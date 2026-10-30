@@ -10,6 +10,7 @@ pub use catalog::Catalog;
 pub use catalog::Reader;
 pub use catalog::catalog;
 pub use catalog::default_budget;
+pub(crate) use catalog::section_in as catalog_in;
 pub(crate) use catalog::escape;
 pub(crate) use frontmatter::body;
 

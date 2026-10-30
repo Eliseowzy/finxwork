@@ -337,6 +337,7 @@ async fn acp_announces_commands_and_runs_skills() {
         commands,
         vec![
             json!({"name": "compact", "description": "Summarize the conversation so far to free up the context window"}),
+            json!({"name": "context", "description": "Show what fills the context window"}),
             json!({"name": "skill:commit-style", "description": "Commit messages."}),
             json!({"name": "skill:gen-report", "description": "Generate the weekly report.", "input": {"hint": "[week]"}}),
         ]
@@ -361,7 +362,7 @@ async fn acp_announces_commands_and_runs_skills() {
         .await
         .unwrap();
     let (commands, replayed) = commands_after_open(&mut rx, &session).await;
-    assert_eq!(commands.len(), 3);
+    assert_eq!(commands.len(), 4);
     let user = replayed.iter().find(|u| u["sessionUpdate"] == "user_message_chunk").unwrap();
     assert_eq!(user["content"]["text"], typed);
 

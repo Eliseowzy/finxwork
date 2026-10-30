@@ -3,6 +3,7 @@
 
 use finx_llm::AssistantContent;
 use finx_llm::Message;
+use finx_llm::ToolCall;
 use finx_tools::Environment;
 use finx_tools::OutputLimits;
 use std::collections::HashMap;
@@ -63,20 +64,29 @@ pub(crate) fn used_files(window: &[&Entry], env: &dyn Environment) -> Vec<PathBu
                     if failed.contains(call.id.as_str()) {
                         continue;
                     }
-                    let args = call.arguments.to_value();
-                    let arg = |name: &str| args.get(name).and_then(|v| v.as_str()).unwrap_or_default();
-                    let paths: Vec<&str> = match call.name.as_str() {
-                        "read" => vec![arg("path")].into_iter().filter(|p| is_skill_file(p)).collect(),
-                        "bash" => printed_skill_files(arg("command")),
-                        _ => Vec::new(),
-                    };
-                    out.extend(paths.into_iter().map(|path| env.resolve(path)));
+                    out.extend(skill_files_read(call).iter().map(|path| env.resolve(path)));
                 }
             }
             _ => {}
         }
     }
     out
+}
+
+/// The SKILL.md files a tool call reads with read, or prints with bash.
+pub(crate) fn skill_files_read(call: &ToolCall) -> Vec<String> {
+    // Before parsing the arguments, which may be a whole file written.
+    if !matches!(call.name.as_str(), "read" | "bash") {
+        return Vec::new();
+    }
+    let args = call.arguments.to_value();
+    let arg = |name: &str| args.get(name).and_then(|v| v.as_str()).unwrap_or_default();
+    let paths: Vec<&str> = match call.name.as_str() {
+        "read" => vec![arg("path")].into_iter().filter(|p| is_skill_file(p)).collect(),
+        "bash" => printed_skill_files(arg("command")),
+        _ => Vec::new(),
+    };
+    paths.into_iter().map(str::to_string).collect()
 }
 
 /// The session's skills behind `used` (from [`used_files`]), most recent first, then the ones

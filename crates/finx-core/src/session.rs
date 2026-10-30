@@ -177,8 +177,10 @@ pub(crate) struct Session {
     pub(crate) output_dir: PathBuf,
     /// The data directory is temporary (no session log) and goes away with the session.
     pub(crate) temporary_data: Option<PathBuf>,
-    /// Estimate of the system prompt and the tool definitions; see `budget`.
-    pub(crate) fixed_tokens: Mutex<Option<u64>>,
+    /// Estimate of the system prompt and the tool definitions, in parts; see `budget`.
+    pub(crate) fixed_tokens: Mutex<Option<crate::context_report::Fixed>>,
+    /// The last context report and what it was made from; see `context_report`.
+    pub(crate) context_report: Mutex<Option<(crate::context_report::ReportKey, finx_protocol::ContextReport)>>,
     /// The messages of the last request with their estimates; see `estimate_request`.
     pub(crate) request_estimates: Mutex<Vec<(finx_llm::Message, u64)>>,
     /// finx's data directory, canonical.

@@ -327,6 +327,7 @@ export function demoSkills(): SkillsListResult {
     })),
     commands: [
       { name: "compact", description: "Summarize the conversation so far to free up the context window" },
+      { name: "context", description: "Show what fills the context window" },
       ...demoSkillList.map((s) => ({ name: `skill:${s.name}`, description: s.description, hint: s.hint, skill: skillPath(s) })),
     ],
     enabled: true,

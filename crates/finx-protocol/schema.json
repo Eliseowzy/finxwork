@@ -26,6 +26,9 @@
       "$ref": "#/definitions/ConnectionsSnapshot"
     },
     {
+      "$ref": "#/definitions/ContextReport"
+    },
+    {
       "$ref": "#/definitions/Empty"
     },
     {
@@ -903,6 +906,102 @@
       "required": [
         "connections",
         "revision"
+      ],
+      "type": "object"
+    },
+    "ContextPart": {
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/ContextPartKind"
+        },
+        "tokens": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "ContextPartKind": {
+      "description": "What a part of the context is. A client meeting a kind it does not know shows it as other.",
+      "oneOf": [
+        {
+          "description": "The conversation: the user's messages, the replies, tool calls and their results.",
+          "enum": [
+            "messages"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The system prompt, without the skill catalog and the MCP section.",
+          "enum": [
+            "system_prompt"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Definitions of the built-in tools.",
+          "enum": [
+            "tools"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The skill catalog, and the instructions of skills loaded in this context.",
+          "enum": [
+            "skills"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "MCP tool definitions and the MCP part of the system prompt.",
+          "enum": [
+            "mcp"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ContextReport": {
+      "description": "What fills the context window of the session's current model (`session/context`, `/context`). The parts add up to `usage.tokens`; with `free` and `reserved` they fill the window.",
+      "properties": {
+        "free": {
+          "description": "Room left before automatic compaction starts (before `hard_limit` when it is off).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "model": {
+          "description": "The model whose window this is, as `provider/model`.",
+          "type": "string"
+        },
+        "parts": {
+          "description": "In a fixed order: messages, system prompt, tools, skills, then MCP when there is any.",
+          "items": {
+            "$ref": "#/definitions/ContextPart"
+          },
+          "type": "array"
+        },
+        "reserved": {
+          "description": "The rest of the window: room kept for the reply, and for compacting in time.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "usage": {
+          "$ref": "#/definitions/ContextUsage"
+        }
+      },
+      "required": [
+        "free",
+        "model",
+        "parts",
+        "reserved",
+        "usage"
       ],
       "type": "object"
     },
@@ -2106,6 +2205,25 @@
           "required": [
             "agent_id",
             "event",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "What fills the context window now: the answer to `/context`.",
+          "properties": {
+            "report": {
+              "$ref": "#/definitions/ContextReport"
+            },
+            "type": {
+              "enum": [
+                "context_reported"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "report",
             "type"
           ],
           "type": "object"
@@ -4909,6 +5027,10 @@
     "session/close": {
       "params": "SessionIdParams",
       "result": "Empty"
+    },
+    "session/context": {
+      "params": "SessionIdParams",
+      "result": "ContextReport"
     },
     "session/delete": {
       "params": "SessionIdParams",

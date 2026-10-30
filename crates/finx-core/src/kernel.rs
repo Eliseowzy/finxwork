@@ -194,6 +194,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         output_dir: session_dir.join("tool-output"),
         temporary_data: temporary.then_some(session_dir),
         fixed_tokens: Mutex::new(None),
+        context_report: Mutex::new(None),
         request_estimates: Mutex::new(Vec::new()),
         data_dir: crate::protected::canonical_data_dir(launch.home.root()),
         skill_roots,
@@ -716,6 +717,12 @@ impl Kernel {
             Some(session) => (session.state.lock().skills.clone(), session.config.skills.enabled),
             None => (Arc::from(Vec::new()), false),
         }
+    }
+
+    /// What fills the context window now; `None` after the session closed. Kept until the
+    /// history, the model or the tools change, so it may be asked for often.
+    pub fn context(&self) -> Option<finx_protocol::ContextReport> {
+        self.session.upgrade().map(|session| session.context_report())
     }
 
     /// Messages and tool results on the current branch, oldest first. Clones `Arc`s only.

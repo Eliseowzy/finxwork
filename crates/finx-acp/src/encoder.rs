@@ -404,6 +404,18 @@ impl AcpEncoder {
                     ));
                 }
             }
+            // `/context`: the report as the agent's text, the only way an ACP client shows it.
+            EventMsg::ContextReported { report } => {
+                let text = format!("```\n{}```", finx_core::context_report::text(report));
+                out.push(out::update(
+                    sid,
+                    Chunk {
+                        session_update: "agent_message_chunk",
+                        content: Block::Text { text: &text },
+                        message_id: None,
+                    },
+                ));
+            }
             // A prompt lasts until the session is idle: reports from sub-agents can start more
             // tasks, and their output belongs to the same prompt. Its answer is the last task's.
             EventMsg::TaskCompleted { reason, .. } => {

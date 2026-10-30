@@ -220,6 +220,8 @@ struct Outcome {
     final_output: Option<String>,
     error: Option<ErrorInfo>,
     agents: Vec<AgentOutcome>,
+    /// The last `/context` report.
+    context: Option<finx_protocol::ContextReport>,
 }
 
 impl Outcome {
@@ -230,6 +232,7 @@ impl Outcome {
             }
             EventMsg::TurnCompleted { .. } => self.turns += 1,
             EventMsg::CompactionCompleted { .. } => self.compactions += 1,
+            EventMsg::ContextReported { report } => self.context = Some(report.clone()),
             EventMsg::ToolCompleted { result, .. } => self.tool_calls.push(json!({
                 "name": result.tool_name,
                 "status": if result.is_error { "error" } else { "ok" },
@@ -295,6 +298,7 @@ impl Outcome {
                 "cost": self.usage.cost_by_currency(),
             },
             "tool_calls": self.tool_calls,
+            "context": self.context,
             "agents": self.agents.iter().map(|a| {
                 let tokens = a.usage.tokens();
                 json!({

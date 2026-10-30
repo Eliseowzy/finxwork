@@ -186,7 +186,7 @@ fn names(list: &Value, field: &str) -> Vec<String> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn skills_list_reports_a_session_and_a_directory() {
     let env = TestEnv::new("manual", "").await;
-    let schema = SchemaCheck::new(&["SkillsListResult"]);
+    let schema = SchemaCheck::new(&["SkillsListResult", "ContextReport"]);
     let report = env.user_home().join(".agents/skills/gen-report/SKILL.md");
     write_file(&report, "---\nname: gen-report\ndescription: Weekly report.\nargument-hint: \"[week]\"\n---\nbody\n");
     write_file(&env.user_home().join(".agents/skills/broken/SKILL.md"), "no header\n");
@@ -215,10 +215,24 @@ async fn skills_list_reports_a_session_and_a_directory() {
     let listed = client.request("skills/list", json!({"session_id": session})).await.unwrap();
     schema.check("SkillsListResult", &listed);
     assert_eq!(names(&listed, "skills"), ["lint", "gen-report"]);
-    assert_eq!(names(&listed, "commands"), ["compact", "skill:lint", "skill:gen-report"]);
+    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report"]);
     assert!(listed["commands"][0].get("skill").is_none());
-    assert_eq!(listed["commands"][2]["hint"], "[week]");
-    assert_eq!(listed["commands"][2]["skill"], json!(report));
+    assert_eq!(listed["commands"][3]["hint"], "[week]");
+    assert_eq!(listed["commands"][3]["skill"], json!(report));
+
+    // What fills its context: the parts add up to the size, and with the free and the kept
+    // room they fill the window. Its skill catalog lists the two skills.
+    let context = client.request("session/context", json!({"session_id": session})).await.unwrap();
+    schema.check("ContextReport", &context);
+    let tokens = |v: &Value| v.as_u64().unwrap();
+    let parts: Vec<(&str, u64)> = context["parts"].as_array().unwrap().iter().map(|p| (p["kind"].as_str().unwrap(), tokens(&p["tokens"]))).collect();
+    assert_eq!(parts.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(), ["messages", "system_prompt", "tools", "skills"]);
+    assert!(parts.iter().skip(1).all(|(_, n)| *n > 0), "{parts:?}");
+    let used = tokens(&context["usage"]["tokens"]);
+    assert_eq!(parts.iter().map(|(_, n)| n).sum::<u64>(), used);
+    assert_eq!(used + tokens(&context["free"]) + tokens(&context["reserved"]), tokens(&context["usage"]["window"]));
+    let again = client.request("session/context", json!({"session_id": session})).await.unwrap();
+    assert_eq!(again, context, "asked again with nothing changed, the same report");
     assert!(listed.get("catalog").is_none());
 
     // `/skill:name` and `/compact` through session/op, as in every front end.
@@ -243,13 +257,17 @@ async fn skills_list_reports_a_session_and_a_directory() {
     assert_eq!(turn.end["type"], "task_completed");
     let compacted = turn.events.iter().find(|e| e["type"] == "compaction_completed").unwrap();
     assert_eq!(compacted["kept_skills"], json!(["lint", "gen-report"]), "mentioned last, used last");
+    // The instructions the compaction kept count as skills, beside the catalog.
+    let skills = |report: &Value| report["parts"].as_array().unwrap().iter().find(|p| p["kind"] == "skills").unwrap()["tokens"].as_u64().unwrap();
+    let after = client.request("session/context", json!({"session_id": session})).await.unwrap();
+    assert!(skills(&after) > skills(&context), "{} then {}", skills(&context), skills(&after));
 
     // Still the session's skills after files change; descriptions are read again.
     write_file(&env.user_home().join(".agents/skills/late/SKILL.md"), "---\nname: late\ndescription: Late.\n---\n");
     write_file(&report, "---\nname: gen-report\ndescription: Edited.\n---\nbody\n");
     let listed = client.request("skills/list", json!({"session_id": session})).await.unwrap();
-    assert_eq!(names(&listed, "commands"), ["compact", "skill:lint", "skill:gen-report"]);
-    assert_eq!(listed["commands"][2]["description"], "Edited.");
+    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report"]);
+    assert_eq!(listed["commands"][3]["description"], "Edited.");
 
     for (params, kind) in [
         (json!({}), "invalid_params"),

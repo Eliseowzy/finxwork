@@ -233,6 +233,11 @@ impl Renderer {
                     ))
                 );
             }
+            EventMsg::ContextReported { report } => {
+                self.end_thinking();
+                self.end_line();
+                print!("{}", finx_core::context_report::text(report));
+            }
             EventMsg::CompactionFailed { error, .. } => {
                 eprintln!("{}", self.style.yellow(&format!("compaction failed: {}", error.message)));
             }

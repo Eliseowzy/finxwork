@@ -13,6 +13,7 @@ use std::sync::Arc;
 
 use crate::config::CompactionSettings;
 use crate::context;
+use crate::context_report::Fixed;
 use crate::session::Session;
 use crate::store::Entry;
 
@@ -269,13 +270,21 @@ impl Session {
     /// Estimate of the system prompt and the tool definitions. They change only when MCP tools
     /// come or go, which clears the cached value.
     pub(crate) fn fixed_tokens(&self) -> u64 {
-        if let Some(tokens) = *self.fixed_tokens.lock() {
-            return tokens;
+        self.fixed().total()
+    }
+
+    /// [`Session::fixed_tokens`] in its parts.
+    pub(crate) fn fixed(&self) -> Fixed {
+        if let Some(fixed) = *self.fixed_tokens.lock() {
+            return fixed;
         }
-        let system = self.state.lock().system_prompt.clone();
-        let tokens = context::estimate_fixed(&system, &self.tools().specs());
-        *self.fixed_tokens.lock() = Some(tokens);
-        tokens
+        let (system, base, mcp) = {
+            let state = self.state.lock();
+            (state.system_prompt.clone(), state.base_prompt.clone(), state.mcp_section.clone())
+        };
+        let fixed = Fixed::of(&system, &base, mcp.as_deref(), &self.tools().specs());
+        *self.fixed_tokens.lock() = Some(fixed);
+        fixed
     }
 
     pub(crate) fn estimate_ratio(&self) -> f64 {

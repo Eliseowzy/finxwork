@@ -243,6 +243,10 @@ pub enum EventMsg {
         agent_id: String,
         event: Box<Event>,
     },
+    /// What fills the context window now: the answer to `/context`.
+    ContextReported {
+        report: ContextReport,
+    },
     /// Nothing is left to do: no task, no queued input or report that starts one, and every
     /// sub-agent idle. Sent once each time the session gets there.
     Idle,
@@ -271,6 +275,44 @@ pub struct ContextUsage {
     /// The context window minus the room kept for the reply. Larger requests fail.
     pub hard_limit: u64,
     pub window: u64,
+}
+
+/// What fills the context window of the session's current model (`session/context`,
+/// `/context`). The parts add up to `usage.tokens`; with `free` and `reserved` they fill the
+/// window.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextReport {
+    /// The model whose window this is, as `provider/model`.
+    pub model: String,
+    pub usage: ContextUsage,
+    /// In a fixed order: messages, system prompt, tools, skills, then MCP when there is any.
+    pub parts: Vec<ContextPart>,
+    /// Room left before automatic compaction starts (before `hard_limit` when it is off).
+    pub free: u64,
+    /// The rest of the window: room kept for the reply, and for compacting in time.
+    pub reserved: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ContextPart {
+    pub kind: ContextPartKind,
+    pub tokens: u64,
+}
+
+/// What a part of the context is. A client meeting a kind it does not know shows it as other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextPartKind {
+    /// The conversation: the user's messages, the replies, tool calls and their results.
+    Messages,
+    /// The system prompt, without the skill catalog and the MCP section.
+    SystemPrompt,
+    /// Definitions of the built-in tools.
+    Tools,
+    /// The skill catalog, and the instructions of skills loaded in this context.
+    Skills,
+    /// MCP tool definitions and the MCP part of the system prompt.
+    Mcp,
 }
 
 /// Warnings a client may recognise. A client meeting a code it does not know shows `message`.

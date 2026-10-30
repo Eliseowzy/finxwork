@@ -309,6 +309,16 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::SESSION_CONTEXT => match finx_rpc::params::<SessionIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        let result = server.context(&p.session_id).await;
+                        conn.send(reply(&id, result));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::SESSION_LIST => match finx_rpc::params::<Option<SessionListParams>>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();

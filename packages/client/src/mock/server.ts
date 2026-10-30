@@ -1,5 +1,5 @@
 import type {
-  ActiveTask, AgentStatus, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, RpcErrorObject,
+  ActiveTask, AgentStatus, ContextReport, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, RpcErrorObject,
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent,
 } from "@finx/protocol";
 import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } from "../session.ts";
@@ -534,6 +534,15 @@ export class MockServer {
 
   private prompt(s: Session, input: UserContent[], script?: TaskScript) {
     const text = userText(input).text;
+    // `/context`: a task of its own that only reports, as finx runs it.
+    if (/^\s*\/context(\s|$)/.test(text)) {
+      s.tasks++;
+      const task_id = `t${s.tasks}`;
+      this.emit(s, { type: "task_started", task_id });
+      this.emit(s, { type: "context_reported", report: contextReport(s.view) });
+      this.emit(s, { type: "task_completed", task_id, usage: { per_model: {} }, reason: "done" });
+      return;
+    }
     if (!script && wantsAgents(text)) {
       const sc = agentsScenario();
       s.scenario = sc;
@@ -659,6 +668,8 @@ export class MockServer {
         // The mock serves the proposed history (P5's task ends among the items).
         return { items: items.slice(start, end) as TranscriptItem[], before: start > 0 ? String(start) : undefined };
       }
+      case "session/context":
+        return contextReport(this.session((p as P<"session/context">).session_id).view) satisfies R<"session/context">;
       case "session/op": {
         const q = p as P<"session/op">;
         const s = this.session(q.session_id);
@@ -837,4 +848,30 @@ function usageFor(model: string, turn: TurnScript): Usage {
   const rate = cny ? { input: 2e-6, output: 8e-6, cache: 0.2e-6 } : { input: 3e-6, output: 15e-6, cache: 0.3e-6 };
   const cost = { input: input * rate.input, output: output * rate.output, cache_read: cache_read * rate.cache, cache_write: 0 };
   return { input, output, cache_read, cache_write: 0, cost: { currency: cny ? "CNY" : "USD", ...cost, total: cost.input + cost.output + cost.cache_read } };
+}
+
+/**
+ * What finx's `session/context` answers for a session: the size its last reply reported (or
+ * the fixed parts alone before one), the parts before the messages as a session of the demo
+ * would have them, and the rest of the window as finx's limits leave it.
+ */
+function contextReport(v: SessionView): ContextReport {
+  const window = v.info.context_window || 131_072;
+  const hard = Math.max(window - 32_000, window / 2);
+  const soft = Math.round(hard * 0.9);
+  const fixed = { system_prompt: 3_400, tools: 2_900, skills: 1_100 };
+  const before = fixed.system_prompt + fixed.tools + fixed.skills;
+  const tokens = Math.max(v.context, before);
+  return {
+    model: v.info.model,
+    usage: { tokens, estimated: 0, soft_limit: soft, hard_limit: hard, window },
+    parts: [
+      { kind: "messages", tokens: tokens - before },
+      { kind: "system_prompt", tokens: fixed.system_prompt },
+      { kind: "tools", tokens: fixed.tools },
+      { kind: "skills", tokens: fixed.skills },
+    ],
+    free: Math.max(0, soft - tokens),
+    reserved: window - Math.max(tokens, soft),
+  };
 }

@@ -1,5 +1,5 @@
 import type {
-  AgentSnapshot, AgentStatus, Delta, ErrorInfo, Event, Location, PartialBlock, PartialMessage, PendingApproval, PermissionMode, SessionInfo,
+  AgentSnapshot, AgentStatus, ContextReport, Delta, ErrorInfo, Event, Location, PartialBlock, PartialMessage, PendingApproval, PermissionMode, SessionInfo,
   SessionSnapshot, TaskEndItem, ThinkingLevel, ToolCategory, TranscriptItem, UsageTotals, UserMessage, WarningCode,
 } from "@finx/protocol";
 import { addTotals, usageTokens } from "./text.ts";
@@ -12,7 +12,9 @@ import { addTotals, usageTokens } from "./text.ts";
 /** Lines the client adds to the conversation that the protocol's history has no item for. */
 export type NoteEntry =
   | { type: "note"; note: "compaction"; tokens_before: number; tokens_after: number; ts: number }
-  | { type: "note"; note: "warning"; message: string; ts: number };
+  | { type: "note"; note: "warning"; message: string; ts: number }
+  /** `/context` was answered: how full the window was then. */
+  | { type: "note"; note: "context"; tokens: number; window: number; ts: number };
 
 export type Entry = TranscriptItem | NoteEntry;
 
@@ -107,6 +109,8 @@ export interface SessionView {
   notices: Notice[];
   /** Sub-agents started since the session was loaded, in the order they started. */
   agents: AgentView[];
+  /** The last answer to `/context`, and when it came. */
+  asked?: { report: ContextReport; at: number };
   closed: boolean;
 }
 
@@ -299,6 +303,10 @@ function step(v: SessionView, e: Event): SessionView {
       // Out of bypass-permissions, its warning no longer holds.
       const notices = info.permission_mode === "bypass-permissions" ? v.notices : v.notices.filter((n) => n.code !== "bypass_permissions");
       return { ...v, info, notices: notices.length === v.notices.length ? v.notices : notices };
+    }
+    case "context_reported": {
+      const note: NoteEntry = { type: "note", note: "context", tokens: e.report.usage.tokens, window: e.report.usage.window, ts: e.ts };
+      return { ...v, entries: [...v.entries, note], asked: { report: e.report, at: e.ts } };
     }
     case "warning":
       if (e.code) {

@@ -33,6 +33,8 @@ pub mod method {
     pub const SESSION_DETACH: &str = "session/detach";
     pub const SESSION_OP: &str = "session/op";
     pub const SESSION_HISTORY: &str = "session/history";
+    /// What fills a loaded session's context window (`ContextReport`).
+    pub const SESSION_CONTEXT: &str = "session/context";
     pub const SESSION_LIST: &str = "session/list";
     pub const SESSION_CLOSE: &str = "session/close";
     pub const SESSION_DELETE: &str = "session/delete";

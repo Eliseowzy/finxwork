@@ -10,6 +10,7 @@ pub mod commands;
 mod compaction;
 pub mod config;
 pub mod context;
+pub mod context_report;
 mod emitter;
 pub mod history;
 pub mod hooks;

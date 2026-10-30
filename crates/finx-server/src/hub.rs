@@ -87,6 +87,10 @@ pub(crate) enum HubCmd {
     Skills {
         reply: oneshot::Sender<(Arc<[SkillRef]>, bool)>,
     },
+    /// What fills the session's context window; `None` while it has no kernel.
+    Context {
+        reply: oneshot::Sender<Option<finx_protocol::ContextReport>>,
+    },
     Close {
         reply: Option<oneshot::Sender<()>>,
     },
@@ -430,6 +434,9 @@ impl Hub {
                     None => (Arc::from(Vec::new()), false),
                 };
                 let _ = reply.send(skills);
+            }
+            HubCmd::Context { reply } => {
+                let _ = reply.send(self.kernel.as_ref().and_then(|kernel| kernel.context()));
             }
             HubCmd::Close { reply } => {
                 self.close_reason = DetachReason::Closed;

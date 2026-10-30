@@ -64,6 +64,11 @@ pub fn document() -> Value {
             name::<api::TranscriptPage>(g),
         ),
         (
+            method::SESSION_CONTEXT,
+            Some(name::<api::SessionIdParams>(g)),
+            name::<crate::ContextReport>(g),
+        ),
+        (
             method::SESSION_LIST,
             Some(name::<api::SessionListParams>(g)),
             name::<api::SessionListResult>(g),

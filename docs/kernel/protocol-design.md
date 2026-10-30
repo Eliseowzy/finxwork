@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.16 | 2026-10-30 | 上下文明细（technical-design §7.5.8），都在版本 2 之内：新增方法 `session/context`，返回已加载会话的 ContextReport；新增事件 `context_reported`（`/context` 的答复）；`skills/list` 的内置命令多了 `context`；ACP 把 `/context` 的明细作为 `agent_message_chunk` 发出 |
 | v0.15 | 2026-10-30 | 思考强度（model-catalog-design §18）：`ThinkingLevel` 新增 `default`、`on`、`xhigh`，`default` 是默认值；`ModelSummary.thinking_levels` 是模型提供的服务商档位（不含 `default`，模型不能指定推理时为空），新增 `default_thinking`（这个模型的起始档位）；`set_model` 不带 `thinking` 时按切换规则决定档位，带了就记住它；ConnectionModel 新增 `thinking`、`default_thinking`（账号连接提供的档位与起始档位） |
 | v0.14 | 2026-10-30 | 模型目录与发现（model-catalog-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `model_discovery` 声明：`models/list` 只列有凭据的服务商的模型（默认模型例外），ModelSummary 增加 `shown`、`known`、`deprecated`、`released`、`cost`，`thinking_levels` 按服务商取值去重；ProviderSummary 增加 `listing`；新增 `models/refresh`、`models/show`；`auth/set` 先验证密钥，返回 `verified`，被拒绝时返回新错误码 −32021 `key_rejected`；ACP 的模型选项只给菜单里显示的模型 |
 | v0.13 | 2026-10-29 | Skill 2d（skill-design.md v1.5 §6.3.5），都在版本 2 之内：`message_completed` 与 TranscriptItem 的用户消息由 `skill` 改为 `skills: [SkillUse]`（SkillUse 是 `{name, path}`，替换 SkillInvocation），消息本身是用户的原话；`skills/list` 的 `commands` 里 Skill 的名字是 `skill:名字`，带 `cwd` 时也返回 `commands`；ACP 的 `available_commands_update` 同样列出 `skill:名字`，提及可以在 prompt 文本的任意位置，内嵌资源的文字不参与识别（§6、§7.4） |
@@ -542,6 +543,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `session/detach` | session_id | `{}` | 停止接收该会话的事件 |
 | `session/op` | session_id、op | `{}` | 提交一个 Op，必须先接入。op 的 JSON 与进程内 API、`--ops-stdin` 完全相同 |
 | `session/history` | session_id、before、limit? | items、before? | 分页读取更早的记录 |
+| `session/context` | session_id | ContextReport | 已加载会话当前上下文的明细（technical-design §7.5.8）：用量、各部分、剩余与预留空间。内核在会话没有变化时直接返回上一份，可以频繁询问 |
 | `session/list` | cwd?、cursor?、limit? | sessions、next_cursor? | 磁盘上的会话，以及本服务中还没写出日志的新会话（technical-design §9.3），附带在本服务中的加载状态。cwd 的匹配规则与 `finx sessions` 相同 |
 | `session/close` | session_id | `{}` | 关闭会话：中断任务、日志落盘、释放锁 |
 | `session/delete` | session_id | `{}` | 会话日志移入回收目录。会话已加载时先关闭（中断任务），再移入 |

@@ -1,4 +1,4 @@
-//! The user's commands and mentions: `/compact` at the start of the input, and `/skill:name`
+//! The user's commands and mentions: `/compact` or `/context` at the start of the input, and `/skill:name`
 //! anywhere in it, which sends the skill's instructions along with the message
 //! (docs/kernel/skill-design.md §6.3).
 
@@ -15,7 +15,10 @@ use crate::skills::SkillState;
 use crate::store::SkillText;
 
 /// Built-in commands and what they do. They work only at the start of the input.
-pub const BUILT_IN: &[(&str, &str)] = &[("compact", "Summarize the conversation so far to free up the context window")];
+pub const BUILT_IN: &[(&str, &str)] = &[
+    ("compact", "Summarize the conversation so far to free up the context window"),
+    ("context", "Show what fills the context window"),
+];
 
 /// What a mention starts with.
 pub const MENTION_PREFIX: &str = "/skill:";
@@ -185,20 +188,25 @@ fn inline_code(text: &str, range: Range<usize>, out: &mut Vec<Range<usize>>) {
 
 pub(crate) enum Command {
     Compact,
+    Context,
     /// A message for the model: the instructions of the skills it mentions, in order, and
     /// what the user should hear about mentions that load nothing.
     Prompt { skills: Vec<SkillText>, warnings: Vec<String> },
 }
 
-/// Reads the user's input: `/compact` as its first word is the built-in command; otherwise
+/// Reads the user's input: `/compact` or `/context` as its first word is a built-in command; otherwise
 /// each skill the text mentions is loaded once, in the order of its first mention. The input
 /// itself is never changed. Text items carrying an embedded resource are not read.
 pub(crate) fn resolve(input: &[UserContent], skills: &[SkillRef], limits: &OutputLimits) -> Command {
-    if let Some(UserContent::Text { text }) = input.first()
-        && let Some(rest) = text.trim_start().strip_prefix("/compact")
-        && rest.chars().next().is_none_or(char::is_whitespace)
-    {
-        return Command::Compact;
+    if let Some(UserContent::Text { text }) = input.first() {
+        let first = text.trim_start();
+        let is = |command: &str| first.strip_prefix(command).is_some_and(|rest| rest.chars().next().is_none_or(char::is_whitespace));
+        if is("/compact") {
+            return Command::Compact;
+        }
+        if is("/context") {
+            return Command::Context;
+        }
     }
     let mut loaded = Vec::new();
     let mut warnings = Vec::new();
@@ -307,7 +315,7 @@ mod tests {
     fn prompt(command: Command) -> (Vec<SkillText>, Vec<String>) {
         match command {
             Command::Prompt { skills, warnings } => (skills, warnings),
-            Command::Compact => panic!("not a prompt"),
+            Command::Compact | Command::Context => panic!("not a prompt"),
         }
     }
 
@@ -378,6 +386,8 @@ mod tests {
         let skills = [report, gone];
         let limits = OutputLimits::default();
         assert!(matches!(resolve(&text("  /compact please"), &skills, &limits), Command::Compact));
+        assert!(matches!(resolve(&text("/context"), &skills, &limits), Command::Context));
+        assert!(matches!(resolve(&text("/contexts"), &skills, &limits), Command::Prompt { .. }));
         for typed in ["/compactly", "please /compact", "/gen-report 本周", "看看 /deploy 接口", "`/skill:gen-report`"] {
             let (loaded, warnings) = prompt(resolve(&text(typed), &skills, &limits));
             assert!(loaded.is_empty() && warnings.is_empty(), "{typed}");
@@ -421,11 +431,11 @@ mod tests {
 
         let menu = available(&described);
         let names: Vec<&str> = menu.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(names, ["compact", "skill:report"], "a name with a space cannot be written; a broken skill is left out");
+        assert_eq!(names, ["compact", "context", "skill:report"], "a name with a space cannot be written; a broken skill is left out");
         assert_eq!(menu[0].description, BUILT_IN[0].1);
         assert_eq!(menu[0].skill, None);
-        assert_eq!(menu[1].hint.as_deref(), Some("[week]"));
-        assert_eq!(menu[1].skill.as_ref(), Some(&report.path));
+        assert_eq!(menu[2].hint.as_deref(), Some("[week]"));
+        assert_eq!(menu[2].skill.as_ref(), Some(&report.path));
         assert!(is_mentionable("gen-report") && is_mentionable("a_b2") && !is_mentionable("a b") && !is_mentionable(""));
     }
 

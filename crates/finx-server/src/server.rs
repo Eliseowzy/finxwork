@@ -583,6 +583,14 @@ impl Server {
             .ok_or_else(|| RpcError::invalid_params("unknown history cursor"))
     }
 
+    /// What fills a loaded session's context window. The kernel keeps the report until the
+    /// session changes, so asking is cheap.
+    pub async fn context(&self, id: &str) -> Result<finx_protocol::ContextReport, RpcError> {
+        let (tx, rx) = oneshot::channel();
+        self.loaded(id)?.send(HubCmd::Context { reply: tx }).await?;
+        rx.await.ok().flatten().ok_or_else(|| errors::session_closed(id))
+    }
+
     /// The whole transcript of a loaded session.
     pub async fn transcript(
         &self,

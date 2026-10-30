@@ -127,7 +127,10 @@ export function conversation(v: SessionView): Step[] {
         return;
       case "task_end": {
         // A task that ended while sub-agents work on is no end of the work: their reports carry it on.
+        // A `/context` task only reported: its note says all there is.
         const end = ends.get(i);
+        const prior = v.entries[i - 1];
+        if (prior?.type === "note" && prior.note === "context") return;
         if (!end?.hidden) out.push({ kind: "end", key: `end:${e.task_id}:${e.ts}`, end: e, chain: end?.chain });
         return;
       }

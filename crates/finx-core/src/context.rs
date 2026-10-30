@@ -293,11 +293,12 @@ pub fn estimate_tokens(messages: &[Message]) -> u64 {
 
 /// Estimate of the part of every request that never changes: system prompt and tool definitions.
 pub fn estimate_fixed(system: &str, tools: &[ToolSpec]) -> u64 {
-    let tools: u64 = tools
-        .iter()
-        .map(|t| estimate_text(&t.name) + estimate_text(&t.description) + estimate_text(&t.parameters.to_string()) + 8)
-        .sum();
-    estimate_text(system) + tools
+    estimate_text(system) + tools.iter().map(estimate_tool).sum::<u64>()
+}
+
+/// Estimate of one tool definition.
+pub fn estimate_tool(tool: &ToolSpec) -> u64 {
+    estimate_text(&tool.name) + estimate_text(&tool.description) + estimate_text(&tool.parameters.to_string()) + 8
 }
 
 #[cfg(test)]

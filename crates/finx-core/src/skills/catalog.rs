@@ -40,6 +40,15 @@ impl Reader {
     }
 }
 
+/// The catalog section within a system prompt, or empty when it has none.
+pub(crate) fn section_in(prompt: &str) -> &str {
+    let Some(start) = prompt.find(OPEN) else { return "" };
+    match prompt[start..].find(CLOSE) {
+        Some(end) => &prompt[start..start + end + CLOSE.len()],
+        None => "",
+    }
+}
+
 /// The budget when the configuration sets none: 2% of the context window, at most 10,000.
 pub fn default_budget(context_window: u64) -> u64 {
     (context_window / 50).min(10_000)

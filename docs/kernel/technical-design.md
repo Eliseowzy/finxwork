@@ -71,6 +71,7 @@
 | v1.22 | 2026-10-29 | Skill 2d（[skill-design.md](skill-design.md) v1.5，决策 D-82–D-89）：用户在消息任意位置用 `/skill:名字` 提及 Skill，可以有多个，二期开头的 `/名字` 不再表示 Skill，`/compact` 仍只认开头（§8.1）；用户的话原样记录，提及的 Skill 的正文记在 message 条目的 `skills`，组成上下文时作为单独的文字项放在原话之前（§9.2）；`message_completed` 和历史条目的 `skill` 换成 `skills: [{name, path}]`（§8.2）；压缩时保留的就是原话（§7.6.4）；清单的说明句加上条件，对话里已有某个 Skill 的 `<skill>` 块时不必再读它的 SKILL.md（§7.2）；`finx skills --json` 与 `skills/list {cwd}` 带 `commands`（§12）；桌面端输入框改用 Lexical（protocol-design.md v0.13、desktop-design.md v0.5） |
 | v1.23 | 2026-10-29 | 长任务循环压测与优化（§1.4）：finx-load 新增 churn、exec-churn，一个任务连续几千个工具轮次（读写改同一个文件、追加日志、grep/find/rg 搜索、读文件的一段），中途多次压缩；采样新增打开文件数。改动：历史的分支按位置保存、追加时延长，不再每次请求从叶子沿父链走到根；校准用的请求估算沿用上次请求的结果，最大一轮的估算接着上次往下算；工具调用的参数和工具结果的 details 存为紧凑的 JSON 文本 JsonText，写出的字节不变（§4.3）；给客户端的记录、回复里少见的大字段装箱。单个会话 3000 轮：每轮指令数由 14.4 M 降到 8.6 M，任务结束后的活跃堆由 14.3 MiB 降到 9.9 MiB；16 个会话各 1500 轮：进程峰值占用由 149 MiB 降到 116 MiB。新增待定问题 Q-96、Q-97 |
 | v1.24 | 2026-10-30 | 新增模型目录与发现方案 [model-catalog-design.md](model-catalog-design.md)，回答 Q-08：有哪些模型由服务商的列表接口决定（保存密钥时顺便验证、常驻服务每 24 小时刷新、手动刷新），参数按字段合并 models.toml、内置修正、列表自带参数和公开维护的模型目录（随版本打包快照，常驻服务在后台刷新）；推理档位从公共目录推导；菜单只显示有凭据、参数已知、未停用的模型，每家最多最新的 12 个，用户可逐个调整。§4.8、§9.1 随之更新。决策 D-130–D-144，待定问题 Q-120–Q-125。一期、二期已实现，端到端测试与真实 DeepSeek 验收通过 |
+| v1.26 | 2026-10-30 | 上下文明细（§7.5.8，D-150–D-153）：内核给出当前上下文由哪几部分组成——消息、系统提示词、内置工具、Skill、MCP，加上预留空间和剩余空间。总量就是用量计算的结果，各部分相加等于总量；按需计算，固定部分随系统提示词的缓存一起保存，整份结果在会话没有变化时直接复用。新增内置命令 `/context`（只汇报、不调模型、不写日志）、事件 `context_reported`（§8.2）和原生协议方法 `session/context`（protocol-design.md v0.16）；`finx exec` 的文本输出打印明细，JSON 结果带 `context`（§12）；ACP 把明细作为助手文字发出 |
 | v1.25 | 2026-10-30 | 思考强度改用服务商自己的档位（model-catalog-design §18，D-145–D-149）：`ThinkingLevel` 新增 `default`（不发参数，配置的默认值）、`on`、`xhigh`；每个模型只提供它支持且请求格式发得出去的档位，不提供的按 `default` 处理；换模型时保留新模型也有的档位，否则用这个模型上次选的档位；§4.13 改写 |
 
 ## 1. 目标与范围
@@ -1801,6 +1802,49 @@ pub struct ContextUsage {
 
 - `turn_started` 带 `context`，即本轮发请求前检查得到的用量；`session_started` 和 `compaction_completed` 也带，前端可以显示上下文占用，恢复会话后也能立刻显示。
 - 本轮请求之后的精确用量，可以从 `turn_completed.usage` 算出。
+- 当前上下文由哪几部分组成，见 §7.5.8。
+
+#### 7.5.8 上下文明细（D-150–D-153）
+
+前端要回答"上下文被什么占满了"。内核给出当前模型窗口的明细 `ContextReport`：
+
+```rust
+pub struct ContextReport {
+    pub model: String,            // provider/model，窗口属于它
+    pub usage: ContextUsage,      // 与 §7.5.1 相同的用量
+    pub parts: Vec<ContextPart>,  // 依次是消息、系统提示词、工具、Skill，有 MCP 时再加 MCP
+    pub free: u64,                // 到自动压缩之前还能用的；关闭自动压缩时算到硬上限
+    pub reserved: u64,            // 窗口里剩下的：留给回复，以及按时压缩
+}
+pub struct ContextPart { pub kind: ContextPartKind, pub tokens: u64 }
+pub enum ContextPartKind { Messages, SystemPrompt, Tools, Skills, Mcp }
+```
+
+| 部分 | 内容 |
+|---|---|
+| messages | 用户消息、模型回复、工具调用与结果、压缩后的摘要与保留的原话 |
+| system_prompt | 系统提示词去掉 Skill 清单和 MCP 部分：基础指令、工具说明、指令文件、环境信息 |
+| tools | 内置工具的定义 |
+| skills | 系统提示词里的 Skill 清单，加上当前窗口里的 Skill 正文：压缩时保留的、随 `/skill:名字` 发出的、模型用 read 或 bash 读到的 SKILL.md |
+| mcp | 系统提示词里的 MCP 部分，以及 MCP 工具（含 `tool_search`、`call_tool`）的定义；没有 MCP 时不出现 |
+
+**计算**：
+
+- 总量 `usage.tokens` 就是 §7.5.1 的用量：最近一次响应的真实计数加上之后内容的估算。明细与自动压缩看到的是同一个数。
+- 消息之外的各部分按 §7.5.3 估算、乘校准系数。消息取总量减去它们的差，所以各部分相加正好等于总量，误差都落在消息上。估算的各部分加起来超过总量时（新会话的第一次请求之前，或换模型之后），按比例缩到总量，消息记 0。
+- `free + reserved + usage.tokens = window`（超过窗口时除外）。自动压缩打开时，free 算到软阈值，reserved 是软阈值之后的部分；关闭时 free 算到硬上限，reserved 只剩预留输出。
+
+**代价与缓存**：前端可能频繁询问（每轮、每个工具结果之后），明细不能拖慢任务。
+
+- 固定部分（系统提示词、Skill 清单、MCP 部分、各工具定义）分开估算，与原来的"系统提示词 + 工具定义"缓存合成一份，只在 MCP 服务器改变工具或提示词时失效。合计与原来的估算逐个 token 相同，用量计算不受影响。
+- 总量沿用用量计算本身的增量做法（§7.5.2）：只估算基准之后的新内容。
+- 当前窗口里的 Skill 正文要扫一遍窗口；工具调用只看 read 和 bash，参数在名字对上之后才解析。
+- 整份明细按"分支代数、历史条目数、当前模型、推理档位、校准系数、固定部分"记住；这些都没变时直接返回上一份。会话在跑任务时询问，只短暂持有会话锁。
+
+**对外**：
+
+- 原生协议 `session/context`（protocol-design §6.4）：已加载会话的明细。桌面端的信息卡片用它，在会话有变化（新消息或工具结果、换模型或推理档位、新一轮开始）后再问，几次变化合成一次。
+- 内置命令 `/context`：输入开头的 `/context`（由内核命令表解析，与 `/compact` 并列），会话空闲时作为一个任务运行，事件依次为 `task_started` → `context_reported` → `task_completed`，不发模型请求，也不写会话日志；任务进行中输入时只发 `context_reported`，由正在跑的任务结束来答复前端。`finx exec`、`finx resume -p /context` 以文本打印明细（§12），ACP 作为助手文字发出，桌面端打开信息卡片的上下文区块。
 
 ### 7.6 上下文压缩（D-18）
 
@@ -2039,6 +2083,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 - 子智能体相关的事件和字段（`agent_started`、`agent_status`、`idle`、`message_completed.mail`、`task_started.trigger`）见 subagent-design §11.1。`trigger` 为 user、`mail` 为空时不出现在 JSON 里。
 - Skill 相关的字段见 skill-design §6.3、§7.2：用户消息提及了 Skill 时，`message_completed` 带 `skills: [{name, path}]`，按提及的顺序，消息本身是用户的原话；`compaction_completed.kept_skills` 是压缩后保留的 Skill。两者为空时不出现在 JSON 里。
 - 每次进入空闲都发一次 `idle`；没有子智能体的会话，它紧跟在任务的终止事件之后。前端以它判断"整件事做完了"（§12）。
+- `context_reported { report }` 是 `/context` 的答复，report 即 §7.5.8 的 ContextReport。
 
 ### 8.3 事件顺序保证
 
@@ -2503,6 +2548,8 @@ pub enum RuleDecision { Allow, Ask, Deny }
 | `finx acp` | ACP 服务，供编辑器以子进程方式启动（protocol-design §7） | 协议扩展 | 已实现 |
 | `finx` | 交互界面，形态待定（Q-12） | M3 | — |
 
+在会话里输入 `/context`（例如 `finx resume -p /context`、`finx exec --continue /context`）打印当前上下文的明细（§7.5.8），不请求模型。`--output json` 的结果带 `context`，`stream-json` 里是 `context_reported` 事件。
+
 `finx exec` 的参数：
 
 | 参数 | 说明 |
@@ -2712,13 +2759,13 @@ finxwork/
 |---|---|---|
 | M0 | finx-llm 全部类型；openai-chat 和 anthropic-messages 两个适配器，DeepSeek 的两种端点都已实测；Compat；内置目录与 models.toml；鉴权（环境变量、配置值、命令、免鉴权）；重试与超时；用量与费用换算；ScriptedApi；`finx chat`、`finx models`、`finx doctor` | `finx chat --record`；`finx models --check`；`finx doctor` 的网络检查；内置目录没有填写价格，费用显示为"未知"；SSE 回放素材的 fixtures 目录（请求体快照已实现，§4.15） |
 | M1 | finx-protocol；read、write、edit、bash 四个工具，以及 LocalEnvironment、截断、FileTracker；会话 actor、提交循环、agent 循环、工具批次并发、中断；会话日志与 resume；`finx exec` 的文本模式、`--json` 和 `--ops-stdin` | 验收第 2 项（用真实模型修复示例仓库中的失败测试）还没有做 |
-| M2 | 提前实现：三档权限模式、命令规则、内置只读命令、工作区边界与受保护路径、关键路径删除检查、项目信任；插话与追加；指令文件；`finx sessions`、`finx trust`；上下文管理（用量校准、交接摘要压缩、工具结果裁切与完整内容保存，§7.5–7.7） | grep、find、ls；openai-responses 和 gemini 适配器；回退与派生；凭据文件与 `finx auth set`；环境变量 FINX_DEBUG_HTTP；首 token 延迟等指标；CLI 测试与性能基准 |
+| M2 | 提前实现：三档权限模式、命令规则、内置只读命令、工作区边界与受保护路径、关键路径删除检查、项目信任；插话与追加；指令文件；`finx sessions`、`finx trust`；上下文管理（用量校准、交接摘要压缩、工具结果裁切与完整内容保存，§7.5–7.7）；上下文明细与 `/context`（§7.5.8） | grep、find、ls；openai-responses 和 gemini 适配器；回退与派生；凭据文件与 `finx auth set`；环境变量 FINX_DEBUG_HTTP；首 token 延迟等指标；CLI 测试与性能基准 |
 | 协议扩展 | 服务层与会话中枢、原生协议（stdio 与 Unix socket 常驻服务）、ACP、`finx protocol schema`；finx-mock 驱动的端到端测试与多场景压测，实测数据见 protocol-design §11.1、§12.2 | 在 Zed 中实测 `finx acp` |
 | 子智能体（一期） | 智能体树、`spawn_agent` 与 `send_message`（同步、异步、`interrupt`）、Mailbox（汇报、轮次边界投递、空闲唤醒、最终回复闸门、中断保持、只交付一次、截断与完整内容保存）、子会话无审批并跟随根会话的权限、插话打断同步等待、整树停止与关闭、按路径的写锁、子会话日志头与 `agent_spawned` / `mail` 条目、列表过滤、新事件、`finx exec` 与 ACP 以 `idle` 结束；已用真实模型通过验收（subagent-design §15） | 二期、三期 |
 | Skill（skill-design.md） | 一期：三层发现与优先级、头部解析、系统提示词里的清单与预算、`[skills]` 配置、受保护路径、system_prompt 条目的 `skills`、`finx skills`，以及 `status`、`doctor` 里的 Skill 信息。二期：内核命令表（`/compact`、显式调用 Skill，只解析用户的输入）、压缩时保留在用的 Skill、原生协议 `skills/list`、ACP 的 `available_commands_update`。2d：任意位置的 `/skill:名字`（可以有多个，内核与桌面端共用识别规则和测试用例），用户的话原样记录，桌面端的 Lexical 输入框（`/` 菜单与 Skill 标签）。finx-mock 扮演按清单读 Skill、按消息里的 Skill 块行事的模型，端到端测试覆盖 exec、原生协议和 ACP；DeepSeek `deepseek-flash` 真实模型验收通过（`tools/acceptance/accept_skills.py`、`tools/acceptance/accept_skills_phase2.py`，skill-design §13.1–§13.3） | 在 Zed 中实测命令菜单；桌面端输入法组字的实际试用；三期 |
 | MCP（一期） | finx-mcp 客户端（stdio、Streamable HTTP、进度、取消、懒重连、`list_changed`）；配置来源与信任；按需加载（目录、`tool_search`、`call_tool`）与 direct 暴露；免审批；子智能体共用连接；ACP 与原生协议带来服务器；`finx mcp list/get`、`--mcp-config`；已用 DeepSeek 实测 20 个服务器、460 个工具（mcp-design §16.1） | 二期、三期；在 Zed 中实测；MCP 官方一致性测试套件 |
 
-**测试**：`cargo test --workspace` 共 463 个测试，全部通过，包括单元测试、基于 wiremock 的适配器测试、基于 ScriptedApi 的内核端到端测试（含上下文管理、裁切内容读回、子智能体和 Skill 四组；子智能体按会话分流脚本，12 个用例）、真实可执行文件对接模拟模型服务的上下文管理端到端测试（§14），以及启动真实 `finx` 进程、由 finx-mock 扮演模型的协议与 Skill 端到端测试和压测。MCP 有客户端与两种传输的集成测试、内核的按需加载测试，以及真实 `finx` 进程对接 MCP 测试服务器的端到端测试。测试把 `HOME` 指向临时目录，开发机上已经装好的 Skill 不会进入测试。`cargo clippy --workspace --all-targets` 只剩本地模型连接带来的 5 条提示（finx-connections 4 条、cmd_info.rs 1 条）。
+**测试**：`cargo test --workspace` 共 523 个测试，全部通过，包括单元测试、基于 wiremock 的适配器测试、基于 ScriptedApi 的内核端到端测试（含上下文管理、裁切内容读回、子智能体和 Skill 四组；子智能体按会话分流脚本，12 个用例）、真实可执行文件对接模拟模型服务的上下文管理端到端测试（§14），以及启动真实 `finx` 进程、由 finx-mock 扮演模型的协议与 Skill 端到端测试和压测。MCP 有客户端与两种传输的集成测试、内核的按需加载测试，以及真实 `finx` 进程对接 MCP 测试服务器的端到端测试。测试把 `HOME` 指向临时目录，开发机上已经装好的 Skill 不会进入测试。`cargo clippy --workspace --all-targets` 只剩本地模型连接带来的 5 条提示（finx-connections 4 条、cmd_info.rs 1 条）。
 
 **上下文管理（2026-10-28）**：用模拟模型服务实测（`compaction_demo`，配置窗口 16,000、回复上限 2,000）：
 - 24 步的长任务压缩 4 次后完成。每次压缩的摘要请求都以上一次请求为前缀，缓存命中约 83%，加上预留输出不超过约 14,800 token，留在窗口之内；压缩后上下文约 1,600 token，只剩系统提示词、任务原话和摘要。
@@ -2865,6 +2912,10 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | D-104 | 原子写入：同目录临时文件加 rename；macOS 用写屏障代替完整刷盘；经由符号链接写到它指向的文件；硬链接有意脱离；拒绝只读文件和特殊文件 | 崩溃后只会看到完整的旧版本或新版本；每次写入省下约 5 ms；不破坏链接，也不绕过工作区检查 | §5.5 |
 | D-105 | 图片按 base64 之后的大小限制为 5 MiB，任一边不超过 8000 像素 | 超限的图片一旦进入只追加的历史，之后每次请求都会被拒绝 | §5.8 |
 | D-106 | edit 只改写匹配到的区间，区间外的字节保持不变；匹配依次为精确、忽略行尾空白、统一排版字符，唯一性在找到匹配的那一级判断，从不忽略缩进；结果只给模型一行摘要，宽松匹配时才附 diff | 混合换行和 BOM 不被改写；常见的空白和引号差异不必多一轮往返；diff 长期占用上下文却很少有用 | §5.8 |
+| D-150 | 上下文明细的总量取用量计算的结果，消息取总量减去其他各部分的差，各部分相加等于总量 | 与自动压缩看到的是同一个数；真实计数只有总量，各部分只能估算，把误差放在占比最大、最难单独估算的消息上，比让各部分加起来对不上总量好 | §7.5.8 |
+| D-151 | 明细由内核计算，原生协议 `session/context` 和内置命令 `/context` 两个入口共用 | 命令行、ACP、桌面端看到的是同一份数据，计算规则只有一处 | §7.5.8 protocol-design §6.4 |
+| D-152 | 明细按需计算，不随事件推送；固定部分与系统提示词的估算缓存合并，整份明细在会话没有变化时直接复用 | 推送会让所有客户端和每轮事件都多带一份数据，多数前端不需要；按需询问加上缓存，频繁询问也只花查表的时间 | §7.5.8 |
+| D-153 | `/context` 作为一个只汇报的任务运行，不调模型，不写会话日志 | 等任务结束的前端（`finx exec`、ACP 的 prompt）需要一个结束；它不改变会话，日志里不必留下一个空任务 | §7.5.8 |
 
 ## 20. 待定问题
 

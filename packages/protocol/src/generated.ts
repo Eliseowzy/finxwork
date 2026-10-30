@@ -194,6 +194,27 @@ export type ConnectionsSnapshot = {
   revision: number;
 };
 
+export type ContextPart = {
+  kind: ContextPartKind;
+  tokens: number;
+};
+
+/** What a part of the context is. A client meeting a kind it does not know shows it as other. */
+export type ContextPartKind = "messages" | "system_prompt" | "tools" | "skills" | "mcp";
+
+/** What fills the context window of the session's current model (`session/context`, `/context`). The parts add up to `usage.tokens`; with `free` and `reserved` they fill the window. */
+export type ContextReport = {
+  /** Room left before automatic compaction starts (before `hard_limit` when it is off). */
+  free: number;
+  /** The model whose window this is, as `provider/model`. */
+  model: string;
+  /** In a fixed order: messages, system prompt, tools, skills, then MCP when there is any. */
+  parts: ContextPart[];
+  /** The rest of the window: room kept for the reply, and for compacting in time. */
+  reserved: number;
+  usage: ContextUsage;
+};
+
 /** How full the model's context window is, as checked before a request. */
 export type ContextUsage = {
   /** The estimated part of `tokens`. */
@@ -430,6 +451,9 @@ export type Event = {
   agent_id: string;
   event: Event;
   type: "agent_event";
+} | {
+  report: ContextReport;
+  type: "context_reported";
 } | {
   type: "idle";
 } | {
@@ -1116,6 +1140,7 @@ export interface Methods {
   "session/archive": [SessionIdParams, Empty];
   "session/attach": [SessionAttachParams, SnapshotResult];
   "session/close": [SessionIdParams, Empty];
+  "session/context": [SessionIdParams, ContextReport];
   "session/delete": [SessionIdParams, Empty];
   "session/detach": [SessionIdParams, Empty];
   "session/history": [SessionHistoryParams, TranscriptPage];

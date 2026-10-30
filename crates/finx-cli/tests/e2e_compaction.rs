@@ -276,6 +276,41 @@ fn a_long_task_compacts_repeatedly_reuses_the_cache_and_resumes() {
         last_reply.messages(),
         "the resumed request extends the last one before the resume"
     );
+
+    // `/context` from the terminal: the report, without a request to the model. Its size is the
+    // provider's count of the last reply plus an estimate of what came after, as a turn checks
+    // it, and the parts add up to it.
+    let requests = server.requests();
+    let last_reply = requests.iter().rev().find(|r| r.kind == Kind::Turn).unwrap();
+    let tasks = log_entries(&log, "task").len();
+    assert!(tasks > 0);
+    let (code, asked) = finx(&env, &["--resume", &session_id, "/context"]);
+    assert_eq!(code, 0);
+    assert_eq!(server.requests().len(), requests.len(), "no request to the model");
+    assert_eq!(log_entries(&log, "task").len(), tasks, "a report leaves no task in the log");
+    let report = &of_type(&asked, "context_reported")[0]["report"];
+    assert_eq!(report["model"], "mock/mock-model");
+    assert_eq!(report["usage"]["window"], WINDOW);
+    let tokens = report["usage"]["tokens"].as_u64().unwrap();
+    let reported = tokens - report["usage"]["estimated"].as_u64().unwrap();
+    assert_eq!(reported, last_reply.prompt_tokens + last_reply.completion_tokens);
+    let parts = report["parts"].as_array().unwrap();
+    assert_eq!(parts[0]["kind"], "messages");
+    assert!(parts[0]["tokens"].as_u64().unwrap() > 0);
+    assert_eq!(parts.iter().map(|p| p["tokens"].as_u64().unwrap()).sum::<u64>(), tokens);
+    // As text, for a person.
+    let output = Command::new(env!("CARGO_BIN_EXE_finx"))
+        .args(["exec", "--resume", &session_id, "/context"])
+        .current_dir(&env.work)
+        .env("FINX_HOME", &env.home)
+        .env("HOME", &env.home)
+        .env_remove("FINX_MODEL")
+        .env_remove("FINX_APPROVAL")
+        .output()
+        .expect("run finx");
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.starts_with("Context · mock/mock-model\n"), "{text}");
+    assert!(text.contains("  Messages ") && text.contains("  Free "), "{text}");
 }
 
 #[test]

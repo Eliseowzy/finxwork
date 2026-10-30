@@ -67,6 +67,8 @@ enum Work {
     Prompt(Option<Input>),
     /// Only a compaction (`Op::Compact`).
     Compact,
+    /// Only the context report (`/context`).
+    Context,
 }
 
 pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: PromptMode, commands: bool) {
@@ -75,6 +77,7 @@ pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: P
         let known = session.state.lock().skills.clone();
         match crate::commands::resolve(&input, &known, &session.config.limits) {
             Command::Compact => return on_compact_command(session),
+            Command::Context => return on_context_command(session),
             Command::Prompt { skills: loaded, warnings } => {
                 for warning in warnings {
                     session.warn(warning);
@@ -158,6 +161,18 @@ fn on_compact_command(session: &Arc<Session>) {
     start(session, Work::Compact, TaskTrigger::User);
 }
 
+/// `/context` typed as a message: the report, in a task of its own so that a front end waiting
+/// for the reply gets one; while a task runs, the report alone (that task's end answers).
+fn on_context_command(session: &Arc<Session>) {
+    if session.is_busy() {
+        session.emit(EventMsg::ContextReported {
+            report: session.context_report(),
+        });
+        return;
+    }
+    start(session, Work::Context, TaskTrigger::User);
+}
+
 pub(crate) fn start_task(session: &Arc<Session>, input: Option<Input>) {
     start(session, Work::Prompt(input), TaskTrigger::User);
 }
@@ -195,17 +210,30 @@ async fn task_main(session: Arc<Session>, task: TaskCtx, work: Work, trigger: Ta
         task_id: task.id.clone(),
         trigger,
     });
-    session.record(EntryKind::Task {
-        task_id: task.id.clone(),
-        status: TaskStatus::Started,
-        error: None,
-        reason: None,
-        usage: None,
-    });
+    // A report changes nothing: the log keeps no trace of it.
+    let recorded = !matches!(work, Work::Context);
+    if recorded {
+        session.record(EntryKind::Task {
+            task_id: task.id.clone(),
+            status: TaskStatus::Started,
+            error: None,
+            reason: None,
+            usage: None,
+        });
+    }
     let run = async {
         match work {
             Work::Prompt(input) => run_task(&session, &task, input).await,
             Work::Compact => run_compaction(&session, &task).await,
+            Work::Context => {
+                session.emit(EventMsg::ContextReported {
+                    report: session.context_report(),
+                });
+                TaskOutcome::Completed {
+                    last_message: None,
+                    reason: CompletionReason::Done,
+                }
+            }
         }
     };
     let outcome = match AssertUnwindSafe(run).catch_unwind().await {
@@ -220,25 +248,27 @@ async fn task_main(session: Arc<Session>, task: TaskCtx, work: Work, trigger: Ta
             TaskOutcome::Failed(ErrorInfo::new("internal", format!("internal error: {message}")))
         }
     };
-    finish_task(&session, &task, outcome).await;
+    finish_task(&session, &task, outcome, recorded).await;
 }
 
-async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcome) {
+async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcome, recorded: bool) {
     let (status, error, reason) = match &outcome {
         TaskOutcome::Completed { reason, .. } => (TaskStatus::Completed, None, Some(*reason)),
         TaskOutcome::Failed(error) => (TaskStatus::Failed, Some(error.clone()), None),
         TaskOutcome::Interrupted => (TaskStatus::Interrupted, None, None),
     };
     let usage = task.usage.lock().clone();
-    session.record(EntryKind::Task {
-        task_id: task.id.clone(),
-        status,
-        error: error.map(Box::new),
-        reason,
-        usage: Some(Box::new(usage.clone())),
-    });
-    if let Err(err) = session.writer.sync().await {
-        session.warn(format!("failed to save the session log: {err}"));
+    if recorded {
+        session.record(EntryKind::Task {
+            task_id: task.id.clone(),
+            status,
+            error: error.map(Box::new),
+            reason,
+            usage: Some(Box::new(usage.clone())),
+        });
+        if let Err(err) = session.writer.sync().await {
+            session.warn(format!("failed to save the session log: {err}"));
+        }
     }
     let (next_input, wake) = {
         let mut guard = session.state.lock();
