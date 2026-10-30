@@ -7,6 +7,7 @@
   "sidebar": {
     "label": "边栏",
     "newSession": "新会话",
+    "newSessionIn": "在 {{project}} 中新建会话",
     "search": "搜索",
     "sessions": "会话",
     "loading": "正在读取会话…",

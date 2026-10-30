@@ -7,6 +7,7 @@
   "sidebar": {
     "label": "Sidebar",
     "newSession": "New Session",
+    "newSessionIn": "New session in {{project}}",
     "search": "Search",
     "sessions": "Sessions",
     "loading": "Loading sessions…",

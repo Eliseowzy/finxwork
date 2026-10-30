@@ -8,7 +8,7 @@ body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font
 /* macOS: the window's sidebar material shows through the sidebar; everything else stays opaque. */
 html.vibrant,html.vibrant body{background:transparent}
 html.vibrant .side{background:var(--side-tint)}
-html.vibrant .grp-h{position:static;background:transparent}
+html.vibrant .grp-h,html.vibrant .grp-row{position:static;background:transparent}
 input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
@@ -104,6 +104,11 @@ button{font:inherit;color:inherit}
 .grp-h .ic{width:16px;height:16px;color:var(--l2);transition:transform .15s var(--ease-out)}
 .grp-h.shut .ic{transform:rotate(-90deg)}
 .grp-h .gt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* In the list a heading sits in a row that sticks; a project's row shows + on hover, for a new session there. */
+.grp-row{position:sticky;top:0;z-index:2;display:flex;align-items:flex-end;background:var(--side-head)}
+.grp-row .grp-h{position:static;background:none;flex:1;min-width:0}
+.grp-row .grpact{display:none;flex:none;margin-bottom:2px}
+.grp-row:hover .grpact,.grp-row .grpact:focus-visible{display:flex}
 .srow{display:flex;padding:7px 10px;border-radius:10px;align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
 .srow:hover{background:var(--fill)}
 .srow.sel{background:var(--side-sel)}

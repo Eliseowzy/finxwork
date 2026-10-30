@@ -55,16 +55,29 @@ export function Sidebar() {
           const open = !st.collapsed.includes(id);
           return (
             <div key={id} role="group" aria-label={title(sec)}>
-              <button
-                className={`grp-h ${open ? "" : "shut"}`}
-                aria-expanded={open}
-                title={sec.grouping === "project" ? sec.key : undefined}
-                onClick={() => st.set({ collapsed: open ? [...st.collapsed, id] : st.collapsed.filter((c) => c !== id) })}
-              >
-                <span className="gt">{title(sec)}</span>
-                {sectionCounted(sec) && <span className="n">{sec.sessions.length}</span>}
-                <Icon name="caret" className="sm" />
-              </button>
+              <div className="grp-row">
+                <button
+                  className={`grp-h ${open ? "" : "shut"}`}
+                  aria-expanded={open}
+                  title={sec.grouping === "project" ? sec.key : undefined}
+                  onClick={() => st.set({ collapsed: open ? [...st.collapsed, id] : st.collapsed.filter((c) => c !== id) })}
+                >
+                  <span className="gt">{title(sec)}</span>
+                  {sectionCounted(sec) && <span className="n">{sec.sessions.length}</span>}
+                  <Icon name="caret" className="sm" />
+                </button>
+                {/* A project's heading starts a new session in that project. */}
+                {sec.grouping === "project" && (
+                  <button
+                    className="tb grpact"
+                    title={t("sidebar.newSessionIn", { project: title(sec) })}
+                    aria-label={t("sidebar.newSessionIn", { project: title(sec) })}
+                    onClick={() => st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: sec.key } })}
+                  >
+                    <Icon name="plus" />
+                  </button>
+                )}
+              </div>
               {open &&
                 sec.sessions.map((s) => (
                   <SessionRow
