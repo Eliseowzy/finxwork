@@ -246,8 +246,9 @@ button{font:inherit;color:inherit}
 /* What the message carried, above its bubble: images as thumbnails, files and folders as chips. */
 .um-att{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-bottom:8px}
 .am{position:relative;font-size:15px;line-height:21px;color:var(--msg)}
-/* A message keeps room below it (blocks apart); copy shows there on hover, under the bubble's right edge or the text's left. */
-.um,.am{margin-bottom:var(--sp-3)}
+/* A message with time and Copy keeps room below it for them, shown on hover under the bubble's right edge or the
+   text's left; the model's words between tool calls have none, so they sit as far from the work above as below. */
+.um,.am.act{margin-bottom:var(--sp-3)}
 .msg-act{position:absolute;top:100%;padding-top:3px;display:flex;align-items:center;gap:4px;opacity:0;transition:opacity .15s}
 .um .msg-act{right:2px}
 .am .msg-act{left:-2px}

@@ -158,7 +158,7 @@ function RowView({ step, previous, final, current, sessionId }: RowProps) {
       );
     case "text":
       return (
-        <div className="am">
+        <div className={`am ${final ? "act" : ""}`}>
           {step.live ? <DraftMarkdown text={step.text} /> : <Markdown text={step.text} />}
           {final && <Copy text={step.text} at={step.ts} />}
         </div>
