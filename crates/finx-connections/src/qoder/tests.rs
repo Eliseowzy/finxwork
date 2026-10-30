@@ -364,6 +364,8 @@ async fn catalog_only_models_cannot_be_invoked_through_ad_hoc_references() {
             max_output_tokens: None,
             reasoning: false,
             images: false,
+            thinking: Vec::new(),
+            default_thinking: Default::default(),
         })
         .collect();
     let record = crate::Record {

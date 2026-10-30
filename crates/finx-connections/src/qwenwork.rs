@@ -5,6 +5,7 @@ use crate::{
 };
 use finx_llm::{Credentials, connection::Authorization};
 use finx_protocol::api::ConnectionModel;
+use finx_llm::ThinkingLevel;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -34,6 +35,32 @@ pub struct QwenWork {
     #[cfg(test)]
     pub(crate) gateway: String,
 }
+/// The thinking levels QwenWork offers for a catalog entry, and the one it uses itself
+/// (model-catalog-design §18). Its gateway takes OpenAI's `reasoning_effort`, `low` to `max`.
+/// `none` switches thinking off only for models without a `thinking_config`: a model the
+/// catalog gives one keeps thinking (measured 2026-10-30: "pro" still reasons at `none`), so it
+/// is not offered "off". The qwen3.7 models only switch thinking on and off; QwenWork itself
+/// asks qwen3.8-max for `xhigh` and the others for `high` unless the catalog names a level.
+pub(crate) fn thinking_of(id: &str, entry: &serde_json::Value) -> (Vec<ThinkingLevel>, ThinkingLevel) {
+    use ThinkingLevel::*;
+    let config = &entry["thinking_config"];
+    let reasoning = entry["is_reasoning"].as_bool().unwrap_or(false) || config["enabled"].as_bool() == Some(true);
+    if !reasoning {
+        return (Vec::new(), Default);
+    }
+    let id = id.to_ascii_lowercase();
+    if id.starts_with("qwen3.7") {
+        return (vec![Off, On], On);
+    }
+    let named = config["effort"].as_str().and_then(|e| e.parse::<ThinkingLevel>().ok()).filter(|l| l.is_effort() && *l != Minimal);
+    let own = if id.starts_with("qwen3.8-max") { Xhigh } else { High };
+    let mut levels = vec![Off, Low, Medium, High, Xhigh, Max];
+    if config.is_object() {
+        levels.retain(|l| *l != Off);
+    }
+    (levels, named.unwrap_or(own))
+}
+
 impl QwenWork {
     pub fn new(id: String, identity: String, environment: Arc<dyn Environment>) -> Self {
         Self {
@@ -101,6 +128,8 @@ impl QwenWork {
                 if !crate::valid_id(id) {
                     return None;
                 }
+                tracing::debug!(model = id, is_reasoning = %m["is_reasoning"], thinking = %m["thinking_config"], "QwenWork catalog entry");
+                let (thinking, default_thinking) = thinking_of(id, m);
                 Some(ConnectionModel {
                     id: id.into(),
                     name: id.into(),
@@ -108,8 +137,10 @@ impl QwenWork {
                         .as_u64()
                         .and_then(|n| u32::try_from(n).ok()),
                     max_output_tokens: None,
-                    reasoning: m["is_reasoning"].as_bool().unwrap_or(false),
+                    reasoning: !thinking.is_empty(),
                     images: false,
+                    thinking,
+                    default_thinking,
                 })
             })
             .collect();

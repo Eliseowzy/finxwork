@@ -985,6 +985,10 @@ pub struct ConnectionModel {
     pub max_output_tokens: Option<u32>,
     #[serde(default)] pub reasoning: bool,
     #[serde(default)] pub images: bool,
+    /// The thinking levels the application offers for it (model-catalog-design §18).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")] pub thinking: Vec<ThinkingLevel>,
+    /// The level the application itself uses when none is chosen.
+    #[serde(default)] pub default_thinking: ThinkingLevel,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

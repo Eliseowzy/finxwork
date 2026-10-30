@@ -1,5 +1,5 @@
 use super::*;
-use finx_llm::{Catalog, RegistryOptions};
+use finx_llm::{Catalog, RegistryOptions, ThinkingLevel};
 use finx_protocol::api::ConnectionDiscovery;
 use platform::{Environment, Login};
 use serde_json::json;
@@ -92,6 +92,8 @@ fn record(enabled: bool) -> Record {
             max_output_tokens: None,
             reasoning: true,
             images: false,
+            thinking: Vec::new(),
+            default_thinking: Default::default(),
         }],
         models_fetched_at: None,
     }
@@ -431,4 +433,20 @@ async fn catalogs_are_asked_again_only_when_old_and_failures_change_nothing() {
     let provider = format!("local-{}", r.connection_id);
     assert!(llm.resolve(&format!("{provider}/flash")).is_ok());
     assert!(matches!(m.snapshot().unwrap().connections[0].state, ConnectionState::Ready));
+}
+#[test]
+fn qwenwork_thinking_follows_the_application() {
+    use ThinkingLevel::*;
+    let all = vec![Off, Low, Medium, High, Xhigh, Max];
+    let always = vec![Low, Medium, High, Xhigh, Max];
+    let of = |id: &str, entry: serde_json::Value| crate::qwenwork::thinking_of(id, &entry);
+    assert_eq!(of("pro", json!({"is_reasoning": true})), (all.clone(), High));
+    assert_eq!(of("qwen3.8-max-preview", json!({"is_reasoning": true})), (all.clone(), Xhigh));
+    // A thinking_config means the model keeps thinking: no "off".
+    assert_eq!(of("pro", json!({"is_reasoning": true, "thinking_config": {"effort": "high"}})), (always.clone(), High));
+    assert_eq!(of("flash", json!({"thinking_config": {"enabled": true, "effort": "medium"}})), (always.clone(), Medium));
+    assert_eq!(of("flash", json!({"is_reasoning": true, "thinking_config": {"effort": "turbo"}})), (always, High), "an unknown effort is ignored");
+    assert_eq!(of("flash", json!({"is_reasoning": true, "thinking_config": null})), (all, High));
+    assert_eq!(of("qwen3.7-plus", json!({"is_reasoning": true})), (vec![Off, On], On));
+    assert_eq!(of("plain", json!({"is_reasoning": false})), (vec![], Default));
 }

@@ -329,6 +329,8 @@ impl ProductAdapter for Qoder {
                     max_output_tokens: None,
                     reasoning: m["is_reasoning"].as_bool().unwrap_or(false),
                     images: false,
+                    thinking: Vec::new(),
+                    default_thinking: Default::default(),
                 })
             })
             .collect();

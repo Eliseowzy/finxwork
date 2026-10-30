@@ -680,7 +680,30 @@ finx 原来有一套统一等级（不思考、极少、少量、适中、深入
 - 菜单："思考强度"一行打开子菜单，第一项"默认"（右侧注明"由服务商决定"），分隔线，然后是模型提供的档位。
 - ACP 的 `thought_level` 选项同样是"默认"加模型提供的档位。
 
-### 18.6 测试
+### 18.6 账号连接（千问办公）
+
+账号连接的模型不在公共目录里，档位由连接从应用自己的目录得出：
+
+- **发送方式**：千问办公的网关是 OpenAI 兼容的 `chat/completions`，用 `reasoning_effort` 指定强度，所以连接的 `thinking_format` 是 `openai`。Qoder 的网关怎么指定还不知道，不提供档位。
+- **档位**：目录项的 `is_reasoning` 为真，或 `thinking_config.enabled` 为真，就提供 `low、medium、high、xhigh、max`（千问办公允许的值）。`qwen3.7` 系列只能开关，提供 `off、on`。
+- **"不思考"**：只给目录里**没有** `thinking_config` 的模型。2026-10-30 实测：`reasoning_effort: "none"` 让 flash、qwen3.8-max-preview 的推理变成 0；带 `thinking_config` 的 pro 仍然推理（40 余个 token），关不掉。
+- **起始档位**：目录的 `thinking_config.effort`，没有时按千问办公自己的做法，qwen3.8-max 用 `xhigh`，其他用 `high`。不选档位时的效果因此与在千问办公里一致。
+- **ConnectionModel** 新增 `thinking`、`default_thinking`，随连接的模型目录一起保存。
+
+2026-10-30 的实测（同一道需要推理的题，pro 模型）：
+
+| 档位 | 推理 token | 用时 |
+|---|---|---|
+| 默认（不发） | 171 | 5.4 s |
+| 低 | 37 | 1.6 s |
+| 中 | 112 | 4.5 s |
+| 高 | 89 | 2.4 s |
+| 超高 | 536 | 10.4 s |
+| 最高 | 1,082 | 15.4 s |
+
+网关接受全部五档，推理量随档位增长（中、高之间的差别在正常波动范围内）。
+
+### 18.7 测试
 
 - finx-llm：`reasoning_options` 推导（档位、开关、预算、未知值）、只发模型提供的档位、各请求格式的参数（请求体快照）。
 - 端到端（`e2e_models.rs` 的 `the_thinking_level_follows_the_model_and_is_remembered`）：DeepSeek 的档位是 `off、low、high、max`；新建会话时不提供的档位变成默认；选"最高"后换到没有档位的模型变成默认、换回来恢复"最高"；两边都有的档位跨模型保留；`selection.json` 记录与 `default_thinking`；选"默认"会忘掉。

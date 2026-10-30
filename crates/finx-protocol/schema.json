@@ -771,6 +771,11 @@
             "null"
           ]
         },
+        "default_thinking": {
+          "$ref": "#/definitions/ThinkingLevel",
+          "default": "default",
+          "description": "The level the application itself uses when none is chosen."
+        },
         "id": {
           "type": "string"
         },
@@ -792,6 +797,13 @@
         "reasoning": {
           "default": false,
           "type": "boolean"
+        },
+        "thinking": {
+          "description": "The thinking levels the application offers for it (model-catalog-design §18).",
+          "items": {
+            "$ref": "#/definitions/ThinkingLevel"
+          },
+          "type": "array"
         }
       },
       "required": [

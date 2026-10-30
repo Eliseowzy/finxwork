@@ -272,7 +272,7 @@ impl Manager {
                     auth: AuthConfig::Managed,
                     headers: BTreeMap::new(),
                     currency: Default::default(),
-                    compat: Compat::default(),
+                    compat: Compat { thinking_format: adapter::thinking_format(&record.adapter_id), ..Compat::default() },
                     models: vec![],
                     listing: Default::default(),
                 };
@@ -288,6 +288,11 @@ impl Manager {
                         model.max_output_tokens =
                             m.max_output_tokens.unwrap_or(8192).clamp(1, 128_000);
                         model.reasoning = m.reasoning;
+                        // The application's own levels; without a format they could not be sent.
+                        if p.compat.thinking_format.is_some() {
+                            model.thinking = m.thinking.clone();
+                            model.default_thinking = m.default_thinking;
+                        }
                         Arc::new(model)
                     })
                     .collect();

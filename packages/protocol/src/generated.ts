@@ -159,11 +159,15 @@ export type ConnectionIdParams = {
 /** Public connection management DTOs. Never contain credentials or session tokens. */
 export type ConnectionModel = {
   context_window?: number | null;
+  /** The level the application itself uses when none is chosen. */
+  default_thinking: ThinkingLevel;
   id: string;
   images: boolean;
   max_output_tokens?: number | null;
   name: string;
   reasoning: boolean;
+  /** The thinking levels the application offers for it (model-catalog-design §18). */
+  thinking?: ThinkingLevel[];
 };
 
 export type ConnectionState = "connecting" | "ready" | "disabled" | "needs_login" | "permission_required" | "unsupported" | "unavailable";

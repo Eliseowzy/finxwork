@@ -41,6 +41,15 @@ pub(crate) fn create(
         _ => Box::new(QwenWork::new(id, identity, env)),
     }
 }
+/// How the application's gateway is told how hard to think: QwenWork's takes OpenAI's
+/// `reasoning_effort`; Qoder's is not known.
+pub(crate) fn thinking_format(adapter: &str) -> Option<finx_llm::model::ThinkingFormat> {
+    match adapter {
+        "qoder" => None,
+        _ => Some(finx_llm::model::ThinkingFormat::Openai),
+    }
+}
+
 pub(crate) fn supported(adapter: &str, model: &str) -> bool {
     adapter != "qoder" || model == "auto"
 }
