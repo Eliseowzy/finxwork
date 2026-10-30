@@ -80,6 +80,26 @@ impl FinxHome {
         self.root.join("logs")
     }
 
+    /// The working folders of sessions started without a project, one each.
+    pub fn chats_dir(&self) -> PathBuf {
+        self.root.join("chats")
+    }
+
+    /// Creates an empty working folder for a session without a project.
+    pub fn new_chat_dir(&self) -> io::Result<PathBuf> {
+        let dir = self.chats_dir().join(uuid::Uuid::now_v7().to_string());
+        std::fs::create_dir_all(&dir)?;
+        Ok(dir)
+    }
+
+    /// Whether `cwd` (canonical, as sessions keep it) is one of those folders, or the folder
+    /// that holds them: a session there has no project.
+    pub fn is_chat_dir(&self, cwd: &Path) -> bool {
+        let chats = self.chats_dir();
+        let chats = std::fs::canonicalize(&chats).unwrap_or(chats);
+        cwd == chats || cwd.parent() == Some(chats.as_path())
+    }
+
 
     /// Files that belong to a session (the full output of cut tool results) live next to its
     /// log, in a directory of the same name, and share its lifetime. A session without a log

@@ -77,7 +77,8 @@ pub struct ServerOptions {
 /// Protocol-neutral arguments for a new session.
 #[derive(Debug, Clone, Default)]
 pub struct NewSession {
-    pub cwd: PathBuf,
+    /// None: no project, an empty folder made for the session.
+    pub cwd: Option<PathBuf>,
     pub extra_roots: Vec<PathBuf>,
     pub model: Option<String>,
     pub thinking: Option<ThinkingLevel>,
@@ -341,11 +342,20 @@ impl Server {
 
     /// Starts a session; `attach` receives its snapshot before any event. Returns the id.
     pub async fn create_session(&self, args: NewSession, attach: AttachRequest) -> Result<String, RpcError> {
-        if !args.cwd.is_absolute() {
+        if args.cwd.as_ref().is_some_and(|cwd| !cwd.is_absolute()) {
             return Err(RpcError::invalid_params("cwd must be an absolute path"));
         }
         self.make_room().await?;
-        let workspace = Workspace::open(&self.0.home, &args.cwd, &self.0.overrides).map_err(errors::from_runtime)?;
+        let cwd = match args.cwd {
+            Some(cwd) => cwd,
+            None => self
+                .0
+                .home
+                .new_chat_dir()
+                .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?,
+        };
+        let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
+        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
         }
@@ -375,6 +385,7 @@ impl Server {
             created_at: now.clone(),
             preview: None,
             updated_at: now,
+            no_project,
         };
         Ok(self.register(kernel, Vec::new(), attach, base))
     }
@@ -409,6 +420,7 @@ impl Server {
         }
         let workspace = Workspace::open(&self.0.home, &header.cwd, &self.0.overrides)
             .map_err(errors::from_runtime)?;
+        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
         let store: Arc<dyn SessionStore> = self.0.store.clone();
         let mut deps = workspace
             .kernel_deps(self.0.llm.clone(), store, &[])
@@ -419,11 +431,13 @@ impl Server {
                 updated_at: last_active(&found),
                 created_at: found.created_at,
                 preview: found.first_message.as_deref().map(hub::preview),
+                no_project,
             },
             Err(_) => SummaryBase {
                 created_at: header.created_at.clone(),
                 preview: None,
                 updated_at: header.created_at.clone(),
+                no_project,
             },
         };
         let options = ResumeOptions {
@@ -513,7 +527,7 @@ impl Server {
             server
                 .0
                 .feed
-                .publish(vec![disk_summary(&found)], Vec::new());
+                .publish(vec![disk_summary(&server.0.home, &found)], Vec::new());
             Ok(())
         })
         .await
@@ -632,6 +646,16 @@ impl Server {
                     .await
                     .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
             }
+            (None, None) => {
+                let server = self.clone();
+                tokio::task::spawn_blocking(move || {
+                    let chats = server.0.home.chats_dir();
+                    std::fs::create_dir_all(&chats).map_err(|e| RpcError::internal(e.to_string()))?;
+                    server.scan_skills(&chats)
+                })
+                .await
+                .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
+            }
             _ => Err(RpcError::invalid_params("give either session_id or cwd")),
         }
     }
@@ -679,7 +703,7 @@ impl Server {
             .skip(offset)
             .take(limit)
             .map(|s| {
-                let on_disk = disk_summary(s);
+                let on_disk = disk_summary(&self.0.home, s);
                 match hubs.get(&s.id) {
                     // A loaded session's state is the hub's; the log may have been written since.
                     Some(hub) => {
@@ -858,9 +882,10 @@ fn last_active(s: &finx_core::store::SessionSummary) -> String {
 }
 
 /// The list row of a session that is not loaded here, from its log.
-fn disk_summary(s: &finx_core::store::SessionSummary) -> SessionSummary {
+fn disk_summary(home: &FinxHome, s: &finx_core::store::SessionSummary) -> SessionSummary {
     SessionSummary {
         session_id: s.id.clone(),
+        no_project: home.is_chat_dir(&s.cwd),
         cwd: s.cwd.clone(),
         created_at: s.created_at.clone(),
         updated_at: last_active(s),

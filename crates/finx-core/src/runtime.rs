@@ -71,7 +71,12 @@ impl Workspace {
             path: cwd.to_path_buf(),
             source,
         })?;
-        let project_root = instructions::find_project_root(&cwd, &[".git".to_string()]);
+        // A session without a project has its own folder, whatever lies around it.
+        let project_root = if home.is_chat_dir(&cwd) {
+            None
+        } else {
+            instructions::find_project_root(&cwd, &[".git".to_string()])
+        };
         let project_dir = project_root.clone().unwrap_or_else(|| cwd.clone());
         let trusted = instructions::is_trusted(home, &project_dir);
         let project_config = project_dir.join(".finx").join("config.toml");

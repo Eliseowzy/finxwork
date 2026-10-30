@@ -877,8 +877,8 @@ export type SessionListResult = {
 };
 
 export type SessionNewParams = {
-  /** Absolute path. */
-  cwd: string;
+  /** Absolute path. Without one the session has no project: it works in an empty folder of its own, made for it (`no_project` in its summary). */
+  cwd?: string | null;
   events?: EventFilter;
   /** Extra workspace roots, absolute. */
   extra_roots?: string[];
@@ -946,6 +946,8 @@ export type SessionSummary = {
   loaded: boolean;
   /** The model the session uses (`provider/model-id`), when known. */
   model?: string | null;
+  /** Started without a project: `cwd` is the folder made for it. */
+  no_project?: boolean;
   /** The start of the first user message. */
   preview?: string | null;
   session_id: string;
@@ -998,7 +1000,7 @@ export type SkillUse = {
   path: string;
 };
 
-/** Parameters of `skills/list`: `session_id` or `cwd`. */
+/** Parameters of `skills/list`: `session_id` or `cwd`, or neither for what a session without a project would find. */
 export type SkillsListParams = {
   /** An absolute directory: every skill a session started there would find now, those it would not use included, and its catalog. The same as `finx skills --all --json`. */
   cwd?: string | null;

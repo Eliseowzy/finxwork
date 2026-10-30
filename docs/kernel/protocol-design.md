@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.15 |
+| 版本 | v0.17 |
 | 日期 | 2026-10-30 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.17 | 2026-10-30 | 无项目会话，都在版本 2 之内：`session/new` 的 `cwd` 改为可选，省略时会话没有项目，内核在 `~/.finx/chats/` 下为它新建一个空文件夹作为工作目录，不向上查找项目根、不读项目配置；SessionSummary 增加 `no_project`；`skills/list` 两个参数都不给时，返回无项目会话能找到的 Skill（§6.4） |
 | v0.16 | 2026-10-30 | 上下文明细（technical-design §7.5.8），都在版本 2 之内：新增方法 `session/context`，返回已加载会话的 ContextReport；新增事件 `context_reported`（`/context` 的答复）；`skills/list` 的内置命令多了 `context`；ACP 把 `/context` 的明细作为 `agent_message_chunk` 发出 |
 | v0.15 | 2026-10-30 | 思考强度（model-catalog-design §18）：`ThinkingLevel` 新增 `default`、`on`、`xhigh`，`default` 是默认值；`ModelSummary.thinking_levels` 是模型提供的服务商档位（不含 `default`，模型不能指定推理时为空），新增 `default_thinking`（这个模型的起始档位）；`set_model` 不带 `thinking` 时按切换规则决定档位，带了就记住它；ConnectionModel 新增 `thinking`、`default_thinking`（账号连接提供的档位与起始档位） |
 | v0.14 | 2026-10-30 | 模型目录与发现（model-catalog-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `model_discovery` 声明：`models/list` 只列有凭据的服务商的模型（默认模型例外），ModelSummary 增加 `shown`、`known`、`deprecated`、`released`、`cost`，`thinking_levels` 按服务商取值去重；ProviderSummary 增加 `listing`；新增 `models/refresh`、`models/show`；`auth/set` 先验证密钥，返回 `verified`，被拒绝时返回新错误码 −32021 `key_rejected`；ACP 的模型选项只给菜单里显示的模型 |
@@ -537,7 +538,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | 方法 | 参数 | 结果 | 说明 |
 |---|---|---|---|
 | `initialize` | protocol_version、client_info、capabilities | protocol_version、server_info、capabilities | §6.3 |
-| `session/new` | cwd、extra_roots?、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | session_id、snapshot | 新建会话，发起的连接自动接入。mcp_servers 是客户端带来的 MCP 服务器，同名时替换配置里的（mcp-design §4.1） |
+| `session/new` | cwd?、extra_roots?、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | session_id、snapshot | 新建会话，发起的连接自动接入。省略 cwd 时会话没有项目：内核在 `~/.finx/chats/` 下新建一个空文件夹作为它的工作目录，列表里标为 `no_project`（v0.17）。mcp_servers 是客户端带来的 MCP 服务器，同名时替换配置里的（mcp-design §4.1） |
 | `session/resume` | session_id、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | snapshot | 未加载时从磁盘恢复；已加载时等同于接入，此时不能带覆盖参数（包括 mcp_servers） |
 | `session/attach` | session_id、events?、history_limit? | snapshot | 接入已加载的会话，不会触发加载 |
 | `session/detach` | session_id | `{}` | 停止接收该会话的事件 |
@@ -558,7 +559,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `session/archive`、`session/unarchive` | session_id | `{}` | 归档或取消归档 |
 | `auth/set` | provider、api_key | `{}`；v0.14 起 `{ verified, models? }` | 把服务商的 API 密钥存入凭据存储（D-39）。服务商不存在或不用 API 密钥认证时返回 invalid_params。v0.14 起先用列表请求验证密钥，被拒绝时不保存、返回 `key_rejected`（model-catalog-design §3.3） |
 | `auth/delete` | provider | `{}` | 删除凭据存储里这个服务商的密钥；本来没有也算成功 |
-| `skills/list` | session_id 或 cwd（二选一） | skills、commands?、catalog?、enabled、warnings | session_id：已加载会话启动时的 Skill（按文件现在的内容描述）和输入 `/` 时能用的命令（CommandInfo：name、description、hint?、skill?，内置命令在前，Skill 的 name 是 `skill:名字`）。cwd：在这个目录新开会话会找到的全部 Skill、清单和命令，与 `finx skills --all --json` 相同。见 skill-design §11.4 |
+| `skills/list` | session_id 或 cwd（二选一），或都不给 | skills、commands?、catalog?、enabled、warnings | session_id：已加载会话启动时的 Skill（按文件现在的内容描述）和输入 `/` 时能用的命令（CommandInfo：name、description、hint?、skill?，内置命令在前，Skill 的 name 是 `skill:名字`）。cwd：在这个目录新开会话会找到的全部 Skill、清单和命令，与 `finx skills --all --json` 相同。都不给：无项目会话会找到的，即用户自己的 Skill（v0.17）。见 skill-design §11.4 |
 
 客户端 → 服务端（通知）：
 
@@ -713,6 +714,7 @@ pub struct ToolState {
 pub struct SessionSummary {
     pub session_id: String,
     pub cwd: PathBuf,
+    pub no_project: bool,                    // 没有项目：cwd 是内核为它新建的文件夹（v0.17）
     pub created_at: String,                  // RFC 3339
     pub updated_at: String,                  // 最后活跃：任务最近一次开始或结束的时间，没有任务时同 created_at；打开、关闭、改名、归档、改设置都不改变它
     pub preview: Option<String>,             // 第一条用户消息的开头

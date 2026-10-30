@@ -117,6 +117,8 @@ pub struct SummaryBase {
     /// When a task last started or ended (the creation time before any): what "recently active"
     /// sorts by. Loading, closing, renaming, archiving or changing settings leave it alone.
     pub updated_at: String,
+    /// Started without a project.
+    pub no_project: bool,
 }
 
 /// State readable without asking the hub.
@@ -598,6 +600,7 @@ fn summary_of(mirror: &SessionMirror, base: &SummaryBase, loaded: bool, attached
     SessionSummary {
         session_id: info.session_id.clone(),
         cwd: info.cwd.clone(),
+        no_project: base.no_project,
         created_at: base.created_at.clone(),
         updated_at: base.updated_at.clone(),
         preview: base.preview.clone(),

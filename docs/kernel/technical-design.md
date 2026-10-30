@@ -2136,6 +2136,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 ├── sessions/2026/10/28/20261028T090000-<session_id>.jsonl
 ├── sessions/2026/10/28/20261028T090000-<session_id>/
 │   └── tool-output/<call_id>.txt        被裁切的工具结果的完整内容（§5.7）
+├── chats/<uuid>/                         无项目会话的工作目录，一个会话一个
 └── logs/finx.<日期>.log                   运行日志，按天滚动
 ```
 
@@ -2144,6 +2145,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 - **短 id**：界面上显示会话 id 的后 8 位。UUID v7 的开头是时间戳，同一时段创建的会话前缀相同；后 8 位取自随机部分，更容易区分。
 - **按 id 查找**：`finx resume` 接受完整 id、唯一前缀或唯一后缀；匹配到多个会话时报错，提示多输入几位。
 - **会话数据目录**：与日志同名、放在日志旁边的目录，存放属于这个会话的文件（目前是工具结果的完整内容，§5.7），生命周期与日志相同：恢复会话后路径依然有效，以后删除会话时一并删除。会话列表扫描时跳过这些目录。不保存日志的会话（`--no-save`）用系统临时目录，会话关闭时删除。
+- **无项目会话**：`session/new` 不带 cwd 时（protocol-design v0.17），内核在 `chats/` 下新建一个空文件夹作为会话的工作目录。工作目录在 `chats/` 里的会话没有项目：不向上查找项目根，所以不会把恰好是 Git 仓库的用户主目录当成项目；项目配置与项目指令都不读，只用用户自己的配置、指令和 Skill。会话列表据此给出 `no_project`，不另外记在日志里。这个文件夹里是模型为用户写的文件，删除会话时不动它。
 
 ### 9.2 条目格式
 

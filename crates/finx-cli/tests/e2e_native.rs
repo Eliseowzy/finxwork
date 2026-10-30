@@ -140,6 +140,48 @@ async fn stdio_runs_a_full_session() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_session_without_a_project_works_in_a_folder_of_its_own() {
+    let env = TestEnv::new("manual", "").await;
+    let (mut child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let demux = Demux::spawn(incoming);
+    let created = client.request("session/new", json!({})).await.unwrap();
+    let session = created["session_id"].as_str().unwrap().to_string();
+    let cwd = std::path::PathBuf::from(created["snapshot"]["session"]["cwd"].as_str().unwrap());
+    let chats = std::fs::canonicalize(env.home.path().join("chats")).unwrap();
+    assert_eq!(cwd.parent(), Some(chats.as_path()));
+    assert_eq!(std::fs::read_dir(&cwd).unwrap().count(), 0, "made empty");
+    let project = env.workspace("a");
+    let (other, _) = new_session(&client, &project).await;
+
+    let mut events = demux.subscribe(&session);
+    let turn = native_prompt(&client, &mut events, &session, "[[mock:files]] go", true).await;
+    assert_eq!(turn.end["reason"], "done");
+    assert_eq!(std::fs::read_to_string(cwd.join("notes.txt")).unwrap(), "gamma\nbeta\n");
+    let flags = |list: &Value| -> Vec<(String, bool)> {
+        list["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| (s["session_id"].as_str().unwrap().to_string(), s["no_project"] == true))
+            .collect()
+    };
+    let list = client.request("session/list", json!({})).await.unwrap();
+    assert!(flags(&list).contains(&(session.clone(), true)), "loaded: {list}");
+    assert!(flags(&list).contains(&(other.clone(), false)));
+    // Read back from its log once closed, and again when resumed.
+    client.request("session/close", json!({"session_id": session})).await.unwrap();
+    let list = client.request("session/list", json!({})).await.unwrap();
+    assert!(flags(&list).contains(&(session.clone(), true)), "on disk: {list}");
+    client.request("session/resume", json!({"session_id": session})).await.unwrap();
+    let list = client.request("session/list", json!({})).await.unwrap();
+    assert!(flags(&list).contains(&(session.clone(), true)), "resumed: {list}");
+
+    drop(client);
+    assert_eq!(common::exit_code(&mut child).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stdio_rejects_bad_input_and_keeps_going() {
     let env = TestEnv::new("manual", "[server]\nmax_frame_bytes = 65536\n").await;
     let (mut child, client, _incoming) = env.spawn_rpc(&["serve"]);
@@ -208,6 +250,9 @@ async fn skills_list_reports_a_session_and_a_directory() {
     assert_eq!(scanned["catalog"]["listed"], 1, "lint is for the user only");
     let output = env.finx_in(&work, &["skills", "--all", "--json"]).output().await.unwrap();
     assert_eq!(scanned, serde_json::from_slice::<Value>(&output.stdout).unwrap());
+    // Neither: what a session without a project would find, the user's own.
+    let projectless = client.request("skills/list", json!({})).await.unwrap();
+    assert_eq!(names(&projectless, "skills"), ["broken", "gen-report"]);
 
     // A session: the skills it started with and what `/` offers, built-in commands first.
     let (session, _) = new_session(&client, &work).await;
@@ -270,7 +315,6 @@ async fn skills_list_reports_a_session_and_a_directory() {
     assert_eq!(listed["commands"][3]["description"], "Edited.");
 
     for (params, kind) in [
-        (json!({}), "invalid_params"),
         (json!({"cwd": "relative/dir"}), "invalid_params"),
         (json!({"session_id": "00000000-0000-0000-0000-000000000000"}), "session_not_found"),
     ] {

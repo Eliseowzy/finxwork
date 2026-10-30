@@ -208,8 +208,10 @@ pub struct ServerCapabilities {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionNewParams {
-    /// Absolute path.
-    pub cwd: PathBuf,
+    /// Absolute path. Without one the session has no project: it works in an empty folder of
+    /// its own, made for it (`no_project` in its summary).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<PathBuf>,
     /// Extra workspace roots, absolute.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_roots: Vec<PathBuf>,
@@ -317,6 +319,9 @@ pub struct SessionListResult {
 pub struct SessionSummary {
     pub session_id: String,
     pub cwd: PathBuf,
+    /// Started without a project: `cwd` is the folder made for it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_project: bool,
     /// RFC 3339.
     pub created_at: String,
     /// RFC 3339; the last activity: when a task last started or ended, else `created_at`. Opening,
@@ -926,7 +931,8 @@ pub struct CatalogInfo {
     pub left_out: Vec<String>,
 }
 
-/// Parameters of `skills/list`: `session_id` or `cwd`.
+/// Parameters of `skills/list`: `session_id` or `cwd`, or neither for what a session without
+/// a project would find.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SkillsListParams {
     /// A loaded session: the skills it started with, described from their files now, and

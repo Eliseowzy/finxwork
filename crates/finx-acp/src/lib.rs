@@ -215,7 +215,7 @@ impl AcpProtocol {
                     }
                     let attach = self.opened(conn, id, false, skipped);
                     let args = NewSession {
-                        cwd: request.cwd,
+                        cwd: Some(request.cwd),
                         extra_roots: request.additional_directories,
                         mcp_servers,
                         ..NewSession::default()

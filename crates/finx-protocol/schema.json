@@ -3957,8 +3957,11 @@
     "SessionNewParams": {
       "properties": {
         "cwd": {
-          "description": "Absolute path.",
-          "type": "string"
+          "description": "Absolute path. Without one the session has no project: it works in an empty folder of its own, made for it (`no_project` in its summary).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "events": {
           "$ref": "#/definitions/EventFilter",
@@ -4013,9 +4016,6 @@
           ]
         }
       },
-      "required": [
-        "cwd"
-      ],
       "type": "object"
     },
     "SessionNewResult": {
@@ -4230,6 +4230,10 @@
             "null"
           ]
         },
+        "no_project": {
+          "description": "Started without a project: `cwd` is the folder made for it.",
+          "type": "boolean"
+        },
         "preview": {
           "description": "The start of the first user message.",
           "type": [
@@ -4412,7 +4416,7 @@
       "type": "object"
     },
     "SkillsListParams": {
-      "description": "Parameters of `skills/list`: `session_id` or `cwd`.",
+      "description": "Parameters of `skills/list`: `session_id` or `cwd`, or neither for what a session without a project would find.",
       "properties": {
         "cwd": {
           "description": "An absolute directory: every skill a session started there would find now, those it would not use included, and its catalog. The same as `finx skills --all --json`.",
