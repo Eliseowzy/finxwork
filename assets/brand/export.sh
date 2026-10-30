@@ -108,6 +108,20 @@ PY
 
 
 
+echo "· GitHub (org/user avatar: full-bleed square, mark enlarged but inside the circle crop; repo social preview 1280×640)"
+mkdir -p $B/github
+for bg in light dark; do
+  b=$([[ $bg == light ]] && echo white || echo black)
+  mark $TMP/gh-$bg.png "mode=strands&bg=$b&tile=square&scale=2" 2048,2048
+  sips -c 1740 1740 $TMP/gh-$bg.png --out $TMP/c.png >/dev/null
+  fit $TMP/c.png 1024 $B/github/finxwork-avatar-$bg.png
+  fit $TMP/c.png 460 $B/github/finxwork-app-logo-$bg.png
+done
+for lang in zh en; do
+  shot $B/github/finxwork-social-preview-$lang.png "file://$B/lockup.html?type=gh&bg=dark&lang=$lang" 1280,640 "" 2
+  sips -z 640 1280 $B/github/finxwork-social-preview-$lang.png >/dev/null
+done
+
 echo "· macOS Icon Composer bundle (for actool, as the desktop app's build uses)"
 # Icon Composer's canvas is the icon shape itself, so crop the mark to the 824 px body first.
 IC=$B/macos/AppIcon.icon
