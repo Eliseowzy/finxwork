@@ -204,7 +204,7 @@ async fn live_qoder_connection() {
     };
     let c = &snapshot.connections[0];
     assert!(c.models.iter().any(|m| m.id == "auto"));
-    let provider = llm.provider(&format!("local-{}", c.connection_id)).unwrap();
+    let provider = llm.provider(&c.provider_id).unwrap();
     assert_eq!(provider.models.len(), 1);
     let model = provider.model("auto").unwrap();
     let context = Context {
@@ -367,6 +367,8 @@ async fn catalog_only_models_cannot_be_invoked_through_ad_hoc_references() {
         .collect();
     let record = crate::Record {
         connection_id: id.clone(),
+        // Written before provider IDs were kept: published as `local-<connection_id>`.
+        provider_id: String::new(),
         adapter_id: "qoder".into(),
         identity_key: "account-a".into(),
         enabled: true,

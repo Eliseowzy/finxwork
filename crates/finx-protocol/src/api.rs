@@ -872,6 +872,9 @@ pub enum ConnectionState { Connecting, Ready, Disabled, NeedsLogin, PermissionRe
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionView {
     pub connection_id: String,
+    /// The provider its models are published under: the same for the same account of the same
+    /// application, so sessions keep their model when the connection is removed and made again.
+    pub provider_id: String,
     pub adapter_id: String,
     pub display_name: String,
     pub state: ConnectionState,

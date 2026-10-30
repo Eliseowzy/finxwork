@@ -871,7 +871,7 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
     assert_eq!(model, "other/scripted");
     // Said among the session's warnings (bypass mode's comes first).
     until(&mut kernel, |m| {
-        matches!(m, EventMsg::Warning { message, .. } if message.contains("'test/scripted' is no longer available"))
+        matches!(m, EventMsg::Warning { message, .. } if message.contains("'test/scripted' is not available"))
     })
     .await;
     // The conversation carries on with the configured model.

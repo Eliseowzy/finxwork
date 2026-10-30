@@ -138,9 +138,9 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
   const status =
     connection?.state ??
     (!discovery ? "checking" : discovery.installed ? "found" : "missing");
-  const published = new Set(st.models.models.filter(m => m.provider === `local-${connection?.connection_id}`).map(m => m.id));
-  const active = connection?.models.filter(m => published.has(`local-${connection.connection_id}/${m.id}`)) ?? [];
-  const pending = connection?.models.filter(m => !published.has(`local-${connection.connection_id}/${m.id}`)) ?? [];
+  const published = new Set(st.models.models.filter(m => m.provider === connection?.provider_id).map(m => m.id));
+  const active = connection?.models.filter(m => published.has(`${connection.provider_id}/${m.id}`)) ?? [];
+  const pending = connection?.models.filter(m => !published.has(`${connection.provider_id}/${m.id}`)) ?? [];
   return { discovery, connection, active, pending, open, busy, error: error || loadError, act, status, ready, rpc: !!st.rpc } as const;
 }
 

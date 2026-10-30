@@ -166,6 +166,8 @@ export type ConnectionView = {
   connection_id: string;
   display_name: string;
   models: ConnectionModel[];
+  /** The provider its models are published under: the same for the same account of the same application, so sessions keep their model when the connection is removed and made again. */
+  provider_id: string;
   reason_code?: string | null;
   state: ConnectionState;
 };

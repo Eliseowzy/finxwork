@@ -548,15 +548,16 @@ impl Kernel {
             .clone()
             .or(model_ref)
             .unwrap_or_else(|| opts.config.model.clone());
-        // The model the session last used may belong to a provider that is gone (a removed
-        // connection): the session still opens, on the configured model, and says so. A model
-        // asked for by name is not replaced.
+        // The model the session last used may belong to a provider that is gone (a disconnected
+        // or removed connection): the session still opens, on the configured model, and says so.
+        // The log keeps the old model, so the session goes back to it once the provider is back.
+        // A model asked for by name is not replaced.
         let mut replaced = None;
         let resolved = match deps.llm.resolve(&reference) {
             Ok(resolved) => resolved,
             Err(ResolveError::UnknownProvider { .. }) if opts.model.is_none() && reference != opts.config.model => {
                 replaced = Some(format!(
-                    "model '{reference}' is no longer available (its provider was removed); this session now uses '{}'",
+                    "model '{reference}' is not available (its provider is disconnected or removed); this session uses '{}' until it is back",
                     opts.config.model
                 ));
                 deps.llm.resolve(&opts.config.model)?

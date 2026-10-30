@@ -798,6 +798,10 @@
           },
           "type": "array"
         },
+        "provider_id": {
+          "description": "The provider its models are published under: the same for the same account of the same application, so sessions keep their model when the connection is removed and made again.",
+          "type": "string"
+        },
         "reason_code": {
           "type": [
             "string",
@@ -813,6 +817,7 @@
         "connection_id",
         "display_name",
         "models",
+        "provider_id",
         "state"
       ],
       "type": "object"

@@ -174,7 +174,7 @@ macOS 解密使用已验证的 v10 格式并限制输入大小。平台 API 优�
 | finx 系统凭据库 | 一条连接的完整 JobToken 记录、到期时间、generation、身份绑定 |
 | 内存 | 短暂的来源 access token、请求授权快照、排队状态、刷新中的 promise/future |
 
-身份键由产品变体、账户 ID、必要的组织维度生成摘要，邮箱和名称不作为唯一身份。provider ID 继续使用 `local-<connection_id>`，模型引用保持稳定。默认一个来源身份在同一 FINX_HOME 只有一条连接；不同 FINX_HOME 各自签发独立凭据，不共享刷新链。
+身份键由产品变体、账户 ID、必要的组织维度生成摘要，邮箱和名称不作为唯一身份。provider ID 由 adapter_id 和身份键生成（见模型连接设计），同一账号移除后重新连接仍保持不变，模型引用随之稳定。默认一个来源身份在同一 FINX_HOME 只有一条连接；不同 FINX_HOME 各自签发独立凭据，不共享刷新链。
 
 来源 account access token 只为签发临时读取，不持久保存；来源 account refresh token 始终不持有。机器标识仅在私有存储中保存，公共目录与诊断不输出其值。删除连接仅删除 finx 自有记录，不注销 Qoder，不撤销来源凭据。
 

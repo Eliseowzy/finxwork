@@ -79,6 +79,8 @@ fn client() -> reqwest::Client {
 fn record(enabled: bool) -> Record {
     Record {
         connection_id: uuid::Uuid::new_v4().to_string(),
+        // Written before provider IDs were kept: published as `local-<connection_id>`.
+        provider_id: String::new(),
         adapter_id: "qwenwork".into(),
         identity_key: "account-a".into(),
         enabled,
@@ -191,6 +193,50 @@ async fn existing_connection_restores_without_secrets_in_catalog_and_disconnect_
     m.disconnect(&r.connection_id).await.unwrap();
     m.remove(&r.connection_id).await.unwrap();
     assert!(env.get(&r.connection_id).await.unwrap().is_none());
+}
+#[tokio::test]
+async fn connecting_the_same_account_again_keeps_the_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = Fake::new();
+    // Expired: the connection is saved, then its catalog fails before any request.
+    env.expires.store(0, Ordering::Relaxed);
+    let llm = registry();
+    let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
+    let connect = |key: &str| {
+        m.connect(ConnectionConnectParams {
+            adapter_id: "qwenwork".into(),
+            discovery_id: "qwenwork-standard".into(),
+            idempotency_key: key.into(),
+        })
+    };
+    assert!(connect("first").await.is_err());
+    let first = m.snapshot().unwrap().connections.remove(0);
+    assert_eq!(first.provider_id, provider_id("qwenwork", "account-a"));
+    m.disconnect(&first.connection_id).await.unwrap();
+    m.remove(&first.connection_id).await.unwrap();
+    assert!(connect("second").await.is_err());
+    let second = m.snapshot().unwrap().connections.remove(0);
+    assert_ne!(second.connection_id, first.connection_id);
+    assert_eq!(second.provider_id, first.provider_id);
+    // Kept across a restart; another account or application gets its own.
+    let m = Manager::with_environment(dir.path().into(), &registry(), env);
+    assert_eq!(m.snapshot().unwrap().connections[0].provider_id, first.provider_id);
+    assert_ne!(provider_id("qwenwork", "account-b"), first.provider_id);
+    assert_ne!(provider_id("qoder", "account-a"), first.provider_id);
+}
+#[tokio::test]
+async fn connection_publishes_and_authorizes_under_its_provider() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut r = record(true);
+    r.provider_id = provider_id("qwenwork", "account-a");
+    save_config(dir.path(), &r);
+    let env = Fake::new();
+    save_session(&env, &r.connection_id).await;
+    let llm = registry();
+    let m = Manager::with_environment(dir.path().into(), &llm, env);
+    assert!(llm.resolve(&format!("{}/flash", r.provider_id)).is_ok());
+    assert!(llm.resolve(&format!("local-{}/flash", r.connection_id)).is_err());
+    assert!(m.begin(&r.provider_id, "flash", client()).await.is_ok());
 }
 #[tokio::test]
 async fn identity_switch_cancels_connection_and_removes_only_its_session() {

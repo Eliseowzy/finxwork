@@ -87,6 +87,9 @@ pub(crate) fn valid_id(id: &str) -> bool {
 #[derive(Clone, Serialize, Deserialize)]
 struct Record {
     connection_id: String,
+    /// Empty in records written before it existed; they keep `local-<connection_id>`.
+    #[serde(default)]
+    provider_id: String,
     adapter_id: String,
     identity_key: String,
     enabled: bool,
@@ -202,6 +205,7 @@ impl Manager {
     fn add(&self, r: Record) -> Arc<Entry> {
         let view = ConnectionView {
             connection_id: r.connection_id.clone(),
+            provider_id: r.provider_id.clone(),
             adapter_id: r.adapter_id.clone(),
             display_name: adapter::name(&r.adapter_id).into(),
             state: if !r.enabled {
@@ -257,7 +261,7 @@ impl Manager {
                     return None;
                 }
                 let mut p = ProviderConfig {
-                    id: format!("local-{}", record.connection_id),
+                    id: record.provider_id.clone(),
                     name: view.display_name.clone(),
                     api: "openai-chat".into(),
                     base_url: adapter::base(&record.adapter_id).into(),
@@ -438,6 +442,7 @@ impl Manager {
         }
         let e = self.add(Record {
             connection_id: uuid::Uuid::new_v4().to_string(),
+            provider_id: provider_id(&p.adapter_id, &login.identity),
             adapter_id: p.adapter_id,
             identity_key: login.identity,
             enabled: true,
@@ -521,7 +526,27 @@ fn read_config(home: &Path) -> Result<Vec<Record>> {
     {
         return Err(ConnectionError::new("invalid_config", "模型连接配置不兼容"));
     }
-    Ok(config.connections)
+    let mut connections = config.connections;
+    for r in &mut connections {
+        if r.provider_id.is_empty() {
+            r.provider_id = format!("local-{}", r.connection_id);
+        }
+    }
+    let mut providers = std::collections::HashSet::new();
+    if connections
+        .iter()
+        .any(|r| !valid_id(&r.provider_id) || !providers.insert(r.provider_id.clone()))
+    {
+        return Err(ConnectionError::new("invalid_config", "模型连接配置不兼容"));
+    }
+    Ok(connections)
+}
+/// Derived from the application and the account, which a connection never changes: removing a
+/// connection and making it again publishes the same provider, so sessions that used its models
+/// still find them.
+fn provider_id(adapter_id: &str, identity: &str) -> String {
+    let hash = platform::digest(format!("{adapter_id}\0{identity}").as_bytes());
+    format!("local-{adapter_id}-{}", &hash[..12])
 }
 struct RequestLease {
     entry: Arc<Entry>,
@@ -540,8 +565,12 @@ impl ConnectionAuthorizer for Manager {
     ) -> std::result::Result<Box<dyn ConnectionRequest>, LlmError> {
         self.check().map_err(|e| e.llm())?;
         let e = self
-            .entry(provider.strip_prefix("local-").unwrap_or(""))
-            .map_err(|e| e.llm())?;
+            .entries
+            .read()
+            .values()
+            .find(|e| e.record.read().provider_id == provider)
+            .cloned()
+            .ok_or_else(|| ConnectionError::new("not_found", "连接不存在").llm())?;
         let permit = e.slot.clone().try_acquire_owned().map_err(|_| {
             ConnectionError::new("rate_limit_exceeded", "此连接已有请求正在运行").llm()
         })?;
