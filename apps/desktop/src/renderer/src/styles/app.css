@@ -301,7 +301,7 @@ button.insp-row:active{background:var(--fill2)}
 .msg-act .tb:hover{color:var(--l1)}
 .msg-act .ic.sm{width:15px;height:15px}
 .msg-act .tb:hover{background:var(--fill)}
-.msg-time{font-size:12px;line-height:26px;color:var(--l3);white-space:nowrap;padding:0 2px;font-variant-numeric:tabular-nums}
+.msg-meta{font-size:12px;line-height:26px;color:var(--l3);white-space:nowrap;padding:0 2px;font-variant-numeric:tabular-nums}
 .md{overflow-wrap:anywhere}
 .md>*{margin:0}
 .md>*+*{margin-top:12px}

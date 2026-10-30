@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { baseName, conversation, costText, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
@@ -55,7 +55,7 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
           {view.before && <div className="tdiv">{t("chat.earlier")}</div>}
           <div className="tr" role="log" aria-label={t("chat.log")}>
             {steps.map((step, i) => (
-              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={isFinal(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
+              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
             ))}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <BackgroundLine view={view} />
@@ -76,23 +76,45 @@ function previousUser(steps: Step[], i: number): number | undefined {
   return undefined;
 }
 
-/** Whether steps[i] is the model's last words of a task that has ended: only those get the time and Copy. */
-function isFinal(steps: Step[], i: number): boolean {
-  if (steps[i].kind !== "text") return false;
+type EndStep = Extract<Step, { kind: "end" }>;
+
+/** The end of the task when steps[i] is the model's last words of one that has ended: only those get the time and Copy. */
+function finalOf(steps: Step[], i: number): EndStep | undefined {
+  if (steps[i].kind !== "text") return undefined;
   for (let j = i + 1; j < steps.length; j++) {
     const x = steps[j];
-    if (x.kind !== "note") return x.kind === "end";
+    if (x.kind !== "note") return x.kind === "end" ? x : undefined;
   }
+  return undefined;
+}
+
+/** A task that simply finished: what it took goes under its last words, and its end draws no line of its own. */
+const finished = (end: EndStep) => end.end.outcome === "completed" && (!end.end.reason || end.end.reason === "done");
+
+/** Whether steps[i] is such an end, after the model's last words. */
+function isMerged(steps: Step[], i: number): boolean {
+  const end = steps[i];
+  if (end.kind !== "end" || !finished(end)) return false;
+  for (let j = i - 1; j >= 0; j--) if (steps[j].kind !== "note") return finalOf(steps, j) === end;
   return false;
 }
 
-type RowProps = { step: Step; previous: number | undefined; final: boolean; current: boolean; sessionId: string };
+type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; sessionId: string };
 
 /**
  * A row renders again only when what it shows changed: the steps are made
  * anew from the session's state each time, but what they hold is shared.
  */
-const Row = memo(RowView, (a, b) => a.previous === b.previous && a.final === b.final && a.current === b.current && a.sessionId === b.sessionId && sameStep(a.step, b.step));
+const Row = memo(
+  RowView,
+  (a, b) =>
+    a.previous === b.previous &&
+    (a.final === b.final || (!!a.final && !!b.final && sameStep(a.final, b.final))) &&
+    a.merged === b.merged &&
+    a.current === b.current &&
+    a.sessionId === b.sessionId &&
+    sameStep(a.step, b.step),
+);
 
 function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
@@ -129,7 +151,7 @@ function sameStep(a: Step, b: Step): boolean {
   }
 }
 
-function RowView({ step, previous, final, current, sessionId }: RowProps) {
+function RowView({ step, previous, final, merged, current, sessionId }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
     case "user":
@@ -152,7 +174,7 @@ function RowView({ step, previous, final, current, sessionId }: RowProps) {
                 <Words text={step.text} skills={step.skills} />
               </div>
             )}
-            <Copy text={step.text} at={step.ts} />
+            <MessageBar text={step.text} at={step.ts} mine />
           </div>
         </>
       );
@@ -160,7 +182,7 @@ function RowView({ step, previous, final, current, sessionId }: RowProps) {
       return (
         <div className={`am ${final ? "act" : ""}`}>
           {step.live ? <DraftMarkdown text={step.text} /> : <Markdown text={step.text} />}
-          {final && <Copy text={step.text} at={step.ts} />}
+          {final && <MessageBar text={step.text} at={step.ts} task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined} />}
         </div>
       );
     case "work":
@@ -170,6 +192,7 @@ function RowView({ step, previous, final, current, sessionId }: RowProps) {
     case "report":
       return <ReportCard step={step} />;
     case "end":
+      if (merged) return null;
       return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} sessionId={sessionId} />;
     case "note":
       return step.note.note === "compaction" ? (
@@ -191,51 +214,75 @@ function TimeLine({ at, previous }: { at: number; previous: number | undefined }
   return text ? <div className="tdiv">{text}</div> : null;
 }
 
-/** Under a message on hover (the model's only once its task ended): how long ago it was written (the full time on hover), and Copy. */
-function Copy({ text, at }: { text: string; at?: number }) {
+/**
+ * Under a message on hover (the model's only once its task ended): Copy, on
+ * the edge the message keeps to, and beside it, quieter, how long ago it was
+ * written (the full time on hover) and, under the model's last words, what
+ * its task took. The owner's messages keep to the right, so Copy comes last.
+ */
+function MessageBar({ text, at, task, mine }: { text: string; at: number; task?: ReactNode; mine?: boolean }) {
   const { t } = useTranslation("session");
   const [done, setDone] = useState(false);
-  return (
-    <div className="msg-act">
-      {at !== undefined && <MessageTime at={new Date(at)} />}
-      <button
-        className="tb"
-        aria-label={t("chat.copy")}
-        title={t("chat.copy")}
-        onClick={() => navigator.clipboard.writeText(text).then(() => (setDone(true), setTimeout(() => setDone(false), 1500)))}
-      >
-        <Icon name={done ? "check" : "copy"} className="sm" />
-      </button>
-    </div>
+  const copy = (
+    <button
+      className="tb"
+      aria-label={t("chat.copy")}
+      title={t("chat.copy")}
+      onClick={() => navigator.clipboard.writeText(text).then(() => (setDone(true), setTimeout(() => setDone(false), 1500)))}
+    >
+      <Icon name={done ? "check" : "copy"} className="sm" />
+    </button>
   );
+  const meta = (
+    <span className="msg-meta">
+      <MessageTime at={new Date(at)} />
+      {task}
+    </span>
+  );
+  return <div className="msg-act">{mine ? <>{meta}{copy}</> : <>{copy}{meta}</>}</div>;
+}
+
+/** What a task took, after the time under its last words: how long, its sub-agents, tokens and cost. */
+function TaskTook({ end, started }: { end: EndStep; started: number | undefined }) {
+  const parts = useTaskParts(end.end, end.chain, started);
+  return <>{parts.map((part) => <span key={part}> · {part}</span>)}</>;
+}
+
+/** How long a task (or a piece of work over several, with its sub-agents) took, and what it used. */
+function useTaskParts(end: TaskEndItem, chain: TaskChain | undefined, started: number | undefined): string[] {
+  const { t } = useTranslation("session");
+  const from = chain?.started ?? started;
+  const u = totals((chain ? chain.usage : end.usage) ?? { per_model: {} });
+  return [
+    from !== undefined && end.ts > from ? t("chat.took", { time: durationText(end.ts - from) }) : "",
+    chain && chain.agents > 0 ? t("chat.agents", { count: chain.agents }) : "",
+    u.tokens > 0 ? t("chat.tokens", { tokens: kilo(u.tokens) }) : "",
+    ...u.costs.filter((c) => c.total > 0).map(costText),
+  ].filter(Boolean);
 }
 
 function MessageTime({ at }: { at: Date }) {
   const now = useNow(agoInterval(at));
   return (
-    <time className="msg-time" dateTime={at.toISOString()} title={at.toLocaleString()}>
+    <time dateTime={at.toISOString()} title={at.toLocaleString()}>
       {messageAgo(at, now)}
     </time>
   );
 }
 
 /**
- * Where a task ended: a quiet line when it went well, a word when it stopped early, the failure as a card.
- * A piece of work that took several tasks or sub-agents is told once, at its end, as a whole.
+ * Where a task ended, when that is not told under the model's last words: a
+ * quiet line when it went well (a task with no words of its own, as a
+ * compaction), a word when it stopped early, the failure as a card. A piece
+ * of work that took several tasks or sub-agents is told once, at its end, as
+ * a whole.
  */
 function TaskEnd({ end, chain, started, current, sessionId }: { end: TaskEndItem; chain?: TaskChain; started: number | undefined; current: boolean; sessionId: string }) {
   const { t } = useTranslation("session");
+  const parts = useTaskParts(end, chain, started);
   if (end.outcome === "interrupted") return <div className="tnote">{t("chat.interrupted")}</div>;
   if (end.outcome === "completed") {
     if (end.reason && end.reason !== "done") return <div className="tnote">{t(`chat.ended.${end.reason}`)}</div>;
-    const from = chain?.started ?? started;
-    const u = totals((chain ? chain.usage : end.usage) ?? { per_model: {} });
-    const parts = [
-      from !== undefined && end.ts > from ? durationText(end.ts - from) : "",
-      chain && chain.agents > 0 ? t("chat.agents", { count: chain.agents }) : "",
-      u.tokens > 0 ? t("chat.tokens", { tokens: kilo(u.tokens) }) : "",
-      ...u.costs.filter((c) => c.total > 0).map(costText),
-    ].filter(Boolean);
     return (
       <div className="donebar">
         <Icon name="check" className="sm" />

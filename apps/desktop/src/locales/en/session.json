@@ -24,6 +24,7 @@
     },
     "done": "Done",
     "tokens": "{{tokens}} tokens",
+    "took": "took {{time}}",
     "failedWith": "Failed: {{title}}",
     "retry": "Retry",
     "setKey": "Set Key",

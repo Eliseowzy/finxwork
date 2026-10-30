@@ -24,6 +24,7 @@
     },
     "done": "完成",
     "tokens": "{{tokens}} tokens",
+    "took": "用时 {{time}}",
     "failedWith": "出错了：{{title}}",
     "retry": "重试",
     "setKey": "设置密钥",
