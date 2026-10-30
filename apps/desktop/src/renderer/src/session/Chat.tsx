@@ -55,7 +55,7 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
           {view.before && <div className="tdiv">{t("chat.earlier")}</div>}
           <div className="tr" role="log" aria-label={t("chat.log")}>
             {steps.map((step, i) => (
-              <Row key={step.key} step={step} previous={previousUser(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
+              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={isFinal(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
             ))}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <BackgroundLine view={view} />
@@ -76,13 +76,23 @@ function previousUser(steps: Step[], i: number): number | undefined {
   return undefined;
 }
 
-type RowProps = { step: Step; previous: number | undefined; current: boolean; sessionId: string };
+/** Whether steps[i] is the model's last words of a task that has ended: only those get the time and Copy. */
+function isFinal(steps: Step[], i: number): boolean {
+  if (steps[i].kind !== "text") return false;
+  for (let j = i + 1; j < steps.length; j++) {
+    const x = steps[j];
+    if (x.kind !== "note") return x.kind === "end";
+  }
+  return false;
+}
+
+type RowProps = { step: Step; previous: number | undefined; final: boolean; current: boolean; sessionId: string };
 
 /**
  * A row renders again only when what it shows changed: the steps are made
  * anew from the session's state each time, but what they hold is shared.
  */
-const Row = memo(RowView, (a, b) => a.previous === b.previous && a.current === b.current && a.sessionId === b.sessionId && sameStep(a.step, b.step));
+const Row = memo(RowView, (a, b) => a.previous === b.previous && a.final === b.final && a.current === b.current && a.sessionId === b.sessionId && sameStep(a.step, b.step));
 
 function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
@@ -119,7 +129,7 @@ function sameStep(a: Step, b: Step): boolean {
   }
 }
 
-function RowView({ step, previous, current, sessionId }: RowProps) {
+function RowView({ step, previous, final, current, sessionId }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
     case "user":
@@ -150,7 +160,7 @@ function RowView({ step, previous, current, sessionId }: RowProps) {
       return (
         <div className="am">
           {step.live ? <DraftMarkdown text={step.text} /> : <Markdown text={step.text} />}
-          {!step.live && <Copy text={step.text} at={step.ts} />}
+          {final && <Copy text={step.text} at={step.ts} />}
         </div>
       );
     case "work":
@@ -179,7 +189,7 @@ function TimeLine({ at, previous }: { at: number; previous: number | undefined }
   return text ? <div className="tdiv">{text}</div> : null;
 }
 
-/** Under a message on hover: how long ago it was written (the full time on hover), and Copy. */
+/** Under a message on hover (the model's only once its task ended): how long ago it was written (the full time on hover), and Copy. */
 function Copy({ text, at }: { text: string; at?: number }) {
   const { t } = useTranslation("session");
   const [done, setDone] = useState(false);
