@@ -1,6 +1,15 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
+import anthropic from "../assets/providers/anthropic.svg?raw";
+import deepseek from "../assets/providers/deepseek.svg?raw";
+import gemini from "../assets/providers/gemini.svg?raw";
+import kimi from "../assets/providers/kimi.svg?raw";
+import ollama from "../assets/providers/ollama.svg?raw";
+import openai from "../assets/providers/openai.svg?raw";
+import openrouter from "../assets/providers/openrouter.svg?raw";
+import qwen from "../assets/providers/qwen.svg?raw";
+import zhipu from "../assets/providers/zhipu.svg?raw";
 import { keyProviders } from "../composer/KeySetup";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
@@ -11,20 +20,22 @@ import "../styles/providers.css";
 // form that gives finx its key (auth/set). Used by Settings › Models and the
 // first-run page.
 
-/** A provider's mark: drawn for the known ones (a variant endpoint as its provider), else its initial. */
+/** The providers' own marks (assets/providers/README.md), by provider id. */
+const marks: Record<string, string> = { anthropic, deepseek, google: gemini, kimi, ollama, openai, openrouter, qwen, glm: zhipu };
+
+/** A provider's mark: its own for the known ones (a variant endpoint as its provider), a code glyph for a custom endpoint, else its initial. */
 export function Brand({ id: given, name }: { id: string; name?: string }) {
   const id = given === "deepseek-anthropic" ? "deepseek" : given;
-  if (!["anthropic", "deepseek", "google", "qwen", "custom", "openai"].includes(id)) {
-    return <span className={`provider-brand brand-${id} brand-initial`} aria-hidden="true">{(name ?? id).charAt(0).toUpperCase()}</span>;
+  // A mark with gradients names them; each use gets its own names.
+  const uid = useId().replace(/[^\w-]/g, "");
+  const mark = marks[id];
+  if (mark) return <span className={`provider-brand brand-${id}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: mark.replaceAll("__uid__", uid) }} />;
+  if (id === "custom") {
+    return <span className="provider-brand brand-custom" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none">
+      <path d="m11 8-8 8 8 8m10-16 8 8-8 8M18 5l-4 22" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg></span>;
   }
-  return <span className={`provider-brand brand-${id}`} aria-hidden="true"><svg viewBox="0 0 32 32" fill="none">
-    {id === "anthropic" ? <><path d="M5 25 13 7h4l8 18h-5l-1.5-4h-8L9 25H5Zm7-8h5l-2.5-6L12 17Z" fill="currentColor"/><path d="m23 7 7 18" stroke="currentColor" strokeWidth="3"/></> :
-    id === "deepseek" ? <><path d="M4 13c7 0 8 5 17 3l5-7 1 10c-2 9-19 11-23-6Z" fill="currentColor"/><path d="m4 13-3-4M10 24l-3 4" stroke="currentColor" strokeWidth="2"/><circle cx="21" cy="20" r="1.2" fill="var(--win)"/></> :
-    id === "google" ? <path d="M16 2c1 9 5 13 14 14-9 1-13 5-14 14C15 21 11 17 2 16 11 15 15 11 16 2Z" fill="currentColor"/> :
-    id === "qwen" ? <><path d="M12 8H5v16h7M20 8h7v16h-7M12 16h8" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></> :
-    id === "custom" ? <path d="m11 8-8 8 8 8m10-16 8 8-8 8M18 5l-4 22" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"/> :
-    <>{[0,60,120,180,240,300].map(angle => <ellipse key={angle} cx="16" cy="11" rx="5" ry="8" stroke="currentColor" strokeWidth="1.7" transform={`rotate(${angle} 16 16)`}/>)}</>}
-  </svg></span>;
+  return <span className={`provider-brand brand-${id} brand-initial`} aria-hidden="true">{(name ?? id).charAt(0).toUpperCase()}</span>;
 }
 
 /** Shorter names than the catalog's, for the provider tiles. */
