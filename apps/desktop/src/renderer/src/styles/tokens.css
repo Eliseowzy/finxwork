@@ -40,12 +40,9 @@
   --menu: rgba(248, 248, 250, .80); --menu-solid: #f8f8fa; --menu-bd: rgba(0, 0, 0, .10);
   --bub: var(--l1); --bub-fg: var(--win); --msg: var(--l1);
   --glass: rgba(255, 255, 255, .72); --glass-sh: 0 0 0 .5px rgba(0, 0, 0, .10), 0 2px 8px rgba(0, 0, 0, .08);
-  /* Toolbar buttons, and the liquid glass their groups float on over the conversation (glass.tsx):
-     a faint tint, a hairline rim, a lit top edge and a soft lift. --edge is the conversation fading under the bar. */
+  /* Toolbar buttons, and the tint of the glass bar the conversation scrolls under (glass.tsx). */
   --tb-fg: rgba(0, 0, 0, .72);
-  --lg-tint: rgba(255, 255, 255, .38); --lg-rim: rgba(0, 0, 0, .10); --lg-hi: rgba(255, 255, 255, .85); --lg-lo: rgba(0, 0, 0, .04);
-  --lg-lift: 0 6px 18px rgba(0, 0, 0, .10), 0 1px 3px rgba(0, 0, 0, .06);
-  --edge: rgba(255, 255, 255, .78);
+  --bar-tint: rgba(255, 255, 255, .7);
   --code: #f6f7fa; --add-bg: rgba(23, 146, 79, .10); --del-bg: rgba(215, 51, 63, .08); --add-fg: #127443; --del-fg: #b0232f;
   --scrim: rgba(0, 0, 0, .18);
   /* The composer's pill and the approval card over it. */
@@ -76,9 +73,7 @@
     --msg: rgba(255, 255, 255, .95);
     --glass: rgba(60, 60, 66, .62); --glass-sh: 0 0 0 .5px rgba(255, 255, 255, .10), 0 2px 10px rgba(0, 0, 0, .3);
     --tb-fg: rgba(255, 255, 255, .82);
-    --lg-tint: rgba(255, 255, 255, .055); --lg-rim: rgba(255, 255, 255, .13); --lg-hi: rgba(255, 255, 255, .20); --lg-lo: rgba(0, 0, 0, .25);
-    --lg-lift: 0 8px 22px rgba(0, 0, 0, .35), 0 1px 3px rgba(0, 0, 0, .25);
-    --edge: rgba(30, 30, 33, .82);
+    --bar-tint: rgba(30, 30, 33, .6);
     --code: #18181b; --add-bg: rgba(63, 207, 134, .12); --del-bg: rgba(255, 102, 112, .11); --add-fg: #5fe0a0; --del-fg: #ff8c94;
     --scrim: rgba(0, 0, 0, .35);
     --pill: #28282c; --pill-bd: rgba(255, 255, 255, .09);

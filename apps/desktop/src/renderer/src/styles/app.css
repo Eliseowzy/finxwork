@@ -389,27 +389,18 @@ button{font:inherit;color:inherit}
 /* A session page: the conversation's column, and the background panel beside it when open. */
 .spage{flex:1;min-height:0;display:flex;position:relative}
 .scol{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
-/* On a session page the bar floats over the conversation: the conversation scrolls under it, fading
-   and blurring out at the bar's edge, and the bar's buttons sit on liquid glass (glass.tsx). */
-.scol>.ctool{position:absolute;top:0;left:0;right:0;z-index:5}
-.scol>.ctool::before{content:"";position:absolute;inset:0 0 -18px;z-index:-1;pointer-events:none;-webkit-app-region:no-drag;
-  background:linear-gradient(var(--edge),color-mix(in srgb,var(--edge) 55%,transparent) 55%,transparent);
-  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);mask-image:linear-gradient(#000 50%,transparent)}
+/* On a session page the bar floats over the conversation as liquid glass (glass.tsx): the conversation
+   scrolls under it and shows through, blurred, bending at the bar's bottom edge; a hairline closes it.
+   The bending is its inline backdrop-filter once measured; until then, and where SVG backdrops don't
+   work, it is frosted. */
+.scol>.ctool{position:absolute;top:0;left:0;right:0;z-index:5;background:var(--bar-tint);box-shadow:inset 0 -.5px 0 var(--sep);
+  backdrop-filter:blur(18px) saturate(1.8);-webkit-backdrop-filter:blur(18px) saturate(1.8)}
+.glass-defs{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
 .scol .dwrap{border-top:0}
 .scol .dbody{padding-top:calc(var(--top) + var(--sp-3))}
 .scol .insp{top:calc(var(--top) + var(--sp-1))}
-/* A capsule of glass: the refraction is its inline backdrop-filter once measured; until then, and where
-   SVG backdrops don't work, frosted. A faint tint, a hairline rim, a lit top edge, a soft lift. */
-.glass{position:relative;display:flex;align-items:center;height:34px;padding:0 3px;border-radius:999px;flex:none;background:var(--lg-tint);
-  box-shadow:inset 0 0 0 .5px var(--lg-rim),inset 0 1px 0 var(--lg-hi),inset 0 -1px 1px var(--lg-lo),var(--lg-lift);
-  backdrop-filter:blur(12px) saturate(1.6);-webkit-backdrop-filter:blur(12px) saturate(1.6)}
-.glass-defs{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
-.glass .tb{min-width:30px;border-radius:999px}
-/* Reduce transparency (System Settings › Accessibility › Display): solid instead of glass. */
-@media (prefers-reduced-transparency:reduce){
-  .glass{backdrop-filter:none !important;background:var(--win2)}
-  .scol>.ctool::before{inset:0;backdrop-filter:none;background:var(--win);mask-image:none}
-}
+/* Reduce transparency (System Settings › Accessibility › Display): a solid bar. */
+@media (prefers-reduced-transparency:reduce){.scol>.ctool{backdrop-filter:none !important;background:var(--win)}}
 /* The system's window buttons sit over the panel's top then, not the conversation's. */
 .spage.bgopen .ctool{padding-right:14px}
 /* The background panel (session/Background.tsx): a column of the window on the right, flush with its
