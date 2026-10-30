@@ -585,6 +585,16 @@ export class MockServer {
         return demoModels(this.stored) satisfies R<"models/list">;
       case "skills/list":
         return demoSkills() satisfies R<"skills/list">;
+      // Local applications: one on this Mac and signed in, one not installed; none connected.
+      case "connections/list":
+        return { connections: [], revision: 0 } satisfies R<"connections/list">;
+      case "connections/discover":
+        return {
+          discoveries: [
+            { adapter_id: "qwenwork", discovery_id: "mock-qwenwork", installed: true, login: "present", version: "1.4.0" },
+            { adapter_id: "qoder", discovery_id: "mock-qoder", installed: false, login: "unavailable" },
+          ],
+        } satisfies R<"connections/discover">;
       case "auth/set":
       case "auth/delete": {
         const q = p as P<"auth/set">;

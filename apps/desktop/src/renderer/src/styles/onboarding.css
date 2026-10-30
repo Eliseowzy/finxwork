@@ -37,3 +37,24 @@
 
 @media (max-width:1080px){.onb{grid-template-columns:300px minmax(0,1fr)}.onb-brand{padding:var(--top) 36px 36px}.onb .onb-body{padding:12px 36px 28px}.onb-foot{padding:12px 36px 20px}}
 @media (prefers-reduced-motion:reduce){.onb-glow,.onb-mark,.onb-copy{animation:none}}
+
+/* The local applications (settings/LocalApplicationConnection.tsx): Settings › Models'
+   rows a step larger, and the one line the applications not installed fold into. */
+.onb-local .mrow{min-height:60px;padding:10px 16px;gap:14px}
+.onb-local .ft{flex:1;min-width:0}
+.onb-local .fn{font-size:14px;font-weight:550}
+.onb-local .fdesc.ok{color:var(--green)}
+.onb-local .fdesc.warn{color:var(--orange)}
+.onb-local .mrow .mlogo{width:36px;height:36px;border-radius:9px;font-size:19px}
+.onb-local .mrow .btn{height:26px;padding:0 12px;font-size:12px}
+.onb-local .mrow-err{margin:0;padding:0 16px 10px 66px}
+.onb-fold{width:100%;border:0;border-top:.5px solid var(--sep);background:none;font:inherit;font-size:12px;color:var(--l2);text-align:left;cursor:pointer;gap:10px;padding:10px 16px}
+.onb-fold:last-child{border-radius:0 0 12px 12px}
+.onb-fold:first-child:last-child{border-radius:12px}
+.onb-fold:hover{background:var(--fill)}
+.onb-fold-marks{display:flex;gap:4px;flex:none}
+.onb-fold-marks .mlogo{width:20px;height:20px;border-radius:5px;font-size:11px;opacity:.6}
+.onb-fold-marks .mlogo:not(.source-icon){background:var(--fill2);color:var(--l2)}
+.onb-fold-marks .mlogo i{display:none}
+.onb-fold>.ic{width:12px;height:12px;flex:none;color:var(--l3);transition:transform .15s var(--ease-out)}
+.onb-fold.open>.ic{transform:rotate(90deg)}

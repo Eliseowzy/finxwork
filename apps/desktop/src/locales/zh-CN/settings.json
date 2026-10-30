@@ -137,13 +137,9 @@
   },
   "local": {
     "note": "无需 API Key，调用计入该账户的额度。",
-    "found": "直接使用{{name}}账户里的模型，调用计入该账户的额度。",
-    "ready": "已接入 {{count}} 个模型，可以开始了。",
-    "needsLogin": "{{name}}的登录已失效，请在{{name}}里重新登录后再连接。",
-    "signedOut": "{{name}}还没有登录，登录后回到这里连接。",
-    "missing": "这台电脑上还没有{{name}}，安装并登录后即可连接。",
-    "trouble": "暂时连不上{{name}}，可以稍后重试，或先用 API Key。",
-    "connect": "连接{{name}}"
+    "more": "还支持{{names}}，装好后会出现在这里",
+    "supported": "支持{{names}}，装好后会出现在这里",
+    "listSep": "、"
   },
   "live": {
     "failed": "连接失败",

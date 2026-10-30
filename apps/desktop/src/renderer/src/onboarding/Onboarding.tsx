@@ -12,9 +12,9 @@ import "../styles/onboarding.css";
 
 // The first-run page (desktop-kernel-integration §8.4): the whole window, shown
 // at launch while no model can run. The brand on the left; on the right the two
-// ways to a model as Settings › Models shows them (the local application's
-// card itself, and the providers that take a key), then "ready" once a model
-// can run. Leaving it, by starting or by "later", is the person's choice.
+// ways to a model as Settings › Models shows them (the local applications' rows,
+// the ones on this Mac first, and the providers that take a key), then "ready"
+// once a model can run. Leaving it, by starting or by "later", is the person's choice.
 
 /** The window event that opens the first-run page again (the new session page sends it while no model can run). */
 export const onboardingEvent = "finx-onboarding";

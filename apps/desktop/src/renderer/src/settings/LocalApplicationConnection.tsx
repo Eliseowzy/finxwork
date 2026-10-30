@@ -1,10 +1,11 @@
-import { useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ConnectionView,
   ConnectionDiscovery,
   ConnectionsSnapshot,
 } from "@finx/protocol";
+import { Icon } from "../icons";
 import { useStore } from "../store";
 
 // Read once per window: the app's icon does not change while FinxWork runs.
@@ -143,61 +144,92 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
   return { discovery, connection, active, pending, open, busy, error: error || loadError, act, status, ready, rpc: !!st.rpc } as const;
 }
 
+/** A local application's name, as FinxWork shows it. */
+export function useLocalName() {
+  const { t } = useTranslation("settings");
+  return (adapter: LocalAdapter) => (adapter === "qoder" ? "Qoder" : t("models.qwen"));
+}
+
 /**
- * The local application as one card (the first-run page): its icon and name, one sentence
- * on what connecting gives or what is missing, and the way forward.
+ * A local application as a grouped row (Settings › Models, the first-run page): its mark,
+ * the name over its state, and the actions, the first the way forward. `primary` says
+ * whether that first one is drawn as the main button (by default, while not connected);
+ * `onStatus` hears the row's status, `hidden` keeps the row's connection without drawing it.
+ */
+export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: LocalAdapter; primary?: boolean; hidden?: boolean; onStatus?: (adapter: LocalAdapter, status: string) => void }) {
+  const { t } = useTranslation("settings");
+  const local = useLocalConnection(adapter);
+  const name = useLocalName()(adapter);
+  const { discovery, connection, busy, status } = local;
+  useEffect(() => onStatus?.(adapter, status), [onStatus, adapter, status]);
+  const state = connection?.state;
+  const act = (a: Parameters<typeof local.act>[0]) => () => void local.act(a);
+  const open = local.open;
+  // The state in a few words, and the actions (the first is the way forward).
+  const [line, actions, tone]: [string, [string, () => void][], "" | "ok" | "warn"] = (() => {
+    if (state === "ready") return [t("models.state.ready", { count: local.active.length }), [[t("models.disconnect"), act("disconnect")]], "ok"];
+    if (state === "connecting") return [t("models.state.connecting"), [], ""];
+    if (state === "needs_login") return [t("models.state.needsLogin", { name }), [[t("models.open", { name }), open], [t("models.reconnect"), act("retry")]], "warn"];
+    if (state === "disabled") return [t("models.state.disabled"), [[t("models.reconnect"), act("retry")], [t("models.remove"), act("remove")]], ""];
+    if (state) return [t("models.state.trouble"), [[t("models.reconnect"), act("retry")]], "warn"];
+    if (!discovery) return [t(local.error ? "models.state.unknown" : "models.state.checking"), local.error ? [[t("models.recheck"), act("scan")]] : [], ""];
+    if (!discovery.installed) return [t("models.state.missing"), [[t("models.recheck"), act("scan")]], ""];
+    if (discovery.login === "missing") return [t("models.state.signedOut"), [[t("models.open", { name }), open], [t("models.recheck"), act("scan")]], "warn"];
+    return [t("models.state.found", { version: discovery.version ?? "" }).trim(), [[t("models.connect"), act("connect")]], ""];
+  })();
+  if (hidden) return null;
+  return (
+    <>
+      <div className="frow mrow">
+        <SourceAppMark className="mlogo mlogo-qwen" adapter={adapter} />
+        <div className="ft">
+          <div className="fn">{name}</div>
+          <div className={`fdesc ${tone}`}>{line}</div>
+        </div>
+        {actions.map(([label, run], i) => (
+          <button key={label} className={`btn ${i === 0 && (primary ?? !state) ? "primary" : ""}`} disabled={busy || !local.rpc} onClick={run}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {state === "ready" && local.pending.length > 0 && <details className="frow" style={{ display: "block" }}><summary>{t("models.otherModels", { count: local.pending.length })}</summary>{local.pending.map(model => <div key={model.id} className="fdesc">{model.name} · {t("models.unverified")}</div>)}</details>}
+      {local.error && discovery && <p className="mrow-err">{local.error}</p>}
+    </>
+  );
+}
+
+/**
+ * The local applications on the first-run page: the rows Settings › Models shows, the
+ * ones on this Mac first. The ones not installed fold into one line naming them, so the
+ * list grows by no more than that line however many applications FinxWork supports.
  */
 export function LocalApplicationConnection() {
   const { t } = useTranslation("settings");
+  const name = useLocalName();
+  const [statuses, setStatuses] = useState<Partial<Record<LocalAdapter, string>>>({});
+  const [unfolded, setUnfolded] = useState(false);
+  const report = useCallback((adapter: LocalAdapter, status: string) => setStatuses(s => (s[adapter] === status ? s : { ...s, [adapter]: status })), []);
+  const missing = localAdapters.filter(a => statuses[a] === "missing");
+  const shown = localAdapters.filter(a => statuses[a] !== "missing");
+  // One main button on the page: connecting the first application found.
+  const lead = shown.find(a => statuses[a] === "found");
+  const row = (adapter: LocalAdapter) => <LocalRow key={adapter} adapter={adapter} primary={adapter === lead} hidden={missing.includes(adapter) && !unfolded} onStatus={report} />;
+  const names = missing.map(name).join(t("local.listSep"));
+  // One list, the fold line keyed among the rows: a row that changes sides moves, it is not made anew.
   return <section aria-label={t("connections.local")}>
     <div className="connections-section-heading"><div><h3>{t("connections.local")}</h3><p>{t("local.note")}</p></div></div>
-    {localAdapters.map(adapter => <LocalApplicationCard key={adapter} adapter={adapter} />)}
+    <div className="fgroup onb-local">
+      {[
+        ...shown.map(row),
+        missing.length > 0 && (
+          <button key="fold" className={`frow onb-fold ${unfolded ? "open" : ""}`} aria-expanded={unfolded} onClick={() => setUnfolded(u => !u)}>
+            <span className="onb-fold-marks">{missing.map(a => <SourceAppMark key={a} className="mlogo" adapter={a} />)}</span>
+            <span className="ft">{t(shown.length ? "local.more" : "local.supported", { names })}</span>
+            <Icon name="chevR" />
+          </button>
+        ),
+        ...missing.map(row),
+      ]}
+    </div>
   </section>;
-}
-function LocalApplicationCard({ adapter }: { adapter: LocalAdapter }) {
-
-  const { t } = useTranslation("settings");
-  const { discovery, connection, active, open, busy, error, act, rpc } = useLocalConnection(adapter);
-  const name = adapter === "qoder" ? "Qoder" : t("models.qwen");
-  const state = connection?.state;
-  const run = (a: Parameters<typeof act>[0]) => () => void act(a);
-  // What to say, the status beside the name, and the buttons (the first is the way forward).
-  const [say, status, actions]: [string, string, [string, () => void][]] = (() => {
-    if (state === "ready") return [t("local.ready", { count: active.length }), t("models.state.ready", { count: active.length }), []];
-    if (state === "connecting") return [t("local.found", { name }), t("models.state.connecting"), []];
-    if (state === "needs_login") return [t("local.needsLogin", { name }), t("models.state.signedOut"), [[t("models.open", { name }), open], [t("models.reconnect"), run("retry")]]];
-    if (state) return [t("local.trouble", { name }), t("models.state.trouble"), [[t("models.reconnect"), run("retry")]]];
-    if (!discovery) return [t("local.found", { name }), t(error ? "models.state.unknown" : "models.state.checking"), error ? [[t("models.recheck"), run("scan")]] : []];
-    if (!discovery.installed) return [t("local.missing", { name }), t("models.state.missing"), [[t("models.recheck"), run("scan")]]];
-    if (discovery.login === "missing") return [t("local.signedOut", { name }), t("models.state.signedOut"), [[t("models.open", { name }), open], [t("models.recheck"), run("scan")]]];
-    return [t("local.found", { name }), t("models.state.found", { version: discovery.version ?? "" }).trim(), [[t("local.connect", { name }), run("connect")]]];
-  })();
-  return (
-      <article className={`connection-card ${state === "ready" ? "is-connected" : ""}`}>
-        <div className="connection-provider">
-          <SourceAppMark className="connection-logo" adapter={adapter} />
-          <div className="connection-provider-name">
-            <h4>{name}</h4>
-            <p>{status}</p>
-          </div>
-        </div>
-        <div className="connection-description">
-          <p>{say}</p>
-          {error && discovery && (
-            <p className="err" role="alert">
-              {error}
-            </p>
-          )}
-        </div>
-        {actions.length > 0 && (
-          <div className="connection-card-footer local-actions">
-            {actions.map(([label, go], i) => (
-              <button key={label} className={`btn ${i === 0 ? "primary" : ""}`} disabled={busy || !rpc} onClick={go}>
-                {busy && i === 0 ? t("models.state.connecting") : label}
-              </button>
-            ))}
-          </div>
-        )}
-      </article>
-  );
 }

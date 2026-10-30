@@ -137,13 +137,9 @@
   },
   "local": {
     "note": "No API key needed; usage counts against that account.",
-    "found": "Use the models in your {{name}} account; usage counts against that account.",
-    "ready": "{{count}} models connected. You're ready.",
-    "needsLogin": "Your {{name}} sign-in expired. Sign in again in {{name}}, then reconnect.",
-    "signedOut": "{{name}} isn't signed in yet. Sign in there, then connect here.",
-    "missing": "{{name}} isn't on this Mac. Install it and sign in to connect.",
-    "trouble": "Can't reach {{name}} right now. Try again later, or use an API key.",
-    "connect": "Connect {{name}}"
+    "more": "Also works with {{names}}; they show up here once installed",
+    "supported": "Works with {{names}}; they show up here once installed",
+    "listSep": ", "
   },
   "live": {
     "failed": "Connection failed",

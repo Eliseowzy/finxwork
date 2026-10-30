@@ -4,7 +4,7 @@ import type { ProviderSummary } from "@finx/protocol";
 import { Dialog } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
-import { SourceAppMark, useLocalConnection, localAdapters, type LocalAdapter } from "./LocalApplicationConnection";
+import { LocalRow, localAdapters } from "./LocalApplicationConnection";
 import { Brand, KeyEntry, ProviderTiles, useTileName } from "./ProviderConnections";
 
 // Settings › Models: where finx's models come from, as two lists in the
@@ -39,47 +39,6 @@ export function ModelConnections() {
       </section>
       {adding && <AddProvider skip={keyed.map((p) => p.id)} onClose={() => setAdding(false)} />}
     </div>
-  );
-}
-
-/** A local application: its state, and connecting, reconnecting or disconnecting it. */
-function LocalRow({ adapter }: { adapter: LocalAdapter }) {
-  const { t } = useTranslation("settings");
-  const local = useLocalConnection(adapter);
-  const name = adapter === "qoder" ? "Qoder" : t("models.qwen");
-  const { discovery, connection, busy } = local;
-  const state = connection?.state;
-  const act = (a: Parameters<typeof local.act>[0]) => () => void local.act(a);
-  const open = local.open;
-  // The state in a few words, and the actions (the first is the way forward).
-  const [line, actions, tone]: [string, [string, () => void][], "" | "ok" | "warn"] = (() => {
-    if (state === "ready") return [t("models.state.ready", { count: local.active.length }), [[t("models.disconnect"), act("disconnect")]], "ok"];
-    if (state === "connecting") return [t("models.state.connecting"), [], ""];
-    if (state === "needs_login") return [t("models.state.needsLogin", { name }), [[t("models.open", { name }), open], [t("models.reconnect"), act("retry")]], "warn"];
-    if (state === "disabled") return [t("models.state.disabled"), [[t("models.reconnect"), act("retry")], [t("models.remove"), act("remove")]], ""];
-    if (state) return [t("models.state.trouble"), [[t("models.reconnect"), act("retry")]], "warn"];
-    if (!discovery) return [t(local.error ? "models.state.unknown" : "models.state.checking"), local.error ? [[t("models.recheck"), act("scan")]] : [], ""];
-    if (!discovery.installed) return [t("models.state.missing"), [[t("models.recheck"), act("scan")]], ""];
-    if (discovery.login === "missing") return [t("models.state.signedOut"), [[t("models.open", { name }), open], [t("models.recheck"), act("scan")]], "warn"];
-    return [t("models.state.found", { version: discovery.version ?? "" }).trim(), [[t("models.connect"), act("connect")]], ""];
-  })();
-  return (
-    <>
-      <div className="frow mrow">
-        <SourceAppMark className="mlogo mlogo-qwen" adapter={adapter} />
-        <div className="ft">
-          <div className="fn">{name}</div>
-          <div className={`fdesc ${tone}`}>{line}</div>
-        </div>
-        {actions.map(([label, run], i) => (
-          <button key={label} className={`btn ${i === 0 && !state ? "primary" : ""}`} disabled={busy || !local.rpc} onClick={run}>
-            {label}
-          </button>
-        ))}
-      </div>
-      {state === "ready" && local.pending.length > 0 && <details className="frow" style={{ display: "block" }}><summary>{t("models.otherModels", { count: local.pending.length })}</summary>{local.pending.map(model => <div key={model.id} className="fdesc">{model.name} · {t("models.unverified")}</div>)}</details>}
-      {local.error && discovery && <p className="mrow-err">{local.error}</p>}
-    </>
   );
 }
 
