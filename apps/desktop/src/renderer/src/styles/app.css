@@ -31,8 +31,10 @@ button{font:inherit;color:inherit}
 .btn.sm{height:22px;padding:0 10px;font-size:12px}
 .btn:disabled{opacity:.42;pointer-events:none}
 .btn .ic{width:14px;height:14px}
-/* Pointers, as macOS has them: the pointing hand for text links; controls keep the arrow. */
+/* Pointers, as macOS has them: the pointing hand for text links, the I-beam over what takes text; controls keep the arrow. */
 .link,a[href]{cursor:pointer}
+input:not([type=checkbox],[type=radio],[type=range],[type=color],[type=file],[type=button],[type=submit]),textarea,[contenteditable=true]{cursor:text}
+input:disabled,textarea:disabled{cursor:default}
 .link:disabled{cursor:default}
 .link{border:0;background:none;padding:0;color:var(--accent-t);font-size:inherit}
 .link:hover{text-decoration:underline}

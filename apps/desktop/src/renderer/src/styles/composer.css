@@ -2,14 +2,16 @@
    conversation's column. The conversation scrolls under it and fades out
    above it; the composer, the row of what the message goes with, and an
    approval when one waits sit there. (Not ".dock": that is the session
-   page's state with the info card shown, .dwrap.dock.) */
-.cmp-zone{position:absolute;left:0;right:0;bottom:0;z-index:4;pointer-events:none;padding:28px var(--sp-4) 12px;background:linear-gradient(to bottom,transparent,var(--win) 28px)}
-.cmp-col{pointer-events:auto;max-width:730px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+   page's state with the info card shown, .dwrap.dock.) The composer stands
+   12 px out past the column on each side: a filled box as wide as the text
+   above it reads narrower than the text. */
+.cmp-zone{position:absolute;left:0;right:0;bottom:0;z-index:4;pointer-events:none;padding:28px calc(var(--sp-4) - 12px) 12px;background:linear-gradient(to bottom,transparent,var(--win) 28px)}
+.cmp-col{pointer-events:auto;max-width:754px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
 
 /* An approval (session/Approval.tsx), above the composer and in its shape:
    a line on what and why, the command or change itself, the answers as
    buttons on one row. */
-.appr{background:var(--pill);border-radius:22px;box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:10px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
+.appr{background:var(--pill);border-radius:12px;box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:10px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
 .appr-h{display:flex;align-items:center;gap:8px;min-width:0;font-size:13.5px;line-height:20px}
 .appr-h b{font-weight:600;flex:none;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .appr-h .why{flex:1;min-width:0;color:var(--l2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -27,16 +29,19 @@
 
 /* A key notice (session/Notice.tsx), above the composer in an approval's shape: a warning sign and
    what holds now, a few lines on why it matters, the answers on one row. */
-.knote{background:var(--pill);border-radius:22px;box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:6px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
+.knote{background:var(--pill);border-radius:12px;box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:6px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
 .knote-h{display:flex;align-items:center;gap:8px;min-width:0;font-size:13.5px;line-height:20px}
 .knote-h b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .knote-i{width:16px;height:16px;flex:none;color:var(--orange)}
 .knote-b{margin:0 0 4px 24px;font-size:12.5px;line-height:19px;color:var(--l2)}
 
 /* The composer: one line while empty ("+", the text, Send), growing with
-   what is written; what is attached shows as tiles above the text. */
-.cmp{background:var(--pill);border-radius:22px;box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
+   what is written; what is attached shows as tiles above the text. Its
+   corners a little tighter than the window's; its buttons' corners follow
+   them, 6 px in. The I-beam over all of it but its buttons and tiles. */
+.cmp{cursor:text;background:var(--pill);border-radius:12px;box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
 .cmp-row{display:flex;align-items:flex-end;gap:4px}
+.cmp button,.cmp .tile{cursor:default}
 /* The text (composer/PromptEditor.tsx, Lexical): plain text that grows to
    ten lines, the placeholder laid over it while it is empty. */
 .cmp-ed{position:relative;flex:1;min-width:0}
@@ -53,10 +58,10 @@
 .cmd-menu{width:360px;max-height:300px}
 .cmd-menu .mi .two{flex:1}
 .cmd-menu .mi .two span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cmp-plus{width:32px;height:32px;border-radius:50%;border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
+.cmp-plus{width:32px;height:32px;border-radius:7px;border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
 .cmp-plus:hover,.cmp-plus[aria-expanded="true"]{background:var(--fill2);color:var(--l1)}
 .cmp-plus .ic{width:18px;height:18px;stroke-width:1.5}
-.send{width:32px;height:32px;border-radius:50%;border:0;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 2px rgba(40,60,200,.3);transition:background .15s}
+.send{width:32px;height:32px;border-radius:7px;border:0;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 2px rgba(40,60,200,.3);transition:background .15s}
 .send:disabled{background:var(--fill3);color:var(--win);box-shadow:none}
 /* A task runs and nothing is typed: Stop, in red, where Send was. */
 .send.stop{background:var(--red);color:#fff;box-shadow:0 1px 2px rgba(200,40,60,.3)}
@@ -85,7 +90,7 @@
 @keyframes zoomin{from{transform:scale(.96);opacity:.6}to{transform:none;opacity:1}}
 
 /* Under the composer, outside it: what the message goes with, as quiet buttons. */
-.cmp-meta{display:flex;align-items:center;gap:2px;padding:0 8px;margin-top:-4px;min-width:0}
+.cmp-meta{display:flex;align-items:center;gap:2px;padding:0 12px;margin-top:-4px;min-width:0}
 .cmp-meta .sp{flex:1}
 .mb{height:26px;border:0;border-radius:7px;background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
 .mb:hover,.mb[aria-expanded="true"]{background:var(--fill);color:var(--l1)}

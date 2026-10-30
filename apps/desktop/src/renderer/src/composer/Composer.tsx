@@ -86,7 +86,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
     <div className={`cmp-zone ${form.mode}`}>
       <div className="cmp-col" ref={col}>
         {form.mode === "session" && form.above}
-        <div className="cmp" onMouseDown={(e) => e.target === e.currentTarget && (e.preventDefault(), area.current?.focus())}>
+        <div className="cmp" onMouseDown={(e) => e.target instanceof HTMLElement && e.target.matches(".cmp,.cmp-row,.cmp-att") && (e.preventDefault(), area.current?.focus())}>
           {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} />}
           <div className="cmp-row">
             <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} />
