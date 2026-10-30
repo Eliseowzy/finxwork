@@ -24,8 +24,8 @@ export type Settings = {
   onThinking: (l: ThinkingLevel) => void;
 };
 
-/** Where a new session works: its project, from the recent ones or picked. */
-export type Place = { cwd: string | null; recent: string[]; names: Map<string, string>; onCwd: (cwd: string) => void; onPick: () => void };
+/** Where a new session works: its project, from the recent ones or picked, or none (null). */
+export type Place = { cwd: string | null; recent: string[]; names: Map<string, string>; onCwd: (cwd: string | null) => void; onPick: () => void };
 
 /**
  * The two forms of the composer, one component. On a session's page it
@@ -438,20 +438,21 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
   );
 }
 
-/** Where a new session works: the last projects, or a folder picked from the system's dialog. */
+/** Where a new session works: the last projects, a folder picked from the system's dialog, or no project. */
 function ProjectPicker({ place: { cwd: value, names, recent, onCwd: onChange, onPick } }: { place: Place }) {
   const { t } = useTranslation("session");
   const home = window.finx?.home ?? "";
   // A folder just picked is on the list too, first, until a session in it makes it a recent one.
   const list = value && !recent.includes(value) ? [value, ...recent] : recent;
   return (
-    <MenuButton className="mb" title={t("new.project")} label={<><Icon name="folder" /><span className="lbl">{value ? (names.get(value) ?? value) : t("new.project")}</span></>}>
+    <MenuButton className="mb" title={t("new.project")} label={<><Icon name="folder" /><span className="lbl">{value ? (names.get(value) ?? value) : t("new.noProject")}</span></>}>
       {(close) => (
         <>
           {list.map((p) => (
             <MenuItem key={p} checked={p === value} label={names.get(p) ?? p} desc={homePath(p, home)} onClick={() => (close(), onChange(p))} />
           ))}
           {list.length > 0 && <div className="msep" role="separator" />}
+          <MenuItem checked={value === null} label={t("new.noProject")} desc={t("new.noProjectDesc")} onClick={() => (close(), onChange(null))} />
           <MenuItem icon="folderPlus" label={t("new.chooseFolder")} onClick={() => (close(), onPick())} />
         </>
       )}

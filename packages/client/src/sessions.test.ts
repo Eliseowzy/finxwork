@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { listView, mergeSessions, projectNames, recentProjects, searchFilter, searchSessions, sections, type ListSession } from "./sessions.ts";
+import { displayTitle, listView, mergeSessions, projectNames, projectsOf, recentProjects, searchFilter, searchSessions, sections, type ListSession } from "./sessions.ts";
 
 const now = new Date(2026, 9, 28, 15, 0);
 const at = (daysAgo: number, hour = 12) => new Date(2026, 9, 28 - daysAgo, hour).toISOString();
@@ -19,6 +19,10 @@ const list: ListSession[] = [
   session("gone", { archived: true, updated_at: at(0, 11) }),
 ];
 const ids = (l: ListSession[]) => l.map((s) => s.session_id);
+
+test("a view not chosen yet: by status, newest first, titles only", () => {
+  assert.deepEqual(listView(), { group: "status", newestFirst: true, metadata: false });
+});
 
 test("by status: what needs the owner, then what runs, then the rest; archived ones only when shown", () => {
   const s = sections(list, listView(), { archived: false, now });
@@ -70,3 +74,15 @@ test("changes replace a session or add it; deleted ones leave", () => {
 test("recent projects: the most recently used first, each once", () => {
   assert.deepEqual(recentProjects(list), ["/w/app", "/w/web"]);
 });
+
+test("sessions without a project: a group of their own after the projects, and never a recent project", () => {
+  const chat = session("chat", { cwd: "/h/.finx/chats/0193", no_project: true, updated_at: at(0, 14) });
+  const all = [...list, chat];
+  const s = sections(all, listView({ group: "project" }), { archived: false, now });
+  assert.deepEqual(s.map((x) => x.key), ["/w/app", "/w/web", ""]);
+  assert.deepEqual(ids(s[2].sessions), ["chat"]);
+  assert.deepEqual(recentProjects(all), ["/w/app", "/w/web"]);
+  assert.deepEqual(projectsOf(all), ["/w/app", "/w/web"]);
+  assert.equal(displayTitle(chat), "", "not the folder's made-up name");
+});
+

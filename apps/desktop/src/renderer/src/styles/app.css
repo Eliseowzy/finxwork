@@ -157,7 +157,12 @@ input:disabled,textarea:disabled{cursor:default}
 @media (prefers-reduced-motion:reduce){.stitle.run{color:inherit}.stitle .shine{display:none}}
 .smeta{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
 .sl2{display:flex;align-items:baseline;gap:8px;font-size:11px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:2px}
-.sl2t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl2t{flex:1;min-width:0;display:flex;align-items:center;gap:9px;overflow:hidden}
+/* The project, then the branch, each after its icon; the branch gives way first. */
+.sl2i{display:inline-flex;align-items:center;gap:3px;min-width:0;flex:0 1 auto}
+.sl2i+.sl2i{flex-shrink:1000}
+.sl2i>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sl2i .ic{width:11px;height:11px;stroke-width:1.35}
 .stime{flex:none;font-size:11px;font-variant-numeric:tabular-nums}
 .loadrow{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;color:var(--l2);font-size:12px}
 .endrow{text-align:center;color:var(--l3);font-size:11.5px;padding:14px 0 6px}

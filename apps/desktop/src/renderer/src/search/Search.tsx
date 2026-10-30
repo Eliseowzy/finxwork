@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { displayTitle, projectNames, rowModel, searchFilter, searchSessions, stateOf, updatedAt, type SearchFilter } from "@finx/client";
+import { displayTitle, projectNames, projectsOf, rowModel, searchFilter, searchSessions, stateOf, updatedAt, type SearchFilter } from "@finx/client";
 import { i18n } from "../../../shared/i18n";
 import { StatusDot } from "../components";
 import { modelTitle, shortTime } from "../format";
@@ -24,7 +24,7 @@ export function SearchPalette() {
   const [index, setIndex] = useState(0);
   const list = useRef<HTMLDivElement>(null);
 
-  const names = projectNames(st.sessions.map((s) => s.cwd));
+  const names = projectNames(projectsOf(st.sessions));
   const found = searchSessions(st.sessions, query, filter);
   const sessions = found.slice(0, 8);
   const q = query.trim().toLowerCase();
@@ -122,9 +122,9 @@ export function SearchPalette() {
           {sessions.map((s, i) => (
             <Row key={s.session_id} on={i === index} onPick={() => open(i)} onHover={() => setIndex(i)}>
               <StatusDot state={stateOf(s)} />
-              <span className="t">{displayTitle(s)}</span>
+              <span className="t">{displayTitle(s) || t("sidebar.untitled")}</span>
               <span className="muted">
-                {[names.get(s.cwd), rowModel(s), s.archived ? t("search.archived") : shortTime(new Date(updatedAt(s)), now)].filter(Boolean).join(" · ")}
+                {[s.no_project ? t("sidebar.noProject") : names.get(s.cwd), rowModel(s), s.archived ? t("search.archived") : shortTime(new Date(updatedAt(s)), now)].filter(Boolean).join(" · ")}
               </span>
             </Row>
           ))}

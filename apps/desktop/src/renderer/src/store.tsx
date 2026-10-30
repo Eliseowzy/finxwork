@@ -24,7 +24,8 @@ export type Toast = { text: string; undo?: () => void; bad?: boolean; id: number
  * `thinking` is the level chosen on the page, `null` until one is: then the model's own;
  * `levels` the level last chosen on the page for each model (model-catalog-design §18).
  */
-export type Draft = { cwd: string | null; model: string | null; thinking: ThinkingLevel | null; levels?: Record<string, ThinkingLevel>; permission: PermissionMode };
+/** A new session's settings; `noProject` starts it without a project, else `cwd` (unset: the latest project). */
+export type Draft = { cwd: string | null; noProject?: boolean; model: string | null; thinking: ThinkingLevel | null; levels?: Record<string, ThinkingLevel>; permission: PermissionMode };
 
 type UI = {
   selection: Selection;
@@ -252,11 +253,10 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const start = useCallback(
     (text: string, d: Draft, attachments: Attachment[]) =>
       run(async () => {
-        if (!d.cwd) throw new Error(i18n.t("session:new.pickFirst"));
         const roots = attachments.flatMap((a) => (a.kind === "folder" ? [a.path] : []));
         const ref = d.model ?? models.defaults?.model;
         const thinking = draftThinking(models.models.find((m) => m.id === ref), d.thinking);
-        const r = await call("session/new", { cwd: d.cwd, extra_roots: roots.length ? roots : undefined, model: d.model ?? undefined, thinking, permission_mode: d.permission });
+        const r = await call("session/new", { cwd: d.noProject ? undefined : (d.cwd ?? undefined), extra_roots: roots.length ? roots : undefined, model: d.model ?? undefined, thinking, permission_mode: d.permission });
         setUI((u) => ({ ...u, draft: d, selection: { kind: "session", id: r.session_id } }));
         await call("session/op", { session_id: r.session_id, op: { type: "prompt", input: toInput(text, attachments.filter((a) => a.kind !== "folder")) } });
       }),

@@ -44,9 +44,10 @@ export function Inspector({ s, view }: { s: ListSession; view: SessionView }) {
               label={
                 <>
                   <Icon name="folder" />
+                  {/* Without a project, the folder made for the session. */}
                   <span className="insp-where">
-                    <span className="insp-t">{baseName(cwd)}</span>
-                    <span className="insp-sub"> · {homePath(parentDir(cwd), window.finx?.home ?? "")}</span>
+                    <span className="insp-t">{s.no_project ? t("inspector.noProject") : baseName(cwd)}</span>
+                    <span className="insp-sub"> · {s.no_project ? t("inspector.ownFolder") : homePath(parentDir(cwd), window.finx?.home ?? "")}</span>
                   </span>
                 </>
               }

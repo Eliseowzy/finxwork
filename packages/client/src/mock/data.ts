@@ -30,6 +30,8 @@ export interface DemoSession {
   model: string;
   thinking: ThinkingLevel;
   permission_mode: PermissionMode;
+  /** Started without a project: `cwd` is the folder made for it. */
+  no_project?: boolean;
   /** A title of its own (P3); without one the list shows the first message. */
   title?: string;
   archived?: boolean;
@@ -219,6 +221,17 @@ export function demoSessions(): DemoSession[] {
       title: "整理 README 的安装说明",
       ago: 1 * day + 3 * hour,
       history: [{ prompt: "README 里的安装说明太散了，整理成一节，按平台分开。", script: readme }],
+    },
+    {
+      id: "0193dc31-4b6a-7d20-9c8e-7a6b5c4d3e2f",
+      cwd: "~/.finx/chats/0193dc31-4b6a-7d20-9c8e-7a6b5c4d3e2f",
+      no_project: true,
+      model: "deepseek/deepseek-pro",
+      thinking: "high",
+      permission_mode: "manual",
+      title: "解释一下推理模式",
+      ago: 2 * day + 4 * hour,
+      history: [{ prompt: "推理模式和普通模式有什么区别？什么时候该开？", script: reasoning }],
     },
     {
       id: "0193d9e7-3a5b-7c92-b4d1-8f7e6d5c4b3a",

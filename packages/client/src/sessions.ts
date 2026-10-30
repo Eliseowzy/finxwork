@@ -29,9 +29,19 @@ export function inTask(s: ListSession): boolean {
   return st === "running" || st === "awaiting_approval";
 }
 
-/** The title, else the start of its first message, else its project. */
+/** The title, else the start of its first message, else its project (empty without one). */
 export function displayTitle(s: ListSession): string {
-  return s.title?.trim() || s.preview?.trim().split("\n")[0] || baseName(s.cwd);
+  return s.title?.trim() || s.preview?.trim().split("\n")[0] || (s.no_project ? "" : baseName(s.cwd));
+}
+
+/** The project a session works in, or null when it was started without one. */
+export function projectOf(s: ListSession): string | null {
+  return s.no_project ? null : s.cwd;
+}
+
+/** The projects of these sessions, each once. */
+export function projectsOf(list: ListSession[]): string[] {
+  return [...new Set(list.flatMap((s) => (s.no_project ? [] : [s.cwd])))];
 }
 
 export function updatedAt(s: ListSession): number {
@@ -68,7 +78,7 @@ export function projectNames(cwds: Iterable<string>): Map<string, string> {
 export const groupings = ["status", "date", "project"] as const;
 export type Grouping = (typeof groupings)[number];
 
-/** How the list is laid out: grouping, which way it sorts by last activity, and whether rows show their metadata line. */
+/** How the list is laid out: grouping, which way it sorts by last activity, and whether rows show their metadata line (off until chosen: titles only). */
 export interface ListView {
   group: Grouping;
   newestFirst: boolean;
@@ -77,10 +87,10 @@ export interface ListView {
 
 export function listView(v: Partial<ListView> = {}): ListView {
   const group = groupings.includes(v.group as Grouping) ? (v.group as Grouping) : "status";
-  return { newestFirst: true, metadata: true, ...v, group };
+  return { newestFirst: true, metadata: false, ...v, group };
 }
 
-/** A section's key: a state or a day (the page titles them), a project directory, or "archived". */
+/** A section's key: a state or a day (the page titles them), a project directory ("" for no project), or "archived". */
 export type Bucket = "attention" | "active" | "done" | "today" | "yesterday" | "week" | "earlier" | "archived";
 
 const statusOrder: Bucket[] = ["attention", "active", "done"];
@@ -110,7 +120,7 @@ export function sectionCounted(sec: Section): boolean {
 /**
  * The list as the view lays it out, each section sorted by last activity.
  * States keep their order (needs you, running, done); days follow the sort;
- * projects go by name. Archived sessions, when shown, are a section of their
+ * projects go by name, those without one last. Archived sessions, when shown, are a section of their
  * own at the end.
  */
 export function sections(list: ListSession[], view: ListView, o: { archived: boolean; now: Date }): Section[] {
@@ -121,16 +131,17 @@ export function sections(list: ListSession[], view: ListView, o: { archived: boo
       if (o.archived) archived.push(s);
       continue;
     }
-    const k = view.group === "status" ? statusBucket(s) : view.group === "date" ? dayBucket(s, o.now) : s.cwd;
+    const k = view.group === "status" ? statusBucket(s) : view.group === "date" ? dayBucket(s, o.now) : (projectOf(s) ?? "");
     const l = by.get(k);
     if (l) l.push(s);
     else by.set(k, [s]);
   }
   const names = projectNames(by.keys());
+  // Sessions without a project come after the projects.
   const order =
     view.group === "status" ? statusOrder
     : view.group === "date" ? (view.newestFirst ? dayOrder : [...dayOrder].reverse())
-    : [...by.keys()].sort((a, b) => (names.get(a) ?? a).localeCompare(names.get(b) ?? b) || a.localeCompare(b));
+    : [...by.keys()].sort((a, b) => +(a === "") - +(b === "") || (names.get(a) ?? a).localeCompare(names.get(b) ?? b) || a.localeCompare(b));
   const sorted = (l: ListSession[]) => l.sort((a, b) => (view.newestFirst ? 1 : -1) * (updatedAt(b) - updatedAt(a)));
   const out: Section[] = order.filter((k) => by.has(k)).map((k) => ({ grouping: view.group, key: k, sessions: sorted(by.get(k)!) }));
   if (archived.length) out.push({ grouping: "archived", key: "archived", sessions: sorted(archived) });
@@ -156,7 +167,7 @@ export function searchSessions(list: ListSession[], query: string, f: SearchFilt
     .filter(
       (s) =>
         (f.archived || !s.archived) &&
-        (f.project === "" || s.cwd === f.project) &&
+        (f.project === "" || projectOf(s) === f.project) &&
         (f.model === "" || s.model === f.model) &&
         (q === "" || [displayTitle(s), s.preview ?? "", s.cwd, s.model ?? ""].join(" ").toLowerCase().includes(q)),
     )
@@ -182,6 +193,6 @@ export function mergeSessions(list: ListSession[], changed: ListSession[], delet
 /** The projects sessions were run in, the most recently used first. */
 export function recentProjects(list: ListSession[], limit = 6): string[] {
   const latest = new Map<string, number>();
-  for (const s of list) latest.set(s.cwd, Math.max(latest.get(s.cwd) ?? 0, updatedAt(s)));
+  for (const s of list) if (!s.no_project) latest.set(s.cwd, Math.max(latest.get(s.cwd) ?? 0, updatedAt(s)));
   return [...latest].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([cwd]) => cwd);
 }

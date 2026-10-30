@@ -100,7 +100,7 @@ export function run(st: Store, c: Command) {
 /** A new session in a folder picked from the system's dialog. */
 async function openProject(st: Store) {
   const dir = await window.finx?.pickDirectory();
-  if (dir) st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: dir } });
+  if (dir) st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: dir, noProject: false } });
 }
 
 /** The session after the selected one (from the top) that matches, in the sidebar's order. */

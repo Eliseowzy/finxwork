@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import {
-  clockText, displayTitle, elapsedSeconds, inTask, needsAttention, projectNames, rowModel, sectionCounted, sections, stateOf, updatedAt,
+  clockText, displayTitle, elapsedSeconds, inTask, needsAttention, projectNames, projectsOf, sectionCounted, sections, stateOf, updatedAt,
   type ListSession, type ListView, type Section,
 } from "@finx/client";
 import { archive, confirmDelete, isArchivable, rename, sessionMenu, unarchive } from "../actions";
@@ -24,12 +24,16 @@ export function Sidebar() {
   const { t } = useTranslation("common");
   const now = useNow(30_000);
   const secs = listSections(st, now);
-  const names = useMemo(() => projectNames(st.sessions.map((s) => s.cwd)), [st.sessions]);
+  const projects = useMemo(() => projectsOf(st.sessions), [st.sessions]);
+  const names = useMemo(() => projectNames(projects), [projects]);
+  // Read again when a session's last activity moves (a task may have switched branches).
+  const branches = useBranches(projects, st.sessions.reduce((n, s) => Math.max(n, updatedAt(s)), 0));
   const total = secs.reduce((n, x) => n + x.sessions.length, 0);
   // The rows get the store as of a click, so a change elsewhere doesn't render them again.
   const latest = useRef(st);
   latest.current = st;
-  const title = (sec: Section) => (sec.grouping === "project" ? (names.get(sec.key) ?? sec.key) : bucketTitle(sec.key as Parameters<typeof bucketTitle>[0]));
+  const title = (sec: Section) =>
+    sec.grouping === "project" ? (sec.key === "" ? t("sidebar.noProject") : (names.get(sec.key) ?? sec.key)) : bucketTitle(sec.key as Parameters<typeof bucketTitle>[0]);
   return (
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
@@ -60,20 +64,20 @@ export function Sidebar() {
                 <button
                   className={`grp-h ${open ? "" : "shut"}`}
                   aria-expanded={open}
-                  title={sec.grouping === "project" ? sec.key : undefined}
+                  title={sec.grouping === "project" && sec.key ? sec.key : undefined}
                   onClick={() => st.set({ collapsed: open ? [...st.collapsed, id] : st.collapsed.filter((c) => c !== id) })}
                 >
                   <span className="gt">{title(sec)}</span>
                   {sectionCounted(sec) && <span className="n">{sec.sessions.length}</span>}
                   <Icon name="caret" className="sm" />
                 </button>
-                {/* A project's heading starts a new session in that project. */}
+                {/* A project's heading starts a new session in that project; that of the sessions without one, another without one. */}
                 {sec.grouping === "project" && (
                   <button
                     className="tb grpact"
-                    title={t("sidebar.newSessionIn", { project: title(sec) })}
-                    aria-label={t("sidebar.newSessionIn", { project: title(sec) })}
-                    onClick={() => st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: sec.key } })}
+                    title={sec.key ? t("sidebar.newSessionIn", { project: title(sec) }) : t("sidebar.newSessionNoProject")}
+                    aria-label={sec.key ? t("sidebar.newSessionIn", { project: title(sec) }) : t("sidebar.newSessionNoProject")}
+                    onClick={() => st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: sec.key || null, noProject: !sec.key } })}
                   >
                     <Icon name="plus" />
                   </button>
@@ -85,7 +89,8 @@ export function Sidebar() {
                     key={s.session_id}
                     s={s}
                     sel={st.selection.kind === "session" && st.selection.id === s.session_id}
-                    project={names.get(s.cwd) ?? s.cwd}
+                    project={s.no_project ? null : (names.get(s.cwd) ?? s.cwd)}
+                    branch={s.no_project ? undefined : branches.get(s.cwd)}
                     meta={st.view.metadata}
                     grouping={st.view.group}
                     renaming={st.renaming === s.session_id}
@@ -129,16 +134,16 @@ export function Sidebar() {
   );
 }
 
-const SessionRow = memo(function SessionRow({ s, sel, project, meta, grouping, renaming, store }: {
-  s: ListSession; sel: boolean; project: string; meta: boolean; grouping: ListView["group"]; renaming: boolean; store: RefObject<Store>;
+const SessionRow = memo(function SessionRow({ s, sel, project, branch, meta, grouping, renaming, store }: {
+  s: ListSession; sel: boolean; project: string | null; branch: string | null | undefined; meta: boolean; grouping: ListView["group"]; renaming: boolean; store: RefObject<Store>;
 }) {
   const { t } = useTranslation("common");
   // Where the ⋯ menu opens (under its button), while it is open.
   const [menu, setMenu] = useState<{ x: number; y: number; key: boolean } | null>(null);
   const running = inTask(s);
-  const title = displayTitle(s);
-  // Grouped by project, the project is the heading: the row's line says the model only.
-  const line = [grouping === "project" ? "" : project, rowModel(s)].filter(Boolean).join(" · ");
+  const title = displayTitle(s) || t("sidebar.untitled");
+  // Grouped by project, the project is the heading: the row's line says the branch only.
+  const where = grouping === "project" ? null : (project ?? t("sidebar.noProject"));
   return (
     <div
       className={`srow has-act ${sel ? "sel" : ""} ${menu ? "menu-open" : ""} ${s.archived ? "arch" : ""}`}
@@ -198,7 +203,20 @@ const SessionRow = memo(function SessionRow({ s, sel, project, meta, grouping, r
         </div>
         {meta && (
           <div className="sl2">
-            <span className="sl2t">{line}</span>
+            <span className="sl2t">
+              {where && (
+                <span className="sl2i" title={project ? s.cwd : undefined}>
+                  <Icon name="folder" />
+                  <span>{where}</span>
+                </span>
+              )}
+              {branch && (
+                <span className="sl2i" title={branch}>
+                  <Icon name="branch" />
+                  <span>{branch}</span>
+                </span>
+              )}
+            </span>
             <RowTime s={s} />
           </div>
         )}
@@ -443,4 +461,31 @@ function ListViewMenu() {
       )}
     </>
   );
+}
+
+/**
+ * The git branch checked out in each project, read again whenever `tick` changes or the window
+ * gains focus; null outside a repository, absent until read.
+ */
+function useBranches(cwds: string[], tick: number): Map<string, string | null> {
+  const [branches, setBranches] = useState(() => new Map<string, string | null>());
+  const key = cwds.join("\n");
+  useEffect(() => {
+    if (!window.finx) return;
+    let current = true;
+    const read = () =>
+      void Promise.all(cwds.map(async (c) => [c, await window.finx!.gitBranch(c)] as const)).then((found) => {
+        if (!current) return;
+        // The same branches keep the same map, so the rows stay as they are.
+        setBranches((was) => (found.length === was.size && found.every(([c, b]) => was.get(c) === b) ? was : new Map(found)));
+      });
+    read();
+    window.addEventListener("focus", read);
+    return () => {
+      current = false;
+      window.removeEventListener("focus", read);
+    };
+    // `cwds` is described by `key`.
+  }, [key, tick]);
+  return branches;
 }

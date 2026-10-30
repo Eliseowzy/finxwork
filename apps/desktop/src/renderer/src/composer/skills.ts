@@ -7,11 +7,12 @@ const known = new Map<string, CommandInfo[]>();
 
 /**
  * What typing `/` offers in the composer: the commands of a session (asked once), or those a
- * new session started in `cwd` would have (asked again when the folder changes).
+ * new session started in `cwd` would have (asked again when the folder changes), or one
+ * without a project (`{}`).
  */
-export function useCommands(source: { session_id: string } | { cwd: string } | null): CommandInfo[] {
+export function useCommands(source: { session_id: string } | { cwd: string } | Record<string, never> | null): CommandInfo[] {
   const st = useStore();
-  const key = source === null ? "" : "session_id" in source ? `session:${source.session_id}` : `cwd:${source.cwd}`;
+  const key = source === null ? "" : "session_id" in source ? `session:${source.session_id}` : "cwd" in source ? `cwd:${source.cwd}` : "none";
   const [commands, setCommands] = useState<CommandInfo[]>(() => known.get(key) ?? []);
   useEffect(() => {
     if (source === null || st.kernel !== "ready") return;

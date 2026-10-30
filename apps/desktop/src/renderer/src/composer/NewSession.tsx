@@ -16,7 +16,7 @@ const greetings = ["new.greeting1", "new.greeting2", "new.greeting3", "new.greet
 /**
  * A new session: finx's mark and a line in the middle, and the composer in
  * its new-session form at the bottom (it also asks where the session runs
- * and in which project). Sending starts the session and its first task at
+ * and in which project, if any). Sending starts the session and its first task at
  * once; folders attached become more workspace roots of it.
  */
 export function NewSession() {
@@ -26,10 +26,11 @@ export function NewSession() {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [greeting] = useState(() => greetings[Math.floor(Math.random() * greetings.length)]);
   const recent = recentProjects(st.sessions.filter((s) => !s.archived));
-  const cwd = st.draft.cwd ?? recent[0] ?? null;
-  const draft = { ...st.draft, cwd };
+  // A project chosen, else the latest one, else none.
+  const cwd = st.draft.noProject ? null : (st.draft.cwd ?? recent[0] ?? null);
+  const draft = { ...st.draft, cwd, noProject: cwd === null };
   const keyless = needsKey(st);
-  const commands = useCommands(cwd ? { cwd } : null);
+  const commands = useCommands(cwd ? { cwd } : {});
   const set = (patch: Partial<typeof draft>) => st.set({ draft: { ...draft, ...patch } });
   // The level on the page: chosen here when the model offers it, else the model's own.
   const model = draft.model ?? st.models.defaults?.model ?? "";
@@ -37,7 +38,7 @@ export function NewSession() {
   const pick = async () => {
     // A page outside the app has no dialog: the path, typed.
     const dir = window.finx ? await window.finx.pickDirectory() : window.prompt(t("new.pathPrompt"));
-    if (dir) set({ cwd: dir });
+    if (dir) set({ cwd: dir, noProject: false });
   };
   return (
     <>
@@ -62,14 +63,14 @@ export function NewSession() {
           </div>
         )}
         <Composer
-          form={{ mode: "new", place: { cwd, recent, names: projectNames([...recent, ...(cwd ? [cwd] : [])]), onCwd: (p) => set({ cwd: p }), onPick: pick } }}
+          form={{ mode: "new", place: { cwd, recent, names: projectNames([...recent, ...(cwd ? [cwd] : [])]), onCwd: (p) => set({ cwd: p, noProject: p === null }), onPick: pick } }}
           value={text}
           onChange={setText}
           attachments={attachments}
           onAttachments={setAttachments}
-          canSend={cwd !== null && st.kernel === "ready" && !keyless}
+          canSend={st.kernel === "ready" && !keyless}
           commands={commands}
-          placeholder={keyless ? t("new.connectFirst") : cwd ? t("new.placeholder") : t("new.pickFirst")}
+          placeholder={keyless ? t("new.connectFirst") : t("new.placeholder")}
           onSend={async () => {
             const sent = { text, attachments };
             setText("");

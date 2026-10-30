@@ -138,7 +138,7 @@ export class MockServer {
     return this.clock ?? Date.now();
   }
 
-  private create(id: string, cwd: string, model: string, thinking: ThinkingLevel, permission_mode: PermissionMode, at: number): Session {
+  private create(id: string, cwd: string, model: string, thinking: ThinkingLevel, permission_mode: PermissionMode, at: number, no_project = false): Session {
     const info: SessionInfo = {
       session_id: id,
       cwd,
@@ -151,7 +151,7 @@ export class MockServer {
     };
     const view = fromSnapshot({ session: info, last_seq: 0, transcript: { items: [] }, usage: { per_model: {} } });
     const summary: SessionSummary = {
-      session_id: id, cwd, created_at: iso(at), updated_at: iso(at), loaded: true, busy: false, attached_clients: 0, state: "idle", model, archived: false,
+      session_id: id, cwd, no_project, created_at: iso(at), updated_at: iso(at), loaded: true, busy: false, attached_clients: 0, state: "idle", model, archived: false,
     };
     const s: Session = { id, view, summary, seq: 0, queued: [], tasks: 0, children: [], mails: [] };
     this.sessions.set(id, s);
@@ -179,7 +179,7 @@ export class MockServer {
 
   private addDemo(d: DemoSession) {
     const start = Date.now() - d.ago;
-    const s = this.create(d.id, d.cwd, d.model, d.thinking, d.permission_mode, start);
+    const s = this.create(d.id, d.cwd, d.model, d.thinking, d.permission_mode, start, d.no_project);
     this.clock = start;
     for (const t of d.history) this.playNow(s, t, t.script.turns.length);
     if (d.live) {
@@ -641,11 +641,13 @@ export class MockServer {
       }
       case "session/new": {
         const q = p as P<"session/new">;
-        if (!q.cwd) throw new Failure(-32602, "invalid_params", "cwd is required");
         const model = q.model ?? demoModels().defaults!.model;
-        const s = this.create(crypto.randomUUID(), q.cwd, model, q.thinking ?? "medium", q.permission_mode ?? "manual", Date.now());
+        // Without a project, a folder of its own, as finx makes one.
+        const id = crypto.randomUUID();
+        const cwd = q.cwd ?? `~/.finx/chats/${id}`;
+        const s = this.create(id, cwd, model, q.thinking ?? "medium", q.permission_mode ?? "manual", Date.now(), !q.cwd);
         c.attached.add(s.id);
-        this.emit(s, { type: "session_started", session_id: s.id, protocol_version: 2, model, cwd: q.cwd, resumed: false, session_file: s.view.info.session_file, thinking: s.view.info.thinking, permission_mode: s.view.info.permission_mode, context_window: s.view.info.context_window, usage: { per_model: {} } });
+        this.emit(s, { type: "session_started", session_id: s.id, protocol_version: 2, model, cwd, resumed: false, session_file: s.view.info.session_file, thinking: s.view.info.thinking, permission_mode: s.view.info.permission_mode, context_window: s.view.info.context_window, usage: { per_model: {} } });
         this.listChanged(s);
         return { session_id: s.id, snapshot: snapshotOf(s.view, q.history_limit ?? undefined) };
       }
