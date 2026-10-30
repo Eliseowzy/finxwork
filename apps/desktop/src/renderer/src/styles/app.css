@@ -312,19 +312,33 @@ button{font:inherit;color:inherit}
 .tnote{align-self:center;font-size:12px;color:var(--l2);background:var(--fill);padding:5px 12px;border-radius:999px;text-align:center;max-width:100%}
 .tnote.warn{color:var(--orange);background:var(--orange-bg)}
 .add-anim{animation:fadein .4s cubic-bezier(.2,0,0,1)}
-/* A failure, in the voice of the steps: a red line, a grey line, Details and Retry. */
-.qfail{display:flex;flex-direction:column;gap:4px;margin-top:6px}
-.qf-line{display:flex;align-items:center;gap:7px;color:var(--red);font-size:13px;border:0;background:none;padding:0;text-align:left}
-.qf-line b{font-weight:600}
-.qfail.past .qf-line{font-size:12.5px;color:var(--red)}
-.qf-line .chev,.qf-act .chev{transition:transform .15s;width:12px;height:12px}
-.qf-line .chev.open,.qf-act .chev.open{transform:rotate(90deg)}
-.qf-hint{font-size:12.5px;color:var(--l2);padding-left:20px}
-.qf-act{display:flex;gap:14px;padding-left:20px;margin-top:2px}
-.qf-act .link{display:inline-flex;align-items:center;gap:3px;font-size:12px;color:var(--l2)}
-.qf-act .link:hover{color:var(--l1)}
-.qf-act .link.go{color:var(--accent-t)}
-.qf-raw{margin:4px 0 0 20px;font-family:var(--mono);font-size:11.5px;color:var(--l2);background:var(--code);border-radius:8px;padding:8px 10px;box-shadow:inset 0 0 0 .5px var(--sep);white-space:pre-wrap;overflow-wrap:anywhere}
+/* A failure as one row: the provider's mark with a badge in the tone of what it asks (set
+   something up, wait it out, change the request), what happened, one way out, the rest in a
+   menu. While finx retries by itself the row drains a line along its bottom. */
+.fail-wrap{display:flex;flex-direction:column;gap:6px;margin-top:6px;max-width:560px}
+.f-setup{--tc:var(--accent-t)}.f-wait{--tc:var(--orange)}.f-fail{--tc:var(--red)}
+.fcard{position:relative;display:flex;align-items:center;gap:12px;padding:11px 10px 11px 12px;border:1px solid var(--sep);border-radius:14px;animation:fadein .3s cubic-bezier(.2,0,0,1)}
+.fc-av{position:relative;flex:none;width:36px;height:36px;border-radius:10px;background:var(--fill);display:grid;place-items:center;color:var(--l2)}
+.fc-av .provider-brand{width:22px;height:22px}
+.fc-av .brand-initial{width:36px;height:36px;border-radius:10px;font-size:15px}
+.fc-badge{position:absolute;right:-4px;bottom:-4px;width:17px;height:17px;border-radius:50%;background:var(--win);display:grid;place-items:center}
+.fc-badge i{width:13px;height:13px;border-radius:50%;background:var(--tc);color:var(--win);display:grid;place-items:center}
+.fc-badge .ic{width:9px;height:9px;stroke-width:2.2}
+.fc-tx{flex:1;min-width:0}
+.fc-tx b{display:block;font-size:13.5px;font-weight:600;line-height:19px}
+.fc-tx span{display:block;font-size:12px;line-height:17px;color:var(--l2);margin-top:1px}
+.fc-side{display:flex;align-items:center;gap:4px;flex:none}
+.fc-more{width:24px;height:24px;border-radius:7px;border:0;background:none;color:var(--l2);display:grid;place-items:center}
+.fc-more:hover,.fc-more[aria-expanded=true]{background:var(--fill);color:var(--l1)}
+.fc-clip{position:absolute;inset:-1px;border-radius:inherit;overflow:hidden;pointer-events:none}
+.fc-clip i{position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--tc);transform-origin:left;animation:fcdrain linear forwards}
+@keyframes fcdrain{from{transform:scaleX(var(--from,1))}to{transform:scaleX(0)}}
+.fc-raw{font-family:var(--mono);font-size:11.5px;color:var(--l2);background:var(--code);border-radius:8px;padding:8px 10px;box-shadow:inset 0 0 0 .5px var(--sep);white-space:pre-wrap;overflow-wrap:anywhere}
+.fpast{align-self:flex-start;display:inline-flex;align-items:center;gap:7px;font-size:12.5px;color:var(--l3);border:0;background:none;padding:2px 0;text-align:left}
+.fpast:hover{color:var(--l2)}
+.fpast>i{width:6px;height:6px;border-radius:50%;background:var(--tc);flex:none}
+.fpast .chev{width:12px;height:12px;transition:transform .15s}
+.fpast .chev.open{transform:rotate(90deg)}
 .livebar{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--l2);padding:8px 2px 0}
 .donebar{align-self:center;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--l3);margin:-4px 0 6px}
 .donebar .ic{color:var(--green)}

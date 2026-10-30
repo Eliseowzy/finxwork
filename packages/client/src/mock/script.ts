@@ -27,6 +27,8 @@ export interface TaskScript {
   turns: TurnScript[];
   /** The task fails after its turns, with this error. */
   fail?: ErrorInfo;
+  /** Before its first turn the model request fails this many times and is retried, as finx retries a rate limit. */
+  retries?: { count: number; error: ErrorInfo };
 }
 
 /** Whether a call with an approval in its script asks in this mode. */

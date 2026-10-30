@@ -92,6 +92,8 @@ class Failure extends Error {
   }
 }
 
+/** The rate limit a retried task waits out before it goes on. */
+const rateLimited: ErrorInfo = { kind: "rate_limited", message: "429 Too Many Requests: Rate limit reached for deepseek-flash on tokens per min (TPM). Please try again in 4s.", status: 429, retryable: true };
 const providerOf = (model: string) => model.split("/")[0] ?? model;
 const iso = (ms: number) => new Date(ms).toISOString();
 let counter = 0;
@@ -425,6 +427,12 @@ export class MockServer {
     const run = s.run;
     if (!run) return;
     const task_id = s.view.live!.task_id;
+    for (let attempt = 1; from === 0 && attempt <= (script.retries?.count ?? 0); attempt++) {
+      const delay_ms = 3000 + attempt * 1000;
+      this.emit(s, { type: "stream_retry", attempt, delay_ms, error: script.retries!.error });
+      await this.sleep(delay_ms);
+      if (run.cancelled) return;
+    }
     for (let i = from; i < script.turns.length; i++) {
       await this.sleep(500 + Math.random() * 500);
       if (run.cancelled) return;
@@ -521,7 +529,7 @@ export class MockServer {
       s.scenario = sc;
       script = { turns: [...sc.lead, { say: sc.started }] };
     }
-    script ??= replyScript(text);
+    script = this.unkeyed(s) ?? script ?? replyScript(text);
     s.run = { cancelled: false, approvals: new Map(), steer: [] };
     this.startTask(s, input);
     void this.play(s, script);
@@ -669,10 +677,13 @@ export class MockServer {
       }
       case "continue":
         if (s.view.live) throw new Failure(-32014, "prompt_in_progress", "a task is running");
+        const limited = s.view.failure?.kind === "rate_limited";
         s.run = { cancelled: false, approvals: new Map(), steer: [] };
         s.tasks++;
         this.emit(s, { type: "task_started", task_id: `t${s.tasks}` });
-        void this.play(s, { turns: [{ think: "接着上次中断的地方继续。", say: "重试成功。上次因为限流中断，现在接着评审：\n\n- **阈值**：在窗口的 80% 触发，留出一轮完整回复的余量，合理。\n- **保留最近消息**：约 20k token 的预算足够保留最近几条用户消息。\n- **失败处理**：摘要请求失败时保留原历史、只发 warning，这一点很好；建议再限制连续压缩的次数，避免来回压缩。" }] });
+        // The demo's rate-limited review goes on after finx waits out the limit twice; anything else just goes on.
+        if (!limited) return void this.play(s, this.unkeyed(s) ?? { turns: [{ say: "好的，接着刚才的请求继续。" }] });
+        void this.play(s, { retries: { count: 2, error: rateLimited }, turns: [{ think: "接着上次中断的地方继续。", say: "重试成功。上次因为限流中断，现在接着评审：\n\n- **阈值**：在窗口的 80% 触发，留出一轮完整回复的余量，合理。\n- **保留最近消息**：约 20k token 的预算足够保留最近几条用户消息。\n- **失败处理**：摘要请求失败时保留原历史、只发 warning，这一点很好；建议再限制连续压缩的次数，避免来回压缩。" }] });
         return;
       case "interrupt":
         return this.interrupt(s);
@@ -699,6 +710,13 @@ export class MockServer {
       case "shutdown":
         return;
     }
+  }
+
+  /** As finx fails a request to a provider it has no key for. */
+  private unkeyed(s: Session): TaskScript | undefined {
+    const model = demoModels(this.stored).models.find((m) => m.id === s.view.info.model);
+    if (!model || model.available) return undefined;
+    return { turns: [], fail: { kind: "auth", message: `no API key for provider '${model.provider}': set one with auth/set or the ${model.provider.toUpperCase()}_API_KEY environment variable`, retryable: false } };
   }
 
   private summaries(): SessionSummary[] {

@@ -202,7 +202,7 @@
     "unknown": "Something went wrong"
   },
   "advice": {
-    "auth": "Check the provider's key in finx's configuration, then retry.",
+    "auth": "Set the key and finx picks up where it stopped.",
     "quota_exceeded": "Top up the provider's account or switch models, then retry.",
     "rate_limited": "The provider asks to slow down. Retry in a moment.",
     "overloaded": "The provider is busy. Retry in a moment.",

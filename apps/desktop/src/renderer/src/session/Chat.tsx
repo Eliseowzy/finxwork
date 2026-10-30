@@ -3,14 +3,14 @@ import { useTranslation } from "react-i18next";
 import { baseName, conversation, costText, segments, totals, type ListSession, type SessionView, type Step, type TaskChain } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
-import { keyEvent } from "../composer/KeySetup";
 import { SkillTag } from "../composer/SkillNode";
 import { Tile } from "../composer/Tile";
-import { agoInterval, durationText, failureAdvice, failureTitle, messageAgo, timeLine } from "../format";
+import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon } from "../icons";
 import { useNow, useStore } from "../store";
 import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
 import { Dock } from "./Dock";
+import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { DraftMarkdown, Markdown } from "./Markdown";
 import { Work } from "./Steps";
 
@@ -25,13 +25,15 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
   const steps = useMemo(() => conversation(view), [view]);
   const scroll = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
+  const retry = view.live?.retry;
+  useResumeAfterCompact(s.session_id, view);
 
   // Follow the conversation: open at its end, and stay there as it grows unless the person scrolled up.
   const atEnd = useRef(true);
   useLayoutEffect(() => {
     const el = scroll.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
-  }, [steps, dock]);
+  }, [steps, dock, retry]);
   const onScroll = () => {
     const el = scroll.current;
     if (el) atEnd.current = el.scrollTop + el.clientHeight > el.scrollHeight - 80;
@@ -55,6 +57,7 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
             {steps.map((step, i) => (
               <Row key={step.key} step={step} previous={previousUser(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
             ))}
+            {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <BackgroundLine view={view} />
           </div>
         </div>
@@ -205,14 +208,11 @@ function MessageTime({ at }: { at: Date }) {
 }
 
 /**
- * Where a task ended: a quiet line when it went well, a word when it stopped early, the failure in red.
+ * Where a task ended: a quiet line when it went well, a word when it stopped early, the failure as a card.
  * A piece of work that took several tasks or sub-agents is told once, at its end, as a whole.
  */
 function TaskEnd({ end, chain, started, current, sessionId }: { end: TaskEndItem; chain?: TaskChain; started: number | undefined; current: boolean; sessionId: string }) {
   const { t } = useTranslation("session");
-  const st = useStore();
-  const modelProvider = st.sessions.find((s) => s.session_id === sessionId)?.model?.split("/")[0];
-  const [open, setOpen] = useState(false);
   if (end.outcome === "interrupted") return <div className="tnote">{t("chat.interrupted")}</div>;
   if (end.outcome === "completed") {
     if (end.reason && end.reason !== "done") return <div className="tnote">{t(`chat.ended.${end.reason}`)}</div>;
@@ -231,48 +231,7 @@ function TaskEnd({ end, chain, started, current, sessionId }: { end: TaskEndItem
       </div>
     );
   }
-  const e = end.error;
-  const kind = e?.kind ?? "unknown";
-  if (!current) {
-    return (
-      <div className="qfail past">
-        <button className="qf-line" aria-expanded={e?.message ? open : undefined} onClick={() => e?.message && setOpen(!open)}>
-          <Icon name="info" className="sm" />
-          <span>{t("chat.failedWith", { title: failureTitle(kind) })}</span>
-          {e?.message && <Icon name="chevR" className={`sm chev ${open ? "open" : ""}`} />}
-        </button>
-        {open && <div className="qf-raw sel-text">{e?.message}</div>}
-      </div>
-    );
-  }
-  return (
-    <div className="qfail" role="alert">
-      <div className="qf-line">
-        <Icon name="info" className="sm" />
-        <b>{t("chat.failedWith", { title: failureTitle(kind) })}</b>
-      </div>
-      <div className="qf-hint">{failureAdvice(kind, e?.retryable ?? false)}</div>
-      <div className="qf-act">
-        {/* No key for the model's provider: set one, then retry. */}
-        {kind === "auth" && (
-          <button className="link go" onClick={() => window.dispatchEvent(new CustomEvent(keyEvent, { detail: modelProvider }))}>
-            <Icon name="key" className="sm" />
-            {t("chat.setKey")}
-          </button>
-        )}
-        <button className="link go" onClick={() => st.op(sessionId, { type: "continue" })}>
-          <Icon name="retry" className="sm" />
-          {t("chat.retry")}
-        </button>
-        {e?.message && (
-          <button className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
-            {t("chat.details")} <Icon name="chevR" className={`sm chev ${open ? "open" : ""}`} />
-          </button>
-        )}
-      </div>
-      {open && <div className="qf-raw sel-text">{e?.message}</div>}
-    </div>
-  );
+  return current ? <FailureCard error={end.error ?? undefined} sessionId={sessionId} /> : <PastFailure error={end.error ?? undefined} />;
 }
 
 /** A message's words, its skill mentions drawn as tags (the text copied is still `/skill:name`). */
