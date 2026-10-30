@@ -94,7 +94,11 @@ export function useStore(): Store {
 
 /** An error from finx, for the person. */
 export function errorText(e: unknown): string {
-  if (e instanceof RpcError) return e.kind === "disconnected" ? i18n.t("common:kernel.down") : e.message;
+  if (e instanceof RpcError) {
+    if (e.kind === "disconnected") return i18n.t("common:kernel.down");
+    if (e.kind === "model_unavailable") return i18n.t("common:model.unavailable");
+    return e.message;
+  }
   return e instanceof Error ? e.message : String(e);
 }
 

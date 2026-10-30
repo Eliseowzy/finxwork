@@ -28,6 +28,9 @@
     "showLog": "查看日志",
     "mock": "演示数据 · 未连接内核"
   },
+  "model": {
+    "unavailable": "这个模型所在的连接已不可用，请换一个模型。"
+  },
   "foot": {
     "label": "本机与设置",
     "settings": "设置…",

@@ -88,6 +88,9 @@ pub mod error_code {
     pub const TASK_FAILED: i64 = -32020;
     /// `auth/set`: the provider refused the key.
     pub const KEY_REJECTED: i64 = -32021;
+    /// The model asked for belongs to a provider that is not there (a connection that was
+    /// removed or disconnected); `data.provider` names it.
+    pub const MODEL_UNAVAILABLE: i64 = -32022;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -110,6 +113,7 @@ pub mod error_code {
         (SESSION_CLOSED, "session_closed"),
         (TASK_FAILED, "task_failed"),
         (KEY_REJECTED, "key_rejected"),
+        (MODEL_UNAVAILABLE, "model_unavailable"),
     ];
 }
 

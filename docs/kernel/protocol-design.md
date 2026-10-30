@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.17 |
+| 版本 | v0.18 |
 | 日期 | 2026-10-30 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.18 | 2026-10-30 | 模型不可用（desktop-design §7 P15），都在版本 2 之内：`session/new` 要的模型所属服务商不存在（例如本机连接已断开或删除）时，返回新错误码 −32022 `model_unavailable`，data 带 `provider`，不再是 invalid_params；引用格式不对仍是 invalid_params |
 | v0.17 | 2026-10-30 | 无项目会话，都在版本 2 之内：`session/new` 的 `cwd` 改为可选，省略时会话没有项目，内核在 `~/.finx/chats/` 下为它新建一个空文件夹作为工作目录，不向上查找项目根、不读项目配置；SessionSummary 增加 `no_project`；`skills/list` 两个参数都不给时，返回无项目会话能找到的 Skill（§6.4） |
 | v0.16 | 2026-10-30 | 上下文明细（technical-design §7.5.8），都在版本 2 之内：新增方法 `session/context`，返回已加载会话的 ContextReport；新增事件 `context_reported`（`/context` 的答复）；`skills/list` 的内置命令多了 `context`；ACP 把 `/context` 的明细作为 `agent_message_chunk` 发出 |
 | v0.15 | 2026-10-30 | 思考强度（model-catalog-design §18）：`ThinkingLevel` 新增 `default`、`on`、`xhigh`，`default` 是默认值；`ModelSummary.thinking_levels` 是模型提供的服务商档位（不含 `default`，模型不能指定推理时为空），新增 `default_thinking`（这个模型的起始档位）；`set_model` 不带 `thinking` 时按切换规则决定档位，带了就记住它；ConnectionModel 新增 `thinking`、`default_thinking`（账号连接提供的档位与起始档位） |
@@ -774,6 +775,8 @@ pub struct ResourceReadResult {
 | -32018 | unsupported_content | 不支持的输入内容，例如音频 |
 | -32019 | session_closed | 会话已关闭 |
 | -32020 | task_failed | ACP：任务失败，data 中带完整的 ErrorInfo |
+| -32021 | key_rejected | `auth/set`：服务商拒绝了密钥 |
+| -32022 | model_unavailable | 要的模型所属服务商不存在（本机连接已断开或删除），data 带 `provider` |
 
 ### 6.8 示例
 

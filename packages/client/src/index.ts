@@ -4,6 +4,7 @@
 export * from "./calendar.ts";
 export * from "./draft.ts";
 export * from "./mentions.ts";
+export * from "./models.ts";
 export * from "./rpc.ts";
 export * from "./session.ts";
 export * from "./sessions.ts";

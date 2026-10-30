@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { projectNames, recentProjects } from "@finx/client";
+import { draftModel, projectNames, recentProjects } from "@finx/client";
 import { SidebarToggle } from "../components";
 import { draftThinking, offersThinking } from "../format";
 import { MarkMotion } from "../icons";
@@ -28,7 +28,8 @@ export function NewSession() {
   const recent = recentProjects(st.sessions.filter((s) => !s.archived));
   // A project chosen, else the latest one, else none.
   const cwd = st.draft.noProject ? null : (st.draft.cwd ?? recent[0] ?? null);
-  const draft = { ...st.draft, cwd, noProject: cwd === null };
+  // A model chosen here whose connection has gone since: the default, as sending it would fail.
+  const draft = { ...st.draft, cwd, noProject: cwd === null, model: draftModel(st.models, st.draft.model) };
   const keyless = needsKey(st);
   const commands = useCommands(cwd ? { cwd } : {});
   const set = (patch: Partial<typeof draft>) => st.set({ draft: { ...draft, ...patch } });

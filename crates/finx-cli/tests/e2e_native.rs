@@ -695,3 +695,48 @@ async fn a_full_server_unloads_the_session_unused_the_longest() {
     client.request("server/shutdown", json!({})).await.unwrap();
     assert_eq!(common::exit_code(&mut child).await, 0);
 }
+
+/// A model whose connection is gone (desktop-design P15): a new session asked for it gets
+/// `model_unavailable` naming the provider, so a client can say so in its own words; a session
+/// that last used it opens on the configured model.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_model_whose_connection_is_gone_is_reported_as_unavailable() {
+    let env = TestEnv::new("manual", "").await;
+    let connection = "35e57942-0000-4000-8000-000000000001";
+    // Written before provider IDs were kept: its models are published as `local-<connection_id>`.
+    std::fs::create_dir_all(env.home.path().join("connections")).unwrap();
+    write_file(
+        &env.home.path().join("connections/config.json"),
+        &json!({"schema": 1, "connections": [{
+            "connection_id": connection, "adapter_id": "qwenwork", "identity_key": "account-a",
+            "enabled": true, "idempotency_key": "e2e",
+            "models": [{"id": "flash", "name": "Flash", "context_window": 1000000, "max_output_tokens": null}]
+        }]})
+        .to_string(),
+    );
+    let flash = format!("local-{connection}/flash");
+    let (mut child, client, _incoming) = env.spawn_rpc(&["serve"]);
+    native_init(&client).await;
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert!(models["models"].as_array().unwrap().iter().any(|m| m["id"] == json!(flash)));
+    let cwd = env.workspace("gone");
+    let used = client.request("session/new", json!({"cwd": cwd, "model": flash})).await.unwrap();
+    let used = used["session_id"].as_str().unwrap().to_string();
+    client.request("session/close", json!({"session_id": used})).await.unwrap();
+
+    client.request("connections/disconnect", json!({"connection_id": connection})).await.unwrap();
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert!(!models["models"].as_array().unwrap().iter().any(|m| m["id"] == json!(flash)));
+    let err = client.request("session/new", json!({"cwd": cwd, "model": flash})).await.unwrap_err();
+    assert_eq!(err.code, finx_protocol::api::error_code::MODEL_UNAVAILABLE);
+    assert_eq!(err.kind(), Some("model_unavailable"));
+    assert_eq!(err.data.as_ref().unwrap()["provider"], json!(format!("local-{connection}")));
+    // A reference that is not one stays a parameter error.
+    let err = client.request("session/new", json!({"cwd": cwd, "model": "flash"})).await.unwrap_err();
+    assert_eq!(err.kind(), Some("invalid_params"));
+    // The session that used it opens on the configured model.
+    let resumed = client.request("session/resume", json!({"session_id": used})).await.unwrap();
+    assert_eq!(resumed["snapshot"]["session"]["model"], json!("mock/mock-1"));
+    drop(client);
+    assert_eq!(common::exit_code(&mut child).await, 0);
+}

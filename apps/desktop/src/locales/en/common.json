@@ -28,6 +28,9 @@
     "showLog": "Show Log",
     "mock": "Demo data · no kernel"
   },
+  "model": {
+    "unavailable": "This model's connection is no longer available. Choose another model."
+  },
   "foot": {
     "label": "This computer and settings",
     "settings": "Settings…",

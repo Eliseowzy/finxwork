@@ -3,6 +3,7 @@
 use finx_core::KernelError;
 use finx_core::runtime::RuntimeError;
 use finx_core::store::StoreError;
+use finx_llm::ResolveError;
 use finx_protocol::ErrorInfo;
 use finx_protocol::api::error_code;
 use finx_rpc::RpcError;
@@ -97,7 +98,16 @@ pub fn from_store(err: StoreError, id: &str) -> RpcError {
 pub fn from_kernel(err: KernelError, id: &str) -> RpcError {
     match err {
         KernelError::Store(err) => from_store(err, id),
-        KernelError::Model(err) => RpcError::invalid_params(err),
+        KernelError::Model(err) => match &err {
+            // A provider that is gone (a removed or disconnected connection): clients say so in
+            // their own words and offer another model.
+            ResolveError::UnknownProvider { provider, .. } => RpcError {
+                code: error_code::MODEL_UNAVAILABLE,
+                data: Some(serde_json::json!({ "kind": "model_unavailable", "provider": provider })),
+                message: err.to_string(),
+            },
+            ResolveError::BadReference(_) => RpcError::invalid_params(err),
+        },
         KernelError::Other(message) => RpcError::internal(message),
     }
 }

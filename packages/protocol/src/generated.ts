@@ -1185,6 +1185,7 @@ export const RPC_ERROR_KINDS = {
   "-32019": "session_closed",
   "-32020": "task_failed",
   "-32021": "key_rejected",
+  "-32022": "model_unavailable",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

@@ -642,6 +642,10 @@ export class MockServer {
       case "session/new": {
         const q = p as P<"session/new">;
         const model = q.model ?? demoModels().defaults!.model;
+        // As finx: a model whose provider is gone (a connection removed) is not there to start on.
+        if (!demoModels().providers.some((d) => d.id === providerOf(model))) {
+          throw new Failure(-32022, "model_unavailable", `unknown provider '${providerOf(model)}'`);
+        }
         // Without a project, a folder of its own, as finx makes one.
         const id = crypto.randomUUID();
         const cwd = q.cwd ?? `~/.finx/chats/${id}`;
