@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.1 |
-| 日期 | 2026-10-29 |
+| 版本 | v0.2 |
+| 日期 | 2026-10-30 |
 | 状态 | 已实现，本机端到端验证通过；发布仓库未创建，尚未发布过版本（§9） |
 | 关系 | 细化 desktop-design.md §11 的三期（Developer ID 签名与公证、DMG、自动更新）；更新后内核的替换沿用 desktop-kernel-integration.md §6.4，本文补上它漏掉的情形（§4.6） |
 
@@ -127,7 +127,7 @@
 
 - **签名身份默认自动选。** 没有设置 `FINXWORK_SIGNING_IDENTITY` 时，取钥匙串里第一个 `Developer ID Application`，找不到再用临时签名。设成 `-` 就强制临时签名。临时签名的构建不检查更新（§8）。
 - **内核用 `dist` 配置编译**（fat LTO、`codegen-units=1`）。可执行文件比 `release` 小约四分之一，启动时间相同（technical-design 已有结论）。
-- **跨架构构建不运行内核**：在 Apple 芯片上打 x64 包时，这台机器可能没装 Rosetta，跑不了 x86_64 程序。所以 x64 内核的版本号从 `cargo metadata` 读取，架构用 `lipo` 核对；本机架构的包仍然直接运行内核，确认它签名后还能启动、版本号也对得上。
+- **跨架构构建不运行内核**：在 Apple 芯片上打 x64 包时，这台机器可能没装 Rosetta，跑不了 x86_64 程序。所以 x64 内核的版本号从 `cargo metadata` 读取，架构用 `lipo` 核对；本机架构的包仍然直接运行内核，确认它签名后还能启动、版本号也对得上。另一个架构的内核要用 Rust 的对应目标（`x86_64-apple-darwin` 或 `aarch64-apple-darwin`）编译，缺少时构建脚本自动用 rustup 装到仓库固定的工具链（rust-toolchain.toml）上，再开始编译（`scripts/rust-target.mjs`）。
 - **更新地址在构建时写进应用**（electron-vite 的 define，见 `main/build.ts`）。发布构建一律指向发布仓库的 GitHub Release。只有测试构建能改成别的地址（`FINXWORK_RELEASES`），也只有测试构建能用自己的数据目录（`FINXWORK_TEST_HOME`）。运行时没有任何办法修改这两项。
 - **DMG 用 dmgbuild 生成。** 它装在 `node_modules/.cache` 下的独立 Python 虚拟环境里，依赖锁定版本和哈希（`build/dmg/requirements.txt`）；窗口布局见 `build/dmg/settings.py`。背景图由 `scripts/make-dmg-background.swift` 画成 1× 和 2× 两张，箭头用品牌蓝。
 - **公证。** 应用打成 zip 提交，DMG 直接提交，都等到 Accepted 后钉入票据，再用 `spctl` 按 Gatekeeper 的标准复核。没有通过时打印 Apple 的日志，列出被拒的文件和原因。
@@ -223,7 +223,7 @@ pnpm release --dry-run       # 构建、公证、检查，但不上传
    - `apps/desktop/releases/<版本>.md` 里写了这一版的变化；
    - 工作区是干净的；
    - 有公证凭证；
-   - 要发 x64 时，仓库固定的 Rust 工具链（rust-toolchain.toml）装了 x86_64 目标。rustup 不在 PATH 里时，到 `~/.cargo/bin` 下找；
+   - 要发另一个架构时，仓库固定的 Rust 工具链（rust-toolchain.toml）有那个架构的目标；没有就在这一步装上，装不上就停下。rustup 不在 PATH 里时，到 `~/.cargo/bin` 下找；
    - 发布仓库能访问，**而且是公开的**：私有仓库对未登录的应用一律返回 404，应用会当成“已是最新”，永远收不到更新；
    - 仓库里还没有这个标签，包括上次中断留下的草稿；
    - 版本号比当前的最新发布高。
@@ -297,7 +297,7 @@ pnpm release --dry-run       # 构建、公证、检查，但不上传
 | 打包：自动选签名身份、`dist` 内核、DMG（签名、公证）、更新源 | 完成。2026-10-29 用公证凭证实测 `pnpm app`：App 和 DMG 都公证通过并钉入票据；给 DMG 副本加上下载隔离标记后，Gatekeeper 检查通过，挂载后里面的 App 也通过。内核 13 MB（`release` 配置时 18 MB），zip 137 MB，DMG 149 MB |
 | 发版脚本（`scripts/release.mjs`） | 完成；发布仓库未创建，尚未正式发布 |
 | 端到端更新测试（`scripts/update-e2e.mjs`） | 完成 |
-| x64 发布 | 脚本支持，不需要 Rosetta；本机还没有安装 Rust 的 x86_64 目标（DQ-15） |
+| x64 发布 | 完成，不需要 Rosetta；缺少的 Rust 目标由构建脚本自动安装。2026-10-30 在 Apple 芯片上实测：脚本自动装上 `x86_64-apple-darwin`，打出的 App、主程序和内核都是 x86_64，Developer ID 签名校验通过（未公证）（DQ-15） |
 
 ## 10. 决策与待定问题
 
@@ -321,7 +321,7 @@ pnpm release --dry-run       # 构建、公证、检查，但不上传
 | 编号 | 问题 | 当前假设 | 章节 |
 |---|---|---|---|
 | DQ-14 | 发布仓库叫什么；源码仓库以后是否公开 | `finxwork/finxwork-releases`。源码公开后可以直接用源码仓库的 Release，只需改 `releaseRepo` 一处，但已安装的应用仍会读旧仓库，所以旧仓库要再发布一个指向新仓库的版本 | §2.2 §6.1 |
-| DQ-15 | 是否同时发布 x64（Intel） | 发：`pnpm release` 默认两个架构都出，本机需要先运行 `rustup target add x86_64-apple-darwin` | §3 §6.2 |
+| DQ-15 | 是否同时发布 x64（Intel） | 发：正式发布兼容 Intel，`pnpm release` 默认两个架构都出，缺少的 Rust 目标自动安装 | §3 §6.2 |
 | DQ-16 | 是否在 CI 里发版 | 暂不。CI 发版需要把 Developer ID 证书（p12）和 API 密钥放进 GitHub Secrets，现在私钥只在本机 | §6.5 |
 | DQ-17 | 发布渠道（beta）与分批推送 | 暂不。静态更新源做不了按比例推送；预发布已经可以发给手动下载的人 | §6.2 |
 | DQ-18 | 在应用里显示更新说明 | 暂时链接到 GitHub Release 页面；需要时在更新源里加上两种语言的摘要 | §4.4 |

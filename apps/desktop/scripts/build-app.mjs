@@ -40,6 +40,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { ensureRustTarget, rustTriples } from "./rust-target.mjs";
 import { dmgName, feedName, githubReleases, releaseFeed, releaseRepo, releaseURLs, zipName } from "../src/shared/update.ts";
 
 const desktop = path.resolve(import.meta.dirname, "..");
@@ -80,14 +81,16 @@ fs.mkdirSync(tmp, { recursive: true });
 
 // The kernel first: the app is only as good as the finx inside it.
 const cargo = process.env.CARGO || [path.join(os.homedir(), ".cargo/bin/cargo")].find((c) => fs.existsSync(c)) || "cargo";
-const triples = { arm64: "aarch64-apple-darwin", x64: "x86_64-apple-darwin" };
 const nativeArch = process.arch === "arm64" ? "arm64" : "x64";
 // The dist profile (Cargo.toml): fat LTO, a quarter smaller than release, the same start-up time.
 step(`building the kernel (finx, dist profile, ${arch})`);
 const cargoArgs = ["build", "--profile", "dist", "--locked", "-p", "finx-cli"];
-if (arch !== nativeArch) cargoArgs.push("--target", triples[arch]);
+if (arch !== nativeArch) {
+  ensureRustTarget(arch, root);
+  cargoArgs.push("--target", rustTriples[arch]);
+}
 sh(cargo, cargoArgs, { cwd: root });
-const kernel = path.join(root, "target", ...(arch !== nativeArch ? [triples[arch]] : []), "dist", "finx");
+const kernel = path.join(root, "target", ...(arch !== nativeArch ? [rustTriples[arch]] : []), "dist", "finx");
 const machO = { arm64: "arm64", x64: "x86_64" }[arch];
 // A kernel of this Mac's architecture is asked; another one may not run here (no Rosetta), so its version comes from Cargo.
 const kernelVersion = arch === nativeArch

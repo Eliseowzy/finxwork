@@ -15,9 +15,9 @@
 // working tree, and what changed in apps/desktop/releases/<version>.md.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { ensureRustTarget } from "./rust-target.mjs";
 import { dmgName, feedName, feedVersion, githubReleases, newer, releaseRepo, releaseURLs, validVersion, zipName } from "../src/shared/update.ts";
 
 const desktop = path.resolve(import.meta.dirname, "..");
@@ -45,17 +45,13 @@ const notes = path.join(desktop, "releases", `${version}.md`);
 ready(fs.existsSync(notes) && fs.readFileSync(notes, "utf8").trim() !== "", `write what changed for people in ${path.relative(root, notes)}`);
 ready(!out("git", ["status", "--porcelain"], { cwd: root }), "the working tree has changes: a release is built from a commit");
 if (!process.env.FINXWORK_NOTARY_PROFILE && !process.env.FINXWORK_NOTARY_KEY_PATH) fail("no notary credentials: set FINXWORK_NOTARY_PROFILE, or FINXWORK_NOTARY_KEY_PATH, _KEY_ID and _ISSUER");
-// Another architecture's kernel needs its Rust target, for the toolchain rust-toolchain.toml pins (so asked from the repository).
-const rustup = process.env.RUSTUP || [path.join(os.homedir(), ".cargo/bin/rustup")].find((p) => fs.existsSync(p)) || "rustup";
-for (const [a, triple] of [["x64", "x86_64-apple-darwin"], ["arm64", "aarch64-apple-darwin"]]) {
-  if (!archs.includes(a) || process.arch === (a === "x64" ? "x64" : "arm64")) continue;
-  let targets = [];
+// Another architecture's kernel needs its Rust target: installed now, before the long builds, when missing.
+for (const a of archs) if (a !== process.arch) {
   try {
-    targets = out(rustup, ["target", "list", "--installed"], { cwd: root }).split("\n");
-  } catch {
-    fail(`cannot run rustup to check the ${a} target; set RUSTUP`);
+    ensureRustTarget(a, root);
+  } catch (e) {
+    fail(e.message);
   }
-  if (!targets.includes(triple)) fail(`the ${a} kernel needs Rust's ${triple} target: cd ${root} && ${rustup} target add ${triple} (or --arch ${process.arch})`);
 }
 const quiet = { stdio: ["ignore", "pipe", "ignore"] };
 const visibility = (() => {
