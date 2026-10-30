@@ -2,13 +2,13 @@
 // Builds, signs and (with notary credentials) notarizes finxwork into dist/
 // at the repository's root (docs/desktop/desktop-release.md §3):
 //   dist/FinxWork.app                  the app (its name as people see it; the executable, bundle ID and profile folder stay finxwork)
-//   dist/finxwork-macos-<arch>.dmg     what people download: drag finxwork to Applications
-//   dist/finxwork-macos-<arch>.zip     what installed apps update from (Squirrel.Mac takes zips only)
+//   dist/FinxWork-macos-<arch>.dmg     what people download: drag FinxWork to Applications
+//   dist/FinxWork-macos-<arch>.zip     what installed apps update from (Squirrel.Mac takes zips only)
 //   dist/RELEASES-darwin-<arch>.json   the update feed naming that zip, for builds that update
 // scripts/release.mjs publishes them as a GitHub release.
 //
 // The bundle:
-//   Contents/MacOS/finxwork              Electron
+//   Contents/MacOS/FinxWork              Electron
 //   Contents/MacOS/finx                  the kernel, started by the app as finx's service (desktop-kernel-integration §4)
 //   Contents/Resources/app.asar          main, preload and the page
 //   Contents/Resources/kernel.json       the kernel's version and protocol version
@@ -123,7 +123,7 @@ const [built] = await packager({
   dir: staged,
   out: tmp,
   name: "FinxWork",
-  executableName: "finxwork",
+  executableName: "FinxWork",
   electronVersion,
   platform: "darwin",
   arch,
@@ -136,9 +136,10 @@ const [built] = await packager({
   asar: true,
   prune: false,
   overwrite: true,
-  // The name Finder, the Dock and Launchpad show (the packager would take the executable's, finxwork), and
-  // the app's languages (src/locales), which macOS offers in System Settings' per-app language.
-  extendInfo: { CFBundleDisplayName: "FinxWork", CFBundleIconName: "AppIcon", LSMinimumSystemVersion: "14.0", CFBundleDevelopmentRegion: "en", CFBundleLocalizations: ["en", "zh_CN"] },
+  // The packager names the bundle after the executable (CFBundleDisplayName, what Finder, the Dock and
+  // Launchpad show, set after extendInfo); here, the app's languages (src/locales), which macOS offers
+  // in System Settings' per-app language.
+  extendInfo: { CFBundleIconName: "AppIcon", LSMinimumSystemVersion: "14.0", CFBundleDevelopmentRegion: "en", CFBundleLocalizations: ["en", "zh_CN"] },
 });
 const app = path.join(dist, "FinxWork.app");
 fs.rmSync(app, { recursive: true, force: true });
@@ -162,7 +163,7 @@ fs.chmodSync(embedded, 0o755);
 fs.writeFileSync(path.join(contents, "Resources/kernel.json"), JSON.stringify({ version: kernelVersion, protocol_version: protocolVersion }) + "\n");
 
 step("flipping Electron fuses");
-await flipFuses(path.join(contents, "MacOS/finxwork"), {
+await flipFuses(path.join(contents, "MacOS/FinxWork"), {
   version: FuseVersion.V1,
   [FuseV1Options.RunAsNode]: false,
   [FuseV1Options.EnableCookieEncryption]: true,

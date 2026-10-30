@@ -84,7 +84,7 @@ try {
 
   step(`running ${from}`);
   const port = 9300 + Math.floor(Math.random() * 500);
-  spawn(path.join(appPath, "Contents/MacOS/finxwork"), [`--remote-debugging-port=${port}`], { stdio: "ignore", detached: true }).unref();
+  spawn(path.join(appPath, "Contents/MacOS/FinxWork"), [`--remote-debugging-port=${port}`], { stdio: "ignore", detached: true }).unref();
   const page = await until(() => connect(port), 30_000, "the window's page");
   await until(async () => (await page.evaluate("!!window.finx && typeof window.finx.updates === 'function'")) || null, 15_000, "the bridge");
   const lock = path.join(home, "finx", "run", "finx.lock");
@@ -138,7 +138,7 @@ try {
 } finally {
   server.close();
   try {
-    execFileSync("pkill", ["-f", path.join(appPath, "Contents/MacOS/finxwork")]);
+    execFileSync("pkill", ["-f", path.join(appPath, "Contents/MacOS/FinxWork")]);
   } catch {
     // Not running.
   }
@@ -230,7 +230,7 @@ function readVersion(plist) {
 
 function running(app) {
   try {
-    return execFileSync("pgrep", ["-f", path.join(app, "Contents/MacOS/finxwork")], { encoding: "utf8" }).trim() !== "";
+    return execFileSync("pgrep", ["-f", path.join(app, "Contents/MacOS/FinxWork")], { encoding: "utf8" }).trim() !== "";
   } catch {
     return false;
   }

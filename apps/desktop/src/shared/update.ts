@@ -125,8 +125,8 @@ export function squirrelFailure(message: string): UpdateFailure {
 // --- What a release publishes ---
 
 export const feedName = (arch: string) => `RELEASES-darwin-${arch}.json`;
-export const zipName = (arch: string) => `finxwork-macos-${arch}.zip`;
-export const dmgName = (arch: string) => `finxwork-macos-${arch}.dmg`;
+export const zipName = (arch: string) => `FinxWork-macos-${arch}.zip`;
+export const dmgName = (arch: string) => `FinxWork-macos-${arch}.dmg`;
 
 /**
  * A release's files, under the releases' address (`https://github.com/<repo>/releases`,

@@ -131,7 +131,7 @@
 
 ```
 ┌──────────────────────────────── FinxWork.app ────────────────────────────────┐
-│ Contents/MacOS/finxwork（Electron）          Contents/MacOS/finx（内置内核）   │
+│ Contents/MacOS/FinxWork（Electron）          Contents/MacOS/finx（内置内核）   │
 │                                                                               │
 │  页面（每个窗口一个）                                                          │
 │    store ── RpcClient ── MessagePort ──┐                                      │

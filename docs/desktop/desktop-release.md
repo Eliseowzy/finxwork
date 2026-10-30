@@ -101,8 +101,8 @@
 | 文件 | 用途 |
 |---|---|
 | `FinxWork.app` | 应用本身 |
-| `finxwork-macos-<arch>.dmg` | 首次安装用：打开后左边是 finxwork，右边是“应用程序”，中间一个箭头，拖过去就装好了。DMG 本身也签名、公证、钉入票据 |
-| `finxwork-macos-<arch>.zip` | 已安装的应用更新时下载它（Squirrel 只收 zip）。里面的应用已经公证、钉入票据 |
+| `FinxWork-macos-<arch>.dmg` | 首次安装用：打开后左边是 FinxWork，右边是“应用程序”，中间一个箭头，拖过去就装好了。DMG 本身也签名、公证、钉入票据 |
+| `FinxWork-macos-<arch>.zip` | 已安装的应用更新时下载它（Squirrel 只收 zip）。里面的应用已经公证、钉入票据 |
 | `RELEASES-darwin-<arch>.json` | 更新源，只有会更新的构建才生成 |
 
 更新源的内容（Squirrel 的 JSON 格式）：
@@ -115,7 +115,7 @@
     "updateTo": {
       "version": "0.1.1", "name": "0.1.1", "pub_date": "2026-10-29T08:00:00Z",
       "notes": "https://github.com/finxwork/finxwork-releases/releases/tag/v0.1.1",
-      "url": "https://github.com/finxwork/finxwork-releases/releases/download/v0.1.1/finxwork-macos-arm64.zip"
+      "url": "https://github.com/finxwork/finxwork-releases/releases/download/v0.1.1/FinxWork-macos-arm64.zip"
     }
   }]
 }
@@ -142,7 +142,7 @@
 |---|---|
 | 最新发布的更新源 | `B/latest/download/RELEASES-darwin-<arch>.json` |
 | 某个版本的更新源 | `B/download/v<版本>/RELEASES-darwin-<arch>.json` |
-| 某个版本的 zip | `B/download/v<版本>/finxwork-macos-<arch>.zip` |
+| 某个版本的 zip | `B/download/v<版本>/FinxWork-macos-<arch>.zip` |
 | 更新说明 | `B/tag/v<版本>` |
 
 `<arch>` 是正在运行的应用的架构（`process.arch`）。在 Apple 芯片上用 Rosetta 运行的 x64 版本，会一直读 x64 的更新源。

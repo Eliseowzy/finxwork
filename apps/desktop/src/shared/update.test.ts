@@ -56,7 +56,7 @@ test("a release's feed names that version's own zip, and the app finds the newes
   assert.equal(urls.feed("0.3.0"), "https://github.com/finxwork/finxwork-releases/releases/download/v0.3.0/RELEASES-darwin-arm64.json");
   const feed = releaseFeed({ version: "0.3.0", zip: urls.zip("0.3.0"), page: urls.page("0.3.0"), date: new Date("2026-10-29T08:00:00.123Z") });
   assert.equal(feedVersion(feed), "0.3.0");
-  assert.equal(feed.releases[0].updateTo.url, "https://github.com/finxwork/finxwork-releases/releases/download/v0.3.0/finxwork-macos-arm64.zip");
+  assert.equal(feed.releases[0].updateTo.url, "https://github.com/finxwork/finxwork-releases/releases/download/v0.3.0/FinxWork-macos-arm64.zip");
   assert.equal(feed.releases[0].updateTo.pub_date, "2026-10-29T08:00:00Z");
   assert.throws(() => feedVersion({ releases: [] }));
   assert.throws(() => feedVersion({ currentRelease: "latest" }));

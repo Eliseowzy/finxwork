@@ -1,6 +1,6 @@
-# The finxwork disk image (dmgbuild settings; scripts/build-app.mjs passes
+# The FinxWork disk image (dmgbuild settings; scripts/build-app.mjs passes
 # the app, its icon and the background with -D). Finder opens it as a
-# window with finxwork on the left, an arrow, and Applications on the right:
+# window with FinxWork on the left, an arrow, and Applications on the right:
 # drag one onto the other to install. dmgbuild writes the window's
 # .DS_Store itself, so no Finder scripting is needed.
 #

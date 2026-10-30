@@ -458,7 +458,7 @@ interface Platform {
 
 规则沿用品牌页：数据点版不小于 64 px，更小用实心版；标志只放在窗口的白色或深色底上，不加描边、阴影、外发光，不改颜色。侧栏底部的圆形头像代表使用者，不放标志。应用没有菜单栏图标（没有托盘），也就没有单色模板图标。
 
-应用显示的名字与字标一致，写作 FinxWork（DD-29）：应用包 FinxWork.app、菜单、关于、窗口标题和界面文字都用它。不变的是可执行文件 `Contents/MacOS/finxwork`、Bundle ID `com.finxwork.app`、数据目录 `~/Library/Application Support/finxwork`（主进程显式指定，不随名字变）、下载文件名 `finxwork-macos-<arch>.dmg`，以及代码与协议里的标识。
+应用显示的名字与字标一致，写作 FinxWork（DD-29）：应用包 FinxWork.app、Finder 与程序坞里的名字（`CFBundleDisplayName`）、活动监视器里的进程名（可执行文件 `Contents/MacOS/FinxWork`）、下载文件名 `FinxWork-macos-<arch>.dmg` 与 `.zip`、菜单、关于、窗口标题和界面文字都用它。打包工具按可执行文件名写 `CFBundleDisplayName`，所以两者必须一起是 FinxWork。不变的是 Bundle ID `com.finxwork.app`、数据目录 `~/Library/Application Support/finxwork`（主进程显式指定，不随名字变），以及代码与协议里的标识。
 
 ## 6. 客户端逻辑
 
@@ -626,7 +626,7 @@ pnpm build                      # 生产构建（apps/desktop/out），pnpm --di
 | DD-08 | 文案中英两份，跟随系统，可在设置里改 | 中文优先（technical-design Q-15），同时保留英文 | §5.9 |
 | DD-09 | 样式手写 CSS + 设计令牌，不用 CSS 框架 | 与基线一致；令牌即主题与平台差异的唯一入口 | §2.4 |
 | DD-28 | 应用图标、窗口里的标志与强调色都取自 assets/brand 的 FinxWork 品牌（原 DQ-01）；应用不另存素材，构建与页面直接引用 export.sh 的产物 | 品牌只有一个来源，改标志只需重新导出、重新打包 | §5.11 |
-| DD-29 | 应用显示的名字是 FinxWork（原 DQ-21）；可执行文件、Bundle ID 与数据目录仍是 finxwork | 与品牌字标一致；已有的设置、更新的签名校验和内核路径不受影响 | §5.11 |
+| DD-29 | 应用显示的名字是 FinxWork（原 DQ-21），可执行文件和下载文件名也是 FinxWork（2026-10-30：打包工具按可执行文件名写显示名，小写时 Finder 和程序坞显示 finxwork）；Bundle ID 与数据目录仍是 finxwork | 与品牌字标一致；已有的设置、更新的签名校验和内核路径不受影响 | §5.11 |
 
 ### 待定问题
 

@@ -1,6 +1,6 @@
 {
   "name": "@finx/desktop",
-  "productName": "finxwork",
+  "productName": "FinxWork",
   "private": true,
   "version": "0.1.0",
   "description": "finxwork: the desktop app for the finx agent kernel",
