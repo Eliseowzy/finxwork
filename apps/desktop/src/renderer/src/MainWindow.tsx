@@ -4,6 +4,7 @@ import { SheetHost, ToastView } from "./components";
 import { KeySheet, needsKey } from "./composer/KeySetup";
 import { NewSession } from "./composer/NewSession";
 import { Onboarding, onboardingEvent } from "./onboarding/Onboarding";
+import { layoutOf, setSidebar, usePeekEnd } from "./layout";
 import { SearchPalette } from "./search/Search";
 import { SessionPage } from "./session/SessionPage";
 import { Sidebar } from "./sidebar/Sidebar";
@@ -23,21 +24,50 @@ export function MainWindow() {
     if (session) listed.current = sel.id;
     else if (st.loaded && listed.current === sel.id) st.set({ selection: { kind: "new" } });
   }, [sel, st.loaded, session, st.set]);
+  // A peek ends when it fits again, when another session or page is chosen, and with Esc.
+  usePeekEnd(st);
+  useEffect(() => {
+    st.set({ peek: null });
+  }, [sel, st.set]);
+  const peeking = st.peek !== null;
+  useEffect(() => {
+    if (!peeking) return;
+    const esc = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && st.set({ peek: null });
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [peeking, st.set]);
+  const settingsOpen = useSettingsOpen();
   const onboarding = useOnboarding();
   if (onboarding.open) return <Onboarding onDone={onboarding.close} />;
+  const { sidebar, narrow } = layoutOf(st);
   return (
-    <div className={`mainwrap ${st.sidebar ? "" : "noside"}`}>
+    <div className={`mainwrap ${sidebar === "docked" ? "" : "noside"} ${sidebar === "over" ? "peek" : ""} ${narrow ? "narrow" : ""}`}>
       <Sidebar />
+      {/* Over the conversation, the sidebar goes again with a click beside it. */}
+      {sidebar === "over" && <div className="peek-scrim" onClick={() => setSidebar(st, false)} />}
       {/* The toast sits in the content, under its title bar: never over the composer at the bottom. */}
       <section className="content">
         {session ? <SessionPage key={session.session_id} s={session} /> : <NewSession />}
         <ToastView />
       </section>
       {st.searching && <SearchPalette />}
+      {/* While the settings window is open the window dims behind it, as under a dialog. Coming back here closes the settings
+          (the main process does), and the click that did it lands on the dim, not on what is under it. */}
+      {settingsOpen && <div className="settings-dim" />}
       <SheetHost />
       <KeySheet />
     </div>
   );
+}
+
+/** Whether the settings window is open, now and as that changes. */
+function useSettingsOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    void window.finx?.settingsOpen().then(setOpen);
+    return window.finx?.onSettingsOpen(setOpen);
+  }, []);
+  return open;
 }
 
 /**

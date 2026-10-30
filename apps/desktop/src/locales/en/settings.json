@@ -3,7 +3,6 @@
   "pages": {
     "general": "General",
     "models": "Models",
-    "permissions": "Permissions",
     "about": "About"
   },
   "appearance": {
@@ -103,14 +102,6 @@
       "inMenu": "Show {{name}} in the model menu",
       "none": "No matching models"
     }
-  },
-  "permissions": {
-    "soonTitle": "Comes with the kernel connection",
-    "soon": "These are finx's own settings; the window will read and change them through the protocol:",
-    "mode": "Default permission mode for new sessions",
-    "rules": "Command rules: what runs without asking, what always asks, what never runs",
-    "protected": "Protected paths",
-    "trust": "Trusted projects"
   },
   "about": {
     "version": "Version {{version}}",

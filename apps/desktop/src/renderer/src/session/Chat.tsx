@@ -1,6 +1,6 @@
 import { memo, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, conversation, costText, segments, totals, type ListSession, type SessionView, type Step, type TaskChain } from "@finx/client";
+import { baseName, conversation, costText, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
@@ -174,6 +174,8 @@ function RowView({ step, previous, final, current, sessionId }: RowProps) {
     case "note":
       return step.note.note === "compaction" ? (
         <div className="tnote">{t("chat.compacted", { before: kilo(step.note.tokens_before), after: kilo(step.note.tokens_after) })}</div>
+      ) : step.note.note === "context" ? (
+        <div className="tnote">{t("chat.context", { percent: step.note.window ? Math.round((step.note.tokens / step.note.window) * 100) : 0, used: tokensText(step.note.tokens), size: tokensText(step.note.window) })}</div>
       ) : (
         <div className="tnote warn">{step.note.message}</div>
       );

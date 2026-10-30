@@ -6,6 +6,7 @@ import type { KernelStatusView } from "../../shared/bridge";
 import { i18n } from "../../shared/i18n";
 import { toInput, type Attachment } from "./composer/attachments";
 import { connect } from "./kernel";
+import type { Peek } from "./layout";
 
 // What the window knows: the session list as finx pushes it (P1, no
 // polling), the models, and the window's own state (selection, list view,
@@ -28,11 +29,15 @@ export type Draft = { cwd: string | null; model: string | null; thinking: Thinki
 type UI = {
   selection: Selection;
   inspector: boolean;
+  /** The context card is open (closed, it shows only the share used). */
+  contextOpen: boolean;
   /** The background panel is shown, in the info card's place. */
   background: boolean;
   /** The sub-agent open in the background panel. */
   agent: string | null;
   sidebar: boolean;
+  /** What shows over the conversation for now, there being no room for it beside it (layout.ts). */
+  peek: Peek;
   view: ListView;
   /** The list shows archived sessions. */
   archived: boolean;
@@ -61,6 +66,8 @@ export type Store = UI & {
   sessions: ListSession[];
   /** The list arrived. */
   loaded: boolean;
+  /** The window's width, which lays it out (layout.ts). */
+  width: number;
   /** Models, providers with their keys, and the defaults of a new session. */
   models: ModelsListResult;
   set: (patch: Partial<UI>) => void;
@@ -90,7 +97,7 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Saved = Pick<UI, "selection" | "sidebar" | "inspector" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft> };
+type Saved = Pick<UI, "selection" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft> };
 
 function saved(): Partial<Saved> {
   if (location.hash.startsWith("#settings")) return {};
@@ -110,14 +117,22 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<ListSession[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [models, setModels] = useState<ModelsListResult>(noModels);
+  const [width, setWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const resize = () => setWidth(window.innerWidth);
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, []);
   const [ui, setUI] = useState<UI>(() => {
     const s = saved();
     return {
       selection: s.selection ?? { kind: "new" },
       inspector: s.inspector ?? true,
+      contextOpen: s.contextOpen ?? true,
       background: false,
       agent: null,
       sidebar: s.sidebar ?? true,
+      peek: null,
       view: s.view ?? listView(),
       archived: s.archived ?? false,
       collapsed: s.collapsed ?? [],
@@ -196,13 +211,13 @@ export function FinxProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (location.hash.startsWith("#settings")) return;
-    const v: Saved = { selection: ui.selection, sidebar: ui.sidebar, inspector: ui.inspector, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft };
+    const v: Saved = { selection: ui.selection, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft };
     try {
       localStorage.setItem("main-view", JSON.stringify(v));
     } catch {
       // The window's layout is a convenience; without storage it just doesn't stick.
     }
-  }, [ui.selection, ui.sidebar, ui.inspector, ui.view, ui.archived, ui.collapsed, ui.draft]);
+  }, [ui.selection, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);
@@ -249,8 +264,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   );
 
   const store = useMemo<Store>(
-    () => ({ ...ui, rpc, kernel: kernelState, status, server, sessions, loaded, models, set, select, run, show, call, op, refreshModels, start }),
-    [ui, rpc, kernelState, status, server, sessions, loaded, models, set, select, run, show, call, op, refreshModels, start],
+    () => ({ ...ui, rpc, kernel: kernelState, status, server, sessions, loaded, width, models, set, select, run, show, call, op, refreshModels, start }),
+    [ui, rpc, kernelState, status, server, sessions, loaded, width, models, set, select, run, show, call, op, refreshModels, start],
   );
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

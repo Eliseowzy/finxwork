@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, screen, shell, type Rectangle } from "electron";
 import os from "node:os";
 import path from "node:path";
 import { i18n, language } from "../shared/i18n";
@@ -64,7 +64,8 @@ export function showMain(): BrowserWindow {
   main = new BrowserWindow({
     width: 1240,
     height: 800,
-    minWidth: 980,
+    // The conversation alone, its margins narrowed; the info card and the sidebar give way before (renderer layout.ts).
+    minWidth: 480,
     minHeight: 620,
     show: false,
     title: "FinxWork",
@@ -73,6 +74,8 @@ export function showMain(): BrowserWindow {
   });
   secure(main);
   main.once("ready-to-show", () => main?.show());
+  // Settings work as a dialog over the main window: going back to the main window closes them.
+  main.on("focus", () => settingsVisible() && settings!.close());
   main.on("closed", () => (main = undefined));
   main.loadURL(page());
   return main;
@@ -82,7 +85,28 @@ export function settingsVisible(): boolean {
   return !!settings && !settings.isDestroyed() && settings.isVisible();
 }
 
-/** The settings window, laid out as System Settings, on a page. */
+/**
+ * Where a window of this size opens: centred on the main window, kept inside
+ * the screen the main window is on. Without a visible main window, the
+ * system centres it on the screen.
+ */
+function overMain(width: number, height: number): Partial<Rectangle> {
+  if (!main || main.isDestroyed() || !main.isVisible() || main.isMinimized()) return {};
+  const b = main.getBounds();
+  const area = screen.getDisplayMatching(b).workArea;
+  const clamp = (v: number, min: number, max: number) => Math.round(Math.min(Math.max(v, min), Math.max(min, max)));
+  return {
+    x: clamp(b.x + (b.width - width) / 2, area.x, area.x + area.width - width),
+    y: clamp(b.y + (b.height - height) / 2, area.y, area.y + area.height - height),
+  };
+}
+
+/** Tells the main window whether settings are open: it dims while they are. */
+function settingsChanged(open: boolean) {
+  if (main && !main.isDestroyed()) main.webContents.send("settings-open", open);
+}
+
+/** The settings window, laid out as System Settings, on a page; it opens over the main window, which dims behind it, and closes when the main window is used again. */
 export function showSettings(page_?: string) {
   if (settings) {
     if (page_) settings.webContents.send("settings-page", page_);
@@ -93,6 +117,7 @@ export function showSettings(page_?: string) {
   settings = new BrowserWindow({
     width: 820,
     height: 620,
+    ...overMain(820, 620),
     minWidth: 720,
     minHeight: 480,
     show: false,
@@ -104,6 +129,10 @@ export function showSettings(page_?: string) {
   });
   secure(settings);
   settings.once("ready-to-show", () => settings?.show());
-  settings.on("closed", () => (settings = undefined));
+  settings.on("show", () => settingsChanged(true));
+  settings.on("closed", () => {
+    settings = undefined;
+    settingsChanged(false);
+  });
   settings.loadURL(page(`#settings${page_ ? "/" + page_ : ""}`));
 }

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { displayTitle, type ListSession } from "@finx/client";
 import type { SessionState } from "@finx/protocol";
 import { Icon } from "./icons";
+import { layoutOf, setSidebar } from "./layout";
 import { useStore } from "./store";
 
 /** A session's title, edited in place: ↩ or leaving the field keeps it (`end` gets the text), Esc puts it back (`end` gets null). */
@@ -47,11 +48,11 @@ export function StatusDot({ state }: { state: SessionState }) {
 export function SidebarToggle() {
   const st = useStore();
   const { t } = useTranslation("common");
-  if (st.sidebar) return null;
+  if (layoutOf(st).sidebar !== "hidden") return null;
   return (
     <>
       <span style={{ width: "calc(var(--lights) - 30px)", flex: "none" }} />
-      <button className="tb" onClick={() => st.set({ sidebar: true })} aria-label={t("window.showSidebar")} title={t("window.showSidebar")}>
+      <button className="tb" onClick={() => setSidebar(st, true)} aria-label={t("window.showSidebar")} title={t("window.showSidebar")}>
         <Icon name="sidebar" />
       </button>
     </>

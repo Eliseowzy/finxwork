@@ -50,6 +50,7 @@ const paths: Record<string, string> = {
   // Stacked sheets: work going on in the background.
   layers: "<path d=\"M8 2.3l5.6 2.9L8 8.1 2.4 5.2z\"/><path d=\"M2.4 8l5.6 2.9L13.6 8\"/><path d=\"M2.4 10.8l5.6 2.9 5.6-2.9\"/>",
   pause: "<path d=\"M6 4.2v7.6M10 4.2v7.6\"/>",
+  branch: "<circle cx=\"4.8\" cy=\"3.6\" r=\"1.5\"/><circle cx=\"4.8\" cy=\"12.4\" r=\"1.5\"/><circle cx=\"11.2\" cy=\"5.2\" r=\"1.5\"/><path d=\"M4.8 5.1v5.8M11.2 6.7c0 2.6-6.4 1.6-6.4 4.2\"/>",
 };
 
 export type IconName = keyof typeof paths;

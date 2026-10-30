@@ -14,7 +14,6 @@ import "../styles/settings.css";
 const pages = [
   { id: "general", icon: "gear" },
   { id: "models", icon: "cube" },
-  { id: "permissions", icon: "shield" },
   { id: "about", icon: "info" },
 ] as const;
 
@@ -60,7 +59,6 @@ export function SettingsWindow() {
         <div className="set-body">
           {page === "general" && <General />}
           {page === "models" && <ModelConnections />}
-          {page === "permissions" && <Permissions />}
           {page === "about" && <About />}
         </div>
       </main>
@@ -126,23 +124,6 @@ function General() {
         </SRow>
       </div>
       {!window.finx && <p className="set-note">{t("browserNote")}</p>}
-    </div>
-  );
-}
-
-/** What finx asks before it acts: comes with the kernel's settings over the protocol (phase 2). */
-function Permissions() {
-  const { t } = useTranslation("settings");
-  return (
-    <div className="set-soon">
-      <b>{t("permissions.soonTitle")}</b>
-      <span>{t("permissions.soon")}</span>
-      <ul>
-        <li>{t("permissions.mode")}</li>
-        <li>{t("permissions.rules")}</li>
-        <li>{t("permissions.protected")}</li>
-        <li>{t("permissions.trust")}</li>
-      </ul>
     </div>
   );
 }

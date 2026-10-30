@@ -35,6 +35,8 @@
   --sel: rgba(31, 107, 255, .12); --sel-fg: #1a56d6; --side-sel: rgba(0, 0, 0, .075);
   --accent-t: var(--accent-fg); --accent-bg: rgba(31, 107, 255, .10);
   --green: var(--ok); --green-bg: rgba(23, 146, 79, .11); --orange: var(--warn); --orange-bg: rgba(230, 126, 10, .12); --red: var(--danger); --red-bg: rgba(215, 51, 63, .10);
+  /* The parts of the context, beside the accent, green and orange. */
+  --violet: #8a5cf5; --teal: #0e9f9a;
   --btn: #ffffff; --btn-sh: 0 0 0 .5px rgba(0, 0, 0, .14), 0 1px 1.5px rgba(0, 0, 0, .08);
   --seg-on: #ffffff; --field: #ffffff; --field-bd: rgba(0, 0, 0, .16);
   --menu: rgba(248, 248, 250, .80); --menu-solid: #f8f8fa; --menu-bd: rgba(0, 0, 0, .10);
@@ -64,6 +66,7 @@
     --sel: rgba(46, 128, 255, .24); --sel-fg: #a8c8ff; --side-sel: rgba(255, 255, 255, .1);
     --accent-bg: rgba(46, 128, 255, .16);
     --green-bg: rgba(63, 207, 134, .14); --orange-bg: rgba(255, 171, 61, .14); --red-bg: rgba(255, 102, 112, .13);
+    --violet: #a585ff; --teal: #3cc8c0;
     --btn: rgba(255, 255, 255, .12); --btn-sh: 0 0 0 .5px rgba(255, 255, 255, .08);
     --seg-on: rgba(255, 255, 255, .22); --field: rgba(255, 255, 255, .06); --field-bd: rgba(255, 255, 255, .16);
     --menu: rgba(44, 44, 48, .80); --menu-solid: #2c2c30; --menu-bd: rgba(255, 255, 255, .12);

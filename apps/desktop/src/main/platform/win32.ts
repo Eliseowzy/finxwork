@@ -1,4 +1,5 @@
 import { nativeTheme } from "electron";
+import { spawn } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 import type { Platform } from "./types";
@@ -24,4 +25,5 @@ export const win32: Platform = {
   kernelBinary: () => path.join(process.resourcesPath, "bin", "finx.exe"),
   // Windows apps get the user's full environment; there is no login shell to ask.
   loginEnvironment: async () => ({ env: process.env, source: "login", ms: 0 }),
+  openTerminal: (dir) => spawn("cmd.exe", ["/c", "start", "", "cmd.exe"], { cwd: dir, detached: true, stdio: "ignore", windowsHide: true }).on("error", () => {}).unref(),
 };

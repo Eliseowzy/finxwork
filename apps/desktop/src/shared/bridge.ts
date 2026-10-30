@@ -98,6 +98,9 @@ export type Bridge = {
   openSettings(page?: string): void;
   /** In the settings window: another page was asked for while it is open. */
   onSettingsPage(cb: (page: string) => void): () => void;
+  /** In the main window: whether the settings window is open now, and as that changes (the window dims behind it). */
+  settingsOpen(): Promise<boolean>;
+  onSettingsOpen(cb: (open: boolean) => void): () => void;
   /** A native menu at the pointer; resolves to the chosen item's id. */
   popupMenu(items: MenuItem[]): Promise<string | null>;
   onCommand(cb: (c: Command) => void): () => void;
@@ -107,6 +110,12 @@ export type Bridge = {
   pickFiles(): Promise<PickedFile[]>;
   /** Shows a file or folder in Finder (Explorer, the file manager). */
   revealPath(path: string): void;
+  /** Opens a folder itself in Finder (Explorer, the file manager). */
+  openFolder(path: string): void;
+  /** A new terminal window, its shell in this folder. */
+  openTerminal(path: string): void;
+  /** The git branch checked out where this folder lies (a detached HEAD's short id), or null outside a repository. */
+  gitBranch(path: string): Promise<string | null>;
   openExternal(url: string): void;
   showAbout(): void;
   getPreferences(): Promise<Preferences>;

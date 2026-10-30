@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import path from "node:path";
 import { loginEnvironment } from "../kernel/env";
 import type { Platform } from "./types";
@@ -13,4 +14,6 @@ export const linux: Platform = {
   kernelEndpoint: (home) => path.join(home, "run", "finx.sock"),
   kernelBinary: () => path.join(process.resourcesPath, "bin", "finx"),
   loginEnvironment,
+  // The desktop's chosen terminal, where Debian's alternatives name one.
+  openTerminal: (dir) => spawn("x-terminal-emulator", [], { cwd: dir, detached: true, stdio: "ignore" }).on("error", () => {}).unref(),
 };

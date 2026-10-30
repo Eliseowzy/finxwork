@@ -39,7 +39,8 @@
     "copiedError": "已拷贝报错",
     "retryIn": "{{seconds}} 秒后第 {{attempt}} 次重试",
     "retrying": "正在第 {{attempt}} 次重试",
-    "stopRetry": "停止"
+    "stopRetry": "停止",
+    "context": "上下文已用 {{percent}}% · {{used}} / {{size}} tokens"
   },
   "fail": {
     "theProvider": "服务商",
@@ -152,14 +153,53 @@
   },
   "inspector": {
     "label": "会话信息",
-    "turn": "第 {{turn}} 轮",
-    "thinking": "思考：{{level}}",
-    "tasks_other": "<b>{{count}}</b> 个任务",
-    "context": "上下文 <b>{{percent}}%</b>",
-    "contextOf": "上下文已用 {{used}} / {{size}} tokens",
-    "background": "后台运行中",
-    "agents_other": "{{count}} 个子智能体在工作",
-    "viewBackground": "查看后台任务"
+    "environment": "环境",
+    "local": "本机",
+    "openFinder": "在访达中打开",
+    "openFolder": "在文件管理器中打开",
+    "openTerminal": "在终端中打开",
+    "copyPath": "拷贝路径",
+    "copiedPath": "已拷贝项目路径",
+    "copyBranch": "点击拷贝分支名",
+    "copiedBranch": "已拷贝分支名 {{branch}}",
+    "noGit": "不是 Git 仓库",
+    "context": "上下文",
+    "used": "已用 {{percent}}%",
+    "estimated": "其中约 {{tokens}} 是估算的：上次回复之后新加的内容，下次回复时以模型的实际计数为准",
+    "parts": {
+      "messages": {
+        "name": "消息",
+        "desc": "你的消息、模型的回复，以及工具调用和结果"
+      },
+      "system_prompt": {
+        "name": "系统提示词",
+        "desc": "基础指令、项目说明和运行环境"
+      },
+      "tools": {
+        "name": "系统工具",
+        "desc": "内置工具的定义"
+      },
+      "skills": {
+        "name": "Skills",
+        "desc": "Skills 目录，以及这段上下文里加载的 Skill 说明"
+      },
+      "mcp": {
+        "name": "MCP",
+        "desc": "MCP 工具的定义和服务说明"
+      },
+      "other": {
+        "name": "其他",
+        "desc": "其他内容"
+      },
+      "reserved": {
+        "name": "预留空间",
+        "desc": "留给模型回复，以及到点自动压缩上下文的空间"
+      },
+      "free": {
+        "name": "剩余空间",
+        "desc": "自动压缩之前还能使用的空间"
+      }
+    }
   },
   "new": {
     "greeting1": "今天想研究点什么？",

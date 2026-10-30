@@ -40,7 +40,8 @@
     "copiedError": "Error copied",
     "retryIn": "Retry {{attempt}} in {{seconds}}s",
     "retrying": "Retry {{attempt}} in progress",
-    "stopRetry": "Stop"
+    "stopRetry": "Stop",
+    "context": "Context {{percent}}% used · {{used}} / {{size}} tokens"
   },
   "fail": {
     "theProvider": "the provider",
@@ -161,16 +162,53 @@
   },
   "inspector": {
     "label": "Session info",
-    "turn": "Turn {{turn}}",
-    "thinking": "thinking: {{level}}",
-    "tasks_one": "<b>{{count}}</b> task",
-    "tasks_other": "<b>{{count}}</b> tasks",
-    "context": "context <b>{{percent}}%</b>",
-    "contextOf": "{{used}} of {{size}} tokens in the context",
-    "background": "Working in the background",
-    "agents_one": "{{count}} sub-agent working",
-    "agents_other": "{{count}} sub-agents working",
-    "viewBackground": "Show background tasks"
+    "environment": "Environment",
+    "local": "This computer",
+    "openFinder": "Open in Finder",
+    "openFolder": "Open in File Manager",
+    "openTerminal": "Open in Terminal",
+    "copyPath": "Copy Path",
+    "copiedPath": "Copied the project's path",
+    "copyBranch": "Click to copy the branch name",
+    "copiedBranch": "Copied the branch name {{branch}}",
+    "noGit": "Not a git repository",
+    "context": "Context",
+    "used": "{{percent}}% used",
+    "estimated": "About {{tokens}} of it is estimated: what was added since the last reply, until the model counts it with its next one",
+    "parts": {
+      "messages": {
+        "name": "Messages",
+        "desc": "Your messages, the replies, tool calls and their results"
+      },
+      "system_prompt": {
+        "name": "System prompt",
+        "desc": "Base instructions, project instructions and the environment"
+      },
+      "tools": {
+        "name": "System tools",
+        "desc": "Definitions of the built-in tools"
+      },
+      "skills": {
+        "name": "Skills",
+        "desc": "The skill catalog, and the instructions of skills loaded in this context"
+      },
+      "mcp": {
+        "name": "MCP",
+        "desc": "MCP tool definitions and server instructions"
+      },
+      "other": {
+        "name": "Other",
+        "desc": "Other content"
+      },
+      "reserved": {
+        "name": "Reserved",
+        "desc": "Room kept for the reply, and for compacting the context in time"
+      },
+      "free": {
+        "name": "Free space",
+        "desc": "Room left before the context is compacted"
+      }
+    }
   },
   "new": {
     "greeting1": "What would you like to research today?",

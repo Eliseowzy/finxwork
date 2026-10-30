@@ -80,6 +80,17 @@ input:disabled,textarea:disabled{cursor:default}
 /* Sidebar titles a step brighter than other text in the dark, as small text on the material reads grey. */
 @media (prefers-color-scheme:dark){.side{--l1:rgba(255,255,255,.93)}}
 .noside .side{opacity:0;pointer-events:none}
+.mainwrap>.content{grid-column:2}
+/* No room for the sidebar beside the conversation, but asked for: over it, opaque, until a click beside it (layout.ts). */
+.mainwrap.peek .side{position:absolute;top:0;left:0;bottom:0;z-index:20;width:272px;opacity:1;pointer-events:auto;background:var(--side);
+  box-shadow:10px 0 30px rgba(0,0,0,.14);animation:peek-in .22s cubic-bezier(.2,0,0,1)}
+.peek-scrim{position:absolute;inset:0;z-index:19;background:rgba(0,0,0,.08);animation:scrim-in .2s}
+@keyframes scrim-in{from{opacity:0}}
+@keyframes peek-in{from{transform:translateX(-24px);opacity:0}}
+@media (prefers-reduced-motion:reduce){.mainwrap.peek .side{animation:none}}
+/* A narrow conversation: less margin beside its column and its composer. */
+.mainwrap.narrow .dbody{padding-left:var(--sp-3);padding-right:var(--sp-3)}
+.mainwrap.narrow .cmp-zone{padding-left:calc(var(--sp-3) - 12px);padding-right:calc(var(--sp-3) - 12px)}
 /* The sidebar toggle sits a step after the traffic lights (which end at x 74); the list's view options end the row. */
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
 .tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
@@ -175,6 +186,8 @@ input:disabled,textarea:disabled{cursor:default}
 .acct-menu .msep{height:.5px;background:var(--sep);margin:5px 9px}
 /* Menus drawn by the page (the list's view menu, a row's ⋯, the composer's pickers): the foot menu's look, opaque. */
 .vmenu{position:fixed;z-index:30;min-width:176px;max-height:calc(100vh - 24px);overflow-y:auto;background:var(--menu-solid);border-radius:12px;box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.08);padding:5px;outline:none;animation:fadein .14s cubic-bezier(.2,0,0,1)}
+.vmenu.down{animation-name:menudown}
+@keyframes menudown{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 .vmenu .mi{display:flex;align-items:center;gap:8px;width:100%;min-height:28px;padding:0 8px 0 9px;border:0;border-radius:7px;background:none;text-align:left;outline:none;white-space:nowrap}
 .vmenu .mi:focus,.vmenu .mi.open{background:var(--fill2)}
 .vmenu .mi .val{margin-left:auto;padding-left:14px;color:var(--l2);font-size:12px}
@@ -215,33 +228,57 @@ input:disabled,textarea:disabled{cursor:default}
 .live-logo{display:inline-flex;animation:live-breathe 2.4s ease-in-out infinite}
 @keyframes live-breathe{0%,100%{opacity:1}50%{opacity:.45}}
 @media (prefers-reduced-motion:reduce){.live-logo{animation:none}}
-/* The session's card: it floats over the conversation's top right (the conversation keeps clear of it), lifted by a soft shadow. */
-.insp{position:absolute;top:var(--sp-3);right:var(--sp-3);z-index:4;width:252px;display:flex;flex-direction:column;
-  background:color-mix(in srgb,var(--win) 86%,transparent);backdrop-filter:blur(24px) saturate(1.5);-webkit-backdrop-filter:blur(24px) saturate(1.5);
-  border-radius:16px;box-shadow:0 0 0 .5px var(--sep),0 2px 6px rgba(0,0,0,.05),0 14px 36px rgba(15,20,40,.12);padding:16px 16px 13px}
+/* The session's card: it floats over the conversation's top right (the conversation keeps clear of it), set off by a hairline, without a shadow (on a dark window a shadow only darkens the ring around it). */
+/* The cards, one under the other. Spacing goes up the scale from inside out: 8 within a card, 13 between cards, 21 to the
+   window's edges (the same above as on the right, so the stack sits square in its corner). */
+.insp-stack{position:absolute;top:var(--sp-3);right:var(--sp-3);z-index:4;width:252px;display:flex;flex-direction:column;gap:var(--sp-2)}
+.insp{background:color-mix(in srgb,var(--win) 86%,transparent);backdrop-filter:blur(24px) saturate(1.5);-webkit-backdrop-filter:blur(24px) saturate(1.5);
+  border-radius:16px;box-shadow:0 0 0 .5px var(--sep);padding:8px}
 .dwrap.dock .cscroll{padding-right:270px}
 /* The composer centres under the conversation too. */
 .dwrap.dock .cmp-zone{right:270px}
-.insp-now{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.insp-st{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--l1)}
-.insp-st .sdot{width:7px;height:7px}
-.insp-st.w{color:var(--orange)}.insp-st.r{color:var(--red)}
-.insp-time{font-size:22px;font-weight:600;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
-.insp-why{font-size:11.5px;color:var(--l2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.insp-why.r{color:var(--red)}
-.insp-state{padding-bottom:13px;margin-bottom:13px;border-bottom:.5px solid var(--sep)}
-.insp-facts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:var(--l2)}
-.insp-facts li{display:flex;align-items:center;gap:9px;min-width:0}
-.insp-facts li>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.insp-facts b{font-weight:500;color:var(--l1)}
-.insp-facts li>.insp-where{display:flex;min-width:0}
-.insp-where>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.insp-where>i{flex:none;font-style:normal;white-space:pre}
-.insp-where>b{flex:none}
-.insp-facts .ic{color:var(--l2);width:16px;height:16px}
-.insp-sum{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:13px;padding-top:11px;border-top:.5px solid var(--sep);font-size:11.5px;color:var(--l2)}
-.insp-sum b{font-weight:600;color:var(--l1);font-variant-numeric:tabular-nums}
-.insp-sum .warn b{color:var(--orange)}
+/* Inside, the sidebar's measures: a group's heading (.grp-h), then rows as its own (.nav-i), the heading's text in line with the rows' icons. */
+.insp h3{margin:0;padding:6px 9px;font-size:12px;line-height:16px;font-weight:400;color:var(--l2)}
+.insp ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.insp-row{box-sizing:border-box;display:flex;align-items:center;gap:9px;width:100%;height:32px;padding:0 9px;border-radius:8px;font-size:14px;color:var(--l1);white-space:nowrap;min-width:0}
+button.insp-row{border:0;background:none;font-family:inherit;text-align:left;cursor:pointer}
+button.insp-row:hover,button.insp-row[aria-expanded="true"]{background:var(--fill)}
+button.insp-row:active{background:var(--fill2)}
+.insp-row .ic{flex:none;width:18px;height:18px;color:var(--l2)}
+/* When room runs short, the folder's path gives way first, then the name. */
+.insp-where{display:flex;min-width:0}
+.insp-t{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.insp-sub{flex-shrink:1000;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:pre;color:var(--l2)}
+/* The context card: a heading that opens it, the share used beside it while closed. */
+.insp-h{box-sizing:border-box;display:flex;align-items:center;gap:2px;width:100%;height:28px;padding:0 9px;border:0;border-radius:8px;background:none;font-family:inherit;color:var(--l2);text-align:left;cursor:pointer}
+.insp-h:hover{background:var(--fill)}
+.insp .insp-h h3{padding:0}
+.insp-h .ic{flex:none;width:16px;height:16px;transition:transform .15s var(--ease-out)}
+.insp-h .ic.shut{transform:rotate(-90deg)}
+.insp-glance{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;font-variant-numeric:tabular-nums}
+.ctx-mini{width:36px;height:6px;border-radius:3px;background:var(--fill2);overflow:hidden}
+.ctx-mini i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.ctx-body{padding:4px 9px 0}
+.ctx-sum{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:14px;color:var(--l1)}
+.ctx-of{font-size:12px;color:var(--l2);font-variant-numeric:tabular-nums}
+/* The window, left to right: the parts, the free room (the track), the kept room at the end. */
+.ctx-bar{display:flex;gap:1px;height:6px;margin:8px 0 6px;border-radius:3px;background:var(--fill2);overflow:hidden}
+.ctx-bar i{display:block;flex:none;min-width:2px;height:100%}
+.ctx-bar .ctx-reserved{margin-left:auto}
+.ctx-rows{list-style:none;margin:0;padding:0}
+.ctx-rows li{display:grid;grid-template-columns:10px minmax(0,1fr) auto 44px;align-items:center;gap:9px;height:26px;font-size:13px}
+.ctx-sw{width:10px;height:10px;border-radius:3px}
+.ctx-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--l2)}
+.ctx-n{color:var(--l2);text-align:right;font-variant-numeric:tabular-nums}
+.ctx-p{color:var(--l1);text-align:right;font-variant-numeric:tabular-nums}
+.ctx-messages{background:var(--accent)}
+.ctx-system_prompt{background:var(--orange)}
+.ctx-tools{background:var(--green)}
+.ctx-skills{background:var(--violet)}
+.ctx-mcp{background:var(--teal)}
+.ctx-other{background:var(--l2)}
+.ctx-reserved{background:var(--l3)}
+.ctx-free{background:var(--fill2);box-shadow:inset 0 0 0 .5px var(--l4)}
 /* The conversation: a 730-wide column, at least 34 from the edges; lines close together, blocks apart. */
 .dbody{max-width:798px;margin:0 auto;padding:var(--sp-3) var(--sp-4) 40px}
 .tr{display:flex;flex-direction:column;gap:var(--sp-2)}
@@ -405,7 +442,7 @@ input:disabled,textarea:disabled{cursor:default}
 .glass-defs{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
 .scol .dwrap{border-top:0}
 .scol .dbody{padding-top:calc(var(--top) + var(--sp-3))}
-.scol .insp{top:calc(var(--top) + var(--sp-1))}
+.scol .insp-stack{top:calc(var(--top) + var(--sp-3))}
 /* Reduce transparency (System Settings › Accessibility › Display): a solid bar. */
 @media (prefers-reduced-transparency:reduce){.scol>.ctool{backdrop-filter:none !important;background:var(--win)}}
 /* The system's window buttons sit over the panel's top then, not the conversation's. */
@@ -449,11 +486,9 @@ input:disabled,textarea:disabled{cursor:default}
 .bgp-note{margin:4px 0 0;font-size:12px;color:var(--l2)}
 .bgp-note.int{color:var(--orange)}
 .bgp-note.bad{color:var(--red)}
-/* A narrow window has no room for a column beside the conversation: the panel covers its right side. */
-@media (max-width:1180px){
-  .bgp{position:absolute;top:0;right:0;bottom:0;z-index:6;box-shadow:-10px 0 30px rgba(0,0,0,.12)}
-  .spage.bgopen .ctool{padding-right:calc(14px + var(--caption))}
-}
+/* No room for a column beside the conversation (layout.ts): the panel covers its right side. */
+.spage.bgover .bgp{position:absolute;top:0;right:0;bottom:0;z-index:6;box-shadow:-10px 0 30px rgba(0,0,0,.12)}
+.spage.bgover .ctool{padding-right:calc(14px + var(--caption))}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--l2);height:100%;text-align:center;padding:40px}
 .empty b{color:var(--l1);font-size:15px}
 /* forms */
@@ -491,6 +526,8 @@ input:disabled,textarea:disabled{cursor:default}
 .toast.bad .ic{color:var(--red)}
 /* sheets */
 .sheet{margin:auto;border:0;padding:0;max-width:calc(100vw - 48px);max-height:calc(100vh - 80px);overflow-y:auto;color:var(--l1);background:var(--win);border-radius:18px;box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1)}
+/* The main window while the settings window is open: dimmed as under a dialog. */
+.settings-dim{position:fixed;inset:0;z-index:100;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
 .sheet::backdrop{background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
 .sheet-in{padding:22px 24px 18px}
 @keyframes sheet{from{opacity:0;transform:scale(.97)}}

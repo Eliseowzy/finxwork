@@ -22,4 +22,6 @@ export interface Platform {
   kernelBinary(): string;
   /** The environment a service the app starts gets: the login shell's on macOS and Linux (desktop-kernel-integration §7). */
   loginEnvironment(): Promise<LoginEnvironment>;
+  /** A new window of the system's terminal, its shell in this folder. */
+  openTerminal(dir: string): void;
 }

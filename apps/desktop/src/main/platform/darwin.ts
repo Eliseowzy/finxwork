@@ -1,3 +1,4 @@
+import { execFile } from "node:child_process";
 import path from "node:path";
 import { loginEnvironment } from "../kernel/env";
 import type { Platform } from "./types";
@@ -21,4 +22,5 @@ export const darwin: Platform = {
   // Helper tools belong in Contents/MacOS, next to the app's own executable (desktop-kernel-integration §4.1).
   kernelBinary: () => path.join(path.dirname(process.execPath), "finx"),
   loginEnvironment,
+  openTerminal: (dir) => execFile("/usr/bin/open", ["-a", "Terminal", dir], () => {}),
 };

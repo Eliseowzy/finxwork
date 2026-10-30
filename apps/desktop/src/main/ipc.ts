@@ -3,10 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
+import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
+import { platform } from "./platform";
 import { preferences, setPreferences } from "./preferences";
 import { check, download, install, setAutoDownload, snooze, updateInfo } from "./updater";
-import { mainWindow, ours, showMain, showSettings } from "./windows";
+import { mainWindow, ours, settingsVisible, showMain, showSettings } from "./windows";
 
 // The page's requests to the main process (shared/bridge.ts). Each handler
 // checks the request comes from one of our own pages.
@@ -61,6 +63,11 @@ function revealable(p: unknown): p is string {
   return typeof p === "string" && path.isAbsolute(p.replace(/^~(?=$|\/)/, os.homedir()));
 }
 
+/** A folder the page may open, in the file manager or a terminal: an existing one, by its absolute path. */
+function folder(p: unknown): p is string {
+  return typeof p === "string" && path.isAbsolute(p) && fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() === true;
+}
+
 export function registerIPC() {
   ipcMain.handle("open-source-app", async (e, adapter: unknown = "qwenwork") => {
     if (!trusted(e)) return;
@@ -84,6 +91,7 @@ export function registerIPC() {
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
   ipcMain.on("open-settings", (e, page?: string) => trusted(e) && showSettings(typeof page === "string" ? page : undefined));
+  ipcMain.handle("settings-open", (e) => trusted(e) && settingsVisible());
   ipcMain.on("relaunch", (e) => {
     if (!trusted(e)) return;
     app.relaunch();
@@ -95,6 +103,11 @@ export function registerIPC() {
   ipcMain.on("reveal-path", (e, p: unknown) => {
     if (trusted(e) && revealable(p)) shell.showItemInFolder(p.replace(/^~(?=$|\/)/, os.homedir()));
   });
+  ipcMain.on("open-folder", (e, p: unknown) => {
+    if (trusted(e) && folder(p)) void shell.openPath(p);
+  });
+  ipcMain.on("open-terminal", (e, p: unknown) => trusted(e) && folder(p) && platform.openTerminal(p));
+  ipcMain.handle("git-branch", (e, p: unknown) => (trusted(e) && typeof p === "string" && path.isAbsolute(p) ? gitBranch(p) : null));
   ipcMain.on("show-about", (e) => trusted(e) && app.showAboutPanel());
   ipcMain.on("menu-state", (e, s: MenuState) => {
     if (!trusted(e) || BrowserWindow.fromWebContents(e.sender) !== mainWindow()) return;

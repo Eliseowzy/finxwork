@@ -3,6 +3,7 @@ import { isRunning, needsAttention, stateOf, type ListSession } from "@finx/clie
 import type { Command, MenuState } from "../../shared/bridge";
 import { archive, copyId, isArchivable, reveal, unarchive } from "./actions";
 import { attachEvent } from "./composer/attachments";
+import { layoutOf, setCard, setSidebar } from "./layout";
 import { keptView } from "./session/useSession";
 import { listSections } from "./sidebar/Sidebar";
 import { useStore, type Store } from "./store";
@@ -40,10 +41,10 @@ export function useCommands() {
           approvable: stateOf(s) === "awaiting_approval",
           archivable: isArchivable(s),
           archived: s.archived === true,
-          inspector: st.inspector,
+          inspector: layoutOf(st).card !== "hidden" && !st.background,
         }
       : null,
-    sidebar: st.sidebar,
+    sidebar: layoutOf(st).sidebar !== "hidden",
     undo: st.toast?.undo !== undefined,
   };
   const key = JSON.stringify(state);
@@ -70,15 +71,15 @@ export function run(st: Store, c: Command) {
     case "nextActive":
       return next(st, isRunning);
     case "toggleInspector":
-      return s && st.set({ inspector: !st.inspector });
+      return s && setCard(st, layoutOf(st).card === "hidden" || st.background);
     case "toggleSidebar":
-      return st.set({ sidebar: !st.sidebar });
+      return setSidebar(st, layoutOf(st).sidebar === "hidden");
     case "approve":
       return s && window.dispatchEvent(new CustomEvent(pageCommand, { detail: "approve" }));
     case "interrupt":
       return s && (isRunning(s) || stateOf(s) === "awaiting_approval") && st.op(s.session_id, { type: "interrupt" });
     case "rename":
-      return s && st.set({ renaming: s.session_id, sidebar: true });
+      return s && (setSidebar(st, true), st.set({ renaming: s.session_id }));
     case "archive":
       return s && isArchivable(s) && archive(st, s);
     case "unarchive":

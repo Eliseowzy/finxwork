@@ -8,6 +8,7 @@ import { archive, confirmDelete, isArchivable, rename, sessionMenu, unarchive } 
 import { RenameField, StatusDot } from "../components";
 import { bucketTitle, listTime } from "../format";
 import { Icon } from "../icons";
+import { setSidebar } from "../layout";
 import { keptView } from "../session/useSession";
 import { useNow, useStore, type Store } from "../store";
 import { UpdateReminder } from "../updates";
@@ -32,7 +33,7 @@ export function Sidebar() {
   return (
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
-        <button className="tb" onClick={() => st.set({ sidebar: false })} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
+        <button className="tb" onClick={() => setSidebar(st, false)} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
           <Icon name="sidebar" />
         </button>
         <ListViewMenu />

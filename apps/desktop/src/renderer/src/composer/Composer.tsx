@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { homePath } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
@@ -161,15 +162,17 @@ function PlusMenu({ attachments, onAttachments }: { attachments: Attachment[]; o
  * bottom), aligned to its left or right edge; the keyboard works as in a
  * native menu.
  */
-export function MenuButton({ className, title, label, align = "left", disabled, children }: {
+export function MenuButton({ className, title, label, align = "left", below, disabled, children }: {
   className: string;
   title: string;
   label: ReactNode;
   align?: "left" | "right";
+  /** Opens under the button (it sits at the top of the window), not over it. */
+  below?: boolean;
   disabled?: boolean;
   children: (close: () => void) => ReactNode;
 }) {
-  const [at, setAt] = useState<{ x: number; bottom: number; key: boolean } | null>(null);
+  const [at, setAt] = useState<{ x: number; y: number; key: boolean } | null>(null);
   const btn = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const close = () => setAt(null);
@@ -204,24 +207,27 @@ export function MenuButton({ className, title, label, align = "left", disabled, 
         onClick={(e) => {
           if (at) return close();
           const r = e.currentTarget.getBoundingClientRect();
-          setAt({ x: align === "left" ? r.left : innerWidth - r.right, bottom: innerHeight - r.top + 6, key: e.detail === 0 });
+          setAt({ x: align === "left" ? r.left : innerWidth - r.right, y: below ? r.bottom + 6 : innerHeight - r.top + 6, key: e.detail === 0 });
         }}
       >
         {label}
       </button>
-      {at && (
-        <div
-          className="vmenu"
-          role="menu"
-          aria-label={title}
-          tabIndex={-1}
-          ref={menu}
-          style={align === "left" ? { left: at.x, bottom: at.bottom } : { right: at.x, bottom: at.bottom }}
-          onKeyDown={(e) => menuKeys(e, menu.current, () => (close(), btn.current?.focus()))}
-        >
-          {children(close)}
-        </div>
-      )}
+      {/* On the page itself: a card with a backdrop filter around the button would hold a fixed menu inside it. */}
+      {at &&
+        createPortal(
+          <div
+            className={`vmenu ${below ? "down" : ""}`}
+            role="menu"
+            aria-label={title}
+            tabIndex={-1}
+            ref={menu}
+            style={{ [align]: at.x, [below ? "top" : "bottom"]: at.y }}
+            onKeyDown={(e) => menuKeys(e, menu.current, () => (close(), btn.current?.focus()))}
+          >
+            {children(close)}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

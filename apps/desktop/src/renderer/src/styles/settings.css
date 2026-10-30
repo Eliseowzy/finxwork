@@ -16,9 +16,6 @@
 .settings .frow>.psel{width:auto}
 .set-note{margin:8px 4px 0;color:var(--l2);font-size:12px;line-height:1.55}
 .form>.set-note{margin-top:-13px}
-.set-soon{display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:16px 18px;border-radius:12px;background:var(--win2);color:var(--l2);font-size:12.5px;line-height:1.6}
-.set-soon b{color:var(--l1);font-size:13px}
-.set-soon ul{margin:0;padding-left:18px}
 .mtile{width:28px;height:28px;border-radius:7px;background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none;font-size:12px;font-weight:600}
 .badge{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--fill2);font-size:11px;color:var(--l2)}
 .badge.ok{background:var(--green-bg);color:var(--green)}

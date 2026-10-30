@@ -185,7 +185,7 @@ function ProcessRow({ step, brief, started }: { step: Step; brief: boolean; star
       );
     }
     case "note":
-      return <p className="bgp-note">{step.note.note === "compaction" ? t("chat.compacted", { before: step.note.tokens_before, after: step.note.tokens_after }) : step.note.message}</p>;
+      return <p className="bgp-note">{step.note.note === "compaction" ? t("chat.compacted", { before: step.note.tokens_before, after: step.note.tokens_after }) : step.note.note === "context" ? t("chat.context", { percent: step.note.window ? Math.round((step.note.tokens / step.note.window) * 100) : 0, used: tokensText(step.note.tokens), size: tokensText(step.note.window) }) : step.note.message}</p>;
     default:
       return null;
   }
