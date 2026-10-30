@@ -340,6 +340,9 @@ impl NativeProtocol {
                 Ok(p) => {
                     let (conn, id) = (conn.clone(), id.clone());
                     tokio::spawn(async move {
+                        if server.is_loaded(&p.session_id) {
+                            let _ = server.close_session(&p.session_id).await;
+                        }
                         let result = tokio::task::spawn_blocking(move || {
                             server.delete_session(&p.session_id)
                         })

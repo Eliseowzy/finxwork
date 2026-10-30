@@ -39,7 +39,11 @@ export function confirmDelete(st: Store, s: ListSession) {
       title: t("sessionMenu.deleteTitle", { title }),
       message: [t("sessionMenu.deleteMessage"), stateOf(s) === "running" || stateOf(s) === "awaiting_approval" ? t("sessionMenu.deleteRunning") : ""].filter(Boolean).join(""),
       button: t("sessionMenu.deleteButton"),
-      run: () => st.call("session/delete", { session_id: s.session_id }),
+      run: () => {
+        // Off its page first: a page attaches again when finx closes the session under it.
+        if (st.selection.kind === "session" && st.selection.id === s.session_id) st.set({ selection: { kind: "new" } });
+        return st.call("session/delete", { session_id: s.session_id });
+      },
       done: t("sessionMenu.deleted", { title }),
     },
   });

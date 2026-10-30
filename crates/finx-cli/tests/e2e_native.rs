@@ -550,8 +550,7 @@ async fn the_desktop_flow_over_the_socket() {
     let models = watch.request("models/list", json!({})).await.unwrap();
     assert_eq!(provider(&models, "deepseek")["credential"], "missing");
 
-    // Deleted: the follower is told.
-    a.request("session/close", json!({"session_id": session})).await.unwrap();
+    // Deleted while loaded: closed first, and the follower is told.
     watch.request("session/delete", json!({"session_id": session})).await.unwrap();
     loop {
         let change = next_change(&mut watch_in).await;

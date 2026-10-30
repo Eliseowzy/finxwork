@@ -544,7 +544,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `session/history` | session_id、before、limit? | items、before? | 分页读取更早的记录 |
 | `session/list` | cwd?、cursor?、limit? | sessions、next_cursor? | 磁盘上的会话，以及本服务中还没写出日志的新会话（technical-design §9.3），附带在本服务中的加载状态。cwd 的匹配规则与 `finx sessions` 相同 |
 | `session/close` | session_id | `{}` | 关闭会话：中断任务、日志落盘、释放锁 |
-| `session/delete` | session_id | `{}` | 会话日志移入回收目录。会话必须未加载 |
+| `session/delete` | session_id | `{}` | 会话日志移入回收目录。会话已加载时先关闭（中断任务），再移入 |
 | `resource/read` | uri、offset?、limit? | text、offset、eof、total_bytes | 分段读取工具的完整输出等大内容 |
 | `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
 | `models/refresh` | provider?、catalog? | providers | 立即刷新服务商的模型列表，`catalog: true` 时同时刷新公共目录（model-catalog-design §8.2） |
