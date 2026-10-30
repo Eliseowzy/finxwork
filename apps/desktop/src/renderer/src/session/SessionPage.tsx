@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { rename } from "../actions";
 import { RenameField, SidebarToggle } from "../components";
+import { Glass } from "../glass";
 import { Icon } from "../icons";
 import { useStore } from "../store";
 import { Background } from "./Background";
@@ -27,7 +28,7 @@ export function SessionPage({ s }: { s: ListSession }) {
     <div className={`spage ${background ? "bgopen" : ""}`}>
       <div className="scol">
         <div className="ctool drag">
-          <SidebarToggle />
+          <SidebarToggle glass />
           {/* Double-click the title to edit it in place; the rest of the bar still moves the window. */}
           <div className="ctitle">
             {editing === s.session_id ? (
@@ -45,29 +46,32 @@ export function SessionPage({ s }: { s: ListSession }) {
               </h2>
             )}
           </div>
-          {/* The background panel's button, with how many tasks run; only for a session that has some. */}
-          {agents > 0 && (
+          {/* The bar's buttons float on one capsule of glass over the conversation. */}
+          <Glass>
+            {/* The background panel's button, with how many tasks run; only for a session that has some. */}
+            {agents > 0 && (
+              <button
+                className={`tb ${background ? "on" : ""}`}
+                title={t("background.title")}
+                aria-label={t("background.title")}
+                aria-pressed={background}
+                onClick={() => st.set({ background: !background })}
+              >
+                <Icon name="layers" />
+                {running > 0 && <span className="tb-badge">{running}</span>}
+              </button>
+            )}
+            {/* A toolbar button as the sidebar's toggle is, highlighted while the info shows. */}
             <button
-              className={`tb ${background ? "on" : ""}`}
-              title={t("background.title")}
-              aria-label={t("background.title")}
-              aria-pressed={background}
-              onClick={() => st.set({ background: !background })}
+              className={`tb ${info ? "on" : ""}`}
+              title={info ? t("page.hideInfo") : t("page.showInfo")}
+              aria-label={t("page.info")}
+              aria-pressed={info}
+              onClick={() => st.set({ inspector: !info, background: false })}
             >
-              <Icon name="layers" />
-              {running > 0 && <span className="tb-badge">{running}</span>}
+              <Icon name="infoCard" />
             </button>
-          )}
-          {/* A toolbar button as the sidebar's toggle is, highlighted while the info shows. */}
-          <button
-            className={`tb ${info ? "on" : ""}`}
-            title={info ? t("page.hideInfo") : t("page.showInfo")}
-            aria-label={t("page.info")}
-            aria-pressed={info}
-            onClick={() => st.set({ inspector: !info, background: false })}
-          >
-            <Icon name="infoCard" />
-          </button>
+          </Glass>
         </div>
         <div className={`dwrap ${info ? "dock" : ""}`}>
           <div className="dmain">{view ? <Chat s={s} view={view} /> : <div className="empty"><span className="mini-spin" /></div>}</div>

@@ -78,9 +78,10 @@ button{font:inherit;color:inherit}
 /* Sidebar titles a step brighter than other text in the dark, as small text on the material reads grey. */
 @media (prefers-color-scheme:dark){.side{--l1:rgba(255,255,255,.93)}}
 .noside .side{opacity:0;pointer-events:none}
-/* The sidebar toggle sits a step after the traffic lights (which end at x 82); the list's view options end the row. */
+/* The sidebar toggle sits a step after the traffic lights (which end at x 74); the list's view options end the row. */
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
-.tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--l2);gap:5px;padding:0 6px}
+.tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
+.tb .ic{stroke-width:1.45}
 .tb:hover{background:var(--fill2);color:var(--l1)}
 .tb.on{background:var(--fill2);color:var(--l1)}
 /* One rhythm with the list: rows 32 high, 34 apart. */
@@ -182,8 +183,8 @@ button{font:inherit;color:inherit}
 .ctool{height:var(--top);flex:none;display:flex;align-items:center;gap:10px;padding:0 calc(14px + var(--caption)) 0 22px}
 .noside .ctool{padding-left:30px}
 .ctitle{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
-.ctitle h2{margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ctitle .crename{flex:1;min-width:0;max-width:520px;font:inherit;font-size:15px;font-weight:600;color:var(--l1);background:var(--field);border:0;border-radius:6px;outline:none;box-shadow:0 0 0 1.5px var(--accent);padding:2px 6px;margin:0 0 0 -6px}
+.ctitle h2{margin:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ctitle .crename{flex:1;min-width:0;max-width:520px;font:inherit;font-size:14px;font-weight:500;color:var(--l1);background:var(--field);border:0;border-radius:6px;outline:none;box-shadow:0 0 0 1.5px var(--accent);padding:2px 6px;margin:0 0 0 -6px}
 .ctitle .sub{font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cscroll{flex:1;overflow-y:auto;min-height:0}
 
@@ -386,7 +387,28 @@ button{font:inherit;color:inherit}
 .tb-badge{position:absolute;top:1px;right:0;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-weight:600;line-height:15px;text-align:center;font-variant-numeric:tabular-nums;box-shadow:0 0 0 2px var(--win)}
 /* A session page: the conversation's column, and the background panel beside it when open. */
 .spage{flex:1;min-height:0;display:flex;position:relative}
-.scol{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+.scol{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
+/* On a session page the bar floats over the conversation: the conversation scrolls under it, fading
+   and blurring out at the bar's edge, and the bar's buttons sit on liquid glass (glass.tsx). */
+.scol>.ctool{position:absolute;top:0;left:0;right:0;z-index:5}
+.scol>.ctool::before{content:"";position:absolute;inset:0 0 -18px;z-index:-1;pointer-events:none;-webkit-app-region:no-drag;
+  background:linear-gradient(var(--edge),color-mix(in srgb,var(--edge) 55%,transparent) 55%,transparent);
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);mask-image:linear-gradient(#000 50%,transparent)}
+.scol .dwrap{border-top:0}
+.scol .dbody{padding-top:calc(var(--top) + var(--sp-3))}
+.scol .insp{top:calc(var(--top) + var(--sp-1))}
+/* A capsule of glass: the refraction is its inline backdrop-filter once measured; until then, and where
+   SVG backdrops don't work, frosted. A faint tint, a hairline rim, a lit top edge, a soft lift. */
+.glass{position:relative;display:flex;align-items:center;height:34px;padding:0 3px;border-radius:999px;flex:none;background:var(--lg-tint);
+  box-shadow:inset 0 0 0 .5px var(--lg-rim),inset 0 1px 0 var(--lg-hi),inset 0 -1px 1px var(--lg-lo),var(--lg-lift);
+  backdrop-filter:blur(12px) saturate(1.6);-webkit-backdrop-filter:blur(12px) saturate(1.6)}
+.glass-defs{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
+.glass .tb{min-width:30px;border-radius:999px}
+/* Reduce transparency (System Settings › Accessibility › Display): solid instead of glass. */
+@media (prefers-reduced-transparency:reduce){
+  .glass{backdrop-filter:none !important;background:var(--win2)}
+  .scol>.ctool::before{inset:0;backdrop-filter:none;background:var(--win);mask-image:none}
+}
 /* The system's window buttons sit over the panel's top then, not the conversation's. */
 .spage.bgopen .ctool{padding-right:14px}
 /* The background panel (session/Background.tsx): a column of the window on the right, flush with its

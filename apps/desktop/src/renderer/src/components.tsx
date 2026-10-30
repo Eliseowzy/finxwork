@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { displayTitle, type ListSession } from "@finx/client";
 import type { SessionState } from "@finx/protocol";
+import { Glass } from "./glass";
 import { Icon } from "./icons";
 import { useStore } from "./store";
 
@@ -43,17 +44,20 @@ export function StatusDot({ state }: { state: SessionState }) {
   return <span className={`sdot ${c}`} role="img" aria-label={t(`state.${state}`)} title={t(`state.${state}`)} />;
 }
 
-/** The window's title bar area when the sidebar is hidden: room for the traffic lights, and the sidebar toggle. */
-export function SidebarToggle() {
+/** The window's title bar area when the sidebar is hidden: room for the traffic lights, and the sidebar toggle (on glass over a conversation). */
+export function SidebarToggle({ glass = false }: { glass?: boolean }) {
   const st = useStore();
   const { t } = useTranslation("common");
   if (st.sidebar) return null;
+  const button = (
+    <button className="tb" onClick={() => st.set({ sidebar: true })} aria-label={t("window.showSidebar")} title={t("window.showSidebar")}>
+      <Icon name="sidebar" />
+    </button>
+  );
   return (
     <>
-      <span style={{ width: "calc(var(--lights) - 30px)", flex: "none" }} />
-      <button className="tb" onClick={() => st.set({ sidebar: true })} aria-label={t("window.showSidebar")} title={t("window.showSidebar")}>
-        <Icon name="sidebar" />
-      </button>
+      <span style={{ width: `calc(var(--lights) - ${glass ? 34 : 30}px)`, flex: "none" }} />
+      {glass ? <Glass>{button}</Glass> : button}
     </>
   );
 }
