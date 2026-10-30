@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FinxWork Motion</title>
+<style>
+  /* The mark in motion (motion/finxwork-mark-motion.js). Opened over http (ES modules do not
+     load from file://): python3 -m http.server -d assets/brand. export.sh renders the video
+     from ?sheet=<theme>&from=<frame>&count=<n>&cols=<n>&px=<size>&fps=<n>. */
+  body{margin:0;background:#EDEEF1;color:#0B1633;font:15px/1.6 -apple-system,"PingFang SC",sans-serif}
+  main{max-width:1180px;margin:0 auto;padding:36px 16px}
+  h1{font-size:28px;margin:0 0 4px} p.lead{color:#5B6478;margin:0 0 22px;max-width:860px}
+  .row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:16px}
+  .tile{position:relative;border-radius:20px;display:grid;place-items:center;padding:28px 16px 40px}
+  .tile.dark{background:#0A0B0F;color:#9AA3B5} .tile.light{background:#fff;color:#5B6478}
+  .tile canvas{display:block;width:min(360px,100%);aspect-ratio:1}
+  .tile .cap{position:absolute;left:18px;bottom:12px;font-size:12px}
+  .small{display:flex;gap:22px;align-items:center}
+  .small canvas{width:auto;aspect-ratio:1}
+  button{font:inherit;font-size:13px;border:0;border-radius:8px;padding:6px 14px;background:#1F6BFF;color:#fff;cursor:pointer}
+  body.sheet{background:#000} body.sheet main{display:none}
+  @media (max-width:640px){.row{grid-template-columns:minmax(0,1fr)}}
+</style></head><body><main>
+  <h1>FinxWork 动态标志</h1>
+  <p class="lead">数据点沿书写顺序流过整个 α：起笔处散落、加速，渐渐减速收拢到各自的丝线上凝成光带，少数化作光脉冲继续贯穿到收笔。静止帧就是原标志；系统开启"减少动态效果"时只画静止帧。</p>
+  <p><button id="replay">重放入场</button></p>
+  <div class="row">
+    <div class="tile dark"><canvas data-theme="dark" data-intro="1"></canvas><span class="cap">深色 · 入场 + 流动</span></div>
+    <div class="tile light"><canvas data-theme="light" data-intro="1"></canvas><span class="cap">浅色 · 入场 + 流动</span></div>
+  </div>
+  <div class="row">
+    <div class="tile dark"><div class="small"><canvas data-theme="dark" style="height:96px"></canvas><canvas data-theme="dark" data-look="solid" style="height:48px"></canvas><canvas data-theme="dark" data-look="solid" style="height:24px"></canvas><canvas data-theme="dark" data-look="solid" style="height:16px"></canvas></div><span class="cap">96 px 数据点 · 48 / 24 / 16 px 实心，光沿笔画跑过</span></div>
+    <div class="tile light"><div class="small"><canvas data-theme="light" style="height:96px"></canvas><canvas data-theme="light" data-look="solid" style="height:48px"></canvas><canvas data-theme="light" data-look="solid" style="height:24px"></canvas><canvas data-theme="light" data-look="solid" style="height:16px"></canvas></div><span class="cap">同上，浅色</span></div>
+  </div>
+</main>
+<script type="module">
+import { animateMark, drawMarkFrame } from "./motion/finxwork-mark-motion.js";
+const q = new URLSearchParams(location.search);
+if (q.get("sheet")) {
+  // A sheet of consecutive frames, `cols` across, for export.sh to cut into a video.
+  document.body.className = "sheet";
+  const px = +q.get("px"), from = +q.get("from"), count = +q.get("count"), fps = +q.get("fps"), cols = +q.get("cols");
+  const cv = Object.assign(document.createElement("canvas"), { width: px * cols, height: px * Math.ceil(count / cols) });
+  cv.style.cssText = `display:block;width:${cv.width}px;height:${cv.height}px`;
+  document.body.append(cv);
+  const ctx = cv.getContext("2d"), bg = q.get("sheet") === "dark" ? "#0A0B0F" : "#FFFFFF";
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, cv.width, cv.height);
+  for (let i = 0; i < count; i++) {
+    ctx.save(); ctx.translate((i % cols) * px, Math.floor(i / cols) * px);
+    drawMarkFrame(ctx, px, (from + i) / fps, { theme: q.get("sheet") });
+    ctx.restore();
+  }
+} else {
+  let live = [];
+  const start = () => {
+    live.forEach((a) => a.stop());
+    live = [...document.querySelectorAll("canvas")].map((cv) => animateMark(cv, { theme: cv.dataset.theme, look: cv.dataset.look || "strands", intro: !!cv.dataset.intro }));
+  };
+  start();
+  document.getElementById("replay").onclick = start;
+}
+</script>
+</body></html>

@@ -21,6 +21,7 @@
   .tile{border-radius:18px;padding:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);position:relative;min-height:180px}
   .tile.light{background:#fff} .tile.dark{background:#0A0B0F;border-color:#0A0B0F} .tile.soft{background:var(--card)}
   .tile img{max-width:100%;display:block}
+  .tile video{width:min(320px,100%);aspect-ratio:1;display:block}
   .cap{font-size:12.5px;color:var(--muted);margin-top:8px}
   .hero .tile{min-height:300px;padding:40px} .hero .tile img{width:min(640px,100%)}
   .story{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px}
@@ -85,6 +86,15 @@
     <div><div class="tile light"><img src="mark/finxwork-mark-on-light.png" style="width:280px" alt=""></div><div class="cap">浅色背景</div></div>
     <div><div class="tile dark"><img src="mark/finxwork-mark-on-dark.png" style="width:280px" alt=""></div><div class="cap">深色背景</div></div>
     <div><div class="tile light"><img src="mark/finxwork-mark-solid.png" style="width:280px" alt=""></div><div class="cap">实心版 · 小尺寸专用</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>动态标志</h2>
+  <p class="d">数据点沿书写顺序流过整个 α：起笔处散落，渐渐减速收拢到各自的丝线上凝成光带，少数化作光脉冲继续贯穿到收笔；每一帧都与静态标志同形同色。应用内用 motion/finxwork-mark-motion.js 实时绘制（可先按书写顺序写出笔画再流动；小尺寸用实心版，一道光沿笔画跑过）；应用之外用下面的循环视频。</p>
+  <div class="g g2">
+    <div><div class="tile dark"><video src="motion/finxwork-mark-flow-dark.mp4" autoplay loop muted playsinline></video></div><div class="cap">深色背景 · 18 秒无缝循环</div></div>
+    <div><div class="tile light"><video src="motion/finxwork-mark-flow-light.mp4" autoplay loop muted playsinline></video></div><div class="cap">浅色背景 · 18 秒无缝循环</div></div>
   </div>
 </section>
 
@@ -162,6 +172,7 @@
     <div class="rule"><h3>最小尺寸</h3><ul><li>标志（数据点版）：不小于 64 px</li><li>标志（实心版）：不小于 16 px</li><li>横版字标组合：宽度不小于 120 px</li></ul>
       <h3 style="margin-top:16px">背景</h3><p>只放在白色、墨黑或干净的浅色 / 深色底上；不要放在复杂图片或彩色背景上。</p></div>
     <div class="rule"><h3>不要这样做</h3><ul><li>拉伸、压扁或旋转标志</li><li>更换颜色、改用其他渐变</li><li>加描边、外发光、高光或额外阴影</li><li>改变 α 与字标之间的大小和间距</li><li>把数据点版缩到 64 px 以下使用</li></ul></div>
+    <div class="rule"><h3>动态</h3><ul><li>只用在品牌时刻：启动页、关于、空白状态；不放在密集的工作界面里</li><li>书写入场每次打开只播一次，之后保持流动</li><li>数据点版动态不小于 96 px，更小用实心版</li><li>系统要求减少动态效果时只显示静止帧</li></ul></div>
     <div class="rule"><h3>字体</h3><p>字标使用 SF Pro Display Medium，字距 −2%。中文配合使用苹方（PingFang SC）。</p></div>
   </div>
 </section>
@@ -172,6 +183,7 @@
     <tr><th>用途</th><th>文件</th><th>规格</th></tr>
     <tr><td>标志</td><td><a href="mark/finxwork-mark-on-light.png">mark-on-light</a> · <a href="mark/finxwork-mark-on-dark.png">mark-on-dark</a> · <a href="mark/finxwork-mark-solid.png">mark-solid</a> · <a href="mark/finxwork-mark-solid.svg">mark-solid.svg</a></td><td>2048 PNG · 透明背景；实心版另有 SVG 矢量</td></tr>
     <tr><td>桌面应用</td><td><a href="app/finxwork-mark-on-light-256.png">mark-on-light-256</a> · <a href="app/finxwork-mark-on-dark-256.png">mark-on-dark-256</a></td><td>256 PNG，裁到与 SVG 同框；应用内 64 px 及以上</td></tr>
+    <tr><td>动态标志</td><td><a href="motion/finxwork-mark-flow-dark.mp4">flow-dark.mp4</a> · <a href="motion/finxwork-mark-flow-light.mp4">flow-light.mp4</a> · <a href="motion/finxwork-mark-motion.js">finxwork-mark-motion.js</a>（<a href="motion.html">预览</a>，需经 http 打开）</td><td>1080 × 1080 H.264，18 秒无缝循环；JS 为网页 / 应用实时绘制</td></tr>
     <tr><td>字标组合</td><td><a href="lockup/finxwork-lockup-horizontal-light.png">横版浅色</a> · <a href="lockup/finxwork-lockup-horizontal-dark.png">横版深色</a> · <a href="lockup/finxwork-lockup-stacked-light.png">竖版浅色</a> · <a href="lockup/finxwork-lockup-stacked-dark.png">竖版深色</a></td><td>1600 × 480 / 1200 × 1200 PNG · 透明背景</td></tr>
     <tr><td>iOS</td><td><a href="ios/AppIcon.appiconset/Contents.json">AppIcon.appiconset</a>（拖入 Xcode Assets）· <a href="ios/icon-180.png">icon-180</a> 等单张</td><td>1024 浅色 / 深色 / 着色 · 无透明通道</td></tr>
     <tr><td>macOS</td><td><a href="macos/AppIcon-light.icns">AppIcon-light.icns</a> · <a href="macos/AppIcon-dark.icns">AppIcon-dark.icns</a> · AppIcon-light/dark.iconset · AppIcon.icon（Icon Composer）</td><td>16 – 1024 全套</td></tr>

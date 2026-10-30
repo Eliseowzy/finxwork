@@ -3,6 +3,8 @@
 import markOnDark from "../../../../../assets/brand/app/finxwork-mark-on-dark-256.png";
 import markOnLight from "../../../../../assets/brand/app/finxwork-mark-on-light-256.png";
 import markSolid from "../../../../../assets/brand/mark/finxwork-mark-solid.svg";
+import { animateMark, type MarkMotionOptions } from "../../../../../assets/brand/motion/finxwork-mark-motion.js";
+import { useEffect, useRef } from "react";
 
 const paths: Record<string, string> = {
   grid: "<rect x=\"2.8\" y=\"2.8\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"9.3\" y=\"2.8\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"2.8\" y=\"9.3\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"9.3\" y=\"9.3\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/>",
@@ -66,4 +68,14 @@ export function Mark({ size = 18 }: { size?: number }) {
       <img src={markOnLight} alt="" draggable={false} style={style} />
     </picture>
   );
+}
+
+/** The mark in motion (assets/brand/motion): its data points flowing along the stroke. The "strands" look from 96 px up, "solid" below; sized by `size` or by CSS through className. */
+export function MarkMotion({ size, className, theme, look, speed, intro }: MarkMotionOptions & { size?: number; className?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const motion = animateMark(ref.current!, { theme, look, speed, intro });
+    return () => motion.stop();
+  }, [theme, look, speed, intro]);
+  return <canvas ref={ref} className={className} aria-hidden="true" style={size ? { display: "block", flex: "none", width: size, height: size } : undefined} />;
 }

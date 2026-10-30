@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
-import markOnDark from "../../../../../../assets/brand/app/finxwork-mark-on-dark-640.png";
-import { Icon } from "../icons";
+import { Icon, MarkMotion } from "../icons";
 import { LocalApplicationConnection } from "../settings/LocalApplicationConnection";
 import { KeyEntry, ProviderTiles } from "../settings/ProviderConnections";
 import { useStore } from "../store";
@@ -27,7 +26,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
     <div className="onb">
       <aside className="onb-brand drag">
         <div className="onb-glow" aria-hidden="true" />
-        <img className="onb-mark" src={markOnDark} alt="" draggable={false} />
+        <MarkMotion className="onb-mark" theme="dark" intro />
         <div className="onb-copy">
           <span className="onb-kicker">FINXWORK</span>
           <h1>{t("onboarding.title")}</h1>

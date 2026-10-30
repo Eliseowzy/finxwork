@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { projectNames, recentProjects } from "@finx/client";
 import { SidebarToggle } from "../components";
-import { Mark } from "../icons";
+import { MarkMotion } from "../icons";
 import { useStore } from "../store";
 import type { Attachment } from "./attachments";
 import { Composer } from "./Composer";
@@ -45,7 +45,7 @@ export function NewSession() {
         {/* No model can run (the first-run page was left for later): the way back to it. */}
         {keyless ? (
           <div className="new-hero">
-            <Mark size={72} />
+            <MarkMotion size={72} />
             <h1>{t("new.noModel")}</h1>
             <button className="btn primary" onClick={() => window.dispatchEvent(new Event(onboardingEvent))}>
               {t("new.connect")}
@@ -53,7 +53,7 @@ export function NewSession() {
           </div>
         ) : (
           <div className="new-hero">
-            <Mark size={72} />
+            <MarkMotion size={72} />
             <h1>{t(greeting)}</h1>
           </div>
         )}

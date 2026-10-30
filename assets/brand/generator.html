@@ -185,6 +185,7 @@ function drawStrands(ctx, rb, v, bg) {
       // Refined: all strands give way to dots along one gentle arc across the ribbon, so the break
       // is one orderly front instead of a ragged one; lines fade out just before they break.
       const thr = P0.ordered ? 0.16 + 0.06 * (1 - s * s) : rand.thr;
+      (rb.thr ??= [])[k] = thr; // where this strand turns from a line into dots (motion/ reads it)
       if (P0.fadeLines) {
         const rows = rb.rows, step = 6;
         for (let i = 0; i < rows.length - 1; i += step) {
@@ -423,8 +424,20 @@ function solidSVG(id) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="187 187 650 650"><defs><linearGradient id="finxwork-a" gradientUnits="userSpaceOnUse" x1="${f(b.x0)}" y1="${f(b.y1)}" x2="${f(b.x1)}" y2="${f(b.y0)}">${stops}</linearGradient></defs><path fill="url(#finxwork-a)" d="${d}"/></svg>`;
 }
 
+// The ribbon as numbers, for motion/finxwork-mark-motion.js: every other sample's centre,
+// unit normal and half-width on the 1024 grid, the ink box, and each strand's break point.
+function geometry(id) {
+  const v = VARIANTS[id], rb = ribbon(v), f = (n, d = 2) => +n.toFixed(d), cv = document.createElement("canvas");
+  cv.width = cv.height = S; rb.fade = 1; rb.v = v;
+  drawStrands(cv.getContext("2d"), rb, v, "black");
+  const rows = rb.rows.filter((_, i) => i % 2 === 0).flatMap((r) => [f(r.x), f(r.y), f(r.nx, 4), f(r.ny, 4), f(Math.hypot(r.hx, r.hy))]);
+  const box = Object.fromEntries(Object.entries(rb.box).map(([k, n]) => [k, f(n)]));
+  return JSON.stringify({ box, thr: rb.thr.map((t) => f(t, 4)), rows });
+}
+
 const q = new URLSearchParams(location.search), root = document.getElementById("root");
 if (q.get("svg")) document.body.textContent = solidSVG(q.get("svg"));
+else if (q.get("geom")) document.body.textContent = geometry(q.get("geom"));
 else if (q.get("v")) {
   document.body.classList.add("solo");
   const cv = document.createElement("canvas"); root.append(cv);

@@ -450,7 +450,8 @@ interface Platform {
 | 同上（macOS 14、15），DMG 的卷图标 | icns，16、32 px 换成实心标志 | macos/AppIcon-light.icns |
 | DMG 窗口背景 | 浅色底，箭头用电光蓝 | apps/desktop/build/dmg/background*.png（scripts/make-dmg-background.swift 绘制） |
 | 开发时（`pnpm dev`）的程序坞 | 1024 px 图标，跟随应用外观换浅色、深色 | macos/icon-light-1024.png、icon-dark-1024.png |
-| 新会话页（72 px）、设置 › 关于（64 px）；首次启动引导页的品牌区（约 300 px，深色底版本 640 px 原图，背后有呼吸的蓝色光晕） | 数据点版，跟随外观换浅色底、深色底两种 | app/finxwork-mark-on-light-256.png、on-dark-256.png、on-dark-640.png（与 SVG 同样裁切，换版本时标志不跳） |
+| 设置 › 关于（64 px） | 数据点版，跟随外观换浅色底、深色底两种 | app/finxwork-mark-on-light-256.png、on-dark-256.png（与 SVG 同样裁切，换版本时标志不跳） |
+| 新会话页（72 px，跟随外观）；首次启动引导页的品牌区（约 300 px，深色底，背后有呼吸的蓝色光晕） | 动态标志：数据点沿笔画一直流动（引导页先按书写顺序写出 α）；系统要求减少动态效果时只画静止帧 | motion/finxwork-mark-motion.js，经 `MarkMotion`（icons.tsx）用 canvas 实时绘制，与静态标志同一几何 |
 | 审批卡片（16 px），及以后 64 px 以下的位置 | 实心版矢量，同一渐变，浅色深色通用 | mark/finxwork-mark-solid.svg |
 | 强调色 | `--accent` 是电光蓝 #1F6BFF（按钮、选中、开关），白字对比 4.6:1；`--accent-fg` 是作文字用的一档（浅色 #1A5CE6，对白底 5.6:1；深色 #7AB0FF） | apps/desktop/src/renderer/src/styles/tokens.css |
 
