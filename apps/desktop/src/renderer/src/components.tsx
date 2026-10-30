@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { displayTitle, type ListSession } from "@finx/client";
 import type { SessionState } from "@finx/protocol";
@@ -74,6 +74,37 @@ export function ToastView() {
   );
 }
 
+/**
+ * A modal dialog, the platform's own (`<dialog>` shown modal): centred over
+ * the window, which is blurred behind it and out of reach until it closes.
+ * Escape or a click outside closes it, and Escape goes no further (the
+ * settings window closes on an Escape nothing else took).
+ */
+export function Dialog({ label, width, className, onClose, children }: { label: string; width: number; className?: string; onClose: () => void; children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    if (ref.current && !ref.current.open) ref.current.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className={className ? `sheet ${className}` : "sheet"}
+      aria-label={label}
+      style={{ width }}
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.preventDefault();
+        onClose();
+      }}
+      onCancel={(e) => (e.preventDefault(), onClose())}
+      // Only the backdrop is the dialog itself; its content is inside .sheet-in.
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="sheet-in">{children}</div>
+    </dialog>
+  );
+}
+
 /** The sheet the window shows, if any: a confirmation. */
 export function SheetHost() {
   const st = useStore();
@@ -82,24 +113,21 @@ export function SheetHost() {
   if (!sheet) return null;
   const close = () => st.set({ sheet: null });
   return (
-    <>
-      <div className="sheet-scrim" onClick={close} />
-      <div className="sheet" role="dialog" aria-label={sheet.title} style={{ width: 420 }} onKeyDown={(e) => e.key === "Escape" && close()}>
-        <h3>{sheet.title}</h3>
-        <p className="sub">{sheet.message}</p>
-        <div className="sheet-foot">
-          <button className="btn" onClick={close} autoFocus>{t("sheet.cancel")}</button>
-          <button
-            className="btn primary danger"
-            onClick={async () => {
-              close();
-              await st.run(sheet.run, sheet.done);
-            }}
-          >
-            {sheet.button}
-          </button>
-        </div>
+    <Dialog label={sheet.title} width={420} onClose={close}>
+      <h3>{sheet.title}</h3>
+      <p className="sub">{sheet.message}</p>
+      <div className="sheet-foot">
+        <button className="btn" onClick={close}>{sheet.cancel ?? t("sheet.cancel")}</button>
+        <button
+          className="btn primary danger"
+          onClick={async () => {
+            close();
+            await st.run(sheet.run, sheet.done);
+          }}
+        >
+          {sheet.button}
+        </button>
       </div>
-    </>
+    </Dialog>
   );
 }

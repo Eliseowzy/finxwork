@@ -5,6 +5,7 @@ import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } fro
 import { permissionDesc, permissionTitle, modelTitle, thinkingTitle } from "../format";
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
+import { useStore } from "../store";
 import { addAttachments, attachEvent, pickFiles, pickFolder, type Attachment } from "./attachments";
 import { keyEvent } from "./KeySetup";
 import { PromptEditor, type EditorHandle } from "./PromptEditor";
@@ -329,14 +330,32 @@ export function MenuItem({ icon, checked, label, desc, value, kbd, disabled, onC
 
 const modes: PermissionMode[] = ["manual", "accept-edits", "bypass-permissions"];
 
-/** How much finx may do without asking (the approval mode), named as it is. */
+/**
+ * How much finx may do without asking (the approval mode), named as it is.
+ * Switching into bypass-permissions asks first, every time it is switched on:
+ * agreeing switches, refusing keeps the mode. Staying in it asks nothing more.
+ */
 function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange: (m: PermissionMode) => void }) {
   const { t } = useTranslation("session");
+  const st = useStore();
+  const choose = (m: PermissionMode) => {
+    if (m !== "bypass-permissions" || value === m) return onChange(m);
+    st.set({
+      sheet: {
+        kind: "confirm",
+        title: t("bypass.title"),
+        message: t("bypass.body"),
+        button: t("bypass.agree"),
+        cancel: t("bypass.refuse"),
+        run: async () => onChange(m),
+      },
+    });
+  };
   return (
     <MenuButton className="mb" title={t("composer.permission")} label={<><Icon name="shield" /><span className="lbl">{permissionTitle(value)}</span></>}>
       {(close) =>
         modes.map((m) => (
-          <MenuItem key={m} checked={m === value} label={permissionTitle(m)} desc={permissionDesc(m)} onClick={() => (close(), onChange(m))} />
+          <MenuItem key={m} checked={m === value} label={permissionTitle(m)} desc={permissionDesc(m)} onClick={() => (close(), choose(m))} />
         ))
       }
     </MenuButton>

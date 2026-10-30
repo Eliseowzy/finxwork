@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
+import { Dialog } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { SourceAppMark, useLocalConnection, localAdapters, type LocalAdapter } from "./LocalApplicationConnection";
@@ -143,14 +144,8 @@ function KeyRow({ p }: { p: ProviderSummary }) {
 function AddProvider({ skip, onClose }: { skip: string[]; onClose: () => void }) {
   const { t } = useTranslation("settings");
   const [provider, setProvider] = useState<ProviderSummary | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const el = dialog.current!;
-    el.showModal();
-    return () => el.close();
-  }, []);
   return (
-    <dialog ref={dialog} className="provider-dialog models-add" aria-label={t("models.add")} onCancel={(e) => (e.preventDefault(), onClose())}>
+    <Dialog label={t("models.add")} width={560} className="models-add" onClose={onClose}>
       <div className="provider-dialog-top">
         <span>{t("models.add")}</span>
         <button className="provider-icon-button" aria-label={t("models.close")} onClick={onClose}>
@@ -160,6 +155,6 @@ function AddProvider({ skip, onClose }: { skip: string[]; onClose: () => void })
       <div className="models-add-body">
         {provider ? <KeyEntry provider={provider} onBack={() => setProvider(null)} onSaved={onClose} /> : <ProviderTiles onPick={setProvider} skip={skip} />}
       </div>
-    </dialog>
+    </Dialog>
   );
 }

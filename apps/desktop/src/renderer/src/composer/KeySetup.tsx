@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
+import { Dialog } from "../components";
 import { errorText, useStore } from "../store";
 
 // Connecting a model service: an API key for one provider, saved by finx in
@@ -106,13 +107,10 @@ export function KeySheet() {
   if (provider === undefined) return null;
   const close = () => setProvider(undefined);
   return (
-    <>
-      <div className="sheet-scrim" onClick={close} />
-      <div className="sheet" role="dialog" aria-label={t("key.title")} style={{ width: 440 }} onKeyDown={(e) => e.key === "Escape" && close()}>
-        <h3>{t("key.title")}</h3>
-        <p className="sub">{t("key.intro")}</p>
-        <KeyForm provider={provider ?? undefined} onDone={close} onCancel={close} />
-      </div>
-    </>
+    <Dialog label={t("key.title")} width={440} onClose={close}>
+      <h3>{t("key.title")}</h3>
+      <p className="sub">{t("key.intro")}</p>
+      <KeyForm provider={provider ?? undefined} onDone={close} onCancel={close} />
+    </Dialog>
   );
 }

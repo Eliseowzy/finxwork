@@ -43,7 +43,7 @@
 .mrow-add:hover{background:var(--fill)}
 .mrow-add .ic{width:14px;height:14px}
 .mrow-err{margin:6px 4px 0;font-size:12px;line-height:1.5;color:var(--red)}
-.models-add{width:min(560px,calc(100vw - 36px))}
+.models-add .sheet-in{padding:0}
 .models-add-body{padding:6px 22px 24px}
 .models-add .provider-dialog-top{padding:18px 22px 8px}
 .models-add .provider-dialog-top>span{font-size:15px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--l1)}

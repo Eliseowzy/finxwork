@@ -13,7 +13,7 @@ import { connect } from "./kernel";
 
 export type Selection = { kind: "new" } | { kind: "session"; id: string };
 
-export type Sheet = { kind: "confirm"; title: string; message: string; button: string; run: () => Promise<unknown>; done?: string };
+export type Sheet = { kind: "confirm"; title: string; message: string; button: string; cancel?: string; run: () => Promise<unknown>; done?: string };
 
 export type Toast = { text: string; undo?: () => void; bad?: boolean; id: number };
 

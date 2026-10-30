@@ -3,7 +3,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { Appearance, KernelStatusView, Preferences } from "../../../shared/bridge";
 import { i18n, languages, pickLanguage, resolveLanguage, type LanguageChoice } from "../../../shared/i18n";
-import { ToastView } from "../components";
+import { SheetHost, ToastView } from "../components";
 import { agoText } from "../format";
 import { useUpdates } from "../updates";
 import { Icon, Mark } from "../icons";
@@ -64,6 +64,7 @@ export function SettingsWindow() {
           {page === "about" && <About />}
         </div>
       </main>
+      <SheetHost />
       <ToastView />
     </div>
   );

@@ -469,9 +469,10 @@ button{font:inherit;color:inherit}
 .toast .ic{color:var(--green)}
 .toast.bad .ic{color:var(--red)}
 /* sheets */
-.sheet-scrim{position:absolute;inset:0;background:var(--scrim);z-index:45;animation:fade .2s}
-.sheet{position:absolute;left:50%;top:60px;transform:translateX(-50%);background:var(--win);border-radius:18px;box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);z-index:46;padding:22px 24px 18px;animation:sheet .3s cubic-bezier(.2,0,0,1);max-height:calc(100% - 80px);overflow-y:auto}
-@keyframes sheet{from{opacity:0;transform:translate(-50%,-12px)}}
+.sheet{margin:auto;border:0;padding:0;max-width:calc(100vw - 48px);max-height:calc(100vh - 80px);overflow-y:auto;color:var(--l1);background:var(--win);border-radius:18px;box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1)}
+.sheet::backdrop{background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
+.sheet-in{padding:22px 24px 18px}
+@keyframes sheet{from{opacity:0;transform:scale(.97)}}
 .sheet h3{margin:0 0 4px;font-size:15px;font-weight:600}
 .sheet .sub{margin:0 0 14px;color:var(--l2);font-size:12.5px;line-height:1.55}
 .sheet-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px;align-items:center}

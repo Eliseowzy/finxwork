@@ -127,12 +127,13 @@
   },
   "notice": {
     "label": "Notice",
-    "dismiss": "Got it",
-    "bypass_permissions": {
-      "title": "Bypass Permissions is on",
-      "body": "Tools run without asking, including changes to protected files such as .git and shell profiles, and to files outside the workspace. Only deny rules, ask rules and deleting critical paths still stop an action. Use it only in an isolated environment such as a container or a throwaway checkout.",
-      "back": "Switch back to Ask Permissions"
-    }
+    "dismiss": "Got it"
+  },
+  "bypass": {
+    "title": "Turn on Bypass Permissions?",
+    "body": "Tools run without asking, including changes to protected files such as .git and shell profiles, and to files outside the workspace. Only deny rules, ask rules and deleting critical paths still stop an action. Use it only in an isolated environment such as a container or a throwaway checkout.",
+    "agree": "Agree",
+    "refuse": "Decline"
   },
   "composer": {
     "label": "Message",
