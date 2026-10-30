@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FinxWork 品牌素材</title>
+<link rel="icon" href="web/favicon.ico"><link rel="apple-touch-icon" href="web/apple-touch-icon.png">
+<style>
+  :root{--bg:#F5F6F8;--card:#FFFFFF;--fg:#0B1633;--muted:#5B6478;--line:rgba(11,22,51,.08);--ink:#1F6BFF}
+  @media (prefers-color-scheme:dark){:root{--bg:#0E1015;--card:#171A21;--fg:#F2F4F8;--muted:#9AA3B5;--line:rgba(255,255,255,.08)}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 -apple-system,"SF Pro Text","PingFang SC",sans-serif}
+  main{max-width:1120px;margin:0 auto;padding:56px 16px 80px}
+  header{margin-bottom:44px}
+  header .eyebrow{color:var(--ink);font-weight:600;font-size:13px;letter-spacing:.08em}
+  h1{font:650 40px/1.15 -apple-system,"SF Pro Display","PingFang SC";letter-spacing:-.02em;margin:6px 0 10px}
+  h2{font:650 24px/1.3 -apple-system,"SF Pro Display","PingFang SC";letter-spacing:-.01em;margin:0 0 6px}
+  section{margin:0 0 56px}
+  section>p.d{color:var(--muted);margin:0 0 18px;max-width:760px}
+  .lead{color:var(--muted);font-size:17px;max-width:760px;margin:0}
+  .g{display:grid;gap:16px}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))} .g3{grid-template-columns:repeat(3,minmax(0,1fr))} .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  @media (max-width:760px){.g2,.g3,.g4{grid-template-columns:minmax(0,1fr)}}
+  .tile{border-radius:18px;padding:24px;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);position:relative;min-height:180px}
+  .tile.light{background:#fff} .tile.dark{background:#0A0B0F;border-color:#0A0B0F} .tile.soft{background:var(--card)}
+  .tile img{max-width:100%;display:block}
+  .cap{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .hero .tile{min-height:300px;padding:40px} .hero .tile img{width:min(640px,100%)}
+  .story{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:28px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:28px}
+  @media (max-width:760px){.story{grid-template-columns:minmax(0,1fr)}}
+  .story img{width:100%;border-radius:16px;display:block;background:#fff}
+  .story ol{margin:10px 0 0;padding-left:20px} .story li{margin:6px 0}
+  .story blockquote{margin:16px 0 0;padding:12px 16px;border-left:3px solid var(--ink);color:var(--fg);font-weight:600}
+  .ios-mask{border-radius:22.4%;overflow:hidden;box-shadow:0 8px 24px rgba(11,22,51,.12)}
+  .ladder{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap;padding:24px;background:var(--card);border:1px solid var(--line);border-radius:18px}
+  .ladder figure{margin:0;text-align:center;font-size:11.5px;color:var(--muted)}
+  .ladder figure img{display:block;margin:0 auto 6px}
+  .sw{border-radius:16px;overflow:hidden;border:1px solid var(--line);background:var(--card)}
+  .sw .chip{height:96px} .sw div.t{padding:12px 14px;font-size:13px} .sw b{display:block;font-size:14px} .sw code{color:var(--muted)}
+  .rules{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+  @media (max-width:760px){.rules{grid-template-columns:minmax(0,1fr)}}
+  .rule{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px}
+  .rule h3{margin:0 0 6px;font-size:16px} .rule p,.rule li{color:var(--muted);margin:0;font-size:14px} .rule ul{margin:0;padding-left:18px}
+  .clear{position:relative;display:inline-block;padding:44px;background:repeating-linear-gradient(45deg,rgba(31,107,255,.08) 0 6px,transparent 6px 12px);border-radius:12px}
+  .clear img{display:block;width:320px;max-width:100%;background:#fff;border-radius:6px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;font-size:14px}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12.5px}
+  td a{color:var(--ink);text-decoration:none} td a:hover{text-decoration:underline}
+  tr:last-child td{border-bottom:0}
+  @media (max-width:760px){table{display:block;overflow-x:auto}}
+</style></head><body><main>
+
+<header>
+  <div class="eyebrow">BRAND ASSETS · V1.0</div>
+  <h1>FinxWork 品牌素材</h1>
+  <p class="lead">为金融专业人士打造的 AI 工作台。本页汇总最终版标志、字标组合、各平台应用图标、色彩与使用规范，所有素材可直接下载使用。</p>
+</header>
+
+<section class="hero">
+  <div class="g g2">
+    <div><div class="tile light"><img src="lockup/finxwork-lockup-horizontal-light.png" alt="FinxWork 横版标志（浅色）"></div><div class="cap">主标志 · 浅色背景</div></div>
+    <div><div class="tile dark"><img src="lockup/finxwork-lockup-horizontal-dark.png" alt="FinxWork 横版标志（深色）"></div><div class="cap">主标志 · 深色背景</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>设计理念 · 渐凝</h2>
+  <div class="story">
+    <img src="mark/finxwork-icon-light.png" alt="FinxWork 标志">
+    <div>
+      <p style="margin:0">标志是一个一笔写成的 α，沿着书写的顺序从数据慢慢凝成光带。</p>
+      <ol>
+        <li><b>α，超额收益</b>：金融人最在意的一个字母，也有「第一」「领先」之意。</li>
+        <li><b>从数据到判断</b>：起笔是散落的数据点，绕过 α 的环逐渐聚拢，收笔已是一条完整的光带——AI 把海量数据凝练成一个清晰的结论。</li>
+        <li><b>千丝成一</b>：光带由近百根细丝织成，每一根是一条信息、一项任务。</li>
+        <li><b>向右上收笔</b>：结论落在右上方，颜色也从深蓝走到亮蓝，整体向上。</li>
+      </ol>
+      <blockquote>千丝万缕的数据，汇成一个 α。</blockquote>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>标志</h2>
+  <p class="d">大尺寸使用数据点版本；64 px 以下（菜单栏、浏览器标签、小图标）使用同一形状的实心版本，保证清晰。</p>
+  <div class="g g3">
+    <div><div class="tile light"><img src="mark/finxwork-mark-on-light.png" style="width:280px" alt=""></div><div class="cap">浅色背景</div></div>
+    <div><div class="tile dark"><img src="mark/finxwork-mark-on-dark.png" style="width:280px" alt=""></div><div class="cap">深色背景</div></div>
+    <div><div class="tile light"><img src="mark/finxwork-mark-solid.png" style="width:280px" alt=""></div><div class="cap">实心版 · 小尺寸专用</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>字标组合</h2>
+  <p class="d">横版用于网站导航、文档页眉、邮件签名；竖版用于启动页、海报、社交媒体头像。字标为 FinxWork，SF Pro Display Medium。</p>
+  <div class="g g4">
+    <div><div class="tile light"><img src="lockup/finxwork-lockup-horizontal-light.png" alt=""></div><div class="cap">横版 · 浅色</div></div>
+    <div><div class="tile dark"><img src="lockup/finxwork-lockup-horizontal-dark.png" alt=""></div><div class="cap">横版 · 深色</div></div>
+    <div><div class="tile light"><img src="lockup/finxwork-lockup-stacked-light.png" style="width:180px" alt=""></div><div class="cap">竖版 · 浅色</div></div>
+    <div><div class="tile dark"><img src="lockup/finxwork-lockup-stacked-dark.png" style="width:180px" alt=""></div><div class="cap">竖版 · 深色</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>iPhone 应用图标</h2>
+  <p class="d">按 iOS 规格提供 1024 × 1024 无透明通道的方形原图，圆角由系统自动裁切。包含浅色、深色、着色三种外观，可直接拖入 Xcode。</p>
+  <div class="g g3">
+    <div><div class="tile soft"><img class="ios-mask" src="ios/AppIcon.appiconset/AppIcon-1024.png" style="width:180px" alt=""></div><div class="cap">浅色（默认）</div></div>
+    <div><div class="tile soft"><img class="ios-mask" src="ios/AppIcon.appiconset/AppIcon-1024-dark.png" style="width:180px" alt=""></div><div class="cap">深色模式</div></div>
+    <div><div class="tile soft"><img class="ios-mask" src="ios/AppIcon.appiconset/AppIcon-1024-tinted.png" style="width:180px" alt=""></div><div class="cap">着色模式（系统再叠加用户选择的颜色）</div></div>
+  </div>
+  <div class="ladder" style="margin-top:16px">
+    <figure><img class="ios-mask" src="ios/icon-180.png" width="90"><span>180 · 主屏 @3x</span></figure>
+    <figure><img class="ios-mask" src="ios/icon-120.png" width="60"><span>120 · 主屏 @2x</span></figure>
+    <figure><img class="ios-mask" src="ios/icon-87.png" width="44"><span>87 · 设置 @3x</span></figure>
+    <figure><img class="ios-mask" src="ios/icon-80.png" width="40"><span>80 · 聚焦 @2x</span></figure>
+    <figure><img class="ios-mask" src="ios/icon-60.png" width="30"><span>60 · 通知 @3x</span></figure>
+    <figure><img class="ios-mask" src="ios/icon-40.png" width="20"><span>40 · 通知 @2x</span></figure>
+  </div>
+</section>
+
+<section>
+  <h2>macOS 应用图标</h2>
+  <p class="d">按 macOS 图标网格：1024 画布内 824 圆角方形主体，带系统风格投影。16、32 px 自动换用实心标志。提供 .icns、.iconset，以及 Icon Composer 的 AppIcon.icon（自动适配浅色 / 深色模式，已用 actool 编译验证）。</p>
+  <div class="g g2">
+    <div><div class="tile soft" style="background:linear-gradient(150deg,#C9D6F0,#E8E2F2 50%,#F4EDE4)"><img src="macos/icon-light-1024.png" style="width:240px" alt=""></div><div class="cap">浅色</div></div>
+    <div><div class="tile dark" style="background:linear-gradient(150deg,#0B1226,#1B2142 55%,#0E1018)"><img src="macos/icon-dark-1024.png" style="width:240px" alt=""></div><div class="cap">深色</div></div>
+  </div>
+  <div class="ladder" style="margin-top:16px">
+    <figure><img src="macos/AppIcon-light.iconset/icon_512x512.png" width="128"><span>512</span></figure>
+    <figure><img src="macos/AppIcon-light.iconset/icon_256x256.png" width="96"><span>256</span></figure>
+    <figure><img src="macos/AppIcon-light.iconset/icon_128x128.png" width="64"><span>128 · 程序坞</span></figure>
+    <figure><img src="macos/AppIcon-light.iconset/icon_32x32@2x.png" width="32"><span>32</span></figure>
+    <figure><img src="macos/AppIcon-light.iconset/icon_16x16@2x.png" width="16"><span>16 · 实心</span></figure>
+  </div>
+</section>
+
+<section>
+  <h2>网页</h2>
+  <p class="d">浏览器标签图标、主屏幕书签图标与社交分享图。</p>
+  <div class="g g2">
+    <div><div class="tile soft" style="gap:26px">
+      <img src="web/favicon-48.png" width="48"><img src="web/favicon-32.png" width="32"><img src="web/favicon-16.png" width="16">
+      <img class="ios-mask" src="web/apple-touch-icon.png" width="90"></div><div class="cap">favicon 48 / 32 / 16 · apple-touch-icon 180</div></div>
+    <div><div class="tile dark" style="padding:0;overflow:hidden"><img src="web/og-image.png" alt="社交分享图"></div><div class="cap">社交分享图 og-image · 1200 × 630</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>色彩</h2>
+  <p class="d">电光蓝渐变为主色，从左下到右上、从深到亮；背景只用白和墨黑，不使用蓝色底。</p>
+  <div class="g g4">
+    <div class="sw"><div class="chip" style="background:linear-gradient(45deg,#1B36D9,#1F6BFF,#2EB8FF)"></div><div class="t"><b>电光蓝渐变</b><code>#1B36D9 → #1F6BFF → #2EB8FF</code></div></div>
+    <div class="sw"><div class="chip" style="background:#1F6BFF"></div><div class="t"><b>电光蓝</b><code>#1F6BFF</code> · 按钮、链接、强调</div></div>
+    <div class="sw"><div class="chip" style="background:#0B1633"></div><div class="t"><b>深海军蓝</b><code>#0B1633</code> · 浅色背景上的字标与正文</div></div>
+    <div class="sw"><div class="chip" style="background:#0A0B0F"></div><div class="t"><b>墨黑</b><code>#0A0B0F</code> · 深色背景</div></div>
+  </div>
+</section>
+
+<section>
+  <h2>使用规范</h2>
+  <div class="rules">
+    <div class="rule"><h3>安全留白</h3><p style="margin-bottom:12px">标志四周至少留出标志高度 ¼ 的空白，不放任何文字或图形。</p><div class="clear"><img src="lockup/finxwork-lockup-horizontal-light.png" alt=""></div></div>
+    <div class="rule"><h3>最小尺寸</h3><ul><li>标志（数据点版）：不小于 64 px</li><li>标志（实心版）：不小于 16 px</li><li>横版字标组合：宽度不小于 120 px</li></ul>
+      <h3 style="margin-top:16px">背景</h3><p>只放在白色、墨黑或干净的浅色 / 深色底上；不要放在复杂图片或彩色背景上。</p></div>
+    <div class="rule"><h3>不要这样做</h3><ul><li>拉伸、压扁或旋转标志</li><li>更换颜色、改用其他渐变</li><li>加描边、外发光、高光或额外阴影</li><li>改变 α 与字标之间的大小和间距</li><li>把数据点版缩到 64 px 以下使用</li></ul></div>
+    <div class="rule"><h3>字体</h3><p>字标使用 SF Pro Display Medium，字距 −2%。中文配合使用苹方（PingFang SC）。</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>素材下载</h2>
+  <table>
+    <tr><th>用途</th><th>文件</th><th>规格</th></tr>
+    <tr><td>标志</td><td><a href="mark/finxwork-mark-on-light.png">mark-on-light</a> · <a href="mark/finxwork-mark-on-dark.png">mark-on-dark</a> · <a href="mark/finxwork-mark-solid.png">mark-solid</a> · <a href="mark/finxwork-mark-solid.svg">mark-solid.svg</a></td><td>2048 PNG · 透明背景；实心版另有 SVG 矢量</td></tr>
+    <tr><td>桌面应用</td><td><a href="app/finxwork-mark-on-light-256.png">mark-on-light-256</a> · <a href="app/finxwork-mark-on-dark-256.png">mark-on-dark-256</a></td><td>256 PNG，裁到与 SVG 同框；应用内 64 px 及以上</td></tr>
+    <tr><td>字标组合</td><td><a href="lockup/finxwork-lockup-horizontal-light.png">横版浅色</a> · <a href="lockup/finxwork-lockup-horizontal-dark.png">横版深色</a> · <a href="lockup/finxwork-lockup-stacked-light.png">竖版浅色</a> · <a href="lockup/finxwork-lockup-stacked-dark.png">竖版深色</a></td><td>1600 × 480 / 1200 × 1200 PNG · 透明背景</td></tr>
+    <tr><td>iOS</td><td><a href="ios/AppIcon.appiconset/Contents.json">AppIcon.appiconset</a>（拖入 Xcode Assets）· <a href="ios/icon-180.png">icon-180</a> 等单张</td><td>1024 浅色 / 深色 / 着色 · 无透明通道</td></tr>
+    <tr><td>macOS</td><td><a href="macos/AppIcon-light.icns">AppIcon-light.icns</a> · <a href="macos/AppIcon-dark.icns">AppIcon-dark.icns</a> · AppIcon-light/dark.iconset · AppIcon.icon（Icon Composer）</td><td>16 – 1024 全套</td></tr>
+    <tr><td>网页</td><td><a href="web/favicon.ico">favicon.ico</a> · <a href="web/favicon-32.png">favicon-16/32/48</a> · <a href="web/apple-touch-icon.png">apple-touch-icon</a> · <a href="web/icon-192.png">icon-192</a> · <a href="web/icon-512.png">icon-512</a> · <a href="web/og-image.png">og-image</a></td><td>ico 含 16/32/48</td></tr>
+  </table>
+  <p class="cap">所有素材由 export.sh 从最终版标志一键重新生成：<code>zsh assets/brand/export.sh</code></p>
+</section>
+
+</main></body></html>

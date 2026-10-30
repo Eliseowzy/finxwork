@@ -1,0 +1,196 @@
+{
+  "page": {
+    "showInfo": "显示信息面板 ⌥⌘0",
+    "hideInfo": "隐藏信息面板 ⌥⌘0",
+    "info": "信息面板"
+  },
+  "chat": {
+    "archived": "已归档：取消归档之前只读。",
+    "unarchive": "取消归档",
+    "earlier": "更早的记录暂未显示",
+    "log": "对话",
+    "inProgress": "进行中",
+    "thinking": "正在思考",
+    "thought": "思考",
+    "thinkingHidden": "服务商没有公开这段推理",
+    "image": "图片",
+    "copy": "拷贝",
+    "compacted": "上下文已压缩：{{before}} → {{after}} tokens",
+    "interrupted": "你打断了这个任务。再发一条消息就会接着做。",
+    "ended": {
+      "max_turns": "达到轮次上限，任务停下了。再发一条消息就会接着做。",
+      "output_limit": "最后一条回复达到输出上限，被截断了。",
+      "hook": "钩子结束了这个任务。"
+    },
+    "done": "完成",
+    "tokens": "{{tokens}} tokens",
+    "failedWith": "出错了：{{title}}",
+    "retry": "重试",
+    "setKey": "设置密钥",
+    "details": "详情",
+    "agents_other": "{{count}} 个子智能体"
+  },
+  "agents": {
+    "launched_other": "派出了 {{count}} 个子智能体，在后台并行工作",
+    "status": {
+      "running": "执行中",
+      "completed": "完成",
+      "failed": "失败",
+      "interrupted": "已中断",
+      "closed": "已关闭"
+    },
+    "open": "在后台面板中查看执行过程",
+    "report": "<b>{{name}}</b> 的汇报",
+    "noReply": {
+      "interrupted": "停下时还没有回复",
+      "completed": "做完了，但没有回复"
+    },
+    "expand": "展开全部",
+    "collapse": "收起",
+    "process": "查看执行过程",
+    "running_other": "有 {{count}} 条后台任务正在执行",
+    "stopped_other": "{{count}} 条后台任务已中断，回复 finx 就能接着做",
+    "sent": "已发消息给",
+    "sending": "正在发消息给",
+    "messageObject": "{{to}}：{{message}}"
+  },
+  "background": {
+    "title": "后台任务",
+    "close": "关闭",
+    "running_other": "{{count}} 个执行中",
+    "completed_other": "{{count}} 个已完成",
+    "interrupted_other": "{{count}} 个已中断",
+    "failed_other": "{{count}} 个失败",
+    "allDone": "全部完成",
+    "none": "还没有后台任务",
+    "stopAll": "全部停止",
+    "stop": "停止",
+    "process": "{{name}} 的执行过程",
+    "brief": "finx 的任务说明",
+    "message": "finx 发来的消息",
+    "expand": "展开全文",
+    "collapse": "收起",
+    "done": "完成",
+    "interruptedNote": "已中断 · 保留着进度，回复 finx 就能让它接着做",
+    "failedLine": "失败：{{message}}",
+    "tokens": "{{tokens}} tokens"
+  },
+  "approval": {
+    "label": "等你批准",
+    "queue": "第 {{n}} / {{total}} 项",
+    "runCommand": "运行这条命令？",
+    "useTool": "{{verb}} {{object}}？",
+    "once": "允许",
+    "session": "本会话都允许",
+    "sessionDesc": "这个会话里同类的调用不再询问",
+    "sessionRule": "这个会话里以「{{rule}}」开头的命令不再询问",
+    "denyWhy": "拒绝…",
+    "deny": "拒绝",
+    "cancel": "取消",
+    "feedback": "告诉 finx 为什么拒绝，或者应该怎么做（可选）",
+    "more_other": "还有 {{count}} 行"
+  },
+  "notice": {
+    "label": "关键提醒",
+    "dismiss": "知道了",
+    "bypass_permissions": {
+      "title": "已开启绕过权限",
+      "body": "工具会直接运行、不再询问，包括改动 .git、shell 配置这类受保护的文件，以及工作区以外的文件。只有拒绝规则、询问规则和删除关键路径仍会拦下操作。请只在容器或临时副本这类隔离环境里使用。",
+      "back": "改回询问权限"
+    }
+  },
+  "composer": {
+    "label": "消息",
+    "commands": "命令与 Skill",
+    "add": "添加",
+    "addFiles": "添加文件和图片",
+    "addFolder": "添加文件夹",
+    "remove": "移除 {{name}}",
+    "view": "查看 {{name}}",
+    "reveal": "在访达中显示 {{name}}",
+    "folder": "文件夹",
+    "send": "发送 ↩",
+    "model": "模型",
+    "thinking": "思考强度",
+    "permission": "权限",
+    "archived": "取消归档后才能继续这个会话",
+    "steer": "插话：下一轮生效（⌥↩ 排到任务之后）",
+    "reply": "回复 finx…",
+    "stop": "停止 ⌘.",
+    "noKey": "未设置密钥"
+  },
+  "inspector": {
+    "label": "会话信息",
+    "turn": "第 {{turn}} 轮",
+    "thinking": "思考：{{level}}",
+    "tasks_other": "<b>{{count}}</b> 个任务",
+    "context": "上下文 <b>{{percent}}%</b>",
+    "contextOf": "上下文已用 {{used}} / {{size}} tokens",
+    "background": "后台运行中",
+    "agents_other": "{{count}} 个子智能体在工作",
+    "viewBackground": "查看后台任务"
+  },
+  "new": {
+    "greeting1": "今天想研究点什么？",
+    "greeting2": "把研报、财报和数据交给 finx",
+    "greeting3": "说出你的分析需求，剩下的交给 finx",
+    "greeting4": "从数据到结论，一步到位",
+    "placeholder": "描述一个任务，比如整理一份财报的要点",
+    "pickFirst": "先选一个项目",
+    "project": "项目",
+    "chooseFolder": "选择文件夹…",
+    "pathPrompt": "项目所在的文件夹（绝对路径）",
+    "environment": "运行环境",
+    "local": "本机",
+    "localDesc": "在这台电脑上运行",
+    "cloud": "云端",
+    "cloudSoon": "即将推出",
+    "connectFirst": "接入模型后就能开始",
+    "noModel": "还没有接入模型",
+    "connect": "接入模型"
+  },
+  "key": {
+    "title": "先连接一个模型服务",
+    "intro": "finx 需要一个模型服务商的 API 密钥才能开始工作。",
+    "provider": "服务商",
+    "key": "API 密钥",
+    "placeholder": "粘贴 {{env}}",
+    "where": "密钥保存在本机的钥匙串里，只有 finx 会读取。",
+    "fromEnv": "已从环境变量 {{env}} 读到密钥；这里保存的密钥只在它不存在时使用。",
+    "save": "保存并继续",
+    "saving": "正在保存…",
+    "cancel": "取消"
+  },
+  "onboarding": {
+    "title": "欢迎使用 FinxWork",
+    "tagline": "专业金融从业者的办公智能体。",
+    "steps": {
+      "connect": "启用 FinxWork",
+      "start": "开始第一个任务"
+    },
+    "later": "稍后再说，先看看",
+    "connect": {
+      "eyebrow": "STEP 1 OF 2 · ENABLE FINXWORK",
+      "title": "使用你现有的 AI 账号，启用 FinxWork",
+      "intro": "用千问办公的账号，或者填一个 API Key，任选其一就能开始。",
+      "api": "用 API Key",
+      "apiNote": "选一家服务商，粘贴它的 API Key。",
+      "models": "{{count}} 个模型"
+    },
+    "key": {
+      "subtitle": "粘贴这个服务商的 API Key",
+      "where": "保存在本机钥匙串，只有 finx 会读取",
+      "back": "返回",
+      "save": "保存并继续"
+    },
+    "ready": {
+      "eyebrow": "STEP 2 OF 2 · READY",
+      "title": "一切就绪",
+      "intro": "FinxWork 已启用，新任务默认使用 {{model}}，随时可以在输入框下方切换。",
+      "active": "可以使用 {{count}} 个模型",
+      "default": "默认",
+      "manage": "可以在设置 › 模型里继续添加",
+      "start": "开始第一个任务"
+    }
+  }
+}

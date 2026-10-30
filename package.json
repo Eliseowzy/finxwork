@@ -1,0 +1,13 @@
+{
+  "name": "finxwork-workspace",
+  "private": true,
+  "packageManager": "pnpm@10.32.1",
+  "scripts": {
+    "dev": "pnpm --filter @finx/desktop dev",
+    "build": "pnpm --filter @finx/desktop build",
+    "app": "pnpm --filter @finx/desktop app",
+    "release": "pnpm --filter @finx/desktop release",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

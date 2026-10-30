@@ -1,0 +1,12 @@
+/target
+**/*.rs.bk
+.DS_Store
+__pycache__/
+*.pyc
+.claude/worktrees/
+
+# JS workspace (apps/, packages/)
+node_modules/
+apps/desktop/out/
+dist/
+apps/desktop/build/model-runtime/

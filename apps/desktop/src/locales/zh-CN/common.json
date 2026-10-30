@@ -1,0 +1,234 @@
+{
+  "window": {
+    "showSidebar": "显示边栏",
+    "hideSidebar": "隐藏边栏",
+    "undo": "撤销"
+  },
+  "sidebar": {
+    "label": "边栏",
+    "newSession": "新会话",
+    "search": "搜索",
+    "sessions": "会话",
+    "loading": "正在读取会话…",
+    "empty": "还没有会话<br/>点「新会话」开始第一个",
+    "showArchived": "显示已归档"
+  },
+  "kernel": {
+    "connecting": "正在连接 finx…",
+    "starting": "正在启动内核…",
+    "reconnecting": "正在重连内核…",
+    "ready": "已连接 · {{server}}",
+    "readyUpdate": "已连接 · {{server}} · 稍后更新",
+    "down": "内核没有运行",
+    "retry": "重试",
+    "showLog": "查看日志",
+    "mock": "演示数据 · 未连接内核"
+  },
+  "foot": {
+    "label": "本机与设置",
+    "settings": "设置…",
+    "models": "模型…",
+    "about": "关于 FinxWork"
+  },
+  "state": {
+    "idle": "空闲",
+    "running": "进行中",
+    "awaiting_approval": "等你批准",
+    "failed": "出错"
+  },
+  "sessionMenu": {
+    "open": "打开",
+    "rename": "重命名",
+    "archive": "归档",
+    "unarchive": "取消归档",
+    "copyId": "拷贝会话 ID",
+    "revealFinder": "在访达中显示会话文件",
+    "reveal": "显示会话文件",
+    "delete": "删除…",
+    "more": "更多操作",
+    "renameLabel": "会话标题",
+    "deleteTitle": "删除「{{title}}」？",
+    "deleteMessage": "会话日志会移到 finx 的回收目录。它对文件做的改动不受影响。",
+    "deleteRunning": "进行中的任务会先被打断。",
+    "deleteButton": "删除",
+    "deleted": "已删除「{{title}}」",
+    "archived": "已归档「{{title}}」",
+    "copiedId": "已拷贝会话 ID"
+  },
+  "listView": {
+    "title": "视图选项",
+    "group": "分组",
+    "sort": "排序",
+    "show": "显示",
+    "byStatus": "按状态",
+    "byDate": "按日期",
+    "byProject": "按项目",
+    "lastActive": "最后活跃时间",
+    "newestFirst": "最新在前",
+    "oldestFirst": "最早在前",
+    "metadata": "元数据",
+    "titleOnly": "仅标题"
+  },
+  "bucket": {
+    "attention": "需要处理",
+    "active": "进行中",
+    "done": "已完成",
+    "today": "今天",
+    "yesterday": "昨天",
+    "week": "7 天内",
+    "earlier": "更早",
+    "archived": "已归档"
+  },
+  "time": {
+    "justNow": "刚刚",
+    "minutesAgo_other": "{{count}} 分钟前",
+    "hoursAgo_other": "{{count}} 小时前",
+    "today": "今天",
+    "yesterday": "昨天",
+    "seconds_other": "{{count}} 秒",
+    "minutesSeconds": "{{m}} 分 {{s}} 秒",
+    "secondsAgo_other": "{{count}} 秒前",
+    "daysAgo_other": "{{count}} 天前"
+  },
+  "steps": {
+    "read": {
+      "done": "已读取",
+      "doing": "正在读取",
+      "do": "读取",
+      "count_other": "读取了 {{count}} 个文件"
+    },
+    "edit": {
+      "done": "已修改",
+      "doing": "正在修改",
+      "do": "修改",
+      "count_other": "修改了 {{count}} 个文件"
+    },
+    "delete": {
+      "done": "已删除",
+      "doing": "正在删除",
+      "do": "删除",
+      "count_other": "删除了 {{count}} 个文件"
+    },
+    "move": {
+      "done": "已移动",
+      "doing": "正在移动",
+      "do": "移动",
+      "count_other": "移动了 {{count}} 个文件"
+    },
+    "search": {
+      "done": "已搜索",
+      "doing": "正在搜索",
+      "do": "搜索",
+      "count_other": "搜索了 {{count}} 次"
+    },
+    "execute": {
+      "done": "已运行",
+      "doing": "正在运行",
+      "do": "运行",
+      "count_other": "运行了 {{count}} 条命令"
+    },
+    "fetch": {
+      "done": "已访问",
+      "doing": "正在访问",
+      "do": "访问",
+      "count_other": "访问了 {{count}} 个网页"
+    },
+    "other": {
+      "done": "已调用",
+      "doing": "正在调用",
+      "do": "调用",
+      "count_other": "调用了 {{count}} 个工具"
+    },
+    "denied": {
+      "done": "已拒绝",
+      "count_other": "拒绝了 {{count}} 次"
+    },
+    "thinking": {
+      "count_other": "思考了 {{count}} 次"
+    },
+    "cancelled": "未执行",
+    "awaiting": "待批准",
+    "separator": "，"
+  },
+  "permission": {
+    "manual": {
+      "title": "询问权限",
+      "desc": "修改文件、运行命令前都先问你"
+    },
+    "accept-edits": {
+      "title": "自动接受编辑",
+      "desc": "工作区里的文件修改直接执行，运行命令前先问你"
+    },
+    "bypass-permissions": {
+      "title": "绕过权限",
+      "desc": "除拒绝规则、询问规则和删除关键路径外，一律直接执行"
+    }
+  },
+  "thinking": {
+    "off": "不思考",
+    "minimal": "极少",
+    "low": "少量",
+    "medium": "适中",
+    "high": "深入",
+    "max": "最深"
+  },
+  "failure": {
+    "auth": "模型服务未登录",
+    "quota_exceeded": "额度已用完",
+    "rate_limited": "被限流",
+    "overloaded": "模型服务繁忙",
+    "server": "模型服务出错",
+    "network": "网络错误",
+    "timeout": "超时",
+    "context_overflow": "上下文已满",
+    "invalid_request": "请求无效",
+    "content_filtered": "被服务商的内容过滤拦下",
+    "protocol": "收到无法识别的回复",
+    "unknown": "出了点问题"
+  },
+  "advice": {
+    "auth": "检查 finx 配置里这个服务商的密钥，然后重试。",
+    "quota_exceeded": "给服务商账户充值或换一个模型，然后重试。",
+    "rate_limited": "服务商要求放慢速度，稍等片刻再重试。",
+    "overloaded": "服务商正忙，稍等片刻再重试。",
+    "server": "服务商那边出了问题，稍等片刻再重试。",
+    "network": "检查网络后重试。",
+    "timeout": "服务商响应太慢。重试，或换一个模型。",
+    "context_overflow": "压缩上下文，或开始一个新会话。",
+    "content_filtered": "换个说法，或换一个模型。",
+    "retryable": "稍等片刻再重试。",
+    "unknown": "重试，或者看看详情。"
+  },
+  "search": {
+    "title": "搜索会话",
+    "placeholder": "搜索标题、第一条消息、项目…",
+    "all": "{{label}}：全部",
+    "includeArchived": "包含已归档",
+    "results": "搜索结果",
+    "found": "会话 · {{n}} 个",
+    "none": "没有找到会话",
+    "noneHint": "换个关键词，或者去掉筛选。已归档的会话要勾选「包含已归档」。",
+    "archived": "已归档",
+    "actions": "操作",
+    "select": "↑↓ 选择",
+    "open": "↩ 打开",
+    "newSession": "新会话",
+    "openSettings": "打开设置"
+  },
+  "filter": {
+    "project": "项目",
+    "model": "模型"
+  },
+  "sheet": {
+    "cancel": "取消"
+  },
+  "update": {
+    "ready": "FinxWork {{version}} 已就绪",
+    "readyHint": "重新启动即可更新，任务不受影响",
+    "available": "有新版本 {{version}}",
+    "availableHint": "下载后再提醒你重新启动",
+    "restart": "重新启动",
+    "download": "下载",
+    "later": "稍后"
+  }
+}

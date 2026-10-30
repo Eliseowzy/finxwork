@@ -1,0 +1,79 @@
+{
+  "settingsWindow": "设置",
+  "menu": {
+    "settings": "设置…",
+    "app": {
+      "about": "关于 FinxWork",
+      "checkUpdates": "检查更新…",
+      "restartToUpdate": "重新启动以更新到 {{version}}",
+      "services": "服务",
+      "hide": "隐藏 FinxWork",
+      "hideOthers": "隐藏其他",
+      "unhide": "全部显示",
+      "quit": "退出 FinxWork"
+    },
+    "file": {
+      "title": "文件",
+      "newSession": "新会话",
+      "openProject": "打开项目…",
+      "close": "关闭窗口",
+      "attachFiles": "添加文件和图片…",
+      "attachFolder": "添加文件夹…"
+    },
+    "edit": {
+      "title": "编辑",
+      "undo": "撤销",
+      "redo": "重做",
+      "cut": "剪切",
+      "copy": "拷贝",
+      "paste": "粘贴",
+      "selectAll": "全选",
+      "find": "查找会话…",
+      "search": "搜索"
+    },
+    "view": {
+      "title": "显示",
+      "nextAttention": "下一个需要处理的会话",
+      "nextActive": "下一个进行中的会话",
+      "showInspector": "显示信息面板",
+      "hideInspector": "隐藏信息面板",
+      "showSidebar": "显示边栏",
+      "hideSidebar": "隐藏边栏",
+      "fullScreen": "进入全屏幕"
+    },
+    "session": {
+      "title": "会话",
+      "approve": "批准",
+      "interrupt": "打断",
+      "rename": "重命名",
+      "archive": "归档",
+      "unarchive": "取消归档",
+      "copyId": "拷贝会话 ID",
+      "revealFinder": "在访达中显示会话文件",
+      "reveal": "显示会话文件"
+    },
+    "window": {
+      "title": "窗口",
+      "minimize": "最小化",
+      "zoom": "缩放",
+      "settings": "设置"
+    },
+    "help": {
+      "title": "帮助",
+      "shortcuts": "快捷键"
+    }
+  },
+  "move": {
+    "title": "把 FinxWork 移到“应用程序”文件夹？",
+    "detail": "放在“应用程序”文件夹里，FinxWork 才能自动更新：直接从磁盘映像或“下载”文件夹打开时，系统不允许替换它。",
+    "move": "移到“应用程序”文件夹",
+    "keep": "不移动",
+    "dontAsk": "不再询问",
+    "replaceTitle": "“应用程序”文件夹里已经有 FinxWork",
+    "replaceDetail": "用这个版本替换它吗？原来的会移到废纸篓。",
+    "replace": "替换",
+    "cancel": "取消",
+    "failedTitle": "没能移动 FinxWork",
+    "failed": "{{reason}}\n\n可以在访达里把 FinxWork 拖到“应用程序”文件夹。"
+  }
+}

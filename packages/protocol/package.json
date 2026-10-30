@@ -1,0 +1,17 @@
+{
+  "name": "@finx/protocol",
+  "private": true,
+  "type": "module",
+  "description": "TypeScript types of the finx native protocol, generated from the kernel schema",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "node scripts/generate.mjs",
+    "test": "node scripts/generate.mjs --check",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

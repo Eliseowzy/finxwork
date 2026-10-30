@@ -1,0 +1,21 @@
+{
+  "name": "@finx/client",
+  "private": true,
+  "type": "module",
+  "description": "Client logic for the finx native protocol, free of any platform or UI framework",
+  "exports": {
+    ".": "./src/index.ts",
+    "./mock": "./src/mock/index.ts"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.ts src/mock/*.test.ts",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@finx/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
+  }
+}

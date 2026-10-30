@@ -1,0 +1,539 @@
+//! MCP in the kernel: a scripted model against the in-process MCP test server. Covers
+//! deferred tools (catalog, tool_search, call_tool), direct tools, list changes, required
+//! servers, sub-agents and resuming, and checks that the request prefix never changes while
+//! the model searches and calls.
+
+use finx_core::Config;
+use finx_core::FinxHome;
+use finx_core::JsonlStore;
+use finx_core::Kernel;
+use finx_core::KernelDeps;
+use finx_core::ResumeOptions;
+use finx_core::SessionRef;
+use finx_core::StartOptions;
+use finx_core::TaskEnd;
+use finx_llm::Catalog;
+use finx_llm::Context;
+use finx_llm::Message;
+use finx_llm::ModelRegistry;
+use finx_llm::RegistryOptions;
+use finx_llm::ThinkingLevel;
+use finx_llm::UserContent;
+use finx_llm::api::scripted::Script;
+use finx_llm::api::scripted::ScriptedApi;
+use finx_mock::mcp::McpHttpServer;
+use finx_mock::mcp::McpTestOptions;
+use finx_protocol::EventMsg;
+use finx_protocol::McpExposure;
+use finx_protocol::McpServerConfig;
+use finx_protocol::McpServerState;
+use finx_protocol::Op;
+use finx_protocol::PermissionMode;
+use finx_tools::BashTool;
+use finx_tools::LocalEnvironment;
+use finx_tools::builtin_registry;
+use parking_lot::Mutex;
+use serde_json::Value;
+use serde_json::json;
+use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
+use tempfile::TempDir;
+
+struct Harness {
+    kernel: Kernel,
+    api: Arc<ScriptedApi>,
+    home: FinxHome,
+    work: PathBuf,
+    server: Option<McpHttpServer>,
+    _dir: TempDir,
+}
+
+/// Scripts by session: the main session is `root`, a sub-agent is its name.
+#[derive(Default)]
+struct Lanes(Mutex<HashMap<String, VecDeque<Script>>>);
+
+fn lane_of(context: &Context) -> String {
+    let first = context.messages.iter().find_map(|m| match m {
+        Message::User(u) => Some(u.text_content()),
+        _ => None,
+    });
+    first
+        .and_then(|text| {
+            text.strip_prefix("You are a sub-agent named \"")
+                .and_then(|rest| rest.split('"').next())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| "root".to_string())
+}
+
+fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpServerConfig>) -> KernelDeps {
+    let mut registry = ModelRegistry::new(Catalog::builtin().unwrap(), RegistryOptions::default());
+    registry.register_api(api.clone());
+    registry.insert_provider(ScriptedApi::provider());
+    KernelDeps {
+        llm: Arc::new(registry),
+        tools: Arc::new(builtin_registry(BashTool::default())),
+        env: Arc::new(LocalEnvironment::new(work.to_path_buf())),
+        store: Arc::new(JsonlStore::new(home.sessions_dir())),
+        hooks: vec![],
+        mcp_servers: servers,
+    }
+}
+
+fn start_options(work: &Path, home: &FinxHome, config: Config) -> StartOptions {
+    StartOptions {
+        model: "test/scripted".into(),
+        thinking: ThinkingLevel::Off,
+        // Manual mode without anyone to approve: MCP calls must still run.
+        permission_mode: PermissionMode::Manual,
+        cwd: work.to_path_buf(),
+        home: home.clone(),
+        config: Arc::new(config),
+        project_root: None,
+        trusted: false,
+        interactive_approvals: false,
+    }
+}
+
+async fn test_server(options: McpTestOptions) -> McpHttpServer {
+    finx_mock::mcp::serve_http("127.0.0.1:0", options).await.unwrap()
+}
+
+fn http_config(name: &str, server: &McpHttpServer) -> McpServerConfig {
+    McpServerConfig {
+        name: name.into(),
+        url: Some(server.url()),
+        description: Some("Test tools: echo, arithmetic, a vault".into()),
+        ..Default::default()
+    }
+}
+
+impl Harness {
+    async fn start(configs: Vec<McpServerConfig>, server: Option<McpHttpServer>, scripts: Vec<Script>) -> Harness {
+        Self::start_with(Config::default(), configs, server, |api| {
+            for script in scripts {
+                api.push(script);
+            }
+        })
+        .await
+    }
+
+    async fn start_with(
+        config: Config,
+        configs: Vec<McpServerConfig>,
+        server: Option<McpHttpServer>,
+        script: impl FnOnce(&Arc<ScriptedApi>),
+    ) -> Harness {
+        let dir = tempfile::tempdir().unwrap();
+        let work = dir.path().join("work");
+        std::fs::create_dir_all(&work).unwrap();
+        let home = FinxHome::new(dir.path().join("home"));
+        home.ensure().unwrap();
+        let api = ScriptedApi::new();
+        script(&api);
+        let kernel = Kernel::start(start_options(&work, &home, config), deps(&api, &work, &home, configs))
+            .await
+            .unwrap();
+        Harness {
+            kernel,
+            api,
+            home,
+            work,
+            server,
+            _dir: dir,
+        }
+    }
+
+    async fn run(&mut self, prompt: &str) -> (TaskEnd, Vec<EventMsg>) {
+        let result = tokio::time::timeout(
+            Duration::from_secs(30),
+            self.kernel.run(vec![UserContent::Text { text: prompt.into() }]),
+        )
+        .await
+        .expect("the task timed out")
+        .unwrap();
+        (result.end, result.events.into_iter().map(|e| e.msg).collect())
+    }
+}
+
+/// The kernel's events up to and including the first one `done` accepts.
+async fn until(kernel: &mut Kernel, done: impl Fn(&EventMsg) -> bool) -> Vec<EventMsg> {
+    let mut seen = Vec::new();
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(30), kernel.next_event())
+            .await
+            .expect("timed out waiting for an event")
+            .expect("the kernel stopped");
+        let stop = done(&event.msg);
+        seen.push(event.msg);
+        if stop {
+            return seen;
+        }
+    }
+}
+
+async fn wait_for_log(log: &Path, needle: &str) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let text = std::fs::read_to_string(log).unwrap_or_default();
+        if text.contains(needle) {
+            return;
+        }
+        assert!(Instant::now() < deadline, "'{needle}' not in the server log:\n{text}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
+fn tool_names(context: &Context) -> Vec<String> {
+    context.tools.iter().map(|t| t.name.clone()).collect()
+}
+
+fn tool_results(context: &Context) -> Vec<String> {
+    context
+        .messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::ToolResult(r) => Some(r.text_content()),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `system_prompt` entries of the session log, as JSON.
+fn prompt_entries(home: &FinxHome) -> Vec<Value> {
+    let mut out = Vec::new();
+    for entry in walk(&home.sessions_dir()) {
+        if entry.extension().is_some_and(|e| e == "jsonl") {
+            for line in std::fs::read_to_string(&entry).unwrap().lines() {
+                let value: Value = serde_json::from_str(line).unwrap();
+                if value["type"] == "system_prompt" {
+                    out.push(value);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                out.extend(walk(&path));
+            } else {
+                out.push(path);
+            }
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn deferred_tools_are_searched_and_called_without_changing_the_request() {
+    let server = test_server(McpTestOptions {
+        generated: 60,
+        ..Default::default()
+    })
+    .await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "tool_search", json!({ "query": "repeat the text back" })),
+            Script::tool_call("t2", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "hi" } })),
+            Script::text("done"),
+        ],
+    )
+    .await;
+    let (end, events) = h.run("say hi through the echo tool").await;
+    assert_eq!(end, TaskEnd::Completed { last_message: Some("done".into()) });
+
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 3);
+    // The prefix (system prompt and tool list) is the same for every request.
+    for request in &requests[1..] {
+        assert_eq!(request.system, requests[0].system);
+        assert_eq!(request.tools, requests[0].tools);
+    }
+    let names = tool_names(&requests[0]);
+    assert!(names.contains(&"tool_search".to_string()) && names.contains(&"call_tool".to_string()), "{names:?}");
+    assert!(!names.iter().any(|n| n.starts_with("mcp__")), "deferred tools stay out of the list: {names:?}");
+    assert!(requests[0].system.contains("<mcp_servers>\n"));
+    assert!(requests[0].system.contains("- test: Test tools: echo, arithmetic, a vault"));
+
+    let search = &tool_results(&requests[1])[0];
+    assert!(search.starts_with("Server test: Test server for finx."), "{search}");
+    assert!(search.contains("- mcp__test__echo: Repeat the given text back."), "{search}");
+    assert!(search.contains("\"Text to repeat\""), "the schema comes with it: {search}");
+    assert_eq!(tool_results(&requests[2])[1], "echo: hi");
+
+    assert!(events.iter().all(|e| !matches!(e, EventMsg::ApprovalRequested { .. })), "MCP calls are not approved");
+    let started = events
+        .iter()
+        .find_map(|e| match e {
+            EventMsg::ToolStarted { name, title, .. } if name == "call_tool" => Some(title.clone()),
+            _ => None,
+        })
+        .unwrap();
+    assert_eq!(started, "test: Echo", "interfaces show the tool that runs");
+    // The log keeps the fixed prompt and the MCP part apart.
+    let entries = prompt_entries(&h.home);
+    assert_eq!(entries.len(), 1, "nothing changed, so one entry: {entries:?}");
+    assert!(entries[0]["mcp"].as_str().unwrap().starts_with("<mcp_servers>"));
+    assert!(!entries[0]["text"].as_str().unwrap().contains("<mcp_servers>"));
+    let _ = h.kernel.shutdown().await;
+}
+
+#[tokio::test]
+async fn repeated_searches_do_not_repeat_definitions() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::tool_call("t2", "tool_search", json!({ "query": "add two numbers" })),
+            Script::tool_call("t3", "tool_search", json!({ "server": "test" })),
+            Script::text("ok"),
+        ],
+    )
+    .await;
+    let (end, _) = h.run("find add").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    let results = tool_results(&h.api.requests()[3]);
+    assert!(results[0].contains("- mcp__test__add: Add two numbers.\n  {"), "{}", results[0]);
+    assert!(results[1].contains("- mcp__test__add: Add two numbers. (definition shown earlier)"), "{}", results[1]);
+    assert!(results[1].starts_with("Server test:\n"), "instructions only once: {}", results[1]);
+    // Listing a server gives names without schemas.
+    assert!(results[2].contains("- mcp__test__vault_reveal_code: Reveal the secret release code"), "{}", results[2]);
+    assert!(!results[2].contains("\"properties\""), "{}", results[2]);
+    assert!(!results[2].contains("ui_panel") && !results[2].contains("bad_schema"), "{}", results[2]);
+}
+
+#[tokio::test]
+async fn call_tool_takes_arguments_sent_as_a_json_string() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "call_tool", json!({ "name": "mcp__test__add", "arguments": "{\"a\": 2, \"b\": 40}" })),
+            Script::text("ok"),
+        ],
+    )
+    .await;
+    let (end, _) = h.run("add them").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    assert_eq!(tool_results(&h.api.requests()[1]), vec!["42".to_string()]);
+}
+
+#[tokio::test]
+async fn listing_a_large_server_gives_every_name() {
+    let server = test_server(McpTestOptions {
+        generated: 300,
+        ..McpTestOptions::default()
+    })
+    .await;
+    let config = http_config("big", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "tool_search", json!({ "server": "big" })),
+            Script::text("ok"),
+        ],
+    )
+    .await;
+    let (end, _) = h.run("what can big do").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    let listing = &tool_results(&h.api.requests()[1])[0];
+    assert!(listing.contains("313 tools; the full name of each is mcp__big__<name>:"), "{listing}");
+    let names = listing.lines().find(|l| l.starts_with("add, ")).expect("the names line");
+    assert_eq!(names.split(", ").count(), 313);
+    assert!(names.contains("vault_reveal_code") && names.contains("weather_list"), "{names}");
+    assert!(!listing.contains("Reveal the secret"), "names only: {listing}");
+    assert!(listing.len() < 6 * 1024, "{} bytes", listing.len());
+}
+
+#[tokio::test]
+async fn interrupting_a_slow_call_cancels_it_on_the_server() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("server.log");
+    let server = test_server(McpTestOptions {
+        log: Some(log.clone()),
+        ..McpTestOptions::default()
+    })
+    .await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "call_tool", json!({ "name": "mcp__test__slow", "arguments": { "seconds": 20 } })),
+            Script::text("still here"),
+        ],
+    )
+    .await;
+    let started = Instant::now();
+    h.kernel.submit(Op::prompt("wait for it")).await.unwrap();
+    // The server's progress reaches the session before the interrupt.
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolProgress { .. })).await;
+    h.kernel.submit(Op::Interrupt).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap(), EventMsg::TaskInterrupted { .. }), "{events:?}");
+    assert!(started.elapsed() < Duration::from_secs(10));
+    wait_for_log(&log, "cancelled").await;
+    // The session goes on.
+    let (end, _) = h.run("go on").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+}
+
+#[tokio::test]
+async fn direct_servers_put_their_tools_in_the_list() {
+    let server = test_server(McpTestOptions::default()).await;
+    let mut config = http_config("tools", &server);
+    config.exposure = Some(McpExposure::Direct);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })),
+            Script::text("ok"),
+        ],
+    )
+    .await;
+    let (end, events) = h.run("echo directly").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    let requests = h.api.requests();
+    let names = tool_names(&requests[0]);
+    assert!(names.contains(&"mcp__tools__echo".to_string()), "{names:?}");
+    assert!(!names.contains(&"tool_search".to_string()), "no deferred server, no search tool");
+    assert!(!names.iter().any(|n| n.contains("bad_schema") || n.contains("ui_panel")), "{names:?}");
+    assert!(requests[0].system.contains("<mcp_instructions server=\"tools\">\nTest server for finx."));
+    assert!(!requests[0].system.contains("<mcp_servers>"));
+    assert_eq!(tool_results(&requests[1])[0], "echo: direct");
+    assert!(events.iter().any(|e| matches!(e, EventMsg::Warning { message, .. } if message.contains("bad_schema"))));
+    // Start without tools, then the first request has them: one more entry, before any request.
+    let entries = prompt_entries(&h.home);
+    assert_eq!(entries.len(), 2);
+    assert!(entries[1]["tools"].as_array().unwrap().iter().any(|t| t == "mcp__tools__echo"));
+}
+
+#[tokio::test]
+async fn direct_tool_changes_apply_between_requests() {
+    let server = test_server(McpTestOptions::default()).await;
+    let mut config = http_config("live", &server);
+    config.exposure = Some(McpExposure::Direct);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "mcp__live__add_tool", json!({})),
+            Script::text("added"),
+            Script::tool_call("t2", "mcp__live__extra_echo", json!({ "text": "new" })),
+            Script::text("used it"),
+        ],
+    )
+    .await;
+    let (end, _) = h.run("add a tool").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let (end, _) = h.run("use the new tool").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    let requests = h.api.requests();
+    assert!(!tool_names(&requests[0]).contains(&"mcp__live__extra_echo".to_string()));
+    assert!(tool_names(&requests[2]).contains(&"mcp__live__extra_echo".to_string()));
+    assert_eq!(tool_results(&requests[3]).last().unwrap(), "echo: new");
+    assert_eq!(prompt_entries(&h.home).len(), 3, "the change is recorded");
+}
+
+#[tokio::test]
+async fn a_required_server_that_cannot_start_fails_the_task() {
+    let config = McpServerConfig {
+        name: "needed".into(),
+        url: Some("http://127.0.0.1:1/mcp".into()),
+        required: true,
+        startup_timeout_secs: Some(2),
+        ..Default::default()
+    };
+    let mut h = Harness::start(vec![config], None, vec![Script::text("never")]).await;
+    let (end, events) = h.run("anything").await;
+    match end {
+        TaskEnd::Failed(error) => {
+            assert_eq!(error.kind, "mcp_unavailable");
+            assert!(error.message.contains("'needed'"), "{}", error.message);
+        }
+        other => panic!("expected a failure, got {other:?}"),
+    }
+    assert_eq!(h.api.requests().len(), 0, "no request without the required server");
+    assert!(events.iter().any(|e| matches!(e, EventMsg::McpServerStatus { state: McpServerState::Failed, .. })));
+}
+
+#[tokio::test]
+async fn sub_agents_share_the_servers_and_get_the_search_tools() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let lanes = Arc::new(Lanes::default());
+    let push = |lane: &str, script: Script| lanes.0.lock().entry(lane.to_string()).or_default().push_back(script);
+    push("root", Script::tool_call("r1", "spawn_agent", json!({ "task": "echo hello", "name": "helper", "wait": true })));
+    push("helper", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the helper" } })));
+    push("helper", Script::text("helper done"));
+    push("root", Script::text("root done"));
+    let routed = lanes.clone();
+    let mut h = Harness::start_with(Config::default(), vec![config], Some(server), move |api| {
+        api.respond_with(move |context| routed.0.lock().get_mut(&lane_of(context))?.pop_front());
+    })
+    .await;
+    let (end, _) = h.run("delegate").await;
+    assert_eq!(end, TaskEnd::Completed { last_message: Some("root done".into()) });
+    let calls = h.api.calls();
+    let helper: Vec<&Context> = calls.iter().map(|c| &c.context).filter(|c| lane_of(c) == "helper").collect();
+    let names = tool_names(helper[0]);
+    assert!(names.contains(&"call_tool".to_string()) && names.contains(&"tool_search".to_string()), "{names:?}");
+    assert!(!names.contains(&"spawn_agent".to_string()), "{names:?}");
+    assert!(helper[0].system.contains("<mcp_servers>"));
+    assert_eq!(tool_results(helper[1])[0], "echo: from the helper");
+    assert_eq!(h.server.as_ref().unwrap().calls(), 1, "one call on the shared connection");
+}
+
+#[tokio::test]
+async fn resumed_sessions_reconnect_and_keep_one_prompt_entry() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(vec![config.clone()], Some(server), vec![Script::text("first")]).await;
+    let (end, _) = h.run("hello").await;
+    assert!(matches!(end, TaskEnd::Completed { .. }));
+    let session = h.kernel.session_file().to_path_buf();
+    let _ = h.kernel.shutdown().await;
+
+    let api = ScriptedApi::new();
+    api.push(Script::tool_call("t1", "call_tool", json!({ "name": "mcp__test__add", "arguments": { "a": 1, "b": 2 } })));
+    api.push(Script::text("second"));
+    let options = ResumeOptions {
+        session: SessionRef::Path(session),
+        model: None,
+        thinking: None,
+        permission_mode: None,
+        home: h.home.clone(),
+        config: Arc::new(Config::default()),
+        project_root: None,
+        trusted: false,
+        interactive_approvals: false,
+    };
+    let mut kernel = Kernel::resume(options, deps(&api, &h.work, &h.home, vec![config])).await.unwrap();
+    let result = kernel.run(vec![UserContent::Text { text: "add".into() }]).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(tool_results(&api.requests()[1]).last().unwrap(), "3");
+    assert_eq!(prompt_entries(&h.home).len(), 1, "same prompt and tools: no new entry on resume");
+    let _ = kernel.shutdown().await;
+}

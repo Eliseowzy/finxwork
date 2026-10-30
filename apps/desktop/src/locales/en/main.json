@@ -1,0 +1,79 @@
+{
+  "settingsWindow": "Settings",
+  "menu": {
+    "settings": "Settings…",
+    "app": {
+      "about": "About FinxWork",
+      "checkUpdates": "Check for Updates…",
+      "restartToUpdate": "Restart to Update to {{version}}",
+      "services": "Services",
+      "hide": "Hide FinxWork",
+      "hideOthers": "Hide Others",
+      "unhide": "Show All",
+      "quit": "Quit FinxWork"
+    },
+    "file": {
+      "title": "File",
+      "newSession": "New Session",
+      "openProject": "Open Project…",
+      "close": "Close Window",
+      "attachFiles": "Add Files or Photos…",
+      "attachFolder": "Add Folder…"
+    },
+    "edit": {
+      "title": "Edit",
+      "undo": "Undo",
+      "redo": "Redo",
+      "cut": "Cut",
+      "copy": "Copy",
+      "paste": "Paste",
+      "selectAll": "Select All",
+      "find": "Find Session…",
+      "search": "Search"
+    },
+    "view": {
+      "title": "View",
+      "nextAttention": "Next Session That Needs You",
+      "nextActive": "Next Running Session",
+      "showInspector": "Show Info",
+      "hideInspector": "Hide Info",
+      "showSidebar": "Show Sidebar",
+      "hideSidebar": "Hide Sidebar",
+      "fullScreen": "Enter Full Screen"
+    },
+    "session": {
+      "title": "Session",
+      "approve": "Approve",
+      "interrupt": "Interrupt",
+      "rename": "Rename",
+      "archive": "Archive",
+      "unarchive": "Unarchive",
+      "copyId": "Copy Session ID",
+      "revealFinder": "Show Session File in Finder",
+      "reveal": "Show Session File"
+    },
+    "window": {
+      "title": "Window",
+      "minimize": "Minimize",
+      "zoom": "Zoom",
+      "settings": "Settings"
+    },
+    "help": {
+      "title": "Help",
+      "shortcuts": "Keyboard Shortcuts"
+    }
+  },
+  "move": {
+    "title": "Move FinxWork to the Applications folder?",
+    "detail": "FinxWork can update itself only from the Applications folder: macOS doesn't let an app be replaced while it runs from a disk image or straight from Downloads.",
+    "move": "Move to Applications Folder",
+    "keep": "Don't Move",
+    "dontAsk": "Don't ask again",
+    "replaceTitle": "FinxWork is already in the Applications folder",
+    "replaceDetail": "Replace it with this version? The other one goes to the Trash.",
+    "replace": "Replace",
+    "cancel": "Cancel",
+    "failedTitle": "FinxWork could not be moved",
+    "failed": "{{reason}}\n\nYou can drag FinxWork to the Applications folder in Finder."
+  }
+}

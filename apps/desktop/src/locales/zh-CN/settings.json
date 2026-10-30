@@ -1,0 +1,183 @@
+{
+  "title": "设置",
+  "pages": {
+    "general": "通用",
+    "models": "模型",
+    "permissions": "权限",
+    "about": "关于"
+  },
+  "appearance": {
+    "title": "外观",
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色"
+  },
+  "language": {
+    "title": "语言",
+    "system": "跟随系统（{{name}}）",
+    "names": {
+      "zh-CN": "简体中文",
+      "en": "English"
+    },
+    "restartHint": "重新启动 FinxWork 后生效。",
+    "restartNow": "立即重启"
+  },
+  "browserNote": "这个页面运行在应用之外，偏好不会保存。",
+  "models": {
+    "credential": {
+      "missing": "缺少密钥",
+      "config": "密钥写在配置文件里",
+      "env": "密钥来自环境变量 {{env}}",
+      "stored": "密钥保存在钥匙串里",
+      "command": "密钥由配置的命令提供",
+      "not_required": "无需密钥"
+    },
+    "setKey": "设置密钥…",
+    "replaceKey": "更换密钥…",
+    "removeKey": "删除密钥",
+    "default": "默认",
+    "reasoning": "支持思考",
+    "context": "上下文 {{size}}",
+    "note": "服务商和模型来自 finx 的配置（~/.finx/config.toml 与 models.toml）。这里设置的密钥由 finx 保存在本机钥匙串里，命令行同样可以使用；配置文件或环境变量里的密钥优先。",
+    "local": "本机应用",
+    "api": "用 API Key",
+    "qwen": "千问办公",
+    "add": "添加 API 服务",
+    "close": "关闭",
+    "connect": "连接",
+    "disconnect": "断开",
+    "reconnect": "重新连接",
+    "open": "打开{{name}}",
+    "recheck": "重新检查",
+    "remove": "移除",
+    "confirmRemove": "确认移除",
+    "cancel": "取消",
+    "count": "{{count}} 个模型",
+    "state": {
+      "ready": "已连接 · {{count}} 个模型",
+      "connecting": "正在连接…",
+      "needsLogin": "登录已失效，请在{{name}}中重新登录",
+      "disabled": "已断开",
+      "trouble": "暂时不可用",
+      "checking": "正在检查…",
+      "unknown": "无法检查",
+      "missing": "未安装",
+      "signedOut": "未登录",
+      "found": "已安装 {{version}}"
+    },
+    "source": {
+      "stored": "钥匙串",
+      "env": "环境变量 {{env}}",
+      "config": "models.toml",
+      "command": "命令提供"
+    },
+    "elsewhere": {
+      "env": "在 shell 配置里设置，要移除请删掉 {{env}}",
+      "config": "在 ~/.finx/models.toml 里设置，要移除请编辑该文件"
+    },
+    "otherModels": "其他模型（{{count}}）",
+    "unverified": "待验证"
+  },
+  "permissions": {
+    "soonTitle": "连接内核后提供",
+    "soon": "这些是 finx 自己的设置，窗口会通过协议读取和修改：",
+    "mode": "新会话的默认权限模式",
+    "rules": "命令规则：哪些直接运行、哪些总要询问、哪些永远不运行",
+    "protected": "受保护的路径",
+    "trust": "受信任的项目"
+  },
+  "about": {
+    "version": "版本 {{version}}",
+    "updates": {
+      "title": "软件更新",
+      "unsupported": "这个版本不会自动更新：只有从 GitHub 下载的正式版本会检查更新。",
+      "idle": "尚未检查更新",
+      "checking": "正在检查更新…",
+      "current": "已是最新版本",
+      "available": "有新版本 {{version}} 可以下载",
+      "downloading": "正在下载 {{version}}…",
+      "ready": "{{version}} 已下载并通过验证，退出 FinxWork 时安装。现在重新启动即可使用，正在运行的任务不受影响。",
+      "checkedAt": "上次检查：{{time}}",
+      "check": "检查更新",
+      "download": "下载更新",
+      "restart": "重新启动以更新",
+      "retry": "重试",
+      "notes": "更新说明",
+      "details": "技术详情",
+      "auto": "自动下载更新",
+      "autoDesc": "发现新版本时在后台下载，下载好后再提醒你重新启动。",
+      "error": {
+        "network": "没能检查更新，请检查网络连接。FinxWork 稍后会再试。",
+        "location": "FinxWork 要放在“应用程序”文件夹里才能自动更新。请在访达里把它移进去后重试。",
+        "download": "没能下载更新，FinxWork 稍后会再试。"
+      }
+    },
+    "kernel": "内核",
+    "mock": "演示（模拟服务）",
+    "data": "finx 的数据",
+    "binary": "内核程序",
+    "started": "由谁启动",
+    "startedHere": "本应用",
+    "startedElsewhere": "其他程序（例如终端）",
+    "env": "运行环境",
+    "env_login": "登录 shell 的环境",
+    "env_fallback": "默认环境（登录 shell 没有响应）",
+    "kernel_starting": "正在启动…",
+    "kernel_reconnecting": "正在重连…",
+    "kernelFailed": "没有运行：{{reason}}",
+    "kernelUpdate": "{{server}}（空闲时更新到本应用的版本）",
+    "restart": "重启内核",
+    "showLog": "查看日志",
+    "restartTitle": "重启内核？",
+    "restartBusy": "有任务正在运行。重启会中断它们，会话记录会保存，之后再发一条消息就会接着做。",
+    "restartNow": "重启"
+  },
+  "connections": {
+    "local": "本机应用"
+  },
+  "local": {
+    "note": "无需 API Key，调用计入该账户的额度。",
+    "found": "直接使用{{name}}账户里的模型，调用计入该账户的额度。",
+    "ready": "已接入 {{count}} 个模型，可以开始了。",
+    "needsLogin": "{{name}}的登录已失效，请在{{name}}里重新登录后再连接。",
+    "signedOut": "{{name}}还没有登录，登录后回到这里连接。",
+    "missing": "这台电脑上还没有{{name}}，安装并登录后即可连接。",
+    "trouble": "暂时连不上{{name}}，可以稍后重试，或先用 API Key。",
+    "connect": "连接{{name}}"
+  },
+  "live": {
+    "failed": "连接失败",
+    "active": "已接入 {{count}} 个模型，可在新对话中选择",
+    "login": "请在千问办公中恢复登录，然后重试。",
+    "description": "连接本机千问办公账户，使用它提供的模型。",
+    "install": "请先安装千问办公并登录。",
+    "independent": "独立模型会话 · 按需续期",
+    "open": "打开千问办公",
+    "remove": "移除",
+    "retry": "重新连接",
+    "connect": "连接千问办公",
+    "working": "处理中…",
+    "states": {
+      "found": "已发现",
+      "missing": "未发现应用",
+      "connecting": "连接中",
+      "ready": "已连接",
+      "disabled": "已断开",
+      "needs_login": "需要登录",
+      "permission_required": "需要系统授权",
+      "unsupported": "暂不支持",
+      "unavailable": "暂时不可用",
+      "syncing": "同步到内核",
+      "checking": "正在检查…"
+    },
+    "otherModels": "其他模型（{{count}}）",
+    "pending": "待验证",
+    "sourceLogin": "请在 {{name}} 中恢复登录，然后重试。",
+    "sourceDescription": "连接本机 {{name}} 账户，使用它提供的模型。",
+    "sourceInstall": "请先安装 {{name}} 并登录。",
+    "openSource": "打开 {{name}}",
+    "connectSource": "连接 {{name}}",
+    "sourceConsent": "读取 {{name}} 本机登录状态，建立独立模型授权；调用计入同一账户用量。",
+    "degraded": "网络暂时不可用，下次调用将自动重试。"
+  }
+}

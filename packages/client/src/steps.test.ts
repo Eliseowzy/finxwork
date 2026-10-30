@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
+import { applyEvents, fromSnapshot, type SessionView } from "./session.ts";
+import { approvalPreview, attachedBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
+import { clockText, costText, tokensText } from "./text.ts";
+
+const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
+const usage: Usage = { input: 1, output: 1, cache_read: 0, cache_write: 0, cost: { currency: "USD", input: 0, output: 0, cache_read: 0, cache_write: 0, total: 0 } };
+
+function play(msgs: EventMsg[]): SessionView {
+  const events = msgs.map((m, i) => ({ seq: i + 1, ts: 1000 + i, ...m }) as Event);
+  return applyEvents(fromSnapshot({ session: info, last_seq: 0, transcript: { items: [] }, usage: { per_model: {} } }), events);
+}
+
+const assistant = (id: string, content: AssistantContent[]): EventMsg => ({
+  type: "message_completed",
+  message_id: id,
+  message: { role: "assistant", content, provider: "p", api: "a", model: "m", usage, stop_reason: "stop", ts: 1 },
+});
+const result = (id: string, text: string, is_error = false): EventMsg => ({
+  type: "tool_completed",
+  call_id: id,
+  result: { call_id: id, tool_name: "bash", content: [{ type: "text", text }], is_error, ts: 2 },
+});
+
+test("thinking and tool calls between the model's words become one step; words and messages stay apart", () => {
+  const v = play([
+    { type: "task_started", task_id: "t1" },
+    { type: "message_completed", message_id: "u1", message: { role: "user", content: [{ type: "text", text: "hi" }], ts: 1 } },
+    assistant("a1", [
+      { type: "thinking", text: "look first" },
+      { type: "text", text: "Looking." },
+      { type: "tool_call", id: "c1", name: "bash", arguments: { command: "ls -la\nmore" } },
+    ]),
+    { type: "tool_started", call_id: "c1", name: "bash", args: { command: "ls -la" }, category: "execute", title: "ls -la" },
+    { type: "tool_running", call_id: "c1" },
+    result("c1", "a\nb"),
+    assistant("a2", [
+      { type: "tool_call", id: "c2", name: "read", arguments: { path: "/w/app/src/main.rs" } },
+      { type: "tool_call", id: "c3", name: "edit", arguments: { path: "/w/app/src/main.rs" } },
+    ]),
+    result("c2", "fn main() {}"),
+    { type: "message_started", message_id: "a3", role: "assistant" },
+    { type: "message_delta", message_id: "a3", delta: { type: "text", index: 0, text: "Do" } },
+    { type: "message_delta", message_id: "a3", delta: { type: "text", index: 0, text: "ne" } },
+  ]);
+  const steps = conversation(v);
+  assert.deepEqual(steps.map((s) => s.kind), ["user", "work", "text", "work", "text"]);
+  const work = steps[3];
+  assert.ok(work.kind === "work");
+  assert.deepEqual(work.items.map((i) => (i.kind === "tool" ? `${i.tool.name}:${i.tool.state}` : "thinking")), ["bash:done", "read:done", "edit:pending"]);
+  assert.equal(work.live, true);
+  const draft = steps.at(-1);
+  assert.ok(draft?.kind === "text" && draft.live && draft.text === "Done");
+  // The edit is still to run in the task in progress; once the task ends without running it, it was not run.
+  const ended = applyEvents(v, [{ seq: 100, ts: 9, type: "task_interrupted", task_id: "t1", returned_input: [], usage: { per_model: {} } }]);
+  const w = conversation(ended).find((s) => s.kind === "work" && s.items.length === 3);
+  assert.ok(w?.kind === "work" && w.items[2].kind === "tool" && w.items[2].tool.state === "cancelled");
+});
+
+test("a group's line counts its calls kind by kind; thinking counts only alone", () => {
+  const tool = (category: "read" | "execute", state: "done" | "denied" = "done") =>
+    ({ kind: "tool", key: Math.random().toString(), tool: { call_id: "", name: "", category, title: "", args: {}, state } }) as const;
+  assert.deepEqual(workSummary([tool("read"), tool("execute"), tool("read"), { kind: "thinking", key: "k", text: "", redacted: false, live: false }]), [
+    { kind: "read", count: 2 },
+    { kind: "execute", count: 1 },
+  ]);
+  assert.deepEqual(workSummary([tool("execute", "denied")]), [{ kind: "denied", count: 1 }]);
+  assert.deepEqual(workSummary([{ kind: "thinking", key: "k", text: "", redacted: false, live: false }]), [{ kind: "thinking", count: 1 }]);
+});
+
+test("the built-in tools are described from their arguments, paths relative to the project", () => {
+  assert.deepEqual(describe("bash", { command: "cargo test\n--nocapture" }, "/w"), { category: "execute", title: "cargo test …" });
+  assert.deepEqual(describe("read", { path: "/w/src/a.rs" }, "/w"), { category: "read", title: "read src/a.rs" });
+  assert.deepEqual(describe("write", { path: "/elsewhere/b" }, "/w"), { category: "edit", title: "write /elsewhere/b" });
+  assert.equal(toolObject({ name: "read", title: "read src/a.rs", category: "read" }), "src/a.rs");
+  assert.equal(toolObject({ name: "bash", title: "read me", category: "execute" }), "read me");
+});
+
+test("an approval previews the command, the change, or what is written", () => {
+  assert.deepEqual(approvalPreview("bash", { command: "rm -rf build" }, "x"), { kind: "command", text: "rm -rf build" });
+  assert.deepEqual(approvalPreview("edit", { path: "a", edits: [{ old_text: "x\ny\n", new_text: "z" }] }, ""), {
+    kind: "diff",
+    lines: [{ sign: "-", text: "x" }, { sign: "-", text: "y" }, { sign: "+", text: "z" }],
+    more: 0,
+  });
+  const long = approvalPreview("write", { path: "a", content: "1\n2\n3\n4" }, "", 3);
+  assert.deepEqual(long, { kind: "content", lines: ["1", "2", "3"], more: 1 });
+  assert.deepEqual(approvalPreview("fetch", { url: "u" }, "fetch u"), { kind: "args", text: "fetch u" });
+});
+
+test("a message's attached files go to the model as a block of paths and come back as files, not words", () => {
+  const content = [{ type: "text", text: "look at these" }, { type: "image", mime_type: "image/png", data: "AAAA" }, attachedBlock(["/w/a.rs", "/w/docs/"])] as const;
+  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"] });
+  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"] });
+  const v = play([{ type: "message_completed", message_id: "u1", message: { role: "user", content: [...content], ts: 1 } }]);
+  const [u] = conversation(v);
+  assert.ok(u.kind === "user");
+  assert.equal(u.text, "look at these");
+  assert.deepEqual(u.images, [{ mime_type: "image/png", data: "AAAA" }]);
+  assert.deepEqual(u.files, ["/w/a.rs", "/w/docs/"]);
+});
+
+test("numbers as the window shows them", () => {
+  assert.equal(clockText(252), "4:12");
+  assert.equal(clockText(3723), "1:02:03");
+  assert.equal(tokensText(950), "950");
+  assert.equal(tokensText(1500), "1.5K");
+  assert.equal(tokensText(412_000), "412K");
+  assert.equal(tokensText(1_800_000), "1.8M");
+  assert.equal(costText({ currency: "CNY", total: 0.42 }), "¥0.42");
+  assert.equal(costText({ currency: "USD", total: 0.004 }), "$0.0040");
+});
+
+test("a coded warning becomes a notice, the latest per code, and leaving bypass-permissions drops its notice", () => {
+  const bypass: EventMsg = { type: "warning", message: "Permission mode bypass-permissions: …", code: "bypass_permissions" };
+  const mode = (permission_mode: "manual" | "bypass-permissions"): EventMsg => ({ type: "settings_changed", model: "p/m", thinking: "off", permission_mode, context_window: 1000 });
+  const v = play([bypass, { type: "warning", message: "nothing to compact" }, bypass]);
+  assert.deepEqual(v.notices.map((n) => [n.code, n.ts]), [["bypass_permissions", 1002]]);
+  assert.deepEqual(v.entries.map((e) => (e.type === "note" && e.note === "warning" ? e.message : e.type)), ["nothing to compact"]);
+  assert.equal(play([bypass, mode("bypass-permissions")]).notices.length, 1);
+  assert.deepEqual(play([bypass, mode("manual")]).notices, []);
+});

@@ -1,0 +1,4654 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "$ref": "#/definitions/AuthDeleteParams"
+    },
+    {
+      "$ref": "#/definitions/AuthSetParams"
+    },
+    {
+      "$ref": "#/definitions/CancelRequestParams"
+    },
+    {
+      "$ref": "#/definitions/ConnectionConnectParams"
+    },
+    {
+      "$ref": "#/definitions/ConnectionIdParams"
+    },
+    {
+      "$ref": "#/definitions/ConnectionsDiscoveryResult"
+    },
+    {
+      "$ref": "#/definitions/ConnectionsSnapshot"
+    },
+    {
+      "$ref": "#/definitions/Empty"
+    },
+    {
+      "$ref": "#/definitions/Event"
+    },
+    {
+      "$ref": "#/definitions/InitializeParams"
+    },
+    {
+      "$ref": "#/definitions/InitializeResult"
+    },
+    {
+      "$ref": "#/definitions/ModelsListResult"
+    },
+    {
+      "$ref": "#/definitions/Op"
+    },
+    {
+      "$ref": "#/definitions/ResourceReadParams"
+    },
+    {
+      "$ref": "#/definitions/ResourceReadResult"
+    },
+    {
+      "$ref": "#/definitions/SessionAttachParams"
+    },
+    {
+      "$ref": "#/definitions/SessionDetachedParams"
+    },
+    {
+      "$ref": "#/definitions/SessionEventParams"
+    },
+    {
+      "$ref": "#/definitions/SessionHistoryParams"
+    },
+    {
+      "$ref": "#/definitions/SessionIdParams"
+    },
+    {
+      "$ref": "#/definitions/SessionListParams"
+    },
+    {
+      "$ref": "#/definitions/SessionListResult"
+    },
+    {
+      "$ref": "#/definitions/SessionNewParams"
+    },
+    {
+      "$ref": "#/definitions/SessionNewResult"
+    },
+    {
+      "$ref": "#/definitions/SessionOpParams"
+    },
+    {
+      "$ref": "#/definitions/SessionRenameParams"
+    },
+    {
+      "$ref": "#/definitions/SessionResumeParams"
+    },
+    {
+      "$ref": "#/definitions/SessionsChangedParams"
+    },
+    {
+      "$ref": "#/definitions/SkillsListParams"
+    },
+    {
+      "$ref": "#/definitions/SkillsListResult"
+    },
+    {
+      "$ref": "#/definitions/SnapshotResult"
+    },
+    {
+      "$ref": "#/definitions/TranscriptPage"
+    }
+  ],
+  "definitions": {
+    "ActiveTask": {
+      "properties": {
+        "approvals": {
+          "items": {
+            "$ref": "#/definitions/PendingApproval"
+          },
+          "type": "array"
+        },
+        "streaming": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PartialMessage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The assistant message being generated."
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "tools": {
+          "description": "Tool calls that have not completed.",
+          "items": {
+            "$ref": "#/definitions/ToolState"
+          },
+          "type": "array"
+        },
+        "turn": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "task_id",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "AgentRef": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "AgentSnapshot": {
+      "description": "A sub-agent as a snapshot shows it: what `agent_started` and `agent_status` said, and its own conversation as far as `agent_event` carried it.",
+      "properties": {
+        "active_task": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ActiveTask"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agent_id": {
+          "type": "string"
+        },
+        "call_id": {
+          "description": "The `spawn_agent` call that started it.",
+          "type": "string"
+        },
+        "elapsed_ms": {
+          "description": "How long its last finished round of work took.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ErrorInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "session_file": {
+          "type": "string"
+        },
+        "since": {
+          "description": "When the status was last set: a running agent's round of work started then.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "status": {
+          "$ref": "#/definitions/AgentStatus"
+        },
+        "summary": {
+          "description": "The start of its last report.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transcript": {
+          "$ref": "#/definitions/TranscriptPage"
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UsageTotals"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "agent_id",
+        "call_id",
+        "name",
+        "session_file",
+        "since",
+        "status",
+        "transcript"
+      ],
+      "type": "object"
+    },
+    "AgentStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "running"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Idle; its last task ended normally.",
+          "enum": [
+            "completed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Idle; its last task failed.",
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Idle; its last task was interrupted.",
+          "enum": [
+            "interrupted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Takes no more messages.",
+          "enum": [
+            "closed"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ApprovalDecision": {
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "approve"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "approve_for_session"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "feedback": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "deny"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Deny and interrupt the whole task.",
+          "properties": {
+            "type": {
+              "enum": [
+                "abort"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AssistantContent": {
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "redacted": {
+              "description": "The provider withheld the reasoning; `text` is empty and the raw data is in `signature`.",
+              "type": "boolean"
+            },
+            "signature": {
+              "description": "Provider replay data (signature, encrypted reasoning or the source field name). Only valid for the model that produced it.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "thinking"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "arguments": {
+              "description": "Always a JSON object."
+            },
+            "arguments_error": {
+              "description": "Set when the model's arguments were not a valid JSON object; `arguments` is then `{}`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_call"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "arguments",
+            "id",
+            "name",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AuthDeleteParams": {
+      "description": "Parameters of `auth/delete`.",
+      "properties": {
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider"
+      ],
+      "type": "object"
+    },
+    "AuthKind": {
+      "description": "How a provider authenticates.",
+      "oneOf": [
+        {
+          "enum": [
+            "connection",
+            "none"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An API key, which `auth/set` can store.",
+          "enum": [
+            "api_key"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A configured command prints the key.",
+          "enum": [
+            "command"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "AuthSetParams": {
+      "description": "Parameters of `auth/set`.",
+      "properties": {
+        "api_key": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "api_key",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "CancelRequestParams": {
+      "description": "Parameters of the `$/cancel_request` notification.",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "CatalogInfo": {
+      "description": "The skill catalog in the system prompt.",
+      "properties": {
+        "budget": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "left_out": {
+          "description": "Skills left out to fit the budget, in priority order.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "listed": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "shortened_to": {
+          "description": "Descriptions were cut to this many characters to fit the budget.",
+          "format": "uint",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tokens": {
+          "description": "Estimated size of the catalog.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "budget",
+        "listed",
+        "tokens"
+      ],
+      "type": "object"
+    },
+    "ClientCapabilities": {
+      "properties": {
+        "coalesce": {
+          "default": true,
+          "description": "Adjacent deltas may be merged while the connection is backlogged.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "CommandInfo": {
+      "description": "Something the user can type as `/name` at the start of a message.",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "hint": {
+          "description": "What to type after the name, from the skill's `argument-hint`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "skill": {
+          "description": "The `SKILL.md` of the skill it invokes; absent for a built-in command.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "description",
+        "name"
+      ],
+      "type": "object"
+    },
+    "CommandRule": {
+      "additionalProperties": false,
+      "description": "Command prefix rule for the bash tool.",
+      "properties": {
+        "decision": {
+          "$ref": "#/definitions/RuleDecision"
+        },
+        "prefix": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "decision",
+        "prefix"
+      ],
+      "type": "object"
+    },
+    "CompactionReason": {
+      "oneOf": [
+        {
+          "enum": [
+            "manual"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The context reached the soft limit.",
+          "enum": [
+            "threshold"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The provider rejected a request as too large.",
+          "enum": [
+            "overflow"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The session switched to a model with a smaller window.",
+          "enum": [
+            "model_switch"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "CompletionReason": {
+      "description": "Why a task completed normally.",
+      "oneOf": [
+        {
+          "description": "The model needed no further turns.",
+          "enum": [
+            "done"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The `max_turns` limit was reached.",
+          "enum": [
+            "max_turns"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The last reply was cut off by the output token limit.",
+          "enum": [
+            "output_limit"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A hook ended the task.",
+          "enum": [
+            "hook"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ConnectionConnectParams": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_id": {
+          "type": "string"
+        },
+        "discovery_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "discovery_id",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "ConnectionDiscovery": {
+      "properties": {
+        "adapter_id": {
+          "type": "string"
+        },
+        "discovery_id": {
+          "type": "string"
+        },
+        "installed": {
+          "type": "boolean"
+        },
+        "login": {
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "adapter_id",
+        "discovery_id",
+        "installed",
+        "login"
+      ],
+      "type": "object"
+    },
+    "ConnectionIdParams": {
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "connection_id"
+      ],
+      "type": "object"
+    },
+    "ConnectionModel": {
+      "description": "Public connection management DTOs. Never contain credentials or session tokens.",
+      "properties": {
+        "context_window": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "images": {
+          "default": false,
+          "type": "boolean"
+        },
+        "max_output_tokens": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "reasoning": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "ConnectionState": {
+      "enum": [
+        "connecting",
+        "ready",
+        "disabled",
+        "needs_login",
+        "permission_required",
+        "unsupported",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "ConnectionView": {
+      "properties": {
+        "adapter_id": {
+          "type": "string"
+        },
+        "connection_id": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "models": {
+          "items": {
+            "$ref": "#/definitions/ConnectionModel"
+          },
+          "type": "array"
+        },
+        "reason_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/ConnectionState"
+        }
+      },
+      "required": [
+        "adapter_id",
+        "connection_id",
+        "display_name",
+        "models",
+        "state"
+      ],
+      "type": "object"
+    },
+    "ConnectionsDiscoveryResult": {
+      "properties": {
+        "discoveries": {
+          "items": {
+            "$ref": "#/definitions/ConnectionDiscovery"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "discoveries"
+      ],
+      "type": "object"
+    },
+    "ConnectionsSnapshot": {
+      "properties": {
+        "connections": {
+          "items": {
+            "$ref": "#/definitions/ConnectionView"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "connections",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "ContextUsage": {
+      "description": "How full the model's context window is, as checked before a request.",
+      "properties": {
+        "estimated": {
+          "description": "The estimated part of `tokens`.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "hard_limit": {
+          "description": "The context window minus the room kept for the reply. Larger requests fail.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "soft_limit": {
+          "description": "Automatic compaction starts at this size.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "tokens": {
+          "description": "The last usage the provider reported, plus an estimate of what was added after it.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "window": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "estimated",
+        "hard_limit",
+        "soft_limit",
+        "tokens",
+        "window"
+      ],
+      "type": "object"
+    },
+    "Cost": {
+      "properties": {
+        "cache_read": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "cache_write": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "currency": {
+          "$ref": "#/definitions/Currency",
+          "default": "USD"
+        },
+        "input": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "output": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        },
+        "total": {
+          "default": 0.0,
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "CredentialState": {
+      "description": "Where a provider's key comes from, checked without contacting the provider.",
+      "oneOf": [
+        {
+          "enum": [
+            "connection",
+            "missing",
+            "not_required"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`api_key` in models.toml.",
+          "enum": [
+            "config"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An environment variable (`credential_source`).",
+          "enum": [
+            "env"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The credential store (`auth/set`).",
+          "enum": [
+            "stored"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`api_key_command`; whether it works shows on the first request.",
+          "enum": [
+            "command"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "Currency": {
+      "enum": [
+        "USD",
+        "CNY"
+      ],
+      "type": "string"
+    },
+    "Delta": {
+      "oneOf": [
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "thinking"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_call_start"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "index",
+            "name",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "json": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_call_args"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "json",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DetachReason": {
+      "oneOf": [
+        {
+          "description": "The connection fell too far behind; attach again for a fresh snapshot.",
+          "enum": [
+            "overflow"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The session was closed.",
+          "enum": [
+            "closed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The idle session was unloaded; resume it to continue.",
+          "enum": [
+            "unloaded"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "Empty": {
+      "description": "The result of methods that return nothing: `{}`.",
+      "type": "object"
+    },
+    "ErrorInfo": {
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "status": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "message",
+        "retryable"
+      ],
+      "type": "object"
+    },
+    "ErrorKind": {
+      "enum": [
+        "auth",
+        "quota_exceeded",
+        "rate_limited",
+        "overloaded",
+        "server",
+        "network",
+        "timeout",
+        "context_overflow",
+        "invalid_request",
+        "content_filtered",
+        "protocol",
+        "unknown"
+      ],
+      "type": "string"
+    },
+    "Event": {
+      "oneOf": [
+        {
+          "properties": {
+            "context": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ContextUsage"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "context_window": {
+              "default": 0,
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "model": {
+              "type": "string"
+            },
+            "permission_mode": {
+              "$ref": "#/definitions/PermissionMode",
+              "default": "manual"
+            },
+            "protocol_version": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "resumed": {
+              "type": "boolean"
+            },
+            "session_file": {
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "thinking": {
+              "$ref": "#/definitions/ThinkingLevel",
+              "default": "off"
+            },
+            "type": {
+              "enum": [
+                "session_started"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/definitions/UsageTotals",
+              "default": {
+                "per_model": {}
+              },
+              "description": "Totals recorded in the log so far; zero for a new session."
+            }
+          },
+          "required": [
+            "cwd",
+            "model",
+            "protocol_version",
+            "resumed",
+            "session_file",
+            "session_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "task_id": {
+              "type": "string"
+            },
+            "trigger": {
+              "$ref": "#/definitions/TaskTrigger",
+              "description": "What started the task."
+            },
+            "type": {
+              "enum": [
+                "task_started"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "context": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ContextUsage"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The context size checked before this turn's request."
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "turn": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "turn_started"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "task_id",
+            "turn",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "message_id": {
+              "type": "string"
+            },
+            "role": {
+              "$ref": "#/definitions/Role"
+            },
+            "type": {
+              "enum": [
+                "message_started"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message_id",
+            "role",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "delta": {
+              "$ref": "#/definitions/Delta"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "message_delta"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "delta",
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Complete user or assistant message. Tool results arrive in `ToolCompleted`.",
+          "properties": {
+            "mail": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/MailInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Set when the message is a sub-agent's report delivered to this session."
+            },
+            "message": {
+              "$ref": "#/definitions/Message"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "skills": {
+              "description": "The skills the user's message mentions with `/skill:name`, in order: show those mentions as tags.",
+              "items": {
+                "$ref": "#/definitions/SkillUse"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "message_completed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "attempt": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "delay_ms": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "error": {
+              "$ref": "#/definitions/ErrorInfo"
+            },
+            "type": {
+              "enum": [
+                "stream_retry"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "attempt",
+            "delay_ms",
+            "error",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "args": true,
+            "call_id": {
+              "type": "string"
+            },
+            "category": {
+              "$ref": "#/definitions/ToolCategory",
+              "default": "other"
+            },
+            "locations": {
+              "items": {
+                "$ref": "#/definitions/Location"
+              },
+              "type": "array"
+            },
+            "name": {
+              "type": "string"
+            },
+            "title": {
+              "default": "",
+              "description": "One-line description for display, e.g. the command or `read <path>`.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_started"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "args",
+            "call_id",
+            "name",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The call passed preflight and approval and is now executing.",
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_running"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_progress"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/definitions/ToolResultMessage",
+              "description": "Shared with the history; the JSON is the plain message."
+            },
+            "type": {
+              "enum": [
+                "tool_completed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "result",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "args": true,
+            "call_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "proposed_mode": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/PermissionMode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Mode that `approve_for_session` switches the session to. With neither this nor `proposed_rule`, approving for the session approves this call only."
+            },
+            "proposed_rule": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/CommandRule"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Command prefix that `approve_for_session` allows from then on."
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "approval_requested"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "args",
+            "call_id",
+            "name",
+            "summary",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "decision": {
+              "$ref": "#/definitions/ApprovalDecision"
+            },
+            "type": {
+              "enum": [
+                "approval_resolved"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "decision",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "reason": {
+              "$ref": "#/definitions/CompactionReason"
+            },
+            "type": {
+              "enum": [
+                "compaction_started"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "reason",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "context": {
+              "$ref": "#/definitions/ContextUsage"
+            },
+            "kept_skills": {
+              "description": "Skills in use whose instructions were kept, most recently used first.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "reason": {
+              "$ref": "#/definitions/CompactionReason"
+            },
+            "retained_messages": {
+              "description": "User messages kept word for word.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "seq": {
+              "description": "The session's compaction count, from 1.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "tokens_after": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "tokens_before": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "compaction_completed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "context",
+            "reason",
+            "retained_messages",
+            "seq",
+            "summary",
+            "tokens_after",
+            "tokens_before",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "$ref": "#/definitions/ErrorInfo"
+            },
+            "reason": {
+              "$ref": "#/definitions/CompactionReason"
+            },
+            "type": {
+              "enum": [
+                "compaction_failed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "error",
+            "reason",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "task_id": {
+              "type": "string"
+            },
+            "turn": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "turn_completed"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/definitions/Usage"
+            }
+          },
+          "required": [
+            "task_id",
+            "turn",
+            "type",
+            "usage"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "last_message": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "reason": {
+              "$ref": "#/definitions/CompletionReason",
+              "default": "done"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "task_completed"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/definitions/UsageTotals"
+            }
+          },
+          "required": [
+            "task_id",
+            "type",
+            "usage"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "error": {
+              "$ref": "#/definitions/ErrorInfo"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "task_failed"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/definitions/UsageTotals"
+            }
+          },
+          "required": [
+            "error",
+            "task_id",
+            "type",
+            "usage"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "returned_input": {
+              "items": {
+                "$ref": "#/definitions/UserMessage"
+              },
+              "type": "array"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "task_interrupted"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "$ref": "#/definitions/UsageTotals"
+            }
+          },
+          "required": [
+            "returned_input",
+            "task_id",
+            "type",
+            "usage"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "context_window": {
+              "default": 0,
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "model": {
+              "type": "string"
+            },
+            "permission_mode": {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            "thinking": {
+              "$ref": "#/definitions/ThinkingLevel"
+            },
+            "type": {
+              "enum": [
+                "settings_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "model",
+            "permission_mode",
+            "thinking",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The session was renamed (`set_title`).",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "title_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The session was archived or brought back (`set_archived`).",
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "archived_changed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "archived",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/WarningCode"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What the warning is about, for a client that words or places it itself. Absent for one-off warnings, which are only shown as `message`."
+            },
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "warning"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An MCP server's connection changed: starting, ready (with its tool count), failed or closed. Only the main session of an agent tree sends these.",
+          "properties": {
+            "elapsed_ms": {
+              "description": "Time since the connection attempt began.",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "server": {
+              "type": "string"
+            },
+            "state": {
+              "$ref": "#/definitions/McpServerState"
+            },
+            "tools": {
+              "default": 0,
+              "description": "Tools offered after filtering, when ready.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "mcp_server_status"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "server",
+            "state",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`spawn_agent` started a sub-agent: a session of its own, hidden from session lists.",
+          "properties": {
+            "agent_id": {
+              "type": "string"
+            },
+            "call_id": {
+              "description": "The `spawn_agent` call that started it.",
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "session_file": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "agent_started"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
+            "call_id",
+            "name",
+            "session_file",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A sub-agent's status changed. An idle status also carries what its report says.",
+          "properties": {
+            "agent_id": {
+              "type": "string"
+            },
+            "elapsed_ms": {
+              "description": "How long its last round of work took (an idle status).",
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ErrorInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "$ref": "#/definitions/AgentStatus"
+            },
+            "summary": {
+              "description": "The start of its report.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "enum": [
+                "agent_status"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/UsageTotals"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "What its last round of work cost."
+            }
+          },
+          "required": [
+            "agent_id",
+            "name",
+            "status",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An event of a sub-agent's own session, passed on so that a client can follow its work. Only what changes its conversation comes: no deltas, tool progress or settings.",
+          "properties": {
+            "agent_id": {
+              "type": "string"
+            },
+            "event": {
+              "$ref": "#/definitions/Event"
+            },
+            "type": {
+              "enum": [
+                "agent_event"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent_id",
+            "event",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Nothing is left to do: no task, no queued input or report that starts one, and every sub-agent idle. Sent once each time the session gets there.",
+          "properties": {
+            "type": {
+              "enum": [
+                "idle"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "session_closed"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "seq": {
+          "description": "Strictly increasing within a session, starting at 1.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "ts": {
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "seq",
+        "ts"
+      ],
+      "type": "object"
+    },
+    "EventClass": {
+      "description": "Event classes a connection can opt out of when attaching.",
+      "enum": [
+        "text_delta",
+        "thinking_delta",
+        "tool_call_delta",
+        "tool_progress"
+      ],
+      "type": "string"
+    },
+    "EventFilter": {
+      "properties": {
+        "exclude": {
+          "items": {
+            "$ref": "#/definitions/EventClass"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "InitializeParams": {
+      "properties": {
+        "capabilities": {
+          "$ref": "#/definitions/ClientCapabilities",
+          "default": {
+            "coalesce": true
+          }
+        },
+        "client_info": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PeerInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "protocol_version": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "protocol_version"
+      ],
+      "type": "object"
+    },
+    "InitializeResult": {
+      "properties": {
+        "capabilities": {
+          "$ref": "#/definitions/ServerCapabilities"
+        },
+        "protocol_version": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "server_info": {
+          "$ref": "#/definitions/PeerInfo"
+        }
+      },
+      "required": [
+        "capabilities",
+        "protocol_version",
+        "server_info"
+      ],
+      "type": "object"
+    },
+    "LlmError": {
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/ErrorKind"
+        },
+        "message": {
+          "type": "string"
+        },
+        "provider_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "retry_after_ms": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "status": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "Location": {
+      "description": "A file a tool call reads or changes.",
+      "properties": {
+        "line": {
+          "description": "1-based line.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "MailInfo": {
+      "description": "Where a delivered message came from.",
+      "properties": {
+        "from": {
+          "$ref": "#/definitions/AgentRef"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/MailKind"
+        },
+        "no_reply": {
+          "description": "The agent had not replied: the report only says so, in words for the model. Clients show their own words for it.",
+          "type": "boolean"
+        },
+        "status": {
+          "$ref": "#/definitions/AgentStatus"
+        }
+      },
+      "required": [
+        "from",
+        "id",
+        "kind",
+        "status"
+      ],
+      "type": "object"
+    },
+    "MailKind": {
+      "oneOf": [
+        {
+          "description": "What a sub-agent reports when it has finished a round of work.",
+          "enum": [
+            "report"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "McpExposure": {
+      "description": "How a server's tools reach the model.",
+      "oneOf": [
+        {
+          "description": "Not in the tool list: the model finds them with `tool_search` and runs them with `call_tool`; only the server's catalog line is always in the prompt.",
+          "enum": [
+            "deferred"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Every tool goes into the tool list.",
+          "enum": [
+            "direct"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "McpServerConfig": {
+      "additionalProperties": false,
+      "description": "One MCP server: a local command (stdio) or a URL (Streamable HTTP).\n\nString values may contain `${VAR}` and `${VAR:-default}`; they are expanded from finx's environment when the server connects, so a missing variable fails only this server.",
+      "properties": {
+        "args": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "bearer_token_env_var": {
+          "description": "Sends `Authorization: Bearer $VAR`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "command": {
+          "description": "Local server: the program to start. Exactly one of `command` and `url` is set.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cwd": {
+          "description": "Working directory; relative to the project root. Default: the session's directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "One line for the server catalog the model sees.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "direct_tools": {
+          "description": "Tools of a deferred server that go straight into the tool list (names on the server).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "disabled_tools": {
+          "description": "Removes these tools, after `enabled_tools`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "description": "`false` removes the server; only meaningful in configuration files.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "enabled_tools": {
+          "description": "Only these tools (names on the server). Absent: all of them.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Variables set for the program, on top of the safe base set.",
+          "type": "object"
+        },
+        "env_vars": {
+          "description": "Variables passed through from finx's environment, on top of the safe base set.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "exposure": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/McpExposure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How its tools reach the model. Default: `[mcp] exposure`, which defaults to deferred."
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "name": {
+          "default": "",
+          "description": "The key of `[mcp_servers.<name>]`; 1-32 letters, digits, `_` or `-`.",
+          "type": "string"
+        },
+        "parallel_tools": {
+          "description": "Every tool of this server may run in parallel with other read-only tools.",
+          "type": "boolean"
+        },
+        "required": {
+          "description": "The first request always waits for this server, and a task fails without it.",
+          "type": "boolean"
+        },
+        "startup_timeout_secs": {
+          "description": "Longest connection attempt: start, handshake and tool list. Default 30.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "tool_timeout_secs": {
+          "description": "Longest call without progress. Default 300.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "Remote server: the Streamable HTTP endpoint.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "McpServerInfo": {
+      "description": "The latest status of one server, as kept in a session snapshot.",
+      "properties": {
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "server": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/McpServerState"
+        },
+        "tools": {
+          "default": 0,
+          "description": "Tools offered after filtering, when ready.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "server",
+        "state"
+      ],
+      "type": "object"
+    },
+    "McpServerState": {
+      "oneOf": [
+        {
+          "enum": [
+            "ready"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Connecting: starting the process, the handshake, the tool list.",
+          "enum": [
+            "starting"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Could not connect, or the connection was lost. Calls try to reconnect.",
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Shut down with the session.",
+          "enum": [
+            "closed"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "Message": {
+      "description": "A message of the conversation. The parts are shared: the session history and every request built from it point at the same data, so cloning a message is cheap.",
+      "oneOf": [
+        {
+          "properties": {
+            "content": {
+              "items": {
+                "$ref": "#/definitions/UserContent"
+              },
+              "type": "array"
+            },
+            "role": {
+              "enum": [
+                "user"
+              ],
+              "type": "string"
+            },
+            "ts": {
+              "default": 0,
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "content",
+            "role"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "api": {
+              "type": "string"
+            },
+            "content": {
+              "items": {
+                "$ref": "#/definitions/AssistantContent"
+              },
+              "type": "array"
+            },
+            "duration_ms": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LlmError"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "model": {
+              "type": "string"
+            },
+            "provider": {
+              "type": "string"
+            },
+            "response_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "role": {
+              "enum": [
+                "assistant"
+              ],
+              "type": "string"
+            },
+            "stop_reason": {
+              "$ref": "#/definitions/StopReason"
+            },
+            "ts": {
+              "default": 0,
+              "format": "int64",
+              "type": "integer"
+            },
+            "usage": {
+              "$ref": "#/definitions/Usage",
+              "default": {
+                "cache_read": 0,
+                "cache_write": 0,
+                "cost": {
+                  "cache_read": 0.0,
+                  "cache_write": 0.0,
+                  "currency": "USD",
+                  "input": 0.0,
+                  "output": 0.0,
+                  "total": 0.0
+                },
+                "input": 0,
+                "output": 0
+              }
+            }
+          },
+          "required": [
+            "api",
+            "content",
+            "model",
+            "provider",
+            "role",
+            "stop_reason"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "content": {
+              "description": "Sent to the model.",
+              "items": {
+                "$ref": "#/definitions/UserContent"
+              },
+              "type": "array"
+            },
+            "details": {
+              "description": "For user interfaces and logs; never sent to the model."
+            },
+            "duration_ms": {
+              "format": "uint64",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "is_error": {
+              "type": "boolean"
+            },
+            "role": {
+              "enum": [
+                "tool_result"
+              ],
+              "type": "string"
+            },
+            "tool_name": {
+              "type": "string"
+            },
+            "ts": {
+              "default": 0,
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          "required": [
+            "call_id",
+            "content",
+            "is_error",
+            "role",
+            "tool_name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ModelSummary": {
+      "properties": {
+        "available": {
+          "description": "The provider's credentials are available.",
+          "type": "boolean"
+        },
+        "context_window": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "id": {
+          "description": "`provider/model-id`",
+          "type": "string"
+        },
+        "images": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "reasoning": {
+          "type": "boolean"
+        },
+        "thinking_levels": {
+          "description": "Supported reasoning levels, `off` included.",
+          "items": {
+            "$ref": "#/definitions/ThinkingLevel"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "available",
+        "context_window",
+        "id",
+        "images",
+        "name",
+        "provider",
+        "reasoning",
+        "thinking_levels"
+      ],
+      "type": "object"
+    },
+    "ModelsListResult": {
+      "properties": {
+        "defaults": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SessionDefaults"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "What a new session starts with when `session/new` leaves a setting out."
+        },
+        "models": {
+          "items": {
+            "$ref": "#/definitions/ModelSummary"
+          },
+          "type": "array"
+        },
+        "providers": {
+          "default": [],
+          "description": "Every provider with where its credentials come from.",
+          "items": {
+            "$ref": "#/definitions/ProviderSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "models"
+      ],
+      "type": "object"
+    },
+    "Op": {
+      "oneOf": [
+        {
+          "description": "User input. Starts a task when the session is idle; queued by `mode` otherwise.",
+          "properties": {
+            "commands": {
+              "description": "Whether a leading `/name` is a command: a built-in one such as `/compact`, or a skill, whose instructions replace it. Front ends leave it out; messages between agents set false.",
+              "type": "boolean"
+            },
+            "input": {
+              "items": {
+                "$ref": "#/definitions/UserContent"
+              },
+              "type": "array"
+            },
+            "mode": {
+              "$ref": "#/definitions/PromptMode",
+              "default": "steer"
+            },
+            "type": {
+              "enum": [
+                "prompt"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Continue from the current history (retry after a failure).",
+          "properties": {
+            "type": {
+              "enum": [
+                "continue"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "interrupt"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Stops one sub-agent's current task. It keeps its session and takes messages again; its report arrives as an interrupted one and does not wake the session.",
+          "properties": {
+            "agent": {
+              "description": "The agent's id or name.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "agent_interrupt"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "decision": {
+              "$ref": "#/definitions/ApprovalDecision"
+            },
+            "type": {
+              "enum": [
+                "approval"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "decision",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "model": {
+              "type": "string"
+            },
+            "thinking": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ThinkingLevel"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": {
+              "enum": [
+                "set_model"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "model",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "mode": {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            "type": {
+              "enum": [
+                "set_permission_mode"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Names the session; recorded in its log, at any time.",
+          "properties": {
+            "title": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "set_title"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "title",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Archives the session or brings it back; recorded in its log, at any time.",
+          "properties": {
+            "archived": {
+              "type": "boolean"
+            },
+            "type": {
+              "enum": [
+                "set_archived"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "archived",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "compact"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "shutdown"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PartialBlock": {
+      "oneOf": [
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "thinking"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "index",
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "args_json": {
+              "type": "string"
+            },
+            "call_id": {
+              "type": "string"
+            },
+            "index": {
+              "format": "uint",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "tool_call"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "args_json",
+            "call_id",
+            "index",
+            "name",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PartialMessage": {
+      "properties": {
+        "blocks": {
+          "description": "Ordered by index.",
+          "items": {
+            "$ref": "#/definitions/PartialBlock"
+          },
+          "type": "array"
+        },
+        "message_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "blocks",
+        "message_id"
+      ],
+      "type": "object"
+    },
+    "PeerInfo": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PendingApproval": {
+      "description": "Same fields as the `approval_requested` event.",
+      "properties": {
+        "args": true,
+        "call_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "proposed_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposed_rule": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CommandRule"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "args",
+        "call_id",
+        "name",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "PermissionMode": {
+      "description": "How much the session may do without asking. Deny and ask rules apply in every mode. Deserializing also accepts the names used before protocol version 2.",
+      "oneOf": [
+        {
+          "description": "Every file change and every command that is not known to be read-only asks first.",
+          "enum": [
+            "manual"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "File changes and simple file-system commands inside the workspace run without asking.",
+          "enum": [
+            "accept-edits"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Everything runs without asking, protected paths included. Only deny rules, ask rules and deleting a critical path still stop an action.",
+          "enum": [
+            "bypass-permissions"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "PromptMode": {
+      "oneOf": [
+        {
+          "description": "Injected at the next turn boundary of the running task.",
+          "enum": [
+            "steer"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Processed when the running task would otherwise finish.",
+          "enum": [
+            "follow_up"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ProviderSummary": {
+      "properties": {
+        "auth": {
+          "$ref": "#/definitions/AuthKind"
+        },
+        "credential": {
+          "$ref": "#/definitions/CredentialState"
+        },
+        "credential_source": {
+          "description": "The environment variable the key comes from, when `credential` is `env`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "key_env": {
+          "description": "Environment variables that may hold the key.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "auth",
+        "credential",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "RequestId": {
+      "anyOf": [
+        {
+          "format": "int64",
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "A JSON-RPC request id."
+    },
+    "ResourceReadParams": {
+      "properties": {
+        "limit": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "uri": {
+          "description": "`finx://tool-output/<session_id>/<call_id>`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "type": "object"
+    },
+    "ResourceReadResult": {
+      "properties": {
+        "eof": {
+          "type": "boolean"
+        },
+        "offset": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "total_bytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "eof",
+        "offset",
+        "text",
+        "total_bytes"
+      ],
+      "type": "object"
+    },
+    "Role": {
+      "enum": [
+        "user",
+        "assistant"
+      ],
+      "type": "string"
+    },
+    "RuleDecision": {
+      "enum": [
+        "allow",
+        "ask",
+        "deny"
+      ],
+      "type": "string"
+    },
+    "ServerCapabilities": {
+      "properties": {
+        "agents": {
+          "default": false,
+          "description": "Sub-agents: `agent_event`, `agents` in snapshots, `mail` on transcript messages, and the `agent_interrupt` op.",
+          "type": "boolean"
+        },
+        "auth": {
+          "default": false,
+          "description": "`auth/set`, `auth/delete`, and `providers` in `models/list`.",
+          "type": "boolean"
+        },
+        "event_filter": {
+          "type": "boolean"
+        },
+        "max_frame_bytes": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "model_connections": {
+          "default": false,
+          "type": "boolean"
+        },
+        "resource_read": {
+          "type": "boolean"
+        },
+        "session_delete": {
+          "type": "boolean"
+        },
+        "session_metadata": {
+          "default": false,
+          "description": "`session/rename`, `session/archive`, `session/unarchive`.",
+          "type": "boolean"
+        },
+        "sessions_subscribe": {
+          "default": false,
+          "description": "`sessions/subscribe`, `sessions/changed`, and the state fields of SessionSummary.",
+          "type": "boolean"
+        },
+        "transcript_task_end": {
+          "default": false,
+          "description": "Transcripts carry `task_end` items.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "event_filter",
+        "max_frame_bytes",
+        "resource_read",
+        "session_delete"
+      ],
+      "type": "object"
+    },
+    "SessionAttachParams": {
+      "properties": {
+        "events": {
+          "$ref": "#/definitions/EventFilter",
+          "default": {}
+        },
+        "history_limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionDefaults": {
+      "properties": {
+        "model": {
+          "description": "`provider/model-id`",
+          "type": "string"
+        },
+        "permission_mode": {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        "thinking": {
+          "$ref": "#/definitions/ThinkingLevel"
+        }
+      },
+      "required": [
+        "model",
+        "permission_mode",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "SessionDetachedParams": {
+      "description": "Parameters of the `session/detached` notification.",
+      "properties": {
+        "last_seq": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "reason": {
+          "$ref": "#/definitions/DetachReason"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "last_seq",
+        "reason",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionEventParams": {
+      "description": "Parameters of the `session/event` notification.",
+      "properties": {
+        "event": {
+          "$ref": "#/definitions/Event"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "event",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionHistoryParams": {
+      "properties": {
+        "before": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "before",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionIdParams": {
+      "description": "Parameters of `session/detach`, `session/close` and `session/delete`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionInfo": {
+      "properties": {
+        "archived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "context_window": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "permission_mode": {
+          "$ref": "#/definitions/PermissionMode"
+        },
+        "session_file": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "thinking": {
+          "$ref": "#/definitions/ThinkingLevel"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "context_window",
+        "cwd",
+        "model",
+        "permission_mode",
+        "session_file",
+        "session_id",
+        "thinking"
+      ],
+      "type": "object"
+    },
+    "SessionListParams": {
+      "properties": {
+        "cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cwd": {
+          "description": "Only sessions of this project (same matching as `finx sessions`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SessionListResult": {
+      "properties": {
+        "next_cursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/definitions/SessionSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "SessionNewParams": {
+      "properties": {
+        "cwd": {
+          "description": "Absolute path.",
+          "type": "string"
+        },
+        "events": {
+          "$ref": "#/definitions/EventFilter",
+          "default": {}
+        },
+        "extra_roots": {
+          "description": "Extra workspace roots, absolute.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "history_limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mcp_servers": {
+          "description": "MCP servers for this session, on top of the configured ones; same name wins.",
+          "items": {
+            "$ref": "#/definitions/McpServerConfig"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cwd"
+      ],
+      "type": "object"
+    },
+    "SessionNewResult": {
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/definitions/SessionSnapshot"
+        }
+      },
+      "required": [
+        "session_id",
+        "snapshot"
+      ],
+      "type": "object"
+    },
+    "SessionOpParams": {
+      "properties": {
+        "op": {
+          "$ref": "#/definitions/Op"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "op",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionRenameParams": {
+      "description": "Parameters of `session/rename`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "title": {
+          "description": "At most 200 characters; trimmed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "title"
+      ],
+      "type": "object"
+    },
+    "SessionResumeParams": {
+      "properties": {
+        "events": {
+          "$ref": "#/definitions/EventFilter",
+          "default": {}
+        },
+        "history_limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mcp_servers": {
+          "description": "MCP servers for this session when it is loaded; not allowed for a loaded session.",
+          "items": {
+            "$ref": "#/definitions/McpServerConfig"
+          },
+          "type": "array"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "permission_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PermissionMode"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "SessionSnapshot": {
+      "properties": {
+        "active_task": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ActiveTask"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "agents": {
+          "description": "The sub-agents started since the session was loaded, in the order they started.",
+          "items": {
+            "$ref": "#/definitions/AgentSnapshot"
+          },
+          "type": "array"
+        },
+        "last_seq": {
+          "description": "The last event reflected here; later events have larger sequence numbers.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "mcp_servers": {
+          "description": "The latest status of each MCP server, by name.",
+          "items": {
+            "$ref": "#/definitions/McpServerInfo"
+          },
+          "type": "array"
+        },
+        "session": {
+          "$ref": "#/definitions/SessionInfo"
+        },
+        "transcript": {
+          "$ref": "#/definitions/TranscriptPage"
+        },
+        "usage": {
+          "$ref": "#/definitions/UsageTotals"
+        }
+      },
+      "required": [
+        "last_seq",
+        "session",
+        "transcript",
+        "usage"
+      ],
+      "type": "object"
+    },
+    "SessionState": {
+      "description": "What a session is doing, for lists.",
+      "oneOf": [
+        {
+          "enum": [
+            "idle",
+            "running"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A task waits for an approval.",
+          "enum": [
+            "awaiting_approval"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The last task failed.",
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SessionSummary": {
+      "properties": {
+        "archived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "attached_clients": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "busy": {
+          "description": "A task is running.",
+          "type": "boolean"
+        },
+        "created_at": {
+          "description": "RFC 3339.",
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "loaded": {
+          "description": "Loaded in this server.",
+          "type": "boolean"
+        },
+        "model": {
+          "description": "The model the session uses (`provider/model-id`), when known.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "preview": {
+          "description": "The start of the first user message.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/definitions/SessionState",
+          "default": "idle"
+        },
+        "task_started_at": {
+          "description": "When the running task started (RFC 3339).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "The name given with `session/rename`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "description": "RFC 3339; the last activity: when a task last started or ended, else `created_at`. Opening, closing, renaming, archiving or changing settings does not move it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "attached_clients",
+        "busy",
+        "created_at",
+        "cwd",
+        "loaded",
+        "session_id",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "SessionsChangedParams": {
+      "description": "Parameters of the `sessions/changed` notification.",
+      "properties": {
+        "deleted": {
+          "description": "Ids of deleted sessions.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sessions": {
+          "description": "Whole summaries of the sessions that changed or appeared.",
+          "items": {
+            "$ref": "#/definitions/SessionSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "SkillEntry": {
+      "description": "One `SKILL.md` that was found, and what became of it.",
+      "properties": {
+        "argument_hint": {
+          "description": "What to type after `/name`, from the header's `argument-hint`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "description": {
+          "description": "One line, at most 1,024 characters; empty when invalid.",
+          "type": "string"
+        },
+        "detail": {
+          "description": "The winner's path when shadowed; the reason when invalid.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "model_invocable": {
+          "description": "False when only the user may invoke it (`disable-model-invocation`).",
+          "type": "boolean"
+        },
+        "name": {
+          "description": "From the header, or the directory's name when the header has none.",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Remarks that did not stop the skill from loading.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "The `SKILL.md`, absolute, as found: symbolic links are kept.",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/definitions/SkillScope"
+        },
+        "state": {
+          "$ref": "#/definitions/SkillState"
+        }
+      },
+      "required": [
+        "description",
+        "model_invocable",
+        "name",
+        "path",
+        "scope",
+        "state"
+      ],
+      "type": "object"
+    },
+    "SkillScope": {
+      "description": "Where a skill comes from. Earlier layers win when names collide.",
+      "enum": [
+        "project",
+        "user",
+        "extra"
+      ],
+      "type": "string"
+    },
+    "SkillState": {
+      "oneOf": [
+        {
+          "enum": [
+            "active"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A skill of the same name with a higher priority is active.",
+          "enum": [
+            "shadowed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Turned off by `skills.disabled`.",
+          "enum": [
+            "disabled"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Not loaded: the header is broken or has no description.",
+          "enum": [
+            "invalid"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SkillUse": {
+      "description": "A skill the user mentioned with `/skill:name`; its instructions went to the model with the message, which stays as the user wrote it.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "description": "The skill's SKILL.md.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "type": "object"
+    },
+    "SkillsListParams": {
+      "description": "Parameters of `skills/list`: `session_id` or `cwd`.",
+      "properties": {
+        "cwd": {
+          "description": "An absolute directory: every skill a session started there would find now, those it would not use included, and its catalog. The same as `finx skills --all --json`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "description": "A loaded session: the skills it started with, described from their files now, and what typing `/` offers there.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SkillsListResult": {
+      "properties": {
+        "catalog": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CatalogInfo"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For a directory."
+        },
+        "commands": {
+          "description": "What typing `/` offers there: the built-in commands first, then the skills as `skill:name`.",
+          "items": {
+            "$ref": "#/definitions/CommandInfo"
+          },
+          "type": "array"
+        },
+        "enabled": {
+          "description": "`skills.enabled`",
+          "type": "boolean"
+        },
+        "skills": {
+          "description": "In priority order.",
+          "items": {
+            "$ref": "#/definitions/SkillEntry"
+          },
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "skills",
+        "warnings"
+      ],
+      "type": "object"
+    },
+    "SnapshotResult": {
+      "description": "Result of `session/resume` and `session/attach`.",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/definitions/SessionSnapshot"
+        }
+      },
+      "required": [
+        "snapshot"
+      ],
+      "type": "object"
+    },
+    "StopReason": {
+      "enum": [
+        "stop",
+        "length",
+        "tool_use",
+        "error",
+        "aborted"
+      ],
+      "type": "string"
+    },
+    "TaskOutcome": {
+      "enum": [
+        "completed",
+        "failed",
+        "interrupted"
+      ],
+      "type": "string"
+    },
+    "TaskTrigger": {
+      "description": "What started a task.",
+      "oneOf": [
+        {
+          "description": "Input from the user, or from the agent that started this session.",
+          "enum": [
+            "user"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A sub-agent's report arrived while nothing was running.",
+          "enum": [
+            "mail"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ThinkingLevel": {
+      "enum": [
+        "off",
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "type": "string"
+    },
+    "ToolCategory": {
+      "description": "What a tool call does, for display. The values are a subset of the ACP tool kinds.",
+      "enum": [
+        "read",
+        "edit",
+        "delete",
+        "move",
+        "search",
+        "execute",
+        "fetch",
+        "other"
+      ],
+      "type": "string"
+    },
+    "ToolResultMessage": {
+      "properties": {
+        "call_id": {
+          "type": "string"
+        },
+        "content": {
+          "description": "Sent to the model.",
+          "items": {
+            "$ref": "#/definitions/UserContent"
+          },
+          "type": "array"
+        },
+        "details": {
+          "description": "For user interfaces and logs; never sent to the model."
+        },
+        "duration_ms": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "is_error": {
+          "type": "boolean"
+        },
+        "tool_name": {
+          "type": "string"
+        },
+        "ts": {
+          "default": 0,
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "call_id",
+        "content",
+        "is_error",
+        "tool_name"
+      ],
+      "type": "object"
+    },
+    "ToolState": {
+      "properties": {
+        "args": true,
+        "call_id": {
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/definitions/ToolCategory"
+        },
+        "name": {
+          "type": "string"
+        },
+        "progress_tail": {
+          "description": "The most recent progress output, capped.",
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "args",
+        "call_id",
+        "category",
+        "name",
+        "running",
+        "title"
+      ],
+      "type": "object"
+    },
+    "TranscriptItem": {
+      "oneOf": [
+        {
+          "description": "A user or assistant message; `skills` as in `message_completed`. `mail` marks a sub-agent's report.",
+          "properties": {
+            "mail": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/MailInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "message": {
+              "$ref": "#/definitions/Message"
+            },
+            "message_id": {
+              "type": "string"
+            },
+            "skills": {
+              "items": {
+                "$ref": "#/definitions/SkillUse"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "message"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "result": {
+              "$ref": "#/definitions/ToolResultMessage"
+            },
+            "type": {
+              "enum": [
+                "tool_result"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "result",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Where a task ended. Usage and reason are absent for tasks logged before they were recorded.",
+          "properties": {
+            "error": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ErrorInfo"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "outcome": {
+              "$ref": "#/definitions/TaskOutcome"
+            },
+            "reason": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/CompletionReason"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "ts": {
+              "format": "int64",
+              "type": "integer"
+            },
+            "type": {
+              "enum": [
+                "task_end"
+              ],
+              "type": "string"
+            },
+            "usage": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/UsageTotals"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "outcome",
+            "task_id",
+            "ts",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TranscriptPage": {
+      "properties": {
+        "before": {
+          "description": "Cursor for earlier items (opaque); absent at the start of the session.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "description": "Oldest first.",
+          "items": {
+            "$ref": "#/definitions/TranscriptItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "type": "object"
+    },
+    "Usage": {
+      "properties": {
+        "cache_read": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "cache_write": {
+          "default": 0,
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "cost": {
+          "$ref": "#/definitions/Cost",
+          "default": {
+            "cache_read": 0.0,
+            "cache_write": 0.0,
+            "currency": "USD",
+            "input": 0.0,
+            "output": 0.0,
+            "total": 0.0
+          }
+        },
+        "input": {
+          "default": 0,
+          "description": "Input tokens that did not hit the cache.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "output": {
+          "default": 0,
+          "description": "Output tokens, reasoning included.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "reasoning": {
+          "description": "The reasoning part of `output`, when the provider reports it.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "UsageTotals": {
+      "description": "Usage summed per model (`provider/model`).",
+      "properties": {
+        "per_model": {
+          "additionalProperties": {
+            "$ref": "#/definitions/Usage"
+          },
+          "default": {},
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "UserContent": {
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "text",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`data` is base64 encoded.",
+          "properties": {
+            "data": {
+              "type": "string"
+            },
+            "mime_type": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "image"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "data",
+            "mime_type",
+            "type"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "UserMessage": {
+      "properties": {
+        "content": {
+          "items": {
+            "$ref": "#/definitions/UserContent"
+          },
+          "type": "array"
+        },
+        "ts": {
+          "default": 0,
+          "format": "int64",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "content"
+      ],
+      "type": "object"
+    },
+    "WarningCode": {
+      "description": "Warnings a client may recognise. A client meeting a code it does not know shows `message`.",
+      "oneOf": [
+        {
+          "description": "The session runs in bypass-permissions: sent when it starts, resumes or switches into it.",
+          "enum": [
+            "bypass_permissions"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "MCP servers that were not ready for the session's first request. A client that shows `mcp_server_status` already has this.",
+          "enum": [
+            "mcp_servers_not_ready"
+          ],
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
+  "title": "finx native protocol",
+  "x-client-notifications": {
+    "$/cancel_request": "CancelRequestParams"
+  },
+  "x-error-codes": {
+    "-32002": "session_not_found",
+    "-32010": "not_initialized",
+    "-32011": "session_busy",
+    "-32012": "session_not_loaded",
+    "-32013": "not_attached",
+    "-32014": "prompt_in_progress",
+    "-32015": "approval_not_pending",
+    "-32016": "server_full",
+    "-32017": "overloaded",
+    "-32018": "unsupported_content",
+    "-32019": "session_closed",
+    "-32020": "task_failed",
+    "-32600": "invalid_request",
+    "-32601": "method_not_found",
+    "-32602": "invalid_params",
+    "-32603": "internal_error",
+    "-32700": "parse_error",
+    "-32800": "request_cancelled"
+  },
+  "x-methods": {
+    "auth/delete": {
+      "params": "AuthDeleteParams",
+      "result": "Empty"
+    },
+    "auth/set": {
+      "params": "AuthSetParams",
+      "result": "Empty"
+    },
+    "connections/connect": {
+      "params": "ConnectionConnectParams",
+      "result": "ConnectionsSnapshot"
+    },
+    "connections/disconnect": {
+      "params": "ConnectionIdParams",
+      "result": "ConnectionsSnapshot"
+    },
+    "connections/discover": {
+      "result": "ConnectionsDiscoveryResult"
+    },
+    "connections/list": {
+      "result": "ConnectionsSnapshot"
+    },
+    "connections/models": {
+      "params": "ConnectionIdParams",
+      "result": "ConnectionsSnapshot"
+    },
+    "connections/remove": {
+      "params": "ConnectionIdParams",
+      "result": "ConnectionsSnapshot"
+    },
+    "connections/retry": {
+      "params": "ConnectionIdParams",
+      "result": "ConnectionsSnapshot"
+    },
+    "initialize": {
+      "params": "InitializeParams",
+      "result": "InitializeResult"
+    },
+    "models/list": {
+      "result": "ModelsListResult"
+    },
+    "resource/read": {
+      "params": "ResourceReadParams",
+      "result": "ResourceReadResult"
+    },
+    "server/shutdown": {
+      "result": "Empty"
+    },
+    "session/archive": {
+      "params": "SessionIdParams",
+      "result": "Empty"
+    },
+    "session/attach": {
+      "params": "SessionAttachParams",
+      "result": "SnapshotResult"
+    },
+    "session/close": {
+      "params": "SessionIdParams",
+      "result": "Empty"
+    },
+    "session/delete": {
+      "params": "SessionIdParams",
+      "result": "Empty"
+    },
+    "session/detach": {
+      "params": "SessionIdParams",
+      "result": "Empty"
+    },
+    "session/history": {
+      "params": "SessionHistoryParams",
+      "result": "TranscriptPage"
+    },
+    "session/list": {
+      "params": "SessionListParams",
+      "result": "SessionListResult"
+    },
+    "session/new": {
+      "params": "SessionNewParams",
+      "result": "SessionNewResult"
+    },
+    "session/op": {
+      "params": "SessionOpParams",
+      "result": "Empty"
+    },
+    "session/rename": {
+      "params": "SessionRenameParams",
+      "result": "Empty"
+    },
+    "session/resume": {
+      "params": "SessionResumeParams",
+      "result": "SnapshotResult"
+    },
+    "session/unarchive": {
+      "params": "SessionIdParams",
+      "result": "Empty"
+    },
+    "sessions/subscribe": {
+      "params": "SessionListParams",
+      "result": "SessionListResult"
+    },
+    "sessions/unsubscribe": {
+      "result": "Empty"
+    },
+    "skills/list": {
+      "params": "SkillsListParams",
+      "result": "SkillsListResult"
+    }
+  },
+  "x-protocol-version": 2,
+  "x-server-notifications": {
+    "models/changed": "Empty",
+    "session/detached": "SessionDetachedParams",
+    "session/event": "SessionEventParams",
+    "sessions/changed": "SessionsChangedParams"
+  }
+}

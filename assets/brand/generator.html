@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FinxWork Mark</title>
+<style>
+  body{margin:0;background:#EDEEF1;color:#0B1633;font:15px/1.6 -apple-system,"PingFang SC",sans-serif}
+  main{max-width:1240px;margin:0 auto;padding:36px 16px}
+  h1{font-size:28px;margin:0 0 4px} p.lead{color:#5B6478;margin:0 0 22px;max-width:980px}
+  .v{display:grid;grid-template-columns:220px repeat(2,1fr) 92px;gap:12px;margin:0 0 18px;align-items:center}
+  .v b{font-size:17px} .v p{color:#5B6478;margin:6px 0 0;font-size:12.5px}
+  figure{margin:0} figure canvas{width:100%;display:block} figcaption{color:#5B6478;font-size:11px;margin-top:4px}
+  .tiny{display:flex;flex-direction:column;gap:8px;align-items:flex-start}
+  .tiny div{display:flex;gap:8px;align-items:end}
+  body.solo{background:transparent} body.solo main{padding:0;max-width:none} body.solo canvas{width:1024px}
+</style></head><body><main id="root"></main>
+<script>
+// α light-ribbon mark, "一次收腰" geometry, with the left loop brought to life:
+// inside the loop the strands loosen (fray), break into particles, pulse, or
+// gather at nodes, and pull back into one ribbon before the crossing.
+// α light-ribbon mark. A centreline α, a tapered width, and a twist: many fine
+// strands across the width form the ribbon (large sizes); the same geometry
+// filled solid gives the small-size icon and the silhouette.
+// ?v=<variant>&mode=<strands|solid|mono>&bg=<white|black> renders one 1024 icon.
+const S = 1024, C = 512, R = 412, PI = Math.PI, TAU = PI * 2;
+const ELECTRIC = ["#1B36D9", "#1F6BFF", "#2EB8FF"];
+const BG = { white: "#FFFFFF", black: "#0A0B0F" };
+const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+
+function tilePath(ctx) {
+  ctx.beginPath();
+  for (let i = 0; i <= 240; i++) {
+    const t = (i / 240) * TAU, c = Math.cos(t), s = Math.sin(t);
+    const x = C + R * Math.sign(c) * Math.abs(c) ** 0.4, y = C + R * Math.sign(s) * Math.abs(s) ** 0.4;
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+}
+const grad = (ctx, b) => {
+  const g = ctx.createLinearGradient(b.x0, b.y1, b.x1, b.y0);
+  ELECTRIC.forEach((c, i) => g.addColorStop(i / (ELECTRIC.length - 1), c));
+  return g;
+};
+
+// Evenly spaced samples along a cubic path, with smoothed normals.
+function sampleCubic(d, n = 1200) {
+  const v = d.match(/-?\d+(\.\d+)?/g).map(Number), raw = [];
+  let p = [v[0], v[1]];
+  for (let i = 2; i + 5 < v.length; i += 6) {
+    const b = [v[i], v[i + 1]], c = [v[i + 2], v[i + 3]], e = [v[i + 4], v[i + 5]];
+    for (let k = raw.length ? 1 : 0; k <= 300; k++) {
+      const t = k / 300, u = 1 - t;
+      raw.push([u * u * u * p[0] + 3 * u * u * t * b[0] + 3 * u * t * t * c[0] + t * t * t * e[0],
+        u * u * u * p[1] + 3 * u * u * t * b[1] + 3 * u * t * t * c[1] + t * t * t * e[1]]);
+    }
+    p = e;
+  }
+  const len = [0];
+  for (let i = 1; i < raw.length; i++) len.push(len[i - 1] + Math.hypot(raw[i][0] - raw[i - 1][0], raw[i][1] - raw[i - 1][1]));
+  const L = len.at(-1), out = [];
+  let j = 0;
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n) * L;
+    while (j < len.length - 2 && len[j + 1] < t) j++;
+    const f = (t - len[j]) / (len[j + 1] - len[j] || 1);
+    out.push({ x: raw[j][0] + (raw[j + 1][0] - raw[j][0]) * f, y: raw[j][1] + (raw[j + 1][1] - raw[j][1]) * f });
+  }
+  out.forEach((p, i) => {
+    const a = out[Math.max(0, i - 6)], b = out[Math.min(n, i + 6)], l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    p.nx = -(b.y - a.y) / l; p.ny = (b.x - a.x) / l;
+  });
+  return out;
+}
+
+// Where the centreline first passes over an earlier part of itself.
+function crossing(pts) {
+  let best = { d: Infinity, i: 0, j: 0 };
+  for (let i = 0; i < pts.length; i += 3) for (let j = i + 200; j < pts.length; j += 3) {
+    const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+    if (d < best.d) best = { d, i, j };
+  }
+  return best;
+}
+
+const ALPHA = "M760,300 C690,410 636,536 566,606 C496,676 396,696 336,636 C276,576 286,446 356,396 C436,338 536,376 586,476 C632,570 668,672 728,686 C782,698 818,640 846,560";
+
+// Build the ribbon: per sample, centre and half-width vector.
+// Width = body (widest mid-stroke, easing to `ends` of it at both ends)
+//       × waist (the ribbon turns part-way and back, narrowing smoothly — never
+//         to a hairline) × a round tip within one half-width of each end.
+function ribbon(v) {
+  const pts = sampleCubic(v.path), n = pts.length - 1, x = crossing(pts);
+  const uc = x.j / n; // the over-pass of the crossing
+  const L = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) * n;
+  const rows = pts.map((p, i) => {
+    const u = i / n;
+    const body = v.ends + (1 - v.ends) * Math.sin(PI * u) ** 0.6;
+    const narrow = v.turns ? 0.5 + 0.5 * Math.cos(TAU * v.turns * (u - uc)) : 0;
+    const face = 1 - (1 - v.waist) * narrow;
+    const half = v.width * body * face;
+    const d = Math.min(u, 1 - u) * L;
+    const tip = d < half ? Math.sqrt(Math.max(0, 1 - (1 - d / half) ** 2)) : 1;
+    const w = half * tip + 0.5;
+    return { ...p, u, hx: p.nx * w, hy: p.ny * w, face };
+  });
+  // Centre the ink box, a touch above the middle (optical centre).
+  const xs = rows.flatMap((r) => [r.x + r.hx, r.x - r.hx]), ys = rows.flatMap((r) => [r.y + r.hy, r.y - r.hy]);
+  const box = { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) };
+  const k = v.size / Math.max(box.x1 - box.x0, box.y1 - box.y0);
+  const cx = (box.x0 + box.x1) / 2, cy = (box.y0 + box.y1) / 2;
+  const T = (px, py) => ({ x: C + (px - cx) * k, y: C - 8 + (py - cy) * k });
+  const out = rows.map((r) => { const p = T(r.x, r.y); return { ...r, x: p.x, y: p.y, hx: r.hx * k, hy: r.hy * k }; });
+  const ink = { x0: C - (box.x1 - box.x0) * k / 2, x1: C + (box.x1 - box.x0) * k / 2, y0: C - 8 - (box.y1 - box.y0) * k / 2, y1: C - 8 + (box.y1 - box.y0) * k / 2 };
+  return { rows: out, box: ink, ui: x.i / n, uj: x.j / n };
+}
+
+function rng(seed) { return () => { seed |= 0; seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+// 0 outside the loop, rising to 1 at its far side and back to 0 at the crossing.
+function lifeAt(rb, u, peak = 1.4) {
+  if (u <= rb.ui || u >= rb.uj) return 0;
+  return Math.sin(PI * (u - rb.ui) / (rb.uj - rb.ui)) ** peak;
+}
+
+// How "alive" the ribbon is at u, by the variant's shape: only the loop, a
+// steady fade from the first stroke to the tail, everywhere, or nowhere.
+function lifeOf(rb, v, u) {
+  const shape = v.life?.shape ?? "loop";
+  if (!v.life || shape === "none") return 0;
+  if (shape === "flow") return Math.max(0, 1 - u / 0.82) ** 1.15;
+  if (shape === "all") return 0.85;
+  return lifeAt(rb, u);
+}
+
+// Where strand s (−1…1, strand index k) sits at row r.
+function strandPoint(rb, v, r, s, k, rand) {
+  const life = lifeAt(rb, r.u) * (v.life?.amt ?? 0);
+  let off = s;
+  if (v.life?.mode === "fray") {
+    const n = Math.sin(r.u * rand.f1 + rand.p1) * 0.6 + Math.sin(r.u * rand.f2 + rand.p2) * 0.4;
+    off = s * (1 + life * 0.4) + n * life * 0.55;
+  } else if (v.life?.mode === "wave") {
+    off = s + Math.sin(r.u * 150 + s * 7) * life * 0.22;
+  } else if (v.life?.mode === "nodes") {
+    const t = (r.u - rb.ui) / (rb.uj - rb.ui), m = v.life.count;
+    let pinch = 0;
+    for (let j = 0; j < m; j++) pinch = Math.max(pinch, Math.exp(-(((t - (j + 0.5) / m) * m * 3.2) ** 2)));
+    off = s * (1 - 0.72 * pinch * life ** 0.5);
+  }
+  return { x: r.x + r.hx * off, y: r.y + r.hy * off, life };
+}
+
+function drawStrands(ctx, rb, v, bg) {
+  const g = grad(ctx, rb.box);
+  ctx.strokeStyle = g; ctx.fillStyle = g;
+  const lift = ctx.createLinearGradient(rb.box.x0, rb.box.y1, rb.box.x1, rb.box.y0);
+  ["#3F6FFF", "#4E9CFF", "#8ADCFF"].forEach((c, i, a) => lift.addColorStop(i / (a.length - 1), c));
+  ctx.lineWidth = v.line ?? 1.15;
+  ctx.globalCompositeOperation = bg === "black" ? "lighter" : "source-over";
+  const alpha = bg === "black" ? 0.42 : 0.66;
+  const N = v.strands ?? 96, R = rng(5);
+  for (let k = 0; k < N; k++) {
+    const s = (k / (N - 1)) * 2 - 1;
+    const rand = { f1: 7 + R() * 7, f2: 15 + R() * 9, p1: R() * TAU, p2: R() * TAU, thr: 0.12 + R() * 0.5 };
+    const edge = k === 0 || k === N - 1;
+    ctx.globalAlpha = edge ? alpha + 0.12 : alpha;
+    ctx.lineWidth = edge ? 1.25 : (v.line ?? 1.15);
+    if (v.life?.mode === "clean") {
+      // Strands fade out smoothly into the loop (drawn in short chunks so each can carry its own alpha).
+      const rows = rb.rows, step = 8;
+      for (let i = 0; i < rows.length - 1; i += step) {
+        const fade = 1 - smooth(0, v.life.fadeBy, lifeAt(rb, rows[Math.min(rows.length - 1, i + step / 2)].u));
+        if (fade <= 0.01) continue;
+        ctx.globalAlpha = (edge ? alpha + 0.12 : alpha) * fade;
+        ctx.beginPath();
+        for (let j = i; j <= Math.min(rows.length - 1, i + step); j++) {
+          const r = rows[j], x = r.x + r.hx * s, y = r.y + r.hy * s;
+          j === i ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      continue;
+    }
+    if (v.life?.mode === "dots") {
+      // Solid where the loop is calm; past this strand's threshold it breaks into drifting particles.
+      const P0 = v.life;
+      // Refined: all strands give way to dots along one gentle arc across the ribbon, so the break
+      // is one orderly front instead of a ragged one; lines fade out just before they break.
+      const thr = P0.ordered ? 0.16 + 0.06 * (1 - s * s) : rand.thr;
+      if (P0.fadeLines) {
+        const rows = rb.rows, step = 6;
+        for (let i = 0; i < rows.length - 1; i += step) {
+          const life = lifeOf(rb, v, rows[Math.min(rows.length - 1, i + step / 2)].u) * P0.amt;
+          const f = 1 - smooth(thr - 0.16, thr, life);
+          if (f <= 0.01) continue;
+          ctx.globalAlpha = (edge ? alpha + 0.12 : alpha) * f;
+          ctx.beginPath();
+          for (let j = i; j <= Math.min(rows.length - 1, i + step); j++) {
+            const r = rows[j], x = r.x + r.hx * s, y = r.y + r.hy * s;
+            j === i ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+        }
+      }
+      if (P0.lift && bg === "black") ctx.fillStyle = lift;
+      let open = false;
+      ctx.beginPath();
+      rb.rows.forEach((r, i) => {
+        const p = strandPoint(rb, v, r, s, k, rand), life = lifeOf(rb, v, r.u) * v.life.amt;
+        if (life < thr) { if (P0.fadeLines) return; open ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); open = true; return; }
+        if (open) { ctx.stroke(); ctx.beginPath(); open = false; }
+        // Particles: sparser and smaller far round the loop, denser toward the crossing.
+        const P = v.life, step = Math.round(P.step * (1 + P.spread * life));
+        // Staggered mode offsets alternate emitting strands half a step, so the dots pack like a dot-matrix screen.
+        const phase = P.stagger ? ((k / (P.every || 1)) % 2) * Math.floor(step / 2) : k * 3;
+        if (i < 10 || i > rb.rows.length - 10) return;
+        if ((i + phase) % step !== 0 || (P.every && k % P.every) || R() > P.keep) return;
+        const j = P.grid ? 0 : (R() - 0.5) * 2 * life * P.jitter;
+        const out = P.grid ? 1 : 1 + life * P.out * R();
+        // `inside` keeps every dot within the ribbon's own edges, so nothing strays past the outline.
+        if (P.inside && Math.abs(s * out + j / (Math.hypot(r.hx, r.hy) || 1)) > 0.96) return;
+        const x = r.x + r.hx * s * out + r.nx * j, y = r.y + r.hy * s * out + r.ny * j;
+        const rad = P.grid ? P.size[1] - (P.size[1] - P.size[0]) * life : P.size[0] + (P.size[1] - P.size[0]) * R() * (1 - 0.5 * life);
+        ctx.save(); ctx.globalAlpha = P.grid ? (P.dotAlpha ?? 0.9) * (P.fadeIn ? smooth(thr - 0.02, thr + 0.1, life) : 1) : Math.min(1, alpha * (1 - 0.35 * life) + 0.25);
+        ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill(); ctx.restore();
+        ctx.beginPath();
+      });
+      if (open) ctx.stroke();
+      ctx.fillStyle = g;
+      continue;
+    }
+    ctx.beginPath();
+    rb.rows.forEach((r, i) => { const p = strandPoint(rb, v, r, s, k, rand); i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y); });
+    ctx.stroke();
+  }
+  if (v.life?.layers) drawLayers(ctx, rb, v, bg);
+  if (v.life?.mode === "packets") {
+    // Brighter data packets riding along the strands, bunching up at the crossing.
+    const P2 = rng(11);
+    ctx.fillStyle = bg === "black" ? "#D6F4FF" : "#1430B8";
+    for (let k = 1; k < N - 1; k += 2) {
+      const s = (k / (N - 1)) * 2 - 1;
+      let u = P2() * 0.06;
+      for (;;) {
+        const near = Math.max(Math.exp(-(((u - rb.ui) / 0.07) ** 2)), Math.exp(-(((u - rb.uj) / 0.07) ** 2)));
+        u += 0.025 + 0.16 * (1 - near) * P2();
+        if (u >= 0.97) break;
+        const r = rb.rows[Math.round(u * (rb.rows.length - 1))];
+        ctx.globalAlpha = bg === "black" ? 0.45 + 0.5 * near : 0.5 + 0.4 * near;
+        ctx.beginPath(); ctx.arc(r.x + r.hx * s, r.y + r.hy * s, 1.2 + 1.3 * near, 0, TAU); ctx.fill();
+      }
+    }
+  }
+  if (v.life?.mode === "escape") {
+    // Dust thrown off both edges along the whole stroke, most of it round the loop.
+    const P3 = rng(17);
+    for (let i = 6; i < rb.rows.length - 6; i += 2) {
+      const r = rb.rows[i], wgt = 0.3 + 0.7 * lifeAt(rb, r.u);
+      if (P3() > 0.5 * wgt) continue;
+      const side = P3() < 0.5 ? -1 : 1, d = -Math.log(P3() + 1e-6) * 22 * wgt;
+      const w = Math.hypot(r.hx, r.hy);
+      const x = r.x + r.nx * side * (w + 3 + d), y = r.y + r.ny * side * (w + 3 + d);
+      ctx.globalAlpha = 0.15 + 0.7 * Math.exp(-d / 40);
+      ctx.beginPath(); ctx.arc(x, y, 0.7 + 1.8 * Math.exp(-d / 30), 0, TAU); ctx.fill();
+    }
+  }
+  if (v.life?.mode === "nodes") {
+    // A small bright core at each node where the strands gather.
+    ctx.globalAlpha = 1;
+    for (let j = 0; j < v.life.count; j++) {
+      const u = rb.ui + (rb.uj - rb.ui) * (j + 0.5) / v.life.count;
+      const r = rb.rows[Math.round(u * (rb.rows.length - 1))];
+      ctx.beginPath(); ctx.arc(r.x, r.y, 7, 0, TAU); ctx.fill();
+    }
+  }
+}
+
+// The living loop in layers: a soft haze, one or more dot layers that thin out
+// toward the far side of the loop, and a few bright key points. Uses a lifted
+// blue so the loop never sinks into the dark tile.
+function drawLayers(ctx, rb, v, bg) {
+  const Ly = v.life.layers, R = rng(23), rows = rb.rows;
+  const lift = ctx.createLinearGradient(rb.box.x0, rb.box.y1, rb.box.x1, rb.box.y0);
+  (bg === "black" ? ["#3F6FFF", "#4E9CFF", "#8ADCFF"] : ["#2747E8", "#2F6BFF", "#3AA8FF"]).forEach((c, i, a) => lift.addColorStop(i / (a.length - 1), c));
+  const add = bg === "black" ? "lighter" : "source-over";
+  const inLoop = (u) => lifeAt(rb, u);
+
+  if (Ly.haze) {
+    const off = document.createElement("canvas"); off.width = off.height = S;
+    const o = off.getContext("2d"); o.fillStyle = lift;
+    for (let i = 0; i < rows.length; i += 3) {
+      const r = rows[i], life = inLoop(r.u);
+      if (life < 0.04) continue;
+      const w = Math.hypot(r.hx, r.hy) * (1 + Ly.haze.spread * life);
+      o.globalAlpha = Ly.haze.alpha * life * 0.09 * (bg === "black" ? 1 : 0.42);
+      o.beginPath(); o.arc(r.x, r.y, w, 0, TAU); o.fill();
+    }
+    ctx.save(); ctx.globalCompositeOperation = add; ctx.globalAlpha = 1;
+    ctx.filter = `blur(${Ly.haze.blur}px)`; ctx.drawImage(off, 0, 0); ctx.restore();
+  }
+
+  ctx.save(); ctx.globalCompositeOperation = add; ctx.fillStyle = lift;
+  for (const L of Ly.dots) {
+    if (L.random) {
+      for (let n = 0; n < L.count; n++) {
+        const i = Math.floor(R() * rows.length), r = rows[i], life = inLoop(r.u);
+        if (R() > life) { n--; if (R() < 0.002) break; continue; }
+        const s = (R() * 2 - 1) * (1 + L.out * life * R()), j = (R() - 0.5) * L.jitter * life;
+        ctx.globalAlpha = L.alpha[0] + (L.alpha[1] - L.alpha[0]) * R();
+        const rad = (L.size[0] + (L.size[1] - L.size[0]) * R() ** 2) * (1 - 0.35 * life);
+        ctx.beginPath(); ctx.arc(r.x + r.hx * s + r.nx * j, r.y + r.hy * s + r.ny * j, rad, 0, TAU); ctx.fill();
+      }
+      continue;
+    }
+    const N = v.strands ?? 96;
+    for (let k = 0; k < N; k += L.every) {
+      const s = (k / (N - 1)) * 2 - 1, thr = L.start ?? 0.08 + ((k * 0.618) % 1) * 0.3;
+      rows.forEach((r, i) => {
+        const life = inLoop(r.u);
+        if (life < thr || i < 10 || i > rows.length - 10) return;
+        const step = Math.round(L.step * (1 + L.spread * life));
+        const phase = ((k / L.every) % 2) * Math.floor(step / 2);
+        if ((i + phase) % step) return;
+        ctx.globalAlpha = L.alpha * (1 - 0.25 * life);
+        const rad = L.size[1] - (L.size[1] - L.size[0]) * life;
+        const out = 1 + (L.out ?? 0) * life;
+        ctx.beginPath(); ctx.arc(r.x + r.hx * s * out, r.y + r.hy * s * out, rad, 0, TAU); ctx.fill();
+      });
+    }
+  }
+  ctx.restore();
+
+  // Key points: a few brighter data points with a soft halo.
+  for (let n = 0, tries = 0; n < (Ly.stars?.count ?? 0) && tries < 5000; tries++) {
+    const r = rows[Math.floor(R() * rows.length)], life = inLoop(r.u);
+    if (life < 0.35 || R() > life) continue;
+    const s = (R() * 2 - 1) * (1 + 0.3 * life);
+    const x = r.x + r.hx * s, y = r.y + r.hy * s, rad = Ly.stars.size[0] + (Ly.stars.size[1] - Ly.stars.size[0]) * R();
+    const halo = ctx.createRadialGradient(x, y, 0, x, y, rad * 4);
+    const core = bg === "black" ? "rgba(214,244,255," : "rgba(31,94,255,";
+    halo.addColorStop(0, core + (bg === "black" ? "0.55)" : "0.28)")); halo.addColorStop(1, core + "0)");
+    ctx.save(); ctx.globalCompositeOperation = add; ctx.globalAlpha = 1;
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(x, y, rad * 4, 0, TAU); ctx.fill();
+    ctx.fillStyle = bg === "black" ? "#E4F7FF" : "#1B3FE0"; ctx.beginPath(); ctx.arc(x, y, rad, 0, TAU); ctx.fill();
+    ctx.restore();
+    n++;
+  }
+}
+
+// Solid: one quad per step; the back face is a lighter tint of the same blue.
+function drawSolid(ctx, rb, bg, mono, under = false) {
+  const base = ctx.globalAlpha;
+  const g = grad(ctx, rb.box), r = rb.rows;
+  for (let i = 0; i < r.length - 1; i++) {
+    const a = r[i], b = r[i + 1];
+    ctx.beginPath();
+    const fade = under ? 1 - lifeOf(rb, rb.v, a.u) * (rb.fade ?? 0) : 1;
+    ctx.moveTo(a.x + a.hx, a.y + a.hy); ctx.lineTo(b.x + b.hx, b.y + b.hy);
+    ctx.lineTo(b.x - b.hx, b.y - b.hy); ctx.lineTo(a.x - a.hx, a.y - a.hy); ctx.closePath();
+    if (mono) { ctx.fillStyle = "#000"; ctx.strokeStyle = "#000"; }
+    else {
+      ctx.fillStyle = g; ctx.strokeStyle = g;
+      ctx.globalAlpha = base * fade;
+    }
+    ctx.lineWidth = 0.8; ctx.fill(); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+
+const ONE = { path: ALPHA, width: 50, turns: 1, waist: 0.84, ends: 0.62, size: 600 };
+const VARIANTS = {
+  final: { ...ONE, life: { mode: "dots", shape: "flow", amt: 1, step: 9, spread: 1.3, keep: 0.9, size: [0.9, 2.6], jitter: 16, out: 0.35, inside: true, baseFade: 1 },
+    title: "最终版 · 渐凝", note: "沿书写顺序从数据点凝成光带；点只落在光带轮廓内，起笔处不留底色。" },
+};
+
+// Export options (query string): scale=2 renders at 2048 px; tile=none draws the
+// mark alone on a transparent canvas, tile=square fills the whole canvas (iOS
+// icons are masked by the system); shadow=1 adds the macOS icon drop shadow;
+// gray=1 converts to luminance (iOS tinted icon).
+function render(canvas, id, mode, bg) {
+  const opt = new URLSearchParams(location.search), scale = +(opt.get("scale") || 1), tile = opt.get("tile") || "squircle";
+  canvas.width = canvas.height = S * scale;
+  if (document.body.classList.contains("solo")) canvas.style.width = S * scale + "px";
+  const ctx = canvas.getContext("2d"), v = VARIANTS[id];
+  ctx.scale(scale, scale);
+  if (mode === "mono") { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, S, S); }
+  else if (tile === "none") ctx.save();
+  else if (tile === "square") { ctx.save(); ctx.fillStyle = BG[bg]; ctx.fillRect(0, 0, S, S); }
+  else {
+    if (opt.get("shadow")) {
+      ctx.save(); tilePath(ctx); ctx.fillStyle = BG[bg];
+      ctx.shadowColor = "rgba(0,0,0,0.3)"; ctx.shadowBlur = 28 * scale; ctx.shadowOffsetY = 10 * scale; ctx.fill(); ctx.restore();
+    }
+    ctx.save(); tilePath(ctx); ctx.fillStyle = BG[bg]; ctx.fill(); ctx.clip();
+  }
+  const rb = ribbon(v);
+  // On white the haze and faint body would blur the dots, so both stay lighter there.
+  // baseFade 1 removes the body entirely where the stroke is still data (no blob at the first tip).
+  rb.fade = !v.life ? 0 : v.life.baseFade === 1 ? 1 : Math.min(0.9, (v.life.baseFade ?? 0.9) + (bg === "black" ? 0 : 0.25)); rb.v = v;
+  if (mode === "strands") {
+    // A faint solid body under the strands smooths out moiré between them.
+    ctx.globalAlpha = bg === "black" ? 0.22 : 0.26;
+    drawSolid(ctx, rb, bg, false, true);
+    drawStrands(ctx, rb, v, bg);
+  }
+  else drawSolid(ctx, rb, bg, mode === "mono");
+  ctx.restore?.();
+  if (opt.get("gray")) {
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height), d = img.data;
+    for (let i = 0; i < d.length; i += 4) { const l = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = Math.min(255, l * 1.35); }
+    ctx.putImageData(img, 0, 0);
+  }
+}
+
+// The solid mark as SVG: the ribbon's outline (one edge out, the other back; nonzero
+// fill covers the crossing) on the 1024 grid, viewBox a 650 square about the centre,
+// as wide as the raster marks are when cropped to 1300 of their 2048 px.
+function solidSVG(id) {
+  const rb = ribbon(VARIANTS[id]), r = rb.rows, b = rb.box, step = 6, f = (n) => +n.toFixed(1);
+  // Every sample at the round tips, every step-th along the body.
+  const pick = r.filter((_, i) => i % step === 0 || i < 30 || i > r.length - 31);
+  const edge = [...pick.map((p) => [p.x + p.hx, p.y + p.hy]), ...pick.reverse().map((p) => [p.x - p.hx, p.y - p.hy])];
+  const d = "M" + edge.map(([x, y]) => `${f(x)} ${f(y)}`).join("L") + "Z";
+  const stops = ELECTRIC.map((c, i) => `<stop offset="${i / (ELECTRIC.length - 1)}" stop-color="${c}"/>`).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="187 187 650 650"><defs><linearGradient id="finxwork-a" gradientUnits="userSpaceOnUse" x1="${f(b.x0)}" y1="${f(b.y1)}" x2="${f(b.x1)}" y2="${f(b.y0)}">${stops}</linearGradient></defs><path fill="url(#finxwork-a)" d="${d}"/></svg>`;
+}
+
+const q = new URLSearchParams(location.search), root = document.getElementById("root");
+if (q.get("svg")) document.body.textContent = solidSVG(q.get("svg"));
+else if (q.get("v")) {
+  document.body.classList.add("solo");
+  const cv = document.createElement("canvas"); root.append(cv);
+  render(cv, q.get("v"), q.get("mode") || "strands", q.get("bg") || "white");
+} else {
+  root.innerHTML = `<h1>FinxWork 标志生成器</h1><p class="lead">最终版标志由本页实时绘制；export.sh 通过查询参数从这里导出全部素材。</p>`;
+  const cols = [["strands", "white", "白底"], ["strands", "black", "黑底"]];
+  for (const [id, v] of Object.entries(VARIANTS)) {
+    const row = document.createElement("div"); row.className = "v";
+    row.innerHTML = `<div><b>${v.title}</b><p>${v.note}</p></div>`;
+    for (const [mode, bg, cap] of cols) {
+      const f = document.createElement("figure"), cv = document.createElement("canvas");
+      render(cv, id, mode, bg); f.append(cv); f.insertAdjacentHTML("beforeend", `<figcaption>${cap}</figcaption>`); row.append(f);
+    }
+    const tiny = document.createElement("div"); tiny.className = "tiny";
+    for (const bg of ["white", "black"]) {
+      const line = document.createElement("div");
+      for (const px of [64, 32, 16]) { const cv = document.createElement("canvas"); render(cv, id, "solid", bg); cv.style.width = px + "px"; line.append(cv); }
+      tiny.append(line);
+    }
+    row.append(tiny);
+    root.append(row);
+  }
+}
+</script>
+</body></html>

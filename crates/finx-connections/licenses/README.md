@@ -1,0 +1,1 @@
+The Qoder COSY protocol implementation references the Qoder plugin in yetone/magpie (MIT), which credits ufec/CLIProxyAPI (MIT). The upstream notices are preserved here. The RSA public key is part of the client wire protocol, not an account credential.

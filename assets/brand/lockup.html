@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>FinxWork Lockup</title>
+<style>
+  /* Rendered by export.sh at device scale 2. ?type=h|v|og&bg=light|dark */
+  html,body{margin:0;background:transparent}
+  body{font-family:-apple-system,"SF Pro Display","Helvetica Neue",sans-serif}
+  .lk{display:flex;align-items:center;justify-content:center}
+  .mark{position:relative;overflow:hidden;flex:none}
+  /* mark PNGs are 1024-canvas renders with the mark box ≈600 px, centred a touch high */
+  .mark img{position:absolute;left:50%;top:49.2%;transform:translate(-50%,-50%);width:calc(100% * 1024 / 600)}
+  .word{font-weight:500;letter-spacing:-.02em;line-height:1;white-space:nowrap}
+  .light .word{color:#0B1633} .dark .word{color:#F4F6FA}
+  .h{width:800px;height:240px;gap:22px} .h .mark{width:150px;height:150px} .h .word{font-size:88px;margin-top:-4px}
+  .v{width:600px;height:600px;flex-direction:column;gap:28px} .v .mark{width:300px;height:300px} .v .word{font-size:78px}
+  .og{width:1200px;height:630px;flex-direction:column;gap:30px;background:#0A0B0F}
+  .og.light{background:#FFFFFF}
+  .og .row{display:flex;align-items:center;gap:26px} .og .mark{width:190px;height:190px} .og .word{font-size:108px}
+  .og p{margin:0;font:500 34px/1.3 -apple-system,"PingFang SC",sans-serif;color:#9AA3B5;letter-spacing:.01em}
+  .og.light p{color:#5B6478}
+</style></head><body>
+<script>
+const q = new URLSearchParams(location.search), type = q.get("type") || "h", bg = q.get("bg") || "light";
+const mark = `<div class="mark"><img src="mark/finxwork-mark-on-${bg}.png"></div>`, word = `<div class="word">FinxWork</div>`;
+document.body.innerHTML = type === "og"
+  ? `<div class="lk og ${bg}"><div class="row">${mark}${word}</div><p>千丝万缕的数据，汇成一个 α · 为金融专业人士打造的 AI 工作台</p></div>`
+  : `<div class="lk ${type} ${bg}">${mark}${word}</div>`;
+</script>
+</body></html>

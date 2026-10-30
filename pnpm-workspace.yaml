@@ -1,0 +1,8 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Electron downloads its binary in a postinstall script.
+onlyBuiltDependencies:
+  - electron
+  - esbuild

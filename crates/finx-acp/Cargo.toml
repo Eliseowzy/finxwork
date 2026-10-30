@@ -1,0 +1,27 @@
+[package]
+name = "finx-acp"
+description = "ACP (Agent Client Protocol) projection of the finx kernel."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+finx-core.workspace = true
+finx-llm.workspace = true
+finx-mcp.workspace = true
+finx-protocol.workspace = true
+finx-rpc.workspace = true
+finx-server.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+agent-client-protocol-schema.workspace = true
+
+[lints]
+workspace = true

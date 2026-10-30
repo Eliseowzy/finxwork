@@ -1,0 +1,3090 @@
+# finx Agent 内核技术方案
+
+| 项 | 内容 |
+|---|---|
+| 版本 | v1.23 |
+| 日期 | 2026-10-29 |
+| 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
+| 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
+
+> 项目名为 `finx`（Q-01，2026-10-28 定）。crate 前缀 `finx-`，可执行文件名 `finx`，数据目录 `~/.finx`，环境变量前缀 `FINX_`。
+
+## 目录
+
+- 0. 阅读说明
+- 1. 目标与范围
+- 2. 核心概念
+- 3. 总体架构
+- 4. 模型接入层（finx-llm）
+- 5. 工具系统（finx-tools）
+- 6. 内核运行时（finx-core）
+- 7. 上下文管理
+- 8. 对外协议（finx-protocol）
+- 9. 会话持久化
+- 10. 配置
+- 11. 安全
+- 12. 命令行（finx-cli）
+- 13. 可观测性
+- 14. 测试策略
+- 15. 工程规范
+- 16. 技术栈
+- 17. 代码结构
+- 18. 里程碑
+- 19. 决策记录
+- 20. 待定问题
+- 21. 风险与对策
+- 附录 A–E
+
+## 0. 阅读说明
+
+- **编号**：决策编号为 D-xx（§19），待定问题编号为 Q-xx（§20）。讨论时直接引用章节号或编号。
+- **代码块**：Rust 定义只是接口草图，用来说明字段与语义；derive、可见性、生命周期等细节在实现时补齐。
+- **范围**：标注"M3"或"后续"的内容只预留接口，v1 不实现。
+
+变更记录：
+
+| 版本 | 日期 | 说明 |
+|---|---|---|
+| v0.1 | 2026-10-28 | 初稿 |
+| v1.0 | 2026-10-28 | 定稿：确认架构；保留 Session / Task / Turn 三层，同一会话内并发多对话列为非目标；确定首个交付的验收标准（§18）；按 DeepSeek 实测结果补充适配细节；修正配置示例中 `tools` 键的冲突 |
+| v1.1 | 2026-10-28 | 首个交付完成并通过验收。按实现同步以下内容：测试素材（§4.15）、bash 注入的环境变量（§5.5）、事件字段（§8.2）、协议 Schema（§8.4）、会话头与短 id（§9）、环境变量（§10.4）、命令行（§12）、日志文件名（§13）。新增实现状态（§18） |
+| v1.2 | 2026-10-28 | 启动耗时优化：`finx exec` 从进程启动到发出第一个模型请求，由约 121 ms 降到约 5 ms（§1.4）。TLS 证书改由操作系统校验（§4.14）；新增 dist 构建配置（§15）和启动基准脚本（§14）；新增待定问题 Q-19、Q-20 |
+| v1.3 | 2026-10-28 | 本地命令提速，新增 Linux 2 ms 目标（§1.4，待 Linux 实测）。本地命令不再启动异步运行时；`models` 和 `doctor` 不写日志文件（§12）。HTTP 客户端与证书校验器改为首次请求时创建（§4.14）。会话列表只解析需要的行（§9.5）。更正 dist 构建的效果（§15） |
+| v1.4 | 2026-10-28 | 内存优化，长任务峰值内存降到原来的 1/2 到 1/7（§1.4）。消息改为共享存储（§4.3）。请求体改为直接从上下文序列化（§4.6）。会话关闭时等日志文件真正关上再返回，修复关闭后立刻重开的竞态（§9.3）。新增请求体快照测试（§4.15）和内存基准脚本（§14）；新增待定问题 Q-21 |
+| v1.5 | 2026-10-28 | 项目定名 finx（Q-01）。命令行补齐脚本和排查所需的基础（§12）：`exec --output json` 输出一个结果对象，`--no-save` 不留会话日志；会话按项目恢复和列出（`--continue`、`resume last`、`sessions --all`）；新增 `finx status`；查看类命令支持 `--json`；`FINX_MODEL` 和 `FINX_APPROVAL` 生效；子进程环境注入 `AI_AGENT=finx`；输出管道提前关闭时静默退出 |
+| v1.6 | 2026-10-28 | 新增通信协议扩展方案 [protocol-design.md](protocol-design.md)：服务层、原生协议（JSON-RPC）、ACP 兼容、本地常驻服务、性能预算与分期实施。§8.5、§12、§18 的 M3 与之对齐；新增决策 D-21–D-29、待定问题 Q-22–Q-28；Q-12 改为自研桌面端 |
+| v1.7 | 2026-10-28 | 权限模式重构（§11.2、§11.5）：审批模式改名为权限模式，分 manual、accept-edits、bypass-permissions 三档；取消 read-only；plan、auto 两个名字预留（Q-29）。accept-edits 还放行工作区内的 `mkdir`、`touch`、`cp`、`mv`；对文件修改选择"本会话总是允许"时，会话切换到 accept-edits。bypass-permissions 不再拦截受保护路径和工作区之外的路径，只保留 deny 规则、ask 规则和关键路径删除，并在进入时发出提示。新增关键路径删除检查，任何模式都要询问。受保护路径扩充到 git、shell、包管理器、构建工具等配置。deny 和 ask 规则能匹配 `sudo`、`env` 等包装命令后面的命令。无人应答时，返回给模型的结果附上需要询问的原因。命令行新增 `--permission-mode` 和 `--dangerously-skip-permissions`，环境变量改为 `FINX_PERMISSION_MODE`，旧名称继续可用并给出 warning。协议版本升到 2（§8.4）。新增决策 D-30–D-32、待定问题 Q-29 |
+| v1.8 | 2026-10-29 | 权限控制加固（§11.2、§11.3、§11.5）。命令分析改为找出一条命令可能执行的所有命令：穿过 `sudo`、`env`、`xargs` 等包装命令，进入 `sh -c`、`eval`、`trap`、`find -exec` 的脚本，最多跟进 8 层，更深时询问。deny 和 ask 规则对这些命令都生效，并能识别绝对路径的程序和 git 的全局选项。关键路径检查跟踪 `cd`：只用 `&&` 连接时按 `cd` 去的目录判断，`;`、`||`、`|` 之后两边都算；新增 `find -delete`、`find -exec rm` 和 `xargs rm`；反引号替换不再被漏掉。"本会话总是允许"不再提议会放行任意代码的前缀，运行器取到第三个词，并且规则必须覆盖整条命令。accept-edits 的文件命令按实际所在的目录判断，也不写入有其他硬链接的文件。受保护路径增加 `.aws`、`.kube`、`.ssh`、`.agents`，以及 `.git` 文件指向的 git 目录。`cd`、`pushd`、`popd` 列入只读命令。基础提示词要求模型被拒后不要换个办法绕过去，此外不向模型介绍权限模式（§11.2、附录 D）。新增决策 D-33–D-35 |
+| v1.9 | 2026-10-29 | 通信协议扩展落地（protocol-design.md v0.4）：新增 finx-rpc、finx-server、finx-acp 三个 crate，以及测试用的模型服务 finx-mock（§3.2、§17）。`finx serve`、`finx acp`、`finx protocol schema` 已实现（§8.4、§8.5、§12）。事件补充工具的分类、标题与位置，新增 `tool_running`，任务结束带原因，设置带上下文窗口；按工作目录装配运行时的代码迁入 finx-core。D-28 改为 ACP 入站用本地类型。更新实现状态（§18） |
+| v1.10 | 2026-10-29 | 上下文管理落地（§7.5–7.7，D-18、D-36）：用量以最近一次响应的真实用量为基准，加上之后内容的估算并按本会话的实测校准，任务内与恢复会话一致；达到软阈值（或下一轮将放不下）时由当前模型写交接摘要，新上下文只保留用户原话和摘要，压缩请求复用上一次请求的前缀；工具结果在写入历史前裁切一次，完整内容存到会话数据目录，模型可以按 offset 读回（§5.7、§9.1）。compaction 条目改为自带保留消息的检查点，日志版本 2（§9.2）；新增 `compaction_failed` 事件和上下文用量字段（§8.2）；`[compaction]` 配置项调整（§10.2）。新增模拟模型服务的端到端测试和演示程序（§14）。裁切内容的读回逐字节验证（§14）；命令输出的清洗改为保留制表符，完整输出文件与模型看到的文本一致；切点落在超长行里时，省略说明给出字节范围和取出命令（§5.5、§5.7）。交接请求并进最后一条工具结果或用户消息，不另起用户回合，DeepSeek 上摘要请求的缓存命中由 8%–21% 提到 85%（§7.6.2）。models.toml 覆盖内置模型改为按字段覆盖（§4.8）。协议的 `resource/read` 改为读取会话数据目录里的完整输出，删除会话时数据目录随日志一起移入回收站 |
+| v1.11 | 2026-10-29 | 桌面端集成需要的内核能力（protocol-design.md v0.5，desktop-kernel-integration.md）：新 Op `set_title`、`set_archived` 与事件 `title_changed`、`archived_changed`（§8.1、§8.2）；会话日志新增 archived 条目，任务条目带 reason 与 usage（§9.2）；凭据存储：配置、环境变量之后查 macOS 钥匙串或 `credentials.toml`（§4.9）；常驻服务把服务记录写进锁文件。新增决策 D-37–D-39 |
+| v1.12 | 2026-10-29 | 事件 warning 增加可选的 `code`，现有 `bypass_permissions`（§8.2，protocol-design.md v0.6）。新增决策 D-55 |
+| v1.13 | 2026-10-29 | 新增子智能体（蜂群）方案 [subagent-design.md](subagent-design.md) 并实现一期：主会话用 `spawn_agent`、`send_message` 创建子智能体并与之对话，默认异步，汇报经 Mailbox 在轮次边界投递并唤醒主会话；子智能体是独立的普通会话，没有审批、不继承对话、不能再派生，权限跟随根会话，不出现在会话列表里；停止作用于整棵树但只中断；不限制数量。§2 新增概念；§8.2 新增 `agent_started`、`agent_status`、`idle`，`message_completed` 带 `mail`、`task_started` 带 `trigger`；§8.3 任务之外的事件补充；§9.2 会话头新增 `agent`，新增 `mail`、`agent_spawned` 条目；§9.5 列表排除子会话；§12 `finx exec` 改为等 `idle` 才结束，JSON 结果新增 `agents`；write、edit 按路径加锁，write 被拒的提示说明文件可能被别的智能体改过；交接摘要要求写明还没汇报的子智能体。新增决策 D-40–D-54、待定问题 Q-40–Q-52（见 subagent-design §18） |
+| v1.14 | 2026-10-29 | 服务并发压测与优化（§1.4）：新增压测程序 finx-load（crate finx-bench），finx-mock 新增多步骤的 agent 场景，用 100–200 个会话测量新建会话的延迟、每个任务的 CPU、线程和内存。200 个会话同时新建时，单个 session/new 的 p50 由 23–31 ms 降到 9–12 ms；服务空闲时新建由 0.80 ms 降到 0.22–0.25 ms；持续新建再关闭由每秒 267 个提到 7700 多个。每个空闲会话的活跃堆由约 120 KiB 降到约 32 KiB，进程峰值占用由 102 MiB 降到 79 MiB，线程由最多 396 个降到 78 个。改动：会话日志的写入器由每个会话一个线程改为异步任务；日志文件在会话第一次有实际内容时才创建，没动过的会话关闭时不强制刷盘，会话列表照常列出还没写出日志的会话（§9.3）。工具注册表按配置在进程内共享；通道里的事件和命令改为装箱传递；常驻服务的工作线程按核数取 4–16 个（§3.3）。HTTP 空闲连接 30 秒后关闭（§4.14）。openai-chat 的流式块直接解析成类型化结构（§4.6）。常驻服务启动时把打开文件数的软上限提到硬上限：以 256 的软上限启动时，200 个会话同时跑任务原本有 101 个失败，现在 1000 个会话同时跑也没有失败；监听时要系统允许的最长接收队列。会话上限默认由 64 提到 1000，满了先卸载最久没用的会话，都在用才报错（§1.4、§3.3）。新增决策 D-90–D-93，待定问题 Q-90 |
+| v1.15 | 2026-10-29 | 合并子智能体一期后，每个空闲主会话的内存多了约 15 KiB：每个会话各建一份含两个智能体工具的注册表和工具定义，新增的内部通道又占一个 4 KiB 的槽位块。改为两个工具从调用上下文的 `session_state` 取发起调用的会话的子智能体，工具相同的主会话共用一份注册表；内部通道的消息装箱（§1.4、§5.2，subagent-design.md v1.7）。200 个空闲会话的活跃堆由 10.4 MiB 回到 7.5 MiB，进程峰值占用由 87.5 MiB 回到 81.5 MiB |
+| v1.16 | 2026-10-29 | Skill 一期落地、二期规划定稿（[skill-design.md](skill-design.md) v1.2，决策 D-60–D-78）：会话启动时从项目层、用户层和配置的额外路径发现 Skill，清单写进系统提示词，位于指令段之后、environment 之前（§7.2），模型用 read 读取 SKILL.md；新增 `[skills]` 配置（§10.2）和 `finx skills` 命令（§12）；`.claude` 与配置的 Skill 路径列为受保护路径（§11.5）；system_prompt 条目记录本会话的 Skill（§9.2）；启动开销实测见 §1.4 |
+| v1.17 | 2026-10-29 | Skill 二期落地（[skill-design.md](skill-design.md) v1.3，决策 D-70–D-81）：`Op::Prompt` 新增 `commands`，用户输入开头的 `/compact`、`/名字` 由内核命令表解析，`/名字` 把 SKILL.md 的正文展开进消息，`message_completed` 和历史条目带 `skill`（§8.1、§8.2）；压缩时保留在用 Skill 的正文，新上下文在保留的用户消息和摘要之间多一条（§7.6.4），新增 `[compaction].keep_skill_tokens`（§10.2），`compaction_completed` 带 `kept_skills`；输入的 `/compact` 没有可压缩的内容时也作为任务结束（§7.6.9）；原生协议新增 `skills/list`，ACP 打开会话后发 `available_commands_update`（protocol-design.md v0.8） |
+| v1.18 | 2026-10-29 | 文件工具 read、write、edit 的可靠性与性能（§5、§6.6、§6.8、§1.4、§14）。Tool 新增参数整理 prepare_arguments 与审批前预检 check，内核先整理参数、需要询问时先预检，被取消的工具最多再等 3 秒（D-100–D-102）。文件戳加入 ctime、设备号和 inode（§5.6）。read 流式读取任意大小的文件，命名管道与设备立即报错，大文件建行索引，UTF-16 按文本解码，图片按 base64 大小与像素尺寸限制，路径不存在时尝试常见变体（D-103、D-105）。原子写入改用写屏障，经由符号链接写到目标，拒绝只读文件与特殊文件，覆盖时保留 BOM、CRLF 与 UTF-16 编码（D-104）。edit 只改写匹配区间，按精确、忽略行尾空白、统一排版字符三级匹配，报错给出行号与原文，结果只给摘要，UTF-16 文件按原编码写回（D-106）。审批的路径检查沿悬空符号链接走到目标。新增文件工具专项测试与基准 |
+| v1.19 | 2026-10-29 | 子智能体的显示与控制（subagent-design v1.8、protocol-design v0.9、desktop-design v0.3）：新增事件 `agent_event`，`agent_status` 增加 `elapsed_ms`，新增 Op `agent_interrupt`（§8.1、§8.2）；快照带子智能体，历史里的汇报带 `mail`；子智能体工作期间会话列表显示为进行中 |
+| v1.20 | 2026-10-29 | 新增 MCP 接入方案 [mcp-design.md](mcp-design.md) 并实现一期：新 crate finx-mcp（自研最小客户端，stdio 与 Streamable HTTP）；服务器来自用户与项目配置、`.mcp.json`（默认不读）、`-c`、`--mcp-config`、ACP 与原生协议，内核只接收合并好的列表；MCP 工具默认按需加载：系统提示词末尾的 `<mcp_servers>` 目录（最多 4 KB）、`tool_search`（本地 BM25）与 `call_tool`，工具列表与系统提示词整个会话不变；direct 服务器的工具直接进工具列表，只在两次请求之间替换；MCP 调用不审批；子智能体与根会话共用连接，工具为父的全部工具去掉两个智能体工具。§5 `Tool` 新增 `kind_for`、`origin`；§8.2 新增 `mcp_server_status` 事件与 warning code `mcp_servers_not_ready`，快照带服务器状态；§9.2 `system_prompt` 条目新增 `mcp` 字段；§10 新增 `[mcp]`、`[mcp_servers]`；§12 新增 `finx mcp list/get` 与全局参数 `--mcp-config`；协议的增量见 protocol-design.md v0.10。新增决策 D-100–D-125、待定问题 Q-100–Q-117（见 mcp-design §19） |
+| v1.21 | 2026-10-29 | 复杂场景压测与优化（§1.4）：finx-load 新增 `--scenario`，覆盖长会话跨压缩与恢复、子智能体扇出、超大输出、多个旁观连接和不读的客户端、各种时机的中断、几千个会话的数据目录；采样新增退休的指令数，在繁忙的机器上比 CPU 时间稳定。改动：流式响应整个流共用一个空闲定时器（§4.11）；token 估算按字节计数、不再把工具参数写成文本；会话日志一批条目一次写入（§9.3）；会话列表记住长日志的摘要、只读追加的部分，遍历目录不再逐个 stat（§9.5）；服务记录在监听之后落盘（protocol-design §8.2）；历史改为列表加索引，少见的大条目和用户消息里的 skill 装箱，一个条目由 256 字节降到 104 字节；空闲会话的系统提示词只存一份。新增决策 D-94、D-95，待定问题 Q-91–Q-94 |
+| v1.22 | 2026-10-29 | Skill 2d（[skill-design.md](skill-design.md) v1.5，决策 D-82–D-89）：用户在消息任意位置用 `/skill:名字` 提及 Skill，可以有多个，二期开头的 `/名字` 不再表示 Skill，`/compact` 仍只认开头（§8.1）；用户的话原样记录，提及的 Skill 的正文记在 message 条目的 `skills`，组成上下文时作为单独的文字项放在原话之前（§9.2）；`message_completed` 和历史条目的 `skill` 换成 `skills: [{name, path}]`（§8.2）；压缩时保留的就是原话（§7.6.4）；清单的说明句加上条件，对话里已有某个 Skill 的 `<skill>` 块时不必再读它的 SKILL.md（§7.2）；`finx skills --json` 与 `skills/list {cwd}` 带 `commands`（§12）；桌面端输入框改用 Lexical（protocol-design.md v0.13、desktop-design.md v0.5） |
+| v1.23 | 2026-10-29 | 长任务循环压测与优化（§1.4）：finx-load 新增 churn、exec-churn，一个任务连续几千个工具轮次（读写改同一个文件、追加日志、grep/find/rg 搜索、读文件的一段），中途多次压缩；采样新增打开文件数。改动：历史的分支按位置保存、追加时延长，不再每次请求从叶子沿父链走到根；校准用的请求估算沿用上次请求的结果，最大一轮的估算接着上次往下算；工具调用的参数和工具结果的 details 存为紧凑的 JSON 文本 JsonText，写出的字节不变（§4.3）；给客户端的记录、回复里少见的大字段装箱。单个会话 3000 轮：每轮指令数由 14.4 M 降到 8.6 M，任务结束后的活跃堆由 14.3 MiB 降到 9.9 MiB；16 个会话各 1500 轮：进程峰值占用由 149 MiB 降到 116 MiB。新增待定问题 Q-96、Q-97 |
+
+## 1. 目标与范围
+
+### 1.1 目标
+
+用 Rust 实现一个高性能、可嵌入的 Agent 内核：
+
+- **多步任务**：模型推理，调用工具，观察结果，再继续，直到任务完成。
+- **界面无关**：同一个内核可以由命令行、无头脚本、IDE 或桌面客户端、服务端进程来驱动，方式可以是进程内调用，也可以是协议。
+- **模型无关**：通过统一的模型接入层对接各家模型。接入一家兼容现有协议的厂商，只需要写配置。
+- **本地优先**：运行在用户机器上，直接操作本地工作区。
+
+### 1.2 设计原则
+
+| 编号 | 原则 | 含义 |
+|---|---|---|
+| P1 | 内核与界面分离 | 内核只接收 Op、只发出 Event；不读终端，不直接打印 |
+| P2 | 中立消息模型 | 内部只有一种消息格式，厂商差异只存在于适配器中 |
+| P3 | 厂商即数据 | 线协议写成代码，厂商与模型写成配置 |
+| P4 | 错误即数据 | 模型和工具的失败都编码为消息或结果，交给模型或上层处理，不让任务崩溃 |
+| P5 | 日志即事实 | 追加写入的会话日志是唯一事实来源，内存状态可以由日志重放得到 |
+| P6 | 取消贯穿 | 任何阶段都可以中断，中断后历史仍然合法 |
+| P7 | 极简工具 | 只提供少量通用工具；工具只声明自己是只读还是修改，审批、并发、截断由内核统一处理 |
+| P8 | 离线可测 | 不联网也能跑通端到端测试 |
+| P9 | 性能可度量 | 目标见 §1.4，纳入 CI 基准测试 |
+
+### 1.3 非目标（v1）
+
+- 多智能体、子智能体编排
+- 同一会话内并发执行多个对话（Q-18）
+- 内置沙箱（M3，通过 §5.5 的 Environment 接入）
+- MCP 与外部钩子脚本（M3）
+- 全屏 TUI 与图形界面（M3）
+- 语音、图像生成等非文本对话能力
+- Windows 支持（后续评估）
+- 云端托管与多租户
+
+### 1.4 约束与性能目标
+
+- **平台**：macOS 与 Linux（x86_64 / aarch64）。
+- **交付**：单个可执行文件，没有运行时依赖；Linux 另提供 musl 静态链接版本。
+
+| 指标 | 目标 |
+|---|---|
+| 冷启动：`finx exec` 从启动到发出第一个模型请求（不含网络与外部鉴权命令） | < 100 ms |
+| 本地命令（`--version`、`models`、`doctor`、`sessions`）从启动到退出，按 `hyperfine -N` 的均值计 | Linux 上 < 2 ms（尚未在 Linux 实测） |
+| 内核处理并转发每个流式增量的开销 | < 0.1 ms；事件只携带增量，不复制整条消息 |
+| 空闲会话的常驻内存 | < 30 MB |
+| 单次工具调用的输出在内存中的占用 | ≤ 1 MB，超出部分写入磁盘 |
+| 恢复一个 10 MB 的会话日志 | < 200 ms |
+
+**冷启动实测**（2026-10-28，Apple Silicon 12 核，macOS 27，取 p50）：用本地 mock 服务代替模型，不连真实模型（`tools/bench/bench_startup.py`）。
+
+在同一时段交替运行新旧版本，从进程启动到发出第一个模型请求：
+- 优化前：128.9 ms。
+- 优化后：release 构建 6.6 ms，dist 构建 6.1 ms。
+- 对照：同一时段启动一个空进程（`/usr/bin/true`）要 2.7 ms。
+
+机器较空闲时，release 构建约 5.2 ms，各阶段耗时如下。
+
+| 阶段 | 耗时 | 说明 |
+|---|---|---|
+| 创建进程 | 2.3 ms | 同条件下启动 `/usr/bin/true` 的耗时，任何程序都省不掉 |
+| 加载可执行文件 | 1.6 ms | 其中约 1.1 ms 用于加载 Security 和 CoreFoundation 框架，系统证书校验依赖它们（Q-20） |
+| 解析参数、创建运行时、初始化日志、读取配置和模型目录、创建 HTTP 客户端 | 0.5 ms | |
+| 注册工具、启动内核（系统提示词、会话文件） | 0.4 ms | |
+| 从发起任务到请求送达 | 0.4 ms | 含建立本地 TCP 连接 |
+
+优化前的耗时主要来自以下三处（机器较空闲时共约 121 ms）：
+- **系统根证书**：创建 HTTP 客户端时从 macOS 钥匙串加载全部系统根证书，耗时 115 ms。现在改由操作系统在 TLS 握手时校验证书（§4.14）。
+- **日志缓冲**：日志的非阻塞写入默认预分配 12.8 万行缓冲（约 4 MB），耗时 0.35 ms。现在改为 4096 行。
+- **工作线程**：tokio 默认按 CPU 核数创建工作线程，本机为 12 个。现在单次任务的命令固定为 4 个；常驻服务同时跑很多会话，按核数取（见下文的服务并发实测）。
+
+收到模型回复后到进程退出约 5 ms，其中约 4.5 ms 是会话日志的 F_FULLFSYNC（Q-19）。
+
+**Skill 的开销**（2026-10-29，同一台机器，release 构建，`tools/bench/bench_startup.py --skills 0 25 80 200`，与加入 Skill 之前的版本交替运行 60 次，取 p50）：
+
+| 用户目录里的 Skill 数 | 之前 | 现在 | 增加 |
+|---|---|---|---|
+| 0 | 7.12 ms | 7.06 ms | 无可测差异 |
+| 25 | 6.92 ms | 7.97 ms | 1.0 ms |
+| 80 | 6.85 ms | 9.00 ms | 2.2 ms |
+| 200 | 7.06 ms | 11.43 ms | 4.4 ms |
+
+- 每个 SKILL.md 约 18 µs：打开、取文件信息、读一次、解析头部。同一层的目录最多分给 4 个线程并行读取，再多线程在 macOS 上已没有收益。
+- 其余来自更长的系统提示词：每个 Skill 约 200 token 进入清单，请求体随之变大。
+- 实测的合成 Skill 描述约 700 字符，与常见的 Skill 相当（skill-design.md §5.4）。
+
+**本地命令实测**（同一台机器，macOS）：
+- 测量方法：与 `hyperfine -N` 相同，直接启动进程，不经过 shell。
+- 取值：预热 10 次后测 100 次取均值，各命令交替运行。
+
+| 命令 | 均值 | 比空进程多 |
+|---|---|---|
+| `/usr/bin/true` | 1.51 ms | — |
+| 最小的 Rust 程序（只打印一行） | 2.30 ms | 0.79 ms |
+| 同上，另外链接 Security 和 CoreFoundation 框架 | 3.59 ms | 2.08 ms |
+| `finx --version` | 4.14 ms | 2.63 ms |
+| `finx models` | 4.38 ms | 2.87 ms |
+| `finx doctor` | 4.46 ms | 2.95 ms |
+| `finx sessions`（30 个短会话） | 4.96 ms | 3.45 ms |
+
+- **长会话列表**：50 个会话（其中 20 个长会话，共 4.6 MB）时，`finx sessions` 由 10.6 ms 降到 6.2 ms。
+- **耗时构成**：在 macOS 上，`finx --version` 比最小的 Rust 程序多出约 1.8 ms。
+  - 约 1.3 ms 是加载这两个系统框架（Q-20）。
+  - 其余来自约 10 MB 的可执行文件和参数解析。
+- **Linux 的情况**：Linux 上没有框架这一项，创建进程本身也更便宜。Linux 上的数字尚未实测。
+
+**内存实测**（同一台机器，macOS）：
+- 测量方法：用 `tools/bench/bench_memory.py` 对接本地 mock 模型。mock 每一轮都让 finx 读取一个每轮都变的文件，直到最后一轮给出结束语；整段历史随每次请求重发，与真实接口一致。
+- 指标：
+  - 峰值 RSS 取内核记账（`wait4`）。
+  - 峰值占用取 macOS 的 lifetime max physical footprint。它就是活动监视器显示的"内存"，不含干净页和可复用页。
+
+| 场景 | 历史大小 | 优化前 峰值占用 / RSS | 优化后 峰值占用 / RSS |
+|---|---|---|---|
+| short：1 轮 | ≈0 | 3.4 / 11.4 MB | 3.3 / 11.2 MB |
+| long：1000 轮，每轮读约 1 KiB | 1.2 MB | 26–30 / 34–38 MB | 12.9 / 20.8 MB |
+| big：100 轮，每轮读约 50 KB | 5.0 MB | 142–165 / 150–173 MB | 20.3 / 28.2 MB |
+
+优化前，每轮请求要同时持有约 4 份历史：
+- 会话历史本身；
+- 每轮深拷贝出的 Context；
+- 重试循环里再克隆的一份 Context；
+- 转成的 `serde_json::Value` 树。
+
+另外，请求体缓冲每轮都按略大的尺寸新分配。macOS 的分配器会把释放的大块缓存起来，这些大小不一的旧块无法被下一轮复用，在 big 场景里扣住了一百多 MB。
+
+现在的做法：
+- **消息共享**：会话历史与每轮请求共享同一批消息（§4.3）。
+- **直接序列化**：请求体直接从上下文写成字节，不再生成 JSON 树（§4.6）。
+- **缓冲按 2 的幂分配**：请求体缓冲的容量按 2 的幂取整，下一轮能复用上一轮释放的块。
+- **收紧工具输出**：工具输出进历史前收紧容量。
+
+结果：long 场景 1000 轮的耗时由约 3.0 s 降到 1.3 s。剩下的开销与进一步压缩的空间见 Q-21。
+
+**文件工具实测**（2026-10-29，同一台机器，release 构建，取中位数；"峰值堆"是这次调用最多同时分配的内存）：
+- 测量方法：`cargo bench -p finx-tools --bench file_tools`，经由工具的公开接口在本地文件系统上调用，每次调用前重新生成文件；峰值堆由计数分配器测得。
+- 测"优化后"时机器有其他构建在跑（负载约 12），数字偏高，波动约 ±30%。
+
+| 场景 | 优化前 | 优化后 |
+|---|---|---|
+| read 5 KB 小文件 | 0.09 ms | 0.09 ms |
+| read 10 MB 文件中任意位置的 2000 行 | 6.7 ms，峰值堆 14 MB | 1.4 ms，1.1 MB |
+| read 100 MB 文件末尾的 2000 行 | 读不到（只读前 16 MiB） | 10 ms；同一版本再读 0.32 ms（行索引） |
+| read 一行 50 MB 的文件 | 8.5 ms，18 MB | 12 ms，1.1 MB（数出整行的字符数） |
+| write 新建 4 KB / 1 MB / 15 MB | 14 / 13 / 26 ms | 0.8 / 1.1 / 6.7 ms，峰值堆约 1 KB |
+| write 覆盖 1 MB（先读过） | 18 ms | 0.8 ms |
+| edit 小文件的一行 | 14 ms | 0.6 ms |
+| edit 1 MB 文件的最后一行 | 22 ms | 2–5 ms |
+| edit 15 MB 文件的最后一行 | 90 ms，峰值堆 78 MB | 12 ms，31 MB |
+| 一次 100 处 edit，1 MB | 51 ms | 13 ms |
+| 一次 2000 处 edit，5 MB | 4.7 s | 1.5 s |
+| edit 只差行尾空白，5 MB | 找不到（报错） | 8 ms，按宽松匹配完成 |
+
+优化前的耗时主要来自以下几处：
+- **每次写入完整刷盘**：macOS 上的 `F_FULLFSYNC` 每次约 5 ms，与文件大小无关；write 和 edit 都要付。现在改用写屏障（D-104）。
+- **读取先载入 16 MiB**：读几行也要读进 16 MiB、整体解码再切分。现在流式读取，大文件建行索引（D-103）。
+- **edit 改写整个文件**：每个 old_text 都在整个文件里重新查找；结果要对整个文件做 diff；写入前数据还要再复制一份。现在只改匹配区间，diff 只对改动所在的行计算，数据按值传给写入（D-106）。
+
+**服务并发实测**（2026-10-29，同一台机器）：
+- **测量方法**：`finx-load`（`crates/finx-bench`）启动真实的 `finx serve --listen unix://…` 和一个模拟模型网关，用原生协议驱动 100–200 个会话，每个会话一个连接。
+  - 网关：首个块之前等 300 ms，之后每 15 ms 发一个块。
+  - 任务：每个任务 7 次模型请求，依次是思考加读文件、bash（`ls`、`wc`）加读文件、写一份约 4 KB 的报告、读回、编辑、bash（`seq 1 2000`）、约 3000 字的总结。一个任务约 730 个事件，单独运行约 13.3 s。
+  - 工作区：有 `.git`、`AGENTS.md`、20 KB 的源文件。权限模式为 bypass-permissions，不等审批。
+  - 采样：每 10 ms 采样一次服务进程的占用（physical footprint）、RSS、CPU 时间和线程数。活跃堆取 `vmmap --summary` 的 allocated；它会让进程暂停，所以只在检查点取。
+- **阶段**：
+  - 服务空闲时，依次新建 20 个会话；
+  - 8 个客户端循环"新建再关闭"5 秒；
+  - 200 个会话同时新建，再全部关闭，重复 20 次；
+  - 200 个会话同时新建、同时跑任务、全部关闭，重复 2 轮。
+- **取值**：机器上同时运行着其他程序，数字取多次运行的范围。刚编译出来的可执行文件第一次启动要多 450–560 ms，这是 macOS 对新程序的检查，测量从第二次启动开始。
+
+| 指标（200 个会话） | 优化前 | 优化后 |
+|---|---|---|
+| 服务空闲时新建一个会话，session/new 往返 p50 / p99 | 0.80 / 1.49 ms | 0.22–0.25 / 0.40–0.49 ms |
+| 8 个客户端循环新建再关闭 | 每秒 267 个；p50 12.9 ms，p99 26.5 ms | 每秒 7746 个；p50 0.36 ms，p99 1.69 ms |
+| 200 个会话同时新建：全部完成 | 33.9–39.7 ms | 13.5–17.3 ms |
+| 同上，单个 session/new 的 p50 / p99 | 23.2–31.0 / 33.5–37.8 ms | 8.7–12.4 / 12.8–16.9 ms |
+| 新建一个会话的服务端 CPU（同时新建时） | 0.74–0.83 ms | 0.35–0.49 ms |
+| 每个任务的服务端 CPU | 32–39 ms | 26–32 ms |
+| 线程：200 个空闲会话 / 跑任务时的峰值 | 208 / 396 | 40–42 / 78；安静 3 秒后 15 |
+| 200 个空闲会话时的进程占用 | 22.5 MiB | 12.1 MiB |
+| 每个空闲会话的活跃堆 | 约 120 KiB | 约 32 KiB |
+| 200 个会话各跑完一个任务后的活跃堆 | 51.4 MiB | 28.1–29.6 MiB |
+| 关闭全部会话后的活跃堆 | 7.7 MiB | 3.4–5.4 MiB |
+| 进程峰值占用 | 102.3 MiB | 78.6–79.5 MiB |
+
+没有变化的指标：
+- 任务开始到第一个增量：单独运行 302–304 ms，200 个任务同时开始时 p50 为 308–323 ms，其中网关本身占 300 ms。
+- 200 个任务同时跑时，每个任务比单独运行慢 3%–14%，主要是同机的 bash 子进程和文件操作在争抢。
+- 进程启动到 socket 可以连接约 8 ms。
+
+100 个会话（优化后）：同时新建时单个 session/new 的 p50 为 4.2–4.6 ms，p99 为 6.1–6.7 ms；空闲时活跃堆 3.6 MiB，跑完任务 14.3–14.9 MiB；进程峰值占用 43.8 MiB。
+
+**容量**：
+- **打开文件数**：每个会话要占日志文件和到模型的连接，每个客户端占一个连接，工具运行时还有管道。从访达、launchd 或默认终端启动的程序，打开文件数的软上限只有 256。
+  - 服务以 256 的软上限启动时，200 个会话同时跑任务，有 101 个因为 "Too many open files" 失败。之前的压测没有发现，是因为压测所在的终端放宽过这个上限。
+  - 现在 `finx serve`、`finx acp` 启动时把软上限提到硬上限，最多 65536；macOS 上不超过 `kern.maxfilesperproc`（D-92）。同样以 256 启动，200 个任务全部成功。
+- **1000 个会话**：服务以 256 的软上限启动，网关改为首个块前等 50 ms、之后每 2 ms 一个块。
+  - 1000 个连接在 12.7 ms 内建立，没有一个被拒。
+  - 1000 个会话同时新建，51 ms 全部完成，单个 session/new 的 p50 为 40 ms。
+  - 1000 个任务同时跑，没有失败；进程峰值占用 253 MiB，每个任务的服务端 CPU 25 ms。
+- **接收队列**：系统的监听队列只限制已经到达、服务还没来得及接收的连接，不限制同时在线的连接数。macOS 的 `kern.ipc.somaxconn` 默认 128，只有 root 能调大；服务接收一个连接只要几微秒，所以上面 1000 个连接同时发起也没有排满。
+  - 服务监听时向系统要最长的队列，Linux 上由 1024 变成系统默认的 4096（D-92）。
+  - 队列万一满了，新连接会被立刻拒绝（ECONNREFUSED）。被拒的连接服务端看不到，只能由客户端退避重试（protocol-design §8.2）。
+  - 多开几个进程分摊也扩大不了它：每个监听 socket 各有一条同样长的队列，前面加一个分发进程，队列还是一条；会话分散到几个进程，多客户端接入、会话列表和审批都要跨进程协调。
+- **会话上限**：默认由 64 提到 1000。达到上限时，新建和恢复先卸载最久没用的会话，即没有客户端接入、也没有任务在跑的会话。它的日志在磁盘上，恢复即可继续。所有会话都在用时才返回 `server_full`（D-93）。
+
+优化前时间和内存花在这些地方，现在的做法如下：
+- **每个会话一个写日志线程**：200 个空闲会话就有 208 个线程，新建会话还要创建线程。现在写入器是异步任务，攒成一批交给阻塞线程池去写，空闲会话不占线程（§9.3）。
+- **新建会话就建日志文件，关闭时强制刷盘**：
+  - 新建会话要建目录、建文件、加锁、写头部。200 个会话同时新建时，这些文件操作与新建会话争抢 CPU，又在同一个目录上排队。实验中去掉文件操作，同时新建的 p50 由 11–14 ms 降到 5–6 ms。
+  - 关闭时的 F_FULLFSYNC 每次要几毫秒，把"新建再关闭"压到每秒两三百个。实验中只去掉这次刷盘，吞吐由每秒 274 个升到 7916 个。
+  - 现在日志文件在会话第一次有实际内容时才创建，没动过的会话关闭时写出日志，但不强制刷盘（§9.3，D-90）。
+- **每个会话各建一份工具注册表**：内置工具不带会话状态。现在工具配置相同的会话共用一份，连同工具定义的 JSON。
+- **通道的槽位**：tokio 的通道按 32 个槽位一块分配，块在通道存续期间一直保留，一个 Event 有 208 字节。现在事件通道和会话中枢的命令通道传 `Box`，槽位只有指针大小。
+- **连接的读缓冲**：原来每个连接固定 64 KiB。现在从 4 KiB 起，读满就翻倍，最多 64 KiB；读不满就减半，空闲时缩回。写出批次的缓冲按需增长。
+- **流式块的解析**：openai-chat 原来把每个块先解析成 JSON 树再取字段。现在直接解析成借用原文的类型化结构，遇到字段类型不寻常的块再退回 JSON 树（§4.6）。单测解析一个块（含生成事件）由约 0.91 µs 降到 0.45 µs；一个任务约 700 个块，合计约 0.3 ms，在每个任务的 CPU 里不到 2%。
+- **数据目录的规范路径**：原来每次权限检查都要求一遍，现在每个目录只求一次。
+- **工作线程数**：常驻服务原来与单次任务一样固定 4 个工作线程。现在 `finx serve`、`finx acp` 按核数取 4–16 个；阻塞线程池最多 64 个线程，空闲 3 秒回收（§3.3，D-91）。
+- **HTTP 空闲连接**：30 秒后关闭，原来是 90 秒。安静下来的服务更早释放连接缓冲（§4.14）。
+- **归还空闲内存**：服务由忙转闲、或者会话变少时，请分配器把空闲内存还给系统：macOS 上调 `malloc_zone_pressure_relief`，Linux（glibc）上调 `malloc_trim`。
+
+仍然存在的问题：
+- **关闭后的占用**：关闭全部会话后，活跃堆回到 3.4–5.4 MiB，占用却停在 46–55 MiB。macOS 的 xzone 分配器保留已释放的页，`malloc_zone_pressure_relief` 对它不起作用。这些页会被之后的会话复用：第二轮 200 个会话跑完任务，峰值占用没有超过第一轮。系统内存紧张时也会回收这些页（Q-90）。
+- **任务结束时的刷盘**：日志的 F_FULLFSYNC 见 Q-19。
+- **CPU 的去向**：每个任务的 CPU 大部分花在系统调用上，包括子进程、文件和 socket。
+
+**合并子智能体一期之后**（2026-10-29）：
+- **复测**：每个空闲主会话多了约 15 KiB、约 90 次分配。200 个空闲会话的活跃堆由 7.0 MiB 升到 10.4 MiB，进程峰值占用由 81.4 MiB 升到 87.5 MiB。
+- **来源**，按分配位置统计：
+  - 每个会话各建一份 `spawn_agent`、`send_message` 的工具定义，即描述和参数的 JSON Schema，约 10 KiB；
+  - 为加这两个工具，各复制一份工具注册表，约 1 KiB；
+  - 新增的内部通道，槽位块 4 KiB。
+- **做法**：两个工具改为从调用上下文取发起调用的会话的子智能体，工具相同的主会话共用一份注册表；内部通道的消息装箱。
+- **结果**：200 个空闲会话的活跃堆 7.5 MiB，进程峰值占用 81.5 MiB，回到合并前的水平。每个会话仍比合并前多约 2.5 KiB，是一期本身需要的结构，例如它自己的智能体树。
+
+**复杂场景压测**（2026-10-29，同一台机器）：
+- **测量方法**：`finx-load --scenario` 在标准轮次之外加了六种更重的负载，都用真实的 `finx serve` 对接模拟网关。
+  - long：20 个会话各连续跑 40 个 agent 任务，每个会话中途压缩 3 次；然后全部关闭、同时恢复、再跑一个任务；最后重启服务，读回 20 份共 44 MB 的日志。
+  - fanout：20 个会话的任务各派出 8 个子智能体（wait=true），一波 160 个子任务，跑两波。
+  - bigout：8 个会话依次跑出 8 MB 的命令输出、读 8 MB 的文件、收 1 MB 的回复（约 13 万个增量），再问一句。
+  - viewers：20 个会话每个再挂 10 个旁观连接和 1 个只连不读的客户端，跑 agent 任务和 1 MB 的回复。
+  - interrupt：40 个会话各跑 6 个任务，0.4–2 s 后中断，分别落在流式输出中、`sleep 30` 执行中和 agent 任务中。
+  - startup：数据目录里有 2000 个会话（每个三个任务），重启服务 5 次，测启动、翻完整个列表、首页、订阅和恢复。
+  - 另用脚本启动服务 60 次，测从启动到 socket 可以连接的时间。
+- **取值**：同机还有别的编译任务在跑，同样的运行之间 CPU 时间相差可达 40%。比较 CPU 改看服务进程退休的指令数（macOS 的 `ri_instructions`），同样的运行之间相差不到 2%。
+
+| 指标 | 优化前 | 优化后 |
+|---|---|---|
+| 服务从启动到 socket 可以连接，p50 | 9.1 ms | 5.2 ms |
+| 标准轮次（200 个会话）：每个任务的指令数 | 81.6 M | 75.4 M |
+| 标准轮次：进程峰值占用 | 88.7 MiB | 79.7 MiB |
+| long：压缩之前历史最长时（第 12 个任务），每个任务的指令数 | 255 M | 144 M |
+| long：40 个任务之后的进程占用 | 100.6 MiB | 93.4 MiB |
+| long：20 个长会话的活跃堆 / 同时恢复之后 | 79.4 / 66.2 MiB | 76.3 / 63.1 MiB |
+| fanout：每个子智能体任务的指令数 | 72 M | 62–64 M |
+| bigout：1 MB 回复（8 个会话同时），每个会话的指令数 / 服务端 CPU | 5.6 G / 1.36 s | 4.3 G / 0.88 s |
+| startup（2000 个会话）：翻完整个列表（10 页） | 561–591 ms | 375–388 ms |
+| startup：首页 50 个 / 订阅 / 恢复一个会话 | 10.5 / 10.3 / 8.2 ms | 5.7–6.1 / 5.7–5.8 / 4.2–4.3 ms |
+| 200 个空闲会话的活跃堆 / 各跑完一个任务后 | 7.5 / 31.8 MiB | 6.2 / 30.0 MiB |
+| 每个日志条目在内存里的大小 | 256 B | 104 B |
+
+没有问题的方面：
+- interrupt：240 个任务全部在 p50 5 ms、最慢 13 ms 内中断，没有残留的子进程，之后每个会话都能照常跑任务，活跃堆回到原来的水平。
+- viewers：200 个旁观连接都收到了每个任务的结束，比任务所在的连接最多晚 0.2 ms；落后的连接按规则被摘掉。
+- bigout：8 MB 的命令输出在内存里只留头尾，其余写到磁盘；8 MB 的文件按 50 KB 截断。
+- long：40 个任务都没有失败；关闭后活跃堆回到约 1 MiB。
+
+优化前时间和内存花在这些地方，现在的做法如下：
+- **流式响应的空闲计时**：原来每个流事件各设一个超时定时器，设和撤都要拿运行时的定时器锁。8 个会话同时快速输出时，采样里一大半时间在等这把锁。现在整个流共用一个定时器，只在它先到了而空闲还不够时才往后挪（§4.11）。
+- **token 估算**：每次请求都要估算整段历史，原来逐个字符解码，还把每个工具调用的参数重新写成字符串。长会话里它是用户态最大的一项。现在按字节计数，参数边写边数，不再生成字符串，结果与原来一致。
+- **会话列表**：原来每次列表把每份日志从头读完；服务分页时，前面的页还要再读一遍。现在记住长日志的摘要和读到的位置，只读追加的部分；遍历目录时不再对每个文件做一次 stat（§9.5，D-94）。
+- **服务记录的落盘**：服务记录写进锁文件后要 F_FULLFSYNC，约 4 ms，挡在 socket 可以连接之前。现在监听之后再落盘（protocol-design §8.2，D-95）。
+- **日志写入**：一批条目拼成一次写入，原来每条一次系统调用（§9.3）。
+- **历史的表示**：原来是装着整个条目的哈希表，加一份 id 列表。现在条目按文件顺序放在列表里，另有按 id 的索引。条目原来按最大的种类占 256 字节，可绝大多数条目只是一个指向消息的指针；把少见的大条目（系统提示词、压缩、任务、汇报、子智能体）和用户消息里很少用到的 skill 装箱后降到 104 字节。日志格式不变，有测试逐类读回再写出比对。
+- **系统提示词**：空闲会话原来存三份系统提示词，即会话状态、历史条目，以及日志文件创建之前留在写入器里的那一行。现在三处共用一份。
+
+仍然存在的问题（有副作用，暂不处理）：
+- **长会话的内存随长度增长**：历史和给客户端的记录都保留整段会话，压缩并不减少内存（Q-92）。
+- **积压的旁观连接**：被摘掉之后，已排队的事件一直留到它读走或断开，每个连接最多约 8 MiB（Q-91）。
+- **同时恢复**：恢复由一把加载锁串行，20 个长会话同时恢复要 120 ms（Q-93）。
+- **做完的子智能体**：留在内存里等后续消息，每个约 110 KiB（Q-94）。
+- **任务结束的事件**：要等日志落盘才发出，中断到 `task_interrupted` 的约 5 ms 里有 4 ms 是 F_FULLFSYNC（Q-95、Q-19）。
+- **空闲的 HTTP 连接**：一阵突发之后，连接池里的每个连接保留一块长到约 54 KiB 的读缓冲，30 秒后随连接关闭释放。
+- **流式增量的开销**：现在每个约 7–9 µs，主要是收发的系统调用、SSE 解析和小块分配。远低于 0.1 ms 的目标，没有再做。
+
+**长任务循环压测**（2026-10-29，合并主干之后，同一台机器）：
+- **测量方法**：`finx-load --scenario churn`，每个会话跑一个任务。模拟网关不等待、不限速，任务连续做 N 个工具轮次，每轮按随机数选一种：
+  - 读、写、改 `notes/state.txt`；
+  - 用 bash 给 `notes/log.txt` 追加一行；
+  - 搜索（grep、find、rg）；
+  - 读源文件或日志的一段。
+- **压缩**：网关按 4 字节 1 token 计，窗口 200k，所以任务中途会压缩多次。网关在交接摘要里写明做到第几步，压缩之后接着做。
+- **收尾**：任务结束后关闭、恢复最长的那个会话、重启服务。`--scenario exec-churn` 在一个 `finx exec` 进程里跑同样的任务。
+- **取值**：按每十分之一的轮次统计每轮的时间、CPU、指令数、占用、线程数和打开文件数。
+
+| 指标 | 合并主干后 | 优化后 |
+|---|---|---|
+| 1 个会话 3000 轮：每轮的指令数 | 14.4 M | 8.6 M |
+| 同上：每轮的服务端 CPU | 1.5–1.7 ms | 1.0–1.1 ms |
+| 同上：每秒轮数 | 362–437 | 494–550 |
+| 同上：任务结束后的活跃堆 / 每轮留下的分配次数 | 14.3 MiB / 34 | 9.9 MiB / 25 |
+| 同上：恢复这个会话之后的活跃堆 | 13.5 MiB | 9.1 MiB |
+| 16 个会话各 1500 轮：每轮的指令数 | 12.4 M | 7.7 M |
+| 同上：每秒轮数 | 2375 | 2763 |
+| 同上：进程峰值占用 | 149.0 MiB | 115.8 MiB |
+| 同上：任务结束后的活跃堆 | 112.7 MiB | 77.6 MiB |
+
+没有问题的方面：
+- 3000 轮、5 次压缩，没有失败，工具调用没有出错。
+- 打开文件数和线程数从头到尾不变（16 个会话时分别为 148 和 46），没有泄漏。
+- 关闭之后活跃堆回到约 1 MiB。
+
+时间和内存原来花在这些地方，现在的做法如下：
+- **沿父链找分支**：每次请求都要从叶子沿父条目一直走到根，每一步按 id 查一次哈希表；一轮要走好几遍，越长越慢，是长任务里用户态最大的一项。现在分支按条目的位置保存，追加时延长，只在加载时和日志损坏的特殊情况下（重复的 id、指向不存在的父条目、环）重新走。
+- **每次请求重新估算整段上下文**：校准用的请求估算现在沿用上一次请求的结果，只估算新增的消息；估算最大的一轮也接着上次的位置往下算。
+- **工具参数和 details 存成 JSON 树**：一个只有一个键的对象也要几百字节的映射节点（ACP 的依赖打开了 serde_json 的 preserve_order，映射是带哈希表的 IndexMap）。它们在历史里留到会话结束，却只读一两次。现在存成紧凑的 JSON 文本，用到时再解析，写出的字节与原来完全一样（§4.3）。请求体直接用参数的文本，不再把树重新序列化。
+- **少见的大字段**：给客户端的记录里每条消息原来都内嵌 skill 和 mail（一条 192 字节），回复里内嵌 error；现在都装箱。
+
+仍然存在的问题：
+- **每轮的开销随上下文长度增长**：每次请求都要把整个上下文序列化成请求体，再从 socket 发出。在两次压缩之间，每轮的指令数由约 5 M 升到约 10 M，压缩后回落（Q-96）。
+- **压缩之前的历史留在内存里**：3000 轮之后，约八成的历史已经不在上下文里，只为翻看旧记录保留（Q-92）。
+- **启动时扫描 skill**：`finx exec` 从进程开始执行到发出第一个请求，进程内约 1.1 ms。这台机器上有 76 个用户级 skill，扫描它们另需约 1.8 ms，主要是打开和读取 SKILL.md 的系统调用（Q-97）。
+- **工具本身的工作**：write 的写屏障、rename 和 bash 子进程是剩下的系统开销的大头。
+
+## 2. 核心概念
+
+| 术语 | 定义 |
+|---|---|
+| 会话 Session | 一段持续的对话。拥有配置、历史、工具集和审批状态，对应一个会话日志文件 |
+| 任务 Task | 由一次用户输入触发的全部工作，直到模型不再需要继续为止。同一会话同一时刻最多只有一个任务 |
+| 轮次 Turn | 一次模型请求，加上这次回复中所有工具调用的执行。一个任务包含 1..n 轮 |
+| 消息 Message | 发给模型的历史单元，分为 user、assistant、tool_result 三种 |
+| 工具调用 / 工具结果 | 助手消息中的调用请求，以及与之对应的 tool_result 消息 |
+| 操作 Op | 前端发给内核的指令 |
+| 事件 Event | 内核发给前端的通知 |
+| 日志条目 Entry | 会话日志中的一行 |
+| 线协议 WireApi | 一种模型 HTTP 接口格式，如 openai-chat、anthropic-messages |
+| 厂商 Provider | 一个服务端点，包括地址、鉴权方式、默认线协议和模型列表 |
+| 模型 Model | 一个具体模型的元数据，包括上下文窗口、输出上限、能力、价格和兼容标志 |
+| 执行环境 Environment | 工具访问文件与进程的抽象层，可以是本地、沙箱、容器或远程 |
+| 子智能体 Sub-agent | 主会话用 `spawn_agent` 创建的会话：独立的普通会话和日志，不出现在会话列表里，忙完向主会话汇报。设计见 [subagent-design.md](subagent-design.md) |
+
+它们的关系是：一个会话包含 1..n 个任务，一个任务包含 1..n 个轮次；每一轮是 1 次模型请求加 0..n 次工具调用。
+
+## 3. 总体架构
+
+### 3.1 分层
+
+```
+前端    finx chat | finx exec（文本 / JSONL）| M3：TUI、JSON-RPC 服务
+          │ Op                                  ▲ Event
+协议    finx-protocol   Op / Event / 序列化约定
+          │
+内核    finx-core       Kernel 句柄、提交循环、任务与轮次循环、审批、钩子、
+                      上下文组装与压缩、系统提示词、会话日志、配置
+          │                                   │
+能力    finx-tools      Tool、注册表、           finx-llm   消息模型、流事件、WireApi、
+                      内置工具、                        厂商与模型目录、鉴权、
+                      Environment、截断                 重试、计费
+          │                                   │
+外部    本地文件系统与进程                      各家模型的 HTTP API
+```
+
+### 3.2 crate 划分
+
+| crate | 职责 | 依赖 |
+|---|---|---|
+| finx-llm | 中立消息模型、流事件、线协议适配器、厂商与模型目录、鉴权、重试、计费、跨模型历史转换 | — |
+| finx-tools | Tool 接口、注册表、内置工具、Environment、输出截断、文件状态跟踪 | finx-llm |
+| finx-protocol | Op、Event 等对外类型与序列化约定 | finx-llm |
+| finx-core | 会话运行时：提交循环、agent 循环、审批、钩子、上下文、压缩、会话日志、配置 | finx-llm、finx-tools、finx-protocol |
+| finx-cli | 可执行文件 `finx` | finx-core、finx-protocol、finx-server、finx-acp |
+| finx-rpc | JSON-RPC 2.0：按行分帧、信封、错误码、通用客户端 | — |
+| finx-server | 服务层：会话管理、会话中枢与镜像、连接与发送队列、原生协议、stdio 与 Unix socket 传输（protocol-design §3） | finx-core、finx-protocol、finx-rpc |
+| finx-acp | ACP 投影（protocol-design §7） | finx-server |
+| finx-mock | 测试用的模型服务，兼容 openai-chat 的流式接口，不进入发布产物 | — |
+| finx-bench | 服务的并发压测程序 `finx-load`（§1.4、§14），不进入发布产物 | finx-mock、finx-rpc |
+
+约束：
+- 依赖只能自上而下。
+- finx-llm 不依赖内核，可以单独作为多模型客户端使用。
+- 库 crate 禁止直接打印输出（§15）。
+
+### 3.3 运行时模型
+
+**进程**：每个进程一个 tokio 多线程运行时，可以同时承载多个会话，每个会话对应一个 Kernel。
+
+**每个会话的后台任务**：
+
+| 任务 | 生命周期 | 职责 |
+|---|---|---|
+| 提交循环 | 常驻 | 串行处理 Op |
+| 日志写入器 | 常驻的异步任务，空闲时不占线程 | 按顺序追加会话日志（§9.3） |
+| 当前任务 | 至多一个 | 运行 agent 循环 |
+| 工具执行 | 每个工具调用一个 | 执行单个工具调用 |
+
+**进程级共享对象**：
+- `ModelRegistry`，内含共享的 HTTP 连接池；
+- `ToolRegistry`，只读。工具配置相同的会话共用一份。
+
+**线程**（D-91）：
+- 单次任务的命令（exec、chat 等）用 4 个工作线程，启动更快（§1.4）。
+- `finx serve`、`finx acp` 同时跑很多会话，工作线程按核数取，最少 4 个，最多 16 个。
+- 阻塞线程池（文件工具、日志写出）最多 64 个线程，空闲 3 秒后回收。
+
+**打开文件数**（D-92）：`finx serve`、`finx acp` 启动时把软上限提到硬上限，最多 65536。每个会话要占日志文件和到模型的连接，每个客户端占一个连接。
+
+**通道**（D-11）：
+- Op 通道有界，容量 64。
+- Event 通道无界。这样内核不会因为前端消费慢而被阻塞，代价是前端必须持续消费事件。
+- 通道里传装箱的 Event。tokio 的通道按块分配槽位，块在通道存续期间一直保留；装箱后每个槽位只有指针大小。
+
+**锁**：
+- 会话状态使用同步互斥锁：不允许跨 await 持有，锁内不做 IO。
+- 工具并发使用异步读写锁（§5.4）。
+
+### 3.4 一次任务的流程
+
+1. 前端提交 `Op::Prompt`。
+2. 提交循环发现会话空闲，于是创建任务（带一个新的取消令牌），发出 `task_started`，并记录用户消息。
+3. 任务组装上下文（§7.1），通过 finx-llm 向模型发起流式请求；收到的增量以 `message_delta` 转发给前端。
+4. 助手消息结束，发出 `message_completed`。如果消息中有工具调用：
+   - 逐个预检；需要审批时发出 `approval_requested`，等待 `Op::Approval`；
+   - 放行的调用并发执行，期间发出 `tool_started`、`tool_progress`、`tool_completed`；
+   - 结果写入历史。
+5. 如果有工具结果，或者用户有插话，就进入下一轮（回到第 3 步）；否则任务结束，发出 `task_completed`。
+6. 整个过程中产生的消息和状态变化，都追加写入会话日志。
+
+## 4. 模型接入层（finx-llm）
+
+### 4.1 职责与边界
+
+- **负责**：把中立的上下文发给任意模型，并返回统一的流事件；管理厂商与模型目录、鉴权、重试、计费，以及跨模型的历史转换。
+- **不负责**：工具执行、会话状态、上下文压缩、提示词组装。这些都在 finx-core 中完成。
+
+### 4.2 三个概念
+
+| 概念 | 是什么 | 形式 | 示例 |
+|---|---|---|---|
+| WireApi（线协议） | 一种 HTTP 接口格式 | 代码，每种协议一个适配器 | `openai-chat`、`anthropic-messages`；M2 增加 `openai-responses`、`gemini` |
+| Provider（厂商） | 端点地址、鉴权方式、默认线协议和模型列表 | 数据：内置目录或 models.toml | deepseek、qwen、kimi、glm、anthropic、openai、openrouter、ollama |
+| Model（模型） | 一个具体模型的元数据 | 数据 | `deepseek/deepseek-chat` |
+
+- **归属**：模型归属于厂商。模型通过 `api` 字段选择线协议；不填时继承厂商的设置。
+- **接入成本**（D-04）：厂商只要兼容现有的某种线协议，接入时写配置即可；只有遇到新的线协议才需要写适配器。
+- **引用格式**：模型写作 `<provider>/<model_id>`，按第一个 `/` 拆开。模型 id 本身可以包含 `/`，例如 `openrouter/anthropic/claude-x`。
+
+### 4.3 消息模型（D-03）
+
+```rust
+pub type Timestamp = i64; // Unix 毫秒
+
+// 各部分用 Arc 共享：会话历史和据此构造的每次请求指向同一份数据，克隆一条消息只增加引用计数。
+// 需要改写某条消息时（跨模型转换、规范化），只对那一条写时复制（Arc::make_mut）。
+#[serde(tag = "role", rename_all = "snake_case")]
+pub enum Message {
+    User(Arc<UserMessage>),
+    Assistant(Arc<AssistantMessage>),
+    ToolResult(Arc<ToolResultMessage>),
+}
+
+pub struct UserMessage {
+    pub content: Vec<UserContent>,
+    pub ts: Timestamp,
+}
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum UserContent {
+    Text { text: String },
+    Image { mime_type: String, data: String }, // base64
+}
+
+pub struct AssistantMessage {
+    pub content: Vec<AssistantContent>,
+    pub provider: String,               // 产生该消息的厂商，如 "deepseek"
+    pub api: String,                    // 线协议，如 "openai-chat"
+    pub model: String,                  // 模型 id
+    pub response_id: Option<String>,
+    pub usage: Usage,
+    pub stop_reason: StopReason,
+    pub error: Option<LlmError>,        // stop_reason 为 Error 时必填
+    pub ts: Timestamp,
+    pub duration_ms: Option<u64>,
+}
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AssistantContent {
+    Text { text: String },
+    Thinking {
+        text: String,
+        /// 厂商的回放数据：签名、加密的推理内容或推理字段名。只对产生它的模型有效
+        signature: Option<String>,
+        /// 推理内容被厂商隐去时为 true：text 为空，原始数据保存在 signature 中
+        redacted: bool,
+    },
+    ToolCall(ToolCall),
+}
+
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: JsonText,                // 总是 JSON 对象
+    /// 模型给出的参数不是合法的 JSON 对象时，记录原因和原文，arguments 置为 {}
+    pub arguments_error: Option<String>,
+}
+
+pub struct ToolResultMessage {
+    pub call_id: String,
+    pub tool_name: String,
+    pub content: Vec<UserContent>,          // 发给模型
+    pub is_error: bool,
+    pub details: Option<JsonText>,          // 供界面和日志使用，不发给模型
+    pub ts: Timestamp,
+    pub duration_ms: Option<u64>,
+}
+
+/// JSON 值的紧凑文本，即把这个值序列化得到的文本：写出时原样嵌入，所以日志、协议和
+/// 请求体里的字节与存 Value 时完全一样；读取时再解析。工具参数和 details 在历史里留到会话
+/// 结束却只读一两次，存成树时一个小对象也要几百字节的映射节点（§1.4）。
+pub struct JsonText(Box<serde_json::value::RawValue>);
+
+pub enum StopReason { Stop, Length, ToolUse, Error, Aborted }
+
+pub struct Usage {
+    pub input: u64,              // 未命中缓存的输入 token
+    pub output: u64,             // 输出 token（含推理）
+    pub cache_read: u64,         // 命中缓存的输入 token
+    pub cache_write: u64,        // 写入缓存的输入 token
+    pub reasoning: Option<u64>,  // output 中属于推理的部分；厂商提供时才有
+    pub cost: Cost,
+}
+
+pub struct Cost {
+    pub currency: Currency,      // USD | CNY，取自厂商配置
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_write: f64,
+    pub total: f64,
+}
+```
+
+补充说明：
+- 系统提示词不放进消息列表，而是单独放在 `Context.system` 中（§4.4）。几乎所有厂商都单独接收系统提示词，这样适配器最简单。
+- `Thinking` 块只会回放给产生它的那个模型（§4.10）。
+
+### 4.4 请求上下文与选项
+
+```rust
+pub struct Context {
+    pub system: String,
+    pub messages: Vec<Message>,
+    pub tools: Vec<ToolSpec>,
+}
+
+pub struct ToolSpec {
+    pub name: String,                     // ^[a-zA-Z0-9_-]{1,64}$
+    pub description: String,
+    pub parameters: serde_json::Value,    // JSON Schema（type = object）
+}
+
+pub struct RequestOptions {
+    pub thinking: ThinkingLevel,                       // 默认 Off
+    pub max_output_tokens: Option<u32>,                // 不填时取 min(模型上限, 32000)
+    pub temperature: Option<f32>,
+    pub tool_choice: ToolChoice,                       // Auto | None
+    pub cache_key: Option<String>,                     // 通常为会话 id，供支持该参数的厂商使用
+    pub extra_body: serde_json::Map<String, serde_json::Value>, // 原样合并进请求体
+}
+
+pub enum ThinkingLevel { Off, Minimal, Low, Medium, High, Max }
+```
+
+### 4.5 流事件与契约（D-06）
+
+```rust
+pub enum StreamEvent {
+    TextDelta { index: usize, text: String },
+    ThinkingDelta { index: usize, text: String },
+    ToolCallStart { index: usize, id: String, name: String },
+    ToolCallArgs { index: usize, json: String },
+    /// 由重试层产生（§4.11），适配器本身不产生
+    Retrying { attempt: u32, delay: Duration, error: LlmError },
+    Done(AssistantMessage),
+    Failed(AssistantMessage),
+}
+```
+
+契约（所有适配器都必须遵守，回放测试会逐条验证）：
+
+1. **不返回 Result**：`stream()` 同步返回一个流。缺少密钥、网络错误、HTTP 错误、解析失败，全部以 `Failed` 事件结束。
+2. **恰好一个终止事件**：每个流以 `Done` 或 `Failed` 之一结束，之后不再有事件。
+3. **index 即位置**：`index` 是内容块在最终 `content` 中的下标。
+   - 同一个块的增量按顺序到达；
+   - 不同块的增量可以交错，例如并行工具调用的参数。
+4. **终止事件携带完整消息**：
+   - `Done` 的 stop_reason 为 Stop、Length 或 ToolUse；
+   - `Failed` 的 stop_reason 为 Error，`error` 字段必填，`content` 为已经收到的部分。
+5. **取消就是丢弃流**：
+   - 调用方 drop 流，HTTP 请求随之中止；
+   - 适配器不产生 `Aborted`，带 `Aborted` 的消息由内核根据已收到的部分构造（§6.5）。
+6. **适配器不重试**：重试只在注册表层进行（§4.11）。
+
+finx-llm 提供 `MessageAccumulator`，按 index 把增量累积成一条 `AssistantMessage`：
+- 适配器用它生成终止事件；
+- 内核在中断时用它取出已收到的部分。
+
+```rust
+impl MessageAccumulator {
+    pub fn new(model: &Model) -> Self;
+    pub fn apply(&mut self, event: &StreamEvent);
+    pub fn snapshot(&self) -> AssistantMessage;   // 当前已收到的部分
+}
+```
+
+工具调用的参数在块结束时整体解析。如果不是合法的 JSON 对象，就写入 `arguments_error`，不中断流。
+
+### 4.6 WireApi 与适配器
+
+```rust
+pub trait WireApi: Send + Sync + 'static {
+    fn id(&self) -> &'static str;   // "openai-chat" | "anthropic-messages" | ...
+    fn stream(&self, req: WireRequest) -> BoxStream<'static, StreamEvent>;
+}
+
+pub struct WireRequest {
+    pub model: Arc<Model>,          // base_url 与 compat 已合并（§4.7、§4.8）
+    pub credentials: Credentials,   // 已解析的密钥与请求头（§4.9）
+    pub context: Arc<Context>,      // 已做过跨模型转换（§4.10）；重试时共享，不再复制
+    pub options: RequestOptions,
+    pub http: reqwest::Client,      // 进程内共享
+}
+```
+
+实现规范：
+- **整体结构**：用 `async-stream` 写成生成器，依次完成：
+  1. 构造请求体；
+  2. 发送请求；
+  3. 检查状态码，非 2xx 时读取错误体并分类（§4.11）；
+  4. 逐条解析 SSE，映射为 StreamEvent；
+  5. 结束时由累积器生成最终消息。
+- **请求体**：构造逻辑写成纯函数 `build_body(&Model, &Context, &RequestOptions) -> Vec<u8>`，用快照测试覆盖（§4.15）。
+  - 消息直接从上下文借用数据并逐条序列化，不复制成 JSON 树。拼接的文本和工具参数也直接写进输出。
+  - 其余顶层字段很小，仍用 `Map` 组装，写在消息之后。
+  - 缓冲按上下文大小预估容量，并取整到 2 的幂（§1.4）。
+- **SSE 解析**：写成状态机 `on_event(&mut State, sse) -> Vec<StreamEvent>`，用录制的真实数据测试。
+- **块的反序列化**：openai-chat 的每个块直接解析成借用原文的类型化结构，不先建 JSON 树。字段类型不寻常的块退回 JSON 树，按同样的规则读取；测试用同一份录制数据比对两条路径产生的事件。
+- **容错**：未知的 SSE 事件类型和字段一律忽略，只记 trace 日志。厂商新增字段不应导致失败。
+- **Schema 清洗**：工具参数的 JSON Schema 如果包含厂商不支持的关键字，由适配器负责清洗。
+
+**openai-chat（Chat Completions 及其兼容接口）**
+
+请求映射：
+
+| 中立模型 | 请求中的形式 |
+|---|---|
+| `system` | `messages[0] = {role: "system", content}`；`compat.system_role = developer` 时改用 `developer` |
+| User 文本与图片 | `{role: "user", content}`。只有文本时 content 为字符串；带图片时为 `[{type: "text"}, {type: "image_url", image_url: {url: "data:<mime>;base64,…"}}]` |
+| Assistant 文本 | `{role: "assistant", content}` |
+| Assistant 推理 | 只有在同一模型且 `compat.replay_thinking` 开启时，才写回推理内容原来的字段（如 `reasoning_content`）；否则丢弃 |
+| Assistant 工具调用 | `tool_calls: [{id, type: "function", function: {name, arguments: "<JSON 字符串>"}}]` |
+| ToolResult | `{role: "tool", tool_call_id, content}`。`compat.tool_result_name` 开启时带上 `name`；接口不支持图片时，把图片挪到紧随其后的一条 user 消息里 |
+| tools | `tools: [{type: "function", function: {name, description, parameters}}]` |
+| 推理等级 | 由 `compat.thinking_format` 决定（§4.13） |
+| 输出上限 | 字段名由 `compat.max_tokens_field` 决定：`max_completion_tokens`（默认）或 `max_tokens` |
+| 流式 | `stream: true`；`compat.stream_usage` 开启时加上 `stream_options: {include_usage: true}` |
+| 缓存键 | `compat.prompt_cache_key` 开启时发送 `prompt_cache_key` |
+
+响应映射：
+
+| 流式字段 | 映射为 |
+|---|---|
+| `choices[0].delta.content` | TextDelta |
+| `delta.reasoning_content` / `reasoning` / `reasoning_text` | ThinkingDelta。取第一个非空的字段，并把字段名记进 signature，供回放时使用 |
+| `delta.tool_calls[i]` 首次出现（带 id 和 name） | ToolCallStart；之后的 `function.arguments` 片段映射为 ToolCallArgs |
+| `finish_reason` | stop → Stop；length → Length；tool_calls → ToolUse；content_filter → Error(content_filtered)。有些厂商在消息含工具调用时仍返回 stop，这种情况按 ToolUse 处理 |
+| `usage`（可能与 finish_reason 在同一个 chunk，也可能单独作为最后一个 chunk） | input = prompt_tokens − cached_tokens；cache_read = `prompt_tokens_details.cached_tokens`，缺失时取 `prompt_cache_hit_tokens`（DeepSeek）；output = completion_tokens；reasoning = `completion_tokens_details.reasoning_tokens` |
+
+**anthropic-messages（Anthropic Messages 及其兼容接口）**
+
+请求映射：
+
+| 中立模型 | 请求中的形式 |
+|---|---|
+| `system` | 顶层字段 `system: [{type: "text", text, cache_control}]` |
+| User | `{role: "user", content: [text / image 块]}` |
+| Assistant | content 依次为：`thinking {thinking, signature}` 或 `redacted_thinking {data}`（仅限同一模型）、`text`、`tool_use {id, name, input}` |
+| ToolResult | 连续的多个工具结果合并到同一条 user 消息中，每个是 `tool_result {tool_use_id, content, is_error}`。错误结果里的图片移出来，作为普通图片块 |
+| tools | `tools: [{name, description, input_schema}]` |
+| 推理等级 | `thinking: {type: "enabled", budget_tokens}`，预算见 §4.13；`max_tokens` 会自动提高到"预算 + 输出余量" |
+| 缓存 | 在 system 的最后一块、最后一个工具、最后两条 user 消息上加 `cache_control`，最多 4 个断点 |
+| 请求头 | `x-api-key`（`compat.auth_header = bearer` 时改用 `Authorization: Bearer`），以及 `anthropic-version: 2023-06-01` |
+
+响应映射：
+
+| SSE 事件 | 处理 |
+|---|---|
+| `message_start` | 记录 response_id 和初始 usage |
+| `content_block_start` | 建立一个内容块；`tool_use` 块映射为 ToolCallStart |
+| `content_block_delta` | `text_delta` → TextDelta；`thinking_delta` → ThinkingDelta；`signature_delta` → 写入签名；`input_json_delta` → ToolCallArgs |
+| `message_delta` | 更新 usage 和 stop_reason：end_turn、stop_sequence → Stop；max_tokens → Length；tool_use → ToolUse；refusal → Error(content_filtered) |
+| `message_stop` | Done |
+| `error` | Failed，按 `error.type` 分类，例如 overloaded_error → Overloaded |
+| `ping` | 忽略 |
+
+usage 对应关系：input = `input_tokens`，cache_read = `cache_read_input_tokens`，cache_write = `cache_creation_input_tokens`，output = `output_tokens`。
+
+### 4.7 兼容标志 Compat（D-05）
+
+各家兼容接口在细节上的差异，统一用数据来表达，不在适配器里写针对某个厂商的分支。
+
+```rust
+#[serde(deny_unknown_fields)]
+pub struct Compat {
+    // openai-chat
+    pub system_role: Option<SystemRole>,           // system（默认）| developer
+    pub max_tokens_field: Option<MaxTokensField>,  // max_completion_tokens（默认）| max_tokens
+    pub stream_usage: Option<bool>,                // 默认 true
+    pub thinking_format: Option<ThinkingFormat>,   // §4.13
+    pub replay_thinking: Option<bool>,             // 同一模型多轮对话时回放推理内容，默认 false
+    pub tool_result_name: Option<bool>,            // tool 消息需要带 name，默认 false
+    pub tool_result_images: Option<bool>,          // tool 消息可以包含图片，默认 false
+    pub prompt_cache_key: Option<bool>,            // 默认 false
+    pub strict_tools: Option<bool>,                // 默认 false
+    // anthropic-messages
+    pub auth_header: Option<AuthHeader>,           // x_api_key（默认）| bearer
+    pub cache_control: Option<bool>,               // 默认 true
+    // 通用
+    pub context_overflow_patterns: Option<Vec<String>>, // 用于识别"上下文超限"的额外错误文本
+}
+```
+
+合并顺序为：适配器默认值 → 厂商的 `compat` → 模型的 `compat`。逐字段覆盖，后者优先。
+
+### 4.8 厂商与模型目录
+
+```rust
+pub struct ProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub api: String,                              // 默认线协议
+    pub base_url: String,
+    pub auth: AuthConfig,                         // §4.9
+    pub headers: BTreeMap<String, String>,
+    pub currency: Currency,                       // 默认 USD
+    pub compat: Compat,
+    pub models: Vec<ModelConfig>,                 // 配置形态，字段与 Model 相同但大多可选
+}
+
+pub struct Model {                                // 合并后的运行时视图
+    pub id: String,                               // 发给厂商的模型名
+    pub name: String,                             // 展示名
+    pub provider: String,
+    pub api: String,                              // 模型级设置优先于厂商默认值
+    pub base_url: String,                         // 模型级设置优先于厂商设置
+    pub context_window: u32,
+    pub max_output_tokens: u32,
+    pub reasoning: bool,                          // 是否支持推理等级
+    pub thinking_levels: Option<ThinkingLevelMap>,  // 统一等级到厂商取值的映射（§4.13）
+    pub thinking_budgets: Option<ThinkingBudgets>,  // 预算型推理的 token 数（§4.13）
+    pub input: Vec<Modality>,                     // text | image
+    pub cost: ModelCost,                          // 每百万 token 单价：input / output / cache_read / cache_write
+    pub compat: Compat,                           // 已合并
+}
+```
+
+目录有两个来源，后者覆盖前者：
+1. **内置目录**：编译进二进制文件（`catalog/builtin.toml`）。
+2. **用户目录**：`~/.finx/models.toml`。
+   - 同 id 的厂商按字段覆盖；
+   - 同 id 的模型也按字段覆盖：只改写用户写出的字段，`thinking_levels` 逐项合并，`compat` 按 §4.7 合并。例如只调小 `context_window`，模型的推理能力、思考档位和图片输入都保留（以前是整条替换，这些会被悄悄丢掉）；
+   - 可以新增厂商。
+
+项目目录中的配置不能定义或修改厂商（§11.7）。
+
+v1 内置的厂商：
+
+| id | 名称 | 线协议 | base_url | 密钥环境变量 |
+|---|---|---|---|---|
+| openai | OpenAI | openai-chat（M2 起改为 openai-responses） | https://api.openai.com/v1 | OPENAI_API_KEY |
+| anthropic | Anthropic | anthropic-messages | https://api.anthropic.com | ANTHROPIC_API_KEY |
+| deepseek | DeepSeek | openai-chat | https://api.deepseek.com | DEEPSEEK_API_KEY |
+| qwen | 通义千问（阿里云百炼） | openai-chat | https://dashscope.aliyuncs.com/compatible-mode/v1 | DASHSCOPE_API_KEY |
+| kimi | 月之暗面 Kimi | openai-chat | https://api.moonshot.cn/v1 | MOONSHOT_API_KEY |
+| glm | 智谱 GLM | openai-chat | https://open.bigmodel.cn/api/paas/v4 | ZHIPUAI_API_KEY |
+| openrouter | OpenRouter | openai-chat | https://openrouter.ai/api/v1 | OPENROUTER_API_KEY |
+| ollama | Ollama（本地） | openai-chat | http://localhost:11434/v1 | 无 |
+
+- 不少厂商同时提供 Anthropic 兼容端点（例如 DeepSeek 的 `https://api.deepseek.com/anthropic`）。需要使用时，新增一个 `api = "anthropic-messages"` 的厂商条目即可。
+- 内置目录中的模型列表和价格会过时，用户配置可以覆盖它们，后续维护方式见 Q-08。完整示例见附录 C。
+- 目录中没有列出的模型 id 也可以直接使用：只要厂商存在，就按默认参数（上下文窗口 128,000，输出上限 8,192，不支持推理和图片）生成模型，并发出 warning。
+- 单价未配置（为 0）时，界面显示"费用未知"，而不是 0 元。
+
+### 4.9 鉴权
+
+```rust
+pub enum AuthConfig {
+    /// 不需要鉴权（本地服务）
+    None,
+    /// API Key：依次尝试 value、env 中第一个非空的变量、凭据文件
+    ApiKey { env: Vec<String>, value: Option<String> },
+    /// 执行外部命令获取密钥（例如从系统钥匙串读取），结果在进程内缓存 ttl 秒
+    Command { command: Vec<String>, ttl_secs: u64 },
+}
+```
+
+- **配置写法**：
+  - `api_key_env = "DEEPSEEK_API_KEY"`
+  - `auth = "none"`
+  - `api_key_command = ["security", "find-generic-password", "-s", "deepseek", "-w"]`
+- **保存的密钥**（D-39，已实现）：配置和环境变量都没有时，再查保存的密钥。macOS 上保存在登录钥匙串（服务名 `finx`，账户名为服务商 id），经由 `/usr/bin/security` 读写，写入时密钥走标准输入；其他平台保存在 `~/.finx/credentials.toml`，权限 0600。`FINX_CREDENTIAL_STORE=file` 在 macOS 上也改用文件，`none` 关闭这一来源。每个进程对每个服务商最多读一次，之后用内存里的结果。目前经协议的 `auth/set`、`auth/delete` 写入（桌面端的密钥引导用它）；命令行的 `finx auth set <provider>` 以后提供。
+- **解析失败**：返回 `Failed`，kind 为 auth；错误信息中列出应该设置的环境变量名。
+- **不落日志**：密钥不进入任何日志；调试转储中，所有鉴权相关的请求头都脱敏（§11.6）。
+
+### 4.10 跨模型历史转换
+
+`ModelRegistry::stream()` 在调用适配器之前，会按目标模型转换历史：
+
+1. **推理块**：助手消息的 (provider, api, model) 与目标模型一致时保留，否则删除。原因有两个：签名只对原模型有效；如果把推理文本当普通文本发给另一个模型，它会被误认为回复内容。
+2. **图片**：目标模型不支持图片输入时，把图片替换为文字 `(image omitted: the current model does not accept images)`。
+3. **工具调用 id**：如果 id 不符合目标线协议的格式要求（例如 anthropic 要求匹配 `^[a-zA-Z0-9_-]+$`），就用确定性映射生成新 id，调用和结果中的 id 同步替换。
+4. **空内容**：删除空的文本块，以及删完内容后变空的助手消息。
+
+### 4.11 错误、重试与超时（D-07）
+
+```rust
+pub struct LlmError {
+    pub kind: ErrorKind,
+    pub message: String,
+    pub status: Option<u16>,
+    pub provider_code: Option<String>,
+    pub retry_after_ms: Option<u64>,
+}
+
+pub enum ErrorKind {
+    Auth, QuotaExceeded, RateLimited, Overloaded, Server, Network, Timeout,
+    ContextOverflow, InvalidRequest, ContentFiltered, Protocol, Unknown,
+}
+```
+
+| 判定依据 | kind | 自动重试 |
+|---|---|---|
+| 401 / 403 | Auth | 否 |
+| 402，或表示余额、配额不足的错误码 | QuotaExceeded | 否 |
+| 429 | RateLimited | 是 |
+| 503 / 529 / overloaded | Overloaded | 是 |
+| 其他 5xx | Server | 是 |
+| 连接失败、连接被重置 | Network | 是 |
+| 超时 | Timeout | 是 |
+| 4xx，且错误信息匹配"上下文超限"的模式 | ContextOverflow | 否（由内核压缩后重试，§6.4） |
+| 其他 4xx | InvalidRequest | 否 |
+| 被内容审查拦截 | ContentFiltered | 否 |
+| 流的格式无法解析 | Protocol | 否 |
+
+重试规则：
+- **时机**：只在**收到第一个内容增量之前**自动重试。已经输出过内容再失败的，直接返回 `Failed`，避免重复输出。
+- **退避**：第 n 次重试前等待 `min(30s, 0.5s × 2^(n−1))`，再乘以 0.8–1.2 之间的随机抖动。默认最多重试 4 次。
+- **Retry-After**：遵守服务端的 `retry-after` 或 `retry-after-ms`。如果要求等待超过 60 秒，就不等了，直接失败并说明原因。
+- **通知**：每次重试前发出 `Retrying` 事件，供界面展示。
+
+超时设置（都可以配置）：
+
+| 阶段 | 默认值 |
+|---|---|
+| 建立连接 | 10 s |
+| 收到响应头 | 60 s |
+| 两个流事件之间的空闲 | 300 s |
+| 整个请求 | 不限 |
+
+两个流事件之间的空闲计时，整个流共用一个定时器：每次等下一个事件时记下开始的时间，定时器先到了而空闲还不够时，再往后挪。每个事件各设一个定时器，要拿两次运行时的定时器锁；很多会话同时快速输出时，工作线程大半时间在等这把锁（§1.4）。
+
+### 4.12 用量与费用
+
+- **口径统一**：各家的 usage 都换算成 §4.3 的定义——input 不包含命中缓存的部分，output 包含推理部分。
+- **费用**：每类 token 数 × 单价 ÷ 1,000,000，total 为四项之和；币种取自厂商配置。
+- **累计**：会话按模型和币种分别累计用量（`UsageTotals`），随 `turn_completed` 和 `task_completed` 事件下发。
+- **上下文大小**：一次成功响应之后，上下文大小 = input + cache_read + cache_write + output。它是 §7.5 中估算的基准。
+
+### 4.13 推理等级映射
+
+统一的推理等级为 `off | minimal | low | medium | high | max`。各 `thinking_format` 对应的请求参数和推理内容字段如下：
+
+| thinking_format | 请求参数 | 推理内容字段 |
+|---|---|---|
+| openai | `reasoning_effort` | chat 接口不返回推理文本 |
+| deepseek | `thinking: {type: "enabled" \| "disabled"}`；开启时附带 `reasoning_effort` | `reasoning_content` |
+| qwen | `enable_thinking: true \| false`，可附带 `thinking_budget` | `reasoning_content` |
+| zai | `thinking: {type: "enabled" \| "disabled"}` | `reasoning_content` |
+| openrouter | `reasoning: {effort}` | `reasoning` |
+| none | 不发送 | — |
+
+等级如何取值：
+- **默认映射**：minimal → minimal，low → low，medium → medium，high → high，max → high。
+- **模型覆盖**：模型可以用 `thinking_levels` 覆盖默认映射。值为空字符串 `""` 表示不支持该等级（TOML 没有 null），此时改用比它低的最近一个可用等级。
+- **无法关闭推理的模型**：`off` 时不发送关闭参数。
+- **不支持推理的模型**（`reasoning = false`）：忽略推理等级。
+
+预算型推理（anthropic，以及 qwen 的 `thinking_budget`）的默认预算如下，模型可以用 `thinking_budgets` 覆盖：
+
+| 等级 | minimal | low | medium | high | max |
+|---|---|---|---|---|---|
+| 预算 token | 1,024 | 4,096 | 10,240 | 24,576 | 32,768 |
+
+- **预算上限**：实际预算不超过 `max_output_tokens − 4,096`，给回复正文留出空间。
+- **请求的 max_tokens**：取 `min(max_output_tokens, 预算 + 16,384)`。
+
+### 4.14 HTTP 客户端
+
+- **共享连接**：整个进程共用一个 `reqwest::Client`，带连接池，支持 HTTP/2 和 gzip。
+- **TLS**：使用 rustls，证书交给操作系统校验（rustls-platform-verifier）。
+  - macOS 上调用系统的 Security 框架；Linux 上读取系统证书库。因此企业代理安装的根证书同样受信任。
+  - 启动时不再一次性加载全部系统根证书。在 macOS 上，这一步原本要 115 ms（§1.4）。
+  - HTTP 客户端在第一次请求时才创建，证书校验器在第一次 TLS 握手时才创建。不调用模型的命令完全不碰 TLS。
+  - Linux 上，创建校验器要读取并解析系统证书库。因此第一次请求开始时，会在后台线程里提前创建校验器，与 DNS 查询和 TCP 建连并行。这部分耗时尚未实测。
+- **空闲连接**：连接池里的空闲连接 30 秒后关闭（默认是 90 秒），常驻服务安静下来后更早释放连接的缓冲。
+- **代理**：遵守 `HTTPS_PROXY`、`HTTP_PROXY`、`NO_PROXY`。
+- **User-Agent**：`finx/<version> (<os>; <arch>)`。
+
+### 4.15 测试支持
+
+- **ScriptedApi**：线协议 id 为 `scripted`。它按预设脚本依次返回事件序列（文本、推理、工具调用、错误、延迟），并记录收到的每个请求。内核的端到端测试全部基于它。
+- **回放测试**：用 wiremock 提供录制好的 SSE（`tests/fixtures/<api>/<case>.sse`），断言事件序列和最终消息。目前 SSE 样本直接写在测试代码里，按 DeepSeek 实测响应的格式构造。
+- **请求体快照**：两种线协议各用一段覆盖各类消息的对话，在各个 compat 开关下生成请求体，与 `crates/finx-llm/tests/fixtures/bodies/*.json` 比对。
+  - 对话中包含多段文本、图片、推理（普通与 redacted）、多个工具调用，以及出错、为空、带图片的工具结果。
+  - 有意修改请求体时，用 `FINX_UPDATE_SNAPSHOTS=1` 重新生成快照。
+- **录制工具**：`finx chat --record <dir>` 把真实响应的原始 SSE 脱敏后保存，用作测试素材（M0，尚未实现）。
+
+## 5. 工具系统（finx-tools）
+
+### 5.1 设计目标
+
+- **接口尽量小**：工具只需要声明 spec 和自己是只读还是修改类，再实现 execute。
+- **工具内不处理通用逻辑**：审批、并发、截断兜底、事件发送、写入记录，都由内核统一处理。
+- **通过 Environment 访问外部**：文件和进程都经由 Environment 访问（D-09）。以后接入沙箱、容器或远程执行时，工具代码不用改。
+
+### 5.2 接口
+
+```rust
+#[async_trait]
+pub trait Tool: Send + Sync + 'static {
+    /// 名称、描述、参数的 JSON Schema
+    fn spec(&self) -> &ToolSpec;
+    /// 只读：可以并行，默认免审批；修改：独占执行，受审批策略约束
+    fn kind(&self) -> ToolKind { ToolKind::ReadOnly }
+    /// 汇入系统提示词中"工具规则"一段的条目
+    fn guidelines(&self) -> &[&'static str] { &[] }
+    /// 一次调用做什么（分类、标题、涉及的路径），供界面展示；args 可能无效，能说多少说多少
+    fn describe(&self, args: &serde_json::Value, env: &dyn Environment) -> ToolDescription;
+    /// 整理参数：修正常见的格式错误（D-100）。内核最先调用，之后的事件、钩子、审批、执行看到的都是整理后的参数
+    fn prepare_arguments(&self, args: serde_json::Value) -> serde_json::Value { args }
+    /// 预检：要询问用户之前，先确认这次调用能成功（D-101）。只检查，不改动任何东西
+    async fn check(&self, args: &serde_json::Value, ctx: &ToolCtx) -> Result<(), ToolError> { Ok(()) }
+    async fn execute(&self, args: serde_json::Value, ctx: ToolCtx) -> Result<ToolOutput, ToolError>;
+}
+
+pub enum ToolKind { ReadOnly, Mutating }
+
+pub struct ToolCtx {
+    pub call_id: String,
+    pub env: Arc<dyn Environment>,
+    pub files: Arc<FileTracker>,     // §5.6
+    pub locks: Arc<PathLocks>,       // 按路径的写锁，同一棵智能体树的会话共用（subagent-design.md §6.5）
+    pub limits: OutputLimits,        // §5.7
+    pub progress: ProgressSink,      // 实时输出，转为 tool_progress 事件
+    pub cancel: CancellationToken,
+    pub model_accepts_images: bool,  // 当前模型是否接受图片输入（read 使用）
+    pub output_dir: PathBuf,         // 会话数据目录下的 tool-output，存放被裁切结果的完整内容（§5.7）
+    pub session_state: Option<Arc<dyn Any + Send + Sync>>,  // 调用方会话给内核自带工具的状态，如它的子智能体；本 crate 的工具不用
+}
+
+pub struct ToolOutput {
+    pub content: Vec<UserContent>,           // 发给模型
+    pub details: Option<serde_json::Value>,  // 供界面和日志使用
+    pub is_error: bool,
+}
+
+#[derive(thiserror::Error)]
+pub enum ToolError {
+    #[error("invalid arguments: {0}")] InvalidArgs(String),
+    #[error("{0}")]                    Failed(String),
+    #[error("cancelled")]              Cancelled,
+    #[error("io error: {0}")]          Io(#[from] std::io::Error),
+}
+```
+
+工具返回 `Err` 时，内核把它转成一条 `is_error = true` 的工具结果交给模型，任务继续进行。
+
+- **参数整理**（D-100）：只修正意图明确的常见错误，例如列表被写成 JSON 字符串、单个对象没有包成数组、参数用了别的常见名字。认不出的形状原样留下，交给反序列化报错。会话历史里保留模型的原始输出，只有本次执行用整理后的参数。
+- **预检**（D-101）：调用需要询问用户时，内核先调用 check。注定失败的调用（例如 edit 的 old_text 找不到、write 的目标在本会话中没读过）直接得到错误结果，用户不会被问到。同一批调用里，前面已经有放行的调用时跳过预检：那个调用会先执行，可能改变预检依据的状态（read 也会，write 的预检要看文件是否读过），这时预检可能拒绝本来会成功的调用。
+
+### 5.3 类型化参数
+
+```rust
+#[async_trait]
+pub trait TypedTool: Send + Sync + 'static {
+    type Args: DeserializeOwned + JsonSchema + Send + Sync;
+    const NAME: &'static str;
+    const DESCRIPTION: &'static str;
+    fn kind(&self) -> ToolKind { ToolKind::ReadOnly }
+    fn guidelines(&self) -> &[&'static str] { &[] }
+    fn prepare_arguments(&self, args: serde_json::Value) -> serde_json::Value { args }
+    /// 参数先反序列化，失败时直接返回 InvalidArgs，所以参数错误在预检阶段就会被发现
+    async fn check(&self, args: &Self::Args, ctx: &ToolCtx) -> Result<(), ToolError> { Ok(()) }
+    async fn run(&self, args: Self::Args, ctx: ToolCtx) -> Result<ToolOutput, ToolError>;
+}
+
+/// 包装器：spec 由 schemars 生成后缓存；check 和 execute 都先反序列化参数，失败时返回 InvalidArgs
+pub struct Typed<T: TypedTool> { inner: T, spec: ToolSpec }
+impl<T: TypedTool> Tool for Typed<T> { /* ... */ }
+```
+
+- **Schema 后处理**：生成的 JSON Schema 需要处理后再发给模型：
+  - 内联所有 `$ref`；
+  - 去掉 `$schema` 和 `title`；
+  - 顶层设为 `type: object`、`additionalProperties: false`；
+  - 可选字段只标为非必填，不用 `null` 联合类型，因为部分厂商不接受。
+- **宽松数值**：整数参数也接受字符串形式（如 `"10"`），因为模型偶尔会这样输出。
+- **错误提示**：参数错误的提示信息要包含字段名和期望的类型，便于模型自行修正后重试。
+
+### 5.4 并发控制（D-10）
+
+- **读写锁**：每个会话一把 `tokio::sync::RwLock<()>`。只读工具拿读锁，修改类工具拿写锁。
+  - 这把锁按先来先到的顺序公平排队，所以同一批调用中，排在修改类调用后面的只读调用会等它执行完。
+- **并发上限**：每个会话一个信号量，限制同时执行的工具数量，默认 8。
+- **结果顺序**：
+  - 写入历史时按模型给出的调用顺序；
+  - `tool_completed` 事件按实际完成的顺序发出。
+
+### 5.5 执行环境 Environment（D-09）
+
+```rust
+#[async_trait]
+pub trait Environment: Send + Sync + 'static {
+    fn cwd(&self) -> &Path;
+    fn workspace_roots(&self) -> &[PathBuf];
+    fn os(&self) -> OsInfo;
+    /// 模型给出的路径：`~` 展开、`file://` URL（百分号解码）、相对 cwd、按字面去掉 `.` 和 `..`
+    fn resolve(&self, raw: &str) -> PathBuf;
+    /// 只读普通文件：命名管道、套接字、设备立即返回 NotRegularFile，不会卡住
+    async fn read_file(&self, path: &Path, max_bytes: u64) -> io::Result<FileContent>;
+    /// 文本文件的一段行（D-103），不把整个文件读进内存；默认实现基于 read_file
+    async fn read_lines(&self, path: &Path, window: &LineWindow) -> io::Result<TextWindow>;
+    async fn write_file(&self, path: &Path, data: &[u8]) -> io::Result<WriteOutcome>;
+    async fn metadata(&self, path: &Path) -> io::Result<FileMeta>;
+    async fn list_dir(&self, path: &Path) -> io::Result<Vec<DirEntry>>;
+    async fn exec(&self, req: ExecRequest) -> io::Result<ExecOutput>;
+}
+
+pub struct LineWindow {
+    pub offset: u64,             // 第一行，从 1 开始
+    pub max_lines: usize,
+    pub max_bytes: usize,        // 返回文本的字节预算，每行另算一个换行
+    pub max_line_chars: usize,   // 超过的行截断，并注明全长
+}
+
+pub struct TextWindow {
+    pub lines: Vec<String>,      // 不含换行；第一行即使超出字节预算也会返回
+    pub total_lines: u64,
+    pub total_exact: bool,       // 否则 total_lines 是下限
+    pub byte_limited: bool,      // 窗口因字节预算而结束
+    pub encoding: TextEncoding,  // Utf8、Utf16Le、Utf16Be
+    pub total_size: u64,
+    pub stamp: FileStamp,        // 读到的版本（§5.6）
+}
+
+pub struct FileMeta {
+    pub is_dir: bool,
+    pub is_file: bool,
+    pub size: u64,
+    pub readonly: bool,          // 普通文件且本进程不能写（权限位、ACL、不可变标志、只读文件系统）
+    pub stamp: FileStamp,
+}
+
+pub struct ExecRequest {
+    pub command: String,
+    pub cwd: PathBuf,
+    pub env: HashMap<String, String>,   // 叠加在继承来的环境变量之上
+    pub timeout: Duration,
+    pub capture: CaptureConfig,         // 头尾各保留多少字节、溢出文件的路径
+    pub progress: Option<ProgressSink>,
+    pub cancel: CancellationToken,
+}
+
+pub struct ExecOutput {
+    pub exit_code: Option<i32>,         // 被信号终止时为 None
+    pub signal: Option<i32>,
+    pub timed_out: bool,
+    pub cancelled: bool,
+    pub duration: Duration,
+    pub output: CapturedOutput,         // head、tail、总字节数、总行数、完整输出文件的路径
+}
+```
+
+v1 只实现 `LocalEnvironment`：
+
+**路径**
+- 相对路径按 cwd 解析，支持 `~` 展开和 `file://` URL。
+- 判断路径是否越出工作区边界时，使用解析符号链接之后的真实路径。路上遇到悬空的符号链接时继续沿链接走：经由它写入会创建它指向的文件，所以检查的是那个文件（§11.5）。
+
+**读文件**
+- 只读普通文件：打开前检查类型，以 `O_NONBLOCK` 打开后再用 fstat 确认一次（防止检查后被替换）。命名管道、套接字、设备立即报错，读取不会卡住。
+- read_lines 流式读取（D-103）：1 MiB 缓冲区，用 memchr 找换行，内存只和窗口有关，与文件大小无关。
+  - `\n`、`\r\n`、单独的 `\r` 都结束一行；按 UTF-8 有损解码；UTF-8 BOM 不显示。
+  - 前 8 KiB 有 NUL 字节视为二进制。带 BOM 的 UTF-16（LE、BE）在内存中解码，最多 16 MiB。
+  - 窗口之前的行只数不留；窗口之后最多再数 256 MiB 来得到总行数，超过时如实给出下限。
+- **行索引**：一次读到文件末尾的扫描，会记下总行数和每个 1 MiB 缓冲区开头的位置（行号、是否在行中、前一个字节是否为 `\r`）。环境保留最近 8 个大文件的行索引，以文件戳（§5.6）为准；同一版本再读时，从窗口前最近的位置开始，读完窗口即停，总行数取自索引。逐页读大文件（包括被裁切的工具结果，§5.7）每页只花窗口本身的代价。
+
+**写文件**（D-104）
+- 先在目标所在目录用 `create_new`（O_EXCL）建一个随机名字的临时文件，写入后 rename 到目标，保证原子性：读者以及崩溃之后的文件，要么是旧版本，要么是完整的新版本。
+- rename 之前保证数据先落盘：macOS 用写屏障（`F_BARRIERFSYNC`），确保数据在 rename 之前写到磁盘，代价约为完整刷盘（`F_FULLFSYNC`，每次约 5 ms）的五分之一；崩溃时可能丢掉最新一次写入，但不会留下残缺的文件。文件系统不支持写屏障时退回完整刷盘；其他系统用 fsync。
+- **符号链接**：沿链接一级级走到最终的文件，在它所在的目录里替换，链接本身保持不变。相对目标从链接所在目录算起；悬空链接像 shell 重定向一样创建目标文件，但不创建缺失的目录；超过 40 跳视为循环。
+- **硬链接**：替换后与其他名字脱离，这是有意的。原地写入会经由硬链接改到工作区之外的同一个文件，绕过审批时的边界检查。
+- **只读文件**：本进程不能写的文件直接拒绝。rename 只需要目录的写权限，不检查会把只读文件替换掉。
+- **特殊文件**：命名管道、套接字、设备不会被普通文件替换。
+- 保留原文件的权限位（替换时临时文件先以 0600 创建，写完再复制权限）；新文件按 umask；父目录不存在时自动创建。
+
+**启动进程**
+- 使用 `/bin/bash -c <command>` 启动；系统没有 bash 时改用 `/bin/sh`。
+- 子进程放进独立的进程组，stdin 接 `/dev/null`。
+- 环境变量在继承当前进程的基础上做以下调整：
+  - 去掉各厂商的密钥变量（§11.6）；
+  - 设置 `PAGER=cat`、`GIT_PAGER=cat`、`GIT_TERMINAL_PROMPT=0`，避免命令卡在分页器或交互提示上；
+  - 注入 `FINX_CALL_ID`，值为本次工具调用的 id；注入 `AI_AGENT=finx`，方便开发工具识别出自己在 agent 里运行。
+
+**采集输出**
+- stdout 和 stderr 按到达顺序合并。
+- 去掉终端转义序列（颜色、标题、超链接等），保留换行和制表符，`\r\n` 变为 `\n`，其他控制字符去掉；按 UTF-8 有损解码。清洗按流进行，跨两次读取的转义序列也能去掉。
+- 内存中只保留头部 10 KB 和尾部 40 KB；超出时，把完整输出同时写进溢出文件。溢出文件写的是同样清洗过的文本，和模型看到的头尾逐字节一致，行号也一致（§5.7）。
+
+**超时与取消**
+- 先向整个进程组发 SIGTERM。
+- 2 秒后仍未退出，再发 SIGKILL，并等待进程回收。
+
+非本地环境中 grep、find、ls 如何实现，见 Q-09。
+
+### 5.6 文件状态跟踪 FileTracker
+
+- **记录读取**：记下本会话中 read 过的文件，保存路径以及读取时的文件戳（FileStamp）。文件戳由 Environment 在读、写、取元数据时一并返回，包括：
+  - 大小和 mtime；
+  - ctime：由系统维护、无法回设，所以保留 mtime 的复制（`cp -p`、`rsync -t`、解压归档）也能发现；
+  - 设备号和 inode：文件被另一个文件改名覆盖时能发现。
+- **覆盖已有文件**：write 覆盖一个已存在的文件之前，要求该文件在本会话中被 read 过，并且文件戳没有变化。否则返回错误（没读过时要求先读，读后被改过时要求重读），避免覆盖掉用户或其他进程做的修改。
+- **更新记录**：edit 和 write 成功后都会更新记录，这样模型自己做的修改不会被误判为外部修改。
+- **新建文件**：不受上述限制。
+
+### 5.7 输出截断
+
+| 场景 | 上限 | 方式 | 附加给模型的提示 |
+|---|---|---|---|
+| read 文本 | 2000 行或 50 KB，以先到者为准 | 保留开头 | `[Showing lines 1-2000 of 5231. Use offset=2001 to continue.]`；因 50 KB 结束时为 `[Showing lines 1-812 of 5231 (50 KB limit). Use offset=813 to continue.]`；总数是下限时写 `of at least N` |
+| read 单行 | 2000 字符 | 截断行尾 | `… [line truncated: 2000 of 81234 characters]` |
+| bash 输出 | 50 KB（头 10 KB + 尾 40 KB） | 保留首尾，切在行边界上；完整输出存文件 | `[Lines 201-1434 of 1520 omitted (56.7 KB). Full output: <path> (read it with offset=201)]` |
+| grep | 100 条匹配；每行 500 字符 | 截断列表 | `[Showing 100 of 532 matches. Narrow the pattern or path.]` |
+| find | 1000 条 | 截断列表 | 同上 |
+| ls | 500 条 | 截断列表 | 同上 |
+| 任意工具结果（兜底） | 50 KB | 头尾各一半，完整内容存文件 | 同 bash，由内核统一施加 |
+| 切点落在超长行里 | 同上 | 按字节保留首尾 | `[Bytes 1441-23133 omitted (21.2 KB), inside a long line. Full output: <path> (print those bytes with: head -c 23133 <path> \| tail -c +1441)]` |
+
+- **只裁一次**：裁切在工具返回、经过 `after_tool` 钩子之后、写入历史之前完成。写进历史和日志的就是裁切后的版本，之后不再改动，所以两次压缩之间请求的前缀逐字节稳定（§7.7）。
+- **完整内容可取回**：被裁掉的内容存到会话数据目录的 `tool-output/<call_id>.txt`（§9.1）。省略说明给出被省略的行号范围和 read 的 offset，模型一次 read 就能接着看。
+  - 文件只写一次，从不覆盖：有的厂商每次响应都用 `call_0` 这类 id，重名时加数字后缀。
+  - 单个文件最多 64 MB（`max_saved_bytes`），防止失控的命令写满磁盘。
+  - 切点落在超长行里时（例如压缩过的 JSON），没有行号可用，省略说明改为给出被省略的字节范围和取出它的命令；read 会截断超过 2,000 字符的行，这时用 bash 按字节分段读取。
+- **随窗口收紧**：单个结果的上限同时不超过可用窗口的 10%（按 4 字节 1 个 token 换算），bash 的头尾按比例缩小。窗口 32k 的模型一次结果最多约 9.5 KB，一次工具调用不会占满窗口。
+
+各项上限都可以在配置中调整（§10.2）。
+
+### 5.8 内置工具（D-08）
+
+发给模型的工具描述、结果文本和错误信息一律使用英文（D-16）。面向用户的界面文案另行处理。
+
+#### read（只读，M1）
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| path | string | 是 | 文件路径，可以相对 cwd，也可以是绝对路径 |
+| offset | integer | 否 | 起始行号，从 1 开始 |
+| limit | integer | 否 | 最多读取的行数 |
+
+行为：
+- **读取方式**：先读前 64 KiB，同时用来判断图片、二进制和编码；文件不大于 64 KiB 时一次读完，更大的文件用 read_lines 流式读取（§5.5），任何位置都能读到，内存与文件大小无关。
+- **图片**：通过文件头识别 png、jpeg、gif、webp，并校验签名。模型支持图片输入时，作为图片内容返回，文字部分形如 `Image: <path> (PNG, 1280x720, 345.0 KB)`；不支持时返回一段文字说明。
+  - 大小上限按 base64 之后计算，为 5 MiB（原始数据约 3.75 MiB）：厂商按编码后的大小拒绝图片，而图片一旦进入只追加的历史，之后每次请求都会失败。
+  - 不解码图片，直接从文件头读出宽高（PNG IHDR、GIF 逻辑屏幕、JPEG SOFn、WebP VP8/VP8L/VP8X）；任一边超过 8000 像素时报错。读不出宽高时只检查大小。
+- **二进制文件**：前 8 KB 中含有 NUL 字节即视为二进制，返回错误并附上文件大小；带 BOM 的 UTF-16 例外，按文本解码。
+- **特殊文件**：命名管道、套接字、设备立即报错（`<path> is not a regular file (named pipe); it cannot be read.`），不会卡住。
+- **文本**：
+  - `\n`、`\r\n`、单独的 `\r` 都结束一行，按 UTF-8 有损解码，按 offset/limit 切片后再按 §5.7 截断；
+  - 原样返回，不加行号（Q-05），因为行号容易被模型抄进 edit 的 old_text 里；
+  - offset 超出末尾时报错，并给出真实的总行数。
+- **路径容错**：路径不存在时依次尝试几种常见的变体，用第一个存在的，并在结果末尾注明 `[Read <真实路径>; the path given does not exist.]`，让后续的 edit 用对路径。read 是只读工具，换一个路径读不影响安全判断。变体为：
+  - 去掉开头的 `@`（聊天中提及文件的习惯）；
+  - 各种 Unicode 空格换成普通空格；
+  - `AM.`/`PM.` 前的空格换成窄不换行空格 U+202F（macOS 截图文件名）；
+  - `'` 换成 `’`（本地化的截图文件名）；
+  - 先试单项，再试组合。
+- **参数整理**：没有 `path` 时把 `file_path` 当作 `path`。
+- **记录**：读取后把读到的版本（文件戳）写入 FileTracker。
+- **错误**：文件不存在；路径是目录（提示改用 ls）；不是普通文件；没有读取权限。
+- **规则提示**：`Use read to view files instead of cat/head/tail in bash.`
+
+#### write（修改，M1）
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| path | string | 是 | 文件路径 |
+| content | string | 是 | 完整的文件内容 |
+
+- 父目录不存在时自动创建。
+- 覆盖已存在的文件时受 §5.6 约束。
+- 原子写入，经由符号链接时替换链接指向的文件，拒绝只读文件和特殊文件（§5.5）。
+- **保留格式**：覆盖已有的 UTF-8 文件时看它的前 64 KiB。原文件有 BOM 而新内容没有时补上；原文件全用 CRLF（至少一个 CRLF、没有单独的 LF）而新内容只有 LF 时，换成 CRLF。新内容自带 `\r`、原文件换行混杂或不是 UTF-8 时不转换。否则用 LF 内容覆盖 CRLF 文件会让 git 里每一行都变。结果里注明保留了什么，例如 `(overwritten, CRLF line endings kept)`。
+- **预检**（§5.2）：目标是目录、某级父路径是文件、文件本会话没读过或读后被改过、只读、不是普通文件，都在询问用户之前报错，执行时用同一套检查。
+- **参数整理**：`file_path` 当作 `path`，`contents` 当作 `content`；`content` 是 JSON 对象或数组时（有的模型这样写 JSON 文件），换成格式化后的文本加末尾换行。
+- 结果形如 `Wrote 1532 bytes to src/main.rs (created)`，字节数是实际写入的大小；details 为 `{created, bytes}`。
+- 规则提示：`Use write to create a file or to replace a file completely; use edit for partial changes.`
+
+#### edit（修改，M1）
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| path | string | 是 | 文件路径 |
+| edits | `{old_text, new_text}` 数组 | 是 | 至少一项 |
+
+执行步骤：
+1. **读取**：文件最大 16 MB；必须是普通文件、可写。UTF-8 照常处理；带 BOM 的 UTF-16（LE、BE）先解码，写回时用原来的编码和 BOM；解码后不能逐字节还原的 UTF-16（有落单的代理项、末尾多一个字节）拒绝编辑。
+2. **匹配**：每个 old_text 都在**原始内容**中查找，必须恰好出现一次（D-106）。查找在一份"视图"上进行：BOM 之后的文本，`\r\n` 和单独的 `\r` 都看成 `\n`，并保留回到原文字节位置的映射。依次尝试三级，前一级一处都没找到才用下一级：
+   - 精确匹配；
+   - 忽略每行行尾的空白（两边都忽略）；
+   - 再把排版字符统一成 ASCII：弯引号 ‘ ’ ‚ ‛ 和 “ ” „ ‟、各种连字符和破折号、不换行空格等特殊空格。
+
+   唯一性在找到匹配的那一级判断：这一级找到多处就报错，不再往宽松的级别找。任何一级都不忽略缩进。宽松匹配映射回原文中的精确区间，只替换这个区间，区间外的字符保持原样（例如同一行别处的弯引号）。
+3. **报错**：
+   - 找到多处时给出行号（最多列 10 个，超过 100 处只说"more than 100"）：`old_text #2 matches 3 times in <path> (lines 10, 45, 80); include more surrounding lines to make it unique.`
+   - 找不到时，如果忽略每行首尾空白后能整行对上（只是缩进不同），说明这一点，并给出文件中对应的原文和行号范围（最多 40 行、4 KB），模型不用重读文件就能照抄；否则如果 old_text 的第一个非空行在文件里出现（最多 5 处），给出这些行号并说明后面的行对不上；否则建议重读文件后照原文复制。
+   - 路径不存在时，如果 read 的路径变体（§5.8 read）里有存在的文件，提示 `Did you mean <path>?`。edit 不自己换路径：用户批准的是给出的那个路径。
+4. **校验其他约束**：各个 old_text 的匹配区间不能重叠（提示合并成一个 edit）；old_text 不能为空，新建文件请用 write。
+5. **写入**：全部校验通过后，只改写各个匹配区间，区间之外的字节一个都不变，所以混合换行、单独的 `\r`、BOM 都原样保留（D-106）。new_text 先统一成 `\n`，再换成被替换处的换行风格：匹配区间开始那一行的行尾换行；那一行没有换行时用全文最常见的换行；都没有时用 `\n`。new_text 与 old_text 相同时保留原文字节，即使宽松匹配下原文的空白或引号与 old_text 不同。然后原子写入（§5.5）。任何一项失败都不写入，要么全部生效，要么全部不生效。
+6. **返回结果**：
+   - 给模型：只有一行摘要 `Edited <path>: 2 replacement(s), first change at line 14.`，行号是第一个真正改变的字节所在的行。模型知道自己改了什么，diff 只会长期占用上下文。有宽松匹配时例外：加一句说明哪几个 edit 是怎么匹配上的，再附上不超过 4 KB 的 diff，让模型确认改动符合本意。
+   - details：完整的统一 diff、第一个改变的行号、替换数，以及哪些 edit 是宽松匹配上的。diff 只对改动所在的行计算，不对整个文件做 diff。
+
+- **预检**（§5.2）：读文件、全部匹配和校验都在询问用户之前完成，只是不写入；执行时重新做一遍。
+- **参数整理**：`edits` 写成了 JSON 字符串时解析它；单个对象包成数组；顶层的 `old_text`/`new_text`（以及 `oldText`/`newText`、`old_string`/`new_string`）作为一项追加进 `edits`；每项里的这些别名改成 `old_text`/`new_text`；`file_path` 当作 `path`。
+- **性能**：精确匹配用 memchr 的子串搜索；宽松视图在需要时才建，每次调用只建一次；行号来自一次建好的行首索引。同一次调用中有 16 个以上包含完整一行的 old_text 时，为视图的行建哈希索引，每个 old_text 从它最少见的那一行定位，不必各自扫描全文。
+
+规则提示：`Each old_text must match the file exactly and be unique. Put several changes to one file in a single edit call.`
+
+#### bash（修改，M1）
+
+| 参数 | 类型 | 必填 | 说明 |
+|---|---|---|---|
+| command | string | 是 | 要执行的 shell 命令 |
+| timeout | integer | 否 | 超时秒数，默认 120（Q-06），上限 600 |
+
+- 执行方式见 §5.5。结果格式如下：
+
+  ```
+  Exit code: 1
+  Duration: 3.2s
+  Output:
+  <output>
+  ```
+
+- `is_error` 只在超时、被取消或无法启动时为 true。命令返回非零退出码属于正常结果，模型从文本中的退出码自行判断（Q-04）。
+- 不支持交互式命令；长驻进程（如开发服务器）不在 v1 范围内（Q-13）。
+- 规则提示：`Use bash for builds, tests, git and other commands. Commands run non-interactively with a timeout; do not start long-running servers.`
+
+#### grep / find / ls（只读，M2）
+
+| 工具 | 参数 | 行为 |
+|---|---|---|
+| grep | pattern（正则，必填）、path、glob、ignore_case、context（0–5）、limit（默认 100） | 遵守 .gitignore 和 .ignore；跳过二进制文件和 `.git/`；输出 `path:line: text`，按路径排序。基于 grep-searcher、grep-regex、ignore 实现 |
+| find | pattern（glob，必填，如 `**/*.rs`）、path、limit（默认 1000） | 遵守 .gitignore；返回相对路径，按路径排序 |
+| ls | path、limit（默认 500） | 目录名后加 `/`；包含隐藏文件；按名称排序 |
+
+规则提示：`Prefer grep, find and ls over bash for searching and listing files.`
+
+### 5.9 注册表与提示词
+
+- **注册表**：`ToolRegistry` 是工具名到 `Arc<dyn Tool>` 的有序映射。
+  - 注册时检查名称格式，名称冲突直接报错。
+  - 会话根据配置 `tools.enabled` 决定启用哪些工具。
+- **列表顺序**：发给模型的工具列表顺序固定，便于命中缓存。
+- **未知工具**：模型调用了不存在的工具时，返回错误结果 `Unknown tool 'x'. Available tools: read, write, edit, bash.`
+- **提示词**：各工具的 `guidelines()` 按工具顺序汇总并去重，写进系统提示词的工具规则一段（§7.2）。
+
+## 6. 内核运行时（finx-core）
+
+### 6.1 Kernel 句柄（D-02）
+
+```rust
+pub struct Kernel { /* op_tx, event_rx, session_id */ }
+
+impl Kernel {
+    pub async fn start(opts: StartOptions, deps: KernelDeps) -> Result<Kernel, KernelError>;
+    pub async fn resume(session: SessionRef, overrides: StartOverrides, deps: KernelDeps)
+        -> Result<Kernel, KernelError>;
+    pub fn session_id(&self) -> &SessionId;
+    pub async fn submit(&self, op: Op) -> Result<(), KernelClosed>;
+    pub async fn next_event(&mut self) -> Option<Event>;   // 会话关闭后返回 None
+    /// 便捷方法：提交一次输入，持续收集事件直到任务结束（用于嵌入和测试）
+    pub async fn run(&mut self, input: Vec<UserContent>) -> Result<TaskResult, KernelClosed>;
+}
+
+pub struct KernelDeps {
+    pub llm: Arc<ModelRegistry>,
+    pub tools: Arc<ToolRegistry>,
+    pub env: Arc<dyn Environment>,
+    pub store: Arc<dyn SessionStore>,
+    pub hooks: Vec<Arc<dyn Hooks>>,
+    pub clock: Arc<dyn Clock>,        // 测试时可以注入固定时间
+}
+```
+
+### 6.2 会话结构
+
+```rust
+pub(crate) struct Session {
+    id: SessionId,
+    deps: KernelDeps,
+    config: SessionConfig,                    // 启动时解析出的配置
+    emitter: Emitter,                         // 分配 seq 并投递事件
+    writer: SessionWriter,                    // 会话日志写入器（独立任务）
+    tool_gate: tokio::sync::RwLock<()>,       // §5.4
+    tool_slots: tokio::sync::Semaphore,
+    files: Arc<FileTracker>,
+    data_dir: PathBuf,                        // finx 数据目录，属于受保护路径（§11.5）
+    state: parking_lot::Mutex<SessionState>,
+}
+
+pub(crate) struct SessionState {
+    history: History,                          // 条目树和当前叶子（§9）
+    system_prompt: Arc<str>,
+    model: ModelRef,
+    thinking: ThinkingLevel,
+    permission_mode: PermissionMode,
+    session_rules: Vec<CommandRule>,           // 用户选择"本会话总是允许"后产生的规则
+    active_task: Option<ActiveTask>,           // { task_id, cancel, join_handle }
+    steer: VecDeque<UserMessage>,
+    follow_up: VecDeque<UserMessage>,
+    pending_approvals: HashMap<String, oneshot::Sender<ApprovalDecision>>,
+    usage: UsageTotals,
+    next_task_no: u32,
+}
+```
+
+- **state 锁**：只用于内存读写，不跨 await，锁内不做 IO。
+- **写日志**：在锁内把条目加入内存历史，同时以非阻塞方式交给写入器。这样日志顺序与内存中的顺序一致。
+- **事件 seq**：Emitter 在同一把锁内分配 seq 并入队，保证 seq 的顺序就是事件投递的顺序。
+
+### 6.3 提交循环
+
+提交循环逐个串行处理 Op：
+
+| Op | 会话空闲时 | 任务进行中 |
+|---|---|---|
+| prompt | 启动新任务 | mode = steer（默认）时放入插话队列；mode = follow_up 时放入追加队列 |
+| continue | 从当前历史继续，用于失败后重试。规范化之后，历史的最后一条必须是 user 或 tool_result，否则发 warning | 发 warning，不处理 |
+| interrupt | 不做任何事 | 取消当前任务（§6.8） |
+| approval | 没有对应的审批请求时发 warning | 唤醒对应的等待者 |
+| set_model | 立即生效，写入 settings 条目，发 settings_changed | 从下一轮开始生效 |
+| set_permission_mode | 立即生效，写入 settings 条目，发 settings_changed；切换到 bypass-permissions 时另发 warning（§11.2） | 同左，作用于之后的工具调用 |
+| compact | 作为一个任务执行压缩（§7.6.9）；没有可压缩的内容时发 warning | 发 warning，提示等任务结束后再试 |
+| shutdown | 关闭会话 | 先中断任务，再关闭会话 |
+
+Op 通道关闭（前端退出）时，按收到 shutdown 处理。
+
+### 6.4 Agent 循环
+
+```rust
+async fn run_task(sess: &Session, task: &TaskCtx, input: Option<UserMessage>) -> TaskOutcome {
+    if let Some(m) = input { sess.record_user(m); }
+    let mut turn = 0;
+    let mut compacted = false;            // 压缩之后还没有成功响应（防循环，§7.6.5）
+    loop {
+        // ① 轮次边界：把插话写入历史；应用待生效的模型切换
+        for m in sess.take_steer() { sess.record_user(m); }
+        sess.apply_pending_model();
+
+        // ② 用量检查（§7.5）：每次发请求前都做，包括任务第一轮和恢复会话后的第一个请求
+        if let Err(outcome) = check_context(sess, task, &mut compacted).await { return outcome; }
+
+        // ③ 组装上下文（§7.1），并经过 transform_context 钩子
+        let ctx = sess.build_context();
+        sess.emit(TurnStarted { task_id: task.id.clone(), turn, context: sess.budget().usage });
+
+        // ④ 流式请求（§6.5）；被中断时返回 Aborted 消息
+        let msg = stream_turn(sess, task, ctx).await;
+        sess.record_assistant(&msg);
+        match msg.stop_reason {
+            Aborted => return TaskOutcome::Interrupted,
+            Error if msg.is(ContextOverflow) && !compacted => {
+                // 压缩后重试一次；刚压缩过又超限就不再压缩
+                if compact(sess, task, Reason::Overflow, None).await.is_ok() {
+                    compacted = true;
+                    turn += 1;
+                    continue;
+                }
+                return TaskOutcome::Failed(msg.error);        // retryable：下次请求前会先压缩
+            }
+            Error => return TaskOutcome::Failed(msg.error),
+            _ => { compacted = false; sess.calibrate(&msg.usage); }   // 校准估算（§7.5.4）
+        }
+
+        // ⑤ 执行工具（§6.6）
+        let calls = msg.tool_calls();
+        if !calls.is_empty() {
+            let results = if msg.stop_reason == Length {
+                reject_all(&calls, "The response hit the output limit, so the arguments may be \
+                                    incomplete. Re-issue the tool call.")
+            } else {
+                execute_batch(sess, task, &calls).await
+            };
+            sess.record_tool_results(results);               // 按调用顺序写入
+        }
+        sess.emit(TurnCompleted { task_id: task.id.clone(), turn, usage: msg.usage });
+        if task.cancel.is_cancelled() { return TaskOutcome::Interrupted; }
+
+        // ⑥ 决定是否继续
+        match sess.finish_turn_hooks(&msg).await {
+            TurnDecision::End => return TaskOutcome::Completed,
+            TurnDecision::Continue => { turn += 1; continue; }
+            TurnDecision::Default => {}
+        }
+        if sess.max_turns_reached(turn) {
+            sess.warn("max turns reached");
+            return TaskOutcome::Completed;
+        }
+        if !calls.is_empty() || sess.has_steer() { turn += 1; continue; }
+        if let Some(m) = sess.take_follow_up() { sess.record_user(m); turn += 1; continue; }
+        if msg.stop_reason == Length { sess.warn("response truncated by the output limit"); }
+        return TaskOutcome::Completed;
+    }
+}
+```
+
+任务外壳负责启动和收尾：
+
+**启动**：发出 `task_started`，并写入一条 task 条目（status = started）。
+
+**异常隔离**：用 `catch_unwind` 包住 `run_task`。内部 panic 只会让这个任务失败（kind = internal），会话本身仍然可用。
+
+**收尾**：
+1. 补齐悬空的工具结果（§7.1）。
+2. 写入 task 条目，状态为 completed、failed 或 interrupted。
+3. 对日志执行 fsync。
+4. 发出唯一的一个终止事件。
+5. 清除 `active_task`。
+
+**特殊情况**：
+- 任务被中断时：还没处理的插话和追加消息，通过 `task_interrupted.returned_input` 交还给前端。
+- 任务正常结束时：如果追加队列里还有消息（恰好在任务结束的瞬间到达），立即启动下一个任务。
+
+### 6.5 流式响应处理
+
+1. 调用 `llm.stream(model, ctx, opts)`，然后循环用 `select!` 同时等待 `stream.next()` 和 `task.cancel.cancelled()`。
+2. 每收到一个事件：
+   - 先交给 `MessageAccumulator`；
+   - 在第一个内容事件之前发出 `message_started`；
+   - 把增量转发为 `message_delta`；
+   - 遇到 `Retrying` 时发出 `stream_retry`。
+3. 收到 `Done` 或 `Failed` 时，取其中携带的消息作为最终消息。
+4. 任务被取消时：
+   - drop 流，HTTP 连接随之关闭；
+   - 用累积器的快照构造一条 `Aborted` 消息。只保留已收到的文本，丢掉推理块和所有工具调用，因为它们可能不完整。
+5. 最后发出 `message_completed`，其中带完整消息；同时记录首个 token 的延迟和输出速率（§13）。
+
+### 6.6 工具批次执行（D-12）
+
+工具在整条助手消息结束之后才开始执行。
+
+```
+预检（按调用顺序串行）
+  对每个 call：
+    工具存在且参数是合法 JSON 时，先整理参数（prepare_arguments，§5.2）
+    发出 tool_started（带整理后的参数）
+    1. 查找工具；不存在 → 错误结果
+    2. call.arguments_error 非空 → 错误结果（参数无效）
+    3. 依次运行 before_tool 钩子（§6.10），第一个非 Allow 的结果生效；
+       审批策略是最后一个钩子（§11.2）
+       结果为 Ask 时：
+         同一批中前面没有放行的调用 → 先预检（check，§5.2），
+           失败 → 错误结果，不询问
+         发出 approval_requested，登记 oneshot，
+         select!{ 收到审批决定, 任务被取消 }
+         approve → 放行
+         approve_for_session → 放行，并记下提议的规则或切换到提议的模式（§11.2）
+         deny{feedback} → 错误结果："The user denied this tool call." 加上用户的说明
+         abort → 取消整个任务
+
+执行（并发）
+  对每个放行的调用 spawn 一个任务：
+    获取信号量 → 按 kind 获取读锁或写锁
+    → execute（取消令牌是任务令牌的子令牌；任务被取消后最多再等 3 秒，§6.8）
+    → after_tool 钩子 → 兜底截断（§5.7）→ 发出 tool_completed
+
+收集
+  按调用顺序组装 ToolResultMessage，写入历史
+```
+
+审批请求同一时刻只发一个，界面不需要处理并发审批。
+
+### 6.7 插话与追加
+
+- **插话（steer）**：任务进行中用户追加的输入，会在下一个轮次边界写入历史。当前轮的工具调用照常执行，不会被跳过。
+- **追加（follow_up）**：等任务本来要结束时才写入历史，然后在同一个任务中继续。
+- 两个队列都保存在 state 里。中断任务时清空，内容通过事件交还给前端（§6.4）。
+
+### 6.8 中断与取消
+
+| 中断时所处的阶段 | 处理方式 |
+|---|---|
+| 流式输出中 | drop 流，记录一条 Aborted 助手消息（只保留文本） |
+| 等待审批中 | 按 abort 处理 |
+| 工具执行中 | 子取消令牌触发：bash 终止整个进程组；其他工具尽快返回 Cancelled，结果文本为 `Cancelled by user.`。工具 3 秒内没有停下（例如卡在某个系统调用上），内核不再等它，丢弃这次执行，结果同样是 `Cancelled by user.`（D-102） |
+| 还在预检、尚未开始执行的调用 | 补一条结果：`Tool call was not executed (interrupted).` |
+
+不变量：中断之后，每个已记录的工具调用都有对应的结果，并且任务一定以 `task_interrupted` 结束。3 秒的宽限足够 bash 先发 SIGTERM、2 秒后发 SIGKILL 并回收进程；不响应取消的工具最多让中断晚 3 秒，不会拖住会话。
+
+### 6.9 错误处理
+
+| 错误 | 来源 | 处理方式 |
+|---|---|---|
+| 首个增量之前发生的限流、过载、5xx、网络错误、超时 | finx-llm | 自动重试（§4.11），发出 stream_retry |
+| 同类错误，但已经输出过内容 | finx-llm | task_failed；已输出的部分保留在日志中；用户可以发 continue 重试 |
+| 上下文超限 | finx-llm | 压缩后重试一次；仍然失败则 task_failed（retryable：下一次请求前会先压缩）。见 §7.6.1、§7.6.6 |
+| 鉴权失败、余额不足、请求无效、被内容审查拦截 | finx-llm | task_failed，错误信息中给出处理建议 |
+| 输出被截断，且包含工具调用 | finx-llm | 这些调用以错误结果返回给模型，任务继续 |
+| 输出被截断，但没有工具调用 | finx-llm | 正常结束，并发出 warning |
+| 未知工具、参数无效 | finx-tools | 以错误结果返回给模型，任务继续 |
+| 工具执行失败 | finx-tools | 以错误结果返回给模型，任务继续 |
+| 写日志失败 | 存储 | 发 warning 并重试一次；仍然失败则 task_failed，因为无法记录时不应继续操作 |
+| 内核内部 panic | finx-core | 只让当前任务失败（kind = internal），会话仍然可用 |
+
+### 6.10 钩子（D-13）
+
+```rust
+#[async_trait]
+pub trait Hooks: Send + Sync {
+    /// 发请求前修改上下文，例如注入提醒、裁剪内容。不能失败
+    fn transform_context(&self, _ctx: &mut Context) {}
+    /// 工具执行前：放行、拒绝或要求审批
+    async fn before_tool(&self, _call: &ToolCall, _tool: &dyn Tool, _view: &SessionView) -> Gate {
+        Gate::Allow
+    }
+    /// 工具执行后修改结果
+    async fn after_tool(&self, _call: &ToolCall, out: ToolOutput) -> ToolOutput { out }
+    /// 一轮结束时决定是否继续
+    async fn finish_turn(&self, _msg: &AssistantMessage) -> TurnDecision { TurnDecision::Default }
+}
+
+pub enum Gate {
+    Allow,
+    Deny(String),
+    Ask {
+        summary: String,
+        reason: Option<String>,
+        proposed_rule: Option<CommandRule>,      // "本会话总是允许"时加入的规则
+        proposed_mode: Option<PermissionMode>,   // "本会话总是允许"时切换到的模式
+    },
+}
+pub enum TurnDecision { Default, Continue, End }
+```
+
+注册了多个钩子时，按注册顺序组合：
+
+| 方法 | 组合方式 |
+|---|---|
+| `transform_context` | 依次执行 |
+| `before_tool` | 第一个非 Allow 的结果生效 |
+| `after_tool` | 链式传递 |
+| `finish_turn` | 第一个非 Default 的结果生效 |
+
+- **审批策略**：内置的审批策略作为最后一个钩子注册。
+- **SessionView**：钩子拿到的只读快照，包含权限模式、会话规则、工作区根目录、finx 数据目录和项目的信任状态。
+- **外部命令钩子**：即用户脚本，通过 stdin/stdout 交换 JSON。M3 实现，形式上是 Hooks 的一个实现。
+
+## 7. 上下文管理
+
+### 7.1 历史与规范化
+
+历史，指的是会话日志条目树中**当前分支**（从根到当前叶子）上的消息。
+
+`build_context()` 分四步：
+1. **取消息**：取当前分支上的消息。如果分支上有 compaction 条目，从最后一个开始：先放它保留的用户消息和摘要，再接它之后的消息，它之前的条目不再参与（§7.6.4）。
+2. **规范化**：
+   - 去掉 stop_reason 为 Error 的助手消息；
+   - Aborted 的助手消息只保留文本，删空后整条去掉；
+   - 每个工具调用都必须有结果，缺失时补一条 `Tool call was not executed (interrupted).`；
+   - 删除找不到对应调用的工具结果；
+   - 工具结果紧跟在它所属的助手消息之后，按调用顺序排列。
+3. **钩子**：依次执行 `transform_context` 钩子。
+4. **发送**：交给 finx-llm。跨模型转换在注册表内完成（§4.10）。
+
+内核写日志时就保证了上述不变量。规范化只是兜底，用于崩溃恢复和读取旧日志。
+
+### 7.2 系统提示词（D-15）
+
+| 段 | 内容 | 来源 |
+|---|---|---|
+| base | 角色、工作方式、沟通风格 | 内置模板（附录 D）；可用 `system_prompt_file` 整体替换 |
+| tools | 工具使用规则 | 各工具的 guidelines（§5.9） |
+| instructions | 用户与项目的指令 | `~/.finx/AGENTS.md`、项目指令文件（§7.3）、配置项 `instructions.extra` |
+| skills | 可用 Skill 的清单 `<available_skills>`：一句用法说明（任务匹配时先读 SKILL.md，对话里已有它的 `<skill>` 块时不必再读），每个 Skill 一行名字、SKILL.md 的路径和描述；没有时省略 | 从项目层、用户层和额外路径发现（skill-design.md §4、§5） |
+| environment | 运行环境 | §7.4 |
+
+- **顺序**：environment 含日期和 git 分支，变化最频繁，放在最后；同一项目里新开的会话，系统提示词直到 environment 之前都相同，前缀缓存能命中更长的一段。
+
+- **标签包裹**：每一段都用标签包起来（如 `<project_instructions path="…">`），让模型能区分内容的来源。
+- **冻结**：系统提示词在会话启动时生成，之后不再变化，并写入日志的 system_prompt 条目；resume 时沿用日志中的版本。
+  - 理由：请求前缀保持稳定，有利于命中缓存；会话行为也可以复现。
+  - M2 提供 `--refresh-instructions` 参数，用于重新生成。
+
+### 7.3 项目指令文件
+
+1. **全局指令**：`~/.finx/AGENTS.md`，存在就加载。
+2. **确定项目根**：从 cwd 向上查找包含 `.git` 的目录（标记可以通过 `project_root_markers` 配置）。找不到时只看 cwd。
+3. **逐级查找**：从项目根到 cwd 逐级查找指令文件。
+   - 文件名列表可以配置，默认是 `["AGENTS.md"]`；
+   - 每一级取列表中第一个存在的文件；
+   - 按"根 → cwd"的顺序拼接。
+4. **长度上限**：总长度不超过 32 KB，超出部分截断并注明。
+
+### 7.4 环境信息
+
+```
+<environment>
+cwd: /work/demo
+workspace_roots: /work/demo
+os: macOS 15.1 (aarch64)
+shell: /bin/zsh
+date: 2026-10-28
+git: yes (branch main)
+</environment>
+```
+
+### 7.5 上下文用量与校准
+
+#### 7.5.1 计算
+
+```
+用量 = 基准 + 校准系数 × 估算(基准之后新增的内容)
+```
+
+```rust
+pub struct ContextUsage {
+    pub tokens: u64,      // 当前上下文的 token 数：基准 + 估算
+    pub estimated: u64,   // 其中估算的部分
+    pub soft_limit: u64,  // 达到就自动压缩（§7.5.5）
+    pub hard_limit: u64,  // 可用窗口；超过时请求基本会失败
+    pub window: u64,      // 模型的上下文窗口
+}
+```
+
+"当前窗口"指当前分支上最后一个 compaction 条目之后的部分；没有压缩过时就是整个分支。用量是会话日志的纯函数：任务内、跨任务、恢复会话（新进程）都调用同一个函数，结果相同。
+
+#### 7.5.2 基准
+
+| 情况 | 基准 | 估算的部分 |
+|---|---|---|
+| 当前窗口里有当前模型的成功响应 | 最近一条的 input + cache_read + cache_write + output | 它之后新增的消息：工具结果、插话、新的用户消息 |
+| 刚压缩完，还没有新的响应 | 无 | 系统提示词 + 工具定义 + 保留的用户消息 + 摘要 + 之后的消息 |
+| 新会话的第一次请求 | 无 | 系统提示词 + 工具定义 + 全部消息 |
+| 刚换了模型，新模型还没有响应过 | 无 | 同上，全部估算。分词器不同，旧模型的数字不能直接用 |
+| 当前窗口最后一次请求报上下文超限 | 视为已满：用量 = 硬上限 | — |
+| 厂商不返回用量 | 无 | 每次都全部估算 |
+
+- **哪些响应可以做基准**：stop_reason 为 stop、tool_use 或 length，并且 usage 不为空。被中断的响应通常没有用量，出错的响应在规范化时被去掉，这两种都跳过，继续往前找。
+- **恢复会话**：基准就是日志里 assistant 消息自带的 usage，不需要另写用量记录。恢复后 `session_started` 带的用量与进程没有退出时算出的一样。
+- **偏保守**：基准里的 output 包含推理 token。有的厂商不会把上一轮的推理内容发回模型，这部分会被多算，只会让压缩提前一点。
+- **代价**：只估算基准之后的少量消息，不需要每轮扫描整个历史。
+
+#### 7.5.3 估算规则
+
+| 内容 | 估算 |
+|---|---|
+| 文本 | ASCII 字符每 4 个约 1 个 token，非 ASCII 字符每个约 1 个 token |
+| 图片 | 每张 1,600 |
+| 工具调用 | 参数 JSON 按文本估算，另加 8 |
+| 每条消息 | 另加 4（角色标记等格式开销） |
+| 系统提示词、工具定义 | 会话内固定，首次使用时算一次；工具定义按 name、description 和参数 schema 的 JSON 估算 |
+
+不引入分词器依赖（Q-14），误差由校准系数修正。
+
+#### 7.5.4 校准系数
+
+固定的"4 个字符 1 个 token"并不准：代码、数字和 JSON 更密，中文的比例因分词器而异。
+
+- **计算**：每次成功响应后，`系数 = 本次请求的真实输入 token（input + cache_read + cache_write）÷ 本次请求内容的估算值`。估算在发请求时顺手完成，只是按字符计数。
+- **范围**：限制在 0.5–2.0 之间，初始值 1.0；请求估算不足 200 token 时不更新。
+- **作用**：乘在所有估算的部分上：基准之后的增量、压缩后的估算、换模型后的全量估算。
+- **不持久化**：恢复会话后，下一次响应重新算出系数；在那之前，用量的大头仍然来自日志里的真实基准。
+
+#### 7.5.5 阈值
+
+```
+预留输出 = 请求可能申请的最大输出（默认 min(模型输出上限, 32,000)；
+           anthropic-messages 开启推理时为 min(模型输出上限, 推理预算 + 16,384)，取较大者）
+硬上限   = 上下文窗口 − 预留输出（不低于窗口的一半）
+软阈值   = threshold × 硬上限，threshold 默认 0.9；配置了 token_limit 时再取较小值
+```
+
+- 预留输出必须与请求实际申请的输出上限一致：很多兼容接口会校验"输入 + max_tokens ≤ 窗口"。
+- `token_limit` 用于超大窗口的模型（例如 1M），在远低于窗口的位置提前压缩，控制单次请求的费用。
+
+| 模型 | 窗口 | 输出上限 | 硬上限 | 软阈值（0.9） | 保留用户原话预算 | 单个工具结果上限 |
+|---|---|---|---|---|---|---|
+| A | 128,000 | 8,192 | 119,808 | 107,827 | 17,971 | 47,923 字节 |
+| B | 200,000 | 64,000 | 168,000 | 151,200 | 20,000 | 50 KB |
+| C | 32,000 | 8,192 | 23,808 | 21,427 | 3,571 | 9,523 字节 |
+
+**提前一轮**：用量过了硬上限的一半，并且"当前用量 + 本窗口里最大一轮的新增量 + 交接请求"会超过硬上限时，也立即压缩。一轮的新增量是一条回复加上它之后的工具结果；各轮大小不一（一次长输出之后可能是几次很短的 read），所以取最大的一轮，而不是上一轮。等到软阈值才压缩的话，一批较大的工具结果就可能让摘要请求本身超出窗口。实测（§14）中，窗口 16,000 的模型在用量约 11,900–12,400 时压缩，摘要请求加上预留输出不超过约 14,800，留在窗口之内。
+
+#### 7.5.6 超限标记
+
+- 请求因上下文超限失败时，失败的那条响应以错误消息写入日志。当前窗口最后一条助手消息是这种错误时，用量按硬上限计算，下一次检查一定触发压缩。
+- 压缩成功（错误消息落到新窗口之前），或者收到一次成功响应之后，标记自然消失。不需要额外持久化，恢复会话时同样成立。
+
+#### 7.5.7 对外可见
+
+- `turn_started` 带 `context`，即本轮发请求前检查得到的用量；`session_started` 和 `compaction_completed` 也带，前端可以显示上下文占用，恢复会话后也能立刻显示。
+- 本轮请求之后的精确用量，可以从 `turn_completed.usage` 算出。
+
+### 7.6 上下文压缩（D-18）
+
+由当前模型写一份交接摘要；新上下文只保留最近的用户原话和这份摘要。
+
+#### 7.6.1 触发时机
+
+检查放在 agent 循环里每次发普通请求之前（§6.4），因此任务内的每一轮、同一会话的每个新任务、continue、恢复会话后的第一个请求都会检查。检查每次都做，压缩只在需要时发生。
+
+| 时机 | 条件 | reason | 压缩失败时 |
+|---|---|---|---|
+| 每次发普通请求之前 | 用量 ≥ 软阈值；或已过硬上限的一半且下一轮将放不下（§7.5.5）；或有超限标记 | threshold；有超限标记时为 overflow | 用量低于硬上限：发 warning，照常发请求；否则任务失败 |
+| 请求报上下文超限 | 本轮还没有为超限压缩过 | overflow | 任务失败（kind = context_overflow，retryable）；会话可以继续，下一次请求前会再尝试压缩 |
+| 换到窗口更小的模型之后，第一次请求之前 | 同第一行 | model_switch | 同第一行 |
+| 手动 `Op::Compact`（会话空闲时） | 有可压缩的内容 | manual | 这个压缩任务失败，历史不变 |
+
+- **没有可压缩的内容**：当前上下文只剩上一次的检查点（例如刚压缩完请求就失败了）时，摘要不能让它更小，不再压缩，直接发请求，由厂商判断。
+- `[compaction] enabled = false` 时关闭前三种自动压缩：超限时任务失败，手动压缩仍然可用。
+
+#### 7.6.2 压缩请求
+
+摘要请求不单独构造，而是在下一次普通请求原本要发的上下文末尾追加一条交接请求：
+
+| 项 | 取值 |
+|---|---|
+| 模型 | 当前模型（换小模型的情况见 §7.6.7） |
+| 系统提示词、工具列表 | 与普通请求相同 |
+| 消息 | `build_context()` 的结果，末尾加上交接请求（附录 E）：最后一条是工具结果或用户消息时，并进这条消息；最后一条是助手回复时（例如空闲时手动压缩），才另起一条 user 消息 |
+| 请求参数 | 与普通请求相同：推理等级、cache_key、tool_choice = auto、默认输出上限 |
+
+- **缓存**：压缩请求 = 上一次请求的前缀 + 新增的几条消息，前缀几乎全部命中缓存，费用主要是缓存读。anthropic-messages 的缓存断点仍落在最后两个 user 回合上。
+- **零转换**：消息原样发送，任何适配器、任何厂商都适用。
+- **参数不变**：工具列表、tool_choice 和推理参数都不改，改动其中任何一项都可能让厂商侧的缓存失效。只靠交接请求的文字要求模型不要调用工具。
+- **不另起用户回合**：有的厂商在一段工具调用之后出现新的用户回合时，会改写前面整段对话的渲染。DeepSeek 在思考模式下由服务端按 tool_call id 补回之前的推理内容，出现新的用户回合后又把它们去掉，缓存前缀从第一条助手消息起就对不上。实测中，交接请求作为单独的 user 消息时，摘要请求只命中 8%–21%；并进最后一条工具结果之后，命中 85%，等于上一次请求的完整前缀。只有最后一条消息有变化，而它本来就是上一次请求之后新增的。
+- **回复的处理**：
+  - 只取文本作为摘要，推理内容和工具调用都忽略；
+  - 没有文本（空回复，或只调用了工具）：改用 tool_choice = none 重试一次，这次可能不命中缓存，但能拿到摘要；
+  - 因输出上限被截断：接受已有文本，末尾注明被截断。
+- **记录**：交接请求和回复都不作为 message 条目写入历史；摘要写进 compaction 条目（§9.2）。这次请求的用量计入会话和任务的累计用量，也写进条目，恢复会话后费用依然正确。压缩期间不发 `message_*` 事件。
+
+#### 7.6.3 交接提示词
+
+两段文字见附录 E：追加在上下文末尾的交接请求，以及新上下文里包装摘要的说明。包装文字在组装上下文时生成，不写进日志；以后修改措辞，不需要改动旧日志。
+
+#### 7.6.4 新上下文的组成
+
+```
+system（不变）+ 工具定义（不变）
++ 保留的用户消息（按时间顺序，每条一个 user 消息）
++ 在用的 Skill（一个 user 消息，没有时省略）
++ 摘要（一个 user 消息，放在最后）
++ 之后新增的消息
+```
+
+**在用的 Skill**（skill-design §7.2）：上一个检查点之后用户用 `/skill:名字` 提及过（二期日志里是 `/名字` 调用过）、模型用 read 或 bash 读过 SKILL.md 的 Skill，加上上一次保留的，按最近使用的顺序重新读取当前的正文，每个最多 5,000 token，合计不超过 `min(keep_skill_tokens, 10% × 硬上限)`，`keep_skill_tokens` 默认 20,000。副本写进 compaction 条目的 `skills`，`compaction_completed` 事件的 `kept_skills` 列出它们的名字。保留的用户消息就是原话，提及的 Skill 的正文不随它保留，由这一条负责（二期日志里正文已展开的消息，只取输入的原文）。
+
+**只保留用户的原话**，助手的回复、工具调用和工具结果全部由摘要代替：
+- 工具结果是上下文的大头，保留它们就压不下来；
+- 保留助手回复和工具调用，就要处理调用与结果的配对和切点；用户消息没有这类问题；
+- 用户的原话信息密度最高、体量最小，由模型转述容易丢失约束和偏好；进度、结论和关键细节由摘要负责。
+
+**选取规则**：
+1. 候选：上一次 compaction 条目保留的用户消息，加上当前窗口里的全部用户消息（包括插话和追加），按时间排列。之前的摘要不是用户消息，不会成为候选。
+2. 预算：`min(keep_user_tokens, 15% × 硬上限)`，`keep_user_tokens` 默认 20,000，小窗口模型自动收紧（§7.5.5 的表）。
+3. 从最新的一条往前选：放得下就整条保留；放不下时，剩余预算还有 200 token 以上就把这条从中间截到剩余预算（中间换成 `…[N characters omitted]…`），然后停止。
+4. 只保留文本，图片换成 `[image omitted]`。
+5. 选中的消息作为副本写进 compaction 条目。
+
+**压缩后的检查**：新上下文的估算（`tokens_after`）仍达到软阈值时，把用户原话和 Skill 的保留预算一起减半重新选取，直到都为 0，不需要再请求模型。预算为 0 仍达到软阈值：低于硬上限就照样写入并发 warning；否则这次压缩算失败，不写条目。
+
+#### 7.6.5 多次压缩与防循环
+
+- **摘要折叠**：上一次的摘要就在当前上下文里，会随交接请求一起发给模型；交接请求要求把其中仍然有用的内容并入新摘要。新上下文里只有最新的一份摘要，不会层层堆叠。
+- **用户原话跨压缩保留**：候选包括上一次保留的用户消息，因此预算以内，较早的原话可以经过多次压缩一直保留，越新的越优先。
+- **序号**：compaction 条目带 `seq`（本会话第几次压缩）。
+- **防止循环**：两次自动压缩之间必须至少有一次成功的普通响应。刚压缩完、下一次检查又要求压缩时：低于硬上限就照常发请求；不低于硬上限则任务失败，提示"压缩之后上下文仍然超出窗口"。超限触发的压缩同理：刚压缩过又超限，不再压缩。最坏情况是每轮压缩一次，任务仍在推进，不会原地空转。
+- **频繁压缩提醒**：同一任务内压缩达到 3 次时发一次 warning，提示摘要会逐步丢失细节。只提醒，不中止。
+
+#### 7.6.6 失败处理
+
+压缩请求本身的错误：
+
+| 情况 | 处理 |
+|---|---|
+| 用户中断 | 放弃这次压缩，历史不变；任务按中断结束 |
+| 限流、过载、5xx、网络错误 | finx-llm 按普通请求的规则自动重试（§4.11）；重试用尽算压缩失败 |
+| 压缩请求本身超限 | 裁剪输入后重试，最多 4 次（见下） |
+| 没有文本 | 改用 tool_choice = none 重试一次；仍然没有文本，算压缩失败 |
+| 输出被截断 | 接受已有文本 |
+| 鉴权失败、余额不足、请求无效、内容审查 | 不重试，算压缩失败 |
+
+**裁剪输入**（只在压缩请求本身超限时使用）：
+- 以"组"为单位从旧往新删：一条 user 消息是一组；一条助手消息连同它的全部工具结果是一组，调用和结果不会被拆开。
+- 上一次的检查点（保留的用户消息和摘要）放在最前面，不删；最新的一组也不删。
+- 先删工具组，用户消息体量小、说明了目标，最后才删。
+- 每轮删到估算值不超过 min(摘要模型硬上限的 85%, 当前大小的 80%)，至少删一组。按当前大小缩减，配置的窗口比厂商实际的大时也能收敛。
+- 删掉的位置插入一条说明，告诉模型这里有消息没有放进来。裁剪只影响这次摘要请求的输入，保留的用户消息仍然从完整历史中选取；条目记录 `dropped_messages`，并发 warning。
+
+三条不变量：
+1. 拿到摘要之前什么都不写，历史和日志都不变。
+2. compaction 条目是日志中的一行，一次写入，写入即生效。
+3. 任何失败之后会话都可以继续：发 continue 重试，或者发新消息；有超限标记时，下一次请求前会再尝试压缩。
+
+#### 7.6.7 换到窗口更小的模型
+
+- 新模型生效后的第一次请求之前，如果用量（全部估算）需要压缩，并且上一次响应来自窗口更大的模型，就由**上一个模型**写摘要：历史是在它的窗口里积累的，放得下，而且缓存还在。新上下文随后交给新模型使用。这是"当前模型写摘要"的唯一例外，reason 为 model_switch。
+- 上一个模型已不可解析（从目录中移除等）时，改用当前模型，必要时按 §7.6.6 裁剪输入。
+
+#### 7.6.8 事件
+
+`compaction_started`、`compaction_completed`、`compaction_failed`，见 §8.2。每个 `compaction_started` 之后恰好有一个 `compaction_completed` 或 `compaction_failed`；压缩事件只出现在任务之内、两轮之间，不产生 turn。
+
+#### 7.6.9 手动压缩
+
+- 会话空闲时收到 `Op::Compact`：作为一个任务执行，事件依次为 `task_started` → `compaction_started` → `compaction_completed` 或 `compaction_failed` → `task_completed` 或 `task_failed`，没有 turn，也不发普通请求。
+- 没有可压缩的内容时发 warning，不启动任务。任务进行中收到时发 warning，提示等任务结束再试。
+- 用户输入 `/compact`（各前端都一样，由内核的命令表解析，skill-design §6.2）时与 `Op::Compact` 相同，只有一点不同：没有可压缩的内容时仍作为一个任务运行，发 warning 后正常结束，这样等任务结束的 `finx exec` 和 ACP 的 prompt 都能收到结果。
+- 手动压缩之后上下文以摘要结尾，用户的下一条消息接在它后面。各家接口都接受连续的 user 消息（anthropic-messages 会把它们合并成一个回合）。
+
+原始消息始终完整保留在日志中，可以用于审计，也可以回退到压缩之前的分支（§9.5）。
+
+### 7.7 提示缓存
+
+- **原则**：请求前缀尽量保持稳定：
+  - 系统提示词冻结；
+  - 工具列表顺序固定；
+  - 历史只追加、不改写：工具结果在写入前裁切一次（§5.7），之后不再改动；压缩是唯一的改写点，以追加 compaction 条目的方式生效。
+- **压缩请求复用前缀**：压缩请求是上一次请求的前缀加上新增的消息，参数完全相同（§7.6.2）。压缩之后的第一次请求只有系统提示词和工具定义能命中缓存，之后又是只追加。
+- **anthropic-messages**：显式设置 cache_control 断点（§4.6）。
+- **openai-chat**：依赖厂商的自动前缀缓存；厂商支持 `prompt_cache_key` 时，传入会话 id。
+- **命中率可见**：usage 中的 cache_read 会体现在事件和费用中，便于观察缓存命中率。
+
+## 8. 对外协议（finx-protocol）
+
+### 8.1 Op
+
+```rust
+pub const PROTOCOL_VERSION: u32 = 2;
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Op {
+    /// 用户输入：会话空闲时开始新任务；任务进行中按 mode 排队。commands 为 true（默认）时，
+    /// 开头的 `/compact` 与任意位置的 `/skill:名字` 由内核的命令表解析；智能体之间的消息设为 false（skill-design §6.3）
+    Prompt { input: Vec<UserContent>, #[serde(default)] mode: PromptMode, #[serde(default = "yes")] commands: bool },
+    /// 从当前历史继续，用于失败后重试
+    Continue,
+    Interrupt,
+    AgentInterrupt { agent: String },   // 只停一个子智能体（subagent-design §15 二期）
+    Approval { call_id: String, decision: ApprovalDecision },
+    SetModel { model: String, thinking: Option<ThinkingLevel> },
+    SetPermissionMode { mode: PermissionMode },     // 也接受旧名 set_approval_mode
+    Compact,
+    Shutdown,
+}
+
+pub enum PromptMode { Steer /* 默认 */, FollowUp }
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ApprovalDecision { Approve, ApproveForSession, Deny { feedback: Option<String> }, Abort }
+
+#[serde(rename_all = "kebab-case")]
+pub enum PermissionMode { Manual /* 默认 */, AcceptEdits, BypassPermissions }
+```
+
+`PermissionMode` 反序列化时也接受旧取值：`ask`、`read-only` 对应 manual，`auto-edit` 对应 accept-edits，`full-auto` 对应 bypass-permissions。`plan` 和 `auto` 会报"尚未提供"（Q-29）。
+
+M2 增加 `Rewind { to: EntryId }`（§9.5）。
+
+### 8.2 Event
+
+```rust
+pub struct Event {
+    pub seq: u64,              // 会话内单调递增，从 1 开始
+    pub ts: Timestamp,
+    #[serde(flatten)]
+    pub msg: EventMsg,
+}
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EventMsg {
+    SessionStarted { session_id: String, protocol_version: u32, model: String, cwd: PathBuf, resumed: bool,
+                     session_file: PathBuf, context: Option<ContextUsage> },
+    TaskStarted { task_id: String, trigger: TaskTrigger },   // user | mail（子智能体的汇报唤醒）
+    TurnStarted { task_id: String, turn: u32, context: Option<ContextUsage> },   // §7.5.7
+    MessageStarted { message_id: String, role: Role },
+    MessageDelta { message_id: String, delta: Delta },
+    MessageCompleted { message_id: String, message: Message, mail: Option<MailInfo> },
+    StreamRetry { attempt: u32, delay_ms: u64, error: ErrorInfo },
+    ToolStarted { call_id: String, name: String, args: Value },
+    ToolProgress { call_id: String, text: String },
+    ToolCompleted { call_id: String, result: ToolResultMessage },
+    ApprovalRequested { call_id: String, name: String, args: Value, summary: String,
+                        reason: Option<String>, proposed_rule: Option<CommandRule>,
+                        proposed_mode: Option<PermissionMode> },
+    ApprovalResolved { call_id: String, decision: ApprovalDecision },
+    CompactionStarted { reason: CompactionReason },
+    CompactionCompleted { reason: CompactionReason, seq: u32, tokens_before: u64, tokens_after: u64,
+                          retained_messages: u32, kept_skills: Vec<String>, summary: String, context: ContextUsage },
+    CompactionFailed { reason: CompactionReason, error: ErrorInfo },
+    TurnCompleted { task_id: String, turn: u32, usage: Usage },
+    TaskCompleted { task_id: String, usage: UsageTotals, last_message: Option<String> },
+    TaskFailed { task_id: String, error: ErrorInfo, usage: UsageTotals },
+    TaskInterrupted { task_id: String, returned_input: Vec<UserMessage>, usage: UsageTotals },
+    SettingsChanged { model: String, thinking: ThinkingLevel, permission_mode: PermissionMode },
+    Warning { message: String, code: Option<WarningCode> },   // code：客户端可自己措辞的提醒，现有 BypassPermissions
+    AgentStarted { agent_id: String, name: String, session_file: PathBuf, call_id: String },
+    AgentStatus { agent_id: String, name: String, status: AgentStatus, summary: Option<String>,
+                  usage: Option<UsageTotals>, error: Option<ErrorInfo>, elapsed_ms: Option<u64> },
+    AgentEvent { agent_id: String, event: Box<Event> },   // 子智能体自己会话里改变对话的事件（protocol-design §6.10）
+    Idle,                      // 没有任务、没有会开启任务的输入或汇报，子智能体也都空闲
+    SessionClosed,
+}
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Delta {
+    Text { index: usize, text: String },
+    Thinking { index: usize, text: String },
+    ToolCallStart { index: usize, call_id: String, name: String },
+    ToolCallArgs { index: usize, json: String },
+}
+
+pub struct ErrorInfo { pub kind: String, pub message: String, pub status: Option<u16>, pub retryable: bool }
+
+pub enum CompactionReason { Threshold, Overflow, ModelSwitch, Manual }   // §7.6.1
+pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_limit: u64, window: u64 }  // §7.5.1
+```
+
+- `message_id` 就是这条消息在会话日志中的条目 id。
+- 工具结果只通过 `tool_completed` 下发，不再另外发 `message_completed`。
+- `session_file` 是会话日志文件的路径，前端可以展示它，方便之后 resume。
+- 三种任务终止事件都带本任务累计的 `usage`，任务失败或被中断时也能显示用量。
+- `proposed_rule` 和 `proposed_mode` 说明选择 `approve_for_session` 会记下什么：加一条 allow 规则，或者把会话切换到这个模式。两者都为空时，`approve_for_session` 只批准这一次，前端不应提供"本会话总是允许"。
+- `compaction_completed.summary` 是摘要全文，前端可以折叠展示，便于用户检查摘要质量。
+- `context` 字段为可选，旧前端忽略即可。
+- 上下文超限的 `ErrorInfo.retryable` 由内核决定：开启压缩时为 true，因为下一次请求前会先压缩（§7.6.1）。
+- 子智能体相关的事件和字段（`agent_started`、`agent_status`、`idle`、`message_completed.mail`、`task_started.trigger`）见 subagent-design §11.1。`trigger` 为 user、`mail` 为空时不出现在 JSON 里。
+- Skill 相关的字段见 skill-design §6.3、§7.2：用户消息提及了 Skill 时，`message_completed` 带 `skills: [{name, path}]`，按提及的顺序，消息本身是用户的原话；`compaction_completed.kept_skills` 是压缩后保留的 Skill。两者为空时不出现在 JSON 里。
+- 每次进入空闲都发一次 `idle`；没有子智能体的会话，它紧跟在任务的终止事件之后。前端以它判断"整件事做完了"（§12）。
+
+### 8.3 事件顺序保证
+
+1. **seq 递增**：同一会话的事件按 seq 严格递增的顺序投递。
+2. **任务边界**：每个任务的事件都在 `task_started` 和唯一的终止事件之间。终止事件是 `task_completed`、`task_failed`、`task_interrupted` 之一；任务被中断时，同样保证发出终止事件。
+3. **轮次边界**：每一轮的事件都在 `turn_started` 和 `turn_completed` 之间。助手消息的事件依次为 `message_started`、若干个 `message_delta`、`message_completed`。
+4. **用户消息**：只发 `message_completed`。
+5. **工具事件**：
+   - 同一个工具调用的 `tool_started`，一定早于它的 `approval_requested`、`tool_progress` 和 `tool_completed`；
+   - 不同调用的工具事件可能交错出现；
+   - `tool_completed` 按实际完成的顺序发出。
+6. **任务之外的事件**：只有 `session_started`、`settings_changed`、`warning`、`agent_started`、`agent_status`、`idle` 和 `session_closed` 会出现在任务之外。手动压缩本身作为一个任务执行。
+7. **压缩事件**：只出现在任务之内、两轮之间（在一轮的 `turn_completed` 之后、下一轮的 `turn_started` 之前），不产生 turn。每个 `compaction_started` 之后恰好有一个 `compaction_completed` 或 `compaction_failed`。
+
+### 8.4 序列化与版本
+
+- **格式**：
+  - 使用 JSON；
+  - 枚举用 `type` 字段作为标签，字段名一律 snake_case；
+  - 值为 None 的可选字段直接省略。
+- **版本**：`protocol_version` 通过 `session_started` 告知前端。
+  - 同一个主版本内只做**增量**修改，即新增事件类型或字段；
+  - 前端必须忽略不认识的事件类型和字段。
+  - 版本 2 把审批模式改名为权限模式，这是非增量修改：`set_approval_mode` 改为 `set_permission_mode`，`approval_mode` 字段改为 `permission_mode`，取值见 §11.2，并新增 `approval_requested.proposed_mode`。旧的 Op 名、字段名和取值在输入时仍然接受。
+- **Schema**：协议类型派生 JSON Schema，用 `finx protocol schema` 导出，格式见 protocol-design §6.9。仓库保存一份 `crates/finx-protocol/schema.json`，测试保证它与类型一致；客户端可以据此生成 TypeScript 等语言的类型。
+
+### 8.5 传输方式
+
+| 方式 | 说明 | 里程碑 |
+|---|---|---|
+| 进程内 | Rust API：`Kernel::submit` 和 `next_event` | M1 |
+| JSONL | `finx exec --json` 把事件逐行写到 stdout；加上 `--ops-stdin` 后，从 stdin 逐行读取 Op | M1 |
+| 原生协议（JSON-RPC 2.0） | `finx serve --stdio` 或 `finx serve --listen unix://`：一个进程承载多个会话和多个客户端；`session/op` 承载 Op，`session/event` 承载 Event | 协议扩展（已实现） |
+| ACP | `finx acp`：编辑器以子进程方式启动，通过 stdio 交互 | 协议扩展（已实现） |
+
+服务层、原生协议、ACP 兼容、传输与性能约束的完整设计见 [protocol-design.md](protocol-design.md)。
+
+## 9. 会话持久化（D-14）
+
+### 9.1 目录布局
+
+```
+~/.finx/                                   可通过 FINX_HOME 改变位置
+├── config.toml                          用户配置
+├── models.toml                          厂商与模型
+├── credentials.toml                     凭据（M2）
+├── AGENTS.md                            全局指令
+├── trusted.toml                         受信任项目列表
+├── sessions/2026/10/28/20261028T090000-<session_id>.jsonl
+├── sessions/2026/10/28/20261028T090000-<session_id>/
+│   └── tool-output/<call_id>.txt        被裁切的工具结果的完整内容（§5.7）
+└── logs/finx.<日期>.log                   运行日志，按天滚动
+```
+
+- 目录权限为 0700，文件权限为 0600。
+- 会话 id 使用 UUID v7，按时间有序。
+- **短 id**：界面上显示会话 id 的后 8 位。UUID v7 的开头是时间戳，同一时段创建的会话前缀相同；后 8 位取自随机部分，更容易区分。
+- **按 id 查找**：`finx resume` 接受完整 id、唯一前缀或唯一后缀；匹配到多个会话时报错，提示多输入几位。
+- **会话数据目录**：与日志同名、放在日志旁边的目录，存放属于这个会话的文件（目前是工具结果的完整内容，§5.7），生命周期与日志相同：恢复会话后路径依然有效，以后删除会话时一并删除。会话列表扫描时跳过这些目录。不保存日志的会话（`--no-save`）用系统临时目录，会话关闭时删除。
+
+### 9.2 条目格式
+
+文件的第一行是头部，之后每行一个条目。
+
+```rust
+pub struct SessionHeader {
+    #[serde(rename = "type")]
+    pub kind: HeaderKind,          // 固定为 "session"，用来和条目区分
+    pub version: u32,
+    pub id: SessionId,
+    pub created_at: String,
+    pub cwd: PathBuf,
+    pub finx_version: String,
+    pub forked_from: Option<ForkRef>,   // M2：派生来源
+    pub agent: Option<AgentOrigin>,     // 子智能体的会话才有：根、父、名字、深度、创建它的调用
+}
+
+pub struct Entry {
+    pub id: EntryId,               // 会话内唯一，8 位十六进制
+    pub parent: Option<EntryId>,
+    pub ts: Timestamp,
+    #[serde(flatten)]
+    pub kind: EntryKind,
+}
+
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum EntryKind {
+    // skills：用户消息提及的 Skill（name、path、content），content 是给模型的块，组成上下文时放在原话之前；
+    // 没有时省略。二期日志里可能有 skill（name、path、input），正文已展开在 message 里（skill-design §6.3.4）
+    Message { message: Message, skills: Vec<SkillText>, skill: Option<ExpandedSkill> },
+    Mail { mail: MailInfo, message: Message },   // 投递进来的子智能体汇报，message 为 user 角色
+    AgentSpawned { agent_id: String, name: String, session_file: PathBuf, call_id: String },
+    // skills：本会话的 Skill（name、path、scope、model_invocable），没有时省略（skill-design §9）
+    SystemPrompt { text: String, tools: Vec<String>, skills: Vec<SkillRef> },
+    Settings { model: Option<String>, thinking: Option<ThinkingLevel>, permission_mode: Option<PermissionMode> },
+    Compaction {                   // 检查点：上下文从这里的保留消息和摘要继续（§7.6.4）
+        seq: u32,                  // 本会话第几次压缩，从 1 开始
+        reason: CompactionReason,
+        summary: String,           // 模型写的交接摘要，原文
+        retained: Vec<UserMessage>,// 保留的用户消息，按时间顺序；只含文本，可能截断过
+        model: String,             // 写摘要的模型，provider/model
+        usage: Usage,              // 压缩请求本身的用量，计入会话费用
+        tokens_before: u64,
+        tokens_after: u64,         // 压缩后的估算用量
+        dropped_messages: u32,     // 压缩请求超限、没有进入摘要的消息数，通常为 0（为 0 时不写）
+    },
+    Task { task_id: String, status: TaskStatus, error: Option<ErrorInfo> },
+    Branch,                        // M2：回退标记，parent 指向回退点
+    Title { title: String },       // M2
+}
+```
+
+- 图片以 base64 形式内嵌在消息中。是否改为外部存储，见 Q-07。
+- 旧日志里 Settings 条目的 `approval_mode` 字段和旧取值照常读取。
+- **日志版本 2**：compaction 条目改为自带保留消息的检查点。之前的版本从未写过 compaction 条目，版本 1 的日志原样可读。
+- 完整示例见附录 B。
+
+### 9.3 写入策略
+
+- **单写入者**：每个会话有一个写入器，按接收顺序追加。写入器是异步任务：条目先进通道，每次最多取 256 条，交给阻塞线程池写出。空闲的会话不占线程（D-90）。
+  - 一批条目拼成一次写入，不再每条一次系统调用。写入失败照样让日志进入失败状态，在这批的末尾或 fsync 之前发现。
+- **刷盘**：每条立即写入文件（进入操作系统缓冲区）；任务结束和会话关闭时执行 fsync。在 macOS 上，标准库的 fsync 是 F_FULLFSYNC，每次约 4 ms，见 Q-19。
+  - 上次 fsync 之后没有新写入时，跳过这次 fsync。
+- **延迟创建**：新会话的日志文件在第一次有实际内容（提问、修改设置等）时才创建，新建会话本身不做文件 IO（D-90）。
+  - 头部、系统提示词和初始设置先留在内存里，创建文件时一起写出。
+  - 没动过的会话关闭时照样写出这三行，但不 fsync。所以每个会话最后都有日志。
+  - 还没写出日志的会话照常出现在本进程的会话列表里（`session/list`）；其他进程在它写出之前看不到它。
+- **关闭**：`Kernel::shutdown` 要等写入器把日志落盘、关闭文件、释放文件锁之后才返回（最多等 5 秒）。因此同一进程里关闭会话后立刻重新打开，不会再撞上文件锁。
+- **文件锁**：用独占文件锁（标准库 `File::try_lock`）防止两个进程同时写同一个会话，拿不到锁时报错。新会话在创建文件时加锁。
+- **写入失败**：处理方式见 §6.9。创建文件失败也按写入失败处理。
+
+### 9.4 恢复（resume）
+
+1. **读取**：读入全部行。如果最后一行不完整（崩溃时只写了一半），忽略这一行并发出 warning。
+2. **找当前叶子**：建立 id 到条目的索引，当前叶子就是文件中的最后一个条目。分支操作也只追加新条目，所以这条规则始终成立。
+3. **恢复状态**：沿 parent 链得到当前分支，然后：
+   - 取最后一个 system_prompt 作为系统提示词；
+   - 依次叠加 settings 条目，得到当前设置；
+   - 逐条累计 usage：assistant 消息的 usage 加上 compaction 条目的 usage（摘要请求也计费）。
+   - 上下文用量与任务内用同一个函数计算（§7.5），基准取自日志里 assistant 消息自带的 usage，超限标记也从日志恢复；不需要额外的用量记录。
+4. **补记中断**：如果最后一个 task 条目只有 started 而没有结束状态（说明进程崩溃过），补写一条 interrupted。
+5. **规范化**：按 §7.1 规范化，补齐悬空的工具调用。
+
+**压缩与崩溃一致性**
+
+| 进程退出的时机 | 恢复后的状态 |
+|---|---|
+| 压缩请求进行中 | 没有 compaction 条目，历史完整，相当于没有压缩；下次请求前重新压缩 |
+| compaction 条目只写了一半 | 最后一行不完整，按第 1 步忽略，同上 |
+| compaction 条目已写入，下一次请求之前 | 压缩已经生效，继续使用新上下文 |
+| 工具结果的完整内容写到一半 | 结果条目还没写入，与工具执行中途退出相同（补"未执行"结果）；残留的文件不影响上下文 |
+
+### 9.5 分支、派生与列表（M2）
+
+- **回退**：发送 `Op::Rewind { to }`，只能回退到某条 user 消息之前。
+  - 内核写入一条 `branch` 条目，它的 parent 指向回退点，之后的新条目都接在它后面；
+  - 这样同一个文件里形成了分支，"最后一个条目即当前叶子"的规则依然成立。
+- **派生**：把当前分支复制为一个新的会话文件，头部记录 `forked_from {session_id, entry_id}`。
+- **列表**：`finx sessions` 按从新到旧的顺序扫描目录，读取每个文件的头部、第一条用户消息和标题。
+  - 默认只列出本项目的会话（按头部的 cwd 判断）；`--all` 列出全部。
+  - 子智能体的会话（头部带 `agent`）不列出，`resume last` 和 `--continue` 也跳过它们；按 id 或路径仍能打开。
+  - 先用子串筛出含用户消息或标题的行，只对这些行做 JSON 解析。长会话里的模型输出和工具结果不再整条反序列化。
+  - 常驻服务记住读过的长日志（64 KiB 以上）的摘要，以及读到了哪里。日志只会追加，下次列表只读新追加的部分；文件换了、变短了，或者没变长却改过，就从头读（D-94）。短日志重读的代价和记住它差不多（约 1 KiB），不记。
+  - 遍历目录时用目录项自带的类型判断子目录，不再对每个文件做一次 stat；符号链接仍按它指向的目标判断。
+  - 会话多了以后再考虑建索引（Q-10）。
+
+## 10. 配置
+
+### 10.1 来源与优先级
+
+配置有五个来源，优先级从低到高依次为：
+1. 内置默认值
+2. 用户配置 `~/.finx/config.toml`
+3. 项目配置 `<项目根>/.finx/config.toml`：其中的安全相关项只在受信任的项目中生效（§11.7）
+4. 环境变量（§10.4）
+5. 命令行参数：`-m`、`--permission-mode`、`-c key=value`
+
+合并规则：
+- **合并方式**：表按键深度合并，数组整体替换。`rules` 例外，各层的规则会拼接成一个列表。
+- **严格校验**：遇到未知的配置项直接报错，并指出所在的文件和行号，防止拼写错误被悄悄忽略。
+
+### 10.2 config.toml
+
+```toml
+model = "deepseek/deepseek-flash"
+thinking = "off"                    # off | minimal | low | medium | high | max
+permission_mode = "manual"          # manual | accept-edits | bypass-permissions（§11.2）
+max_turns = 0                       # 每个任务最多几轮，0 表示不限
+extra_writable_roots = []           # 工作区之外允许写入的目录
+system_prompt_file = ""             # 用该文件整体替换基础提示词
+
+[instructions]
+files = ["AGENTS.md"]
+extra = ""                          # 追加到指令段末尾的文本
+project_root_markers = [".git"]
+
+[skills]                            # skill-design.md §10
+enabled = true
+dirs = [".finx", ".agents", ".claude"]  # 每一层依次查找 <目录>/skills
+paths = []                          # 额外的 Skill 根、Skill 目录或 SKILL.md
+disabled = []                       # 停用：Skill 的名字或路径
+max_catalog_tokens = 0              # 清单预算，0 为 min(2% × 上下文窗口, 10,000)
+
+[tools]
+enabled = ["read", "write", "edit", "bash"]
+
+[tools.bash]
+default_timeout_secs = 120
+max_timeout_secs = 600
+shell = "/bin/bash"
+pass_provider_keys = false          # 是否把厂商密钥变量传给子进程
+
+[tools.limits]
+max_lines = 2000
+max_bytes = 51200                   # 单个工具结果写入历史的上限，同时不超过可用窗口的 10%（§5.7）
+max_saved_bytes = 67108864          # 单个完整输出文件的上限（64 MB）
+max_parallel = 8
+
+[compaction]                        # §7.5、§7.6
+enabled = true                      # false：不自动压缩，超限时任务失败；手动压缩仍可用
+threshold = 0.9                     # 软阈值 = threshold × 硬上限
+token_limit = 0                     # 软阈值的绝对上限（token），0 表示不限
+keep_user_tokens = 20000            # 保留用户原话的预算，实际取它与硬上限 15% 的较小值
+keep_skill_tokens = 20000           # 压缩后重新附上在用 Skill 的预算，实际取它与硬上限 10% 的较小值（§7.6.4）
+
+[llm]
+max_retries = 4
+connect_timeout_secs = 10
+idle_timeout_secs = 300
+
+[[rules]]                           # 命令规则（§11.3）
+prefix = ["git", "push"]
+decision = "ask"                    # allow | ask | deny
+reason = "Confirm before pushing"
+```
+
+旧键名 `approval_mode` 和旧取值仍然可以读取，会给出 warning，提示改用新名字。同一个文件里同时写新旧两个键名时报错。
+
+### 10.3 models.toml
+
+格式见 §4.8 和附录 C。这个文件只从用户目录加载（D-17）。
+
+### 10.4 环境变量
+
+| 变量 | 作用 |
+|---|---|
+| FINX_HOME | 数据根目录，默认为 `~/.finx` |
+| FINX_MODEL | 默认模型。优先级高于配置文件，低于 `-c` 和命令行参数 |
+| FINX_PERMISSION_MODE | 权限模式，优先级同上。旧名 `FINX_APPROVAL` 仍然可用，会给出 warning |
+| FINX_LOG | 日志过滤规则，例如 `info,finx_core=debug` |
+| FINX_DEBUG_HTTP | 设为 1 时转储 HTTP 请求和原始流（§13，尚未实现） |
+| 各厂商的密钥变量 | 见 §4.8 |
+
+## 11. 安全
+
+### 11.1 威胁模型
+
+| 威胁 | 典型场景 |
+|---|---|
+| 误操作 | 模型执行了破坏性操作，例如删除文件、覆盖用户的改动 |
+| 提示注入 | 文件内容或命令输出中的文字诱导模型执行危险操作 |
+| 恶意仓库 | 仓库通过项目配置放宽审批，或者把请求和密钥引到别的地址 |
+| 密钥泄露 | 密钥出现在日志、会话文件或子进程的环境变量中 |
+
+v1 没有沙箱，防线由四部分组成：权限模式、规则、工作区边界与受保护路径、项目信任。M3 再通过 Environment 接入系统级隔离（§11.8）。
+
+### 11.2 权限模式（D-13、D-30）
+
+| 模式 | 含义 |
+|---|---|
+| `manual` | 默认值（Q-03）。文件修改和不在只读清单里的命令，都先询问 |
+| `accept-edits` | 工作区内的文件修改，以及工作区内的 `mkdir`、`touch`、`cp`、`mv`，都不再询问；受保护路径和工作区之外仍然询问 |
+| `bypass-permissions` | 全部放行，包括受保护路径和工作区之外的路径。只有 deny 规则、ask 规则和关键路径删除还会拦下（D-31） |
+
+- **预留**：`plan` 和 `auto` 两个名字已经预留，暂不提供（Q-29）。
+- **旧名称**：仍然可用，使用时给出 warning。`ask`、`read-only` 对应 manual，`auto-edit` 对应 accept-edits，`full-auto` 对应 bypass-permissions。原来的 read-only 模式已取消。
+
+**bash 命令的判定**：按以下顺序检查，第一条命中的规则生效。前四条看的是这条命令可能执行的所有命令（§11.3）。
+1. 命中 deny 规则：拒绝。任何模式都适用。
+2. 脚本嵌套超过 8 层，无法分析：询问，只对这一次有效。任何模式都适用。
+3. 删除关键路径（§11.5）：询问，只对这一次有效。任何模式都适用，allow 规则也不能事先放行（D-32）。
+4. 命中 ask 规则：询问，只对这一次有效。任何模式都适用。
+5. 模式是 bypass-permissions：放行。
+6. 复杂命令（§11.3）：询问。
+7. 拆出的每个简单命令都满足下列条件之一时放行，否则询问：
+   - 属于内置只读命令（§11.4）；
+   - 命中 allow 规则或本会话批准过的规则，并且参数中没有受保护路径；
+   - 模式是 accept-edits，命令是 `mkdir`、`touch`、`cp`、`mv` 之一，只带不改变写入位置的普通选项（如 `-p`、`-r`、`-f`）。每个操作对象都不能含通配符；从命令可能所在的每个目录看（§11.3），都要在工作区之内，不是工作区根目录本身，也不是受保护路径。`cp -t`、`mv --target-directory`、`mkdir -m` 这类带值的选项不算普通选项。
+   - `cp` 的目标还不能是有其他硬链接的已有文件，否则写入会同时改掉工作区外的同一个文件。
+
+**write / edit 的判定**：同样按顺序检查。
+1. 模式是 bypass-permissions：放行。
+2. 目标在工作区之外：询问，只对这一次有效。
+3. 目标是受保护路径（§11.5）：询问，只对这一次有效。
+4. 模式是 accept-edits：放行。
+5. 模式是 manual：询问。
+
+**其他修改类工具**：bypass-permissions 下放行，其他模式询问。**只读工具**（read、grep、find、ls）：任何模式下都放行。
+
+**没有前端可以应答时**（例如 exec 以非交互方式运行），"询问"一律按拒绝处理。返回给模型的结果会说明没有人可以批准，并附上需要询问的原因，例如路径受保护，让模型换一种做法。
+
+**模型对权限知道多少**（D-35）：
+- 系统提示词不介绍权限模式和规则，切换模式时也不通知模型。要不要询问完全由内核判断，模型不参与；被拒时，返回结果已经写明了原因。
+- 基础提示词只要求一点：调用被拒绝或没有获批时，不要重试，也不要换个命令、脚本或工具达到同样的效果（附录 D）。
+- 以后提供 plan 模式时再加模式提示，因为那时模式会改变模型该做的事。
+
+**"本会话总是允许"**：只在能记下点什么时提供。
+- bash：生成一条 allow 规则，并通过 `proposed_rule` 事先展示给用户（D-34）。
+  - 前缀一般取命令的前两个词，例如 `cargo test`；运行器取到第三个词，例如 `npm run build`、`python3 -m pytest`、`uv run pytest`。
+  - 只在这条规则能覆盖整条命令中所有需要询问的部分时提供。例如 `cd web && npm install` 提议 `npm install`；`npm install && make` 两部分不同，不提供。
+  - 规则会放行任意代码时不提供。这包括：shell 和解释器带内联代码或不带脚本（`bash -c`、`python3 -c`、`node -e`、单独的 `python3`）；带全局选项的 `git`（`git -c`、`git -C`）；包装命令（`sudo`、`env`、`xargs`、`timeout` 等）；删除命令（`rm`、`rmdir`）；以及 `find`。
+  - 复杂命令、命中 ask 规则或删除关键路径时也不提供。
+- write / edit：会话切换到 accept-edits，并通过 `proposed_mode` 事先展示。写入工作区之外或受保护路径时不提供。
+- 其他询问只对这一次有效。
+
+**进入 bypass-permissions 时的提示**：会话以 bypass-permissions 启动或恢复，或者中途切换到这个模式时，内核都会发出 warning。提示说明此时受保护路径和工作区之外都不再拦截，只适合在容器、一次性检出这类隔离环境中使用。
+- 这是设计上的取舍，不是漏洞：这个模式的本意就是全部放行，兜底只有规则和关键路径删除（D-31）。
+- 以 root 身份运行时不做额外限制。
+
+**命令行**：`--permission-mode MODE` 选择模式；`--dangerously-skip-permissions` 等同于 `--permission-mode bypass-permissions`（§12）。
+
+### 11.3 命令分析与规则
+
+```rust
+pub struct CommandRule { pub prefix: Vec<String>, pub decision: RuleDecision, pub reason: Option<String> }
+pub enum RuleDecision { Allow, Ask, Deny }
+```
+
+**拆分命令**：用一个能识别引号的分词器解析命令。遇到不在引号内的 `;`、`&&`、`||`、`|` 或换行，就从这里切开，得到多个"简单命令"，同时记下它们之间的连接符。
+
+**复杂命令**：出现以下任一情况，整条命令视为复杂命令：
+- 含有重定向 `>`、`>>`、`<`；
+- 含有变量或命令替换：`$`、反引号；
+- 含有括号、花括号，或者表示后台运行的 `&`；
+- 以变量赋值开头，如 `A=1 cmd`；
+- 分词失败。
+
+复杂命令按标点粗略切分。
+- 反引号替换单独成段，并在原位置留下占位符，所以 `` rm -rf `pwd` `` 仍然有一个无法确定的删除目标。
+- 重定向符号和它的目标不算命令的参数。
+
+**找出所有可能执行的命令**：deny 规则、ask 规则和关键路径检查，看的不只是表面上的简单命令，还包括：
+- 包装命令后面的命令。会跳过开头的变量赋值和 `then`、`do` 等关键字，以及 `sudo`、`doas`、`env`、`nice`、`nohup`、`time`、`timeout`、`exec`、`command`、`builtin`、`stdbuf`、`watch`、`busybox`、`xargs` 和它们的选项。`env -S` 的值会拆开，作为命令的开头几个词。
+- 脚本里的命令：`sh -c`（以及 `bash -lc` 等写法）的脚本、`eval` 的参数、`trap` 的动作，以及 `find -exec`、`-execdir`、`-ok` 执行的命令。这些可以层层嵌套，最多跟进 8 层，更深时询问（§11.2）。
+
+**命令所在的目录**：删除目标和 accept-edits 的操作对象，按命令实际可能所在的目录解析，而不只是会话的工作目录。
+- `cd`、`pushd` 会改变之后命令的目录；`env -C`、`sudo -D` 只改变它包装的那条命令的目录。
+- 只用 `&&` 连起来的命令，一定在 `cd` 去的目录里执行。例如 `cd build && rm -rf *` 只会清空 build。
+- 遇到 `;`、`||`、`|`，或者是粗略切分时，`cd` 可能失败、被跳过，或者只在子 shell 里生效，所以之前的目录也都算可能。例如 `cd build; rm -rf *`：`cd` 失败时会清空当前目录，因此要询问。
+- `eval` 和 `trap` 在当前 shell 里执行，它们里面的 `cd` 也算数；`sh -c` 在单独的进程里执行，里面的 `cd` 不影响外面。
+- 目录无法确定时（`cd -`、`cd $X`，或者设置了 `CDPATH` 时的 `cd name`），之后的相对路径都按无法确定处理。
+
+**前缀匹配**：规则的 prefix 必须与某条命令开头的若干个词完全相同。
+- deny 和 ask 规则对每条找到的命令按几种形式匹配：原样的写法；去掉包装命令之后；去掉程序的路径之后，即 `/usr/bin/git` 视为 `git`；对 git 还会去掉子命令前的全局选项，即 `git -C dir push` 视为 `git push`。
+- allow 规则只匹配表面上简单命令原样的写法。允许了 `X`，并不会放行 `sudo X`、`/usr/bin/X` 或 `bash -c 'X'`。
+
+**合并结果**：按 §11.2 的顺序得出整体结论。拒绝和询问只要有一条命令命中就生效；放行则要求每个简单命令都满足条件。
+
+### 11.4 内置只读命令
+
+清单故意定得保守，宁缺毋滥，每一项都有单元测试覆盖。
+
+| 命令 | 需排除的参数 |
+|---|---|
+| ls、pwd、cat、head、tail、wc、file、stat、du、echo、which、basename、dirname、realpath、date、uname | — |
+| cd、pushd、popd | —。它们本身不改动任何东西，之后的命令按新的目录判断（§11.3） |
+| tree | `-o` |
+| rg | `--pre`、`-z` / `--search-zip` |
+| grep | — |
+| find | `-exec`、`-execdir`、`-ok`、`-okdir`、`-delete`、`-fprint`、`-fprint0`、`-fprintf`、`-fls` |
+| git status、git diff、git log、git show、git rev-parse、git ls-files、git blame，以及只列出分支的 git branch | `--output`、`--ext-diff`。另外**只在受信任的项目中放行**，因为仓库自带的 git 配置可能会触发外部程序 |
+
+### 11.5 工作区边界、受保护路径与关键路径
+
+- **工作区根目录**：项目根目录（找不到时用 cwd），再加上 `extra_writable_roots` 中列出的目录。
+- **受保护路径**：会配置工具，或者会被工具自动执行的位置。
+  - 在 manual 和 accept-edits 模式下，写入受保护路径都要询问；allow 规则和"本会话总是允许"都不会事先放行。bypass-permissions 下不拦截。
+  - 目录，路径中任何一级都算：`.git`、`.finx`、`.vscode`、`.idea`、`.husky`、`.cargo`、`.devcontainer`、`.yarn`、`.mvn`、`.aws`、`.kube`、`.ssh`、`.agents`、`.claude`，以及 `.config/git`。
+  - Skill 的位置：`skills.paths` 中的目录，以及 `skills.dirs` 中上面没有的目录名。写进去的内容会成为以后每个会话的指令（skill-design.md §8.3）。
+  - `.git` 是文件时（worktree、子模块、`git init --separate-git-dir`），它用 `gitdir:` 指向的 git 目录也受保护。
+  - 文件，在任何位置都算：
+    - git：`.gitconfig`、`.gitmodules`；
+    - shell：`.bashrc`、`.bash_profile`、`.bash_login`、`.bash_aliases`、`.bash_logout`、`.zshrc`、`.zprofile`、`.zshenv`、`.zlogin`、`.zlogout`、`.profile`、`.envrc`；
+    - 包管理器：`.npmrc`、`.yarnrc`、`.yarnrc.yml`、`.pnp.cjs`、`.pnp.loader.mjs`、`.pnpmfile.cjs`、`bunfig.toml`、`.bunfig.toml`；
+    - 构建工具：`.bazelrc`、`.bazelversion`、`.bazeliskrc`、`gradle-wrapper.properties`、`maven-wrapper.properties`；
+    - 提交钩子：`.pre-commit-config.yaml`、`lefthook.yml`、`lefthook.yaml`、`.lefthook.yml`、`.lefthook.yaml`；
+    - 其他：`.devcontainer.json`、`.ripgreprc`、`pyrightconfig.json`、`.mcp.json`。
+  - finx 自己的数据目录（`FINX_HOME`，默认 `~/.finx`）。
+  - 工作区之内只看根目录以下的部分。所以工作区本身位于 `.cargo` 之类的目录下时，不会整个被当成受保护路径。
+  - 目的是防止模型改写自己的权限配置，或者通过 git hooks、shell 配置、包管理器脚本、凭据配置埋下以后会执行的代码。`.aws`、`.kube`、`.ssh` 的配置都可以指定要执行的程序。
+- **关键路径**：任何模式下，`rm` 或 `rmdir` 删除以下路径都要询问。这个询问不提供"本会话总是允许"，没有前端可以应答时按拒绝处理（D-32）。
+  - 根目录 `/` 和顶层目录，如 `/usr`、`/tmp`；
+  - 用户主目录；
+  - 工作区根目录、当前工作目录，以及它们的上级目录；
+  - 通配符目标按它清空的目录判断：`*`、`~/*`、`/*` 分别相当于清空当前目录、主目录和根目录。`*.o` 这类还带其他字符的模式只删除一部分，按普通路径判断；
+  - `find` 用 `-delete` 或 `-exec rm` 删除，又没有名字条件时，视为清空它的起点目录，按起点判断。例如 `find . -delete`、`find ~ -type f -delete` 要询问，`find . -name '*.pyc' -delete` 不用。取反和 `-o` 组合的名字条件不算；
+  - 执行前无法确定的目标：含 `$`、反引号或 `~user` 的参数，`xargs` 从输入读到的参数，以及目录无法确定之后的相对路径。
+  - 检查覆盖 §11.3 找到的所有命令。路径按命令可能所在的每个目录解析，同时按字面形式和解析符号链接之后的形式判断。
+- **已知局限**：这些检查都基于对命令文本的分析，以下情况看不到：
+  - 脚本文件的内容，如 `bash x.sh`、`source x.sh`；
+  - 解释器里的代码，如 `python3 -c "import shutil; ..."`；
+  - 拼出来的命令名，如 `$(which rm)`；
+  - `rm`、`rmdir`、`find` 以外的删除方式，如 `git clean`、`rsync --delete`，或者用 `mv` 移走关键路径。
+
+  这些只能靠命令审批把关，彻底的限制要等沙箱（§11.8）。
+
+### 11.6 密钥保护
+
+- **日志**：密钥不写入会话日志，也不写入运行日志。HTTP 转储中，`authorization`、`x-api-key` 等请求头一律脱敏。
+- **子进程**：子进程的环境变量中默认去掉已配置厂商的密钥变量，也就是 models.toml 中出现的 `api_key_env`。这一行为可以通过 `tools.bash.pass_provider_keys` 关闭。
+- **显示**：`finx doctor` 只显示密钥的开头和结尾几位。
+- **会话文件**：会话日志可能包含模型读到的敏感内容，因此文件权限设为 0600。
+
+### 11.7 项目信任（D-17）
+
+**信任方式**：受信任的项目记录在 `~/.finx/trusted.toml` 中，可以用 `finx trust [DIR]` 添加。
+
+**未受信任的项目**：
+
+- `.finx/config.toml` 中的以下配置项会被忽略，同时发出 warning 列出被忽略的项：
+  - `permission_mode`（以及旧键名 `approval_mode`）
+  - allow 规则
+  - `extra_writable_roots`
+  - `tools.bash.*`
+  - 钩子
+- 内置的 git 只读命令不会自动放行。
+
+**任何项目**：无论是否受信任，项目配置都**不能**定义厂商，也不能修改 base_url 或鉴权设置。
+
+**指令文件**（AGENTS.md）：始终加载。它只是提示词中的文本，风险与模型读取仓库里任意一个文件相同。
+
+### 11.8 沙箱（M3）
+
+沙箱通过 Environment 的不同实现来接入，内核和工具都不需要修改。
+
+| 实现 | 方式 |
+|---|---|
+| SandboxedLocal（macOS） | 用 `sandbox-exec` 加载自动生成的策略：允许读取所有文件，只允许写工作区和临时目录，网络访问可开可关 |
+| SandboxedLocal（Linux） | 用 bubblewrap：根目录只读挂载，工作区可写挂载，可选断网；还可以再叠加 Landlock 和 seccomp |
+| Container | 命令在一个长驻容器中执行，工作区挂载进容器 |
+| Remote（后续） | 通过网络协议在远端机器上执行 |
+
+- **越出沙箱重试**：识别出命令被沙箱拦截后，发起审批，说明这条命令需要在沙箱外执行；用户同意后，在沙箱外重新运行。
+- **放宽审批**：有了沙箱之后，审批策略可以相应放宽，例如沙箱内执行的命令不再需要审批。
+
+## 12. 命令行（finx-cli）
+
+| 命令 | 说明 | 里程碑 | 状态 |
+|---|---|---|---|
+| `finx chat [PROMPT]` | 只用模型层对话，不带工具，用于验证模型接入。不给 PROMPT 时进入简单的 REPL；`--tool-test` 附带一个示例工具，用来验证工具调用；`--record DIR` 录制原始流 | M0 | 已实现，`--record` 除外 |
+| `finx models [--provider P] [--check] [--json]` | 列出模型；`--check` 检查鉴权和连通性 | M0 | 已实现，`--check` 除外 |
+| `finx doctor [--json]` | 检查配置、密钥（脱敏显示）、网络和目录权限；有失败项时退出码为 1 | M0 | 已实现，网络检查除外 |
+| `finx status [--json]` | 显示生效的配置：模型、接口与服务地址、密钥来源（脱敏）、推理等级、权限模式、启用的工具、来自环境变量的设置、项目与信任状态、各配置文件、数据目录 | M1 | 已实现 |
+| `finx exec [PROMPT]` | 以无头方式执行一个任务；PROMPT 为 `-` 时从 stdin 读取 | M1 | 已实现 |
+| `finx resume [last\|ID] -p PROMPT` | 继续一个会话。`last`（默认）是本项目最近的会话；ID 可以是完整 id、唯一前缀或唯一后缀，可以跨项目 | M1 | 已实现 |
+| `finx protocol schema` | 导出协议的 JSON Schema，包括原生协议的方法参数与结果、通知与错误码（protocol-design §6.9） | M1 | 已实现 |
+| `finx sessions [--all] [--limit N] [--json]` | 列出本项目的会话；`--all` 列出所有项目的 | M2 | 已提前实现 |
+| `finx trust [DIR]` | 把目录标记为受信任项目 | M2 | 已提前实现 |
+| `finx skills [DIR] [--all] [--json]` | 列出在 DIR 新开会话时会用到的 Skill 与清单的 token 数；`--all` 同时列出被遮蔽、被停用、加载失败的 Skill 及原因（skill-design.md §11.1） | Skill 一期 | 已实现 |
+| `finx serve [--stdio \| --listen unix://[PATH]]` | 原生协议服务：stdio 上的单个连接，或 Unix socket 上的常驻服务（protocol-design §8） | 协议扩展 | 已实现 |
+| `finx acp` | ACP 服务，供编辑器以子进程方式启动（protocol-design §7） | 协议扩展 | 已实现 |
+| `finx` | 交互界面，形态待定（Q-12） | M3 | — |
+
+`finx exec` 的参数：
+
+| 参数 | 说明 |
+|---|---|
+| `-m, --model` | 模型 |
+| `--thinking` | 推理等级 |
+| `--permission-mode MODE` | 权限模式：manual、accept-edits、bypass-permissions（§11.2）。旧写法 `--approval` 仍然可用 |
+| `--dangerously-skip-permissions` | 等同 `--permission-mode bypass-permissions`，不能与 `--permission-mode` 同时使用 |
+| `--cwd` | 工作目录 |
+| `--continue` | 在本项目最近的会话里继续，等同 `--resume last` |
+| `--resume last\|ID` | 在指定会话里继续 |
+| `--no-save` | 不留会话日志（日志只存在内存里） |
+| `--output text\|json\|stream-json` | 输出格式，见下文；默认 `text` |
+| `--json` | 等同 `--output stream-json` |
+| `--ops-stdin` | 从 stdin 读取 Op（JSONL），由程序来应答审批、发送中断 |
+| `--max-turns N` | 最大轮数 |
+| `--output-last-message FILE` | 把最后一条助手消息写入文件 |
+| `-c key=value` | 覆盖配置项 |
+
+**审批方式**：
+- stdin 是终端时：在行内询问 `[y] 允许 / [a] 本会话总是允许 / [n] 拒绝（可附说明）/ [q] 中止任务`。
+  - `[a]` 只在能记下规则或切换模式时出现（§11.2）。对命令显示为"总是允许 `cargo test`"；对文件修改显示为"本会话允许所有修改"，选择后会话切换到 accept-edits。
+- 加了 `--ops-stdin` 时：等待 stdin 发来 approval。
+- 其他情况：一律按拒绝处理（§11.2）。
+
+**结束时机**：等会话的 `idle`，也就是子智能体都忙完、它们的汇报引起的任务也结束之后，退出码取最后一个任务的结果（完成 0、失败 1）。收到 `task_interrupted`（Ctrl-C）时立即结束，退出码 130，随后关闭整棵树（subagent-design §11.4）。
+
+**输出**：
+- `text`：助手的回复以流式写到 stdout；工具活动、推理内容和最终用量写到 stderr。子智能体的开始和结束各显示一行。
+  - 会话保存了的话，结束时在 stderr 提示短 id 和继续的命令（`finx exec --continue "…"`）。
+- `json`：结束时向 stdout 输出一个结果对象，供脚本读取，例如 `jq -r .final_output`。不在终端询问审批；内核发出的 warning（例如 bypass-permissions 的提示）写到 stderr。字段如下：
+  - `final_output`：最后一条助手消息，没有时为 `""`。
+  - `exit_code`：与进程退出码相同。
+  - `error`：成功时为 `null`；失败时为 `{kind, message, status?, retryable}`，被中断时 kind 为 `interrupted`。
+  - `session_id`、`session_file`：加了 `--no-save` 时为 `null`。
+  - `model`、`turns`、`duration_ms`。
+  - `usage`：`{input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, cost}`。其中 input_tokens 不含缓存命中；cost 按币种汇总，没有价格时为空对象。汇报唤醒的任务也计入。
+  - `agents`：每个子智能体的 `{name, status, session_file, usage}`，用量是它自己会话的，不计入上面的 `usage`。
+  - `tool_calls[]`：`{name, status: ok|error, duration_ms}`。
+- `stream-json`：stdout 只输出事件（JSONL），日志写入日志文件。
+
+**会话按项目区分**：项目指所在的 git 仓库根目录；不在仓库里时就是当前目录。
+- `--continue`、`resume`（不带 id 或带 `last`）、`sessions` 都只看本项目的会话。
+- 带 id 的 `resume` 和 `sessions --all` 可以跨项目。
+
+**管道**：stdout 的读取方提前退出时（如 `finx sessions | head`），进程像其他 Unix 工具一样静默结束，不报错。
+
+**Ctrl-C**：按一次发送 interrupt；2 秒内再按一次则强制退出。
+
+**本地命令**：`sessions`、`models`、`status`、`doctor`、`skills`、`trust` 只读写本地文件。
+- 它们不启动异步运行时；其中 `models`、`doctor` 和 `skills` 也不写日志文件。
+- 原因是启动运行时和日志的开销，比这几个命令本身的工作还大（§1.4）。
+
+**退出码**：
+
+| 退出码 | 含义 |
+|---|---|
+| 0 | 任务完成 |
+| 1 | 任务失败 |
+| 2 | 参数或配置错误 |
+| 130 | 被中断 |
+
+## 13. 可观测性
+
+- **结构化日志**：基于 tracing。span 的层级为 `session{id}` › `task{id}` › `turn{n}` › `llm_request{model}` 或 `tool{name, call_id}`。
+- **日志文件**：
+  - 写入 `~/.finx/logs/finx.<日期>.log`，按天滚动，保留 7 天；
+  - 过滤规则用 `FINX_LOG` 设置；
+  - 日志不输出到 stdout。
+- **指标**：包括首个 token 的延迟、输出速率（token/s）、各工具的耗时、重试次数。它们随 `turn_completed` 和 `task_completed` 事件下发，同时写入日志（尚未实现）。
+- **HTTP 转储**：设置 `FINX_DEBUG_HTTP=1` 后，请求体和原始流会写入 `~/.finx/logs/http/<session_id>/`，其中的鉴权信息已脱敏（尚未实现）。
+- **自检**：`finx doctor` 用于诊断运行环境。
+
+## 14. 测试策略
+
+| 层次 | 覆盖内容 | 工具 |
+|---|---|---|
+| 单元测试 | 截断、edit 匹配、命令规则解析、配置合并、Compat 合并、历史规范化、usage 换算；文本扫描与行索引对照简单的参考实现做随机检验（任意分块、检查点落在 CRLF 中间或行中间） | cargo test |
+| 文件工具专项测试 | `crates/finx-tools/tests/corpus.rs`：按固定种子生成约 170 个复杂文件（UTF-8、带 BOM、UTF-16 LE/BE、Latin-1、损坏的 UTF-8；LF、CRLF、单独的 CR、混合；各种文字、表情、控制字符、特殊空格与排版字符；8 KiB、64 KiB、1 MiB 边界前后的大小；超长行、重复块、多种语言的源码），用三个工具的简单参考模型逐字节核对：<br>- read：按工具自己的 "Use offset=N" 逐页读完每个文件，与参考切分逐行一致；行索引、换新环境、文件被原地改动或替换后再读的结果一致；并发读取一致。<br>- edit：12 类随机编辑与模型逐字节一致，每种匹配级别和错误都实际出现过；编辑后再反向编辑还原每个字节；diff 能把旧文本变成新文本。<br>- write：写回 read 显示的内容得到承诺的字节；陈旧写入、符号链接、失败不留残余。<br>- 三个工具串起来的流程。<br>每次调用都像内核一样先整理参数、再预检后执行，并核对预检的拒绝与执行一致、预检不碰文件。`FINX_CORPUS_SEED` 换种子。超大文件（120 MB、300 MB、60 MB 单行、16 MiB 以上的 UTF-16、150 MB 写入、14 MB 上 3000 多处编辑）标为 ignored，用 `cargo test -p finx-tools --release -- --ignored` 运行 | cargo test |
+| 适配器回放 | 每个适配器的请求体快照；用录制的 SSE 验证事件序列和最终消息；错误分类；流在中途断开 | wiremock、insta |
+| 内核端到端 | 基于 ScriptedApi 和临时工作区：多轮工具调用、并行工具、审批同意与拒绝、三种时机的中断（流式输出中、工具执行中、等待审批时）、插话、resume、崩溃恢复（截掉最后一行）。上下文管理另有一组（`crates/finx-core/tests/compaction.rs`）：阈值触发且压缩请求与上一次请求共享前缀、多次压缩折叠摘要、超限压缩重试与防循环、压缩失败在软/硬阈值下的不同处理、空摘要改用 tool_choice = none、恢复后从检查点继续且用量取自日志、手动压缩、换小模型由上一个模型写摘要、工具结果裁切与读回、无日志会话的临时目录 | tokio::test |
+| 模拟模型服务端到端 | 真实的 `finx` 可执行文件对接模拟的 openai-chat 服务（`crates/finx-cli/tests/mock_model/`）：服务按 4 字节 1 token 计数、模拟前缀缓存、可设真实窗口并按惯用文案拒绝超长请求；背后是一个按步骤干活的脚本化 agent，只能从工具结果和摘要里的进度标记知道做到哪一步，所以摘要不携带进度任务就无法完成。用例：24 步长任务多次压缩后完成、摘要请求缓存命中 > 80% 且留在窗口内、被裁切的输出按 offset 读回、resume 后用量基准取自日志；厂商窗口小于配置时超限→裁剪→摘要→完成。`cargo run -p finx-cli --example compaction_demo` 可以直接观看整个过程 | cargo test、std::net |
+| 裁切内容的读回 | `crates/finx-core/tests/read_back.rs`：一个"读回模型"只凭结果里的信息行事——省略说明给出的路径、行号范围和 offset，之后跟着 read 自己的 "Use offset=N to continue" 一页页读；超长行按说明里的字节范围和命令分段取。读完后把头部、读回的部分和尾部拼起来，与命令的原始输出逐字节比对。覆盖：带制表符的编号行、中文、带颜色转义和 `\r\n` 的输出（读回的是同样清洗过的文本）、超长单行、内核兜底裁切的非 bash 工具、读回途中上下文放不下而压缩（摘要带着读到第几行，压缩后接着读）、压缩之后和恢复会话（新进程）之后再读、厂商重复使用 call id 时各自的文件、文件超过上限时如实说明只存了前一部分。端到端测试里的模拟模型同样逐页读回整段被省略的内容并逐字节比对 | tokio::test |
+| CLI | `finx exec --json` 的输出与退出码 | assert_cmd |
+| 安全矩阵 | §11.2 的每一种组合；§11.4 的每一条命令及其每个排除参数 | 表驱动测试 |
+| 服务并发压测 | `finx-load`（`crates/finx-bench`）：真实的 `finx serve` 对接模拟网关（finx-mock 的 agent 场景，一个任务 7 次请求，涉及读、写、改、bash），100–200 个会话依次新建、循环新建再关闭、同时新建、同时跑任务。每 10 ms 采样服务进程的占用、RSS、CPU、退休的指令数和线程数；`--heap` 在检查点用 vmmap 取活跃堆；`--json` 输出全部指标。`--scenario` 换成更重的负载：long（长会话跨压缩、同时恢复、重启读回）、fanout（子智能体扇出）、bigout（超大的命令输出、文件和回复）、viewers（多个旁观连接和只连不读的客户端）、interrupt（各种时机的中断）、startup（数据目录里有几千个会话时重启）、churn 和 exec-churn（一个任务连续几千个工具轮次，跨多次压缩）。结果见 §1.4 | finx-load |
+| 性能基准 | §1.4 中的各项指标。冷启动用 `tools/bench/bench_startup.py`，长任务内存用 `tools/bench/bench_memory.py`（都对接本地 mock，可同时对比多个可执行文件）；文件工具用 `cargo bench -p finx-tools --bench file_tools`（5 KB 到 100 MB 的 21 个场景，给出延迟和单次调用的峰值堆） | criterion，在 CI 中与基线对比 |
+| 真实厂商冒烟 | 每家做一次最小对话加一次工具调用 | `--features live`，手动触发 |
+
+两条原则：
+- 默认情况下测试不联网。
+- 时间和 id 都可以注入，保证测试结果确定。
+
+## 15. 工程规范
+
+- **工具链**：用 `rust-toolchain.toml` 固定一个稳定版本，edition 2024。
+- **依赖**：
+  - 统一在 `[workspace.dependencies]` 中声明；新增依赖时要写明理由。
+  - 用 cargo-deny 检查许可证和安全公告。
+- **Lint**：
+  - 库 crate 中禁止使用 `print!` 和 `eprintln!`，即把 `clippy::print_stdout` 和 `clippy::print_stderr` 设为 deny。
+  - 处理外部输入时禁止 `unwrap`。
+  - CI 中 clippy 使用 `-D warnings`。
+- **错误处理**：
+  - 库用 thiserror 定义错误类型，不向外暴露 anyhow。
+  - 模型输出、文件内容、配置等外部输入，不能导致 panic。
+- **异步**：
+  - 不在异步上下文中执行阻塞 IO；较重的目录遍历放进 `spawn_blocking`。
+  - 同步锁不能跨 await 持有。
+- **序列化兼容**：协议类型和日志类型的字段名显式固定，只做增量修改；破坏性修改必须升级版本号。
+- **构建配置**：
+  - 日常开发用 `release`（thin LTO）。
+  - 发布用 `cargo build --profile dist`（fat LTO、codegen-units=1）。可执行文件小约 25%，构建时间约为两倍；启动耗时与 release 的差异在测量误差范围内。
+- **CI**：运行 fmt、clippy、test（Linux 和 macOS）、cargo-deny 和性能基准。
+
+## 16. 技术栈
+
+| 领域 | crate | 用途 |
+|---|---|---|
+| 异步 | tokio、tokio-util、futures、async-stream、async-trait | 运行时、取消令牌、流、异步 trait |
+| HTTP | reqwest（rustls、stream、gzip）、rustls-platform-verifier、eventsource-stream | 模型请求、由操作系统校验证书、SSE 解析 |
+| 序列化 | serde、serde_json、toml | 协议、日志、配置 |
+| Schema | schemars | 工具参数与协议的 JSON Schema |
+| 错误 | thiserror（库）、anyhow（finx-cli） | 错误类型 |
+| 日志 | tracing、tracing-subscriber、tracing-appender | 结构化日志与日志文件 |
+| 并发 | parking_lot | 会话状态锁 |
+| 文件与文本 | similar、ignore、globset、grep-searcher、grep-regex、regex、base64 | diff、目录遍历、搜索、图片编码；输出清洗（去掉终端转义序列、保留制表符）、原子写与文件锁用自己的实现和标准库 |
+| 进程 | tokio::process、libc | 子进程、进程组信号 |
+| 标识与时间 | uuid（v7）、rand、chrono | 会话 id、条目 id、时间戳 |
+| 命令行 | clap | 参数解析 |
+| 测试 | wiremock、insta、assert_cmd、pretty_assertions、tempfile、criterion | 模拟服务、快照、CLI 测试、临时目录、基准 |
+| 后续 | portable-pty、rmcp、ts-rs、ratatui、crossterm、keyring | 交互式终端、MCP、TS 类型、TUI、系统钥匙串 |
+
+## 17. 代码结构
+
+```
+finxwork/
+├── Cargo.toml  rust-toolchain.toml           # 内核：Rust workspace
+├── package.json  pnpm-workspace.yaml         # 客户端：pnpm workspace（apps/、packages/）
+├── apps/desktop/                             # 桌面应用（docs/desktop/）
+├── packages/protocol/  packages/client/      # 由 schema.json 生成的 TS 类型、客户端逻辑
+├── assets/brand/                             # 品牌标志与应用图标
+├── docs/kernel/  docs/desktop/               # 内核与桌面的设计文档
+├── examples/snake-game/                      # 一次真实任务的产物与会话日志（§18）
+├── tools/bench/                              # bench_startup.py 冷启动（§1.4，--skills 比较 Skill 数）、bench_memory.py 长任务内存
+├── tools/acceptance/                         # 用真实模型验收 Skill（skill-design §13）
+└── crates/
+    ├── finx-llm/
+    │   ├── src/
+    │   │   ├── lib.rs  types.rs  stream.rs  error.rs  model.rs  provider.rs
+    │   │   ├── catalog.rs  registry.rs  transform.rs  retry.rs  usage.rs  sse.rs
+    │   │   └── api/  openai_chat.rs  anthropic.rs  scripted.rs   # M2：openai_responses.rs、gemini.rs
+    │   ├── catalog/builtin.toml
+    │   └── tests/  fixtures/<api>/*.sse  replay_*.rs
+    ├── finx-tools/
+    │   └── src/
+    │       ├── lib.rs  tool.rs  typed.rs  registry.rs  env.rs  local_env.rs  truncate.rs  files.rs
+    │       └── builtin/  read.rs  write.rs  edit.rs  bash.rs  grep.rs  find.rs  ls.rs
+    ├── finx-protocol/
+    │   ├── src/  lib.rs  op.rs  event.rs  api.rs  schema.rs
+    │   └── schema.json                 # finx protocol schema 的输出，测试保证与类型一致
+    ├── finx-core/
+    │   └── src/
+    │       ├── lib.rs  kernel.rs  session.rs  submission.rs  task.rs  turn.rs  tool_exec.rs
+    │       ├── approval.rs  rules.rs  hooks.rs  context.rs  compaction.rs  prompt.rs
+    │       ├── instructions.rs  config.rs  runtime.rs
+    │       ├── skills/  mod.rs  frontmatter.rs  catalog.rs   # 发现与优先级、头部解析、清单与预算
+    │       └── store/  mod.rs  entry.rs  jsonl.rs  memory.rs
+    ├── finx-rpc/
+    │   └── src/  lib.rs  message.rs  frame.rs  encode.rs  client.rs
+    ├── finx-server/
+    │   └── src/  lib.rs  server.rs  hub.rs  mirror.rs  conn.rs  frame.rs  native.rs  transport.rs  errors.rs  memory.rs
+    ├── finx-acp/
+    │   └── src/  lib.rs  encoder.rs  out.rs  content.rs  schema.rs
+    ├── finx-mock/                      # 测试用的模型服务
+    │   └── src/  lib.rs  main.rs
+    ├── finx-bench/                     # 服务并发压测 finx-load（§1.4）
+    │   └── src/  main.rs  probe.rs
+    └── finx-cli/
+        └── src/
+            ├── main.rs  render.rs  approval_prompt.rs  cmd_serve.rs
+            ├── cmd/  chat.rs  exec.rs  resume.rs  sessions.rs  models.rs  doctor.rs  trust.rs
+            └── tests/  e2e_exec.rs  e2e_native.rs  e2e_acp.rs  e2e_skills.rs  stress.rs   # 端到端测试与压测
+```
+
+## 18. 里程碑
+
+"预估"一列按单人全职估算，只用于排期。
+
+### 首个交付（D-19）
+
+- **范围**：M0 与 M1 的核心部分，即模型接入层、四个基础工具、内核与会话日志，以及 `finx chat`、`finx models`、`finx exec`、`finx resume` 四个命令。
+- **验收标准**：用开发完成的 `finx exec` 调用 DeepSeek 平台的轻量模型 `deepseek-flash`，在一个空目录中完成一个可以运行的贪吃蛇小游戏。
+- 其余条目按下面的里程碑继续推进。
+
+### 实现状态（截至 2026-10-29）
+
+**首个交付：已完成，验收通过**
+- **运行**：在空目录 `examples/snake-game/` 中执行 `finx exec --permission-mode bypass-permissions --thinking medium "<需求>"`（验收时写作 `--approval full-auto`，两者等价），模型为 `deepseek/deepseek-flash`。
+- **过程**：耗时 210 秒，退出码 0。模型调用 13 次，工具调用 15 次（bash 10、read 3、write 1、edit 1）。输入 505,300 token，其中缓存命中 475,904；输出 37,590 token。
+- **产物**：`index.html` 在浏览器中逐项实测通过，包括开始、转向与禁止掉头、暂停与继续、吃到食物后变长加分、50 分升级提速、撞墙和撞自身结束、回车或按钮重开、最高分持久化。
+- **日志**：完整会话日志见 `examples/snake-game/finx-session.jsonl`。
+
+**各里程碑进度**
+
+| 里程碑 | 已实现 | 尚未实现 |
+|---|---|---|
+| M0 | finx-llm 全部类型；openai-chat 和 anthropic-messages 两个适配器，DeepSeek 的两种端点都已实测；Compat；内置目录与 models.toml；鉴权（环境变量、配置值、命令、免鉴权）；重试与超时；用量与费用换算；ScriptedApi；`finx chat`、`finx models`、`finx doctor` | `finx chat --record`；`finx models --check`；`finx doctor` 的网络检查；内置目录没有填写价格，费用显示为"未知"；SSE 回放素材的 fixtures 目录（请求体快照已实现，§4.15） |
+| M1 | finx-protocol；read、write、edit、bash 四个工具，以及 LocalEnvironment、截断、FileTracker；会话 actor、提交循环、agent 循环、工具批次并发、中断；会话日志与 resume；`finx exec` 的文本模式、`--json` 和 `--ops-stdin` | 验收第 2 项（用真实模型修复示例仓库中的失败测试）还没有做 |
+| M2 | 提前实现：三档权限模式、命令规则、内置只读命令、工作区边界与受保护路径、关键路径删除检查、项目信任；插话与追加；指令文件；`finx sessions`、`finx trust`；上下文管理（用量校准、交接摘要压缩、工具结果裁切与完整内容保存，§7.5–7.7） | grep、find、ls；openai-responses 和 gemini 适配器；回退与派生；凭据文件与 `finx auth set`；环境变量 FINX_DEBUG_HTTP；首 token 延迟等指标；CLI 测试与性能基准 |
+| 协议扩展 | 服务层与会话中枢、原生协议（stdio 与 Unix socket 常驻服务）、ACP、`finx protocol schema`；finx-mock 驱动的端到端测试与多场景压测，实测数据见 protocol-design §11.1、§12.2 | 在 Zed 中实测 `finx acp` |
+| 子智能体（一期） | 智能体树、`spawn_agent` 与 `send_message`（同步、异步、`interrupt`）、Mailbox（汇报、轮次边界投递、空闲唤醒、最终回复闸门、中断保持、只交付一次、截断与完整内容保存）、子会话无审批并跟随根会话的权限、插话打断同步等待、整树停止与关闭、按路径的写锁、子会话日志头与 `agent_spawned` / `mail` 条目、列表过滤、新事件、`finx exec` 与 ACP 以 `idle` 结束；已用真实模型通过验收（subagent-design §15） | 二期、三期 |
+| Skill（skill-design.md） | 一期：三层发现与优先级、头部解析、系统提示词里的清单与预算、`[skills]` 配置、受保护路径、system_prompt 条目的 `skills`、`finx skills`，以及 `status`、`doctor` 里的 Skill 信息。二期：内核命令表（`/compact`、显式调用 Skill，只解析用户的输入）、压缩时保留在用的 Skill、原生协议 `skills/list`、ACP 的 `available_commands_update`。2d：任意位置的 `/skill:名字`（可以有多个，内核与桌面端共用识别规则和测试用例），用户的话原样记录，桌面端的 Lexical 输入框（`/` 菜单与 Skill 标签）。finx-mock 扮演按清单读 Skill、按消息里的 Skill 块行事的模型，端到端测试覆盖 exec、原生协议和 ACP；DeepSeek `deepseek-flash` 真实模型验收通过（`tools/acceptance/accept_skills.py`、`tools/acceptance/accept_skills_phase2.py`，skill-design §13.1–§13.3） | 在 Zed 中实测命令菜单；桌面端输入法组字的实际试用；三期 |
+| MCP（一期） | finx-mcp 客户端（stdio、Streamable HTTP、进度、取消、懒重连、`list_changed`）；配置来源与信任；按需加载（目录、`tool_search`、`call_tool`）与 direct 暴露；免审批；子智能体共用连接；ACP 与原生协议带来服务器；`finx mcp list/get`、`--mcp-config`；已用 DeepSeek 实测 20 个服务器、460 个工具（mcp-design §16.1） | 二期、三期；在 Zed 中实测；MCP 官方一致性测试套件 |
+
+**测试**：`cargo test --workspace` 共 463 个测试，全部通过，包括单元测试、基于 wiremock 的适配器测试、基于 ScriptedApi 的内核端到端测试（含上下文管理、裁切内容读回、子智能体和 Skill 四组；子智能体按会话分流脚本，12 个用例）、真实可执行文件对接模拟模型服务的上下文管理端到端测试（§14），以及启动真实 `finx` 进程、由 finx-mock 扮演模型的协议与 Skill 端到端测试和压测。MCP 有客户端与两种传输的集成测试、内核的按需加载测试，以及真实 `finx` 进程对接 MCP 测试服务器的端到端测试。测试把 `HOME` 指向临时目录，开发机上已经装好的 Skill 不会进入测试。`cargo clippy --workspace --all-targets` 只剩本地模型连接带来的 5 条提示（finx-connections 4 条、cmd_info.rs 1 条）。
+
+**上下文管理（2026-10-28）**：用模拟模型服务实测（`compaction_demo`，配置窗口 16,000、回复上限 2,000）：
+- 24 步的长任务压缩 4 次后完成。每次压缩的摘要请求都以上一次请求为前缀，缓存命中约 83%，加上预留输出不超过约 14,800 token，留在窗口之内；压缩后上下文约 1,600 token，只剩系统提示词、任务原话和摘要。
+- 每一步约 9 KB 的命令输出裁到 5.6 KB 写入历史，完整内容存到会话数据目录。模型按省略说明里的 offset 用 3 次 read 读回被省略的第 306–1105 行，与头尾拼起来和命令的原始输出逐字节一致。
+- `finx exec --resume` 之后，第一个请求的用量基准等于退出前最后一次响应报告的用量（估算部分为 0），请求与退出前的最后一个请求共享前缀，缓存命中 98%–100%。
+- 厂商真实窗口只有 9,000（小于配置）时，超限触发压缩；摘要请求本身也超限，裁剪两轮后成功，任务完成。
+
+**真实模型（DeepSeek `deepseek-flash`，2026-10-29，窗口调小到 24,000）**：
+- 读回：命令输出 3,000 行，随机密钥在被省略的第 1500 行，只运行一次。模型看到省略说明后用 read 按 offset 读保存的文件，找到密钥；途中压缩一次，摘要带着文件路径，压缩后模型又按路径读了一次确认。答案与真值一致。
+- 多步压缩：依次运行 10 个各输出约 25 KB 的步骤，第 7 步后压缩，摘要记下前 7 个随机代码，最后报出的 10 个代码全部正确。
+- 缓存：普通轮次每次命中上一次请求的完整前缀（最高 85%）；摘要请求按 §7.6.2 的方式发送后同样命中 85%–86%，思考模式开启和关闭都实测过。
+
+**子智能体（DeepSeek `deepseek-flash`，2026-10-29）**：subagent-design §15 一期第 2、3 项通过。
+- `finx exec` 让主智能体并行派出 3 个子智能体分别补测试，被汇报唤醒后给出最终结果，用时 44.6 秒。子会话不出现在 `finx sessions` 里。
+- 子智能体运行中停止，整棵树在 0.1 秒内停下。发"继续"后，中断汇报先于用户消息写入上下文，子智能体经 `send_message` 接着完成。
+- 运行中补充输入：追加派出、停掉一个、给子智能体补充要求，都按预期完成。测试中发现主智能体会用 `sleep` 等待后台子智能体，把插话和汇报都挡住。原因是工具说明没有讲清楚怎样等待。改为说明"结束本轮就是等待"之后，同一请求重复运行，sleep 从 36 次里 16 次降到 24 次里 0 次，插话 0.7 秒内送达（subagent-design §15）。
+- 停止后只说"继续"：中断汇报说明子智能体保留着工作、可以用 `send_message` 接着做之后，主智能体让原来的子智能体接着做的次数从 12 次里 0 次升到 9 次，之前是重新派新的或自己动手（subagent-design §15）。
+
+**启动耗时**：已达到 §1.4 的冷启动目标。从进程启动到发出第一个模型请求，实测约 5 ms，各阶段耗时见 §1.4。
+
+**本地命令**：macOS 上实测 4.1–5.0 ms（含 1.5 ms 的空进程开销），见 §1.4。Linux 上 2 ms 的目标尚未实测。
+
+**服务并发**：200 个会话同时新建，单个 session/new 的 p50 为 9–12 ms；服务空闲时新建一个会话 0.22–0.25 ms；每个空闲会话的活跃堆约 32 KiB；200 个会话同时跑任务，进程峰值占用约 79 MiB。以 256 的打开文件数软上限启动，1000 个会话同时跑任务也没有失败。见 §1.4。
+
+**内存**：
+- 1000 轮的长任务峰值占用为 12.9 MB，100 轮、每轮 50 KB 输出的任务为 20.3 MB；优化前分别为 26–30 MB 和 142–165 MB。
+- 都远低于 §1.4 中 30 MB 的目标。细项见 §1.4。
+
+### M0 模型层（预估 2 周）
+
+**范围**
+- finx-llm 的全部类型；
+- openai-chat 和 anthropic-messages 两个适配器；
+- Compat；内置目录与 models.toml；
+- 鉴权、重试、计费；
+- ScriptedApi；
+- `finx chat`、`finx models`、`finx doctor` 三个命令。
+
+**验收标准**
+1. `finx chat` 能与 DeepSeek 流式对话，两种线协议（openai-chat，以及 DeepSeek 的 Anthropic 兼容端点）都实测通过。其他厂商在拿到 key 之后补测，在此之前用回放测试覆盖。
+2. 推理内容和工具调用参数（包括并行调用）都能正确地流式解析。
+3. 每个适配器的主要分支都有回放测试。
+4. 能显示 token 用量和费用。
+
+### M1 内核（预估 3 周）
+
+**范围**
+- finx-protocol；
+- finx-tools：read、write、edit、bash、LocalEnvironment、截断、FileTracker；
+- finx-core：会话、提交循环、agent 循环、权限判定（manual 和 bypass-permissions 两档）、中断；
+- 会话日志与 resume；
+- `finx exec`（文本模式和 `--json` 模式）。
+
+**验收标准**
+1. 基于 ScriptedApi 的端到端测试覆盖：多轮工具调用、并行执行、审批、三种时机的中断、resume。
+2. 用真实模型在示例仓库中完成一次"修复失败的测试"任务。
+3. 中断之后会话可以恢复，并且历史合法。
+
+### M2 日常可用（预估 4 周）
+
+**范围**
+- 安全：三档权限模式、命令规则、内置只读命令、工作区边界、项目信任；
+- 交互：插话与追加；
+- 上下文：压缩、指令文件；
+- 工具：grep、find、ls；
+- 模型：openai-responses 和 gemini 两个适配器；
+- 会话：会话列表与回退分支；凭据文件。
+
+**验收标准**
+1. 连续两小时的真实任务中，无需手动管理上下文。
+2. 安全矩阵的每一种组合都有测试。
+3. 四种线协议的回放测试全部通过。
+4. §1.4 中的性能目标全部达标。
+
+### M3 扩展（暂不预估）
+
+**范围**
+- 通信协议扩展：服务层、原生协议与 ACP，三期均已实现（见 protocol-design.md §11.1）；
+- MCP 客户端：一期已实现（见 mcp-design.md §16.1）；
+- 外部命令钩子；
+- 沙箱与容器环境；
+- 交互界面；
+- Windows 支持评估。
+
+**验收标准**：各子项分别定义。
+
+## 19. 决策记录
+
+Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md §16。
+
+| 编号 | 决策 | 理由 | 章节 |
+|---|---|---|---|
+| D-01 | 用 Rust 实现 | 性能好，可单文件分发，内存安全 | §1 |
+| D-02 | 内核以 Op/Event 队列对为边界，会话由后台任务驱动 | 与界面无关；可以直接映射为进程间协议；避免共享可变状态 | §3.3 §6.1 |
+| D-03 | 内部使用中立的消息模型 | 接入多家模型的前提；切换模型时不丢历史 | §4.3 |
+| D-04 | 线协议写成代码，厂商与模型写成数据 | 接入兼容的厂商不需要写代码 | §4.2 |
+| D-05 | 兼容差异用 Compat 标志表达 | 避免在适配器中堆积针对各厂商的分支 | §4.7 |
+| D-06 | 流式请求的失败编码为事件，不返回 Err；取消就是丢弃流 | 调用方只需要一条处理路径 | §4.5 |
+| D-07 | 只在收到第一个内容增量之前自动重试 | 避免重复输出 | §4.11 |
+| D-08 | 默认工具为 read、write、edit、bash；grep、find、ls 在 M2 加入 | 少而通用 | §5.8 |
+| D-09 | 工具通过 Environment 访问文件和进程 | 以后接入沙箱、容器、远程执行时不用改工具 | §5.5 |
+| D-10 | 工具并发用读写锁控制：只读工具并行，修改类工具独占 | 简单而且安全 | §5.4 |
+| D-11 | Event 通道无界，Op 通道有界 | 内核不会被消费慢的前端阻塞 | §3.3 |
+| D-12 | 助手消息完整结束之后再执行工具 | 实现简单，执行顺序确定 | §6.6 |
+| D-13 | 权限判定作为 before_tool 钩子实现，按权限模式分档 | 权限判定和扩展共用同一套机制 | §6.10 §11.2 |
+| D-14 | 会话日志采用 JSONL 追加写入，每个条目带 parent | 可恢复、可分支、可审计 | §9 |
+| D-15 | 系统提示词在会话内冻结 | 有利于命中缓存，行为可以复现 | §7.2 |
+| D-16 | 发给模型的工具描述和结果使用英文 | 模型最熟悉英文的工具输出，也更省 token | §5.8 |
+| D-17 | 项目配置不能定义厂商；项目未受信任时不能放宽安全设置 | 防止仓库窃取密钥或提升权限 | §11.7 |
+| D-18 | 压缩由当前模型写交接摘要，新上下文只保留最近的用户原话（预算内）和摘要；压缩请求就是下一次普通请求加一条交接请求，参数不变；用量以最近一次响应的真实用量为基准加估算并校准；原始记录保留 | 用户原话信息密度最高、体量最小；工具结果是大头，由摘要代替；复用前缀缓存、无需格式转换；任务内与恢复会话后的用量计算一致 | §7.5 §7.6 |
+| D-19 | 首个交付的验收标准：用 `finx exec` 调用 DeepSeek 的 `deepseek-flash` 完成一个贪吃蛇小游戏 | 用一个真实的端到端任务检验整条链路 | §18 |
+| D-20 | 保留 Session / Task / Turn 三层，同一会话同一时刻只运行一个任务 | 暂不需要同一会话内并发多对话；需要时再引入对话线程层（Q-18） | §2 §6.3 |
+| D-21 | 所有对外协议都是内核事件在同一进程内的投影：每个事件在每种协议下最多序列化一次，不经过中间形式，不经过第二个进程 | 协议层不增加可感知的开销 | protocol-design §1.2 §4 |
+| D-22 | 新增服务层 finx-server：一个进程承载多个会话与多个连接，会话与连接解耦 | 多客户端、常驻服务、断线重连的基础 | protocol-design §3 |
+| D-23 | 原生协议使用 JSON-RPC 2.0 信封，`session/op` 承载 Op，`session/event` 承载 Event；载荷与进程内 API、`exec --json`、`--ops-stdin` 完全相同 | 零映射；新增 Op、Event 不用改协议层 | protocol-design §6 |
+| D-24 | 原生协议的审批沿用"事件 + Op"，不使用服务端请求；ACP 投影将其转换为 session/request_permission | 审批属于会话，天然支持多客户端、快照和重连 | protocol-design §3.7 §7.6 |
+| D-25 | 接入会话 = 快照 + 增量；快照由会话中枢根据事件流维护的镜像生成，与 seq 严格衔接 | 中途接入与重连不缺事件，也不重复 | protocol-design §3.2–§3.4 |
+| D-26 | 每个连接一个按字节设上限的发送队列；积压时合并相邻的增量；超过上限只断开该连接对该会话的接入。内核事件通道保持无界 | 慢客户端只影响自己；跟得上时不增加延迟 | protocol-design §3.6 |
+| D-27 | stdio 与 Unix socket 都使用 NDJSON 分帧；WebSocket 只用于以后的网络传输 | 本地开销最小；stdio 与 socket 共用一套编解码 | protocol-design §6.1 §8 |
+| D-28 | ACP 入站用本地最小类型，官方 schema crate 只作测试依赖、用于一致性校验；连接层自研并与原生协议共用；出站热路径用借用视图直接序列化；不定义 finx 专属的 ACP 扩展 | 运行时不引入 schema crate 打开的 serde_json `preserve_order`；避开 SDK 的版本变化；不复制字符串；保持标准 | protocol-design §4.3 §7.1 |
+| D-29 | ACP 实现 v1，并实现 v2 草案中必选的会话方法（list、resume、close） | 兼容现有编辑器，为 v2 做好准备 | protocol-design §7.1 |
+| D-30 | 权限模式分 manual、accept-edits、bypass-permissions 三档，命名和语义与业界通行的权限模型一致；取消 read-only；旧名称保留为别名，协议版本升到 2 | 用户熟悉这套名字和预期；旧脚本和旧日志照常可用 | §11.2 §8.4 |
+| D-31 | bypass-permissions 不检查受保护路径和工作区边界，只保留 deny 规则、ask 规则和关键路径删除三道兜底；进入时发出提示，不限制 root | 全部放行是这个模式的本意；按路径限制写入属于沙箱的职责 | §11.2 |
+| D-32 | 删除关键路径在任何模式下都要询问，不能用规则或"本会话总是允许"事先放行；无人应答时拒绝 | 这类操作无法挽回，代价远高于多问一次 | §11.5 |
+| D-33 | 权限判断基于一条命令可能执行的所有命令：穿过包装命令，进入脚本，按连接符跟踪 `cd`。看不清的部分（嵌套过深、目录或目标无法确定）一律询问 | 文本分析做不到精确，就宁可多问；同时不影响 `cd build && rm -rf *` 这类确定安全的写法 | §11.3 §11.5 |
+| D-34 | "本会话总是允许"只提议窄前缀：会放行任意代码的前缀不提议，规则还必须覆盖整条命令中需要询问的部分 | 用户一键同意的规则，不应该悄悄放行任意代码 | §11.2 |
+| D-35 | 不向模型介绍权限模式和规则，只在基础提示词里要求被拒后不要绕过；plan 模式上线时再加模式提示 | 模型不参与审批判断，被拒的原因由返回结果说明；绕过审批这件事事后补不上，需要事先说 | §11.2 附录 D |
+| D-36 | 工具结果在写入历史之前裁切一次（保留首尾、切在行边界上），之后不再改动；完整内容保存在会话数据目录，省略说明给出路径和 read 的 offset | 历史只追加，两次压缩之间请求前缀逐字节稳定，长任务缓存命中率高；被裁掉的内容仍可取回 | §5.7 §7.7 §9.1 |
+| D-37 | 常驻服务把服务记录写进单实例锁文件，拿到锁之后才清空写入 | 客户端无法握手时也能找到进程；诊断 | protocol-design §8.2 |
+| D-38 | 桌面端需要的列表推送、摘要状态、改名与归档、历史中的任务边界、默认设置与密钥状态，在协议版本 2 之内由 capabilities 声明；改名与归档是 Op，写进会话日志 | 增量修改不升版本；元数据只存在会话日志里 | protocol-design §6.4 §8.1 |
+| D-39 | 凭据存储排在配置与环境变量之后：macOS 用登录钥匙串（经 `/usr/bin/security`），其他平台用 0600 的 `credentials.toml` | 首次使用不必写配置文件；内核升级不触发钥匙串授权弹框 | §4.9 |
+| D-40–D-54 | 子智能体（蜂群）：子智能体是独立的普通会话，由每棵树一个的控制面管理；只有主智能体有 `spawn_agent`、`send_message`，默认异步；子只干活，没有审批，不继承对话，不能再派生，权限跟随根会话；汇报经 Mailbox 以 user 角色在轮次边界投递并唤醒主会话；停止作用于整棵树但只中断；不限制数量；新增 `idle`，exec 与 ACP 以它结束；默认开启。逐条见 subagent-design §18.1 | 见 subagent-design §17、§18.1 | subagent-design |
+| D-55 | warning 带可选的 `code`；进入绕过权限的提醒标为 `bypass_permissions` | 客户端按代码自己措辞、换语言、放到对话之外，不必比对英文原文；没有代码的 warning 照旧只看 message | §8.2 |
+| D-90 | 会话日志由异步任务写出，攒批交给阻塞线程池；新会话的日志文件在第一次有实际内容时才创建，没动过的会话关闭时写出但不 fsync；存储照常列出还没写出日志的会话 | 每个会话一个线程，200 个会话就是 200 多个线程；新建时的文件操作让 200 个同时新建的 p50 翻倍，关闭时的 F_FULLFSYNC 把新建再关闭压到每秒两三百个。代价是其他进程在会话写出日志之前看不到它，进程崩溃时没动过的会话不留日志 | §9.3 §1.4 |
+| D-91 | `finx serve`、`finx acp` 的工作线程按核数取 4–16 个，阻塞线程池最多 64 个、空闲 3 秒回收；其余命令仍是 4 个工作线程 | 单次任务以启动快为先，常驻服务要同时处理很多会话，突发新建时线程不够会排队；阻塞线程池设上限，避免很多会话同时写文件时线程数暴涨 | §3.3 §1.4 |
+| D-92 | `finx serve`、`finx acp` 启动时把打开文件数的软上限提到硬上限（最多 65536，macOS 上不超过 `kern.maxfilesperproc`）；监听时向系统要最长的接收队列；不为突破接收队列而多开进程 | 以默认的 256 启动时，200 个会话同时跑任务一半失败。接收队列只限制还没被接收的连接，被拒的连接由客户端重试；多进程扩大不了它，还会把会话拆散到几个进程 | §1.4 §3.3 protocol-design §8.2 |
+| D-93 | 会话上限默认 1000；满了先卸载最久没用的会话（没有客户端接入、没有任务在跑），都在用才返回 `server_full` | 会话日志都在磁盘上，卸载后恢复即可继续，比让新请求失败好；一个空闲会话约 32 KiB，64 个的上限过于保守 | §1.4 protocol-design §3.1 |
+| D-94 | 常驻服务记住长日志（64 KiB 以上）的列表摘要和读到的位置，之后只读追加的部分；文件换了、变短了或没变长却改过时从头读；短日志每次重读 | 列表原来每次把每份日志从头读完，服务分页时还要把前面的页再读一遍：20 个 2.2 MB 的长会话列一次 19–24 ms，2000 个会话翻完 10 页 566 ms。日志只追加，增量读取结果不变；只记长日志，几千个短会话不多占内存 | §9.5 §1.4 |
+| D-95 | 服务记录写进锁文件后先绑定并监听 socket，记录的落盘放到之后的阻塞线程池里 | 落盘在 macOS 上是 F_FULLFSYNC，约 4 ms，原来挡在可以连接之前，占了服务启动的四成多。同机的读者不经落盘也能读到记录；断电后服务已不在，记录本就过时 | protocol-design §8.2 §1.4 |
+| D-100 | 内核在一切之前调用工具的 prepare_arguments 整理参数，会话历史保留模型的原始输出 | 常见的格式错误不必多一轮往返；事件、审批和执行看到的是同一份参数 | §5.2 §6.6 |
+| D-101 | 需要询问用户的调用先由工具预检；同一批调用中前面已有放行的调用时不预检 | 不让用户批准注定失败的调用；预检只能拒绝执行时必然失败的调用，不能拿执行前的旧状态误判 | §5.2 §6.6 |
+| D-102 | 任务取消后工具最多再等 3 秒，之后内核不再等待这次执行 | 任何工具都不能拖住中断；3 秒足够 bash 终止并回收进程组 | §6.8 |
+| D-103 | read 流式读取任意大小的文件，内存只和窗口有关；大文件建行索引，同一版本再读时从窗口前最近的检查点开始，读完窗口即停 | 大文件的任何位置都能读到；逐页读不必每页扫一遍整个文件 | §5.5 §5.8 |
+| D-104 | 原子写入：同目录临时文件加 rename；macOS 用写屏障代替完整刷盘；经由符号链接写到它指向的文件；硬链接有意脱离；拒绝只读文件和特殊文件 | 崩溃后只会看到完整的旧版本或新版本；每次写入省下约 5 ms；不破坏链接，也不绕过工作区检查 | §5.5 |
+| D-105 | 图片按 base64 之后的大小限制为 5 MiB，任一边不超过 8000 像素 | 超限的图片一旦进入只追加的历史，之后每次请求都会被拒绝 | §5.8 |
+| D-106 | edit 只改写匹配到的区间，区间外的字节保持不变；匹配依次为精确、忽略行尾空白、统一排版字符，唯一性在找到匹配的那一级判断，从不忽略缩进；结果只给模型一行摘要，宽松匹配时才附 diff | 混合换行和 BOM 不被改写；常见的空白和引号差异不必多一轮往返；diff 长期占用上下文却很少有用 | §5.8 |
+
+## 20. 待定问题
+
+| 编号 | 问题 | 当前假设 | 章节 |
+|---|---|---|---|
+| Q-01 | 项目名、crate 前缀和可执行文件名 | 已定：finx | 全文 |
+| Q-02 | 首批接入并用于验收的厂商 | 已定：DeepSeek（D-19）；其他厂商拿到 key 后补测 | §4.8 §18 |
+| Q-03 | 默认权限模式 | manual | §11.2 |
+| Q-04 | bash 返回非零退出码时是否标记为 is_error | 否 | §5.8 |
+| Q-05 | read 的输出是否带行号 | 否 | §5.8 |
+| Q-06 | bash 的默认超时时间 | 120 秒 | §5.8 |
+| Q-07 | 会话日志中的图片是否改为外部存储 | 以 base64 内嵌 | §9.2 |
+| Q-08 | 内置模型目录如何维护 | 手工维护，用户配置可覆盖 | §4.8 |
+| Q-09 | 非本地 Environment 中 grep、find、ls 如何实现 | 通过 exec 调用 rg 和 find | §5.5 |
+| Q-10 | 是否需要会话索引（如 SQLite） | 先直接扫描目录 | §9.5 |
+| Q-11 | 是否在模型流式输出的过程中提前执行工具 | 否（D-12） | §6.6 |
+| Q-12 | 交互界面的形态 | 自研桌面端：前端页面加 macOS 原生外壳，外壳技术待定；通过原生协议使用内核（protocol-design §6） | §12 |
+| Q-13 | 是否提供后台进程工具（启动长驻服务、读取其输出） | v1 不提供 | §5.8 |
+| Q-14 | Token 估算是否引入分词器 | 否。以响应报告的用量为基准，估算部分用本会话实测的系数校准（§7.5.4） | §7.5 |
+| Q-15 | 界面文案的语言与国际化 | 优先中文 | §12 |
+| Q-16 | 是否提供计划（待办清单）工具 | v1 不提供 | §5.8 |
+| Q-17 | 是否内置联网工具（网页抓取、搜索） | v1 不提供，以后经 MCP 接入 | §5.8 |
+| Q-18 | 以后是否支持同一会话内并发多个对话、共享上下文 | 暂不支持（D-20）。需要时在 Session 与 Task 之间引入对话线程层（Thread）：协议与日志加 thread_id；线程之间通过分叉、汇报、共享笔记共享上下文；工具锁降为线程级 | §2 |
+| Q-19 | 会话日志用哪种 fsync | 沿用标准库的 sync_data，在 macOS 上即 F_FULLFSYNC，每次任务结束约 4 ms。改用 fsync(2) 只需约 0.03 ms，代价是断电时可能丢失最后写入的几条记录 | §9.3 |
+| Q-20 | 是否为启动速度放弃系统信任库 | 保留。由操作系统校验证书需要链接 Security 和 CoreFoundation 框架，macOS 上每个命令的进程加载因此多约 1.3 ms，Linux 不受影响。改用内置根证书可以省掉这部分（还需去掉 chrono 读取本地时区时对 CoreFoundation 的依赖），代价是企业代理自签的根证书不再受信任，可以用 `SSL_CERT_FILE` 之类的配置补上 | §4.14 §1.4 |
+| Q-21 | 是否继续压缩历史的内存表示 | 暂不。1000 轮的长任务现在约 12.9 MB，其中约 3 MB 是分配器碎片。在用部分的大头依次是：请求体缓冲（2 MB）、工具输出文本（1.25 MB）、工具参数与 details 这类小 JSON 对象（每个占一个 640 B 的 BTreeMap 节点，共 1.3 MB）、历史的哈希表（0.7 MB）。可选做法：参数和 details 改存原始 JSON（RawValue）；条目 id 改成定长类型。每项在 1000 轮时约省 0.5–1 MB，但都要改核心类型。2026-10-29 已做：历史改为按文件顺序的列表加 id 索引，少见的大条目装箱，一个条目由 256 字节降到 104 字节（§1.4） | §1.4 §4.3 §9.2 |
+| Q-22 | 没有客户端接入时出现审批怎么办 | 一直等待。待审批项在快照里，客户端接入后答复。可选：超时按拒绝处理 | protocol-design §3.7 |
+| Q-23 | ACP 客户端支持 fs、terminal 时，是否把工具执行交给客户端 | v1 不交，全部在本地执行；以后可以用 `acp.delegate_fs` 打开文件读写的委托 | protocol-design §7.9 |
+| Q-24 | 快照默认带多少条记录 | 100 条，可分页 | protocol-design §3.4 |
+| Q-25 | 图片是否改为按引用传输 | v1 以 base64 内嵌（同 Q-07） | protocol-design §4.7 |
+| Q-26 | 是否为只支持 session modes 的 ACP 客户端提供 modes | 否，只提供配置项 | protocol-design §7.1 |
+| Q-27 | 常驻服务由谁启动 | 客户端在 socket 不存在时以后台方式启动，配合空闲退出；登录自启以后再定 | protocol-design §8.2 |
+| Q-28 | 编辑器能否接入常驻服务里的会话 | 以后再做；届时 `finx acp --attach` 只转发字节，编码仍在服务进程里只做一次 | protocol-design §11 |
+| Q-29 | 何时提供 plan 和 auto 两种权限模式 | 暂不。名字已经预留。plan 需要只读的规划流程和计划确认；auto 需要一个判断操作风险的小模型 | §11.2 |
+| Q-30 | 是否在任务结束后、会话空闲时提前压缩 | 暂不做。它能把压缩的等待藏起来，但会多一次请求；以后作为可选项 | §7.6 |
+| Q-31 | 厂商报错里的真实窗口（如 "maximum context length is N"）是否用来修正配置的窗口 | 暂不。配置的窗口偏大时，现在每轮都会先超限再压缩（§14 实测一轮多 2–3 次被拒的请求）；按报错修正可以省掉这些请求，但依赖各家的报错文案 | §7.5.5 §7.6.6 |
+| Q-40–Q-52 | 子智能体的待定问题：继承对话的模式、指定模型或角色、未投递信件的持久化、独立工作树、整棵树的预算、卸载空闲子会话、manual 下的预先授权、给子的并发修改提示等 | 逐条见 subagent-design §18.2 | subagent-design |
+| Q-90 | 会话关闭后，macOS 上分配器保留的空闲页要不要主动还给系统 | 暂不处理。关闭 200 个会话后活跃堆约 4 MiB，占用停在 46–55 MiB；xzone 分配器不响应 `malloc_zone_pressure_relief`。这些页会被之后的会话复用（第二轮峰值不超过第一轮），系统内存紧张时也会回收。Linux 上用 `malloc_trim` 归还，尚未实测 | §1.4 |
+| Q-91 | 连接因积压被摘掉之后，已经排队的事件要不要丢弃 | 暂不。现在摘掉时只在队尾追加 `session/detached`，队里积压的事件留到连接读走或断开为止，每个这样的连接最多扣住约 4 倍队列上限（压测中约 8 MiB）。客户端反正要重新接入拿快照，可以在摘掉时丢弃这个会话已排队的事件，代价是这个客户端在收到摘掉通知之前少收一段事件 | §1.4 protocol-design §3.6 |
+| Q-92 | 压缩之前的历史要不要留在内存里 | 留着。历史和给客户端的记录都保留整段会话，长会话的内存随长度增长（40 个任务、3 次压缩之后约 3.8 MiB，日志 2.2 MB；一个任务 3000 轮、5 次压缩之后约 9.9 MiB，其中约八成已不在上下文里）。可以只留最近一次压缩之后的部分，更早的在 `session/history` 翻页时从日志读，代价是翻旧记录要读盘 | §1.4 §9.5 |
+| Q-93 | 同时恢复多个会话要不要并行 | 暂不。恢复和新建在服务里由一把加载锁串行，避免会话上限的计数出错；20 个 2.2 MB 的会话同时恢复，一个约 6 ms，全部 120 ms。改成按会话加锁、只在腾位置时全局协调即可并行 | §1.4 protocol-design §3.1 |
+| Q-94 | 做完的子智能体要不要卸载 | 不卸载。子智能体做完后留在内存里等 `send_message`，每个保留它的整段历史（一个 agent 任务约 110 KiB）。可以闲置一段时间后卸载，收到消息时再从日志恢复，代价是那次消息要多等一次恢复 | §1.4 subagent-design |
+| Q-95 | 任务的终止事件要不要等日志落盘之后再发 | 等。终止事件在任务条目 fsync 之后才发出，所以中断到 `task_interrupted` 约 5 ms，其中约 4 ms 是 F_FULLFSYNC。先发事件再落盘可以省掉这段等待，代价是客户端看到任务结束时，结束记录可能还没落盘；与 Q-19 一起决定 | §9.3 §1.4 |
+| Q-96 | 要不要缓存上一次请求体、只序列化新增的消息 | 暂不。上下文只追加，相邻两次请求的请求体前缀相同；长任务里序列化请求体占每轮用户态 CPU 的约两成。缓存的代价是每个运行中的会话多占一份上下文大小的内存（0.3–0.8 MB），压缩后作废 | §1.4 §4.6 |
+| Q-97 | 要不要把 skill 的扫描结果缓存到磁盘 | 暂不。有 76 个用户级 skill 时，每次启动扫描约 1.8 ms，主要是打开和读取 SKILL.md。可以按目录和文件的修改时间缓存，代价是缓存与文件不一致时的风险，以及多一个需要维护的文件 | §1.4 skill-design |
+
+## 21. 风险与对策
+
+| 风险 | 影响 | 对策 |
+|---|---|---|
+| 各家 OpenAI 兼容接口的细节差异很多 | 适配器需要反复修补 | 把差异写成 Compat 标志；每接入一家，先录制真实的流，再补回放测试 |
+| 各家回放推理内容的规则不同 | 多轮对话报错，或者回复质量下降 | 只在同一模型上回放，由 `replay_thinking` 控制；录制多轮对话的测试用例 |
+| 没有沙箱阶段的误操作 | 文件或数据损坏 | 默认使用 ask 模式；设置受保护路径；用 FileTracker 防止覆盖用户的改动；保留完整的会话日志；M3 引入沙箱 |
+| 压缩丢失关键信息 | 任务跑偏 | 用户原话逐字保留；交接请求要求逐字保留路径、标识符和报错；被裁切的工具输出可读回；频繁压缩时提醒；持续改进摘要提示词；原始记录可以回溯 |
+| 内置模型目录过时 | 价格或上下文窗口不准确 | 用户配置可以覆盖；以后评估自动更新的方案（Q-08） |
+| Rust 的开发迭代速度 | 进度延后 | 先把接口定稳；提示词和策略放进模板与配置，调整时不用改代码 |
+
+## 附录 A：事件流示例
+
+`finx exec --json "跑一下测试"`，权限模式为 manual。除第一行外，其余各行省略了 ts 和部分字段。
+
+```jsonl
+{"seq":1,"ts":1761642000000,"type":"session_started","session_id":"0193f0c2-7c1e-7d3a-9b1f-4c2d8e6a5b10","protocol_version":2,"model":"deepseek/deepseek-chat","cwd":"/work/demo","resumed":false}
+{"seq":2,"type":"task_started","task_id":"t1"}
+{"seq":3,"type":"message_completed","message_id":"5f2a9c01","message":{"role":"user","content":[{"type":"text","text":"跑一下测试"}]}}
+{"seq":4,"type":"turn_started","task_id":"t1","turn":0}
+{"seq":5,"type":"message_started","message_id":"8b31d0e4","role":"assistant"}
+{"seq":6,"type":"message_delta","message_id":"8b31d0e4","delta":{"type":"text","index":0,"text":"先运行测试。"}}
+{"seq":7,"type":"message_delta","message_id":"8b31d0e4","delta":{"type":"tool_call_start","index":1,"call_id":"call_01","name":"bash"}}
+{"seq":8,"type":"message_delta","message_id":"8b31d0e4","delta":{"type":"tool_call_args","index":1,"json":"{\"command\":\"cargo test\"}"}}
+{"seq":9,"type":"message_completed","message_id":"8b31d0e4","message":{"role":"assistant","content":[{"type":"text","text":"先运行测试。"},{"type":"tool_call","id":"call_01","name":"bash","arguments":{"command":"cargo test"}}],"provider":"deepseek","api":"openai-chat","model":"deepseek-chat","stop_reason":"tool_use"}}
+{"seq":10,"type":"tool_started","call_id":"call_01","name":"bash","args":{"command":"cargo test"}}
+{"seq":11,"type":"approval_requested","call_id":"call_01","name":"bash","args":{"command":"cargo test"},"summary":"cargo test","proposed_rule":{"prefix":["cargo","test"],"decision":"allow"}}
+{"seq":12,"type":"approval_resolved","call_id":"call_01","decision":{"type":"approve_for_session"}}
+{"seq":13,"type":"tool_progress","call_id":"call_01","text":"   Compiling demo v0.1.0 (/work/demo)\n"}
+{"seq":14,"type":"tool_completed","call_id":"call_01","result":{"call_id":"call_01","tool_name":"bash","content":[{"type":"text","text":"Exit code: 0\nDuration: 4.1s\nOutput:\n...test result: ok. 12 passed..."}],"is_error":false,"duration_ms":4100}}
+{"seq":15,"type":"turn_completed","task_id":"t1","turn":0}
+{"seq":16,"type":"turn_started","task_id":"t1","turn":1}
+{"seq":17,"type":"message_started","message_id":"c2d4e6f8","role":"assistant"}
+{"seq":18,"type":"message_delta","message_id":"c2d4e6f8","delta":{"type":"text","index":0,"text":"12 个测试全部通过。"}}
+{"seq":19,"type":"message_completed","message_id":"c2d4e6f8","message":{"role":"assistant","content":[{"type":"text","text":"12 个测试全部通过。"}],"stop_reason":"stop"}}
+{"seq":20,"type":"turn_completed","task_id":"t1","turn":1}
+{"seq":21,"type":"task_completed","task_id":"t1","last_message":"12 个测试全部通过。"}
+```
+
+## 附录 B：会话日志示例
+
+```jsonl
+{"type":"session","version":1,"id":"0193f0c2-7c1e-7d3a-9b1f-4c2d8e6a5b10","created_at":"2026-10-28T09:00:00Z","cwd":"/work/demo","finx_version":"0.1.0"}
+{"type":"system_prompt","id":"a1b2c3d4","parent":null,"ts":1761642000000,"text":"You are finx, ...","tools":["read","write","edit","bash"]}
+{"type":"settings","id":"b2c3d4e5","parent":"a1b2c3d4","ts":1761642000001,"model":"deepseek/deepseek-chat","thinking":"off","permission_mode":"manual"}
+{"type":"task","id":"c3d4e5f6","parent":"b2c3d4e5","ts":1761642000002,"task_id":"t1","status":"started"}
+{"type":"message","id":"5f2a9c01","parent":"c3d4e5f6","ts":1761642000003,"message":{"role":"user","content":[{"type":"text","text":"跑一下测试"}]}}
+{"type":"message","id":"8b31d0e4","parent":"5f2a9c01","ts":1761642002100,"message":{"role":"assistant","content":[...],"stop_reason":"tool_use","usage":{...}}}
+{"type":"message","id":"9e8d7c6b","parent":"8b31d0e4","ts":1761642006300,"message":{"role":"tool_result","call_id":"call_01","tool_name":"bash","content":[...],"is_error":false}}
+{"type":"message","id":"c2d4e6f8","parent":"9e8d7c6b","ts":1761642007900,"message":{"role":"assistant","content":[...],"stop_reason":"stop"}}
+{"type":"task","id":"d4e5f6a7","parent":"c2d4e6f8","ts":1761642007901,"task_id":"t1","status":"completed"}
+```
+
+压缩之后，日志里多出一行检查点（§9.2），之后的消息接在它后面：
+
+```jsonl
+{"type":"compaction","id":"e5f6a7b8","parent":"d4e5f6a7","ts":1761642100000,"seq":1,"reason":"threshold","summary":"Goal: ...","retained":[{"content":[{"type":"text","text":"跑一下测试"}],"ts":1761642000003}],"model":"deepseek/deepseek-chat","usage":{"input":1200,"output":900,"cache_read":98000,"cache_write":0,"cost":{...}},"tokens_before":108500,"tokens_after":3200}
+```
+
+## 附录 C：models.toml 示例
+
+```toml
+# ~/.finx/models.toml：与内置目录合并。同 id 的厂商按字段覆盖，同 id 的模型整条替换。
+# 价格、上下文窗口等数值仅为示例，以厂商官方数据为准。
+
+[providers.deepseek]
+api = "openai-chat"
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+currency = "CNY"
+compat = { max_tokens_field = "max_tokens", thinking_format = "deepseek" }
+
+[[providers.deepseek.models]]
+id = "deepseek-flash"
+name = "DeepSeek-V4.1-Flash"
+context_window = 1048576
+max_output_tokens = 393216
+reasoning = true
+thinking_levels = { minimal = "low", medium = "high", max = "max" }   # 厂商支持 low / high / max
+input = ["text", "image"]
+cost = { input = 1.0, output = 2.0, cache_read = 0.1 }
+
+# 同一个厂商也可以通过 Anthropic 兼容端点接入
+[providers.deepseek-anthropic]
+name = "DeepSeek（Anthropic 兼容）"
+api = "anthropic-messages"
+base_url = "https://api.deepseek.com/anthropic"
+api_key_env = "DEEPSEEK_API_KEY"
+currency = "CNY"
+
+[providers.anthropic]
+api = "anthropic-messages"
+base_url = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[[providers.anthropic.models]]
+id = "claude-sonnet-4-5"
+context_window = 200000
+max_output_tokens = 64000
+reasoning = true
+input = ["text", "image"]
+cost = { input = 3.0, output = 15.0, cache_read = 0.3, cache_write = 3.75 }
+
+# 自建服务：任何 OpenAI 兼容接口都可以这样接入
+[providers.my-vllm]
+name = "内网 vLLM"
+api = "openai-chat"
+base_url = "http://10.0.0.5:8000/v1"
+api_key_env = "MY_VLLM_KEY"
+compat = { max_tokens_field = "max_tokens", thinking_format = "qwen", stream_usage = false }
+
+[[providers.my-vllm.models]]
+id = "qwen3-coder"
+context_window = 262144
+max_output_tokens = 32768
+reasoning = true
+input = ["text"]
+cost = { input = 0.0, output = 0.0 }
+```
+
+## 附录 D：基础系统提示词草案
+
+```
+You are finx, a coding agent that works in the user's terminal. You complete software
+engineering tasks by reading and editing files and running commands in the user's workspace.
+
+How to work:
+- Read the relevant code before changing it, and keep changes focused on the request.
+- Use the dedicated tools: read to view files, edit for targeted changes, write for new
+  files or full rewrites, bash for builds, tests, git and other commands.
+- When it is practical, verify your work by building or running tests. If you could not
+  verify something, say so.
+- Never discard or overwrite changes you did not make, and do not run destructive commands
+  (for example `git reset --hard` or `rm -rf`) unless the user asked for them.
+- When a tool call is denied or not approved, do not retry it or get the same effect another
+  way, such as a different command, a script or another tool. Change your approach, or tell
+  the user what you need and why.
+- If a request is ambiguous or risky, ask before acting.
+
+How to communicate:
+- Reply in the user's language. Be concise and lead with the outcome.
+- Refer to code as path:line. Do not paste large files back to the user.
+```
+
+## 附录 E：交接提示词
+
+**交接请求**：追加在上下文末尾的 user 消息，原文在 `crates/finx-core/src/prompts/handoff.md`。
+
+```
+<handoff_request>
+The context window is nearly full. The conversation so far will be replaced by a handoff
+summary that you write now. After that, the work continues from your summary, the user's
+recent messages and the current state of the workspace. Nothing else from this conversation
+will be available, including tool results.
+
+Pause the task and write the handoff summary. Cover:
+1. Goal: what the user asked for, with every constraint, preference and decision they stated.
+2. Done so far: files created or changed, commands run and what they showed, decisions made
+   and why.
+3. Current state: what works, what fails, open errors, and what was in progress when you
+   stopped.
+4. Next steps: what remains, in order.
+5. Exact details: file paths, names, identifiers, commands, error messages and values the
+   work depends on, including paths of saved tool output. Copy them exactly.
+
+If the conversation already contains an earlier handoff summary, carry over what still
+matters from it, because it will be replaced too. Do not call tools. Reply with the summary
+only, in plain Markdown.
+</handoff_request>
+```
+
+**摘要的包装**：压缩后，摘要以一条 user 消息放在新上下文里（`context::summary_message`）。没有保留的用户消息时，去掉 "The user's recent messages ..." 一句。
+
+```
+<conversation_summary>
+Earlier parts of this conversation were replaced by the handoff summary below, written by the
+assistant that did the work. The user's recent messages are kept above in their own words. Tool
+results from that work are no longer in context: read files again when you need their current
+content. Continue from where the work stopped and do not redo finished steps.
+
+{summary}
+</conversation_summary>
+```

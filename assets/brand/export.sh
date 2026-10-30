@@ -1,0 +1,146 @@
+#!/bin/zsh
+# Exports every FinxWork brand asset from the final mark (generator.html, variant "final").
+# Run: zsh assets/brand/export.sh
+set -euo pipefail
+B=${0:A:h}
+ART=$B/generator.html
+G="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+TMP=$(mktemp -d)
+trap 'rm -rf $TMP' EXIT
+
+# shot OUT URL SIZE [transparent] [device-scale]
+shot() {
+  local extra=(--force-device-scale-factor=${5:-1})
+  [[ ${4:-} == transparent ]] && extra+=(--default-background-color=00000000)
+  "$G" --headless=new --disable-gpu --allow-file-access-from-files --hide-scrollbars $extra \
+    --virtual-time-budget=30000 --screenshot="$1" --window-size="$3" "$2" 2>/dev/null
+}
+mark() { shot "$1" "file://$ART?v=final&$2" "${3:-2048,2048}" "${4:-}"; }
+fit() { sips -z $2 $2 "$1" --out "$3" >/dev/null; }
+
+mkdir -p $B/mark $B/lockup $B/ios $B/macos $B/web
+
+echo "· mark"
+mark $B/mark/finxwork-mark-on-light.png "mode=strands&bg=white&tile=none&scale=2" 2048,2048 transparent
+mark $B/mark/finxwork-mark-on-dark.png  "mode=strands&bg=black&tile=none&scale=2" 2048,2048 transparent
+mark $B/mark/finxwork-mark-solid.png    "mode=solid&bg=white&tile=none&scale=2"   2048,2048 transparent
+mark $B/mark/finxwork-icon-light.png    "mode=strands&bg=white&scale=2" 2048,2048 transparent
+mark $B/mark/finxwork-icon-dark.png     "mode=strands&bg=black&scale=2" 2048,2048 transparent
+
+echo "· solid mark as SVG (the app's small sizes)"
+"$G" --headless=new --disable-gpu --allow-file-access-from-files --virtual-time-budget=10000 --dump-dom "file://$ART?svg=final" 2>/dev/null |
+  python3 -I -c 'import sys, html, re; m = re.search(r"&lt;svg.*?&lt;/svg&gt;", sys.stdin.read(), re.S); print(html.unescape(m.group(0)))' > $B/mark/finxwork-mark-solid.svg
+
+echo "· app (the data-point mark cropped as the SVG is: 256 px for 64 px and up in the desktop app, 640 px on dark for its first-run page)"
+mkdir -p $B/app
+for bg in light dark; do
+  sips -c 1300 1300 $B/mark/finxwork-mark-on-$bg.png --out $TMP/c.png >/dev/null
+  fit $TMP/c.png 256 $B/app/finxwork-mark-on-$bg-256.png
+done
+sips -c 1300 1300 $B/mark/finxwork-mark-on-dark.png --out $TMP/c.png >/dev/null
+fit $TMP/c.png 640 $B/app/finxwork-mark-on-dark-640.png
+
+echo "· lockups"
+for bg in light dark; do
+  shot $B/lockup/finxwork-lockup-horizontal-$bg.png "file://$B/lockup.html?type=h&bg=$bg" 800,240 transparent 2
+  shot $B/lockup/finxwork-lockup-stacked-$bg.png    "file://$B/lockup.html?type=v&bg=$bg" 600,600 transparent 2
+done
+shot $B/web/og-image.png "file://$B/lockup.html?type=og&bg=dark" 1200,630 "" 2
+sips -z 630 1200 $B/web/og-image.png >/dev/null
+
+echo "· iOS (full-bleed square, no alpha; the system applies the mask)"
+I=$B/ios/AppIcon.appiconset
+mkdir -p $I
+mark $TMP/ios-light.png  "mode=strands&bg=white&tile=square" 1024,1024
+mark $TMP/ios-dark.png   "mode=strands&bg=black&tile=square" 1024,1024
+mark $TMP/ios-tinted.png "mode=strands&bg=black&tile=square&gray=1" 1024,1024
+cp $TMP/ios-light.png $I/AppIcon-1024.png
+cp $TMP/ios-dark.png $I/AppIcon-1024-dark.png
+cp $TMP/ios-tinted.png $I/AppIcon-1024-tinted.png
+cat > $I/Contents.json <<'JSON'
+{
+  "images" : [
+    { "filename" : "AppIcon-1024.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" },
+    { "appearances" : [ { "appearance" : "luminosity", "value" : "dark" } ],
+      "filename" : "AppIcon-1024-dark.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" },
+    { "appearances" : [ { "appearance" : "luminosity", "value" : "tinted" } ],
+      "filename" : "AppIcon-1024-tinted.png", "idiom" : "universal", "platform" : "ios", "size" : "1024x1024" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}
+JSON
+for s in 180 120 87 80 60 58 40; do fit $TMP/ios-light.png $s $B/ios/icon-$s.png; done
+
+echo "· macOS (824 px body on the 1024 grid, with drop shadow; solid mark at 16 and 32 px)"
+for look in light dark; do
+  bg=$([[ $look == light ]] && echo white || echo black)
+  mark $TMP/mac-$look.png       "mode=strands&bg=$bg&shadow=1" 1024,1024 transparent
+  mark $TMP/mac-$look-small.png "mode=solid&bg=$bg&shadow=1"   1024,1024 transparent
+  S=$B/macos/AppIcon-$look.iconset
+  mkdir -p $S
+  for px in 16 32 64 128 256 512 1024; do
+    src=$TMP/mac-$look.png; (( px <= 32 )) && src=$TMP/mac-$look-small.png
+    fit $src $px $TMP/m$px.png
+  done
+  cp $TMP/m16.png $S/icon_16x16.png;     cp $TMP/m32.png $S/icon_16x16@2x.png
+  cp $TMP/m32.png $S/icon_32x32.png;     cp $TMP/m64.png $S/icon_32x32@2x.png
+  cp $TMP/m128.png $S/icon_128x128.png;  cp $TMP/m256.png $S/icon_128x128@2x.png
+  cp $TMP/m256.png $S/icon_256x256.png;  cp $TMP/m512.png $S/icon_256x256@2x.png
+  cp $TMP/m512.png $S/icon_512x512.png;  cp $TMP/m1024.png $S/icon_512x512@2x.png
+  iconutil -c icns $S -o $B/macos/AppIcon-$look.icns
+  cp $TMP/m1024.png $B/macos/icon-$look-1024.png
+done
+
+echo "· web"
+mark $TMP/fav.png "mode=solid&bg=white&tile=none" 1024,1024 transparent
+for s in 16 32 48; do fit $TMP/fav.png $s $B/web/favicon-$s.png; done
+fit $TMP/ios-light.png 180 $B/web/apple-touch-icon.png
+fit $TMP/ios-light.png 192 $B/web/icon-192.png
+fit $TMP/ios-light.png 512 $B/web/icon-512.png
+python3 -I - $B/web <<'PY'
+import struct, sys, pathlib
+d = pathlib.Path(sys.argv[1]); imgs = [(s, (d / f"favicon-{s}.png").read_bytes()) for s in (16, 32, 48)]
+head = struct.pack("<HHH", 0, 1, len(imgs)); off = 6 + 16 * len(imgs); ents = b""
+for s, b in imgs:
+    ents += struct.pack("<BBBBHHII", s, s, 0, 0, 1, 32, len(b), off); off += len(b)
+(d / "favicon.ico").write_bytes(head + ents + b"".join(b for _, b in imgs))
+PY
+
+
+
+echo "· macOS Icon Composer bundle (for actool, as the desktop app's build uses)"
+# Icon Composer's canvas is the icon shape itself, so crop the mark to the 824 px body first.
+IC=$B/macos/AppIcon.icon
+mkdir -p $IC/Assets
+for look in light dark; do
+  sips -c 1648 1648 $B/mark/finxwork-mark-on-$look.png --out $TMP/c.png >/dev/null
+  fit $TMP/c.png 1024 $IC/Assets/mark-$look.png
+done
+cat > $IC/icon.json <<'JSON'
+{
+  "fill" : { "solid" : "srgb:1.00000,1.00000,1.00000,1.00000" },
+  "fill-specializations" : [
+    { "appearance" : "dark", "value" : { "solid" : "srgb:0.03922,0.04314,0.05882,1.00000" } }
+  ],
+  "groups" : [
+    {
+      "layers" : [
+        {
+          "glass" : false,
+          "image-name" : "mark-light.png",
+          "image-name-specializations" : [ { "appearance" : "dark", "value" : "mark-dark.png" } ],
+          "name" : "mark"
+        }
+      ],
+      "shadow" : { "kind" : "neutral", "opacity" : 0.5 },
+      "translucency" : { "enabled" : false, "value" : 0.5 }
+    }
+  ],
+  "supported-platforms" : { "squares" : [ "macOS" ] }
+}
+JSON
+xcrun actool $IC --compile $TMP --platform macosx --minimum-deployment-target 14.0 \
+  --app-icon AppIcon --output-partial-info-plist $TMP/AppIcon.plist >$TMP/actool.log 2>&1 || { cat $TMP/actool.log; exit 1; }
+[[ -f $TMP/Assets.car ]] || { echo "actool produced no Assets.car"; cat $TMP/actool.log; exit 1; }
+echo "  actool compiled AppIcon.icon"
+echo "done"

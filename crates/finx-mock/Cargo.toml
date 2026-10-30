@@ -1,0 +1,23 @@
+[package]
+name = "finx-mock"
+description = "A scriptable OpenAI-compatible model service for end-to-end and load tests."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "finx-mock"
+path = "src/main.rs"
+
+[[bin]]
+name = "finx-mcp-server"
+path = "src/bin/finx-mcp-server.rs"
+
+[dependencies]
+parking_lot.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["io-std", "net"] }
+
+[lints]
+workspace = true

@@ -1,0 +1,76 @@
+//! Extension points of the agent loop. The approval policy is itself a hook.
+
+use async_trait::async_trait;
+use finx_llm::AssistantMessage;
+use finx_llm::Context;
+use finx_llm::ToolCall;
+use finx_protocol::CommandRule;
+use finx_protocol::PermissionMode;
+use finx_tools::Environment;
+use finx_tools::Tool;
+use finx_tools::ToolOutput;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Gate {
+    Allow,
+    Deny(String),
+    Ask {
+        summary: String,
+        reason: Option<String>,
+        /// Command prefix that approving for the session allows from then on.
+        proposed_rule: Option<CommandRule>,
+        /// Mode that approving for the session switches to. Without this or a rule, an
+        /// approval covers this call only.
+        proposed_mode: Option<PermissionMode>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TurnDecision {
+    /// Normal scheduling: continue when there are tool results or queued input.
+    Default,
+    /// Run one more turn.
+    Continue,
+    /// End the task now.
+    End,
+}
+
+/// Read-only snapshot of session state for hooks.
+#[derive(Clone)]
+pub struct SessionView {
+    pub permission_mode: PermissionMode,
+    pub config_rules: Vec<CommandRule>,
+    pub session_rules: Vec<CommandRule>,
+    pub trusted: bool,
+    pub env: Arc<dyn Environment>,
+    /// finx's own data directory (canonical), which is protected like `.git`.
+    pub data_dir: PathBuf,
+    /// Configured skill paths (canonical) and `skills.dirs` names missing from the built-in
+    /// protected directories. What is written there becomes instructions for later
+    /// sessions, so they are protected like `.agents`.
+    pub skill_roots: Arc<[PathBuf]>,
+    pub skill_dirs: Arc<[String]>,
+}
+
+#[async_trait]
+pub trait Hooks: Send + Sync + 'static {
+    /// Adjust the request context (inject reminders, trim). Must not fail.
+    fn transform_context(&self, _ctx: &mut Context) {}
+
+    /// Allow, deny, or ask before a tool runs. The first non-`Allow` answer wins.
+    async fn before_tool(&self, _call: &ToolCall, _tool: &dyn Tool, _view: &SessionView) -> Gate {
+        Gate::Allow
+    }
+
+    /// Adjust a tool result.
+    async fn after_tool(&self, _call: &ToolCall, output: ToolOutput) -> ToolOutput {
+        output
+    }
+
+    /// Decide after each turn. The first non-`Default` answer wins.
+    async fn finish_turn(&self, _message: &AssistantMessage) -> TurnDecision {
+        TurnDecision::Default
+    }
+}

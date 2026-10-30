@@ -1,0 +1,249 @@
+{
+  "window": {
+    "showSidebar": "Show Sidebar",
+    "hideSidebar": "Hide Sidebar",
+    "undo": "Undo"
+  },
+  "sidebar": {
+    "label": "Sidebar",
+    "newSession": "New Session",
+    "search": "Search",
+    "sessions": "Sessions",
+    "loading": "Loading sessions…",
+    "empty": "No sessions yet<br/>Start one with New Session",
+    "showArchived": "Show Archived"
+  },
+  "kernel": {
+    "connecting": "Connecting to finx…",
+    "starting": "Starting the kernel…",
+    "reconnecting": "Reconnecting to the kernel…",
+    "ready": "Connected · {{server}}",
+    "readyUpdate": "Connected · {{server}} · updates when idle",
+    "down": "The kernel is not running",
+    "retry": "Try Again",
+    "showLog": "Show Log",
+    "mock": "Demo data · no kernel"
+  },
+  "foot": {
+    "label": "This computer and settings",
+    "settings": "Settings…",
+    "models": "Models…",
+    "about": "About FinxWork"
+  },
+  "state": {
+    "idle": "Idle",
+    "running": "Running",
+    "awaiting_approval": "Waiting for approval",
+    "failed": "Failed"
+  },
+  "sessionMenu": {
+    "open": "Open",
+    "rename": "Rename",
+    "archive": "Archive",
+    "unarchive": "Unarchive",
+    "copyId": "Copy Session ID",
+    "revealFinder": "Show Session File in Finder",
+    "reveal": "Show Session File",
+    "delete": "Delete…",
+    "more": "More",
+    "renameLabel": "Session title",
+    "deleteTitle": "Delete “{{title}}”?",
+    "deleteMessage": "The session's log goes to finx's trash. Changes it made to your files stay.",
+    "deleteRunning": " The task in progress is interrupted first.",
+    "deleteButton": "Delete",
+    "deleted": "Deleted “{{title}}”",
+    "archived": "Archived “{{title}}”",
+    "copiedId": "Copied the session ID"
+  },
+  "listView": {
+    "title": "View Options",
+    "group": "Group",
+    "sort": "Sort",
+    "show": "Show",
+    "byStatus": "By Status",
+    "byDate": "By Date",
+    "byProject": "By Project",
+    "lastActive": "Last Active",
+    "newestFirst": "Newest First",
+    "oldestFirst": "Oldest First",
+    "metadata": "Metadata",
+    "titleOnly": "Title Only"
+  },
+  "bucket": {
+    "attention": "Needs You",
+    "active": "In Progress",
+    "done": "Done",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "week": "Previous 7 Days",
+    "earlier": "Earlier",
+    "archived": "Archived"
+  },
+  "time": {
+    "justNow": "just now",
+    "minutesAgo_one": "{{count}} min ago",
+    "minutesAgo_other": "{{count}} min ago",
+    "hoursAgo_one": "{{count}} hr ago",
+    "hoursAgo_other": "{{count}} hr ago",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "seconds_one": "{{count}} s",
+    "seconds_other": "{{count}} s",
+    "minutesSeconds": "{{m}} min {{s}} s",
+    "secondsAgo_one": "{{count}} sec ago",
+    "secondsAgo_other": "{{count}} sec ago",
+    "daysAgo_one": "{{count}} day ago",
+    "daysAgo_other": "{{count}} days ago"
+  },
+  "steps": {
+    "read": {
+      "done": "Read",
+      "doing": "Reading",
+      "do": "Read",
+      "count_one": "Read {{count}} file",
+      "count_other": "Read {{count}} files"
+    },
+    "edit": {
+      "done": "Edited",
+      "doing": "Editing",
+      "do": "Edit",
+      "count_one": "Edited {{count}} file",
+      "count_other": "Edited {{count}} files"
+    },
+    "delete": {
+      "done": "Deleted",
+      "doing": "Deleting",
+      "do": "Delete",
+      "count_one": "Deleted {{count}} file",
+      "count_other": "Deleted {{count}} files"
+    },
+    "move": {
+      "done": "Moved",
+      "doing": "Moving",
+      "do": "Move",
+      "count_one": "Moved {{count}} file",
+      "count_other": "Moved {{count}} files"
+    },
+    "search": {
+      "done": "Searched",
+      "doing": "Searching",
+      "do": "Search",
+      "count_one": "Searched once",
+      "count_other": "Searched {{count}} times"
+    },
+    "execute": {
+      "done": "Ran",
+      "doing": "Running",
+      "do": "Run",
+      "count_one": "Ran {{count}} command",
+      "count_other": "Ran {{count}} commands"
+    },
+    "fetch": {
+      "done": "Fetched",
+      "doing": "Fetching",
+      "do": "Fetch",
+      "count_one": "Fetched {{count}} page",
+      "count_other": "Fetched {{count}} pages"
+    },
+    "other": {
+      "done": "Called",
+      "doing": "Calling",
+      "do": "Call",
+      "count_one": "Called {{count}} tool",
+      "count_other": "Called {{count}} tools"
+    },
+    "denied": {
+      "done": "Denied",
+      "count_one": "Denied {{count}} call",
+      "count_other": "Denied {{count}} calls"
+    },
+    "thinking": {
+      "count_one": "Thought once",
+      "count_other": "Thought {{count}} times"
+    },
+    "cancelled": "Not run",
+    "awaiting": "Needs approval:",
+    "separator": ", "
+  },
+  "permission": {
+    "manual": {
+      "title": "Ask Permissions",
+      "desc": "Asks before changing files or running commands"
+    },
+    "accept-edits": {
+      "title": "Accept Edits",
+      "desc": "Changes files in the workspace without asking; asks before commands"
+    },
+    "bypass-permissions": {
+      "title": "Bypass Permissions",
+      "desc": "Runs everything without asking, except deny rules, ask rules and deleting critical paths"
+    }
+  },
+  "thinking": {
+    "off": "No Thinking",
+    "minimal": "Minimal",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "max": "Max"
+  },
+  "failure": {
+    "auth": "Not signed in to the provider",
+    "quota_exceeded": "Out of quota",
+    "rate_limited": "Rate limited",
+    "overloaded": "Provider overloaded",
+    "server": "Provider error",
+    "network": "Network error",
+    "timeout": "Timed out",
+    "context_overflow": "Context is full",
+    "invalid_request": "Invalid request",
+    "content_filtered": "Blocked by the provider's filter",
+    "protocol": "Unexpected response",
+    "unknown": "Something went wrong"
+  },
+  "advice": {
+    "auth": "Check the provider's key in finx's configuration, then retry.",
+    "quota_exceeded": "Top up the provider's account or switch models, then retry.",
+    "rate_limited": "The provider asks to slow down. Retry in a moment.",
+    "overloaded": "The provider is busy. Retry in a moment.",
+    "server": "The provider had a problem. Retry in a moment.",
+    "network": "Check your network, then retry.",
+    "timeout": "The provider took too long. Retry, or switch models.",
+    "context_overflow": "Compact the context or start a new session.",
+    "content_filtered": "Rephrase the request, or switch models.",
+    "retryable": "Retry in a moment.",
+    "unknown": "Retry, or look at the details."
+  },
+  "search": {
+    "title": "Search Sessions",
+    "placeholder": "Search titles, first messages, projects…",
+    "all": "{{label}}: All",
+    "includeArchived": "Include Archived",
+    "results": "Results",
+    "found": "Sessions · {{n}}",
+    "none": "No sessions found",
+    "noneHint": "Try other words, or clear the filters. Archived sessions show with Include Archived.",
+    "archived": "Archived",
+    "actions": "Actions",
+    "select": "↑↓ Select",
+    "open": "↩ Open",
+    "newSession": "New Session",
+    "openSettings": "Open Settings"
+  },
+  "filter": {
+    "project": "Project",
+    "model": "Model"
+  },
+  "sheet": {
+    "cancel": "Cancel"
+  },
+  "update": {
+    "ready": "FinxWork {{version}} is ready",
+    "readyHint": "Restart to update; tasks keep running",
+    "available": "FinxWork {{version}} is available",
+    "availableHint": "You'll be asked to restart once it's downloaded",
+    "restart": "Restart",
+    "download": "Download",
+    "later": "Later"
+  }
+}

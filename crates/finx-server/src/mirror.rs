@@ -1,0 +1,759 @@
+//! The session as the events describe it, kept by the session hub to answer attaches with a
+//! snapshot that lines up exactly with the following events.
+
+use finx_llm::Timestamp;
+use finx_llm::UsageTotals;
+use finx_protocol::AgentStatus;
+use finx_protocol::CompletionReason;
+use finx_protocol::Delta;
+use finx_protocol::ErrorInfo;
+use finx_protocol::Event;
+use finx_protocol::EventMsg;
+use finx_protocol::Role;
+use finx_protocol::api::ActiveTask;
+use finx_protocol::api::AgentSnapshot;
+use finx_protocol::api::PartialBlock;
+use finx_protocol::api::PartialMessage;
+use finx_protocol::api::PendingApproval;
+use finx_protocol::api::SessionInfo;
+use finx_protocol::api::SessionSnapshot;
+use finx_protocol::api::SessionState;
+use finx_protocol::api::TaskOutcome;
+use finx_protocol::api::ToolState;
+use finx_protocol::api::TranscriptItem;
+use finx_protocol::api::TranscriptPage;
+
+/// Progress output kept per running tool.
+const PROGRESS_TAIL: usize = 16 * 1024;
+
+pub struct SessionMirror {
+    info: SessionInfo,
+    last_seq: u64,
+    transcript: Vec<TranscriptItem>,
+    active: Option<ActiveTask>,
+    usage: UsageTotals,
+    /// When the running task started.
+    task_started: Option<Timestamp>,
+    /// The last task failed.
+    failed: bool,
+    /// Latest status of each MCP server, by name.
+    mcp_servers: std::collections::BTreeMap<String, finx_protocol::McpServerInfo>,
+    /// Sub-agents started since the session was loaded, in the order they started.
+    agents: Vec<AgentMirror>,
+}
+
+/// A sub-agent: what `agent_started` and `agent_status` said, and its own session as its
+/// `agent_event`s describe it.
+struct AgentMirror {
+    agent_id: String,
+    name: String,
+    call_id: String,
+    status: AgentStatus,
+    since: Timestamp,
+    summary: Option<String>,
+    usage: Option<UsageTotals>,
+    error: Option<ErrorInfo>,
+    elapsed_ms: Option<u64>,
+    session: SessionMirror,
+}
+
+impl SessionMirror {
+    pub fn new(info: SessionInfo, transcript: Vec<TranscriptItem>) -> Self {
+        let failed = transcript.iter().rev().find_map(|item| match item {
+            TranscriptItem::TaskEnd { outcome, .. } => Some(*outcome == TaskOutcome::Failed),
+            _ => None,
+        });
+        Self {
+            info,
+            last_seq: 0,
+            transcript,
+            active: None,
+            usage: UsageTotals::default(),
+            task_started: None,
+            failed: failed.unwrap_or(false),
+            mcp_servers: std::collections::BTreeMap::new(),
+            agents: Vec::new(),
+        }
+    }
+
+    pub fn info(&self) -> &SessionInfo {
+        &self.info
+    }
+
+    /// What the session is doing, as lists show it.
+    pub fn state(&self) -> SessionState {
+        match &self.active {
+            Some(task) if !task.approvals.is_empty() => SessionState::AwaitingApproval,
+            Some(_) => SessionState::Running,
+            None if self.failed => SessionState::Failed,
+            None => SessionState::Idle,
+        }
+    }
+
+    pub fn task_started(&self) -> Option<Timestamp> {
+        self.task_started
+    }
+
+    pub fn last_seq(&self) -> u64 {
+        self.last_seq
+    }
+
+    pub fn busy(&self) -> bool {
+        self.active.is_some()
+    }
+
+    /// A sub-agent is working.
+    pub fn agents_running(&self) -> bool {
+        self.agents.iter().any(|a| a.status == AgentStatus::Running)
+    }
+
+    pub fn approval_pending(&self, call_id: &str) -> bool {
+        self.active
+            .as_ref()
+            .is_some_and(|task| task.approvals.iter().any(|a| a.call_id == call_id))
+    }
+
+    pub fn transcript(&self) -> &[TranscriptItem] {
+        &self.transcript
+    }
+
+    pub fn apply(&mut self, event: &Event) {
+        self.last_seq = event.seq;
+        match &event.msg {
+            EventMsg::SessionStarted {
+                model,
+                cwd,
+                session_file,
+                thinking,
+                permission_mode,
+                context_window,
+                usage,
+                ..
+            } => {
+                self.info.model = model.clone();
+                self.info.cwd = cwd.clone();
+                self.info.session_file = session_file.clone();
+                self.info.thinking = *thinking;
+                self.info.permission_mode = *permission_mode;
+                self.info.context_window = *context_window;
+                self.usage = usage.clone();
+            }
+            EventMsg::McpServerStatus { server, state, tools, error, .. } => {
+                self.mcp_servers.insert(
+                    server.clone(),
+                    finx_protocol::McpServerInfo {
+                        server: server.clone(),
+                        state: *state,
+                        tools: *tools,
+                        error: error.clone(),
+                    },
+                );
+            }
+            EventMsg::SettingsChanged {
+                model,
+                thinking,
+                permission_mode,
+                context_window,
+            } => {
+                self.info.model = model.clone();
+                self.info.thinking = *thinking;
+                self.info.permission_mode = *permission_mode;
+                if *context_window > 0 {
+                    self.info.context_window = *context_window;
+                }
+            }
+            EventMsg::TaskStarted { task_id, .. } => {
+                self.active = Some(ActiveTask {
+                    task_id: task_id.clone(),
+                    turn: 0,
+                    streaming: None,
+                    tools: Vec::new(),
+                    approvals: Vec::new(),
+                });
+                self.task_started = Some(event.ts);
+            }
+            EventMsg::TitleChanged { title } => self.info.title = Some(title.clone()),
+            EventMsg::ArchivedChanged { archived } => self.info.archived = *archived,
+            EventMsg::TurnStarted { turn, .. } => {
+                if let Some(task) = &mut self.active {
+                    task.turn = *turn;
+                }
+            }
+            EventMsg::MessageStarted {
+                message_id,
+                role: Role::Assistant,
+            } => {
+                if let Some(task) = &mut self.active {
+                    task.streaming = Some(PartialMessage {
+                        message_id: message_id.clone(),
+                        blocks: Vec::new(),
+                    });
+                }
+            }
+            EventMsg::MessageDelta { message_id, delta } => {
+                if let Some(partial) = self
+                    .active
+                    .as_mut()
+                    .and_then(|t| t.streaming.as_mut())
+                    .filter(|p| &p.message_id == message_id)
+                {
+                    apply_delta(partial, delta);
+                }
+            }
+            EventMsg::MessageCompleted {
+                message_id,
+                message,
+                mail,
+                skills,
+            } => {
+                self.transcript.push(TranscriptItem::Message {
+                    message_id: message_id.clone(),
+                    message: message.clone(),
+                    skills: skills.clone(),
+                    mail: mail.clone().map(Box::new),
+                });
+                if let Some(task) = &mut self.active
+                    && task.streaming.as_ref().is_some_and(|p| &p.message_id == message_id)
+                {
+                    task.streaming = None;
+                }
+            }
+            EventMsg::ToolStarted {
+                call_id,
+                name,
+                args,
+                category,
+                title,
+                ..
+            } => {
+                if let Some(task) = &mut self.active {
+                    task.tools.push(ToolState {
+                        call_id: call_id.clone(),
+                        name: name.clone(),
+                        category: *category,
+                        title: title.clone(),
+                        args: args.clone(),
+                        running: false,
+                        progress_tail: String::new(),
+                    });
+                }
+            }
+            EventMsg::ToolRunning { call_id } => {
+                if let Some(tool) = self.tool_mut(call_id) {
+                    tool.running = true;
+                }
+            }
+            EventMsg::ToolProgress { call_id, text } => {
+                if let Some(tool) = self.tool_mut(call_id) {
+                    tool.progress_tail.push_str(text);
+                    keep_tail(&mut tool.progress_tail, PROGRESS_TAIL);
+                }
+            }
+            EventMsg::ToolCompleted { call_id, result } => {
+                self.transcript.push(TranscriptItem::ToolResult {
+                    call_id: call_id.clone(),
+                    result: result.clone(),
+                });
+                if let Some(task) = &mut self.active {
+                    task.tools.retain(|t| &t.call_id != call_id);
+                    task.approvals.retain(|a| &a.call_id != call_id);
+                }
+            }
+            EventMsg::ApprovalRequested {
+                call_id,
+                name,
+                args,
+                summary,
+                reason,
+                proposed_rule,
+                proposed_mode,
+            } => {
+                if let Some(task) = &mut self.active {
+                    task.approvals.push(PendingApproval {
+                        call_id: call_id.clone(),
+                        name: name.clone(),
+                        args: args.clone(),
+                        summary: summary.clone(),
+                        reason: reason.clone(),
+                        proposed_rule: proposed_rule.clone(),
+                        proposed_mode: *proposed_mode,
+                    });
+                }
+            }
+            EventMsg::ApprovalResolved { call_id, .. } => {
+                if let Some(task) = &mut self.active {
+                    task.approvals.retain(|a| &a.call_id != call_id);
+                }
+            }
+            EventMsg::TaskCompleted {
+                task_id, usage, reason, ..
+            } => self.end_task(event.ts, task_id, TaskOutcome::Completed, Some(*reason), None, usage),
+            EventMsg::TaskFailed { task_id, error, usage } => {
+                self.end_task(event.ts, task_id, TaskOutcome::Failed, None, Some(error.clone()), usage)
+            }
+            EventMsg::TaskInterrupted { task_id, usage, .. } => {
+                self.end_task(event.ts, task_id, TaskOutcome::Interrupted, None, None, usage)
+            }
+            EventMsg::AgentStarted {
+                agent_id,
+                name,
+                session_file,
+                call_id,
+            } => {
+                let info = SessionInfo {
+                    session_id: agent_id.clone(),
+                    session_file: session_file.clone(),
+                    title: Some(name.clone()),
+                    archived: false,
+                    ..self.info.clone()
+                };
+                self.agents.push(AgentMirror {
+                    agent_id: agent_id.clone(),
+                    name: name.clone(),
+                    call_id: call_id.clone(),
+                    status: AgentStatus::Running,
+                    since: event.ts,
+                    summary: None,
+                    usage: None,
+                    error: None,
+                    elapsed_ms: None,
+                    session: SessionMirror::new(info, Vec::new()),
+                });
+            }
+            EventMsg::AgentStatus {
+                agent_id,
+                status,
+                summary,
+                usage,
+                error,
+                elapsed_ms,
+                ..
+            } => {
+                if let Some(agent) = self.agents.iter_mut().find(|a| &a.agent_id == agent_id) {
+                    agent.status = *status;
+                    agent.since = event.ts;
+                    // A new round keeps what the last one reported until it reports itself.
+                    if *status != AgentStatus::Running {
+                        agent.summary.clone_from(summary);
+                        agent.usage.clone_from(usage);
+                        agent.error.clone_from(error);
+                        agent.elapsed_ms = *elapsed_ms;
+                    }
+                }
+            }
+            EventMsg::AgentEvent { agent_id, event } => {
+                if let Some(agent) = self.agents.iter_mut().find(|a| &a.agent_id == agent_id) {
+                    agent.session.apply(event);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn end_task(
+        &mut self,
+        ts: Timestamp,
+        task_id: &str,
+        outcome: TaskOutcome,
+        reason: Option<CompletionReason>,
+        error: Option<ErrorInfo>,
+        usage: &UsageTotals,
+    ) {
+        self.usage.merge(usage);
+        self.active = None;
+        self.task_started = None;
+        self.failed = outcome == TaskOutcome::Failed;
+        self.transcript.push(TranscriptItem::TaskEnd {
+            task_id: task_id.to_string(),
+            outcome,
+            reason,
+            error: error.map(Box::new),
+            usage: Some(usage.clone()),
+            ts,
+        });
+    }
+
+    fn tool_mut(&mut self, call_id: &str) -> Option<&mut ToolState> {
+        self.active.as_mut()?.tools.iter_mut().find(|t| t.call_id == call_id)
+    }
+
+    /// The current state with the last `limit` transcript items (all with `None`).
+    pub fn snapshot(&self, limit: Option<usize>) -> SessionSnapshot {
+        let end = self.transcript.len();
+        let start = limit.map_or(0, |n| end.saturating_sub(n));
+        SessionSnapshot {
+            session: self.info.clone(),
+            last_seq: self.last_seq,
+            transcript: self.page(start, end),
+            active_task: self.active.clone(),
+            usage: self.usage.clone(),
+            mcp_servers: self.mcp_servers.values().cloned().collect(),
+            agents: self.agents.iter().map(|a| a.snapshot(limit)).collect(),
+        }
+    }
+
+    /// Items before the `before` cursor of an earlier page.
+    pub fn history(&self, before: &str, limit: usize) -> Option<TranscriptPage> {
+        let end: usize = before.strip_prefix('i')?.parse().ok()?;
+        let end = end.min(self.transcript.len());
+        Some(self.page(end.saturating_sub(limit), end))
+    }
+
+    fn page(&self, start: usize, end: usize) -> TranscriptPage {
+        TranscriptPage {
+            items: self.transcript[start..end].to_vec(),
+            before: (start > 0).then(|| format!("i{start}")),
+        }
+    }
+}
+
+impl AgentMirror {
+    fn snapshot(&self, limit: Option<usize>) -> AgentSnapshot {
+        let own = self.session.snapshot(limit);
+        AgentSnapshot {
+            agent_id: self.agent_id.clone(),
+            name: self.name.clone(),
+            call_id: self.call_id.clone(),
+            session_file: self.session.info.session_file.clone(),
+            status: self.status,
+            since: self.since,
+            summary: self.summary.clone(),
+            usage: self.usage.clone(),
+            error: self.error.clone(),
+            elapsed_ms: self.elapsed_ms,
+            transcript: own.transcript,
+            active_task: own.active_task,
+        }
+    }
+}
+
+fn apply_delta(partial: &mut PartialMessage, delta: &Delta) {
+    match delta {
+        Delta::Text { index, text } => match block_mut(partial, *index) {
+            Some(PartialBlock::Text { text: existing, .. }) => existing.push_str(text),
+            Some(_) => {}
+            None => partial.blocks.push(PartialBlock::Text {
+                index: *index,
+                text: text.clone(),
+            }),
+        },
+        Delta::Thinking { index, text } => match block_mut(partial, *index) {
+            Some(PartialBlock::Thinking { text: existing, .. }) => existing.push_str(text),
+            Some(_) => {}
+            None => partial.blocks.push(PartialBlock::Thinking {
+                index: *index,
+                text: text.clone(),
+            }),
+        },
+        Delta::ToolCallStart { index, call_id, name } => {
+            if block_mut(partial, *index).is_none() {
+                partial.blocks.push(PartialBlock::ToolCall {
+                    index: *index,
+                    call_id: call_id.clone(),
+                    name: name.clone(),
+                    args_json: String::new(),
+                });
+            }
+        }
+        Delta::ToolCallArgs { index, json } => {
+            if let Some(PartialBlock::ToolCall { args_json, .. }) = block_mut(partial, *index) {
+                args_json.push_str(json);
+            }
+        }
+    }
+    partial.blocks.sort_by_key(PartialBlock::index);
+}
+
+fn block_mut(partial: &mut PartialMessage, index: usize) -> Option<&mut PartialBlock> {
+    partial.blocks.iter_mut().find(|b| b.index() == index)
+}
+
+/// Keeps the last `max` bytes, cut at a character boundary.
+fn keep_tail(text: &mut String, max: usize) {
+    if text.len() <= max {
+        return;
+    }
+    let mut cut = text.len() - max;
+    while !text.is_char_boundary(cut) {
+        cut += 1;
+    }
+    text.drain(..cut);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finx_llm::UserMessage;
+    use finx_protocol::PermissionMode;
+    use finx_protocol::CompletionReason;
+    use finx_protocol::ToolCategory;
+    use std::path::PathBuf;
+
+    fn info() -> SessionInfo {
+        SessionInfo {
+            session_id: "s".into(),
+            cwd: PathBuf::from("/w"),
+            session_file: PathBuf::from("/f"),
+            model: "p/m".into(),
+            thinking: Default::default(),
+            permission_mode: PermissionMode::Manual,
+            context_window: 1000,
+            title: None,
+            archived: false,
+        }
+    }
+
+    fn ev(seq: u64, msg: EventMsg) -> Event {
+        Event { seq, ts: 0, msg }
+    }
+
+    #[test]
+    fn keeps_each_sub_agent_and_its_own_conversation() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        m.apply(&ev(
+            1,
+            EventMsg::AgentStarted {
+                agent_id: "a1".into(),
+                name: "counter".into(),
+                session_file: PathBuf::from("/a1"),
+                call_id: "c1".into(),
+            },
+        ));
+        let child = |seq, msg| EventMsg::AgentEvent {
+            agent_id: "a1".into(),
+            event: Box::new(ev(seq, msg)),
+        };
+        m.apply(&ev(
+            2,
+            child(
+                1,
+                EventMsg::TaskStarted {
+                    task_id: "t1".into(),
+                    trigger: Default::default(),
+                },
+            ),
+        ));
+        m.apply(&ev(
+            3,
+            child(
+                2,
+                EventMsg::MessageCompleted {
+                    message_id: "u1".into(),
+                    message: UserMessage::text("count").into(),
+                    mail: None,
+                    skills: Vec::new(),
+                },
+            ),
+        ));
+        let snap = m.snapshot(None);
+        assert!(snap.transcript.items.is_empty(), "its events are not the main session's");
+        let agent = &snap.agents[0];
+        assert_eq!((agent.name.as_str(), agent.status), ("counter", AgentStatus::Running));
+        assert_eq!(agent.transcript.items.len(), 1);
+        assert_eq!(agent.active_task.as_ref().map(|t| t.task_id.as_str()), Some("t1"));
+
+        m.apply(&ev(
+            4,
+            EventMsg::AgentStatus {
+                agent_id: "a1".into(),
+                name: "counter".into(),
+                status: AgentStatus::Completed,
+                summary: Some("3 files".into()),
+                usage: None,
+                error: None,
+                elapsed_ms: Some(1200),
+            },
+        ));
+        // Its report reaches the main session as mail, and stays marked as one.
+        m.apply(&ev(
+            5,
+            EventMsg::MessageCompleted {
+                message_id: "m1".into(),
+                message: UserMessage::text("<agent_report agent=\"counter\" status=\"completed\">\n3 files\n</agent_report>").into(),
+                mail: Some(finx_protocol::MailInfo {
+                    id: "m1".into(),
+                    from: finx_protocol::AgentRef {
+                        id: "a1".into(),
+                        name: "counter".into(),
+                    },
+                    kind: finx_protocol::MailKind::Report,
+                    status: AgentStatus::Completed,
+                    no_reply: false,
+                }),
+                skills: Vec::new(),
+            },
+        ));
+        let snap = m.snapshot(None);
+        let agent = &snap.agents[0];
+        assert_eq!(agent.status, AgentStatus::Completed);
+        assert_eq!((agent.summary.as_deref(), agent.elapsed_ms), (Some("3 files"), Some(1200)));
+        assert!(matches!(&snap.transcript.items[0], TranscriptItem::Message { mail: Some(mail), .. } if mail.from.name == "counter"));
+    }
+
+    #[test]
+    fn tracks_a_task_until_it_ends() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        m.apply(&ev(
+            1,
+            EventMsg::TaskStarted {
+                task_id: "t1".into(),
+                trigger: Default::default(),
+            },
+        ));
+        m.apply(&ev(
+            2,
+            EventMsg::MessageCompleted {
+                message_id: "u1".into(),
+                message: UserMessage::text("hi").into(),
+                mail: None,
+                skills: Vec::new(),
+            },
+        ));
+        m.apply(&ev(
+            3,
+            EventMsg::MessageStarted {
+                message_id: "a1".into(),
+                role: Role::Assistant,
+            },
+        ));
+        for (seq, t) in [(4, "Hel"), (5, "lo")] {
+            m.apply(&ev(
+                seq,
+                EventMsg::MessageDelta {
+                    message_id: "a1".into(),
+                    delta: Delta::Text {
+                        index: 0,
+                        text: t.into(),
+                    },
+                },
+            ));
+        }
+        m.apply(&ev(
+            6,
+            EventMsg::ToolStarted {
+                call_id: "c1".into(),
+                name: "bash".into(),
+                args: serde_json::json!({"command": "ls"}),
+                category: ToolCategory::Execute,
+                title: "ls".into(),
+                locations: Vec::new(),
+            },
+        ));
+        m.apply(&ev(
+            7,
+            EventMsg::ApprovalRequested {
+                call_id: "c1".into(),
+                name: "bash".into(),
+                args: serde_json::json!({"command": "ls"}),
+                summary: "ls".into(),
+                reason: None,
+                proposed_rule: None,
+                proposed_mode: None,
+            },
+        ));
+        let snap = m.snapshot(None);
+        assert_eq!(snap.last_seq, 7);
+        let task = snap.active_task.unwrap();
+        assert_eq!(
+            task.streaming.unwrap().blocks,
+            vec![PartialBlock::Text {
+                index: 0,
+                text: "Hello".into()
+            }]
+        );
+        assert_eq!(task.tools.len(), 1);
+        assert!(m.approval_pending("c1"));
+        m.apply(&ev(
+            8,
+            EventMsg::TaskCompleted {
+                task_id: "t1".into(),
+                usage: Default::default(),
+                last_message: None,
+                reason: CompletionReason::Done,
+            },
+        ));
+        assert!(!m.busy());
+        assert_eq!(m.state(), SessionState::Idle);
+        // The message, then where the task ended.
+        let items = m.snapshot(None).transcript.items;
+        assert_eq!(items.len(), 2);
+        assert!(matches!(
+            &items[1],
+            TranscriptItem::TaskEnd { task_id, outcome: TaskOutcome::Completed, reason: Some(CompletionReason::Done), .. } if task_id == "t1"
+        ));
+    }
+
+    #[test]
+    fn the_list_state_follows_approvals_and_failures() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        assert_eq!(m.state(), SessionState::Idle);
+        m.apply(&Event {
+            seq: 1,
+            ts: 1_700_000_000_000,
+            msg: EventMsg::TaskStarted {
+                task_id: "t1".into(),
+                trigger: Default::default(),
+            },
+        });
+        assert_eq!(m.state(), SessionState::Running);
+        assert_eq!(m.task_started(), Some(1_700_000_000_000));
+        m.apply(&ev(
+            2,
+            EventMsg::ApprovalRequested {
+                call_id: "c1".into(),
+                name: "bash".into(),
+                args: serde_json::json!({"command": "rm x"}),
+                summary: "rm x".into(),
+                reason: None,
+                proposed_rule: None,
+                proposed_mode: None,
+            },
+        ));
+        assert_eq!(m.state(), SessionState::AwaitingApproval);
+        m.apply(&ev(
+            3,
+            EventMsg::TaskFailed {
+                task_id: "t1".into(),
+                error: finx_protocol::ErrorInfo::new("auth", "no key"),
+                usage: Default::default(),
+            },
+        ));
+        assert_eq!(m.state(), SessionState::Failed);
+        assert_eq!(m.task_started(), None);
+        m.apply(&ev(4, EventMsg::TitleChanged { title: "Fix the build".into() }));
+        m.apply(&ev(5, EventMsg::ArchivedChanged { archived: true }));
+        assert_eq!(m.info().title.as_deref(), Some("Fix the build"));
+        assert!(m.info().archived);
+        // A resumed session remembers that its last task failed.
+        let again = SessionMirror::new(info(), m.transcript().to_vec());
+        assert_eq!(again.state(), SessionState::Failed);
+    }
+
+    #[test]
+    fn pages_through_history() {
+        let items: Vec<TranscriptItem> = (0..5)
+            .map(|i| TranscriptItem::Message {
+                message_id: format!("m{i}"),
+                message: UserMessage::text(format!("{i}")).into(),
+                skills: Vec::new(),
+                mail: None,
+            })
+            .collect();
+        let m = SessionMirror::new(info(), items);
+        let snap = m.snapshot(Some(2));
+        assert_eq!(snap.transcript.items.len(), 2);
+        let before = snap.transcript.before.unwrap();
+        let page = m.history(&before, 2).unwrap();
+        assert_eq!(page.items.len(), 2);
+        let page = m.history(page.before.as_deref().unwrap(), 2).unwrap();
+        assert_eq!(page.items.len(), 1);
+        assert!(page.before.is_none());
+    }
+
+    #[test]
+    fn progress_tail_is_capped_at_a_char_boundary() {
+        let mut s = "é".repeat(10);
+        keep_tail(&mut s, 5);
+        assert!(s.len() <= 6 && s.chars().all(|c| c == 'é'));
+    }
+}

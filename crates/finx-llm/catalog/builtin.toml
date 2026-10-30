@@ -1,0 +1,99 @@
+# Built-in providers and models.
+#
+# Values here are defaults and can go stale; the provider's own documentation wins.
+# Override or extend them in ~/.finx/models.toml. Model ids that are not listed can still be
+# used (`provider/model-id`) with default limits.
+# Prices are per million tokens in the provider's currency; leave them out when unknown and
+# the UI shows the cost as unknown.
+
+[providers.deepseek]
+name = "DeepSeek"
+api = "openai-chat"
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+currency = "CNY"
+compat = { max_tokens_field = "max_tokens", thinking_format = "deepseek" }
+
+[[providers.deepseek.models]]
+id = "deepseek-flash"
+name = "DeepSeek-V4.1-Flash"
+context_window = 1048576
+max_output_tokens = 393216
+reasoning = true
+thinking_levels = { minimal = "low", medium = "high", max = "max" }
+input = ["text", "image"]
+
+[[providers.deepseek.models]]
+id = "deepseek-v4-pro"
+name = "DeepSeek-V4-Pro"
+context_window = 1048576
+max_output_tokens = 393216
+reasoning = true
+thinking_levels = { minimal = "low", medium = "high", max = "max" }
+input = ["text"]
+
+[providers.deepseek-anthropic]
+name = "DeepSeek (Anthropic-compatible endpoint)"
+api = "anthropic-messages"
+base_url = "https://api.deepseek.com/anthropic"
+api_key_env = "DEEPSEEK_API_KEY"
+currency = "CNY"
+
+[[providers.deepseek-anthropic.models]]
+id = "deepseek-flash"
+name = "DeepSeek-V4.1-Flash"
+context_window = 1048576
+max_output_tokens = 393216
+reasoning = true
+input = ["text", "image"]
+
+[providers.openai]
+name = "OpenAI"
+api = "openai-chat"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+compat = { system_role = "developer", thinking_format = "openai", prompt_cache_key = true }
+
+[providers.anthropic]
+name = "Anthropic"
+api = "anthropic-messages"
+base_url = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"
+
+[providers.qwen]
+name = "Qwen (Alibaba Cloud Model Studio)"
+api = "openai-chat"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "DASHSCOPE_API_KEY"
+currency = "CNY"
+compat = { thinking_format = "qwen", max_tokens_field = "max_tokens" }
+
+[providers.kimi]
+name = "Moonshot Kimi"
+api = "openai-chat"
+base_url = "https://api.moonshot.cn/v1"
+api_key_env = "MOONSHOT_API_KEY"
+currency = "CNY"
+compat = { max_tokens_field = "max_tokens" }
+
+[providers.glm]
+name = "Zhipu GLM"
+api = "openai-chat"
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+api_key_env = "ZHIPUAI_API_KEY"
+currency = "CNY"
+compat = { thinking_format = "zai", max_tokens_field = "max_tokens" }
+
+[providers.openrouter]
+name = "OpenRouter"
+api = "openai-chat"
+base_url = "https://openrouter.ai/api/v1"
+api_key_env = "OPENROUTER_API_KEY"
+compat = { thinking_format = "openrouter" }
+
+[providers.ollama]
+name = "Ollama (local)"
+api = "openai-chat"
+base_url = "http://localhost:11434/v1"
+auth = "none"
+compat = { max_tokens_field = "max_tokens" }

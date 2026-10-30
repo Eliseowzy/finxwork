@@ -1,0 +1,207 @@
+{
+  "page": {
+    "showInfo": "Show Info ⌥⌘0",
+    "hideInfo": "Hide Info ⌥⌘0",
+    "info": "Info"
+  },
+  "chat": {
+    "archived": "Archived: read only until you unarchive it.",
+    "unarchive": "Unarchive",
+    "earlier": "Earlier messages aren't shown yet",
+    "log": "Conversation",
+    "inProgress": "In progress",
+    "thinking": "Thinking",
+    "thought": "Thought",
+    "thinkingHidden": "The provider keeps this reasoning private",
+    "image": "Image",
+    "copy": "Copy",
+    "compacted": "Context compacted: {{before}} → {{after}} tokens",
+    "interrupted": "You interrupted this task. Send a message to go on.",
+    "ended": {
+      "max_turns": "Stopped at the turn limit. Send a message to go on.",
+      "output_limit": "The last reply hit the output limit and was cut off.",
+      "hook": "A hook ended this task."
+    },
+    "done": "Done",
+    "tokens": "{{tokens}} tokens",
+    "failedWith": "Failed: {{title}}",
+    "retry": "Retry",
+    "setKey": "Set Key",
+    "details": "Details",
+    "agents_one": "{{count}} sub-agent",
+    "agents_other": "{{count}} sub-agents"
+  },
+  "agents": {
+    "launched_one": "Started {{count}} sub-agent, working in the background",
+    "launched_other": "Started {{count}} sub-agents, working in the background",
+    "status": {
+      "running": "Working",
+      "completed": "Done",
+      "failed": "Failed",
+      "interrupted": "Stopped",
+      "closed": "Closed"
+    },
+    "open": "Show its work in the background panel",
+    "report": "Report from <b>{{name}}</b>",
+    "noReply": {
+      "interrupted": "Stopped before it replied",
+      "completed": "Finished without a reply"
+    },
+    "expand": "Show all",
+    "collapse": "Show less",
+    "process": "Show its work",
+    "running_one": "{{count}} background task running",
+    "running_other": "{{count}} background tasks running",
+    "stopped_one": "{{count}} background task stopped; reply to let finx continue it",
+    "stopped_other": "{{count}} background tasks stopped; reply to let finx continue them",
+    "sent": "Sent to",
+    "sending": "Sending to",
+    "messageObject": "{{to}}: {{message}}"
+  },
+  "background": {
+    "title": "Background tasks",
+    "close": "Close",
+    "running_one": "{{count}} working",
+    "running_other": "{{count}} working",
+    "completed_one": "{{count}} done",
+    "completed_other": "{{count}} done",
+    "interrupted_one": "{{count}} stopped",
+    "interrupted_other": "{{count}} stopped",
+    "failed_one": "{{count}} failed",
+    "failed_other": "{{count}} failed",
+    "allDone": "All done",
+    "none": "No background tasks yet",
+    "stopAll": "Stop all",
+    "stop": "Stop",
+    "process": "What {{name}} did",
+    "brief": "finx's brief",
+    "message": "Message from finx",
+    "expand": "Show all",
+    "collapse": "Show less",
+    "done": "Done",
+    "interruptedNote": "Stopped · it keeps its progress; reply to finx to let it continue",
+    "failedLine": "Failed: {{message}}",
+    "tokens": "{{tokens}} tokens"
+  },
+  "approval": {
+    "label": "Waiting for your approval",
+    "queue": "{{n}} of {{total}}",
+    "runCommand": "Run this command?",
+    "useTool": "{{verb}} {{object}}?",
+    "once": "Allow",
+    "session": "Allow for This Session",
+    "sessionDesc": "Calls like this one won't ask again in this session",
+    "sessionRule": "Commands starting with “{{rule}}” won't ask again in this session",
+    "denyWhy": "Deny…",
+    "deny": "Deny",
+    "cancel": "Cancel",
+    "feedback": "Tell finx why, or what to do instead (optional)",
+    "more_one": "{{count}} more line",
+    "more_other": "{{count}} more lines"
+  },
+  "notice": {
+    "label": "Notice",
+    "dismiss": "Got it",
+    "bypass_permissions": {
+      "title": "Bypass Permissions is on",
+      "body": "Tools run without asking, including changes to protected files such as .git and shell profiles, and to files outside the workspace. Only deny rules, ask rules and deleting critical paths still stop an action. Use it only in an isolated environment such as a container or a throwaway checkout.",
+      "back": "Switch back to Ask Permissions"
+    }
+  },
+  "composer": {
+    "label": "Message",
+    "commands": "Commands and skills",
+    "add": "Add",
+    "addFiles": "Add Files or Photos",
+    "addFolder": "Add Folder",
+    "remove": "Remove {{name}}",
+    "view": "View {{name}}",
+    "reveal": "Show {{name}} in Finder",
+    "folder": "Folder",
+    "send": "Send ↩",
+    "model": "Model",
+    "thinking": "Thinking",
+    "permission": "Permissions",
+    "archived": "Unarchive the session to write in it",
+    "steer": "Steer the task: taken in at its next turn (⌥↩ to queue after it)",
+    "reply": "Reply to finx…",
+    "stop": "Stop ⌘.",
+    "noKey": "No key"
+  },
+  "inspector": {
+    "label": "Session info",
+    "turn": "Turn {{turn}}",
+    "thinking": "thinking: {{level}}",
+    "tasks_one": "<b>{{count}}</b> task",
+    "tasks_other": "<b>{{count}}</b> tasks",
+    "context": "context <b>{{percent}}%</b>",
+    "contextOf": "{{used}} of {{size}} tokens in the context",
+    "background": "Working in the background",
+    "agents_one": "{{count}} sub-agent working",
+    "agents_other": "{{count}} sub-agents working",
+    "viewBackground": "Show background tasks"
+  },
+  "new": {
+    "greeting1": "What would you like to research today?",
+    "greeting2": "Hand finx the reports, filings and data",
+    "greeting3": "Describe the analysis; finx does the rest",
+    "greeting4": "From data to conclusions, in one go",
+    "placeholder": "Describe a task, such as summarizing an earnings report",
+    "pickFirst": "Choose a project first",
+    "project": "Project",
+    "chooseFolder": "Choose Folder…",
+    "pathPrompt": "The project's folder (an absolute path)",
+    "environment": "Environment",
+    "local": "Local",
+    "localDesc": "Runs on this computer",
+    "cloud": "Cloud",
+    "cloudSoon": "Coming soon",
+    "connectFirst": "Connect a model to get started",
+    "noModel": "No model connected yet",
+    "connect": "Connect a model"
+  },
+  "key": {
+    "title": "Connect a model service",
+    "intro": "finx needs an API key from a model provider to start working.",
+    "provider": "Provider",
+    "key": "API key",
+    "placeholder": "Paste {{env}}",
+    "where": "The key is kept in this Mac’s keychain; only finx reads it.",
+    "fromEnv": "A key was found in {{env}}; a key saved here is used only when that variable is not set.",
+    "save": "Save and Continue",
+    "saving": "Saving…",
+    "cancel": "Cancel"
+  },
+  "onboarding": {
+    "title": "Welcome to FinxWork",
+    "tagline": "The AI work agent for finance professionals.",
+    "steps": {
+      "connect": "Enable FinxWork",
+      "start": "Start your first task"
+    },
+    "later": "Not now, just look around",
+    "connect": {
+      "eyebrow": "STEP 1 OF 2 · ENABLE FINXWORK",
+      "title": "Enable FinxWork with the AI account you already have",
+      "intro": "Use your QwenWork account, or an API key. Either one is enough to start.",
+      "api": "Use an API key",
+      "apiNote": "Pick a provider and paste its API key.",
+      "models": "{{count}} models"
+    },
+    "key": {
+      "subtitle": "Paste this provider's API key",
+      "where": "Kept in this Mac's keychain, read only by finx",
+      "back": "Back",
+      "save": "Save and continue"
+    },
+    "ready": {
+      "eyebrow": "STEP 2 OF 2 · READY",
+      "title": "You're all set",
+      "intro": "FinxWork is enabled. New tasks use {{model}} by default; switch any time below the composer.",
+      "active": "{{count}} models ready",
+      "default": "Default",
+      "manage": "Add more in Settings › Models",
+      "start": "Start your first task"
+    }
+  }
+}

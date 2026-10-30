@@ -1,0 +1,183 @@
+{
+  "title": "Settings",
+  "pages": {
+    "general": "General",
+    "models": "Models",
+    "permissions": "Permissions",
+    "about": "About"
+  },
+  "appearance": {
+    "title": "Appearance",
+    "system": "System",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "language": {
+    "title": "Language",
+    "system": "System ({{name}})",
+    "names": {
+      "zh-CN": "简体中文",
+      "en": "English"
+    },
+    "restartHint": "The new language shows after FinxWork restarts.",
+    "restartNow": "Restart Now"
+  },
+  "browserNote": "This page runs outside the app: its preferences aren't kept.",
+  "models": {
+    "credential": {
+      "missing": "No key",
+      "config": "Key in the configuration file",
+      "env": "Key from {{env}}",
+      "stored": "Key saved in the keychain",
+      "command": "Key from the configured command",
+      "not_required": "No key needed"
+    },
+    "setKey": "Set Key…",
+    "replaceKey": "Replace Key…",
+    "removeKey": "Remove Key",
+    "default": "Default",
+    "reasoning": "Thinking",
+    "context": "{{size}} context",
+    "note": "Providers and models come from finx’s configuration (~/.finx/config.toml and models.toml). A key set here is saved by finx in this Mac’s keychain and works for the command line too; keys in the configuration or the environment come first.",
+    "local": "Local applications",
+    "api": "Use an API key",
+    "qwen": "QwenWork",
+    "add": "Add API service",
+    "close": "Close",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "reconnect": "Reconnect",
+    "open": "Open {{name}}",
+    "recheck": "Check again",
+    "remove": "Remove",
+    "confirmRemove": "Remove",
+    "cancel": "Cancel",
+    "count": "{{count}} models",
+    "state": {
+      "ready": "Connected · {{count}} models",
+      "connecting": "Connecting…",
+      "needsLogin": "Signed out; sign in again in {{name}}",
+      "disabled": "Disconnected",
+      "trouble": "Unavailable right now",
+      "checking": "Checking…",
+      "unknown": "Couldn't check",
+      "missing": "Not installed",
+      "signedOut": "Not signed in",
+      "found": "Installed {{version}}"
+    },
+    "source": {
+      "stored": "Keychain",
+      "env": "Environment variable {{env}}",
+      "config": "models.toml",
+      "command": "From a command"
+    },
+    "elsewhere": {
+      "env": "Set in your shell configuration; remove {{env}} there",
+      "config": "Set in ~/.finx/models.toml; edit that file to remove it"
+    },
+    "otherModels": "Other models ({{count}})",
+    "unverified": "Not yet verified"
+  },
+  "permissions": {
+    "soonTitle": "Comes with the kernel connection",
+    "soon": "These are finx's own settings; the window will read and change them through the protocol:",
+    "mode": "Default permission mode for new sessions",
+    "rules": "Command rules: what runs without asking, what always asks, what never runs",
+    "protected": "Protected paths",
+    "trust": "Trusted projects"
+  },
+  "about": {
+    "version": "Version {{version}}",
+    "updates": {
+      "title": "Software Update",
+      "unsupported": "This build doesn't update itself: only releases downloaded from GitHub check for updates.",
+      "idle": "Not checked yet",
+      "checking": "Checking for updates…",
+      "current": "FinxWork is up to date",
+      "available": "FinxWork {{version}} is available to download",
+      "downloading": "Downloading {{version}}…",
+      "ready": "{{version}} is downloaded and verified, and installs when you quit FinxWork. Restart now to use it; running tasks keep going.",
+      "checkedAt": "Last checked: {{time}}",
+      "check": "Check for Updates",
+      "download": "Download Update",
+      "restart": "Restart to Update",
+      "retry": "Try Again",
+      "notes": "Release notes",
+      "details": "Technical details",
+      "auto": "Download updates automatically",
+      "autoDesc": "New versions download in the background; you're asked to restart once one is ready.",
+      "error": {
+        "network": "Couldn't check for updates. Check your network connection; FinxWork will try again later.",
+        "location": "FinxWork can update itself only from the Applications folder. Move it there in Finder, then try again.",
+        "download": "Couldn't download the update. FinxWork will try again later."
+      }
+    },
+    "kernel": "Kernel",
+    "mock": "Demo (mock server)",
+    "data": "finx's data",
+    "binary": "Kernel program",
+    "started": "Started by",
+    "startedHere": "This app",
+    "startedElsewhere": "Another program (such as a terminal)",
+    "env": "Environment",
+    "env_login": "Login shell environment",
+    "env_fallback": "Default environment (the login shell did not answer)",
+    "kernel_starting": "Starting…",
+    "kernel_reconnecting": "Reconnecting…",
+    "kernelFailed": "Not running: {{reason}}",
+    "kernelUpdate": "{{server}} (updates to this app’s version when idle)",
+    "restart": "Restart Kernel",
+    "showLog": "Show Log",
+    "restartTitle": "Restart the kernel?",
+    "restartBusy": "Tasks are running. Restarting interrupts them; their sessions are saved, and a new message continues them.",
+    "restartNow": "Restart"
+  },
+  "connections": {
+    "local": "Local applications"
+  },
+  "local": {
+    "note": "No API key needed; usage counts against that account.",
+    "found": "Use the models in your {{name}} account; usage counts against that account.",
+    "ready": "{{count}} models connected. You're ready.",
+    "needsLogin": "Your {{name}} sign-in expired. Sign in again in {{name}}, then reconnect.",
+    "signedOut": "{{name}} isn't signed in yet. Sign in there, then connect here.",
+    "missing": "{{name}} isn't on this Mac. Install it and sign in to connect.",
+    "trouble": "Can't reach {{name}} right now. Try again later, or use an API key.",
+    "connect": "Connect {{name}}"
+  },
+  "live": {
+    "failed": "Connection failed",
+    "active": "{{count}} models available in new chats",
+    "login": "Restore your login in QwenWork, then retry.",
+    "description": "Connect the local QwenWork account to use its models.",
+    "install": "Install QwenWork and sign in first.",
+    "independent": "Independent session · renews on demand",
+    "open": "Open QwenWork",
+    "remove": "Remove",
+    "retry": "Reconnect",
+    "connect": "Connect QwenWork",
+    "working": "Working…",
+    "states": {
+      "found": "Discovered",
+      "missing": "Not installed",
+      "connecting": "Connecting",
+      "ready": "Connected",
+      "disabled": "Disconnected",
+      "needs_login": "Sign in required",
+      "permission_required": "System permission required",
+      "unsupported": "Unsupported",
+      "unavailable": "Unavailable",
+      "syncing": "Syncing to kernel",
+      "checking": "Checking…"
+    },
+    "otherModels": "Other models ({{count}})",
+    "pending": "Not yet verified",
+    "sourceLogin": "Sign in to {{name}}, then retry.",
+    "sourceDescription": "Connect your local {{name}} account to use its models.",
+    "sourceInstall": "Install {{name}} and sign in first.",
+    "openSource": "Open {{name}}",
+    "connectSource": "Connect {{name}}",
+    "sourceConsent": "Use the local {{name}} login to create independent model authorization. Requests count toward the same account usage.",
+    "degraded": "Temporarily offline. The next request will try again."
+  }
+}

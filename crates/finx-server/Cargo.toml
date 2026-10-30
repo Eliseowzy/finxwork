@@ -1,0 +1,29 @@
+[package]
+name = "finx-server"
+description = "Protocol service: many sessions and connections per process, the native JSON-RPC protocol, stdio and Unix socket transports."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+finx-connections.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+finx-core.workspace = true
+finx-llm.workspace = true
+finx-protocol.workspace = true
+finx-rpc.workspace = true
+libc.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["raw_value"] }
+tokio = { workspace = true, features = ["io-std", "net"] }
+tokio-util.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

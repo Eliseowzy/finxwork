@@ -1,0 +1,387 @@
+//! One batch of tool calls: sequential preflight (argument repair, lookup, hooks, checks,
+//! approval), concurrent execution, results in call order.
+
+use finx_llm::JsonText;
+use finx_llm::ToolCall;
+use finx_llm::ToolResultMessage;
+use finx_llm::UserContent;
+use finx_llm::now_ms;
+use finx_protocol::ApprovalDecision;
+use finx_protocol::CommandRule;
+use finx_protocol::EventMsg;
+use finx_protocol::Location;
+use finx_protocol::PermissionMode;
+use finx_protocol::ToolCategory;
+use finx_tools::ProgressSink;
+use finx_tools::Tool;
+use finx_tools::ToolCtx;
+use finx_tools::ToolDescription;
+use finx_tools::ToolError;
+use finx_tools::ToolKind;
+use finx_tools::ToolOutput;
+use finx_tools::cap_result;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
+use tokio::sync::oneshot;
+
+use crate::context::NOT_EXECUTED;
+use crate::hooks::Gate;
+use crate::session::Session;
+use crate::task::TaskCtx;
+
+pub(crate) const NO_APPROVER: &str = "This tool call needs approval, but nobody can approve it in this \
+    non-interactive run. Do not retry it; tell the user what you wanted to do instead.";
+/// The same for a sub-agent, which never asks: its parent decides what to do instead.
+pub(crate) const SUB_AGENT_NO_APPROVER: &str = "This tool call needs approval, and a sub-agent cannot ask for it. \
+    Do not retry it or work around it; list it in your report so your parent can handle it.";
+pub(crate) const TRUNCATED_CALL: &str = "The response hit the output token limit, so the arguments may be \
+    incomplete. Re-issue the tool call.";
+/// How long a cancelled tool may take to stop on its own.
+const CANCEL_GRACE: Duration = Duration::from_secs(3);
+
+enum Prepared {
+    Done(Arc<ToolResultMessage>),
+    Run(Arc<dyn Tool>, ToolCall),
+}
+
+enum Approval {
+    Granted,
+    Denied(Option<String>),
+    /// Carries the reason the call needed approval.
+    NoApprover(Option<String>),
+    Aborted,
+}
+
+pub(crate) async fn execute_batch(
+    session: &Arc<Session>,
+    task: &TaskCtx,
+    calls: Vec<ToolCall>,
+) -> Vec<Arc<ToolResultMessage>> {
+    let mut prepared = Vec::with_capacity(calls.len());
+    // Every call of a batch is looked up in the same registry.
+    let tools = session.tools();
+    // Set once a call is going to run before the rest of the batch. A check sees the state
+    // before the batch, which a call that runs first may change (a read, too: write checks what
+    // was read), so from then on checks could refuse calls that would succeed.
+    let mut runs_before = false;
+    for mut call in calls {
+        let tool = tools.get(&call.name);
+        if let Some(tool) = &tool
+            && call.arguments_error.is_none()
+        {
+            call.arguments = tool.prepare_arguments(call.arguments.to_value()).into();
+        }
+        session.emit(started(session, &call, tool.as_deref()));
+        if task.cancel.is_cancelled() {
+            prepared.push(Prepared::Done(immediate(session, &call, NOT_EXECUTED)));
+            continue;
+        }
+        let Some(tool) = tool else {
+            let text = format!(
+                "Unknown tool '{}'. Available tools: {}.",
+                call.name,
+                tools.names().join(", ")
+            );
+            prepared.push(Prepared::Done(immediate(session, &call, &text)));
+            continue;
+        };
+        if let Some(problem) = &call.arguments_error {
+            let text = format!("Invalid arguments: {problem}");
+            prepared.push(Prepared::Done(immediate(session, &call, &text)));
+            continue;
+        }
+        match gate(session, &call, tool.as_ref()).await {
+            Gate::Allow => {
+                runs_before = true;
+                prepared.push(Prepared::Run(tool, call));
+            }
+            Gate::Deny(reason) => {
+                let text = format!("Tool call denied: {reason}");
+                prepared.push(Prepared::Done(immediate(session, &call, &text)));
+            }
+            Gate::Ask {
+                summary,
+                reason,
+                proposed_rule,
+                proposed_mode,
+            } => {
+                // Nobody should be asked about a call that cannot succeed.
+                if !runs_before && let Err(err) = check(session, task, tool.as_ref(), &call).await {
+                    let text = match err {
+                        ToolError::Cancelled => NOT_EXECUTED.to_string(),
+                        err => err.to_string(),
+                    };
+                    prepared.push(Prepared::Done(immediate(session, &call, &text)));
+                    continue;
+                }
+                match request_approval(session, task, &call, summary, reason, proposed_rule, proposed_mode).await {
+                    Approval::Granted => {
+                        runs_before = true;
+                        prepared.push(Prepared::Run(tool, call));
+                    }
+                    Approval::Denied(feedback) => {
+                        let mut text = "The user denied this tool call.".to_string();
+                        if let Some(feedback) = feedback.filter(|f| !f.trim().is_empty()) {
+                            text.push_str(&format!(" Feedback: {feedback}"));
+                        }
+                        prepared.push(Prepared::Done(immediate(session, &call, &text)));
+                    }
+                    Approval::NoApprover(reason) => {
+                        let base = if session.sub_agent { SUB_AGENT_NO_APPROVER } else { NO_APPROVER };
+                        let text = match reason {
+                            Some(reason) => format!("{base} Why it needs approval: {reason}"),
+                            None => base.to_string(),
+                        };
+                        prepared.push(Prepared::Done(immediate(session, &call, &text)));
+                    }
+                    Approval::Aborted => {
+                        task.cancel.cancel();
+                        prepared.push(Prepared::Done(immediate(session, &call, NOT_EXECUTED)));
+                    }
+                }
+            }
+        }
+    }
+    let runs = prepared.into_iter().map(|item| async move {
+        match item {
+            Prepared::Done(result) => result,
+            Prepared::Run(tool, call) => run_tool(session, task, tool, call).await,
+        }
+    });
+    futures::future::join_all(runs).await
+}
+
+/// Error results for every call of a truncated response, with the usual events.
+pub(crate) fn reject_all(session: &Session, calls: &[ToolCall], text: &str) -> Vec<Arc<ToolResultMessage>> {
+    calls
+        .iter()
+        .map(|call| {
+            let tool = session.tools().get(&call.name);
+            session.emit(started(session, call, tool.as_deref()));
+            immediate(session, call, text)
+        })
+        .collect()
+}
+
+/// The tool_started event, with the tool's own description of the call.
+fn started(session: &Session, call: &ToolCall, tool: Option<&dyn Tool>) -> EventMsg {
+    let description = match tool {
+        Some(tool) => tool.describe(&call.arguments.to_value(), session.env.as_ref()),
+        None => ToolDescription::named(&call.name),
+    };
+    EventMsg::ToolStarted {
+        call_id: call.id.clone(),
+        name: call.name.clone(),
+        args: call.arguments.to_value(),
+        category: match description.category {
+            finx_tools::ToolCategory::Read => ToolCategory::Read,
+            finx_tools::ToolCategory::Edit => ToolCategory::Edit,
+            finx_tools::ToolCategory::Delete => ToolCategory::Delete,
+            finx_tools::ToolCategory::Move => ToolCategory::Move,
+            finx_tools::ToolCategory::Search => ToolCategory::Search,
+            finx_tools::ToolCategory::Execute => ToolCategory::Execute,
+            finx_tools::ToolCategory::Fetch => ToolCategory::Fetch,
+            finx_tools::ToolCategory::Other => ToolCategory::Other,
+        },
+        title: description.title,
+        locations: description
+            .locations
+            .into_iter()
+            .map(|(path, line)| Location { path, line })
+            .collect(),
+    }
+}
+
+async fn gate(session: &Session, call: &ToolCall, tool: &dyn Tool) -> Gate {
+    let view = session.view();
+    for hook in &session.hooks {
+        match hook.before_tool(call, tool, &view).await {
+            Gate::Allow => continue,
+            other => return other,
+        }
+    }
+    Gate::Allow
+}
+
+async fn request_approval(
+    session: &Session,
+    task: &TaskCtx,
+    call: &ToolCall,
+    summary: String,
+    reason: Option<String>,
+    proposed_rule: Option<CommandRule>,
+    proposed_mode: Option<PermissionMode>,
+) -> Approval {
+    if !session.interactive_approvals {
+        return Approval::NoApprover(reason);
+    }
+    let (tx, rx) = oneshot::channel();
+    session.state.lock().pending_approvals.insert(call.id.clone(), tx);
+    session.emit(EventMsg::ApprovalRequested {
+        call_id: call.id.clone(),
+        name: call.name.clone(),
+        args: call.arguments.to_value(),
+        summary,
+        reason,
+        proposed_rule: proposed_rule.clone(),
+        proposed_mode,
+    });
+    let decision = tokio::select! {
+        decision = rx => decision.unwrap_or(ApprovalDecision::Abort),
+        _ = task.cancel.cancelled() => ApprovalDecision::Abort,
+    };
+    session.state.lock().pending_approvals.remove(&call.id);
+    session.emit(EventMsg::ApprovalResolved {
+        call_id: call.id.clone(),
+        decision: decision.clone(),
+    });
+    match decision {
+        ApprovalDecision::Approve => Approval::Granted,
+        ApprovalDecision::ApproveForSession => {
+            // With nothing proposed, this approves the call only.
+            if let Some(rule) = proposed_rule {
+                session.add_session_rule(rule);
+            }
+            if let Some(mode) = proposed_mode {
+                session.set_permission_mode(mode);
+            }
+            Approval::Granted
+        }
+        ApprovalDecision::Deny { feedback } => Approval::Denied(feedback),
+        ApprovalDecision::Abort => Approval::Aborted,
+    }
+}
+
+fn immediate(session: &Session, call: &ToolCall, text: &str) -> Arc<ToolResultMessage> {
+    let result = Arc::new(ToolResultMessage {
+        call_id: call.id.clone(),
+        tool_name: call.name.clone(),
+        content: vec![UserContent::Text { text: text.to_string() }],
+        is_error: true,
+        details: None,
+        ts: now_ms(),
+        duration_ms: None,
+    });
+    session.emit(EventMsg::ToolCompleted {
+        call_id: call.id.clone(),
+        result: result.clone(),
+    });
+    result
+}
+
+async fn run_tool(
+    session: &Arc<Session>,
+    task: &TaskCtx,
+    tool: Arc<dyn Tool>,
+    call: ToolCall,
+) -> Arc<ToolResultMessage> {
+    let started = Instant::now();
+    let _slot = session.tool_slots.acquire().await.ok();
+    let ctx = tool_ctx(session, task, &call);
+    let limits = ctx.limits.clone();
+    let running = || session.emit(EventMsg::ToolRunning { call_id: call.id.clone() });
+    let result = match tool.kind_for(&call.arguments.to_value()) {
+        ToolKind::ReadOnly => {
+            let _guard = session.tool_gate.read().await;
+            running();
+            execute(tool.as_ref(), &call, ctx, task).await
+        }
+        ToolKind::Mutating => {
+            let _guard = session.tool_gate.write().await;
+            running();
+            execute(tool.as_ref(), &call, ctx, task).await
+        }
+    };
+    let mut output = match result {
+        Ok(output) => output,
+        Err(ToolError::Cancelled) => ToolOutput::error("Cancelled by user."),
+        Err(err) => ToolOutput::error(err.to_string()),
+    };
+    for hook in &session.hooks {
+        output = hook.after_tool(&call, output).await;
+    }
+    // Safety net on top of each tool's own limits (leaves room for their notes). The result is
+    // cut once, here, and never changes afterwards; the full text stays readable in a file.
+    cap_result(
+        &mut output.content,
+        limits.max_bytes + 4096,
+        Some(&session.output_dir),
+        &call.id,
+        limits.max_saved_bytes,
+    );
+    // The result stays in the history for the whole session; drop the slack left from
+    // building the text, which can be as large as the text itself.
+    for content in &mut output.content {
+        if let UserContent::Text { text } = content {
+            text.shrink_to_fit();
+        }
+    }
+    let result = Arc::new(ToolResultMessage {
+        call_id: call.id.clone(),
+        tool_name: call.name.clone(),
+        content: output.content,
+        is_error: output.is_error,
+        details: output.details.map(JsonText::from),
+        ts: now_ms(),
+        duration_ms: Some(started.elapsed().as_millis() as u64),
+    });
+    session.emit(EventMsg::ToolCompleted {
+        call_id: call.id.clone(),
+        result: result.clone(),
+    });
+    result
+}
+
+fn tool_ctx(session: &Session, task: &TaskCtx, call: &ToolCall) -> ToolCtx {
+    let (model, _) = session.current_model();
+    let emitter = session.emitter.clone();
+    let progress_id = call.id.clone();
+    ToolCtx {
+        call_id: call.id.clone(),
+        env: session.env.clone(),
+        files: session.files.clone(),
+        locks: session.locks.clone(),
+        // A small window gets smaller results, so one call cannot fill it.
+        limits: session.tool_limits(),
+        progress: ProgressSink::new(move |text| {
+            emitter.emit(EventMsg::ToolProgress {
+                call_id: progress_id.clone(),
+                text: text.to_string(),
+            })
+        }),
+        cancel: task.cancel.child_token(),
+        model_accepts_images: model.accepts_images(),
+        output_dir: session.output_dir.clone(),
+        session_state: session.agents.clone().map(|tree| tree as Arc<dyn std::any::Any + Send + Sync>),
+    }
+}
+
+/// The tool's own check of a call that is about to be put to the user.
+async fn check(session: &Session, task: &TaskCtx, tool: &dyn Tool, call: &ToolCall) -> Result<(), ToolError> {
+    let ctx = tool_ctx(session, task, call);
+    until_cancelled(task, tool.check(&call.arguments.to_value(), &ctx)).await
+}
+
+async fn execute(tool: &dyn Tool, call: &ToolCall, ctx: ToolCtx, task: &TaskCtx) -> Result<ToolOutput, ToolError> {
+    if task.cancel.is_cancelled() {
+        return Err(ToolError::Cancelled);
+    }
+    until_cancelled(task, tool.execute(call.arguments.to_value(), ctx)).await
+}
+
+/// Waits for a tool, but not forever once the task is cancelled: the tool gets a grace period to
+/// stop on its own (a command is killed within about 2.5 s), then the kernel stops waiting and
+/// drops it, so a stuck call cannot hold the session.
+async fn until_cancelled<T>(
+    task: &TaskCtx,
+    run: impl Future<Output = Result<T, ToolError>>,
+) -> Result<T, ToolError> {
+    let mut run = std::pin::pin!(run);
+    tokio::select! {
+        result = &mut run => result,
+        _ = task.cancel.cancelled() => {
+            tokio::time::timeout(CANCEL_GRACE, run).await.unwrap_or(Err(ToolError::Cancelled))
+        }
+    }
+}

@@ -1,0 +1,381 @@
+//! Terminal rendering: the reply goes to stdout, everything else to stderr.
+
+use finx_llm::Message;
+use finx_llm::UsageTotals;
+use finx_protocol::AgentStatus;
+use finx_protocol::Delta;
+use finx_protocol::Event;
+use finx_protocol::EventMsg;
+use finx_protocol::McpServerState;
+use finx_protocol::WarningCode;
+use serde_json::Value;
+use std::io::IsTerminal;
+use std::io::Write;
+
+pub struct Style {
+    color: bool,
+}
+
+impl Style {
+    pub fn detect() -> Self {
+        Self {
+            color: std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
+        }
+    }
+
+    fn paint(&self, code: &str, text: &str) -> String {
+        if self.color {
+            format!("\x1b[{code}m{text}\x1b[0m")
+        } else {
+            text.to_string()
+        }
+    }
+
+    pub fn dim(&self, text: &str) -> String {
+        self.paint("2", text)
+    }
+
+    pub fn red(&self, text: &str) -> String {
+        self.paint("31", text)
+    }
+
+    pub fn green(&self, text: &str) -> String {
+        self.paint("32", text)
+    }
+
+    pub fn yellow(&self, text: &str) -> String {
+        self.paint("33", text)
+    }
+
+    pub fn cyan(&self, text: &str) -> String {
+        self.paint("36", text)
+    }
+}
+
+pub struct Renderer {
+    json: bool,
+    style: Style,
+    line_open: bool,
+    thinking_open: bool,
+    /// Status lines that arrived in the middle of a line of the reply or of thinking.
+    held: Vec<String>,
+}
+
+impl Renderer {
+    pub fn new(json: bool) -> Self {
+        Self {
+            json,
+            style: Style::detect(),
+            line_open: false,
+            thinking_open: false,
+            held: Vec::new(),
+        }
+    }
+
+    /// A line on stderr that arrives on its own (not caused by the reply), held until the
+    /// current line ends so it does not split the reply.
+    fn status_line(&mut self, line: String) {
+        if self.line_open || self.thinking_open {
+            self.held.push(line);
+        } else {
+            eprintln!("{line}");
+        }
+    }
+
+    fn release_held(&mut self) {
+        for line in std::mem::take(&mut self.held) {
+            eprintln!("{line}");
+        }
+    }
+
+    pub fn style(&self) -> &Style {
+        &self.style
+    }
+
+    pub fn render(&mut self, event: &Event) {
+        if self.json {
+            if let Ok(line) = serde_json::to_string(event) {
+                println!("{line}");
+            }
+            return;
+        }
+        match &event.msg {
+            EventMsg::SessionStarted {
+                session_id,
+                model,
+                resumed,
+                ..
+            } => {
+                let action = if *resumed { "resumed" } else { "session" };
+                let short = finx_core::short_id(session_id);
+                eprintln!("{}", self.style.dim(&format!("finx · {model} · {action} {short}")));
+            }
+            EventMsg::MessageDelta {
+                delta: Delta::Text { text, .. },
+                ..
+            } => {
+                self.end_thinking();
+                print!("{text}");
+                let _ = std::io::stdout().flush();
+                self.line_open = !text.ends_with('\n');
+            }
+            EventMsg::MessageDelta {
+                delta: Delta::Thinking { text, .. },
+                ..
+            } => {
+                if !self.thinking_open {
+                    self.end_line();
+                    eprint!("{}", self.style.dim("thinking: "));
+                    self.thinking_open = true;
+                }
+                eprint!("{}", self.style.dim(text));
+            }
+            EventMsg::MessageCompleted {
+                message: Message::Assistant(_),
+                ..
+            } => {
+                self.end_thinking();
+                self.end_line();
+            }
+            EventMsg::MessageCompleted {
+                message: Message::User(_),
+                skills,
+                ..
+            } if !skills.is_empty() => {
+                self.end_line();
+                let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+                eprintln!("{}", self.style.dim(&format!("using skill(s): {}", names.join(", "))));
+            }
+            EventMsg::ToolStarted { name, args, .. } => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{} {}", self.style.cyan(&format!("• {name}")), tool_summary(name, args));
+            }
+            EventMsg::ToolCompleted { result, .. } => {
+                let text = result.text_content();
+                let line = result_line(&result.tool_name, &text, result.duration_ms);
+                if result.is_error {
+                    eprintln!("  {}", self.style.red(&format!("✗ {line}")));
+                } else {
+                    eprintln!("  {}", self.style.green(&format!("✓ {line}")));
+                }
+            }
+            EventMsg::StreamRetry {
+                attempt,
+                delay_ms,
+                error,
+            } => {
+                eprintln!(
+                    "{}",
+                    self.style.yellow(&format!(
+                        "retrying in {:.1}s (attempt {attempt}): {}",
+                        *delay_ms as f64 / 1000.0,
+                        error.message
+                    ))
+                );
+            }
+            // Shown by the server status lines already.
+            EventMsg::Warning {
+                code: Some(WarningCode::McpServersNotReady),
+                ..
+            } => {}
+            EventMsg::Warning { message, .. } => {
+                self.end_line();
+                eprintln!("{}", self.style.yellow(&format!("warning: {message}")));
+            }
+            EventMsg::McpServerStatus {
+                server,
+                state,
+                tools,
+                error,
+                elapsed_ms,
+            } => {
+                let elapsed = elapsed_ms.map(|ms| format!(", {ms} ms")).unwrap_or_default();
+                match state {
+                    McpServerState::Ready => {
+                        let line = self.style.dim(&format!("mcp: {server} ready ({tools} tools{elapsed})"));
+                        self.status_line(line);
+                    }
+                    McpServerState::Failed => {
+                        let error = error.as_deref().unwrap_or("not connected");
+                        let line = self.style.yellow(&format!("mcp: {server} failed: {error}"));
+                        self.status_line(line);
+                    }
+                    McpServerState::Starting | McpServerState::Closed => {}
+                }
+            }
+            EventMsg::CompactionStarted { reason } => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{}", self.style.dim(&format!("compacting the context ({})…", reason.as_str())));
+            }
+            EventMsg::CompactionCompleted {
+                seq,
+                tokens_before,
+                tokens_after,
+                retained_messages,
+                kept_skills,
+                summary,
+                ..
+            } => {
+                let skills = if kept_skills.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · kept skill(s) {}", kept_skills.join(", "))
+                };
+                eprintln!(
+                    "{}",
+                    self.style.dim(&format!(
+                        "context compacted (#{seq}): {} → {} tokens · kept {retained_messages} user message(s){skills} · summary {} chars",
+                        group_digits(*tokens_before),
+                        group_digits(*tokens_after),
+                        group_digits(summary.chars().count() as u64)
+                    ))
+                );
+            }
+            EventMsg::CompactionFailed { error, .. } => {
+                eprintln!("{}", self.style.yellow(&format!("compaction failed: {}", error.message)));
+            }
+            EventMsg::TaskFailed { error, usage, .. } => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{}", self.style.red(&format!("error ({}): {}", error.kind, error.message)));
+                eprintln!("{}", self.style.dim(&usage_line(usage)));
+            }
+            EventMsg::TaskInterrupted { usage, .. } => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{}", self.style.yellow("interrupted"));
+                eprintln!("{}", self.style.dim(&usage_line(usage)));
+            }
+            EventMsg::TaskCompleted { usage, .. } => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{}", self.style.dim(&usage_line(usage)));
+            }
+            EventMsg::AgentStarted { name, .. } => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{}", self.style.dim(&format!("· agent {name} started")));
+            }
+            EventMsg::AgentStatus { name, status, .. } if *status != AgentStatus::Running => {
+                self.end_thinking();
+                self.end_line();
+                eprintln!("{}", self.style.dim(&format!("· agent {name} {}", status.as_str())));
+            }
+            _ => {}
+        }
+    }
+
+    fn end_thinking(&mut self) {
+        if self.thinking_open {
+            eprintln!();
+            self.thinking_open = false;
+        }
+        if !self.line_open {
+            self.release_held();
+        }
+    }
+
+    fn end_line(&mut self) {
+        if self.line_open {
+            println!();
+            self.line_open = false;
+        }
+        if !self.thinking_open {
+            self.release_held();
+        }
+    }
+}
+
+pub fn truncate(text: &str, max: usize) -> String {
+    let single: String = text.lines().next().unwrap_or("").to_string();
+    let cut = single.chars().count() > max || text.lines().count() > 1;
+    let mut out: String = single.chars().take(max).collect();
+    if cut {
+        out.push('…');
+    }
+    out
+}
+
+pub fn tool_summary(name: &str, args: &Value) -> String {
+    let field = |key: &str| args.get(key).and_then(Value::as_str).unwrap_or("").to_string();
+    match name {
+        "bash" => truncate(&field("command"), 120),
+        "read" | "write" => field("path"),
+        "edit" => {
+            let count = args.get("edits").and_then(Value::as_array).map_or(0, Vec::len);
+            format!("{} ({count} change(s))", field("path"))
+        }
+        "spawn_agent" => truncate(format!("{} {}", field("name"), field("task")).trim_start(), 120),
+        "tool_search" => truncate(format!("{} {}", field("server"), field("query")).trim(), 120),
+        "call_tool" => {
+            let arguments = args.get("arguments").map(Value::to_string).unwrap_or_default();
+            truncate(&format!("{} {arguments}", field("name")), 120)
+        }
+        "send_message" => truncate(&format!("{}: {}", field("to"), field("message")), 120),
+        _ => truncate(&args.to_string(), 120),
+    }
+}
+
+fn result_line(tool: &str, text: &str, duration_ms: Option<u64>) -> String {
+    if tool == "bash"
+        && let Some(code) = text.lines().find_map(|l| l.strip_prefix("Exit code: "))
+    {
+        let seconds = duration_ms.unwrap_or(0) as f64 / 1000.0;
+        let timed_out = text.starts_with("Command timed out");
+        return format!(
+            "exit {code} · {seconds:.1}s{}",
+            if timed_out { " · timed out" } else { "" }
+        );
+    }
+    truncate(text, 100)
+}
+
+fn group_digits(n: u64) -> String {
+    let digits = n.to_string();
+    let mut out = String::new();
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+pub fn usage_line(usage: &UsageTotals) -> String {
+    let tokens = usage.tokens();
+    let input = tokens.input + tokens.cache_read + tokens.cache_write;
+    let mut line = format!(
+        "tokens: {} in ({} cached) · {} out",
+        group_digits(input),
+        group_digits(tokens.cache_read),
+        group_digits(tokens.output)
+    );
+    let costs = usage.cost_by_currency();
+    if !costs.is_empty() {
+        let parts: Vec<String> = costs
+            .iter()
+            .map(|(currency, amount)| format!("{}{amount:.4}", currency.symbol()))
+            .collect();
+        line.push_str(&format!(" · cost {}", parts.join(" + ")));
+    }
+    if usage.has_unpriced_usage() {
+        line.push_str(" · cost unknown (no price configured)");
+    }
+    line
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_numbers_and_results() {
+        assert_eq!(group_digits(1234567), "1,234,567");
+        assert_eq!(group_digits(12), "12");
+        assert_eq!(result_line("bash", "Exit code: 2\nDuration: 0.1s\nOutput:\nx", Some(1500)), "exit 2 · 1.5s");
+        assert_eq!(truncate("one\ntwo", 10), "one…");
+    }
+}
