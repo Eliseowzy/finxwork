@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { useTranslation } from "react-i18next";
 import { homePath } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
-import { permissionDesc, permissionTitle, modelTitle, thinkingTitle } from "../format";
+import { permissionDesc, permissionTitle, menuModels, modelTitle, thinkingTitle } from "../format";
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
@@ -366,10 +366,11 @@ const allLevels: ThinkingLevel[] = ["off", "low", "medium", "high", "max"];
 
 /**
  * The model and how hard it thinks, as one button ("DeepSeek Flash 适中").
- * Its menu is the models (their provider at the right, or that its key is
- * missing), then, when the model can think, one row for the thinking level
- * — the levels the model supports — which opens its own menu. Choosing a
- * model whose key is missing asks for the key (§8.4).
+ * Its menu is the models that can be used (their provider at the right) and
+ * the current one even when its key is missing, then, when the model can
+ * think, one row for the thinking level — the levels the model supports —
+ * which opens its own menu. Choosing a model whose key is missing asks for
+ * the key (§8.4).
  */
 function ModelPicker({ settings: { model, thinking, models, onModel, onThinking } }: { settings: Settings }) {
   const { t } = useTranslation("session");
@@ -396,7 +397,7 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
     >
       {(close) => (
         <>
-          {models.models.map((m) => (
+          {menuModels(models, current).map((m) => (
             <MenuItem
               key={m.id}
               checked={m.id === current}

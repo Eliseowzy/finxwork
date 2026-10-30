@@ -4,7 +4,7 @@ import type { SessionView } from "@finx/client";
 import type { ErrorInfo, ModelsListResult } from "@finx/protocol";
 import { keyEvent } from "../composer/KeySetup";
 import { MenuButton, MenuItem, SubMenuItem } from "../composer/Composer";
-import { failureAdvice, failureTitle, modelTitle } from "../format";
+import { failureAdvice, failureTitle, menuModels, modelTitle } from "../format";
 import { Icon } from "../icons";
 import { Brand } from "../settings/ProviderConnections";
 import { useNow, useStore } from "../store";
@@ -69,13 +69,13 @@ function Avatar({ provider, name, tone, kind }: { provider: string; name: string
   );
 }
 
-/** The models to switch to, as a submenu: picking one with a key goes on with the task, one without asks for its key. */
+/** The models to switch to, as a submenu: those that can be used, and the current one (which, without a key, asks for it). */
 function ModelItems({ current, models, onPick }: { current?: string; models: ModelsListResult; onPick: (id: string, provider: string, available: boolean) => void }) {
   const { t } = useTranslation("session");
   const providerName = (id: string) => models.providers.find((p) => p.id === id)?.name ?? id;
   return (
     <SubMenuItem label={t("chat.switchModel")} value={current ? modelTitle(current, models) : ""} title={t("chat.switchModel")}>
-      {models.models.map((m) => (
+      {menuModels(models, current).map((m) => (
         <MenuItem
           key={m.id}
           checked={m.id === current}

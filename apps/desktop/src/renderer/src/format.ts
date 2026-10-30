@@ -104,6 +104,11 @@ export function modelTitle(ref: string, models: ModelsListResult): string {
   return modelName(ref);
 }
 
+/** The models a model menu offers: those that can be used, and the current one even when it cannot. */
+export function menuModels(models: ModelsListResult, current?: string | null): ModelsListResult["models"] {
+  return models.models.filter((m) => m.available || m.id === current);
+}
+
 /** What a failed task's error kind means, and what to do about it. */
 export function failureTitle(kind: string): string {
   return i18n.exists(`common:failure.${kind}`) ? t(`failure.${kind}` as "failure.unknown") : t("failure.unknown");
