@@ -14,9 +14,14 @@ export function MainWindow() {
   useCommands();
   const sel = st.selection;
   const session = sel.kind === "session" ? st.sessions.find((s) => s.session_id === sel.id) : undefined;
-  // A selected session that is gone (deleted elsewhere): back to a new one.
+  // A selected session that is gone (deleted elsewhere): back to a new one. Gone only once the
+  // list has had it: a session just started is selected before finx's push brings it to the
+  // list. The selection the window opens with is checked against the list's first arrival.
+  const listed = useRef(sel.kind === "session" ? sel.id : null);
   useEffect(() => {
-    if (sel.kind === "session" && st.loaded && !session) st.set({ selection: { kind: "new" } });
+    if (sel.kind !== "session") return;
+    if (session) listed.current = sel.id;
+    else if (st.loaded && listed.current === sel.id) st.set({ selection: { kind: "new" } });
   }, [sel, st.loaded, session, st.set]);
   const onboarding = useOnboarding();
   if (onboarding.open) return <Onboarding onDone={onboarding.close} />;
