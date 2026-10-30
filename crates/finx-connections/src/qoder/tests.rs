@@ -299,6 +299,7 @@ async fn strict_transport_rejects_partial_and_malformed_tools_and_keeps_system()
         currency: Default::default(),
         compat: Compat::default(),
         models: vec![],
+        listing: Default::default(),
     };
     for response in [
         "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
@@ -374,6 +375,7 @@ async fn catalog_only_models_cannot_be_invoked_through_ad_hoc_references() {
         enabled: true,
         idempotency_key: "test".into(),
         models,
+        models_fetched_at: None,
     };
     std::fs::create_dir_all(dir.path().join("connections")).unwrap();
     std::fs::write(

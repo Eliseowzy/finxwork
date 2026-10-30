@@ -1,10 +1,11 @@
-# Built-in providers and models.
+# Built-in providers, and corrections to the public model catalog.
 #
-# Values here are defaults and can go stale; the provider's own documentation wins.
-# Override or extend them in ~/.finx/models.toml. Model ids that are not listed can still be
-# used (`provider/model-id`) with default limits.
-# Prices are per million tokens in the provider's currency; leave them out when unknown and
-# the UI shows the cost as unknown.
+# Which models a provider offers comes from its own model list; each model's details come from
+# the public catalog (catalog/public, refreshed by `cargo run -p finx-llm --example sync_catalog`).
+# Model entries here only fix what the catalog lacks or gets wrong; say why next to each.
+# Override or extend anything in ~/.finx/models.toml. Prices are per million tokens in the
+# provider's currency (or the entry's `currency`); the catalog's are US dollars.
+# See docs/kernel/model-catalog-design.md.
 
 [providers.deepseek]
 name = "DeepSeek"
@@ -12,46 +13,38 @@ api = "openai-chat"
 base_url = "https://api.deepseek.com"
 api_key_env = "DEEPSEEK_API_KEY"
 currency = "CNY"
+catalog_id = "deepseek"
 compat = { max_tokens_field = "max_tokens", thinking_format = "deepseek" }
 
+# The catalog names them after a dated build; finx shows the product names.
 [[providers.deepseek.models]]
 id = "deepseek-flash"
 name = "DeepSeek-V4.1-Flash"
-context_window = 1048576
-max_output_tokens = 393216
-reasoning = true
-thinking_levels = { minimal = "low", medium = "high", max = "max" }
-input = ["text", "image"]
 
 [[providers.deepseek.models]]
 id = "deepseek-v4-pro"
 name = "DeepSeek-V4-Pro"
-context_window = 1048576
-max_output_tokens = 393216
-reasoning = true
-thinking_levels = { minimal = "low", medium = "high", max = "max" }
-input = ["text"]
 
+# The same account through the Anthropic-compatible endpoint: it shares DeepSeek's list.
 [providers.deepseek-anthropic]
 name = "DeepSeek (Anthropic-compatible endpoint)"
 api = "anthropic-messages"
 base_url = "https://api.deepseek.com/anthropic"
 api_key_env = "DEEPSEEK_API_KEY"
 currency = "CNY"
+catalog_id = "deepseek"
+list_from = "deepseek"
 
 [[providers.deepseek-anthropic.models]]
 id = "deepseek-flash"
 name = "DeepSeek-V4.1-Flash"
-context_window = 1048576
-max_output_tokens = 393216
-reasoning = true
-input = ["text", "image"]
 
 [providers.openai]
 name = "OpenAI"
 api = "openai-chat"
 base_url = "https://api.openai.com/v1"
 api_key_env = "OPENAI_API_KEY"
+catalog_id = "openai"
 compat = { system_role = "developer", thinking_format = "openai", prompt_cache_key = true }
 
 [providers.anthropic]
@@ -59,6 +52,7 @@ name = "Anthropic"
 api = "anthropic-messages"
 base_url = "https://api.anthropic.com"
 api_key_env = "ANTHROPIC_API_KEY"
+catalog_id = "anthropic"
 
 [providers.qwen]
 name = "Qwen (Alibaba Cloud Model Studio)"
@@ -66,6 +60,7 @@ api = "openai-chat"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 api_key_env = "DASHSCOPE_API_KEY"
 currency = "CNY"
+catalog_id = "alibaba-cn"
 compat = { thinking_format = "qwen", max_tokens_field = "max_tokens" }
 
 [providers.kimi]
@@ -74,6 +69,7 @@ api = "openai-chat"
 base_url = "https://api.moonshot.cn/v1"
 api_key_env = "MOONSHOT_API_KEY"
 currency = "CNY"
+catalog_id = "moonshotai-cn"
 compat = { max_tokens_field = "max_tokens" }
 
 [providers.glm]
@@ -82,6 +78,7 @@ api = "openai-chat"
 base_url = "https://open.bigmodel.cn/api/paas/v4"
 api_key_env = "ZHIPUAI_API_KEY"
 currency = "CNY"
+catalog_id = "zhipuai"
 compat = { thinking_format = "zai", max_tokens_field = "max_tokens" }
 
 [providers.openrouter]
@@ -89,6 +86,7 @@ name = "OpenRouter"
 api = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
 api_key_env = "OPENROUTER_API_KEY"
+catalog_id = "openrouter"
 compat = { thinking_format = "openrouter" }
 
 [providers.ollama]
@@ -96,4 +94,5 @@ name = "Ollama (local)"
 api = "openai-chat"
 base_url = "http://localhost:11434/v1"
 auth = "none"
+list_details = "ollama"
 compat = { max_tokens_field = "max_tokens" }

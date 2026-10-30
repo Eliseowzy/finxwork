@@ -54,6 +54,11 @@ impl FinxHome {
         self.root.join("models.toml")
     }
 
+    /// Model list and catalog caches, and the model menu selection.
+    pub fn models_dir(&self) -> PathBuf {
+        self.root.join("models")
+    }
+
     pub fn agents_md(&self) -> PathBuf {
         self.root.join("AGENTS.md")
     }

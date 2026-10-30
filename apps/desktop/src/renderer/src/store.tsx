@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { listView, mergeSessions, RpcError, RpcClient, type ListSession, type ListView } from "@finx/client";
+import { draftThinking } from "./format";
 import type { Methods, ModelsListResult, Op, PermissionMode, ThinkingLevel } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import { i18n } from "../../shared/i18n";
@@ -18,7 +19,11 @@ export type Sheet = { kind: "confirm"; title: string; message: string; button: s
 export type Toast = { text: string; undo?: () => void; bad?: boolean; id: number };
 
 /** What a new session starts with, chosen on the new session page. */
-export type Draft = { cwd: string | null; model: string | null; thinking: ThinkingLevel; permission: PermissionMode };
+/**
+ * `thinking` is the level chosen on the page, `null` until one is: then the model's own;
+ * `levels` the level last chosen on the page for each model (model-catalog-design §18).
+ */
+export type Draft = { cwd: string | null; model: string | null; thinking: ThinkingLevel | null; levels?: Record<string, ThinkingLevel>; permission: PermissionMode };
 
 type UI = {
   selection: Selection;
@@ -120,7 +125,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       renaming: null,
       sheet: null,
       toast: null,
-      draft: { cwd: null, model: null, thinking: "medium", permission: "manual", ...s.draft },
+      draft: { cwd: null, model: null, thinking: null, permission: "manual", ...s.draft },
     };
   });
 
@@ -234,11 +239,13 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       run(async () => {
         if (!d.cwd) throw new Error(i18n.t("session:new.pickFirst"));
         const roots = attachments.flatMap((a) => (a.kind === "folder" ? [a.path] : []));
-        const r = await call("session/new", { cwd: d.cwd, extra_roots: roots.length ? roots : undefined, model: d.model ?? undefined, thinking: d.thinking, permission_mode: d.permission });
+        const ref = d.model ?? models.defaults?.model;
+        const thinking = draftThinking(models.models.find((m) => m.id === ref), d.thinking);
+        const r = await call("session/new", { cwd: d.cwd, extra_roots: roots.length ? roots : undefined, model: d.model ?? undefined, thinking, permission_mode: d.permission });
         setUI((u) => ({ ...u, draft: d, selection: { kind: "session", id: r.session_id } }));
         await call("session/op", { session_id: r.session_id, op: { type: "prompt", input: toInput(text, attachments.filter((a) => a.kind !== "folder")) } });
       }),
-    [run, call],
+    [run, call, models],
   );
 
   const store = useMemo<Store>(

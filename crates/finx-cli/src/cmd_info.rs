@@ -8,8 +8,10 @@ use finx_core::skills;
 use finx_core::skills::SkillEntry;
 use finx_core::skills::SkillState;
 use finx_llm::AuthStatus;
-use finx_llm::Modality;
 use finx_llm::ProviderConfig;
+use finx_protocol::api::CredentialState;
+use finx_protocol::api::ListingSource;
+use finx_protocol::api::SessionDefaults;
 use serde_json::Value;
 use serde_json::json;
 use std::io::Write;
@@ -59,99 +61,126 @@ fn masked_key(provider: &ProviderConfig) -> Option<String> {
 }
 
 fn print_json(value: &Value) -> anyhow::Result<()> {
-    let mut out = std::io::stdout().lock();
+    // Buffered: stdout flushes every line, and a long listing has thousands.
+    let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     serde_json::to_writer_pretty(&mut out, value)?;
     writeln!(out)?;
+    out.flush()?;
     Ok(())
 }
 
-pub fn models(overrides: &[String], provider: Option<&str>, as_json: bool) -> anyhow::Result<u8> {
+pub fn models(
+    overrides: &[String],
+    provider: Option<&str>,
+    all: bool,
+    refresh: bool,
+    as_json: bool,
+    action: Option<crate::ModelsAction>,
+) -> anyhow::Result<u8> {
     let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::Off)?;
-    let providers: Vec<ProviderConfig> = rt
-        .llm
-        .providers()
-        .filter(|p| provider.is_none_or(|wanted| wanted == p.id))
-        .collect();
     anyhow::ensure!(
-        !providers.is_empty() || provider.is_none(),
+        provider.is_none_or(|wanted| rt.llm.provider(wanted).is_some()),
         "unknown provider '{}'",
         provider.unwrap_or_default()
     );
+    let defaults = SessionDefaults {
+        model: rt.config.model.clone(),
+        thinking: rt.config.thinking,
+        permission_mode: rt.config.permission_mode,
+    };
+    if let Some(action) = action {
+        let (reference, shown) = match &action {
+            crate::ModelsAction::Show { model } => (model, true),
+            crate::ModelsAction::Hide { model } => (model, false),
+        };
+        finx_core::models::set_shown(&rt.llm, &defaults.model, reference, shown).map_err(anyhow::Error::msg)?;
+        return Ok(0);
+    }
+    let mut problems = Vec::new();
+    if refresh {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        runtime.block_on(async {
+            if let Err(e) = rt.llm.refresh_catalog(&finx_core::models::catalog_url()).await {
+                problems.push(format!("public model catalog: {}", e.message));
+            }
+            let targets: Vec<String> = finx_core::models::refreshable(&rt.llm)
+                .into_iter()
+                .filter(|id| provider.is_none_or(|wanted| rt.llm.provider(wanted).is_some_and(|p| p.listing.from.as_deref().unwrap_or(wanted) == id)))
+                .collect();
+            let results = futures::future::join_all(targets.iter().map(|id| rt.llm.refresh_list(id, None))).await;
+            for (id, result) in targets.iter().zip(results) {
+                if let Err(e) = result {
+                    problems.push(format!("{id}: {}", e.message));
+                }
+            }
+        });
+    }
+    let mut listing = finx_core::models::list(&rt.llm, &defaults, &|_| false);
+    if let Some(wanted) = provider {
+        listing.providers.retain(|p| p.id == wanted);
+        listing.models.retain(|m| m.provider == wanted);
+    }
     if as_json {
-        let rows: Vec<Value> = providers
-            .iter()
-            .map(|p| {
-                let models: Vec<Value> = p
-                    .models
-                    .iter()
-                    .map(|m| {
-                        json!({
-                            "ref": m.reference(),
-                            "name": m.name,
-                            "context_window": m.context_window,
-                            "max_output_tokens": m.max_output_tokens,
-                            "reasoning": m.reasoning,
-                            "images": m.input.contains(&Modality::Image),
-                            "default": m.reference() == rt.config.model,
-                        })
-                    })
-                    .collect();
-                json!({
-                    "id": p.id,
-                    "name": p.name,
-                    "api": p.api,
-                    "base_url": p.base_url,
-                    "auth": auth_json(&p.auth.status(&p.id)),
-                    "models": models,
-                })
-            })
-            .collect();
-        print_json(&Value::Array(rows))?;
+        print_json(&serde_json::to_value(&listing)?)?;
         return Ok(0);
     }
     let style = Style::detect();
     // One write for the whole listing instead of one per line.
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
-    for p in providers {
-        writeln!(
-            out,
-            "{}  {}  {}  [{}]",
-            p.id,
-            p.api,
-            p.base_url,
-            auth_text(&p.auth.status(&p.id))
-        )?;
-        if p.models.is_empty() {
-            writeln!(
-                out,
-                "    {}",
-                style.dim(&format!("(no models listed; use {}/<model-id>)", p.id))
-            )?;
+    for problem in &problems {
+        writeln!(out, "{}", style.dim(&format!("refresh failed: {problem}")))?;
+    }
+    for p in &listing.providers {
+        let Some(config) = rt.llm.provider(&p.id) else { continue };
+        let mut head = format!("{}  {}  [{}]", p.id, p.name, auth_text(&config.auth.status(&p.id)));
+        if let Some(l) = &p.listing {
+            let source = match l.source {
+                ListingSource::Provider => "provider's list",
+                ListingSource::Catalog => "public catalog",
+                ListingSource::Unsupported => "no list",
+                ListingSource::Config => "models.toml",
+            };
+            head.push_str(&format!("  {} of {} shown, from the {source}", l.shown, l.models));
+            if let Some(at) = &l.fetched_at {
+                head.push_str(&format!(", {at}"));
+            }
         }
-        for m in &p.models {
+        writeln!(out, "{head}")?;
+        if let Some(error) = p.listing.as_ref().and_then(|l| l.error.as_ref()) {
+            writeln!(out, "    {}", style.dim(&format!("last refresh failed ({}): {}", error.kind, error.message)))?;
+        }
+        let rows: Vec<_> = listing.models.iter().filter(|m| m.provider == p.id && (all || m.shown)).collect();
+        if rows.is_empty() && p.credential != CredentialState::Missing {
+            writeln!(out, "    {}", style.dim(&format!("(no models shown; use {}/<model-id> or --all)", p.id)))?;
+        }
+        for m in rows {
             let mut traits = Vec::new();
             if m.reasoning {
                 traits.push("reasoning");
             }
-            if m.input.contains(&Modality::Image) {
+            if m.images {
                 traits.push("images");
             }
-            let marker = if m.reference() == rt.config.model {
-                " (default)"
-            } else {
-                ""
-            };
+            if !m.known {
+                traits.push("details unknown");
+            }
+            if m.deprecated {
+                traits.push("deprecated");
+            }
+            if !m.shown {
+                traits.push("hidden");
+            }
+            if !m.available {
+                traits.push("no key");
+            }
+            let marker = if m.id == defaults.model { " (default)" } else { "" };
             writeln!(
                 out,
-                "    {}{marker}  context {}  output {}{}",
-                m.reference(),
+                "    {}{marker}  {}  context {}{}",
+                m.id,
+                m.name,
                 m.context_window,
-                m.max_output_tokens,
-                if traits.is_empty() {
-                    String::new()
-                } else {
-                    format!("  {}", traits.join(", "))
-                }
+                if traits.is_empty() { String::new() } else { format!("  {}", traits.join(", ")) }
             )?;
         }
     }

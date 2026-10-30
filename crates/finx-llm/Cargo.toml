@@ -10,11 +10,13 @@ publish.workspace = true
 async-trait.workspace = true
 tokio-util.workspace = true
 async-stream.workspace = true
+chrono.workspace = true
 eventsource-stream.workspace = true
 futures.workspace = true
 parking_lot.workspace = true
 rand.workspace = true
 reqwest.workspace = true
+ring.workspace = true
 rustls.workspace = true
 rustls-platform-verifier.workspace = true
 schemars.workspace = true
@@ -26,6 +28,7 @@ toml.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+tempfile.workspace = true
 wiremock.workspace = true
 
 [lints]

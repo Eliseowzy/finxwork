@@ -15,3 +15,7 @@
 .key-entry .provider-form label{margin-bottom:12px}
 .key-entry .err{color:var(--red);font-size:12px;margin:0 0 12px}
 .key-actions{display:flex;gap:8px}
+/* The close button: no inherited button padding, so the cross sits in the middle of its circle. */
+.provider-icon-button{padding:0;color:var(--l2);transition:background .15s,color .15s}
+.provider-icon-button:hover{background:var(--fill3);color:var(--l1)}
+.provider-icon-button .ic{width:12px;height:12px;stroke-width:1.8}

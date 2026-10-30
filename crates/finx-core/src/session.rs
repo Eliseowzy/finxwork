@@ -439,7 +439,22 @@ impl Session {
         if resolved.ad_hoc {
             self.warn(format!("model '{reference}' is not in the catalog; default limits apply"));
         }
-        let thinking = thinking.unwrap_or_else(|| self.state.lock().thinking);
+        // A level chosen here is remembered for the model; a model switch keeps the session's
+        // level when the new model offers it, else takes the level that model starts with
+        // (docs/kernel/model-catalog-design.md §18).
+        let thinking = match thinking {
+            Some(level) => {
+                let level = resolved.model.resolve_thinking(level);
+                if let Err(err) = self.llm.directory().remember_thinking(&resolved.model.reference(), level) {
+                    tracing::warn!("cannot remember the thinking level: {}", err.message);
+                }
+                level
+            }
+            None => {
+                let current = self.state.lock().thinking;
+                crate::models::thinking_for(&self.llm, &resolved.model, current)
+            }
+        };
         if self.is_busy() {
             self.state.lock().pending_model = Some((resolved.model, thinking));
         } else {

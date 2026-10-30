@@ -336,8 +336,10 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
             body.insert("tool_choice".into(), json!({ "type": "none" }));
         }
     }
-    if model.reasoning && opts.thinking != ThinkingLevel::Off {
-        let budget = model.thinking_budget(opts.thinking);
+    // Without a thinking block Claude does not think: `Default` and `Off` send none.
+    let thinking = model.resolve_thinking(opts.thinking);
+    if model.reasoning && !matches!(thinking, ThinkingLevel::Default | ThinkingLevel::Off) {
+        let budget = model.thinking_budget(thinking);
         let max_tokens = model.max_output_tokens.min(budget + 16_384).max(budget + 1);
         body.insert("max_tokens".into(), json!(max_tokens));
         body.insert("thinking".into(), json!({ "type": "enabled", "budget_tokens": budget }));

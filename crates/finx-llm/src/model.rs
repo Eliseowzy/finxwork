@@ -34,6 +34,14 @@ impl ModelCost {
     }
 }
 
+/// Prices that apply once a request's input (cached parts included) exceeds `above` tokens.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CostTier {
+    pub above: u64,
+    #[serde(flatten)]
+    pub cost: ModelCost,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SystemRole {
@@ -140,6 +148,8 @@ pub struct ThinkingBudgets {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub high: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub xhigh: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max: Option<u32>,
 }
 
@@ -154,11 +164,19 @@ pub struct Model {
     pub context_window: u32,
     pub max_output_tokens: u32,
     pub reasoning: bool,
-    /// Unified level name → provider value. An empty string marks the level as unsupported.
+    /// The levels it offers, in `ThinkingLevel::ALL` order, never `Default`. Empty when it cannot
+    /// be told how hard to think.
+    pub thinking: Vec<ThinkingLevel>,
+    /// The value sent for a level when it is not the level's own name.
     pub thinking_levels: BTreeMap<String, String>,
+    /// The level a session starts with on this model (models.toml `default_thinking`).
+    pub default_thinking: ThinkingLevel,
     pub thinking_budgets: ThinkingBudgets,
     pub input: Vec<Modality>,
     pub cost: ModelCost,
+    /// Higher prices for long inputs, ascending by `above`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cost_tiers: Vec<CostTier>,
     pub currency: Currency,
     pub compat: Compat,
     pub headers: BTreeMap<String, String>,
@@ -177,39 +195,37 @@ impl Model {
         self.input.contains(&Modality::Image)
     }
 
-    /// Provider value for a unified reasoning level, or `None` when reasoning is off or
-    /// unsupported. Unsupported levels fall back to the nearest lower supported level.
-    pub fn thinking_value(&self, level: ThinkingLevel) -> Option<String> {
-        if level == ThinkingLevel::Off || !self.reasoning {
-            return None;
-        }
-        let order = [
-            ThinkingLevel::Minimal,
-            ThinkingLevel::Low,
-            ThinkingLevel::Medium,
-            ThinkingLevel::High,
-            ThinkingLevel::Max,
-        ];
-        let start = order.iter().position(|l| *l == level)?;
-        for candidate in order[..=start].iter().rev() {
-            match self.thinking_levels.get(candidate.as_str()) {
-                Some(value) if value.is_empty() => continue,
-                Some(value) => return Some(value.clone()),
-                None => return Some(default_level_value(*candidate).to_string()),
-            }
-        }
-        None
+    /// Whether `level` can be asked of this model; `Default` always can.
+    pub fn offers(&self, level: ThinkingLevel) -> bool {
+        level == ThinkingLevel::Default || self.thinking.contains(&level)
     }
 
-    /// Token budget for budget-style reasoning, capped so the reply itself keeps room.
+    /// The level a request carries: `level` when this model offers it, else `Default`, which
+    /// sends nothing and leaves it to the provider.
+    pub fn resolve_thinking(&self, level: ThinkingLevel) -> ThinkingLevel {
+        if self.offers(level) { level } else { ThinkingLevel::Default }
+    }
+
+    /// The value an effort level is sent as: its own name unless models.toml says otherwise.
+    pub fn thinking_value(&self, level: ThinkingLevel) -> String {
+        self.thinking_levels
+            .get(level.as_str())
+            .filter(|v| !v.is_empty())
+            .cloned()
+            .unwrap_or_else(|| level.as_str().to_string())
+    }
+
+    /// Token budget for budget-style reasoning, capped so the reply itself keeps room. `On` and
+    /// `Default` think at the medium budget.
     pub fn thinking_budget(&self, level: ThinkingLevel) -> u32 {
         let b = &self.thinking_budgets;
         let budget = match level {
             ThinkingLevel::Off => return 0,
             ThinkingLevel::Minimal => b.minimal.unwrap_or(1_024),
             ThinkingLevel::Low => b.low.unwrap_or(4_096),
-            ThinkingLevel::Medium => b.medium.unwrap_or(10_240),
+            ThinkingLevel::Default | ThinkingLevel::On | ThinkingLevel::Medium => b.medium.unwrap_or(10_240),
             ThinkingLevel::High => b.high.unwrap_or(24_576),
+            ThinkingLevel::Xhigh => b.xhigh.unwrap_or(28_672),
             ThinkingLevel::Max => b.max.unwrap_or(32_768),
         };
         let cap = self.max_output_tokens.saturating_sub(4_096).max(1_024);
@@ -225,21 +241,12 @@ impl Model {
     /// adapters' limits). The prompt has to leave this much of the context window free.
     pub fn output_reserve(&self, thinking: ThinkingLevel) -> u32 {
         let mut reserve = self.default_max_output();
+        let thinking = self.resolve_thinking(thinking);
         if self.reasoning && thinking != ThinkingLevel::Off {
             let budget = self.thinking_budget(thinking);
             reserve = reserve.max(self.max_output_tokens.min(budget + 16_384).max(budget + 1));
         }
         reserve
-    }
-}
-
-fn default_level_value(level: ThinkingLevel) -> &'static str {
-    match level {
-        ThinkingLevel::Off => "none",
-        ThinkingLevel::Minimal => "minimal",
-        ThinkingLevel::Low => "low",
-        ThinkingLevel::Medium => "medium",
-        ThinkingLevel::High | ThinkingLevel::Max => "high",
     }
 }
 
@@ -254,10 +261,13 @@ pub(crate) fn test_model(api: &str) -> Model {
         context_window: DEFAULT_CONTEXT_WINDOW,
         max_output_tokens: 64_000,
         reasoning: true,
+        thinking: ThinkingLevel::EFFORTS.to_vec(),
         thinking_levels: BTreeMap::new(),
+        default_thinking: ThinkingLevel::Default,
         thinking_budgets: ThinkingBudgets::default(),
         input: vec![Modality::Text],
         cost: ModelCost::default(),
+        cost_tiers: Vec::new(),
         currency: Currency::Usd,
         compat: Compat::default(),
         headers: BTreeMap::new(),
@@ -269,19 +279,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn thinking_value_falls_back_to_lower_level() {
+    fn only_offered_levels_reach_a_request() {
         let mut model = test_model("openai-chat");
-        model.thinking_levels.insert("minimal".into(), "low".into());
-        model.thinking_levels.insert("medium".into(), "".into());
-        model.thinking_levels.insert("max".into(), "max".into());
-        assert_eq!(model.thinking_value(ThinkingLevel::Off), None);
-        assert_eq!(model.thinking_value(ThinkingLevel::Minimal).as_deref(), Some("low"));
-        // medium is unsupported → falls back to low (default mapping)
-        assert_eq!(model.thinking_value(ThinkingLevel::Medium).as_deref(), Some("low"));
-        assert_eq!(model.thinking_value(ThinkingLevel::High).as_deref(), Some("high"));
-        assert_eq!(model.thinking_value(ThinkingLevel::Max).as_deref(), Some("max"));
-        model.reasoning = false;
-        assert_eq!(model.thinking_value(ThinkingLevel::High), None);
+        model.thinking = vec![ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::High];
+        model.thinking_levels.insert("high".into(), "hard".into());
+        assert_eq!(model.resolve_thinking(ThinkingLevel::High), ThinkingLevel::High);
+        assert_eq!(model.resolve_thinking(ThinkingLevel::Medium), ThinkingLevel::Default, "never a level it lacks");
+        assert_eq!(model.resolve_thinking(ThinkingLevel::Default), ThinkingLevel::Default);
+        assert_eq!(model.thinking_value(ThinkingLevel::High), "hard");
+        assert_eq!(model.thinking_value(ThinkingLevel::Low), "low");
     }
 
     #[test]

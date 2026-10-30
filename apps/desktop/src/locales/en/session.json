@@ -153,7 +153,11 @@
     "steer": "Steer the task: taken in at its next turn (⌥↩ to queue after it)",
     "reply": "Reply to finx…",
     "stop": "Stop ⌘.",
-    "noKey": "No key"
+    "noKey": "No key",
+    "hidden": "Hidden",
+    "gone": "Not in the model list",
+    "thinkingChanged": "{{model}} has no “{{from}}” level; thinking is now “{{to}}”",
+    "thinkingDefault": "The provider decides"
   },
   "inspector": {
     "label": "Session info",
@@ -197,7 +201,9 @@
     "fromEnv": "A key was found in {{env}}; a key saved here is used only when that variable is not set.",
     "save": "Save and Continue",
     "saving": "Saving…",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "rejected": "The key was refused: {{message}}",
+    "unverified": "The key could not be checked with the provider right now; it is saved"
   },
   "onboarding": {
     "title": "Welcome to FinxWork",

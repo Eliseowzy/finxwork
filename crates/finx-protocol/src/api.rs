@@ -46,6 +46,8 @@ pub mod method {
     pub const CONNECTIONS_MODELS: &str = "connections/models";
     pub const MODELS_CHANGED: &str = "models/changed";
     pub const MODELS_LIST: &str = "models/list";
+    pub const MODELS_REFRESH: &str = "models/refresh";
+    pub const MODELS_SHOW: &str = "models/show";
     pub const SERVER_SHUTDOWN: &str = "server/shutdown";
     /// The session list now, and `sessions/changed` on this connection from then on.
     pub const SESSIONS_SUBSCRIBE: &str = "sessions/subscribe";
@@ -82,6 +84,8 @@ pub mod error_code {
     pub const UNSUPPORTED_CONTENT: i64 = -32018;
     pub const SESSION_CLOSED: i64 = -32019;
     pub const TASK_FAILED: i64 = -32020;
+    /// `auth/set`: the provider refused the key.
+    pub const KEY_REJECTED: i64 = -32021;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -103,6 +107,7 @@ pub mod error_code {
         (UNSUPPORTED_CONTENT, "unsupported_content"),
         (SESSION_CLOSED, "session_closed"),
         (TASK_FAILED, "task_failed"),
+        (KEY_REJECTED, "key_rejected"),
     ];
 }
 
@@ -190,6 +195,11 @@ pub struct ServerCapabilities {
     pub agents: bool,
     #[serde(default)]
     pub model_connections: bool,
+    /// Model lists asked from providers (docs/kernel/model-catalog-design.md §8): `shown`,
+    /// `known`, `deprecated` on models, `listing` on providers, `models/refresh`, `models/show`,
+    /// and a checked `auth/set`.
+    #[serde(default)]
+    pub model_discovery: bool,
 }
 
 // ---- Sessions ----
@@ -614,7 +624,7 @@ pub struct ResourceReadResult {
     pub total_bytes: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ModelsListResult {
     pub models: Vec<ModelSummary>,
     /// Every provider with where its credentials come from.
@@ -645,6 +655,85 @@ pub struct ProviderSummary {
     /// Environment variables that may hold the key.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub key_env: Vec<String>,
+    /// Where its models came from; absent while it has no credentials.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub listing: Option<ProviderListing>,
+}
+
+/// A provider's model list as the kernel last saw it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProviderListing {
+    pub source: ListingSource,
+    /// The last successful answer (RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fetched_at: Option<String>,
+    /// A refresh is running in the background.
+    #[serde(default)]
+    pub refreshing: bool,
+    /// Why the last refresh failed; the older list is still in use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ListingError>,
+    /// Models of this provider in `models/list`.
+    pub models: u32,
+    /// Of those, the ones in the model menu.
+    pub shown: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ListingSource {
+    /// The provider's own list.
+    Provider,
+    /// Not asked yet, or no list: the public catalog's models.
+    Catalog,
+    /// The provider has no list endpoint and the catalog does not know it.
+    Unsupported,
+    /// Only the models written in models.toml.
+    Config,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ListingError {
+    /// An error kind (`auth`, `network`, …).
+    pub kind: String,
+    pub message: String,
+}
+
+/// Result of `auth/set`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AuthSetResult {
+    /// The provider accepted the key (its model list answered). `false` when it could not be
+    /// asked; the key is saved either way.
+    #[serde(default)]
+    pub verified: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models: Option<u32>,
+}
+
+/// Parameters of `models/refresh`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelsRefreshParams {
+    /// One provider; all with credentials when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    /// Refresh the public model catalog too.
+    #[serde(default)]
+    pub catalog: bool,
+}
+
+/// Result of `models/refresh`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelsRefreshResult {
+    pub providers: Vec<ProviderSummary>,
+}
+
+/// Parameters of `models/show`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelsShowParams {
+    /// `provider/model-id`
+    pub model: String,
+    /// In the model menu or not.
+    pub shown: bool,
 }
 
 /// How a provider authenticates.
@@ -697,7 +786,7 @@ pub struct AuthDeleteParams {
     pub provider: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ModelSummary {
     /// `provider/model-id`
     pub id: String,
@@ -705,11 +794,42 @@ pub struct ModelSummary {
     pub provider: String,
     pub context_window: u64,
     pub reasoning: bool,
-    /// Supported reasoning levels, `off` included.
+    /// The provider's own thinking levels this model offers, `off` when it can be switched off;
+    /// `default` (the provider decides) is always possible and not listed. Empty: no control.
     pub thinking_levels: Vec<ThinkingLevel>,
+    /// The level a session starts with on this model: the one last chosen on it, else its
+    /// configured default, else `default`.
+    #[serde(default)]
+    pub default_thinking: ThinkingLevel,
     pub images: bool,
     /// The provider's credentials are available.
     pub available: bool,
+    /// In the model menu (the defaults and the user's choices).
+    #[serde(default = "yes")]
+    pub shown: bool,
+    /// Its details come from somewhere; `false` means default limits.
+    #[serde(default = "yes")]
+    pub known: bool,
+    /// The provider retired it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deprecated: bool,
+    /// `YYYY-MM-DD`
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub released: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost: Option<ModelPrice>,
+}
+
+/// Prices per million tokens.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ModelPrice {
+    pub input: f64,
+    pub output: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
+    pub currency: finx_llm::Currency,
 }
 
 // ---- Skills ----
@@ -880,6 +1000,8 @@ pub struct ConnectionView {
     pub state: ConnectionState,
     #[serde(skip_serializing_if = "Option::is_none")] pub reason_code: Option<String>,
     pub models: Vec<ConnectionModel>,
+    /// When `models` was last taken from the application (RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub models_fetched_at: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionsSnapshot { pub revision: u64, pub connections: Vec<ConnectionView> }

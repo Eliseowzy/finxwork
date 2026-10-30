@@ -4,7 +4,9 @@ import type { ProviderSummary } from "@finx/protocol";
 import { Dialog } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
+import { agoText } from "../format";
 import { LocalRow, localAdapters } from "./LocalApplicationConnection";
+import { ManageModels } from "./ManageModels";
 import { Brand, KeyEntry, ProviderTiles, useTileName } from "./ProviderConnections";
 
 // Settings › Models: where finx's models come from, as two lists in the
@@ -42,7 +44,7 @@ export function ModelConnections() {
   );
 }
 
-/** A provider finx has a key for: where the key comes from and how many models; a key saved here can be removed (auth/delete). */
+/** A provider finx has a key for: where the key comes from, how many of its models the menu shows and when its list was asked; its models can be managed, and a key saved here removed (auth/delete). */
 function KeyRow({ p }: { p: ProviderSummary }) {
   const { t } = useTranslation("settings");
   const st = useStore();
@@ -50,8 +52,16 @@ function KeyRow({ p }: { p: ProviderSummary }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const count = st.models.models.filter((m) => m.provider === p.id).length;
+  const [managing, setManaging] = useState(false);
+  const listing = p.listing;
+  const count = listing?.models ?? st.models.models.filter((m) => m.provider === p.id).length;
   const source = t(`models.source.${p.credential}`, { env: p.credential_source ?? "", defaultValue: "" });
+  const models = listing ? t("models.shownOf", { shown: listing.shown, count }) : t("models.count", { count });
+  const updated = listing?.refreshing
+    ? t("models.manage.refreshing")
+    : listing?.fetched_at
+      ? t("models.manage.updated", { when: agoText(new Date(listing.fetched_at), new Date()) })
+      : "";
   const remove = async () => {
     setBusy(true);
     setError("");
@@ -70,8 +80,14 @@ function KeyRow({ p }: { p: ProviderSummary }) {
         <Brand id={p.id} name={label(p)} />
         <div className="ft">
           <div className="fn">{label(p)}</div>
-          <div className="fdesc">{[source, t("models.count", { count })].filter(Boolean).join(" · ")}</div>
+          <div className="fdesc">{[source, models, updated].filter(Boolean).join(" · ")}</div>
+          {listing?.error && <div className="fdesc warn">{t("models.manage.failed", { message: listing.error.message })}</div>}
         </div>
+        {!confirming && (
+          <button className="btn" onClick={() => setManaging(true)}>
+            {t("models.manage.open")}
+          </button>
+        )}
         {p.credential === "stored" ? (
           confirming ? (
             <>
@@ -95,6 +111,21 @@ function KeyRow({ p }: { p: ProviderSummary }) {
         )}
       </div>
       {error && <p className="mrow-err">{error}</p>}
+      {managing && (
+        <ManageModels
+          source={{
+            id: p.id,
+            name: label(p),
+            mark: <Brand id={p.id} name={label(p)} />,
+            origin: listing ? t(`models.manage.source.${listing.source}`) : undefined,
+            fetchedAt: listing?.fetched_at,
+            refreshing: listing?.refreshing,
+            failure: listing?.error?.message,
+            refresh: () => st.call("models/refresh", { provider: p.id }),
+          }}
+          onClose={() => setManaging(false)}
+        />
+      )}
     </>
   );
 }

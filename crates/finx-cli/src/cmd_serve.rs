@@ -57,6 +57,8 @@ fn spawn_signal_handler(server: Server) {
 
 pub async fn serve(overrides: &[String], listen: Option<String>, idle_exit: Option<u64>) -> anyhow::Result<u8> {
     let (server, _guard) = start(overrides)?;
+    // The resident service keeps model lists and the public catalog fresh in the background.
+    server.start_model_upkeep();
     match listen {
         None => finx_server::serve_stdio(server.clone(), NativeProtocol::new(server)).await,
         Some(url) => {

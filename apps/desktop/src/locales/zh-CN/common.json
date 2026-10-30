@@ -165,12 +165,15 @@
     }
   },
   "thinking": {
+    "default": "默认",
     "off": "不思考",
-    "minimal": "极少",
-    "low": "少量",
-    "medium": "适中",
-    "high": "深入",
-    "max": "最深"
+    "on": "思考",
+    "minimal": "最少",
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "xhigh": "超高",
+    "max": "最高"
   },
   "failure": {
     "auth": "模型服务未登录",

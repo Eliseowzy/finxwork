@@ -1,0 +1,228 @@
+//! End-to-end: model lists and the public catalog through the real `finx serve` and `finx models`
+//! (docs/kernel/model-catalog-design.md). The mock stands in for DeepSeek's model list and for
+//! the public catalog; nothing leaves the machine.
+
+mod common;
+
+use common::Demux;
+use common::SchemaCheck;
+use common::TestEnv;
+use common::native_init;
+use common::native_prompt;
+use serde_json::Value;
+use serde_json::json;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
+use std::time::Instant;
+
+fn provider(models: &Value, id: &str) -> Value {
+    models["providers"].as_array().unwrap().iter().find(|p| p["id"] == id).cloned().unwrap_or(Value::Null)
+}
+
+fn model(models: &Value, id: &str) -> Value {
+    models["models"].as_array().unwrap().iter().find(|m| m["id"] == id).cloned().unwrap_or(Value::Null)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_key_brings_the_providers_models_and_the_menu_follows_the_user() {
+    let env = TestEnv::new("manual", "").await;
+    let schema = SchemaCheck::new(&["ModelsListResult", "AuthSetResult", "ModelsRefreshResult"]);
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let demux = Demux::spawn(incoming);
+
+    // The service refreshes the public catalog in the background when it starts.
+    let started = Instant::now();
+    while env.mock.stats().catalog_fetches.load(Ordering::Relaxed) == 0 {
+        assert!(started.elapsed() < Duration::from_secs(20), "the catalog was never fetched");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    // No DeepSeek key yet: its models are not listed, the default model is.
+    let models = client.request("models/list", json!({})).await.unwrap();
+    schema.check("ModelsListResult", &models);
+    assert_eq!(provider(&models, "deepseek")["credential"], "missing");
+    assert!(provider(&models, "deepseek").get("listing").is_none());
+    assert!(models["models"].as_array().unwrap().iter().all(|m| m["provider"] != "deepseek"));
+    assert_eq!(model(&models, "mock/mock-1")["shown"], true);
+
+    // A refused key is not saved.
+    let err = client
+        .request("auth/set", json!({"provider": "deepseek", "api_key": finx_mock::REJECTED_KEY}))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, -32021);
+    assert!(err.message.contains("invalid"), "{}", err.message);
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(provider(&models, "deepseek")["credential"], "missing");
+    assert!(!env.home.path().join("credentials.toml").exists());
+
+    // A good key is checked against the provider's list, saved, and brings its models.
+    let lists_before = env.mock.stats().model_lists.load(Ordering::Relaxed);
+    let set = client
+        .request("auth/set", json!({"provider": "deepseek", "api_key": "sk-good-key"}))
+        .await
+        .unwrap();
+    schema.check("AuthSetResult", &set);
+    assert_eq!(set, json!({"verified": true, "models": 3}));
+    assert!(env.mock.stats().model_lists.load(Ordering::Relaxed) > lists_before);
+    let models = client.request("models/list", json!({})).await.unwrap();
+    schema.check("ModelsListResult", &models);
+    let deepseek = provider(&models, "deepseek");
+    assert_eq!(deepseek["credential"], "stored");
+    assert_eq!(deepseek["listing"]["source"], "provider");
+    assert!(deepseek["listing"]["fetched_at"].is_string());
+    // Listed and described by the catalog: shown, with the catalog's window.
+    let flash = model(&models, "deepseek/deepseek-flash");
+    assert_eq!((&flash["shown"], &flash["known"], &flash["available"]), (&json!(true), &json!(true), &json!(true)));
+    assert_eq!(flash["name"], "DeepSeek-V4.1-Flash", "the built-in correction names it");
+    assert_eq!(flash["thinking_levels"], json!(["off", "low", "high", "max"]));
+    // Listed but unknown to the catalog: there, hidden, default limits.
+    let unknown = model(&models, "deepseek/mock-2");
+    assert_eq!((&unknown["shown"], &unknown["known"]), (&json!(false), &json!(false)));
+    // Written in builtin.toml though not in the list: still there.
+    assert!(model(&models, "deepseek/deepseek-v4-pro").is_object());
+    // The Anthropic endpoint is a provider of its own: its key is set separately.
+    assert_eq!(provider(&models, "deepseek-anthropic")["credential"], "missing");
+    assert!(models["models"].as_array().unwrap().iter().all(|m| m["provider"] != "deepseek-anthropic"));
+    assert!(!models.to_string().contains("sk-good-key"), "keys never leave the service");
+
+    // The user's menu: show the unknown model, hide the default one's sibling.
+    client.request("models/show", json!({"model": "deepseek/mock-2", "shown": true})).await.unwrap();
+    client.request("models/show", json!({"model": "deepseek/deepseek-flash", "shown": false})).await.unwrap();
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(model(&models, "deepseek/mock-2")["shown"], true);
+    assert_eq!(model(&models, "deepseek/deepseek-flash")["shown"], false);
+    assert_eq!(provider(&models, "deepseek")["listing"]["shown"], 2);
+    let selection: Value =
+        serde_json::from_slice(&std::fs::read(env.home.path().join("models/selection.json")).unwrap()).unwrap();
+    assert_eq!(selection["show"], json!(["deepseek/mock-2"]));
+    assert_eq!(selection["hide"], json!(["deepseek/deepseek-flash"]));
+    let err = client.request("models/show", json!({"model": "nope/x", "shown": true})).await.unwrap_err();
+    assert_eq!(err.code, finx_rpc::code::INVALID_PARAMS);
+
+    // A manual refresh asks again and takes the catalog's newer details.
+    let refreshed = client.request("models/refresh", json!({"provider": "deepseek", "catalog": true})).await.unwrap();
+    schema.check("ModelsRefreshResult", &refreshed);
+    assert_eq!(refreshed["providers"].as_array().unwrap().iter().find(|p| p["id"] == "deepseek").unwrap()["listing"]["refreshing"], false);
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(model(&models, "deepseek/deepseek-flash")["context_window"], 777_777, "the mock catalog's window");
+    let err = client.request("models/refresh", json!({"provider": "nope"})).await.unwrap_err();
+    assert_eq!(err.code, finx_rpc::code::INVALID_PARAMS);
+
+    // A model only the provider's list knows works in a real session.
+    let cwd = env.workspace("discovered");
+    let created = client.request("session/new", json!({"cwd": cwd, "model": "deepseek/mock-2"})).await.unwrap();
+    let session = created["session_id"].as_str().unwrap().to_string();
+    assert_eq!(created["snapshot"]["session"]["model"], "deepseek/mock-2");
+    let mut events = demux.subscribe(&session);
+    let turn = native_prompt(&client, &mut events, &session, "hello", false).await;
+    assert_eq!(turn.end["type"], "task_completed", "{:?}", turn.end);
+
+    // The command line sees the same models and changes the same menu.
+    let out = env.finx(&["models", "--provider", "deepseek", "--json"]).output().await.unwrap();
+    assert!(out.status.success());
+    let cli: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(model(&cli, "deepseek/mock-2")["shown"], true);
+    assert!(cli["providers"].as_array().unwrap().iter().all(|p| p["id"] == "deepseek"));
+    let out = env.finx(&["models", "hide", "deepseek/mock-2"]).output().await.unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = env.finx(&["models", "--provider", "deepseek"]).output().await.unwrap();
+    let text = String::from_utf8(text.stdout).unwrap();
+    assert!(!text.contains("deepseek/mock-2"), "{text}");
+    assert!(text.contains("from the provider's list"), "{text}");
+    let all = env.finx(&["models", "--provider", "deepseek", "--all"]).output().await.unwrap();
+    assert!(String::from_utf8(all.stdout).unwrap().contains("deepseek/mock-2  mock-2  context 128000  details unknown, hidden"));
+
+    // Removing the key takes the models away again.
+    client.request("auth/delete", json!({"provider": "deepseek"})).await.unwrap();
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert!(models["models"].as_array().unwrap().iter().all(|m| m["provider"] != "deepseek"));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn without_network_nothing_is_asked_in_the_background() {
+    let env = TestEnv::new("manual", "[models]\nnetwork = false\n").await;
+    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    client.request("models/list", json!({})).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(env.mock.stats().catalog_fetches.load(Ordering::Relaxed), 0);
+    // An explicit key check still asks.
+    let set = client.request("auth/set", json!({"provider": "deepseek", "api_key": "sk-good-key"})).await.unwrap();
+    assert_eq!(set["verified"], true);
+    // A project cannot turn it back on.
+    let project = env.workspace("p");
+    std::fs::create_dir_all(project.join(".finx")).unwrap();
+    std::fs::write(project.join(".finx/config.toml"), "[models]\nnetwork = true\n").unwrap();
+    let out = env.finx_in(&project, &["status"]).output().await.unwrap();
+    assert!(String::from_utf8_lossy(&out.stdout).contains("ignored [models]"), "{}", String::from_utf8_lossy(&out.stdout));
+}
+
+/// Waits for the session's next `settings_changed` and returns its thinking level.
+async fn next_thinking(events: &mut tokio::sync::mpsc::UnboundedReceiver<finx_rpc::Incoming>) -> String {
+    loop {
+        let incoming = common::recv(events).await;
+        let event = &incoming.params()["event"];
+        if event["type"] == "settings_changed" {
+            return event["thinking"].as_str().unwrap().to_string();
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_thinking_level_follows_the_model_and_is_remembered() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let demux = Demux::spawn(incoming);
+    client.request("auth/set", json!({"provider": "deepseek", "api_key": "sk-good-key"})).await.unwrap();
+    let models = client.request("models/list", json!({})).await.unwrap();
+    let flash = model(&models, "deepseek/deepseek-flash");
+    assert_eq!(flash["thinking_levels"], json!(["off", "low", "high", "max"]), "DeepSeek's own levels");
+    assert_eq!(flash["default_thinking"], "default");
+    assert_eq!(model(&models, "mock/mock-1")["thinking_levels"], json!([]), "no thinking control without a format");
+
+    // A level the model does not offer is not kept: the provider decides.
+    let cwd = env.workspace("t");
+    let created = client
+        .request("session/new", json!({"cwd": cwd, "model": "deepseek/deepseek-flash", "thinking": "medium"}))
+        .await
+        .unwrap();
+    assert_eq!(created["snapshot"]["session"]["thinking"], "default");
+    let session = created["session_id"].as_str().unwrap().to_string();
+    let mut events = demux.subscribe(&session);
+    let set = |model: &str, thinking: Option<&str>| {
+        let mut op = json!({"type": "set_model", "model": model});
+        if let Some(level) = thinking {
+            op["thinking"] = json!(level);
+        }
+        client.request("session/op", json!({"session_id": session, "op": op}))
+    };
+
+    // Chosen by hand: kept, and remembered for the model.
+    set("deepseek/deepseek-flash", Some("max")).await.unwrap();
+    assert_eq!(next_thinking(&mut events).await, "max");
+    // A model without it: the provider decides.
+    set("mock/mock-1", None).await.unwrap();
+    assert_eq!(next_thinking(&mut events).await, "default");
+    // Back: the level chosen on this model returns.
+    set("deepseek/deepseek-flash", None).await.unwrap();
+    assert_eq!(next_thinking(&mut events).await, "max");
+    // A level both models offer is kept across the switch.
+    set("deepseek/deepseek-flash", Some("low")).await.unwrap();
+    assert_eq!(next_thinking(&mut events).await, "low");
+    set("deepseek-anthropic/deepseek-flash", None).await.unwrap();
+    assert_eq!(next_thinking(&mut events).await, "low");
+
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(model(&models, "deepseek/deepseek-flash")["default_thinking"], "low");
+    let selection: Value =
+        serde_json::from_slice(&std::fs::read(env.home.path().join("models/selection.json")).unwrap()).unwrap();
+    assert_eq!(selection["thinking"]["deepseek/deepseek-flash"], "low");
+    // Choosing "default" forgets it.
+    set("deepseek/deepseek-flash", Some("default")).await.unwrap();
+    assert_eq!(next_thinking(&mut events).await, "default");
+    let models = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(model(&models, "deepseek/deepseek-flash")["default_thinking"], "default");
+}

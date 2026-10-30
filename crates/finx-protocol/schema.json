@@ -8,6 +8,9 @@
       "$ref": "#/definitions/AuthSetParams"
     },
     {
+      "$ref": "#/definitions/AuthSetResult"
+    },
+    {
       "$ref": "#/definitions/CancelRequestParams"
     },
     {
@@ -36,6 +39,15 @@
     },
     {
       "$ref": "#/definitions/ModelsListResult"
+    },
+    {
+      "$ref": "#/definitions/ModelsRefreshParams"
+    },
+    {
+      "$ref": "#/definitions/ModelsRefreshResult"
+    },
+    {
+      "$ref": "#/definitions/ModelsShowParams"
     },
     {
       "$ref": "#/definitions/Op"
@@ -483,6 +495,25 @@
       ],
       "type": "object"
     },
+    "AuthSetResult": {
+      "description": "Result of `auth/set`.",
+      "properties": {
+        "models": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "verified": {
+          "default": false,
+          "description": "The provider accepted the key (its model list answered). `false` when it could not be asked; the key is saved either way.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "CancelRequestParams": {
       "description": "Parameters of the `$/cancel_request` notification.",
       "properties": {
@@ -797,6 +828,13 @@
             "$ref": "#/definitions/ConnectionModel"
           },
           "type": "array"
+        },
+        "models_fetched_at": {
+          "description": "When `models` was last taken from the application (RFC 3339).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "provider_id": {
           "description": "The provider its models are published under: the same for the same account of the same application, so sessions keep their model when the connection is removed and made again.",
@@ -1203,7 +1241,7 @@
             },
             "thinking": {
               "$ref": "#/definitions/ThinkingLevel",
-              "default": "off"
+              "default": "default"
             },
             "type": {
               "enum": [
@@ -2179,6 +2217,54 @@
       ],
       "type": "object"
     },
+    "ListingError": {
+      "properties": {
+        "kind": {
+          "description": "An error kind (`auth`, `network`, …).",
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ListingSource": {
+      "oneOf": [
+        {
+          "description": "The provider's own list.",
+          "enum": [
+            "provider"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Not asked yet, or no list: the public catalog's models.",
+          "enum": [
+            "catalog"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The provider has no list endpoint and the catalog does not know it.",
+          "enum": [
+            "unsupported"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Only the models written in models.toml.",
+          "enum": [
+            "config"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "LlmError": {
       "properties": {
         "kind": {
@@ -2661,6 +2747,42 @@
         }
       ]
     },
+    "ModelPrice": {
+      "description": "Prices per million tokens.",
+      "properties": {
+        "cache_read": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "cache_write": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "currency": {
+          "$ref": "#/definitions/Currency"
+        },
+        "input": {
+          "format": "double",
+          "type": "number"
+        },
+        "output": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "currency",
+        "input",
+        "output"
+      ],
+      "type": "object"
+    },
     "ModelSummary": {
       "properties": {
         "available": {
@@ -2672,11 +2794,35 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "cost": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ModelPrice"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default_thinking": {
+          "$ref": "#/definitions/ThinkingLevel",
+          "default": "default",
+          "description": "The level a session starts with on this model: the one last chosen on it, else its configured default, else `default`."
+        },
+        "deprecated": {
+          "description": "The provider retired it.",
+          "type": "boolean"
+        },
         "id": {
           "description": "`provider/model-id`",
           "type": "string"
         },
         "images": {
+          "type": "boolean"
+        },
+        "known": {
+          "default": true,
+          "description": "Its details come from somewhere; `false` means default limits.",
           "type": "boolean"
         },
         "name": {
@@ -2688,8 +2834,20 @@
         "reasoning": {
           "type": "boolean"
         },
+        "released": {
+          "description": "`YYYY-MM-DD`",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shown": {
+          "default": true,
+          "description": "In the model menu (the defaults and the user's choices).",
+          "type": "boolean"
+        },
         "thinking_levels": {
-          "description": "Supported reasoning levels, `off` included.",
+          "description": "The provider's own thinking levels this model offers, `off` when it can be switched off; `default` (the provider decides) is always possible and not listed. Empty: no control.",
           "items": {
             "$ref": "#/definitions/ThinkingLevel"
           },
@@ -2738,6 +2896,57 @@
       },
       "required": [
         "models"
+      ],
+      "type": "object"
+    },
+    "ModelsRefreshParams": {
+      "description": "Parameters of `models/refresh`.",
+      "properties": {
+        "catalog": {
+          "default": false,
+          "description": "Refresh the public model catalog too.",
+          "type": "boolean"
+        },
+        "provider": {
+          "description": "One provider; all with credentials when absent.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ModelsRefreshResult": {
+      "description": "Result of `models/refresh`.",
+      "properties": {
+        "providers": {
+          "items": {
+            "$ref": "#/definitions/ProviderSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "providers"
+      ],
+      "type": "object"
+    },
+    "ModelsShowParams": {
+      "description": "Parameters of `models/show`.",
+      "properties": {
+        "model": {
+          "description": "`provider/model-id`",
+          "type": "string"
+        },
+        "shown": {
+          "description": "In the model menu or not.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model",
+        "shown"
       ],
       "type": "object"
     },
@@ -3170,6 +3379,55 @@
         }
       ]
     },
+    "ProviderListing": {
+      "description": "A provider's model list as the kernel last saw it.",
+      "properties": {
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ListingError"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the last refresh failed; the older list is still in use."
+        },
+        "fetched_at": {
+          "description": "The last successful answer (RFC 3339).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "models": {
+          "description": "Models of this provider in `models/list`.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "refreshing": {
+          "default": false,
+          "description": "A refresh is running in the background.",
+          "type": "boolean"
+        },
+        "shown": {
+          "description": "Of those, the ones in the model menu.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "source": {
+          "$ref": "#/definitions/ListingSource"
+        }
+      },
+      "required": [
+        "models",
+        "shown",
+        "source"
+      ],
+      "type": "object"
+    },
     "ProviderSummary": {
       "properties": {
         "auth": {
@@ -3194,6 +3452,17 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "listing": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ProviderListing"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Where its models came from; absent while it has no credentials."
         },
         "name": {
           "type": "string"
@@ -3309,6 +3578,11 @@
         },
         "model_connections": {
           "default": false,
+          "type": "boolean"
+        },
+        "model_discovery": {
+          "default": false,
+          "description": "Model lists asked from providers (docs/kernel/model-catalog-design.md §8): `shown`, `known`, `deprecated` on models, `listing` on providers, `models/refresh`, `models/show`, and a checked `auth/set`.",
           "type": "boolean"
         },
         "resource_read": {
@@ -4122,15 +4396,29 @@
       ]
     },
     "ThinkingLevel": {
-      "enum": [
-        "off",
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "max"
-      ],
-      "type": "string"
+      "description": "How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others are the providers' own levels, and a model offers only those it supports (docs/kernel/model-catalog-design.md §18).",
+      "oneOf": [
+        {
+          "enum": [
+            "default",
+            "off",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Reasoning switched on, for models with a switch and no levels.",
+          "enum": [
+            "on"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "ToolCategory": {
       "description": "What a tool call does, for display. The values are a subset of the ACP tool kinds.",
@@ -4533,6 +4821,7 @@
     "-32018": "unsupported_content",
     "-32019": "session_closed",
     "-32020": "task_failed",
+    "-32021": "key_rejected",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -4547,7 +4836,7 @@
     },
     "auth/set": {
       "params": "AuthSetParams",
-      "result": "Empty"
+      "result": "AuthSetResult"
     },
     "connections/connect": {
       "params": "ConnectionConnectParams",
@@ -4581,6 +4870,14 @@
     },
     "models/list": {
       "result": "ModelsListResult"
+    },
+    "models/refresh": {
+      "params": "ModelsRefreshParams",
+      "result": "ModelsRefreshResult"
+    },
+    "models/show": {
+      "params": "ModelsShowParams",
+      "result": "Empty"
     },
     "resource/read": {
       "params": "ResourceReadParams",

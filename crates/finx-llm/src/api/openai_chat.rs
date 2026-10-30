@@ -551,37 +551,47 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
     messages.finish(&body)
 }
 
+/// Thinking parameters for a level the model offers (docs/kernel/model-catalog-design.md §18):
+/// `Default` sends nothing, `Off` the format's way of switching reasoning off, `On` switches it
+/// on without a level, and the effort levels send the provider's own value.
 fn apply_thinking(body: &mut Map<String, Value>, model: &Model, level: ThinkingLevel) {
-    if !model.reasoning {
+    let level = model.resolve_thinking(level);
+    if !model.reasoning || level == ThinkingLevel::Default {
         return;
     }
-    let value = model.thinking_value(level);
+    let effort = level.is_effort().then(|| model.thinking_value(level));
     let switch = |on: bool| json!({ "type": if on { "enabled" } else { "disabled" } });
+    let on = level != ThinkingLevel::Off;
     match model.compat.thinking_format.unwrap_or(ThinkingFormat::None) {
         ThinkingFormat::None => {}
         ThinkingFormat::Openai => {
-            if let Some(effort) = value {
-                body.insert("reasoning_effort".into(), json!(effort));
+            let value = if on { effort } else { Some("none".to_string()) };
+            if let Some(value) = value {
+                body.insert("reasoning_effort".into(), json!(value));
             }
         }
         ThinkingFormat::Deepseek => {
-            body.insert("thinking".into(), switch(value.is_some()));
-            if let Some(effort) = value {
+            body.insert("thinking".into(), switch(on));
+            if let Some(effort) = effort {
                 body.insert("reasoning_effort".into(), json!(effort));
             }
         }
         ThinkingFormat::Qwen => {
-            body.insert("enable_thinking".into(), json!(value.is_some()));
-            if value.is_some() {
+            body.insert("enable_thinking".into(), json!(on));
+            if effort.is_some() {
                 body.insert("thinking_budget".into(), json!(model.thinking_budget(level)));
             }
         }
         ThinkingFormat::Zai => {
-            body.insert("thinking".into(), switch(value.is_some()));
+            body.insert("thinking".into(), switch(on));
         }
         ThinkingFormat::Openrouter => {
-            let effort = value.unwrap_or_else(|| "none".to_string());
-            body.insert("reasoning".into(), json!({ "effort": effort }));
+            let reasoning = match effort {
+                Some(effort) => json!({ "effort": effort }),
+                None if on => json!({ "enabled": true }),
+                None => json!({ "effort": "none" }),
+            };
+            body.insert("reasoning".into(), reasoning);
         }
     }
 }
@@ -808,9 +818,8 @@ mod tests {
             thinking_format: Some(ThinkingFormat::Deepseek),
             ..Default::default()
         };
-        model.thinking_levels.insert("minimal".into(), "low".into());
-        model.thinking_levels.insert("medium".into(), "high".into());
-        model.thinking_levels.insert("max".into(), "max".into());
+        // DeepSeek's own levels, as the catalog gives them.
+        model.thinking = vec![ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::High, ThinkingLevel::Max];
         model
     }
 
@@ -927,7 +936,7 @@ mod tests {
             }],
         };
         let opts = RequestOptions {
-            thinking: ThinkingLevel::Medium,
+            thinking: ThinkingLevel::High,
             ..Default::default()
         };
         let body: Value = serde_json::from_slice(&build_body(&model, &ctx, &opts)).unwrap();
@@ -944,7 +953,11 @@ mod tests {
         assert_eq!(body["stream_options"]["include_usage"], true);
         assert_eq!(body["tools"][0]["function"]["name"], "read");
 
-        let off: Value = serde_json::from_slice(&build_body(&model, &ctx, &RequestOptions::default())).unwrap();
+        // The provider's default: nothing about thinking.
+        let default: Value = serde_json::from_slice(&build_body(&model, &ctx, &RequestOptions::default())).unwrap();
+        assert!(default.get("thinking").is_none() && default.get("reasoning_effort").is_none());
+        let off_opts = RequestOptions { thinking: ThinkingLevel::Off, ..Default::default() };
+        let off: Value = serde_json::from_slice(&build_body(&model, &ctx, &off_opts)).unwrap();
         assert_eq!(off["thinking"]["type"], "disabled");
         assert!(off.get("reasoning_effort").is_none());
     }

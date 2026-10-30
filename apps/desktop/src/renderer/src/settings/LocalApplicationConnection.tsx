@@ -5,8 +5,10 @@ import type {
   ConnectionDiscovery,
   ConnectionsSnapshot,
 } from "@finx/protocol";
+import { agoText } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
+import { ManageModels, useModelCounts } from "./ManageModels";
 
 // Read once per window: the app's icon does not change while FinxWork runs.
 export type LocalAdapter = "qwenwork" | "qoder";
@@ -98,7 +100,7 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
     };
   }, [call, st.rpc, adapter]);
   const act = async (
-    action: "connect" | "retry" | "disconnect" | "remove" | "scan",
+    action: "connect" | "retry" | "disconnect" | "remove" | "scan" | "models",
   ) => {
     setBusy(true);
     setError("");
@@ -117,6 +119,8 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
               })
             : action === "retry"
               ? await call("connections/retry", id)
+              : action === "models"
+              ? await call("connections/models", id)
               : action === "disconnect"
                 ? await call("connections/disconnect", id)
                 : await call("connections/remove", id);
@@ -165,9 +169,18 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
   const state = connection?.state;
   const act = (a: Parameters<typeof local.act>[0]) => () => void local.act(a);
   const open = local.open;
+  const [managing, setManaging] = useState(false);
+  const { count, shown } = useModelCounts(connection?.provider_id);
+  // Its models as an API service's row says them: how many the menu shows, and when they were taken.
+  const ready = [
+    t("models.state.readyShown", { shown, count }),
+    connection?.models_fetched_at ? t("models.manage.updated", { when: agoText(new Date(connection.models_fetched_at), new Date()) }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   // The state in a few words, and the actions (the first is the way forward).
   const [line, actions, tone]: [string, [string, () => void][], "" | "ok" | "warn"] = (() => {
-    if (state === "ready") return [t("models.state.ready", { count: local.active.length }), [[t("models.disconnect"), act("disconnect")]], "ok"];
+    if (state === "ready") return [ready, [[t("models.manage.open"), () => setManaging(true)], [t("models.disconnect"), act("disconnect")]], "ok"];
     if (state === "connecting") return [t("models.state.connecting"), [], ""];
     if (state === "needs_login") return [t("models.state.needsLogin", { name }), [[t("models.open", { name }), open], [t("models.reconnect"), act("retry")]], "warn"];
     if (state === "disabled") return [t("models.state.disabled"), [[t("models.reconnect"), act("retry")], [t("models.remove"), act("remove")]], ""];
@@ -194,6 +207,20 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
       </div>
       {state === "ready" && local.pending.length > 0 && <details className="frow" style={{ display: "block" }}><summary>{t("models.otherModels", { count: local.pending.length })}</summary>{local.pending.map(model => <div key={model.id} className="fdesc">{model.name} · {t("models.unverified")}</div>)}</details>}
       {local.error && discovery && <p className="mrow-err">{local.error}</p>}
+      {managing && connection && (
+        <ManageModels
+          source={{
+            id: connection.provider_id,
+            name,
+            mark: <SourceAppMark className="mlogo mlogo-qwen" adapter={adapter} />,
+            origin: t("models.manage.source.app", { name }),
+            fetchedAt: connection.models_fetched_at,
+            failure: local.error || undefined,
+            refresh: () => local.act("models"),
+          }}
+          onClose={() => setManaging(false)}
+        />
+      )}
     </>
   );
 }

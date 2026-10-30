@@ -377,37 +377,64 @@ pub struct ToolSpec {
     pub parameters: Value,
 }
 
+/// How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others
+/// are the providers' own levels, and a model offers only those it supports
+/// (docs/kernel/model-catalog-design.md §18).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ThinkingLevel {
     #[default]
+    Default,
     Off,
+    /// Reasoning switched on, for models with a switch and no levels.
+    On,
     Minimal,
     Low,
     Medium,
     High,
+    Xhigh,
     Max,
 }
 
 impl ThinkingLevel {
-    pub const ALL: [ThinkingLevel; 6] = [
+    pub const ALL: [ThinkingLevel; 9] = [
+        ThinkingLevel::Default,
         ThinkingLevel::Off,
+        ThinkingLevel::On,
         ThinkingLevel::Minimal,
         ThinkingLevel::Low,
         ThinkingLevel::Medium,
         ThinkingLevel::High,
+        ThinkingLevel::Xhigh,
+        ThinkingLevel::Max,
+    ];
+
+    /// The effort levels, weakest first.
+    pub const EFFORTS: [ThinkingLevel; 6] = [
+        ThinkingLevel::Minimal,
+        ThinkingLevel::Low,
+        ThinkingLevel::Medium,
+        ThinkingLevel::High,
+        ThinkingLevel::Xhigh,
         ThinkingLevel::Max,
     ];
 
     pub fn as_str(self) -> &'static str {
         match self {
+            ThinkingLevel::Default => "default",
             ThinkingLevel::Off => "off",
+            ThinkingLevel::On => "on",
             ThinkingLevel::Minimal => "minimal",
             ThinkingLevel::Low => "low",
             ThinkingLevel::Medium => "medium",
             ThinkingLevel::High => "high",
+            ThinkingLevel::Xhigh => "xhigh",
             ThinkingLevel::Max => "max",
         }
+    }
+
+    pub fn is_effort(self) -> bool {
+        Self::EFFORTS.contains(&self)
     }
 }
 
@@ -424,7 +451,9 @@ impl FromStr for ThinkingLevel {
         ThinkingLevel::ALL
             .into_iter()
             .find(|level| level.as_str() == s)
-            .ok_or_else(|| format!("invalid thinking level '{s}' (expected off, minimal, low, medium, high or max)"))
+            .ok_or_else(|| {
+                format!("invalid thinking level '{s}' (expected default, off, on, minimal, low, medium, high, xhigh or max)")
+            })
     }
 }
 

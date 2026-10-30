@@ -23,11 +23,14 @@ export function MainWindow() {
   return (
     <div className={`mainwrap ${st.sidebar ? "" : "noside"}`}>
       <Sidebar />
-      <section className="content">{session ? <SessionPage key={session.session_id} s={session} /> : <NewSession />}</section>
+      {/* The toast sits in the content, under its title bar: never over the composer at the bottom. */}
+      <section className="content">
+        {session ? <SessionPage key={session.session_id} s={session} /> : <NewSession />}
+        <ToastView />
+      </section>
       {st.searching && <SearchPalette />}
       <SheetHost />
       <KeySheet />
-      <ToastView />
     </div>
   );
 }

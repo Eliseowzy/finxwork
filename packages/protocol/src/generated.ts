@@ -87,6 +87,13 @@ export type AuthSetParams = {
   provider: string;
 };
 
+/** Result of `auth/set`. */
+export type AuthSetResult = {
+  models?: number | null;
+  /** The provider accepted the key (its model list answered). `false` when it could not be asked; the key is saved either way. */
+  verified: boolean;
+};
+
 /** Parameters of the `$/cancel_request` notification. */
 export type CancelRequestParams = {
   id: RequestId;
@@ -166,6 +173,8 @@ export type ConnectionView = {
   connection_id: string;
   display_name: string;
   models: ConnectionModel[];
+  /** When `models` was last taken from the application (RFC 3339). */
+  models_fetched_at?: string | null;
   /** The provider its models are published under: the same for the same account of the same application, so sessions keep their model when the connection is removed and made again. */
   provider_id: string;
   reason_code?: string | null;
@@ -442,6 +451,14 @@ export type InitializeResult = {
   server_info: PeerInfo;
 };
 
+export type ListingError = {
+  /** An error kind (`auth`, `network`, …). */
+  kind: string;
+  message: string;
+};
+
+export type ListingSource = "provider" | "catalog" | "unsupported" | "config";
+
 export type LlmError = {
   kind: ErrorKind;
   message: string;
@@ -558,17 +575,37 @@ export type Message = {
   ts: number;
 };
 
+/** Prices per million tokens. */
+export type ModelPrice = {
+  cache_read?: number | null;
+  cache_write?: number | null;
+  currency: Currency;
+  input: number;
+  output: number;
+};
+
 export type ModelSummary = {
   /** The provider's credentials are available. */
   available: boolean;
   context_window: number;
+  cost?: ModelPrice | null;
+  /** The level a session starts with on this model: the one last chosen on it, else its configured default, else `default`. */
+  default_thinking: ThinkingLevel;
+  /** The provider retired it. */
+  deprecated?: boolean;
   /** `provider/model-id` */
   id: string;
   images: boolean;
+  /** Its details come from somewhere; `false` means default limits. */
+  known: boolean;
   name: string;
   provider: string;
   reasoning: boolean;
-  /** Supported reasoning levels, `off` included. */
+  /** `YYYY-MM-DD` */
+  released?: string | null;
+  /** In the model menu (the defaults and the user's choices). */
+  shown: boolean;
+  /** The provider's own thinking levels this model offers, `off` when it can be switched off; `default` (the provider decides) is always possible and not listed. Empty: no control. */
   thinking_levels: ThinkingLevel[];
 };
 
@@ -578,6 +615,27 @@ export type ModelsListResult = {
   models: ModelSummary[];
   /** Every provider with where its credentials come from. */
   providers: ProviderSummary[];
+};
+
+/** Parameters of `models/refresh`. */
+export type ModelsRefreshParams = {
+  /** Refresh the public model catalog too. */
+  catalog?: boolean;
+  /** One provider; all with credentials when absent. */
+  provider?: string | null;
+};
+
+/** Result of `models/refresh`. */
+export type ModelsRefreshResult = {
+  providers: ProviderSummary[];
+};
+
+/** Parameters of `models/show`. */
+export type ModelsShowParams = {
+  /** `provider/model-id` */
+  model: string;
+  /** In the model menu or not. */
+  shown: boolean;
 };
 
 export type Op = {
@@ -660,6 +718,21 @@ export type PermissionMode = "manual" | "accept-edits" | "bypass-permissions";
 
 export type PromptMode = "steer" | "follow_up";
 
+/** A provider's model list as the kernel last saw it. */
+export type ProviderListing = {
+  /** Why the last refresh failed; the older list is still in use. */
+  error?: ListingError | null;
+  /** The last successful answer (RFC 3339). */
+  fetched_at?: string | null;
+  /** Models of this provider in `models/list`. */
+  models: number;
+  /** A refresh is running in the background. */
+  refreshing: boolean;
+  /** Of those, the ones in the model menu. */
+  shown: number;
+  source: ListingSource;
+};
+
 export type ProviderSummary = {
   auth: AuthKind;
   credential: CredentialState;
@@ -668,6 +741,8 @@ export type ProviderSummary = {
   id: string;
   /** Environment variables that may hold the key. */
   key_env?: string[];
+  /** Where its models came from; absent while it has no credentials. */
+  listing?: ProviderListing | null;
   name: string;
 };
 
@@ -700,6 +775,8 @@ export type ServerCapabilities = {
   event_filter: boolean;
   max_frame_bytes: number;
   model_connections: boolean;
+  /** Model lists asked from providers (docs/kernel/model-catalog-design.md §8): `shown`, `known`, `deprecated` on models, `listing` on providers, `models/refresh`, `models/show`, and a checked `auth/set`. */
+  model_discovery: boolean;
   resource_read: boolean;
   session_delete: boolean;
   /** `session/rename`, `session/archive`, `session/unarchive`. */
@@ -925,7 +1002,8 @@ export type TaskOutcome = "completed" | "failed" | "interrupted";
 /** What started a task. */
 export type TaskTrigger = "user" | "mail";
 
-export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "max";
+/** How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others are the providers' own levels, and a model offers only those it supports (docs/kernel/model-catalog-design.md §18). */
+export type ThinkingLevel = "default" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "on";
 
 /** What a tool call does, for display. The values are a subset of the ACP tool kinds. */
 export type ToolCategory = "read" | "edit" | "delete" | "move" | "search" | "execute" | "fetch" | "other";
@@ -1017,7 +1095,7 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 /** Requests: [params, result]. */
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
-  "auth/set": [AuthSetParams, Empty];
+  "auth/set": [AuthSetParams, AuthSetResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];
   "connections/disconnect": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/discover": [Record<string, never>, ConnectionsDiscoveryResult];
@@ -1027,6 +1105,8 @@ export interface Methods {
   "connections/retry": [ConnectionIdParams, ConnectionsSnapshot];
   "initialize": [InitializeParams, InitializeResult];
   "models/list": [Record<string, never>, ModelsListResult];
+  "models/refresh": [ModelsRefreshParams, ModelsRefreshResult];
+  "models/show": [ModelsShowParams, Empty];
   "resource/read": [ResourceReadParams, ResourceReadResult];
   "server/shutdown": [Record<string, never>, Empty];
   "session/archive": [SessionIdParams, Empty];
@@ -1073,6 +1153,7 @@ export const RPC_ERROR_KINDS = {
   "-32018": "unsupported_content",
   "-32019": "session_closed",
   "-32020": "task_failed",
+  "-32021": "key_rejected",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

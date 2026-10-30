@@ -40,7 +40,9 @@ impl TestEnv {
         let mock = MockServer::start().await.expect("mock server");
         let home = tempfile::tempdir().expect("home");
         let work = tempfile::tempdir().expect("work");
-        std::fs::write(home.path().join("models.toml"), mock.models_toml()).unwrap();
+        // Built-in providers a test gives a key to ask the mock, never the real service.
+        let models = format!("{}\n[providers.deepseek]\nbase_url = \"{}\"\n", mock.models_toml(), mock.base_url());
+        std::fs::write(home.path().join("models.toml"), models).unwrap();
         std::fs::write(
             home.path().join("config.toml"),
             format!(
@@ -80,6 +82,15 @@ impl TestEnv {
             .env("HOME", self.user_home())
             // Saved keys go to a file in the test's home, never the developer's keychain.
             .env("FINX_CREDENTIAL_STORE", "file")
+            // The public model catalog comes from the mock; the developer's keys stay out.
+            .env("FINX_MODEL_CATALOG_URL", self.mock.catalog_url())
+            .env_remove("DEEPSEEK_API_KEY")
+            .env_remove("OPENAI_API_KEY")
+            .env_remove("ANTHROPIC_API_KEY")
+            .env_remove("DASHSCOPE_API_KEY")
+            .env_remove("MOONSHOT_API_KEY")
+            .env_remove("ZHIPUAI_API_KEY")
+            .env_remove("OPENROUTER_API_KEY")
             .env_remove("FINX_MODEL")
             .env_remove("FINX_APPROVAL")
             .env_remove("FINX_LOG")

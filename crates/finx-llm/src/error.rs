@@ -169,6 +169,20 @@ impl LlmError {
         }
     }
 
+    /// The provider says the requested model does not exist (it may have been retired).
+    pub fn is_missing_model(&self) -> bool {
+        if !matches!(self.kind, ErrorKind::InvalidRequest | ErrorKind::Unknown) {
+            return false;
+        }
+        let code = self.provider_code.as_deref().unwrap_or_default().to_lowercase();
+        let message = self.message.to_lowercase();
+        code.contains("model_not_found")
+            || (message.contains("model")
+                && ["not exist", "does not exist", "not found", "no such model", "unknown model"]
+                    .iter()
+                    .any(|p| message.contains(p)))
+    }
+
     pub fn from_reqwest(err: &reqwest::Error) -> Self {
         let kind = if err.is_timeout() {
             ErrorKind::Timeout
@@ -293,6 +307,16 @@ mod tests {
             LlmError::from_http(400, "bad", None, &none).kind,
             ErrorKind::InvalidRequest
         );
+    }
+
+    #[test]
+    fn missing_models_are_recognized() {
+        let gone = LlmError::from_http(400, r#"{"error":{"message":"Model Not Exist","code":"invalid_request_error"}}"#, None, &[]);
+        assert!(gone.is_missing_model());
+        let openai = LlmError::from_http(404, r#"{"error":{"message":"The model `x` does not exist","code":"model_not_found"}}"#, None, &[]);
+        assert!(openai.is_missing_model());
+        assert!(!LlmError::from_http(400, r#"{"error":{"message":"bad tool schema"}}"#, None, &[]).is_missing_model());
+        assert!(!LlmError::from_http(401, r#"{"error":{"message":"model not found"}}"#, None, &[]).is_missing_model());
     }
 
     #[test]

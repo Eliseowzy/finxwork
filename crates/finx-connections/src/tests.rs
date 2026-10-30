@@ -93,6 +93,7 @@ fn record(enabled: bool) -> Record {
             reasoning: true,
             images: false,
         }],
+        models_fetched_at: None,
     }
 }
 fn save_config(dir: &Path, r: &Record) {
@@ -408,4 +409,26 @@ async fn transient_failure_keeps_route_and_success_clears_diagnostic() {
         .unwrap();
     lease.authorize(false).await.unwrap();
     assert!(entry.view.read().reason_code.is_none());
+}
+#[tokio::test]
+async fn catalogs_are_asked_again_only_when_old_and_failures_change_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut r = record(true);
+    r.models_fetched_at = Some(finx_llm::discovery::now());
+    save_config(dir.path(), &r);
+    let env = Fake::new();
+    save_session(&env, &r.connection_id).await;
+    let llm = registry();
+    let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
+    let day = std::time::Duration::from_secs(24 * 60 * 60);
+    // Fresh: not asked.
+    assert!(!m.refresh_stale_catalogs(day).await);
+    assert_eq!(env.calls.load(Ordering::Relaxed), 0);
+    // Old, and the source's login has expired: asked, and the failure leaves all as it was.
+    env.expires.store(0, Ordering::Relaxed);
+    assert!(!m.refresh_stale_catalogs(std::time::Duration::ZERO).await);
+    assert!(env.calls.load(Ordering::Relaxed) > 0);
+    let provider = format!("local-{}", r.connection_id);
+    assert!(llm.resolve(&format!("{provider}/flash")).is_ok());
+    assert!(matches!(m.snapshot().unwrap().connections[0].state, ConnectionState::Ready));
 }

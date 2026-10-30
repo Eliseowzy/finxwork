@@ -180,11 +180,14 @@
     }
   },
   "thinking": {
-    "off": "No Thinking",
+    "default": "Default",
+    "off": "Off",
+    "on": "On",
     "minimal": "Minimal",
     "low": "Low",
     "medium": "Medium",
     "high": "High",
+    "xhigh": "Extra high",
     "max": "Max"
   },
   "failure": {

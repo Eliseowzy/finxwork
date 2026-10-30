@@ -10,7 +10,7 @@ import openai from "../assets/providers/openai.svg?raw";
 import openrouter from "../assets/providers/openrouter.svg?raw";
 import qwen from "../assets/providers/qwen.svg?raw";
 import zhipu from "../assets/providers/zhipu.svg?raw";
-import { keyProviders } from "../composer/KeySetup";
+import { keyProviders, saveKey } from "../composer/KeySetup";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import "../styles/connections.css";
@@ -91,7 +91,7 @@ export function KeyEntry({ provider, onBack, onSaved }: { provider: ProviderSumm
     setBusy(true);
     setError("");
     try {
-      await st.call("auth/set", { provider: provider.id, api_key: key.trim() });
+      await saveKey(st, provider.id, key.trim());
       setKey("");
       // Its models become available (the first-run page moves on to "ready").
       await st.refreshModels();

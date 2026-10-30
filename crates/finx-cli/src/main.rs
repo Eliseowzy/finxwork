@@ -42,7 +42,8 @@ enum Command {
         /// Model as provider/model-id
         #[arg(short, long)]
         model: Option<String>,
-        /// Reasoning level: off, minimal, low, medium, high, max
+        /// Thinking level: default (the provider decides), or one the model offers: off, on,
+        /// minimal, low, medium, high, xhigh, max
         #[arg(long)]
         thinking: Option<ThinkingLevel>,
         /// System prompt
@@ -92,14 +93,22 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// List providers and models
+    /// List the models in the model menu, by provider; `show` and `hide` change the menu
     Models {
         /// Only this provider
         #[arg(long)]
         provider: Option<String>,
-        /// Print JSON
+        /// Also the hidden models
+        #[arg(long)]
+        all: bool,
+        /// Ask the providers and the public model catalog first
+        #[arg(long)]
+        refresh: bool,
+        /// Print JSON (the `models/list` result)
         #[arg(long)]
         json: bool,
+        #[command(subcommand)]
+        action: Option<ModelsAction>,
     },
     /// Show the effective configuration: model, provider, credentials, directories
     Status {
@@ -176,6 +185,20 @@ enum McpCommand {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum ModelsAction {
+    /// Put a model in the model menu
+    Show {
+        /// provider/model-id
+        model: String,
+    },
+    /// Take a model out of the model menu
+    Hide {
+        /// provider/model-id
+        model: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum ProtocolCommand {
     /// Print the JSON Schema of every message, with the methods and error codes
     Schema,
@@ -186,7 +209,8 @@ pub struct RunArgs {
     /// Model as provider/model-id
     #[arg(short, long)]
     pub model: Option<String>,
-    /// Reasoning level: off, minimal, low, medium, high, max
+    /// Thinking level: default (the provider decides), or one the model offers: off, on,
+    /// minimal, low, medium, high, xhigh, max
     #[arg(long)]
     pub thinking: Option<ThinkingLevel>,
     /// Permission mode: manual (ask before changes), accept-edits (file changes in the
@@ -343,7 +367,9 @@ fn main() -> ExitCode {
     let result = setup::load_mcp_config(&mcp_config).and_then(|()| match command {
         // Local commands skip the async runtime: starting it costs more than they do.
         Command::Sessions { all, limit, json } => cmd_info::sessions(all, limit, json),
-        Command::Models { provider, json } => cmd_info::models(&overrides, provider.as_deref(), json),
+        Command::Models { provider, all, refresh, json, action } => {
+            cmd_info::models(&overrides, provider.as_deref(), all, refresh, json, action)
+        }
         Command::Status { json } => cmd_info::status(&overrides, json),
         Command::Doctor { json } => cmd_info::doctor(&overrides, json),
         Command::Skills { dir, all, json } => cmd_info::skills(&overrides, dir, all, json),

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
 import { Dialog } from "../components";
+import { RpcError } from "@finx/client";
+import { i18n } from "../../../shared/i18n";
 import { errorText, useStore } from "../store";
 
 // Connecting a model service: an API key for one provider, saved by finx in
@@ -15,6 +17,21 @@ export const keyEvent = "finx-key-setup";
 /** Providers that take a key the user can type. */
 export function keyProviders(providers: ProviderSummary[]): ProviderSummary[] {
   return providers.filter((p) => p.auth === "api_key");
+}
+
+/**
+ * Saves a key with auth/set: finx asks the provider first, and a refused key is
+ * not saved (its error says so). A key finx could not check is saved, and the
+ * page says it was not checked.
+ */
+export async function saveKey(st: ReturnType<typeof useStore>, provider: string, key: string): Promise<void> {
+  try {
+    const result = await st.call("auth/set", { provider, api_key: key });
+    if (!result.verified) st.show(i18n.t("session:key.unverified"));
+  } catch (e) {
+    if (e instanceof RpcError && e.kind === "key_rejected") throw new Error(i18n.t("session:key.rejected", { message: e.message }));
+    throw e;
+  }
 }
 
 /** No model can run: every provider that needs a key lacks one. */
@@ -38,7 +55,7 @@ export function KeyForm({ provider: initial, onDone, onCancel }: { provider?: st
     setBusy(true);
     setError(null);
     try {
-      await st.call("auth/set", { provider, api_key: key.trim() });
+      await saveKey(st, provider, key.trim());
       setKey("");
       await st.refreshModels();
       onDone();

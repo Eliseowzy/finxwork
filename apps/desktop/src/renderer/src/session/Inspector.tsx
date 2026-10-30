@@ -66,7 +66,7 @@ export function Inspector({ s, view }: { s: ListSession; view: SessionView }) {
           <Icon name="sparkle" />
           <span>
             <b>{modelTitle(info.model, st.models)}</b>
-            {info.thinking !== "off" && ` · ${t("inspector.thinking", { level: thinkingTitle(info.thinking) })}`}
+            {info.thinking !== "default" && ` · ${t("inspector.thinking", { level: thinkingTitle(info.thinking) })}`}
           </span>
         </li>
         <li>

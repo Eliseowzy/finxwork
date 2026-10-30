@@ -12,7 +12,13 @@ use crate::types::Usage;
 
 /// Fills `usage.cost` from the model's prices.
 pub fn apply_cost(model: &Model, usage: &mut Usage) {
-    let price = &model.cost;
+    let prompt = usage.input + usage.cache_read + usage.cache_write;
+    let price = model
+        .cost_tiers
+        .iter()
+        .rev()
+        .find(|tier| prompt > tier.above)
+        .map_or(&model.cost, |tier| &tier.cost);
     let part = |tokens: u64, per_million: f64| tokens as f64 * per_million / 1_000_000.0;
     let mut cost = Cost {
         currency: model.currency,
@@ -80,6 +86,19 @@ mod tests {
     use super::*;
     use crate::model::ModelCost;
     use crate::model::test_model;
+
+    #[test]
+    fn long_inputs_use_the_tier_they_reach() {
+        let mut model = test_model("openai-chat");
+        model.cost = ModelCost { input: 1.0, output: 2.0, ..Default::default() };
+        model.cost_tiers = vec![crate::model::CostTier { above: 200_000, cost: ModelCost { input: 2.0, output: 4.0, ..Default::default() } }];
+        let mut short = Usage { input: 100_000, cache_read: 100_000, output: 1_000_000, ..Default::default() };
+        apply_cost(&model, &mut short);
+        assert_eq!(short.cost.output, 2.0, "200,000 is not above the tier");
+        let mut long = Usage { input: 150_000, cache_read: 60_000, output: 1_000_000, ..Default::default() };
+        apply_cost(&model, &mut long);
+        assert_eq!(long.cost.output, 4.0);
+    }
 
     #[test]
     fn computes_cost_per_million() {

@@ -95,6 +95,7 @@ fn setup(server: &MockServer) -> (ModelRegistry, Arc<AtomicUsize>, Arc<AtomicUsi
         currency: Default::default(),
         compat: Compat::default(),
         models: vec![],
+        listing: Default::default(),
     };
     p.models.push(Arc::new(p.ad_hoc_model("flash")));
     registry.replace_source("connections", vec![p]).unwrap();

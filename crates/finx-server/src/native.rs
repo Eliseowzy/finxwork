@@ -9,6 +9,8 @@ use finx_protocol::api::AuthSetParams;
 use finx_protocol::api::InitializeParams;
 use finx_protocol::api::InitializeResult;
 use finx_protocol::api::ModelsListResult;
+use finx_protocol::api::ModelsRefreshParams;
+use finx_protocol::api::ModelsShowParams;
 use finx_protocol::api::PeerInfo;
 use finx_protocol::api::ResourceReadParams;
 use finx_protocol::api::ServerCapabilities;
@@ -193,6 +195,7 @@ impl NativeProtocol {
                             auth: true,
                             agents: true,
                             model_connections: true,
+                            model_discovery: true,
                         },
                     })
                 });
@@ -403,6 +406,7 @@ impl NativeProtocol {
                 // Saved keys may be read from the keychain on the first listing.
                 let (conn, id) = (conn.clone(), id.clone());
                 tokio::spawn(async move {
+                    server.refresh_local_models().await;
                     let result: Result<ModelsListResult, RpcError> =
                         tokio::task::spawn_blocking(move || server.list_models())
                             .await
@@ -454,33 +458,50 @@ impl NativeProtocol {
                     Err(err) => conn.send_error(Some(id), &err),
                 }
             }
-            method::AUTH_SET | method::AUTH_DELETE => {
-                let (conn, id) = (conn.clone(), id.clone());
-                let work: Result<Box<dyn FnOnce() -> Result<(), RpcError> + Send>, RpcError> =
-                    if method_name == method::AUTH_SET {
-                        finx_rpc::params::<AuthSetParams>(params).map(|p| {
-                            Box::new(move || server.set_key(&p.provider, &p.api_key))
-                                as Box<dyn FnOnce() -> _ + Send>
-                        })
-                    } else {
-                        finx_rpc::params::<AuthDeleteParams>(params).map(|p| {
-                            Box::new(move || server.delete_key(&p.provider))
-                                as Box<dyn FnOnce() -> _ + Send>
-                        })
-                    };
-                match work {
-                    Ok(work) => {
-                        tokio::spawn(async move {
-                            let result = tokio::task::spawn_blocking(work)
-                                .await
-                                .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
-                                .map(|()| json!({}));
-                            conn.send(reply(&id, result));
-                        });
-                    }
-                    Err(err) => conn.send_error(Some(&id), &err),
+            method::AUTH_SET => match finx_rpc::params::<AuthSetParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move {
+                        Some(reply(&reply_id, server.set_key(&p.provider, &p.api_key).await))
+                    });
                 }
-            }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::AUTH_DELETE => match finx_rpc::params::<AuthDeleteParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        let result = tokio::task::spawn_blocking(move || server.delete_key(&p.provider))
+                            .await
+                            .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
+                            .map(|()| json!({}));
+                        conn.send(reply(&id, result));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::MODELS_REFRESH => match finx_rpc::params::<Option<ModelsRefreshParams>>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move {
+                        Some(reply(&reply_id, server.refresh_models(p.unwrap_or_default()).await))
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::MODELS_SHOW => match finx_rpc::params::<ModelsShowParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        let result = tokio::task::spawn_blocking(move || server.show_model(&p.model, p.shown))
+                            .await
+                            .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
+                            .map(|()| json!({}));
+                        conn.send(reply(&id, result));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             other => conn.send_error(Some(id), &RpcError::method_not_found(other)),
         }
     }

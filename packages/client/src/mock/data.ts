@@ -183,7 +183,7 @@ export function demoSessions(): DemoSession[] {
       id: "0193f6a2-5c1e-7b40-9d6a-1f2e3d4c5b6a",
       cwd: projects.finxwork,
       model: "deepseek/deepseek-flash",
-      thinking: "medium",
+      thinking: "default",
       permission_mode: "accept-edits",
       ago: 3 * min,
       history: [],
@@ -224,7 +224,7 @@ export function demoSessions(): DemoSession[] {
       id: "0193d9e7-3a5b-7c92-b4d1-8f7e6d5c4b3a",
       cwd: projects.finxwork,
       model: "deepseek/deepseek-flash",
-      thinking: "medium",
+      thinking: "default",
       permission_mode: "manual",
       title: "排查启动慢的原因",
       ago: 3 * day + 2 * hour,
@@ -234,7 +234,7 @@ export function demoSessions(): DemoSession[] {
       id: "0193d1f2-8c4e-7b13-9e5a-2d1c0b9a8f7e",
       cwd: projects.finxwork,
       model: "deepseek/deepseek-flash",
-      thinking: "medium",
+      thinking: "default",
       permission_mode: "manual",
       title: "重写 bash 工具的超时处理",
       ago: 4 * day + 5 * hour,
@@ -244,7 +244,7 @@ export function demoSessions(): DemoSession[] {
       id: "0193b8a1-6d2f-7e47-8c3b-9a8f7e6d5c4b",
       cwd: projects.finxwork,
       model: "deepseek/deepseek-flash",
-      thinking: "medium",
+      thinking: "default",
       permission_mode: "accept-edits",
       title: "会话日志格式升级到 v2",
       ago: 12 * day,
@@ -348,29 +348,65 @@ export function demoSkillUses(text: string): SkillUse[] {
   });
 }
 
-const levels: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "max"];
+/** Each demo provider's own thinking levels, as finx reports them (model-catalog-design §18). */
+const levels: Record<string, ThinkingLevel[]> = {
+  deepseek: ["off", "low", "high", "max"],
+  anthropic: ["off", "low", "medium", "high", "max"],
+  kimi: ["low", "high", "max"],
+};
 
-/** The demo's `models/list`: the shape finx sends, keys as if DeepSeek's came from the environment. */
-export function demoModels(stored: ReadonlySet<string> = new Set()): ModelsListResult {
+/** The demo's model menu choices: `provider/model-id` → shown or hidden by hand. */
+export type DemoSelection = ReadonlyMap<string, boolean>;
+
+/**
+ * The demo's `models/list`: the shape finx sends, keys as if DeepSeek's came from the
+ * environment. Only providers with a key list models (the default model aside); each model
+ * says whether it is in the menu (docs/kernel/model-catalog-design.md §6).
+ */
+export function demoModels(stored: ReadonlySet<string> = new Set(), selection: DemoSelection = new Map(), fetchedAt = "2026-10-30T08:00:00Z"): ModelsListResult {
   const providers: ProviderSummary[] = [
     { id: "deepseek", name: "DeepSeek", auth: "api_key", credential: "env", credential_source: "DEEPSEEK_API_KEY", key_env: ["DEEPSEEK_API_KEY"] },
     { id: "anthropic", name: "Anthropic", auth: "api_key", credential: stored.has("anthropic") ? "stored" : "missing", key_env: ["ANTHROPIC_API_KEY"] },
+    { id: "kimi", name: "Moonshot Kimi", auth: "api_key", credential: stored.has("kimi") ? "stored" : "missing", key_env: ["MOONSHOT_API_KEY"] },
     { id: "ollama", name: "Ollama", auth: "none", credential: "not_required" },
   ];
-  const available = (provider: string) => providers.find((p) => p.id === provider)?.credential !== "missing";
-  const model = (id: string, name: string, context_window: number, reasoning: boolean, images: boolean): ModelSummary => {
+  const keyed = (provider: string) => providers.find((p) => p.id === provider)?.credential !== "missing";
+  type Extra = Partial<Pick<ModelSummary, "known" | "deprecated" | "released" | "cost">> & { hidden?: boolean };
+  const model = (id: string, name: string, context_window: number, reasoning: boolean, images: boolean, extra: Extra = {}): ModelSummary => {
     const provider = id.split("/")[0];
-    return { id, name, provider, context_window, reasoning, thinking_levels: reasoning ? levels : ["off"], images, available: available(provider) };
+    const { hidden, ...rest } = extra;
+    const known = rest.known ?? true;
+    const byDefault = known && !rest.deprecated && !hidden;
+    return {
+      id, name, provider, context_window, reasoning, images,
+      thinking_levels: reasoning ? (levels[provider] ?? []) : [],
+      default_thinking: "default",
+      available: keyed(provider),
+      shown: selection.get(id) ?? byDefault,
+      known,
+      ...rest,
+    };
   };
+  const usd = (input: number, output: number) => ({ input, output, currency: "USD" as const });
+  const all = [
+    model("deepseek/deepseek-flash", "DeepSeek-V4.1-Flash", 1_048_576, true, true, { released: "2026-10-17", cost: usd(0.15, 0.6) }),
+    model("deepseek/deepseek-v4-pro", "DeepSeek-V4-Pro", 1_048_576, true, false, { released: "2026-09-02", cost: usd(0.66, 1.98) }),
+    model("deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", 1_048_576, true, true, { released: "2026-06-20", deprecated: true, cost: usd(0.15, 0.6) }),
+    model("deepseek/deepseek-flash-exp", "deepseek-flash-exp", 128_000, false, false, { known: false }),
+    model("anthropic/claude-sonnet-5-5", "Claude Sonnet 5.5", 1_000_000, true, true, { released: "2026-08-12", cost: usd(3, 15) }),
+    model("anthropic/claude-opus-5-5", "Claude Opus 5.5", 1_000_000, true, true, { released: "2026-08-12", cost: usd(15, 75) }),
+    model("kimi/kimi-k3", "Kimi K3", 1_048_576, true, true, { released: "2026-10-01", cost: usd(0.6, 2.5) }),
+    model("ollama/qwen3-coder", "Qwen3 Coder（本地）", 262_144, false, false),
+  ];
+  const models = all.filter((m) => keyed(m.provider));
+  for (const p of providers) {
+    if (p.credential === "missing") continue;
+    const mine = models.filter((m) => m.provider === p.id);
+    p.listing = { source: p.id === "ollama" ? "provider" : "provider", fetched_at: fetchedAt, refreshing: false, models: mine.length, shown: mine.filter((m) => m.shown).length };
+  }
   return {
-    models: [
-      model("deepseek/deepseek-flash", "DeepSeek Flash", 1_048_576, true, false),
-      model("deepseek/deepseek-pro", "DeepSeek Pro", 1_048_576, true, false),
-      model("anthropic/claude-sonnet-5-5", "Claude Sonnet 5.5", 1_000_000, true, true),
-      model("anthropic/claude-opus-5-5", "Claude Opus 5.5", 1_000_000, true, true),
-      model("ollama/qwen3-coder", "Qwen3 Coder（本地）", 262_144, false, false),
-    ],
+    models,
     providers,
-    defaults: { model: "deepseek/deepseek-flash", thinking: "medium", permission_mode: "manual" },
+    defaults: { model: "deepseek/deepseek-flash", thinking: "default", permission_mode: "manual" },
   };
 }

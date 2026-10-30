@@ -82,7 +82,7 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
         model: info.model,
         thinking: info.thinking,
         models: st.models,
-        onModel: (ref) => st.op(id, { type: "set_model", model: ref }),
+        onModel: (ref) => void st.op(id, { type: "set_model", model: ref }),
         onThinking: (l) => st.op(id, { type: "set_model", model: info.model, thinking: l }),
       }}
     />

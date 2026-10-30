@@ -1,5 +1,5 @@
 import { hourMinute, isYesterday, modelName, monthDay, sameDay, weekday, withinWeek, type Bucket, type ToolView, type WorkItem, workSummary } from "@finx/client";
-import type { ModelsListResult, PermissionMode, SessionState, ThinkingLevel } from "@finx/protocol";
+import type { ModelPrice, ModelSummary, ModelsListResult, PermissionMode, SessionState, ThinkingLevel } from "@finx/protocol";
 import { i18n, language } from "../../shared/i18n";
 
 // The window's words for times, states and steps, in the app's language.
@@ -97,6 +97,26 @@ export function thinkingTitle(l: ThinkingLevel): string {
   return t(`thinking.${l}`);
 }
 
+/** Whether a model offers a thinking level; "default" (the provider decides) it always does. */
+export function offersThinking(m: ModelSummary | undefined, l: ThinkingLevel): boolean {
+  return l === "default" || !!m?.thinking_levels.includes(l);
+}
+
+/**
+ * The thinking level that goes with a model (model-catalog-design §18): `current` when the model
+ * offers it, else the level the model starts with (the one last chosen on it, else "default").
+ * `null` is a level nobody chose. The kernel applies the same rule to a session's model switch.
+ */
+export function thinkingFor(m: ModelSummary | undefined, current: ThinkingLevel | null): ThinkingLevel {
+  if (current && current !== "default" && offersThinking(m, current)) return current;
+  return m?.default_thinking ?? "default";
+}
+
+/** A new session's level on its model: the one chosen on the page when the model offers it ("default" included), else the level the model starts with. */
+export function draftThinking(m: ModelSummary | undefined, chosen: ThinkingLevel | null): ThinkingLevel {
+  return chosen !== null && offersThinking(m, chosen) ? chosen : (m?.default_thinking ?? "default");
+}
+
 /** A model's name as its provider lists it, else its short reference. */
 export function modelTitle(ref: string, models: ModelsListResult): string {
   const found = models.models.find((m) => m.id === ref);
@@ -104,9 +124,46 @@ export function modelTitle(ref: string, models: ModelsListResult): string {
   return modelName(ref);
 }
 
-/** The models a model menu offers: those that can be used, and the current one even when it cannot. */
-export function menuModels(models: ModelsListResult, current?: string | null): ModelsListResult["models"] {
-  return models.models.filter((m) => m.available || m.id === current);
+/** A model menu's row; `note` says why the current model is there although the menu would leave it out. */
+export type MenuModel = ModelSummary & { note?: "noKey" | "hidden" | "gone" };
+
+/** The models a model menu offers: those in the menu that can be used, and first the current one when it is not (model-catalog-design §10). */
+export function menuModels(models: ModelsListResult, current?: string | null): MenuModel[] {
+  const list: MenuModel[] = models.models.filter((m) => m.available && m.shown);
+  if (!current || list.some((m) => m.id === current)) return list;
+  const found = models.models.find((m) => m.id === current);
+  if (found) return [{ ...found, note: found.available ? "hidden" : "noKey" }, ...list];
+  const provider = current.split("/")[0];
+  const keyed = models.providers.some((p) => p.id === provider && p.credential !== "missing");
+  const gone: MenuModel = {
+    id: current,
+    name: modelName(current),
+    provider,
+    context_window: 0,
+    reasoning: false,
+    thinking_levels: [],
+    default_thinking: "default",
+    images: false,
+    available: keyed,
+    shown: true,
+    known: false,
+    note: keyed ? "gone" : "noKey",
+  };
+  return [gone, ...list];
+}
+
+/** "1M", "200K", "8K": a context window in tokens. */
+export function tokensText(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1000) return `${Math.round(n / 1000)}K`;
+  return String(n);
+}
+
+/** "$0.15 / $0.60": input and output prices per million tokens. */
+export function priceText(cost: ModelPrice): string {
+  const sign = cost.currency === "CNY" ? "¥" : "$";
+  const n = (v: number) => sign + (v >= 10 ? v.toFixed(0) : v.toFixed(2));
+  return `${n(cost.input)} / ${n(cost.output)}`;
 }
 
 /** What a failed task's error kind means, and what to do about it. */

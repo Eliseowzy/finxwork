@@ -16,6 +16,11 @@ use crate::api::anthropic::AnthropicApi;
 use crate::api::openai_chat::OpenAiChatApi;
 use crate::catalog::Catalog;
 use crate::catalog::ProviderConfig;
+use crate::directory::ModelDirectory;
+use crate::discovery::ListError;
+use crate::discovery::ListSource;
+use crate::discovery::Listed;
+use crate::discovery::ModelList;
 use crate::error::ErrorKind;
 use crate::error::LlmError;
 use crate::model::Model;
@@ -101,6 +106,17 @@ pub struct RegistryOptions {
     pub timeouts: Timeouts,
     pub retry: RetryPolicy,
     pub user_agent: Option<String>,
+    /// `~/.finx/models`: list and catalog caches, the menu selection. `None` keeps them in memory.
+    pub models_dir: Option<std::path::PathBuf>,
+}
+
+/// What one list refresh found.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ListRefresh {
+    pub source: ListSource,
+    pub models: usize,
+    /// The list differs from the previous one.
+    pub changed: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -124,6 +140,7 @@ pub struct ModelRegistry {
     apis: HashMap<String, Arc<dyn WireApi>>,
     /// Built by the first request, so commands that never call a model skip HTTP and TLS setup.
     http: OnceLock<Result<reqwest::Client, LlmError>>,
+    directory: ModelDirectory,
     options: RegistryOptions,
 }
 
@@ -135,6 +152,7 @@ impl ModelRegistry {
             authorizer: OnceLock::new(),
             apis: HashMap::new(),
             http: OnceLock::new(),
+            directory: ModelDirectory::new(options.models_dir.clone()),
             options,
         };
         registry.register_api(Arc::new(OpenAiChatApi));
@@ -203,6 +221,106 @@ impl ModelRegistry {
         self.http.get_or_init(|| build_http(&self.options)).clone()
     }
 
+    /// Every provider's models, merged from their layers (docs/kernel/model-catalog-design.md §4).
+    pub fn directory(&self) -> &ModelDirectory {
+        &self.directory
+    }
+
+    /// A provider's model: managed providers' as they are, the others' merged.
+    pub fn lookup(&self, provider: &ProviderConfig, id: &str) -> Option<Arc<Model>> {
+        if matches!(provider.auth, crate::AuthConfig::Managed) {
+            return provider.model(id);
+        }
+        self.directory.model(provider, id)
+    }
+
+    /// Asks a provider for its model list and remembers the answer. With `key`, that key is used
+    /// instead of the provider's credentials, and a failure leaves nothing behind (key checks).
+    pub async fn refresh_list(&self, provider_id: &str, key: Option<String>) -> Result<ListRefresh, LlmError> {
+        let provider = self
+            .provider(provider_id)
+            .ok_or_else(|| LlmError::new(ErrorKind::InvalidRequest, format!("unknown provider '{provider_id}'")))?;
+        let checking = key.is_some();
+        let credentials = match key {
+            Some(key) => crate::Credentials::with_key(key),
+            None => provider.auth.resolve(provider_id).await?,
+        };
+        let http = self.http_client()?;
+        let fetched = crate::discovery::fetch(&http, &provider, &credentials).await;
+        let lists = self.directory.lists_dir();
+        let previous = self.directory.list(provider_id);
+        let now = crate::discovery::now();
+        let credential = credentials.api_key.as_deref().map(crate::discovery::fingerprint);
+        let list = match fetched {
+            Ok(Listed::Models(models)) => ModelList {
+                version: 1,
+                fetched_at: Some(now.clone()),
+                checked_at: now,
+                source: ListSource::Provider,
+                credential,
+                error: None,
+                models,
+            },
+            Ok(Listed::Unsupported) => ModelList {
+                version: 1,
+                fetched_at: Some(now.clone()),
+                checked_at: now,
+                source: ListSource::Unsupported,
+                credential,
+                error: None,
+                models: Vec::new(),
+            },
+            Err(error) if checking => return Err(error),
+            Err(error) => {
+                let mut kept = previous.clone().unwrap_or(ModelList {
+                    version: 1,
+                    fetched_at: None,
+                    checked_at: now.clone(),
+                    source: ListSource::Provider,
+                    credential: None,
+                    error: None,
+                    models: Vec::new(),
+                });
+                kept.checked_at = now;
+                kept.credential = credential;
+                kept.error = Some(ListError { kind: error.kind.as_str().to_string(), message: error.message.clone() });
+                if let Some(dir) = &lists {
+                    crate::discovery::write_json(&dir.join(format!("{provider_id}.json")), &kept)?;
+                }
+                self.directory.invalidate();
+                return Err(error);
+            }
+        };
+        if let Some(dir) = &lists {
+            crate::discovery::write_json(&dir.join(format!("{provider_id}.json")), &list)?;
+        }
+        self.directory.invalidate();
+        Ok(ListRefresh {
+            source: list.source,
+            models: list.models.len(),
+            changed: previous.is_none_or(|p| p.models != list.models || p.source != list.source),
+        })
+    }
+
+    /// Refreshes the local copy of the public catalog for every provider that names one.
+    /// Returns whether any provider's models changed.
+    pub async fn refresh_catalog(&self, url: &str) -> Result<bool, LlmError> {
+        let Some(dir) = self.directory.catalog_dir() else {
+            return Ok(false);
+        };
+        let mut ids: Vec<String> = self.providers().filter_map(|p| p.listing.catalog_id).collect();
+        ids.sort();
+        ids.dedup();
+        if ids.is_empty() {
+            return Ok(false);
+        }
+        let http = self.http_client()?;
+        let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let changed = crate::public_catalog::refresh(&http, url, &dir, &refs).await?;
+        self.directory.invalidate();
+        Ok(changed)
+    }
+
     pub fn has_api(&self, id: &str) -> bool {
         self.apis.contains_key(id)
     }
@@ -239,7 +357,7 @@ impl ModelRegistry {
         {
             return Err(ResolveError::BadReference(reference.to_string()));
         }
-        Ok(match provider.model(model_id) {
+        Ok(match self.lookup(&provider, model_id) {
             Some(model) => ResolvedModel {
                 model,
                 ad_hoc: false,
@@ -263,13 +381,14 @@ impl ModelRegistry {
         let provider = self.provider(&model.provider);
         let model = provider
             .as_ref()
-            .and_then(|p| p.model(&model.id))
+            .and_then(|p| self.lookup(p, &model.id))
             .unwrap_or(model);
         let api = self.apis.get(&model.api).cloned();
         let auth = provider.map(|p| p.auth);
         let authorizer = self.authorizer.get().cloned();
         let http = self.http.get_or_init(|| build_http(&self.options)).clone();
         let registry_options = self.options.clone();
+        let missing = self.directory.missing_handle();
         Box::pin(async_stream::stream! {
             let base = MessageAccumulator::for_model(&model);
             let http = match http {
@@ -367,6 +486,9 @@ impl ModelRegistry {
                             if retryable {
                                 retry_error = message.error.take().map(|e| *e);
                                 break;
+                            }
+                            if message.error.as_ref().is_some_and(|e| e.is_missing_model()) {
+                                missing.lock().insert(model.provider.clone());
                             }
                             apply_cost(&model, &mut message.usage);
                             yield StreamEvent::Failed(message);

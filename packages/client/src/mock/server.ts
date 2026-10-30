@@ -108,6 +108,10 @@ export class MockServer {
   private clock: number | null = null;
   /** Providers whose key was saved with auth/set. */
   private readonly stored = new Set<string>();
+  /** Models shown or hidden with models/show. */
+  private readonly selection = new Map<string, boolean>();
+  /** When the demo's model lists were last asked (models/refresh). */
+  private listedAt = "2026-10-30T08:00:00Z";
 
   constructor(o: MockOptions = {}) {
     this.speed = o.speed ?? 1;
@@ -255,6 +259,12 @@ export class MockServer {
     if (this.clock !== null) return;
     const line = JSON.stringify({ jsonrpc: "2.0", method: "sessions/changed", params: { sessions: deleted.length ? [] : [s.summary], deleted } }) + "\n";
     for (const c of this.conns) if (c.listening) c.peer.write(line);
+  }
+
+  /** Tells every connection the models changed, as finx does after a key, a refresh or a menu change. */
+  private notifyModels() {
+    const line = JSON.stringify({ jsonrpc: "2.0", method: "models/changed", params: {} }) + "\n";
+    for (const c of this.conns) c.peer.write(line);
   }
 
   private startTask(s: Session, input: UserContent[]) {
@@ -570,7 +580,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false };
+        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -582,7 +592,18 @@ export class MockServer {
       case "session/list":
         return { sessions: this.summaries() } satisfies R<"session/list">;
       case "models/list":
-        return demoModels(this.stored) satisfies R<"models/list">;
+        return demoModels(this.stored, this.selection, this.listedAt) satisfies R<"models/list">;
+      case "models/refresh":
+        this.listedAt = new Date().toISOString();
+        this.notifyModels();
+        return { providers: demoModels(this.stored, this.selection, this.listedAt).providers } satisfies R<"models/refresh">;
+      case "models/show": {
+        const q = p as P<"models/show">;
+        if (!demoModels(new Set(["anthropic", "kimi"])).models.some((m) => m.id === q.model)) throw new Failure(-32602, "invalid_params", `unknown model '${q.model}'`);
+        this.selection.set(q.model, q.shown);
+        this.notifyModels();
+        return {} satisfies R<"models/show">;
+      }
       case "skills/list":
         return demoSkills() satisfies R<"skills/list">;
       // Local applications: one on this Mac and signed in, one not installed; none connected.
@@ -600,9 +621,14 @@ export class MockServer {
         const q = p as P<"auth/set">;
         const provider = demoModels().providers.find((x) => x.id === q.provider);
         if (provider?.auth !== "api_key") throw new Failure(-32602, "invalid_params", `provider '${q.provider}' does not use an API key`);
+        // A key the demo provider refuses, to show what a wrong key looks like.
+        if (method === "auth/set" && q.api_key === "sk-rejected") throw new Failure(-32021, "key_rejected", "Authentication Fails, Your api key is invalid");
         if (method === "auth/set") this.stored.add(q.provider);
         else this.stored.delete(q.provider);
-        return {};
+        this.notifyModels();
+        if (method === "auth/delete") return {};
+        const count = demoModels(this.stored).models.filter((m) => m.provider === q.provider).length;
+        return { verified: true, models: count } satisfies R<"auth/set">;
       }
       case "session/new": {
         const q = p as P<"session/new">;
@@ -707,8 +733,14 @@ export class MockServer {
         if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
         return resolve(op.decision);
       }
-      case "set_model":
-        return this.emit(s, { type: "settings_changed", model: op.model, thinking: op.thinking ?? s.view.info.thinking, permission_mode: s.view.info.permission_mode, context_window: contextWindow(op.model) });
+      case "set_model": {
+        // As finx does (model-catalog-design §18): a level asked for is kept when the model offers it;
+        // on a switch the session's level is kept when the new model offers it; else "default".
+        const offered = demoModels(new Set(["anthropic", "kimi"])).models.find((m) => m.id === op.model)?.thinking_levels ?? [];
+        const wanted = op.thinking ?? s.view.info.thinking;
+        const thinking = wanted !== "default" && offered.includes(wanted) ? wanted : "default";
+        return this.emit(s, { type: "settings_changed", model: op.model, thinking, permission_mode: s.view.info.permission_mode, context_window: contextWindow(op.model) });
+      }
       case "set_permission_mode": {
         const before = s.view.info.permission_mode;
         this.emit(s, { type: "settings_changed", model: s.view.info.model, thinking: s.view.info.thinking, permission_mode: op.mode, context_window: s.view.info.context_window });

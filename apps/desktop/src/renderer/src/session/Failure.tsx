@@ -80,7 +80,7 @@ function ModelItems({ current, models, onPick }: { current?: string; models: Mod
           key={m.id}
           checked={m.id === current}
           label={m.name}
-          value={m.available ? providerName(m.provider) : t("composer.noKey")}
+          value={m.note ? t(`composer.${m.note}`) : providerName(m.provider)}
           onClick={() => onPick(m.id, m.provider, m.available)}
         />
       ))}

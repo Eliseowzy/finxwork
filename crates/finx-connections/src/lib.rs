@@ -96,6 +96,9 @@ struct Record {
     idempotency_key: String,
     #[serde(default)]
     models: Vec<ConnectionModel>,
+    /// When `models` was last taken from the source (RFC 3339).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    models_fetched_at: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 struct Config {
@@ -217,6 +220,7 @@ impl Manager {
             },
             reason_code: None,
             models: r.models.clone(),
+            models_fetched_at: r.models_fetched_at.clone(),
         };
         let e = Arc::new(Entry {
             adapter: Mutex::new(adapter::create(
@@ -270,6 +274,7 @@ impl Manager {
                     currency: Default::default(),
                     compat: Compat::default(),
                     models: vec![],
+                    listing: Default::default(),
                 };
                 p.models = view
                     .models
@@ -367,6 +372,55 @@ impl Manager {
             .await
             .map_err(|_| ConnectionError::unavailable())
     }
+    /// Asks ready connections whose model catalog is older than `max_age` for it again
+    /// (model-catalog-design §14). Quiet: a failure keeps the old catalog and the connection's
+    /// state, and a connection that is busy is left for the next time. Returns whether any
+    /// connection's models changed.
+    pub async fn refresh_stale_catalogs(&self, max_age: std::time::Duration) -> bool {
+        let due: Vec<Arc<Entry>> = self
+            .entries
+            .read()
+            .values()
+            .filter(|e| {
+                let record = e.record.read();
+                record.enabled
+                    && matches!(e.view.read().state, ConnectionState::Ready)
+                    && record
+                        .models_fetched_at
+                        .as_deref()
+                        .and_then(finx_llm::discovery::age_secs)
+                        .is_none_or(|age| age >= max_age.as_secs() as i64)
+            })
+            .cloned()
+            .collect();
+        let mut changed = false;
+        for e in due {
+            let Ok(_permit) = e.slot.clone().try_acquire_owned() else { continue };
+            let Ok(http) = self.http() else { return changed };
+            let fetched = e.adapter.lock().await.catalog(&http).await;
+            let Ok(models) = fetched else { continue };
+            let same = serde_json::to_value(&e.record.read().models).ok() == serde_json::to_value(&models).ok();
+            {
+                let mut record = e.record.write();
+                record.models_fetched_at = Some(finx_llm::discovery::now());
+                if !same {
+                    record.models = models.clone();
+                }
+            }
+            let mut view = e.view.write();
+            view.models_fetched_at = e.record.read().models_fetched_at.clone();
+            if !same {
+                view.models = models;
+                changed = true;
+            }
+        }
+        if changed {
+            let _ = self.persist().await;
+            self.publish();
+        }
+        changed
+    }
+
     async fn prepare(&self, e: &Arc<Entry>) -> Result<()> {
         let _permit = e
             .slot
@@ -388,10 +442,12 @@ impl Manager {
                 let mut record = e.record.write();
                 record.enabled = true;
                 record.models = models.clone();
+                record.models_fetched_at = Some(finx_llm::discovery::now());
             }
             {
                 let mut view = e.view.write();
                 view.models = models;
+                view.models_fetched_at = e.record.read().models_fetched_at.clone();
             }
             *e.cancel.write() = CancellationToken::new();
             self.persist().await?;
@@ -448,6 +504,7 @@ impl Manager {
             enabled: true,
             idempotency_key: p.idempotency_key,
             models: vec![],
+            models_fetched_at: None,
         });
         self.persist().await?;
         self.prepare(&e).await?;

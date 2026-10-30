@@ -34,3 +34,4 @@ pub use transport::serve_stdio;
 pub use transport::serve_unix;
 
 mod connections;
+mod models;

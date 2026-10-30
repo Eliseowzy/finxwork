@@ -109,6 +109,16 @@ pub fn document() -> Value {
         (
             method::AUTH_SET,
             Some(name::<api::AuthSetParams>(g)),
+            name::<api::AuthSetResult>(g),
+        ),
+        (
+            method::MODELS_REFRESH,
+            Some(name::<api::ModelsRefreshParams>(g)),
+            name::<api::ModelsRefreshResult>(g),
+        ),
+        (
+            method::MODELS_SHOW,
+            Some(name::<api::ModelsShowParams>(g)),
             name::<api::Empty>(g),
         ),
         (

@@ -35,6 +35,7 @@ pub struct ConfigFile {
     pub agents: Option<AgentsFile>,
     pub skills: Option<SkillsFile>,
     pub mcp: Option<McpFile>,
+    pub models: Option<ModelsFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
 }
@@ -50,6 +51,14 @@ pub struct McpFile {
     pub startup_wait_secs: Option<u64>,
     /// Default exposure of servers that do not set one.
     pub exposure: Option<McpExposure>,
+}
+
+/// `[models]`: model lists and the public catalog (docs/kernel/model-catalog-design.md §11).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModelsFile {
+    /// `false`: no background refresh of the catalog and the lists.
+    pub network: Option<bool>,
 }
 
 /// `[agents]`: sub-agents (`spawn_agent`, `send_message`).
@@ -239,6 +248,8 @@ pub struct Config {
     pub agents_enabled: bool,
     pub skills: SkillsSettings,
     pub mcp: McpSettings,
+    /// Refresh model lists and the public catalog in the background (`[models] network`).
+    pub models_network: bool,
     /// The configured servers by name, names filled in; not yet validated.
     pub mcp_servers: Vec<McpServerConfig>,
 }
@@ -347,6 +358,7 @@ impl Config {
                 startup_wait: Duration::from_secs(mcp.startup_wait_secs.unwrap_or(10)),
                 exposure: mcp.exposure.unwrap_or_default(),
             },
+            models_network: file.models.and_then(|m| m.network).unwrap_or(true),
             mcp_servers: file
                 .mcp_servers
                 .unwrap_or_default()
@@ -405,6 +417,10 @@ pub fn load(
         && project_file.exists()
     {
         let mut table = read_table(project_file)?;
+        // Where models come from is the user's to say, trusted project or not.
+        if table.remove("models").is_some() {
+            warnings.push(format!("ignored [models] in {}: it can only be set in the user config", project_file.display()));
+        }
         if !project_trusted {
             let removed = strip_untrusted(&mut table);
             if !removed.is_empty() {

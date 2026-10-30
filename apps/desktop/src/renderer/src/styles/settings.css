@@ -45,8 +45,29 @@
 .mrow-err{margin:6px 4px 0;font-size:12px;line-height:1.5;color:var(--red)}
 .models-add .sheet-in{padding:0}
 .models-add-body{padding:6px 22px 24px}
-.models-add .provider-dialog-top{padding:18px 22px 8px}
+.models-add .provider-dialog-top{padding:22px 22px 8px}
 .models-add .provider-dialog-top>span{font-size:15px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--l1)}
+/* Manage models: a provider's models, each with its menu switch. */
+.models-manage .sheet-in{padding:0}
+.models-manage .provider-dialog-top{gap:10px;padding:22px 22px 12px}
+.models-manage .provider-dialog-top .provider-brand{width:24px;height:24px}
+.models-manage .provider-dialog-top>span{font-size:15px;font-weight:600;letter-spacing:0;text-transform:none;color:var(--l1)}
+.mm-bar{display:flex;gap:8px;padding:0 22px}
+.mm-bar .field{flex:1;min-width:0;height:30px;font-size:13px}
+.mm-bar .btn{flex:none;height:30px;padding:0 12px;font-size:12px}
+.mm-status{margin:8px 22px 4px;font-size:12px;color:var(--l3)}
+.models-manage .mrow-err{margin:4px 22px}
+.mm-list{max-height:min(420px,60vh);overflow-y:auto;margin:6px 0 0;padding:0 14px 18px}
+.mm-row{display:flex;align-items:center;gap:12px;padding:9px 8px;border-radius:8px}
+.mm-row:hover{background:var(--fill)}
+.mm-row.off .mm-name{color:var(--l2)}
+.mm-main{flex:1;min-width:0}
+.mm-name{font-size:13px;color:var(--l1);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.mm-meta{font-size:11px;color:var(--l3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mm-tag{font-size:10px;line-height:16px;padding:0 5px;border-radius:4px;background:var(--fill2);color:var(--l2)}
+.mm-tag.warn{background:var(--orange-bg,var(--fill2));color:var(--orange)}
+.mm-tag.new{background:var(--accent-bg);color:var(--accent-t)}
+.mm-empty{margin:14px 8px;font-size:12px;color:var(--l3)}
 .mrow-add .ic{color:var(--accent-t)}
 .models .mrow-add>.ic{color:var(--accent-t)}
 .mlogo.source-icon,.connection-logo.source-icon{background:none}

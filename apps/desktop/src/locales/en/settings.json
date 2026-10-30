@@ -63,7 +63,8 @@
       "unknown": "Couldn't check",
       "missing": "Not installed",
       "signedOut": "Not signed in",
-      "found": "Installed {{version}}"
+      "found": "Installed {{version}}",
+      "readyShown": "Connected · {{shown}} of {{count}} models shown"
     },
     "source": {
       "stored": "Keychain",
@@ -76,7 +77,32 @@
       "config": "Set in ~/.finx/models.toml; edit that file to remove it"
     },
     "otherModels": "Other models ({{count}})",
-    "unverified": "Not yet verified"
+    "unverified": "Not yet verified",
+    "shownOf": "{{shown}} of {{count}} models shown",
+    "manage": {
+      "open": "Manage models",
+      "title": "{{name}} models",
+      "search": "Search models",
+      "refresh": "Refresh list",
+      "refreshing": "Refreshing…",
+      "updated": "updated {{when}}",
+      "shownOf": "{{shown}} of {{count}} in the menu",
+      "source": {
+        "provider": "from the provider's model list",
+        "catalog": "from the public model catalog",
+        "unsupported": "the provider has no model list",
+        "config": "from models.toml",
+        "app": "from {{name}}'s model catalog"
+      },
+      "failed": "Last refresh failed: {{message}}",
+      "unknown": "Details unknown",
+      "deprecated": "Retired",
+      "new": "New",
+      "context": "{{size}} context",
+      "price": "{{price}} per million tokens",
+      "inMenu": "Show {{name}} in the model menu",
+      "none": "No matching models"
+    }
   },
   "permissions": {
     "soonTitle": "Comes with the kernel connection",

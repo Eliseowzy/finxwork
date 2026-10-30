@@ -14,13 +14,11 @@ use finx_core::instructions;
 use finx_core::runtime;
 use finx_core::skills;
 use finx_core::runtime::RuntimeError;
-use finx_llm::AuthStatus;
 use finx_llm::ModelRegistry;
 use finx_llm::ThinkingLevel;
 use finx_protocol::McpServerConfig;
 use finx_protocol::Op;
 use finx_protocol::PermissionMode;
-use finx_protocol::api::ModelSummary;
 use finx_protocol::api::ResourceReadParams;
 use finx_protocol::api::ResourceReadResult;
 use finx_protocol::api::SessionInfo;
@@ -60,11 +58,6 @@ use crate::list;
 use crate::list::ListFeed;
 use finx_core::store::EntryKind;
 use finx_core::store::TaskStatus;
-use finx_llm::AuthConfig;
-use finx_protocol::api::AuthKind;
-use finx_protocol::api::CredentialState;
-use finx_protocol::api::ModelsListResult;
-use finx_protocol::api::ProviderSummary;
 use finx_protocol::api::SessionDefaults;
 use finx_protocol::api::SessionState;
 
@@ -114,12 +107,14 @@ pub struct Server(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) connections: Arc<finx_connections::Manager>,
     pub(crate) model_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    home: FinxHome,
+    /// Model lists and the catalog (crate::models).
+    pub(crate) model_upkeep: crate::models::Upkeep,
+    pub(crate) home: FinxHome,
     overrides: Vec<String>,
     mcp_servers: Vec<McpServerConfig>,
     settings: ServerSettings,
     acp: AcpSettings,
-    llm: Arc<ModelRegistry>,
+    pub(crate) llm: Arc<ModelRegistry>,
     store: Arc<JsonlStore>,
     sessions: Mutex<HashMap<String, HubHandle>>,
     /// Serializes loading so a session is opened once even when resumed concurrently.
@@ -130,7 +125,7 @@ pub(crate) struct Inner {
     /// Connections following the session list.
     feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
-    defaults: SessionDefaults,
+    pub(crate) defaults: SessionDefaults,
 }
 
 impl Server {
@@ -149,6 +144,7 @@ impl Server {
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
+            model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
             defaults,
             store: Arc::new(JsonlStore::new(options.home.sessions_dir())),
@@ -802,94 +798,6 @@ impl Server {
         })
     }
 
-    /// Models, providers with where their keys come from, and the defaults of new sessions.
-    /// May read saved keys (the keychain), so it blocks.
-    pub fn list_models(&self) -> ModelsListResult {
-        let mut providers = Vec::new();
-        for provider in self.0.llm.providers() {
-            let status = provider.auth.status(&provider.id);
-            let (credential, credential_source) = match &status {
-                AuthStatus::NotRequired => (CredentialState::NotRequired, None),
-                AuthStatus::Managed => (CredentialState::Connection, None),
-                AuthStatus::Configured(source) if source == "config" => {
-                    (CredentialState::Config, None)
-                }
-                AuthStatus::Configured(source) => (CredentialState::Env, Some(source.clone())),
-                AuthStatus::Stored => (CredentialState::Stored, None),
-                AuthStatus::Missing(_) => (CredentialState::Missing, None),
-                AuthStatus::Command => (CredentialState::Command, None),
-            };
-            providers.push(ProviderSummary {
-                id: provider.id.clone(),
-                name: provider.name.clone(),
-                auth: match provider.auth {
-                    AuthConfig::None => AuthKind::None,
-                    AuthConfig::Managed => AuthKind::Connection,
-                    AuthConfig::ApiKey { .. } => AuthKind::ApiKey,
-                    AuthConfig::Command { .. } => AuthKind::Command,
-                },
-                credential,
-                credential_source,
-                key_env: provider.auth.env_vars().to_vec(),
-            });
-        }
-        ModelsListResult {
-            models: self.models_of(&providers),
-            providers,
-            defaults: Some(self.0.defaults.clone()),
-        }
-    }
-
-    /// Saves a provider's API key (`auth/set`). Blocking I/O.
-    pub fn set_key(&self, provider: &str, key: &str) -> Result<(), RpcError> {
-        self.key_provider(provider)?;
-        finx_llm::credentials::set(provider, key).map_err(RpcError::internal)
-    }
-
-    /// Removes a provider's saved key (`auth/delete`). Blocking I/O.
-    pub fn delete_key(&self, provider: &str) -> Result<(), RpcError> {
-        self.key_provider(provider)?;
-        finx_llm::credentials::delete(provider).map_err(RpcError::internal)
-    }
-
-    fn key_provider(&self, id: &str) -> Result<(), RpcError> {
-        match self.0.llm.provider(id) {
-            Some(p) if matches!(p.auth, AuthConfig::ApiKey { .. }) => Ok(()),
-            Some(_) => Err(RpcError::invalid_params(format!(
-                "provider '{id}' does not use an API key"
-            ))),
-            None => Err(RpcError::invalid_params(format!("unknown provider '{id}'"))),
-        }
-    }
-
-    fn models_of(&self, providers: &[ProviderSummary]) -> Vec<ModelSummary> {
-        let mut out = Vec::new();
-        for provider in self.0.llm.providers() {
-            let available = providers
-                .iter()
-                .find(|p| p.id == provider.id)
-                .is_some_and(|p| p.credential != CredentialState::Missing);
-            for model in &provider.models {
-                let mut levels = vec![ThinkingLevel::Off];
-                levels.extend(
-                    ThinkingLevel::ALL
-                        .into_iter()
-                        .filter(|l| *l != ThinkingLevel::Off && model.thinking_value(*l).is_some()),
-                );
-                out.push(ModelSummary {
-                    id: model.reference(),
-                    name: model.name.clone(),
-                    provider: provider.id.clone(),
-                    context_window: u64::from(model.context_window),
-                    reasoning: model.reasoning,
-                    thinking_levels: levels,
-                    images: model.accepts_images(),
-                    available,
-                });
-            }
-        }
-        out
-    }
 }
 
 /// The project a directory belongs to (its git checkout), or the directory itself.

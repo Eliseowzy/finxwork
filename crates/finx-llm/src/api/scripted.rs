@@ -174,10 +174,13 @@ impl ScriptedApi {
             context_window: 128_000,
             max_output_tokens: 8_192,
             reasoning: false,
+            thinking: Vec::new(),
             thinking_levels: BTreeMap::new(),
+            default_thinking: crate::types::ThinkingLevel::Default,
             thinking_budgets: ThinkingBudgets::default(),
             input: vec![Modality::Text],
             cost: ModelCost::default(),
+            cost_tiers: Vec::new(),
             currency: Currency::Usd,
             compat: Compat::default(),
             headers: BTreeMap::new(),
@@ -192,6 +195,7 @@ impl ScriptedApi {
             currency: Currency::Usd,
             compat: Compat::default(),
             models: vec![Arc::new(model)],
+            listing: Default::default(),
         }
     }
 }

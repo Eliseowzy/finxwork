@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.13 |
-| 日期 | 2026-10-29 |
+| 版本 | v0.15 |
+| 日期 | 2026-10-30 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,8 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.15 | 2026-10-30 | 思考强度（model-catalog-design §18）：`ThinkingLevel` 新增 `default`、`on`、`xhigh`，`default` 是默认值；`ModelSummary.thinking_levels` 是模型提供的服务商档位（不含 `default`，模型不能指定推理时为空），新增 `default_thinking`（这个模型的起始档位）；`set_model` 不带 `thinking` 时按切换规则决定档位，带了就记住它 |
+| v0.14 | 2026-10-30 | 模型目录与发现（model-catalog-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `model_discovery` 声明：`models/list` 只列有凭据的服务商的模型（默认模型例外），ModelSummary 增加 `shown`、`known`、`deprecated`、`released`、`cost`，`thinking_levels` 按服务商取值去重；ProviderSummary 增加 `listing`；新增 `models/refresh`、`models/show`；`auth/set` 先验证密钥，返回 `verified`，被拒绝时返回新错误码 −32021 `key_rejected`；ACP 的模型选项只给菜单里显示的模型 |
 | v0.13 | 2026-10-29 | Skill 2d（skill-design.md v1.5 §6.3.5），都在版本 2 之内：`message_completed` 与 TranscriptItem 的用户消息由 `skill` 改为 `skills: [SkillUse]`（SkillUse 是 `{name, path}`，替换 SkillInvocation），消息本身是用户的原话；`skills/list` 的 `commands` 里 Skill 的名字是 `skill:名字`，带 `cwd` 时也返回 `commands`；ACP 的 `available_commands_update` 同样列出 `skill:名字`，提及可以在 prompt 文本的任意位置，内嵌资源的文字不参与识别（§6、§7.4） |
 | v0.12 | 2026-10-29 | 没有回复的子智能体汇报（§6.10）：MailInfo 新增 `no_reply`。这时汇报正文只是写给模型的一句说明，客户端改用自己的文字；这一轮的 `agent_status` 也不带 summary |
 | v0.11 | 2026-10-29 | 复杂场景压测（technical-design §1.4）：§8.2 服务记录写进锁文件后不等落盘就开始监听，落盘改在监听之后进行，服务从启动到可以连接由约 9 ms 降到约 5 ms |
@@ -544,13 +546,15 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `session/close` | session_id | `{}` | 关闭会话：中断任务、日志落盘、释放锁 |
 | `session/delete` | session_id | `{}` | 会话日志移入回收目录。会话必须未加载 |
 | `resource/read` | uri、offset?、limit? | text、offset、eof、total_bytes | 分段读取工具的完整输出等大内容 |
-| `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式 |
+| `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
+| `models/refresh` | provider?、catalog? | providers | 立即刷新服务商的模型列表，`catalog: true` 时同时刷新公共目录（model-catalog-design §8.2） |
+| `models/show` | model、shown | `{}` | 在模型菜单里显示或隐藏一个模型（model-catalog-design §6.3） |
 | `server/shutdown` | — | `{}` | 只用于常驻服务，优雅退出（§3.8） |
 | `sessions/subscribe` | 同 `session/list` | 同 `session/list` | 返回第一页，之后这个连接收到 `sessions/changed`。先返回列表、再发变化，客户端不会先看到变化后看到旧列表 |
 | `sessions/unsubscribe` | — | `{}` | 不再接收 `sessions/changed`；连接断开时自动取消 |
 | `session/rename` | session_id、title | `{}` | 标题去掉首尾空白、合并成一行，最长 200 字符；空标题返回 invalid_params |
 | `session/archive`、`session/unarchive` | session_id | `{}` | 归档或取消归档 |
-| `auth/set` | provider、api_key | `{}` | 把服务商的 API 密钥存入凭据存储（D-39）。服务商不存在或不用 API 密钥认证时返回 invalid_params |
+| `auth/set` | provider、api_key | `{}`；v0.14 起 `{ verified, models? }` | 把服务商的 API 密钥存入凭据存储（D-39）。服务商不存在或不用 API 密钥认证时返回 invalid_params。v0.14 起先用列表请求验证密钥，被拒绝时不保存、返回 `key_rejected`（model-catalog-design §3.3） |
 | `auth/delete` | provider | `{}` | 删除凭据存储里这个服务商的密钥；本来没有也算成功 |
 | `skills/list` | session_id 或 cwd（二选一） | skills、commands?、catalog?、enabled、warnings | session_id：已加载会话启动时的 Skill（按文件现在的内容描述）和输入 `/` 时能用的命令（CommandInfo：name、description、hint?、skill?，内置命令在前，Skill 的 name 是 `skill:名字`）。cwd：在这个目录新开会话会找到的全部 Skill、清单和命令，与 `finx skills --all --json` 相同。见 skill-design §11.4 |
 

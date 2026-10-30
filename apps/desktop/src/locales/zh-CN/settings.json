@@ -63,7 +63,8 @@
       "unknown": "无法检查",
       "missing": "未安装",
       "signedOut": "未登录",
-      "found": "已安装 {{version}}"
+      "found": "已安装 {{version}}",
+      "readyShown": "已连接 · 显示 {{shown}} / 共 {{count}} 个模型"
     },
     "source": {
       "stored": "钥匙串",
@@ -76,7 +77,32 @@
       "config": "在 ~/.finx/models.toml 里设置，要移除请编辑该文件"
     },
     "otherModels": "其他模型（{{count}}）",
-    "unverified": "待验证"
+    "unverified": "待验证",
+    "shownOf": "显示 {{shown}} / 共 {{count}} 个模型",
+    "manage": {
+      "open": "管理模型",
+      "title": "{{name}} 的模型",
+      "search": "搜索模型",
+      "refresh": "刷新列表",
+      "refreshing": "正在刷新…",
+      "updated": "{{when}}更新",
+      "shownOf": "菜单显示 {{shown}} 个，共 {{count}} 个",
+      "source": {
+        "provider": "来自服务商的模型列表",
+        "catalog": "来自公开模型目录",
+        "unsupported": "服务商不提供模型列表",
+        "config": "来自 models.toml",
+        "app": "来自{{name}}的模型目录"
+      },
+      "failed": "上次刷新失败：{{message}}",
+      "unknown": "参数未知",
+      "deprecated": "已停用",
+      "new": "新",
+      "context": "上下文 {{size}}",
+      "price": "每百万 token {{price}}",
+      "inMenu": "在模型菜单里显示 {{name}}",
+      "none": "没有匹配的模型"
+    }
   },
   "permissions": {
     "soonTitle": "连接内核后提供",

@@ -89,7 +89,7 @@ function Connect() {
 function Ready({ onDone }: { onDone: () => void }) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const available = st.models.models.filter((m) => m.available);
+  const available = st.models.models.filter((m) => m.available && m.shown);
   const preferred = st.models.defaults?.model;
   const chosen = available.find((m) => m.id === preferred) ?? available[0];
   const providers = new Map(st.models.providers.map((p) => [p.id, p.name]));

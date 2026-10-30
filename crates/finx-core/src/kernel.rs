@@ -430,11 +430,19 @@ impl Kernel {
         let created = deps.store.create(&SessionHeader::new(id.clone(), opts.cwd.clone()))?;
         let model_ref = resolved.model.reference();
         let mcp_section = mcp.as_ref().and_then(|m| m.prompt_section());
+        // The level asked for, when the model offers it; else the provider decides. A level
+        // asked for is remembered for the model, as one chosen in a session is (§18).
+        let thinking = resolved.model.resolve_thinking(opts.thinking);
+        if thinking != ThinkingLevel::Default
+            && let Err(err) = deps.llm.directory().remember_thinking(&resolved.model.reference(), thinking)
+        {
+            tracing::warn!("cannot remember the thinking level: {}", err.message);
+        }
         let mut state = SessionState::new(
             History::default(),
             mcp::compose(&system_prompt, mcp_section.as_deref()).into(),
             resolved.model,
-            opts.thinking,
+            thinking,
             opts.permission_mode,
         );
         state.base_prompt = system_prompt.into();
@@ -564,7 +572,12 @@ impl Kernel {
             }
             Err(error) => return Err(error.into()),
         };
-        let thinking = opts.thinking.or(thinking).unwrap_or(opts.config.thinking);
+        // Asked for now: kept when the model offers it. Saved or configured: kept when the model
+        // offers it, else the level the model starts with (§18).
+        let thinking = match opts.thinking {
+            Some(level) => resolved.model.resolve_thinking(level),
+            None => crate::models::thinking_for(&deps.llm, &resolved.model, thinking.unwrap_or(opts.config.thinking)),
+        };
         let permission_mode = opts.permission_mode.or(permission_mode).unwrap_or(opts.config.permission_mode);
         let mut warnings = loaded.warnings;
         warnings.extend(replaced);

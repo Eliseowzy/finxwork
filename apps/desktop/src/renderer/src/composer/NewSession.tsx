@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { projectNames, recentProjects } from "@finx/client";
 import { SidebarToggle } from "../components";
+import { draftThinking, offersThinking } from "../format";
 import { MarkMotion } from "../icons";
 import { useStore } from "../store";
 import type { Attachment } from "./attachments";
@@ -30,6 +31,9 @@ export function NewSession() {
   const keyless = needsKey(st);
   const commands = useCommands(cwd ? { cwd } : null);
   const set = (patch: Partial<typeof draft>) => st.set({ draft: { ...draft, ...patch } });
+  // The level on the page: chosen here when the model offers it, else the model's own.
+  const model = draft.model ?? st.models.defaults?.model ?? "";
+  const thinking = draftThinking(st.models.models.find((m) => m.id === model), draft.thinking);
   const pick = async () => {
     // A page outside the app has no dialog: the path, typed.
     const dir = window.finx ? await window.finx.pickDirectory() : window.prompt(t("new.pathPrompt"));
@@ -76,10 +80,19 @@ export function NewSession() {
             permission: draft.permission,
             onPermission: (m) => set({ permission: m }),
             model: draft.model,
-            thinking: draft.thinking,
+            thinking,
             models: st.models,
-            onModel: (ref) => set({ model: ref }),
-            onThinking: (l) => set({ thinking: l }),
+            // As a session switches (§18): the level goes along when the new model offers it, else
+            // the one last chosen here for that model, else the model's own.
+            onModel: (ref) => {
+              const next = st.models.models.find((m) => m.id === ref);
+              const remembered = draft.levels?.[ref];
+              const kept =
+                thinking !== "default" && offersThinking(next, thinking) ? thinking : remembered && offersThinking(next, remembered) ? remembered : null;
+              set({ model: ref, thinking: kept });
+              return draftThinking(next, kept);
+            },
+            onThinking: (l) => set({ thinking: l, levels: { ...draft.levels, [model]: l } }),
           }}
         />
       </div>

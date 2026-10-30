@@ -144,7 +144,11 @@
     "steer": "插话：下一轮生效（⌥↩ 排到任务之后）",
     "reply": "回复 finx…",
     "stop": "停止 ⌘.",
-    "noKey": "未设置密钥"
+    "noKey": "未设置密钥",
+    "hidden": "已隐藏",
+    "gone": "不在模型列表中",
+    "thinkingChanged": "{{model}} 没有「{{from}}」档，思考强度改为「{{to}}」",
+    "thinkingDefault": "由服务商决定"
   },
   "inspector": {
     "label": "会话信息",
@@ -186,7 +190,9 @@
     "fromEnv": "已从环境变量 {{env}} 读到密钥；这里保存的密钥只在它不存在时使用。",
     "save": "保存并继续",
     "saving": "正在保存…",
-    "cancel": "取消"
+    "cancel": "取消",
+    "rejected": "密钥无效：{{message}}",
+    "unverified": "暂时无法向服务商验证这个密钥，已先保存"
   },
   "onboarding": {
     "title": "欢迎使用 FinxWork",

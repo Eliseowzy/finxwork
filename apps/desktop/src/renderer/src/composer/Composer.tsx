@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { useTranslation } from "react-i18next";
 import { homePath } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
-import { permissionDesc, permissionTitle, menuModels, modelTitle, thinkingTitle } from "../format";
+import { permissionDesc, permissionTitle, menuModels, modelTitle, thinkingFor, thinkingTitle } from "../format";
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
@@ -18,7 +18,8 @@ export type Settings = {
   model: string | null;
   thinking: ThinkingLevel;
   models: ModelsListResult;
-  onModel: (ref: string) => void;
+  /** Returns the thinking level the model switch leads to, when the caller decides it (a new session's page). */
+  onModel: (ref: string) => ThinkingLevel | void;
   onThinking: (l: ThinkingLevel) => void;
 };
 
@@ -362,25 +363,32 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
   );
 }
 
-const allLevels: ThinkingLevel[] = ["off", "low", "medium", "high", "max"];
-
 /**
- * The model and how hard it thinks, as one button ("DeepSeek Flash 适中").
+ * The model and how hard it thinks, as one button ("DeepSeek-V4.1-Flash 高").
  * Its menu is the models that can be used (their provider at the right) and
- * the current one even when its key is missing, then, when the model can
- * think, one row for the thinking level — the levels the model supports —
- * which opens its own menu. Choosing a model whose key is missing asks for
- * the key (§8.4).
+ * the current one even when its key is missing, then, when the model can be
+ * told how hard to think, one row for the level — "default" (the provider
+ * decides) and the provider's own levels for this model — which opens its own
+ * menu. Choosing another model keeps the level when that model offers it, else
+ * takes the level that model starts with, and says so (model-catalog-design
+ * §18). Choosing a model whose key is missing asks for the key (§8.4).
  */
 function ModelPicker({ settings: { model, thinking, models, onModel, onThinking } }: { settings: Settings }) {
   const { t } = useTranslation("session");
+  const st = useStore();
   const current = model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
   const entry = models.models.find((m) => m.id === current);
-  const reasoning = entry?.reasoning ?? true;
-  const levels = entry ? entry.thinking_levels.filter((l) => l !== "minimal") : allLevels;
+  const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
+  const thinks = levels.length > 0;
   const providerName = (id: string) => models.providers.find((p) => p.id === id)?.name ?? id;
   const choose = (id: string, provider: string, available: boolean) => {
-    onModel(id);
+    const next = models.models.find((m) => m.id === id);
+    // A session's switch follows the kernel's rule, which thinkingFor mirrors.
+    const after = onModel(id) ?? thinkingFor(next, thinking);
+    // A level chosen on purpose that the new model lacks: say what it became.
+    if (id !== current && next && thinking !== "default" && after !== thinking) {
+      st.show(t("composer.thinkingChanged", { model: next.name, from: thinkingTitle(thinking), to: thinkingTitle(after) }));
+    }
     if (!available) window.dispatchEvent(new CustomEvent(keyEvent, { detail: provider }));
   };
   return (
@@ -391,7 +399,7 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
       label={
         <>
           <span className="lbl strong">{current ? modelTitle(current, models) : t("composer.model")}</span>
-          {reasoning && <span className="sub">{thinkingTitle(thinking)}</span>}
+          {thinks && <span className="sub">{thinkingTitle(thinking)}</span>}
         </>
       }
     >
@@ -402,14 +410,16 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
               key={m.id}
               checked={m.id === current}
               label={m.name}
-              value={m.available ? providerName(m.provider) : t("composer.noKey")}
+              value={m.note ? t(`composer.${m.note}`) : providerName(m.provider)}
               onClick={() => (close(), choose(m.id, m.provider, m.available))}
             />
           ))}
-          {reasoning && (
+          {thinks && (
             <>
               <div className="msep" role="separator" />
               <SubMenuItem label={t("composer.thinking")} value={thinkingTitle(thinking)} title={t("composer.thinking")}>
+                <MenuItem checked={thinking === "default"} label={thinkingTitle("default")} value={t("composer.thinkingDefault")} onClick={() => (close(), onThinking("default"))} />
+                <div className="msep" role="separator" />
                 {levels.map((l) => (
                   <MenuItem key={l} checked={l === thinking} label={thinkingTitle(l)} onClick={() => (close(), onThinking(l))} />
                 ))}

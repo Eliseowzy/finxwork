@@ -226,20 +226,17 @@ pub fn config_options(server: &Server, info: &SessionInfo) -> Value {
     let models = server.list_models().models;
     let mut model_options: Vec<Value> = models
         .iter()
-        .filter(|m| m.available || m.id == info.model)
+        .filter(|m| (m.available && m.shown) || m.id == info.model)
         .map(|m| json!({ "value": m.id, "name": m.name }))
         .collect();
     if !models.iter().any(|m| m.id == info.model) {
         model_options.insert(0, json!({ "value": info.model, "name": info.model }));
     }
-    let levels = models
-        .iter()
-        .find(|m| m.id == info.model)
-        .map(|m| m.thinking_levels.clone())
-        .unwrap_or_else(|| vec![ThinkingLevel::Off]);
-    let level_options: Vec<Value> = levels
-        .iter()
-        .map(|l| json!({ "value": l.as_str(), "name": l.as_str() }))
+    // "Default" first (the provider decides), then the model's own levels (model-catalog §18).
+    let levels = models.iter().find(|m| m.id == info.model).map(|m| m.thinking_levels.clone()).unwrap_or_default();
+    let level_options: Vec<Value> = std::iter::once(ThinkingLevel::Default)
+        .chain(levels)
+        .map(|l| json!({ "value": l.as_str(), "name": thinking_label(l) }))
         .collect();
     let mode_options: Vec<Value> = PermissionMode::ALL
         .iter()
@@ -253,6 +250,20 @@ pub fn config_options(server: &Server, info: &SessionInfo) -> Value {
         { "id": "permission_mode", "name": "权限模式", "category": "mode", "type": "select",
           "currentValue": info.permission_mode.as_str(), "options": mode_options },
     ])
+}
+
+fn thinking_label(level: ThinkingLevel) -> &'static str {
+    match level {
+        ThinkingLevel::Default => "默认",
+        ThinkingLevel::Off => "不思考",
+        ThinkingLevel::On => "思考",
+        ThinkingLevel::Minimal => "最少",
+        ThinkingLevel::Low => "低",
+        ThinkingLevel::Medium => "中",
+        ThinkingLevel::High => "高",
+        ThinkingLevel::Xhigh => "超高",
+        ThinkingLevel::Max => "最高",
+    }
 }
 
 fn mode_label(mode: PermissionMode) -> &'static str {

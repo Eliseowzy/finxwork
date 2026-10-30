@@ -218,6 +218,7 @@ pub fn model_registry(home: &FinxHome, config: &Config) -> Result<ModelRegistry,
             ..Default::default()
         },
         user_agent: None,
+        models_dir: Some(home.models_dir()),
     };
     Ok(ModelRegistry::new(catalog, options))
 }

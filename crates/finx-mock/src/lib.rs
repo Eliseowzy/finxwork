@@ -56,6 +56,9 @@ use tokio::net::TcpStream;
 
 pub const MODEL_ID: &str = "mock-1";
 
+/// A key the mock's model list refuses (401), for key checks.
+pub const REJECTED_KEY: &str = "sk-rejected";
+
 #[derive(Default)]
 pub struct Stats {
     pub requests: AtomicU64,
@@ -65,6 +68,10 @@ pub struct Stats {
     /// Body sizes of `churn` requests in arrival order, and how many asked for a handoff.
     churn_bodies: Mutex<Vec<u32>>,
     pub churn_handoffs: AtomicU64,
+    /// `GET …/models` requests.
+    pub model_lists: AtomicU64,
+    /// Requests for the public model catalog (`/catalog/api.json`).
+    pub catalog_fetches: AtomicU64,
 }
 
 impl Stats {
@@ -144,6 +151,11 @@ impl MockServer {
         &self.shared.stats
     }
 
+    /// A public model catalog in the upstream format, naming every built-in `catalog_id`.
+    pub fn catalog_url(&self) -> String {
+        format!("http://{}/catalog/api.json", self.addr)
+    }
+
     /// A `models.toml` with provider `mock` and model `mock/mock-1` pointing at this server.
     pub fn models_toml(&self) -> String {
         format!(
@@ -172,6 +184,7 @@ struct Request {
     path: String,
     body: Vec<u8>,
     close: bool,
+    authorization: Option<String>,
 }
 
 async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
@@ -183,6 +196,17 @@ async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
         };
         let ok = if request.path.ends_with("/chat/completions") {
             respond_chat(&mut stream, &request.body, &shared).await
+        } else if request.path == "/catalog/api.json" {
+            shared.stats.catalog_fetches.fetch_add(1, Ordering::Relaxed);
+            write_json(&mut stream, 200, &catalog()).await
+        } else if request.path.ends_with("/models") {
+            shared.stats.model_lists.fetch_add(1, Ordering::Relaxed);
+            if request.authorization.as_deref() == Some(&format!("Bearer {REJECTED_KEY}")) {
+                write_json(&mut stream, 401, &json!({"error": {"message": "Authentication Fails, Your api key is invalid"}})).await
+            } else {
+                let data = json!([{"id": MODEL_ID, "object": "model"}, {"id": "mock-2", "object": "model"}, {"id": "deepseek-flash", "object": "model"}]);
+                write_json(&mut stream, 200, &json!({"object": "list", "data": data})).await
+            }
         } else {
             write_json(&mut stream, 404, &json!({"error": {"message": "not found"}})).await
         };
@@ -210,12 +234,14 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
     let path = request_line.split(' ').nth(1).unwrap_or("/").to_string();
     let mut length = 0usize;
     let mut close = false;
+    let mut authorization = None;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else { continue };
         let value = value.trim();
         match name.trim().to_ascii_lowercase().as_str() {
             "content-length" => length = value.parse().unwrap_or(0),
             "connection" => close = value.eq_ignore_ascii_case("close"),
+            "authorization" => authorization = Some(value.to_string()),
             _ => {}
         }
     }
@@ -230,7 +256,32 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
     }
     let body = buf[body_start..body_start + length].to_vec();
     buf.drain(..body_start + length);
-    Ok(Some(Request { path, body, close }))
+    Ok(Some(Request { path, body, close, authorization }))
+}
+
+/// The catalog the mock serves: DeepSeek's flash with a window no real catalog has, so a test
+/// can tell it was taken; the other built-in catalog ids empty.
+fn catalog() -> Value {
+    let mut root = serde_json::Map::new();
+    for id in ["alibaba-cn", "anthropic", "moonshotai-cn", "openai", "openrouter", "zhipuai"] {
+        root.insert(id.into(), json!({"models": {}}));
+    }
+    root.insert(
+        "deepseek".into(),
+        json!({"models": {
+            "deepseek-flash": {
+                "id": "deepseek-flash", "name": "DeepSeek Flash (mock catalog)",
+                "reasoning": true, "tool_call": true,
+                "reasoning_options": [{"type": "toggle"}, {"type": "effort", "values": ["low", "high", "max"]}],
+                "modalities": {"input": ["text"], "output": ["text"]},
+                "limit": {"context": 777777, "output": 32000},
+                "release_date": "2026-10-17",
+                "cost": {"input": 0.15, "output": 0.6}
+            },
+            "deepseek-embed": {"id": "deepseek-embed", "type": "embedding", "limit": {"context": 8192}}
+        }}),
+    );
+    Value::Object(root)
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -242,6 +293,7 @@ async fn write_json(stream: &mut TcpStream, status: u16, body: &Value) -> io::Re
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
+        401 => "Unauthorized",
         404 => "Not Found",
         _ => "Internal Server Error",
     };

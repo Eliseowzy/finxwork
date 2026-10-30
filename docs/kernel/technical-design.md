@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.23 |
-| 日期 | 2026-10-29 |
+| 版本 | v1.25 |
+| 日期 | 2026-10-30 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -70,6 +70,8 @@
 | v1.21 | 2026-10-29 | 复杂场景压测与优化（§1.4）：finx-load 新增 `--scenario`，覆盖长会话跨压缩与恢复、子智能体扇出、超大输出、多个旁观连接和不读的客户端、各种时机的中断、几千个会话的数据目录；采样新增退休的指令数，在繁忙的机器上比 CPU 时间稳定。改动：流式响应整个流共用一个空闲定时器（§4.11）；token 估算按字节计数、不再把工具参数写成文本；会话日志一批条目一次写入（§9.3）；会话列表记住长日志的摘要、只读追加的部分，遍历目录不再逐个 stat（§9.5）；服务记录在监听之后落盘（protocol-design §8.2）；历史改为列表加索引，少见的大条目和用户消息里的 skill 装箱，一个条目由 256 字节降到 104 字节；空闲会话的系统提示词只存一份。新增决策 D-94、D-95，待定问题 Q-91–Q-94 |
 | v1.22 | 2026-10-29 | Skill 2d（[skill-design.md](skill-design.md) v1.5，决策 D-82–D-89）：用户在消息任意位置用 `/skill:名字` 提及 Skill，可以有多个，二期开头的 `/名字` 不再表示 Skill，`/compact` 仍只认开头（§8.1）；用户的话原样记录，提及的 Skill 的正文记在 message 条目的 `skills`，组成上下文时作为单独的文字项放在原话之前（§9.2）；`message_completed` 和历史条目的 `skill` 换成 `skills: [{name, path}]`（§8.2）；压缩时保留的就是原话（§7.6.4）；清单的说明句加上条件，对话里已有某个 Skill 的 `<skill>` 块时不必再读它的 SKILL.md（§7.2）；`finx skills --json` 与 `skills/list {cwd}` 带 `commands`（§12）；桌面端输入框改用 Lexical（protocol-design.md v0.13、desktop-design.md v0.5） |
 | v1.23 | 2026-10-29 | 长任务循环压测与优化（§1.4）：finx-load 新增 churn、exec-churn，一个任务连续几千个工具轮次（读写改同一个文件、追加日志、grep/find/rg 搜索、读文件的一段），中途多次压缩；采样新增打开文件数。改动：历史的分支按位置保存、追加时延长，不再每次请求从叶子沿父链走到根；校准用的请求估算沿用上次请求的结果，最大一轮的估算接着上次往下算；工具调用的参数和工具结果的 details 存为紧凑的 JSON 文本 JsonText，写出的字节不变（§4.3）；给客户端的记录、回复里少见的大字段装箱。单个会话 3000 轮：每轮指令数由 14.4 M 降到 8.6 M，任务结束后的活跃堆由 14.3 MiB 降到 9.9 MiB；16 个会话各 1500 轮：进程峰值占用由 149 MiB 降到 116 MiB。新增待定问题 Q-96、Q-97 |
+| v1.24 | 2026-10-30 | 新增模型目录与发现方案 [model-catalog-design.md](model-catalog-design.md)，回答 Q-08：有哪些模型由服务商的列表接口决定（保存密钥时顺便验证、常驻服务每 24 小时刷新、手动刷新），参数按字段合并 models.toml、内置修正、列表自带参数和公开维护的模型目录（随版本打包快照，常驻服务在后台刷新）；推理档位从公共目录推导；菜单只显示有凭据、参数已知、未停用的模型，每家最多最新的 12 个，用户可逐个调整。§4.8、§9.1 随之更新。决策 D-130–D-144，待定问题 Q-120–Q-125。一期、二期已实现，端到端测试与真实 DeepSeek 验收通过 |
+| v1.25 | 2026-10-30 | 思考强度改用服务商自己的档位（model-catalog-design §18，D-145–D-149）：`ThinkingLevel` 新增 `default`（不发参数，配置的默认值）、`on`、`xhigh`；每个模型只提供它支持且请求格式发得出去的档位，不提供的按 `default` 处理；换模型时保留新模型也有的档位，否则用这个模型上次选的档位；§4.13 改写 |
 
 ## 1. 目标与范围
 
@@ -839,9 +841,9 @@ pub struct Model {                                // 合并后的运行时视图
 }
 ```
 
-目录有两个来源，后者覆盖前者：
-1. **内置目录**：编译进二进制文件（`catalog/builtin.toml`）。
-2. **用户目录**：`~/.finx/models.toml`。
+模型目录与发现的完整设计见 [model-catalog-design.md](model-catalog-design.md)（v1.24 起，已实现）：有哪些模型由服务商的列表接口决定，每个模型的参数按字段合并下面的来源，前者覆盖后者——用户目录、内置目录、列表响应自带的参数、公开维护的模型目录（随版本打包一份快照，常驻服务在后台刷新）、默认值。下面描述的是内置目录与用户目录这两层：
+1. **内置目录**：编译进二进制文件（`catalog/builtin.toml`）。实现上述方案后，它主要描述服务商，模型部分只写公共目录缺失或不对的字段。
+2. **用户目录**：`~/.finx/models.toml`。新增的服务商字段 `catalog_id`、`list_models`、`list_from`、`list_details` 与模型字段 `currency` 见 model-catalog-design §11.2。
    - 同 id 的厂商按字段覆盖；
    - 同 id 的模型也按字段覆盖：只改写用户写出的字段，`thinking_levels` 逐项合并，`compat` 按 §4.7 合并。例如只调小 `context_window`，模型的推理能力、思考档位和图片输入都保留（以前是整条替换，这些会被悄悄丢掉）；
    - 可以新增厂商。
@@ -862,7 +864,7 @@ v1 内置的厂商：
 | ollama | Ollama（本地） | openai-chat | http://localhost:11434/v1 | 无 |
 
 - 不少厂商同时提供 Anthropic 兼容端点（例如 DeepSeek 的 `https://api.deepseek.com/anthropic`）。需要使用时，新增一个 `api = "anthropic-messages"` 的厂商条目即可。
-- 内置目录中的模型列表和价格会过时，用户配置可以覆盖它们，后续维护方式见 Q-08。完整示例见附录 C。
+- 内置目录中的模型列表和价格会过时，用户配置可以覆盖它们；维护方式已定（Q-08），见 model-catalog-design.md。完整示例见附录 C。
 - 目录中没有列出的模型 id 也可以直接使用：只要厂商存在，就按默认参数（上下文窗口 128,000，输出上限 8,192，不支持推理和图片）生成模型，并发出 warning。
 - 单价未配置（为 0）时，界面显示"费用未知"，而不是 0 元。
 
@@ -953,28 +955,31 @@ pub enum ErrorKind {
 
 ### 4.13 推理等级映射
 
-统一的推理等级为 `off | minimal | low | medium | high | max`。各 `thinking_format` 对应的请求参数和推理内容字段如下：
+推理等级用服务商自己的档位，不再是 finx 统一的六档（v1.25 起，完整规则见 model-catalog-design §18）：`default | off | on | minimal | low | medium | high | xhigh | max`。
 
-| thinking_format | 请求参数 | 推理内容字段 |
-|---|---|---|
-| openai | `reasoning_effort` | chat 接口不返回推理文本 |
-| deepseek | `thinking: {type: "enabled" \| "disabled"}`；开启时附带 `reasoning_effort` | `reasoning_content` |
-| qwen | `enable_thinking: true \| false`，可附带 `thinking_budget` | `reasoning_content` |
-| zai | `thinking: {type: "enabled" \| "disabled"}` | `reasoning_content` |
-| openrouter | `reasoning: {effort}` | `reasoning` |
-| none | 不发送 | — |
+- `default`：不发送任何推理参数，由服务商决定；任何模型都可以选。
+- 其余档位：每个模型只提供它支持、且请求格式发得出去的那几个（`ModelSummary.thinking_levels`）；不支持推理或请求格式不能指定推理的模型没有档位，界面隐藏这项设置。
+- 请求里出现的档位一定是模型提供的：不提供的档位按 `default` 处理，不再"降到最近的低一档"。
 
-等级如何取值：
-- **默认映射**：minimal → minimal，low → low，medium → medium，high → high，max → high。
-- **模型覆盖**：模型可以用 `thinking_levels` 覆盖默认映射。值为空字符串 `""` 表示不支持该等级（TOML 没有 null），此时改用比它低的最近一个可用等级。
-- **无法关闭推理的模型**：`off` 时不发送关闭参数。
-- **不支持推理的模型**（`reasoning = false`）：忽略推理等级。
+各 `thinking_format` 发送的参数：
+
+| thinking_format | off | on | 档位（minimal … max） | 推理内容字段 |
+|---|---|---|---|---|
+| openai | `reasoning_effort: "none"` | 不发送 | `reasoning_effort: <档位>` | chat 接口不返回推理文本 |
+| deepseek | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 开启，并附带 `reasoning_effort: <档位>` | `reasoning_content` |
+| qwen | `enable_thinking: false` | `enable_thinking: true` | 开启，并附带 `thinking_budget`（按下表） | `reasoning_content` |
+| zai | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 同 on | `reasoning_content` |
+| openrouter | `reasoning: {effort: "none"}` | `reasoning: {enabled: true}` | `reasoning: {effort: <档位>}` | `reasoning` |
+| none | — | — | —（这类模型没有档位） | — |
+
+- anthropic-messages：`default` 和 `off` 不发送 thinking 块（Claude 不发就不推理），`on` 和各档位按下表的预算开启。
+- 档位发送的值默认就是档位名，模型可以用 `thinking_levels = { high = "<服务商的值>" }` 改写。
 
 预算型推理（anthropic，以及 qwen 的 `thinking_budget`）的默认预算如下，模型可以用 `thinking_budgets` 覆盖：
 
-| 等级 | minimal | low | medium | high | max |
-|---|---|---|---|---|---|
-| 预算 token | 1,024 | 4,096 | 10,240 | 24,576 | 32,768 |
+| 等级 | minimal | low | medium（以及 on） | high | xhigh | max |
+|---|---|---|---|---|---|---|
+| 预算 token | 1,024 | 4,096 | 10,240 | 24,576 | 28,672 | 32,768 |
 
 - **预算上限**：实际预算不超过 `max_output_tokens − 4,096`，给回复正文留出空间。
 - **请求的 max_tokens**：取 `min(max_output_tokens, 预算 + 16,384)`。
@@ -2082,6 +2087,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 ├── credentials.toml                     凭据（M2）
 ├── AGENTS.md                            全局指令
 ├── trusted.toml                         受信任项目列表
+├── models/                              模型列表与公共目录的缓存、菜单显示的选择（model-catalog-design §7）
 ├── sessions/2026/10/28/20261028T090000-<session_id>.jsonl
 ├── sessions/2026/10/28/20261028T090000-<session_id>/
 │   └── tool-output/<call_id>.txt        被裁切的工具结果的完整内容（§5.7）
@@ -2219,7 +2225,7 @@ pub enum EntryKind {
 
 ```toml
 model = "deepseek/deepseek-flash"
-thinking = "off"                    # off | minimal | low | medium | high | max
+thinking = "default"                # default（服务商决定）| off | on | minimal | low | medium | high | xhigh | max
 permission_mode = "manual"          # manual | accept-edits | bypass-permissions（§11.2）
 max_turns = 0                       # 每个任务最多几轮，0 表示不限
 extra_writable_roots = []           # 工作区之外允许写入的目录
@@ -2484,7 +2490,7 @@ pub enum RuleDecision { Allow, Ask, Deny }
 | 命令 | 说明 | 里程碑 | 状态 |
 |---|---|---|---|
 | `finx chat [PROMPT]` | 只用模型层对话，不带工具，用于验证模型接入。不给 PROMPT 时进入简单的 REPL；`--tool-test` 附带一个示例工具，用来验证工具调用；`--record DIR` 录制原始流 | M0 | 已实现，`--record` 除外 |
-| `finx models [--provider P] [--check] [--json]` | 列出模型；`--check` 检查鉴权和连通性 | M0 | 已实现，`--check` 除外 |
+| `finx models [--provider P] [--all] [--refresh] [--json]`、`finx models show <provider/model-id>`、`finx models hide <provider/model-id>` | 按服务商列出模型菜单里的模型；`--all` 连同隐藏的，`--refresh` 先向服务商和公共目录刷新，`--json` 与 `models/list` 相同；`show`、`hide` 改模型菜单（model-catalog-design §9） | M0 | 已实现 |
 | `finx doctor [--json]` | 检查配置、密钥（脱敏显示）、网络和目录权限；有失败项时退出码为 1 | M0 | 已实现，网络检查除外 |
 | `finx status [--json]` | 显示生效的配置：模型、接口与服务地址、密钥来源（脱敏）、推理等级、权限模式、启用的工具、来自环境变量的设置、项目与信任状态、各配置文件、数据目录 | M1 | 已实现 |
 | `finx exec [PROMPT]` | 以无头方式执行一个任务；PROMPT 为 `-` 时从 stdin 读取 | M1 | 已实现 |
@@ -2871,7 +2877,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | Q-05 | read 的输出是否带行号 | 否 | §5.8 |
 | Q-06 | bash 的默认超时时间 | 120 秒 | §5.8 |
 | Q-07 | 会话日志中的图片是否改为外部存储 | 以 base64 内嵌 | §9.2 |
-| Q-08 | 内置模型目录如何维护 | 手工维护，用户配置可覆盖 | §4.8 |
+| Q-08 | 内置模型目录如何维护 | 已定：模型列表问服务商，参数来自公开维护的模型目录加内置修正与用户配置（model-catalog-design.md，D-130–D-144） | §4.8 |
 | Q-09 | 非本地 Environment 中 grep、find、ls 如何实现 | 通过 exec 调用 rg 和 find | §5.5 |
 | Q-10 | 是否需要会话索引（如 SQLite） | 先直接扫描目录 | §9.5 |
 | Q-11 | 是否在模型流式输出的过程中提前执行工具 | 否（D-12） | §6.6 |
@@ -2983,7 +2989,7 @@ name = "DeepSeek-V4.1-Flash"
 context_window = 1048576
 max_output_tokens = 393216
 reasoning = true
-thinking_levels = { minimal = "low", medium = "high", max = "max" }   # 厂商支持 low / high / max
+thinking = ["off", "low", "high", "max"]                             # 服务商提供的档位（一般由公共目录给出，不必写）
 input = ["text", "image"]
 cost = { input = 1.0, output = 2.0, cache_read = 0.1 }
 
