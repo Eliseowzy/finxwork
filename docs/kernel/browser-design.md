@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.2 |
+| 版本 | v0.3 |
 | 日期 | 2026-10-31 |
 | 状态 | 草案，待评审 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
@@ -29,7 +29,7 @@
   - 敏感字段（密码、验证码、银行卡）的值不进快照；
   - 系统提示词要求模型不执行页面里的指令（§7.7）。
 - **没有审批人的场景**：`finx exec` 和子智能体只能访问配置里允许的站点和已经授权的站点，所以 `browser.sites` 一期就提供（§10）。
-- **会话隔离**：每个会话只能看到、操作自己的标签页；同一个用户目录的登录状态由使用它的会话共享（§6）。
+- **会话隔离与池化**：同一进程里按用户目录共用一个浏览器进程（进程级 `BrowserPool`，经 `KernelDeps` 注入）；每个会话只持有租约和自己的标签页，事件按标签页分发，会话结束时自动关掉自己的标签页；登录状态由使用同一用户目录的会话共享。浏览器不拆成独立服务（§6.1、§6.6）。
 - **分期**：
   - 一期：托管浏览器 + 7 个工具 + 权限与审批改造，约 3.5 周；
   - 二期：桌面内嵌浏览器 + 批量执行；
@@ -177,8 +177,10 @@ Windows 也用 pipe（D-195）：
  └─ 浏览器工具（browser_navigate / browser_snapshot / browser_act / …）   finx-core
      ├─ authorities()：结合当前页面算出权限                              finx-core
      ├─ 内核按权限检查闸（网址、私有网络、域名、站点授权、审批）            finx-core
-     └─ BrowserSession（会话的标签页、ref 表、站点授权的执行期副本）         finx-browser
-         └─ Page：快照、定位、输入、截图、等待；执行前再核对（§7.4）        finx-browser
+     └─ BrowserSession（会话级：租约、本会话的标签页、ref 表）              finx-browser
+         ├─ Page：快照、定位、输入、截图、等待；执行前再核对（§7.4）        finx-browser
+         └─ Browser（共享层：一个浏览器进程，按 target 分发事件，§6.1）       finx-browser
+             ↑ 由 BrowserPool（进程级，经 KernelDeps 注入）按 profile 发放   finx-browser
              └─ CdpClient：请求/响应配对、事件分发、按 target 分会话          finx-browser
                  └─ Backend（trait）
                      ├─ Managed：pipe（mac/linux）/ 本机端口（Windows）  一期
@@ -188,7 +190,8 @@ Windows 也用 pipe（D-195）：
 
 ### 4.2 crate 划分
 
-- **新 crate finx-browser**：CDP 客户端、后端、页面操作、快照、网址与私有网络检查。不依赖 finx-core，可以单独测试。
+- **新 crate finx-browser**：CDP 客户端、后端、`BrowserPool` / `Browser` / `BrowserSession`、页面操作、快照、网址与私有网络检查。不依赖 finx-core，可以单独测试。
+- **不拆成独立服务**（D-203）：浏览器在内核进程里，不另起一个浏览器服务进程，理由见 §6.6。
 - **finx-tools**：`Tool` trait 新增 `authorities()`，以及 `Authority` 类型（§7.1）。
 - **finx-core**：
   - 浏览器工具的定义；
@@ -196,14 +199,14 @@ Windows 也用 pipe（D-195）：
   - 会话里的站点授权；
   - 会话状态的挂载；
   - 配置。
-- **finx-protocol**：`approval_requested` 的 `proposed_grant`，以及浏览器结果的 `details` 字段（§9）。
+- **finx-protocol**：`approval_requested` 的 `proposed_grants`，以及浏览器结果的 `details` 字段（§9）。
 
 ### 4.3 一次调用的流程
 
 1. 模型调用 `browser_act {ref:"e12", action:"click"}`。
 2. `prepare_arguments` 照常执行。
 3. 内核调用 `authorities(args, ctx)`。工具在 `BrowserSession` 里查到 `e12` 所在的标签页、frame 和文档，返回 `[Act { origin: "https://example.com", target: (tab 3, frame F, loader L) }]`。ref 不存在或已失效时，直接返回错误，不进入审批。
-4. 钩子链执行。`ApprovalPolicy` 按权限依次检查闸：网址 → 私有网络 → 域名策略 → 站点授权 → 审批（§7.2、§7.3）。需要审批时发出 `approval_requested`，附带 `proposed_grant: Act on https://example.com`。
+4. 钩子链执行。`ApprovalPolicy` 按权限依次检查闸：网址 → 私有网络 → 域名策略 → 站点授权 → 审批（§7.2、§7.3）。需要审批时发出 `approval_requested`，附带 `proposed_grants: [Act on https://example.com]`。
 5. 执行：
    - 取得标签页的锁；
    - 核对标签页、frame、文档、origin 与第 3 步记下的一致（§7.4），不一致就返回 `page_changed`，什么都不发；
@@ -311,21 +314,64 @@ Windows 也用 pipe（D-195）：
 
 ## 6. 浏览器会话
 
-### 6.1 生命周期（D-169）
+### 6.1 池化：三层结构（D-169、D-202）
 
-- 第一次调用浏览器工具时启动浏览器进程，建立 `BrowserSession`。
-- 一个托管浏览器进程（同一个用户目录）由使用它的所有会话共用。每个会话只能看到、操作自己打开的标签页。
-- 会话结束、被删除或内核退出时，关闭它的标签页；没有会话再使用这个浏览器时，关闭浏览器进程。
+一个托管浏览器进程（同一个用户目录）由使用它的所有会话共用，共享只发生在 `Browser` 这一层。`Kernel` 和浏览器工具本身仍然不持有共享状态。
+
+```
+进程级   BrowserPool（经 KernelDeps 注入；finx-server、finx exec 各建一个）
+           └─ profile → Weak<Browser>
+共享层   Browser（一个浏览器进程 + 一条 CDP 连接 + 用户目录锁文件）
+           └─ 事件按 target 分发给持有它的会话
+会话级   BrowserSession（放在 SessionState 里，§6.3）
+           ├─ lease: Arc<Browser>
+           ├─ 本会话拥有的 target
+           └─ ref 表、当前标签页、每个标签页一把锁
+```
+
+```rust
+pub struct BrowserPool {
+    browsers: Mutex<HashMap<ProfileKey, Weak<Browser>>>,
+    launcher: Arc<dyn Launcher>,           // 测试里换成模拟实现
+}
+impl BrowserPool {
+    /// 取得某个用户目录的浏览器；没有或已经失效时启动一个。
+    pub async fn acquire(&self, cfg: &BrowserConfig) -> Result<Arc<Browser>, BrowserError>;
+}
+```
+
+- **BrowserPool**：
+  - 放在 `KernelDeps` 里，不做成 static，也不放进 `shared_tools()` 的缓存。同一进程里的所有内核共用一个，测试可以注入模拟的 launcher；
+  - 只存 `Weak<Browser>`。最后一个 `Arc<Browser>` 释放时，浏览器随之关闭；下次 `acquire` 发现失效就重新启动。不另做引用计数；
+  - `acquire` 按 profile 加异步锁，避免两个会话同时触发、启动出两个进程；
+  - **等旧进程退出再启动**（D-204）：`Weak` 失效时，旧浏览器可能还在关闭，Chrome 仍占着用户目录。这时再用同一个用户目录启动，新进程会把请求交给旧实例后自己退出，pipe 随即断开。所以池里按 profile 另记一个"正在关闭"的完成信号，`acquire` 先等它（有超时，超时后结束旧进程）再启动；
+  - 浏览器配置（可执行文件、profile、headless、超时）在 `acquire` 时从调用方传入，浏览器工具保持无状态，`ToolsKey` 不变。配置和池怎么到达工具见 §6.3。
+- **Browser**：
+  - 持有子进程、CDP 连接和用户目录锁文件（§6.2）；子进程设 `kill_on_drop(true)`，与 MCP 的 stdio 传输一致，finx 进程意外退出时浏览器不会残留；
+  - 一个读循环把 CDP 事件按 `sessionId` / `targetId` 路由给拥有该 target 的会话。会话只订阅自己的 target，看不到别人的标签页是结构上保证的，不靠过滤；
+  - **读循环不持有 `Arc<Browser>`**：读循环是一个后台任务，只持有连接和路由表。否则 `Browser` 永远释放不掉，池里的 `Weak` 也永远不会失效；
+  - **新 target 的归属**（D-205）：
+    - 页面打开的新标签页或弹窗（有 `openerId`）归 opener 所属的会话；
+    - 子 target（跨源 iframe 等）在 `flatten` 模式下是在父 target 的 `sessionId` 下附加的，归父 target 所属的会话；
+    - 会话自己 `Target.createTarget` 时，`attachedToTarget` 事件可能先于响应到达。读循环把还没有归属的 target 的事件暂存起来，`createTarget` 的响应回来、登记归属后再交给会话；暂存有上限和超时，超时仍无人认领的按下一条处理；
+    - 没有 opener 也没有父 target 的（例如用户在窗口里手动打开的标签页）不归任何会话，工具看不到；
+  - **关闭**（D-204）：Drop 里不能 await，所以 `Browser` 的 Drop 只把子进程和连接交给一个独立的关闭任务，并在池里登记"正在关闭"。关闭任务先发 `Browser.close`，超时后结束进程，最后释放用户目录锁、删除临时用户目录（D-200），再发出完成信号；
+  - 进程崩溃或被用户关掉时标记为失效，所有持有者的下一次调用都重新 `acquire`，并在结果里说明之前的标签页和 ref 都已经失效。
+- **BrowserSession**：
+  - 第一次调用浏览器工具时由 `get_or_init` 建立，这时才 `acquire`。不调用就不启动浏览器；
+  - 会话结束、被删除、被卸载或内核退出时，`SessionState` 随会话释放，`BrowserSession` 的 Drop 关闭它的标签页并释放租约。不需要给内核加会话结束的回调；
+  - Drop 里不能 await，所以只把要关的 target 放进 `Browser` 的关闭队列，由读循环所在的任务发出 `Target.closeTarget`。
+- **会话被卸载**（D-206）：finx-server 会卸载空闲的会话（没有客户端连着、也没有任务在跑），恢复时再从日志加载。对浏览器来说，卸载就是会话结束：标签页随之关闭。恢复后的会话是新建的 `BrowserSession`，模型若引用恢复前的标签页或 ref，错误里说明"恢复会话前的标签页都已关闭，请重新打开"，不去猜对应关系。不为了保留标签页而阻止卸载：一个空闲会话不应该一直占着浏览器进程。
 - 用户中断一轮对话：取消正在执行的调用（§5.3 的超时与中断），不关标签页。
-- 浏览器崩溃或被用户关掉：下一次调用时重新启动，并在结果里说明之前的标签页和 ref 都已经失效。
 
 ### 6.2 共用用户目录（D-191）
 
 - **登录状态共享**：同一个用户目录里的 cookie、localStorage 和登录状态，由使用它的所有会话共享。在一个会话里登录了某个网站，其他会话打开它时也是登录状态。这是有意的，用户只需要登录一次。需要隔离时，给不同的项目配置不同的 `browser.profile`。
-- **同一时间只能一个进程使用**：Chrome 同一时间只允许一个进程使用一个用户目录。finx 在用户目录里放一个锁文件，记下持有它的内核进程：
-  - 同一个内核里的会话共用这个浏览器进程；
+- **同一时间只能一个进程使用**：Chrome 同一时间只允许一个进程使用一个用户目录。finx 在用户目录里放一个锁文件，记下持有它的进程的 pid 和启动时间（防止 pid 被复用后误判）：
+  - 同一个 finx 进程里的会话经 `BrowserPool` 共用这个浏览器进程（§6.1）；
   - 另一个 finx 进程（例如命令行里的 `finx exec`）要用同一个用户目录时，改用临时用户目录 `~/.finx/browser/tmp-<pid>`，浏览器关闭后删除（D-200）。第一次工具结果里写明"用户目录被进程 <pid> 占用，这次没有登录状态"，模型可以转告用户，用户据此换一个 `browser.profile`。不为此加配置项；
-  - 持有锁的进程已经不在了，就接管这个锁。
+  - 持有锁的进程已经不在了，就接管这个锁；
+  - 不让第二个进程连第一个进程的浏览器：那需要开端口或 socket，与 D-163 用 pipe 的初衷相反（§6.6）。
 
 ### 6.3 会话状态的挂载（D-170）
 
@@ -336,6 +382,7 @@ pub struct SessionState { /* TypeId → Arc<dyn Any + Send + Sync> */ }
 impl SessionState {
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>>;
     pub fn get_or_init<T: Send + Sync + 'static>(&self, init: impl FnOnce() -> T) -> Arc<T>;
+    pub fn remove<T: Send + Sync + 'static>(&self) -> Option<Arc<T>>;   // 子智能体结束时用（§6.4）
 }
 ```
 
@@ -343,9 +390,24 @@ impl SessionState {
 - 浏览器工具用 `get_or_init::<BrowserSession>()`，不调用就不建立。
 - `authorities()` 只用 `get`：会话还没有浏览器时，`browser_navigate` 照样能算出 `Navigate(url)`；其他工具直接报"还没有打开页面"。
 
+**池和配置怎么到达工具**（D-207）：`ToolCtx` 不带 `Config`，也不该为浏览器加 pool 字段。内核建会话时，在 `SessionState` 里放一个 `BrowserHandle`：
+
+```rust
+pub struct BrowserHandle {
+    pub pool: Arc<BrowserPool>,     // 来自 KernelDeps
+    pub config: BrowserConfig,      // 会话的 [browser] 配置，项目配置已按 D-178 收紧
+}
+```
+
+- 浏览器工具用 `get::<BrowserHandle>()` 取池和配置，再 `get_or_init::<BrowserSession>()`；
+- `browser.enabled = false` 时内核不放 `BrowserHandle`，工具也不在工具列表里；
+- 子智能体从 `ChildDeps` 拿到同一个池，与主会话用同一份配置；
+- `KernelDeps` 新增 `browser_pool: Option<Arc<BrowserPool>>`，为 `None` 时视同没启用浏览器。现有构造 `KernelDeps` 的地方（主要是 `finx-core/tests/` 下的测试）补一个 `None` 即可；finx-server 和 `finx exec` 各在启动时建一个池。
+
 ### 6.4 子智能体（D-171）
 
-- **标签页**：子智能体拿到父会话的全部工具，浏览器工具也在内（MCP 方案 D-110）。子智能体有自己的 `BrowserSession`，与父会话共用浏览器进程但标签页分开，几个子智能体可以同时在不同的标签页里工作。
+- **标签页**：子智能体拿到父会话的全部工具，浏览器工具也在内（MCP 方案 D-110）。子智能体有自己的 `BrowserSession`，从同一个 `BrowserPool` 拿到同一个 `Browser`，与父会话共用浏览器进程但标签页分开。子智能体的会话现在没有 `session_state`，改造后也要有自己的 `SessionState`，几个子智能体可以同时在不同的标签页里工作。
+- **结束时关标签页**（D-206）：`AgentTree` 会保留已经结束的子智能体，以便之后 `send_message`，它的会话要到主会话结束才释放。所以子智能体交回报告时，内核就从它的 `SessionState` 里移除 `BrowserSession`，关闭它的标签页、释放租约，而不是等 Drop。之后再给它发消息、它又用浏览器时，重新建立。
 - **审批**：子智能体没有审批人。它与 `session_rules` 一样，始终使用主会话当前的站点授权（`share_permissions`），只能访问这些站点、配置里允许的站点和 localhost。需要新站点时得到"没有人可以批准"的结果，由父会话自己去做，或者先替它取得授权。
 
 ### 6.5 并发
@@ -353,6 +415,21 @@ impl SessionState {
 - 只读工具（`browser_snapshot`、`browser_screenshot`、`browser_console` 等）可以和其他只读工具并行（`ToolKind::ReadOnly`）。
 - 同一个会话里，对同一个标签页的操作由 `BrowserSession` 内部的锁串行执行，避免快照与点击交错。
 - 执行前的再核对（§7.4）在持有锁之后进行。
+
+### 6.6 不拆成独立服务（D-203）
+
+另一种做法是把浏览器做成独立的服务进程，多个 finx 进程连上去共用。一期不这样做：
+
+- **审批和再核对离不开会话状态**：`authorities()` 要读当前页面，§7.4 要在持有标签页锁之后核对再发出操作。跨进程后两步都变成远程调用，竞态窗口变大，"核对后立即执行"只能由服务端保证，安全逻辑的一半会跑到服务里；
+- **要做进程间鉴权**：用 pipe 是为了不开端口、不需要鉴权（D-163）。服务要接受连接，就得有 socket 权限、`peer_cred`、可执行文件核对这一套，否则能控制浏览器、读 cookie 的通道比 pipe 弱；
+- **与 D-160 矛盾**：服务若只做 CDP 转发，与 finx-browser 没有区别，只是多一跳；若也做策略判断，就回到绕过内核审批的问题；
+- **分发与运维**：多一个二进制，以及它的启动、回收、版本兼容和崩溃重启。
+
+以后出现下列需要时再拆：`finx exec` 与桌面端共用同一份登录状态、三期的 Native Messaging 宿主、远程或云端浏览器。拆出去的只有"连接和路由"（启动浏览器、持有 CDP 连接、分发事件）；快照、ref、再核对和闸永远留在内核。
+
+为此现在守住两条边界，届时拆分只是新增一种后端：
+- `Backend`（§8.1）只暴露 CDP 的 `send` 和 `events`，独立服务就是一种新的 `Remote` 后端；
+- `BrowserPool::acquire` 返回的 `Browser` 不暴露"这是本进程启动的子进程"，`BrowserSession` 不区分浏览器是自己启动的还是连上的。
 
 ## 7. 权限与安全
 
@@ -380,9 +457,10 @@ pub trait Tool {
 }
 ```
 
-- **调用时机**：`tool_exec` 在钩子链之前调用 `authorities()`。结果放进 `before_tool` 的参数，用户的钩子也能看到。
-- **结果的使用**：`ApprovalPolicy` 遇到非空的权限列表时按权限判断（§7.3），否则沿用现在按工具名的规则。
-- **执行时再核对**：算出的 `PageTarget` 随调用传给 `execute`，由 §7.4 核对。
+- **调用时机**：`tool_exec` 在钩子链之前调用 `authorities()`。结果放进 `before_tool` 的参数，用户的钩子也能看到：`Hooks::before_tool(call, tool, authorities: &[Authority], view)`。目前只有 `ApprovalPolicy` 一个实现，改签名影响面小。
+- **结果的使用**：`ApprovalPolicy` 只加一个分支：权限列表非空时，交给独立的站点策略模块（`site_policy.rs`，负责 §7.2 的闸、§7.3 的规则和 `site_grants`）；为空时沿用现在按工具名的规则。按权限的逻辑不散进 `approval.rs` 的按工具名分派里。
+- **bash、write、edit 不迁移**：它们继续用命令前缀和路径规则。这些规则已经够用，迁到按权限判断收益小、回归风险大。两套规则并存，靠上面的分支划清边界。
+- **执行时再核对**（D-207）：`execute(args, ctx)` 本身拿不到 `authorities()` 的结果，所以 `ToolCtx` 新增 `authorities: Arc<[Authority]>`，由 `tool_exec` 把审批时算出的那一份原样放进去，不在执行时重算（重算就会按新页面算，再核对失去意义）。浏览器工具从中取出 `PageTarget`，按 §7.4 核对。其他工具忽略这个字段。
 - **以后**：MCP 工具以后要审批时也可以走这个入口。
 
 ### 7.2 闸（D-172、D-183）
@@ -426,8 +504,10 @@ pub trait Tool {
 | `Script` | 每次询问 | 每次询问 |
 
 - **会话授权**（D-180）：
-  - `Gate::Ask` 新增 `proposed_grant: Option<Grant>`，`Grant = { authority: navigate | act | upload, origin }`；
-  - 用户选"本会话允许"时，授权加入会话的 `site_grants`。它与 `session_rules` 并列：只在内存中，恢复会话后要重新批准；子智能体通过 `share_permissions` 共享主会话当前的授权；
+  - `Gate::Ask` 新增 `proposed_grants: Vec<Grant>`，`Grant = { authority: navigate | act | upload, origin }`。一般只有一条（本站点）；导航时多一条随意浏览（D-201），所以是列表而不是 `Option`（D-208）；
+  - 用户选"本会话允许"时，`ApprovalDecision::ApproveForSession` 新增可选的 `grant: Option<usize>`，指明选的是 `proposed_grants` 里的哪一条，缺省为第一条。内核只接受提议过的授权，客户端不能自己构造一条更宽的；
+  - 选中的授权加入会话的 `site_grants`。它与 `session_rules` 并列：只在内存中，恢复会话后要重新批准；子智能体通过 `share_permissions` 共享主会话当前的授权；
+  - `SessionView` 新增 `site_grants`（与 `session_rules` 一样，取的是共享后的那一份），以及配置里的 `browser.sites` 和域名策略。`site_policy.rs` 只读 `SessionView`，不直接碰会话；
   - `Act` 的授权包含同一 origin 的 `Navigate`；
   - **随意浏览**（D-201）：导航的审批框另有一个选项"本会话允许打开任何网站"，对应 `Grant = { authority: navigate, origin: * }`：
     - 只放行导航；`Act` 仍然按站点询问，私有地址、云元数据地址和域名策略照常生效；
@@ -520,7 +600,7 @@ pub trait Backend: Send + Sync {
 - **用户接手**：用户直接在窗口里操作即可，不需要额外的交接。智能体的下一次调用会因为执行前的再核对（§7.4）返回"页面已变化"，于是重新取快照。
 - **安装**（D-194，二期）：`finx browser install` 下载 Chrome for Testing，校验哈希，装到 `~/.finx/browser/chromium`，找浏览器时排在系统浏览器之后。只由用户主动运行，桌面端的"安装"按钮调用同一条命令。
 - **连接**：`Target.setAutoAttach {flatten: true}`，所有 target 共用一条连接，用 `sessionId` 区分。只保留页面和 iframe，worker 等其他 target 直接 detach。
-- **退出**：先发 `Browser.close`，等待超时后再结束进程。
+- **退出**：先发 `Browser.close`，等待超时后再结束进程。由独立的关闭任务执行，见 §6.1（D-204）。
 
 ### 8.3 桌面内嵌浏览器（二期）
 
@@ -559,10 +639,15 @@ pub trait Backend: Send + Sync {
   - `describe()` 返回 "open example.com"、"click 'Continue' on example.com" 这样的标题，`locations` 为空。
   - 桌面端靠工具名前缀 `browser_` 和 `details` 识别浏览器调用。
 - **结果详情**：`tool_result` 的 `details` 带上 `{url, title, tab_id, screenshot_path?}`，桌面端据此显示网址和缩略图。截图保存在会话的 `tool-output` 目录，不把 base64 塞进事件。
-- **审批事件**：`approval_requested` 新增可选的 `proposed_grant`（D-180）。对浏览器操作附带 `origin` 和当前页面的截图路径。
+- **审批事件**：`approval_requested` 新增可选的 `proposed_grants`（D-180、D-208）。对浏览器操作附带 `origin` 和当前页面的截图路径。
+- **审批的下游**（D-208）：现在凡是读 `proposed_rule` 的地方都要同样处理 `proposed_grants`，否则"本会话允许"在这些入口上用不了：
+  - **finx-server 的 mirror**：`PendingApproval` 保存 `proposed_grants`，客户端重新连上时补发的待审批里也要带上；
+  - **ACP**：`permission_options` 为每条授权生成一个 `allow_always` 选项，`optionId` 为 `approve_for_session:<序号>`，解码时映射回 `ApproveForSession { grant: Some(序号) }`；随意浏览的选项名写明风险；
+  - **`finx exec` 的交互审批**（`approval_prompt`）：列出每条授权供选择；非交互时照常得到"没有人可以批准"（§7.3）；
+  - **桌面端**：见下一条。
 - **审批界面**：桌面端在审批框里显示"在 example.com 上点击 'Continue'"、截图，以及"本会话允许 example.com"的按钮；导航的审批框另有"本会话允许打开任何网站"（D-201），旁边写明风险。
 - **步骤显示**：桌面端一期在步骤里显示网址、操作和截图缩略图，点开看大图。二期加内嵌浏览器面板。
-- **协议版本**：新增字段都是可选的，旧客户端忽略即可，不升版本。旧客户端不认识 `proposed_grant`，"本会话允许"的批准只放行这一次调用，与现在没有提议时的行为相同。
+- **协议版本**：新增字段都是可选的，旧客户端忽略即可，不升版本。旧客户端不认识 `proposed_grants`，不会为浏览器调用显示"本会话允许"，批准只放行这一次调用，与现在没有提议时的行为相同；`ApproveForSession` 不带 `grant` 时取第一条，旧的发送方式仍然合法。
 
 ## 10. 配置
 
@@ -597,11 +682,14 @@ action_timeout_secs = 10
 
 - **finx-browser**：
   - CDP 客户端：请求与响应配对、乱序响应、事件分发、超时、连接断开，用内存里的模拟后端；
+  - `BrowserPool`（模拟 launcher）：并发 `acquire` 只启动一次；最后一个租约释放后，关闭完成前的 `acquire` 等它完成再启动；`Browser` 释放后读循环退出；
+  - target 归属：opener、父 target、`createTarget` 响应晚于 `attachedToTarget` 三种情况都归到正确的会话，无人认领的暂存按超时丢弃；
   - 快照：用录制好的 `getFullAXTree` 输出做快照测试；同一文档内 ref 稳定，导航后失效；敏感字段的值被屏蔽；
   - 网址检查、私有地址分类、域名策略的各种组合。
 - **finx-core**：
   - `ApprovalPolicy` 按权限判断的各种模式组合；
-  - `proposed_grant` 批准后进入 `site_grants`，子智能体立即可用；
+  - `proposed_grants` 批准后进入 `site_grants`，子智能体立即可用；`grant` 序号越界或缺省时的处理；
+  - ACP 的 `permission_options` 与 `approve_for_session:<序号>` 的往返；mirror 补发的待审批带 `proposed_grants`；
   - 没有审批人时的结果文本。
 
 ### 11.2 端到端测试（真实 Chromium）
@@ -626,9 +714,13 @@ action_timeout_secs = 10
 | 浏览器被关掉 | 下一次调用重新启动并说明 |
 | 两个会话同时使用 | 互相看不到对方的标签页；一个会话里设置的 cookie 另一个会话能看到（§6.2） |
 | 两个 finx 进程用同一个用户目录 | 第二个进程改用临时用户目录，第一次结果里说明占用者；浏览器关闭后临时目录被删除 |
+| 关闭后立即重新使用 | 唯一的会话结束后马上开新会话调用浏览器工具：等旧进程退出后启动新进程，不出现 pipe 断开 |
+| 会话卸载与恢复 | finx-server 卸载空闲会话后它的标签页被关闭；恢复后引用旧 ref 得到"恢复会话前的标签页都已关闭" |
+| 子智能体结束 | 子智能体交回报告后它的标签页被关闭，主会话的标签页不受影响 |
+| finx 进程被强制结束 | 浏览器进程随之退出，下次启动能接管用户目录锁 |
 | `file:` 网址 | 工作区内的 HTML 直接打开；工作区外的路径每次询问；页面跳到工作区外的 file 时被拦下 |
 | 随意浏览 | 选"本会话允许打开任何网站"后导航不再询问，但第一次在新站点上的操作仍然询问，私有地址仍然询问 |
-| 审批 | manual 模式下第一次操作某个 origin 时发出带 `proposed_grant` 的 `approval_requested`；选"本会话允许"后不再询问；之后子智能体也能使用这条授权 |
+| 审批 | manual 模式下第一次操作某个 origin 时发出带 `proposed_grants` 的 `approval_requested`；选"本会话允许"后不再询问；之后子智能体也能使用这条授权 |
 | `finx exec` | 没有配置 `browser.sites` 时访问外部站点得到说明配置方法的结果；配置以后能完成任务 |
 
 CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收时显示窗口。
@@ -646,7 +738,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 
 | 期 | 内容 | 估计 |
 |---|---|---|
-| 一期 | finx-browser（CDP 客户端、托管后端、快照与正文模式、输入、再核对、私有网络检查）；7 个工具；`Tool::authorities()` 与审批改造、`proposed_grant`、`site_grants`；`SessionState` 改造；配置（含 `browser.sites`）；桌面端显示截图和站点授权按钮；单元测试和端到端测试 | 约 3.5 周 |
+| 一期 | finx-browser（CDP 客户端、托管后端、`BrowserPool` 池化、快照与正文模式、输入、再核对、私有网络检查）；7 个工具；`Tool::authorities()` 与审批改造、`proposed_grants`、`site_grants`；`SessionState` 改造；配置（含 `browser.sites`）；桌面端显示截图和站点授权按钮；单元测试和端到端测试 | 约 3.5 周 |
 | 二期 | 桌面内嵌浏览器（含方法白名单）；`browser_batch`、`browser_eval`；永久允许写进配置；`finx browser install` | 约 2.5 周 |
 | 三期 | Chrome 扩展 + Native Messaging 宿主 | 待定 |
 
@@ -685,6 +777,13 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-167 | 点击前检查目标是否被遮挡 |
 | D-168 | 结果不自动附带截图 |
 | D-169 | 浏览器进程由多个会话共用，标签页按会话归属；会话结束时关闭它的标签页 |
+| D-202 | 池化：进程级 `BrowserPool`（经 `KernelDeps` 注入，存 `Weak<Browser>`）按用户目录发放共享的 `Browser`；会话的 `BrowserSession` 持有租约和自己的 target，Drop 时关标签页；事件按 target 路由，新 target 按 opener 归属 |
+| D-203 | 浏览器不拆成独立服务进程；`Backend` 和 `BrowserPool` 的接口保持可拆，以后作为一种新后端接入 |
+| D-204 | 浏览器的关闭交给独立任务（`Browser.close` → 超时结束进程 → 释放锁），池按 profile 记"正在关闭"，`acquire` 等它完成再启动；子进程 `kill_on_drop`；读循环不持有 `Arc<Browser>` |
+| D-205 | 新 target 按 opener 或父 target 归属；`createTarget` 响应到达前的事件暂存，有上限和超时 |
+| D-206 | 会话被 finx-server 卸载视同会话结束，标签页关闭；子智能体交回报告时就关闭它的标签页，不等主会话结束 |
+| D-207 | 池和配置以 `BrowserHandle` 放进 `SessionState`，`KernelDeps` 新增可选的 `browser_pool`；`ToolCtx` 新增 `authorities`，执行时用审批时算出的那一份 |
+| D-208 | `proposed_grant` 改为列表 `proposed_grants`，`ApproveForSession` 带可选的 `grant` 序号；mirror、ACP、`finx exec` 和桌面端都要处理；`SessionView` 新增 `site_grants` |
 | D-170 | `ToolCtx.session_state` 改成按类型取值的容器 |
 | D-171 | 子智能体有自己的浏览器会话，与父会话共用浏览器进程；站点授权与主会话共享 |
 | D-172 | 工具声明权限，内核按网址检查 → 私有网络 → 域名策略 → 站点授权 → 审批的顺序检查 |
@@ -695,7 +794,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-177 | 默认显示浏览器窗口；`finx exec` 和没有显示器时无界面 |
 | D-178 | 项目配置只能收紧浏览器策略 |
 | D-179 | `Tool` trait 新增 `authorities()`，在钩子链之前调用；审批策略遇到非空的权限列表时按权限判断 |
-| D-180 | `Gate::Ask` 和 `approval_requested` 新增可选的 `proposed_grant`；会话保存 `site_grants`，与 `session_rules` 一样只在内存中、与子智能体共享 |
+| D-180 | `Gate::Ask` 和 `approval_requested` 新增可选的 `proposed_grants`；会话保存 `site_grants`，与 `session_rules` 一样只在内存中、与子智能体共享 |
 | D-181 | 执行前和每次异步等待之后，核对标签页、frame、文档和 origin 与审批时一致，否则什么都不发 |
 | D-182 | 坐标点击和跨源 iframe 里的操作，按最内层 frame 的 origin 检查 |
 | D-183 | 私有地址每个 origin 单独授权（bypass 也不例外），回环地址除外；云元数据地址一律拒绝；响应时用实际地址再检查一次 |
