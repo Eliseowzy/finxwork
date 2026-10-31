@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { Bridge, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
+import type { Bridge, BrowserPanel, BrowserTab, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
 import type { Language } from "../shared/i18n";
 import type { UpdateInfo } from "../shared/update";
 
@@ -21,6 +21,10 @@ const listen = <T>(channel: string, cb: (v: T) => void) => {
 ipcRenderer.on("finx-kernel", (e) => window.postMessage("finx-kernel", "*", e.ports));
 
 const bridge: Bridge = {
+  setBrowserPanel: (panel: BrowserPanel) => ipcRenderer.send("browser-panel", panel),
+  browserTabs: () => ipcRenderer.invoke("browser-tabs"),
+  onBrowserTabs: (cb: (tabs: BrowserTab[]) => void) => listen("browser-tabs", cb),
+  showBrowserTab: (targetId: string) => ipcRenderer.send("browser-show", targetId),
   openSourceApp: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("open-source-app", adapter),
   sourceAppIcon: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("source-app-icon", adapter),
   platform: arg("platform") as PlatformId,

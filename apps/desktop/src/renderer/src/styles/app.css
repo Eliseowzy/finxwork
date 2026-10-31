@@ -468,6 +468,15 @@ button.insp-row:active{background:var(--fill2)}
 .bgp .grp-h .n{font-weight:400}
 .bgp-list{flex:none;max-height:50%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0 8px 4px;scrollbar-width:thin}
 .bgp.nosel .bgp-list{flex:1;max-height:none}
+/* The embedded browser's panel: wider than the background panel; the tab's own view is laid over .brp-view by the main process. */
+.bgp.brp{width:clamp(380px,44%,760px)}
+.brp-tabs{flex:none;display:flex;gap:4px;padding:0 10px 6px;overflow-x:auto;scrollbar-width:none}
+.brp-tab{flex:none;max-width:180px;padding:3px 9px;border-radius:6px;font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brp-tab:hover{background:var(--side-sel)}
+.brp-tab.on{background:var(--sel);color:var(--l1)}
+.brp-url{flex:none;display:flex;align-items:center;gap:6px;margin:0 10px 8px;padding:4px 8px;border-radius:6px;background:var(--side-sel);font-size:12px;color:var(--l2)}
+.brp-url span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brp-view{flex:1;min-height:0;background:#fff}
 .bgp .srow{align-items:center}
 .bgp .sl2{font-size:12px;color:var(--l2)}
 .bgp .sl2t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

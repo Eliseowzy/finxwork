@@ -57,6 +57,8 @@ pub struct NativeProtocol {
     initialized: AtomicBool,
     /// Spawned requests that `$/cancel_request` can abort.
     running: Arc<Mutex<HashMap<Id, AbortHandle>>>,
+    /// Set once the connection called `browser/host`.
+    browser_host: Mutex<Option<Arc<crate::browser_host::HostLink>>>,
 }
 
 #[derive(Serialize)]
@@ -88,6 +90,7 @@ impl NativeProtocol {
             server,
             initialized: AtomicBool::new(false),
             running: Arc::new(Mutex::new(HashMap::new())),
+            browser_host: Mutex::new(None),
         })
     }
 
@@ -216,6 +219,7 @@ impl NativeProtocol {
                             model_connections: true,
                             model_discovery: true,
                             customize: true,
+                            embedded_browser: true,
                         },
                     })
                 });
@@ -454,6 +458,15 @@ impl NativeProtocol {
             }
             method::MCP_PROBE_CANCEL => self.call(id, params, conn, |server, p: McpProbeCancelParams| async move { server.mcp_probe_cancel(p).await }),
             method::MCP_LOGIN => self.call(id, params, conn, |server, p: McpLoginParams| async move { server.mcp_login(p).await }),
+            method::BROWSER_HOST => {
+                // A later host replaces the one before it (browser-design §8.3.1).
+                let link = Arc::new(crate::browser_host::HostLink::new(conn.clone()));
+                if let Some(before) = self.browser_host.lock().replace(link.clone()) {
+                    before.close();
+                }
+                server.0.browser_pool.set_host(Some(link));
+                conn.send(reply(id, Ok::<_, RpcError>(finx_protocol::api::Empty {})));
+            }
             method::MCP_LOGOUT => self.call(id, params, conn, |server, p: McpLogoutParams| async move { server.mcp_logout(p).await }),
             method::SKILLS_LIST => match finx_rpc::params::<SkillsListParams>(params) {
                 Ok(p) => {
@@ -587,6 +600,11 @@ impl Protocol for NativeProtocol {
                     && let Ok(p) = finx_rpc::params::<CancelParams>(params)
                 {
                     self.cancel(&p.id, conn);
+                } else if method == method::BROWSER_CDP
+                    && let Some(host) = self.browser_host.lock().clone()
+                    && let Ok(p) = finx_rpc::params::<finx_protocol::api::BrowserCdpParams>(params)
+                {
+                    host.receive(p.stream, p.data);
                 }
             }
             Kind::Response { .. } => {}
@@ -604,6 +622,11 @@ impl Protocol for NativeProtocol {
     fn on_closed(&self, _conn: &ConnHandle) {
         for (_, task) in self.running.lock().drain() {
             task.abort();
+        }
+        if let Some(host) = self.browser_host.lock().take() {
+            use finx_browser::EmbeddedHost;
+            host.close();
+            self.server.0.browser_pool.remove_host(host.id());
         }
     }
 }

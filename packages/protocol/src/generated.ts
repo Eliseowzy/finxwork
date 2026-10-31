@@ -96,6 +96,14 @@ export type AuthSetResult = {
   verified: boolean;
 };
 
+/** Parameters of the `browser/cdp` notification, in both directions. */
+export type BrowserCdpParams = {
+  /** One CDP message as JSON text: a command from the kernel; a response or an event from the host. */
+  data: string;
+  /** Which browser on the host: each one the kernel starts gets a new number, and the host answers with the number of the command. Messages of an earlier browser are dropped. */
+  stream: number;
+};
+
 /** Parameters of the `$/cancel_request` notification. */
 export type CancelRequestParams = {
   id: RequestId;
@@ -1089,6 +1097,8 @@ export type ServerCapabilities = {
   auth: boolean;
   /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */
   customize: boolean;
+  /** `browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3). */
+  embedded_browser: boolean;
   event_filter: boolean;
   max_frame_bytes: number;
   model_connections: boolean;
@@ -1508,6 +1518,7 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "browser/host": [Record<string, never>, Empty];
   "config/read": [ConfigReadParams, ConfigReadResult];
   "config/write": [ConfigWriteParams, ConfigWriteResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];
@@ -1556,6 +1567,7 @@ export interface Methods {
 
 /** Notifications: their params. */
 export interface ServerNotifications {
+  "browser/cdp": BrowserCdpParams;
   "config/changed": ConfigChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
@@ -1569,6 +1581,7 @@ export interface ServerNotifications {
 /** Notifications: their params. */
 export interface ClientNotifications {
   "$/cancel_request": CancelRequestParams;
+  "browser/cdp": BrowserCdpParams;
 }
 
 /** JSON-RPC error codes and the `kind` their data carries. */

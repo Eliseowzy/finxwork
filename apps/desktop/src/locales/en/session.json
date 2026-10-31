@@ -283,5 +283,9 @@
       "manage": "Add more in Settings › Models",
       "start": "Start your first task"
     }
+  },
+  "browser": {
+    "title": "Browser",
+    "close": "Hide"
   }
 }

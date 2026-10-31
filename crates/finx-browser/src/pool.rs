@@ -10,6 +10,8 @@ use std::sync::Weak;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncWrite;
 use tokio::sync::watch;
 
 use crate::BrowserError;
@@ -34,9 +36,20 @@ pub enum Headless {
     Off,
 }
 
+/// Which browser a session gets (§8.3.3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Backend {
+    /// The desktop app's embedded browser while one is connected, else the managed one.
+    #[default]
+    Auto,
+    Embedded,
+    Managed,
+}
+
 /// The `[browser]` settings that decide which browser a session gets.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BrowserConfig {
+    pub backend: Backend,
     pub executable: Option<PathBuf>,
     pub profile: String,
     pub headless: Headless,
@@ -45,6 +58,7 @@ pub struct BrowserConfig {
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
+            backend: Backend::Auto,
             executable: None,
             profile: "default".into(),
             headless: Headless::Auto,
@@ -52,12 +66,28 @@ impl Default for BrowserConfig {
     }
 }
 
+/// Both ends of a CDP byte stream.
+pub type Stream = (Box<dyn AsyncRead + Send + Unpin>, Box<dyn AsyncWrite + Send + Unpin>);
+
+/// A desktop app that shows embedded browsers (§8.3.1). Each `connect` is a new browser: a
+/// CDP stream to the app, which acts as the browser end.
+pub trait EmbeddedHost: Send + Sync + 'static {
+    /// Tells hosts apart: a host that replaced another gets its own browser.
+    fn id(&self) -> u64;
+    fn connect(&self) -> Result<Stream, BrowserError>;
+}
+
+const NO_HOST: &str = "No desktop app is connected to show the embedded browser. Open FinxWork, \
+    or set browser.backend = \"managed\" in ~/.finx/config.toml to use a separate browser window.";
+
 pub struct BrowserPool {
     /// `~/.finx/browser`.
     root: PathBuf,
     /// What `Headless::Auto` means in this process.
     auto_headless: bool,
     launcher: Arc<dyn Launcher>,
+    /// The desktop app connected to this process, if any.
+    host: Mutex<Option<Arc<dyn EmbeddedHost>>>,
     inner: Arc<PoolInner>,
 }
 
@@ -82,13 +112,43 @@ impl BrowserPool {
             root,
             auto_headless: !auto_headless_off,
             launcher,
+            host: Mutex::new(None),
             inner: Arc::default(),
         }
     }
 
-    /// The browser for `config.profile`, started when there is none.
+    /// The desktop app that shows embedded browsers from now on; `None` when it left. A
+    /// browser on a host that left is dead (its stream ended), so its sessions start over.
+    pub fn set_host(&self, host: Option<Arc<dyn EmbeddedHost>>) {
+        *self.host.lock() = host;
+    }
+
+    /// Clears the host only if it is still `id`: a newer one may have replaced it.
+    pub fn remove_host(&self, id: u64) {
+        let mut host = self.host.lock();
+        if host.as_ref().is_some_and(|h| h.id() == id) {
+            *host = None;
+        }
+    }
+
+    pub fn has_host(&self) -> bool {
+        self.host.lock().is_some()
+    }
+
+    /// The browser for `config`: the embedded one or the managed one for `config.profile`,
+    /// started when there is none.
     pub async fn acquire(&self, config: &BrowserConfig) -> Result<Arc<Browser>, BrowserError> {
-        let key = config.profile.clone();
+        let host = match config.backend {
+            Backend::Managed => None,
+            Backend::Auto | Backend::Embedded => self.host.lock().clone(),
+        };
+        if config.backend == Backend::Embedded && host.is_none() {
+            return Err(BrowserError::Launch(NO_HOST.into()));
+        }
+        let key = match &host {
+            Some(host) => format!("embedded#{}", host.id()),
+            None => config.profile.clone(),
+        };
         let gate = self.inner.starting.lock().entry(key.clone()).or_default().clone();
         let _started = gate.lock().await;
         let existing = self.inner.browsers.lock().get(&key).and_then(Weak::upgrade);
@@ -104,9 +164,38 @@ impl BrowserPool {
         if let Some(mut done) = closing {
             let _ = tokio::time::timeout(CLOSE_WAIT, done.wait_for(|done| *done)).await;
         }
-        let browser = self.launch(config).await?;
+        let browser = match host {
+            Some(host) => self.embedded(host.as_ref(), &key).await?,
+            None => self.launch(config).await?,
+        };
         self.inner.browsers.lock().insert(key, Arc::downgrade(&browser));
         Ok(browser)
+    }
+
+    /// A browser in the desktop app: no process or profile of ours, only the stream.
+    async fn embedded(&self, host: &dyn EmbeddedHost, key: &str) -> Result<Arc<Browser>, BrowserError> {
+        let (reader, writer) = host.connect()?;
+        let (conn, events) = Conn::start(reader, writer, crate::launch::COMMAND_TIMEOUT);
+        let downloads = self.root.join("downloads").join(format!("{}-{}", std::process::id(), key.replace('#', "-")));
+        let router = Router::start(conn.clone(), events, downloads.clone(), true);
+        router.init().await?;
+        let (done_tx, _) = watch::channel(false);
+        Ok(Arc::new(Browser {
+            conn,
+            router,
+            note: None,
+            embedded: true,
+            close: Mutex::new(Some(Closing {
+                child: None,
+                lock: None,
+                temporary: None,
+                downloads,
+                done: done_tx,
+                pool: Arc::downgrade(&self.inner),
+                key: key.to_string(),
+            })),
+            runtime: tokio::runtime::Handle::current(),
+        }))
     }
 
     async fn launch(&self, config: &BrowserConfig) -> Result<Arc<Browser>, BrowserError> {
@@ -150,13 +239,14 @@ impl BrowserPool {
             }
         };
         let downloads = self.root.join("downloads").join(format!("{}-{}", std::process::id(), short_key(&user_data_dir)));
-        let router = Router::start(launched.conn.clone(), launched.events, downloads.clone());
+        let router = Router::start(launched.conn.clone(), launched.events, downloads.clone(), false);
         router.init().await?;
         let (done_tx, _) = watch::channel(false);
         Ok(Arc::new(Browser {
             conn: launched.conn,
             router,
             note,
+            embedded: false,
             close: Mutex::new(Some(Closing {
                 child: launched.child,
                 lock,
@@ -196,6 +286,8 @@ pub struct Browser {
     pub(crate) router: Arc<Router>,
     /// Said in the first result of every session: the profile was taken.
     pub(crate) note: Option<String>,
+    /// The desktop app's embedded browser rather than a managed one.
+    embedded: bool,
     close: Mutex<Option<Closing>>,
     runtime: tokio::runtime::Handle,
 }
@@ -219,6 +311,10 @@ impl Browser {
 
     pub fn note(&self) -> Option<&str> {
         self.note.as_deref()
+    }
+
+    pub fn is_embedded(&self) -> bool {
+        self.embedded
     }
 }
 

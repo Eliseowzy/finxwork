@@ -178,6 +178,7 @@ impl Fixture {
                 downloads: self.dir.path().join("downloads"),
                 navigation_timeout: Duration::from_secs(15),
                 action_timeout: Duration::from_secs(10),
+                label: None,
             },
         )
     }

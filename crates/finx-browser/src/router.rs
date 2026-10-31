@@ -151,6 +151,8 @@ impl Tab {
 struct Owner {
     guard: Arc<dyn NavigationGuard>,
     downloads: PathBuf,
+    /// The finx session whose window shows the tabs, for an embedded browser (§8.3.4).
+    label: Option<String>,
     tabs: Vec<Arc<Tab>>,
     next_tab: u32,
 }
@@ -187,14 +189,17 @@ pub struct Router {
     state: Mutex<State>,
     /// Where the browser saves downloads before they move to their session's directory.
     incoming: PathBuf,
+    /// The desktop app's embedded browser (§8.3), which places tabs by `finxSession`.
+    embedded: bool,
 }
 
 impl Router {
-    pub(crate) fn start(conn: Arc<Conn>, events: mpsc::UnboundedReceiver<CdpEvent>, incoming: PathBuf) -> Arc<Router> {
+    pub(crate) fn start(conn: Arc<Conn>, events: mpsc::UnboundedReceiver<CdpEvent>, incoming: PathBuf, embedded: bool) -> Arc<Router> {
         let router = Arc::new(Router {
             conn,
             state: Mutex::new(State::default()),
             incoming,
+            embedded,
         });
         tokio::spawn(route(Arc::downgrade(&router), events));
         router
@@ -218,7 +223,7 @@ impl Router {
         Ok(())
     }
 
-    pub fn add_owner(&self, guard: Arc<dyn NavigationGuard>, downloads: PathBuf) -> OwnerId {
+    pub fn add_owner(&self, guard: Arc<dyn NavigationGuard>, downloads: PathBuf, label: Option<String>) -> OwnerId {
         let mut state = self.state.lock();
         state.next_owner += 1;
         let id = state.next_owner;
@@ -227,6 +232,7 @@ impl Router {
             Owner {
                 guard,
                 downloads,
+                label,
                 tabs: Vec::new(),
                 next_tab: 1,
             },
@@ -256,10 +262,13 @@ impl Router {
 
     /// Opens a blank tab for `owner`.
     pub async fn create_tab(&self, owner: OwnerId) -> Result<Arc<Tab>, BrowserError> {
-        let created = self
-            .conn
-            .send(None, "Target.createTarget", json!({ "url": "about:blank" }))
-            .await?;
+        let mut params = json!({ "url": "about:blank" });
+        if self.embedded
+            && let Some(label) = self.state.lock().owners.get(&owner).and_then(|o| o.label.clone())
+        {
+            params["finxSession"] = Value::String(label);
+        }
+        let created = self.conn.send(None, "Target.createTarget", params).await?;
         let target_id = str_of(&created, "targetId").to_string();
         self.attach(owner, &target_id, None).await
     }

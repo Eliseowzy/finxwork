@@ -47,6 +47,12 @@ export type Preferences = {
   moveDeclined?: boolean;
 };
 
+/** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
+export type BrowserPanel = { session: string | null; rect: { x: number; y: number; width: number; height: number } | null };
+
+/** A tab of the embedded browser. */
+export type BrowserTab = { targetId: string; session: string | null; url: string; title: string; shown: boolean };
+
 /** Where the window's sessions come from: finx, or the demo's mock server (FINXWORK_KERNEL=mock). */
 export type KernelKind = "mock" | "finx";
 
@@ -72,6 +78,11 @@ export type KernelStatusView = {
 };
 
 export type Bridge = {
+  /** The embedded browser: where this window's panel is, the tabs there are, and picking one. */
+  setBrowserPanel(panel: BrowserPanel): void;
+  browserTabs(): Promise<BrowserTab[]>;
+  onBrowserTabs(cb: (tabs: BrowserTab[]) => void): () => void;
+  showBrowserTab(targetId: string): void;
   openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */
   sourceAppIcon(adapter?: "qwenwork" | "qoder"): Promise<string | null>;

@@ -94,6 +94,10 @@ pub mod method {
     pub const MCP_PROBE_PROGRESS: &str = "mcp/probe_progress";
     pub const MCP_LOGIN: &str = "mcp/login";
     pub const MCP_LOGOUT: &str = "mcp/logout";
+    /// This connection shows embedded browsers (browser-design §8.3.1).
+    pub const BROWSER_HOST: &str = "browser/host";
+    /// One CDP message between the kernel and the browser host, either way.
+    pub const BROWSER_CDP: &str = "browser/cdp";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -188,6 +192,17 @@ pub struct CancelRequestParams {
     pub id: RequestId,
 }
 
+/// Parameters of the `browser/cdp` notification, in both directions.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserCdpParams {
+    /// Which browser on the host: each one the kernel starts gets a new number, and the host
+    /// answers with the number of the command. Messages of an earlier browser are dropped.
+    pub stream: u64,
+    /// One CDP message as JSON text: a command from the kernel; a response or an event from
+    /// the host.
+    pub data: String,
+}
+
 // ---- Initialization ----
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -264,6 +279,10 @@ pub struct ServerCapabilities {
     /// `mcp/check`, and their notifications (docs/desktop/customize-design.md §6).
     #[serde(default)]
     pub customize: bool,
+    /// `browser/host` and `browser/cdp`: a client can show the browser tools' pages
+    /// (browser-design §8.3).
+    #[serde(default)]
+    pub embedded_browser: bool,
 }
 
 // ---- Sessions ----

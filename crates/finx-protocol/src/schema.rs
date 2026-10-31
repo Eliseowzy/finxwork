@@ -155,8 +155,12 @@ pub fn document() -> Value {
         (method::MCP_PROBE_CANCEL, Some(name::<customize::McpProbeCancelParams>(g)), name::<api::Empty>(g)),
         (method::MCP_LOGIN, Some(name::<customize::McpLoginParams>(g)), name::<customize::McpLoginResult>(g)),
         (method::MCP_LOGOUT, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_HOST, None, name::<api::Empty>(g)),
     ];
-    let client_notifications = [(method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g))];
+    let client_notifications = [
+        (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),
+        (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
+    ];
     let server_notifications = [
         (method::MODELS_CHANGED, name::<api::Empty>(g)),
         (method::CONFIG_CHANGED, name::<customize::ConfigChangedParams>(g)),
@@ -164,6 +168,7 @@ pub fn document() -> Value {
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
+        (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
         (
             method::SESSION_DETACHED,
             name::<api::SessionDetachedParams>(g),

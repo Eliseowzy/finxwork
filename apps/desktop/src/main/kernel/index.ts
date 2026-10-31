@@ -9,6 +9,7 @@ import type { KernelKind, KernelStatusView } from "../../shared/bridge";
 import { testHome } from "../build";
 import { LineCutter } from "../frames";
 import { platform } from "../platform";
+import { startBrowserHost } from "../browser/host";
 import { Supervisor, type KernelStatus } from "./supervisor";
 
 // The windows' connections to finx (desktop-design §3.2, desktop-kernel-
@@ -78,6 +79,11 @@ export function startKernel() {
   });
   supervisor.start();
   app.on("before-quit", () => supervisor?.stop());
+  // The browser tools' pages show in the app (browser-design §8.3).
+  startBrowserHost(async () => {
+    await supervisor!.ready();
+    return supervisor!.current.endpoint;
+  }, trace);
 }
 
 function view(s: KernelStatus): KernelStatusView {

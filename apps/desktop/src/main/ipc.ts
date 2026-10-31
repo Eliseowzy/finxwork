@@ -2,8 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, type Ipc
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
+import type { BrowserPanel, Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
+import { currentTabs, setPanel, showTab } from "./browser/pages";
 import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { platform } from "./platform";
@@ -29,6 +30,17 @@ export function command(c: Command) {
   const win = showMain();
   if (menuState.main) win.webContents.send("command", c);
   else pending = c;
+}
+
+/** A panel as the page reports it: a session id or null, a rectangle of finite numbers or null. */
+function browserPanel(p: unknown): p is BrowserPanel {
+  if (typeof p !== "object" || p === null) return false;
+  const { session, rect } = p as Record<string, unknown>;
+  if (session !== null && typeof session !== "string") return false;
+  if (rect === null) return true;
+  if (typeof rect !== "object" || rect === undefined) return false;
+  const r = rect as Record<string, unknown>;
+  return ["x", "y", "width", "height"].every((k) => typeof r[k] === "number" && Number.isFinite(r[k]));
 }
 
 /** The images an attachment sends as image content; any other file goes by its path. */
@@ -88,6 +100,9 @@ export function registerIPC() {
     }
   });
   ipcMain.on("connect-kernel", (e) => trusted(e) && connectKernel(e.sender));
+  ipcMain.on("browser-panel", (e, panel: unknown) => trusted(e) && browserPanel(panel) && setPanel(e.sender, panel));
+  ipcMain.handle("browser-tabs", (e) => (trusted(e) ? currentTabs() : []));
+  ipcMain.on("browser-show", (e, targetId: unknown) => trusted(e) && typeof targetId === "string" && showTab(targetId));
   ipcMain.handle("kernel-status", (e) => (trusted(e) ? kernelStatus() : null));
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));

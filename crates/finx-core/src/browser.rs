@@ -85,10 +85,19 @@ pub(crate) struct BrowserHandle {
     grants: Arc<Mutex<Vec<SiteGrant>>>,
     /// One browser start at a time for the session.
     starting: tokio::sync::Mutex<()>,
+    /// The main session's id: the desktop app shows the tabs in its window.
+    label: String,
 }
 
 impl BrowserHandle {
-    pub(crate) fn new(pool: Arc<BrowserPool>, settings: BrowserSettings, downloads: PathBuf, roots: Vec<PathBuf>, grants: Vec<SiteGrant>) -> Self {
+    pub(crate) fn new(
+        pool: Arc<BrowserPool>,
+        settings: BrowserSettings,
+        downloads: PathBuf,
+        roots: Vec<PathBuf>,
+        grants: Vec<SiteGrant>,
+        label: String,
+    ) -> Self {
         Self {
             pool,
             settings,
@@ -96,6 +105,7 @@ impl BrowserHandle {
             roots,
             grants: Arc::new(Mutex::new(grants)),
             starting: tokio::sync::Mutex::new(()),
+            label,
         }
     }
 
@@ -198,6 +208,7 @@ async fn browser(ctx: &ToolCtx) -> Result<(Arc<BrowserSession>, Option<&'static 
             downloads: handle.downloads.clone(),
             navigation_timeout: handle.settings.navigation_timeout,
             action_timeout: handle.settings.action_timeout,
+            label: Some(handle.label.clone()),
         },
     ));
     ctx.session_state.insert(session.clone());

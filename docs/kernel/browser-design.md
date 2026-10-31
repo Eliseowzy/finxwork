@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.3 |
+| 版本 | v0.4 |
 | 日期 | 2026-10-31 |
 | 状态 | 草案，待评审 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
@@ -604,13 +604,55 @@ pub trait Backend: Send + Sync {
 
 ### 8.3 桌面内嵌浏览器（二期）
 
-- **显示**：桌面端在会话页旁边用 `WebContentsView` 显示网页，`session` 用独立的 partition。
-- **转发**：主进程对这个视图调用 `webContents.debugger.attach("1.3")`，CDP 命令经内核与桌面端的现有连接转发。新增两个方向相反的消息：
-  - 内核 → 桌面端：`browser/cdp`；
-  - 桌面端 → 内核：`browser/cdp_event`。
-- **方法白名单**（D-192）：主进程只转发 finx-browser 用到的 CDP 方法，名单由 finx-browser 导出、构建时生成，其他方法一律拒绝。内嵌视图和应用自己的页面在同一个 Electron 进程里，不能让一条协议消息做到比浏览器工具更多的事。
-- **归属**：浏览器属于某个会话，其他会话看不到；会话属于哪个桌面窗口，浏览器就显示在哪个窗口里（D-199）。
-- **回退**：桌面端没开、或者走 CLI 时，自动回退到托管浏览器。
+用户在桌面端会话页旁边看着智能体操作网页，也可以直接上手。
+
+#### 8.3.1 连接（D-209）
+
+- **宿主是桌面端主进程**：主进程另开一条到 finx 服务的连接，调用 `browser/host` 声明"这条连接提供内嵌浏览器"。不走窗口那条连接：
+  - `WebContentsView` 和它的 `debugger` 都在主进程里，渲染进程转一手只多一跳；
+  - 一棵无障碍树可能有几 MB，不该经过界面线程；
+  - 窗口连接在主进程里是不解析的透明管道（desktop-design §3.2），保持不变。
+- **消息**：CDP 文本原样装在通知里，两个方向同名：
+  - 内核 → 桌面端：`browser/cdp {data}`，`data` 是一条 CDP 命令；
+  - 桌面端 → 内核：`browser/cdp {data}`，`data` 是一条 CDP 响应或事件。
+- **服务端**：把这条连接接到一条内存里的字节流上，finx-browser 照常在上面建 `Conn`，与 pipe 没有区别（§6.6 留的边界）。
+- **一个服务只有一个宿主**：后连上的宿主替换先前的；宿主断开时，内嵌浏览器失效，持有它的会话下一次调用重新 `acquire`（§6.1）。
+- **鉴权**：沿用内核 socket 的保护（只有同一个用户的进程能连上）。`browser/host` 不放宽任何权限：审批、闸和再核对都在内核，宿主只是执行 CDP。
+
+#### 8.3.2 主进程是一个"浏览器"（D-210）
+
+`webContents.debugger` 只附加一个页面，没有浏览器级的 `Target`、`Browser` 域。所以主进程自己实现 finx-browser 用到的浏览器级方法，页面级命令转给对应页面的 `debugger`：
+
+| 方法 | 主进程的做法 |
+|---|---|
+| `Target.createTarget` | 新建一个 `WebContentsView`（partition `persist:finx-browser`），附加 `debugger`，发 `targetCreated` |
+| `Target.attachToTarget` | 给页面分配一个会话 id，发 `attachedToTarget` |
+| `Target.closeTarget` / `activateTarget` / `getTargetInfo` | 关闭视图 / 在面板里显示它 / 返回 URL 和标题 |
+| `Target.setDiscoverTargets`、`Browser.close` | 记下 / 关闭全部视图 |
+| `Browser.setDownloadBehavior` | 用 `session` 的 `will-download` 存到指定目录，发 `Browser.downloadWillBegin`、`downloadProgress` |
+| 带会话 id 的其他方法 | 白名单内的转给页面的 `debugger.sendCommand`；页面里自动附加的 iframe 会话照样带着会话 id 转发 |
+
+- **白名单**（D-192）：finx-browser 导出 `CDP_METHODS`，测试保证源码里用到的每个方法都在表里；桌面端的 `methods.ts` 由同一张表生成，另一个测试保证两者一致。不在表里的方法返回错误，不转发。
+- **新标签页**：页面的 `window.open` 和 `target=_blank` 不开新窗口，改成新建一个视图，发带 `openerId` 的 `targetCreated`，按 D-205 归 opener 的会话。
+- **后台标签页**：不显示的视图关掉节流（`backgroundThrottling: false`），快照、截图照常能做。
+
+#### 8.3.3 选哪个后端（D-211）
+
+- 配置 `browser.backend = "auto" | "embedded" | "managed"`，默认 `auto`：
+  - `auto`：服务有宿主时用内嵌，否则用托管浏览器；
+  - `embedded`：没有宿主时报错，提示打开桌面端或改用 `managed`；
+  - `managed`：总是托管浏览器。
+- 会话第一次用浏览器时决定，之后不切换；宿主断开后下一次调用重新选择，结果里说明之前的标签页都已关闭。
+- `finx exec` 有自己的浏览器池，没有宿主，所以总是托管浏览器。
+- 项目配置不能设 `backend`（D-178 的同一条理由：不由项目决定用哪个浏览器）。
+
+#### 8.3.4 显示（D-212）
+
+- `Target.createTarget` 额外带 `finxSession`（会话 id；子智能体带主会话的 id），只在内嵌后端上加。主进程据此把标签页放进显示这个会话的窗口。
+- **浏览器面板**：会话页右侧的一栏，与后台任务面板共用位置。会话第一次打开网页时自动展开；顶栏是本会话的标签页和当前网址，可以收起。渲染进程报告面板占的矩形，主进程把当前标签页的视图摆在那里。
+- 不在显示的会话的标签页照常运行，只是不摆进窗口。
+- **用户接手**：用户在面板里直接点、输入即可。智能体下一次调用若页面已变化，§7.4 的再核对会报"页面已变化"。
+- **登录状态**：内嵌浏览器的 cookie 在 `persist:finx-browser` 里，与托管浏览器的用户目录、与应用自己的页面都分开。
 
 ### 8.4 用户自己的 Chrome（三期）
 
@@ -654,6 +696,7 @@ pub trait Backend: Send + Sync {
 ```toml
 [browser]
 enabled = false              # 打开后加入 7 个浏览器工具
+backend = "auto"             # auto | embedded | managed；auto：桌面端连着时用内嵌浏览器（§8.3.3）
 executable = ""              # 留空则自动查找
 profile = "default"          # 用户目录 ~/.finx/browser/profiles/<profile>
 headless = "auto"            # auto | true | false；auto：finx exec 和没有显示器时无界面
@@ -816,6 +859,10 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-199 | 托管浏览器的窗口在内核所在的机器上，没有显示器时无界面，启动时决定；用户直接在窗口里接手，智能体靠执行前再核对发现变化 |
 | D-200 | 用户目录被另一个 finx 进程占用时，改用临时用户目录，并在第一次结果里说明；不加配置项 |
 | D-201 | 导航审批提供"本会话允许打开任何网站"：只放行导航，只能在审批框里主动选择，不能写进配置，界面写明外带数据的风险 |
+| D-209 | 内嵌浏览器的宿主是桌面端主进程自己的一条连接（`browser/host`），CDP 文本装在双向的 `browser/cdp` 通知里；一个服务一个宿主 |
+| D-210 | 主进程实现 finx-browser 用到的浏览器级 `Target`/`Browser` 方法，页面级命令按白名单转给 `webContents.debugger`；白名单由 finx-browser 的 `CDP_METHODS` 生成并有测试保证一致 |
+| D-211 | `browser.backend` 默认 `auto`：有宿主用内嵌，否则托管；会话第一次使用时决定；项目配置不能设 |
+| D-212 | 新标签页带 `finxSession`，显示在该会话所在窗口右侧的浏览器面板里；不显示的标签页照常运行；内嵌浏览器的登录状态在独立的 partition |
 
 ### 待定问题
 

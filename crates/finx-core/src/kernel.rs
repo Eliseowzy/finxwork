@@ -154,6 +154,8 @@ pub struct Kernel {
 
 struct Launch {
     id: String,
+    /// The main session: this one, or a sub-agent's parent. Its window shows the browser.
+    root_id: String,
     location: PathBuf,
     writer: SessionWriter,
     home: FinxHome,
@@ -193,6 +195,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
             session_dir.join("downloads"),
             launch.deps.env.workspace_roots().to_vec(),
             launch.state.site_grants.clone(),
+            launch.root_id.clone(),
         )));
     }
     let session = Arc::new(Session {
@@ -347,8 +350,10 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
     state.base_prompt = child.base_prompt;
     state.mcp_section = child.mcp_section;
     state.skills = child.skills.clone();
+    let root_id = child.header.agent.as_ref().map_or_else(|| child.header.id.clone(), |a| a.root_id.clone());
     let (kernel, session) = launch(Launch {
         id: child.header.id.clone(),
+        root_id,
         location: created.location.clone(),
         writer: created.writer,
         home: child.home,
@@ -497,6 +502,7 @@ impl Kernel {
         state.skills = Arc::from(skills);
         let (kernel, session) = launch(Launch {
             id: id.clone(),
+            root_id: id.clone(),
             location: created.location.clone(),
             writer: created.writer,
             home: opts.home.clone(),
@@ -659,6 +665,7 @@ impl Kernel {
         let overridden = opts.model.is_some() || opts.thinking.is_some() || opts.permission_mode.is_some();
         let (kernel, session) = launch(Launch {
             id: loaded.header.id.clone(),
+            root_id: loaded.header.id.clone(),
             location: loaded.location.clone(),
             writer: loaded.writer,
             home: opts.home.clone(),

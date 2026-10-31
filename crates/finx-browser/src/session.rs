@@ -44,6 +44,8 @@ pub struct SessionOptions {
     pub downloads: PathBuf,
     pub navigation_timeout: Duration,
     pub action_timeout: Duration,
+    /// The finx session whose window shows the tabs, for an embedded browser (§8.3.4).
+    pub label: Option<String>,
 }
 
 /// A page as approved: the tab, the frame, its document and origin. Execution runs only if
@@ -210,7 +212,9 @@ impl BrowserSession {
             inner: options.guard.clone(),
             approved: Mutex::new(HashMap::new()),
         });
-        let owner = browser.router.add_owner(guard.clone(), options.downloads.clone());
+        let owner = browser
+            .router
+            .add_owner(guard.clone(), options.downloads.clone(), options.label.clone());
         let pending_note = Mutex::new(browser.note.clone());
         Self {
             browser,

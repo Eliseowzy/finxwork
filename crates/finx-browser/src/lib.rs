@@ -6,6 +6,7 @@
 pub mod cdp;
 pub mod input;
 pub mod launch;
+pub mod methods;
 pub mod policy;
 pub mod pool;
 pub mod router;
@@ -13,10 +14,13 @@ pub mod session;
 pub mod snapshot;
 
 pub use cdp::CdpError;
+pub use pool::Backend;
 pub use pool::Browser;
 pub use pool::BrowserConfig;
 pub use pool::BrowserPool;
+pub use pool::EmbeddedHost;
 pub use pool::Headless;
+pub use pool::Stream;
 pub use router::NavigationGuard;
 pub use session::BrowserSession;
 pub use session::SessionOptions;

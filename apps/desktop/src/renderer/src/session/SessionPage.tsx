@@ -8,6 +8,7 @@ import { Icon } from "../icons";
 import { layoutOf, setCard } from "../layout";
 import { useStore } from "../store";
 import { Background } from "./Background";
+import { BrowserPanel, useBrowserTabs } from "./Browser";
 import { Chat } from "./Chat";
 import { Inspector } from "./Inspector";
 import { useSession } from "./useSession";
@@ -21,9 +22,17 @@ export function SessionPage({ s }: { s: ListSession }) {
   const view = useSession(s.session_id);
   const agents = view?.agents.length ?? 0;
   const running = view ? runningAgents(view).length : 0;
+  const browserTabs = useBrowserTabs().filter((t) => t.session === s.session_id);
   const background = st.background && agents > 0;
+  // One panel on the right at a time: the background panel when asked for, else the browser.
+  const browser = st.browser && browserTabs.length > 0 && !background;
   const layout = layoutOf(st);
-  const info = layout.card !== "hidden" && !background;
+  const info = layout.card !== "hidden" && !background && !browser;
+  // The first page the session opens brings the browser panel out.
+  const hasTabs = browserTabs.length > 0;
+  useEffect(() => {
+    if (hasTabs) st.set({ browser: true, background: false });
+  }, [hasTabs, s.session_id]);
   // `/context` answered: the card shows, its context section open.
   const asked = view?.asked?.at;
   useEffect(() => {
@@ -34,7 +43,7 @@ export function SessionPage({ s }: { s: ListSession }) {
   // The session whose title the bar is editing; another session's page shows its title.
   const [editing, setEditing] = useState<string | null>(null);
   return (
-    <div className={`spage ${background ? "bgopen" : ""} ${background && !layout.panelFits ? "bgover" : ""}`}>
+    <div className={`spage ${background || browser ? "bgopen" : ""} ${background && !layout.panelFits ? "bgover" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -68,6 +77,18 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
+          {/* The browser panel's button, for a session that has opened pages. */}
+          {hasTabs && (
+            <button
+              className={`tb ${browser ? "on" : ""}`}
+              title={t("browser.title")}
+              aria-label={t("browser.title")}
+              aria-pressed={browser}
+              onClick={() => st.set(browser ? { browser: false } : { browser: true, background: false })}
+            >
+              <Icon name="globe" />
+            </button>
+          )}
           {/* A toolbar button as the sidebar's toggle is, highlighted while the info shows. */}
           <button
             className={`tb ${info ? "on" : ""}`}
@@ -86,6 +107,7 @@ export function SessionPage({ s }: { s: ListSession }) {
         </div>
       </div>
       {view && background && <Background s={s} view={view} />}
+      {browser && <BrowserPanel session={s.session_id} tabs={browserTabs} />}
     </div>
   );
 }

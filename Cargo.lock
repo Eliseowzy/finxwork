@@ -1003,6 +1003,7 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "chrono",
+ "finx-browser",
  "finx-connections",
  "finx-core",
  "finx-llm",
@@ -1019,6 +1020,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+ "url",
  "uuid",
 ]
 

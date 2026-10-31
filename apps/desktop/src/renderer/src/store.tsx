@@ -47,6 +47,8 @@ type UI = {
   background: boolean;
   /** The sub-agent open in the background panel. */
   agent: string | null;
+  /** The embedded browser's panel is shown for a session with tabs, in the same place. */
+  browser: boolean;
   sidebar: boolean;
   /** What shows over the conversation for now, there being no room for it beside it (layout.ts). */
   peek: Peek;
@@ -150,6 +152,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       contextOpen: s.contextOpen ?? true,
       background: false,
       agent: null,
+      browser: true,
       sidebar: s.sidebar ?? true,
       peek: null,
       view: s.view ?? listView(),

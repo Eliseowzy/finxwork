@@ -63,6 +63,8 @@ pub struct McpFile {
 #[serde(deny_unknown_fields)]
 pub struct BrowserFile {
     pub enabled: Option<bool>,
+    /// `auto`, `embedded` or `managed` (§8.3.3).
+    pub backend: Option<String>,
     pub executable: Option<PathBuf>,
     pub profile: Option<String>,
     /// `auto`, `true` or `false`.
@@ -101,6 +103,16 @@ impl BrowserSettings {
             },
             Some(other) => return Err(ConfigError::Invalid(format!("browser.headless must be auto, true or false, got {other}"))),
         };
+        let backend = match file.backend.as_deref() {
+            None | Some("auto") => finx_browser::Backend::Auto,
+            Some("embedded") => finx_browser::Backend::Embedded,
+            Some("managed") => finx_browser::Backend::Managed,
+            Some(other) => {
+                return Err(ConfigError::Invalid(format!(
+                    "browser.backend must be auto, embedded or managed, got \"{other}\""
+                )));
+            }
+        };
         if file.script_enabled == Some(true) {
             return Err(ConfigError::Invalid("browser.script_enabled is not available yet".into()));
         }
@@ -123,6 +135,7 @@ impl BrowserSettings {
         Ok(Self {
             enabled: file.enabled.unwrap_or(false),
             config: finx_browser::BrowserConfig {
+                backend,
                 executable: file.executable.filter(|p| !p.as_os_str().is_empty()),
                 profile,
                 headless,
@@ -789,7 +802,7 @@ fn tighten_browser(table: &mut toml::Table, user: &toml::Table, trusted: bool) -
             .unwrap_or_default()
     };
     let mut dropped = Vec::new();
-    for key in ["executable", "profile"] {
+    for key in ["backend", "executable", "profile"] {
         if browser.remove(key).is_some() {
             dropped.push(format!("browser.{key}"));
         }
@@ -975,12 +988,12 @@ mod tests {
         std::fs::write(
             &user,
             "[browser]\nenabled = true\nheadless = true\nallowed_domains = [\"github.com\", \"example.com\"]\n\
-             denied_domains = [\"evil.test\"]\n[browser.sites]\n\"https://GitHub.com/\" = \"act\"\n\"http://192.168.1.10:8080\" = \"act\"\n",
+             denied_domains = [\"evil.test\"]\nbackend = \"managed\"\n[browser.sites]\n\"https://GitHub.com/\" = \"act\"\n\"http://192.168.1.10:8080\" = \"act\"\n",
         )
         .unwrap();
         std::fs::write(
             &project,
-            "[browser]\nexecutable = \"/tmp/evil\"\nallowed_domains = [\"github.com\", \"other.com\"]\n\
+            "[browser]\nexecutable = \"/tmp/evil\"\nbackend = \"embedded\"\nallowed_domains = [\"github.com\", \"other.com\"]\n\
              denied_domains = [\"ads.test\"]\n[browser.sites]\n\"https://github.com\" = \"deny\"\n\"https://bank.test\" = \"act\"\n",
         )
         .unwrap();
@@ -989,10 +1002,12 @@ mod tests {
         assert_eq!(user_only.config.headless, finx_browser::Headless::On);
         assert_eq!(user_only.policy.site("https://github.com"), Some(SiteLevel::Act), "origins are normalized");
         assert_eq!(user_only.navigation_timeout, Duration::from_secs(30));
+        assert_eq!(user_only.config.backend, finx_browser::Backend::Managed);
 
         let loaded = load(&user, Some(&project), true, &[]).unwrap();
         let browser = loaded.config.browser;
         assert_eq!(browser.config.executable, None, "a project never picks the program");
+        assert_eq!(browser.config.backend, finx_browser::Backend::Managed, "nor the backend");
         assert_eq!(browser.policy.allowed_domains, vec!["github.com"], "allow lists intersect");
         assert_eq!(browser.policy.denied_domains, vec!["ads.test", "evil.test"], "deny lists add up");
         assert_eq!(browser.policy.site("https://github.com"), Some(SiteLevel::Deny));
