@@ -12,6 +12,7 @@
 //   Contents/MacOS/finx                  the kernel, started by the app as finx's service (desktop-kernel-integration §4)
 //   Contents/Resources/app.asar          main, preload and the page
 //   Contents/Resources/kernel.json       the kernel's version and protocol version
+//   Contents/Resources/catalog/skills    the 自定义 page's catalog skills (resources/catalog/skills, checked against src/shared/catalog.ts)
 //   Contents/Resources/Assets.car        the icon (assets/brand/macos/AppIcon.icon, compiled by actool): light and dark, macOS 26 on
 //   Contents/Resources/electron.icns     the icon before macOS 26 (assets/brand/macos/AppIcon-light.icns: the solid mark at 16 and 32 px)
 //
@@ -40,7 +41,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { catalogProblems, catalogSkillsDir } from "./catalog-hash.mjs";
 import { ensureRustTarget, rustTriples } from "./rust-target.mjs";
+import { catalogSkills } from "../src/shared/catalog.ts";
 import { dmgName, feedName, githubReleases, releaseFeed, releaseRepo, releaseURLs, zipName } from "../src/shared/update.ts";
 
 const desktop = path.resolve(import.meta.dirname, "..");
@@ -153,6 +156,10 @@ for (const f of fs.readdirSync(path.join(contents, "Resources"))) {
   if (f.endsWith(".lproj") && !["en.lproj", "zh_CN.lproj"].includes(f)) fs.rmSync(path.join(contents, "Resources", f), { recursive: true });
 }
 fs.copyFileSync(path.join(icons, "Assets.car"), path.join(contents, "Resources/Assets.car"));
+// The 自定义 page's catalog skills, exactly as src/shared/catalog.ts describes them.
+const problems = catalogProblems(catalogSkills);
+if (problems.length) throw new Error(`the catalog's skills differ from src/shared/catalog.ts:\n  ${problems.join("\n  ")}`);
+if (fs.existsSync(catalogSkillsDir)) fs.cpSync(catalogSkillsDir, path.join(contents, "Resources/catalog/skills"), { recursive: true, filter: (f) => path.basename(f) !== ".DS_Store" });
 
 step(`embedding the kernel: finx ${kernelVersion}, protocol ${protocolVersion}`);
 // Helper tools go in Contents/MacOS, next to the app's executable, never in Resources,

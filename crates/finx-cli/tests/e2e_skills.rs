@@ -18,11 +18,13 @@ fn write(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
-/// The user's weekly-report skill with a format reference and a script, a shadowed copy in
-/// another client's directory, a project skill and a broken one.
+/// The user's weekly-report skill with a format reference and a script, a copy in another
+/// app's folder (not read unless `skills.other_apps`), a project skill, one in the project's
+/// `.claude` (off by default) and a broken one.
 fn install_skills(env: &TestEnv, work: &Path) -> PathBuf {
     let user = env.user_home();
-    let skill = user.join(".agents/skills/gen-report");
+    let own = env.home.path().join("skills");
+    let skill = own.join("gen-report");
     write(
         &skill.join("SKILL.md"),
         "---\nname: gen-report\ndescription: >-\n  Generate the weekly report. Use when the user\n  \
@@ -41,7 +43,11 @@ fn install_skills(env: &TestEnv, work: &Path) -> PathBuf {
         &work.join(".agents/skills/lint/SKILL.md"),
         "---\nname: lint\ndescription: Lint rules for this repository.\n---\n",
     );
-    write(&user.join(".agents/skills/broken/SKILL.md"), "no header here\n");
+    write(
+        &work.join(".claude/skills/deploy/SKILL.md"),
+        "---\nname: deploy\ndescription: Deploy this repository.\n---\n",
+    );
+    write(&own.join("broken/SKILL.md"), "no header here\n");
     skill
 }
 
@@ -119,7 +125,7 @@ async fn exec_follows_a_skill_from_the_catalog() {
     assert_eq!(
         std::fs::read_to_string(work.join("report.md")).unwrap(),
         "WEEKLY-REPORT from the skill\n",
-        "the skill in ~/.agents ran, not the shadowed copy"
+        "the user's own skill ran, not the other app's copy"
     );
     assert_eq!(of_type(&events, "task_completed")[0]["last_message"], "skill done");
 
@@ -140,9 +146,10 @@ async fn exec_follows_a_skill_from_the_catalog() {
     );
     assert!(text.contains(&line), "{text}");
     assert!(text.find("<skill name=\"lint\"").unwrap() < text.find("<skill name=\"gen-report\"").unwrap());
-    assert!(!text.contains("Shadowed copy."));
+    assert!(!text.contains("Shadowed copy.") && !text.contains("<skill name=\"deploy\""));
     let names: Vec<&str> = logged["skills"].as_array().unwrap().iter().filter_map(|s| s["name"].as_str()).collect();
-    assert_eq!(names, vec!["lint", "gen-report"]);
+    // The built-in skill is the user's to invoke, never in the catalog.
+    assert_eq!(names, vec!["lint", "gen-report", "skill-creator"]);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -198,12 +205,15 @@ async fn the_skills_command_lists_layers_shadows_and_problems() {
         rows,
         vec![
             row("lint", "project", "active"),
+            row("deploy", "project", "disabled"),
             row("broken", "user", "invalid"),
             row("gen-report", "user", "active"),
-            row("gen-report", "user", "shadowed"),
+            row("skill-creator", "system", "active"),
         ]
     );
-    assert_eq!(report["skills"][3]["detail"], skill.join("SKILL.md").display().to_string());
+    assert_eq!(report["skills"][1]["default_enabled"], false, "the project's .claude is off by default");
+    assert_eq!(report["skills"][0]["default_enabled"], true);
+    assert_eq!(report["not_read"], json!([env.user_home().join(".claude/skills")]));
     assert_eq!(report["catalog"]["listed"], 2);
     assert!(report["catalog"]["tokens"].as_u64().unwrap() > 0);
     assert_eq!(report["catalog"]["budget"], 4000, "2% of the mock model's 200,000-token window");
@@ -214,17 +224,42 @@ async fn the_skills_command_lists_layers_shadows_and_problems() {
     let text = String::from_utf8_lossy(&output.stdout);
     assert!(text.contains("project  lint"), "{text}");
     assert!(text.contains(".agents/skills/lint/SKILL.md"), "{text}");
-    assert!(text.contains("~/.agents/skills/gen-report/SKILL.md"), "{text}");
+    assert!(text.contains("gen-report/SKILL.md"), "{text}");
     assert!(text.contains("2 more shadowed, disabled or broken"), "{text}");
     assert!(text.contains("catalog: 2 skills"), "{text}");
+    assert!(text.contains("not read: ~/.claude/skills (skills.other_apps is off)"), "{text}");
     let output = env.finx_in(&work, &["skills", "--all"]).output().await.unwrap();
     let text = String::from_utf8_lossy(&output.stdout);
-    assert!(text.contains("shadowed by ~/.agents/skills/gen-report/SKILL.md"), "{text}");
+    assert!(text.contains("off by default; finx skills enable .claude/skills/deploy turns it on"), "{text}");
     assert!(text.contains("not loaded: no header"), "{text}");
+
+    // Reading the other apps' folders brings the copy in, behind the user's own.
+    let output = env.finx_in(&work, &["-c", "skills.other_apps=true", "skills", "--all"]).output().await.unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains(&format!("shadowed by {}", skill.join("SKILL.md").display())), "{text}");
+    assert!(!text.contains("not read"), "{text}");
+
+    // Turning the .claude skill on writes opt_in; it then joins the catalog.
+    let output = env.finx_in(&work, &["skills", "enable", ".claude/skills/deploy"]).output().await.unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", String::from_utf8_lossy(&output.stderr));
+    let config = std::fs::read_to_string(env.home.path().join("config.toml")).unwrap();
+    assert!(config.contains("opt_in = [") && config.contains(".claude/skills/deploy"), "{config}");
+    let output = env.finx_in(&work, &["skills"]).output().await.unwrap();
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("project  deploy") && text.contains("catalog: 3 skills"), "{text}");
+    let output = env.finx_in(&work, &["skills", "disable", ".claude/skills/deploy"]).output().await.unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let config = std::fs::read_to_string(env.home.path().join("config.toml")).unwrap();
+    assert!(!config.contains("opt_in") && !config.contains("deploy"), "{config}");
+
+    // The removed setting says what replaced it.
+    let output = env.finx_in(&work, &["-c", "skills.dirs=[\".agents\"]", "skills"]).output().await.unwrap();
+    assert_ne!(output.status.code(), Some(0));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("skills.dirs was removed"));
 
     let output = env.finx_in(&work, &["status", "--json"]).output().await.unwrap();
     let status: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(status["skills"]["active"], 2);
+    assert_eq!(status["skills"]["active"], 3);
     let output = env.finx_in(&work, &["doctor", "--json"]).output().await.unwrap();
     let doctor: Value = serde_json::from_slice(&output.stdout).unwrap();
     let check = doctor["checks"].as_array().unwrap().iter().find(|c| c["name"] == "skills").unwrap().clone();
@@ -276,7 +311,7 @@ async fn exec_loads_only_what_is_mentioned_explicitly() {
     let work = env.workspace("project");
     install_skills(&env, &work);
     write(
-        &env.user_home().join(".agents/skills/commit-style/SKILL.md"),
+        &env.home.path().join("skills/commit-style/SKILL.md"),
         "---\nname: commit-style\ndescription: Commit messages.\n---\nTag it.\n",
     );
     let (code, events, _) = exec_approving(

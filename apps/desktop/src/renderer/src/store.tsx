@@ -13,7 +13,18 @@ import type { Peek } from "./layout";
 // open sheet, toast). A session's conversation is its page's
 // (session/useSession.ts).
 
-export type Selection = { kind: "new" } | { kind: "session"; id: string };
+export type Selection = { kind: "new" } | { kind: "session"; id: string } | { kind: "customize" };
+
+/**
+ * Where the 自定义 page is (customize-design §10.1): skills or connectors, the person's own or
+ * the catalog, and a card's own page when one is open. A card's id is a skill's path or a
+ * server's name; with `catalog`, an entry of the catalog not added yet.
+ */
+export type CustomizeView = {
+  tab: "skills" | "connectors";
+  view: "mine" | "discover";
+  detail: { kind: "skill" | "connector"; id: string; catalog?: boolean; tab: string } | null;
+};
 
 export type Sheet = { kind: "confirm"; title: string; message: string; button: string; cancel?: string; run: () => Promise<unknown>; done?: string };
 
@@ -50,6 +61,9 @@ type UI = {
   sheet: Sheet | null;
   toast: Toast | null;
   draft: Draft;
+  customize: CustomizeView;
+  /** Text the new session's composer starts with, taken once (自定义 › 在对话中使用). */
+  prefill: string | null;
 };
 
 const noModels: ModelsListResult = { models: [], providers: [] };
@@ -102,7 +116,7 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Saved = Pick<UI, "selection" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft> };
+type Saved = Pick<UI, "selection" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
 
 function saved(): Partial<Saved> {
   if (location.hash.startsWith("#settings")) return {};
@@ -146,6 +160,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       sheet: null,
       toast: null,
       draft: { cwd: null, model: null, thinking: null, permission: "manual", ...s.draft },
+      customize: s.customize ?? { tab: "skills", view: "discover", detail: null },
+      prefill: null,
     };
   });
 
@@ -216,13 +232,13 @@ export function FinxProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (location.hash.startsWith("#settings")) return;
-    const v: Saved = { selection: ui.selection, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft };
+    const v: Saved = { selection: ui.selection, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
     try {
       localStorage.setItem("main-view", JSON.stringify(v));
     } catch {
       // The window's layout is a convenience; without storage it just doesn't stick.
     }
-  }, [ui.selection, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft]);
+  }, [ui.selection, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);

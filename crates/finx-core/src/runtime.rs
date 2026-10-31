@@ -8,6 +8,7 @@ use finx_llm::RegistryOptions;
 use finx_llm::RetryPolicy;
 use finx_llm::Timeouts;
 use finx_protocol::McpServerConfig;
+use finx_protocol::customize::ConfigLayer;
 use finx_tools::BashTool;
 use finx_tools::LocalEnvironment;
 use finx_tools::RegistryError;
@@ -62,6 +63,11 @@ pub struct Workspace {
     pub mcp_servers: Vec<McpServerConfig>,
     /// Where each server is defined: configuration layers, or ".mcp.json".
     pub mcp_sources: BTreeMap<String, Vec<String>>,
+    /// The user's own configuration for this project (`~/.finx/projects/<key>/config.toml`),
+    /// whether or not it exists; none for a session without a project.
+    pub user_project_file: Option<PathBuf>,
+    /// The layer that last set each configuration key.
+    pub origins: BTreeMap<String, ConfigLayer>,
 }
 
 impl Workspace {
@@ -80,15 +86,29 @@ impl Workspace {
         let project_dir = project_root.clone().unwrap_or_else(|| cwd.clone());
         let trusted = instructions::is_trusted(home, &project_dir);
         let project_config = project_dir.join(".finx").join("config.toml");
-        let loaded = config::load(&home.config_file(), Some(&project_config), trusted, overrides)?;
+        let user_project_file = (!home.is_chat_dir(&cwd)).then(|| home.user_project_config(&project_dir));
+        let files = config::LayerFiles {
+            user: &home.config_file(),
+            project: Some(&project_config),
+            user_project: user_project_file.as_deref(),
+            project_root: Some(&project_dir),
+        };
+        let loaded = config::load_layers(&files, trusted, overrides)?;
         let mut warnings = loaded.warnings;
-        let config = loaded.config;
+        let mut config = loaded.config;
+        config.mcp.cache_dir = Some(home.mcp_cache_dir());
+        config.mcp.finx_home = Some(home.root().to_path_buf());
         let mut mcp_sources = loaded.mcp_sources;
+        let origins = loaded.origins;
         let mcp_servers = if config.mcp.enabled {
             let project_json = project_mcp_json(&config, &project_dir, trusted, &mut warnings);
-            // `.mcp.json` only adds servers the configuration does not name.
+            // `.mcp.json` adds the servers the configuration does not define; the
+            // configuration's settings for one of them still apply.
             for server in &project_json {
-                mcp_sources.entry(server.name.clone()).or_insert_with(|| vec![".mcp.json".to_string()]);
+                let configured = config.mcp_servers.iter().find(|s| s.name == server.name);
+                if configured.is_none_or(mcp::is_settings_only) {
+                    mcp_sources.entry(server.name.clone()).or_default().insert(0, ".mcp.json".to_string());
+                }
             }
             let (servers, problems) = mcp::merge_servers(&config.mcp_servers, project_json, &[]);
             warnings.extend(problems);
@@ -104,6 +124,8 @@ impl Workspace {
             warnings,
             mcp_servers,
             mcp_sources,
+            user_project_file,
+            origins,
         })
     }
 

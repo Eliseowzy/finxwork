@@ -16,7 +16,7 @@ use rustls::pki_types::UnixTime;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-pub(crate) fn client_config() -> Result<rustls::ClientConfig, rustls::Error> {
+pub fn client_config() -> Result<rustls::ClientConfig, rustls::Error> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = Arc::new(LazyVerifier {
         provider: provider.clone(),

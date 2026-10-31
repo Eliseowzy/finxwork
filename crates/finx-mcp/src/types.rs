@@ -32,6 +32,7 @@ pub struct ServerCapabilities {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Implementation {
     #[serde(default)]
     pub name: String,
@@ -39,6 +40,11 @@ pub struct Implementation {
     pub version: String,
     #[serde(default)]
     pub title: Option<String>,
+    /// The server's icons (2025-11-25); entries that are not icons are dropped.
+    #[serde(default, deserialize_with = "crate::icon::lenient_icons")]
+    pub icons: Vec<crate::icon::IconSpec>,
+    #[serde(default)]
+    pub website_url: Option<String>,
 }
 
 /// One entry of `tools/list`.

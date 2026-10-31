@@ -61,6 +61,12 @@ pub fn get(provider: &str) -> Option<String> {
     key
 }
 
+/// Drops the cached value of `provider`, so the next [`get`] reads the store again: another
+/// process may have changed it.
+pub fn forget(provider: &str) {
+    CACHE.lock().remove(provider);
+}
+
 pub fn set(provider: &str, key: &str) -> Result<(), String> {
     check_provider(provider)?;
     let key = key.trim();

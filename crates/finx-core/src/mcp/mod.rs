@@ -5,6 +5,8 @@
 //! so the tool list and the system prompt never change during a session. Tools of direct
 //! servers (and a deferred server's `direct_tools`) go into the tool list.
 
+pub mod cache;
+pub mod views;
 pub(crate) mod tools;
 
 use finx_mcp::McpServer;
@@ -40,6 +42,10 @@ const CATALOG_LIMIT: usize = 4096;
 const DESCRIPTION_LIMIT: usize = 250;
 /// Longest server instructions shown to the model, in bytes.
 pub(crate) const INSTRUCTIONS_LIMIT: usize = 16 * 1024;
+
+/// finx's OAuth client metadata document (mcp-design §13.8.3, Q-119). `None` until the
+/// address is published: sign-ins then use dynamic registration or the user's own client.
+pub const CLIENT_METADATA_URL: Option<&str> = None;
 
 const CATALOG_INTRO: &str = "Tools of these MCP servers are not in your tool list. Find them with tool_search, then run them with call_tool.";
 
@@ -98,6 +104,11 @@ impl McpManager {
         }
         let events: Arc<Mutex<Option<Arc<Emitter>>>> = Arc::new(Mutex::new(None));
         let sink = events.clone();
+        // Ready or failed: the result goes to the cache the 自定义 page reads.
+        let cache = settings.cache_dir.clone().map(|dir| (dir, project_root.clone().unwrap_or_else(|| cwd.clone())));
+        // Weak: each server holds this callback, and must still go away with the session.
+        let made: Arc<std::sync::OnceLock<Vec<std::sync::Weak<McpServer>>>> = Arc::new(std::sync::OnceLock::new());
+        let made_for_status = made.clone();
         let on_status = Arc::new(move |server: &str, status: &ServerStatus| {
             if let Some(emitter) = sink.lock().as_ref() {
                 emitter.emit(EventMsg::McpServerStatus {
@@ -108,6 +119,17 @@ impl McpManager {
                     elapsed_ms: status.elapsed_ms,
                 });
             }
+            if let Some((dir, workspace)) = &cache
+                && matches!(status.state, McpServerState::Ready | McpServerState::Failed | McpServerState::NeedsLogin)
+                && let Some(found) = made_for_status.get().and_then(|all| all.iter().filter_map(std::sync::Weak::upgrade).find(|s| s.name() == server))
+            {
+                let (dir, workspace, status) = (dir.clone(), workspace.clone(), status.clone());
+                let write = move || record(&dir, &found, &workspace, &status, true);
+                match tokio::runtime::Handle::try_current() {
+                    Ok(handle) => drop(handle.spawn_blocking(write)),
+                    Err(_) => write(),
+                }
+            }
         });
         let ctx = ServerContext {
             http,
@@ -115,10 +137,12 @@ impl McpManager {
             cwd,
             project_root,
             on_status: Some(on_status),
+            oauth: settings.finx_home.clone().map(|finx_home| finx_mcp::oauth::OAuthPaths { finx_home }),
         };
         configs.sort_by(|a, b| a.name.cmp(&b.name));
         let exposure = configs.iter().map(|c| c.exposure.unwrap_or(settings.exposure)).collect();
-        let servers = configs.into_iter().map(|c| McpServer::new(c, ctx.clone())).collect();
+        let servers: Vec<Arc<McpServer>> = configs.into_iter().map(|c| McpServer::new(c, ctx.clone())).collect();
+        let _ = made.set(servers.iter().map(Arc::downgrade).collect());
         Some(Arc::new(McpManager {
             servers,
             exposure,
@@ -342,7 +366,22 @@ impl McpManager {
     }
 }
 
-/// What connecting to one server found, for `finx mcp list --check`.
+/// Writes a server's last connection to the cache.
+fn record(dir: &Path, server: &McpServer, workspace: &Path, status: &ServerStatus, throttle: bool) {
+    let tools = server.tools();
+    let outcome = cache::Outcome {
+        ok: status.state == McpServerState::Ready,
+        error: status.error.clone(),
+        elapsed_ms: status.elapsed_ms,
+        instructions: server.instructions(),
+        tools: tools.iter().map(|t| (t.name.as_str(), t.title.as_deref(), t.description.as_deref())).collect(),
+    };
+    if let Err(err) = cache::write(dir, server.config(), workspace, outcome, throttle) {
+        tracing::debug!(server = server.name(), %err, "cannot write the MCP cache");
+    }
+}
+
+/// What connecting to one server found, for `finx mcp list --check` and `mcp/check`.
 #[derive(Debug, Clone)]
 pub struct ServerCheck {
     pub name: String,
@@ -351,22 +390,32 @@ pub struct ServerCheck {
     pub elapsed_ms: Option<u64>,
     /// Qualified names of the tools it offers, after filtering.
     pub tools: Vec<String>,
+    /// Every tool the server lists, as the page shows them.
+    pub summaries: Vec<finx_protocol::customize::McpToolSummary>,
+    /// What the server said about itself in the handshake.
+    pub info: Option<finx_mcp::types::Implementation>,
 }
 
 /// Connects to every enabled server in `configs` at once, waits until each is ready or has
-/// failed, then disconnects.
+/// failed, then disconnects. With `cache_dir`, each result is written to the cache.
 pub async fn check_servers(
     configs: Vec<McpServerConfig>,
     http: Option<reqwest::Client>,
     roots: Vec<PathBuf>,
     cwd: PathBuf,
     project_root: Option<PathBuf>,
+    cache_dir: Option<PathBuf>,
+    finx_home: Option<PathBuf>,
 ) -> Vec<ServerCheck> {
+    let workspace = project_root.clone().unwrap_or_else(|| cwd.clone());
     let settings = McpSettings {
         enabled: true,
         project_json: false,
         startup_wait: Duration::ZERO,
         exposure: McpExposure::Deferred,
+        cache_dir: None,
+        finx_home,
+        client_metadata_url: None,
     };
     let Some(manager) = McpManager::new(configs, &settings, http, roots, cwd, project_root) else {
         return Vec::new();
@@ -385,8 +434,21 @@ pub async fn check_servers(
         .iter()
         .map(|server| {
             let status = server.status();
+            if let Some(dir) = &cache_dir {
+                record(dir, server, &workspace, &status, false);
+            }
             ServerCheck {
+                summaries: server
+                    .tools()
+                    .iter()
+                    .map(|t| finx_protocol::customize::McpToolSummary {
+                        name: t.name.clone(),
+                        title: t.title.clone(),
+                        description: t.description.as_deref().map(|d| cap(d.lines().next().unwrap_or(d), 300)),
+                    })
+                    .collect(),
                 name: server.name().to_string(),
+                info: server.info(),
                 state: status.state,
                 error: status.error,
                 elapsed_ms: status.elapsed_ms,
@@ -535,10 +597,27 @@ pub fn parse_mcp_json(text: &str, source: &Path) -> Result<(Vec<McpServerConfig>
     Ok((out, warnings))
 }
 
+/// Says neither how to start the server nor where it is: settings for a server defined
+/// elsewhere, such as turning it off for one project.
+pub fn is_settings_only(server: &McpServerConfig) -> bool {
+    server.command.is_none() && server.url.is_none()
+}
+
+/// `base` with the settings `over` sets.
+fn overlay(base: &McpServerConfig, over: &McpServerConfig) -> McpServerConfig {
+    let (Ok(Value::Object(mut merged)), Ok(Value::Object(set))) = (serde_json::to_value(base), serde_json::to_value(over)) else {
+        return base.clone();
+    };
+    merged.extend(set);
+    serde_json::from_value(Value::Object(merged)).unwrap_or_else(|_| base.clone())
+}
+
 /// The servers a session uses: `configured` (all configuration layers merged), plus the
 /// `.mcp.json` servers whose names are not configured, then `extra` (command line, clients)
-/// replacing servers of the same name. Invalid servers are dropped, and the warnings say
-/// why; disabled ones are kept, unchecked, and not started.
+/// replacing servers of the same name. A configured entry that only changes settings (it
+/// says neither how to start the server nor where it is) applies to the `.mcp.json` server
+/// of its name. Invalid servers are dropped, and the warnings say why; disabled ones are
+/// kept, unchecked, and not started.
 pub fn merge_servers(
     configured: &[McpServerConfig],
     project_json: Vec<McpServerConfig>,
@@ -549,7 +628,13 @@ pub fn merge_servers(
         by_name.insert(server.name.clone(), server.clone());
     }
     for server in project_json {
-        by_name.entry(server.name.clone()).or_insert(server);
+        match by_name.get_mut(&server.name) {
+            Some(settings) if is_settings_only(settings) => *settings = overlay(&server, settings),
+            Some(_) => {}
+            None => {
+                by_name.insert(server.name.clone(), server);
+            }
+        }
     }
     for server in extra {
         by_name.insert(server.name.clone(), server.clone());
@@ -559,8 +644,11 @@ pub fn merge_servers(
     let mut out = Vec::new();
     for (name, server) in by_name {
         // Kept for listing; not checked, since turning a server off may leave it incomplete.
+        // Turning off a server that is not here (an untrusted project's) leaves nothing.
         if !server.is_enabled() {
-            out.push(server);
+            if !is_settings_only(&server) {
+                out.push(server);
+            }
             continue;
         }
         if let Err(problem) = server.validate() {
@@ -684,7 +772,7 @@ impl crate::session::Session {
                         && match s.status().state {
                             McpServerState::Ready => false,
                             McpServerState::Starting => mcp.waits_for(*i),
-                            McpServerState::Failed | McpServerState::Closed => true,
+                            McpServerState::Failed | McpServerState::NeedsLogin | McpServerState::Closed => true,
                         }
                 })
                 .map(|(_, s)| {
@@ -710,7 +798,7 @@ impl crate::session::Session {
             let required: Vec<(String, String)> = mcp
                 .servers()
                 .iter()
-                .filter(|s| s.config().required && s.status().state == McpServerState::Failed)
+                .filter(|s| s.config().required && matches!(s.status().state, McpServerState::Failed | McpServerState::NeedsLogin))
                 .map(|s| (s.name().to_string(), s.status().error.unwrap_or_default()))
                 .collect();
             if !required.is_empty() {
@@ -746,6 +834,9 @@ mod tests {
             project_json: false,
             startup_wait: Duration::ZERO,
             exposure: McpExposure::Deferred,
+            cache_dir: None,
+            finx_home: None,
+            client_metadata_url: None,
         };
         let server = McpServerConfig {
             name: "docs".into(),
@@ -757,6 +848,10 @@ mod tests {
         let with = base_tools(&tools, Some(&manager), &shown);
         assert!(!Arc::ptr_eq(&with, &tools));
         assert!(with.get("tool_search").is_some() && with.get("call_tool").is_some());
+        // The servers go away with the session: the status callback does not keep them.
+        let servers: Vec<_> = manager.servers.iter().map(Arc::downgrade).collect();
+        drop((with, manager));
+        assert!(servers.iter().all(|s| s.upgrade().is_none()));
     }
 
     #[test]
@@ -815,5 +910,20 @@ mod tests {
             servers.iter().map(|s| (s.name.as_str(), s.command.as_deref().unwrap(), s.is_enabled())).collect();
         assert_eq!(names, vec![("a", "config-a", true), ("b", "x", false), ("c", "json-c", true), ("d-x", "extra", true)]);
         assert_eq!(warnings.len(), 2, "{warnings:?}");
+    }
+
+    #[test]
+    fn settings_apply_to_the_mcp_json_server_of_their_name() {
+        let off = |name: &str| McpServerConfig { name: name.into(), enabled: Some(false), ..Default::default() };
+        let json = vec![McpServerConfig {
+            name: "docs".into(),
+            command: Some("docs-mcp".into()),
+            args: vec!["--stdio".into()],
+            ..Default::default()
+        }];
+        let (servers, warnings) = merge_servers(&[off("docs"), off("gone")], json, &[]);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(servers.len(), 1, "turning off a server that is not here leaves nothing");
+        assert_eq!((servers[0].command.as_deref(), servers[0].args.len(), servers[0].is_enabled()), (Some("docs-mcp"), 1, false));
     }
 }

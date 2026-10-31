@@ -1,11 +1,16 @@
-//! MCP client for finx: connects to MCP servers over stdio or Streamable HTTP and offers their
-//! tools as finx tools. It knows nothing about sessions; the kernel decides which servers to
-//! start and how their tools reach the model.
+//! MCP client for finx: connects to MCP servers over stdio, Streamable HTTP or the older
+//! HTTP+SSE, signs in to remote ones with OAuth, checks a server before it is added, and offers
+//! their tools as finx tools. It knows nothing about sessions; the kernel decides which servers
+//! to start and how their tools reach the model.
 
 pub mod client;
 pub mod content;
 pub mod env;
+pub mod icon;
+pub mod identity;
 pub mod naming;
+pub mod oauth;
+pub mod probe;
 pub mod schema;
 pub mod search;
 pub mod server;
@@ -39,8 +44,11 @@ pub enum McpError {
     Closed(String),
     #[error("{0}")]
     Protocol(String),
-    #[error("the server requires authorization (HTTP 401); finx does not sign in to MCP servers yet")]
+    #[error("the server requires authorization (HTTP 401)")]
     AuthRequired,
+    /// Signs in with OAuth and has no usable token; the text says how to sign in.
+    #[error("{0}")]
+    NeedsLogin(String),
     #[error("the server ended the session (HTTP 404)")]
     SessionExpired,
     /// The server cannot take calls now; the reason says why.

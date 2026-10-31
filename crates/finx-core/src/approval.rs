@@ -240,7 +240,7 @@ fn protected_operand(words: &[String], cwds: &Cwds, view: &SessionView, home: Op
                 .find_map(|cwd| protected::protected(&rules::resolve_in(cwd, operand, home), view)),
             Cwds::Unknown if anchored => protected::protected(&rules::resolve_in(Path::new("/"), operand, home), view),
             // Without the directory, only the names in the path itself can be judged.
-            Cwds::Unknown => protected::protected_name(Path::new(operand), &view.skill_dirs),
+            Cwds::Unknown => protected::protected_name(Path::new(operand)),
         };
         if found.is_some() {
             return found;
@@ -372,7 +372,6 @@ mod tests {
             env: Arc::new(LocalEnvironment::new(dir.to_path_buf())),
             data_dir: canonical_lossy(&dir.join("finx-home")),
             skill_roots: Arc::from([]),
-            skill_dirs: Arc::from([]),
         }
     }
 

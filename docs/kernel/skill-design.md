@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.5 |
-| 日期 | 2026-10-29 |
-| 状态 | 已定稿；一期、二期、2d（任意位置提及与桌面端输入框，§6.3）已实现，真实模型验收通过（§13.1–§13.3）；三期待实施 |
+| 版本 | v1.6 |
+| 日期 | 2026-10-31 |
+| 状态 | 已定稿；一期、二期、2d（任意位置提及与桌面端输入框，§6.3）已实现，真实模型验收通过（§13.1–§13.3）；2e（技能来源收敛，§4.1、§4.4、§10，D-170–D-177）已实现，待提交（§13.4）；三期待实施 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§7.6 上下文压缩、§10 配置、§11.5 受保护路径；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
 
 ## 方案摘要
@@ -13,14 +13,16 @@
 - **不加工具**：
   - 会话启动时扫描所有位置，把可用 Skill 的名字、描述和 SKILL.md 的路径写进系统提示词里的 `<available_skills>` 段。
   - 模型判断任务与某个 Skill 匹配时，用 read 读它的 SKILL.md，再按其中的指引读同目录的文件、用 bash 运行脚本。
-- **从哪里加载**：三层，每层依次看 `.finx/skills`、`.agents/skills`、`.claude/skills`：
-  - 项目层：从 cwd 到项目根的每一级目录；
-  - 用户层：`~/.finx`（`FINX_HOME`）、`~/.agents`、`~/.claude`；
-  - 配置里列出的额外路径。
+- **从哪里加载**（2e，D-170–D-172）：项目里用共享标准，用户级只认 finx 自己的目录。
+  - 项目层：从 cwd 到项目根的每一级目录，看 `.agents/skills`（默认启用）和 `.claude/skills`（列出，默认不启用）；不读项目里的 `.finx/skills`；主目录本身不算项目层。
+  - 用户层：只读 `~/.finx/skills`（`FINX_HOME`）。`~/.agents/skills`、`~/.claude/skills` 是本机其他应用的目录，默认不读，由 `skills.other_apps` 打开。
+  - 内置 Skill 和配置里列出的额外路径。
+  - `.finx` 只放 finx 独有、没有共享标准的东西：项目配置 `.finx/config.toml` 和数据目录 `~/.finx`。
+- **默认不启用的 Skill**（D-173、D-174）：在列表里、开关是关着的，不进清单，也不能提及；用户逐个打开，记在 `skills.opt_in`。它不参与同名先到先得。
 - **同名时谁生效**：离当前工作越近越优先，先找到的生效。
   - 项目层优先于用户层，用户层优先于额外路径；
   - 项目层里，子目录优先于项目根；
-  - 同一位置，`.finx` 优先于 `.agents`，`.agents` 优先于 `.claude`。
+  - 同一位置，`.agents` 优先于 `.claude`。
   - 被遮蔽的 Skill 不进清单，`finx skills` 里能看到。
 - **清单放在哪**：
   - 系统提示词里，指令段之后、environment 之前，随系统提示词一起冻结；
@@ -40,7 +42,7 @@
 - **压缩（二期）**：用过的 Skill 在压缩后重新附上正文，不会只剩摘要里的一句话。
 - **子智能体**：系统提示词与父相同，自然拥有同一份清单。
 - **开关**：默认开启，`skills.enabled = false` 关闭。
-- **实施**：分三期。一期做发现、解析、清单注入和 `finx skills`（§13.1）；二期做显式调用、压缩保留、`skills/list` 和 ACP 的命令（§13.2）；2d 把显式调用改成任意位置的 `/skill:名字`，桌面端输入框换成 Lexical（§13.3）。都已完成。
+- **实施**：分三期。一期做发现、解析、清单注入和 `finx skills`（§13.1）；二期做显式调用、压缩保留、`skills/list` 和 ACP 的命令（§13.2）；2d 把显式调用改成任意位置的 `/skill:名字`，桌面端输入框换成 Lexical（§13.3）。都已完成。2e 收敛技能来源（§13.4），内核、命令行、协议和桌面端一次改完。
 
 ## 目录
 
@@ -68,7 +70,7 @@
 ## 0. 阅读说明
 
 - **章节引用**：§x 指本文；"总方案 §x"指 technical-design.md；"协议方案 §x"指 protocol-design.md；"子智能体方案 §x"指 subagent-design.md；"桌面端方案 §x"指 desktop-design.md。后两份还在各自的分支上。
-- **编号**：决策 D-60–D-89，待定问题 Q-60–Q-68。D-60–D-89 与 Q-60–Q-89 留给本文，不与总方案、协议方案、子智能体方案和 MCP 方案冲突。
+- **编号**：决策 D-60–D-89、D-170–D-177，待定问题 Q-60–Q-69。D-60–D-89、D-170–D-179 与 Q-60–Q-89 留给本文，不与总方案（服务性能用 D-90 起）、协议方案、子智能体方案、MCP 方案、模型目录方案和自定义页方案冲突。
 
 变更记录：
 
@@ -80,6 +82,7 @@
 | v1.3 | 2026-10-29 | 二期实现，DeepSeek 真实模型验收通过（§13.2）。按实现和验收修正：展开块不带 SKILL.md 的路径，否则模型会照清单的说明再读一遍（§6.2、附录 A.2，D-79）；输入的 `/compact` 总是作为一个任务运行，没有可压缩的内容时发 warning 并结束（§6.2）；文件已删除的在用 Skill 沿用上次保留的副本，放不下的跳过、后面较小的仍可放入，`compaction_completed` 带 `kept_skills`（§7.2）；`skills/list` 与 `finx skills --json` 共用一个结果类型，会话形式按当前文件描述、名字和可见性按会话冻结（§11.1、§11.4，D-80）；ACP 在 `session/new`、`load`、`resume` 的应答之后发送命令（§11.5，D-81）；代码落点与测试与实现对应（§12、§14）。新增决策 D-79–D-81 |
 | v1.4 | 2026-10-29 | 2d 方案（§6.3、§13）：Skill 的提及改写成带命名空间的 `/skill:名字`，可以在任意位置、可以有多个，二期的 `/名字` 不再表示 Skill，内核不再从普通的词里猜，也不再有与内置命令重名的问题；用户的话原样记录，Skill 的正文作为单独的文字项放在前面；意图只由文字表达，协议不加标记字段；识别规则内核与桌面端共用一套；反引号转义，写错名字发 warning；事件和历史的 `skill` 换成 `skills`；桌面端输入框改用 Lexical。新增决策 D-82–D-88 |
 | v1.5 | 2026-10-29 | 2d 实现，DeepSeek 真实模型验收通过（§13.3）。按实现和验收修正：清单的说明句加上条件，对话里已经有某个 Skill 的 `<skill>` 块时不必再读它的 SKILL.md（§5.2、附录 A.1，D-89）；组成给模型的消息在 `context::entry_message`（§6.3.4）；桌面端输入框的标签用 DecoratorNode，正在输入的提及等光标离开再变成标签，菜单只在有匹配的项时打开（§6.3.7）；`finx skills --json` 与 `skills/list {cwd}` 都带 `commands`（§11.1、§11.4）；附录 A.2 改为 2d 的块，A.4 补上 2d 的 warning；代码落点与测试与实现对应（§12、§14）；桌面端方案里 Skill 这一项改为 P13（与子智能体的 P12 重号）。新增决策 D-89 |
+| v1.6 | 2026-10-31 | 2e 方案：收敛技能来源。原来项目层和用户层都读 `.finx`、`.agents`、`.claude` 三个目录名，开发机上 39 个生效的 Skill 全部来自其他应用，清单约 8,300 token。现在项目里用共享标准 `.agents/skills`，`.claude/skills` 列出但默认不启用，不再读项目里的 `.finx/skills`；用户层只读 `~/.finx/skills`，其他应用的用户目录由 `skills.other_apps` 打开；主目录本身不算项目层；新增 `skills.opt_in`，删除 `skills.dirs`；SkillEntry 新增 `default_enabled`。改写 §1.1 的 G1、§4.1、§4.2、§4.4、§8.3、§10、§11.1 和附录 B.1，新增 §13.4。新增决策 D-170–D-177 和 Q-69，Q-68 由 D-171 解决 |
 - **术语**：沿用总方案 §2，新增的如下。
 
 | 术语 | 定义 |
@@ -88,8 +91,9 @@
 | SKILL.md | Skill 的入口文件：`---` 包住的 YAML 头部，加 Markdown 正文 |
 | 头部 | SKILL.md 开头的 YAML 部分，至少有 `description` |
 | Skill 目录 | SKILL.md 所在的目录。Skill 里的相对路径都相对它 |
-| Skill 根 | 扫描的起点，例如 `~/.agents/skills`。一个根下可以有很多 Skill |
+| Skill 根 | 扫描的起点，例如 `~/.finx/skills`。一个根下可以有很多 Skill |
 | 层 | Skill 根的来源：项目层、用户层、额外路径。同名时按层和位置决定优先级（§4.2） |
+| 默认启用 | 用户没有打开或关掉时，Skill 是否可用。由所在的位置决定（§4.1）；默认不启用的 Skill 在列表里，但不进清单 |
 | 清单 | 系统提示词里的 `<available_skills>` 段，列出可用 Skill 的名字、描述和路径 |
 | 激活 | Skill 的正文进入上下文：模型用 read 读取（模型激活），或用户用 `/skill:名字` 提及（显式调用；二期的写法是开头的 `/名字`） |
 | 遮蔽 | 同名的 Skill 中，优先级较低的那个不生效 |
@@ -100,7 +104,7 @@
 
 | 编号 | 目标 |
 |---|---|
-| G1 | 兼容开放规范：按规范写的 Skill 不用修改就能使用；常见客户端目录里已经装好的 Skill 直接可用 |
+| G1 | 兼容开放规范：按规范写的 Skill 不用修改就能使用；项目里用规范的共享位置 `.agents/skills`，不另立 finx 自己的目录标准；本机其他应用装的 Skill 不会自己进来（2e） |
 | G2 | 不增加工具：激活只依靠已有的 read 和 bash |
 | G3 | 结果确定：同一组文件，任何时候加载的结果和生成的清单都相同；被遮蔽、被停用、加载失败的原因都查得到 |
 | G4 | 不破坏缓存：清单放进冻结的系统提示词，会话内不变；同一项目的不同会话，系统提示词的前缀尽量相同 |
@@ -114,6 +118,8 @@
 - **内核负责发现和公布，模型负责判断**：内核不做关键词匹配，也不替模型挑选 Skill。
 - **宽松加载，诊断明确**：只要还能用就加载，问题写进诊断；只有缺少描述、头部无法解析的才不加载。
 - **复用已有机制**：项目根、AGENTS.md 的逐级查找、受保护路径、系统提示词冻结、压缩检查点，都沿用总方案的做法。
+- **项目里用共享标准，`.finx` 只放 finx 独有的东西**（2e）：规则用 `AGENTS.md`，MCP 读 `.mcp.json`，Skill 用 `.agents/skills`。`.finx` 只放没有共享标准的东西：项目配置 `.finx/config.toml` 和数据目录 `~/.finx`。
+- **加载要经过用户同意**（2e）：放进 finx 自己的目录、仓库的共享目录、配置里的路径，就算同意了；其他应用的目录要用户自己打开。
 
 ### 1.3 本期不做
 
@@ -208,51 +214,54 @@ to get the text.
 
 ## 4. 发现与优先级
 
-### 4.1 三层位置（D-61）
+### 4.1 位置与默认启用（D-61，2e 改为 D-170–D-173）
 
-| 层 | 位置 | 说明 |
-|---|---|---|
-| 项目层 | 从 cwd 到项目根的每一级目录 D：`D/.finx/skills`、`D/.agents/skills`、`D/.claude/skills` | 项目根同总方案 §7.3，向上找 `.git`；找不到项目根时只看 cwd |
-| 用户层 | `$FINX_HOME/skills`（默认 `~/.finx/skills`）、`~/.agents/skills`、`~/.claude/skills` | 对所有项目生效 |
-| 额外路径 | 配置项 `skills.paths` 列出的目录 | 可以是一个 Skill 根，也可以直接是一个 Skill 目录 |
+| 层 | 位置 | 默认 | 说明 |
+|---|---|---|---|
+| 项目层 | 从 cwd 到项目根的每一级目录 D：`D/.agents/skills` | 启用 | 开放规范推荐的共享位置，仓库的人维护，给所有在这里工作的智能体用 |
+| 项目层 | 同上：`D/.claude/skills` | **不启用** | 列出，用户逐个打开（§4.4） |
+| 用户层 | `$FINX_HOME/skills`（默认 `~/.finx/skills`） | 启用 | 上传、从目录安装、在对话里创建的 Skill 都在这里；内置 Skill 在它的 `.system` 下 |
+| 用户层 | `~/.agents/skills`、`~/.claude/skills` | **不读** | 本机其他应用的目录，`skills.other_apps = true` 时才读，读进来的默认启用 |
+| 额外路径 | 配置项 `skills.paths` 列出的目录 | 启用 | 可以是一个 Skill 根，也可以直接是一个 Skill 目录 |
+| 内置 | `$FINX_HOME/skills/.system` | 启用 | 在所有根之后 |
 
-- **三个目录名**：由 `skills.dirs` 配置，默认 `[".finx", ".agents", ".claude"]`（§10）。
-  - `.finx/skills` 是 finx 自己的位置。
-  - `.agents/skills` 是开放规范推荐的跨客户端共享位置，其他客户端安装的 Skill 也放在这里。
-  - `.claude/skills` 下已经有大量现成的 Skill，一起加载，用户不用复制或链接。
-- **用户层的 `.finx`** 对应 `FINX_HOME`，其余名字对应 `~/<名字>`。
-- **项目层与用户层重合**：项目层遇到的目录恰好是用户层的根时（例如 cwd 就是主目录），按用户层处理，项目层不再重复扫描。
+- **项目根**：同总方案 §7.3，向上找 `.git`；找不到项目根时只看 cwd。
+- **项目里不读 `.finx/skills`**（D-170）：项目里一律用共享标准，`.finx` 只放项目配置。finx 还没有发布，不做兼容读取，也不迁移。
+- **为什么两层的 `.agents` 处理不同**（D-171）：
+  - 项目里的 `.agents/skills` 由仓库的人挑选和维护，正是给在这个仓库里工作的智能体用的。
+  - 用户级的 `~/.agents/skills` 是任何工具都可能写入的共享安装位置，没有人替 finx 挑选过。开发机上实测：那里有 24 个、`~/.claude/skills` 里有 15 个（其中 14 个是另一个客户端按账号同步下来的，一半依赖那个客户端自己的工具），清单约 8,300 token，没有一个是为 finx 装的。
+- **主目录不算项目层**（D-172）：从 cwd 往上找时跳过主目录本身。否则把主目录当工作目录打开、或者主目录本身是一个 git 仓库（放 dotfiles 的）时，`~/.agents/skills` 会作为项目层被读进来，绕过 `other_apps`。
+- **默认启用只看位置**（D-173）：`$FINX_HOME/skills`、内置、`skills.paths`、项目层的 `.agents/skills` 默认启用，项目层的 `.claude/skills` 默认不启用。放进 finx 自己的目录、仓库的共享目录、配置里的路径，就算用户同意了；`.claude` 是另一个应用的目录，要用户自己打开。
 - **不往下找**：项目层只看 cwd 和它的上级，不扫描 cwd 下面的子目录，与 AGENTS.md 的查找方式相同。
-- **其他客户端同步的目录**：`~/.claude/skills/synced/<账号>/<名字>/SKILL.md` 这类由其他客户端按账号同步下来的 Skill 也会被找到，多个账号之间的同名副本按路径先到先得。开发机上实测：76 个 SKILL.md，生效 39 个，清单约 8,300 token。其中有些 Skill 是为其他客户端专门写的，用户可以用 `skills.disabled` 停用（Q-68）。
 
 ### 4.2 同名时的优先级（D-62）
 
 按下面的顺序扫描，**同名的 Skill 先找到的生效**：
 
-1. 项目层，从 cwd 开始，逐级往上到项目根；
-2. 用户层；
-3. 额外路径，按配置的顺序。
+1. 项目层，从 cwd 开始，逐级往上到项目根（不含主目录）；
+2. 用户层：`$FINX_HOME/skills`，`other_apps` 打开时再接 `~/.agents/skills`、`~/.claude/skills`；
+3. 额外路径，按配置的顺序；
+4. 内置。
 
-- 同一级目录里，按 `skills.dirs` 的顺序：`.finx` → `.agents` → `.claude`。
+- 同一级目录里：`.agents` → `.claude`。
+- **不可用的不参与**（D-174）：默认不启用而用户没有打开的，以及按路径停用的，不遮蔽别的同名 Skill，排在它后面的同名候选照常生效。例如仓库的 `.claude/skills/deploy` 默认不启用，生效的是 `~/.finx/skills/deploy`；用户打开仓库那份之后，按"近的优先"由仓库那份生效。
 - 同一个 Skill 根里出现同名（例如 `skills/a/lint` 和 `skills/b/lint`），按路径的字典序，先到先得。
 - 同一个 SKILL.md 经不同的根出现多次（按真实路径判断，例如 `~/.agents/skills` 是指向 `~/.claude/skills` 的链接），只保留优先级最高的那一处，不算遮蔽。
 
 一个 monorepo 的例子，cwd 为 `/work/repo/packages/web`，项目根为 `/work/repo`，扫描顺序是：
 
 ```
-/work/repo/packages/web/.finx/skills
 /work/repo/packages/web/.agents/skills
-/work/repo/packages/web/.claude/skills
-/work/repo/packages/.finx/skills
+/work/repo/packages/web/.claude/skills      （默认不启用）
 /work/repo/packages/.agents/skills
-/work/repo/packages/.claude/skills
-/work/repo/.finx/skills
+/work/repo/packages/.claude/skills          （默认不启用）
 /work/repo/.agents/skills
-/work/repo/.claude/skills
+/work/repo/.claude/skills                   （默认不启用）
 ~/.finx/skills
-~/.agents/skills
-~/.claude/skills
+~/.agents/skills                            （other_apps 打开时）
+~/.claude/skills                            （other_apps 打开时）
 skills.paths 中的各项
+~/.finx/skills/.system
 ```
 
 **为什么近的优先**：
@@ -274,14 +283,28 @@ skills.paths 中的各项
 - **不读 `.gitignore`**（Q-65）。Skill 根里很少有需要忽略的构建产物，深度和目录数的上限已经能防止扫描失控。
 - **根目录不存在**：静默跳过。这是最常见的情况，每个会话要检查十来个可能的位置。
 
-### 4.4 停用与过滤
+### 4.4 启用、停用与过滤
 
 | 方式 | 效果 |
 |---|---|
 | `skills.enabled = false` | 不扫描，系统提示词里没有清单 |
+| `skills.other_apps = true` | 用户层再读 `~/.agents/skills`、`~/.claude/skills`，读进来的默认启用 |
+| `skills.opt_in` 中写路径（Skill 目录或 SKILL.md） | 打开一个默认不启用的 Skill（D-173）；只收路径，写名字是配置错误 |
 | `skills.disabled` 中写名字 | 这个名字的 Skill 全部停用，包括被它遮蔽的，所以不会"停掉一个，冒出另一个" |
-| `skills.disabled` 中写路径（Skill 目录或 SKILL.md） | 只停用这一个；同名的下一个候选随之生效，例如停用仓库里的版本，用回自己的 |
+| `skills.disabled` 中写路径 | 只停用这一个；同名的下一个候选随之生效，例如停用仓库里的版本，用回自己的 |
 | 头部 `disable-model-invocation: true` | 不进清单，仍然可以显式调用 |
+
+- **状态**：默认不启用而没有打开的 Skill，`state` 是 `disabled`，与用户停用的相同：不进清单，不能用 `/skill:名字` 提及，不在 `/` 菜单里。两者靠 SkillEntry 的 `default_enabled` 区分（D-177）。
+- **`opt_in` 只收路径**：写名字会打开所有仓库里同名的 Skill，范围太大；而默认不启用的 Skill 本来就是"这一份要不要用"的问题。
+- **同时命中**：一个 Skill 既在 `opt_in` 里又被 `disabled` 停用时，按停用算。
+- **开关怎么写**（D-175）：`skills/set_enabled { path, enabled }` 和 `finx skills enable/disable <路径>` 按这个 Skill 的默认状态决定写哪个列表，都写用户配置 `~/.finx/config.toml`，不改仓库：
+
+| 这个 Skill 默认 | 打开 | 关掉 |
+|---|---|---|
+| 启用 | 从 `disabled` 删掉指向它的路径，以及它的名字形式 | 把路径加进 `disabled` |
+| 不启用 | 把路径加进 `opt_in` | 从 `opt_in` 删掉指向它的路径 |
+
+  每次写入时，顺手删掉另一个列表里指向它的路径，配置里不留互相矛盾的记录。写名字的 `finx skills disable <名字>` 照旧写进 `disabled`，停用全部同名。
 
 ### 4.5 性能
 
@@ -612,9 +635,9 @@ system（不变）+ 工具定义（不变）
 ### 8.3 写入：受保护路径（D-69）
 
 - **已经受保护**：`.finx`、`.agents`（路径中任何一级），以及数据目录 `FINX_HOME`。
-- **新增 `.claude` 目录**：finx 从 `.claude/skills` 加载 Skill；这个目录里还有其他编码智能体的设置和钩子，同样会被自动执行。
+- **新增 `.claude` 目录**：finx 从 `.claude/skills` 加载 Skill（2e 起默认不启用，用户可以打开）；这个目录里还有其他编码智能体的设置和钩子，同样会被自动执行。
 - **新增额外路径**：`skills.paths` 中的目录作为受保护路径传入，与数据目录用同一机制。
-- **新增自定义目录名**：`skills.dirs` 里内置列表之外的目录名（例如团队自己的 `.team-agent`），在路径中任何一级都受保护，与 `.agents` 相同。
+- **2e 起没有自定义目录名**：`skills.dirs` 删除之后（D-176），受保护的目录名固定为 `.finx`、`.agents`、`.claude`。`.finx` 在项目里不再放 Skill，但仍有项目配置，照旧受保护。
 - **理由**：写进 Skill 目录的内容会成为以后每个会话的指令，和 git hooks、shell 配置一样，需要先问。
 - manual 和 accept-edits 下写入这些位置都要询问；bypass-permissions 下不拦截（D-31）。
 
@@ -644,8 +667,9 @@ system（不变）+ 工具定义（不变）
 ```toml
 [skills]
 enabled = true                          # false：不扫描，系统提示词里没有清单
-dirs = [".finx", ".agents", ".claude"]  # 每一层依次查找 <目录>/<名字>/skills，顺序即同一位置的优先级
-paths = []                              # 额外的 Skill 根或 Skill 目录，优先级最低
+other_apps = false                      # true：用户层再读 ~/.agents/skills、~/.claude/skills（2e）
+paths = []                              # 额外的 Skill 根或 Skill 目录，默认启用
+opt_in = []                             # 打开的默认不启用的 Skill：Skill 目录或 SKILL.md 的路径（2e，§4.4）
 disabled = []                           # 停用：Skill 的名字，或 Skill 目录、SKILL.md 的路径（§4.4）
 max_catalog_tokens = 0                  # 清单的预算，0 为自动：min(2% × 上下文窗口, 10,000)
 
@@ -653,10 +677,12 @@ max_catalog_tokens = 0                  # 清单的预算，0 为自动：min(2%
 keep_skill_tokens = 20000               # 压缩后重新附上的 Skill 正文的预算，另受 10% × 硬上限限制（§7.2）
 ```
 
-- `dirs` 里的 `.finx` 在用户层对应 `FINX_HOME`，其余名字对应 `~/<名字>`。从列表里去掉 `.claude`，就不再加载那里的 Skill。
-- `paths` 和 `disabled` 里的路径：绝对路径，或以 `~/` 开头。相对路径在项目配置里相对项目根（加载配置时就换成绝对路径），在其他来源里相对 cwd。`disabled` 中含 `/` 或以 `~` 开头的项是路径，其余是名字。
-- 项目配置可以设置以上各项，不受信任状态影响，因为它们都不放宽安全设置（总方案 §11.7）。
-- 合并按总方案 §10.1：表按键合并，数组整体替换。
+- **`other_apps`**（D-171）：先只在配置里，以后加到设置页（Q-69）。
+- **路径的写法**：`paths`、`opt_in` 和 `disabled` 里的路径是绝对路径，或以 `~/` 开头。相对路径在项目配置里相对项目根（加载配置时就换成绝对路径），在其他来源里相对 cwd。`disabled` 中含 `/` 或以 `~` 开头的项是路径，其余是名字；`opt_in` 里出现名字是配置错误。
+- **团队想让仓库里 `.claude/skills` 的某个 Skill 对所有人默认启用**：把它放进 `.agents/skills`；或者在仓库的 `.finx/config.toml` 里写 `skills.opt_in = [".claude/skills/xxx"]`。
+- **`skills.dirs` 已删除**（D-176）：配置里还写着它时，加载配置报错：`skills.dirs was removed: project skills live in .agents/skills, and .claude/skills is listed off by default; set skills.other_apps for ~/.agents and ~/.claude`。与其他未知的键一样严格。
+- **项目配置**可以设置以上各项，不受信任状态影响，因为它们都不放宽安全设置（总方案 §11.7）。
+- **合并**按总方案 §10.1：表按键合并，数组整体替换；`opt_in` 与 `disabled` 例外，跨层拼接、去重（自定义页方案 DD-34），否则项目配置里一写，个人的选择就全被覆盖。
 - 不新增环境变量。临时关闭可以用 `-c skills.enabled=false`。
 
 ## 11. 命令行、协议与前端
@@ -671,14 +697,16 @@ finx skills [DIR] [--all] [--json]
 
 ```
 project  lint       .agents/skills/lint/SKILL.md
-user     aws-iam    ~/.agents/skills/aws-iam/SKILL.md
+user     pdf-tools  ~/.finx/skills/pdf-tools/SKILL.md
 user     deploy     ~/.finx/skills/deploy/SKILL.md  only when the user invokes it
 2 more shadowed, disabled or broken; `finx skills --all` lists them
 catalog: 2 skills, about 1240 tokens (budget 10000)
+not read: ~/.agents/skills, ~/.claude/skills (skills.other_apps is off)
 ```
 
 - 路径在 cwd 之下时显示相对路径，在主目录之下时以 `~` 开头。
-- `--all`：同时列出被遮蔽、被停用、加载失败的 Skill 和原因，例如 `shadowed by ~/.agents/skills/aws-iam/SKILL.md`、`not loaded: the header has no description`，以及每个 Skill 的提示（§3.4）。
+- `--all`：同时列出被遮蔽、被停用、加载失败的 Skill 和原因，例如 `shadowed by ~/.finx/skills/deploy/SKILL.md`、`off by default; finx skills enable .claude/skills/deploy turns it on`、`not loaded: the header has no description`，以及每个 Skill 的提示（§3.4）。
+- **末尾的 `not read` 行**（D-177）：`other_apps` 关着、而 `~/.agents/skills` 或 `~/.claude/skills` 存在且里面有不以 `.` 开头的子目录时才输出，只列这样的目录。用过别的工具的人一眼能知道"我的 Skill 为什么不在"。只读一次目录，不扫描；SkillsListResult 新增可选字段 `not_read: [路径]`，`--json` 和 `skills/list {cwd}` 都带。桌面端不显示，保持页面干净。
 - `--json`：`{skills, commands, catalog: {listed, tokens, budget, shortened_to?, left_out?}, enabled, warnings}`，`commands` 是在这里新开的会话里 `/` 能用的命令（2d），`skills` 的每项是 SkillEntry（name、description、path、scope、model_invocable、argument_hint?、state、detail?、notes?），带 `?` 的字段为空时省略。这就是原生协议 `skills/list` 带 `cwd` 时的结果（SkillsListResult，§11.4），两边用同一个类型输出。
 - 与其他查看类命令一样，不启动异步运行时，不写日志文件（总方案 §12）。
 
@@ -706,6 +734,7 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 - `Op::Prompt` 新增可选字段 `commands`（§6.2）。
 - 显式调用的用户消息在 `message_completed` 事件和 `session/history` 里带 `skill` 字段（§6.2），桌面端显示用户输入的原文，正文折叠。2d 起换成 `skills: [{name, path}]`，消息本身就是原话（§6.3.5）。
 - TypeScript 类型（`packages/protocol/src/generated.ts`）随 schema 重新生成。
+- **2e**（D-177）：SkillEntry 新增 `default_enabled: bool`，SkillsListResult 新增可选的 `not_read`；协议版本不变。`skills/set_enabled` 的参数和结果不变，内核按默认状态决定写哪个列表（§4.4），结果的 `file` 照旧是改了的用户配置。
 - 桌面端方案 §7 的 P 列表补一项 P13（原为 P12，与子智能体那一项重号后改）：`/` 菜单（`skills/list` 的 `commands`）和用户消息上的 `skills` 字段。二期不做桌面端的界面，2d 做了（§6.3.7）。
 
 ### 11.5 ACP（二期）
@@ -767,6 +796,14 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | `skills/catalog.rs` | 说明句加上已有 `<skill>` 块时不必再读的条件（D-89） | 2d |
 | `finx-acp`、`finx-server`、`finx-cli` | ACP 去掉原文替换；镜像带 `skills`；命令行的提示行列出加载的 Skill | 2d |
 | `packages/client`、`apps/desktop` | 步骤与会话状态带 `skills`；模拟服务支持 `skills/list` 与 `skills`；Lexical 输入框；历史里画标签 | 2d |
+| `skills/mod.rs` 的 `roots`、`project_dirs`、`discover` | 项目层只看 `.agents`、`.claude`，跳过主目录；用户层只有 `FINX_HOME/skills`，`other_apps` 时再加两个目录；每个根带默认启用；`opt_in`；不可用的不参与同名；`not_read` 的检查 | 2e |
+| `config.rs` | 删除 `skills.dirs`（写了就报错并说明）；新增 `other_apps`、`opt_in`；`opt_in` 跨层拼接 | 2e |
+| `skills/install.rs` | `set_enabled` 按默认状态写 `opt_in` 或 `disabled`，并清掉另一个列表；`--project` 的目标改为 `.agents/skills` | 2e |
+| `skills/system/skill-creator/SKILL.md` | 给一个仓库用的位置改为 `<project>/.agents/skills/<name>` | 2e |
+| `protected.rs` | 去掉 `skills.dirs` 带来的自定义目录名 | 2e |
+| `finx-protocol` 的 `api.rs` | SkillEntry 的 `default_enabled`；SkillsListResult 的 `not_read` | 2e |
+| `finx-cli` | `finx skills` 末尾的 `not read` 行和 `--all` 的说明；`skills add --project` 的帮助文字 | 2e |
+| `apps/desktop`、`packages/client` 的模拟服务 | 默认不启用的技能行的说明；仓库分组的提示文字；不再显示 `.claude`、`.agents` 的来源标记（自定义页方案 §10.4） | 2e |
 | 依赖 | 一个 YAML 解析库（§3.3） | 一期 |
 | 文档 | 总方案 §1.4、§7.2、§10.2、§11.5、§12、§17、§18、§19 指向本文 | 随各期 |
 
@@ -926,6 +963,38 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 - **压缩**：同二期，模型按清单读 commit-style，`/compact` 保留了它，压缩之后写的提交信息仍按它的格式，没有再读 SKILL.md。
 - **一期的验收在 2d 代码上重跑**（说明句改过之后）：项目层、用户层各 5 项全过，模型照常按清单读 SKILL.md；第二个会话的第一个请求分别有 2,176/2,324、2,176/2,320 个输入 token 命中缓存（约 94%）。
 
+### 13.4 2e：技能来源收敛（预估 1 天）
+
+**范围**：§4.1、§4.2、§4.4、§8.3、§10、§11.1、§11.4 的 2e 部分，以及自定义页方案里对应的界面（自定义页方案 §9.3、§10.4）。
+
+**一次改完**：内核是唯一的真相，命令行、原生协议、ACP 和桌面端都从内核拿结果，所以一起改、一起合入：
+- 内核改了而桌面端没改：页面仍能用，只是默认不启用的技能显示成"你停用的"，开关也照样有效（`skills/set_enabled` 的接口不变）。
+- 桌面端先改而内核没改：拿不到 `default_enabled`，按"默认启用"处理，与现在相同。
+- 所以两边各自先合入都不会坏，但只有一起改，界面上的说法才对。
+
+**验收**：
+1. `cargo test --workspace` 全部通过，`cargo clippy --workspace --all-targets` 没有警告；桌面端 `typecheck`、单元测试和 `e2e/customize.mjs` 通过。
+2. 开发机上 `finx skills`（cwd 为 finxwork）：清单里没有来自 `~/.agents`、`~/.claude` 的 Skill，末尾有 `not read` 行；`skills.other_apps = true` 时恢复成改之前的 39 个。
+3. 临时项目里放 `.agents/skills/a`、`.claude/skills/b`、`.finx/skills/c`：清单里只有 a；`--all` 里 b 是默认不启用，c 不出现；`finx skills enable .claude/skills/b` 之后 b 进清单，`~/.finx/config.toml` 的 `opt_in` 里是 b 的绝对路径；再 `disable` 就删掉这一条。
+4. 把主目录当 cwd：`~/.agents/skills` 里的 Skill 不进清单。
+5. 配置里写了 `skills.dirs`：报错，说明改用什么。
+6. 桌面端：仓库分组里 `.claude` 的技能显示"默认不启用"，打开、关掉都在 2 秒内反映到列表；个人分组没有其他应用的技能。
+
+**实现状态（2026-10-31）**：已实现，未提交。
+- **内核**：
+  - `skills/mod.rs` 的每个根带默认是否启用；项目层只看 `.agents`、`.claude`，并跳过主目录；`other_apps` 打开时用户层多两个根；默认不启用的不参与同名；`not_read` 只读一次目录。
+  - 判断默认状态的 `on_by_default` 供开关使用，与发现的规则一致。
+  - `config.rs` 写了 `skills.dirs` 就报错并说明改用什么；`opt_in` 里出现名字是配置错误；`opt_in` 与 `disabled` 都跨层拼接，项目配置里的相对路径按项目根解析。
+  - 受保护路径不再带自定义目录名（`SessionView::skill_dirs` 删除）。
+  - `finx skills add --project`、`skills/install {scope: "project"}`、skill-creator 都改为 `.agents/skills`。
+- **协议**：`default_enabled` 总是输出；`not_read` 为空时省略。schema 与 TypeScript 类型已重新生成。
+- **验收**：
+  - Rust 全部测试通过（547 个）；clippy 只剩 main 原有的 finx-connections 和 `cmd_info.rs:279`。
+  - client 36 个、desktop 25 个测试通过，typecheck 通过。
+  - 第 2 项：开发机上 `finx skills` 只剩内置的 skill-creator，末尾是 `not read: ~/.agents/skills, ~/.claude/skills (skills.other_apps is off)`。
+  - 第 3–5 项写进了 `e2e_skills` 与 `finx-core/src/skills` 的单元测试；`e2e_customize` 增加 `.claude` 技能经 `skills/set_enabled` 打开、写进 `opt_in`、进入清单。
+  - 第 6 项在网页调试模式下用模拟数据验证：行内"来自 .claude""默认不启用"、分组提示、打开后的提示、详情页的说明。`e2e/customize.mjs` 是无项目的页面，看不到项目层，没有为此扩展。
+
 ### 三期：扩展（暂不预估）
 
 会话中途更新清单（Q-60）、内置 Skill（Q-61）、`allowed-tools`（Q-62）、占位符（Q-63）、按路径激活（Q-66）、Skill 的安装与更新命令。
@@ -937,7 +1006,7 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | 范围 | 内容 |
 |---|---|
 | 遍历 | 嵌套的 Skill；找到就停（Skill 的 assets 里的 SKILL.md 不算）；根本身是 Skill；跳过点目录和 node_modules；深度和目录数的上限；符号链接与环；按真实路径去重；根不存在、没有权限 |
-| 优先级 | 项目层由近到远、用户层、额外路径；`dirs` 的顺序；同一个根里的同名；按名字停用（包括被遮蔽的）；按路径停用后由下一个候选补上 |
+| 优先级 | 项目层由近到远、用户层、额外路径；同一级 `.agents` 先于 `.claude`（2e 之前是 `dirs` 的顺序）；同一个根里的同名；按名字停用（包括被遮蔽的）；按路径停用后由下一个候选补上 |
 | 解析 | 折叠块和字面块；引号；冒号修复；BOM 和 CRLF；没有头部、头部没有结束行；description 缺失或不是字符串；name 缺省取目录名；超长截断 |
 | 清单 | 转义；顺序稳定（打乱目录读取顺序，结果不变）；没有 Skill 时整段省略；read、bash 的两种说明；预算的统一截短和整条去掉；warning |
 | 内核 | 系统提示词的段落顺序；冻结（resume 不重新扫描）；没有 read 和 bash 时不出清单。子会话的清单与父相同，等子智能体合入后补测 |
@@ -957,6 +1026,10 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | 端到端（2d） | `e2e_skills`（句中两个提及与不算的写法、写错名字）、`e2e_native`（一条消息两个提及、历史条目的 `skills`、压缩保留两个）、`e2e_acp`（命令名 `skill:名字`、句中两个提及、回放原话） |
 | 桌面端（2d） | 共用测试用例；网页调试模式下逐项验证（§13.3） |
 | 真实模型（2d） | `tools/acceptance/accept_skills_phase2.py` 增加句中两个提及、不是提及的写法两组（§13.3） |
+| 发现（2e） | `skills/mod.rs`：项目层只看 `.agents`、`.claude`，不看 `.finx`；`.claude` 默认不启用；跳过主目录（cwd 为主目录、主目录是 git 仓库两种）；用户层默认只有 `FINX_HOME/skills`，`other_apps` 时三个；`opt_in` 按路径打开、写名字报错；`opt_in` 与 `disabled` 同时命中按停用；不可用的不遮蔽同名；`not_read` 只在目录有子目录时出现。改写原来默认读 `~/.agents`、项目 `.finx` 的用例 |
+| 配置（2e） | `config.rs`：`skills.dirs` 报错的文字；`other_apps`、`opt_in` 的默认值；`opt_in` 跨层拼接 |
+| 开关（2e） | `install.rs`：两种默认状态各自打开、关掉，配置的写入与清理；按名字停用照旧 |
+| 端到端（2e） | `e2e_skills`：§13.4 的第 3–5 项；`e2e_native`：`skills/list` 的 `default_enabled`、`not_read` 和 `skills/set_enabled` 写 `opt_in`；桌面端 `e2e/customize.mjs` 增加 `.claude` 技能的打开与关掉 |
 
 ## 15. 备选方案与取舍
 
@@ -973,6 +1046,12 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | 未受信任的项目不加载项目层 Skill | 与 AGENTS.md 的处理不一致；克隆下来的仓库附带的 Skill 往往正是用户想用的。保留为 Q-64 的可选项 |
 | 每次请求前重新扫描，清单一变就改系统提示词 | 改写前缀，缓存失效（G4） |
 | 压缩时不保留 Skill，只靠摘要 | 长任务压缩后会偏离 Skill；一期暂时如此，二期补上（§7.2） |
+| 项目里继续读 `.finx/skills`（2e） | 等于另立一个目录标准；仓库里本来就有 `.agents/skills`，团队不必为 finx 再放一份 |
+| 用户层默认读 `~/.agents/skills`，因为它是规范的共享位置（2e） | 任何工具都可能往里装，没有人替 finx 挑选；开发机上那里的 Skill 与 finx 无关，却占了清单的大半 |
+| 其他应用的 Skill 在"发现"里逐个添加，启用后原地引用（2e） | 多一个来源的概念和一组界面，用户要的只是"默认不读、需要时打开"；以后真有需要，再由设置页的开关扩展（Q-69） |
+| `.claude` 的 Skill 也默认启用（2e） | 是另一个应用的目录，里面的 Skill 常依赖那个应用自己的工具；默认不启用，列出来让用户自己打开，成本只有一次点击 |
+| `opt_in` 也收名字（2e） | 写一个名字就会打开所有仓库里同名的 Skill，范围太大 |
+| 保留 `skills.dirs`（2e） | 读哪几个目录已经固定，多一个配置就多一组要测的组合；要读别的目录可以写进 `skills.paths` |
 
 ## 16. 决策与待定问题
 
@@ -981,8 +1060,8 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | 编号 | 决策 | 理由 | 章节 |
 |---|---|---|---|
 | D-60 | Skill 遵循 Agent Skills 开放规范；不增加工具，系统提示词里列出清单，模型用 read 读取 SKILL.md，再按需读同目录的文件、用 bash 运行脚本 | 兼容现有的 Skill；不增加工具；只有用到时才占上下文 | §3 §6.1 |
-| D-61 | 三层位置：项目层（cwd 到项目根的每一级）、用户层、额外路径；每层依次查找 `skills.dirs` 列出的目录，默认 `.finx`、`.agents`、`.claude` | finx 自己的位置、跨客户端的共享位置、现有 Skill 最多的位置都能用；与 AGENTS.md 的目录链一致 | §4.1 |
-| D-62 | 同名时先找到的生效：项目层由近到远，然后用户层，最后额外路径；同一位置按 `dirs` 的顺序。被遮蔽的不进清单，不发 warning；同一个文件只算一次 | 越具体越优先，与配置分层一致，也是各实现通行的约定；结果确定，可以查询 | §4.2 |
+| D-61 | 三层位置：项目层（cwd 到项目根的每一级）、用户层、额外路径；每层依次查找 `skills.dirs` 列出的目录，默认 `.finx`、`.agents`、`.claude`。**2e 由 D-170–D-173 取代** | finx 自己的位置、跨客户端的共享位置、现有 Skill 最多的位置都能用；与 AGENTS.md 的目录链一致 | §4.1 |
+| D-62 | 同名时先找到的生效：项目层由近到远，然后用户层，最后额外路径；同一位置 `.agents` 先于 `.claude`（2e 之前按 `dirs` 的顺序）。被遮蔽的不进清单，不发 warning；同一个文件只算一次 | 越具体越优先，与配置分层一致，也是各实现通行的约定；结果确定，可以查询 | §4.2 |
 | D-63 | 有 SKILL.md 的目录就是一个 Skill，找到就不再往下；跳过点目录和 node_modules；跟随目录链接并防环；每个根最多 6 层、2,000 个目录 | 不把 Skill 自带的模板当成 Skill；扫描量有上限 | §4.3 |
 | D-64 | 宽松解析：用真正的 YAML 解析，失败时修复冒号再试；description 必填，name 缺省取目录名；不符合规范只记诊断；只使用 name、description、disable-model-invocation，其他字段忽略 | 现成的 Skill 写法不一，只要能用就加载；字段越少，行为越可预测 | §3 |
 | D-65 | 清单放在系统提示词里，指令段之后、environment 之前，随系统提示词冻结 | 会话内前缀不变；environment 变化最频繁，留在最后，跨会话的前缀缓存能命中更长 | §5.1 |
@@ -1010,6 +1089,14 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | D-87 | ACP 内嵌资源的文字不参与识别（2d） | 附件里的内容不是用户的话 | §6.3.2 |
 | D-88 | 桌面端输入框用 Lexical：纯文本模式、typeahead、整体选中和删除的标签节点，固定版本（2d） | 任意位置的原子标签、输入法、撤销、粘贴都有成熟实现；以后的 `@文件`、长段粘贴折叠用同一套机制；自己写 contenteditable 的维护成本高 | §6.3.7 |
 | D-89 | 清单的说明句加上条件：对话里已经有某个 Skill 的 `<skill>` 块时，不必再读它的 SKILL.md（2d） | 真实验收里，句中提及两个 Skill 时 5 次有 3 次又读了 SKILL.md：说明句无条件要求先读，却没有说 `<skill>` 块就是已经加载的正文。补上条件后 6 次都没有再读；压缩后保留的块同样适用。这是给原有的要求补上适用范围，不是禁止 | §5.2 附录 A.1 |
+| D-170 | 项目层用共享标准：各级的 `.agents/skills` 默认启用，`.claude/skills` 列出但默认不启用；不读项目里的 `.finx/skills`，不做兼容读取。`.finx` 只放 finx 独有、没有共享标准的东西（2e） | 与规则用 `AGENTS.md`、MCP 读 `.mcp.json` 一致；仓库不必为 finx 另放一份；finx 未发布，没有要迁移的用户 | §1.2 §4.1 |
+| D-171 | 用户层只读 `FINX_HOME/skills`；`~/.agents/skills`、`~/.claude/skills` 由 `skills.other_apps`（默认 false）打开，读进来的默认启用（2e） | 用户级的共享目录谁都能写，没有人替 finx 挑选；开发机上 39 个生效的 Skill 全部来自其他应用，清单约 8,300 token。打开开关表示用户信任这两个目录，所以照旧启用。解决 Q-68 | §4.1 §10 |
+| D-172 | 项目层从 cwd 往上找时跳过主目录本身（2e） | 否则主目录作为工作目录、或者主目录本身是 git 仓库时，`~/.agents/skills` 会作为项目层读进来，绕过 D-171 | §4.1 |
+| D-173 | 默认是否启用只由位置决定：`FINX_HOME/skills`、内置、`skills.paths`、项目层的 `.agents/skills` 启用，项目层的 `.claude/skills` 不启用；用户打开的记在 `skills.opt_in`，只收路径；与 `disabled` 都跨层拼接，同时命中按停用（2e） | 一条规则就能说清；放进 finx 自己的目录、仓库的共享目录、配置里的路径就算用户同意了；`disabled` 表达不了"打开一个默认关着的"，所以另设列表；只收路径，免得一个名字打开所有仓库里的同名 Skill | §4.1 §4.4 §10 |
+| D-174 | 不可用的 Skill（默认不启用而没有打开的、按路径停用的）不参与同名先到先得（2e） | 关着的 Skill 不应该挡住别的；与按路径停用的现有行为一致 | §4.2 |
+| D-175 | `skills/set_enabled` 和 `finx skills enable/disable <路径>` 的接口不变，按 Skill 的默认状态写 `opt_in` 或 `disabled`，都写用户配置，并清掉另一个列表里指向它的路径（2e） | 页面和命令行只有一个开关，不必知道背后是哪个列表；个人的选择不改仓库；配置里不留矛盾的记录 | §4.4 |
+| D-176 | 删除 `skills.dirs`；配置里写了就报错并说明改用什么；受保护的目录名固定为 `.finx`、`.agents`、`.claude`（2e） | 读哪几个目录已经固定，少一个配置就少一组要测的组合；要读别的目录可以用 `skills.paths`；严格校验与其他未知的键一致 | §8.3 §10 |
+| D-177 | SkillEntry 新增 `default_enabled`，SkillsListResult 新增可选的 `not_read`；协议版本不变。`finx skills` 在其他应用的目录里确实有东西却没有读时，末尾多一行说明；桌面端不显示这一行（2e） | 页面要区分"默认不启用"和"你停用的"；用过别的工具的人要知道 Skill 为什么不在，又不让页面变乱 | §11.1 §11.4 |
 
 ### 16.2 待定问题
 
@@ -1023,7 +1110,8 @@ catalog: 2 skills, about 1240 tokens (budget 10000)
 | Q-65 | 扫描时是否遵守 `.gitignore` | 暂不，靠深度和目录数的上限 | §4.3 |
 | Q-66 | 是否支持按文件路径激活、嵌套目录里同名 Skill 的命名空间、cwd 以下子目录里的 Skill | 暂不，等 monorepo 的实际需求 | §4.1 §15 |
 | Q-67 | 清单超出预算时，是否按使用频率决定保留谁的描述 | 暂不。需要跨会话统计使用次数，清单就不再只取决于文件，同一组 Skill 生成的文本会变 | §5.4 |
-| Q-68 | 是否默认跳过其他客户端按账号同步下来的目录，例如 `~/.claude/skills/synced` | 暂不，照常加载，用户可以按名字停用。那里既有通用的 Skill（文档、表格、PDF 处理），也有只适用于那个客户端的 Skill；整个目录跳过会丢掉前者 | §4.1 |
+| Q-68 | 是否默认跳过其他客户端按账号同步下来的目录，例如 `~/.claude/skills/synced` | 已定（D-171）：用户层的 `~/.claude/skills` 整个默认不读，同步目录随之不读；`other_apps` 打开时照常读 | §4.1 |
+| Q-69 | `other_apps` 以后怎样放进界面：一个总开关，还是按目录分开；打开后读进来的是默认启用还是默认不启用 | 做设置页时再定。眼下只在配置里，打开时默认启用（D-171） | §4.1 §10 |
 
 ## 附录 A：给模型的文本
 
@@ -1094,34 +1182,38 @@ warning 发给用户，与现有的 warning 一样用英文：
 ├── .agents/skills/
 │   ├── release/SKILL.md            description: Cut a release ...
 │   └── commit/SKILL.md             description: Commit using the repo convention ...
+├── .claude/skills/
+│   └── deploy/SKILL.md             description: Deploy to staging ...
 └── packages/web                    （cwd）
-    └── .finx/skills/
+    └── .agents/skills/
         └── release/SKILL.md        description: Release the web package ...
 
 ~/.finx/skills/
-└── commit/SKILL.md                 description: Write commit messages ...
+├── commit/SKILL.md                 description: Write commit messages ...
+└── deploy/SKILL.md                 description: My own deploy ...
 ~/.agents/skills/
 └── pdf-tools/SKILL.md              description: Extract text and tables ...
-~/.claude/skills/
-└── pdf-tools/SKILL.md              （与上一个内容相同，但不是同一个文件）
 ```
 
-结果：
+结果（`other_apps` 关着，`opt_in` 为空）：
 
-| Skill | 生效的位置 | 被遮蔽的 |
+| Skill | 生效的位置 | 没有生效的 |
 |---|---|---|
-| release | `packages/web/.finx/skills/release` | `/work/repo/.agents/skills/release` |
-| commit | `/work/repo/.agents/skills/commit` | `~/.finx/skills/commit` |
-| pdf-tools | `~/.agents/skills/pdf-tools` | `~/.claude/skills/pdf-tools` |
+| release | `packages/web/.agents/skills/release` | `/work/repo/.agents/skills/release`（被遮蔽） |
+| commit | `/work/repo/.agents/skills/commit` | `~/.finx/skills/commit`（被遮蔽） |
+| deploy | `~/.finx/skills/deploy` | `/work/repo/.claude/skills/deploy`（默认不启用，不遮蔽别的） |
+| pdf-tools | — | `~/.agents/skills` 没有读；`finx skills` 末尾的 `not read` 行列出它 |
+
+用户执行 `finx skills enable /work/repo/.claude/skills/deploy` 之后，`opt_in` 里多一条，deploy 改由仓库那份生效，`~/.finx/skills/deploy` 被遮蔽。
 
 清单（描述从略）：
 
 ```
 <available_skills>
 The following skills provide specialized instructions for specific tasks. When a task matches a skill's description, read its SKILL.md with the read tool before acting, unless the conversation already has its instructions in a <skill> block. Resolve relative paths in a skill against the directory that contains its SKILL.md.
-<skill name="release" path="/work/repo/packages/web/.finx/skills/release/SKILL.md">Release the web package ...</skill>
+<skill name="release" path="/work/repo/packages/web/.agents/skills/release/SKILL.md">Release the web package ...</skill>
 <skill name="commit" path="/work/repo/.agents/skills/commit/SKILL.md">Commit using the repo convention ...</skill>
-<skill name="pdf-tools" path="/Users/me/.agents/skills/pdf-tools/SKILL.md">Extract text and tables ...</skill>
+<skill name="deploy" path="/Users/me/.finx/skills/deploy/SKILL.md">My own deploy ...</skill>
 </available_skills>
 ```
 
@@ -1137,7 +1229,7 @@ The following skills provide specialized instructions for specific tasks. When a
 
 ```
 <skill name="pdf-tools">
-Relative paths in this skill are relative to /Users/me/.agents/skills/pdf-tools.
+Relative paths in this skill are relative to /Users/me/.finx/skills/pdf-tools.
 
 # PDF tools
 
@@ -1148,4 +1240,4 @@ to get the text.
 extract report.pdf
 ```
 
-日志条目附带 `"skill": {"name": "pdf-tools", "path": "/Users/me/.agents/skills/pdf-tools/SKILL.md", "input": "/pdf-tools extract report.pdf"}`，界面显示用户输入的原文。
+日志条目附带 `"skill": {"name": "pdf-tools", "path": "/Users/me/.finx/skills/pdf-tools/SKILL.md", "input": "/pdf-tools extract report.pdf"}`，界面显示用户输入的原文。

@@ -72,6 +72,32 @@ impl FinxHome {
         self.root.join("trusted.toml")
     }
 
+    /// `projects/`: the user's own settings for each project (docs/desktop/customize-design.md §4.3).
+    pub fn projects_dir(&self) -> PathBuf {
+        self.root.join("projects")
+    }
+
+    /// The user's own configuration for the project at `project_dir` (canonical), only theirs
+    /// and only there: `projects/<key>/config.toml`.
+    pub fn user_project_config(&self, project_dir: &Path) -> PathBuf {
+        self.projects_dir().join(project_key(project_dir)).join("config.toml")
+    }
+
+    /// `skills/.system`: the skills built into finx, written there on first use.
+    pub fn system_skills_dir(&self) -> PathBuf {
+        self.skills_dir().join(".system")
+    }
+
+    /// `mcp/cache`: each MCP server's last connection and tool list.
+    pub fn mcp_cache_dir(&self) -> PathBuf {
+        self.root.join("mcp").join("cache")
+    }
+
+    /// Each MCP service's logo (mcp-design §13.9).
+    pub fn mcp_icons_dir(&self) -> PathBuf {
+        finx_mcp::icon::dir(&self.root)
+    }
+
     pub fn sessions_dir(&self) -> PathBuf {
         self.root.join("sessions")
     }
@@ -122,4 +148,21 @@ impl FinxHome {
         }
         Ok(())
     }
+}
+
+/// `<name>-<8 hex digits>`: the directory's name, made safe and at most 40 characters, and the
+/// start of the SHA-256 of its full path, so two projects of the same name stay apart.
+pub fn project_key(project_dir: &Path) -> String {
+    let name: String = project_dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '-' })
+        .take(40)
+        .collect();
+    let name = name.trim_matches(['-', '.']);
+    let digest = ring::digest::digest(&ring::digest::SHA256, project_dir.as_os_str().as_encoded_bytes());
+    let hex: String = digest.as_ref()[..4].iter().map(|b| format!("{b:02x}")).collect();
+    if name.is_empty() { format!("project-{hex}") } else { format!("{name}-{hex}") }
 }

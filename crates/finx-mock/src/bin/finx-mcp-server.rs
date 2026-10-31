@@ -2,9 +2,14 @@
 //!
 //! Options: `--name NAME`, `--instructions TEXT`, `--tools N` (generated tools),
 //! `--domain NAME` (only that domain's generated tools), `--page-size N`, `--log PATH`, `--stderr-lines N` (noise on stderr at start-up),
-//! `--http ADDR` (Streamable HTTP instead of stdio; prints the URL).
+//! `--http ADDR` (Streamable HTTP instead of stdio; prints the URL). Over HTTP:
+//! `--sse` (the older HTTP+SSE transport), `--token TOKEN` (a fixed bearer token),
+//! `--oauth` (an OAuth authorization server beside it), with `--no-metadata-document`,
+//! `--no-registration` and `--token-ttl SECONDS`.
 
 use finx_mock::mcp::McpTestOptions;
+use finx_mock::mcp_auth::McpTestAuth;
+use finx_mock::mcp_auth::OAuthOptions;
 use std::io::Write;
 
 #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
@@ -15,6 +20,7 @@ async fn main() -> std::io::Result<()> {
     };
     let mut http: Option<String> = None;
     let mut stderr_lines = 0usize;
+    let mut oauth: Option<OAuthOptions> = None;
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let mut value = || args.next().unwrap_or_default();
@@ -27,8 +33,17 @@ async fn main() -> std::io::Result<()> {
             "--log" => options.log = Some(value().into()),
             "--stderr-lines" => stderr_lines = value().parse().unwrap_or(0),
             "--http" => http = Some(value()),
+            "--sse" => options.legacy_sse = true,
+            "--token" => options.auth = McpTestAuth::Token(value()),
+            "--oauth" => oauth = Some(oauth.unwrap_or_default()),
+            "--no-metadata-document" => oauth.get_or_insert_with(OAuthOptions::default).metadata_document = false,
+            "--no-registration" => oauth.get_or_insert_with(OAuthOptions::default).registration = false,
+            "--token-ttl" => oauth.get_or_insert_with(OAuthOptions::default).token_ttl_secs = value().parse().unwrap_or(3600),
             _ => {}
         }
+    }
+    if let Some(oauth) = oauth {
+        options.auth = McpTestAuth::OAuth(oauth);
     }
     let mut err = std::io::stderr().lock();
     for n in 0..stderr_lines {

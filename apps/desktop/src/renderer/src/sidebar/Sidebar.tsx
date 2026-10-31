@@ -53,6 +53,10 @@ export function Sidebar() {
           <span>{t("sidebar.search")}</span>
           <span className="kbd">⌘K</span>
         </button>
+        <button className={`nav-i ${st.selection.kind === "customize" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "customize" } })}>
+          <Icon name="blocks" />
+          <span>{t("sidebar.customize")}</span>
+        </button>
       </nav>
       <div className="side-list" role="list" aria-label={t("sidebar.sessions")}>
         {secs.map((sec) => {

@@ -42,6 +42,16 @@ pub struct McpServerConfig {
     /// Sends `Authorization: Bearer $VAR`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bearer_token_env_var: Option<String>,
+    /// Remote server: Streamable HTTP, or the older HTTP+SSE. Absent: SSE when the URL ends
+    /// in `/sse`, else Streamable HTTP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport: Option<McpRemoteTransport>,
+    /// Remote server: `oauth` signs in with OAuth; the token is kept in the credential store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth: Option<McpAuthMode>,
+    /// Remote server: the user's own OAuth client, used before any other identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<McpOAuthClient>,
     /// `false` removes the server; only meaningful in configuration files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -110,13 +120,51 @@ pub enum McpTransportKind {
     Http,
 }
 
+/// How a remote server is reached.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpRemoteTransport {
+    StreamableHttp,
+    /// The 2024-11-05 transport: a GET event stream names the address to POST messages to.
+    Sse,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAuthMode {
+    Oauth,
+}
+
+/// An OAuth client the user registered with the provider.
+#[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct McpOAuthClient {
+    pub client_id: String,
+    /// Only for providers that require one; best written as a `${credential:…}` reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_secret: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scopes: Vec<String>,
+}
+
+impl fmt::Debug for McpOAuthClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("McpOAuthClient").field("client_id", &self.client_id).field("scopes", &self.scopes).finish_non_exhaustive()
+    }
+}
+
 impl McpServerConfig {
     /// The transport, or why the fields are inconsistent.
     pub fn transport(&self) -> Result<McpTransportKind, String> {
         match (&self.command, &self.url) {
             (Some(_), None) => {
-                if self.bearer_token_env_var.is_some() || !self.headers.is_empty() {
-                    return Err("`headers` and `bearer_token_env_var` only apply to servers with a `url`".into());
+                if self.bearer_token_env_var.is_some()
+                    || !self.headers.is_empty()
+                    || self.transport.is_some()
+                    || self.auth.is_some()
+                    || self.oauth.is_some()
+                {
+                    return Err("`headers`, `bearer_token_env_var`, `transport`, `auth` and `oauth` only apply to servers with a `url`".into());
                 }
                 Ok(McpTransportKind::Stdio)
             }
@@ -145,6 +193,20 @@ impl McpServerConfig {
     pub fn is_enabled(&self) -> bool {
         self.enabled != Some(false)
     }
+
+    /// The transport of a remote server: as configured, or SSE for a URL ending in `/sse`.
+    pub fn remote_transport(&self) -> McpRemoteTransport {
+        self.transport.unwrap_or_else(|| match &self.url {
+            Some(url) if url.split(['?', '#']).next().unwrap_or(url).trim_end_matches('/').ends_with("/sse") => {
+                McpRemoteTransport::Sse
+            }
+            _ => McpRemoteTransport::StreamableHttp,
+        })
+    }
+
+    pub fn uses_oauth(&self) -> bool {
+        self.auth == Some(McpAuthMode::Oauth)
+    }
 }
 
 pub fn valid_server_name(name: &str) -> bool {
@@ -171,6 +233,8 @@ pub enum McpServerState {
     Ready,
     /// Could not connect, or the connection was lost. Calls try to reconnect.
     Failed,
+    /// Signs in with OAuth, and there is no usable token: someone has to sign in.
+    NeedsLogin,
     /// Shut down with the session.
     Closed,
 }

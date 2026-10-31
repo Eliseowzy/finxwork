@@ -317,7 +317,7 @@ async fn acp_lists_loads_resumes_and_deletes_sessions() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn acp_announces_commands_and_runs_skills() {
     let env = TestEnv::new("manual", "").await;
-    let skill = env.user_home().join(".agents/skills/gen-report");
+    let skill = env.home.path().join("skills/gen-report");
     std::fs::create_dir_all(skill.join("scripts")).unwrap();
     std::fs::write(
         skill.join("SKILL.md"),
@@ -326,7 +326,7 @@ async fn acp_announces_commands_and_runs_skills() {
     )
     .unwrap();
     std::fs::write(skill.join("scripts/gen.sh"), "echo WEEKLY-REPORT > report.md\n").unwrap();
-    let style = env.user_home().join(".agents/skills/commit-style");
+    let style = env.home.path().join("skills/commit-style");
     std::fs::create_dir_all(&style).unwrap();
     std::fs::write(style.join("SKILL.md"), "---\nname: commit-style\ndescription: Commit messages.\n---\nTag it.\n").unwrap();
     let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
@@ -340,6 +340,8 @@ async fn acp_announces_commands_and_runs_skills() {
             json!({"name": "context", "description": "Show what fills the context window"}),
             json!({"name": "skill:commit-style", "description": "Commit messages."}),
             json!({"name": "skill:gen-report", "description": "Generate the weekly report.", "input": {"hint": "[week]"}}),
+            // Built into finx (docs/desktop/customize-design.md §4.6).
+            json!({"name": "skill:skill-creator", "description": "Writes a new skill, or improves an existing one, from what the user describes. Use when the user asks to create, write or turn something into a skill."}),
         ]
     );
 
@@ -362,7 +364,7 @@ async fn acp_announces_commands_and_runs_skills() {
         .await
         .unwrap();
     let (commands, replayed) = commands_after_open(&mut rx, &session).await;
-    assert_eq!(commands.len(), 4);
+    assert_eq!(commands.len(), 5);
     let user = replayed.iter().find(|u| u["sessionUpdate"] == "user_message_chunk").unwrap();
     assert_eq!(user["content"]["text"], typed);
 

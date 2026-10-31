@@ -21,6 +21,8 @@ pub mod transform;
 pub mod types;
 pub mod usage;
 
+/// The TLS setup finx's own HTTP clients use: system roots, verified lazily.
+pub use tls::client_config as tls_client_config;
 pub use api::Timeouts;
 pub use api::WireApi;
 pub use api::WireRequest;

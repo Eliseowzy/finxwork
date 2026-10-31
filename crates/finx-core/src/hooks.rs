@@ -47,11 +47,9 @@ pub struct SessionView {
     pub env: Arc<dyn Environment>,
     /// finx's own data directory (canonical), which is protected like `.git`.
     pub data_dir: PathBuf,
-    /// Configured skill paths (canonical) and `skills.dirs` names missing from the built-in
-    /// protected directories. What is written there becomes instructions for later
-    /// sessions, so they are protected like `.agents`.
+    /// Configured skill paths (canonical). What is written there becomes instructions for
+    /// later sessions, so they are protected like `.agents`.
     pub skill_roots: Arc<[PathBuf]>,
-    pub skill_dirs: Arc<[String]>,
 }
 
 #[async_trait]

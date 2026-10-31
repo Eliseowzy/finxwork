@@ -1,6 +1,7 @@
 //! Transports carry single JSON-RPC messages; the client does correlation and timeouts.
 
 pub(crate) mod http;
+pub(crate) mod sse;
 pub(crate) mod stdio;
 
 use async_trait::async_trait;

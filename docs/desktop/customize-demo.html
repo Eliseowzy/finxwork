@@ -1,0 +1,1196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>自定义 · 原型</title>
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --fs:13px;--top:44px;--lights:78px;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --win:#ffffff;--win2:#f4f4f7;--win3:#ebebf0;--side:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);--l4:rgba(0,0,0,.14);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --side-sel:rgba(0,0,0,.075);--accent-t:var(--accent-fg);--accent-bg:rgba(31,107,255,.10);
+  --green:var(--ok);--green-bg:rgba(23,146,79,.11);--orange:var(--warn);--orange-bg:rgba(230,126,10,.12);--red:var(--danger);--red-bg:rgba(215,51,63,.10);
+  --violet:#8a5cf5;--violet-bg:rgba(138,92,245,.11);--teal:#0e9f9a;--teal-bg:rgba(14,159,154,.11);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --seg-on:#ffffff;--field:#ffffff;--field-bd:rgba(0,0,0,.16);
+  --menu:rgba(248,248,250,.80);--menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);
+  --tb-fg:rgba(0,0,0,.72);--bar-tint:rgba(255,255,255,.72);--code:#f6f7fa;--scrim:rgba(0,0,0,.18);
+  --card:#f6f6f9;--card-h:#efeff3;--pill:#ffffff;--pill-bd:rgba(0,0,0,.12);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;--win3:#323237;--side:#25252a;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);--l4:rgba(255,255,255,.14);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.05);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --side-sel:rgba(255,255,255,.1);--accent-bg:rgba(46,128,255,.16);
+  --green-bg:rgba(63,207,134,.14);--orange-bg:rgba(255,171,61,.14);--red-bg:rgba(255,102,112,.13);
+  --violet:#a585ff;--violet-bg:rgba(165,133,255,.15);--teal:#3cc8c0;--teal-bg:rgba(60,200,192,.14);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --seg-on:rgba(255,255,255,.22);--field:rgba(255,255,255,.06);--field-bd:rgba(255,255,255,.16);
+  --menu:rgba(44,44,48,.80);--menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);
+  --tb-fg:rgba(255,255,255,.82);--bar-tint:rgba(30,30,33,.62);--code:#18181b;--scrim:rgba(0,0,0,.35);
+  --card:#26262a;--card-h:#2c2c31;--pill:#28282c;--pill-bd:rgba(255,255,255,.09);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;cursor:default;overflow:hidden}
+button{font:inherit;color:inherit}
+input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.ic.sm{width:13px;height:13px}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fade{from{opacity:0}}
+.mini-spin{width:13px;height:13px;border-radius:50%;border:1.6px solid var(--fill3);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
+
+/* controls (app.css) */
+.btn{height:26px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:var(--l1);flex:none}
+.btn:hover{filter:brightness(.98)}
+.btn:active{filter:brightness(.93)}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(40,60,200,.3)}
+.btn.danger{color:var(--red)}
+/* The page's one main action: solid in the text colour, quieter than the accent on a dark window. */
+.btn.solid{background:var(--l1);color:var(--win);box-shadow:none}
+.btn.lg{height:30px;padding:0 15px}
+.btn .ic{width:14px;height:14px}
+.btn:disabled{opacity:.42;pointer-events:none}
+.link{border:0;background:none;padding:0;color:var(--accent-t);font-size:inherit;cursor:pointer}
+.link:hover{text-decoration:underline}
+.link.danger{color:var(--red)}
+.sw{width:34px;height:20px;border-radius:999px;border:0;background:var(--fill3);position:relative;flex:none;transition:background .2s;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.2,0,0,1)}
+.sw.on{background:var(--accent)}
+.sw.on::after{transform:translateX(14px)}
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
+.seg button{border:0;background:transparent;height:24px;padding:0 13px;border-radius:var(--r-xs);font-size:12.5px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.seg button.on{background:var(--seg-on);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.seg.sm button{height:22px;padding:0 11px;font-size:12px}
+.field{height:26px;border-radius:var(--r-sm);border:0;box-shadow:inset 0 0 0 1px var(--field-bd);background:var(--field);padding:0 9px;font-size:13px;color:var(--l1);outline:none;width:100%}
+.field:focus{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px var(--accent-bg)}
+.field.mono{font-family:var(--mono);font-size:12px}
+.kbd{font-size:11.5px;color:var(--l3);letter-spacing:.04em}
+.badge{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 7px;border-radius:var(--r-xs);background:var(--fill2);font-size:11px;color:var(--l2);white-space:nowrap;flex:none}
+.badge.ok{background:var(--green-bg);color:var(--green)}
+.badge.warn{background:var(--orange-bg);color:var(--orange)}
+.badge.bad{background:var(--red-bg);color:var(--red)}
+.badge.acc{background:var(--accent-bg);color:var(--accent-t)}
+.badge .ic{width:11px;height:11px;stroke-width:2}
+.dotc{width:6px;height:6px;border-radius:50%;background:var(--l3);flex:none;display:inline-block}
+.dotc.ok{background:var(--green)}.dotc.bad{background:var(--red)}.dotc.warn{background:var(--orange)}
+.mono{font-family:var(--mono)}
+
+/* window */
+.mainwrap{display:grid;grid-template-columns:272px minmax(0,1fr);height:100%}
+.side{background:var(--side);border-right:.5px solid var(--sep);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none;position:relative}
+.lights{position:absolute;left:20px;top:16px;display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;display:block}
+.tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
+.tb .ic{stroke-width:1.45}
+.tb:hover{background:var(--fill2);color:var(--l1)}
+.side-nav{padding:0 8px 6px;display:flex;flex-direction:column;gap:2px;flex:none}
+.nav-i{display:flex;align-items:center;gap:9px;height:32px;padding:0 9px;border-radius:var(--r-md);font-size:14px;border:0;background:none;width:100%;text-align:left}
+.nav-i .ic{width:18px;height:18px;color:var(--l1)}
+.nav-i .kbd{margin-left:auto;opacity:0;transition:opacity .12s}
+.nav-i:hover .kbd{opacity:1}
+.nav-i:hover{background:var(--fill)}
+.nav-i.sel{background:var(--side-sel)}
+.side-list{flex:1;overflow-y:auto;min-height:0;padding:0 8px 8px}
+.grp-h{font-size:12px;color:var(--l2);padding:20px 10px 6px;display:flex;align-items:center;gap:6px}
+.grp-h .ic{width:16px;height:16px}
+.srow{display:flex;flex-direction:column;padding:7px 10px;border-radius:var(--r-md);font-size:14px;margin-bottom:2px}
+.srow:hover{background:var(--fill)}
+.srow span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.srow small{font-size:11px;color:var(--l2);margin-top:2px;display:flex;gap:4px;align-items:center}
+.srow small .ic{width:11px;height:11px}
+.side-foot{flex:none;height:52px;display:flex;align-items:center;gap:9px;margin:0 6px 6px;padding:0 10px 0 8px;border-radius:var(--r-md);border-top:.5px solid var(--sep)}
+.av{width:24px;height:24px;border-radius:50%;background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600}
+.side-foot b{font-weight:500}
+.side-foot span{font-size:11.5px;color:var(--l2);display:block}
+
+/* The page, as the session page draws its parts: the title in the 44 px band (.ctool, .ctitle h2),
+   a hairline, then a column 798 wide (.dbody) on the spacing scale 8 / 13 / 21 / 34 / 55. */
+.content{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--win)}
+.ctop{height:var(--top);flex:none}
+.ctool{height:var(--top);flex:none;display:flex;align-items:center;gap:10px;padding:0 14px 0 22px;border-bottom:.5px solid var(--sep)}
+.ctool h2{flex:1;margin:0;font-size:14px;font-weight:500}
+.cscroll{flex:1;overflow-y:auto;min-height:0}
+.dbody{max-width:1120px;margin:0 auto;padding:0 var(--sp-4) var(--sp-5)}
+/* The page's name, large, with room above it: this is a place of its own, not a conversation. */
+.ptitle{margin:0;font-size:28px;font-weight:650;letter-spacing:-.6px;line-height:1.25}
+/* What kind, a rule, whose; Add at the end. All 30 high. It stays at the top while the list scrolls. */
+.bar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-2);padding:var(--sp-1) 0;background:var(--win)}
+.bar.stuck{box-shadow:0 .5px 0 var(--sep)}
+.bar .grow{flex:1}
+.tabs{display:flex;gap:2px}
+.tab{height:30px;padding:0 13px;border:0;border-radius:var(--r-sm);background:none;font-size:14px;color:var(--l1)}
+.tab:hover{background:var(--fill)}
+.tab.on{background:var(--fill2)}
+.vsep{width:1px;height:18px;background:var(--sep);flex:none}
+.bar .seg button{height:26px;padding:0 13px;font-size:14px}
+.bar .seg button.on{color:var(--l1)}
+.addbtn{height:30px;padding:0 12px 0 11px;font-size:13.5px}
+.addbtn .chev{width:12px;height:12px;opacity:.6;margin-right:-3px}
+
+.sect{animation:fadein .3s cubic-bezier(.2,0,0,1)}
+.sect+.sect{margin-top:var(--sp-3)}
+.bar+.sect{margin-top:var(--sp-2)}
+/* A group's heading: the settings' .fhead, with its count as the sidebar's. */
+.fhead{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--l2);margin:0 0 var(--sp-1)}
+.fhead .n{color:var(--l3);font-weight:500;font-variant-numeric:tabular-nums}
+.anote{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:8px 13px;margin-bottom:var(--sp-1)}
+.anote .ic{color:var(--orange)}
+.anote .link{margin-left:auto;flex:none}
+.anote code{font-family:var(--mono);font-size:11.5px;color:var(--l1)}
+
+.tile{width:32px;height:32px;border-radius:var(--r-md);background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none;font-weight:650;font-size:12.5px;letter-spacing:-.02em}
+.tile .ic{width:17px;height:17px;stroke-width:1.35}
+
+/* Mine: one to a row, each its own rounded panel (not a table): the mark, the name over one line
+   of what it does, then on the right its state, its switch and its menu. */
+.rows{display:flex;flex-direction:column;gap:var(--sp-1)}
+.row{display:flex;align-items:center;gap:var(--sp-2);min-height:58px;padding:9px 8px 9px 13px;border-radius:var(--r-lg);background:var(--win2);transition:background .15s}
+.row:hover{background:var(--win3)}
+.row.off .tile,.row.off .rt{opacity:.5}
+.rt{flex:1;min-width:0}
+.rn{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;line-height:18px;min-width:0}
+.rn .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd{font-size:12px;color:var(--l2);margin-top:2px;line-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rd.mono{font-family:var(--mono);font-size:11.5px}
+.ra{display:flex;align-items:center;gap:8px;flex:none;margin-left:var(--sp-1)}
+.st{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;color:var(--l2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.st.ok{color:var(--green)}.st.bad{color:var(--red)}
+.st .link{font-size:11.5px}
+.more{width:26px;height:26px;border-radius:var(--r-sm);border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;padding:0}
+.more:hover,.more.open{background:var(--fill2);color:var(--l1)}
+
+/* Discover: two to a row, the mark beside the name, what it does in two lines, where it comes from. */
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-1)}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{display:grid;grid-template-columns:32px minmax(0,1fr) auto;column-gap:var(--sp-2);padding:var(--sp-2);border-radius:var(--r-lg);background:var(--win2);transition:background .15s}
+.card:hover{background:var(--win3)}
+.card .tile{grid-row:1/4}
+.ct{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:500;line-height:18px;margin-top:-1px}
+.ct .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cd{grid-column:2/4;font-size:12px;color:var(--l2);line-height:17px;margin-top:3px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;min-height:34px}
+.cm{grid-column:2/4;font-size:11px;color:var(--l3);margin-top:6px}
+.ca{grid-column:3;grid-row:1;display:flex;align-items:center;margin:-3px 0 -3px 8px}
+/* Add: a round + that turns into a spinner, then a check. */
+.inst{width:26px;height:26px;border-radius:50%;border:0;padding:0;background:var(--btn);box-shadow:var(--btn-sh);display:flex;align-items:center;justify-content:center;color:var(--l1);transition:background .15s,color .15s}
+.inst:hover{background:var(--accent);color:#fff;box-shadow:none}
+.inst .ic{width:14px;height:14px;stroke-width:1.6}
+.inst.busy{pointer-events:none;background:var(--fill);box-shadow:none}
+.inst.done{background:var(--fill);color:var(--l2);box-shadow:none;pointer-events:none}
+.inst.done .ic{stroke-width:2}
+.inst-wait{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--l2);height:26px}
+
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:var(--sp-5) var(--sp-3);border-radius:var(--r-lg);background:var(--win2);color:var(--l2);gap:6px;font-size:12.5px}
+.empty .ic{width:26px;height:26px;color:var(--l3);stroke-width:1.1;margin-bottom:4px}
+.empty b{color:var(--l1);font-weight:500;font-size:13px}
+.empty .acts{display:flex;gap:8px;margin-top:var(--sp-1)}
+
+/* menus */
+.vmenu{position:fixed;z-index:30;min-width:176px;background:var(--menu-solid);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.08);padding:4px;animation:menudown .14s cubic-bezier(.2,0,0,1)}
+@keyframes menudown{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.vmenu .mh{font-size:11.5px;color:var(--l3);padding:6px 9px 3px}
+.vmenu .mi{display:flex;align-items:center;gap:9px;width:100%;min-height:30px;padding:0 9px;border:0;border-radius:var(--r-sm);background:none;text-align:left;white-space:nowrap}
+.vmenu .mi:hover{background:var(--fill2)}
+.vmenu .mi>.ic{color:var(--l2)}
+.vmenu .mi.danger,.vmenu .mi.danger>.ic{color:var(--red)}
+.vmenu .mi.two{align-items:flex-start;padding:7px 10px 7px 9px;gap:10px}
+.vmenu .mi.two>.ic{margin-top:1px}
+.vmenu .mi.two b{display:block;font-weight:400}
+.vmenu .mi.two small{display:block;font-size:11.5px;color:var(--l2);margin-top:1px}
+.vmenu .msep{height:.5px;background:var(--sep);margin:5px 9px}
+
+/* sheets */
+.scrim{position:fixed;inset:0;z-index:40;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;animation:fade .2s}
+.sheet{width:560px;max-width:calc(100vw - 48px);max-height:calc(100vh - 80px);overflow-y:auto;background:var(--win);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1)}
+@keyframes sheet{from{opacity:0;transform:scale(.97)}}
+.sheet-in{padding:22px 24px 18px}
+.sheet h3{margin:0 0 4px;font-size:15px;font-weight:600}
+.sheet .sub{margin:0 0 16px;color:var(--l2);font-size:12.5px;line-height:1.55}
+.sheet-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:20px;align-items:center}
+.sheet-foot .left{margin-right:auto;display:flex;gap:14px;align-items:center}
+.dlabel{font-size:12px;color:var(--l2);margin:var(--sp-3) 0 var(--sp-1)}
+.fgroup{background:var(--win2);border-radius:var(--r-lg)}
+.frow{display:flex;align-items:center;gap:12px;padding:8px 13px;min-height:38px;border-top:.5px solid var(--sep)}
+.frow:first-child{border-top:0}
+.frow>.fl{flex:none;width:72px;color:var(--l2);font-size:12.5px}
+.frow>.fv{flex:1;min-width:0;display:flex;align-items:center;gap:8px;color:var(--l1)}
+.frow>.fv.mono{font-size:12px}
+.frow .ic{color:var(--l2)}
+.frow .fdesc{font-size:12px;color:var(--l2);margin-top:2px}
+.frow.tool{padding:9px 13px}
+.frow.tool .mono{font-size:12.5px}
+.files .frow{min-height:34px;padding:6px 13px;gap:9px}
+.files .frow span.sz{margin-left:auto;color:var(--l3);font-size:11.5px;font-variant-numeric:tabular-nums}
+.errbox{font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--red);background:var(--red-bg);border-radius:var(--r-md);padding:9px 13px;white-space:pre-wrap}
+.field.bad{box-shadow:inset 0 0 0 1px var(--red),0 0 0 3px var(--red-bg)}
+
+/* A card's page: back to the list, the item (mark, name, what it is, its actions), tabs on a hairline,
+   then the body: what it does on the left, the facts about it in a panel on the right. */
+.dback{display:inline-flex;align-items:center;gap:6px;height:28px;margin:2px 0 0 -6px;padding:0 9px 0 6px;border:0;border-radius:var(--r-sm);background:none;font-size:13.5px;color:var(--l2)}
+.dback:hover{color:var(--l1);background:var(--fill)}
+.dback .ic{width:15px;height:15px}
+.dhero{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-2)}
+.tile.xl{width:52px;height:52px;border-radius:var(--r-lg);font-size:17px}
+.tile.xl .ic{width:26px;height:26px;stroke-width:1.25}
+.dhero .dt{flex:1;min-width:0}
+.dhero h1{margin:0;display:flex;align-items:center;gap:8px;font-size:20px;font-weight:650;letter-spacing:-.3px;line-height:1.3}
+.dmeta{display:flex;align-items:center;gap:6px;margin-top:4px;font-size:12.5px;color:var(--l2);white-space:nowrap}
+.dmeta i{font-style:normal;color:var(--l3)}
+.dmeta .st{font-size:12.5px}
+.dacts{display:flex;align-items:center;gap:8px;flex:none}
+.dacts .btn{height:30px;padding:0 15px;font-size:13.5px}
+.dtabs{display:flex;gap:var(--sp-3);margin-top:var(--sp-3);border-bottom:.5px solid var(--sep)}
+.dtab{position:relative;height:38px;padding:0 1px;border:0;background:none;font-size:13.5px;color:var(--l1)}
+.dtab .n{color:var(--l3)}
+.dtab.on{font-weight:500}
+.dtab.on::after{content:"";position:absolute;left:0;right:0;bottom:-.5px;height:2px;border-radius:1px;background:var(--l1)}
+.dcols{display:grid;grid-template-columns:minmax(0,1fr) clamp(248px,calc((100% - var(--sp-4)) * .382),320px);gap:var(--sp-4);margin-top:var(--sp-3);align-items:start}
+@media (max-width:1000px){.dcols{grid-template-columns:minmax(0,1fr)}}
+.dpane{margin-top:var(--sp-3)}
+.dsec+.dsec{margin-top:var(--sp-3)}
+.dsec h4{margin:0 0 8px;font-size:12px;font-weight:400;color:var(--l2)}
+.dsec p{margin:0;font-size:13.5px;line-height:1.65}
+.dsec p.hint{margin-top:8px;font-size:12px;color:var(--l3)}
+.dsec code{font-family:var(--mono);font-size:12px;background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs)}
+.dsec .field{height:30px}
+.dside{background:var(--win2);border-radius:var(--r-lg);padding:3px 0}
+.kv2{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px;padding:8px 13px;font-size:12.5px}
+.kv2+.kv2{border-top:.5px solid var(--sep)}
+.kv2 .k{color:var(--l2);flex:none}
+.kv2 .v{min-width:0;text-align:right;overflow-wrap:anywhere}
+.kv2 .v.mono{font-family:var(--mono);font-size:11.5px;color:var(--l2)}
+.kv2.stack{flex-direction:column;align-items:flex-start;gap:7px}
+.kv2.stack .v{text-align:left}
+.filebar{display:flex;align-items:center;gap:7px;margin-bottom:var(--sp-1);font-size:12px;color:var(--l2)}
+.filebar .ic{width:14px;height:14px}
+.filebar .link{margin-left:auto;font-size:12px}
+.code{margin:0;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--l1);background:var(--code);border-radius:var(--r-md);box-shadow:inset 0 0 0 .5px var(--sep);padding:14px 16px;white-space:pre-wrap;user-select:text;-webkit-user-select:text}
+.code .fm{color:var(--l2)}
+
+/* forms in sheets */
+.form{display:flex;flex-direction:column;gap:14px}
+.fi{display:flex;flex-direction:column;gap:6px}
+.fi>label{font-size:12px;color:var(--l2);display:flex;align-items:center;gap:6px}
+.fi>label em{font-style:normal;color:var(--l3)}
+.fi>.seg{align-self:flex-start}
+.fi .note{font-size:11.5px;color:var(--l3)}
+.kv{display:grid;grid-template-columns:1fr 1.6fr 24px;gap:6px;align-items:center}
+.kv .x{width:24px;height:24px;border:0;background:none;border-radius:var(--r-sm);color:var(--l3);display:flex;align-items:center;justify-content:center}
+.kv .x:hover{background:var(--fill2);color:var(--l1)}
+.addrow{align-self:flex-start;font-size:12.5px;display:flex;gap:4px;align-items:center}
+.addrow .ic{width:12px;height:12px}
+.drop{border:1.5px dashed var(--fill3);border-radius:var(--r-lg);padding:34px 21px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--l2);text-align:center;transition:background .15s,border-color .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-bg)}
+.drop .ic{width:30px;height:30px;color:var(--l3);stroke-width:1.1}
+.drop b{color:var(--l1);font-weight:500;font-size:14px}
+.drop small{font-size:12px;color:var(--l3)}
+.parsed{display:flex;gap:12px;align-items:flex-start;background:var(--win2);border-radius:var(--r-lg);padding:var(--sp-2)}
+.parsed b{font-weight:500}
+.parsed p{margin:3px 0 0;font-size:12.5px;color:var(--l2);line-height:1.5}
+
+/* toast */
+.toast{position:fixed;left:calc(272px + (100vw - 272px) / 2);top:calc(var(--top) + 12px);transform:translateX(-50%);background:var(--menu);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);box-shadow:0 0 0 .5px var(--menu-bd),0 10px 30px rgba(0,0,0,.2);border-radius:var(--r-xl);padding:8px 10px 8px 14px;display:flex;align-items:center;gap:10px;font-size:13px;z-index:60;animation:pop2 .25s cubic-bezier(.2,0,0,1)}
+.toast .ic{color:var(--green)}
+@keyframes pop2{from{opacity:0;transform:translate(-50%,-8px)}}
+
+/* the new-session page "create in a conversation" lands on */
+.newpage{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 34px 80px;animation:fadein .3s}
+.newpage h2{font-size:22px;font-weight:600;margin:16px 0 26px}
+.pill{width:min(680px,100%);background:var(--pill);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--pill-bd),0 4px 18px rgba(0,0,0,.06);padding:14px 16px 10px}
+.pill .txt{min-height:52px;font-size:14px;line-height:1.6}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--accent-bg);color:var(--accent-t);border-radius:var(--r-xs);padding:0 6px;font-size:13px;height:22px;vertical-align:1px;margin-right:4px}
+.chip .ic{width:12px;height:12px}
+.caret{display:inline-block;width:1.5px;height:17px;background:var(--accent);vertical-align:-3px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.pill .row{display:flex;align-items:center;gap:8px;color:var(--l2);font-size:12px}
+.pill .send{margin-left:auto;width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center}
+
+/* final version: what the design adds */
+.fhead .hint{color:var(--l3);margin-left:2px}
+.st.warn{color:var(--orange)}
+/* A note on a page: why something is read-only, what a choice will do. */
+.callout{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:9px 13px;line-height:1.55}
+.callout>.ic{margin-top:2px;color:var(--l3)}
+.callout.warn>.ic{color:var(--orange)}
+.callout .btn{margin-left:auto;flex:none;align-self:center}
+.callout code{font-family:var(--mono);font-size:11.5px;color:var(--l1)}
+.dsec .callout+.btn{margin-top:10px}
+.ferr{font-size:11.5px;color:var(--red)}
+.ferr:empty{display:none}
+.kv{grid-template-columns:1fr 1.6fr 24px 24px}
+.lockbtn{width:24px;height:24px;border:0;border-radius:var(--r-sm);background:none;color:var(--l3);display:flex;align-items:center;justify-content:center;padding:0}
+.lockbtn:hover{background:var(--fill2);color:var(--l1)}
+.lockbtn.on{color:var(--accent-t);background:var(--accent-bg)}
+.lockbtn .ic{width:13px;height:13px}
+.field.saved{color:var(--l3)}
+.tsrc{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--l2);margin-bottom:var(--sp-1)}
+.tsrc .link{margin-left:auto;font-size:12px}
+.toast .ic.info{color:var(--l2)}
+.toast .btn{height:24px}
+.target{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--l2);background:var(--win2);border-radius:var(--r-md);padding:9px 13px}
+.target .ic{color:var(--l3)}
+.target .mono{font-size:11.5px;color:var(--l1)}
+.pill .send{border:0;padding:0;cursor:default}
+.pill .send:disabled{opacity:.35}
+
+/* demo-only control */
+.demo{position:fixed;right:14px;bottom:14px;z-index:70;display:flex;align-items:center;gap:8px;background:var(--menu);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 0 0 .5px var(--menu-bd),0 6px 20px rgba(0,0,0,.14);border-radius:var(--r-sm);padding:4px 4px 4px 12px;font-size:11.5px;color:var(--l2)}
+</style>
+</head>
+<body>
+<div class="mainwrap">
+  <aside class="side">
+    <div class="side-top">
+      <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+      <button class="tb" title="隐藏侧栏"><svg class="ic" viewBox="0 0 16 16" data-i="sidebar"></svg></button>
+      <button class="tb" title="列表显示"><svg class="ic" viewBox="0 0 16 16" data-i="filter"></svg></button>
+    </div>
+    <nav class="side-nav">
+      <button class="nav-i" data-nav="new"><svg class="ic" viewBox="0 0 16 16" data-i="plus"></svg><span>新会话</span><span class="kbd">⌘N</span></button>
+      <button class="nav-i"><svg class="ic" viewBox="0 0 16 16" data-i="search"></svg><span>搜索</span><span class="kbd">⌘K</span></button>
+      <button class="nav-i sel" data-nav="custom"><svg class="ic" viewBox="0 0 16 16" data-i="blocks"></svg><span>自定义</span></button>
+    </nav>
+    <div class="side-list">
+      <div class="grp-h">finxwork <svg class="ic" viewBox="0 0 16 16" data-i="caret"></svg></div>
+      <div class="srow"><span>打包流程和版本管理</span><small><svg class="ic" viewBox="0 0 16 16" data-i="branch"></svg>main</small></div>
+      <div class="srow"><span>模型目录接入 models.dev</span><small><svg class="ic" viewBox="0 0 16 16" data-i="branch"></svg>main</small></div>
+      <div class="grp-h">hermesh <svg class="ic" viewBox="0 0 16 16" data-i="caret"></svg></div>
+      <div class="srow"><span>错误提示溢出和文案优化</span><small><svg class="ic" viewBox="0 0 16 16" data-i="branch"></svg>fix/error-copy</small></div>
+      <div class="srow"><span>Windows 端支持计划</span><small><svg class="ic" viewBox="0 0 16 16" data-i="branch"></svg>main</small></div>
+      <div class="srow"><span>项目设置页面</span><small><svg class="ic" viewBox="0 0 16 16" data-i="branch"></svg>feat/project-settings</small></div>
+    </div>
+    <div class="side-foot"><div class="av">Y</div><div style="flex:1;min-width:0"><b>yee</b><span>DeepSeek V3.2</span></div></div>
+  </aside>
+  <main class="content" id="content"></main>
+</div>
+<div class="demo">原型外观 <div class="seg sm" id="theme"><button data-t="light" class="on">浅色</button><button data-t="dark">深色</button></div></div>
+
+<script>
+const P = {
+  sidebar:'<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.4"/><path d="M6.2 2.8v10.4"/>',
+  filter:'<path d="M2.5 4.2h11M4.6 8h6.8M6.7 11.8h2.6"/>',
+  search:'<circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3l3.4 3.4"/>',
+  plus:'<path d="M8 3v10M3 8h10"/>',
+  // Customize: three tiles and a fourth being added.
+  blocks:'<rect x="2.8" y="2.8" width="3.9" height="3.9" rx="1.1"/><rect x="9.3" y="2.8" width="3.9" height="3.9" rx="1.1"/><rect x="2.8" y="9.3" width="3.9" height="3.9" rx="1.1"/><path d="M11.25 9.1v4.3M9.1 11.25h4.3"/>',
+  caret:'<path d="M4.8 6.4h6.4L8 10z" fill="currentColor" stroke="none"/>',
+  chevD:'<path d="M4.5 6.3L8 9.8l3.5-3.5"/>',
+  branch:'<circle cx="4.8" cy="3.6" r="1.5"/><circle cx="4.8" cy="12.4" r="1.5"/><circle cx="11.2" cy="5.2" r="1.5"/><path d="M4.8 5.1v5.8M11.2 6.7c0 2.6-6.4 1.6-6.4 4.2"/>',
+  more:'<circle cx="3.6" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.15" fill="currentColor" stroke="none"/><circle cx="12.4" cy="8" r="1.15" fill="currentColor" stroke="none"/>',
+  check:'<path d="M3.4 8.4l3 3 6.2-6.8"/>',
+  x:'<path d="M4.3 4.3l7.4 7.4M11.7 4.3l-7.4 7.4"/>',
+  folder:'<path d="M1.8 4.4c0-.7.5-1.2 1.2-1.2h3l1.4 1.5H13c.7 0 1.2.5 1.2 1.2V12c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/>',
+  file:'<path d="M9.2 1.9H4.4c-.7 0-1.2.5-1.2 1.2v9.8c0 .7.5 1.2 1.2 1.2h7.2c.7 0 1.2-.5 1.2-1.2V5.6z"/><path d="M9.2 1.9v3.7h3.6"/>',
+  upload:'<path d="M8 10.6V2.8M4.8 6L8 2.8 11.2 6"/><path d="M2.6 10.2v1.8c0 .7.5 1.2 1.2 1.2h8.4c.7 0 1.2-.5 1.2-1.2v-1.8"/>',
+  chat:'<path d="M2.6 4.2c0-.8.6-1.4 1.4-1.4h8c.8 0 1.4.6 1.4 1.4v5.4c0 .8-.6 1.4-1.4 1.4H7l-2.9 2.3V11H4c-.8 0-1.4-.6-1.4-1.4z"/>',
+  plug:'<path d="M5.8 2.4v3M10.2 2.4v3"/><path d="M3.8 5.4h8.4v2a4.2 4.2 0 0 1-8.4 0z"/><path d="M8 11.6v2.2"/>',
+  terminal:'<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2"/><path d="M4.6 6.3l2 1.7-2 1.7M8.2 10h3.2"/>',
+  globe:'<circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c1.7 1.8 2.5 3.8 2.5 6S9.7 12.2 8 14C6.3 12.2 5.5 10.2 5.5 8S6.3 3.8 8 2z"/>',
+  person:'<circle cx="8" cy="5.5" r="2.6"/><path d="M3 13.6c.6-2.5 2.6-3.8 5-3.8s4.4 1.3 5 3.8"/>',
+  ext:'<path d="M6.5 3.2H4c-.7 0-1.2.5-1.2 1.2V12c0 .7.5 1.2 1.2 1.2h7.6c.7 0 1.2-.5 1.2-1.2V9.5M9.3 2.8h3.9v3.9M13.2 2.8L7.5 8.5"/>',
+  edit:'<path d="M10.6 2.7l2.7 2.7-7.6 7.6-3.2.5.5-3.2z"/>',
+  trash:'<path d="M2.8 4.3h10.4M6.3 4.3V3c0-.4.3-.7.7-.7h2c.4 0 .7.3.7.7v1.3M4 4.3l.6 8.5c0 .6.5 1 1.1 1h4.6c.6 0 1.1-.4 1.1-1l.6-8.5"/>',
+  retry:'<path d="M13.1 8.4A5.2 5.2 0 1 1 11.6 4.4"/><path d="M13.3 2.4v2.8h-2.8"/>',
+  info:'<circle cx="8" cy="8" r="6"/><path d="M8 7.3v3.9M8 5v.1"/>',
+  warn:'<path d="M8 2.2l6.2 11H1.8z"/><path d="M8 6.4v3.2M8 11.4v.1"/>',
+  lock:'<rect x="3.2" y="7" width="9.6" height="6.8" rx="1.6"/><path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.4 0V7"/>',
+  unlock:'<rect x="3.2" y="7" width="9.6" height="6.8" rx="1.6"/><path d="M5.3 7V5.2a2.7 2.7 0 0 1 5.3-.8"/>',
+  skill:'<path d="M8 4.3C6.6 3.2 4.6 2.9 2.6 3.4v8.9c2-.5 4-.2 5.4.9 1.4-1.1 3.4-1.4 5.4-.9V3.4c-2-.5-4-.2-5.4.9z"/><path d="M8 4.3v8.9"/>',
+  sparkle:'<path d="M8 2.2l1.3 3.5 3.5 1.3-3.5 1.3L8 11.8 6.7 8.3 3.2 7l3.5-1.3z"/><path d="M12.6 11.2l.5 1.3 1.3.5-1.3.5-.5 1.3-.5-1.3-1.3-.5 1.3-.5z"/>',
+  wand:'<path d="M2.6 13.4l7.6-7.6M9 4.6l2.4 2.4"/><path d="M11.6 1.8v2M10.6 2.8h2M13.6 5.4v1.6M12.8 6.2h1.6"/>',
+  arrowLeft:'<path d="M13 8H3.2M7.2 4L3.2 8l4 4"/>',
+  arrowUp:'<path d="M8 13.2V3.2M3.8 7.4L8 3.2l4.2 4.2"/>',
+  paperclip:'<path d="M13 7.4l-5.1 5.1a3.1 3.1 0 0 1-4.4-4.4l5.5-5.5a2.1 2.1 0 0 1 3 3l-5.4 5.4a1.1 1.1 0 0 1-1.6-1.6l4.9-4.9"/>',
+};
+const ic = (n, c = '') => `<svg class="ic ${c}" viewBox="0 0 16 16">${P[n] || ''}</svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+document.querySelectorAll('svg[data-i]').forEach((s) => (s.innerHTML = P[s.dataset.i]));
+
+/* ---------- data: what the kernel's methods would return ---------- */
+const PROJECT = 'finxwork';
+// The files a connector can live in (design §4.1). The page writes only the first two.
+const FILES = {
+  user: '~/.finx/config.toml',
+  user_project: '~/.finx/projects/finxwork-3fa81c02/config.toml',
+  project: 'finxwork/.finx/config.toml',
+};
+// Conversations open in finxwork: what "让打开的会话也用上" would reach (design DD-49).
+const OPEN_SESSIONS = 2;
+const TOOL_COUNT = { github: 38, playwright: 21, context7: 2, linear: 23, notion: 14, sentry: 16, fetch: 1, 'brave-search': 2, 'docs-search': 6, 'staging-db': 4 };
+
+const S = {
+  view: 'custom',          // custom | new
+  newMode: 'create',       // what the new-session page was opened for: create | use
+  tab: 'skills',           // skills | connectors
+  scope: 'discover',       // mine | discover
+  // skills/list: layer is system (built in), user (~/.finx/skills, or another client's folder when `from` is set) or project (the repo).
+  skills: [
+    { id: 'pdf-tools', name: 'pdf-tools', layer: 'user', source: 'upload', path: '~/.finx/skills/pdf-tools', on: true,
+      desc: '提取 PDF 里的文字和表格。读取、转换或检查 PDF 文件时使用。', files: [['SKILL.md', '2.1 KB'], ['scripts/extract.py', '6.4 KB'], ['references/formats.md', '3.0 KB']] },
+    { id: 'release-notes', name: 'release-notes', layer: 'user', source: 'catalog', path: '~/.finx/skills/release-notes', on: true,
+      desc: '根据两个版本之间的提交整理更新说明，按新功能、修复和内部改动分组，用用户看得懂的话写。', files: [['SKILL.md', '1.4 KB'], ['assets/template.md', '0.6 KB']] },
+    { id: 'frontend-design', name: 'frontend-design', layer: 'user', from: '.claude', path: '~/.claude/skills/frontend-design', on: true,
+      desc: '做网页和界面时使用：给出有个性的排版、配色和动效，避免千篇一律的模板感。', files: [['SKILL.md', '3.8 KB']] },
+    { id: 'xlsx', name: 'xlsx', layer: 'user', from: '.agents', path: '~/.agents/skills/xlsx', on: false,
+      desc: '创建、编辑和分析电子表格，保留公式、格式和图表；读写 .xlsx、.csv 时使用。', files: [['SKILL.md', '4.2 KB'], ['scripts/recalc.py', '3.1 KB']] },
+    { id: 'kernel-e2e', name: 'kernel-e2e', layer: 'project', path: 'finxwork/.finx/skills/kernel-e2e', on: true,
+      desc: '用真实模型跑一遍内核验收：启动 finx、发起会话、核对事件流和落盘的会话文件。', files: [['SKILL.md', '2.6 KB'], ['scripts/run.sh', '1.1 KB']] },
+    { id: 'desktop-dev-run', name: 'desktop-dev-run', layer: 'project', path: 'finxwork/.finx/skills/desktop-dev-run', on: true,
+      desc: '隔离启动桌面端开发版：独立的 FINX_HOME、端口和窗口，不碰正在用的 App。', files: [['SKILL.md', '1.9 KB']] },
+    { id: 'skill-creator', name: 'skill-creator', layer: 'system', path: '~/.finx/skills/.system/skill-creator', on: true,
+      desc: '一步步帮你写出新技能：问清用途、起草 SKILL.md、用几个例子验证它真的会被用上。', files: [['SKILL.md', '5.6 KB'], ['references/format.md', '2.2 KB'], ['scripts/validate.py', '3.4 KB']] },
+  ],
+  skillIssues: [{ path: '~/.claude/skills/old-notes/SKILL.md', why: '缺少 description' }],
+  skillCatalog: [
+    { id: 'webapp-testing', name: 'webapp-testing', desc: '用浏览器打开本地网页，点一点、截个图，确认改动真的生效，而不是只看代码。' },
+    { id: 'code-review', name: 'code-review', desc: '按正确性、可读性和性能审查当前改动，只报真正值得改的问题，附上修改建议。' },
+    { id: 'frontend-design', name: 'frontend-design', desc: '做网页和界面时使用：给出有个性的排版、配色和动效，避免千篇一律的模板感。' },
+    { id: 'mcp-builder', name: 'mcp-builder', desc: '指导你写一个好用的 MCP 服务器：工具怎么切分、参数怎么描述、错误怎么返回。' },
+    { id: 'release-notes', name: 'release-notes', desc: '根据两个版本之间的提交整理更新说明，按新功能、修复和内部改动分组，用用户看得懂的话写。' },
+    { id: 'commit-message', name: 'commit-message', desc: '读懂暂存区的改动，写一条说清楚"改了什么、为什么改"的提交说明。' },
+    { id: 'api-docs', name: 'api-docs', desc: '从代码里整理接口文档：参数、返回值、错误码和可以直接运行的示例。' },
+    { id: 'data-cleaning', name: 'data-cleaning', desc: '清理杂乱的表格数据：统一编码和分隔符、修正日期格式、去掉重复行。' },
+  ].map((s) => ({ by: 'finx 精选', license: 'Apache-2.0', files: [['SKILL.md', '3.2 KB'], ['references/guide.md', '2.4 KB']], ...s })),
+  // mcp/list: layer says which file defines the server; status comes from an open conversation or from the cache.
+  connectors: [
+    { id: 'github', name: 'GitHub', mono: 'GH', by: 'GitHub', layer: 'user', kind: 'http', where: 'https://api.githubcopilot.com/mcp/', auth: 'credential', on: true,
+      status: { state: 'ok', source: 'session', sessions: 2, tools: 38 }, desc: '读写仓库、议题和拉取请求，查看 CI 结果。' },
+    { id: 'playwright', name: 'Playwright', mono: 'PW', by: 'Microsoft', layer: 'user', kind: 'stdio', where: 'npx @playwright/mcp@latest', auth: 'none', on: true,
+      status: { state: 'ok', source: 'cache', ago: '3 小时前', tools: 21 }, desc: '控制一个真实的浏览器：打开网页、点击、填表、截图。' },
+    { id: 'linear', name: 'Linear', mono: 'L', by: 'Linear', layer: 'user', kind: 'http', where: 'https://mcp.linear.app/mcp', auth: 'oauth', authState: 'needs_login', on: true,
+      status: { state: 'needs_login' }, desc: '查找、创建和更新议题与项目，按团队和周期整理。' },
+    { id: 'fetch', name: 'Fetch', mono: '', icon: 'globe', by: 'MCP 官方示例', layer: 'user', kind: 'stdio', where: 'uvx mcp-server-fetch', auth: 'none', on: true,
+      status: { state: 'unknown' }, desc: '抓取网页并转成 Markdown，给模型读。' },
+    { id: 'sentry', name: 'Sentry', mono: 'S', by: 'Sentry', layer: 'user', kind: 'http', where: 'https://mcp.sentry.dev/mcp', auth: 'oauth', authState: 'logged_in', on: false,
+      status: { state: 'ok', source: 'cache', ago: '上周', tools: 16 }, desc: '查看错误和性能问题，按堆栈定位到代码。' },
+    { id: 'postgres-dev', name: 'postgres-dev', mono: 'Pg', layer: 'user_project', kind: 'stdio', where: 'uvx mcp-server-postgres', auth: 'credential', custom: true, on: true,
+      status: { state: 'failed', ago: '10 分钟前', error: 'connection refused: localhost:5432\n进程退出，代码 1' } },
+    { id: 'docs-search', name: 'docs-search', mono: 'DS', layer: 'project', kind: 'http', where: 'https://docs.internal.example/mcp', auth: 'none', on: true,
+      status: { state: 'ok', source: 'cache', ago: '昨天', tools: 6 }, desc: '在团队的内部文档里搜索，返回段落和原文链接。' },
+    { id: 'staging-db', name: 'staging-db', mono: 'SD', layer: 'project', kind: 'stdio', where: 'npx -y @acme/staging-db-mcp', auth: 'none', on: false,
+      status: { state: 'ok', source: 'cache', ago: '3 天前', tools: 4 }, desc: '只读查询预发布环境的数据库。' },
+  ],
+  // The desktop's own catalog (design §6): templates to prefill a config, not install records.
+  connectorCatalog: [
+    { id: 'github', name: 'GitHub', mono: 'GH', by: 'GitHub', url: 'https://api.githubcopilot.com/mcp/', auth: 'token',
+      token: { label: '个人访问令牌', placeholder: 'ghp_…', kind: 'header', key: 'Authorization' }, desc: '读写仓库、议题和拉取请求，查看 CI 结果。' },
+    { id: 'brave-search', name: 'Brave Search', mono: 'B', by: 'Brave', command: 'npx -y @brave/brave-search-mcp-server', auth: 'token',
+      token: { label: 'API Key', placeholder: 'BSA…', kind: 'env', key: 'BRAVE_API_KEY' }, desc: '用 Brave 的搜索接口查网页、新闻和图片，结果带来源链接。' },
+    { id: 'playwright', name: 'Playwright', mono: 'PW', by: 'Microsoft', command: 'npx @playwright/mcp@latest', auth: 'none', desc: '控制一个真实的浏览器：打开网页、点击、填表、截图。' },
+    { id: 'context7', name: 'Context7', mono: 'C7', by: 'Upstash', command: 'npx -y @upstash/context7-mcp', auth: 'none', desc: '按版本查最新的库文档和示例代码，不再靠模型的旧记忆。' },
+    { id: 'linear', name: 'Linear', mono: 'L', by: 'Linear', url: 'https://mcp.linear.app/mcp', auth: 'oauth', desc: '查找、创建和更新议题与项目，按团队和周期整理。' },
+    { id: 'notion', name: 'Notion', mono: 'N', by: 'Notion', url: 'https://mcp.notion.com/mcp', auth: 'oauth', desc: '搜索和编辑你的页面与数据库，把结论写回文档。' },
+    { id: 'sentry', name: 'Sentry', mono: 'S', by: 'Sentry', url: 'https://mcp.sentry.dev/mcp', auth: 'oauth', desc: '查看错误和性能问题，按堆栈定位到代码。' },
+    { id: 'fetch', name: 'Fetch', mono: '', icon: 'globe', by: 'MCP 官方示例', command: 'uvx mcp-server-fetch', auth: 'none', desc: '抓取网页并转成 Markdown，给模型读。' },
+  ],
+  detail: null,  // { kind: 'skill' | 'conn', id, tab } while a card's page is open
+  picks: {},     // the detail page's segmented choices (scope)
+  busy: {},      // catalog id → 'install' | 'oauth'
+  menu: null,
+  toast: null,
+};
+
+const mineSkill = (id) => S.skills.find((s) => s.id === id);
+function addPersonal(skill) {
+  const i = S.skills.findIndex((s) => s.layer !== 'user');
+  if (i < 0) S.skills.push(skill); else S.skills.splice(i, 0, skill);
+}
+const mineConn = (id) => S.connectors.find((c) => c.id === id);
+const catSkill = (id) => S.skillCatalog.find((s) => s.id === id);
+const catConn = (id) => S.connectorCatalog.find((c) => c.id === id);
+const skillTile = (s, size = '') => `<div class="tile ${size}">${ic('skill')}</div>`;
+const connTile = (c, size = '') => `<div class="tile ${size}">${c.icon ? ic(c.icon) : esc(c.mono)}</div>`;
+// Only skills in ~/.finx/skills can be removed from the page (DD-35, DD-36, DD-46).
+const removable = (s) => s.layer === 'user' && !s.from;
+const skillScope = (s) => ({ system: '内置', user: '个人', project: `随仓库共享 · ${PROJECT}` }[s.layer]);
+const skillSource = (s) => s.layer === 'system' ? 'finx 内置' : s.from ? `与 ${s.from} 共用` : s.layer === 'project' ? '仓库'
+  : ({ catalog: 'finx 精选', upload: '上传', chat: '在对话中创建' }[s.source] || '本地');
+// Only connectors in the user's own files are editable (DD-46).
+const editable = (c) => c.layer === 'user' || c.layer === 'user_project';
+const connScope = (layer) => ({ user: '所有项目', user_project: `仅 ${PROJECT}`, project: `随仓库共享 · ${PROJECT}` }[layer]);
+const authText = (c) => c.auth === 'credential' ? '令牌 · 已保存在钥匙串' : c.auth === 'oauth' ? (c.authState === 'logged_in' ? 'OAuth · 已登录' : 'OAuth · 未登录') : '无';
+const srcText = (c) => c.status.source === 'session' ? `${c.status.sessions} 个打开的会话正在使用` : c.status.ago ? `${c.status.ago}检测` : '还没有连接过';
+
+// The status a row shows (design §4.3): an open conversation's connection first, then the cache.
+function connStatus(c) {
+  if (!c.on) return { label: c.layer === 'project' ? '只对你关闭' : '已停用', off: true };
+  const s = c.status;
+  switch (s.state) {
+    case 'checking': return { label: '正在检测…', spin: true };
+    case 'authorizing': return { label: '等待授权…', spin: true };
+    case 'ok': return { cls: 'ok', label: `可用 · ${s.tools} 个工具`, title: srcText(c) };
+    case 'failed': return { cls: 'bad', label: '连接失败', act: ['重试', 'check'] };
+    case 'needs_login': return { cls: 'warn', label: '需要登录', act: ['登录', 'login'] };
+    default: return { label: '未检测', act: ['检测', 'check'] };
+  }
+}
+function statusHtml(c, withAction = true) {
+  const st = connStatus(c);
+  if (st.off) return `<span class="st">${st.label}</span>`;
+  const lead = st.spin ? '<span class="mini-spin" style="width:10px;height:10px"></span>' : `<i class="dotc ${st.cls || ''}"></i>`;
+  const act = withAction && st.act ? ` · <button class="link" data-act="${st.act[1]}" data-id="${c.id}">${st.act[0]}</button>` : '';
+  return `<span class="st ${st.cls || ''}" title="${esc(st.title || '')}">${lead}${st.label}${act}</span>`;
+}
+
+/* ---------- render ---------- */
+const content = document.getElementById('content');
+function render() {
+  document.querySelectorAll('[data-nav]').forEach((b) => b.classList.toggle('sel', b.dataset.nav === S.view));
+  if (S.view === 'new') { content.innerHTML = newPage() + (S.toast ? toastHtml() : ''); return; }
+  const scrollTop = content.querySelector('.cscroll')?.scrollTop ?? 0;
+  if (S.detail) {
+    content.innerHTML = detailPage() + (S.toast ? toastHtml() : '');
+    content.querySelector('.cscroll').scrollTop = scrollTop;
+    return;
+  }
+  content.innerHTML = `
+    <div class="ctop"></div>
+    <div class="cscroll"><div class="dbody">
+      <h1 class="ptitle">自定义</h1>
+      <div class="bar">
+        <div class="tabs">
+          <button class="tab ${S.tab === 'skills' ? 'on' : ''}" data-tab="skills">技能</button>
+          <button class="tab ${S.tab === 'connectors' ? 'on' : ''}" data-tab="connectors">连接器</button>
+        </div>
+        <div class="vsep"></div>
+        <div class="seg">
+          <button class="${S.scope === 'mine' ? 'on' : ''}" data-scope="mine">我的</button>
+          <button class="${S.scope === 'discover' ? 'on' : ''}" data-scope="discover">发现</button>
+        </div>
+        <div class="grow"></div>
+        <button class="btn solid addbtn" data-act="add-menu">${ic('plus')}添加${ic('chevD', 'chev')}</button>
+      </div>
+      ${S.tab === 'skills' ? (S.scope === 'mine' ? mySkills() : discoverSkills()) : (S.scope === 'mine' ? myConnectors() : discoverConnectors())}
+    </div></div>
+    ${S.toast ? toastHtml() : ''}`;
+  const body = content.querySelector('.cscroll');
+  body.scrollTop = scrollTop;
+  const bar = content.querySelector('.bar');
+  const stick = () => bar.classList.toggle('stuck', body.scrollTop > 8);
+  body.addEventListener('scroll', stick);
+  stick();
+}
+
+function section(title, n, inner, extra = '', hint = '') {
+  return `<section class="sect"><div class="fhead">${title}${n != null ? `<span class="n">${n}</span>` : ''}${hint ? `<span class="hint">· ${hint}</span>` : ''}</div>${extra}${inner}</section>`;
+}
+const rows = (items, f) => `<div class="rows">${items.map(f).join('')}</div>`;
+const grid = (cards) => `<div class="grid">${cards}</div>`;
+const moreBtn = (id) => `<button class="more ${S.menu?.for === id ? 'open' : ''}" data-act="card-menu" data-id="${id}" title="更多" aria-label="更多">${ic('more')}</button>`;
+
+function mySkills() {
+  const user = S.skills.filter((s) => s.layer === 'user');
+  const proj = S.skills.filter((s) => s.layer === 'project');
+  const sys = S.skills.filter((s) => s.layer === 'system');
+  const issues = S.skillIssues.length
+    ? `<div class="anote">${ic('warn')}<span>${S.skillIssues.length} 个技能没有加载：<code>${esc(S.skillIssues[0].path)}</code> ${esc(S.skillIssues[0].why)}</span><button class="link" data-act="issue">查看</button></div>` : '';
+  let out = section('个人', user.length, user.length ? rows(user, skillRow)
+    : `<div class="empty">${ic('skill')}<b>还没有自己的技能</b><span>上传一个，或者让 finx 在对话里帮你写。</span><div class="acts"><button class="btn" data-act="upload-skill">${ic('upload')}上传技能</button><button class="btn" data-act="create-skill">${ic('chat')}在对话中创建</button></div></div>`, issues);
+  if (proj.length) out += section(`随仓库共享 · ${PROJECT}`, proj.length, rows(proj, skillRow), '', '仓库里的技能，这里只能停用');
+  if (sys.length) out += section('内置', sys.length, rows(sys, skillRow), '', '随 finx 一起更新');
+  return out;
+}
+function skillRow(s) {
+  return `<div class="row ${s.on ? '' : 'off'}" role="button" tabindex="0" data-open="skill:${s.id}">
+    ${skillTile(s)}
+    <div class="rt">
+      <div class="rn"><span class="nm">${esc(s.name)}</span>${s.from ? `<span class="badge">与 ${s.from} 共用</span>` : ''}</div>
+      <div class="rd">${esc(s.desc)}</div>
+    </div>
+    <div class="ra">${s.on ? '' : '<span class="st">已停用</span>'}<button class="sw ${s.on ? 'on' : ''}" data-act="toggle-skill" data-id="${s.id}" title="${s.on ? '停用' : '启用'}"></button>${moreBtn('skill:' + s.id)}</div>
+  </div>`;
+}
+
+function discoverSkills() {
+  return section('精选技能', S.skillCatalog.length, grid(S.skillCatalog.map((s) => catalogCard('skill', s, skillTile(s), !!mineSkill(s.id))).join('')));
+}
+function catalogCard(kind, item, tile, added) {
+  const b = S.busy[item.id];
+  let act;
+  if (added) act = `<span class="inst done" title="已添加">${ic('check')}</span>`;
+  else if (b === 'oauth') act = `<span class="inst-wait"><span class="mini-spin"></span>等待授权…</span>`;
+  else if (b) act = `<span class="inst busy"><span class="mini-spin"></span></span>`;
+  else act = `<button class="inst" data-act="install-${kind}" data-id="${item.id}" title="添加" aria-label="添加 ${esc(item.name)}">${ic('plus')}</button>`;
+  return `<div class="card" role="button" tabindex="0" data-open="${kind}-cat:${item.id}">
+    ${tile}
+    <div class="ct"><span class="nm">${esc(item.name)}</span>${added ? '<span class="badge">已添加</span>' : ''}</div>
+    <div class="ca">${act}</div>
+    <div class="cd">${esc(item.desc)}</div>
+    <div class="cm">${esc(item.by)}</div>
+  </div>`;
+}
+
+function myConnectors() {
+  if (!S.connectors.length) return `<section class="sect"><div class="empty">${ic('plug')}<b>还没有连接器</b><span>连接器是一个 MCP 服务器：一条本地命令，或者一个远程地址。</span><div class="acts"><button class="btn" data-scope="discover">看看推荐的</button><button class="btn" data-act="custom-connector">${ic('plus')}添加自定义连接器</button></div></div></section>`;
+  const by = (layer) => S.connectors.filter((c) => c.layer === layer);
+  let out = '';
+  if (by('user').length) out += section('所有项目', by('user').length, rows(by('user'), connRow));
+  if (by('user_project').length) out += section(`仅 ${PROJECT}`, by('user_project').length, rows(by('user_project'), connRow), '', '只对你');
+  if (by('project').length) out += section(`随仓库共享 · ${PROJECT}`, by('project').length, rows(by('project'), connRow), '', '仓库里的配置，这里只读');
+  return out;
+}
+function connRow(c) {
+  const title = c.layer === 'project' ? (c.on ? '只对你关闭' : '对你重新打开') : (c.on ? '停用' : '启用');
+  return `<div class="row ${c.on ? '' : 'off'}" role="button" tabindex="0" data-open="conn:${c.id}">
+    ${connTile(c)}
+    <div class="rt">
+      <div class="rn"><span class="nm">${esc(c.name)}</span>${c.custom ? '<span class="badge">自定义</span>' : ''}</div>
+      ${c.desc ? `<div class="rd">${esc(c.desc)}</div>` : `<div class="rd mono" title="${esc(c.where)}">${esc(c.where)}</div>`}
+    </div>
+    <div class="ra">${statusHtml(c)}<button class="sw ${c.on ? 'on' : ''}" data-act="toggle-conn" data-id="${c.id}" title="${title}"></button>${moreBtn('conn:' + c.id)}</div>
+  </div>`;
+}
+function discoverConnectors() {
+  return section('推荐连接器', S.connectorCatalog.length, grid(S.connectorCatalog.map((c) => catalogCard('connector', c, connTile(c), !!mineConn(c.id))).join('')));
+}
+function toastHtml() {
+  const t = S.toast;
+  return `<div class="toast">${ic(t.icon || 'check', t.icon === 'info' ? 'info' : '')}<span>${t.text}</span>${t.action ? `<button class="btn" data-act="${t.action.act}">${t.action.label}</button>` : ''}${t.undo ? '<button class="btn" data-act="undo">撤销</button>' : ''}</div>`;
+}
+function newPage() {
+  const create = S.newMode === 'create';
+  const chip = create ? 'skill-creator' : S.newSkill;
+  return `<div class="ctop"></div><div class="newpage">
+    <div style="width:44px;height:44px;border-radius:12px;background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center">${ic(create ? 'wand' : 'skill')}</div>
+    <h2>今天想让 finx 做什么？</h2>
+    <div class="pill">
+      <div class="txt"><span class="chip">${ic('skill')}${esc(chip)}</span>${create ? '帮我做一个技能：按固定格式整理一周的工作记录' : ''}<span class="caret"></span></div>
+      <div class="row">${ic('paperclip')}<span>${create ? '无项目' : PROJECT}</span><span>·</span><span>DeepSeek V3.2</span><button class="send" data-act="${create ? 'send-create' : 'noop'}" title="发送">${ic('arrowUp')}</button></div>
+    </div>
+    <p style="color:var(--l3);font-size:12px;margin-top:14px;max-width:560px;text-align:center;line-height:1.6">${create
+      ? 'skill-creator 是内置技能，不用先安装。模型写进 ~/.finx/skills 之前会先请你批准；写好以后，自定义页会自动出现这个技能。'
+      : '技能已经放进输入框，接着说要它做什么。'}</p>
+  </div>`;
+}
+
+/* ---------- menus ---------- */
+let menuEl = null;
+function closeMenu() { menuEl?.remove(); menuEl = null; if (S.menu) { S.menu = null; render(); } }
+function openMenu(anchor, html, forId, alignRight = true) {
+  menuEl?.remove();
+  S.menu = { for: forId };
+  render();
+  const a = (forId ? document.querySelector(`[data-act="card-menu"][data-id="${forId}"]`) : document.querySelector('[data-act="add-menu"]')) || anchor;
+  const r = a.getBoundingClientRect();
+  menuEl = document.createElement('div');
+  menuEl.className = 'vmenu';
+  menuEl.innerHTML = html;
+  document.body.appendChild(menuEl);
+  const w = menuEl.offsetWidth;
+  menuEl.style.top = r.bottom + 6 + 'px';
+  menuEl.style.left = (alignRight ? r.right - w : r.left) + 'px';
+}
+function addMenu(btn) {
+  openMenu(btn, `
+    <div class="mh">技能</div>
+    <button class="mi two" data-act="upload-skill">${ic('upload')}<span><b>上传技能…</b><small>文件夹、.zip 或单个 SKILL.md，只给你自己用</small></span></button>
+    <button class="mi two" data-act="create-skill">${ic('chat')}<span><b>在对话中创建</b><small>说说你要什么，finx 帮你写成技能</small></span></button>
+    <div class="msep"></div>
+    <div class="mh">连接器</div>
+    <button class="mi two" data-act="custom-connector">${ic('plug')}<span><b>添加自定义连接器…</b><small>一条本地命令，或一个远程地址</small></span></button>`, null);
+}
+function cardMenu(btn, id) {
+  const [kind, key] = id.split(':');
+  const view = S.detail ? '' : `<button class="mi" data-act="open" data-id="${id}">${ic('info')}查看详情</button>`;
+  let html;
+  if (kind === 'skill') {
+    const s = mineSkill(key);
+    html = `${view}
+      <button class="mi" data-act="try-skill" data-id="${key}">${ic('chat')}在对话中使用</button>
+      <button class="mi" data-act="reveal" data-path="${esc(s.path)}">${ic('folder')}在访达中显示</button>
+      ${removable(s) ? `<div class="msep"></div><button class="mi danger" data-act="remove-skill" data-id="${key}">${ic('trash')}删除</button>` : ''}`;
+  } else {
+    const c = mineConn(key);
+    const login = c.auth !== 'oauth' ? '' : c.authState === 'logged_in'
+      ? `<button class="mi" data-act="logout" data-id="${key}">${ic('ext')}退出登录</button>`
+      : `<button class="mi" data-act="login" data-id="${key}">${ic('ext')}登录…</button>`;
+    html = `${view}
+      ${editable(c) && !S.detail ? `<button class="mi" data-act="edit-conn" data-id="${key}">${ic('edit')}编辑配置…</button>` : ''}
+      ${login}
+      <button class="mi" data-act="check" data-id="${key}">${ic('retry')}重新检测</button>
+      <button class="mi" data-act="reveal" data-path="${esc(FILES[c.layer])}">${ic('folder')}在访达中显示配置文件</button>
+      ${editable(c) ? `<div class="msep"></div><button class="mi danger" data-act="remove-conn" data-id="${key}">${ic('trash')}删除</button>` : ''}`;
+  }
+  openMenu(btn, html, id);
+}
+
+/* ---------- sheets ---------- */
+let sheetEl = null;
+function openSheet(html, w) {
+  closeSheet();
+  sheetEl = document.createElement('div');
+  sheetEl.className = 'scrim';
+  sheetEl.innerHTML = `<div class="sheet" style="${w ? `width:${w}px` : ''}"><div class="sheet-in">${html}</div></div>`;
+  sheetEl.addEventListener('mousedown', (e) => { if (e.target === sheetEl) closeSheet(); });
+  document.body.appendChild(sheetEl);
+  wire(sheetEl);
+}
+function closeSheet() { sheetEl?.remove(); sheetEl = null; }
+
+/* ---------- detail page ---------- */
+// A card opens a page of its own under the list (not a sheet): back, the item, its tabs, then the body.
+const TOOLS = {
+  github: [['create_issue', '在仓库里新建一个议题'], ['get_pull_request', '读取拉取请求的标题、描述和改动'], ['list_commits', '列出一个分支上的提交'], ['search_code', '在仓库里搜索代码'], ['merge_pull_request', '合并一个拉取请求'], ['get_workflow_run', '查看一次 CI 运行的结果和日志']],
+  playwright: [['browser_navigate', '打开一个网址'], ['browser_click', '点击页面上的元素'], ['browser_type', '在输入框里打字'], ['browser_snapshot', '读取页面的结构，供模型定位元素'], ['browser_take_screenshot', '给当前页面截图']],
+  sentry: [['search_issues', '按条件查找错误'], ['get_issue_details', '读取一个错误的堆栈和发生次数'], ['list_projects', '列出组织里的项目']],
+  linear: [['list_issues', '按团队、状态或负责人查找议题'], ['create_issue', '新建一个议题'], ['update_issue', '修改议题的状态、负责人或标签'], ['list_projects', '列出项目和它们的进度']],
+  notion: [['search', '在工作区里搜索页面和数据库'], ['fetch', '读取一个页面的全部内容'], ['create_pages', '新建页面'], ['update_page', '修改页面的属性或正文']],
+  context7: [['resolve-library-id', '把库名解析成文档库的标识'], ['get-library-docs', '按版本读取库的文档和示例']],
+  fetch: [['fetch', '抓取一个网址并转成 Markdown']],
+  'brave-search': [['brave_web_search', '搜索网页'], ['brave_news_search', '搜索新闻']],
+  'docs-search': [['search_docs', '按关键词搜索内部文档'], ['read_page', '读取一篇文档的全文']],
+  'staging-db': [['list_tables', '列出数据表'], ['describe_table', '查看表结构'], ['query', '执行只读查询']],
+};
+const back = (label) => `<button class="dback" data-act="back">${ic('arrowLeft')}${label}</button>`;
+const spin = '<span class="mini-spin" style="border-color:color-mix(in srgb,var(--win) 35%,transparent);border-top-color:var(--win)"></span>';
+const kv = (k, v, cls = '') => `<div class="kv2"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
+const kvStack = (k, v, cls = '') => `<div class="kv2 stack"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`;
+const callout = (icon, text, extra = '', cls = '') => `<div class="callout ${cls}">${ic(icon)}<span>${text}</span>${extra}</div>`;
+function seg(name, opts, def) {
+  const v = S.picks[name] || def;
+  return `<div class="seg sm" data-pick="${name}">${opts.map(([k, l]) => `<button class="${v === k ? 'on' : ''}" data-v="${k}">${l}</button>`).join('')}</div>`;
+}
+function dtabs(list) {
+  return `<div class="dtabs">${list.map(([k, label, n]) => `<button class="dtab ${S.detail.tab === k ? 'on' : ''}" data-dtab="${k}">${label}${n != null ? `<span class="n"> · ${n}</span>` : ''}</button>`).join('')}</div>`;
+}
+function hero(tile, name, badge, meta, acts) {
+  return `<div class="dhero">${tile}<div class="dt"><h1>${esc(name)}${badge}</h1><div class="dmeta">${meta.join('<i>·</i>')}</div></div><div class="dacts">${acts}</div></div>`;
+}
+function detailPage() {
+  return `<div class="ctop"></div><div class="cscroll"><div class="dbody">${S.detail.kind === 'skill' ? skillPage(S.detail.id) : connPage(S.detail.id)}</div></div>`;
+}
+
+function skillMd(s) {
+  return `<span class="fm">---
+name: ${esc(s.name)}
+description: ${esc(s.desc)}
+---</span>
+
+# ${esc(s.name)}
+
+先读 \`references/\` 里的说明，弄清楚输入的格式，再动手。
+
+## 步骤
+
+1. 确认用户要处理的文件和想要的结果。
+2. 运行 \`scripts/\` 里对应的脚本，不要自己重写一遍。
+3. 检查输出，有问题时说明原因，不要静默跳过。`;
+}
+
+function skillPage(id) {
+  const mine = mineSkill(id), cat = catSkill(id), s = mine || cat;
+  const files = s.files;
+  const meta = mine ? [skillScope(mine), `${files.length} 个文件`] : [esc(cat.by), `${files.length} 个文件`];
+  if (mine && !mine.on) meta.push('已停用');
+  const acts = mine
+    ? `<button class="btn" data-act="try-skill" data-id="${id}">${ic('chat')}在对话中使用</button>${moreBtn('skill:' + id)}`
+    : S.busy[id] ? `<button class="btn solid" disabled>${spin}添加中…</button>`
+    : `<button class="btn solid" data-act="install-skill" data-id="${id}">${ic('plus')}添加</button>`;
+  const tab = S.detail.tab;
+  let main;
+  if (tab === 'skillmd') {
+    main = `<div class="dpane"><div class="filebar">${ic('file')}<span class="mono">${esc(mine ? mine.path : 'finx 精选 / ' + id)}/SKILL.md</span>${mine ? `<button class="link" data-act="reveal" data-path="${esc(mine.path)}/SKILL.md">在编辑器中打开</button>` : ''}</div><div class="code">${skillMd(s)}</div></div>`;
+  } else if (tab === 'files') {
+    main = `<div class="dpane"><div class="fgroup files">${files.map(([f, z]) => `<div class="frow">${ic(f.endsWith('/') ? 'folder' : 'file')}<span class="mono" style="font-size:12px">${esc(f)}</span><span class="sz">${z}</span></div>`).join('')}</div></div>`;
+  } else {
+    let note = '';
+    if (mine?.layer === 'system') note = callout('info', '内置技能随 finx 一起更新。可以停用；直接改它的文件，会在下次升级时被覆盖。');
+    else if (mine?.layer === 'project') note = callout('info', `这个技能在仓库里，随仓库共享。这里只能停用：停用写进你的个人配置，不改仓库。要修改内容，请在访达中打开它。`);
+    else if (mine?.from) note = callout('info', `这个技能在 <code>~/${mine.from}/skills</code> 里，归那个工具管理。这里只能停用，不能删除。`);
+    main = `<div class="dcols"><div>
+        <div class="dsec"><h4>描述</h4><p>${esc(s.desc)}</p></div>
+        <div class="dsec"><h4>怎样使用</h4><p>finx 会在用得上的时候自己调用它。也可以在输入框里输入 <code>/skill:${esc(s.name)}</code> 直接点名。</p></div>
+        ${note ? `<div class="dsec">${note}</div>` : ''}
+      </div>
+      <aside class="dside">
+        ${mine ? kv('启用', `<button class="sw ${mine.on ? 'on' : ''}" data-act="toggle-skill" data-id="${id}" aria-label="启用"></button>`) : ''}
+        ${kv('来源', mine ? skillSource(mine) : 'finx 精选')}
+        ${mine ? kv('范围', skillScope(mine)) + kvStack('路径', esc(mine.path), 'mono')
+               : kv('许可', esc(cat.license)) + kvStack('添加到', `个人 · ~/.finx/skills/${esc(id)}`, 'mono')}
+      </aside></div>`;
+  }
+  return back('技能') + hero(skillTile(s, 'xl'), s.name, mine?.layer === 'system' ? '<span class="badge">内置</span>' : '', meta, acts)
+    + dtabs([['overview', '概览'], ['skillmd', 'SKILL.md'], ['files', '文件', files.length]]) + main;
+}
+
+function connPage(id) {
+  const mine = mineConn(id);
+  if (!mine) return catalogConnPage(catConn(id));
+  const c = mine;
+  const meta = [statusHtml(c, false)];
+  if (c.by) meta.push(esc(c.by));
+  const acts = editable(c)
+    ? `<button class="btn" data-act="edit-conn" data-id="${id}">${ic('edit')}编辑配置</button>${moreBtn('conn:' + id)}`
+    : `<button class="btn" data-act="check" data-id="${id}">${ic('retry')}重新检测</button>${moreBtn('conn:' + id)}`;
+  const tools = TOOLS[id] || [];
+  const hasTools = c.status.state === 'ok';
+  const tabs = [['overview', '概览']];
+  if (hasTools) tabs.push(['tools', '工具', c.status.tools]);
+  let main;
+  if (S.detail.tab === 'tools' && hasTools) {
+    const rest = c.status.tools - tools.length;
+    main = `<div class="dpane">
+      <div class="tsrc">${ic('info')}<span>${c.status.source === 'session' ? `来自 ${c.status.sessions} 个打开的会话里的连接` : `${c.status.ago}检测的结果`}</span><button class="link" data-act="check" data-id="${id}">重新检测</button></div>
+      <div class="fgroup">${tools.map(([n, d]) => `<div class="frow tool"><div><div class="mono">${n}</div><div class="fdesc">${d}</div></div></div>`).join('')}
+      ${rest > 0 ? `<div class="frow tool"><span class="fdesc">以及另外 ${rest} 个工具</span></div>` : ''}</div></div>`;
+  } else {
+    let secs = c.desc ? `<div class="dsec"><h4>描述</h4><p>${esc(c.desc)}</p></div>` : '';
+    if (c.layer === 'project') secs += `<div class="dsec">${callout('info', `这个连接器写在仓库的 <code>.finx/config.toml</code> 里，随仓库共享，这里只读。关闭它只对你生效：写在你的个人项目配置里，不影响队友。`)}</div>`;
+    if (c.on && c.status.state === 'failed') secs += `<div class="dsec"><h4>连接失败</h4><div class="errbox">${esc(c.status.error)}</div><button class="btn" data-act="check" data-id="${id}" style="margin-top:10px">${ic('retry')}重新连接</button></div>`;
+    if (c.on && c.status.state === 'needs_login') secs += `<div class="dsec">${callout('warn', `${esc(c.name)} 要求登录。登录会在浏览器里完成，令牌存进钥匙串，由 finx 负责续期。`, `<button class="btn" data-act="login" data-id="${id}">${ic('ext')}登录</button>`, 'warn')}</div>`;
+    secs += `<div class="dsec"><h4>配置</h4><div class="fgroup">
+        <div class="frow"><span class="fl">${c.kind === 'http' ? '地址' : '命令'}</span><span class="fv mono" style="word-break:break-all">${esc(c.where)}</span></div>
+        <div class="frow"><span class="fl">鉴权</span><span class="fv">${authText(c)}</span></div>
+        <div class="frow"><span class="fl">写在</span><span class="fv mono" style="word-break:break-all">${esc(FILES[c.layer])}</span></div></div></div>`;
+    const sw = `<button class="sw ${c.on ? 'on' : ''}" data-act="toggle-conn" data-id="${id}" aria-label="启用"></button>`;
+    main = `<div class="dcols"><div>${secs}</div>
+      <aside class="dside">
+        ${kv(c.layer === 'project' ? '对你启用' : '启用', sw)}
+        ${kv('提供方', esc(c.by || (c.layer === 'project' ? '仓库' : '自定义')))}
+        ${kv('范围', connScope(c.layer))}
+        ${c.on && c.status.state === 'ok' ? kv('状态来自', srcText(c)) + kv('工具', `${c.status.tools} 个`) : ''}
+      </aside></div>`;
+  }
+  return back('连接器') + hero(connTile(c, 'xl'), c.name, c.custom ? '<span class="badge">自定义</span>' : '', meta, acts) + dtabs(tabs) + main;
+}
+
+// A catalog connector not added yet: what it is, what will run, and where it will be written.
+function catalogConnPage(cat) {
+  const id = cat.id, busy = S.busy[id];
+  const acts = busy ? `<button class="btn solid" disabled>${spin}${busy === 'oauth' ? '等待授权…' : '添加中…'}</button>`
+    : `<button class="btn solid" data-act="install-connector" data-id="${id}" data-detail="1">${ic('plus')}${cat.auth === 'oauth' ? '添加并登录' : '添加'}</button>`;
+  let secs = `<div class="dsec"><h4>描述</h4><p>${esc(cat.desc)}</p></div>`;
+  secs += cat.command
+    ? `<div class="dsec"><h4>将在本机运行</h4><div class="code" style="padding:10px 14px">${esc(cat.command)}</div><p class="hint">添加和检测时都会运行这条命令；第一次运行可能要下载这个包。</p></div>`
+    : `<div class="dsec"><h4>地址</h4><div class="code" style="padding:10px 14px">${esc(cat.url)}</div></div>`;
+  if (cat.auth === 'token') {
+    secs += `<div class="dsec"><h4>${esc(cat.token.label)}${cat.token.kind === 'env' ? `（${cat.token.key}）` : ''}</h4><input class="field mono" id="token" type="password" placeholder="${esc(cat.token.placeholder)}">
+      <p class="hint">存进系统钥匙串，配置文件里只写引用，不写明文。<button class="link">去 ${esc(cat.by)} 获取 ↗</button></p></div>`;
+  } else if (cat.auth === 'oauth') {
+    secs += `<div class="dsec"><h4>怎样连接</h4><p>添加后会在浏览器里打开 ${esc(cat.name)} 的授权页面。登录并同意后回到 finx，令牌存进钥匙串，由 finx 负责续期。</p></div>`;
+  }
+  const scope = S.picks.scope || 'user';
+  return back('连接器') + hero(connTile(cat, 'xl'), cat.name, '', [esc(cat.by)], acts) + dtabs([['overview', '概览']])
+    + `<div class="dcols"><div>${secs}</div>
+      <aside class="dside">
+        ${kv('提供方', esc(cat.by))}
+        ${kvStack('作用范围', seg('scope', [['user', '所有项目'], ['user_project', '仅 ' + PROJECT]], 'user'))}
+        ${kvStack('写入', esc(FILES[scope]), 'mono')}
+      </aside></div>`;
+}
+
+/* ---------- custom connector form ---------- */
+// One key/value row; the lock marks a value that goes to the keychain (credentials/set), not the file.
+function kvRow(k = '', v = '', locked = false, saved = false) {
+  return `<div class="kv"><input class="field mono" placeholder="${k ? '' : 'KEY'}" value="${esc(k)}">
+    <input class="field mono ${saved ? 'saved' : ''}" type="${locked ? 'password' : 'text'}" placeholder="${saved ? '已保存在钥匙串 · 输入新值即更换' : 'value'}" value="${esc(v)}">
+    <button class="lockbtn ${locked ? 'on' : ''}" data-act="lock" title="${locked ? '存进钥匙串' : '写进配置文件'}">${ic(locked ? 'lock' : 'unlock')}</button>
+    <button class="lockbtn" data-act="drop-row" title="移除">${ic('x')}</button></div>`;
+}
+function customConnectorSheet(editId) {
+  const c = editId ? mineConn(editId) : null;
+  const http = c ? c.kind === 'http' : false;
+  const scope = c ? c.layer : 'user';
+  const headers = c?.id === 'github' ? kvRow('Authorization', '', true, true) : kvRow('Authorization', '', true);
+  const envs = c?.id === 'postgres-dev' ? kvRow('DATABASE_URL', '', true, true) : kvRow();
+  const html = `<h3>${c ? `编辑 ${esc(c.name)}` : '添加自定义连接器'}</h3>
+    <p class="sub">连接器就是一个 MCP 服务器。在本机运行的给命令，在别处运行的给地址。</p>
+    <div class="form" id="cf">
+      <div class="fi"><label>名称</label><input class="field" id="cf-name" placeholder="例如 postgres-dev" value="${c ? esc(c.name) : ''}" ${c ? 'disabled' : ''}>
+        <div class="ferr" id="cf-name-err"></div><span class="note">字母、数字、- 和 _，最长 32 个字符；模型看到的工具名会以它开头。</span></div>
+      <div class="fi"><label>类型</label><div class="seg sm" data-pick="kind" id="cf-kind"><button class="${http ? '' : 'on'}" data-v="stdio">${ic('terminal', 'sm')}本地命令</button><button class="${http ? 'on' : ''}" data-v="http">${ic('globe', 'sm')}远程地址</button></div></div>
+      <div id="cf-stdio" style="display:${http ? 'none' : 'contents'}">
+        <div class="fi"><label>命令</label><input class="field mono" id="cf-cmd" placeholder="npx -y @modelcontextprotocol/server-postgres" value="${c && !http ? esc(c.where) : ''}"><div class="ferr" id="cf-cmd-err"></div></div>
+        <div class="fi"><label>环境变量 <em>可选</em></label><div id="cf-env" style="display:flex;flex-direction:column;gap:6px">${envs}</div>
+          <button class="link addrow" data-act="add-row" data-to="cf-env">${ic('plus')}添加一行</button></div>
+      </div>
+      <div id="cf-http" style="display:${http ? 'contents' : 'none'}">
+        <div class="fi"><label>地址</label><input class="field mono" id="cf-url" placeholder="https://example.com/mcp" value="${c && http ? esc(c.where) : ''}"><div class="ferr" id="cf-url-err"></div></div>
+        <div class="fi"><label>请求头 <em>可选</em></label><div id="cf-headers" style="display:flex;flex-direction:column;gap:6px">${headers}</div>
+          <button class="link addrow" data-act="add-row" data-to="cf-headers">${ic('plus')}添加一行</button>
+          <span class="note">服务器要求登录时不用填令牌：添加后 finx 会检测出来，提示你登录。</span></div>
+      </div>
+      <div class="fi"><label>作用范围</label><div class="seg sm" data-pick="scope" id="cf-scope"><button class="${scope === 'user' ? 'on' : ''}" data-v="user">所有项目</button><button class="${scope === 'user_project' ? 'on' : ''}" data-v="user_project">仅 ${PROJECT}</button></div>
+        <span class="note">写进 <span class="mono" id="cf-file">${esc(FILES[scope])}</span></span></div>
+      <div class="callout">${ic('lock')}<span>带锁的值存进系统钥匙串，配置文件里只写 <code>\${credential:…}</code> 引用。</span></div>
+    </div>
+    <div class="sheet-foot"><div class="left"><button class="link" data-act="paste-json">从 JSON 粘贴</button></div>
+      <button class="btn" data-act="close">取消</button><button class="btn primary" data-act="save-connector" data-id="${c ? c.id : ''}">${c ? '保存' : '添加'}</button></div>`;
+  openSheet(html, 540);
+  const kind = sheetEl.querySelector('#cf-kind');
+  kind.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    const h = b.dataset.v === 'http';
+    sheetEl.querySelector('#cf-stdio').style.display = h ? 'none' : 'contents';
+    sheetEl.querySelector('#cf-http').style.display = h ? 'contents' : 'none';
+  });
+  sheetEl.querySelector('#cf-scope').addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (b) sheetEl.querySelector('#cf-file').textContent = FILES[b.dataset.v];
+  });
+  if (!c) sheetEl.querySelector('#cf-name').focus();
+}
+// What config/write would answer with config_validation_error: the key path's field gets the message.
+function fieldError(id, msg) {
+  const el = sheetEl.querySelector(`#${id}-err`);
+  el.textContent = msg;
+  sheetEl.querySelector(`#${id}`).classList.toggle('bad', !!msg);
+}
+function saveConnector(editId) {
+  ['cf-name', 'cf-cmd', 'cf-url'].forEach((f) => fieldError(f, ''));
+  const name = editId || sheetEl.querySelector('#cf-name').value.trim();
+  const http = sheetEl.querySelector('#cf-kind .on').dataset.v === 'http';
+  const where = sheetEl.querySelector(http ? '#cf-url' : '#cf-cmd').value.trim();
+  const layer = sheetEl.querySelector('#cf-scope .on').dataset.v;
+  const box = sheetEl.querySelector(http ? '#cf-headers' : '#cf-env');
+  const secret = [...box.querySelectorAll('.kv')].some((r) => r.querySelector('.lockbtn.on') && (r.querySelectorAll('input')[1].value || r.querySelectorAll('input')[1].classList.contains('saved')));
+  let bad = false;
+  if (!editId) {
+    const dup = mineConn(name);
+    if (!name) { fieldError('cf-name', '要填一个名字'); bad = true; }
+    else if (!/^[A-Za-z0-9_-]{1,32}$/.test(name)) { fieldError('cf-name', '只能用字母、数字、- 和 _，最长 32 个字符'); bad = true; }
+    else if (dup) { fieldError('cf-name', `已经有一个叫 ${name} 的连接器（写在 ${FILES[dup.layer]}）`); bad = true; }
+  }
+  if (!where) { fieldError(http ? 'cf-url' : 'cf-cmd', http ? '要填服务器的地址' : '要填启动它的命令'); bad = true; }
+  else if (http && !/^https?:\/\//.test(where)) { fieldError('cf-url', '地址要以 http:// 或 https:// 开头'); bad = true; }
+  if (bad) return;
+  closeSheet();
+  let c = editId && mineConn(editId);
+  if (c) Object.assign(c, { where, layer, kind: http ? 'http' : 'stdio', fixed: true });
+  else {
+    c = { id: name, name, mono: name.slice(0, 2).toUpperCase(), layer, kind: http ? 'http' : 'stdio', where, custom: true, on: true,
+      auth: secret ? 'credential' : 'none', detectOAuth: http && !secret, status: { state: 'unknown' } };
+    S.connectors.push(c);
+  }
+  S.tab = 'connectors'; S.scope = 'mine'; S.detail = null;
+  check(c);
+  toast(editId ? `已保存 ${esc(name)}，正在检测` : `已添加 ${esc(name)}，写进了 ${FILES[layer]}`, { action: applyAction() });
+}
+
+function uploadSheet(stage = 'drop') {
+  const exists = mineSkill('csv-cleaner');
+  const html = stage === 'drop'
+    ? `<h3>上传技能</h3><p class="sub">技能是一个含 SKILL.md 的文件夹。finx 先检查它的头部，再复制到 <span class="mono">~/.finx/skills</span>。</p>
+       <div class="drop" id="drop">${ic('upload')}<b>把技能拖到这里</b><small>文件夹、.zip、.skill 或单个 SKILL.md</small>
+         <button class="btn" data-act="pick-file" style="margin-top:6px">选择文件…</button></div>
+       <div class="sheet-foot"><button class="btn" data-act="close">取消</button></div>`
+    : `<h3>上传技能</h3><p class="sub">读到了一个技能，确认一下：</p>
+       <div class="parsed">${skillTile({})}<div style="flex:1;min-width:0"><b class="mono">csv-cleaner</b>
+         <p>清理和规范化 CSV：统一编码和分隔符、修正日期格式、去掉重复行。处理杂乱的表格数据时使用。</p></div><span class="badge ok">${ic('check')}格式正确</span></div>
+       <div class="dlabel">将复制到</div>
+       <div class="target">${ic('person')}个人 · <span class="mono">~/.finx/skills/csv-cleaner</span></div>
+       ${exists ? `<div class="callout warn" style="margin-top:10px">${ic('warn')}<span>已经有一个同名的技能。替换会先把旧的移到废纸篓。</span></div>` : ''}
+       <div class="sheet-foot"><div class="left"><button class="link" data-act="upload-skill">换一个</button></div><button class="btn" data-act="close">取消</button><button class="btn primary" data-act="upload-confirm">${exists ? '替换' : '添加'}</button></div>`;
+  openSheet(html, 520);
+  const drop = sheetEl.querySelector('#drop');
+  if (drop) {
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); uploadSheet('parsed'); });
+  }
+}
+
+/* ---------- actions: each stands for one call of the design's methods ---------- */
+let toastTimer;
+function toast(text, opts = {}) {
+  S.toast = { text, ...opts };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { S.toast = null; render(); }, opts.undo || opts.action ? 6000 : 2800);
+  render();
+}
+const applyAction = () => (OPEN_SESSIONS ? { label: '让打开的会话也用上', act: 'apply-sessions' } : null);
+// mcp/check: connect once, list tools, write the cache.
+function check(c, ms = 1100) {
+  c.status = { ...c.status, state: 'checking' }; render();
+  setTimeout(() => {
+    if (c.id === 'postgres-dev' && !c.fixed) c.status = { state: 'failed', ago: '刚刚', error: 'connection refused: localhost:5432\n进程退出，代码 1' };
+    else if ((c.auth === 'oauth' || c.detectOAuth) && c.authState !== 'logged_in') { c.auth = 'oauth'; c.status = { state: 'needs_login' }; }
+    else c.status = { state: 'ok', source: 'cache', ago: '刚刚', tools: c.status.tools || TOOL_COUNT[c.id] || 7 };
+    render();
+  }, ms);
+}
+// mcp/login: the kernel returns a URL, the app opens the browser, the kernel takes the callback.
+function login(c) {
+  c.status = { state: 'authorizing' }; render();
+  setTimeout(() => { c.authState = 'logged_in'; toast(`已登录 ${esc(c.name)}，令牌存进了钥匙串`); check(c, 700); }, 1800);
+}
+// skills/install with the bundled files of a catalog entry.
+function installSkill(id) {
+  const c = catSkill(id);
+  S.busy[id] = 'install'; render();
+  setTimeout(() => {
+    delete S.busy[id];
+    addPersonal({ ...c, layer: 'user', source: 'catalog', on: true, path: `~/.finx/skills/${id}` });
+    toast(`已添加 ${c.name}，新会话起可用`);
+  }, 900);
+}
+// credentials/set (for a token), then config/write, then mcp/check.
+function installConnector(id, fromPage) {
+  const cat = catConn(id);
+  if (!fromPage && cat.auth === 'token') { openCard('connector-cat:' + id); content.querySelector('#token')?.focus(); return; }
+  if (cat.auth === 'token') {
+    const f = content.querySelector('#token');
+    if (!f.value.trim()) { f.classList.add('bad'); f.focus(); return; }
+  }
+  const layer = (fromPage && S.picks.scope) || 'user';
+  S.busy[id] = cat.auth === 'oauth' ? 'oauth' : 'install'; render();
+  setTimeout(() => {
+    delete S.busy[id];
+    S.connectors.push({ id, name: cat.name, mono: cat.mono, icon: cat.icon, by: cat.by, desc: cat.desc, layer, kind: cat.url ? 'http' : 'stdio', where: cat.url || cat.command,
+      auth: cat.auth === 'token' ? 'credential' : cat.auth, authState: cat.auth === 'oauth' ? 'logged_in' : undefined, on: true,
+      status: { state: 'ok', source: 'cache', ago: '刚刚', tools: TOOL_COUNT[id] || 7 } });
+    toast(`已添加 ${cat.name} · ${TOOL_COUNT[id] || 7} 个工具，新会话起可用`, { action: applyAction() });
+  }, cat.auth === 'oauth' ? 2200 : 1100);
+}
+let lastRemoved = null;
+
+function onAct(el, e) {
+  const act = el.dataset.act, id = el.dataset.id;
+  switch (act) {
+    case 'add-menu': e.stopPropagation(); S.menu ? closeMenu() : addMenu(el); return;
+    case 'card-menu': e.stopPropagation(); S.menu?.for === id ? closeMenu() : cardMenu(el, id); return;
+    case 'toggle-skill': {
+      // skills/set_enabled: always the user's config, path form (DD-34).
+      e.stopPropagation(); const s = mineSkill(id); s.on = !s.on;
+      toast(s.on ? `已启用 ${s.name}，新会话起生效` : s.layer === 'project' ? `已停用 ${s.name}：写在你的个人配置里，不改仓库` : `已停用 ${s.name}，新会话起生效`);
+      return;
+    }
+    case 'toggle-conn': {
+      // config/write: mcp_servers.<name>.enabled, in the file that defines it, or the personal project layer for the repo's (DD-33).
+      e.stopPropagation(); const c = mineConn(id); c.on = !c.on;
+      if (c.on && c.status.state !== 'ok') check(c, 900);
+      if (c.layer === 'project') toast(c.on ? `已对你重新打开 ${c.name}` : `已对你关闭 ${c.name}：写在你的个人项目配置里，不影响队友`, { action: applyAction() });
+      else toast(c.on ? `已启用 ${c.name}，新会话起可用` : `已停用 ${c.name}，新会话起生效`, { action: applyAction() });
+      return;
+    }
+    case 'install-skill': e.stopPropagation(); installSkill(id); return;
+    case 'install-connector': e.stopPropagation(); installConnector(id, el.dataset.detail); return;
+    case 'check': { e.stopPropagation(); closeMenu(); const c = mineConn(id); if (c.id === 'postgres-dev') { c.fixed = c.retried; c.retried = true; } check(c); return; }
+    case 'login': e.stopPropagation(); closeMenu(); login(mineConn(id)); return;
+    case 'logout': { closeMenu(); const c = mineConn(id); c.authState = 'needs_login'; c.status = { state: 'needs_login' }; toast(`已退出 ${esc(c.name)} 的登录，令牌已从钥匙串删除`); return; }
+    case 'apply-sessions': toast(`已推送到 ${OPEN_SESSIONS} 个打开的会话，各自在下一次模型请求前生效`); return;
+    case 'back': S.detail = null; S.picks = {}; render(); return;
+    case 'open': closeMenu(); openCard(id); return;
+    case 'upload-skill': closeMenu(); uploadSheet(); return;
+    case 'pick-file': uploadSheet('parsed'); return;
+    case 'upload-confirm': {
+      closeSheet();
+      const old = mineSkill('csv-cleaner');
+      if (!old) addPersonal({ id: 'csv-cleaner', name: 'csv-cleaner', layer: 'user', source: 'upload', on: true, path: '~/.finx/skills/csv-cleaner',
+        desc: '清理和规范化 CSV：统一编码和分隔符、修正日期格式、去掉重复行。处理杂乱的表格数据时使用。', files: [['SKILL.md', '1.7 KB'], ['scripts/clean.py', '4.0 KB']] });
+      S.tab = 'skills'; S.scope = 'mine'; S.detail = null;
+      toast(old ? '已替换 csv-cleaner，旧的在废纸篓里' : '已添加 csv-cleaner，新会话起可用'); return;
+    }
+    case 'create-skill': closeMenu(); closeSheet(); S.view = 'new'; S.newMode = 'create'; S.detail = null; render(); return;
+    case 'try-skill': closeMenu(); closeSheet(); S.view = 'new'; S.newMode = 'use'; S.newSkill = id; render(); return;
+    case 'send-create': {
+      // The model writes ~/.finx/skills/weekly-report after an approval; the kernel's watcher sends skills/changed.
+      addPersonal({ id: 'weekly-report', name: 'weekly-report', layer: 'user', source: 'chat', on: true, path: '~/.finx/skills/weekly-report',
+        desc: '按固定格式整理一周的工作记录：完成了什么、遇到什么问题、下周计划。', files: [['SKILL.md', '1.8 KB']] });
+      S.view = 'custom'; S.tab = 'skills'; S.scope = 'mine';
+      toast('weekly-report 写进了 ~/.finx/skills，列表自动更新了'); return;
+    }
+    case 'custom-connector': closeMenu(); customConnectorSheet(); return;
+    case 'edit-conn': closeMenu(); customConnectorSheet(id); return;
+    case 'save-connector': saveConnector(id); return;
+    case 'add-row': { const box = sheetEl.querySelector('#' + el.dataset.to); box.insertAdjacentHTML('beforeend', kvRow()); return; }
+    case 'drop-row': { const row = el.closest('.kv'); if (row.parentElement.children.length > 1) row.remove(); else row.querySelectorAll('input').forEach((i) => (i.value = '')); return; }
+    case 'lock': {
+      el.classList.toggle('on');
+      const on = el.classList.contains('on');
+      el.innerHTML = ic(on ? 'lock' : 'unlock');
+      el.title = on ? '存进钥匙串' : '写进配置文件';
+      el.closest('.kv').querySelectorAll('input')[1].type = on ? 'password' : 'text';
+      return;
+    }
+    case 'paste-json': {
+      // A pasted mcpServers snippet becomes form fields; its token goes to a locked row, never the file.
+      sheetEl.querySelector('#cf-name').value = 'internal-wiki';
+      sheetEl.querySelector('#cf-kind [data-v="http"]').click();
+      sheetEl.querySelector('#cf-url').value = 'https://wiki.internal.example/mcp';
+      sheetEl.querySelector('#cf-headers').innerHTML = kvRow('Authorization', 'Bearer wk_9f2c41d8', true);
+      return;
+    }
+    case 'remove-skill': case 'remove-conn': {
+      // Delayed commit: the call (skills/remove, or config/write with null) goes out only when the toast ends.
+      closeMenu(); closeSheet();
+      const list = act === 'remove-skill' ? S.skills : S.connectors;
+      const i = list.findIndex((x) => x.id === id);
+      lastRemoved = { list, i, item: list[i] };
+      list.splice(i, 1);
+      if (S.detail?.id === id) S.detail = null;
+      toast(act === 'remove-skill' ? `已删除 ${lastRemoved.item.name}，移到了废纸篓` : `已删除 ${lastRemoved.item.name}，它的令牌一并删除`, { undo: true }); return;
+    }
+    case 'undo': if (lastRemoved) { lastRemoved.list.splice(lastRemoved.i, 0, lastRemoved.item); lastRemoved = null; } S.toast = null; render(); return;
+    case 'reveal': closeMenu(); toast(`（Demo）会在访达中显示 ${esc(el.dataset.path || '')}`, { icon: 'info' }); return;
+    case 'issue': openSheet(`<h3>1 个技能没有加载</h3><p class="sub">finx 跳过了它，其他技能不受影响。改好之后，列表会自动更新。</p>
+        <div class="fgroup"><div class="frow">${ic('file')}<span class="fv mono" style="font-size:12px">${esc(S.skillIssues[0].path)}</span></div>
+        <div class="frow"><span class="fl">原因</span><span class="fv">头部缺少 description，模型不知道什么时候该用它</span></div></div>
+        <div class="sheet-foot"><button class="btn" data-act="close">关闭</button><button class="btn primary" data-act="reveal" data-path="${esc(S.skillIssues[0].path)}">${ic('edit')}打开 SKILL.md</button></div>`, 520); return;
+    case 'close': closeSheet(); return;
+  }
+}
+function openCard(key) {
+  const [kind, id] = key.split(':');
+  closeMenu();
+  S.detail = { kind: kind.startsWith('skill') ? 'skill' : 'conn', id, tab: 'overview' };
+  S.picks = {};
+  content.querySelector('.cscroll')?.scrollTo(0, 0);
+  render();
+}
+
+function wire(root) {
+  root.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-pick] button');
+    if (pick) {
+      pick.parentElement.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b === pick));
+      S.picks[pick.parentElement.dataset.pick] = pick.dataset.v;
+      if (root === content && S.detail) render();
+      return;
+    }
+    const a = e.target.closest('[data-act]');
+    if (a) return onAct(a, e);
+  });
+}
+wire(content);
+document.addEventListener('click', (e) => {
+  if (menuEl && menuEl.contains(e.target)) { const a = e.target.closest('[data-act]'); if (a) onAct(a, e); return; }
+  if (menuEl && !e.target.closest('[data-act="add-menu"],[data-act="card-menu"]')) closeMenu();
+  if (e.target.closest('#content')) {
+    const t = e.target.closest('[data-tab]'); if (t) { S.tab = t.dataset.tab; render(); return; }
+    const sc = e.target.closest('[data-scope]'); if (sc) { S.scope = sc.dataset.scope; render(); return; }
+    const dt = e.target.closest('[data-dtab]'); if (dt) { S.detail.tab = dt.dataset.dtab; render(); return; }
+    const card = e.target.closest('[data-open]');
+    if (card && !e.target.closest('[data-act]')) openCard(card.dataset.open);
+  }
+  const nav = e.target.closest('[data-nav]');
+  if (nav) { S.view = nav.dataset.nav; S.detail = null; render(); }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { if (!menuEl && !sheetEl && S.detail) { S.detail = null; render(); } closeMenu(); closeSheet(); }
+  if (e.key === 'Enter' && e.target.matches('[data-open]')) openCard(e.target.dataset.open);
+});
+document.getElementById('theme').addEventListener('click', (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  document.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b));
+  document.documentElement.dataset.theme = b.dataset.t;
+});
+if (matchMedia('(prefers-color-scheme: dark)').matches) document.querySelector('#theme [data-t="dark"]').click();
+render();
+</script>
+</body>
+</html>

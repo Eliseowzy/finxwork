@@ -1,10 +1,13 @@
 //! Skills: directories with a `SKILL.md` that teach the model one kind of task. They are
-//! found when a session starts, in the project, the user's directories and configured paths,
-//! and listed in the system prompt; the model loads one with read (docs/kernel/skill-design.md).
+//! found when a session starts, in the project's `.agents/skills` (and `.claude/skills`, off
+//! by default), the user's `~/.finx/skills` and configured paths, and listed in the system
+//! prompt; the model loads one with read (docs/kernel/skill-design.md).
 
 mod catalog;
 mod frontmatter;
+pub mod install;
 pub(crate) mod kept;
+pub mod system;
 
 pub use catalog::Catalog;
 pub use catalog::Reader;
@@ -78,6 +81,8 @@ pub struct SkillSet {
     pub entries: Vec<SkillEntry>,
     /// Problems the user should fix; a session reports them when it starts.
     pub warnings: Vec<String>,
+    /// Other apps' folders that hold skills but were not read (`skills.other_apps` is off).
+    pub not_read: Vec<PathBuf>,
 }
 
 impl SkillSet {
@@ -143,6 +148,7 @@ impl Scan {
             }),
             enabled: self.enabled,
             warnings: self.warnings(),
+            not_read: self.set.not_read.clone(),
         }
     }
 }
@@ -157,6 +163,7 @@ pub fn session_report(skills: &[SkillRef], enabled: bool) -> SkillsListResult {
         catalog: None,
         enabled,
         warnings: Vec::new(),
+        not_read: Vec::new(),
     }
 }
 
@@ -184,11 +191,14 @@ pub fn describe(skills: &[SkillRef]) -> Vec<SkillEntry> {
 pub struct Sources<'a> {
     pub cwd: &'a Path,
     pub project_root: Option<&'a Path>,
-    /// `FINX_HOME`: its `skills` directory stands for `.finx` in the user layer.
+    /// `FINX_HOME`: its `skills` directory is the user layer.
     pub finx_home: &'a Path,
-    /// The user's home directory, for `~/.agents/skills` and the like; `None` skips them.
+    /// The user's home directory: never a project directory, and where `~/.agents/skills`
+    /// and `~/.claude/skills` are when `skills.other_apps` is on.
     pub user_home: Option<&'a Path>,
     pub settings: &'a SkillsSettings,
+    /// Include the skills built into finx, after every other root.
+    pub system: bool,
 }
 
 impl<'a> Sources<'a> {
@@ -204,19 +214,26 @@ impl<'a> Sources<'a> {
             finx_home: home.root(),
             user_home: home.user_home(),
             settings,
+            system: true,
         }
     }
 }
 
 /// Finds the skills of a session that would start in `sources.cwd`: the project layer from
 /// the working directory up to the project root, then the user layer, then configured
-/// paths. The first skill of a name wins (docs/kernel/skill-design.md §4).
+/// paths. The first skill of a name that is on wins (docs/kernel/skill-design.md §4).
 pub fn discover(sources: &Sources<'_>) -> SkillSet {
     let mut set = SkillSet::default();
     if !sources.settings.enabled {
         return set;
     }
-    let disabled = Disabled::new(sources);
+    if sources.system {
+        system::ensure(sources.finx_home);
+    }
+    let disabled = PathsAndNames::new(&sources.settings.disabled, sources);
+    let opt_in = PathsAndNames::new(&sources.settings.opt_in, sources);
+    set.not_read = not_read(sources);
+    let user_skills = sources.finx_home.join("skills");
     let mut seen_roots = HashSet::new();
     let mut seen_files = HashSet::new();
     let mut winners: HashMap<String, PathBuf> = HashMap::new();
@@ -238,13 +255,21 @@ pub fn discover(sources: &Sources<'_>) -> SkillSet {
                 continue;
             }
             let mut entry = found.entry;
+            entry.default_enabled = root.default_enabled;
+            // Installed by finx in the user's own folder: the page may remove it, and it may
+            // say where it came from.
+            if entry.scope == SkillScope::User && entry.path.starts_with(&user_skills) {
+                entry.removable = true;
+                entry.source = install::read_source(entry.dir());
+            }
             if entry.state == SkillState::Invalid {
                 set.warnings.push(format!(
                     "skill at {} was not loaded: {}",
                     entry.path.display(),
                     entry.detail.as_deref().unwrap_or_default()
                 ));
-            } else if disabled.matches(&entry) {
+            } else if disabled.matches(&entry) || !(entry.default_enabled || opt_in.matches(&entry)) {
+                // Off, so it does not shadow another skill of its name (design D-174).
                 entry.state = SkillState::Disabled;
             } else if let Some(winner) = winners.get(&entry.name) {
                 entry.state = SkillState::Shadowed;
@@ -275,38 +300,49 @@ pub fn expand(path: &str, user_home: Option<&Path>, base: &Path) -> PathBuf {
     normalize_lexically(&path)
 }
 
+/// The folders of other apps in a project and in the home directory, in priority order:
+/// `.agents` is the open specification's shared place, `.claude` another app's (design §4.1).
+const SHARED_DIR: &str = ".agents";
+const OTHER_APP_DIR: &str = ".claude";
+
 struct Root {
     path: PathBuf,
     scope: SkillScope,
+    /// Whether its skills are on before the user turns them on or off (design D-173).
+    default_enabled: bool,
     meta: io::Result<Metadata>,
 }
 
 impl Root {
-    fn new(path: PathBuf, scope: SkillScope) -> Self {
+    fn new(path: PathBuf, scope: SkillScope, default_enabled: bool) -> Self {
         let meta = std::fs::metadata(&path);
-        Self { path, scope, meta }
+        Self {
+            path,
+            scope,
+            default_enabled,
+            meta,
+        }
     }
 }
 
 fn roots(sources: &Sources<'_>) -> Vec<Root> {
-    let names = &sources.settings.dirs;
-    let user: Vec<Root> = names
-        .iter()
-        .filter_map(|name| match name.as_str() {
-            ".finx" => Some(sources.finx_home.join("skills")),
-            _ => sources.user_home.map(|home| home.join(name).join("skills")),
-        })
-        .map(|path| Root::new(path, SkillScope::User))
-        .collect();
+    let mut user = vec![Root::new(sources.finx_home.join("skills"), SkillScope::User, true)];
+    if sources.settings.other_apps
+        && let Some(home) = sources.user_home
+    {
+        for name in [SHARED_DIR, OTHER_APP_DIR] {
+            user.push(Root::new(home.join(name).join("skills"), SkillScope::User, true));
+        }
+    }
     let user_ids: HashSet<_> = user
         .iter()
         .filter_map(|root| root.meta.as_ref().ok().map(|meta| file_id(meta, &root.path)))
         .collect();
     let mut roots = Vec::new();
-    for dir in project_dirs(sources.cwd, sources.project_root) {
-        for name in names {
-            let root = Root::new(dir.join(name).join("skills"), SkillScope::Project);
-            // A user root met on the way up (the working directory is the home) stays a user root.
+    for dir in project_dirs(sources.cwd, sources.project_root, sources.user_home) {
+        for (name, default_enabled) in [(SHARED_DIR, true), (OTHER_APP_DIR, false)] {
+            let root = Root::new(dir.join(name).join("skills"), SkillScope::Project, default_enabled);
+            // A user root met on the way up (a link to one) stays a user root.
             let is_user = root.meta.as_ref().is_ok_and(|meta| user_ids.contains(&file_id(meta, &root.path)));
             if !is_user {
                 roots.push(root);
@@ -319,22 +355,65 @@ fn roots(sources: &Sources<'_>) -> Vec<Root> {
             .settings
             .paths
             .iter()
-            .map(|path| Root::new(expand(path, sources.user_home, sources.cwd), SkillScope::Extra)),
+            .map(|path| Root::new(expand(path, sources.user_home, sources.cwd), SkillScope::Extra, true)),
     );
+    if sources.system {
+        roots.push(Root::new(system::dir(sources.finx_home), SkillScope::System, true));
+    }
     roots
 }
 
 /// The working directory and its parents up to the project root, nearest first; only the
-/// working directory when there is no project.
-fn project_dirs(cwd: &Path, project_root: Option<&Path>) -> Vec<PathBuf> {
-    match project_root {
+/// working directory when there is no project. Never the home directory: its `.agents` and
+/// `.claude` are other apps' folders, read only with `skills.other_apps` (design D-172).
+fn project_dirs(cwd: &Path, project_root: Option<&Path>, home: Option<&Path>) -> Vec<PathBuf> {
+    let dirs: Vec<PathBuf> = match project_root {
         Some(root) if cwd.starts_with(root) => cwd
             .ancestors()
             .take_while(|dir| dir.starts_with(root))
             .map(Path::to_path_buf)
             .collect(),
         _ => vec![cwd.to_path_buf()],
-    }
+    };
+    let home = home.map(|home| std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf()));
+    dirs.into_iter()
+        .filter(|dir| home.as_ref().is_none_or(|home| std::fs::canonicalize(dir).as_ref().unwrap_or(dir) != home))
+        .collect()
+}
+
+/// Whether the skill in `dir` is on by default, as its root says in [`discover`]: false only
+/// inside a project's `.claude/skills` (not the home's, which `skills.other_apps` reads as on).
+pub fn on_by_default(dir: &Path, user_home: Option<&Path>) -> bool {
+    let home = user_home.map(|home| std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf()));
+    !dir.ancestors().any(|root| {
+        root.file_name().is_some_and(|name| name == "skills")
+            && root.parent().is_some_and(|app| app.file_name().is_some_and(|name| name == OTHER_APP_DIR))
+            && root.parent().and_then(Path::parent).is_some_and(|project| {
+                home.as_ref().is_none_or(|home| std::fs::canonicalize(project).as_ref().unwrap_or(&project.to_path_buf()) != home)
+            })
+    })
+}
+
+/// Other apps' skill folders in the home directory that hold something but are not read,
+/// for the note under `finx skills` (design D-177). One directory read each.
+fn not_read(sources: &Sources<'_>) -> Vec<PathBuf> {
+    let Some(home) = sources.user_home.filter(|_| !sources.settings.other_apps) else {
+        return Vec::new();
+    };
+    [SHARED_DIR, OTHER_APP_DIR]
+        .into_iter()
+        .map(|name| home.join(name).join("skills"))
+        .filter(|root| {
+            std::fs::read_dir(root).is_ok_and(|mut entries| {
+                entries.any(|entry| {
+                    entry.is_ok_and(|entry| {
+                        !entry.file_name().to_string_lossy().starts_with('.')
+                            && std::fs::metadata(entry.path()).is_ok_and(|meta| meta.is_dir())
+                    })
+                })
+            })
+        })
+        .collect()
 }
 
 /// A `SKILL.md` that the walk found, loaded.
@@ -458,6 +537,15 @@ fn open_skill(path: &Path, scope: SkillScope) -> Option<Found> {
     })
 }
 
+/// Reads one `SKILL.md` as discovery would see it (used to check a skill before installing it).
+pub(crate) fn read_entry(path: PathBuf, scope: SkillScope) -> SkillEntry {
+    let header = std::fs::File::open(&path)
+        .map_err(|e| format!("cannot read the file: {e}"))
+        .and_then(read_header)
+        .and_then(|text| frontmatter::parse(&text));
+    load(path, header, scope)
+}
+
 /// Checks the header of a `SKILL.md` that the walk found. Problems that do not stop the
 /// skill from working become notes.
 fn load(path: PathBuf, header: Result<frontmatter::Header, String>, scope: SkillScope) -> SkillEntry {
@@ -476,6 +564,9 @@ fn load(path: PathBuf, header: Result<frontmatter::Header, String>, scope: Skill
         state: SkillState::Active,
         detail: None,
         notes: Vec::new(),
+        source: None,
+        removable: false,
+        default_enabled: true,
     };
     let header = match header {
         Ok(header) => header,
@@ -572,17 +663,18 @@ fn follows_naming_rules(name: &str) -> bool {
         && !name.contains("--")
 }
 
-/// `skills.disabled`: names, and paths of skill directories or `SKILL.md` files.
-struct Disabled {
+/// `skills.disabled` or `skills.opt_in`: names, and paths of skill directories or
+/// `SKILL.md` files (`opt_in` holds paths only; the configuration checks that).
+struct PathsAndNames {
     names: HashSet<String>,
     paths: Vec<PathBuf>,
 }
 
-impl Disabled {
-    fn new(sources: &Sources<'_>) -> Self {
+impl PathsAndNames {
+    fn new(items: &[String], sources: &Sources<'_>) -> Self {
         let mut names = HashSet::new();
         let mut paths = Vec::new();
-        for item in &sources.settings.disabled {
+        for item in items {
             if is_path(item) {
                 let path = expand(item, sources.user_home, sources.cwd);
                 paths.push(std::fs::canonicalize(&path).unwrap_or(path));
@@ -678,6 +770,7 @@ mod tests {
                 finx_home: &self.path("finx-home"),
                 user_home: Some(&self.path("home")),
                 settings,
+                system: false,
             })
         }
     }
@@ -689,7 +782,8 @@ mod tests {
     #[test]
     fn nearest_first_across_the_three_layers() {
         let fx = Fixture::new();
-        fx.skill("repo/packages/web/.finx/skills/release", None, "Release the web package.");
+        fx.skill("repo/packages/web/.agents/skills/release", None, "Release the web package.");
+        fx.skill("repo/packages/web/.finx/skills/old", None, "A project's .finx is not read.");
         fx.skill("repo/.agents/skills/release", None, "Release everything.");
         fx.skill("repo/.agents/skills/commit", None, "Commit using the repo convention.");
         fx.skill("finx-home/skills/commit", None, "My commit style.");
@@ -697,6 +791,7 @@ mod tests {
         fx.skill("home/.claude/skills/pdf-tools", None, "Another copy.");
         fx.skill("extra/lint", None, "Lint rules.");
         let settings = SkillsSettings {
+            other_apps: true,
             paths: vec![fx.path("extra").display().to_string()],
             ..SkillsSettings::default()
         };
@@ -720,6 +815,51 @@ mod tests {
         let refs: Vec<String> = set.references().into_iter().map(|r| r.name).collect();
         assert_eq!(refs, vec!["release", "commit", "pdf-tools", "lint"]);
         assert!(set.warnings.is_empty(), "{:?}", set.warnings);
+        assert!(set.not_read.is_empty(), "read, so not reported");
+
+        // By default the user layer is finx's own folder; the others are only reported.
+        let set = fx.discover("repo/packages/web", Some("repo"), &SkillsSettings::default());
+        assert!(set.entries.iter().all(|e| !e.path.starts_with(fx.path("home"))), "{:?}", states(&set));
+        assert_eq!(set.not_read, vec![fx.path("home/.agents/skills"), fx.path("home/.claude/skills")]);
+    }
+
+    #[test]
+    fn claude_skills_are_off_until_opted_in_and_do_not_shadow() {
+        let fx = Fixture::new();
+        fx.skill("work/.agents/skills/x", None, "From agents.");
+        fx.skill("work/.claude/skills/x", None, "From claude.");
+        let deploy = fx.skill("work/.claude/skills/deploy", None, "The repo's deploy.");
+        fx.skill("finx-home/skills/deploy", None, "My deploy.");
+        let set = fx.discover("work", None, &SkillsSettings::default());
+        use SkillScope::*;
+        use SkillState::*;
+        assert_eq!(
+            states(&set),
+            vec![
+                ("x".into(), Project, Active),
+                ("deploy".into(), Project, Disabled),
+                ("x".into(), Project, Disabled),
+                ("deploy".into(), User, Active),
+            ],
+            "an off skill shadows nothing"
+        );
+        assert!(set.entries[0].default_enabled && !set.entries[1].default_enabled && set.entries[3].default_enabled);
+
+        let opted = SkillsSettings {
+            opt_in: vec![deploy.parent().unwrap().display().to_string()],
+            ..SkillsSettings::default()
+        };
+        let set = fx.discover("work", None, &opted);
+        assert_eq!(set.entries[1].state, Active, "turned on, the nearer copy wins");
+        assert_eq!(set.entries[3].state, Shadowed);
+
+        let both = SkillsSettings {
+            disabled: vec![deploy.display().to_string()],
+            ..opted
+        };
+        let set = fx.discover("work", None, &both);
+        assert_eq!(set.entries[1].state, Disabled, "disabled wins over opt_in");
+        assert_eq!(set.entries[3].state, Active);
     }
 
     #[test]
@@ -729,25 +869,6 @@ mod tests {
         fx.skill(".agents/skills/above", None, "Above the working directory.");
         let set = fx.discover("work", None, &SkillsSettings::default());
         assert_eq!(states(&set), vec![("here".into(), SkillScope::Project, SkillState::Active)]);
-    }
-
-    #[test]
-    fn the_dirs_setting_picks_and_orders_the_directory_names() {
-        let fx = Fixture::new();
-        fx.skill("work/.agents/skills/x", None, "From agents.");
-        fx.skill("work/.claude/skills/x", None, "From claude.");
-        let reversed = SkillsSettings {
-            dirs: vec![".claude".into(), ".agents".into()],
-            ..SkillsSettings::default()
-        };
-        let set = fx.discover("work", None, &reversed);
-        assert_eq!(set.entries[0].description, "From claude.");
-        assert_eq!(set.entries[1].state, SkillState::Shadowed);
-        let only_agents = SkillsSettings {
-            dirs: vec![".agents".into()],
-            ..SkillsSettings::default()
-        };
-        assert_eq!(fx.discover("work", None, &only_agents).entries.len(), 1);
     }
 
     #[test]
@@ -780,17 +901,32 @@ mod tests {
         // The whole root linked from another client's directory: the same files, seen once.
         std::fs::create_dir_all(fx.path("home/.claude")).unwrap();
         std::os::unix::fs::symlink(&root, fx.path("home/.claude/skills")).unwrap();
-        let set = fx.discover("work", None, &SkillsSettings::default());
+        let other_apps = SkillsSettings {
+            other_apps: true,
+            ..SkillsSettings::default()
+        };
+        let set = fx.discover("work", None, &other_apps);
         assert_eq!(set.entries.len(), 1, "{:?}", states(&set));
         assert_eq!(set.entries[0].path, root.join("shared/SKILL.md"), "the path as found, not resolved");
         assert_eq!(std::fs::canonicalize(&set.entries[0].path).unwrap(), real);
     }
 
     #[test]
-    fn the_home_as_working_directory_keeps_user_skills_in_the_user_layer() {
+    fn the_home_is_never_a_project_directory() {
         let fx = Fixture::new();
         fx.skill("home/.agents/skills/mine", None, "Mine.");
+        fx.skill("home/code/.agents/skills/here", None, "Here.");
+        // The home as the working directory, and the home as a project (a dotfiles repository).
         let set = fx.discover("home", None, &SkillsSettings::default());
+        assert!(set.entries.is_empty(), "{:?}", states(&set));
+        let set = fx.discover("home/code", Some("home"), &SkillsSettings::default());
+        assert_eq!(states(&set), vec![("here".into(), SkillScope::Project, SkillState::Active)]);
+        // With other apps read, the home's folder stays in the user layer.
+        let other_apps = SkillsSettings {
+            other_apps: true,
+            ..SkillsSettings::default()
+        };
+        let set = fx.discover("home", None, &other_apps);
         assert_eq!(states(&set), vec![("mine".into(), SkillScope::User, SkillState::Active)]);
     }
 
@@ -798,9 +934,10 @@ mod tests {
     fn disabling_by_name_or_by_path() {
         let fx = Fixture::new();
         fx.skill("work/.agents/skills/deploy", None, "The repo's deploy.");
-        fx.skill("home/.agents/skills/deploy", None, "My deploy.");
-        fx.skill("home/.agents/skills/other", None, "Other.");
+        fx.skill("finx-home/skills/deploy", None, "My deploy.");
+        fx.skill("home/team/other", None, "Other.");
         let by_name = SkillsSettings {
+            paths: vec!["~/team".into()],
             disabled: vec!["deploy".into()],
             ..SkillsSettings::default()
         };
@@ -811,6 +948,7 @@ mod tests {
             "no shadowed copy takes over"
         );
         let by_path = SkillsSettings {
+            paths: vec!["~/team".into()],
             disabled: vec![fx.path("work/.agents/skills/deploy").display().to_string()],
             ..SkillsSettings::default()
         };
@@ -819,7 +957,8 @@ mod tests {
         assert_eq!(set.entries[1].state, SkillState::Active, "the next one takes over");
         assert_eq!(set.entries[1].description, "My deploy.");
         let by_home_path = SkillsSettings {
-            disabled: vec!["~/.agents/skills/other/SKILL.md".into()],
+            paths: vec!["~/team".into()],
+            disabled: vec!["~/team/other/SKILL.md".into()],
             ..SkillsSettings::default()
         };
         let set = fx.discover("work", None, &by_home_path);

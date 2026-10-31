@@ -50,6 +50,7 @@ use crate::hub::AttachRequest;
 use crate::server::NewSession;
 use crate::server::ResumeOverrides;
 use crate::server::Server;
+use finx_protocol::customize::*;
 
 pub struct NativeProtocol {
     server: Server,
@@ -91,6 +92,24 @@ impl NativeProtocol {
     }
 
     /// Runs a request in its own task; the task answers on its own unless cancelled.
+    /// Parses the parameters, runs `work` on its own task and replies with its result.
+    fn call<P, R, F, Fut>(&self, id: &Id, params: Option<&RawValue>, conn: &ConnHandle, work: F)
+    where
+        P: serde::de::DeserializeOwned + Send + 'static,
+        R: Serialize,
+        F: FnOnce(Server, P) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<R, RpcError>> + Send + 'static,
+    {
+        match finx_rpc::params::<P>(params) {
+            Ok(p) => {
+                let reply_id = id.clone();
+                let server = self.server.clone();
+                self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, work(server, p).await)) });
+            }
+            Err(err) => conn.send_error(Some(id), &err),
+        }
+    }
+
     fn spawn<F>(&self, id: Id, conn: &ConnHandle, work: F)
     where
         F: Future<Output = Option<Vec<u8>>> + Send + 'static,
@@ -196,6 +215,7 @@ impl NativeProtocol {
                             agents: true,
                             model_connections: true,
                             model_discovery: true,
+                            customize: true,
                         },
                     })
                 });
@@ -407,8 +427,39 @@ impl NativeProtocol {
                 }
                 Err(error) => conn.send_error(Some(id), &error),
             },
+            method::CONFIG_READ => {
+                let conn2 = conn.clone();
+                self.call(id, params, conn, move |server, p: ConfigReadParams| async move { server.config_read(p, &conn2).await })
+            }
+            method::CONFIG_WRITE => self.call(id, params, conn, |server, p: ConfigWriteParams| async move { server.config_write(p).await }),
+            method::CREDENTIALS_SET => self.call(id, params, conn, |server, p: CredentialsSetParams| async move { server.credentials_set(p).await }),
+            method::CREDENTIALS_DELETE => {
+                self.call(id, params, conn, |server, p: CredentialsDeleteParams| async move { server.credentials_delete(p).await })
+            }
+            method::SKILLS_INSTALL => self.call(id, params, conn, |server, p: SkillsInstallParams| async move { server.skills_install(p).await }),
+            method::SKILLS_REMOVE => self.call(id, params, conn, |server, p: SkillsRemoveParams| async move { server.skills_remove(p).await }),
+            method::SKILLS_SET_ENABLED => {
+                self.call(id, params, conn, |server, p: SkillsSetEnabledParams| async move { server.skills_set_enabled(p).await })
+            }
+            method::SKILLS_FILES => self.call(id, params, conn, |server, p: SkillsFilesParams| async move { server.skills_files(p).await }),
+            method::MCP_LIST => {
+                let conn2 = conn.clone();
+                self.call(id, params, conn, move |server, p: McpListParams| async move { server.mcp_list(p, &conn2).await })
+            }
+            method::MCP_TOOLS => self.call(id, params, conn, |server, p: McpServerParams| async move { server.mcp_tools(p).await }),
+            method::MCP_CHECK => self.call(id, params, conn, |server, p: McpServerParams| async move { server.mcp_check(p).await }),
+            method::MCP_PROBE => {
+                let conn2 = conn.clone();
+                self.call(id, params, conn, move |server, p: McpProbeParams| async move { server.mcp_probe(p, &conn2).await })
+            }
+            method::MCP_PROBE_CANCEL => self.call(id, params, conn, |server, p: McpProbeCancelParams| async move { server.mcp_probe_cancel(p).await }),
+            method::MCP_LOGIN => self.call(id, params, conn, |server, p: McpLoginParams| async move { server.mcp_login(p).await }),
+            method::MCP_LOGOUT => self.call(id, params, conn, |server, p: McpLogoutParams| async move { server.mcp_logout(p).await }),
             method::SKILLS_LIST => match finx_rpc::params::<SkillsListParams>(params) {
                 Ok(p) => {
+                    if p.session_id.is_none() {
+                        server.watch_skills(conn, p.cwd.as_deref());
+                    }
                     let reply_id = id.clone();
                     self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.list_skills(p).await)) });
                 }

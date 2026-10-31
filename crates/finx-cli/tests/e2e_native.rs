@@ -229,9 +229,9 @@ fn names(list: &Value, field: &str) -> Vec<String> {
 async fn skills_list_reports_a_session_and_a_directory() {
     let env = TestEnv::new("manual", "").await;
     let schema = SchemaCheck::new(&["SkillsListResult", "ContextReport"]);
-    let report = env.user_home().join(".agents/skills/gen-report/SKILL.md");
+    let report = env.home.path().join("skills/gen-report/SKILL.md");
     write_file(&report, "---\nname: gen-report\ndescription: Weekly report.\nargument-hint: \"[week]\"\n---\nbody\n");
-    write_file(&env.user_home().join(".agents/skills/broken/SKILL.md"), "no header\n");
+    write_file(&env.home.path().join("skills/broken/SKILL.md"), "no header\n");
     let work = env.workspace("skills");
     write_file(
         &work.join(".agents/skills/lint/SKILL.md"),
@@ -245,22 +245,22 @@ async fn skills_list_reports_a_session_and_a_directory() {
     // A directory: what a session there would find, the same as `finx skills --all --json`.
     let scanned = client.request("skills/list", json!({"cwd": work})).await.unwrap();
     schema.check("SkillsListResult", &scanned);
-    assert_eq!(names(&scanned, "skills"), ["lint", "broken", "gen-report"]);
+    assert_eq!(names(&scanned, "skills"), ["lint", "broken", "gen-report", "skill-creator"]);
     assert_eq!(scanned["skills"][1]["state"], "invalid");
     assert_eq!(scanned["catalog"]["listed"], 1, "lint is for the user only");
     let output = env.finx_in(&work, &["skills", "--all", "--json"]).output().await.unwrap();
     assert_eq!(scanned, serde_json::from_slice::<Value>(&output.stdout).unwrap());
     // Neither: what a session without a project would find, the user's own.
     let projectless = client.request("skills/list", json!({})).await.unwrap();
-    assert_eq!(names(&projectless, "skills"), ["broken", "gen-report"]);
+    assert_eq!(names(&projectless, "skills"), ["broken", "gen-report", "skill-creator"]);
 
     // A session: the skills it started with and what `/` offers, built-in commands first.
     let (session, _) = new_session(&client, &work).await;
     let mut events = demux.subscribe(&session);
     let listed = client.request("skills/list", json!({"session_id": session})).await.unwrap();
     schema.check("SkillsListResult", &listed);
-    assert_eq!(names(&listed, "skills"), ["lint", "gen-report"]);
-    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report"]);
+    assert_eq!(names(&listed, "skills"), ["lint", "gen-report", "skill-creator"]);
+    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report", "skill:skill-creator"]);
     assert!(listed["commands"][0].get("skill").is_none());
     assert_eq!(listed["commands"][3]["hint"], "[week]");
     assert_eq!(listed["commands"][3]["skill"], json!(report));
@@ -308,10 +308,10 @@ async fn skills_list_reports_a_session_and_a_directory() {
     assert!(skills(&after) > skills(&context), "{} then {}", skills(&context), skills(&after));
 
     // Still the session's skills after files change; descriptions are read again.
-    write_file(&env.user_home().join(".agents/skills/late/SKILL.md"), "---\nname: late\ndescription: Late.\n---\n");
+    write_file(&env.home.path().join("skills/late/SKILL.md"), "---\nname: late\ndescription: Late.\n---\n");
     write_file(&report, "---\nname: gen-report\ndescription: Edited.\n---\nbody\n");
     let listed = client.request("skills/list", json!({"session_id": session})).await.unwrap();
-    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report"]);
+    assert_eq!(names(&listed, "commands"), ["compact", "context", "skill:lint", "skill:gen-report", "skill:skill-creator"]);
     assert_eq!(listed["commands"][3]["description"], "Edited.");
 
     for (params, kind) in [

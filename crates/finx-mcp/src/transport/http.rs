@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 use super::Inbound;
 use super::Transport;
 use crate::McpError;
+use crate::oauth::BearerSource;
 
 const SESSION_HEADER: &str = "mcp-session-id";
 const VERSION_HEADER: &str = "mcp-protocol-version";
@@ -40,6 +41,19 @@ struct HttpInner {
     protocol_version: Mutex<Option<String>>,
     inbound: mpsc::UnboundedSender<Inbound>,
     closed: CancellationToken,
+    /// OAuth: the access token for each request, refreshed once after a 401.
+    auth: Option<Arc<dyn BearerSource>>,
+}
+
+/// Fixed request headers, checked once.
+pub(crate) fn header_map(headers: &[(String, String)]) -> Result<HeaderMap, String> {
+    let mut map = HeaderMap::new();
+    for (name, value) in headers {
+        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| format!("invalid header name '{name}'"))?;
+        let value = HeaderValue::from_str(value).map_err(|_| format!("invalid value for header '{name}'"))?;
+        map.insert(name, value);
+    }
+    Ok(map)
 }
 
 pub(crate) fn connect(
@@ -47,34 +61,33 @@ pub(crate) fn connect(
     client: reqwest::Client,
     url: String,
     headers: &[(String, String)],
+    auth: Option<Arc<dyn BearerSource>>,
     inbound: mpsc::UnboundedSender<Inbound>,
 ) -> Result<HttpTransport, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(format!("the URL must start with http:// or https://: {url}"));
-    }
-    let mut map = HeaderMap::new();
-    for (name, value) in headers {
-        let name = HeaderName::from_bytes(name.as_bytes()).map_err(|_| format!("invalid header name '{name}'"))?;
-        let value = HeaderValue::from_str(value).map_err(|_| format!("invalid value for header '{name}'"))?;
-        map.insert(name, value);
     }
     Ok(HttpTransport {
         inner: Arc::new(HttpInner {
             server,
             client,
             url,
-            headers: map,
+            headers: header_map(headers)?,
             session_id: Mutex::new(None),
             protocol_version: Mutex::new(None),
             inbound,
             closed: CancellationToken::new(),
+            auth,
         }),
     })
 }
 
 impl HttpInner {
-    fn request(&self, method: reqwest::Method) -> reqwest::RequestBuilder {
+    fn request(&self, method: reqwest::Method, bearer: Option<&str>) -> reqwest::RequestBuilder {
         let mut request = self.client.request(method, &self.url).headers(self.headers.clone());
+        if let Some(token) = bearer {
+            request = request.bearer_auth(token);
+        }
         if let Some(id) = self.session_id.lock().clone() {
             request = request.header(SESSION_HEADER, id);
         }
@@ -152,7 +165,11 @@ impl HttpInner {
         let mut failures = 0u32;
         let mut retry = Duration::from_secs(1);
         while !self.closed.is_cancelled() && failures < 5 {
-            let request = self.request(reqwest::Method::GET).header(ACCEPT, "text/event-stream");
+            let bearer = match &self.auth {
+                Some(auth) => auth.token().await.ok(),
+                None => None,
+            };
+            let request = self.request(reqwest::Method::GET, bearer.as_deref()).header(ACCEPT, "text/event-stream");
             let response = tokio::select! {
                 _ = self.closed.cancelled() => return,
                 response = request.send() => response,
@@ -182,14 +199,31 @@ impl Transport for HttpTransport {
         let is_request = message.get("method").is_some() && message.get("id").is_some();
         let request_id = is_request.then(|| message.get("id").cloned()).flatten();
         let had_session = inner.session_id.lock().is_some();
-        let request = inner
-            .request(reqwest::Method::POST)
-            .header(CONTENT_TYPE, "application/json")
-            .header(ACCEPT, "application/json, text/event-stream")
-            .json(&message);
-        let response = tokio::select! {
-            _ = inner.closed.cancelled() => return Err(McpError::Closed("the connection was closed".into())),
-            response = request.send() => response.map_err(|e| McpError::Transport(format!("request failed: {e}")))?,
+        let mut bearer = match &inner.auth {
+            Some(auth) => Some(auth.token().await?),
+            None => None,
+        };
+        let mut refreshed = false;
+        let response = loop {
+            let request = inner
+                .request(reqwest::Method::POST, bearer.as_deref())
+                .header(CONTENT_TYPE, "application/json")
+                .header(ACCEPT, "application/json, text/event-stream")
+                .json(&message);
+            let response = tokio::select! {
+                _ = inner.closed.cancelled() => return Err(McpError::Closed("the connection was closed".into())),
+                response = request.send() => response.map_err(|e| McpError::Transport(format!("request failed: {e}")))?,
+            };
+            // An expired or revoked token: refresh once and send again.
+            if response.status() == StatusCode::UNAUTHORIZED
+                && !refreshed
+                && let (Some(auth), Some(stale)) = (&inner.auth, &bearer)
+            {
+                bearer = Some(auth.refresh(stale).await?);
+                refreshed = true;
+                continue;
+            }
+            break response;
         };
         inner.remember_session(&response);
         let status = response.status();
@@ -249,7 +283,7 @@ impl Transport for HttpTransport {
         inner.closed.cancel();
         let session = inner.session_id.lock().clone();
         if session.is_some() {
-            let request = inner.request(reqwest::Method::DELETE).send();
+            let request = inner.request(reqwest::Method::DELETE, None).send();
             let _ = tokio::time::timeout(Duration::from_secs(1), request).await;
         }
         let _ = inner.inbound.send(Inbound::Closed("the connection was closed".into()));

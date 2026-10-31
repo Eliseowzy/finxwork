@@ -3,6 +3,7 @@ import { useCommands } from "./commands";
 import { SheetHost, ToastView } from "./components";
 import { KeySheet, needsKey } from "./composer/KeySetup";
 import { NewSession } from "./composer/NewSession";
+import { Customize } from "./customize/Customize";
 import { Onboarding, onboardingEvent } from "./onboarding/Onboarding";
 import { layoutOf, setSidebar, usePeekEnd } from "./layout";
 import { SearchPalette } from "./search/Search";
@@ -47,7 +48,7 @@ export function MainWindow() {
       {sidebar === "over" && <div className="peek-scrim" onClick={() => setSidebar(st, false)} />}
       {/* The toast sits in the content, under its title bar: never over the composer at the bottom. */}
       <section className="content">
-        {session ? <SessionPage key={session.session_id} s={session} /> : <NewSession />}
+        {sel.kind === "customize" ? <Customize /> : session ? <SessionPage key={session.session_id} s={session} /> : <NewSession />}
         <ToastView />
       </section>
       {st.searching && <SearchPalette />}

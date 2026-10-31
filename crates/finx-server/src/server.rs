@@ -111,7 +111,7 @@ pub(crate) struct Inner {
     /// Model lists and the catalog (crate::models).
     pub(crate) model_upkeep: crate::models::Upkeep,
     pub(crate) home: FinxHome,
-    overrides: Vec<String>,
+    pub(crate) overrides: Vec<String>,
     mcp_servers: Vec<McpServerConfig>,
     settings: ServerSettings,
     acp: AcpSettings,
@@ -127,6 +127,8 @@ pub(crate) struct Inner {
     feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
     pub(crate) defaults: SessionDefaults,
+    /// The 自定义 page's subscriptions and file watching (crate::customize).
+    pub(crate) customize: crate::customize::State,
 }
 
 impl Server {
@@ -160,6 +162,7 @@ impl Server {
             next_conn: AtomicU64::new(1),
             shutdown: CancellationToken::new(),
             closing: AtomicBool::new(false),
+            customize: Default::default(),
         }));
         let weak = Arc::downgrade(&server.0);
         connections.on_change(Arc::new(move || {
@@ -209,6 +212,7 @@ impl Server {
     /// Detaches a closed connection from every session and from the session list.
     pub fn connection_closed(&self, conn: &ConnHandle) {
         self.forget_model_watcher(conn.id);
+        self.forget_customize(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -221,7 +225,7 @@ impl Server {
         }
     }
 
-    fn hubs(&self) -> Vec<HubHandle> {
+    pub(crate) fn hubs(&self) -> Vec<HubHandle> {
         self.0.sessions.lock().values().cloned().collect()
     }
 

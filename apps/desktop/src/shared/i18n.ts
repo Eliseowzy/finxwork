@@ -1,16 +1,18 @@
 import i18next from "i18next";
 import enCommon from "../locales/en/common.json" with { type: "json" };
+import enCustomize from "../locales/en/customize.json" with { type: "json" };
 import enMain from "../locales/en/main.json" with { type: "json" };
 import enSession from "../locales/en/session.json" with { type: "json" };
 import enSettings from "../locales/en/settings.json" with { type: "json" };
 import zhCommon from "../locales/zh-CN/common.json" with { type: "json" };
+import zhCustomize from "../locales/zh-CN/customize.json" with { type: "json" };
 import zhMain from "../locales/zh-CN/main.json" with { type: "json" };
 import zhSession from "../locales/zh-CN/session.json" with { type: "json" };
 import zhSettings from "../locales/zh-CN/settings.json" with { type: "json" };
 
 // The app's text, by namespace: main (the main process: menus, dialogs),
-// common (what the window's parts share), session (a session's page) and
-// settings. English holds every key; zh-CN translates them. The language is
+// common (what the window's parts share), session (a session's page),
+// customize (the 自定义 page) and settings. English holds every key; zh-CN translates them. The language is
 // chosen once per process, before anything shows text (main/language.ts),
 // so no text is computed at a module's top level.
 
@@ -18,8 +20,8 @@ export const languages = ["zh-CN", "en"] as const;
 export type Language = (typeof languages)[number];
 
 export const resources = {
-  en: { main: enMain, common: enCommon, session: enSession, settings: enSettings },
-  "zh-CN": { main: zhMain, common: zhCommon, session: zhSession, settings: zhSettings },
+  en: { main: enMain, common: enCommon, session: enSession, customize: enCustomize, settings: enSettings },
+  "zh-CN": { main: zhMain, common: zhCommon, session: zhSession, customize: zhCustomize, settings: zhSettings },
 } satisfies Record<Language, Record<string, object>>;
 
 declare module "i18next" {
@@ -35,7 +37,7 @@ i18n.init({
   fallbackLng: "en",
   supportedLngs: languages,
   resources,
-  ns: ["main", "common", "session", "settings"],
+  ns: ["main", "common", "session", "customize", "settings"],
   defaultNS: "common",
   initAsync: false,
   interpolation: { escapeValue: false },

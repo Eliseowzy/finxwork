@@ -48,6 +48,7 @@ fn http_client() -> reqwest::Client {
 
 fn context(dir: &Path) -> ServerContext {
     ServerContext {
+        oauth: None,
         http: Some(http_client()),
         roots: vec![dir.to_path_buf()],
         cwd: dir.to_path_buf(),

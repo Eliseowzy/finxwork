@@ -75,5 +75,8 @@
     "cancel": "取消",
     "failedTitle": "没能移动 FinxWork",
     "failed": "{{reason}}\n\n可以在访达里把 FinxWork 拖到“应用程序”文件夹。"
+  },
+  "dialog": {
+    "skillSource": "技能"
   }
 }

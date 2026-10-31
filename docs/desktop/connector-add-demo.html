@@ -1,0 +1,713 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>添加连接器 · 原型</title>
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css, as customize-demo.html. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --fs:13px;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --win:#ffffff;--win2:#f4f4f7;--win3:#ebebf0;--side:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);--l4:rgba(0,0,0,.14);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --accent-t:var(--accent-fg);--accent-bg:rgba(31,107,255,.10);
+  --green:var(--ok);--green-bg:rgba(23,146,79,.11);--orange:var(--warn);--orange-bg:rgba(230,126,10,.12);--red:var(--danger);--red-bg:rgba(215,51,63,.10);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --seg-on:#ffffff;--field:#ffffff;--field-bd:rgba(0,0,0,.16);
+  --menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);--scrim:rgba(0,0,0,.18);--code:#f6f7fa;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;--win3:#323237;--side:#25252a;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);--l4:rgba(255,255,255,.14);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.05);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --accent-bg:rgba(46,128,255,.16);
+  --green-bg:rgba(63,207,134,.14);--orange-bg:rgba(255,171,61,.14);--red-bg:rgba(255,102,112,.13);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --seg-on:rgba(255,255,255,.22);--field:rgba(255,255,255,.06);--field-bd:rgba(255,255,255,.16);
+  --menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);--scrim:rgba(0,0,0,.35);--code:#18181b;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;cursor:default;overflow:hidden}
+button{font:inherit;color:inherit}
+input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes fade{from{opacity:0}}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes sheet{from{opacity:0;transform:translateY(8px) scale(.985)}}
+@keyframes pop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.mini-spin{width:14px;height:14px;border-radius:50%;border:1.6px solid var(--fill3);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
+
+/* controls, as app.css */
+.btn{height:26px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:var(--l1);flex:none;cursor:default}
+.btn:hover{filter:brightness(.98)}
+.btn:active{filter:brightness(.93)}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(40,60,200,.3)}
+.btn.lg{height:30px;padding:0 15px}
+.btn .ic{width:14px;height:14px}
+.btn:disabled{opacity:.42;pointer-events:none}
+.btn .mini-spin{width:12px;height:12px;border-color:rgba(255,255,255,.35);border-top-color:#fff}
+.link{border:0;background:none;padding:0;color:var(--accent-t);font-size:inherit;cursor:pointer}
+.link:hover{text-decoration:underline}
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
+.seg button{border:0;background:transparent;height:24px;padding:0 13px;border-radius:var(--r-xs);font-size:12.5px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.seg button.on{background:var(--seg-on);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.field{height:30px;border-radius:var(--r-sm);border:0;box-shadow:inset 0 0 0 1px var(--field-bd);background:var(--field);padding:0 9px;font-size:13px;color:var(--l1);outline:none;width:100%;user-select:text}
+.field:focus{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px var(--accent-bg)}
+.field.bad{box-shadow:inset 0 0 0 1px var(--red),0 0 0 3px var(--red-bg)}
+.field.mono{font-family:var(--mono);font-size:12.5px}
+.field::placeholder{color:var(--l3)}
+.field[readonly]{color:var(--l2);background:transparent}
+textarea.field{height:auto;min-height:30px;padding:6px 9px;line-height:18px;resize:none;display:block}
+.badge{display:inline-flex;align-items:center;gap:4px;height:18px;padding:0 7px;border-radius:var(--r-xs);background:var(--fill2);font-size:11px;color:var(--l2);white-space:nowrap;flex:none;font-weight:400}
+.badge.ok{background:var(--green-bg);color:var(--green)}
+.badge.warn{background:var(--orange-bg);color:var(--orange)}
+.badge.bad{background:var(--red-bg);color:var(--red)}
+.badge.acc{background:var(--accent-bg);color:var(--accent-t)}
+.badge.mono{font-family:var(--mono);font-size:10.5px}
+.badge .ic{width:11px;height:11px;stroke-width:2}
+
+/* the page behind the sheet */
+.app{display:flex;height:100%}
+.side{width:272px;background:var(--side);flex:none;padding:44px 8px 0}
+.side .nav{display:flex;align-items:center;gap:9px;height:32px;padding:0 9px;border-radius:var(--r-md);font-size:14px}
+.side .nav.on{background:var(--fill2)}
+.main{flex:1;min-width:0;padding:44px 34px 0}
+.main h1{margin:0;font-size:28px;font-weight:650;letter-spacing:-.6px;line-height:1.25}
+.bar{display:flex;align-items:center;gap:13px;margin-top:21px}
+.tab{height:30px;padding:0 13px;border-radius:var(--r-sm);font-size:14px;display:flex;align-items:center}
+.tab.on{background:var(--fill2)}
+.row{display:flex;align-items:center;gap:13px;min-height:58px;padding:9px 13px;border-radius:var(--r-lg);background:var(--win2);margin-top:8px}
+.tile{width:32px;height:32px;border-radius:var(--r-md);background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none;font-weight:650;font-size:12.5px;letter-spacing:-.02em}
+.tile .ic{width:17px;height:17px}
+
+/* the sheet */
+.scrim{position:fixed;inset:0 0 72px;z-index:40;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;animation:fade .2s}
+.sheet{width:580px;max-width:calc(100vw - 48px);max-height:calc(100vh - 96px);display:flex;flex-direction:column;background:var(--win);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1);overflow:hidden}
+.sh-head{display:flex;align-items:center;gap:8px;padding:17px 21px 0}
+.sh-head h3{margin:0;font-size:15px;font-weight:600;flex:1}
+.x{width:26px;height:26px;border:0;background:none;border-radius:var(--r-sm);color:var(--l2);display:flex;align-items:center;justify-content:center;padding:0;margin-right:-5px}
+.x:hover{background:var(--fill2);color:var(--l1)}
+.sh-body{padding:8px 21px 21px;overflow-y:auto;flex:1;min-height:0}
+.sh-body.anim>*{animation:fadein .25s cubic-bezier(.2,0,0,1) both}
+.sh-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:13px 21px;border-top:.5px solid transparent;transition:border-color .15s}
+.sh-foot.edge{border-top-color:var(--sep)}
+.sh-foot .left{margin-right:auto;display:flex;align-items:center;gap:13px;font-size:12.5px}
+.sub{margin:0 0 21px;color:var(--l2);font-size:12.5px;line-height:1.55}
+
+.fi{display:flex;flex-direction:column;gap:6px}
+.fi+.fi{margin-top:var(--sp-2)}
+.fi>label{font-size:12px;color:var(--l2);display:flex;align-items:center;gap:6px}
+.note{font-size:11.5px;color:var(--l3);line-height:1.5}
+.note.bad{color:var(--red)}
+.detect{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--l2);min-height:16px}
+.detect .ic{width:13px;height:13px}
+.detect.bad{color:var(--red)}
+.detect b{font-weight:500;color:var(--l1)}
+
+/* what was entered, once the sheet has moved on */
+.summary{display:flex;align-items:center;gap:12px;padding:11px 13px;border-radius:var(--r-lg);background:var(--win2)}
+.summary .t{flex:1;min-width:0}
+.summary .n{font-weight:500;display:flex;align-items:center;gap:6px}
+.summary .a{font-family:var(--mono);font-size:11.5px;color:var(--l2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* checking the server */
+.steps-h{font-size:12.5px;color:var(--l2);margin:21px 0 6px;display:flex;align-items:center;gap:8px}
+.steps{border-radius:var(--r-lg);background:var(--win2);padding:2px 0}
+.stp{display:flex;align-items:center;gap:12px;min-height:50px;padding:8px 13px}
+.stp+.stp{border-top:.5px solid var(--sep)}
+.stp .si{width:18px;height:18px;flex:none;display:flex;align-items:center;justify-content:center}
+.stp .si .mini-spin{width:16px;height:16px}
+.stp .ring{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--fill3)}
+.stp .done{width:18px;height:18px;border-radius:50%;background:var(--green);color:#fff;display:flex;align-items:center;justify-content:center;animation:pop .3s cubic-bezier(.2,0,0,1)}
+.stp .fail{width:18px;height:18px;border-radius:50%;background:var(--red);color:#fff;display:flex;align-items:center;justify-content:center;animation:pop .3s}
+.stp .skip{width:18px;height:18px;border-radius:50%;background:var(--fill2);color:var(--l3);display:flex;align-items:center;justify-content:center}
+.stp .done .ic,.stp .fail .ic,.stp .skip .ic{width:11px;height:11px;stroke-width:2.4}
+.stp .st{flex:1;min-width:0}
+.stp .st b{font-weight:400;display:block}
+.stp .st small{display:block;font-size:11.5px;color:var(--l2);margin-top:2px}
+.stp.wait .st b{color:var(--l3)}
+.stp .bs{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:46%}
+
+/* one choice in a group */
+.sect{margin-top:var(--sp-3)}
+.sect-h{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;margin-bottom:var(--sp-1)}
+.info{position:relative;display:inline-flex;color:var(--l3)}
+.info .ic{width:14px;height:14px}
+.info .pop{display:none;position:absolute;left:-8px;top:22px;z-index:5;width:300px;padding:10px 12px;border-radius:var(--r-lg);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.24);font-size:12px;font-weight:400;line-height:1.55;color:var(--l1)}
+.info:hover .pop{display:block}
+.info:hover{color:var(--l1)}
+.opts{display:flex;flex-direction:column;gap:2px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px 9px;margin:0 -10px;border-radius:var(--r-md);border:0;background:none;text-align:left;width:calc(100% + 20px)}
+.opt:hover{background:var(--fill)}
+.opt .rd{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1.5px var(--fill3);flex:none;margin-top:1px;position:relative;transition:box-shadow .15s}
+.opt.on .rd{box-shadow:inset 0 0 0 5px var(--accent)}
+.opt .ot{flex:1;min-width:0}
+.opt .on1{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.opt .on1 .term{font-family:var(--mono);font-size:10.5px;color:var(--l3)}
+.opt .od{font-size:12px;color:var(--l2);margin-top:3px;line-height:1.5}
+.opt.dis{opacity:.45;pointer-events:none}
+.opt.dis .od{color:var(--l3)}
+.inset{margin:8px 0 6px 26px;display:flex;flex-direction:column;gap:var(--sp-1)}
+
+.kvs{display:flex;flex-direction:column;gap:6px}
+.kv{display:grid;grid-template-columns:1fr 1.6fr 26px 26px;gap:6px;align-items:center}
+.kv .field{height:28px}
+.ib{width:26px;height:26px;border:0;background:none;border-radius:var(--r-sm);color:var(--l3);display:flex;align-items:center;justify-content:center;padding:0}
+.ib:hover{background:var(--fill2);color:var(--l1)}
+.ib.on{color:var(--accent-t);background:var(--accent-bg)}
+.ib .ic{width:13px;height:13px}
+.addrow{align-self:flex-start;font-size:12.5px;display:flex;gap:4px;align-items:center}
+.addrow .ic{width:12px;height:12px}
+.sendas{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--l3)}
+.sendas code{font-family:var(--mono);font-size:11px;color:var(--l2);background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs)}
+.callout{display:flex;gap:9px;align-items:flex-start;font-size:12px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:9px 13px;line-height:1.55}
+.callout .ic{margin-top:1px;color:var(--l3)}
+.callout.warn .ic{color:var(--orange)}
+.callout b{font-weight:500;color:var(--l1)}
+.fold{display:flex;align-items:center;gap:6px;border:0;background:none;padding:0;font-size:13px;font-weight:500;margin-top:var(--sp-3)}
+.fold .ic{width:13px;height:13px;color:var(--l2);transition:transform .15s}
+.fold.open .ic{transform:rotate(90deg)}
+.fold small{font-weight:400;color:var(--l3);font-size:12px}
+.trust{margin-top:var(--sp-3);padding-top:var(--sp-2);border-top:.5px solid var(--sep);font-size:12px;color:var(--l3);line-height:1.55}
+.cmdline{font-family:var(--mono);font-size:11.5px;color:var(--l2);display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.cmdline .tok{background:var(--fill2);border-radius:var(--r-xs);padding:1px 5px}
+.cmdline .tok.p{color:var(--l1)}
+
+/* in the browser, then done */
+.center{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:var(--sp-4) var(--sp-3) var(--sp-2)}
+.center .big{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:6px}
+.center .big.ok{background:var(--green);color:#fff;animation:pop .35s cubic-bezier(.2,0,0,1)}
+.center .big.ok .ic{width:22px;height:22px;stroke-width:2.2}
+.center .big .mini-spin{width:30px;height:30px;border-width:2.5px}
+.center b{font-size:15px;font-weight:600}
+.center p{margin:0;color:var(--l2);font-size:12.5px;line-height:1.55;max-width:420px}
+.tools{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:var(--sp-1)}
+.tools span{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
+
+.toast{position:fixed;left:calc(272px + (100vw - 272px) / 2);top:56px;transform:translateX(-50%);z-index:60;background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 10px 30px rgba(0,0,0,.2);border-radius:var(--r-xl);padding:9px 14px;display:flex;align-items:center;gap:8px;font-size:13px;animation:fadein .2s}
+.toast .ic{color:var(--green)}
+
+/* the prototype's own controls, outside the product */
+.demo{position:fixed;left:12px;bottom:12px;right:12px;z-index:80;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;border-radius:var(--r-lg);background:rgba(20,20,24,.86);color:#ddd;font-size:11.5px;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+:root:not([data-theme="dark"]) .demo{background:rgba(250,250,252,.92);color:#333;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
+.demo b{font-weight:600;margin-right:4px}
+.demo button{border:0;border-radius:var(--r-sm);padding:4px 8px;background:rgba(127,127,127,.18);font-size:11.5px;cursor:pointer}
+.demo button:hover{background:rgba(127,127,127,.3)}
+.demo .sp{flex:1}
+</style>
+</head>
+<body>
+<div class="app" aria-hidden="true">
+  <div class="side">
+    <div class="nav"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg>新会话</div>
+    <div class="nav"><svg class="ic" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4"/><path d="m10 10 3 3"/></svg>搜索</div>
+    <div class="nav on"><svg class="ic" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><path d="M11.25 9v4.5M9 11.25h4.5"/></svg>自定义</div>
+  </div>
+  <div class="main">
+    <h1>自定义</h1>
+    <div class="bar"><span class="tab">技能</span><span class="tab on">连接器</span></div>
+    <div class="row"><div class="tile">PW</div><div><b style="font-weight:500">playwright</b><div style="font-size:12px;color:var(--l2)">npx @playwright/mcp@latest</div></div></div>
+    <div class="row"><div class="tile">F</div><div><b style="font-weight:500">fetch</b><div style="font-size:12px;color:var(--l2)">uvx mcp-server-fetch</div></div></div>
+  </div>
+</div>
+<div class="scrim"><div class="sheet" id="sheet" role="dialog" aria-label="添加连接器"></div></div>
+<div id="toast"></div>
+<div class="demo" id="demo"></div>
+
+<script>
+// ── icons ──
+const I = {
+  x: '<path d="M4 4l8 8M12 4l-8 8"/>',
+  check: '<path d="M3.5 8.5l3 3 6-7"/>',
+  globe: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.6 5.9 5.6 8s.8 3.9 2.4 5.5"/>',
+  term: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M4.5 6.5 6.5 8l-2 1.5M8 10h3"/>',
+  json: '<path d="M6 3c-1.5 0-2 .7-2 2v1c0 .9-.5 1.5-1.5 2 1 .5 1.5 1.1 1.5 2v1c0 1.3.5 2 2 2M10 3c1.5 0 2 .7 2 2v1c0 .9.5 1.5 1.5 2-1 .5-1.5 1.1-1.5 2v1c0 1.3-.5 2-2 2"/>',
+  info: '<circle cx="8" cy="8" r="5.5"/><path d="M8 7.2v3.3M8 5.3v.1"/>',
+  warn: '<path d="M8 2.8 14 13H2z"/><path d="M8 6.5v3M8 11.2v.1"/>',
+  lock: '<rect x="3.5" y="7" width="9" height="6" rx="1.2"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/>',
+  unlock: '<rect x="3.5" y="7" width="9" height="6" rx="1.2"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 4.8-1"/>',
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  chev: '<path d="M6 4l4 4-4 4"/>',
+  dash: '<path d="M4.5 8h7"/>',
+  ext: '<path d="M9 3h4v4M13 3 7.5 8.5M11 9.5V13H3V5h3.5"/>',
+  copy: '<rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.2"/><path d="M3 10.5V3h7.5"/>',
+};
+const ic = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 16 16">${I[n]}</svg>`;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const info = (text) => `<span class="info">${ic("info")}<span class="pop">${text}</span></span>`;
+
+// ── what the address says ──
+const existing = ["playwright", "fetch"];
+const secretish = /token|key|secret|password|passwd|auth|cookie|credential/i;
+
+function words(line) {
+  const out = []; let cur = ""; let q = null; let any = false;
+  for (const ch of line.trim()) {
+    if (q) { if (ch === q) q = null; else cur += ch; continue; }
+    if (ch === '"' || ch === "'") { q = ch; any = true; continue; }
+    if (/\s/.test(ch)) { if (cur || any) out.push(cur); cur = ""; any = false; continue; }
+    cur += ch;
+  }
+  if (cur || any) out.push(cur);
+  return out;
+}
+
+/** The kind of thing pasted: a remote address, a command line (with leading VAR=value), or a JSON config. */
+function detect(text) {
+  const t = text.trim();
+  if (!t) return null;
+  if (t.startsWith("{")) {
+    let v; try { v = JSON.parse(t); } catch { return { kind: "bad", why: "看起来是 JSON，但格式不对" }; }
+    const table = v.mcpServers ?? v.mcp_servers ?? v.servers ?? v;
+    const [name, s] = Object.entries(table).find(([, s]) => s && (s.command || s.url)) ?? [];
+    if (!s) return { kind: "bad", why: "JSON 里没有找到服务器（要有 command 或 url）" };
+    const inner = s.url ? detect(s.url) : detect([s.command, ...(s.args ?? [])].join(" "));
+    return { ...inner, json: true, jsonName: name, env: Object.entries(s.env ?? {}).map(([k, v]) => row(k, v)), headers: Object.entries(s.headers ?? {}).map(([k, v]) => row(k, v)) };
+  }
+  if (/^https?:\/\//i.test(t)) {
+    let u; try { u = new URL(t); } catch { return { kind: "bad", why: "地址的格式不对" }; }
+    const local = ["localhost", "127.0.0.1", "[::1]"].includes(u.hostname);
+    return { kind: "remote", url: t, host: u.hostname, insecure: u.protocol === "http:" && !local, sse: /\/sse\/?$/.test(u.pathname) };
+  }
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return { kind: "bad", why: "远程地址只能是 http:// 或 https:// 开头" };
+  const argv = words(t);
+  const env = [];
+  while (argv.length && /^[A-Za-z_][A-Za-z0-9_]*=/.test(argv[0])) { const [k, ...v] = argv.shift().split("="); env.push(row(k, v.join("="))); }
+  if (!argv.length) return { kind: "bad", why: "只有变量，没有命令" };
+  return { kind: "local", argv, program: argv[0], env };
+}
+const row = (key, value) => ({ key, value: String(value), locked: secretish.test(key) && !!value });
+
+/** A name to offer when the person leaves it empty. */
+function suggest(d) {
+  if (!d || d.kind === "bad") return "";
+  if (d.jsonName) return d.jsonName;
+  let n = "";
+  if (d.kind === "remote") {
+    const parts = d.host.split(".").filter((p) => !["mcp", "api", "www", "server"].includes(p));
+    n = parts.length > 1 ? parts[parts.length - 2] : parts[0] || d.host;
+  } else {
+    const pkg = d.argv.slice(1).find((a) => !a.startsWith("-") && !["dlx", "run", "x"].includes(a)) ?? d.program;
+    const bare = pkg.replace(/@[^@/]+$/, "");
+    const [scope, last] = bare.startsWith("@") ? bare.slice(1).split("/") : [null, bare.split("/").pop()];
+    n = last.replace(/\.(py|js|ts)$/, "").replace(/^(mcp-server-|server-|mcp-)/, "").replace(/(-mcp-server|-mcp|-server)$/, "");
+    if (!n || n === "mcp") n = scope ?? "local";
+  }
+  return n.toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+}
+
+// ── what checking a remote server finds, per address (the demo's stand-in for the service) ──
+function profileOf(d) {
+  const h = d.host;
+  if (/unreachable|\.test$/.test(h)) return { fail: `找不到主机 ${h}` };
+  if (d.sse) return { status: 200, transport: "sse", tools: 4 };
+  if (/context7|localhost|127\.0\.0\.1/.test(h)) return { status: 200, tools: 2 };
+  if (/hermesh/.test(h)) return { status: 401, as: "auth.hermesh.io", pkce: true, cimd: true, dcr: true, tools: 18 };
+  if (/linear/.test(h)) return { status: 401, as: "mcp.linear.app", pkce: true, cimd: true, dcr: true, tools: 23 };
+  if (/acme/.test(h)) return { status: 401, as: "auth.acme-tools.com", pkce: true, cimd: false, dcr: true, tools: 7 };
+  if (/github/.test(h)) return { status: 401, as: "github.com", pkce: true, cimd: false, dcr: false, patOk: true, tools: 51 };
+  return { status: 401, as: null, tools: 9 };
+}
+const toolNames = {
+  hermesh: ["session_start", "session_get", "session_events", "message_send", "message_list", "project_list"],
+  linear: ["list_issues", "get_issue", "create_issue", "update_issue", "list_projects", "search_documentation"],
+  github: ["search_repositories", "get_file_contents", "list_pull_requests", "create_issue", "add_issue_comment", "list_commits"],
+  context7: ["resolve-library-id", "get-library-docs"],
+  playwright: ["browser_navigate", "browser_click", "browser_type", "browser_snapshot", "browser_take_screenshot", "browser_wait_for"],
+  memory: ["create_entities", "create_relations", "add_observations", "search_nodes", "open_nodes", "read_graph"],
+  brave: ["brave_web_search", "brave_local_search"],
+};
+
+// ── state ──
+const fresh = () => ({
+  step: "entry", name: "", address: "", errors: {}, d: null,
+  checks: [], prof: null, checking: false,
+  auth: "none", client: "dcr", clientId: "", clientSecret: "", token: "", header: "Authorization", prefix: "Bearer ", sendAsOpen: false,
+  headers: [], transport: "http", adv: false, scope: "all",
+  command: "", env: [], cwd: "", ladv: false,
+});
+let S = fresh();
+let run = 0; // cancels a check that is still running
+
+const sheet = document.getElementById("sheet");
+let shown = null; // the step on screen: only a new step fades in
+function render() {
+  sheet.innerHTML = view();
+  const body = sheet.querySelector(".sh-body"), foot = sheet.querySelector(".sh-foot");
+  if (S.step !== shown) body.classList.add("anim");
+  shown = S.step;
+  const edge = () => foot && foot.classList.toggle("edge", body.scrollHeight - body.scrollTop - body.clientHeight > 1);
+  if (body) { body.addEventListener("scroll", edge); edge(); }
+  sheet.querySelectorAll("textarea.field").forEach(grow);
+}
+function grow(t) { t.style.height = "auto"; t.style.height = t.scrollHeight + 2 + "px"; }
+const shell = (title, body, foot) => `
+  <div class="sh-head"><h3>${title}</h3><button class="x" data-act="close" aria-label="关闭">${ic("x")}</button></div>
+  <div class="sh-body">${body}</div>
+  <div class="sh-foot">${foot}</div>`;
+
+function view() {
+  switch (S.step) {
+    case "entry": return entry();
+    case "check": return checkView();
+    case "remote": return remoteView();
+    case "local": return localView();
+    case "login": return loginView();
+    case "done": return doneView();
+  }
+}
+
+// Step 1: a name, an address.
+function entry() {
+  const d = detect(S.address);
+  const hint = !d ? `<div class="detect"></div>`
+    : d.kind === "bad" ? `<div class="detect bad">${ic("warn")}${esc(d.why)}</div>`
+    : d.kind === "remote" ? `<div class="detect">${ic("globe")}<span><b>远程服务器</b>${d.insecure ? " · 不是 https，令牌会明文传输" : " · 连接时先检查它要不要登录"}${d.json ? "（来自 JSON）" : ""}</span></div>`
+    : `<div class="detect">${ic(d.json ? "json" : "term")}<span><b>本地命令</b> · ${esc(d.program)}${d.env.length ? ` · ${d.env.length} 个环境变量` : ""}${d.json ? "（来自 JSON）" : ""}</span></div>`;
+  const sug = !S.name && suggest(d);
+  const body = `
+    <p class="sub">连接器是一个 MCP 服务器，给 finx 增加工具。粘贴它的地址或启动命令就行，其余的 finx 会去检查。</p>
+    <div class="fi">
+      <label for="f-name">名称</label>
+      <input id="f-name" class="field ${S.errors.name ? "bad" : ""}" data-in="name" value="${esc(S.name)}" placeholder="${sug ? esc(sug) : "例如 github"}" spellcheck="false" autocomplete="off">
+      ${S.errors.name ? `<div class="note bad">${esc(S.errors.name)}</div>` : `<div class="note">显示在连接器列表里，也是它的工具名的前缀。${sug ? `留空就用 <b style="font-weight:500;color:var(--l2)">${esc(sug)}</b>。` : ""}</div>`}
+    </div>
+    <div class="fi">
+      <label for="f-addr">地址</label>
+      <textarea id="f-addr" rows="1" class="field mono ${S.errors.address ? "bad" : ""}" data-in="address" spellcheck="false" placeholder="https://mcp.example.com/mcp，或者 npx -y @scope/server">${esc(S.address)}</textarea>
+      ${S.errors.address ? `<div class="detect bad">${ic("warn")}${esc(S.errors.address)}</div>` : hint}
+    </div>`;
+  const foot = `<div class="left"><span class="note">也可以粘贴一段 JSON 配置</span></div>
+    <button class="btn lg" data-act="close">取消</button>
+    <button class="btn lg primary" data-act="connect" ${d && d.kind !== "bad" ? "" : "disabled"}>连接</button>`;
+  return shell("添加连接器", body, foot);
+}
+
+function summary(edit = true) {
+  const d = S.d;
+  const remote = d.kind === "remote";
+  const addr = remote ? d.url : S.command || d.argv.join(" ");
+  return `<div class="summary"><div class="tile">${ic(remote ? "globe" : "term")}</div>
+    <div class="t"><div class="n">${esc(S.name)}<span class="badge">${remote ? (S.transport === "sse" ? "远程 · SSE" : "远程") : "本地命令"}</span></div>${remote || S.step !== "local" ? `<div class="a">${esc(addr)}</div>` : ""}</div>
+    ${edit ? `<button class="link" data-act="edit">修改</button>` : ""}</div>`;
+}
+
+// Step 2, remote: checking the server.
+function checkView() {
+  const icon = (c) => c.state === "run" ? `<span class="mini-spin"></span>` : c.state === "ok" ? `<span class="done">${ic("check")}</span>`
+    : c.state === "fail" ? `<span class="fail">${ic("x")}</span>` : c.state === "skip" ? `<span class="skip">${ic("dash")}</span>` : `<span class="ring"></span>`;
+  const failed = S.checks.find((c) => c.state === "fail");
+  const body = `${summary(false)}
+    <div class="steps-h">${failed ? "检查没有通过" : S.checking ? `<span class="mini-spin" style="width:12px;height:12px"></span>正在检查服务器…` : "检查完成"}</div>
+    <div class="steps">${S.checks.map((c) => `
+      <div class="stp ${c.state === "wait" ? "wait" : ""}"><span class="si">${icon(c)}</span>
+        <div class="st"><b>${c.title}</b>${c.sub ? `<small>${c.sub}</small>` : ""}</div>
+        <div class="bs">${(c.badges ?? []).map((b) => `<span class="badge mono ${b.k ?? ""}">${esc(b.t)}</span>`).join("")}</div></div>`).join("")}
+    </div>
+    ${failed ? `<div class="callout" style="margin-top:13px">${ic("info")}<span>可以改一下地址再试；也可以先添加，之后在连接器的详情里重新检测。</span></div>` : ""}`;
+  const foot = failed
+    ? `<div class="left"><button class="link" data-act="add-anyway">仍然添加</button></div>
+       <button class="btn lg" data-act="edit">返回修改</button><button class="btn lg primary" data-act="retry">重试</button>`
+    : `<button class="btn lg" data-act="cancel-check">取消</button><button class="btn lg primary" disabled style="min-width:76px"><span class="mini-spin"></span></button>`;
+  return shell("添加连接器", body, foot);
+}
+
+// Step 3, remote: how to sign in, and the rest.
+function remoteView() {
+  const p = S.prof;
+  const host = S.d.host;
+  const det = `<span class="badge acc">${ic("check")}检测到</span>`;
+  const opt = (group, value, title, desc, { detected = false, disabled = false, term = "", why = "" } = {}) => `
+    <button class="opt ${S[group] === value ? "on" : ""} ${disabled ? "dis" : ""}" data-pick="${group}:${value}">
+      <span class="rd"></span><span class="ot"><span class="on1">${title}${term ? `<span class="term">${term}</span>` : ""}${detected ? det : ""}${disabled && why ? `<span class="badge">${why}</span>` : ""}</span>
+      <span class="od">${desc}</span></span></button>`;
+  const oauthOk = !!p.as;
+  const auth = `
+    <div class="sect"><div class="sect-h">鉴权${info("finx 连接时先不带凭据试了一次。服务器回 401 并公布了登录服务，就是 OAuth；回 200 就是开放的。不确定时选检测到的那一项。")}</div>
+    <div class="opts">
+      ${opt("auth", "oauth", "用账号登录", `添加后在浏览器里登录 ${esc(p.as ?? host)}，令牌存进系统钥匙串，过期自动续期。`, { detected: p.status === 401 && oauthOk, disabled: !oauthOk, term: "OAuth 2.1", why: "服务器没有公布登录服务" })}
+      ${S.auth === "oauth" ? clientSect() : ""}
+      ${opt("auth", "token", "令牌或 API Key", "把服务商给你的令牌放进请求头。服务器不用 OAuth、改用 API Key 时选这个。", { detected: p.status === 401 && !oauthOk })}
+      ${S.auth === "token" ? tokenSect() : ""}
+      ${opt("auth", "none", "不需要鉴权", "服务器对外开放，直接连接。", { detected: p.status === 200 })}
+    </div>
+    ${p.patOk && S.auth === "oauth" ? `<div class="callout" style="margin-top:6px">${ic("info")}<span>GitHub 不支持自动注册，用账号登录得先在 GitHub 建一个 OAuth 应用。它也接受<b>个人访问令牌</b>，选「令牌或 API Key」更省事。</span></div>` : ""}
+    </div>`;
+  const scope = `
+    <div class="sect"><div class="sect-h">范围</div>
+      <div class="seg" style="align-self:flex-start"><button class="${S.scope === "all" ? "on" : ""}" data-pick="scope:all">所有项目</button><button class="${S.scope === "project" ? "on" : ""}" data-pick="scope:project">仅 finxwork（只对你）</button></div>
+      <div class="note" style="margin-top:6px">写进 ${S.scope === "all" ? "~/.finx/config.toml" : "~/.finx/projects/finxwork-3fa81c02/config.toml"}</div>
+    </div>`;
+  const adv = `
+    <button class="fold ${S.adv ? "open" : ""}" data-act="adv">${ic("chev")}高级 <small>${S.adv ? "" : `请求头 ${S.headers.length || "无"} · ${S.transport === "sse" ? "SSE（旧版）" : "Streamable HTTP"}`}</small></button>
+    ${S.adv ? `
+      <div class="sect" style="margin-top:13px"><div class="sect-h">请求头${info("每个请求都带上这些头，和登录得到的令牌一起发送。适合服务器要求额外标识的情况，比如租户或版本。带锁的值存进钥匙串，之后不再显示。")}</div>
+        ${rows("headers", "Header", "值")}
+      </div>
+      <div class="sect"><div class="sect-h">传输方式${info("按地址自动选择：以 /sse 结尾的是旧版 SSE。只有服务器的文档要求时才改。")}</div>
+        <div class="opts">
+          ${opt("transport", "http", "Streamable HTTP", "现行的 MCP 传输方式。除非服务器只支持 SSE，否则用它。", { detected: p.transport !== "sse" })}
+          ${opt("transport", "sse", "SSE（旧版）", "正在被淘汰的旧方式。地址以 /sse 结尾时自动选它。", { detected: p.transport === "sse" })}
+        </div>
+      </div>` : ""}`;
+  const body = `${summary()}${auth}${scope}${adv}
+    <div class="trust">只添加你信任的开发者提供的连接器。它提供哪些工具、返回什么内容由它的开发者决定，finx 无法核实，也不能保证以后不变。</div>`;
+  const okToAdd = S.auth !== "token" || S.token.trim() || S.headers.some((h) => h.value);
+  const ownOk = S.auth !== "oauth" || S.client !== "own" || S.clientId.trim();
+  const foot = `<button class="btn lg" data-act="edit">返回</button>
+    <button class="btn lg primary" data-act="add" ${okToAdd && ownOk ? "" : "disabled"}>${S.auth === "oauth" ? "添加并登录" : "添加"}</button>`;
+  return shell("添加连接器", body, foot);
+}
+
+function clientSect() {
+  const p = S.prof;
+  const det = `<span class="badge acc">${ic("check")}检测到</span>`;
+  const o = (v, title, term, desc, ok, why) => `
+    <button class="opt ${S.client === v ? "on" : ""} ${ok ? "" : "dis"}" data-pick="client:${v}">
+      <span class="rd"></span><span class="ot"><span class="on1">${title}<span class="term">${term}</span>${ok && defaultClient() === v ? det : ""}${ok ? "" : `<span class="badge">${why}</span>`}</span>
+      <span class="od">${desc}</span></span></button>`;
+  return `<div class="inset">
+    <div class="sect-h" style="margin:4px 0 0;font-size:12px;color:var(--l2);font-weight:400">登录用的身份${info("OAuth 要求每个应用在登录服务那里有一个身份（client）。finx 按服务器支持的方式自动选：先用公布的身份，其次自动注册，都不支持才需要你自己的应用。")}</div>
+    <div class="opts">
+      ${o("cimd", "使用 finx 公布的身份", "CIMD", "登录服务从 finx 公布的地址读取它的身份，什么都不用设置。", p.cimd, "服务器不支持")}
+      ${o("dcr", "自动注册", "DCR", "第一次登录时，finx 在登录服务那里为你注册一个身份。大多数服务器支持。", p.dcr, "服务器不支持")}
+      ${o("own", "使用你自己的 OAuth 应用", "", "填你在服务商那里登记的 Client ID；服务商要求时才填 Secret。", true)}
+    </div>
+    ${S.client === "own" ? `<div class="inset" style="margin-left:26px">
+      <input class="field mono" data-in="clientId" value="${esc(S.clientId)}" placeholder="Client ID" spellcheck="false">
+      <input class="field mono" type="password" data-in="clientSecret" value="${esc(S.clientSecret)}" placeholder="Client Secret（可不填，存进钥匙串）">
+      <div class="sendas">回调地址 <code>http://127.0.0.1/callback</code><button class="link" style="font-size:11.5px">复制</button>，登记应用时填它。</div>
+    </div>` : ""}
+  </div>`;
+}
+
+function tokenSect() {
+  return `<div class="inset">
+    <input class="field mono" type="password" data-in="token" value="${esc(S.token)}" placeholder="粘贴令牌，存进系统钥匙串" autocomplete="off">
+    ${S.sendAsOpen ? `<div class="kv" style="grid-template-columns:1fr 1fr"><input class="field mono" data-in="header" value="${esc(S.header)}" placeholder="Header"><input class="field mono" data-in="prefix" value="${esc(S.prefix)}" placeholder="前缀（可空）"></div>`
+      : `<div class="sendas">发送为 <code>${esc(S.header)}: ${esc(S.prefix)}&lt;令牌&gt;</code><button class="link" style="font-size:11.5px" data-act="sendas">修改</button></div>`}
+  </div>`;
+}
+
+function rows(list, kp, vp) {
+  return `<div class="kvs">${S[list].map((r, i) => `
+    <div class="kv"><input class="field mono" data-row="${list}:${i}:key" value="${esc(r.key)}" placeholder="${kp}" spellcheck="false">
+      <input class="field mono" data-row="${list}:${i}:value" type="${r.locked ? "password" : "text"}" value="${esc(r.value)}" placeholder="${r.locked ? "存进钥匙串" : vp}" spellcheck="false">
+      <button class="ib ${r.locked ? "on" : ""}" data-lock="${list}:${i}" title="${r.locked ? "存进钥匙串" : "明文写进配置"}">${ic(r.locked ? "lock" : "unlock")}</button>
+      <button class="ib" data-del="${list}:${i}" title="删除">${ic("x")}</button></div>`).join("")}
+    <button class="link addrow" data-addrow="${list}">${ic("plus")}添加一行</button></div>`;
+}
+
+// Step 2, local: the command, its variables, where it goes.
+function localView() {
+  const d = detect(S.command) ?? S.d;
+  const argv = d.kind === "local" ? d.argv : [];
+  const downloads = ["npx", "uvx", "bunx", "pnpm", "docker"].includes(argv[0]);
+  const body = `${summary()}
+    <div class="sect"><div class="sect-h">命令</div>
+      <textarea class="field mono" rows="1" data-in="command" spellcheck="false">${esc(S.command)}</textarea>
+      <div class="cmdline" style="margin-top:8px">${argv.map((a, i) => `<span class="tok ${i === 0 ? "p" : ""}">${esc(a)}</span>`).join("")}</div>
+      ${downloads ? `<div class="note" style="margin-top:6px">${esc(argv[0])} 第一次运行会先下载，检查可能要几十秒。</div>` : ""}
+    </div>
+    <div class="sect"><div class="sect-h">环境变量${info("启动命令时带上这些变量。名字里有 KEY、TOKEN、SECRET 的会自动上锁：值存进系统钥匙串，配置文件里只写引用。")}</div>
+      ${rows("env", "名称", "值")}
+    </div>
+    <div class="sect"><div class="sect-h">范围</div>
+      <div class="seg"><button class="${S.scope === "all" ? "on" : ""}" data-pick="scope:all">所有项目</button><button class="${S.scope === "project" ? "on" : ""}" data-pick="scope:project">仅 finxwork（只对你）</button></div>
+    </div>
+    <button class="fold ${S.ladv ? "open" : ""}" data-act="ladv">${ic("chev")}高级 <small>${S.ladv ? "" : `工作目录 ${S.cwd ? esc(S.cwd) : "默认"}`}</small></button>
+    ${S.ladv ? `<div class="sect" style="margin-top:13px"><div class="sect-h">工作目录</div>
+      <input class="field mono" data-in="cwd" value="${esc(S.cwd)}" placeholder="默认是会话的工作目录" spellcheck="false"></div>` : ""}
+    <div class="trust">本地命令以你的身份在这台电脑上运行，能读写你能读写的文件。只添加你信任的命令。</div>`;
+  const foot = `<button class="btn lg" data-act="edit">返回</button><button class="btn lg primary" data-act="add" ${argv.length ? "" : "disabled"}>添加</button>`;
+  return shell("添加本地连接器", body, foot);
+}
+
+function loginView() {
+  const body = `<div class="center"><div class="big"><span class="mini-spin"></span></div>
+    <b>在浏览器里登录 ${esc(S.name)}</b>
+    <p>已在浏览器打开 ${esc(S.prof.as)} 的登录页。登录并同意之后，会自动回到这里。</p>
+    <p style="font-size:12px"><button class="link">没打开？复制链接</button></p></div>`;
+  return shell("添加连接器", body, `<button class="btn lg" data-act="edit">取消</button>`);
+}
+
+function doneView() {
+  const names = toolNames[Object.keys(toolNames).find((k) => S.name.includes(k) || (S.d.host ?? "").includes(k) || S.command.includes(k))] ?? ["search", "fetch", "list", "get", "create", "update"];
+  const n = S.tools;
+  const body = `<div class="center"><div class="big ok">${ic("check")}</div>
+    <b>已添加 ${esc(S.name)}</b>
+    <p>${n} 个工具 · 新会话起可用${S.auth === "oauth" ? " · 已登录" : ""}</p>
+    <div class="tools">${names.slice(0, Math.min(6, n)).map((t) => `<span>${esc(t)}</span>`).join("")}${n > 6 ? `<span>等 ${n} 个</span>` : ""}</div></div>`;
+  return shell("添加连接器", body, `<button class="btn lg primary" data-act="close" style="margin-left:auto">完成</button>`);
+}
+
+// ── flow ──
+async function connect() {
+  const d = detect(S.address);
+  const name = (S.name || suggest(d)).trim();
+  S.errors = {};
+  if (!/^[A-Za-z0-9_-]{1,32}$/.test(name)) S.errors.name = "只能用字母、数字、- 和 _，最长 32 个字符";
+  else if (existing.includes(name)) S.errors.name = `已经有一个叫 ${name} 的连接器了，换个名字`;
+  if (!d || d.kind === "bad") S.errors.address = d?.why ?? "填一个地址或命令";
+  if (S.errors.name || S.errors.address) return render();
+  S.name = name; S.d = d;
+  if (d.kind === "local") {
+    S.command = d.argv.map((a) => (/\s/.test(a) ? `"${a}"` : a)).join(" ");
+    S.env = [...d.env, ...(d.json ? [] : [])];
+    if (d.json) S.env = d.env;
+    S.step = "local"; return render();
+  }
+  if (d.json && d.headers?.length) S.headers = d.headers;
+  S.transport = d.sse ? "sse" : "http";
+  await check();
+}
+
+async function check() {
+  const me = ++run;
+  const p = profileOf(S.d);
+  S.prof = p; S.step = "check"; S.checking = true;
+  S.checks = [
+    { title: "连接服务器", state: "run" },
+    { title: "查找登录设置", state: "wait" },
+    { title: "检查登录服务", state: "wait" },
+  ];
+  render();
+  const live = () => me === run && S.step === "check";
+  await sleep(900); if (!live()) return;
+  if (p.fail) { S.checks[0] = { ...S.checks[0], state: "fail", sub: p.fail }; S.checks[1].state = S.checks[2].state = "skip"; S.checking = false; return render(); }
+  const c0 = S.checks[0];
+  if (p.status === 200) {
+    c0.state = "ok"; c0.sub = p.transport === "sse" ? "POST 不受理，改用 GET 拿到了事件流" : `握手成功，${p.tools} 个工具`; c0.badges = p.transport === "sse" ? [{ t: "SSE", k: "warn" }] : [{ t: "200", k: "ok" }];
+    S.checks[1] = { ...S.checks[1], state: "skip", sub: "不需要登录" }; S.checks[2] = { ...S.checks[2], state: "skip", sub: "不需要登录" };
+    render(); await sleep(700); if (!live()) return;
+    S.auth = "none"; return finishCheck();
+  }
+  c0.state = "ok"; c0.sub = "服务器要求鉴权"; c0.badges = [{ t: "401", k: "acc" }];
+  S.checks[1].state = "run"; render(); await sleep(850); if (!live()) return;
+  if (!p.as) {
+    S.checks[1] = { ...S.checks[1], state: "skip", sub: "没有公布登录服务，多半要用 API Key" };
+    S.checks[2] = { ...S.checks[2], state: "skip" };
+    render(); await sleep(600); if (!live()) return;
+    S.auth = "token"; return finishCheck();
+  }
+  S.checks[1] = { ...S.checks[1], state: "ok", sub: `登录服务：${p.as}`, badges: [{ t: "OAuth" }] };
+  S.checks[2].state = "run"; render(); await sleep(850); if (!live()) return;
+  const caps = [p.pkce && { t: "PKCE", k: "ok" }, p.cimd && { t: "公布身份", k: "ok" }, p.dcr ? { t: "自动注册", k: "ok" } : { t: "不能自动注册" }].filter(Boolean);
+  S.checks[2] = { ...S.checks[2], state: "ok", sub: p.cimd ? "可以直接用 finx 公布的身份登录" : p.dcr ? "第一次登录时自动注册" : "需要你自己的 OAuth 应用", badges: caps };
+  render(); await sleep(700); if (!live()) return;
+  S.auth = "oauth"; S.client = defaultClient(); finishCheck();
+}
+function defaultClient() { const p = S.prof; return p.cimd ? "cimd" : p.dcr ? "dcr" : "own"; }
+function finishCheck() { S.checking = false; S.step = "remote"; render(); }
+
+async function add() {
+  if (S.step === "remote" && S.auth === "oauth") {
+    S.step = "login"; render();
+    const me = ++run; await sleep(2600); if (me !== run || S.step !== "login") return;
+  }
+  if (S.step === "local") {
+    // The same checklist, for a command.
+    S.prof = { status: 200 };
+    S.step = "check"; S.checking = true;
+    const me = ++run;
+    const bad = /nonexistent|does-not-exist/.test(S.command);
+    S.checks = [{ title: "启动命令", state: "run", sub: S.command.split(" ").slice(0, 3).join(" ") + (S.command.split(" ").length > 3 ? " …" : "") }, { title: "完成握手", state: "wait" }, { title: "列出工具", state: "wait" }];
+    render(); await sleep(1200); if (me !== run) return;
+    if (bad) { S.checks[0] = { ...S.checks[0], state: "fail", sub: "npm error 404 Not Found：没有这个包" }; S.checks[1].state = S.checks[2].state = "skip"; S.checking = false; S.backTo = "local"; return render(); }
+    S.checks[0].state = "ok"; S.checks[1].state = "run"; render(); await sleep(700); if (me !== run) return;
+    S.checks[1] = { ...S.checks[1], state: "ok", badges: [{ t: "2025-06-18" }] }; S.checks[2].state = "run"; render(); await sleep(600); if (me !== run) return;
+    S.tools = /playwright/.test(S.command) ? 21 : /brave/.test(S.command) ? 2 : /memory/.test(S.command) ? 9 : 6;
+    S.checks[2] = { ...S.checks[2], state: "ok", sub: `${S.tools} 个工具`, badges: [{ t: String(S.tools), k: "ok" }] }; render(); await sleep(600); if (me !== run) return;
+    S.checking = false;
+  } else {
+    S.tools = S.prof.tools ?? 6;
+  }
+  S.step = "done"; render();
+  toast(`已添加 ${S.name} · ${S.tools} 个工具，新会话起可用`);
+}
+
+function toast(text) {
+  const t = document.getElementById("toast");
+  t.innerHTML = `<div class="toast">${ic("check")}${esc(text)}</div>`;
+  clearTimeout(toast.h); toast.h = setTimeout(() => (t.innerHTML = ""), 3200);
+}
+
+// ── events ──
+sheet.addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.dataset.in) {
+    S[el.dataset.in] = el.value;
+    if (el.tagName === "TEXTAREA") grow(el);
+    if (S.step === "entry") {
+      // Only the hint and the name's placeholder change while typing.
+      S.errors = {};
+      const pos = el.selectionStart, id = el.id;
+      render();
+      const again = document.getElementById(id); again.focus(); again.setSelectionRange(pos, pos);
+    } else if (["token", "clientId", "command"].includes(el.dataset.in)) {
+      const pos = el.selectionStart, key = el.dataset.in;
+      render();
+      const again = sheet.querySelector(`[data-in="${key}"]`); again.focus(); again.setSelectionRange(pos, pos);
+    }
+  }
+  if (el.dataset.row) { const [list, i, k] = el.dataset.row.split(":"); S[list][i][k] = el.value; if (k === "key" && secretish.test(el.value) && !S[list][i].value) { S[list][i].locked = true; } }
+});
+sheet.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && S.step === "entry") { e.preventDefault(); connect(); }
+});
+sheet.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  const act = b.dataset.act;
+  if (act === "close") { run++; S = fresh(); render(); return; }
+  if (act === "connect") return connect();
+  if (act === "retry") { if (S.backTo === "local") { S.step = "local"; return add(); } return connect(); }
+  if (act === "cancel-check") { run++; S.step = "entry"; render(); return; }
+  if (act === "edit") { run++; S.step = S.backTo === "local" && S.step === "check" ? "local" : "entry"; S.backTo = null; S.checking = false; render(); return; }
+  if (act === "add") return add();
+  if (act === "add-anyway") { S.tools = 0; S.step = "done"; render(); toast(`已添加 ${S.name}，之后可以在详情里重新检测`); return; }
+  if (act === "adv") { S.adv = !S.adv; render(); return; }
+  if (act === "ladv") { S.ladv = !S.ladv; render(); return; }
+  if (act === "sendas") { S.sendAsOpen = true; render(); return; }
+  if (b.dataset.pick) { const [g, v] = b.dataset.pick.split(":"); S[g] = v; render(); return; }
+  if (b.dataset.lock) { const [l, i] = b.dataset.lock.split(":"); S[l][i].locked = !S[l][i].locked; render(); return; }
+  if (b.dataset.del) { const [l, i] = b.dataset.del.split(":"); S[l].splice(+i, 1); render(); return; }
+  if (b.dataset.addrow) { S[b.dataset.addrow].push({ key: "", value: "", locked: false }); render(); sheet.querySelector(`[data-row="${b.dataset.addrow}:${S[b.dataset.addrow].length - 1}:key"]`)?.focus(); return; }
+});
+
+// ── the prototype's controls ──
+const samples = [
+  ["OAuth · 公布身份", "https://mcp.hermesh.io/mcp"],
+  ["OAuth · 只能自动注册", "https://mcp.acme-tools.com/mcp"],
+  ["OAuth · 自己的应用", "https://api.githubcopilot.com/mcp/"],
+  ["开放", "https://mcp.context7.com/mcp"],
+  ["API Key", "https://api.example-search.com/mcp"],
+  ["旧版 SSE", "https://mcp.example.dev/sse"],
+  ["连不上", "https://mcp.unreachable.test/mcp"],
+  ["本地 npx", "npx -y @playwright/mcp@latest"],
+  ["本地带变量", "BRAVE_API_KEY=BSAx9 npx -y @brave/brave-search-mcp-server"],
+  ["本地失败", "npx -y nonexistent-mcp-server"],
+  ["JSON", '{"mcpServers":{"memory":{"command":"npx","args":["-y","@modelcontextprotocol/server-memory"]}}}'],
+];
+document.getElementById("demo").innerHTML = `<b>原型</b>${samples.map(([l], i) => `<button data-s="${i}">${l}</button>`).join("")}<span class="sp"></span><button data-theme-t>深色 / 浅色</button>`;
+document.getElementById("demo").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.s) { run++; S = fresh(); S.address = samples[+b.dataset.s][1]; render(); document.getElementById("f-addr").focus(); return; }
+  if ("themeT" in b.dataset) { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"; }
+});
+render();
+</script>
+</body>
+</html>

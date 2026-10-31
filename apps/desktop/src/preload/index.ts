@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { Bridge, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
 import type { Language } from "../shared/i18n";
 import type { UpdateInfo } from "../shared/update";
@@ -42,6 +42,9 @@ const bridge: Bridge = {
   onCommand: (cb: (c: Command) => void) => listen("command", cb),
   setMenuState: (s: MenuState) => ipcRenderer.send("menu-state", s),
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
+  pickSkillSource: () => ipcRenderer.invoke("pick-skill-source"),
+  pathForFile: (file: File) => webUtils.getPathForFile(file),
+  catalogDir: arg("catalog"),
   pickFiles: () => ipcRenderer.invoke("pick-files"),
   revealPath: (path: string) => ipcRenderer.send("reveal-path", path),
   openFolder: (path: string) => ipcRenderer.send("open-folder", path),

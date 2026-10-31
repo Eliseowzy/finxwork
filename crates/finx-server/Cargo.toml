@@ -13,15 +13,18 @@ bytes.workspace = true
 chrono.workspace = true
 finx-core.workspace = true
 finx-llm.workspace = true
+finx-mcp.workspace = true
 finx-protocol.workspace = true
 finx-rpc.workspace = true
 libc.workspace = true
+notify.workspace = true
 parking_lot.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 tokio = { workspace = true, features = ["io-std", "net"] }
 tokio-util.workspace = true
 tracing.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

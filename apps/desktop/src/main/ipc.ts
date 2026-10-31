@@ -3,6 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
+import { i18n } from "../shared/i18n";
 import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { platform } from "./platform";
@@ -98,7 +99,13 @@ export function registerIPC() {
     app.quit();
   });
   ipcMain.on("open-external", (e, url: string) => {
-    if (trusted(e) && typeof url === "string" && url.startsWith("https://")) shell.openExternal(url);
+    if (!trusted(e) || typeof url !== "string") return;
+    // https, or plain http on this machine (a sign-in served by a local server).
+    const loopback = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//.test(url);
+    if (!(url.startsWith("https://") || loopback)) return;
+    // Tests play the browser themselves.
+    if (process.env.FINXWORK_NO_BROWSER) return;
+    shell.openExternal(url);
   });
   ipcMain.on("reveal-path", (e, p: unknown) => {
     if (trusted(e) && revealable(p)) shell.showItemInFolder(p.replace(/^~(?=$|\/)/, os.homedir()));
@@ -130,6 +137,17 @@ export function registerIPC() {
     if (!trusted(e)) return null;
     const win = BrowserWindow.fromWebContents(e.sender);
     const options = { properties: ["openDirectory", "createDirectory"] as ("openDirectory" | "createDirectory")[] };
+    const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+    return r.canceled ? null : (r.filePaths[0] ?? null);
+  });
+  // A skill to upload (自定义 › 上传技能): its folder, or an archive or a SKILL.md; finx reads it.
+  ipcMain.handle("pick-skill-source", async (e) => {
+    if (!trusted(e)) return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      properties: ["openFile", "openDirectory"] as ("openFile" | "openDirectory")[],
+      filters: [{ name: i18n.t("main:dialog.skillSource"), extensions: ["zip", "skill", "md"] }],
+    };
     const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
     return r.canceled ? null : (r.filePaths[0] ?? null);
   });

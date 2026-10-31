@@ -196,7 +196,7 @@ impl Renderer {
                         let line = self.style.dim(&format!("mcp: {server} ready ({tools} tools{elapsed})"));
                         self.status_line(line);
                     }
-                    McpServerState::Failed => {
+                    McpServerState::Failed | McpServerState::NeedsLogin => {
                         let error = error.as_deref().unwrap_or("not connected");
                         let line = self.style.yellow(&format!("mcp: {server} failed: {error}"));
                         self.status_line(line);

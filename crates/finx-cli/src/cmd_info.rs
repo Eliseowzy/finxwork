@@ -570,6 +570,10 @@ pub fn skills(overrides: &[String], dir: Option<PathBuf>, all: bool, as_json: bo
                 "shadowed by {}",
                 entry.detail.as_deref().map(|p| short_path(Path::new(p), &rt.cwd, home)).unwrap_or_default()
             ),
+            SkillState::Disabled if !entry.default_enabled => format!(
+                "off by default; finx skills enable {} turns it on",
+                short_path(entry.dir(), &rt.cwd, home)
+            ),
             SkillState::Disabled => "disabled".to_string(),
             SkillState::Invalid => format!("not loaded: {}", entry.detail.as_deref().unwrap_or_default()),
         };
@@ -599,6 +603,11 @@ pub fn skills(overrides: &[String], dir: Option<PathBuf>, all: bool, as_json: bo
             "catalog: {} skills, about {} tokens (budget {})",
             catalog.listed, catalog.tokens, catalog.budget
         )?;
+    }
+    if !report.set.not_read.is_empty() {
+        let dirs: Vec<String> = report.set.not_read.iter().map(|d| short_path(d, &rt.cwd, home)).collect();
+        let note = format!("not read: {} (skills.other_apps is off)", dirs.join(", "));
+        writeln!(out, "{}", style.dim(&note))?;
     }
     for warning in report.warnings() {
         writeln!(out, "{}", style.yellow(&format!("warning: {warning}")))?;

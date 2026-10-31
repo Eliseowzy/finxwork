@@ -6,6 +6,7 @@ import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } f
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
 import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, steerScript, type DemoSession, type DemoTask } from "./data.ts";
+import { CustomizeMock, Failure as CustomizeFailure } from "./customize.ts";
 import { asks, type TaskScript, type ToolScript, type TurnScript } from "./script.ts";
 import { snake } from "./snake.ts";
 
@@ -112,6 +113,11 @@ export class MockServer {
   private readonly selection = new Map<string, boolean>();
   /** When the demo's model lists were last asked (models/refresh). */
   private listedAt = "2026-10-30T08:00:00Z";
+  /** The 自定义 page's skills, servers and configuration; its changes reach every connection. */
+  private readonly customize = new CustomizeMock((method, params) => {
+    const line = JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n";
+    for (const c of this.conns) c.peer.write(line);
+  });
 
   constructor(o: MockOptions = {}) {
     this.speed = o.speed ?? 1;
@@ -567,10 +573,19 @@ export class MockServer {
     const id = msg.id;
     if (id === undefined) return; // A notification: $/cancel_request has nothing to cancel here.
     // Answered at once: a response must reach the client before any event that follows it (protocol-design §6.5).
+    const failed = (e: unknown): RpcErrorObject =>
+      e instanceof Failure
+        ? e.error
+        : e instanceof CustomizeFailure
+          ? { code: e.code, message: e.message, data: { kind: e.kind, ...e.extra } }
+          : { code: -32603, message: String(e), data: { kind: "internal_error" } };
     try {
-      this.reply(c, id, this.call(c, msg.method as keyof Methods, (msg.params ?? {}) as never));
+      const result: unknown = this.call(c, msg.method as keyof Methods, (msg.params ?? {}) as never);
+      // A check takes its time; everything else answers at once.
+      if (result instanceof Promise) result.then((r) => this.reply(c, id, r), (e) => this.reply(c, id, undefined, failed(e)));
+      else this.reply(c, id, result);
     } catch (e) {
-      this.reply(c, id, undefined, e instanceof Failure ? e.error : { code: -32603, message: String(e), data: { kind: "internal_error" } });
+      this.reply(c, id, undefined, failed(e));
     }
   }
 
@@ -589,7 +604,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true };
+        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -613,8 +628,43 @@ export class MockServer {
         this.notifyModels();
         return {} satisfies R<"models/show">;
       }
+      // A session's skills are the demo's; a folder's, those of the 自定义 page.
       case "skills/list":
-        return demoSkills() satisfies R<"skills/list">;
+        return ((p as P<"skills/list">).session_id ? demoSkills() : this.customize.skillsList()) satisfies R<"skills/list">;
+      case "skills/install":
+        return this.customize.skillsInstall(p as P<"skills/install">) satisfies R<"skills/install">;
+      case "skills/remove":
+        return this.customize.skillsRemove((p as P<"skills/remove">).path) satisfies R<"skills/remove">;
+      case "skills/set_enabled": {
+        const q = p as P<"skills/set_enabled">;
+        return this.customize.skillsSetEnabled(q.path, q.enabled) satisfies R<"skills/set_enabled">;
+      }
+      case "skills/files":
+        return this.customize.skillsFiles((p as P<"skills/files">).path) satisfies R<"skills/files">;
+      case "config/read":
+        return this.customize.configRead(!!(p as P<"config/read">).layers) satisfies R<"config/read">;
+      case "config/write": {
+        const q = p as P<"config/write">;
+        return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;
+      }
+      case "credentials/set":
+        return this.customize.credentialsSet((p as P<"credentials/set">).name) satisfies R<"credentials/set">;
+      case "credentials/delete":
+        return this.customize.credentialsDelete((p as P<"credentials/delete">).name) satisfies R<"credentials/delete">;
+      case "mcp/list":
+        return this.customize.mcpList() satisfies R<"mcp/list">;
+      case "mcp/tools":
+        return this.customize.mcpTools((p as P<"mcp/tools">).name) satisfies R<"mcp/tools">;
+      case "mcp/check":
+        return this.customize.mcpCheck((p as P<"mcp/check">).name) satisfies R<"mcp/check">;
+      case "mcp/probe":
+        return this.customize.mcpProbe(p as P<"mcp/probe">) as unknown as R<"mcp/probe">;
+      case "mcp/probe_cancel":
+        return {} satisfies R<"mcp/probe_cancel">;
+      case "mcp/login":
+        return this.customize.mcpLogin(p as P<"mcp/login">) satisfies R<"mcp/login">;
+      case "mcp/logout":
+        return this.customize.mcpLogout((p as P<"mcp/logout">).name) satisfies R<"mcp/logout">;
       // Local applications: one on this Mac and signed in, one not installed; none connected.
       case "connections/list":
         return { connections: [], revision: 0 } satisfies R<"connections/list">;

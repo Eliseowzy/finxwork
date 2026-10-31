@@ -187,7 +187,6 @@ pub(crate) struct Session {
     pub(crate) data_dir: PathBuf,
     /// See [`SessionView::skill_roots`].
     pub(crate) skill_roots: Arc<[PathBuf]>,
-    pub(crate) skill_dirs: Arc<[String]>,
     pub(crate) trusted: bool,
     pub(crate) interactive_approvals: bool,
     /// One lock per file, shared with the sub-agents: changes to a file never interleave.
@@ -365,7 +364,6 @@ impl Session {
             env: self.env.clone(),
             data_dir: self.data_dir.clone(),
             skill_roots: self.skill_roots.clone(),
-            skill_dirs: self.skill_dirs.clone(),
         }
     }
 
