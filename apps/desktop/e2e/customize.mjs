@@ -204,7 +204,8 @@ try {
   check(credentials().includes("mcp.vault.API_KEY"), "the secret is not in the credential store");
   await page.until("vault ready", `!![...document.querySelectorAll(".cz-row")].find((r) => r.querySelector(".nm")?.textContent === "vault")?.querySelector(".cz-st.ok")`);
   // Its logo, declared in the handshake, is kept and shown (mcp-design §13.9).
-  await page.until("vault's logo", `!![...document.querySelectorAll(".cz-row")].find((r) => r.querySelector(".nm")?.textContent === "vault")?.querySelector(".cz-tile.img img[src^='data:image/png']")`);
+  // An opaque square logo fills the tile, as a store shows an app icon (customize-design §10.10).
+  await page.until("vault's logo", `!![...document.querySelectorAll(".cz-row")].find((r) => r.querySelector(".nm")?.textContent === "vault")?.querySelector(".cz-tile.logo img[src^='data:image/png']")`);
   // The same command under another name is the same service (§13.10): said at once, not added.
   await openAdd();
   await page.run(type("dialog[open] textarea", 0, `${mcpServer} --name vault --tools 2`));
@@ -216,10 +217,36 @@ try {
   await page.theme(true);
   await page.shot("3-mine-connectors-dark");
   await page.run(`[...document.querySelectorAll(".cz-row")].find((r) => r.querySelector(".nm")?.textContent === "vault").click()`);
-  await page.until("vault's page", `!!document.querySelector(".cz-hero")`);
+  await page.until("vault's page", `!!document.querySelector(".cz-dhead")`);
+  // One page, no tabs: the facts in a row and the tools a line each (customize-design §10.12).
+  await page.until("vault's tools, a line each", `document.querySelectorAll(".cz-dtools .cz-tool").length === 16`);
+  check(await page.run(`document.querySelectorAll(".cz-facts .cz-fact").length >= 2`), "the facts row is missing");
   await page.shot("4-connector-page-dark");
   await page.theme(false);
   await page.shot("4-connector-page-light");
+
+  step("编辑配置: the add sheet's settings, filled from the file; the saved secret stays saved");
+  const openEdit = async (kind) => {
+    // 编辑配置 is the first item of the page's ⋯ menu (customize-design §10.12).
+    await page.run(click(".cz-dacts .cz-more"));
+    await page.until("the page's menu", `!!document.querySelector(".cz-menu")`);
+    await page.run(click(".cz-menu .mi", words((x) => x.connector.edit)[1]) + " || " + click(".cz-menu .mi", words((x) => x.connector.edit)[0]));
+    await page.until("the edit sheet", `document.querySelector("dialog[open] .cz-add-body")?.dataset.step === ${JSON.stringify(kind)}`);
+  };
+  await openEdit("local");
+  const command = `document.querySelector("dialog[open] .fgroup input.field")`;
+  check(await page.run(`${command}.value.endsWith("--tools 2")`), "the command is not filled in");
+  const savedHint = await page.run(`document.querySelector("dialog[open] .cz-kvrow input[type=password]")?.placeholder ?? ""`);
+  check(words((x) => x.addc.saved).includes(savedHint), `the saved variable shows: ${savedHint}`);
+  await page.shot("7-edit-local-light");
+  await page.run(`(() => { const el = ${command}; const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(el, el.value.replace("--tools 2", "--tools 3")); el.dispatchEvent(new Event("input", { bubbles: true })); return true; })()`);
+  await page.run(`${primary}.click()`);
+  // One generated tool more than the 16 it had.
+  await page.until("saved and checked again", `!document.querySelector("dialog[open]") && document.querySelector(".cz-th .n")?.textContent === "17"`, 20000);
+  const edited = fs.readFileSync(path.join(home, "config.toml"), "utf8");
+  check(/args = \[[^\]]*"3"\]/.test(edited) && edited.includes("${credential:mcp.vault.API_KEY}") && !edited.includes("sk-desk-1"), `the configuration after the edit:\n${edited}`);
+  check(credentials().includes("mcp.vault.API_KEY"), "the edit lost the saved secret");
+  console.log("  the command changed; the variable kept its keychain value");
   await page.run(`document.querySelector(".cz-back").click()`);
 
   step("添加 › 添加连接器: an OAuth server, checked, signed in, then written");
@@ -256,12 +283,24 @@ try {
     cli(["mcp", "logout", "tracker"]);
     await page.until("tracker needs a sign-in", `!!${trackerRow}?.querySelector(".cz-st.warn")`, 10000);
     await page.run(`${trackerRow}.click()`);
-    await page.until("tracker's page offers to sign in", `!!document.querySelector(".cz-dsec .btn.primary")`);
-    await page.run(`document.querySelector(".cz-dsec .btn.primary").click()`);
+    await page.until("tracker's page offers to sign in", `!!document.querySelector(".cz-note .btn.primary")`);
+    await page.run(`document.querySelector(".cz-note .btn.primary").click()`);
     await page.until("waiting for the browser", `!!document.querySelector("[data-authorize]")`);
     const again = await fetch(await page.run(`document.querySelector("[data-authorize]").dataset.authorize`), { redirect: "follow" });
     check(again.ok, `the second sign-in: ${again.status}`);
-    await page.until("signed in again and connected", `!!document.querySelector(".cz-hero .cz-st.ok")`, 30000);
+    await page.until("signed in again and connected", `!!document.querySelector(".cz-fact .cz-st.ok")`, 30000);
+    // Its edit sheet checks the address again and shows the sign-in as the add sheet did.
+    await openEdit("remote");
+    await page.until("the address checked", `!!document.querySelector("dialog[open] .cz-fn .det") && !document.querySelector("dialog[open] .cz-fn .mini-spin")`, 20000);
+    const editPicked = await page.run(`[...document.querySelectorAll("dialog[open] .cz-pop .lbl")].map((e) => e.textContent).join(" | ")`);
+    check(words((x) => x.addc.oauth).some((w) => editPicked.includes(w)), `the edit sheet shows: ${editPicked}`);
+    check(words((x) => x.edit.save).includes(await page.run(`${primary}.textContent.trim()`)), "an unchanged OAuth connector asks to sign in again");
+    await page.theme(true);
+    await page.shot("7-edit-remote-dark");
+    await page.theme(false);
+    await page.shot("7-edit-remote-light");
+    await page.run(`document.querySelector("dialog[open] .sheet-foot .btn:not(.primary)").click()`);
+    await page.until("the sheet closed", `!document.querySelector("dialog[open]")`);
     await page.run(`document.querySelector(".cz-back").click()`);
     console.log("  signed out, then signed in again from the connector's page");
   } finally {

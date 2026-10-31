@@ -50,8 +50,8 @@ use tokio::sync::oneshot;
 use crate::mcp_auth::McpTestAuth;
 use crate::mcp_auth::OAuthState;
 
-/// The logo the test server declares: one blue pixel.
-pub const ICON: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+/// The logo the test server declares: a 64-pixel tile, teal with a white bar, as an app icon is.
+pub const ICON: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAWElEQVR42u3WQQ0AIAwEwWqoYBTguZggTSFzWQPzu8i9ni4AAAAAAAAAAAAAAAAAAAAAAAA+B1TjAAAAAAAAAACmAbxRAAAAAAAAAAAAAAAAAAAAAACAax2wg+zdIlH2xgAAAABJRU5ErkJggg==";
 
 /// A 1×1 transparent PNG.
 pub const PNG_1X1: &str =
@@ -206,7 +206,7 @@ impl State {
                 "protocolVersion": params.get("protocolVersion").and_then(Value::as_str).unwrap_or("2025-06-18"),
                 "capabilities": { "tools": { "listChanged": true } },
                 // A declared logo (MCP 2025-11-25), so clients can show it.
-                "serverInfo": { "name": self.options.name, "version": "1.0.0", "icons": [{ "src": ICON, "mimeType": "image/png", "sizes": ["1x1"] }] },
+                "serverInfo": { "name": self.options.name, "version": "1.0.0", "icons": [{ "src": ICON, "mimeType": "image/png", "sizes": ["64x64"] }] },
                 "instructions": self.options.instructions,
             })),
             "ping" => Ok(json!({})),

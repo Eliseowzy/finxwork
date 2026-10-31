@@ -7,7 +7,7 @@ import { SidebarToggle } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore, type CustomizeView } from "../store";
 import { AddConnector } from "./AddConnector";
-import { ConnectorForm } from "./ConnectorForm";
+import { EditConnector } from "./EditConnector";
 import { catalogDir, ConnectorPage, SkillPage } from "./Details";
 import { DiscoverConnectors, DiscoverSkills, MyConnectors, MySkills, type Actions } from "./Lists";
 import { brokenSkills, catalogServer, fromRepo, nextInLine, type SkillItem } from "./model";
@@ -20,7 +20,7 @@ import "../styles/customize.css";
 // and the catalog's (发现), each card opening a page of its own. finx manages them; this page
 // shows what it says and asks it for changes.
 
-type Sheet = { kind: "upload" } | { kind: "add" } | { kind: "connector"; edit: McpServerView | null } | { kind: "broken" };
+type Sheet = { kind: "upload" } | { kind: "add" } | { kind: "connector"; edit: McpServerView } | { kind: "broken" };
 
 export function Customize() {
   const st = useStore();
@@ -233,12 +233,12 @@ export function Customize() {
         />
       )}
       {sheet?.kind === "connector" && (
-        <ConnectorForm
+        <EditConnector
           c={c}
-          edit={sheet.edit}
+          server={sheet.edit}
           project={project}
           onClose={() => setSheet(null)}
-          onSaved={(name) => setView({ tab: "connectors", view: "mine", detail: sheet.edit ? { kind: "connector", id: name, tab: "overview" } : null })}
+          onSaved={(name) => setView({ tab: "connectors", view: "mine", detail: { kind: "connector", id: name, tab: "overview" } })}
         />
       )}
       {sheet?.kind === "broken" && <BrokenSkills broken={brokenSkills(c.skills)} onClose={() => setSheet(null)} />}

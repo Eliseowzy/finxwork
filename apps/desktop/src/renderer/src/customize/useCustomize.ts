@@ -190,6 +190,21 @@ export function useCustomize(cwd: string | null) {
     [rpc, params, check, st],
   );
 
+  /** mcp/logout: forgets the server's sign-in, then checks it, so the page says it needs one. */
+  const logout = useCallback(
+    async (name: string) => {
+      if (!rpc) return;
+      try {
+        await rpc.request("mcp/logout", { name });
+        st.show(t("toast.signedOut", { name }));
+        await check(name);
+      } catch (e) {
+        st.show(errorText(e), undefined, true);
+      }
+    },
+    [rpc, check, st],
+  );
+
   // ---- skills ----
 
   const items = useMemo(
@@ -318,6 +333,7 @@ export function useCustomize(cwd: string | null) {
     write,
     check,
     login,
+    logout,
     switchSkill,
     removeSkill,
     switchServer,

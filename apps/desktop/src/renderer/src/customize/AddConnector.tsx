@@ -6,7 +6,8 @@ import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { localIdentity, remoteIdentity } from "../../../shared/identity";
 import { credentialName, joinCommand, splitCommand } from "./model";
-import { PopUp, ServerTile, type Choice } from "./parts";
+import { LocalFields, RemoteFields, row, type Auth, type Client, type RemoteState, type Row, type Transport } from "./ConnectorFields";
+import { ServerTile } from "./parts";
 import type { Customize } from "./useCustomize";
 
 // 添加 › 添加连接器 (customize-design §10.9; the steps are docs/desktop/connector-add-demo.html,
@@ -15,20 +16,12 @@ import type { Customize } from "./useCustomize";
 // set up with what the check found; a command gets its form and is checked when added.
 // Nothing is written before a check passes, unless the person adds it anyway (DD-54).
 
-type Row = { key: string; value: string; locked: boolean };
 type Detected =
   | { kind: "remote"; url: string; host: string; insecure: boolean; sse: boolean; json?: boolean; name?: string; headers: Row[] }
   | { kind: "local"; argv: string[]; env: Row[]; json?: boolean; name?: string }
   | { kind: "bad"; why: string };
 type Step = "entry" | "check" | "remote" | "local" | "login" | "done";
-type Auth = "oauth" | "token" | "none";
-// Which client finx signs in as: finx finds one on its own (a published identity, else a
-// registration; the order is the kernel's), or the person's own OAuth app.
-type Client = "auto" | "own";
-
-const secretish = /token|key|secret|password|passwd|auth|cookie|credential/i;
-const row = (key: string, value: string): Row => ({ key, value, locked: secretish.test(key) && !!value });
-const REMOTE_STEPS: McpProbeStepId[] = ["connect", "resource", "auth_server"];
+export const REMOTE_STEPS: McpProbeStepId[] = ["connect", "resource", "auth_server"];
 const LOCAL_STEPS: McpProbeStepId[] = ["start", "handshake", "tools"];
 
 /** What the address box holds: a remote address, a command line (with leading VAR=value), or JSON. */
@@ -96,31 +89,6 @@ export function suggestName(d: Detected | null): string {
     .slice(0, 32);
 }
 
-function Rows({ rows, set, keyHint, valueHint }: { rows: Row[]; set: (rows: Row[]) => void; keyHint: string; valueHint: string }) {
-  const { t } = useTranslation("customize");
-  const change = (i: number, patch: Partial<Row>) => set(rows.map((r, j) => (j === i ? { ...r, ...patch } : r)));
-  return (
-    <div className="cz-kvs">
-      {rows.map((r, i) => (
-        <div key={i} className="cz-kvrow">
-          <input className="field mono" value={r.key} placeholder={keyHint} spellCheck={false} onChange={(e) => change(i, { key: e.target.value, locked: r.locked || (secretish.test(e.target.value) && !r.value) })} />
-          <input className="field mono" type={r.locked ? "password" : "text"} value={r.value} placeholder={r.locked ? t("addc.keychain") : valueHint} spellCheck={false} onChange={(e) => change(i, { value: e.target.value })} />
-          <button className={`cz-lock ${r.locked ? "on" : ""}`} title={r.locked ? t("addc.locked") : t("addc.unlocked")} onClick={() => change(i, { locked: !r.locked })}>
-            <Icon name={r.locked ? "lock" : "unlock"} />
-          </button>
-          <button className="cz-lock" title={t("addc.removeRow")} onClick={() => set(rows.filter((_, j) => j !== i))}>
-            <Icon name="x" />
-          </button>
-        </div>
-      ))}
-      <button className="link cz-addrow" onClick={() => set([...rows, { key: "", value: "", locked: false }])}>
-        <Icon name="plus" />
-        {t("addc.addRow")}
-      </button>
-    </div>
-  );
-}
-
 export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Customize; project: string | null; onClose: () => void; onAdded: (name: string) => void; onOpen: (name: string) => void }) {
   const { t } = useTranslation("customize");
   const st = useStore();
@@ -140,14 +108,11 @@ export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Cust
   const [token, setToken] = useState("");
   const [header, setHeader] = useState("Authorization");
   const [prefix, setPrefix] = useState("Bearer ");
-  const [sendAs, setSendAs] = useState(false);
   const [headers, setHeaders] = useState<Row[]>([]);
-  const [transport, setTransport] = useState<"streamable_http" | "sse">("streamable_http");
-  const [adv, setAdv] = useState(false);
+  const [transport, setTransport] = useState<Transport>("streamable_http");
   const [command, setCommand] = useState("");
   const [env, setEnv] = useState<Row[]>([]);
   const [cwd, setCwd] = useState("");
-  const [ladv, setLadv] = useState(false);
   const [busy, setBusy] = useState(false);
   const [back, setBack] = useState<Step>("entry");
   const [tools, setTools] = useState<string[]>([]);
@@ -503,127 +468,12 @@ export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Cust
   );
 
   const oauthFound = probed?.auth?.oauth ?? null;
-  // The sign-in service by its host, as people know it.
-  const issuer = (oauthFound ? URL.parse(oauthFound.authorization_server)?.host || oauthFound.authorization_server : (d as { host?: string } | null)?.host) ?? "";
-  const authChoices: Choice<Auth>[] = [
-    { id: "oauth", label: t("addc.oauth"), tag: "OAuth", desc: t("addc.oauthDesc", { issuer }), off: !oauthFound?.pkce && t("addc.noOAuth") },
-    { id: "token", label: t("addc.token"), desc: t("addc.tokenDesc") },
-    { id: "none", label: t("addc.none"), desc: t("addc.noneDesc") },
-  ];
-  const ownRequired = probed?.suggested.client === "own";
-  const clientChoices: Choice<Client>[] = [
-    { id: "auto", label: t("addc.clientAuto"), desc: t("addc.clientAutoDesc"), off: ownRequired && t("addc.clientAutoOff", { issuer }) },
-    { id: "own", label: t("addc.own"), desc: t("addc.ownDesc") },
-  ];
-  const transportChoices: Choice<"streamable_http" | "sse">[] = [
-    { id: "streamable_http", label: "Streamable HTTP", desc: t("addc.httpDesc") },
-    { id: "sse", label: t("addc.sse"), desc: t("addc.sseDesc") },
-  ];
-  // What the check found, then what adding does with the choice made.
-  const found = !probed?.auth?.required
-    ? t("addc.found.open")
-    : oauthFound
-      ? t(ownRequired ? "addc.found.oauthOwn" : "addc.found.oauth", { issuer })
-      : t("addc.found.token");
-  // Sentences run on without a space in Chinese, with one in English.
-  const sep = t("addc.sep");
-  const what = auth === "oauth" ? t("addc.oauthDesc", { issuer }) : auth === "token" ? t("addc.what.token") : null;
+  const fields: RemoteState = { auth, setAuth, client, setClient, clientId, setClientId, clientSecret, setClientSecret, token, setToken, header, setHeader, prefix, setPrefix, headers, setHeaders, transport, setTransport };
   const remoteView = (
     <>
       {summary(true)}
       {failure && <div className="cz-errbox cz-gap">{failure}</div>}
-      <div className="cz-gh">{t("addc.auth")}</div>
-      <div className="fgroup">
-        <div className="frow">
-          <span className="fl">{t("addc.method")}</span>
-          <span className="fv">
-            <PopUp label={t("addc.method")} value={auth} choices={authChoices} found={probed?.suggested.auth} onChange={setAuth} />
-          </span>
-        </div>
-        {auth === "oauth" && client === "own" && (
-          <>
-            <div className="frow">
-              <label className="fl" htmlFor="cz-client-id">Client ID</label>
-              <span className="fv">
-                <input id="cz-client-id" className="field mono" value={clientId} spellCheck={false} onChange={(e) => setClientId(e.target.value)} />
-              </span>
-            </div>
-            <div className="frow">
-              <label className="fl" htmlFor="cz-client-secret">Client Secret</label>
-              <span className="fv">
-                <input id="cz-client-secret" className="field mono" type="password" value={clientSecret} placeholder={t("addc.secretOptional")} onChange={(e) => setClientSecret(e.target.value)} />
-              </span>
-            </div>
-          </>
-        )}
-        {auth === "token" && (
-          <>
-            <div className="frow">
-              <label className="fl" htmlFor="cz-token">{t("addc.tokenRow")}</label>
-              <span className="fv">
-                <input id="cz-token" className="field mono" type="password" value={token} placeholder={t("addc.tokenPlaceholder")} autoComplete="off" onChange={(e) => setToken(e.target.value)} />
-              </span>
-            </div>
-            <div className="frow">
-              <span className="fl">{t("addc.sendAs")}</span>
-              {sendAs ? (
-                <span className="fv cz-two">
-                  <input className="field mono" value={header} placeholder="Header" aria-label="Header" onChange={(e) => setHeader(e.target.value)} />
-                  <input className="field mono" value={prefix} placeholder={t("addc.prefix")} aria-label={t("addc.prefix")} onChange={(e) => setPrefix(e.target.value)} />
-                </span>
-              ) : (
-                <span className="fv">
-                  <code className="cz-code">{`${header}: ${prefix}‹${t("addc.tokenRow")}›`}</code>
-                  <button className="link" onClick={() => setSendAs(true)}>
-                    {t("addc.change")}
-                  </button>
-                </span>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-      <p className="cz-fn">
-        <span className="det">{found}</span>
-        {/* When the person must bring their own app, what to do comes first; the rest is as usual. */}
-        {what && !(auth === "oauth" && ownRequired) && sep + what}
-        {auth === "oauth" && client === "own" && (
-          <>
-            {sep + t("addc.redirect", { issuer }) + " "}
-            <code className="cz-code">http://127.0.0.1/callback</code>
-            {t("addc.stop")}
-          </>
-        )}
-        {auth === "oauth" && ownRequired && sep + t("addc.patHint")}
-      </p>
-      <button className={`cz-fold ${adv ? "open" : ""}`} aria-expanded={adv} onClick={() => setAdv(!adv)}>
-        <Icon name="chevR" />
-        {t("addc.advanced")}
-        {!adv && <small>{t("addc.advancedNow", { transport: transport === "sse" ? t("addc.sse") : "Streamable HTTP", headers: headers.filter((h) => h.key.trim()).length || t("addc.noneShort") })}</small>}
-      </button>
-      {adv && (
-        <div className="fgroup cz-advgroup">
-          {/* Who finx signs in as: finx sees to it, unless the person must or wants to use their own app. */}
-          {auth === "oauth" && (
-            <div className="frow">
-              <span className="fl">{t("addc.client")}</span>
-              <span className="fv">
-                <PopUp label={t("addc.client")} value={client} choices={clientChoices} onChange={setClient} />
-              </span>
-            </div>
-          )}
-          <div className="frow">
-            <span className="fl">{t("addc.transport")}</span>
-            <span className="fv">
-              <PopUp label={t("addc.transport")} value={transport} choices={transportChoices} found={probed?.transport} onChange={setTransport} />
-            </span>
-          </div>
-          <div className="frow stack">
-            <span className="fl">{t("addc.headers")}</span>
-            <Rows rows={headers} set={setHeaders} keyHint="Header" valueHint={t("addc.value")} />
-          </div>
-        </div>
-      )}
+      <RemoteFields s={fields} probed={probed} host={(d as { host?: string } | null)?.host ?? ""} />
       <p className="cz-trust">{t("addc.trust")}</p>
     </>
   );
@@ -632,42 +482,7 @@ export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Cust
   const localView = (
     <>
       {summary(true)}
-      <div className="cz-gh">{t("addc.command")}</div>
-      <div className="fgroup">
-        <div className="frow stack">
-          <input className="field mono" value={command} aria-label={t("addc.command")} spellCheck={false} onChange={(e) => setCommand(e.target.value)} />
-          <div className="cz-cmdline">
-            {argv.map((a, i) => (
-              <span key={i} className={i === 0 ? "tok p" : "tok"}>
-                {a}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
-      {["npx", "uvx", "bunx", "pnpm", "docker"].includes(argv[0] ?? "") && <p className="cz-fn">{t("addc.download", { program: argv[0] })}</p>}
-      <div className="cz-gh">{t("addc.env")}</div>
-      <div className="fgroup">
-        <div className="frow stack">
-          <Rows rows={env} set={setEnv} keyHint={t("addc.varName")} valueHint={t("addc.value")} />
-        </div>
-      </div>
-      <p className="cz-fn">{t("addc.envNote")}</p>
-      <button className={`cz-fold ${ladv ? "open" : ""}`} aria-expanded={ladv} onClick={() => setLadv(!ladv)}>
-        <Icon name="chevR" />
-        {t("addc.advanced")}
-        {!ladv && <small>{t("addc.cwdNow", { cwd: cwd || t("addc.default") })}</small>}
-      </button>
-      {ladv && (
-        <div className="fgroup cz-advgroup">
-          <div className="frow">
-            <label className="fl" htmlFor="cz-cwd">{t("addc.cwd")}</label>
-            <span className="fv">
-              <input id="cz-cwd" className="field mono" value={cwd} placeholder={t("addc.cwdPlaceholder")} spellCheck={false} onChange={(e) => setCwd(e.target.value)} />
-            </span>
-          </div>
-        </div>
-      )}
+      <LocalFields command={command} setCommand={setCommand} env={env} setEnv={setEnv} cwd={cwd} setCwd={setCwd} />
       {failure && <div className="cz-errbox cz-gap">{failure}</div>}
       <p className="cz-trust">{t("addc.localTrust")}</p>
     </>
@@ -764,9 +579,7 @@ export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Cust
   const foot =
     step === "entry" ? (
       <>
-        <div className="left">
-          <span className="note">{t("addc.jsonHint")}</span>
-        </div>
+        <div className="left" />
         <button className="btn" onClick={close}>
           {t("addc.cancel")}
         </button>

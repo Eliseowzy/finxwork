@@ -41,10 +41,21 @@
 .cz-tile .ic{width:17px;height:17px;stroke-width:1.35}
 .cz-tile.xl{width:52px;height:52px;border-radius:var(--r-lg);font-size:17px}
 .cz-tile.xl .ic{width:26px;height:26px;stroke-width:1.25}
-/* A logo sits on white in both themes: most are drawn for a light page. */
-.cz-tile.img{background:#fff;padding:4px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.08)}
-.cz-tile.img.xl{padding:7px}
-.cz-tile.img img{width:100%;height:100%;object-fit:contain;border-radius:var(--r-xs);display:block}
+/* A logo (customize-design §10.10). One that is a tile fills the shape, nothing around it, under
+   a hairline that keeps a white icon's edge on a light page and a black one's on a dark page;
+   one with its own rounded corners keeps them, unlined. A mark sits on the plain plate, which
+   turns light under a dark mark in the dark and dark under a light mark in the light. */
+.cz-tile.logo{position:relative;overflow:hidden;background:none}
+.cz-tile.logo img{position:absolute;display:block;max-width:none}
+.cz-tile.logo::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.1);pointer-events:none}
+.cz-tile.logo.cut::after{content:none}
+.cz-tile.glyph img{display:block;object-fit:contain}
+.cz-tile.glyph.light{background:#2c2c30}
+@media (prefers-color-scheme:dark){
+  .cz-tile.logo::after{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12)}
+  .cz-tile.glyph.light{background:var(--fill2)}
+  .cz-tile.glyph.dark{background:#f2f2f4}
+}
 
 /* 我的: one to a row, each its own rounded panel (not a table): the mark, the name over one
    line of what it does, then on the right its state, its switch and its menu. */
@@ -111,6 +122,67 @@
 .cz-meta .cz-st{font-size:12.5px}
 .cz-acts{display:flex;align-items:center;gap:8px;flex:none}
 .cz-acts .btn{height:30px;padding:0 15px;font-size:13.5px}
+/* A connector's page (customize-design §10.12, docs/desktop/connector-detail-demo.html): one column,
+   at most 852 wide so a line stays readable. Back has the top line to itself; then the
+   logo and name with the item's controls at the right, one sentence, the facts in a row, a note when one is due, the tools a line each.
+   No boxes and no rules: 21 under the top line, 34 to the facts, 55 to the tools. */
+.cz-dpage{max-width:852px}
+.cz-dbar{display:flex;align-items:center;height:28px}
+.cz-dbar .cz-back{margin-top:0;margin-left:-8px;padding:0 10px 0 7px;font-size:13px;gap:5px}
+.cz-dbar .cz-back .ic{width:14px;height:14px}
+/* On the title line, at its right end; the ⋯ glyph lines up with the tools' 重新检测 below. */
+.cz-dacts{display:flex;align-items:center;gap:var(--sp-1);margin-left:auto;padding-left:var(--sp-3)}
+.cz-swl{display:inline-flex;align-items:center;gap:var(--sp-1);height:28px;padding:0 var(--sp-1);font-size:13px;color:var(--l2)}
+.cz-dacts .cz-more{width:28px;height:28px;margin-right:-6px}
+.cz-dhead{animation:fadein .35s cubic-bezier(.2,0,0,1)}
+.cz-dtitle{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-3)}
+.cz-dtitle .cz-tile.xl{width:48px;height:48px;font-size:19px;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.cz-dtitle h1{margin:0;font-size:26px;font-weight:650;letter-spacing:-.5px;line-height:32px}
+.cz-dtitle .badge{margin:2px 0 0 -3px}
+.cz-lede{margin:var(--sp-2) 0 0;max-width:600px;font-size:13.5px;line-height:22px;color:var(--l2);user-select:text;-webkit-user-select:text}
+.cz-facts{display:flex;flex-wrap:wrap;gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-4)}
+.cz-fact{min-width:0}
+/* The address or command takes the rest of the row and ends in … rather than wrapping alone. */
+.cz-fact.grow{flex:1 1 240px}
+.cz-fact.grow .v .mono{min-width:0}
+.cz-fact .k{font-size:11.5px;line-height:16px;color:var(--l3)}
+.cz-fact .v{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:13px;line-height:22px;color:var(--l1);white-space:nowrap}
+.cz-fact .v.cz-st.ok{color:var(--green)}
+.cz-fact .v.cz-st.bad{color:var(--red)}
+.cz-fact .v.cz-st.warn{color:var(--orange)}
+.cz-fact .v .mono{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;user-select:text;-webkit-user-select:text}
+.cz-fact .v .sub{color:var(--l3)}
+.cz-ghost{width:20px;height:20px;margin-left:-2px;flex:none;border:0;border-radius:var(--r-xs);background:none;color:var(--l3);display:grid;place-items:center;padding:0;opacity:0;transition:opacity .15s,background .15s,color .15s}
+.cz-fact:hover .cz-ghost,.cz-ghost:focus-visible{opacity:1}
+.cz-ghost:hover{background:var(--fill2);color:var(--l1)}
+.cz-ghost .ic{width:12px;height:12px}
+.cz-note{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-4);padding:var(--sp-2) var(--sp-2) var(--sp-2) 15px;border-radius:var(--r-lg);background:var(--fill);font-size:13px;line-height:20px;animation:fadein .25s cubic-bezier(.2,0,0,1)}
+.cz-note>.ic{align-self:flex-start;margin-top:2px;width:15px;height:15px;color:var(--l3)}
+.cz-note .tx{flex:1;min-width:0;color:var(--l2)}
+.cz-note .tx b{display:block;font-weight:550;color:var(--l1)}
+.cz-note .tx code{font-family:var(--mono);font-size:12px;background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs);color:var(--l1)}
+.cz-note .err{display:block;margin-top:3px;font-family:var(--mono);font-size:11.5px;line-height:17px;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.cz-note.warn{background:var(--orange-bg)}.cz-note.warn>.ic{color:var(--orange)}
+.cz-note.bad{background:var(--red-bg)}.cz-note.bad>.ic{color:var(--red)}
+.cz-note .btn{flex:none}
+.cz-note-wait{display:flex;align-items:center;gap:var(--sp-1);flex:none;font-size:12.5px;color:var(--l2)}
+.cz-dtools{margin-top:var(--sp-5);animation:fadein .45s cubic-bezier(.2,0,0,1)}
+.cz-th{display:flex;align-items:baseline;gap:7px;margin-bottom:var(--sp-1)}
+.cz-th h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.1px}
+.cz-th .n{font-size:13px;color:var(--l3);font-variant-numeric:tabular-nums}
+.cz-th .right{margin-left:auto;display:flex;align-items:baseline;gap:var(--sp-1);font-size:12px;color:var(--l3)}
+.cz-th .link{font-size:12px}
+.cz-tool{display:flex;align-items:baseline;gap:var(--sp-3);padding:7px 12px;margin:0 -12px;border-radius:var(--r-md);font-size:13px;line-height:22px;transition:background .12s}
+.cz-tool:hover,.cz-tool.open{background:var(--fill)}
+.cz-tool .tn{width:172px;flex:none;font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cz-tool .td{flex:1;min-width:0;color:var(--l2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cz-tool.open .td{white-space:normal;color:var(--l1);user-select:text;-webkit-user-select:text}
+.cz-dempty{margin:var(--sp-1) 0 0;font-size:13px;color:var(--l3)}
+/* Off: the page steps back; the controls at the top do not. */
+.cz-dpage.off .cz-dtitle .cz-tile{opacity:.45}
+.cz-dpage.off .cz-facts,.cz-dpage.off .cz-tlist{opacity:.5}
+@media (prefers-reduced-motion:reduce){.cz-dhead,.cz-note,.cz-dtools{animation:none}}
+
 /* The page's one main action: solid in the text colour, quieter than the accent on a dark window. */
 .btn.cz-solid{background:var(--l1);color:var(--win);box-shadow:none}
 .mini-spin.cz-spin-solid{width:12px;height:12px;border-color:color-mix(in srgb,var(--win) 35%,transparent);border-top-color:var(--win)}
@@ -155,12 +227,7 @@
 .cz-files .frow{min-height:34px;padding:6px 13px;gap:9px}
 .cz-files .frow .mono{font-size:12px}
 .cz-files .sz{margin-left:auto;color:var(--l3);font-size:11.5px;font-variant-numeric:tabular-nums}
-.cz-tools .frow{padding:9px 13px}
-.cz-tools .mono{font-size:12.5px}
-.cz-tsrc{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--l2);margin-bottom:var(--sp-1)}
-.cz-tsrc .link{margin-left:auto;font-size:12px}
 .cz-errbox{font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--red);background:var(--red-bg);border-radius:var(--r-md);padding:9px 13px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
-.btn.cz-after{margin-top:10px}
 /* A note on a page: why something is read-only, what a choice will do. */
 .cz-callout{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:9px 13px;line-height:1.55}
 .cz-callout>.ic{margin-top:2px;color:var(--l3)}
@@ -289,4 +356,3 @@ textarea.field.cz-grow{height:auto;min-height:30px;padding:6px 9px;line-height:1
 .cz-toolchips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:var(--sp-1)}
 .cz-toolchips span{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
 .sheet.cz-add .sheet-foot .note{font-size:12px;color:var(--l3)}
-.cz-waiting{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--l2)}
