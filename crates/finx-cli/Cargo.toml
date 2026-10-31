@@ -18,6 +18,7 @@ futures.workspace = true
 finx-acp.workspace = true
 finx-core.workspace = true
 finx-llm.workspace = true
+finx-mcp.workspace = true
 finx-protocol.workspace = true
 finx-server.workspace = true
 finx-tools.workspace = true

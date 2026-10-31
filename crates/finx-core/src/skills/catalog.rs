@@ -301,6 +301,9 @@ mod tests {
             state: SkillState::Active,
             detail: None,
             notes: Vec::new(),
+            source: None,
+            removable: false,
+            default_enabled: true,
         }
     }
 

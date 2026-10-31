@@ -95,12 +95,11 @@ pub(crate) fn protected(path: &Path, view: &SessionView) -> Option<String> {
         .iter()
         .find_map(|root| path.strip_prefix(root).ok().map(Path::to_path_buf))
         .unwrap_or(path);
-    protected_name(&relative, &view.skill_dirs)
+    protected_name(&relative)
 }
 
-/// The protected name among the components of `path`, judged by the names alone. `extra`
-/// are further protected directory names.
-pub(crate) fn protected_name(path: &Path, extra: &[String]) -> Option<String> {
+/// The protected name among the components of `path`, judged by the names alone.
+pub(crate) fn protected_name(path: &Path) -> Option<String> {
     let names: Vec<&str> = path
         .components()
         .filter_map(|c| match c {
@@ -109,10 +108,7 @@ pub(crate) fn protected_name(path: &Path, extra: &[String]) -> Option<String> {
         })
         .collect();
     // A protected directory itself, or anything inside it.
-    if let Some(dir) = names
-        .iter()
-        .find(|name| PROTECTED_DIRS.contains(name) || extra.iter().any(|e| e == **name))
-    {
+    if let Some(dir) = names.iter().find(|name| PROTECTED_DIRS.contains(name)) {
         return Some((*dir).to_string());
     }
     if names.windows(2).any(|pair| pair == [".config", "git"]) {
@@ -167,24 +163,18 @@ pub(crate) fn critical(path: &Path, view: &SessionView) -> Option<&'static str> 
     None
 }
 
-/// What skills add to the protected locations, for [`SessionView::skill_roots`] and
-/// [`SessionView::skill_dirs`].
-pub(crate) fn skill_locations(skills: &SkillsSettings, home: &FinxHome, cwd: &Path) -> (Arc<[PathBuf]>, Arc<[String]>) {
+/// What skills add to the protected locations, for [`SessionView::skill_roots`]: the
+/// configured paths. The other skill folders are inside `.agents`, `.claude` and the data
+/// directory, which are protected already.
+pub(crate) fn skill_locations(skills: &SkillsSettings, home: &FinxHome, cwd: &Path) -> Arc<[PathBuf]> {
     if !skills.enabled {
-        return (Arc::from([]), Arc::from([]));
+        return Arc::from([]);
     }
-    let roots: Vec<PathBuf> = skills
+    skills
         .paths
         .iter()
         .map(|path| canonical_lossy(&crate::skills::expand(path, home.user_home(), cwd)))
-        .collect();
-    let dirs: Vec<String> = skills
-        .dirs
-        .iter()
-        .filter(|name| !PROTECTED_DIRS.contains(&name.as_str()))
-        .cloned()
-        .collect();
-    (roots.into(), dirs.into())
+        .collect()
 }
 
 /// [`canonical_lossy`] of finx's data directory, worked out once per directory.
@@ -259,7 +249,6 @@ mod tests {
             env: Arc::new(LocalEnvironment::new(workspace.to_path_buf())),
             data_dir: canonical_lossy(data_dir),
             skill_roots: Arc::from([]),
-            skill_dirs: Arc::from([]),
         }
     }
 
@@ -317,13 +306,11 @@ mod tests {
 
     #[test]
     fn names_alone() {
-        assert_eq!(protected_name(Path::new("a/.git/config"), &[]).as_deref(), Some(".git"));
-        assert_eq!(protected_name(Path::new(".bashrc"), &[]).as_deref(), Some(".bashrc"));
-        assert_eq!(protected_name(Path::new("../x/.npmrc"), &[]).as_deref(), Some(".npmrc"));
-        assert_eq!(protected_name(Path::new("src/main.rs"), &[]), None);
-        assert_eq!(protected_name(Path::new(""), &[]), None);
-        let extra = ["team-agent".to_string()];
-        assert_eq!(protected_name(Path::new("team-agent/skills/x"), &extra).as_deref(), Some("team-agent"));
+        assert_eq!(protected_name(Path::new("a/.git/config")).as_deref(), Some(".git"));
+        assert_eq!(protected_name(Path::new(".bashrc")).as_deref(), Some(".bashrc"));
+        assert_eq!(protected_name(Path::new("../x/.npmrc")).as_deref(), Some(".npmrc"));
+        assert_eq!(protected_name(Path::new("src/main.rs")), None);
+        assert_eq!(protected_name(Path::new("")), None);
     }
 
     #[test]
@@ -335,26 +322,22 @@ mod tests {
         std::fs::create_dir_all(&shared).unwrap();
         let settings = SkillsSettings {
             paths: vec![shared.display().to_string()],
-            dirs: vec![".agents".into(), "team-agent".into()],
             ..SkillsSettings::default()
         };
         let home = FinxHome::new(dir.path().join("finx-home"));
-        let (skill_roots, skill_dirs) = skill_locations(&settings, &home, &workspace);
-        assert_eq!(&*skill_dirs, ["team-agent".to_string()], "built-in names are not repeated");
+        let skill_roots = skill_locations(&settings, &home, &workspace);
         let view = SessionView {
             skill_roots,
-            skill_dirs,
             ..view_for(&workspace, &dir.path().join("finx-home"))
         };
         assert_eq!(protected(&shared.join("x/SKILL.md"), &view).as_deref(), Some("skills directory"));
-        assert_eq!(protected(&workspace.join("team-agent/skills/x/SKILL.md"), &view).as_deref(), Some("team-agent"));
+        assert_eq!(protected(&workspace.join(".claude/skills/x/SKILL.md"), &view).as_deref(), Some(".claude"));
         assert_eq!(protected(&workspace.join("src/lib.rs"), &view), None);
         let off = SkillsSettings {
             enabled: false,
             ..settings
         };
-        let (roots, dirs) = skill_locations(&off, &home, &workspace);
-        assert!(roots.is_empty() && dirs.is_empty());
+        assert!(skill_locations(&off, &home, &workspace).is_empty());
     }
 
     #[test]

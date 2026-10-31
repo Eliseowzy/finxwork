@@ -173,7 +173,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let (session_dir, temporary) = FinxHome::session_data_dir(&launch.location, &launch.id);
     let shown = Arc::new(Mutex::new(Shown::default()));
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &shown);
-    let (skill_roots, skill_dirs) =
+    let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
     let session = Arc::new(Session {
         id: launch.id.clone(),
@@ -198,7 +198,6 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         request_estimates: Mutex::new(Vec::new()),
         data_dir: crate::protected::canonical_data_dir(launch.home.root()),
         skill_roots,
-        skill_dirs,
         trusted: launch.trusted,
         interactive_approvals: launch.interactive_approvals,
         locks: launch.locks,

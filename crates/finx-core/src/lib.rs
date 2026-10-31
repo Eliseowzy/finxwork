@@ -9,6 +9,7 @@ mod budget;
 pub mod commands;
 mod compaction;
 pub mod config;
+pub mod config_edit;
 pub mod context;
 pub mod context_report;
 mod emitter;
@@ -26,6 +27,7 @@ pub mod runtime;
 mod session;
 pub mod skills;
 pub mod store;
+pub mod trash;
 mod task;
 mod tool_exec;
 

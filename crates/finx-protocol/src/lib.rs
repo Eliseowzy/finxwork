@@ -4,6 +4,7 @@
 //! additive; clients must ignore unknown event types and fields.
 
 pub mod api;
+pub mod customize;
 mod event;
 pub mod mcp;
 mod op;
@@ -29,7 +30,10 @@ pub use event::SkillUse;
 pub use event::TaskTrigger;
 pub use event::ToolCategory;
 pub use event::WarningCode;
+pub use mcp::McpAuthMode;
 pub use mcp::McpExposure;
+pub use mcp::McpOAuthClient;
+pub use mcp::McpRemoteTransport;
 pub use mcp::McpServerConfig;
 pub use mcp::McpServerInfo;
 pub use mcp::McpServerState;

@@ -127,26 +127,28 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
     let env = env();
     write_skill(&env.work.join(".agents/skills/lint"), "name: lint\ndescription: Lint rules for this repo.", "");
     let pdf = write_skill(
-        &env.user.join(".agents/skills/pdf-tools"),
+        &env.home.skills_dir().join("pdf-tools"),
         "name: pdf-tools\ndescription: >-\n  Extract text and tables\n  from PDF files.",
         "Read `references/formats.md` first.\n",
     );
-    std::fs::create_dir_all(env.user.join(".agents/skills/pdf-tools/references")).unwrap();
-    std::fs::write(env.user.join(".agents/skills/pdf-tools/references/formats.md"), "FORMAT-MARKER\n").unwrap();
-    write_skill(&env.user.join(".claude/skills/pdf-tools"), "name: pdf-tools\ndescription: Shadowed copy.", "");
+    std::fs::create_dir_all(env.home.skills_dir().join("pdf-tools/references")).unwrap();
+    std::fs::write(env.home.skills_dir().join("pdf-tools/references/formats.md"), "FORMAT-MARKER\n").unwrap();
+    write_skill(&env.work.join(".claude/skills/pdf-tools"), "name: pdf-tools\ndescription: Shadowed copy.", "");
     write_skill(
-        &env.user.join(".agents/skills/deploy"),
+        &env.home.skills_dir().join("deploy"),
         "name: deploy\ndescription: Deploy.\ndisable-model-invocation: true",
         "",
     );
-    write_skill(&env.user.join(".agents/skills/broken"), "name: broken", "");
+    write_skill(&env.home.skills_dir().join("broken"), "name: broken", "");
+    // Another app's folder in the home directory is not read (skills.other_apps is off).
+    write_skill(&env.user.join(".agents/skills/elsewhere"), "name: elsewhere\ndescription: Another app's.", "");
 
     let api = ScriptedApi::new();
     api.push(Script::tool_call("call_1", "read", json!({ "path": pdf })));
     api.push(Script::tool_call(
         "call_2",
         "read",
-        json!({ "path": env.user.join(".agents/skills/pdf-tools/references/formats.md") }),
+        json!({ "path": env.home.skills_dir().join("pdf-tools/references/formats.md") }),
     ));
     api.push(Script::text("done"));
     let mut kernel = start(&env, &api, PermissionMode::Manual, Config::default(), ALL_TOOLS).await;
@@ -179,6 +181,7 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
     assert!(system.contains(&pdf_line), "{system}");
     assert!(lint < system.find(&pdf_line).unwrap(), "project skills first");
     assert!(!system.contains("Shadowed copy.") && !system.contains("name=\"deploy\"") && !system.contains("broken"));
+    assert!(!system.contains("elsewhere"), "{system}");
     let results = tool_results(&requests[2]);
     assert!(results[0].contains("Read `references/formats.md` first."));
     assert!(results[1].contains("FORMAT-MARKER"));
@@ -204,12 +207,13 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
             ("lint".to_string(), "project".to_string(), true),
             ("deploy".to_string(), "user".to_string(), false),
             ("pdf-tools".to_string(), "user".to_string(), true),
+            ("skill-creator".to_string(), "system".to_string(), false),
         ],
         "priority order: layers first, then paths within a root"
     );
 
     // A skill added later shows up in new sessions only: the resumed one keeps its prompt.
-    write_skill(&env.user.join(".agents/skills/late"), "name: late\ndescription: Added later.", "");
+    write_skill(&env.home.skills_dir().join("late"), "name: late\ndescription: Added later.", "");
     let session_id = kernel.session_id().to_string();
     kernel.shutdown().await;
     let api = ScriptedApi::new();
@@ -271,7 +275,7 @@ async fn skill_directories_are_protected_paths() {
 #[tokio::test]
 async fn no_catalog_when_turned_off_or_unreadable() {
     let env = env();
-    write_skill(&env.user.join(".agents/skills/x"), "name: x\ndescription: X.", "");
+    write_skill(&env.home.skills_dir().join("x"), "name: x\ndescription: X.", "");
     let system_of = |config: Config, tools: &'static [&'static str]| {
         let env = &env;
         async move {
@@ -353,11 +357,11 @@ async fn until_task_end(kernel: &mut Kernel) -> Vec<finx_protocol::Event> {
 async fn mentions_anywhere_load_each_skill_once_and_keep_the_users_words() {
     let env = env();
     let deploy = write_skill(
-        &env.user.join(".agents/skills/deploy"),
+        &env.home.skills_dir().join("deploy"),
         "name: deploy\ndescription: Deploy the service.\ndisable-model-invocation: true",
         "# Deploy\n\nRun `scripts/ship.sh`.\n",
     );
-    let review = write_skill(&env.user.join(".agents/skills/review"), "name: review\ndescription: Review.", "Check it twice.\n");
+    let review = write_skill(&env.home.skills_dir().join("review"), "name: review\ndescription: Review.", "Check it twice.\n");
     let api = ScriptedApi::new();
     api.push(Script::text("deployed"));
     let mut kernel = start(&env, &api, PermissionMode::Manual, Config::default(), ALL_TOOLS).await;
@@ -434,7 +438,7 @@ async fn mentions_anywhere_load_each_skill_once_and_keep_the_users_words() {
 #[tokio::test]
 async fn only_explicit_mentions_of_the_users_own_input_load_skills() {
     let env = env();
-    let deploy = write_skill(&env.user.join(".agents/skills/deploy"), "name: deploy\ndescription: Deploy.", "Body.\n");
+    let deploy = write_skill(&env.home.skills_dir().join("deploy"), "name: deploy\ndescription: Deploy.", "Body.\n");
     let api = ScriptedApi::new();
     for _ in 0..6 {
         api.push(Script::text("ok"));
@@ -517,16 +521,16 @@ fn kept_skills(events: &[finx_protocol::Event]) -> Vec<String> {
 async fn compaction_keeps_the_skills_in_use_and_resume_rebuilds_them() {
     let env = env();
     let deploy = write_skill(
-        &env.user.join(".agents/skills/deploy"),
+        &env.home.skills_dir().join("deploy"),
         "name: deploy\ndescription: Deploy.",
         "Ship with DEPLOY-STEPS.\n",
     );
     let review = write_skill(
-        &env.user.join(".agents/skills/review"),
+        &env.home.skills_dir().join("review"),
         "name: review\ndescription: Review.",
         "Check REVIEW-V1.\n",
     );
-    write_skill(&env.user.join(".agents/skills/unused"), "name: unused\ndescription: Unused.", "UNUSED-BODY\n");
+    write_skill(&env.home.skills_dir().join("unused"), "name: unused\ndescription: Unused.", "UNUSED-BODY\n");
     let api = ScriptedApi::new();
     api.push(Script::text("deploying"));
     api.push(Script::tool_call("call_1", "read", json!({ "path": review })));
@@ -580,7 +584,7 @@ async fn compaction_keeps_the_skills_in_use_and_resume_rebuilds_them() {
 
     // The next compaction keeps them, read again: the new version of a changed file, the last
     // copy of a deleted one.
-    write_skill(&env.user.join(".agents/skills/review"), "name: review\ndescription: Review.", "Check REVIEW-V2.\n");
+    write_skill(&env.home.skills_dir().join("review"), "name: review\ndescription: Review.", "Check REVIEW-V2.\n");
     std::fs::remove_file(&deploy).unwrap();
     let compacted = kernel.run(prompt("/compact")).await.unwrap();
     assert_eq!(kept_skills(&compacted.events), vec!["review", "deploy"]);
@@ -599,7 +603,7 @@ async fn compaction_keeps_the_skills_in_use_and_resume_rebuilds_them() {
 #[tokio::test]
 async fn queued_input_comes_back_as_written() {
     let env = env();
-    write_skill(&env.user.join(".agents/skills/deploy"), "name: deploy\ndescription: Deploy.", "Body.\n");
+    write_skill(&env.home.skills_dir().join("deploy"), "name: deploy\ndescription: Deploy.", "Body.\n");
     let api = ScriptedApi::new();
     api.push(Script::tool_call("call_1", "bash", json!({"command": "sleep 30"})));
     let mut kernel = start(&env, &api, PermissionMode::BypassPermissions, Config::default(), ALL_TOOLS).await;

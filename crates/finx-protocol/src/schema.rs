@@ -14,6 +14,7 @@ use crate::PROTOCOL_VERSION;
 use crate::api;
 use crate::api::error_code;
 use crate::api::method;
+use crate::customize;
 use crate::event::Event;
 use crate::op::Op;
 
@@ -139,10 +140,29 @@ pub fn document() -> Value {
         (method::CONNECTIONS_REMOVE, Some(name::<api::ConnectionIdParams>(g)), name::<api::ConnectionsSnapshot>(g)),
         (method::CONNECTIONS_MODELS, Some(name::<api::ConnectionIdParams>(g)), name::<api::ConnectionsSnapshot>(g)),
         (method::SKILLS_LIST, Some(name::<api::SkillsListParams>(g)), name::<api::SkillsListResult>(g)),
+        (method::CONFIG_READ, Some(name::<customize::ConfigReadParams>(g)), name::<customize::ConfigReadResult>(g)),
+        (method::CONFIG_WRITE, Some(name::<customize::ConfigWriteParams>(g)), name::<customize::ConfigWriteResult>(g)),
+        (method::CREDENTIALS_SET, Some(name::<customize::CredentialsSetParams>(g)), name::<api::Empty>(g)),
+        (method::CREDENTIALS_DELETE, Some(name::<customize::CredentialsDeleteParams>(g)), name::<api::Empty>(g)),
+        (method::SKILLS_FILES, Some(name::<customize::SkillsFilesParams>(g)), name::<customize::SkillsFilesResult>(g)),
+        (method::SKILLS_INSTALL, Some(name::<customize::SkillsInstallParams>(g)), name::<customize::SkillsInstallResult>(g)),
+        (method::SKILLS_REMOVE, Some(name::<customize::SkillsRemoveParams>(g)), name::<api::Empty>(g)),
+        (method::SKILLS_SET_ENABLED, Some(name::<customize::SkillsSetEnabledParams>(g)), name::<customize::SkillsSetEnabledResult>(g)),
+        (method::MCP_LIST, Some(name::<customize::McpListParams>(g)), name::<customize::McpListResult>(g)),
+        (method::MCP_TOOLS, Some(name::<customize::McpServerParams>(g)), name::<customize::McpToolsResult>(g)),
+        (method::MCP_CHECK, Some(name::<customize::McpServerParams>(g)), name::<customize::McpCheckResult>(g)),
+        (method::MCP_PROBE, Some(name::<customize::McpProbeParams>(g)), name::<customize::McpProbeResult>(g)),
+        (method::MCP_PROBE_CANCEL, Some(name::<customize::McpProbeCancelParams>(g)), name::<api::Empty>(g)),
+        (method::MCP_LOGIN, Some(name::<customize::McpLoginParams>(g)), name::<customize::McpLoginResult>(g)),
+        (method::MCP_LOGOUT, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
     ];
     let client_notifications = [(method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g))];
     let server_notifications = [
         (method::MODELS_CHANGED, name::<api::Empty>(g)),
+        (method::CONFIG_CHANGED, name::<customize::ConfigChangedParams>(g)),
+        (method::SKILLS_CHANGED, name::<customize::SkillsChangedParams>(g)),
+        (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
+        (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (
             method::SESSION_DETACHED,

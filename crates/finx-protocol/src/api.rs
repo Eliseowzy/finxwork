@@ -69,6 +69,30 @@ pub mod method {
     pub const SESSION_DETACHED: &str = "session/detached";
     /// Server notification to `sessions/subscribe`rs: summaries that changed, sessions deleted.
     pub const SESSIONS_CHANGED: &str = "sessions/changed";
+    // The 自定义 page (docs/desktop/customize-design.md §6).
+    pub const CONFIG_READ: &str = "config/read";
+    pub const CONFIG_WRITE: &str = "config/write";
+    /// Server notification to connections that called `config/read`.
+    pub const CONFIG_CHANGED: &str = "config/changed";
+    pub const CREDENTIALS_SET: &str = "credentials/set";
+    pub const CREDENTIALS_DELETE: &str = "credentials/delete";
+    pub const SKILLS_FILES: &str = "skills/files";
+    pub const SKILLS_INSTALL: &str = "skills/install";
+    pub const SKILLS_REMOVE: &str = "skills/remove";
+    pub const SKILLS_SET_ENABLED: &str = "skills/set_enabled";
+    /// Server notification to connections that called `skills/list`.
+    pub const SKILLS_CHANGED: &str = "skills/changed";
+    pub const MCP_LIST: &str = "mcp/list";
+    pub const MCP_TOOLS: &str = "mcp/tools";
+    pub const MCP_CHECK: &str = "mcp/check";
+    /// Server notification to connections that called `mcp/list`.
+    pub const MCP_CHANGED: &str = "mcp/changed";
+    pub const MCP_PROBE: &str = "mcp/probe";
+    pub const MCP_PROBE_CANCEL: &str = "mcp/probe_cancel";
+    /// Server notification to the connection that called `mcp/probe`.
+    pub const MCP_PROBE_PROGRESS: &str = "mcp/probe_progress";
+    pub const MCP_LOGIN: &str = "mcp/login";
+    pub const MCP_LOGOUT: &str = "mcp/logout";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -91,6 +115,25 @@ pub mod error_code {
     /// The model asked for belongs to a provider that is not there (a connection that was
     /// removed or disconnected); `data.provider` names it.
     pub const MODEL_UNAVAILABLE: i64 = -32022;
+    /// `config/write`: the file changed after it was read; `data.version` is the current one.
+    pub const CONFIG_VERSION_CONFLICT: i64 = -32023;
+    /// `config/write`: the layer is not one finx writes for the user.
+    pub const CONFIG_LAYER_READONLY: i64 = -32024;
+    /// `config/write`: the changed file or the merged result is not valid; `data.errors`
+    /// lists `{key_path, message}`.
+    pub const CONFIG_VALIDATION_ERROR: i64 = -32025;
+    /// The configuration file stayed locked for 2 seconds.
+    pub const CONFIG_BUSY: i64 = -32026;
+    /// `skills/install`: no usable `SKILL.md`, or too large.
+    pub const SKILL_INVALID: i64 = -32027;
+    /// `skills/install`: a skill of that name is there and `replace` was not given.
+    pub const SKILL_CONFLICT: i64 = -32028;
+    /// `skills/remove`: only skills in `~/.finx/skills` can be removed.
+    pub const NOT_REMOVABLE: i64 = -32029;
+    /// The keychain (or credential file) could not be used.
+    pub const CREDENTIAL_STORE_UNAVAILABLE: i64 = -32030;
+    /// `mcp/login`: the server publishes no usable sign-in, or the sign-in could not start.
+    pub const MCP_LOGIN_FAILED: i64 = -32031;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -114,6 +157,15 @@ pub mod error_code {
         (TASK_FAILED, "task_failed"),
         (KEY_REJECTED, "key_rejected"),
         (MODEL_UNAVAILABLE, "model_unavailable"),
+        (CONFIG_VERSION_CONFLICT, "config_version_conflict"),
+        (CONFIG_LAYER_READONLY, "config_layer_readonly"),
+        (CONFIG_VALIDATION_ERROR, "config_validation_error"),
+        (CONFIG_BUSY, "config_busy"),
+        (SKILL_INVALID, "skill_invalid"),
+        (SKILL_CONFLICT, "skill_conflict"),
+        (NOT_REMOVABLE, "not_removable"),
+        (CREDENTIAL_STORE_UNAVAILABLE, "credential_store_unavailable"),
+        (MCP_LOGIN_FAILED, "mcp_login_failed"),
     ];
 }
 
@@ -206,6 +258,11 @@ pub struct ServerCapabilities {
     /// and a checked `auth/set`.
     #[serde(default)]
     pub model_discovery: bool,
+    /// The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`,
+    /// `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`,
+    /// `mcp/check`, and their notifications (docs/desktop/customize-design.md §6).
+    #[serde(default)]
+    pub customize: bool,
 }
 
 // ---- Sessions ----
@@ -852,6 +909,8 @@ pub enum SkillScope {
     Project,
     User,
     Extra,
+    /// Built into finx, written to `~/.finx/skills/.system`; after every other root.
+    System,
 }
 
 impl SkillScope {
@@ -860,6 +919,7 @@ impl SkillScope {
             SkillScope::Project => "project",
             SkillScope::User => "user",
             SkillScope::Extra => "extra",
+            SkillScope::System => "system",
         }
     }
 }
@@ -898,6 +958,16 @@ pub struct SkillEntry {
     /// Remarks that did not stop the skill from loading.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notes: Vec<String>,
+    /// Where finx installed it from (`.finx-source.json`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<crate::customize::SkillSource>,
+    /// In `~/.finx/skills` (not built in), so `skills/remove` takes it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub removable: bool,
+    /// Whether it is on when the user has not turned it on or off: false for a project's
+    /// `.claude/skills`, which `skills.opt_in` turns on. Then `disabled` means "off by default".
+    #[serde(default = "yes")]
+    pub default_enabled: bool,
 }
 
 impl SkillEntry {
@@ -963,6 +1033,9 @@ pub struct SkillsListResult {
     /// `skills.enabled`
     pub enabled: bool,
     pub warnings: Vec<String>,
+    /// Other apps' folders that hold skills but are not read (`skills.other_apps` is off).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub not_read: Vec<PathBuf>,
 }
 
 #[cfg(test)]

@@ -35,8 +35,9 @@ fn is_base(name: &str) -> bool {
     BASE_VARS.contains(&name) || name.starts_with("XDG_")
 }
 
-/// Expands `${VAR}` and `${VAR:-default}`. A variable that is unset (or empty, with a
-/// default) and has no default is an error naming it.
+/// Expands `${VAR}`, `${VAR:-default}` and `${credential:<name>}`. A variable that is unset
+/// (or empty, with a default) and has no default is an error naming it; so is a credential
+/// that is not saved. `lookup` gets credentials as `credential:<name>`.
 pub fn expand(value: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
@@ -47,6 +48,17 @@ pub fn expand(value: &str, lookup: &dyn Fn(&str) -> Option<String>) -> Result<St
             return Err(format!("unclosed `${{` in '{value}'"));
         };
         let inner = &after[..end];
+        if let Some(credential) = inner.strip_prefix("credential:") {
+            if credential.is_empty() || !credential.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-')) {
+                return Err(format!("invalid credential name '{credential}' in '{value}'"));
+            }
+            match lookup(inner).filter(|v| !v.is_empty()) {
+                Some(found) => out.push_str(&found),
+                None => return Err(format!("credential {credential} is not saved")),
+            }
+            rest = &after[end + 1..];
+            continue;
+        }
         let (name, default) = match inner.split_once(":-") {
             Some((name, default)) => (name, Some(default)),
             None => (inner, None),
@@ -92,6 +104,24 @@ pub fn process_lookup(name: &str) -> Option<String> {
     std::env::var(name).ok()
 }
 
+/// The `${credential:<name>}` names in `values`.
+pub fn credential_names<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut names = Vec::new();
+    for value in values {
+        let mut rest = value;
+        while let Some(start) = rest.find("${credential:") {
+            let after = &rest[start + "${credential:".len()..];
+            let Some(end) = after.find('}') else { break };
+            let name = after[..end].to_string();
+            if !names.contains(&name) {
+                names.push(name);
+            }
+            rest = &after[end + 1..];
+        }
+    }
+    names
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -100,8 +130,20 @@ mod tests {
         match name {
             "TOKEN" => Some("t0k".into()),
             "EMPTY" => Some(String::new()),
+            "credential:mcp.github" => Some("ghp_x".into()),
             _ => None,
         }
+    }
+
+    #[test]
+    fn expands_saved_credentials() {
+        assert_eq!(expand("Bearer ${credential:mcp.github}", &lookup).unwrap(), "Bearer ghp_x");
+        assert_eq!(expand("${credential:mcp.missing}", &lookup).unwrap_err(), "credential mcp.missing is not saved");
+        assert!(expand("${credential:bad name}", &lookup).is_err());
+        assert_eq!(
+            credential_names(["Bearer ${credential:mcp.a}", "${credential:mcp.b}${credential:mcp.a}", "${TOKEN}"]),
+            vec!["mcp.a", "mcp.b"]
+        );
     }
 
     #[test]

@@ -1,10 +1,12 @@
-//! Layered configuration: defaults < user file < project file < command-line overrides.
+//! Layered configuration: defaults < user file < project file < the user's own file for the
+//! project < command-line overrides.
 
 use finx_llm::ThinkingLevel;
 use finx_protocol::CommandRule;
 use finx_protocol::McpExposure;
 use finx_protocol::McpServerConfig;
 use finx_protocol::PermissionMode;
+use finx_protocol::customize::ConfigLayer;
 use std::collections::BTreeMap;
 use finx_tools::OutputLimits;
 use serde::Deserialize;
@@ -51,6 +53,8 @@ pub struct McpFile {
     pub startup_wait_secs: Option<u64>,
     /// Default exposure of servers that do not set one.
     pub exposure: Option<McpExposure>,
+    /// finx's OAuth client metadata document; only for tests and self-built copies.
+    pub client_metadata_url: Option<String>,
 }
 
 /// `[models]`: model lists and the public catalog (docs/kernel/model-catalog-design.md §11).
@@ -73,8 +77,11 @@ pub struct AgentsFile {
 #[serde(deny_unknown_fields)]
 pub struct SkillsFile {
     pub enabled: Option<bool>,
-    pub dirs: Option<Vec<String>>,
+    /// Removed in 2e (design D-176); still read so that the error can say what replaced it.
+    pub dirs: Option<toml::Value>,
+    pub other_apps: Option<bool>,
     pub paths: Option<Vec<String>>,
+    pub opt_in: Option<Vec<String>>,
     pub disabled: Option<Vec<String>>,
     pub max_catalog_tokens: Option<u64>,
 }
@@ -83,12 +90,15 @@ pub struct SkillsFile {
 pub struct SkillsSettings {
     /// Look for skills and list them in the system prompt.
     pub enabled: bool,
-    /// Directories holding a `skills` folder, looked for in every layer in this order.
-    pub dirs: Vec<String>,
+    /// Also read `~/.agents/skills` and `~/.claude/skills`, the folders other apps install
+    /// into (design D-171).
+    pub other_apps: bool,
     /// Further skill roots, skill directories or `SKILL.md` files, after the user layer.
     /// `~/` is the home directory; other relative paths are relative to the working
     /// directory, except in a project's own file, where they are relative to the project.
     pub paths: Vec<String>,
+    /// Paths of skill directories or `SKILL.md` files that are off by default and turned on.
+    pub opt_in: Vec<String>,
     /// Skill names, or paths of skill directories or `SKILL.md` files.
     pub disabled: Vec<String>,
     /// Catalog budget in tokens; 0 for 2% of the context window, at most 10,000.
@@ -99,8 +109,9 @@ impl Default for SkillsSettings {
     fn default() -> Self {
         Self {
             enabled: true,
-            dirs: [".finx", ".agents", ".claude"].map(String::from).to_vec(),
+            other_apps: false,
             paths: Vec::new(),
+            opt_in: Vec::new(),
             disabled: Vec::new(),
             max_catalog_tokens: 0,
         }
@@ -216,6 +227,13 @@ pub struct McpSettings {
     pub project_json: bool,
     pub startup_wait: Duration,
     pub exposure: McpExposure,
+    /// Where sessions record each server's last connection (`~/.finx/mcp/cache`); set by
+    /// `Workspace::open`, not by a configuration file.
+    pub cache_dir: Option<PathBuf>,
+    /// finx's home, for OAuth's refresh lock and client registrations; set like `cache_dir`.
+    pub finx_home: Option<PathBuf>,
+    /// The `client_id` URL of finx's client metadata document (mcp-design §13.8.3).
+    pub client_metadata_url: Option<String>,
 }
 
 /// Resolved configuration with every default applied.
@@ -272,18 +290,23 @@ impl Config {
         let acp = file.acp.unwrap_or_default();
         let skills_file = file.skills.unwrap_or_default();
         let mut skills = SkillsSettings::default();
-        if let Some(dirs) = skills_file.dirs {
-            let not_a_name =
-                |d: &&String| d.is_empty() || matches!(d.as_str(), "." | "..") || crate::skills::is_path(d);
-            if let Some(bad) = dirs.iter().find(not_a_name) {
-                return Err(ConfigError::Invalid(format!(
-                    "skills.dirs takes directory names such as \".agents\", got \"{bad}\""
-                )));
-            }
-            skills.dirs = dirs;
+        if skills_file.dirs.is_some() {
+            return Err(ConfigError::Invalid(
+                "skills.dirs was removed: project skills live in .agents/skills, and .claude/skills is listed \
+                 off by default; set skills.other_apps for ~/.agents and ~/.claude"
+                    .into(),
+            ));
+        }
+        let opt_in = skills_file.opt_in.unwrap_or_default();
+        if let Some(name) = opt_in.iter().find(|item| !crate::skills::is_path(item)) {
+            return Err(ConfigError::Invalid(format!(
+                "skills.opt_in takes paths of skills, got the name \"{name}\""
+            )));
         }
         skills.enabled = skills_file.enabled.unwrap_or(skills.enabled);
+        skills.other_apps = skills_file.other_apps.unwrap_or(skills.other_apps);
         skills.paths = skills_file.paths.unwrap_or_default();
+        skills.opt_in = opt_in;
         skills.disabled = skills_file.disabled.unwrap_or_default();
         skills.max_catalog_tokens = skills_file.max_catalog_tokens.unwrap_or(0);
         let mcp = file.mcp.unwrap_or_default();
@@ -357,6 +380,9 @@ impl Config {
                 project_json: mcp.project_json.unwrap_or(false),
                 startup_wait: Duration::from_secs(mcp.startup_wait_secs.unwrap_or(10)),
                 exposure: mcp.exposure.unwrap_or_default(),
+                cache_dir: None,
+                finx_home: None,
+                client_metadata_url: mcp.client_metadata_url.filter(|u| !u.trim().is_empty()).or_else(|| crate::mcp::CLIENT_METADATA_URL.map(String::from)),
             },
             models_network: file.models.and_then(|m| m.network).unwrap_or(true),
             mcp_servers: file
@@ -390,8 +416,26 @@ pub struct LoadedConfig {
     pub config: Config,
     pub warnings: Vec<String>,
     pub sources: Vec<PathBuf>,
-    /// The layers that define each MCP server, in order: "user config", "project config", "-c".
+    /// The layers that define each MCP server, in order: "user config", "project config",
+    /// "personal project config", "-c".
     pub mcp_sources: BTreeMap<String, Vec<String>>,
+    /// The layer that last set each leaf, by dotted key path (`config/read`).
+    pub origins: BTreeMap<String, ConfigLayer>,
+    /// The merged table, before defaults were applied.
+    pub merged: toml::Table,
+}
+
+/// The files of the layers. Missing files are skipped.
+#[derive(Clone, Copy, Debug)]
+pub struct LayerFiles<'a> {
+    pub user: &'a Path,
+    /// `<project>/.finx/config.toml`
+    pub project: Option<&'a Path>,
+    /// `~/.finx/projects/<key>/config.toml`: the user's own settings for the project, above
+    /// the project's file (docs/desktop/customize-design.md §4.3).
+    pub user_project: Option<&'a Path>,
+    /// What relative skill paths in the two project files are relative to.
+    pub project_root: Option<&'a Path>,
 }
 
 /// Loads and merges the configuration layers. Settings that loosen security are dropped
@@ -402,21 +446,53 @@ pub fn load(
     project_trusted: bool,
     overrides: &[String],
 ) -> Result<LoadedConfig, ConfigError> {
+    let project_root = project_file.and_then(Path::parent).and_then(Path::parent);
+    let files = LayerFiles { user: user_file, project: project_file, user_project: None, project_root };
+    load_layers(&files, project_trusted, overrides)
+}
+
+/// [`load`] with every layer, the user's own file for the project included.
+pub fn load_layers(files: &LayerFiles<'_>, project_trusted: bool, overrides: &[String]) -> Result<LoadedConfig, ConfigError> {
+    load_layers_with(files, project_trusted, overrides, None)
+}
+
+/// [`load_layers`] with one layer's file replaced by `substitute`: what the configuration
+/// would be after a write (docs/desktop/customize-design.md §5.1). The table must already
+/// have passed [`check_file`].
+pub fn load_layers_with(
+    files: &LayerFiles<'_>,
+    project_trusted: bool,
+    overrides: &[String],
+    substitute: Option<(ConfigLayer, toml::Table)>,
+) -> Result<LoadedConfig, ConfigError> {
+    let mut substitute = substitute;
+    let mut layer_table = |layer: ConfigLayer, path: Option<&Path>| -> Result<Option<toml::Table>, ConfigError> {
+        if let Some((replaced, _)) = &substitute
+            && *replaced == layer
+        {
+            return Ok(substitute.take().map(|(_, table)| table));
+        }
+        match path {
+            Some(path) if path.exists() => read_table(path).map(Some),
+            _ => Ok(None),
+        }
+    };
     let mut merged = toml::Table::new();
     let mut warnings = Vec::new();
     let mut sources = Vec::new();
     let mut mcp_sources = BTreeMap::new();
-    if user_file.exists() {
-        let mut table = read_table(user_file)?;
+    let mut origins = BTreeMap::new();
+    let user_file = files.user;
+    if let Some(mut table) = layer_table(ConfigLayer::User, Some(user_file))? {
         migrate_legacy(&mut table, &user_file.display().to_string(), &mut warnings);
         note_mcp_servers(&table, "user config", &mut mcp_sources);
-        merge_tables(&mut merged, table);
+        note_origins(&table, "", ConfigLayer::User, &mut origins);
+        merge_tables(&mut merged, table, "");
         sources.push(user_file.to_path_buf());
     }
-    if let Some(project_file) = project_file
-        && project_file.exists()
+    if let Some(project_file) = files.project
+        && let Some(mut table) = layer_table(ConfigLayer::Project, Some(project_file))?
     {
-        let mut table = read_table(project_file)?;
         // Where models come from is the user's to say, trusted project or not.
         if table.remove("models").is_some() {
             warnings.push(format!("ignored [models] in {}: it can only be set in the user config", project_file.display()));
@@ -432,20 +508,35 @@ pub fn load(
             }
         }
         migrate_legacy(&mut table, &project_file.display().to_string(), &mut warnings);
-        // `<project>/.finx/config.toml`
-        if let Some(project_root) = project_file.parent().and_then(Path::parent) {
+        if let Some(project_root) = files.project_root {
             anchor_skill_paths(&mut table, project_root);
         }
         note_mcp_servers(&table, "project config", &mut mcp_sources);
-        merge_tables(&mut merged, table);
+        note_origins(&table, "", ConfigLayer::Project, &mut origins);
+        merge_tables(&mut merged, table, "");
         sources.push(project_file.to_path_buf());
+    }
+    // The user's own file: trusted whatever the project, since only they write it.
+    if let Some(user_project) = files.user_project
+        && let Some(mut table) = layer_table(ConfigLayer::UserProject, Some(user_project))?
+    {
+        migrate_legacy(&mut table, &user_project.display().to_string(), &mut warnings);
+        if let Some(project_root) = files.project_root {
+            anchor_skill_paths(&mut table, project_root);
+        }
+        note_mcp_servers(&table, "personal project config", &mut mcp_sources);
+        note_origins(&table, "", ConfigLayer::UserProject, &mut origins);
+        merge_tables(&mut merged, table, "");
+        sources.push(user_project.to_path_buf());
     }
     for item in overrides {
         let mut table = parse_override(item)?;
         migrate_legacy(&mut table, &format!("-c {item}"), &mut warnings);
         note_mcp_servers(&table, "-c", &mut mcp_sources);
-        merge_tables(&mut merged, table);
+        note_origins(&table, "", ConfigLayer::Flag, &mut origins);
+        merge_tables(&mut merged, table, "");
     }
+    let kept = merged.clone();
     let file: ConfigFile = toml::Value::Table(merged)
         .try_into()
         .map_err(|e: toml::de::Error| ConfigError::Parse {
@@ -457,7 +548,30 @@ pub fn load(
         warnings,
         sources,
         mcp_sources,
+        origins,
+        merged: kept,
     })
+}
+
+/// Records `layer` as the origin of every leaf of `table`; tables are walked, arrays and
+/// values are leaves.
+fn note_origins(table: &toml::Table, prefix: &str, layer: ConfigLayer, origins: &mut BTreeMap<String, ConfigLayer>) {
+    for (key, value) in table {
+        let path = join_key(prefix, key);
+        match value {
+            toml::Value::Table(inner) if !inner.is_empty() => note_origins(inner, &path, layer, origins),
+            _ => {
+                origins.insert(path, layer);
+            }
+        }
+    }
+}
+
+/// `prefix.key`, the key quoted when it is not a bare TOML key.
+pub fn join_key(prefix: &str, key: &str) -> String {
+    let bare = !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    let key = if bare { key.to_string() } else { toml::Value::String(key.to_string()).to_string() };
+    if prefix.is_empty() { key } else { format!("{prefix}.{key}") }
 }
 
 /// Records that `layer` defines (part of) each MCP server in `table`.
@@ -470,6 +584,16 @@ fn note_mcp_servers(table: &toml::Table, layer: &str, sources: &mut BTreeMap<Str
             }
         }
     }
+}
+
+/// Checks one file's text against the schema (unknown keys are errors) and parses it.
+pub fn check_file(text: &str, path: &Path) -> Result<toml::Table, ConfigError> {
+    let parse_error = |e: toml::de::Error| ConfigError::Parse {
+        path: path.display().to_string(),
+        message: e.to_string(),
+    };
+    toml::from_str::<ConfigFile>(text).map_err(parse_error)?;
+    toml::from_str::<toml::Table>(text).map_err(parse_error)
 }
 
 fn read_table(path: &Path) -> Result<toml::Table, ConfigError> {
@@ -486,18 +610,38 @@ fn read_table(path: &Path) -> Result<toml::Table, ConfigError> {
     toml::from_str::<toml::Table>(&text).map_err(parse_error)
 }
 
-fn merge_tables(base: &mut toml::Table, over: toml::Table) {
+/// Tables merge key by key and arrays replace each other, except the lists that add up:
+/// `rules`, and `skills.disabled` and `skills.opt_in` so that a project's list cannot undo
+/// the user's (design §4.4).
+fn merge_tables(base: &mut toml::Table, over: toml::Table, prefix: &str) {
     for (key, value) in over {
+        let path = join_key(prefix, &key);
         match (base.get_mut(&key), value) {
-            (Some(toml::Value::Table(existing)), toml::Value::Table(incoming)) => merge_tables(existing, incoming),
-            (Some(toml::Value::Array(existing)), toml::Value::Array(incoming)) if key == "rules" => {
+            (Some(toml::Value::Table(existing)), toml::Value::Table(incoming)) => merge_tables(existing, incoming, &path),
+            (Some(toml::Value::Array(existing)), toml::Value::Array(incoming)) if path == "rules" => {
                 existing.extend(incoming)
+            }
+            (Some(toml::Value::Array(existing)), toml::Value::Array(incoming)) if matches!(path.as_str(), "skills.disabled" | "skills.opt_in") => {
+                for item in incoming {
+                    if !existing.contains(&item) {
+                        existing.push(item);
+                    }
+                }
             }
             (_, value) => {
                 base.insert(key, value);
             }
         }
     }
+}
+
+/// Merges the tables of several layers in order, as [`load_layers`] does.
+pub fn merge_all(tables: impl IntoIterator<Item = toml::Table>) -> toml::Table {
+    let mut merged = toml::Table::new();
+    for table in tables {
+        merge_tables(&mut merged, table, "");
+    }
+    merged
 }
 
 /// Renames settings from before the permission modes were renamed, with a warning.
@@ -514,19 +658,19 @@ fn migrate_legacy(table: &mut toml::Table, source: &str, warnings: &mut Vec<Stri
     }
 }
 
-/// Makes relative paths in a project's `skills.paths` and `skills.disabled` relative to the
+/// Makes relative paths in a project's `skills.paths`, `skills.opt_in` and `skills.disabled` relative to the
 /// project, before the layers are merged and their origin is lost.
 fn anchor_skill_paths(table: &mut toml::Table, project_root: &Path) {
     let Some(toml::Value::Table(skills)) = table.get_mut("skills") else {
         return;
     };
-    for key in ["paths", "disabled"] {
+    for key in ["paths", "opt_in", "disabled"] {
         let Some(toml::Value::Array(items)) = skills.get_mut(key) else {
             continue;
         };
         for item in items {
             if let toml::Value::String(path) = item
-                && (key == "paths" || crate::skills::is_path(path))
+                && (key != "disabled" || crate::skills::is_path(path))
                 && !path.starts_with('~')
                 && Path::new(path.as_str()).is_relative()
             {
@@ -707,7 +851,7 @@ mod tests {
     fn skills_settings_and_project_relative_paths() {
         let defaults = Config::default().skills;
         assert!(defaults.enabled);
-        assert_eq!(defaults.dirs, vec![".finx", ".agents", ".claude"]);
+        assert!(!defaults.other_apps);
         assert_eq!(defaults.max_catalog_tokens, 0);
 
         let dir = tempfile::tempdir().unwrap();
@@ -718,7 +862,8 @@ mod tests {
         let project = project_root.join(".finx/config.toml");
         std::fs::write(
             &project,
-            "[skills]\npaths = [\"tools/skills\", \"/abs\", \"~/x\"]\ndisabled = [\"deploy\", \"vendor/skills/old\"]\n",
+            "[skills]\npaths = [\"tools/skills\", \"/abs\", \"~/x\"]\ndisabled = [\"deploy\", \"vendor/skills/old\"]\n\
+             opt_in = [\".claude/skills/deploy\"]\n",
         )
         .unwrap();
         let skills = load(&user, Some(&project), false, &[]).unwrap().config.skills;
@@ -731,16 +876,25 @@ mod tests {
             skills.disabled,
             vec!["deploy".to_string(), project_root.join("vendor/skills/old").display().to_string()]
         );
+        assert_eq!(skills.opt_in, vec![project_root.join(".claude/skills/deploy").display().to_string()]);
         assert_eq!(skills.max_catalog_tokens, 3000);
         let user_only = load(&user, None, false, &["skills.enabled=false".into()]).unwrap().config.skills;
         assert_eq!(user_only.paths, vec!["~/team", "rel"], "left for the working directory");
         assert!(!user_only.enabled);
 
-        for bad in ["\"skills/x\"", "\"..\"", "\"\""] {
-            std::fs::write(&user, format!("[skills]\ndirs = [{bad}]\n")).unwrap();
-            let err = load(&user, None, false, &[]).err().unwrap().to_string();
-            assert!(err.contains("skills.dirs"), "{bad}: {err}");
-        }
+        std::fs::write(&user, "[skills]\ndirs = [\".agents\"]\n").unwrap();
+        let err = load(&user, None, false, &[]).err().unwrap().to_string();
+        assert!(err.contains("skills.dirs was removed") && err.contains("other_apps"), "{err}");
+        std::fs::write(&user, "[skills]\nopt_in = [\"deploy\"]\n").unwrap();
+        let err = load(&user, None, false, &[]).err().unwrap().to_string();
+        assert!(err.contains("skills.opt_in takes paths"), "{err}");
+
+        // Both lists add up across layers, so a project cannot undo the user's choices.
+        std::fs::write(&user, "[skills]\nother_apps = true\nopt_in = [\"~/a/SKILL.md\"]\ndisabled = [\"x\"]\n").unwrap();
+        let skills = load(&user, Some(&project), false, &[]).unwrap().config.skills;
+        assert!(skills.other_apps);
+        assert_eq!(skills.opt_in.len(), 2, "{:?}", skills.opt_in);
+        assert_eq!(skills.disabled.len(), 3, "{:?}", skills.disabled);
     }
 
     #[test]

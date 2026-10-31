@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>连接器详情页</title>
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --win:#ffffff;--win2:#f4f4f7;--side:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.04);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --accent-t:var(--accent-fg);
+  --orange-bg:rgba(208,112,10,.09);--red-bg:rgba(215,51,63,.07);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);--edge:rgba(0,0,0,.1);--lift:0 1px 2px rgba(0,0,0,.1);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;--side:#25252a;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.045);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --orange-bg:rgba(255,171,61,.11);--red-bg:rgba(255,102,112,.1);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);--edge:rgba(255,255,255,.12);--lift:0 1px 3px rgba(0,0,0,.4);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font:13px/1.38 var(--font);-webkit-font-smoothing:antialiased;user-select:none;cursor:default;overflow:hidden;font-feature-settings:"tnum" 0}
+button{font:inherit;color:inherit;cursor:default}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+@keyframes fade{from{opacity:0}}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}
+.btn{height:28px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:13px;color:var(--l1)}
+.btn .ic{width:14px;height:14px}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(40,60,200,.3)}
+.link{border:0;background:none;padding:0;color:var(--accent-t);font-size:12.5px;white-space:nowrap}
+.link:hover{text-decoration:underline;text-underline-offset:2px}
+.badge{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:var(--r-xs);background:var(--fill2);font-size:11px;font-weight:450;color:var(--l2);white-space:nowrap;letter-spacing:0}
+.sw{width:32px;height:19px;border-radius:999px;border:0;background:var(--fill3);position:relative;flex:none;transition:background .2s;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.2,0,0,1)}
+.sw.on{background:var(--accent)}
+.sw.on::after{transform:translateX(13px)}
+.mono{font-family:var(--mono)}
+.l3{color:var(--l3)}
+
+.win{height:100%;display:flex}
+.side{width:248px;flex:none;background:var(--side);padding:52px 10px 0}
+.side .it{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border-radius:var(--r-md);font-size:13.5px}
+.side .it.on{background:var(--fill2)}
+.main{flex:1;min-width:0;overflow-y:auto}
+
+/* The page: one column, at most 920 wide so a line of text stays readable; 34 to the window's
+   sides, as the list page has. Every distance is on the 8 / 13 / 21 / 34 / 55 scale. */
+.body{max-width:920px;padding:44px var(--sp-4) 140px}
+
+/* ── The top line: back, alone. The item's controls sit on its title line, at the right. ── */
+.bar{display:flex;align-items:center;height:28px}
+.back{display:inline-flex;align-items:center;gap:5px;height:28px;margin-left:-8px;padding:0 10px 0 7px;border:0;border-radius:var(--r-sm);background:none;font-size:13px;color:var(--l2);transition:background .15s,color .15s}
+.back:hover{color:var(--l1);background:var(--fill)}
+.back .ic{width:14px;height:14px}
+.acts{display:flex;align-items:center;gap:var(--sp-1);margin-left:auto;padding-left:var(--sp-3)}
+.swl{display:inline-flex;align-items:center;gap:var(--sp-1);height:28px;padding:0 var(--sp-1);font-size:13px;color:var(--l2)}
+.more{width:28px;height:28px;margin-right:-6px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:grid;place-items:center;transition:background .15s,color .15s}
+.more:hover,.more.open{background:var(--fill2);color:var(--l1)}
+
+/* ── The head: the logo, the name large, then one sentence on what it does. ── */
+.head{animation:rise .35s cubic-bezier(.2,0,0,1)}
+.title{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-3)}
+.tile{width:48px;height:48px;border-radius:var(--r-lg);flex:none;position:relative;overflow:hidden;background:var(--fill2);display:grid;place-items:center;font-size:19px;font-weight:600;color:var(--l2);box-shadow:var(--lift);transition:opacity .2s}
+.tile img{width:100%;height:100%;display:block}
+.tile.logo::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 .5px var(--edge)}
+h1{margin:0;font-size:26px;font-weight:650;letter-spacing:-.5px;line-height:32px}
+.title .badge{margin-left:-3px;margin-top:2px}
+.lede{margin:var(--sp-2) 0 0;max-width:600px;font-size:13.5px;line-height:22px;color:var(--l2)}
+
+/* ── The facts: one row, each a small label over its value; no box, no rule. The value's
+   own action (copy, show) waits beside it until the pointer comes. ── */
+.facts{display:flex;flex-wrap:wrap;gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-4)}
+.fact{min-width:0}
+.fact .k{font-size:11.5px;line-height:16px;color:var(--l3)}
+.fact .v{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:13px;line-height:22px;white-space:nowrap}
+.fact .v .mono{font-size:12.5px}
+.fact .v .sub{color:var(--l3)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--l3);flex:none}
+.dot.ok{background:var(--ok)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--danger)}
+.ok-t{color:var(--ok)}.warn-t{color:var(--warn)}.bad-t{color:var(--danger)}
+.ghost{width:20px;height:20px;margin-left:-2px;border:0;border-radius:var(--r-xs);background:none;color:var(--l3);display:grid;place-items:center;opacity:0;transition:opacity .15s,background .15s,color .15s}
+.fact:hover .ghost{opacity:1}
+.ghost:hover{background:var(--fill2);color:var(--l1)}
+.ghost .ic{width:12px;height:12px}
+
+/* ── A note, only when something needs the person; its one action at the right. ── */
+.note{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-4);padding:var(--sp-2) var(--sp-2) var(--sp-2) 15px;border-radius:var(--r-lg);font-size:13px;line-height:20px;animation:rise .25s cubic-bezier(.2,0,0,1)}
+.note>.ic{align-self:flex-start;margin-top:2px;width:15px;height:15px}
+.note .tx{flex:1;min-width:0;color:var(--l2)}
+.note .tx b{display:block;font-weight:550;color:var(--l1)}
+.note .err{display:block;margin-top:3px;font-family:var(--mono);font-size:11.5px;line-height:17px;color:var(--l2);overflow-wrap:anywhere;user-select:text}
+.note.warn{background:var(--orange-bg)}.note.warn>.ic{color:var(--warn)}
+.note.bad{background:var(--red-bg)}.note.bad>.ic{color:var(--danger)}
+
+/* ── The tools: a heading, then a line each, the names in one column. The line lights up under
+   the pointer; a click opens all of what the tool says. ── */
+.tools{margin-top:var(--sp-5);animation:rise .45s cubic-bezier(.2,0,0,1)}
+.th{display:flex;align-items:baseline;gap:7px;margin-bottom:var(--sp-1)}
+.th h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.1px}
+.th .n{font-size:13px;color:var(--l3);font-variant-numeric:tabular-nums}
+.th .right{margin-left:auto;display:flex;align-items:baseline;gap:var(--sp-1);font-size:12px;color:var(--l3)}
+.tool{display:flex;align-items:baseline;gap:var(--sp-3);padding:7px 12px;margin:0 -12px;border-radius:var(--r-md);font-size:13px;line-height:22px;transition:background .12s}
+.tool:hover{background:var(--fill)}
+.tool .tn{width:172px;flex:none;font-family:var(--mono);font-size:12.5px;color:var(--l1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool .td{flex:1;min-width:0;color:var(--l2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tool.open{background:var(--fill)}
+.tool.open .td{white-space:normal;color:var(--l1);user-select:text}
+.empty{margin:var(--sp-1) 0 0;font-size:13px;color:var(--l3)}
+
+/* Off: the page stays readable but steps back; the controls at the top do not. */
+.off .head .tile{opacity:.45}
+.off .facts,.off .tools .list{opacity:.5}
+
+/* ── The ⋯ menu. ── */
+.menu{position:fixed;z-index:20;min-width:208px;padding:5px;border-radius:var(--r-lg);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 10px 32px rgba(0,0,0,.22);animation:fade .12s}
+.menu .mi{display:flex;align-items:center;gap:9px;width:100%;height:28px;padding:0 9px;border:0;border-radius:var(--r-sm);background:none;font-size:13px;text-align:left}
+.menu .mi:hover{background:var(--accent);color:#fff}
+.menu .mi.danger{color:var(--danger)}
+.menu .mi.danger:hover{background:var(--danger);color:#fff}
+.menu .mi .ic{width:14px;height:14px}
+.menu .msep{height:.5px;margin:5px 9px;background:var(--sep)}
+
+/* The demo's own controls, not part of the design. */
+.demo{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:4px;padding:5px;border-radius:var(--r-lg);background:rgba(20,20,24,.88);box-shadow:0 6px 24px rgba(0,0,0,.3);backdrop-filter:blur(12px);z-index:30}
+.demo button{height:26px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;color:rgba(255,255,255,.7);font-size:12px;white-space:nowrap}
+.demo button.on{background:rgba(255,255,255,.18);color:#fff}
+.demo i{width:1px;background:rgba(255,255,255,.15);margin:4px 3px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-back" viewBox="0 0 16 16"><path d="M13 8H3.5M7.5 4 3.5 8l4 4"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.5 3.2 12.8 5.5 6 12.3 3.2 12.8 3.7 10z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r=".95" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".95" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".95" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2.5 4.5A1.5 1.5 0 0 1 4 3h2.6l1.4 1.5h4A1.5 1.5 0 0 1 13.5 6v5.5A1.5 1.5 0 0 1 12 13H4a1.5 1.5 0 0 1-1.5-1.5z"/></symbol>
+  <symbol id="i-retry" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.5-3.6M13 3v2.6h-2.6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2"/></symbol>
+  <symbol id="i-warn" viewBox="0 0 16 16"><path d="M8 2.5 14 13H2zM8 6.5v3M8 11.2v.1"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 16 16"><path d="M9.5 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h5.5M7 8h6.5M11 5.5 13.5 8 11 10.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.3"/><path d="m10.2 10.2 3.3 3.3"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><path d="M11.2 9v4.5M9 11.2h4.5"/></symbol>
+</svg>
+
+<div class="win">
+  <aside class="side">
+    <div class="it"><svg class="ic"><use href="#i-plus"/></svg>新会话</div>
+    <div class="it"><svg class="ic"><use href="#i-search"/></svg>搜索</div>
+    <div class="it on"><svg class="ic"><use href="#i-grid"/></svg>自定义</div>
+  </aside>
+  <main class="main"><div class="body" id="page"></div></main>
+</div>
+<div class="demo" id="demo"></div>
+
+<script>
+const LOGO = "data:image/png;base64,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";
+const icon = (n) => `<svg class="ic"><use href="#i-${n}"/></svg>`;
+const TOOLS = [
+  ["auth_status", "Check this connection's identity, grant and relay connectivity, and whether the grant is still current."],
+  ["hermesh_status", "Check setup and approval of this app's connection, including the user's next step."],
+  ["message_ack", "Acknowledge handled messages by id; the inbox forgets them and their senders see them handled."],
+  ["message_contacts", "The user's agents and machines that have inboxes, with their addresses."],
+  ["message_list", "List the messages waiting in this connection's inbox, oldest first."],
+  ["message_send", "Write a message to a session or to one of the user's agents."],
+  ["message_status", "What became of messages, by id: waiting, taken, handled, held, refused or expired."],
+  ["message_wake", "Ask the owner to have Hermesh wake this agent by webhook when messages arrive."],
+  ["project_list", "The projects on the user's machines that sessions can start in."],
+  ["session_answer", "Answer a question a session asked, or approve what it is waiting on."],
+  ["session_archive", "Archive a finished session."],
+  ["session_diff", "The changes a session made to its project, as a diff."],
+  ["session_events", "What happened in a session since a point: messages, tool calls and results."],
+  ["session_get", "One session: its state, project, model and last message."],
+  ["session_interrupt", "Stop a session's current turn."],
+  ["session_list", "The user's sessions, newest first, with their state."],
+  ["session_start", "Start a session in a project on one of the user's machines, with a first message."],
+  ["session_unarchive", "Bring an archived session back."],
+];
+const VAULT = [["vault_read", "Read a secret by path."], ["vault_list", "List the secret paths under a prefix."], ["vault_write", "Write a secret at a path."]];
+const STATES = { ok: "可用", login: "需要登录", failed: "连接失败", off: "已停用", local: "本地命令", bare: "没有说明" };
+let state = "ok", enabled = true, menuAt = null, picked = null;
+
+function render() {
+  const local = state === "local";
+  const on = state !== "off" && enabled;
+  const live = on && (state === "ok" || state === "local" || state === "bare");
+  const showTools = live || !on;
+  const s = local
+    ? { name: "vault", tools: VAULT, lede: "在本机运行，读写团队 Vault 里的密钥。" }
+    : { name: "hermesh", logo: true, tools: TOOLS, lede: state === "bare" ? "" : "让 agent 在你的各台机器上开会话、互相发消息，并查看会话的进展和改动。" };
+
+  const status = !on ? [``, "已停用"] : state === "login" ? ["warn", "需要登录"] : state === "failed" ? ["bad", "连接失败"] : ["ok", "可用"];
+  const fact = (k, v, action = "") => `<div class="fact"><div class="k">${k}</div><div class="v">${v}${action}</div></div>`;
+  const ghost = (name, title) => `<button class="ghost" title="${title}">${icon(name)}</button>`;
+  const facts = [
+    fact("状态", `<span class="dot ${status[0]}"></span><span class="${status[0] ? status[0] + "-t" : ""}">${status[1]}</span>`),
+    local
+      ? fact("密钥", `VAULT_TOKEN<span class="sub">在钥匙串里</span>`)
+      : fact("账号", state === "login" ? `hermesh.io<span class="sub">未登录</span>` : `hermesh.io<span class="sub">已登录</span>`),
+    local
+      ? fact("命令", `<span class="mono">npx -y @acme/vault-mcp</span>`, ghost("copy", "复制命令"))
+      : fact("地址", `<span class="mono">https://mcp.hermesh.io/mcp</span>`, ghost("copy", "复制地址")),
+  ].join("");
+
+  const note = !on ? "" : state === "login"
+    ? `<div class="note warn">${icon("warn")}<div class="tx"><b>需要登录才能使用</b>在浏览器里用你的 hermesh.io 账号登录，令牌存进系统钥匙串。</div><button class="btn primary" data-act="signin">在浏览器里登录</button></div>`
+    : state === "failed"
+      ? `<div class="note bad">${icon("warn")}<div class="tx"><b>没有连上这个服务器</b><span class="err">error sending request for url (https://mcp.hermesh.io/mcp): connection refused</span></div><button class="btn" data-act="retry">${icon("retry")}重试</button></div>`
+      : "";
+
+  const tools = showTools
+    ? `<div class="list">${s.tools.map(([n, d]) => `<div class="tool ${picked === n ? "open" : ""}" data-tool="${n}"><span class="tn">${n}</span><span class="td">${d}</span></div>`).join("")}</div>`
+    : `<p class="empty">${state === "failed" ? "连上之后，这里列出它提供的工具。" : "登录之后，这里列出它提供的工具。"}</p>`;
+
+  document.getElementById("page").innerHTML = `
+    <div class="${on ? "" : "off"}">
+      <div class="bar">
+        <button class="back">${icon("back")}连接器</button>
+      </div>
+      <div class="head">
+        <div class="title">
+          <div class="tile ${s.logo ? "logo" : ""}">${s.logo ? `<img src="${LOGO}" alt="">` : s.name[0].toUpperCase()}</div>
+          <h1>${s.name}</h1><span class="badge">自定义</span>
+          <div class="acts">
+            <label class="swl">启用<button class="sw ${on ? "on" : ""}" data-act="toggle" role="switch" aria-checked="${on}"></button></label>
+            <button class="more ${menuAt ? "open" : ""}" data-act="menu" title="更多">${icon("more")}</button>
+          </div>
+        </div>
+        ${s.lede ? `<p class="lede">${s.lede}</p>` : ""}
+        <div class="facts">${facts}</div>
+      </div>
+      ${note}
+      <section class="tools">
+        <div class="th"><h2>工具</h2>${showTools ? `<span class="n">${s.tools.length}</span>` : ""}${live ? `<span class="right">2 分钟前检测<button class="link" data-act="retry">重新检测</button></span>` : ""}</div>
+        ${tools}
+      </section>
+    </div>`;
+
+  document.querySelector(".menu")?.remove();
+  if (menuAt) {
+    const m = document.createElement("div");
+    m.className = "menu";
+    m.innerHTML = `
+      <button class="mi">${icon("edit")}编辑配置…</button>
+      <div class="msep"></div>
+      <button class="mi" data-act="retry">${icon("retry")}重新检测</button>
+      <button class="mi">${icon("copy")}复制${local ? "命令" : "地址"}</button>
+      ${!local && live ? `<button class="mi" data-act="logout">${icon("logout")}退出登录</button>` : ""}
+      <div class="msep"></div>
+      <button class="mi danger">${icon("trash")}删除连接器…</button>`;
+    document.body.append(m);
+    m.style.top = `${menuAt.bottom + 6}px`;
+    m.style.left = `${Math.max(8, menuAt.right - m.offsetWidth)}px`;
+  }
+
+  const theme = document.documentElement.dataset.theme;
+  const row = (items, key, cur) => Object.entries(items).map(([k, v]) => `<button class="${cur === k ? "on" : ""}" data-${key}="${k}">${v}</button>`).join("");
+  document.getElementById("demo").innerHTML = `${row(STATES, "state", state)}<i></i>${row({ light: "浅色", dark: "深色" }, "theme", theme)}`;
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  const d = b?.dataset ?? {};
+  if (d.act === "menu") {
+    menuAt = menuAt ? null : b.getBoundingClientRect();
+    return render();
+  }
+  menuAt = null;
+  if (d.state) (state = d.state), (enabled = true), (picked = null);
+  if (d.theme) document.documentElement.dataset.theme = d.theme;
+  const line = !b && e.target.closest("[data-tool]");
+  if (line) picked = picked === line.dataset.tool ? null : line.dataset.tool;
+  if (d.act === "toggle") state === "off" ? ((state = "ok"), (enabled = true)) : (enabled = !enabled);
+  if (d.act === "signin" || (d.act === "retry" && state === "failed")) state = "ok";
+  if (d.act === "logout") state = "login";
+  render();
+});
+render();
+</script>
+</body>
+</html>

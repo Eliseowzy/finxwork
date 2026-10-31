@@ -2465,7 +2465,7 @@ pub enum RuleDecision { Allow, Ask, Deny }
 - **受保护路径**：会配置工具，或者会被工具自动执行的位置。
   - 在 manual 和 accept-edits 模式下，写入受保护路径都要询问；allow 规则和"本会话总是允许"都不会事先放行。bypass-permissions 下不拦截。
   - 目录，路径中任何一级都算：`.git`、`.finx`、`.vscode`、`.idea`、`.husky`、`.cargo`、`.devcontainer`、`.yarn`、`.mvn`、`.aws`、`.kube`、`.ssh`、`.agents`、`.claude`，以及 `.config/git`。
-  - Skill 的位置：`skills.paths` 中的目录，以及 `skills.dirs` 中上面没有的目录名。写进去的内容会成为以后每个会话的指令（skill-design.md §8.3）。
+  - Skill 的位置：`skills.paths` 中的目录（Skill 的其他位置都在上面的 `.agents`、`.claude` 和数据目录里）。写进去的内容会成为以后每个会话的指令（skill-design.md §8.3）。
   - `.git` 是文件时（worktree、子模块、`git init --separate-git-dir`），它用 `gitdir:` 指向的 git 目录也受保护。
   - 文件，在任何位置都算：
     - git：`.gitconfig`、`.gitmodules`；

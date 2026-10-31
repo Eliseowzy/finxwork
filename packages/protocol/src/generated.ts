@@ -138,6 +138,73 @@ export type CompactionReason = "manual" | "threshold" | "overflow" | "model_swit
 /** Why a task completed normally. */
 export type CompletionReason = "done" | "max_turns" | "output_limit" | "hook";
 
+/** `config/changed`: a configuration file changed, written by finx or by someone else. */
+export type ConfigChangedParams = {
+  file: string;
+};
+
+/** One change: a dotted key path such as `mcp_servers.github.enabled`, and its new value; null removes the key. */
+export type ConfigEdit = {
+  key_path: string;
+  merge?: ConfigMerge;
+  value: unknown;
+};
+
+/** A configuration layer, lowest priority first (design §4.3). */
+export type ConfigLayer = "user" | "project_json" | "project" | "user_project" | "flag";
+
+export type ConfigLayerInfo = {
+  exists: boolean;
+  file: string;
+  layer: ConfigLayer;
+  /** The first 16 hex digits of the file's SHA-256, or "absent". */
+  version: string;
+  writable: boolean;
+};
+
+export type ConfigMerge = "replace" | "upsert";
+
+/** A written key that a higher layer sets too. */
+export type ConfigOverride = {
+  file?: string | null;
+  key_path: string;
+  layer: ConfigLayer;
+};
+
+export type ConfigReadParams = {
+  /** The directory whose project layers to include; absent: the user's file only. */
+  cwd?: string | null;
+  /** Also describe each layer: its file, version and whether finx writes it. */
+  layers?: boolean;
+};
+
+export type ConfigReadResult = {
+  /** The merged configuration as TOML would give it, `${credential:…}` references kept. */
+  config: unknown;
+  layers?: ConfigLayerInfo[];
+  /** The layer that last set each leaf, by dotted key path. */
+  origins: { [key: string]: ConfigLayer };
+};
+
+export type ConfigWriteParams = {
+  /** Required for `user_project`: a directory in the project. */
+  cwd?: string | null;
+  edits: ConfigEdit[];
+  /** The version `config/read` gave; the write fails if the file changed since. */
+  expected_version?: string | null;
+  /** `user` or `user_project`; the others are read-only. */
+  layer: ConfigLayer;
+};
+
+export type ConfigWriteResult = {
+  file: string;
+  overridden_by?: ConfigOverride[];
+  status: ConfigWriteStatus;
+  version: string;
+};
+
+export type ConfigWriteStatus = "ok" | "overridden";
+
 export type ConnectionConnectParams = {
   adapter_id: string;
   discovery_id: string;
@@ -239,6 +306,17 @@ export type Cost = {
 
 /** Where a provider's key comes from, checked without contacting the provider. */
 export type CredentialState = "connection" | "missing" | "not_required" | "config" | "env" | "stored" | "command";
+
+export type CredentialsDeleteParams = {
+  name: string;
+};
+
+/** A secret for configuration values to refer to as `${credential:<name>}`. */
+export type CredentialsSetParams = {
+  /** Starts with `mcp.`: 1-96 letters, digits, `.`, `_` or `-` after it. */
+  name: string;
+  value: string;
+};
 
 export type Currency = "USD" | "CNY";
 
@@ -515,8 +593,139 @@ export type MailInfo = {
 
 export type MailKind = "report";
 
+export type McpAuthKind = "none" | "oauth" | "credential";
+
+export type McpAuthMode = "oauth";
+
+export type McpAuthState = "logged_in" | "needs_login" | "saved" | "missing";
+
+/** `mcp/changed`: a server's status, cached result or configuration changed; or a sign-in started with `mcp/login` ended (`login_id`, with `login_error` when it failed). */
+export type McpChangedParams = {
+  login_error?: string | null;
+  login_id?: string | null;
+  name?: string | null;
+};
+
+export type McpCheckResult = {
+  server: McpServerView;
+  tools: McpToolSummary[];
+};
+
 /** How a server's tools reach the model. */
 export type McpExposure = "deferred" | "direct";
+
+export type McpListParams = {
+  cwd?: string | null;
+};
+
+export type McpListResult = {
+  servers: McpServerView[];
+  warnings?: string[];
+};
+
+/** `mcp/login`: starts signing in to a server. With `server`, the server is not in the configuration yet: the token is saved under `name`, and adding it comes after. */
+export type McpLoginParams = {
+  /** The identity the person chose; used when the authorization server allows it, else the usual order (mcp-design D-182). */
+  client?: McpOAuthClientKind | null;
+  cwd?: string | null;
+  name: string;
+  server?: McpServerConfig | null;
+};
+
+export type McpLoginResult = {
+  /** Open in the system browser; the sign-in ends with `mcp/changed { login_id }`. */
+  authorize_url: string;
+  client: McpOAuthClientKind;
+  login_id: string;
+};
+
+export type McpLogoutParams = {
+  name: string;
+};
+
+/** An OAuth client the user registered with the provider. */
+export type McpOAuthClient = {
+  client_id: string;
+  /** Only for providers that require one; best written as a `${credential:…}` reference. */
+  client_secret?: string | null;
+  scopes?: string[];
+};
+
+/** The OAuth client identity a sign-in would use (mcp-design D-182). */
+export type McpOAuthClientKind = "metadata_document" | "registration" | "own";
+
+export type McpProbeAuth = {
+  oauth?: McpProbeOAuth | null;
+  /** The server answered 401. */
+  required: boolean;
+};
+
+export type McpProbeCancelParams = {
+  probe_id: string;
+};
+
+export type McpProbeKind = "remote" | "local";
+
+/** What the authorization server of a remote server supports. */
+export type McpProbeOAuth = {
+  /** Its issuer. */
+  authorization_server: string;
+  metadata_document: boolean;
+  /** PKCE with S256, which finx requires. */
+  pkce: boolean;
+  registration: boolean;
+  scopes?: string[];
+};
+
+/** `mcp/probe`: checks a server before it is added, writing nothing (mcp-design §13.6). */
+export type McpProbeParams = {
+  /** Working directory and root of a local command. */
+  cwd?: string | null;
+  /** Chosen by the caller; progress notifications and `mcp/probe_cancel` use it. */
+  probe_id: string;
+  /** The server as it would be written: secrets as `${credential:…}` references. */
+  server: McpServerConfig;
+};
+
+/** `mcp/probe_progress`: one step of a probe started or ended. */
+export type McpProbeProgressParams = {
+  probe_id: string;
+  step: McpProbeStep;
+};
+
+export type McpProbeResult = {
+  auth?: McpProbeAuth | null;
+  /** Why the probe failed; absent when it passed. */
+  error?: string | null;
+  /** The service's logo as a `data:` URI: the icon the server declares, else its website's. */
+  icon?: string | null;
+  kind: McpProbeKind;
+  steps: McpProbeStep[];
+  suggested: McpProbeSuggestion;
+  /** The server's tools, when the probe got that far. */
+  tools?: McpToolSummary[];
+  /** Remote: the transport that answered. */
+  transport?: McpRemoteTransport | null;
+};
+
+export type McpProbeStep = {
+  detail?: string | null;
+  http_status?: number | null;
+  id: McpProbeStepId;
+  state: McpProbeStepState;
+};
+
+export type McpProbeStepId = "connect" | "resource" | "auth_server" | "start" | "handshake" | "tools";
+
+export type McpProbeStepState = "running" | "ok" | "failed" | "skipped";
+
+export type McpProbeSuggestion = {
+  auth: McpSuggestedAuth;
+  client?: McpOAuthClientKind | null;
+};
+
+/** How a remote server is reached. */
+export type McpRemoteTransport = "streamable_http" | "sse";
 
 /**
  * One MCP server: a local command (stdio) or a URL (Streamable HTTP).
@@ -525,6 +734,8 @@ export type McpExposure = "deferred" | "direct";
  */
 export type McpServerConfig = {
   args?: string[];
+  /** Remote server: `oauth` signs in with OAuth; the token is kept in the credential store. */
+  auth?: McpAuthMode | null;
   /** Sends `Authorization: Bearer $VAR`. */
   bearer_token_env_var?: string | null;
   /** Local server: the program to start. Exactly one of `command` and `url` is set. */
@@ -550,6 +761,8 @@ export type McpServerConfig = {
   headers?: { [key: string]: string };
   /** The key of `[mcp_servers.<name>]`; 1-32 letters, digits, `_` or `-`. */
   name?: string;
+  /** Remote server: the user's own OAuth client, used before any other identity. */
+  oauth?: McpOAuthClient | null;
   /** Every tool of this server may run in parallel with other read-only tools. */
   parallel_tools?: boolean;
   /** The first request always waits for this server, and a task fails without it. */
@@ -558,6 +771,8 @@ export type McpServerConfig = {
   startup_timeout_secs?: number | null;
   /** Longest call without progress. Default 300. */
   tool_timeout_secs?: number | null;
+  /** Remote server: Streamable HTTP, or the older HTTP+SSE. Absent: SSE when the URL ends in `/sse`, else Streamable HTTP. */
+  transport?: McpRemoteTransport | null;
   /** Remote server: the Streamable HTTP endpoint. */
   url?: string | null;
 };
@@ -571,7 +786,72 @@ export type McpServerInfo = {
   tools: number;
 };
 
-export type McpServerState = "ready" | "starting" | "failed" | "closed";
+export type McpServerParams = {
+  cwd?: string | null;
+  name: string;
+};
+
+export type McpServerState = "ready" | "starting" | "failed" | "needs_login" | "closed";
+
+export type McpServerStatusView = {
+  /** RFC 3339. */
+  checked_at?: string | null;
+  elapsed_ms?: number | null;
+  error?: string | null;
+  /** Open sessions connected to it. */
+  sessions?: number | null;
+  source?: McpStatusSource | null;
+  state: McpStatusState;
+  tools?: number | null;
+};
+
+/** One server as the page shows it; secrets never appear, only the names they are saved under. */
+export type McpServerView = {
+  auth: McpAuthKind;
+  auth_state?: McpAuthState | null;
+  /** The credentials its configuration refers to. */
+  credentials?: string[];
+  description?: string | null;
+  /** When disabled: the layer that turned it off. */
+  disabled_by?: ConfigLayer | null;
+  /** Defined in a file finx writes for the user. */
+  editable: boolean;
+  enabled: boolean;
+  file?: string | null;
+  /** The service's logo as a `data:` URI, when one was found (mcp-design §13.9). */
+  icon?: string | null;
+  /** Which service it reaches, whatever its name: two servers with the same identity are the same service (mcp-design §13.10). */
+  identity?: string | null;
+  /** The layer that defines the server (its command or URL). */
+  layer: ConfigLayer;
+  name: string;
+  status: McpServerStatusView;
+  /** The command line, or the URL without its query. */
+  summary: string;
+  transport: McpTransportKind;
+};
+
+export type McpStatusSource = "session" | "cache";
+
+export type McpStatusState = "ok" | "failed" | "needs_login" | "unknown" | "untrusted";
+
+export type McpSuggestedAuth = "oauth" | "token" | "none";
+
+export type McpToolSummary = {
+  description?: string | null;
+  name: string;
+  title?: string | null;
+};
+
+export type McpToolsResult = {
+  checked_at?: string | null;
+  source: McpToolsSource;
+  tools: McpToolSummary[];
+};
+
+export type McpToolsSource = "session" | "cache" | "none";
+
+export type McpTransportKind = "stdio" | "http" | "sse";
 
 /** A message of the conversation. The parts are shared: the session history and every request built from it point at the same data, so cloning a message is cheap. */
 export type Message = {
@@ -800,6 +1080,8 @@ export type ServerCapabilities = {
   agents: boolean;
   /** `auth/set`, `auth/delete`, and `providers` in `models/list`. */
   auth: boolean;
+  /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */
+  customize: boolean;
   event_filter: boolean;
   max_frame_bytes: number;
   model_connections: boolean;
@@ -972,6 +1254,8 @@ export type SessionsChangedParams = {
 export type SkillEntry = {
   /** What to type after `/name`, from the header's `argument-hint`. */
   argument_hint?: string | null;
+  /** Whether it is on when the user has not turned it on or off: false for a project's `.claude/skills`, which `skills.opt_in` turns on. Then `disabled` means "off by default". */
+  default_enabled: boolean;
   /** One line, at most 1,024 characters; empty when invalid. */
   description: string;
   /** The winner's path when shadowed; the reason when invalid. */
@@ -984,12 +1268,37 @@ export type SkillEntry = {
   notes?: string[];
   /** The `SKILL.md`, absolute, as found: symbolic links are kept. */
   path: string;
+  /** In `~/.finx/skills` (not built in), so `skills/remove` takes it. */
+  removable?: boolean;
   scope: SkillScope;
+  /** Where finx installed it from (`.finx-source.json`). */
+  source?: SkillSource | null;
   state: SkillState;
 };
 
+export type SkillFileInfo = {
+  dir: boolean;
+  /** Relative to the skill's directory. */
+  path: string;
+  size: number;
+};
+
+export type SkillInstallScope = "user" | "project";
+
 /** Where a skill comes from. Earlier layers win when names collide. */
-export type SkillScope = "project" | "user" | "extra";
+export type SkillScope = "project" | "user" | "extra" | "system";
+
+/** `.finx-source.json` in a skill's directory: where finx installed it from. */
+export type SkillSource = {
+  id?: string | null;
+  installed_at?: string | null;
+  kind: SkillSourceKind;
+  /** Of the installed files; tells whether the user changed them since. */
+  sha256?: string | null;
+  version?: string | null;
+};
+
+export type SkillSourceKind = "catalog" | "upload";
 
 export type SkillState = "active" | "shadowed" | "disabled" | "invalid";
 
@@ -998,6 +1307,46 @@ export type SkillUse = {
   name: string;
   /** The skill's SKILL.md. */
   path: string;
+};
+
+/** `skills/changed`: a skill directory or a setting about skills changed. */
+export type SkillsChangedParams = {
+  cwd?: string | null;
+};
+
+export type SkillsFilesParams = {
+  /** The skill's directory or its `SKILL.md`. */
+  path: string;
+};
+
+export type SkillsFilesResult = {
+  /** At most 500 entries, 6 levels deep. */
+  files: SkillFileInfo[];
+  skill_md: string;
+  /** `skill_md` was cut at 256 KB. */
+  truncated: boolean;
+};
+
+export type SkillsInstallParams = {
+  /** Required for the project scope: a directory in the project. */
+  cwd?: string | null;
+  /** Read and check only; write nothing. */
+  dry_run?: boolean;
+  /** A skill directory, a `SKILL.md`, or a `.zip` or `.skill` archive. */
+  from: string;
+  /** Replace a skill of the same name (moved to the trash first). */
+  replace?: boolean;
+  scope?: SkillInstallScope;
+  /** Recorded in `.finx-source.json`; absent: an upload. */
+  source?: SkillSource | null;
+};
+
+export type SkillsInstallResult = {
+  /** A dry run found a skill of the same name there. */
+  conflict?: string | null;
+  /** As installed; for a dry run, as it would be. */
+  skill: SkillEntry;
+  target: string;
 };
 
 /** Parameters of `skills/list`: `session_id` or `cwd`, or neither for what a session without a project would find. */
@@ -1015,9 +1364,28 @@ export type SkillsListResult = {
   commands?: CommandInfo[];
   /** `skills.enabled` */
   enabled: boolean;
+  /** Other apps' folders that hold skills but are not read (`skills.other_apps` is off). */
+  not_read?: string[];
   /** In priority order. */
   skills: SkillEntry[];
   warnings: string[];
+};
+
+export type SkillsRemoveParams = {
+  path: string;
+};
+
+export type SkillsSetEnabledParams = {
+  enabled: boolean;
+  /** The skill's `SKILL.md` or directory. */
+  path: string;
+};
+
+export type SkillsSetEnabledResult = {
+  /** The user's configuration file that now lists or no longer lists it. */
+  file: string;
+  /** A name-form entry for the same skill was removed too. */
+  removed_names?: string[];
 };
 
 /** Result of `session/resume` and `session/attach`. */
@@ -1126,6 +1494,8 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "config/read": [ConfigReadParams, ConfigReadResult];
+  "config/write": [ConfigWriteParams, ConfigWriteResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];
   "connections/disconnect": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/discover": [Record<string, never>, ConnectionsDiscoveryResult];
@@ -1133,7 +1503,16 @@ export interface Methods {
   "connections/models": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/remove": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/retry": [ConnectionIdParams, ConnectionsSnapshot];
+  "credentials/delete": [CredentialsDeleteParams, Empty];
+  "credentials/set": [CredentialsSetParams, Empty];
   "initialize": [InitializeParams, InitializeResult];
+  "mcp/check": [McpServerParams, McpCheckResult];
+  "mcp/list": [McpListParams, McpListResult];
+  "mcp/login": [McpLoginParams, McpLoginResult];
+  "mcp/logout": [McpLogoutParams, Empty];
+  "mcp/probe": [McpProbeParams, McpProbeResult];
+  "mcp/probe_cancel": [McpProbeCancelParams, Empty];
+  "mcp/tools": [McpServerParams, McpToolsResult];
   "models/list": [Record<string, never>, ModelsListResult];
   "models/refresh": [ModelsRefreshParams, ModelsRefreshResult];
   "models/show": [ModelsShowParams, Empty];
@@ -1154,15 +1533,23 @@ export interface Methods {
   "session/unarchive": [SessionIdParams, Empty];
   "sessions/subscribe": [SessionListParams, SessionListResult];
   "sessions/unsubscribe": [Record<string, never>, Empty];
+  "skills/files": [SkillsFilesParams, SkillsFilesResult];
+  "skills/install": [SkillsInstallParams, SkillsInstallResult];
   "skills/list": [SkillsListParams, SkillsListResult];
+  "skills/remove": [SkillsRemoveParams, Empty];
+  "skills/set_enabled": [SkillsSetEnabledParams, SkillsSetEnabledResult];
 }
 
 /** Notifications: their params. */
 export interface ServerNotifications {
+  "config/changed": ConfigChangedParams;
+  "mcp/changed": McpChangedParams;
+  "mcp/probe_progress": McpProbeProgressParams;
   "models/changed": Empty;
   "session/detached": SessionDetachedParams;
   "session/event": SessionEventParams;
   "sessions/changed": SessionsChangedParams;
+  "skills/changed": SkillsChangedParams;
 }
 
 /** Notifications: their params. */
@@ -1186,6 +1573,15 @@ export const RPC_ERROR_KINDS = {
   "-32020": "task_failed",
   "-32021": "key_rejected",
   "-32022": "model_unavailable",
+  "-32023": "config_version_conflict",
+  "-32024": "config_layer_readonly",
+  "-32025": "config_validation_error",
+  "-32026": "config_busy",
+  "-32027": "skill_invalid",
+  "-32028": "skill_conflict",
+  "-32029": "not_removable",
+  "-32030": "credential_store_unavailable",
+  "-32031": "mcp_login_failed",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

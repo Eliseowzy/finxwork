@@ -1,5 +1,7 @@
 //! A scriptable MCP server for tests, over stdio (`finx-mcp-server`) or Streamable HTTP
-//! (in-process with [`serve_http`], or `finx-mcp-server --http ADDR`).
+//! (in-process with [`serve_http`], or `finx-mcp-server --http ADDR`). Over HTTP it can also
+//! require a token or OAuth ([`McpTestAuth`], with the authorization server in
+//! [`crate::mcp_auth`]), and speak the older HTTP+SSE transport at `/sse` instead.
 //!
 //! | Tool | Behaviour |
 //! |---|---|
@@ -45,6 +47,12 @@ use tokio::sync::Notify;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 
+use crate::mcp_auth::McpTestAuth;
+use crate::mcp_auth::OAuthState;
+
+/// The logo the test server declares: a 64-pixel tile, teal with a white bar, as an app icon is.
+pub const ICON: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAWElEQVR42u3WQQ0AIAwEwWqoYBTguZggTSFzWQPzu8i9ni4AAAAAAAAAAAAAAAAAAAAAAAA+B1TjAAAAAAAAAACmAbxRAAAAAAAAAAAAAAAAAAAAAACAax2wg+zdIlH2xgAAAABJRU5ErkJggg==";
+
 /// A 1×1 transparent PNG.
 pub const PNG_1X1: &str =
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
@@ -63,6 +71,10 @@ pub struct McpTestOptions {
     pub log: Option<PathBuf>,
     /// `crash` and `spawn_sleeper` work only when the server is its own process.
     pub own_process: bool,
+    /// Over HTTP: who may call.
+    pub auth: McpTestAuth,
+    /// Over HTTP: the 2024-11-05 HTTP+SSE transport at `/sse` (`POST /sse` answers 405).
+    pub legacy_sse: bool,
 }
 
 impl Default for McpTestOptions {
@@ -75,6 +87,8 @@ impl Default for McpTestOptions {
             page_size: 0,
             log: None,
             own_process: false,
+            auth: McpTestAuth::None,
+            legacy_sse: false,
         }
     }
 }
@@ -100,6 +114,11 @@ struct State {
     asked: Mutex<HashMap<i64, oneshot::Sender<Value>>>,
     next_id: AtomicI64,
     calls: AtomicU64,
+    /// `http://host:port`, once bound.
+    base: Mutex<String>,
+    oauth: OAuthState,
+    /// Open `GET /sse` streams by session.
+    sse: Mutex<HashMap<u64, Out>>,
 }
 
 impl State {
@@ -111,6 +130,9 @@ impl State {
             asked: Mutex::new(HashMap::new()),
             next_id: AtomicI64::new(1),
             calls: AtomicU64::new(0),
+            base: Mutex::new(String::new()),
+            oauth: OAuthState::default(),
+            sse: Mutex::new(HashMap::new()),
         })
     }
 
@@ -183,7 +205,8 @@ impl State {
             "initialize" => Ok(json!({
                 "protocolVersion": params.get("protocolVersion").and_then(Value::as_str).unwrap_or("2025-06-18"),
                 "capabilities": { "tools": { "listChanged": true } },
-                "serverInfo": { "name": self.options.name, "version": "1.0.0" },
+                // A declared logo (MCP 2025-11-25), so clients can show it.
+                "serverInfo": { "name": self.options.name, "version": "1.0.0", "icons": [{ "src": ICON, "mimeType": "image/png", "sizes": ["64x64"] }] },
                 "instructions": self.options.instructions,
             })),
             "ping" => Ok(json!({})),
@@ -419,12 +442,30 @@ pub struct McpHttpServer {
 }
 
 impl McpHttpServer {
+    /// The MCP endpoint: `/mcp`, or `/sse` for the older transport.
     pub fn url(&self) -> String {
-        format!("http://{}/mcp", self.addr)
+        let path = if self.state.options.legacy_sse { "sse" } else { "mcp" };
+        format!("http://{}/{path}", self.addr)
     }
 
     pub fn calls(&self) -> u64 {
         self.state.calls.load(Ordering::Relaxed)
+    }
+
+    /// Dynamic client registrations, authorization-code grants, refreshes and revocations.
+    pub fn oauth_counts(&self) -> (u64, u64, u64, u64) {
+        let o = &self.state.oauth;
+        (
+            o.registrations.load(Ordering::Relaxed),
+            o.grants.load(Ordering::Relaxed),
+            o.refreshes.load(Ordering::Relaxed),
+            o.revocations.load(Ordering::Relaxed),
+        )
+    }
+
+    /// The `client_id` of the last authorization request.
+    pub fn last_client(&self) -> Option<String> {
+        self.state.oauth.last_client.lock().clone()
     }
 }
 
@@ -433,6 +474,7 @@ pub async fn serve_http(addr: &str, options: McpTestOptions) -> io::Result<McpHt
     let listener = TcpListener::bind(addr).await?;
     let addr = listener.local_addr()?;
     let state = State::new(options);
+    *state.base.lock() = format!("http://{addr}");
     let sessions = Arc::new(AtomicU64::new(0));
     let accept_state = state.clone();
     tokio::spawn(async move {
@@ -445,11 +487,11 @@ pub async fn serve_http(addr: &str, options: McpTestOptions) -> io::Result<McpHt
     Ok(McpHttpServer { addr, state })
 }
 
-struct HttpRequest {
-    method: String,
-    path: String,
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
+pub(crate) struct HttpRequest {
+    pub(crate) method: String,
+    pub(crate) path: String,
+    pub(crate) headers: HashMap<String, String>,
+    pub(crate) body: Vec<u8>,
 }
 
 async fn read_http(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<Option<HttpRequest>> {
@@ -488,7 +530,7 @@ async fn read_http(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<Opti
     Ok(Some(HttpRequest { method, path, headers, body }))
 }
 
-async fn write_response(stream: &mut TcpStream, status: &str, extra: &str, body: &[u8]) -> io::Result<()> {
+pub(crate) async fn write_response(stream: &mut TcpStream, status: &str, extra: &str, body: &[u8]) -> io::Result<()> {
     let head = format!("HTTP/1.1 {status}\r\n{extra}Content-Length: {}\r\n\r\n", body.len());
     stream.write_all(head.as_bytes()).await?;
     stream.write_all(body).await?;
@@ -498,7 +540,58 @@ async fn write_response(stream: &mut TcpStream, status: &str, extra: &str, body:
 async fn serve_http_connection(mut stream: TcpStream, state: Arc<State>, sessions: Arc<AtomicU64>) {
     let mut buf = Vec::new();
     while let Ok(Some(request)) = read_http(&mut stream, &mut buf).await {
-        if request.path != "/mcp" {
+        let (path, query) = request.path.split_once('?').map(|(p, q)| (p.to_string(), q.to_string())).unwrap_or((request.path.clone(), String::new()));
+        let base = state.base.lock().clone();
+        let endpoint = if state.options.legacy_sse { "/sse" } else { "/mcp" };
+        let site = crate::mcp_auth::Site { auth: &state.options.auth, oauth: &state.oauth, base: &base, resource_path: endpoint };
+        if let Some(result) = crate::mcp_auth::route(&mut stream, &request, &path, &query, &site).await {
+            if result.is_err() {
+                return;
+            }
+            continue;
+        }
+        if state.options.legacy_sse {
+            // `/stream` is the same stream at an address that does not end in `/sse`.
+            let stream_path = matches!(path.as_str(), "/sse" | "/stream");
+            if !(stream_path || path == "/messages") || (request.method == "POST" && stream_path) {
+                let status = if stream_path { "405 Method Not Allowed" } else { "404 Not Found" };
+                if write_response(&mut stream, status, "", b"").await.is_err() {
+                    return;
+                }
+                continue;
+            }
+            match crate::mcp_auth::admit(&mut stream, &request, &state.options.auth, &state.oauth, &base, if path == "/stream" { "/stream" } else { "/sse" }).await {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(_) => return,
+            }
+            if request.method == "GET" {
+                serve_sse_stream(stream, state).await;
+                return;
+            }
+            let session: u64 = crate::mcp_auth::form(&query).get("session").and_then(|s| s.parse().ok()).unwrap_or(0);
+            let Some(out) = state.sse.lock().get(&session).cloned() else {
+                let _ = write_response(&mut stream, "404 Not Found", "", b"unknown session").await;
+                return;
+            };
+            let Ok(message) = serde_json::from_slice::<Value>(&request.body) else {
+                let _ = write_response(&mut stream, "400 Bad Request", "", b"not JSON").await;
+                return;
+            };
+            tokio::spawn(state.clone().handle(message, out));
+            if write_response(&mut stream, "202 Accepted", "", b"").await.is_err() {
+                return;
+            }
+            continue;
+        }
+        if request.path.split('?').next() == Some("/mcp") {
+            match crate::mcp_auth::admit(&mut stream, &request, &state.options.auth, &state.oauth, &base, "/mcp").await {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(_) => return,
+            }
+        }
+        if path != "/mcp" {
             if write_response(&mut stream, "404 Not Found", "", b"").await.is_err() {
                 return;
             }
@@ -582,6 +675,24 @@ async fn serve_http_connection(mut stream: TcpStream, state: Arc<State>, session
             }
         }
     }
+}
+
+/// `GET /sse`: names the address for messages, then carries every message the server sends.
+async fn serve_sse_stream(mut stream: TcpStream, state: Arc<State>) {
+    static SESSIONS: AtomicU64 = AtomicU64::new(0);
+    let session = SESSIONS.fetch_add(1, Ordering::Relaxed) + 1;
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    state.sse.lock().insert(session, tx);
+    let head = format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\n\r\nevent: endpoint\ndata: /messages?session={session}\n\n");
+    if stream.write_all(head.as_bytes()).await.is_ok() && stream.flush().await.is_ok() {
+        while let Some(out) = rx.recv().await {
+            let event = format!("event: message\ndata: {out}\n\n");
+            if stream.write_all(event.as_bytes()).await.is_err() || stream.flush().await.is_err() {
+                break;
+            }
+        }
+    }
+    state.sse.lock().remove(&session);
 }
 
 #[cfg(test)]

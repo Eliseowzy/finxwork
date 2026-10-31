@@ -136,7 +136,9 @@ pub async fn check(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
     }
     let servers: Vec<McpServerConfig> = rt.mcp_servers.iter().filter(|s| s.is_enabled()).cloned().collect();
     let http = servers.iter().any(|s| s.url.is_some()).then(|| rt.llm.http_client().ok()).flatten();
-    let checks = finx_core::mcp::check_servers(servers, http, vec![rt.cwd.clone()], rt.cwd.clone(), rt.project_root.clone()).await;
+    let checks =
+        finx_core::mcp::check_servers(servers, http, vec![rt.cwd.clone()], rt.cwd.clone(), rt.project_root.clone(), Some(rt.home.mcp_cache_dir()), Some(rt.home.root().to_path_buf()))
+            .await;
     let failed = checks.iter().any(|c| c.state != McpServerState::Ready);
     if as_json {
         let rows: Vec<Value> = checks

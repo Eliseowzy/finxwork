@@ -16,6 +16,7 @@ pub mod mirror;
 pub mod native;
 pub mod server;
 pub mod transport;
+pub mod watch;
 
 pub use conn::ConnHandle;
 pub use conn::Encoder;
@@ -34,4 +35,5 @@ pub use transport::serve_stdio;
 pub use transport::serve_unix;
 
 mod connections;
+mod customize;
 mod models;

@@ -132,6 +132,8 @@ pub struct HubShared {
     /// [`idle_clock`]; 0 while it is in use or closing. A full server unloads the session
     /// unused the longest.
     pub idle_since: AtomicU64,
+    /// Each MCP server's latest status in this session, for the 自定义 page (`mcp/list`).
+    pub mcp: parking_lot::Mutex<std::collections::BTreeMap<String, finx_protocol::McpServerInfo>>,
     done: watch::Receiver<bool>,
 }
 
@@ -216,6 +218,7 @@ pub(crate) fn spawn(
         attached: AtomicU32::new(0),
         summary: parking_lot::Mutex::new(summary_of(&mirror, &base, true, 0)),
         idle_since: AtomicU64::new(0),
+        mcp: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
         done: done_rx,
     });
     let mut hub = Hub {
@@ -291,6 +294,12 @@ impl Hub {
     fn dispatch(&mut self, event: Event) {
         self.mirror.apply(&event);
         match &event.msg {
+            EventMsg::McpServerStatus { server, state, tools, error, .. } => {
+                self.shared.mcp.lock().insert(
+                    server.clone(),
+                    finx_protocol::McpServerInfo { server: server.clone(), state: *state, tools: *tools, error: error.clone() },
+                );
+            }
             EventMsg::ApprovalResolved { call_id, .. } => {
                 self.answered.remove(call_id);
             }

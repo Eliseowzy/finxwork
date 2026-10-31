@@ -16,8 +16,8 @@
 .settings .frow>.psel{width:auto}
 .set-note{margin:8px 4px 0;color:var(--l2);font-size:12px;line-height:1.55}
 .form>.set-note{margin-top:-13px}
-.mtile{width:28px;height:28px;border-radius:7px;background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none;font-size:12px;font-weight:600}
-.badge{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:999px;background:var(--fill2);font-size:11px;color:var(--l2)}
+.mtile{width:28px;height:28px;border-radius:var(--r-sm);background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none;font-size:12px;font-weight:600}
+.badge{display:inline-flex;align-items:center;height:18px;padding:0 7px;border-radius:var(--r-xs);background:var(--fill2);font-size:11px;color:var(--l2)}
 .badge.ok{background:var(--green-bg);color:var(--green)}
 .badge.warn{background:var(--orange-bg);color:var(--orange)}
 .badge.acc{background:var(--accent-bg);color:var(--accent-t)}
@@ -28,15 +28,15 @@
 /* Models: two grouped lists; each row a mark, the name over its state, and its action. */
 .models .mrow{min-height:52px}
 .models .mrow .provider-brand{width:28px;height:28px}
-.models .mrow .brand-initial{border-radius:7px;font-size:13px}
+.models .mrow .brand-initial{border-radius:var(--r-sm);font-size:13px}
 .models .mrow .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
 .models .fdesc.ok{color:var(--green)}
 .models .fdesc.warn{color:var(--orange)}
-.mlogo{position:relative;width:28px;height:28px;flex:none;display:grid;place-items:center;border-radius:7px;font-size:16px;font-weight:650}
+.mlogo{position:relative;width:28px;height:28px;flex:none;display:grid;place-items:center;border-radius:var(--r-sm);font-size:16px;font-weight:650}
 .mlogo-qwen{background:#ede9ff;color:#6444d8}
 .mlogo-qwen i{position:absolute;right:1px;bottom:-3px;font-size:10px;font-style:normal;color:#8863ec}
-.mrow-add{width:100%;border:0;border-top:.5px solid var(--sep);background:none;font:inherit;font-size:13px;color:var(--accent-t);text-align:left;cursor:pointer;gap:8px;border-radius:0 0 12px 12px}
-.mrow-add:first-child{border-top:0;border-radius:12px}
+.mrow-add{width:100%;border:0;border-top:.5px solid var(--sep);background:none;font:inherit;font-size:13px;color:var(--accent-t);text-align:left;cursor:pointer;gap:8px;border-radius:0 0 var(--r-lg) var(--r-lg)}
+.mrow-add:first-child{border-top:0;border-radius:var(--r-lg)}
 .mrow-add:hover{background:var(--fill)}
 .mrow-add .ic{width:14px;height:14px}
 .mrow-err{margin:6px 4px 0;font-size:12px;line-height:1.5;color:var(--red)}
@@ -55,13 +55,13 @@
 .mm-status{margin:8px 22px 4px;font-size:12px;color:var(--l3)}
 .models-manage .mrow-err{margin:4px 22px}
 .mm-list{max-height:min(420px,60vh);overflow-y:auto;margin:6px 0 0;padding:0 14px 18px}
-.mm-row{display:flex;align-items:center;gap:12px;padding:9px 8px;border-radius:8px}
+.mm-row{display:flex;align-items:center;gap:12px;padding:9px 8px;border-radius:var(--r-md)}
 .mm-row:hover{background:var(--fill)}
 .mm-row.off .mm-name{color:var(--l2)}
 .mm-main{flex:1;min-width:0}
 .mm-name{font-size:13px;color:var(--l1);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .mm-meta{font-size:11px;color:var(--l3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mm-tag{font-size:10px;line-height:16px;padding:0 5px;border-radius:4px;background:var(--fill2);color:var(--l2)}
+.mm-tag{font-size:10px;line-height:16px;padding:0 5px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
 .mm-tag.warn{background:var(--orange-bg,var(--fill2));color:var(--orange)}
 .mm-tag.new{background:var(--accent-bg);color:var(--accent-t)}
 .mm-empty{margin:14px 8px;font-size:12px;color:var(--l3)}

@@ -11,12 +11,12 @@
 /* An approval (session/Approval.tsx), above the composer and in its shape:
    a line on what and why, the command or change itself, the answers as
    buttons on one row. */
-.appr{background:var(--pill);border-radius:12px;box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:10px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
+.appr{background:var(--pill);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:10px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
 .appr-h{display:flex;align-items:center;gap:8px;min-width:0;font-size:13.5px;line-height:20px}
 .appr-h b{font-weight:600;flex:none;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .appr-h .why{flex:1;min-width:0;color:var(--l2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appr-h .qx-tag{margin-left:auto;flex:none}
-.appr-pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--l1);background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);border-radius:10px;padding:8px 11px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:132px;overflow-y:auto}
+.appr-pre{margin:0;font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--l1);background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);border-radius:var(--r-md);padding:8px 11px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:132px;overflow-y:auto}
 .appr-pre.diff{padding:6px 0}
 .appr-pre.diff>span{display:block;padding:0 11px}
 .appr-pre .add{background:var(--add-bg);color:var(--add-fg)}
@@ -24,12 +24,12 @@
 .appr-pre .more{display:block;color:var(--l3)}
 .appr-f{display:flex;align-items:center;gap:8px}
 .appr-f .btn{height:30px;padding:0 14px}
-.appr-f .field{flex:1;height:30px;border-radius:10px}
+.appr-f .field{flex:1;height:30px;border-radius:var(--r-sm)}
 .appr-sp{flex:1}
 
 /* A key notice (session/Notice.tsx), above the composer in an approval's shape: a warning sign and
    what holds now, a few lines on why it matters, the answers on one row. */
-.knote{background:var(--pill);border-radius:12px;box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:6px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
+.knote{background:var(--pill);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:14px 14px 12px 16px;display:flex;flex-direction:column;gap:6px;animation:cbarup .32s cubic-bezier(.2,0,0,1)}
 .knote-h{display:flex;align-items:center;gap:8px;min-width:0;font-size:13.5px;line-height:20px}
 .knote-h b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .knote-i{width:16px;height:16px;flex:none;color:var(--orange)}
@@ -39,7 +39,7 @@
    what is written; what is attached shows as tiles above the text. Its
    corners a little tighter than the window's; its buttons' corners follow
    them, 6 px in. The I-beam over all of it but its buttons and tiles. */
-.cmp{cursor:text;background:var(--pill);border-radius:12px;box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
+.cmp{cursor:text;background:var(--pill);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
 .cmp-row{display:flex;align-items:flex-end;gap:4px}
 .cmp button,.cmp .tile{cursor:default}
 /* The text (composer/PromptEditor.tsx, Lexical): plain text that grows to
@@ -51,17 +51,17 @@
 /* A skill mentioned as /skill:name: a tag with its name, in the composer and
    in the conversation. The text stays /skill:name for copying. */
 .skill-tag-host{display:inline}
-.skill-tag{display:inline-flex;align-items:center;gap:3px;padding:0 6px 0 4px;margin:0 1px;border-radius:6px;background:var(--accent-bg);color:var(--accent-t);font-size:.92em;line-height:1.45;vertical-align:baseline;user-select:none;white-space:nowrap;cursor:default}
+.skill-tag{display:inline-flex;align-items:center;gap:3px;padding:0 6px 0 4px;margin:0 1px;border-radius:var(--r-sm);background:var(--accent-bg);color:var(--accent-t);font-size:.92em;line-height:1.45;vertical-align:baseline;user-select:none;white-space:nowrap;cursor:default}
 .skill-tag .ic{width:12px;height:12px;stroke-width:1.8}
 .skill-tag-text{font-size:0}
 /* The `/` menu above the caret: a skill's name and description, its argument hint at the right. */
 .cmd-menu{width:360px;max-height:300px}
 .cmd-menu .mi .two{flex:1}
 .cmd-menu .mi .two span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cmp-plus{width:32px;height:32px;border-radius:7px;border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
+.cmp-plus{width:32px;height:32px;border-radius:var(--r-sm);border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
 .cmp-plus:hover,.cmp-plus[aria-expanded="true"]{background:var(--fill2);color:var(--l1)}
 .cmp-plus .ic{width:18px;height:18px;stroke-width:1.5}
-.send{width:32px;height:32px;border-radius:7px;border:0;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 2px rgba(40,60,200,.3);transition:background .15s}
+.send{width:32px;height:32px;border-radius:var(--r-sm);border:0;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 2px rgba(40,60,200,.3);transition:background .15s}
 .send:disabled{background:var(--fill3);color:var(--win);box-shadow:none}
 /* A task runs and nothing is typed: Stop, in red, where Send was. */
 .send.stop{background:var(--red);color:#fff;box-shadow:0 1px 2px rgba(200,40,60,.3)}
@@ -73,26 +73,26 @@
    its name (four lines at most) and its type. × shows on hover. */
 .cmp-att{display:flex;flex-wrap:wrap;gap:8px;padding:4px 4px 0}
 .tile{position:relative;width:96px;height:96px;flex:none}
-.tile-open{width:100%;height:100%;padding:0;border:0;border-radius:12px;overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--l1);font:inherit;text-align:left}
+.tile-open{width:100%;height:100%;padding:0;border:0;border-radius:var(--r-md);overflow:hidden;display:flex;flex-direction:column;align-items:flex-start;background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--l1);font:inherit;text-align:left}
 .tile-open:hover{background:var(--fill2)}
 .tile.img .tile-open{box-shadow:0 0 0 .5px var(--sep)}
 .tile.img .tile-open img{display:block;width:100%;height:100%;object-fit:cover}
 .tile.img .tile-open:hover img{opacity:.88}
 .tile.doc .tile-open{padding:9px 9px 8px;gap:5px}
 .tile-name{flex:1;min-height:0;width:100%;font-size:11.5px;line-height:15px;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
-.tile-kind{flex:none;max-width:100%;overflow:hidden;font-size:9.5px;font-weight:600;line-height:15px;letter-spacing:.03em;color:var(--l2);padding:0 5px;border-radius:5px;box-shadow:inset 0 0 0 .5px var(--l4)}
+.tile-kind{flex:none;max-width:100%;overflow:hidden;font-size:9.5px;font-weight:600;line-height:15px;letter-spacing:.03em;color:var(--l2);padding:0 5px;border-radius:var(--r-xs);box-shadow:inset 0 0 0 .5px var(--l4)}
 .tile-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:var(--l1);color:var(--win);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--pill);opacity:0;transition:opacity .12s}
 .tile:hover .tile-x,.tile-x:focus-visible{opacity:1}
 .tile-x .ic{width:10px;height:10px;stroke-width:2.2}
 /* An image over the window, on a dark veil. */
 .lightbox{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:40px;background:rgba(0,0,0,.72);animation:fade .15s;-webkit-app-region:no-drag}
-.lightbox img{max-width:100%;max-height:100%;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.5);animation:zoomin .2s cubic-bezier(.2,0,0,1)}
+.lightbox img{max-width:100%;max-height:100%;border-radius:var(--r-md);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:zoomin .2s cubic-bezier(.2,0,0,1)}
 @keyframes zoomin{from{transform:scale(.96);opacity:.6}to{transform:none;opacity:1}}
 
 /* Under the composer, outside it: what the message goes with, as quiet buttons. */
 .cmp-meta{display:flex;align-items:center;gap:2px;padding:0 12px;margin-top:-4px;min-width:0}
 .cmp-meta .sp{flex:1}
-.mb{height:26px;border:0;border-radius:7px;background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
+.mb{height:26px;border:0;border-radius:var(--r-sm);background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
 .mb:hover,.mb[aria-expanded="true"]{background:var(--fill);color:var(--l1)}
 .mb:disabled{opacity:.5}
 .mb .ic{width:14px;height:14px;flex:none}
@@ -113,7 +113,7 @@
    settings. */
 .keyform{display:flex;flex-direction:column;gap:10px}
 .keyform label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--l2)}
-.keyform .field{height:30px;border-radius:8px;font-size:13px}
+.keyform .field{height:30px;border-radius:var(--r-sm);font-size:13px}
 .keyform select.field{appearance:auto}
 .keyform .note{margin:0;font-size:11.5px;line-height:1.5;color:var(--l3)}
 .keyform .err{margin:0;font-size:12px;color:var(--red)}

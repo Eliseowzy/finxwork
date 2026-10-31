@@ -47,6 +47,7 @@ function webPreferences() {
       arg("lang", language()),
       arg("platform", platform.id),
       arg("kernel", kernelKind),
+      arg("catalog", app.isPackaged ? path.join(process.resourcesPath, "catalog/skills") : path.join(app.getAppPath(), "resources/catalog/skills")),
     ],
   };
 }

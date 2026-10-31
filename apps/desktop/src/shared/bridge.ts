@@ -106,6 +106,12 @@ export type Bridge = {
   onCommand(cb: (c: Command) => void): () => void;
   setMenuState(state: MenuState): void;
   pickDirectory(): Promise<string | null>;
+  /** A skill to upload, from the system's dialog: a folder, or a .zip, .skill or .md file. */
+  pickSkillSource(): Promise<string | null>;
+  /** The path of a file or folder dropped on the page. */
+  pathForFile(file: File): string;
+  /** The 自定义 page's catalog skills: in the app's resources, or the repository's in development. */
+  catalogDir: string;
   /** Files to attach, from the system's dialog; images read (up to 10 MB each), others by path. */
   pickFiles(): Promise<PickedFile[]>;
   /** Shows a file or folder in Finder (Explorer, the file manager). */

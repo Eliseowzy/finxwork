@@ -15,6 +15,8 @@ name = "finx-mcp-server"
 path = "src/bin/finx-mcp-server.rs"
 
 [dependencies]
+base64.workspace = true
+ring.workspace = true
 parking_lot.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["io-std", "net"] }

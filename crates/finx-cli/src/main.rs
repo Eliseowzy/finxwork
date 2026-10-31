@@ -2,6 +2,7 @@
 
 mod approval_prompt;
 mod cmd_chat;
+mod cmd_customize;
 mod cmd_exec;
 mod cmd_info;
 mod cmd_mcp;
@@ -122,7 +123,9 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
-    /// List the skills that a session started here would offer the model
+    /// List the skills that a session started here would offer the model; `add`, `remove`,
+    /// `enable` and `disable` change them
+    #[command(args_conflicts_with_subcommands = true)]
     Skills {
         /// Directory (default: the current directory)
         dir: Option<PathBuf>,
@@ -132,13 +135,15 @@ enum Command {
         /// Print JSON
         #[arg(long)]
         json: bool,
+        #[command(subcommand)]
+        action: Option<SkillsAction>,
     },
     /// Trust a project so its .finx/config.toml may change security settings
     Trust {
         /// Project directory (default: the current directory)
         dir: Option<PathBuf>,
     },
-    /// Show the MCP servers of this project
+    /// Show, add and remove the MCP servers of this project
     Mcp {
         #[command(subcommand)]
         command: McpCommand,
@@ -181,6 +186,94 @@ enum McpCommand {
         /// Print JSON
         #[arg(long)]
         json: bool,
+    },
+    /// Check a server, then add it to your configuration; one that signs in with OAuth is signed in first
+    Add {
+        name: String,
+        /// The server's URL (streamable HTTP)
+        #[arg(long, conflicts_with = "command")]
+        url: Option<String>,
+        /// An HTTP header, as KEY=VALUE (repeatable)
+        #[arg(long = "header", value_name = "KEY=VALUE", requires = "url")]
+        headers: Vec<String>,
+        /// A variable for the command, as KEY=VALUE (repeatable)
+        #[arg(long = "env", value_name = "KEY=VALUE")]
+        env: Vec<String>,
+        /// Keep this --env variable's value in the keychain; the configuration refers to it
+        #[arg(long = "secret-env", value_name = "KEY")]
+        secret_env: Vec<String>,
+        /// Read a bearer token from standard input and keep it in the keychain
+        #[arg(long, requires = "url")]
+        token: bool,
+        /// Only for you, only in this project (your personal project settings)
+        #[arg(long, conflicts_with = "project")]
+        here: bool,
+        /// In the project's .finx/config.toml, for everyone who uses the repository
+        #[arg(long)]
+        project: bool,
+        /// Add it even when the check fails
+        #[arg(long)]
+        force: bool,
+        /// Do not sign in now; sign in later with `finx mcp login`
+        #[arg(long)]
+        no_login: bool,
+        /// The command that runs the server, after --
+        #[arg(last = true, value_name = "COMMAND")]
+        command: Vec<String>,
+    },
+    /// Sign in to a server with OAuth in your browser
+    Login { name: String },
+    /// Sign out of a server: revoke and delete its tokens
+    Logout { name: String },
+    /// Remove a server from the file that defines it
+    Remove {
+        name: String,
+        /// Also from the project's .finx/config.toml
+        #[arg(long)]
+        project: bool,
+    },
+    /// Turn a server on again
+    Enable {
+        name: String,
+        /// Only for you, only in this project
+        #[arg(long)]
+        here: bool,
+    },
+    /// Turn a server off; a server of the repository is turned off for you alone
+    Disable {
+        name: String,
+        /// Only for you, only in this project
+        #[arg(long)]
+        here: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum SkillsAction {
+    /// Copy a skill (a folder with SKILL.md, or a .zip or .skill archive) into ~/.finx/skills
+    Add {
+        path: PathBuf,
+        /// Into the project's .agents/skills instead
+        #[arg(long)]
+        project: bool,
+        /// Put it in place of a skill of the same name (the old one goes to the trash)
+        #[arg(long)]
+        replace: bool,
+    },
+    /// Move one of your own skills to the trash
+    Remove {
+        /// A name, or a path to the skill
+        skill: String,
+    },
+    /// Turn a skill on again
+    Enable {
+        /// A name (every skill of the name), or a path (that copy)
+        skill: String,
+    },
+    /// Turn a skill off in your configuration
+    Disable {
+        /// A name (every skill of the name), or a path (that copy)
+        skill: String,
     },
 }
 
@@ -316,6 +409,18 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         Command::Mcp {
             command: McpCommand::List { check: true, json },
         } => cmd_mcp::check(overrides, json).await,
+        Command::Mcp {
+            command: McpCommand::Add { name, url, headers, env, secret_env, token, here, project, force, no_login, command },
+        } => {
+            cmd_customize::mcp_add(cmd_customize::AddArgs { name, url, headers, env, secret_env, token, here, project, command, force, no_login })
+                .await
+        }
+        Command::Mcp {
+            command: McpCommand::Login { name },
+        } => cmd_customize::mcp_login(&name).await,
+        Command::Mcp {
+            command: McpCommand::Logout { name },
+        } => cmd_customize::mcp_logout(&name).await,
         Command::Sessions { .. }
         | Command::Models { .. }
         | Command::Status { .. }
@@ -372,7 +477,13 @@ fn main() -> ExitCode {
         }
         Command::Status { json } => cmd_info::status(&overrides, json),
         Command::Doctor { json } => cmd_info::doctor(&overrides, json),
-        Command::Skills { dir, all, json } => cmd_info::skills(&overrides, dir, all, json),
+        Command::Skills { action: Some(action), .. } => match action {
+            SkillsAction::Add { path, project, replace } => cmd_customize::skills_add(&path, project, replace),
+            SkillsAction::Remove { skill } => cmd_customize::skills_remove(&skill),
+            SkillsAction::Enable { skill } => cmd_customize::skills_switch(&skill, true),
+            SkillsAction::Disable { skill } => cmd_customize::skills_switch(&skill, false),
+        },
+        Command::Skills { dir, all, json, action: None } => cmd_info::skills(&overrides, dir, all, json),
         Command::Trust { dir } => cmd_info::trust(dir),
         Command::Mcp {
             command: McpCommand::List { check: false, json },
@@ -380,6 +491,15 @@ fn main() -> ExitCode {
         Command::Mcp {
             command: McpCommand::Get { name, json },
         } => cmd_mcp::get(&overrides, &name, json),
+        Command::Mcp {
+            command: McpCommand::Remove { name, project },
+        } => cmd_customize::mcp_remove(&name, project),
+        Command::Mcp {
+            command: McpCommand::Enable { name, here },
+        } => cmd_customize::mcp_switch(&name, true, here),
+        Command::Mcp {
+            command: McpCommand::Disable { name, here },
+        } => cmd_customize::mcp_switch(&name, false, here),
         Command::Protocol {
             command: ProtocolCommand::Schema,
         } => cmd_serve::schema(),

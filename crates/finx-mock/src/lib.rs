@@ -31,11 +31,13 @@
 //! | `churn:N[:SEED]` | N tool turns in one task, each picked at random: read, write or edit `notes/state.txt`, append to `notes/log.txt`, search with grep, find or rg, read part of a file; then `churn done` (see [`churn_step`]) |
 //! | `mcp:SERVER:PROJECT` | `tool_search` for the vault tool, `call_tool` on `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
+//! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
 //!
 //! [`MockOptions`] adds a gateway's latency: a pause before the first chunk of every reply
 //! and between chunks.
 
 pub mod mcp;
+pub mod mcp_auth;
 
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -493,6 +495,13 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 ("mcp", 0) => Plan::Step(Step::calls(vec![("tool_search", json!({ "query": "vault release code" }))])),
                 ("mcp", 1) => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": tool, "arguments": arguments }))])),
                 ("mcp_direct", 0) => Plan::Step(Step::calls(vec![(tool.as_str(), arguments)])),
+                _ => Plan::Step(Step::text(format!("mcp done: {}", last_tool_result(messages)))),
+            }
+        }
+        "mcp_env" => {
+            let (server, var) = arg.split_once(':').unwrap_or((arg, "PATH"));
+            match step {
+                0 => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": format!("mcp__{server}__env"), "arguments": { "name": var } }))])),
                 _ => Plan::Step(Step::text(format!("mcp done: {}", last_tool_result(messages)))),
             }
         }

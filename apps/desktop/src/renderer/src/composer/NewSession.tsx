@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { draftModel, projectNames, recentProjects } from "@finx/client";
 import { SidebarToggle } from "../components";
@@ -25,6 +25,12 @@ export function NewSession() {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [greeting] = useState(() => greetings[Math.floor(Math.random() * greetings.length)]);
+  // 自定义 › 在对话中使用 (or 创建) starts the message with the skill.
+  useEffect(() => {
+    if (st.prefill === null) return;
+    setText(st.prefill);
+    st.set({ prefill: null });
+  }, [st.prefill, st.set]);
   const recent = recentProjects(st.sessions.filter((s) => !s.archived));
   // A project chosen, else the latest one, else none.
   const cwd = st.draft.noProject ? null : (st.draft.cwd ?? recent[0] ?? null);

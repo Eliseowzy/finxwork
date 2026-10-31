@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>添加连接器 · 分组表单</title>
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --win:#ffffff;--win2:#f4f4f7;--win3:#ebebf0;--side:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --accent-t:var(--accent-fg);--accent-bg:rgba(31,107,255,.10);
+  --green:var(--ok);--green-bg:rgba(23,146,79,.11);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --field:#ffffff;--field-bd:rgba(0,0,0,.16);--seg-on:#ffffff;
+  --menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);--scrim:rgba(0,0,0,.18);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;
+  --win:#1e1e21;--win2:#29292d;--win3:#323237;--side:#25252a;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.05);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --accent-bg:rgba(46,128,255,.16);--green-bg:rgba(63,207,134,.14);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --field:rgba(255,255,255,.06);--field-bd:rgba(255,255,255,.16);--seg-on:rgba(255,255,255,.22);
+  --menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);--scrim:rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font:13px/1.38 var(--font);-webkit-font-smoothing:antialiased;user-select:none;cursor:default;overflow:hidden}
+button,input{font:inherit;color:inherit}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+@keyframes sheet{from{opacity:0;transform:translateY(8px) scale(.985)}}
+@keyframes fade{from{opacity:0}}
+.btn{height:26px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn.primary{background:var(--accent);color:#fff;box-shadow:0 1px 2px rgba(40,60,200,.3)}
+.btn:disabled{opacity:.42}
+.link{border:0;background:none;padding:0;color:var(--accent-t);cursor:pointer}
+.field{height:24px;border-radius:var(--r-sm);border:0;box-shadow:inset 0 0 0 1px var(--field-bd);background:var(--field);padding:0 8px;font-size:12.5px;outline:none;width:100%;user-select:text}
+.field:focus{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px var(--accent-bg)}
+.field.mono{font-family:var(--mono);font-size:12px}
+.field::placeholder{color:var(--l3)}
+.badge{display:inline-flex;align-items:center;gap:3px;height:17px;padding:0 6px;border-radius:var(--r-xs);background:var(--fill2);font-size:10.5px;color:var(--l2);white-space:nowrap}
+.badge.acc{background:var(--accent-bg);color:var(--accent-t)}
+.badge .ic{width:10px;height:10px;stroke-width:2.2}
+
+.page{height:100%;display:flex}
+.side{width:272px;background:var(--side)}
+.main{flex:1;padding:44px 34px}
+.main h1{margin:0;font-size:28px;font-weight:650}
+.scrim{position:fixed;inset:0 0 64px;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;animation:fade .2s}
+
+/* The sheet: fixed header and footer, the form between; it grows with its content up to the window. */
+.sheet{width:520px;max-height:calc(100vh - 110px);display:flex;flex-direction:column;background:var(--win);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1);overflow:hidden}
+.sh-head{padding:17px 21px 13px}
+.sh-head h3{margin:0;font-size:15px;font-weight:600}
+.sh-body{padding:0 21px 21px;overflow-y:auto;flex:1;min-height:0}
+.sh-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:13px 21px;border-top:.5px solid var(--sep)}
+.sh-foot .left{margin-right:auto;font-size:12px;color:var(--l3)}
+
+/* Grouped form, as System Settings: a label on the left, its control on the right, rows on a hairline. */
+.group{border-radius:var(--r-lg);background:var(--win2)}
+.group+.group,.group+.gh,.foot+.gh,.foot+.group,.disclose+.group{margin-top:var(--sp-3)}
+.gh{font-size:12px;color:var(--l2);margin:0 0 6px 2px}
+.row{display:flex;align-items:center;gap:var(--sp-2);min-height:40px;padding:7px var(--sp-2)}
+.row+.row{border-top:.5px solid var(--sep)}
+.row>.k{flex:none;width:96px;color:var(--l1)}
+.row>.v{flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.row>.v .field{max-width:260px}
+.row.stack{align-items:flex-start}
+.row.stack>.v{flex-direction:column;align-items:stretch}
+.foot{font-size:11.5px;color:var(--l2);line-height:1.55;margin:7px 2px 0}
+.foot b{font-weight:500;color:var(--l1)}
+.foot .det{color:var(--accent-t)}
+
+/* The item it describes. */
+.who{display:flex;align-items:center;gap:var(--sp-2);min-height:56px}
+.who .tile{width:32px;height:32px;border-radius:var(--r-md);background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
+.who .t{flex:1;min-width:0}
+.who .n{font-weight:500}
+.who .a{font-family:var(--mono);font-size:11.5px;color:var(--l2);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* A pop-up button: the chosen item and the up-down chevrons; its menu lists the others. */
+.pop{height:24px;display:inline-flex;align-items:center;gap:6px;padding:0 6px 0 9px;border:0;border-radius:var(--r-sm);background:var(--btn);box-shadow:var(--btn-sh);font-size:12.5px;max-width:260px;white-space:nowrap}
+.pop .lbl{overflow:hidden;text-overflow:ellipsis}
+.pop .chev{width:12px;height:12px;color:var(--l2)}
+.menu{position:fixed;z-index:60;min-width:240px;max-width:340px;background:var(--menu-solid);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.28);padding:4px;animation:fade .12s}
+.mi{display:flex;gap:8px;align-items:flex-start;width:100%;border:0;background:none;border-radius:var(--r-sm);padding:6px 8px;text-align:left}
+.mi:hover:not(:disabled){background:var(--accent);color:#fff}
+.mi:hover:not(:disabled) small,.mi:hover:not(:disabled) .badge{color:rgba(255,255,255,.85);background:rgba(255,255,255,.18)}
+.mi .ck{width:14px;flex:none;margin-top:1px}
+.mi .ck .ic{width:13px;height:13px;stroke-width:2}
+.mi .tx{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.mi .tx span{display:flex;align-items:center;gap:6px}
+.mi small{font-size:11.5px;color:var(--l2);line-height:1.45}
+.mi:disabled{opacity:.45}
+.msep{height:.5px;background:var(--sep);margin:4px 8px}
+
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px}
+.seg button{border:0;background:transparent;height:20px;padding:0 10px;border-radius:var(--r-xs);font-size:12px;white-space:nowrap}
+.seg button.on{background:var(--seg-on);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.disclose{display:flex;align-items:center;gap:6px;border:0;background:none;padding:0;margin-top:var(--sp-3);font-size:12px;color:var(--l2)}
+.disclose .ic{width:12px;height:12px;transition:transform .15s}
+.disclose.open .ic{transform:rotate(90deg)}
+.hdr{display:grid;grid-template-columns:1fr 1.4fr 22px;gap:6px;align-items:center}
+.lockb{width:22px;height:22px;border:0;border-radius:var(--r-sm);background:var(--accent-bg);color:var(--accent-t);display:flex;align-items:center;justify-content:center;padding:0}
+.lockb .ic{width:12px;height:12px}
+.trust{font-size:11.5px;color:var(--l3);line-height:1.55;margin-top:var(--sp-3)}
+.code{font-family:var(--mono);font-size:11.5px;color:var(--l2)}
+
+.demo{position:fixed;left:12px;right:12px;bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:8px 10px;border-radius:var(--r-lg);background:rgba(20,20,24,.86);color:#ddd;font-size:11.5px;z-index:80}
+:root:not([data-theme="dark"]) .demo{background:rgba(250,250,252,.92);color:#333;box-shadow:0 0 0 .5px rgba(0,0,0,.12)}
+.demo b{font-weight:600;margin-right:4px}
+.demo button{border:0;border-radius:var(--r-sm);padding:4px 8px;background:rgba(127,127,127,.18);cursor:pointer;font-size:11.5px}
+.demo button.on{background:var(--accent);color:#fff}
+.demo .sp{flex:1}
+</style>
+</head>
+<body>
+<div class="page" aria-hidden="true"><div class="side"></div><div class="main"><h1>自定义</h1></div></div>
+<div class="scrim"><div class="sheet" id="sheet"></div></div>
+<div class="demo" id="demo"></div>
+<script>
+const I = {
+  globe: '<circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c1.6 1.6 2.4 3.4 2.4 5.5S9.6 11.9 8 13.5M8 2.5C6.4 4.1 5.6 5.9 5.6 8s.8 3.9 2.4 5.5"/>',
+  term: '<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M4.5 6.5 6.5 8l-2 1.5M8 10h3"/>',
+  updown: '<path d="M5.5 6 8 3.5 10.5 6M5.5 10 8 12.5 10.5 10"/>',
+  check: '<path d="M3.5 8.5l3 3 6-7"/>',
+  chev: '<path d="M6 4l4 4-4 4"/>',
+  lock: '<rect x="3.5" y="7" width="9" height="6" rx="1.2"/><path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7"/>',
+};
+const ic = (n, c = "") => `<svg class="ic ${c}" viewBox="0 0 16 16">${I[n]}</svg>`;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// What the check found, per case.
+const cases = {
+  hermesh: { name: "hermesh", url: "https://mcp.hermesh.io/mcp", issuer: "hermesh.io", status: 401, oauth: true, cimd: true, dcr: true, transport: "http" },
+  github: { name: "github", url: "https://api.githubcopilot.com/mcp/", issuer: "github.com", status: 401, oauth: true, cimd: false, dcr: false, transport: "http" },
+  apikey: { name: "search", url: "https://api.example-search.com/mcp", status: 401, oauth: false, transport: "http" },
+  open: { name: "context7", url: "https://mcp.context7.com/mcp", status: 200, oauth: false, transport: "http" },
+  sse: { name: "legacy", url: "https://mcp.example.dev/sse", status: 200, oauth: false, transport: "sse" },
+};
+let C = cases.hermesh;
+const S = { auth: "oauth", client: "auto", transport: "http", adv: false, menu: null, sendAs: false };
+function reset(key) {
+  C = cases[key];
+  S.auth = C.status === 200 ? "none" : C.oauth ? "oauth" : "token";
+  S.client = C.dcr ? "auto" : "own";
+  S.transport = C.transport;
+  S.adv = false; S.menu = null; S.sendAs = false;
+}
+
+const authItems = () => [
+  { v: "oauth", t: "用账号登录", tag: "OAuth", d: `在浏览器里登录${C.issuer ? " " + C.issuer : ""}，令牌存进钥匙串，过期自动续期。`, off: !C.oauth && "服务器没有公布登录服务" },
+  { v: "token", t: "令牌或 API Key", d: "把服务商给的令牌放进请求头。" },
+  { v: "none", t: "不需要鉴权", d: "服务器对外开放，直接连接。" },
+];
+// Who finx signs in as is finx's business; only the advanced options show it.
+const clientItems = () => [
+  { v: "auto", t: "自动", d: "finx 自己向登录服务登记，不用设置。", off: !C.dcr && `${C.issuer} 不接受应用自动登记` },
+  { v: "own", t: "你自己的 OAuth 应用", d: "用你在服务商那里登记的应用，比如公司要求使用固定的 Client ID。" },
+];
+const transportItems = () => [
+  { v: "http", t: "Streamable HTTP", d: "现行的传输方式。" },
+  { v: "sse", t: "SSE（旧版）", d: "只支持旧方式的服务器用它。" },
+];
+const detectedAuth = () => (C.status === 200 ? "none" : C.oauth ? "oauth" : "token");
+const detectedClient = () => null;
+const label = (items, v) => items.find((i) => i.v === v)?.t ?? "";
+
+function pop(id, items, value, detected) {
+  return `<button class="pop" data-menu="${id}">${value === detected ? `<span class="badge acc">${ic("check")}检测到</span>` : ""}<span class="lbl">${esc(label(items, value))}</span>${ic("updown", "chev")}</button>`;
+}
+
+function body() {
+  const rows = [];
+  rows.push(`<div class="row"><span class="k">方式</span><span class="v">${pop("auth", authItems(), S.auth, detectedAuth())}</span></div>`);
+  if (S.auth === "oauth") {
+    if (S.client === "own") {
+      rows.push(`<div class="row"><span class="k">Client ID</span><span class="v"><input class="field mono" placeholder="Iv23li…"></span></div>`);
+      rows.push(`<div class="row"><span class="k">Client Secret</span><span class="v"><input class="field mono" type="password" placeholder="可不填，存进钥匙串"></span></div>`);
+    }
+  }
+  if (S.auth === "token") {
+    rows.push(`<div class="row"><span class="k">令牌</span><span class="v"><input class="field mono" type="password" placeholder="粘贴令牌，存进钥匙串"></span></div>`);
+    rows.push(S.sendAs
+      ? `<div class="row"><span class="k">发送为</span><span class="v"><input class="field mono" style="max-width:130px" value="Authorization"><input class="field mono" style="max-width:120px" value="Bearer "></span></div>`
+      : `<div class="row"><span class="k">发送为</span><span class="v"><span class="code">Authorization: Bearer ‹令牌›</span><button class="link" data-act="sendas" style="font-size:12px">修改</button></span></div>`);
+  }
+  const what = {
+    oauth: `${C.dcr ? `添加后在浏览器里用你的 <b>${esc(C.issuer)}</b> 账号登录，令牌存进系统钥匙串，过期自动续期。` : ""}${S.client === "own" ? `在 ${esc(C.issuer)} 登记应用时，回调地址填 <span class="code">http://127.0.0.1/callback</span>。` : ""}`,
+    token: "令牌存进系统钥匙串，配置文件里只写引用。",
+    none: "服务器对外开放，finx 直接连接。",
+  }[S.auth];
+  const found = C.status === 200 ? "服务器直接接受了连接" : C.oauth ? (C.dcr ? `服务器要求登录，登录服务是 ${esc(C.issuer)}` : `服务器要求登录，但 ${esc(C.issuer)} 不接受应用自动登记，需要你自己的 OAuth 应用`) : "服务器要求鉴权，但没有公布登录服务";
+  const hint = !C.dcr && S.auth === "oauth" ? "如果服务商也提供个人访问令牌，选「令牌或 API Key」更省事。" : "";
+  return `
+    <div class="group"><div class="row who"><div class="tile">${ic("globe")}</div><div class="t"><div class="n">${esc(C.name)}</div><div class="a">${esc(C.url)}</div></div><button class="link" style="font-size:12.5px">修改</button></div></div>
+    <div class="gh" style="margin-top:21px">鉴权</div>
+    <div class="group">${rows.join("")}</div>
+    <div class="foot"><span class="det">检测：${found}。</span>${what}${hint}</div>
+    <button class="disclose ${S.adv ? "open" : ""}" data-act="adv">${ic("chev")}高级选项${S.adv ? "" : ` · ${S.transport === "sse" ? "SSE（旧版）" : "Streamable HTTP"}，请求头无`}</button>
+    ${S.adv ? `<div class="group" style="margin-top:8px">
+      ${S.auth === "oauth" ? `<div class="row"><span class="k">OAuth 客户端</span><span class="v">${pop("client", clientItems(), S.client, null)}</span></div>` : ""}
+      <div class="row"><span class="k">传输方式</span><span class="v">${pop("transport", transportItems(), S.transport, C.transport)}</span></div>
+      <div class="row stack"><span class="k">请求头</span><span class="v"><div class="hdr"><input class="field mono" placeholder="Header"><input class="field mono" placeholder="值"><button class="lockb">${ic("lock")}</button></div><button class="link" style="font-size:12px;align-self:flex-start;margin-top:4px">＋ 添加一行</button></span></div>
+    </div>` : ""}
+    <div class="trust">只添加你信任的开发者提供的连接器。它提供哪些工具、返回什么内容由开发者决定，finx 无法核实。</div>`;
+}
+
+function render() {
+  const sheet = document.getElementById("sheet");
+  sheet.innerHTML = `
+    <div class="sh-head"><h3>添加连接器</h3></div>
+    <div class="sh-body">${body()}</div>
+    <div class="sh-foot"><button class="btn">返回</button><button class="btn primary">${S.auth === "oauth" ? "添加并登录" : "添加"}</button></div>`;
+  document.querySelector(".menu")?.remove();
+  if (S.menu) openMenu();
+}
+
+function openMenu() {
+  const id = S.menu;
+  const anchor = document.querySelector(`[data-menu="${id}"]`);
+  const items = id === "auth" ? authItems() : id === "client" ? clientItems() : transportItems();
+  const value = id === "auth" ? S.auth : id === "client" ? S.client : S.transport;
+  const detected = id === "auth" ? detectedAuth() : id === "client" ? detectedClient() : C.transport;
+  const menu = document.createElement("div");
+  menu.className = "menu";
+  menu.innerHTML = items.map((i) => `<button class="mi" data-pick="${id}:${i.v}" ${i.off ? "disabled" : ""}>
+      <span class="ck">${i.v === value ? ic("check") : ""}</span>
+      <span class="tx"><span>${esc(i.t)}${i.tag ? `<span class="badge">${i.tag}</span>` : ""}${i.v === detected ? `<span class="badge acc">检测到</span>` : ""}</span><small>${esc(i.off || i.d)}</small></span></button>`).join("");
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = Math.max(8, r.right - menu.offsetWidth) + "px";
+  menu.style.top = Math.min(innerHeight - menu.offsetHeight - 8, r.bottom + 4) + "px";
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b?.dataset.menu) { S.menu = S.menu === b.dataset.menu ? null : b.dataset.menu; render(); return; }
+  if (b?.dataset.pick) { const [id, v] = b.dataset.pick.split(":"); if (id === "auth") S.auth = v; else if (id === "client") S.client = v; else S.transport = v; S.menu = null; render(); return; }
+  if (S.menu && !e.target.closest(".menu")) { S.menu = null; render(); }
+  if (b?.dataset.act === "adv") { S.adv = !S.adv; render(); }
+  if (b?.dataset.act === "sendas") { S.sendAs = true; render(); }
+});
+
+const demo = document.getElementById("demo");
+const labels = { hermesh: "OAuth · 自动注册", github: "OAuth · 自己的应用", apikey: "API Key", open: "开放", sse: "旧版 SSE" };
+function drawDemo(active) {
+  demo.innerHTML = `<b>原型</b>${Object.keys(cases).map((k) => `<button data-case="${k}" class="${k === active ? "on" : ""}">${labels[k]}</button>`).join("")}<span class="sp"></span><button data-theme-t>深色 / 浅色</button>`;
+}
+demo.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  e.stopPropagation();
+  if (b.dataset.case) { reset(b.dataset.case); drawDemo(b.dataset.case); render(); }
+  if ("themeT" in b.dataset) { const r = document.documentElement; r.dataset.theme = r.dataset.theme === "dark" ? "light" : "dark"; }
+});
+reset("hermesh"); drawDemo("hermesh"); render();
+</script>
+</body>
+</html>

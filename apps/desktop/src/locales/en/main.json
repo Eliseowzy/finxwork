@@ -75,5 +75,8 @@
     "cancel": "Cancel",
     "failedTitle": "FinxWork could not be moved",
     "failed": "{{reason}}\n\nYou can drag FinxWork to the Applications folder in Finder."
+  },
+  "dialog": {
+    "skillSource": "Skills"
   }
 }

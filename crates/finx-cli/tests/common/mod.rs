@@ -82,6 +82,8 @@ impl TestEnv {
             .env("HOME", self.user_home())
             // Saved keys go to a file in the test's home, never the developer's keychain.
             .env("FINX_CREDENTIAL_STORE", "file")
+            // Sign-ins print their address; tests play the browser themselves.
+            .env("FINX_NO_BROWSER", "1")
             // The public model catalog comes from the mock; the developer's keys stay out.
             .env("FINX_MODEL_CATALOG_URL", self.mock.catalog_url())
             .env_remove("DEEPSEEK_API_KEY")

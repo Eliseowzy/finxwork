@@ -324,7 +324,7 @@ const demoSkillList: { name: string; description: string; hint?: string; scope: 
 ];
 
 const skillPath = (s: (typeof demoSkillList)[number]) =>
-  s.scope === "project" ? `/Users/demo/code/finxwork/.agents/skills/${s.name}/SKILL.md` : `/Users/demo/.agents/skills/${s.name}/SKILL.md`;
+  s.scope === "project" ? `/Users/demo/code/finxwork/.agents/skills/${s.name}/SKILL.md` : `/Users/demo/.finx/skills/${s.name}/SKILL.md`;
 
 /** The demo's `skills/list`, for a session or a folder alike. */
 export function demoSkills(): SkillsListResult {
@@ -337,6 +337,7 @@ export function demoSkills(): SkillsListResult {
       model_invocable: true,
       argument_hint: s.hint,
       state: "active",
+      default_enabled: true,
     })),
     commands: [
       { name: "compact", description: "Summarize the conversation so far to free up the context window" },
