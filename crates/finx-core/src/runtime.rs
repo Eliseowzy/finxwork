@@ -207,6 +207,7 @@ pub fn kernel_deps(
         store,
         hooks: Vec::new(),
         mcp_servers: Vec::new(),
+        browser_pool: None,
     })
 }
 

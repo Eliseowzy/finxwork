@@ -4,7 +4,9 @@
 use bytes::Bytes;
 use finx_llm::ThinkingLevel;
 use finx_llm::UserContent;
+use finx_protocol::GrantAuthority;
 use finx_protocol::PermissionMode;
+use finx_protocol::SiteGrant;
 use finx_protocol::CompletionReason;
 use finx_protocol::api::CommandInfo;
 use finx_protocol::api::SessionInfo;
@@ -275,8 +277,9 @@ fn mode_label(mode: PermissionMode) -> &'static str {
 }
 
 /// Permission options for an approval. "Always" is offered only when approving for the
-/// session means more than this call: a command rule, or a switch of the permission mode.
-pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>) -> Value {
+/// session means more than this call: a command rule, a switch of the permission mode, or a
+/// site grant; each grant gets its own option, `approve_for_session:<index>`.
+pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>, grants: &[SiteGrant]) -> Value {
     let always = match (rule, mode) {
         (Some(prefix), _) if !prefix.is_empty() => Some(format!("本会话总是允许 {}", prefix.join(" "))),
         (_, Some(mode)) => Some(format!("允许，并切换到“{}”", mode_label(mode))),
@@ -285,6 +288,14 @@ pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>)
     let mut options = vec![json!({ "optionId": "approve", "name": "允许", "kind": "allow_once" })];
     if let Some(always) = always {
         options.push(json!({ "optionId": "approve_for_session", "name": always, "kind": "allow_always" }));
+    }
+    for (index, grant) in grants.iter().enumerate() {
+        let name = match (grant.authority, grant.origin.as_str()) {
+            (_, "*") => "本会话允许打开任何网站（风险：被注入的页面可能诱导把数据拼进网址带出去）".to_string(),
+            (GrantAuthority::Navigate, origin) => format!("本会话允许打开 {origin}"),
+            (GrantAuthority::Act, origin) => format!("本会话允许在 {origin} 上操作"),
+        };
+        options.push(json!({ "optionId": format!("approve_for_session:{index}"), "name": name, "kind": "allow_always" }));
     }
     options.push(json!({ "optionId": "deny", "name": "拒绝", "kind": "reject_once" }));
     Value::Array(options)

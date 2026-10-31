@@ -75,6 +75,8 @@ pub(crate) struct ChildDeps {
     pub(crate) trusted: bool,
     /// The main session's MCP servers; sub-agents use the same connections.
     pub(crate) mcp: Option<Arc<crate::mcp::McpManager>>,
+    /// The main session's browsers: a sub-agent has its own tabs in the same browser.
+    pub(crate) browser_pool: Option<Arc<finx_browser::BrowserPool>>,
 }
 
 /// The main session, once it runs. Weak: the session owns the tree, not the other way round.
@@ -112,6 +114,8 @@ struct Agent {
     /// `send_message` with `interrupt`: the interrupted task's input starts the next one.
     redirect: bool,
     driver: Option<JoinHandle<()>>,
+    /// What the kernel's tools keep for the agent's session: its browser.
+    tool_state: Option<Arc<finx_tools::SessionState>>,
 }
 
 /// Where the report of the current round of work goes.
@@ -176,12 +180,13 @@ impl AgentTree {
     }
 
     /// Sub-agents judge tool calls by the main session's current permissions.
-    pub(crate) fn share_permissions(&self, mode: PermissionMode, rules: Vec<CommandRule>) {
+    pub(crate) fn share_permissions(&self, mode: PermissionMode, rules: Vec<CommandRule>, grants: Vec<finx_protocol::SiteGrant>) {
         let state = self.state.lock();
         for agent in state.agents.iter().filter(|a| a.status != AgentStatus::Closed) {
             let _ = agent.internal.send(Box::new(Internal::Permissions {
                 mode,
                 rules: rules.clone(),
+                grants: grants.clone(),
             }));
         }
     }
@@ -244,7 +249,7 @@ impl AgentTree {
             return Err(ToolError::InvalidArgs("task must not be empty".into()));
         }
         let root = self.root()?;
-        let (system_prompt, base_prompt, mcp_section, skills, model, thinking, permission_mode, session_rules, parent_task) = {
+        let (system_prompt, base_prompt, mcp_section, skills, model, thinking, permission_mode, session_rules, site_grants, parent_task) = {
             let state = root.state.lock();
             (
                 state.system_prompt.clone(),
@@ -255,6 +260,7 @@ impl AgentTree {
                 state.thinking,
                 state.permission_mode,
                 state.session_rules.clone(),
+                state.site_grants.clone(),
                 state.active_task.as_ref().map(|t| t.id.clone()).unwrap_or_default(),
             )
         };
@@ -280,6 +286,7 @@ impl AgentTree {
             thinking,
             permission_mode,
             session_rules,
+            site_grants,
             deps: KernelDeps {
                 llm: self.deps.llm.clone(),
                 tools: self.deps.tools.clone(),
@@ -287,6 +294,7 @@ impl AgentTree {
                 store: self.deps.store.clone(),
                 hooks: self.deps.hooks.clone(),
                 mcp_servers: Vec::new(),
+                browser_pool: self.deps.browser_pool.clone(),
             },
             home: self.deps.home.clone(),
             config: self.deps.config.clone(),
@@ -306,6 +314,7 @@ impl AgentTree {
             route,
             redirect: false,
             driver: None,
+            tool_state: kernel.tool_state(),
         });
         root.record(EntryKind::AgentSpawned(Box::new(AgentSpawnedEntry {
             agent_id: id.clone(),
@@ -530,6 +539,11 @@ impl AgentTree {
             };
             agent.status = report.status;
             agent.redirect = false;
+            // A finished agent keeps its session for later messages, but not its tabs
+            // (browser-design D-206); a later browser call starts afresh.
+            if let Some(tool_state) = &agent.tool_state {
+                tool_state.remove::<finx_browser::BrowserSession>();
+            }
             let route = std::mem::replace(&mut agent.route, Route::Mail);
             let name = agent.name.clone();
             if closing {

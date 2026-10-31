@@ -790,6 +790,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "finx-browser"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "dirs",
+ "futures",
+ "libc",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "finx-cli"
 version = "0.1.0"
 dependencies = [
@@ -858,8 +879,10 @@ name = "finx-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "chrono",
  "dirs",
+ "finx-browser",
  "finx-llm",
  "finx-mcp",
  "finx-mock",
@@ -880,6 +903,7 @@ dependencies = [
  "toml",
  "toml_edit",
  "tracing",
+ "url",
  "uuid",
  "yaml-rust2",
  "zip",

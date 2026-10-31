@@ -154,6 +154,7 @@ async fn drive(
                 reason,
                 proposed_rule,
                 proposed_mode,
+                proposed_grants,
                 ..
             } if interactive && !run.ops_stdin => {
                 let question = approval_prompt::Question {
@@ -162,6 +163,7 @@ async fn drive(
                     reason: reason.as_deref(),
                     rule: proposed_rule.as_ref(),
                     mode: *proposed_mode,
+                    grants: proposed_grants,
                 };
                 let decision = approval_prompt::ask(renderer.style(), question).await;
                 let _ = ops

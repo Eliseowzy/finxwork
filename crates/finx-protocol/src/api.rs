@@ -22,6 +22,7 @@ use crate::event::ToolCategory;
 use crate::op::CommandRule;
 use crate::op::Op;
 use crate::op::PermissionMode;
+use crate::op::SiteGrant;
 use finx_llm::Timestamp;
 
 /// Method names.
@@ -670,6 +671,8 @@ pub struct PendingApproval {
     pub proposed_rule: Option<CommandRule>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proposed_mode: Option<PermissionMode>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proposed_grants: Vec<SiteGrant>,
 }
 
 // ---- Resources and models ----

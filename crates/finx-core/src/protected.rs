@@ -249,6 +249,8 @@ mod tests {
             env: Arc::new(LocalEnvironment::new(workspace.to_path_buf())),
             data_dir: canonical_lossy(data_dir),
             skill_roots: Arc::from([]),
+            site_grants: Vec::new(),
+            browser: Arc::default(),
         }
     }
 

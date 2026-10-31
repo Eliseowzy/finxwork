@@ -37,6 +37,7 @@ pub struct ConfigFile {
     pub agents: Option<AgentsFile>,
     pub skills: Option<SkillsFile>,
     pub mcp: Option<McpFile>,
+    pub browser: Option<BrowserFile>,
     pub models: Option<ModelsFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
@@ -55,6 +56,86 @@ pub struct McpFile {
     pub exposure: Option<McpExposure>,
     /// finx's OAuth client metadata document; only for tests and self-built copies.
     pub client_metadata_url: Option<String>,
+}
+
+/// `[browser]`: the browser tools (docs/kernel/browser-design.md §10).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BrowserFile {
+    pub enabled: Option<bool>,
+    pub executable: Option<PathBuf>,
+    pub profile: Option<String>,
+    /// `auto`, `true` or `false`.
+    pub headless: Option<toml::Value>,
+    pub allowed_domains: Option<Vec<String>>,
+    pub denied_domains: Option<Vec<String>>,
+    pub script_enabled: Option<bool>,
+    pub navigation_timeout_secs: Option<u64>,
+    pub action_timeout_secs: Option<u64>,
+    /// Origin → `deny`, `navigate` or `act`.
+    pub sites: Option<BTreeMap<String, String>>,
+}
+
+/// `[browser]` with its defaults applied.
+#[derive(Debug, Clone)]
+pub struct BrowserSettings {
+    pub enabled: bool,
+    pub config: finx_browser::BrowserConfig,
+    pub policy: std::sync::Arc<finx_browser::policy::SitePolicy>,
+    pub navigation_timeout: Duration,
+    pub action_timeout: Duration,
+}
+
+impl BrowserSettings {
+    fn from_file(file: BrowserFile) -> Result<Self, ConfigError> {
+        use finx_browser::policy::SiteLevel;
+        let headless = match &file.headless {
+            None => finx_browser::Headless::Auto,
+            Some(toml::Value::Boolean(true)) => finx_browser::Headless::On,
+            Some(toml::Value::Boolean(false)) => finx_browser::Headless::Off,
+            Some(toml::Value::String(text)) => match text.as_str() {
+                "auto" => finx_browser::Headless::Auto,
+                "true" => finx_browser::Headless::On,
+                "false" => finx_browser::Headless::Off,
+                _ => return Err(ConfigError::Invalid(format!("browser.headless must be auto, true or false, got \"{text}\""))),
+            },
+            Some(other) => return Err(ConfigError::Invalid(format!("browser.headless must be auto, true or false, got {other}"))),
+        };
+        if file.script_enabled == Some(true) {
+            return Err(ConfigError::Invalid("browser.script_enabled is not available yet".into()));
+        }
+        let mut sites = BTreeMap::new();
+        for (origin, level) in file.sites.unwrap_or_default() {
+            let normalized = finx_browser::policy::normalize_origin(&origin).ok_or_else(|| {
+                ConfigError::Invalid(format!(
+                    "browser.sites: \"{origin}\" is not an origin such as \"https://example.com\""
+                ))
+            })?;
+            let level = SiteLevel::parse(&level).ok_or_else(|| {
+                ConfigError::Invalid(format!("browser.sites.\"{origin}\" must be deny, navigate or act, got \"{level}\""))
+            })?;
+            sites.insert(normalized, level);
+        }
+        let profile = file.profile.unwrap_or_else(|| "default".into());
+        if profile.is_empty() || profile.contains(['/', '\\']) || profile.starts_with('.') {
+            return Err(ConfigError::Invalid(format!("browser.profile \"{profile}\" must be a plain name")));
+        }
+        Ok(Self {
+            enabled: file.enabled.unwrap_or(false),
+            config: finx_browser::BrowserConfig {
+                executable: file.executable.filter(|p| !p.as_os_str().is_empty()),
+                profile,
+                headless,
+            },
+            policy: std::sync::Arc::new(finx_browser::policy::SitePolicy {
+                allowed_domains: file.allowed_domains.unwrap_or_default(),
+                denied_domains: file.denied_domains.unwrap_or_default(),
+                sites,
+            }),
+            navigation_timeout: Duration::from_secs(file.navigation_timeout_secs.unwrap_or(30).clamp(1, 600)),
+            action_timeout: Duration::from_secs(file.action_timeout_secs.unwrap_or(10).clamp(1, 600)),
+        })
+    }
 }
 
 /// `[models]`: model lists and the public catalog (docs/kernel/model-catalog-design.md §11).
@@ -266,6 +347,7 @@ pub struct Config {
     pub agents_enabled: bool,
     pub skills: SkillsSettings,
     pub mcp: McpSettings,
+    pub browser: BrowserSettings,
     /// Refresh model lists and the public catalog in the background (`[models] network`).
     pub models_network: bool,
     /// The configured servers by name, names filled in; not yet validated.
@@ -310,6 +392,7 @@ impl Config {
         skills.disabled = skills_file.disabled.unwrap_or_default();
         skills.max_catalog_tokens = skills_file.max_catalog_tokens.unwrap_or(0);
         let mcp = file.mcp.unwrap_or_default();
+        let browser = BrowserSettings::from_file(file.browser.unwrap_or_default())?;
         let threshold = compaction.threshold.unwrap_or(0.9);
         if !(0.1..=1.0).contains(&threshold) {
             return Err(ConfigError::Invalid(format!(
@@ -384,6 +467,7 @@ impl Config {
                 finx_home: None,
                 client_metadata_url: mcp.client_metadata_url.filter(|u| !u.trim().is_empty()).or_else(|| crate::mcp::CLIENT_METADATA_URL.map(String::from)),
             },
+            browser,
             models_network: file.models.and_then(|m| m.network).unwrap_or(true),
             mcp_servers: file
                 .mcp_servers
@@ -510,6 +594,14 @@ pub fn load_layers_with(
         migrate_legacy(&mut table, &project_file.display().to_string(), &mut warnings);
         if let Some(project_root) = files.project_root {
             anchor_skill_paths(&mut table, project_root);
+        }
+        let loosened = tighten_browser(&mut table, &merged, project_trusted);
+        if !loosened.is_empty() {
+            warnings.push(format!(
+                "ignored {} in {}: a project can only tighten the browser settings",
+                loosened.join(", "),
+                project_file.display()
+            ));
         }
         note_mcp_servers(&table, "project config", &mut mcp_sources);
         note_origins(&table, "", ConfigLayer::Project, &mut origins);
@@ -680,6 +772,64 @@ fn anchor_skill_paths(table: &mut toml::Table, project_root: &Path) {
     }
 }
 
+/// A project's `[browser]` may only tighten the user's (browser-design D-178): its domain
+/// allow list narrows the user's, its deny list adds to it, and of its sites only `deny`
+/// counts. It never picks the program that runs, nor turns scripts on; an untrusted project
+/// cannot turn the tools on either. Returns what was dropped.
+fn tighten_browser(table: &mut toml::Table, user: &toml::Table, trusted: bool) -> Vec<String> {
+    let Some(toml::Value::Table(browser)) = table.get_mut("browser") else {
+        return Vec::new();
+    };
+    let user_browser = user.get("browser").and_then(toml::Value::as_table);
+    let user_list = |key: &str| -> Vec<toml::Value> {
+        user_browser
+            .and_then(|b| b.get(key))
+            .and_then(toml::Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let mut dropped = Vec::new();
+    for key in ["executable", "profile"] {
+        if browser.remove(key).is_some() {
+            dropped.push(format!("browser.{key}"));
+        }
+    }
+    if browser.get("script_enabled").and_then(toml::Value::as_bool) == Some(true) {
+        browser.remove("script_enabled");
+        dropped.push("browser.script_enabled".into());
+    }
+    if !trusted && browser.get("enabled").and_then(toml::Value::as_bool) == Some(true) {
+        browser.remove("enabled");
+        dropped.push("browser.enabled".into());
+    }
+    if let Some(toml::Value::Array(allowed)) = browser.get_mut("allowed_domains") {
+        let user_allowed = user_list("allowed_domains");
+        if !user_allowed.is_empty() {
+            let before = allowed.len();
+            allowed.retain(|domain| user_allowed.contains(domain));
+            if allowed.is_empty() && before > 0 {
+                // Nothing in common: allow nothing rather than everything.
+                allowed.push(toml::Value::String("invalid.".into()));
+            }
+        }
+    }
+    if let Some(toml::Value::Array(denied)) = browser.get_mut("denied_domains") {
+        for domain in user_list("denied_domains") {
+            if !denied.contains(&domain) {
+                denied.push(domain);
+            }
+        }
+    }
+    if let Some(toml::Value::Table(sites)) = browser.get_mut("sites") {
+        let before = sites.len();
+        sites.retain(|_, level| level.as_str() == Some("deny"));
+        if sites.len() != before {
+            dropped.push("browser.sites other than deny".into());
+        }
+    }
+    dropped
+}
+
 fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
     let mut removed = Vec::new();
     for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file"] {
@@ -814,6 +964,48 @@ mod tests {
         assert!(!github.is_enabled(), "a trusted project can turn a server off");
         assert_eq!(trusted.mcp_sources["github"], vec!["user config", "project config"]);
         assert!(trusted.config.mcp.project_json);
+    }
+
+    #[test]
+    fn browser_settings_and_projects_only_tighten_them() {
+        use finx_browser::policy::SiteLevel;
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("user.toml");
+        let project = dir.path().join("project.toml");
+        std::fs::write(
+            &user,
+            "[browser]\nenabled = true\nheadless = true\nallowed_domains = [\"github.com\", \"example.com\"]\n\
+             denied_domains = [\"evil.test\"]\n[browser.sites]\n\"https://GitHub.com/\" = \"act\"\n\"http://192.168.1.10:8080\" = \"act\"\n",
+        )
+        .unwrap();
+        std::fs::write(
+            &project,
+            "[browser]\nexecutable = \"/tmp/evil\"\nallowed_domains = [\"github.com\", \"other.com\"]\n\
+             denied_domains = [\"ads.test\"]\n[browser.sites]\n\"https://github.com\" = \"deny\"\n\"https://bank.test\" = \"act\"\n",
+        )
+        .unwrap();
+        let user_only = load(&user, None, true, &[]).unwrap().config.browser;
+        assert!(user_only.enabled);
+        assert_eq!(user_only.config.headless, finx_browser::Headless::On);
+        assert_eq!(user_only.policy.site("https://github.com"), Some(SiteLevel::Act), "origins are normalized");
+        assert_eq!(user_only.navigation_timeout, Duration::from_secs(30));
+
+        let loaded = load(&user, Some(&project), true, &[]).unwrap();
+        let browser = loaded.config.browser;
+        assert_eq!(browser.config.executable, None, "a project never picks the program");
+        assert_eq!(browser.policy.allowed_domains, vec!["github.com"], "allow lists intersect");
+        assert_eq!(browser.policy.denied_domains, vec!["ads.test", "evil.test"], "deny lists add up");
+        assert_eq!(browser.policy.site("https://github.com"), Some(SiteLevel::Deny));
+        assert_eq!(browser.policy.site("https://bank.test"), None, "a project cannot allow a site");
+        assert_eq!(browser.policy.site("http://192.168.1.10:8080"), Some(SiteLevel::Act));
+        assert!(loaded.warnings.iter().any(|w| w.contains("browser.executable") && w.contains("only tighten")), "{:?}", loaded.warnings);
+
+        std::fs::write(&project, "[browser]\nenabled = true\n").unwrap();
+        std::fs::write(&user, "").unwrap();
+        assert!(!load(&user, Some(&project), false, &[]).unwrap().config.browser.enabled, "untrusted projects cannot turn it on");
+        assert!(load(&user, Some(&project), true, &[]).unwrap().config.browser.enabled);
+        let bad = load(&user, None, true, &["browser.sites.\"github.com\"=\"act\"".into()]);
+        assert!(bad.is_err());
     }
 
     #[test]

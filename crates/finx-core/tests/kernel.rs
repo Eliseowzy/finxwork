@@ -61,6 +61,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         store: Arc::new(JsonlStore::new(home.sessions_dir())),
         hooks: vec![],
         mcp_servers: Vec::new(),
+        browser_pool: None,
     }
 }
 
@@ -313,7 +314,7 @@ async fn approving_an_edit_for_the_session_switches_to_accept_edits() {
     h.kernel
         .submit(Op::Approval {
             call_id: call_id.clone(),
-            decision: ApprovalDecision::ApproveForSession,
+            decision: ApprovalDecision::ApproveForSession { grant: None },
         })
         .await
         .unwrap();

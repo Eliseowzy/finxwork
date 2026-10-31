@@ -5,6 +5,7 @@
 
 mod agents;
 pub mod approval;
+mod browser;
 mod budget;
 pub mod commands;
 mod compaction;
@@ -25,6 +26,7 @@ mod protected;
 pub mod rules;
 pub mod runtime;
 mod session;
+mod site_policy;
 pub mod skills;
 pub mod store;
 pub mod trash;
@@ -56,3 +58,5 @@ pub use store::MemoryStore;
 pub use store::SessionRef;
 pub use store::SessionStore;
 pub use store::short_id;
+
+pub use finx_browser::BrowserPool;

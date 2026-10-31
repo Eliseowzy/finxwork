@@ -12,6 +12,7 @@ members = [
     "crates/finx-acp",
     "crates/finx-mock",
     "crates/finx-mcp",
+    "crates/finx-browser",
     "crates/finx-bench",
 ]
 
@@ -32,6 +33,7 @@ finx-server = { path = "crates/finx-server" }
 finx-acp = { path = "crates/finx-acp" }
 finx-mock = { path = "crates/finx-mock" }
 finx-mcp = { path = "crates/finx-mcp" }
+finx-browser = { path = "crates/finx-browser" }
 
 agent-client-protocol-schema = { version = "1.13", default-features = false }
 anyhow = "1"
@@ -80,6 +82,7 @@ toml_edit = "0.25"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+url = "2"
 uuid = { version = "1", features = ["v4", "v7"] }
 zip = { version = "9", default-features = false, features = ["deflate"] }
 notify = "8"

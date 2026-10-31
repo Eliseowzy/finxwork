@@ -2,7 +2,9 @@
 
 use finx_protocol::ApprovalDecision;
 use finx_protocol::CommandRule;
+use finx_protocol::GrantAuthority;
 use finx_protocol::PermissionMode;
+use finx_protocol::SiteGrant;
 use std::io::Write;
 
 use crate::render::Style;
@@ -29,6 +31,16 @@ pub struct Question<'a> {
     pub rule: Option<&'a CommandRule>,
     /// Mode that "always" switches the session to.
     pub mode: Option<PermissionMode>,
+    /// Site permissions to keep for the rest of the session, one of them by number.
+    pub grants: &'a [SiteGrant],
+}
+
+fn grant_label(grant: &SiteGrant) -> String {
+    match (grant.authority, grant.origin.as_str()) {
+        (_, "*") => "allow opening any site in this session (an injected page could make the model leak data in URLs)".into(),
+        (GrantAuthority::Navigate, origin) => format!("allow opening {origin} in this session"),
+        (GrantAuthority::Act, origin) => format!("allow acting on {origin} in this session"),
+    }
 }
 
 pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
@@ -48,6 +60,16 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
         Some(always) => eprintln!("  [y] yes   [a] {always}   [n] no   [q] stop the task"),
         None => eprintln!("  [y] yes   [n] no   [q] stop the task"),
     }
+    for (index, grant) in question.grants.iter().enumerate() {
+        eprintln!("  [{}] {}", index + 1, grant_label(grant));
+    }
+    let pick_grant = |answer: &str| {
+        answer
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=question.grants.len()).contains(n))
+            .map(|n| n - 1)
+    };
     loop {
         eprint!("> ");
         let _ = std::io::stderr().flush();
@@ -60,7 +82,10 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
                 if let Some(mode) = question.mode {
                     eprintln!("  {}", style.dim(&format!("permission mode is now {mode}")));
                 }
-                return ApprovalDecision::ApproveForSession;
+                return ApprovalDecision::ApproveForSession { grant: None };
+            }
+            answer if pick_grant(answer).is_some() => {
+                return ApprovalDecision::ApproveForSession { grant: pick_grant(answer) };
             }
             "n" | "no" => {
                 eprint!("  feedback for the model (optional): ");
@@ -69,6 +94,7 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
                 return ApprovalDecision::Deny { feedback };
             }
             "q" | "quit" => return ApprovalDecision::Abort,
+            _ if !question.grants.is_empty() => eprintln!("  please answer y, a number, n or q"),
             _ if always.is_some() => eprintln!("  please answer y, a, n or q"),
             _ => eprintln!("  please answer y, n or q"),
         }

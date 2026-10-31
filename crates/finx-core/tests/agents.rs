@@ -95,6 +95,7 @@ impl Harness {
             store: Arc::new(JsonlStore::new(home.sessions_dir())),
             hooks: vec![],
             mcp_servers: Vec::new(),
+            browser_pool: None,
         };
         let options = StartOptions {
             model: "test/scripted".into(),
@@ -673,6 +674,7 @@ async fn sub_agents_can_be_turned_off() {
             store: Arc::new(JsonlStore::new(home.sessions_dir())),
             hooks: vec![],
             mcp_servers: Vec::new(),
+            browser_pool: None,
         },
     )
     .await

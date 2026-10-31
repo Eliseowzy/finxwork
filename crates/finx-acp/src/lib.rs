@@ -405,6 +405,7 @@ impl AcpProtocol {
     }
 
     /// The client answered one of our permission requests.
+    /// (See [`decode_option`] for the option ids.)
     fn permission_answer(&self, id: &Id, result: Result<&RawValue, &RpcError>, conn: &ConnHandle) {
         let Some((session, call_id)) = self.shared.permissions.lock().remove(id) else {
             return;
@@ -412,11 +413,7 @@ impl AcpProtocol {
         let decision = match result {
             Ok(raw) => match serde_json::from_str::<RequestPermissionResponse>(raw.get()) {
                 Ok(response) => match response.outcome {
-                    Outcome::Selected { option_id } => match option_id.as_str() {
-                        "approve" => ApprovalDecision::Approve,
-                        "approve_for_session" => ApprovalDecision::ApproveForSession,
-                        _ => ApprovalDecision::Deny { feedback: None },
-                    },
+                    Outcome::Selected { option_id } => decode_option(&option_id),
                     Outcome::Cancelled => ApprovalDecision::Abort,
                 },
                 Err(_) => ApprovalDecision::Deny { feedback: None },
@@ -498,5 +495,18 @@ impl Protocol for AcpProtocol {
         for (_, task) in self.running.lock().drain() {
             task.abort();
         }
+    }
+}
+
+/// The decision for a permission option the client picked: `approve`, `approve_for_session`,
+/// or `approve_for_session:<index>` for one of the proposed site grants.
+fn decode_option(option_id: &str) -> ApprovalDecision {
+    match option_id {
+        "approve" => ApprovalDecision::Approve,
+        "approve_for_session" => ApprovalDecision::ApproveForSession { grant: None },
+        other => match other.strip_prefix("approve_for_session:").map(str::parse::<usize>) {
+            Some(Ok(index)) => ApprovalDecision::ApproveForSession { grant: Some(index) },
+            _ => ApprovalDecision::Deny { feedback: None },
+        },
     }
 }

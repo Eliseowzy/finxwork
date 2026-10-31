@@ -267,6 +267,7 @@ impl SessionMirror {
                 reason,
                 proposed_rule,
                 proposed_mode,
+                proposed_grants,
             } => {
                 if let Some(task) = &mut self.active {
                     task.approvals.push(PendingApproval {
@@ -277,6 +278,7 @@ impl SessionMirror {
                         reason: reason.clone(),
                         proposed_rule: proposed_rule.clone(),
                         proposed_mode: *proposed_mode,
+                        proposed_grants: proposed_grants.clone(),
                     });
                 }
             }
@@ -649,6 +651,7 @@ mod tests {
                 reason: None,
                 proposed_rule: None,
                 proposed_mode: None,
+                proposed_grants: Vec::new(),
             },
         ));
         let snap = m.snapshot(None);
@@ -707,6 +710,7 @@ mod tests {
                 reason: None,
                 proposed_rule: None,
                 proposed_mode: None,
+                proposed_grants: Vec::new(),
             },
         ));
         assert_eq!(m.state(), SessionState::AwaitingApproval);

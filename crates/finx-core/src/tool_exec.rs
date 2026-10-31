@@ -11,7 +11,9 @@ use finx_protocol::CommandRule;
 use finx_protocol::EventMsg;
 use finx_protocol::Location;
 use finx_protocol::PermissionMode;
+use finx_protocol::SiteGrant;
 use finx_protocol::ToolCategory;
+use finx_tools::Authority;
 use finx_tools::ProgressSink;
 use finx_tools::Tool;
 use finx_tools::ToolCtx;
@@ -42,7 +44,8 @@ const CANCEL_GRACE: Duration = Duration::from_secs(3);
 
 enum Prepared {
     Done(Arc<ToolResultMessage>),
-    Run(Arc<dyn Tool>, ToolCall),
+    /// With what the call was approved to do, for the tool to hold execution to.
+    Run(Arc<dyn Tool>, ToolCall, Arc<[Authority]>),
 }
 
 enum Approval {
@@ -91,10 +94,23 @@ pub(crate) async fn execute_batch(
             prepared.push(Prepared::Done(immediate(session, &call, &text)));
             continue;
         }
-        match gate(session, &call, tool.as_ref()).await {
+        // What the call does on which site, judged from the session's state before the batch
+        // runs (browser-design §7.1); execution is held to it.
+        let authorities: Arc<[Authority]> = match authorities(session, task, tool.as_ref(), &call).await {
+            Ok(authorities) => authorities.into(),
+            Err(err) => {
+                let text = match err {
+                    ToolError::Cancelled => NOT_EXECUTED.to_string(),
+                    err => err.to_string(),
+                };
+                prepared.push(Prepared::Done(immediate(session, &call, &text)));
+                continue;
+            }
+        };
+        match gate(session, &call, tool.as_ref(), &authorities).await {
             Gate::Allow => {
                 runs_before = true;
-                prepared.push(Prepared::Run(tool, call));
+                prepared.push(Prepared::Run(tool, call, authorities));
             }
             Gate::Deny(reason) => {
                 let text = format!("Tool call denied: {reason}");
@@ -105,6 +121,7 @@ pub(crate) async fn execute_batch(
                 reason,
                 proposed_rule,
                 proposed_mode,
+                proposed_grants,
             } => {
                 // Nobody should be asked about a call that cannot succeed.
                 if !runs_before && let Err(err) = check(session, task, tool.as_ref(), &call).await {
@@ -115,10 +132,15 @@ pub(crate) async fn execute_batch(
                     prepared.push(Prepared::Done(immediate(session, &call, &text)));
                     continue;
                 }
-                match request_approval(session, task, &call, summary, reason, proposed_rule, proposed_mode).await {
+                let proposal = Proposal {
+                    rule: proposed_rule,
+                    mode: proposed_mode,
+                    grants: proposed_grants,
+                };
+                match request_approval(session, task, &call, summary, reason, proposal).await {
                     Approval::Granted => {
                         runs_before = true;
-                        prepared.push(Prepared::Run(tool, call));
+                        prepared.push(Prepared::Run(tool, call, authorities));
                     }
                     Approval::Denied(feedback) => {
                         let mut text = "The user denied this tool call.".to_string();
@@ -146,7 +168,7 @@ pub(crate) async fn execute_batch(
     let runs = prepared.into_iter().map(|item| async move {
         match item {
             Prepared::Done(result) => result,
-            Prepared::Run(tool, call) => run_tool(session, task, tool, call).await,
+            Prepared::Run(tool, call, authorities) => run_tool(session, task, tool, call, authorities).await,
         }
     });
     futures::future::join_all(runs).await
@@ -193,15 +215,27 @@ fn started(session: &Session, call: &ToolCall, tool: Option<&dyn Tool>) -> Event
     }
 }
 
-async fn gate(session: &Session, call: &ToolCall, tool: &dyn Tool) -> Gate {
+async fn authorities(session: &Session, task: &TaskCtx, tool: &dyn Tool, call: &ToolCall) -> Result<Vec<Authority>, ToolError> {
+    let ctx = tool_ctx(session, task, call, Arc::from([]));
+    until_cancelled(task, tool.authorities(&call.arguments.to_value(), &ctx)).await
+}
+
+async fn gate(session: &Session, call: &ToolCall, tool: &dyn Tool, authorities: &[Authority]) -> Gate {
     let view = session.view();
     for hook in &session.hooks {
-        match hook.before_tool(call, tool, &view).await {
+        match hook.before_tool(call, tool, authorities, &view).await {
             Gate::Allow => continue,
             other => return other,
         }
     }
     Gate::Allow
+}
+
+/// What approving for the session would keep.
+struct Proposal {
+    rule: Option<CommandRule>,
+    mode: Option<PermissionMode>,
+    grants: Vec<SiteGrant>,
 }
 
 async fn request_approval(
@@ -210,8 +244,7 @@ async fn request_approval(
     call: &ToolCall,
     summary: String,
     reason: Option<String>,
-    proposed_rule: Option<CommandRule>,
-    proposed_mode: Option<PermissionMode>,
+    proposal: Proposal,
 ) -> Approval {
     if !session.interactive_approvals {
         return Approval::NoApprover(reason);
@@ -224,8 +257,9 @@ async fn request_approval(
         args: call.arguments.to_value(),
         summary,
         reason,
-        proposed_rule: proposed_rule.clone(),
-        proposed_mode,
+        proposed_rule: proposal.rule.clone(),
+        proposed_mode: proposal.mode,
+        proposed_grants: proposal.grants.clone(),
     });
     let decision = tokio::select! {
         decision = rx => decision.unwrap_or(ApprovalDecision::Abort),
@@ -238,13 +272,18 @@ async fn request_approval(
     });
     match decision {
         ApprovalDecision::Approve => Approval::Granted,
-        ApprovalDecision::ApproveForSession => {
+        ApprovalDecision::ApproveForSession { grant } => {
             // With nothing proposed, this approves the call only.
-            if let Some(rule) = proposed_rule {
+            if let Some(rule) = proposal.rule {
                 session.add_session_rule(rule);
             }
-            if let Some(mode) = proposed_mode {
+            if let Some(mode) = proposal.mode {
                 session.set_permission_mode(mode);
+            }
+            // Only a grant that was proposed: a client cannot name a wider one. An index out
+            // of range keeps nothing beyond this call.
+            if let Some(grant) = proposal.grants.into_iter().nth(grant.unwrap_or(0)) {
+                session.add_site_grant(grant);
             }
             Approval::Granted
         }
@@ -275,10 +314,11 @@ async fn run_tool(
     task: &TaskCtx,
     tool: Arc<dyn Tool>,
     call: ToolCall,
+    authorities: Arc<[Authority]>,
 ) -> Arc<ToolResultMessage> {
     let started = Instant::now();
     let _slot = session.tool_slots.acquire().await.ok();
-    let ctx = tool_ctx(session, task, &call);
+    let ctx = tool_ctx(session, task, &call, authorities);
     let limits = ctx.limits.clone();
     let running = || session.emit(EventMsg::ToolRunning { call_id: call.id.clone() });
     let result = match tool.kind_for(&call.arguments.to_value()) {
@@ -333,7 +373,7 @@ async fn run_tool(
     result
 }
 
-fn tool_ctx(session: &Session, task: &TaskCtx, call: &ToolCall) -> ToolCtx {
+fn tool_ctx(session: &Session, task: &TaskCtx, call: &ToolCall, authorities: Arc<[Authority]>) -> ToolCtx {
     let (model, _) = session.current_model();
     let emitter = session.emitter.clone();
     let progress_id = call.id.clone();
@@ -353,13 +393,14 @@ fn tool_ctx(session: &Session, task: &TaskCtx, call: &ToolCall) -> ToolCtx {
         cancel: task.cancel.child_token(),
         model_accepts_images: model.accepts_images(),
         output_dir: session.output_dir.clone(),
-        session_state: session.agents.clone().map(|tree| tree as Arc<dyn std::any::Any + Send + Sync>),
+        session_state: session.tool_state.clone(),
+        authorities,
     }
 }
 
 /// The tool's own check of a call that is about to be put to the user.
 async fn check(session: &Session, task: &TaskCtx, tool: &dyn Tool, call: &ToolCall) -> Result<(), ToolError> {
-    let ctx = tool_ctx(session, task, call);
+    let ctx = tool_ctx(session, task, call, Arc::from([]));
     until_cancelled(task, tool.check(&call.arguments.to_value(), &ctx)).await
 }
 

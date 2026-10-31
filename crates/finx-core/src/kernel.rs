@@ -21,6 +21,7 @@ use finx_protocol::api::TranscriptItem;
 use finx_tools::Environment;
 use finx_tools::FileTracker;
 use finx_tools::PathLocks;
+use finx_tools::Tool;
 use finx_tools::ToolRegistry;
 use parking_lot::Mutex;
 use std::path::Path;
@@ -39,6 +40,7 @@ use crate::agents;
 use crate::agents::AgentTree;
 use crate::agents::ChildDeps;
 use crate::approval::ApprovalPolicy;
+use crate::browser::BrowserHandle;
 use crate::config::Config;
 use crate::context;
 use crate::emitter::Emitter;
@@ -79,6 +81,9 @@ pub struct KernelDeps {
     /// MCP servers for the session, merged and validated by the front end. Started with the
     /// session; empty means no MCP.
     pub mcp_servers: Vec<finx_protocol::McpServerConfig>,
+    /// The process's browsers, shared by its sessions (browser-design §6.1). `None` leaves
+    /// the browser tools out, whatever `[browser] enabled` says.
+    pub browser_pool: Option<Arc<finx_browser::BrowserPool>>,
 }
 
 pub struct StartOptions {
@@ -175,6 +180,21 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &shown);
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
+    let tool_state = Arc::new(finx_tools::SessionState::default());
+    if let Some(tree) = &launch.agents {
+        tool_state.insert(tree.clone());
+    }
+    if launch.config.browser.enabled
+        && let Some(pool) = &launch.deps.browser_pool
+    {
+        tool_state.insert(Arc::new(BrowserHandle::new(
+            pool.clone(),
+            launch.config.browser.clone(),
+            session_dir.join("downloads"),
+            launch.deps.env.workspace_roots().to_vec(),
+            launch.state.site_grants.clone(),
+        )));
+    }
     let session = Arc::new(Session {
         id: launch.id.clone(),
         llm: launch.deps.llm,
@@ -203,6 +223,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         locks: launch.locks,
         agents: launch.agents,
         sub_agent: launch.sub_agent,
+        tool_state,
         input_seq: watch::channel(0).0,
         config: launch.config,
         state: Mutex::new(launch.state),
@@ -243,28 +264,46 @@ fn agent_tree(
         config: config.clone(),
         trusted,
         mcp,
+        browser_pool: deps.browser_pool.clone(),
     });
     deps.tools = with_agent_tools(&deps.tools);
     Some(tree)
 }
 
+/// Adds the browser tools when `[browser]` turns them on and the process has a pool; before
+/// the agent tree is built, so sub-agents get them too.
+fn add_browser_tools(deps: &mut KernelDeps, config: &Config) {
+    if config.browser.enabled && deps.browser_pool.is_some() {
+        deps.tools = extended(&deps.tools, "browser", crate::browser::browser_tools);
+    }
+}
+
 /// `tools` plus `spawn_agent` and `send_message`, built once for each registry: the two tools
 /// hold no session, so main sessions with the same tools share the result.
 fn with_agent_tools(tools: &Arc<ToolRegistry>) -> Arc<ToolRegistry> {
-    type Built = Vec<(Weak<ToolRegistry>, Arc<ToolRegistry>)>;
+    extended(tools, "agents", agents::agent_tools)
+}
+
+/// `tools` plus the tools `make` returns, built once for each registry and `kind`: these tools
+/// hold no session, so sessions with the same tools share the result.
+fn extended(tools: &Arc<ToolRegistry>, kind: &'static str, make: fn() -> Vec<Arc<dyn Tool>>) -> Arc<ToolRegistry> {
+    type Built = Vec<(Weak<ToolRegistry>, &'static str, Arc<ToolRegistry>)>;
     static BUILT: OnceLock<Mutex<Built>> = OnceLock::new();
     let mut built = BUILT.get_or_init(Default::default).lock();
-    built.retain(|(base, _)| base.strong_count() > 0);
-    if let Some((_, with)) = built.iter().find(|(base, _)| std::ptr::eq(base.as_ptr(), Arc::as_ptr(tools))) {
+    built.retain(|(base, _, _)| base.strong_count() > 0);
+    if let Some((_, _, with)) = built
+        .iter()
+        .find(|(base, k, _)| *k == kind && std::ptr::eq(base.as_ptr(), Arc::as_ptr(tools)))
+    {
         return with.clone();
     }
     let mut with = (**tools).clone();
-    for tool in agents::agent_tools() {
+    for tool in make() {
         // A custom registry may already define these names; it wins.
         let _ = with.register(tool);
     }
     let with = Arc::new(with);
-    built.push((Arc::downgrade(tools), with.clone()));
+    built.push((Arc::downgrade(tools), kind, with.clone()));
     with
 }
 
@@ -282,6 +321,7 @@ pub(crate) struct ChildLaunch {
     pub(crate) thinking: ThinkingLevel,
     pub(crate) permission_mode: PermissionMode,
     pub(crate) session_rules: Vec<CommandRule>,
+    pub(crate) site_grants: Vec<finx_protocol::SiteGrant>,
     pub(crate) deps: KernelDeps,
     pub(crate) home: FinxHome,
     pub(crate) config: Arc<Config>,
@@ -303,6 +343,7 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
         child.permission_mode,
     );
     state.session_rules = child.session_rules;
+    state.site_grants = child.site_grants;
     state.base_prompt = child.base_prompt;
     state.mcp_section = child.mcp_section;
     state.skills = child.skills.clone();
@@ -411,9 +452,15 @@ fn build_prompt(
 }
 
 impl Kernel {
+    /// What the kernel's tools keep for the session, while it runs.
+    pub(crate) fn tool_state(&self) -> Option<Arc<finx_tools::SessionState>> {
+        self.session.upgrade().map(|session| session.tool_state.clone())
+    }
+
     pub async fn start(opts: StartOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
+        add_browser_tools(&mut deps, &opts.config);
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
         let mut warnings = Vec::new();
         if resolved.ad_hoc {
@@ -502,6 +549,7 @@ impl Kernel {
     pub async fn resume(opts: ResumeOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let loaded = deps.store.open(&opts.session)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
+        add_browser_tools(&mut deps, &opts.config);
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
         let history = History::from_entries(loaded.entries);
         let mut system_prompt = None;
@@ -872,7 +920,7 @@ async fn submission_loop(
             }
             Some(message) = internal.recv() => match *message {
                 Internal::Mail(mail) => task::on_mail(&session, mail),
-                Internal::Permissions { mode, rules } => session.apply_permissions(mode, rules),
+                Internal::Permissions { mode, rules, grants } => session.apply_permissions(mode, rules, grants),
             },
         }
     }

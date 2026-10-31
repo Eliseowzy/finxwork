@@ -77,6 +77,7 @@ fn deps(api: &Arc<ScriptedApi>, env: &Env, tools: &[&str]) -> KernelDeps {
         store: Arc::new(JsonlStore::new(env.home.sessions_dir())),
         hooks: vec![],
         mcp_servers: Vec::new(),
+        browser_pool: None,
     }
 }
 

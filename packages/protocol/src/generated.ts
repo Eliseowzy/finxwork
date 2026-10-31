@@ -45,6 +45,8 @@ export type AgentStatus = "running" | "completed" | "failed" | "interrupted" | "
 export type ApprovalDecision = {
   type: "approve";
 } | {
+  /** Which of `proposed_grants` to keep, by index; the first when left out. */
+  grant?: number | null;
   type: "approve_for_session";
 } | {
   feedback?: string | null;
@@ -428,7 +430,9 @@ export type Event = {
   args: unknown;
   call_id: string;
   name: string;
-  /** Mode that `approve_for_session` switches the session to. With neither this nor `proposed_rule`, approving for the session approves this call only. */
+  /** Site permissions that `approve_for_session` may keep; its `grant` picks one, the first by default. */
+  proposed_grants?: SiteGrant[];
+  /** Mode that `approve_for_session` switches the session to. With none of this, `proposed_rule` and `proposed_grants`, approving for the session approves this call only. */
   proposed_mode?: PermissionMode | null;
   /** Command prefix that `approve_for_session` allows from then on. */
   proposed_rule?: CommandRule | null;
@@ -544,6 +548,8 @@ export type EventClass = "text_delta" | "thinking_delta" | "tool_call_delta" | "
 export type EventFilter = {
   exclude?: EventClass[];
 };
+
+export type GrantAuthority = "navigate" | "act";
 
 export type InitializeParams = {
   capabilities?: ClientCapabilities;
@@ -1015,6 +1021,7 @@ export type PendingApproval = {
   args: unknown;
   call_id: string;
   name: string;
+  proposed_grants?: SiteGrant[];
   proposed_mode?: PermissionMode | null;
   proposed_rule?: CommandRule | null;
   reason?: string | null;
@@ -1248,6 +1255,13 @@ export type SessionsChangedParams = {
   deleted?: string[];
   /** Whole summaries of the sessions that changed or appeared. */
   sessions: SessionSummary[];
+};
+
+/** Permission for the browser tools on one origin, for the rest of the session (docs/kernel/browser-design.md §7.3). */
+export type SiteGrant = {
+  authority: GrantAuthority;
+  /** `https://example.com`, or `*` for every site (navigation only). */
+  origin: string;
 };
 
 /** One `SKILL.md` that was found, and what became of it. */

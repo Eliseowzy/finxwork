@@ -8,6 +8,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value;
 use std::any::Any;
+use std::any::TypeId;
+use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -57,6 +59,15 @@ pub trait Tool: Send + Sync + 'static {
     /// kernel calls it first; hooks, approval, events and `execute` see the result.
     fn prepare_arguments(&self, args: Value) -> Value {
         args
+    }
+
+    /// What the call will do on which site, judged from the session's current state
+    /// (browser-design §7.1). The kernel computes it once, before the hooks; approval judges
+    /// it, and `execute` gets the same list in [`ToolCtx::authorities`]. `Err` fails the call
+    /// without asking anyone.
+    async fn authorities(&self, args: &Value, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        let _ = (args, ctx);
+        Ok(Vec::new())
     }
 
     /// Checks a call before the user is asked to approve it, so nobody approves a call that
@@ -146,9 +157,72 @@ pub struct ToolCtx {
     pub model_accepts_images: bool,
     /// Where the full output of a cut result is saved: the session's `tool-output` directory.
     pub output_dir: PathBuf,
-    /// What the kernel's own tools need from the calling session, such as its sub-agents. It
-    /// lets one instance of such a tool serve every session. The tools here ignore it.
-    pub session_state: Option<Arc<dyn Any + Send + Sync>>,
+    /// What the kernel's own tools keep for the calling session, such as its sub-agents or
+    /// its browser. It lets one instance of such a tool serve every session. The tools here
+    /// ignore it.
+    pub session_state: Arc<SessionState>,
+    /// What [`Tool::authorities`] returned when the call was approved; never recomputed, so
+    /// the tool can check that the page is still the approved one (browser-design §7.4).
+    pub authorities: Arc<[Authority]>,
+}
+
+/// Per-session values of the kernel's tools, one per type.
+#[derive(Default)]
+pub struct SessionState {
+    slots: parking_lot::Mutex<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>,
+}
+
+impl SessionState {
+    pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
+        let slot = self.slots.lock().get(&TypeId::of::<T>()).cloned()?;
+        slot.downcast::<T>().ok()
+    }
+
+    pub fn get_or_init<T: Send + Sync + 'static>(&self, init: impl FnOnce() -> T) -> Arc<T> {
+        let mut slots = self.slots.lock();
+        let slot = slots
+            .entry(TypeId::of::<T>())
+            .or_insert_with(|| Arc::new(init()) as Arc<dyn Any + Send + Sync>)
+            .clone();
+        slot.downcast::<T>().expect("slots are keyed by their type")
+    }
+
+    pub fn insert<T: Send + Sync + 'static>(&self, value: Arc<T>) {
+        self.slots.lock().insert(TypeId::of::<T>(), value);
+    }
+
+    pub fn remove<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
+        let slot = self.slots.lock().remove(&TypeId::of::<T>())?;
+        slot.downcast::<T>().ok()
+    }
+}
+
+impl fmt::Debug for SessionState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SessionState({} slots)", self.slots.lock().len())
+    }
+}
+
+/// A page as a call was approved for: the tab, the frame and the document (browser-design
+/// §7.1). Execution runs only on that page.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PageTarget {
+    pub tab: String,
+    pub frame: String,
+    pub loader: String,
+}
+
+/// What one call does on which site. Origins are written as `https://example.com`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Authority {
+    /// Opens a URL.
+    Navigate { url: String },
+    /// Reads the page of an origin.
+    Observe { origin: String },
+    /// Acts on a page: clicks, types, selects. `action` says what, for the user.
+    Act { origin: String, target: PageTarget, action: String },
+    /// Hands local files to a page.
+    Upload { origin: String, paths: Vec<PathBuf>, target: PageTarget },
 }
 
 /// What a tool returns. `content` goes to the model, `details` to user interfaces and logs.
