@@ -13,7 +13,7 @@
     "thinking": "Thinking",
     "thought": "Thought",
     "thinkingHidden": "The provider keeps this reasoning private",
-    "image": "Image",
+    "image": "Image (click to enlarge or shrink)",
     "copy": "Copy",
     "compacted": "Context compacted: {{before}} → {{after}} tokens",
     "interrupted": "You interrupted this task. Send a message to go on.",
@@ -130,7 +130,9 @@
     "cancel": "Cancel",
     "feedback": "Tell finx why, or what to do instead (optional)",
     "more_one": "{{count}} more line",
-    "more_other": "{{count}} more lines"
+    "more_other": "{{count}} more lines",
+    "remember": "Remember",
+    "rememberDesc": "Also save the site's permission in ~/.finx/config.toml, so later sessions don't ask"
   },
   "notice": {
     "label": "Notice",
@@ -286,6 +288,7 @@
   },
   "browser": {
     "title": "Browser",
-    "close": "Hide"
+    "close": "Hide",
+    "resize": "Resize the browser panel"
   }
 }

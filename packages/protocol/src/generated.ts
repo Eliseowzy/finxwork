@@ -47,6 +47,8 @@ export type ApprovalDecision = {
 } | {
   /** Which of `proposed_grants` to keep, by index; the first when left out. */
   grant?: number | null;
+  /** Keep that grant beyond the session too: written to the user's configuration under `[browser.sites]` (browser-design D-197). Not for "any site". */
+  persist?: boolean;
   type: "approve_for_session";
 } | {
   feedback?: string | null;

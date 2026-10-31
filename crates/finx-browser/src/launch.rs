@@ -60,7 +60,37 @@ impl Launcher for ManagedLauncher {
 }
 
 const NOT_FOUND: &str = "No Chrome, Edge or Chromium was found on this machine. Install Google Chrome, \
-    or set browser.executable in ~/.finx/config.toml to the path of a Chromium-based browser.";
+    run `finx browser install` to install a browser for finx alone, or set browser.executable in \
+    ~/.finx/config.toml to the path of a Chromium-based browser.";
+
+/// The Chrome for Testing platform of this machine, as its downloads name it (D-194).
+pub fn testing_platform() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => Some("mac-arm64"),
+        ("macos", "x86_64") => Some("mac-x64"),
+        ("linux", "x86_64") => Some("linux64"),
+        ("windows", "x86_64") => Some("win64"),
+        ("windows", "x86") => Some("win32"),
+        _ => None,
+    }
+}
+
+/// Where the executable lies in an unpacked Chrome for Testing archive of `platform`.
+pub fn testing_executable(platform: &str) -> Option<PathBuf> {
+    let app = "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing";
+    Some(match platform {
+        "mac-arm64" | "mac-x64" => PathBuf::from(format!("chrome-{platform}")).join(app),
+        "linux64" => PathBuf::from("chrome-linux64/chrome"),
+        "win64" | "win32" => PathBuf::from(format!("chrome-{platform}")).join("chrome.exe"),
+        _ => return None,
+    })
+}
+
+/// The browser `finx browser install` put under `browser_root` (`~/.finx/browser`), if any.
+pub fn installed_executable(browser_root: &Path) -> Option<PathBuf> {
+    let path = browser_root.join("chromium").join(testing_executable(testing_platform()?)?);
+    path.is_file().then_some(path)
+}
 
 /// The first Chromium-family browser in the usual places.
 pub fn find_executable() -> Option<PathBuf> {

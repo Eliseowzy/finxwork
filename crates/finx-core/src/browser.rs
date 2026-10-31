@@ -52,6 +52,7 @@ use std::time::Duration;
 use url::Url;
 
 use crate::config::BrowserSettings;
+use crate::hooks::Gate;
 
 /// Longest `browser_wait`.
 const MAX_WAIT: Duration = Duration::from_secs(60);
@@ -60,8 +61,26 @@ const NO_PAGE: &str = "No page is open in this session. Open one with browser_na
     (Tabs from before the session was resumed are closed.)";
 const RESTARTED: &str = "The browser had stopped, so it was started again: earlier tabs and refs are gone.";
 
-/// The seven tools, added to a session's tools when `browser.enabled` is on.
+/// Most steps a `browser_batch` runs.
+const MAX_STEPS: usize = 20;
+
+/// The tools added to a session's tools when `browser.enabled` is on: the seven, and
+/// `browser_batch` (D-193).
 pub(crate) fn browser_tools() -> Vec<Arc<dyn Tool>> {
+    let mut tools = step_tools();
+    tools.push(Arc::new(Typed::new(BrowserBatch)));
+    tools
+}
+
+/// [`browser_tools`] and `browser_eval`, with `browser.script_enabled` (§7.6).
+pub(crate) fn browser_tools_with_scripts() -> Vec<Arc<dyn Tool>> {
+    let mut tools = browser_tools();
+    tools.push(Arc::new(Typed::new(BrowserEval)));
+    tools
+}
+
+/// The tools a batch may run.
+fn step_tools() -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(Typed::new(BrowserNavigate)),
         Arc::new(Typed::new(BrowserSnapshot)),
@@ -72,6 +91,10 @@ pub(crate) fn browser_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(Typed::new(BrowserTabs)),
     ]
 }
+
+/// The approval policy's verdict on what a call does, without asking anyone: how a batch
+/// judges its steps after the first (§12.1).
+pub(crate) type Judge = Arc<dyn Fn(Vec<Authority>) -> futures::future::BoxFuture<'static, Gate> + Send + Sync>;
 
 /// What a session's browser tools need: the process's pool and the session's `[browser]`
 /// settings (D-207). Without it in the session's state the tools refuse.
@@ -87,6 +110,8 @@ pub(crate) struct BrowserHandle {
     starting: tokio::sync::Mutex<()>,
     /// The main session's id: the desktop app shows the tabs in its window.
     label: String,
+    /// Set by the kernel once the session exists.
+    judge: std::sync::OnceLock<Judge>,
 }
 
 impl BrowserHandle {
@@ -106,7 +131,12 @@ impl BrowserHandle {
             grants: Arc::new(Mutex::new(grants)),
             starting: tokio::sync::Mutex::new(()),
             label,
+            judge: std::sync::OnceLock::new(),
         }
+    }
+
+    pub(crate) fn set_judge(&self, judge: Judge) {
+        let _ = self.judge.set(judge);
     }
 
     pub(crate) fn set_grants(&self, grants: Vec<SiteGrant>) {
@@ -218,7 +248,9 @@ async fn browser(ctx: &ToolCtx) -> Result<(Arc<BrowserSession>, Option<&'static 
 /// The page the call was approved for (§7.4).
 fn approved(ctx: &ToolCtx) -> Option<finx_browser::session::PageTarget> {
     ctx.authorities.iter().find_map(|authority| match authority {
-        Authority::Act { origin, target, .. } | Authority::Upload { origin, target, .. } => {
+        Authority::Act { origin, target, .. }
+        | Authority::Upload { origin, target, .. }
+        | Authority::Script { origin, target } => {
             Some(finx_browser::session::PageTarget {
                 tab: target.tab.clone(),
                 frame: target.frame.clone(),
@@ -976,6 +1008,234 @@ fn list(session: &BrowserSession) -> String {
     }
     // Titles and URLs come from pages.
     finx_browser::snapshot::wrap_page_content("browser", &lines.join("\n"))
+}
+
+// ---- browser_eval ----
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct EvalArgs {
+    /// A JavaScript expression, run in the page; its value comes back as JSON. A promise is awaited.
+    expression: String,
+    /// Tab id; the current tab by default.
+    #[serde(default)]
+    tab: Option<String>,
+}
+
+struct BrowserEval;
+
+#[async_trait]
+impl TypedTool for BrowserEval {
+    type Args = EvalArgs;
+    const NAME: &'static str = "browser_eval";
+    const DESCRIPTION: &'static str = "Run a JavaScript expression in the page and get its value. The user is asked \
+        every time, so use it only for what the other browser tools cannot do, such as reading data the page keeps \
+        in scripts. Prefer browser_snapshot and browser_act.";
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mutating
+    }
+
+    async fn authorities(&self, args: &EvalArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        if args.expression.trim().is_empty() {
+            return Err(ToolError::InvalidArgs("expression must not be empty".into()));
+        }
+        let page = existing(ctx)?.page(args.tab.as_deref()).map_err(failed)?;
+        Ok(vec![Authority::Script {
+            target: page_target(&page),
+            origin: page.origin,
+        }])
+    }
+
+    fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
+        let expression = str_arg(args, "expression").unwrap_or("");
+        let first = expression.lines().next().unwrap_or("");
+        let short: String = first.chars().take(80).collect();
+        ToolDescription {
+            category: ToolCategory::Execute,
+            title: format!("run in the page: {short}"),
+            locations: Vec::new(),
+        }
+    }
+
+    async fn run(&self, args: EvalArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let session = existing(&ctx)?;
+        let page = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
+        let report = session.eval(&page, &args.expression).await.map_err(failed)?;
+        Ok(output(report, None))
+    }
+}
+
+// ---- browser_batch ----
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct BatchArgs {
+    /// The steps, run in order; the batch stops at the first that fails or needs approval.
+    steps: Vec<BatchStep>,
+}
+
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+pub(crate) struct BatchStep {
+    /// A browser tool: browser_navigate, browser_snapshot, browser_act, browser_screenshot, browser_wait, browser_console or browser_tabs.
+    tool: String,
+    /// That tool's arguments.
+    #[serde(default)]
+    args: Value,
+}
+
+struct BrowserBatch;
+
+/// A batch step's tool and its arguments.
+type Step = (Arc<dyn Tool>, Value);
+
+impl BatchArgs {
+    /// Each step with its tool; an unknown or nested tool fails the whole call.
+    fn tools(&self) -> Result<Vec<Step>, ToolError> {
+        if self.steps.is_empty() {
+            return Err(ToolError::InvalidArgs("give at least one step".into()));
+        }
+        if self.steps.len() > MAX_STEPS {
+            return Err(ToolError::InvalidArgs(format!("at most {MAX_STEPS} steps")));
+        }
+        let tools = step_tools();
+        self.steps
+            .iter()
+            .enumerate()
+            .map(|(i, step)| {
+                let tool = tools.iter().find(|t| t.spec().name == step.tool).cloned().ok_or_else(|| {
+                    ToolError::InvalidArgs(format!(
+                        "step {}: {} cannot be batched; use browser_navigate, browser_snapshot, browser_act, browser_screenshot, browser_wait, browser_console or browser_tabs",
+                        i + 1,
+                        step.tool
+                    ))
+                })?;
+                let args = if step.args.is_null() { json!({}) } else { step.args.clone() };
+                let args = tool.prepare_arguments(args);
+                Ok((tool, args))
+            })
+            .collect()
+    }
+}
+
+#[async_trait]
+impl TypedTool for BrowserBatch {
+    type Args = BatchArgs;
+    const NAME: &'static str = "browser_batch";
+    const DESCRIPTION: &'static str = "Run several browser tool calls in one go, in order, such as filling a form and \
+        submitting it. Only the first step is approved up front; each later step runs only if it needs no approval \
+        (its site is allowed already), and the batch stops at the first step that fails or needs approval: then call \
+        that step on its own. The result has each step's result. Use refs from a snapshot taken before the batch, or \
+        from an earlier step's result only if no navigation came in between.";
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mutating
+    }
+
+    /// The first step's: later steps may run on another page, so they are judged as they come.
+    async fn authorities(&self, args: &BatchArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        let steps = args.tools()?;
+        let (tool, step_args) = &steps[0];
+        tool.authorities(step_args, ctx).await
+    }
+
+    fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
+        let steps = args.get("steps").and_then(Value::as_array);
+        let names: Vec<&str> = steps
+            .map(|s| s.iter().filter_map(|step| step.get("tool").and_then(Value::as_str)).collect())
+            .unwrap_or_default();
+        let short: Vec<&str> = names.iter().map(|n| n.trim_start_matches("browser_")).collect();
+        ToolDescription {
+            category: ToolCategory::Other,
+            title: format!("browser: {}", short.join(", ")),
+            locations: Vec::new(),
+        }
+    }
+
+    async fn run(&self, args: BatchArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let steps = args.tools()?;
+        let judge = handle(&ctx)?.judge.get().cloned();
+        let total = steps.len();
+        let mut content = Vec::new();
+        let mut texts = Vec::new();
+        let mut details = None;
+        let mut stopped = None;
+        for (i, (tool, step_args)) in steps.into_iter().enumerate() {
+            let n = i + 1;
+            let name = tool.spec().name.clone();
+            if ctx.cancel.is_cancelled() {
+                return Err(ToolError::Cancelled);
+            }
+            // The first step was approved with the batch; the others pass the gates now.
+            let authorities: Arc<[Authority]> = if i == 0 {
+                ctx.authorities.clone()
+            } else {
+                let probe = ToolCtx {
+                    authorities: Arc::from([]),
+                    ..ctx.clone()
+                };
+                let found = match tool.authorities(&step_args, &probe).await {
+                    Ok(found) => found,
+                    Err(err) => {
+                        stopped = Some(format!("Step {n} ({name}) failed: {err}"));
+                        break;
+                    }
+                };
+                if !found.is_empty() {
+                    let Some(judge) = &judge else {
+                        stopped = Some(format!("Step {n} ({name}) was not run: it cannot be checked here."));
+                        break;
+                    };
+                    match judge(found.clone()).await {
+                        Gate::Allow => {}
+                        Gate::Deny(reason) => {
+                            stopped = Some(format!("Step {n} ({name}) was refused: {reason}"));
+                            break;
+                        }
+                        Gate::Ask { summary, .. } => {
+                            stopped = Some(format!(
+                                "Step {n} ({name}) needs approval ({summary}), which a batch does not ask for. Call it on its own."
+                            ));
+                            break;
+                        }
+                    }
+                }
+                found.into()
+            };
+            let step_ctx = ToolCtx {
+                authorities,
+                ..ctx.clone()
+            };
+            let output = match tool.execute(step_args, step_ctx).await {
+                Ok(output) => output,
+                Err(ToolError::Cancelled) => return Err(ToolError::Cancelled),
+                Err(err) => ToolOutput::error(err.to_string()),
+            };
+            let mut text = String::new();
+            for part in output.content {
+                match part {
+                    UserContent::Text { text: t } => text.push_str(&t),
+                    image => content.push(image),
+                }
+            }
+            texts.push(format!("Step {n} of {total} ({name}):\n{text}"));
+            if output.details.is_some() {
+                details = output.details;
+            }
+            if output.is_error {
+                stopped = Some(format!("Step {n} ({name}) failed, so the batch stopped."));
+                break;
+            }
+        }
+        let ran = texts.len();
+        if let Some(why) = &stopped {
+            texts.push(format!("{why} {ran} of {total} steps ran; the rest did not."));
+        }
+        content.insert(0, UserContent::Text { text: texts.join("\n\n") });
+        Ok(ToolOutput {
+            content,
+            details,
+            is_error: stopped.is_some(),
+        })
+    }
 }
 
 #[cfg(test)]

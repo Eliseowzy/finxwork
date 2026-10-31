@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | v0.4 |
 | 日期 | 2026-10-31 |
-| 状态 | 草案，待评审 |
+| 状态 | 一期、二期已实现（feature/browser-control） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -233,7 +233,7 @@ Windows 也用 pipe（D-195）：
 | `browser_wait` | 只读 | `Observe(origin)` | 等待文字出现或消失、网址变化、网络空闲，或者固定等待一段时间（有上限） |
 | `browser_console` | 只读 | `Observe(origin)` | 本标签页的控制台消息、未捕获的异常和失败的网络请求，可以按级别过滤，从上次读取的位置继续 |
 
-二期：`browser_batch`（D-193）、`browser_eval`（执行脚本，§7.6）。
+二期加了两个：`browser_batch`（D-193，§12.1），浏览器启用时就有；`browser_eval`（执行脚本，§7.6），只在 `browser.script_enabled = true` 时出现在工具列表里。
 
 - **默认不启用**：浏览器工具默认不在工具列表里，配置 `browser.enabled = true` 以后加入（D-165）。
 - **开销**：工具定义放在请求前缀里，7 个工具约 1.8k token；没启用时没有任何开销。
@@ -516,7 +516,11 @@ pub trait Tool {
   - `Upload` 和 `Script` 不提出会话授权，每次都问。
 - **不管什么模式都拒绝**：域名策略和站点授权里的 `deny`、云元数据地址。
 - **没有审批人**：`finx exec`、子智能体和非交互会话遇到需要审批的调用时，得到"没有人可以批准"的结果，结果里写明需要在配置的 `browser.sites` 里允许哪个 origin。
-- **永久允许**（D-197）：审批时选"永久允许"，写入用户配置（`~/.finx/config.toml`）的 `browser.sites`，与命令审批的 `[[rules]]` 放在同一个文件，用户在一处查看和修改所有权限。只写用户配置，不写项目配置。二期提供，一期可以手写配置。
+- **永久允许**（D-197）：审批时选"永久允许"，写入用户配置（`~/.finx/config.toml`）的 `browser.sites`，与命令审批的 `[[rules]]` 放在同一个文件，用户在一处查看和修改所有权限。只写用户配置，不写项目配置。
+  - 协议：`ApproveForSession` 加可选的 `persist: true`，对它选中的那条授权生效；旧客户端不发这个字段，行为不变；
+  - "任何网站"那条不写；已有的 `deny` 不覆盖，`act` 不降成 `navigate`；文件里其他内容和注释保持原样；
+  - 写入失败时这次批准照样生效（只在本会话），并发出一条警告；
+  - 入口：ACP 为每条授权另加一个 `approve_always:<序号>` 选项；`finx exec` 输入序号加 `!`（如 `1!`）；桌面端审批框里勾选"记住"再点授权按钮。
 
 ### 7.4 执行前再核对（D-181）
 
@@ -546,9 +550,10 @@ pub trait Tool {
 ### 7.6 执行脚本与 raw CDP（D-175）
 
 - **`browser_eval`**（在页面里执行 JS）：二期提供，默认关闭。需要同时满足三个条件：
-  - 配置 `browser.script_enabled = true`；
-  - 该 origin 的策略不是 `deny`；
-  - 每次调用都经过审批。
+  - 配置 `browser.script_enabled = true`（只认用户配置，项目配置不能打开）；
+  - 该 origin 的策略不是 `deny`，也不是云元数据地址；
+  - 每次调用都经过审批，`bypass-permissions` 也一样，不提出会话授权（权限 `Script`）。
+- 实现：在审批时那个页面的主框架里用 `Runtime.evaluate` 执行（执行前照常再核对，§7.4），等待 promise，返回值按 JSON 给出并作为页面内容包起来，结果里另附页面的变化；抛出异常或超时时说明"页面可能已经被改动"。不能放进 `browser_batch`。
 - **raw CDP**：不提供给模型。以后如果要提供，至少要有：
   - 域名白名单；
   - 方法黑名单：禁止注入脚本、绕过 CSP、改请求头、清 cookie 等；
@@ -598,7 +603,11 @@ pub trait Backend: Send + Sync {
   - 内核运行在没有显示器的环境里（SSH 登录、服务器）时用无界面模式；
   - 启动浏览器时决定，运行中不切换。
 - **用户接手**：用户直接在窗口里操作即可，不需要额外的交接。智能体的下一次调用会因为执行前的再核对（§7.4）返回"页面已变化"，于是重新取快照。
-- **安装**（D-194，二期）：`finx browser install` 下载 Chrome for Testing，校验哈希，装到 `~/.finx/browser/chromium`，找浏览器时排在系统浏览器之后。只由用户主动运行，桌面端的"安装"按钮调用同一条命令。
+- **安装**（D-194，二期）：`finx browser install` 下载 Chrome for Testing，装到 `~/.finx/browser/chromium`，找浏览器时排在系统浏览器之后。只由用户主动运行。
+  - 版本：官方 last-known-good 清单里 Stable 的版本，已经装了同一版本时不再下载；
+  - 校验：Chrome for Testing 不公布单独的哈希文件，所以用下载时 Google 存储在 `x-goog-hash` 头里给出的 MD5 核对收到的内容（没有这个头就拒绝），解压时逐个文件核对 zip 里的 CRC，macOS 上再用 `codesign --verify --deep --strict` 验签；指向包外的链接和路径一律拒绝；
+  - 全部通过后才替换旧的安装，失败时旧的保持原样，不留下半成品；
+  - 桌面端不提供"安装"按钮：桌面端用内嵌浏览器（§8.3），不需要另装浏览器。
 - **连接**：`Target.setAutoAttach {flatten: true}`，所有 target 共用一条连接，用 `sessionId` 区分。只保留页面和 iframe，worker 等其他 target 直接 detach。
 - **退出**：先发 `Browser.close`，等待超时后再结束进程。由独立的关闭任务执行，见 §6.1（D-204）。
 
@@ -803,6 +812,10 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
   - 所以批量调用只审批第一步，后面每一步在执行前按 §7.2 的闸和已有授权检查；
   - 遇到需要询问的步骤就停下，结果里写明"第 n 步需要批准，请单独调用"。
 - **再核对**：§7.4 在每一步照常进行。
+- **实现**：
+  - 最多 20 步；可以放进批量的是 7 个工具，`browser_batch` 自身和 `browser_eval` 不行；步骤里的工具名在审批之前就检查；
+  - 后面的步骤由审批策略（站点策略）判断，结果是 `Allow` 才执行，`Ask` 或 `Deny` 时停下并说明原因；
+  - 结果按步骤列出，停下时写明"n 步中执行了几步，其余没有执行"，截图步骤的图片照常附带。
 
 ## 13. 决策与待定问题
 

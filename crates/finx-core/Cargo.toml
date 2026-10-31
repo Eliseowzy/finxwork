@@ -17,6 +17,7 @@ finx-llm.workspace = true
 finx-mcp.workspace = true
 finx-protocol.workspace = true
 finx-tools.workspace = true
+md-5.workspace = true
 reqwest.workspace = true
 parking_lot.workspace = true
 rand.workspace = true

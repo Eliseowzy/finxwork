@@ -231,6 +231,19 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         config: launch.config,
         state: Mutex::new(launch.state),
     });
+    // A browser batch judges its later steps by the session's approval policy (§12.1).
+    if let Some(browser) = session.tool_state.get::<BrowserHandle>() {
+        let weak = Arc::downgrade(&session);
+        browser.set_judge(Arc::new(move |authorities| {
+            let weak = weak.clone();
+            Box::pin(async move {
+                match weak.upgrade() {
+                    Some(session) => crate::site_policy::evaluate(&authorities, &session.view()).await,
+                    None => crate::hooks::Gate::Deny("the session has ended".into()),
+                }
+            })
+        }));
+    }
     let handle = tokio::spawn(submission_loop(session.clone(), op_rx, internal_rx));
     let kernel = Kernel {
         ops: op_tx,
@@ -277,7 +290,11 @@ fn agent_tree(
 /// the agent tree is built, so sub-agents get them too.
 fn add_browser_tools(deps: &mut KernelDeps, config: &Config) {
     if config.browser.enabled && deps.browser_pool.is_some() {
-        deps.tools = extended(&deps.tools, "browser", crate::browser::browser_tools);
+        deps.tools = if config.browser.policy.script_enabled {
+            extended(&deps.tools, "browser+scripts", crate::browser::browser_tools_with_scripts)
+        } else {
+            extended(&deps.tools, "browser", crate::browser::browser_tools)
+        };
     }
 }
 

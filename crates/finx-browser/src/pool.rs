@@ -224,8 +224,15 @@ impl BrowserPool {
             Headless::Off => false,
             Headless::Auto => self.auto_headless,
         };
+        // The configured one, else one installed on the machine, else finx's own (D-194).
+        let executable = config.executable.clone().or_else(|| {
+            crate::launch::find_executable()
+                .is_none()
+                .then(|| crate::launch::installed_executable(&self.root))
+                .flatten()
+        });
         let options = LaunchOptions {
-            executable: config.executable.clone(),
+            executable,
             user_data_dir: user_data_dir.clone(),
             headless,
         };

@@ -6,6 +6,7 @@
 mod agents;
 pub mod approval;
 mod browser;
+pub mod browser_install;
 mod budget;
 pub mod commands;
 mod compaction;

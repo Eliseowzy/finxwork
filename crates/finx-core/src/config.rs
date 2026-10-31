@@ -113,9 +113,6 @@ impl BrowserSettings {
                 )));
             }
         };
-        if file.script_enabled == Some(true) {
-            return Err(ConfigError::Invalid("browser.script_enabled is not available yet".into()));
-        }
         let mut sites = BTreeMap::new();
         for (origin, level) in file.sites.unwrap_or_default() {
             let normalized = finx_browser::policy::normalize_origin(&origin).ok_or_else(|| {
@@ -144,6 +141,7 @@ impl BrowserSettings {
                 allowed_domains: file.allowed_domains.unwrap_or_default(),
                 denied_domains: file.denied_domains.unwrap_or_default(),
                 sites,
+                script_enabled: file.script_enabled.unwrap_or(false),
             }),
             navigation_timeout: Duration::from_secs(file.navigation_timeout_secs.unwrap_or(30).clamp(1, 600)),
             action_timeout: Duration::from_secs(file.action_timeout_secs.unwrap_or(10).clamp(1, 600)),

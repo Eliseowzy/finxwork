@@ -74,6 +74,28 @@ async fn judge(authority: &Authority, view: &SessionView) -> Verdict {
         Authority::Observe { .. } => Verdict::Allow,
         Authority::Act { origin, action, .. } => act(origin, action, view).await,
         Authority::Upload { origin, paths, .. } => upload(origin, paths, view).await,
+        Authority::Script { origin, .. } => script(origin, view).await,
+    }
+}
+
+/// Scripts: only with `browser.script_enabled`, never on a refused site, and asked about every
+/// time in every mode (§7.3, §7.6).
+async fn script(origin: &str, view: &SessionView) -> Verdict {
+    if !view.browser.script_enabled {
+        return Verdict::Deny("running scripts is off (browser.script_enabled)".into());
+    }
+    if let Ok(url) = Url::parse(origin) {
+        if let Some(reason) = view.browser.refusal(&url) {
+            return Verdict::Deny(reason);
+        }
+        if classify_url(&url).await == AddressClass::Metadata {
+            return Verdict::Deny(format!("{origin} is a cloud metadata address"));
+        }
+    }
+    Verdict::Ask {
+        summary: format!("run a script on {origin}"),
+        reason: "A script can read and change anything on the page, so every one is asked about.".into(),
+        grants: Vec::new(),
     }
 }
 
@@ -212,6 +234,46 @@ async fn upload(origin: &str, paths: &[PathBuf], view: &SessionView) -> Verdict 
     }
 }
 
+/// Writes a grant into `[browser.sites]` of the user's configuration (D-197): never "any
+/// site", never over a `deny`, and never down from `act` to `navigate`. Comments and the rest
+/// of the file stay as they are.
+pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), String> {
+    if grant.origin == "*" {
+        return Err("\"any site\" is never kept".into());
+    }
+    let text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err.to_string()),
+    };
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let browser = doc
+        .entry("browser")
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_mut()
+        .ok_or("browser is not a table")?;
+    let sites = browser
+        .entry("sites")
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .ok_or("browser.sites is not a table")?;
+    let level = match grant.authority {
+        GrantAuthority::Navigate => "navigate",
+        GrantAuthority::Act => "act",
+    };
+    let current = sites.get(&grant.origin).and_then(|v| v.as_str()).map(str::to_string);
+    match current.as_deref() {
+        Some("deny") | Some("act") => return Ok(()),
+        Some("navigate") if level == "navigate" => return Ok(()),
+        _ => {}
+    }
+    sites.insert(&grant.origin, toml_edit::value(level));
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    crate::config_edit::replace_file(file, doc.to_string().as_bytes()).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -303,6 +365,46 @@ mod tests {
         assert!(matches!(evaluate(&[nav("https://www.evil.test/")], &bypass).await, Gate::Deny(_)));
         assert!(matches!(evaluate(&[nav("javascript:alert(1)")], &bypass).await, Gate::Deny(_)));
         assert!(matches!(evaluate(&[act_on("https://evil.test")], &bypass).await, Gate::Deny(_)));
+    }
+
+    #[test]
+    fn remembered_grants_go_into_the_user_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        std::fs::write(&file, "# mine\nmodel = \"x\"\n\n[browser]\nenabled = true\n[browser.sites]\n\"https://bank.test\" = \"deny\"\n").unwrap();
+        remember(&file, &grant(GrantAuthority::Navigate, "https://a.test")).unwrap();
+        remember(&file, &grant(GrantAuthority::Act, "https://a.test")).unwrap();
+        remember(&file, &grant(GrantAuthority::Navigate, "https://a.test")).unwrap();
+        remember(&file, &grant(GrantAuthority::Act, "https://bank.test")).unwrap();
+        assert!(remember(&file, &grant(GrantAuthority::Navigate, "*")).is_err());
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with("# mine\nmodel = \"x\""), "{text}");
+        let parsed: toml::Table = text.parse().unwrap();
+        let sites = &parsed["browser"]["sites"];
+        assert_eq!(sites["https://a.test"].as_str(), Some("act"), "never down from act");
+        assert_eq!(sites["https://bank.test"].as_str(), Some("deny"), "never over a deny");
+        // A file that does not exist yet.
+        let fresh = dir.path().join("new/config.toml");
+        remember(&fresh, &grant(GrantAuthority::Act, "http://192.168.1.10:8080")).unwrap();
+        assert!(std::fs::read_to_string(&fresh).unwrap().contains("[browser.sites]\n\"http://192.168.1.10:8080\" = \"act\""));
+    }
+
+    #[tokio::test]
+    async fn scripts_ask_every_time_and_only_when_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Authority::Script {
+            origin: "http://localhost:3000".into(),
+            target: page(),
+        };
+        let off = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), dir.path());
+        assert!(matches!(evaluate(std::slice::from_ref(&script), &off).await, Gate::Deny(r) if r.contains("script_enabled")));
+        let on = SitePolicy {
+            script_enabled: true,
+            ..SitePolicy::default()
+        };
+        let granted = vec![grant(GrantAuthority::Act, "http://localhost:3000")];
+        let bypass = view(PermissionMode::BypassPermissions, granted, on, dir.path());
+        assert_eq!(asks(&evaluate(std::slice::from_ref(&script), &bypass).await), Some(vec![]), "asks even in bypass, never for the session");
     }
 
     #[tokio::test]

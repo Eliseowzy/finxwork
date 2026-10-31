@@ -297,6 +297,14 @@ pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>,
         };
         options.push(json!({ "optionId": format!("approve_for_session:{index}"), "name": name, "kind": "allow_always" }));
     }
+    // Kept in the configuration: a named site only, never "any site" (D-197, D-201).
+    for (index, grant) in grants.iter().enumerate().filter(|(_, g)| g.origin != "*") {
+        let name = match grant.authority {
+            GrantAuthority::Navigate => format!("总是允许打开 {}（写入配置）", grant.origin),
+            GrantAuthority::Act => format!("总是允许在 {} 上操作（写入配置）", grant.origin),
+        };
+        options.push(json!({ "optionId": format!("approve_always:{index}"), "name": name, "kind": "allow_always" }));
+    }
     options.push(json!({ "optionId": "deny", "name": "拒绝", "kind": "reject_once" }));
     Value::Array(options)
 }

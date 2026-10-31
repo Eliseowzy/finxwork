@@ -513,6 +513,18 @@ impl Session {
         self.share_permissions();
     }
 
+    /// "Always allow": the grant goes into the user's configuration as well (D-197). A
+    /// failure to write is a warning; the grant still holds for the session.
+    pub(crate) fn remember_site(&self, grant: &SiteGrant) {
+        let file = self.data_dir.join("config.toml");
+        if let Err(err) = crate::site_policy::remember(&file, grant) {
+            self.emit(EventMsg::Warning {
+                message: format!("could not save the site permission in {}: {err}", file.display()),
+                code: None,
+            });
+        }
+    }
+
     /// Navigations the page makes may reach the private sites the session allowed.
     fn sync_browser_grants(&self) {
         if let Some(browser) = self.tool_state.get::<crate::browser::BrowserHandle>() {

@@ -36,17 +36,73 @@ function hostOf(url: string): string {
   }
 }
 
+/** The panel's width the person dragged it to, kept for later. */
+const widthKey = "finxwork.browserPanelWidth";
+const minWidth = 360;
+/** What the conversation keeps beside the panel at least (layout.ts). */
+const conversationRoom = 560;
+
+function savedWidth(): number | null {
+  const n = Number(localStorage.getItem(widthKey));
+  return Number.isFinite(n) && n >= minWidth ? n : null;
+}
+
 export function BrowserPanel({ session, tabs }: { session: string; tabs: BrowserTab[] }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const room = useRef<HTMLDivElement>(null);
+  const panel = useRef<HTMLElement>(null);
   const current = tabs.find((x) => x.shown) ?? tabs[tabs.length - 1];
+  const [width, setWidth] = useState<number | null>(savedWidth);
+  const [resizing, setResizing] = useState(false);
+
+  /** The widest the panel may be: the conversation keeps its room. */
+  const maxWidth = () => {
+    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
+    const left = panel.current?.parentElement?.getBoundingClientRect().left ?? 0;
+    return Math.max(minWidth, right - left - conversationRoom);
+  };
+  const keep = (w: number) => {
+    const next = Math.round(Math.min(maxWidth(), Math.max(minWidth, w)));
+    setWidth(next);
+    localStorage.setItem(widthKey, String(next));
+  };
+  // The arrow keys on the edge: left widens, right narrows.
+  const resizeByKey = (e: React.KeyboardEvent) => {
+    const now = panel.current?.getBoundingClientRect().width ?? minWidth;
+    if (e.key === "ArrowLeft") keep(now + 24);
+    else if (e.key === "ArrowRight") keep(now - 24);
+    else return;
+    e.preventDefault();
+  };
+
+  // Dragging the left edge. The tab's view sits above the page and would take the pointer,
+  // so it steps aside (rect null) until the drag ends.
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
+    const max = maxWidth();
+    window.finx?.setBrowserPanel({ session, rect: null });
+    setResizing(true);
+    const move = (ev: PointerEvent) => setWidth(Math.round(Math.min(max, Math.max(minWidth, right - ev.clientX))));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      setResizing(false);
+      setWidth((w) => {
+        if (w !== null) localStorage.setItem(widthKey, String(w));
+        return w;
+      });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   // Where the tab's view goes, in window coordinates; reported again as it moves or resizes.
   useLayoutEffect(() => {
     const el = room.current;
     const finx = window.finx;
-    if (!el || !finx) return;
+    if (!el || !finx || resizing) return;
     const report = () => {
       const r = el.getBoundingClientRect();
       finx.setBrowserPanel({ session, rect: { x: r.left, y: r.top, width: r.width, height: r.height } });
@@ -60,10 +116,16 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
       window.removeEventListener("resize", report);
       finx.setBrowserPanel({ session: null, rect: null });
     };
-  }, [session]);
+  }, [session, resizing]);
 
   return (
-    <aside className="bgp brp" aria-label={t("browser.title")}>
+    <aside
+      ref={panel}
+      className={`bgp brp ${width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
+      style={width !== null ? ({ "--brp-w": `${width}px` } as React.CSSProperties) : undefined}
+      aria-label={t("browser.title")}
+    >
+      <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />
       <div className="bgp-top drag">
         <h3>{t("browser.title")}</h3>
         <button className="tb" aria-label={t("browser.close")} title={t("browser.close")} onClick={() => st.set({ browser: false })}>

@@ -337,6 +337,11 @@ button.insp-row:active{background:var(--fill2)}
 .tool{border-radius:var(--r-md);font-size:14px}
 .tool .th{display:flex;align-items:center;gap:6px;padding:2px 0;border-radius:var(--r-sm);border:0;background:none;max-width:100%;text-align:left;color:var(--l2)}
 .tool .th:hover{color:var(--l1)}
+.tool-shots{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
+.tool-shot{padding:0;border:.5px solid var(--sep);border-radius:var(--r-sm);background:none;overflow:hidden;cursor:zoom-in;line-height:0}
+.tool-shot img{display:block;max-width:240px;max-height:150px;object-fit:contain}
+.tool-shots.big .tool-shot{cursor:zoom-out}
+.tool-shots.big .tool-shot img{max-width:100%;max-height:none}
 .tool .th .vb{flex:none}
 .tool .th .sm2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* A command reads as code: the mono face a size down, a little quieter until hovered. */
@@ -469,7 +474,12 @@ button.insp-row:active{background:var(--fill2)}
 .bgp-list{flex:none;max-height:50%;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0 8px 4px;scrollbar-width:thin}
 .bgp.nosel .bgp-list{flex:1;max-height:none}
 /* The embedded browser's panel: wider than the background panel; the tab's own view is laid over .brp-view by the main process. */
-.bgp.brp{width:clamp(380px,44%,760px)}
+.bgp.brp{position:relative;width:clamp(380px,44%,760px)}
+.bgp.brp.sized{width:var(--brp-w)}
+/* Drag to resize; while dragging the page's own view steps aside (it would take the pointer). */
+.brp-grip{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:2}
+.brp-grip:hover,.brp.resizing .brp-grip{background:var(--sel)}
+.brp.resizing .brp-view{background:var(--side-sel)}
 .brp-tabs{flex:none;display:flex;gap:4px;padding:0 10px 6px;overflow-x:auto;scrollbar-width:none}
 .brp-tab{flex:none;max-width:180px;padding:3px 9px;border-radius:6px;font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brp-tab:hover{background:var(--side-sel)}

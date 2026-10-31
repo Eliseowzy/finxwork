@@ -29,6 +29,8 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const [denying, setDenying] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
+  // "Always": the chosen site grant also goes into ~/.finx/config.toml (never "any site").
+  const [remember, setRemember] = useState(false);
   const field = useRef<HTMLInputElement>(null);
 
   const give = async (decision: ApprovalDecision) => {
@@ -103,9 +105,15 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
           <>
             <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("approval.denyWhy")}</button>
             <span className="appr-sp" />
+            {grants.some((g) => g.origin !== "*") && (
+              <label className="appr-keep" title={t("approval.rememberDesc")}>
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                {t("approval.remember")}
+              </label>
+            )}
             {grants.length > 0 ? (
               grants.map((g, i) => (
-                <button key={i} className="btn" disabled={busy} title={grantTitle(g, t)} onClick={() => give({ type: "approve_for_session", grant: i })}>
+                <button key={i} className="btn" disabled={busy} title={grantTitle(g, t)} onClick={() => give({ type: "approve_for_session", grant: i, persist: remember && g.origin !== "*" ? true : undefined })}>
                   {grantLabel(g, t)}
                 </button>
               ))

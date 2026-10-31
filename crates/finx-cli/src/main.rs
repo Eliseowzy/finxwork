@@ -138,6 +138,11 @@ enum Command {
         #[command(subcommand)]
         action: Option<SkillsAction>,
     },
+    /// The browser tools' own browser
+    Browser {
+        #[command(subcommand)]
+        command: BrowserCommand,
+    },
     /// Trust a project so its .finx/config.toml may change security settings
     Trust {
         /// Project directory (default: the current directory)
@@ -167,6 +172,13 @@ enum Command {
         #[command(subcommand)]
         command: ProtocolCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum BrowserCommand {
+    /// Download Chrome for Testing into ~/.finx/browser/chromium, for machines without Chrome,
+    /// Edge or Chromium (used only when none is installed)
+    Install,
 }
 
 #[derive(Subcommand)]
@@ -406,6 +418,9 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         }
         Command::Serve { listen, idle_exit, .. } => cmd_serve::serve(overrides, listen, idle_exit).await,
         Command::Acp => cmd_serve::acp(overrides).await,
+        Command::Browser {
+            command: BrowserCommand::Install,
+        } => cmd_info::browser_install().await,
         Command::Mcp {
             command: McpCommand::List { check: true, json },
         } => cmd_mcp::check(overrides, json).await,

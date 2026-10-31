@@ -408,6 +408,10 @@
                 "null"
               ]
             },
+            "persist": {
+              "description": "Keep that grant beyond the session too: written to the user's configuration under `[browser.sites]` (browser-design D-197). Not for \"any site\".",
+              "type": "boolean"
+            },
             "type": {
               "enum": [
                 "approve_for_session"

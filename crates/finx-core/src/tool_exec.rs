@@ -272,7 +272,7 @@ async fn request_approval(
     });
     match decision {
         ApprovalDecision::Approve => Approval::Granted,
-        ApprovalDecision::ApproveForSession { grant } => {
+        ApprovalDecision::ApproveForSession { grant, persist } => {
             // With nothing proposed, this approves the call only.
             if let Some(rule) = proposal.rule {
                 session.add_session_rule(rule);
@@ -283,6 +283,9 @@ async fn request_approval(
             // Only a grant that was proposed: a client cannot name a wider one. An index out
             // of range keeps nothing beyond this call.
             if let Some(grant) = proposal.grants.into_iter().nth(grant.unwrap_or(0)) {
+                if persist && grant.origin != "*" {
+                    session.remember_site(&grant);
+                }
                 session.add_site_grant(grant);
             }
             Approval::Granted

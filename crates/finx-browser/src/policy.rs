@@ -155,6 +155,8 @@ pub struct SitePolicy {
     pub denied_domains: Vec<String>,
     /// By origin, as [`origin_of`] writes it.
     pub sites: BTreeMap<String, SiteLevel>,
+    /// `browser.script_enabled`: `browser_eval` may be asked about at all (§7.6).
+    pub script_enabled: bool,
 }
 
 impl SitePolicy {
@@ -263,6 +265,7 @@ mod tests {
             allowed_domains: vec![],
             denied_domains: vec!["evil.test".into()],
             sites: BTreeMap::new(),
+            script_enabled: false,
         };
         policy.sites.insert("https://bank.example.com".into(), SiteLevel::Deny);
         assert!(policy.refusal(&url("https://www.evil.test/")).is_some());

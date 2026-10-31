@@ -908,6 +908,77 @@ impl BrowserSession {
         self.report(&tab, changes, &summary).await
     }
 
+    /// Runs a script in the page's own world, on the page the call was approved for (§7.6),
+    /// and reports its value and what changed. The value is page content.
+    pub async fn eval(&self, page: &PageTarget, expression: &str) -> Result<Report, BrowserError> {
+        let (tab, _) = self.verify(page)?;
+        let _busy = tab.busy.lock().await;
+        let (tab, frame) = self.verify(page)?;
+        let before = match self.last.lock().get(&(tab.id.clone(), page.frame.clone())) {
+            Some((loader, lines)) if *loader == frame.loader => Some(lines.clone()),
+            _ => None,
+        };
+        let before = match before {
+            Some(lines) => lines,
+            None => self.tree(&tab, &page.frame, &frame, None, 0).await.unwrap_or_default(),
+        };
+        let main_before = self.main_loader(&tab);
+        let timeout = self.options.action_timeout;
+        // No contextId: the main world of the session's top frame, which is the approved one.
+        let sent = self
+            .conn()
+            .send_with_timeout(
+                Some(&frame.session),
+                "Runtime.evaluate",
+                json!({
+                    "expression": expression,
+                    "returnByValue": true,
+                    "awaitPromise": true,
+                    "userGesture": true,
+                    "timeout": timeout.as_millis() as u64,
+                }),
+                timeout + Duration::from_secs(1),
+            )
+            .await;
+        let result = match sent {
+            Ok(result) => result,
+            Err(CdpError::Timeout { .. }) => {
+                return Err(BrowserError::failed(
+                    "The script did not finish in time; it may have changed the page. Take a snapshot.",
+                ));
+            }
+            Err(err) => return Err(err.into()),
+        };
+        let origin = url_origin(&frame.url);
+        if let Some(details) = result.get("exceptionDetails") {
+            let text = details["exception"]["description"]
+                .as_str()
+                .or_else(|| details["text"].as_str())
+                .unwrap_or("an exception");
+            return Err(BrowserError::Failed(format!(
+                "The script threw; it may have changed the page before that. Take a snapshot.\n{}",
+                snapshot::wrap_page_content(&origin, &cut(text, 4_000, ""))
+            )));
+        }
+        let value = &result["result"];
+        let shown = match value.get("value") {
+            Some(v) => serde_json::to_string_pretty(v).unwrap_or_default(),
+            None => value["description"].as_str().unwrap_or("undefined").to_string(),
+        };
+        let summary = format!(
+            "Ran the script. Its value:\n{}",
+            snapshot::wrap_page_content(&origin, &cut(&shown, 20_000, "The value was cut."))
+        );
+        self.settle(&tab, main_before.clone()).await;
+        drop(_busy);
+        let changes = if self.main_loader(&tab) != main_before {
+            None
+        } else {
+            Some((page.frame.clone(), frame, before))
+        };
+        self.report(&tab, changes, &summary).await
+    }
+
     async fn perform(&self, action: &Action, place: &Place, tab: &Arc<Tab>, cancel: &CancellationToken) -> Result<String, BrowserError> {
         match (action, place) {
             (Action::Scroll { dx, dy }, Place::Page(_)) => {

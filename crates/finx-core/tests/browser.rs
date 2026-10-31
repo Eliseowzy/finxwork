@@ -58,8 +58,11 @@ async fn serve(pages: HashMap<&'static str, &'static str>) -> u16 {
                 let mut buf = vec![0u8; 8192];
                 let n = stream.read(&mut buf).await.unwrap_or(0);
                 let request = String::from_utf8_lossy(&buf[..n]).to_string();
-                let path = request.split_whitespace().nth(1).unwrap_or("/");
-                let path = path.split('?').next().unwrap_or("/");
+                let target = request.split_whitespace().nth(1).unwrap_or("/");
+                let (path, query) = target.split_once('?').unwrap_or((target, ""));
+                if path == "/beat" {
+                    *BEATS.lock().unwrap().entry((port, query.to_string())).or_default() += 1;
+                }
                 let (status, body) = match pages.get(path) {
                     Some(body) => ("200 OK", *body),
                     None => ("404 Not Found", "<title>missing</title>"),
@@ -75,8 +78,29 @@ async fn serve(pages: HashMap<&'static str, &'static str>) -> u16 {
     port
 }
 
+/// Heartbeats of `/alive` pages, by server port and the page's query: a page beats while its
+/// tab is open.
+static BEATS: std::sync::LazyLock<std::sync::Mutex<HashMap<(u16, String), u64>>> = std::sync::LazyLock::new(Default::default);
+
+fn beats(origin: &str, who: &str) -> u64 {
+    let port: u16 = origin.rsplit(':').next().unwrap().parse().unwrap();
+    BEATS.lock().unwrap().get(&(port, who.to_string())).copied().unwrap_or(0)
+}
+
+/// Whether the page of `who` is still beating: beats come within `window`.
+async fn beating(origin: &str, who: &str, window: Duration) -> bool {
+    let before = beats(origin, who);
+    tokio::time::sleep(window).await;
+    beats(origin, who) > before
+}
+
 fn pages() -> HashMap<&'static str, &'static str> {
     let mut pages = HashMap::new();
+    pages.insert("/beat", "");
+    pages.insert(
+        "/alive",
+        "<title>Alive</title><h1>Alive</h1><script>setInterval(() => fetch('/beat' + location.search), 150)</script>",
+    );
     pages.insert(
         "/login",
         r#"<title>Sign in</title><h1>Sign in</h1>
@@ -118,11 +142,18 @@ struct Harness {
     kernel: Kernel,
     api: Arc<ScriptedApi>,
     origin: String,
+    /// The user configuration file.
+    config: PathBuf,
     _dir: TempDir,
 }
 
 /// A session with the browser tools on, or `None` without a browser on this machine.
 async fn harness(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)]) -> Option<Harness> {
+    harness_with(mode, interactive, sites, "").await
+}
+
+/// `extra`: more lines for `[browser]`.
+async fn harness_with(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)], extra: &str) -> Option<Harness> {
     let dir = tempfile::tempdir().unwrap();
     let Some(executable) = wrapper(dir.path()) else {
         eprintln!("no Chromium-family browser installed; skipping");
@@ -134,9 +165,9 @@ async fn harness(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)]
     std::fs::create_dir_all(&work).unwrap();
     let home = FinxHome::new(dir.path().join("home"));
     home.ensure().unwrap();
-    let user = dir.path().join("config.toml");
+    let user = home.config_file();
     let mut toml = format!(
-        "[browser]\nenabled = true\nheadless = true\nexecutable = \"{}\"\n[browser.sites]\n",
+        "[browser]\nenabled = true\nheadless = true\nexecutable = \"{}\"\n{extra}\n[browser.sites]\n",
         executable.display()
     );
     for (site, level) in sites {
@@ -179,6 +210,7 @@ async fn harness(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)]
         kernel,
         api,
         origin,
+        config: user,
         _dir: dir,
     })
 }
@@ -283,7 +315,7 @@ async fn approvals_grants_and_the_approved_page() {
             },
         ]
     );
-    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(0) }).await;
+    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(0), persist: false }).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     let page = last_results(&h.api).pop().unwrap();
     assert!(page.contains("Sign in") && page.contains("<page-content"), "{page}");
@@ -309,7 +341,7 @@ async fn approvals_grants_and_the_approved_page() {
             origin: h.origin.clone(),
         }]
     );
-    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: None }).await;
+    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: None, persist: false }).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     let results = last_results(&h.api);
     let found = &results[results.len() - 2];
@@ -437,5 +469,178 @@ async fn denied_sites_and_metadata_addresses_are_refused_in_every_mode() {
     h.api.push(Script::text("nothing"));
     run(&mut h.kernel, "read").await;
     assert!(last_results(&h.api).pop().unwrap().contains("No page is open"));
+    h.kernel.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_batch_runs_its_steps_and_stops_where_approval_is_needed() {
+    // A configured site: every step runs, the form is filled and sent in one call.
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[("ORIGIN", "act")]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("opened"));
+    run(&mut h.kernel, "open").await;
+    let page = last_results(&h.api).pop().unwrap();
+    let steps = json!([
+        { "tool": "browser_act", "args": { "action": "fill", "ref": ref_of(&page, "Email"), "text": "ada@example.com" } },
+        { "tool": "browser_act", "args": { "action": "fill", "ref": ref_of(&page, "Password"), "text": "hunter2" } },
+        { "tool": "browser_act", "args": { "action": "click", "ref": ref_of(&page, "Continue") } },
+        { "tool": "browser_snapshot", "args": { "query": "welcome" } },
+    ]);
+    h.api.push(Script::tool_call("c2", "browser_batch", json!({ "steps": steps })));
+    h.api.push(Script::text("sent"));
+    let result = run(&mut h.kernel, "sign in").await;
+    assert!(!asked(&result.events));
+    let text = last_results(&h.api).pop().unwrap();
+    assert!(text.contains("Step 4 of 4 (browser_snapshot)") && text.contains("Welcome back"), "{text}");
+    assert!(!text.contains("value=\"hunter2\""), "{text}");
+    h.kernel.shutdown().await;
+
+    // No grant: the first step is asked about with the batch; the second, on a site not yet
+    // allowed for acting, stops the batch.
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[]).await else {
+        return;
+    };
+    let other = format!("{}/other", h.origin);
+    let steps = json!([
+        { "tool": "browser_navigate", "args": { "url": other } },
+        { "tool": "browser_act", "args": { "action": "scroll" } },
+        { "tool": "browser_snapshot" },
+    ]);
+    h.api.push(Script::tool_call("c1", "browser_batch", json!({ "steps": steps })));
+    h.api.push(Script::text("stopped"));
+    h.kernel.submit(Op::prompt("go")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    let (call_id, summary, _) = approval(&events);
+    assert_eq!(summary, format!("open {other}"));
+    approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert_eq!(events.iter().filter(|e| matches!(e.msg, EventMsg::ApprovalRequested { .. })).count(), 0);
+    let text = last_results(&h.api).pop().unwrap();
+    assert!(text.contains("Another page"), "the first step ran: {text}");
+    assert!(text.contains("Step 2 (browser_act) needs approval") && text.contains("1 of 3 steps ran"), "{text}");
+
+    // Batches do not nest, and an unknown tool fails before anything runs.
+    h.api.push(Script::tool_call("c2", "browser_batch", json!({ "steps": [{ "tool": "browser_batch" }] })));
+    h.api.push(Script::text("no"));
+    run(&mut h.kernel, "nest").await;
+    assert!(last_results(&h.api).pop().unwrap().contains("cannot be batched"));
+    h.kernel.shutdown().await;
+}
+
+#[tokio::test]
+async fn scripts_run_only_when_enabled_and_always_ask() {
+    let Some(mut h) = harness(PermissionMode::BypassPermissions, true, &[]).await else {
+        return;
+    };
+    let other = format!("{}/other", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": other })));
+    h.api.push(Script::text("opened"));
+    run(&mut h.kernel, "open").await;
+    h.api.push(Script::tool_call("c2", "browser_eval", json!({ "expression": "1 + 1" })));
+    h.api.push(Script::text("no tool"));
+    run(&mut h.kernel, "eval").await;
+    assert!(last_results(&h.api).pop().unwrap().contains("Unknown tool"), "off by default: not even listed");
+    h.kernel.shutdown().await;
+
+    let Some(mut h) = harness_with(PermissionMode::BypassPermissions, true, &[], "script_enabled = true").await else {
+        return;
+    };
+    let other = format!("{}/other", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": other })));
+    h.api.push(Script::text("opened"));
+    run(&mut h.kernel, "open").await;
+    h.api.push(Script::tool_call(
+        "c2",
+        "browser_eval",
+        json!({ "expression": "document.querySelector('h1').textContent = 'Changed'; ({ title: document.title, n: 6 * 7 })" }),
+    ));
+    h.api.push(Script::text("ran"));
+    h.kernel.submit(Op::prompt("eval")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    let (call_id, summary, grants) = approval(&events);
+    assert_eq!(summary, format!("run a script on {}", h.origin), "asked even in bypass");
+    assert!(grants.is_empty(), "never for the session");
+    approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let text = last_results(&h.api).pop().unwrap();
+    assert!(text.contains("\"n\": 42") && text.contains("\"title\": \"Other\""), "{text}");
+    assert!(text.contains("Changed"), "the change shows: {text}");
+    h.kernel.shutdown().await;
+}
+
+#[tokio::test]
+async fn always_allowing_a_site_writes_it_to_the_user_configuration() {
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("opened"));
+    h.kernel.submit(Op::prompt("open")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    let (call_id, _, _) = approval(&events);
+    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(0), persist: true }).await;
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let saved: toml::Table = std::fs::read_to_string(&h.config).unwrap().parse().unwrap();
+    assert_eq!(saved["browser"]["sites"][&h.origin].as_str(), Some("navigate"), "{saved}");
+    assert_eq!(saved["browser"]["enabled"].as_bool(), Some(true), "the rest of the file stays");
+    h.kernel.shutdown().await;
+}
+
+#[tokio::test]
+async fn tabs_close_when_the_session_ends() {
+    let Some(mut h) = harness(PermissionMode::Manual, false, &[("ORIGIN", "act")]).await else {
+        return;
+    };
+    let alive = format!("{}/alive?end", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": alive })));
+    h.api.push(Script::text("open"));
+    run(&mut h.kernel, "open").await;
+    assert!(beating(&h.origin, "end", Duration::from_secs(1)).await, "the page runs");
+    h.kernel.shutdown().await;
+    // Let a beat already on its way arrive, then nothing more.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(!beating(&h.origin, "end", Duration::from_millis(1500)).await, "the tab closed with the session");
+}
+
+#[tokio::test]
+async fn a_sub_agents_tabs_close_when_it_reports_and_the_main_sessions_stay() {
+    let Some(mut h) = harness(PermissionMode::Manual, false, &[("ORIGIN", "act")]).await else {
+        return;
+    };
+    let main = format!("{}/alive?main", h.origin);
+    let child = format!("{}/alive?child", h.origin);
+    // The main session opens a page, then waits for an agent that opens one of its own.
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": main })));
+    h.api.push(Script::tool_call("c2", "spawn_agent", json!({ "task": "open the page", "name": "web", "wait": true })));
+    h.api.push(Script::tool_call("k1", "browser_navigate", json!({ "url": child })));
+    // While the agent still works, its page runs beside the main one.
+    h.api.push(Script::tool_call("k2", "browser_wait", json!({ "seconds": 1 })));
+    h.api.push(Script::text("opened it"));
+    h.api.push(Script::text("the agent is done"));
+    let result = run(&mut h.kernel, "go").await;
+    assert!(matches!(result.end, TaskEnd::Completed { .. }), "{:?}", result.end);
+    let all: Vec<String> = h
+        .api
+        .requests()
+        .iter()
+        .flat_map(|r| r.messages.iter().filter_map(|m| match m {
+            Message::ToolResult(r) => Some(format!("{}: {}", r.tool_name, r.text_content())),
+            _ => None,
+        }))
+        .collect();
+    assert!(beats(&h.origin, "child") > 0, "the agent's page ran: {all:#?}");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(!beating(&h.origin, "child", Duration::from_millis(1500)).await, "the agent's tab closed when it reported");
+    assert!(beating(&h.origin, "main", Duration::from_millis(1500)).await, "the main session's tab is still open");
+    // The main session still sees only its own tab.
+    h.api.push(Script::tool_call("c3", "browser_tabs", json!({})));
+    h.api.push(Script::text("listed"));
+    run(&mut h.kernel, "tabs").await;
+    let listing = last_results(&h.api).pop().unwrap();
+    assert!(listing.contains("1 tab:") && listing.contains("alive?main"), "{listing}");
     h.kernel.shutdown().await;
 }

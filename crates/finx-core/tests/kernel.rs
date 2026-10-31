@@ -314,7 +314,7 @@ async fn approving_an_edit_for_the_session_switches_to_accept_edits() {
     h.kernel
         .submit(Op::Approval {
             call_id: call_id.clone(),
-            decision: ApprovalDecision::ApproveForSession { grant: None },
+            decision: ApprovalDecision::ApproveForSession { grant: None, persist: false },
         })
         .await
         .unwrap();

@@ -13,7 +13,7 @@
     "thinking": "正在思考",
     "thought": "思考",
     "thinkingHidden": "服务商没有公开这段推理",
-    "image": "图片",
+    "image": "图片（点击放大或缩小）",
     "copy": "拷贝",
     "compacted": "上下文已压缩：{{before}} → {{after}} tokens",
     "interrupted": "你打断了这个任务。再发一条消息就会接着做。",
@@ -121,7 +121,9 @@
     "deny": "拒绝",
     "cancel": "取消",
     "feedback": "告诉 finx 为什么拒绝，或者应该怎么做（可选）",
-    "more_other": "还有 {{count}} 行"
+    "more_other": "还有 {{count}} 行",
+    "remember": "记住",
+    "rememberDesc": "同时把这个网站的授权写入 ~/.finx/config.toml，以后的会话也不再询问"
   },
   "notice": {
     "label": "关键提醒",
@@ -277,6 +279,7 @@
   },
   "browser": {
     "title": "浏览器",
-    "close": "收起"
+    "close": "收起",
+    "resize": "调整浏览器面板宽度"
   }
 }

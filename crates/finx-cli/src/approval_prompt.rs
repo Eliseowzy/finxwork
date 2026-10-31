@@ -63,12 +63,22 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
     for (index, grant) in question.grants.iter().enumerate() {
         eprintln!("  [{}] {}", index + 1, grant_label(grant));
     }
+    // "Always": kept in ~/.finx/config.toml; never for any site (D-197, D-201).
+    let keepable = question.grants.iter().any(|g| g.origin != "*");
+    if keepable {
+        eprintln!("  {}", style.dim("[number]! also saves it in ~/.finx/config.toml, e.g. 1!"));
+    }
     let pick_grant = |answer: &str| {
-        answer
+        let (number, persist) = match answer.strip_suffix('!') {
+            Some(number) => (number, true),
+            None => (answer, false),
+        };
+        number
             .parse::<usize>()
             .ok()
             .filter(|n| (1..=question.grants.len()).contains(n))
-            .map(|n| n - 1)
+            .filter(|n| !persist || question.grants[n - 1].origin != "*")
+            .map(|n| (n - 1, persist))
     };
     loop {
         eprint!("> ");
@@ -82,10 +92,10 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
                 if let Some(mode) = question.mode {
                     eprintln!("  {}", style.dim(&format!("permission mode is now {mode}")));
                 }
-                return ApprovalDecision::ApproveForSession { grant: None };
+                return ApprovalDecision::ApproveForSession { grant: None, persist: false };
             }
-            answer if pick_grant(answer).is_some() => {
-                return ApprovalDecision::ApproveForSession { grant: pick_grant(answer) };
+            answer if let Some((grant, persist)) = pick_grant(answer) => {
+                return ApprovalDecision::ApproveForSession { grant: Some(grant), persist };
             }
             "n" | "no" => {
                 eprint!("  feedback for the model (optional): ");

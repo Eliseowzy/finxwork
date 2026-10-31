@@ -91,6 +91,10 @@ pub enum ApprovalDecision {
         /// Which of `proposed_grants` to keep, by index; the first when left out.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         grant: Option<usize>,
+        /// Keep that grant beyond the session too: written to the user's configuration under
+        /// `[browser.sites]` (browser-design D-197). Not for "any site".
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        persist: bool,
     },
     Deny {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -258,10 +262,12 @@ mod tests {
     fn approve_for_session_takes_an_optional_grant() {
         // Clients that predate site grants send no index.
         let plain: ApprovalDecision = serde_json::from_str(r#"{"type":"approve_for_session"}"#).unwrap();
-        assert_eq!(plain, ApprovalDecision::ApproveForSession { grant: None });
+        assert_eq!(plain, ApprovalDecision::ApproveForSession { grant: None, persist: false });
         assert_eq!(serde_json::to_string(&plain).unwrap(), r#"{"type":"approve_for_session"}"#);
         let second: ApprovalDecision = serde_json::from_str(r#"{"type":"approve_for_session","grant":1}"#).unwrap();
-        assert_eq!(second, ApprovalDecision::ApproveForSession { grant: Some(1) });
+        assert_eq!(second, ApprovalDecision::ApproveForSession { grant: Some(1), persist: false });
+        let kept: ApprovalDecision = serde_json::from_str(r#"{"type":"approve_for_session","grant":0,"persist":true}"#).unwrap();
+        assert_eq!(kept, ApprovalDecision::ApproveForSession { grant: Some(0), persist: true });
         let grant = SiteGrant {
             authority: GrantAuthority::Act,
             origin: "https://example.com".into(),

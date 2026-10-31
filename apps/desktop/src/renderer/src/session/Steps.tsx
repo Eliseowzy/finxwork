@@ -70,7 +70,10 @@ function Thinking({ text, redacted, live }: { text: string; redacted: boolean; l
 function ToolRow({ tool }: { tool: ToolView }) {
   const { t } = useTranslation("session");
   const [open, setOpen] = useState(false);
+  const [big, setBig] = useState(false);
   const output = toolOutput(tool);
+  // Images a tool returned (a browser screenshot, an image read): a thumbnail, larger on a click.
+  const images = (tool.result?.content ?? []).flatMap((c) => (c.type === "image" ? [c] : []));
   const spinning = tool.state === "running" || tool.state === "streaming";
   // A message to a sub-agent reads as one: "Sent to name: the message".
   const toAgent = tool.name === "send_message";
@@ -90,6 +93,15 @@ function ToolRow({ tool }: { tool: ToolView }) {
         )}
         {output && <Icon name="caret" className="chev" />}
       </button>
+      {images.length > 0 && (
+        <div className={`tool-shots ${big ? "big" : ""}`}>
+          {images.map((img, i) => (
+            <button key={i} className="tool-shot" aria-label={t("chat.image")} aria-expanded={big} onClick={() => setBig(!big)}>
+              <img src={`data:${img.mime_type};base64,${img.data}`} alt="" />
+            </button>
+          ))}
+        </div>
+      )}
       {output && <div className="out sel-text">{output}</div>}
     </div>
   );
