@@ -19,7 +19,7 @@ export default defineConfig({
   },
   preload: {
     // A sandboxed preload must be CommonJS.
-    build: { outDir: path.join(out, "preload"), rollupOptions: { output: { format: "cjs", entryFileNames: "[name].cjs" } } },
+    build: { outDir: path.join(out, "preload"), rollupOptions: { input: { index: path.resolve("src/preload/index.ts"), browser: path.resolve("src/preload/browser.ts") }, output: { format: "cjs", entryFileNames: "[name].cjs" } } },
   },
   renderer: {
     plugins: [react()],

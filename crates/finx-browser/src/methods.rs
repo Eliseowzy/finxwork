@@ -16,6 +16,7 @@ pub const CDP_METHODS: &[&str] = &[
     "Target.createTarget",
     "Target.detachFromTarget",
     "Target.getTargetInfo",
+    "Target.getTargets",
     "Target.setDiscoverTargets",
     // Page level.
     "Accessibility.getFullAXTree",
@@ -59,7 +60,7 @@ pub const CDP_METHODS: &[&str] = &[
 ];
 
 /// How many of [`CDP_METHODS`] are browser level.
-pub const BROWSER_LEVEL: usize = 9;
+pub const BROWSER_LEVEL: usize = 10;
 
 /// Every event read.
 pub const CDP_EVENTS: &[&str] = &[

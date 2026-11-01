@@ -229,6 +229,18 @@ impl BrowserSession {
         }
     }
 
+    /// Preserve the real pages (including form state and history) handed over by the UI.
+    pub async fn adopt_pending(&self) -> Result<(), BrowserError> {
+        for tab in self.browser.router.adopt_pending(self.owner).await? {
+            self.wait_for(&tab, Duration::from_secs(5), |state| {
+                state.main_frame.is_some()
+            })
+            .await;
+            *self.current.lock() = Some(tab.id.clone());
+        }
+        Ok(())
+    }
+
     pub fn is_dead(&self) -> bool {
         self.browser.is_dead()
     }

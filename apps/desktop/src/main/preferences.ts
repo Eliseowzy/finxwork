@@ -19,6 +19,7 @@ export function preferences(): Preferences {
       appearance: (["system", "light", "dark"] as Appearance[]).includes(p.appearance as Appearance) ? (p.appearance as Appearance) : defaults.appearance,
       language: p.language === "en" || p.language === "zh-CN" ? p.language : "system",
       ...(p.moveDeclined === true && { moveDeclined: true }),
+      ...(p.browserCookies === "untilQuit" && { browserCookies: "untilQuit" as const }),
     };
   } catch {
     cached = { ...defaults };
@@ -31,6 +32,10 @@ export function setPreferences(p: Partial<Preferences>): Preferences {
   if (p.appearance === "system" || p.appearance === "light" || p.appearance === "dark") next.appearance = p.appearance;
   if (p.language === "system" || p.language === "en" || p.language === "zh-CN") next.language = p.language;
   if (p.moveDeclined === true) next.moveDeclined = true;
+  if ("browserCookies" in p) {
+    if (p.browserCookies === "untilQuit") next.browserCookies = "untilQuit";
+    else delete next.browserCookies;
+  }
   cached = next;
   fs.mkdirSync(path.dirname(file()), { recursive: true });
   fs.writeFileSync(file(), JSON.stringify(next, null, 2));

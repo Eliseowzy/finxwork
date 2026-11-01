@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import type { WebComment } from "@finx/client";
 import { Icon } from "../icons";
 
 // What a message carries, as square tiles, the same in the composer and in
@@ -14,9 +15,21 @@ export function kindOf(path: string, folder: boolean, folderWord: string): strin
   return ext ? ext.toUpperCase() : "";
 }
 
-/** One attachment. An image with no path (one from a sent message) has no name to show; it only opens large. */
-export function Tile({ kind, path, name, src, onRemove }: {
-  kind: "file" | "folder" | "image";
+function hostOf(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * One attachment. An image with no path (one from a sent message) has no name to show; it only opens large.
+ * A part of a web page shows what was said about it, or its text, and the site.
+ */
+export function Tile({ kind, path, name, src, web, onRemove }: {
+  kind: "file" | "folder" | "image" | "web";
+  web?: WebComment;
   path?: string;
   name?: string;
   /** An image's data URL. */
@@ -26,15 +39,22 @@ export function Tile({ kind, path, name, src, onRemove }: {
   const { t } = useTranslation("session");
   const [large, setLarge] = useState(false);
   const label = name ?? t("chat.image");
-  const open = () => (src ? setLarge(true) : path && window.finx?.revealPath(path));
-  const type = kindOf(name ?? "", kind === "folder", t("composer.folder"));
+  const open = () => (src ? setLarge(true) : kind !== "web" && path && window.finx?.revealPath(path));
+  const type = web ? hostOf(web.url) : kindOf(name ?? "", kind === "folder", t("composer.folder"));
+  const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : path;
   return (
-    <div className={`tile ${src ? "img" : "doc"}`} title={path}>
-      <button className="tile-open" onClick={open} aria-label={src ? t("composer.view", { name: label }) : t("composer.reveal", { name: label })}>
+    <div className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""}`} title={title}>
+      <button className="tile-open" onClick={open} aria-label={src ? t("composer.view", { name: label }) : web ? `${type}: ${label}` : t("composer.reveal", { name: label })}>
         {src ? (
           <img src={src} alt="" />
         ) : (
           <>
+            {web && (
+              <span className="tile-web">
+                <Icon name="globe" />
+                {web.comment ? t("composer.webComment") : t("composer.webElement")}
+              </span>
+            )}
             <span className="tile-name">{label}</span>
             {type && <span className="tile-kind">{type}</span>}
           </>

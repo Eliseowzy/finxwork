@@ -260,6 +260,36 @@ impl Router {
         self.state.lock().owners.get(&owner).map(|o| o.guard.clone())
     }
 
+    /// Attach only user-opened pages explicitly assigned to this embedded session.
+    pub async fn adopt_pending(&self, owner: OwnerId) -> Result<Vec<Arc<Tab>>, BrowserError> {
+        if !self.embedded {
+            return Ok(Vec::new());
+        }
+        let label = self
+            .state
+            .lock()
+            .owners
+            .get(&owner)
+            .and_then(|o| o.label.clone());
+        let Some(label) = label else {
+            return Ok(Vec::new());
+        };
+        let result = self
+            .conn
+            .send(None, "Target.getTargets", json!({ "finxSession": label }))
+            .await?;
+        let mut tabs = Vec::new();
+        if let Some(infos) = result.get("targetInfos").and_then(Value::as_array) {
+            for info in infos {
+                let id = str_of(info, "targetId");
+                if !id.is_empty() {
+                    tabs.push(self.attach(owner, id, None).await?);
+                }
+            }
+        }
+        Ok(tabs)
+    }
+
     /// Opens a blank tab for `owner`.
     pub async fn create_tab(&self, owner: OwnerId) -> Result<Arc<Tab>, BrowserError> {
         let mut params = json!({ "url": "about:blank" });

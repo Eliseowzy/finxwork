@@ -3,9 +3,12 @@ import { useTranslation } from "react-i18next";
 import { draftModel, projectNames, recentProjects } from "@finx/client";
 import { SidebarToggle } from "../components";
 import { draftThinking, offersThinking } from "../format";
-import { MarkMotion } from "../icons";
+import { homeBrowserSession } from "../../../shared/bridge";
+import { BrowserPanel, useBrowserTabs } from "../session/Browser";
+import { Icon, MarkMotion } from "../icons";
 import { useStore } from "../store";
-import type { Attachment } from "./attachments";
+import { addAttachments, type Attachment } from "./attachments";
+import { useBrowserComments } from "./browserComments";
 import { Composer } from "./Composer";
 import { onboardingEvent } from "../onboarding/Onboarding";
 import { needsKey } from "./KeySetup";
@@ -22,8 +25,12 @@ const greetings = ["new.greeting1", "new.greeting2", "new.greeting3", "new.greet
 export function NewSession() {
   const { t } = useTranslation("session");
   const st = useStore();
+  const tabs = useBrowserTabs().filter((tab) => tab.session === homeBrowserSession);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const browser = browserOpen && tabs.length > 0;
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  useBrowserComments(homeBrowserSession, (more) => setAttachments((list) => addAttachments(list, more)));
   const [greeting] = useState(() => greetings[Math.floor(Math.random() * greetings.length)]);
   // 自定义 › 在对话中使用 (or 创建) starts the message with the skill.
   useEffect(() => {
@@ -48,62 +55,80 @@ export function NewSession() {
     if (dir) set({ cwd: dir, noProject: false });
   };
   return (
-    <>
-      <div className="ctool drag">
-        <SidebarToggle />
-        <div className="ctitle" />
+    <div className={`spage ${browser ? "bgopen" : ""}`}>
+      <div className="scol">
+        <div className="ctool drag">
+          <SidebarToggle />
+          <div className="ctitle" />
+          {window.finx && <button
+            className={`tb no-drag ${browser ? "on" : ""}`}
+            title={t("browser.title")}
+            aria-label={t("browser.title")}
+            aria-pressed={browser}
+            onClick={() => {
+              if (browser) setBrowserOpen(false);
+              else void st.run(async () => {
+                await window.finx?.openBrowser();
+                setBrowserOpen(true);
+              });
+            }}
+          >
+            <Icon name="globe" />
+          </button>}
+        </div>
+        <div className="newpage" style={{ paddingTop: "var(--top)" }}>
+          {/* No model can run (the first-run page was left for later): the way back to it. */}
+          {keyless ? (
+            <div className="new-hero">
+              <MarkMotion size={72} />
+              <h1>{t("new.noModel")}</h1>
+              <button className="btn primary" onClick={() => window.dispatchEvent(new Event(onboardingEvent))}>
+                {t("new.connect")}
+              </button>
+            </div>
+          ) : (
+            <div className="new-hero">
+              <MarkMotion size={72} />
+              <h1>{t(greeting)}</h1>
+            </div>
+          )}
+          <Composer
+            form={{ mode: "new", place: { cwd, recent, names: projectNames([...recent, ...(cwd ? [cwd] : [])]), onCwd: (p) => set({ cwd: p, noProject: p === null }), onPick: pick } }}
+            value={text}
+            onChange={setText}
+            attachments={attachments}
+            onAttachments={setAttachments}
+            canSend={st.kernel === "ready" && !keyless}
+            commands={commands}
+            placeholder={keyless ? t("new.connectFirst") : t("new.placeholder")}
+            onSend={async () => {
+              const sent = { text, attachments };
+              setText("");
+              setAttachments([]);
+              if (!(await st.start(sent.text, draft, sent.attachments))) (setText(sent.text), setAttachments(sent.attachments));
+            }}
+            settings={{
+              permission: draft.permission,
+              onPermission: (m) => set({ permission: m }),
+              model: draft.model,
+              thinking,
+              models: st.models,
+              // As a session switches (§18): the level goes along when the new model offers it, else
+              // the one last chosen here for that model, else the model's own.
+              onModel: (ref) => {
+                const next = st.models.models.find((m) => m.id === ref);
+                const remembered = draft.levels?.[ref];
+                const kept =
+                  thinking !== "default" && offersThinking(next, thinking) ? thinking : remembered && offersThinking(next, remembered) ? remembered : null;
+                set({ model: ref, thinking: kept });
+                return draftThinking(next, kept);
+              },
+              onThinking: (l) => set({ thinking: l, levels: { ...draft.levels, [model]: l } }),
+            }}
+          />
+        </div>
       </div>
-      <div className="newpage">
-        {/* No model can run (the first-run page was left for later): the way back to it. */}
-        {keyless ? (
-          <div className="new-hero">
-            <MarkMotion size={72} />
-            <h1>{t("new.noModel")}</h1>
-            <button className="btn primary" onClick={() => window.dispatchEvent(new Event(onboardingEvent))}>
-              {t("new.connect")}
-            </button>
-          </div>
-        ) : (
-          <div className="new-hero">
-            <MarkMotion size={72} />
-            <h1>{t(greeting)}</h1>
-          </div>
-        )}
-        <Composer
-          form={{ mode: "new", place: { cwd, recent, names: projectNames([...recent, ...(cwd ? [cwd] : [])]), onCwd: (p) => set({ cwd: p, noProject: p === null }), onPick: pick } }}
-          value={text}
-          onChange={setText}
-          attachments={attachments}
-          onAttachments={setAttachments}
-          canSend={st.kernel === "ready" && !keyless}
-          commands={commands}
-          placeholder={keyless ? t("new.connectFirst") : t("new.placeholder")}
-          onSend={async () => {
-            const sent = { text, attachments };
-            setText("");
-            setAttachments([]);
-            if (!(await st.start(sent.text, draft, sent.attachments))) (setText(sent.text), setAttachments(sent.attachments));
-          }}
-          settings={{
-            permission: draft.permission,
-            onPermission: (m) => set({ permission: m }),
-            model: draft.model,
-            thinking,
-            models: st.models,
-            // As a session switches (§18): the level goes along when the new model offers it, else
-            // the one last chosen here for that model, else the model's own.
-            onModel: (ref) => {
-              const next = st.models.models.find((m) => m.id === ref);
-              const remembered = draft.levels?.[ref];
-              const kept =
-                thinking !== "default" && offersThinking(next, thinking) ? thinking : remembered && offersThinking(next, remembered) ? remembered : null;
-              set({ model: ref, thinking: kept });
-              return draftThinking(next, kept);
-            },
-            onThinking: (l) => set({ thinking: l, levels: { ...draft.levels, [model]: l } }),
-          }}
-        />
-      </div>
-    </>
+      {browser && <BrowserPanel session={homeBrowserSession} tabs={tabs} />}
+    </div>
   );
 }

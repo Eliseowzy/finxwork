@@ -241,6 +241,7 @@ async fn browser(ctx: &ToolCtx) -> Result<(Arc<BrowserSession>, Option<&'static 
             label: Some(handle.label.clone()),
         },
     ));
+    session.adopt_pending().await.map_err(failed)?;
     ctx.session_state.insert(session.clone());
     Ok((session, note))
 }
@@ -279,9 +280,14 @@ fn output(report: finx_browser::session::Report, note: Option<&str>) -> ToolOutp
 }
 
 /// The origin of the tab's page, for `Observe`.
-fn observe(ctx: &ToolCtx, tab: Option<&str>) -> Result<Vec<Authority>, ToolError> {
+async fn observe(ctx: &ToolCtx, tab: Option<&str>) -> Result<Vec<Authority>, ToolError> {
+    if ctx.session_state.get::<BrowserSession>().is_none() && handle(ctx)?.pool.has_host() {
+        browser(ctx).await?;
+    }
     let page = existing(ctx)?.page(tab).map_err(failed)?;
-    Ok(vec![Authority::Observe { origin: page.origin }])
+    Ok(vec![Authority::Observe {
+        origin: page.origin,
+    }])
 }
 
 /// A URL as the model wrote it: `example.com` means https.
@@ -362,7 +368,7 @@ impl TypedTool for BrowserNavigate {
                 Ok(vec![Authority::Navigate { url }])
             }
             // History entries were visited already; the guard still stops refused ones.
-            (None, Some("back" | "forward")) => observe(ctx, args.tab.as_deref()),
+            (None, Some("back" | "forward")) => observe(ctx, args.tab.as_deref()).await,
             (None, Some(other)) => Err(ToolError::InvalidArgs(format!(
                 "action must be back, forward or reload, got \"{other}\""
             ))),
@@ -436,7 +442,7 @@ impl TypedTool for BrowserSnapshot {
         region, and mode \"text\" to read an article.";
 
     async fn authorities(&self, args: &SnapshotArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref())
+        observe(ctx, args.tab.as_deref()).await
     }
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -672,7 +678,7 @@ impl TypedTool for BrowserScreenshot {
         check how the page looks. To read or act on the page, use browser_snapshot instead.";
 
     async fn authorities(&self, args: &ScreenshotArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref())
+        observe(ctx, args.tab.as_deref()).await
     }
 
     fn describe(&self, _args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -766,7 +772,7 @@ impl TypedTool for BrowserWait {
         what happens later.";
 
     async fn authorities(&self, args: &WaitArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref())
+        observe(ctx, args.tab.as_deref()).await
     }
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -839,7 +845,7 @@ impl TypedTool for BrowserConsole {
         the last read.";
 
     async fn authorities(&self, args: &ConsoleArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref())
+        observe(ctx, args.tab.as_deref()).await
     }
 
     fn describe(&self, _args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -911,7 +917,7 @@ impl TypedTool for BrowserTabs {
                 url: "about:blank".into(),
             }]),
             (Some("select" | "close"), None) => match &args.tab {
-                Some(tab) => observe(ctx, Some(tab)),
+                Some(tab) => observe(ctx, Some(tab)).await,
                 None => Err(ToolError::InvalidArgs("give the tab id".into())),
             },
             (None | Some("list"), None) => Ok(Vec::new()),
@@ -944,9 +950,15 @@ impl TypedTool for BrowserTabs {
         let tab_id = || args.tab.clone().ok_or_else(|| ToolError::InvalidArgs("give the tab id".into()));
         match args.action.as_deref().unwrap_or("list") {
             "list" => {
-                // Listing never starts the browser.
-                let Some(session) = ctx.session_state.get::<BrowserSession>().filter(|s| !s.is_dead()) else {
-                    return Ok(ToolOutput::text("No tabs are open."));
+                // An embedded host may have pages the user handed over before any tool ran.
+                let session = match ctx
+                    .session_state
+                    .get::<BrowserSession>()
+                    .filter(|s| !s.is_dead())
+                {
+                    Some(session) => session,
+                    None if handle(&ctx)?.pool.has_host() => browser(&ctx).await?.0,
+                    None => return Ok(ToolOutput::text("No tabs are open.")),
                 };
                 Ok(ToolOutput::text(list(&session)))
             }

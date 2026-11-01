@@ -30,6 +30,9 @@ export interface PageEvents {
 
 export interface PageHost {
   create(o: { targetId: string; url: string; finxSession?: string; openerId?: string }, events: PageEvents): Page;
+  /** User-opened tabs explicitly handed to this conversation, active tab last. */
+  pending?(finxSession: string): string[];
+  adopt?(targetId: string, events: PageEvents): Page;
   /** Show the tab in its window's panel. */
   activate(targetId: string): void;
   /** Where downloads go; `report` is called as each one starts and ends. */
@@ -143,6 +146,14 @@ export class EmbeddedBrowser {
       case "Target.activateTarget":
         this.host.activate(this.target(params.targetId).targetId);
         return {};
+      case "Target.getTargets": {
+        const label = typeof params.finxSession === "string" ? params.finxSession : undefined;
+        if (!label) return { targetInfos: [] };
+        for (const id of this.host.pending?.(label) ?? []) {
+          if (!this.targets.has(id)) this.create("about:blank", label, undefined, true, id);
+        }
+        return { targetInfos: [...this.targets.values()].filter((t) => t.finxSession === label && !t.sessionId).map((t) => this.info(t)) };
+      }
       case "Target.getTargetInfo":
         return { targetInfo: this.info(this.target(params.targetId)) };
     }
@@ -155,10 +166,10 @@ export class EmbeddedBrowser {
     return t;
   }
 
-  private create(url: string, finxSession?: string, openerId?: string, byPerson?: boolean): Target {
-    const targetId = `T${this.next++}`;
+  private create(url: string, finxSession?: string, openerId?: string, byPerson?: boolean, adoptedId?: string): Target {
+    const targetId = adoptedId ?? `T${this.next++}`;
     const t = { targetId, finxSession, openerId, byPerson } as Target;
-    t.page = this.host.create({ targetId, url, finxSession, openerId }, {
+    const events: PageEvents = {
       message: (method, params, session) => this.pageEvent(t, method, params, session),
       changed: () => {
         if (this.targets.has(targetId)) this.emit("Target.targetInfoChanged", { targetInfo: this.info(t) });
@@ -168,7 +179,9 @@ export class EmbeddedBrowser {
         if (!this.closed && this.targets.has(targetId)) this.create(next, t.finxSession, targetId, byPerson);
       },
       gone: (reason) => this.drop(t, reason, false),
-    });
+    };
+    t.page = adoptedId && this.host.adopt ? this.host.adopt(adoptedId, events)
+      : this.host.create({ targetId, url, finxSession, openerId }, events);
     this.targets.set(targetId, t);
     this.emit("Target.targetCreated", { targetInfo: this.info(t) });
     return t;

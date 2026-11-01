@@ -8,6 +8,8 @@ import { useEffect, useRef } from "react";
 
 const paths: Record<string, string> = {
   grid: "<rect x=\"2.8\" y=\"2.8\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"9.3\" y=\"2.8\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"2.8\" y=\"9.3\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"9.3\" y=\"9.3\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/>",
+  eye: "<path d=\"M1.8 8s2.3-4.3 6.2-4.3S14.2 8 14.2 8s-2.3 4.3-6.2 4.3S1.8 8 1.8 8z\"/><circle cx=\"8\" cy=\"8\" r=\"1.9\"/>",
+  eyeOff: "<path d=\"M1.8 8s2.3-4.3 6.2-4.3S14.2 8 14.2 8s-2.3 4.3-6.2 4.3S1.8 8 1.8 8z\"/><circle cx=\"8\" cy=\"8\" r=\"1.9\"/><path d=\"M2.6 2.6l10.8 10.8\"/>",
   search: "<circle cx=\"7\" cy=\"7\" r=\"4.4\"/><path d=\"M10.3 10.3l3.4 3.4\"/>",
   sidebar: "<rect x=\"1.8\" y=\"2.8\" width=\"12.4\" height=\"10.4\" rx=\"2.4\"/><path d=\"M6.2 2.8v10.4\"/>",
   gear: "<circle cx=\"8\" cy=\"8\" r=\"2.1\"/><path d=\"M8 1.9v1.8M8 12.3v1.8M1.9 8h1.8M12.3 8h1.8M3.7 3.7l1.3 1.3M11 11l1.3 1.3M3.7 12.3L5 11M11 5l1.3-1.3\"/>",

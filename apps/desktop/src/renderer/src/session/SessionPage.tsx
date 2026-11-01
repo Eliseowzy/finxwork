@@ -77,14 +77,21 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
-          {/* The browser panel's button, for a session that has opened pages. */}
-          {hasTabs && (
+          {/* The browser panel's button; a session with no pages yet gets a blank tab to start from. */}
+          {window.finx && (
             <button
               className={`tb ${browser ? "on" : ""}`}
               title={t("browser.title")}
               aria-label={t("browser.title")}
               aria-pressed={browser}
-              onClick={() => st.set(browser ? { browser: false } : { browser: true, background: false })}
+              onClick={() => {
+                if (browser) st.set({ browser: false });
+                else if (hasTabs) st.set({ browser: true, background: false });
+                else void st.run(async () => {
+                  await window.finx?.openBrowser(s.session_id);
+                  st.set({ browser: true, background: false });
+                });
+              }}
             >
               <Icon name="globe" />
             </button>

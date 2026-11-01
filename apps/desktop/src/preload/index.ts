@@ -22,11 +22,18 @@ ipcRenderer.on("finx-kernel", (e) => window.postMessage("finx-kernel", "*", e.po
 
 const bridge: Bridge = {
   setBrowserPanel: (panel: BrowserPanel) => ipcRenderer.send("browser-panel", panel),
+  openBrowser: (session) => ipcRenderer.invoke("browser-open", session),
+  claimHomeBrowser: (session) => ipcRenderer.invoke("browser-claim-home", session),
   browserTabs: () => ipcRenderer.invoke("browser-tabs"),
   onBrowserTabs: (cb: (tabs: BrowserTab[]) => void) => listen("browser-tabs", cb),
+  onBrowserComment: (cb) => listen("browser-comment", cb),
   showBrowserTab: (targetId: string) => ipcRenderer.send("browser-show", targetId),
   onBrowserStill: (cb: (still: BrowserStill) => void) => listen("browser-still", cb),
   browserTabCommand: (targetId: string, command: BrowserTabCommand) => ipcRenderer.send("browser-command", targetId, command),
+  browserMenuState: (targetId) => ipcRenderer.invoke("browser-menu-state", targetId),
+  browserMenuAction: (targetId, action) => ipcRenderer.send("browser-menu-action", targetId, action),
+  openPrivacySettings: () => ipcRenderer.send("open-privacy-settings"),
+  localServers: () => ipcRenderer.invoke("browser-local-servers"),
   openSourceApp: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("open-source-app", adapter),
   sourceAppIcon: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("source-app-icon", adapter),
   platform: arg("platform") as PlatformId,

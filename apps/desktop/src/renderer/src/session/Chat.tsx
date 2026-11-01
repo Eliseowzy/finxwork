@@ -120,7 +120,7 @@ function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
   switch (a.kind) {
     case "user":
-      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.skills.join() === (b as typeof a).skills.join();
+      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.skills.join() === (b as typeof a).skills.join();
     case "text":
       return a.text === (b as typeof a).text && a.live === (b as typeof a).live;
     case "work": {
@@ -159,13 +159,16 @@ function RowView({ step, previous, final, merged, current, sessionId }: RowProps
         <>
           <TimeLine at={step.ts} previous={previous} />
           <div className="um">
-            {(step.images.length > 0 || step.files.length > 0) && (
+            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0) && (
               <div className="um-att">
                 {step.images.map((im, i) => (
                   <Tile key={i} kind="image" src={`data:${im.mime_type};base64,${im.data}`} />
                 ))}
                 {step.files.map((f) => (
                   <Tile key={f} kind={/[\\/]$/.test(f) ? "folder" : "file"} path={f} name={baseName(f)} />
+                ))}
+                {step.comments.map((c, i) => (
+                  <Tile key={`web${i}`} kind="web" name={c.comment || c.text || `<${c.tag}>`} web={c} />
                 ))}
               </div>
             )}

@@ -157,7 +157,9 @@
     "hidden": "已隐藏",
     "gone": "不在模型列表中",
     "thinkingChanged": "{{model}} 没有「{{from}}」档，思考强度改为「{{to}}」",
-    "thinkingDefault": "由服务商决定"
+    "thinkingDefault": "由服务商决定",
+    "webComment": "网页批注",
+    "webElement": "网页元素"
   },
   "inspector": {
     "label": "会话信息",
@@ -278,6 +280,7 @@
     }
   },
   "browser": {
+    "annotate": "添加到对话",
     "title": "浏览器",
     "resize": "调整浏览器面板宽度",
     "newTab": "新标签页",
@@ -287,6 +290,27 @@
     "reload": "刷新",
     "stop": "停止加载",
     "address": "网址",
-    "typeUrl": "输入网址"
+    "typeUrl": "输入网址",
+    "localServers": "本地服务",
+    "rescan": "重新检测",
+    "noLocalServers": "本机没有正在运行的网页服务。启动后会显示在这里。",
+    "more": "更多",
+    "menu": {
+      "openIn": "在 {{browser}} 中打开",
+      "openInDefault": "在默认浏览器中打开",
+      "copyUrl": "复制网址",
+      "screenshot": "保存截图",
+      "viewport": "视口",
+      "viewports": {
+        "responsive": "自适应",
+        "mobile": "手机 (375 × 812)",
+        "tablet": "平板 (768 × 1024)"
+      },
+      "cookies": "Cookie",
+      "keepCookies": "保留 Cookie",
+      "always": "始终",
+      "untilQuit": "直到退出",
+      "clearData": "清除浏览数据"
+    }
   }
 }

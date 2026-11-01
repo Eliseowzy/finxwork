@@ -166,7 +166,9 @@
     "hidden": "Hidden",
     "gone": "Not in the model list",
     "thinkingChanged": "{{model}} has no “{{from}}” level; thinking is now “{{to}}”",
-    "thinkingDefault": "The provider decides"
+    "thinkingDefault": "The provider decides",
+    "webComment": "Page comment",
+    "webElement": "Page element"
   },
   "inspector": {
     "label": "Session info",
@@ -287,6 +289,7 @@
     }
   },
   "browser": {
+    "annotate": "Add to chat",
     "title": "Browser",
     "resize": "Resize the browser panel",
     "newTab": "New tab",
@@ -296,6 +299,27 @@
     "reload": "Reload",
     "stop": "Stop loading",
     "address": "Address",
-    "typeUrl": "Type a URL"
+    "typeUrl": "Type a URL",
+    "localServers": "Local servers",
+    "rescan": "Look again",
+    "noLocalServers": "No web server is running on this machine. Start one and it shows here.",
+    "more": "More",
+    "menu": {
+      "openIn": "Open in {{browser}}",
+      "openInDefault": "Open in default browser",
+      "copyUrl": "Copy URL",
+      "screenshot": "Save screenshot",
+      "viewport": "Viewport",
+      "viewports": {
+        "responsive": "Responsive",
+        "mobile": "Mobile (375 × 812)",
+        "tablet": "Tablet (768 × 1024)"
+      },
+      "cookies": "Cookies",
+      "keepCookies": "Keep cookies",
+      "always": "Always",
+      "untilQuit": "Until quit",
+      "clearData": "Clear browsing data"
+    }
   }
 }

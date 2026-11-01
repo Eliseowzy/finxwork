@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, fromSnapshot, type SessionView } from "./session.ts";
-import { approvalPreview, attachedBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
+import { approvalPreview, attachedBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
 const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
@@ -92,8 +92,10 @@ test("an approval previews the command, the change, or what is written", () => {
 
 test("a message's attached files go to the model as a block of paths and come back as files, not words", () => {
   const content = [{ type: "text", text: "look at these" }, { type: "image", mime_type: "image/png", data: "AAAA" }, attachedBlock(["/w/a.rs", "/w/docs/"])] as const;
-  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"] });
-  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"] });
+  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [] });
+  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [] });
+  const web = { url: "https://example.com/", title: "Example", tag: "h1", text: "Hello", selector: "#h", comment: "shorter" };
+  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web] });
   const v = play([{ type: "message_completed", message_id: "u1", message: { role: "user", content: [...content], ts: 1 } }]);
   const [u] = conversation(v);
   assert.ok(u.kind === "user");

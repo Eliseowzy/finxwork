@@ -78,5 +78,11 @@
   },
   "dialog": {
     "skillSource": "技能"
+  },
+  "browserMenu": {
+    "clearConfirm": "清除浏览数据？",
+    "clearDetail": "内置浏览器将清除所有网站的 Cookie、存储和缓存，已登录的网站需要重新登录。",
+    "clear": "清除",
+    "cancel": "取消"
   }
 }
