@@ -159,6 +159,7 @@ export function BrowserSettings() {
           browsers={browsers}
           connected={!!connected}
           onConnected={() => use(true)}
+          refresh={refresh}
           onClose={() => {
             setGuide(false);
             refresh();
@@ -186,22 +187,32 @@ function BrowserMark({ id }: { id?: SystemBrowserId }) {
 type Step = "pick" | "prepare" | "install" | "wait" | "done";
 
 /** The setup, one step at a time. Only adding the extension needs the user; the rest the app does. */
+/** How long the extension gets to connect before the guide says what to check. */
+const WAIT_SECONDS = 10;
+
 function Guide({
   browsers,
   connected,
   onConnected,
+  refresh,
   onClose,
 }: {
   browsers: SystemBrowser[];
   connected: boolean;
   onConnected: () => Promise<void>;
+  refresh: () => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation("settings");
-  const [browser, setBrowser] = useState<SystemBrowser>(() => browsers.find((b) => b.running) ?? browsers[0]);
+  const [picked, setBrowser] = useState<SystemBrowser>(() => browsers.find((b) => b.running) ?? browsers[0]);
+  // The picked browser as last asked: whether it is open changes while the guide is up.
+  const browser = browsers.find((b) => b.id === picked.id) ?? picked;
   const [step, setStep] = useState<Step>(browsers.length > 1 ? "pick" : "prepare");
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  // Seconds left before saying what to check, counted down on screen so the wait has an end.
+  const [left, setLeft] = useState(WAIT_SECONDS);
+  const slow = left === 0;
 
   // Registering finx: done by the app, shown as a step so a failure has somewhere to be said.
   useEffect(() => {
@@ -229,6 +240,19 @@ function Guide({
       live = false;
     };
   }, [step, connected, onConnected]);
+
+  // While waiting, ask again and again whether the browser is open: the extension connects only once it is.
+  useEffect(() => {
+    if (step !== "wait" || connected) return;
+    const timer = setInterval(refresh, 2000);
+    return () => clearInterval(timer);
+  }, [step, connected, refresh]);
+  useEffect(() => {
+    setLeft(WAIT_SECONDS);
+    if (step !== "wait" || connected || !browser.running) return;
+    const timer = setInterval(() => setLeft((n) => Math.max(0, n - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [step, connected, browser.running]);
 
   const order = ["prepare", "install", "wait"] as const;
   const index = step === "done" ? order.length : Math.max(0, (order as readonly Step[]).indexOf(step));
@@ -318,12 +342,20 @@ function Guide({
           <div className="bg-status">
             {error ? (
               <p className="mrow-err">{error}</p>
+            ) : !browser.running ? (
+              <p className="bg-lead">{t("browser.guide.notOpen", { name: browser.name })}</p>
             ) : (
-              <p className="bg-lead"><span className="mini-spin" />{t("browser.guide.waiting", { name: browser.name })}</p>
+              <p className="bg-lead"><span className="mini-spin" />{t("browser.guide.waiting", { name: browser.name })}{!slow && <span className="bg-count">{t("browser.guide.countdown", { count: left })}</span>}</p>
             )}
-            <p className="set-note">{t("browser.guide.waitHint")}</p>
+            {!error && browser.running && slow && <p className="set-note">{t("browser.guide.waitHint", { name: browser.name })}</p>}
             <div className="bg-actions">
               <button className="btn" onClick={() => setStep("install")}>{t("browser.guide.back")}</button>
+              {!error && !browser.running && (
+                <button className="btn primary" onClick={() => void window.finx?.openSystemBrowser(browser.id).then(refresh)}>{t("browser.open", { name: browser.name })}</button>
+              )}
+              {!error && browser.running && slow && (
+                <button className="btn" onClick={() => void window.finx?.openSystemBrowser(browser.id, "extensions")}>{t("browser.guide.openExtensions")}</button>
+              )}
             </div>
           </div>
         )}

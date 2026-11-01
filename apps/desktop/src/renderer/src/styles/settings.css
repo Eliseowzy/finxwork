@@ -42,6 +42,7 @@
 .bg-steps li.done .bg-num{background:var(--green-bg);color:var(--green)}
 .bg-num .ic{width:11px;height:11px}
 .bg-lead{margin:0;font-size:13px;line-height:1.6;color:var(--l1);display:flex;align-items:center;gap:8px}
+.bg-count{margin-left:auto;color:var(--l3);font-variant-numeric:tabular-nums}
 .bg-lead.ok{color:var(--green)}
 .bg-lead.ok .ic{width:14px;height:14px}
 .bg-howto{margin:0;padding:0 0 0 20px;display:flex;flex-direction:column;gap:10px;font-size:13px;line-height:1.5;color:var(--l1)}

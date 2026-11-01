@@ -10,6 +10,10 @@ export const devURL = !app.isPackaged ? process.env.ELECTRON_RENDERER_URL : unde
 
 let main: BrowserWindow | undefined;
 let settings: BrowserWindow | undefined;
+// When settings last lost the focus, and when the app last came back from another app (macOS).
+let settingsBlurred = 0;
+let appActivated = 0;
+app.on("did-become-active", () => (appActivated = Date.now()));
 
 /** Is url one of our own pages (the only pages that may call the main process)? */
 export function ours(url: string): boolean {
@@ -76,7 +80,15 @@ export function showMain(): BrowserWindow {
   secure(main);
   main.once("ready-to-show", () => main?.show());
   // Settings work as a dialog over the main window: going back to the main window closes them.
-  main.on("focus", () => settingsVisible() && settings!.close());
+  // Coming back from another app (a click on the main window, the Dock) brings them forward instead.
+  // A click from settings on the main window blurs settings just before; coming back from another app does not
+  // (and on macOS the app has just become active, in case settings were given the focus on the way back).
+  main.on("focus", () => {
+    if (!settingsVisible()) return;
+    const now = Date.now();
+    if (now - settingsBlurred < 300 && now - appActivated > 300) settings!.close();
+    else settings!.focus();
+  });
   main.on("closed", () => (main = undefined));
   main.loadURL(page());
   return main;
@@ -131,6 +143,7 @@ export function showSettings(page_?: string) {
   secure(settings);
   settings.once("ready-to-show", () => settings?.show());
   settings.on("show", () => settingsChanged(true));
+  settings.on("blur", () => (settingsBlurred = Date.now()));
   settings.on("closed", () => {
     settings = undefined;
     settingsChanged(false);
