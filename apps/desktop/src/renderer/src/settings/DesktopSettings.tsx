@@ -78,6 +78,8 @@ export function DesktopSettings() {
   const on = !!config?.enabled;
   // On, but it cannot work yet: say what is missing right under the switch.
   const blocked = on && status && (!status.program || status.accessibility === "denied");
+  // What finx may do in each app means nothing until it can reach apps at all.
+  const permitted = !!status && status.accessibility !== "denied";
   return (
     <div className="form desktop-set">
       <section>
@@ -102,8 +104,6 @@ export function DesktopSettings() {
 
       {/* Off, the rest is only shown: a fieldset disables every control in it. */}
       <fieldset className="desktop-sub" disabled={!on}>
-        {config && <AppsSection apps={config.apps} setApp={setApp} />}
-
         {status && status.accessibility !== "unsupported" && (
           <section>
             <h3 className="fhead">{t("desktop.permissions")}</h3>
@@ -114,6 +114,11 @@ export function DesktopSettings() {
             <p className="set-note">{t("desktop.permissionsNote")}</p>
           </section>
         )}
+      </fieldset>
+
+      {/* The apps come after the permissions, and only once FinxWork has them. */}
+      <fieldset className="desktop-sub" disabled={!on || !permitted}>
+        {config && <AppsSection apps={config.apps} setApp={setApp} locked={on && !!status && !permitted} />}
       </fieldset>
 
       {/* Where agent-desktop lives is FinxWork's business while it works; the row is only for
@@ -141,7 +146,7 @@ export function DesktopSettings() {
 }
 
 /** `[desktop.apps]`: each app finx may read or act in without asking, or never. */
-function AppsSection({ apps, setApp }: { apps: [string, AppLevel][]; setApp: (key: string, level: AppLevel | null) => Promise<void> }) {
+function AppsSection({ apps, setApp, locked }: { apps: [string, AppLevel][]; setApp: (key: string, level: AppLevel | null) => Promise<void>; locked: boolean }) {
   const { t } = useTranslation("settings");
   const [error, setError] = useState("");
   const change = (key: string, level: AppLevel | null) => {
@@ -163,7 +168,7 @@ function AppsSection({ apps, setApp }: { apps: [string, AppLevel][]; setApp: (ke
   return (
     <section>
       <h3 className="fhead">{t("desktop.apps")}</h3>
-      <p className="set-note apps-intro">{t("desktop.appsIntro")}</p>
+      <p className="set-note apps-intro">{t(locked ? "desktop.appsLocked" : "desktop.appsIntro")}</p>
       <div className="fgroup">
         {apps.length === 0 && (
           <div className="frow">
@@ -222,12 +227,12 @@ function PermissionRow({ kind, state }: { kind: "accessibility" | "screen"; stat
       <div className="ft">
         <div className="fn">
           {t(`desktop.${kind}`)}{" "}
-          {granted ? <span className="badge ok">{t("desktop.granted")}</span> : <span className={`badge ${kind === "accessibility" ? "warn" : ""}`}>{t("desktop.notGranted")}</span>}
+          <span className={`badge ${granted ? "ok" : "warn"}`}>{t(granted ? "desktop.granted" : "desktop.notGranted")}</span>
         </div>
         <div className="fdesc">{t(`desktop.${kind}Desc`)}</div>
       </div>
       {!granted && (
-        <button className={`btn ${kind === "accessibility" ? "primary" : ""}`} onClick={() => window.finx?.requestDesktopPermission(kind)}>
+        <button className="btn primary" onClick={() => window.finx?.requestDesktopPermission(kind)}>
           {t("desktop.openSettings")}
         </button>
       )}
