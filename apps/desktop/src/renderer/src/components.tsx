@@ -4,6 +4,7 @@ import { displayTitle, type ListSession } from "@finx/client";
 import type { SessionState } from "@finx/protocol";
 import { Icon } from "./icons";
 import { layoutOf, setSidebar } from "./layout";
+import { useOverlay } from "./overlays";
 import { useStore } from "./store";
 
 /** A session's title, edited in place: ↩ or leaving the field keeps it (`end` gets the text), Esc puts it back (`end` gets null). */
@@ -83,6 +84,7 @@ export function ToastView() {
  */
 export function Dialog({ label, width, className, onClose, children }: { label: string; width: number; className?: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
+  useOverlay();
   useEffect(() => {
     if (ref.current && !ref.current.open) ref.current.showModal();
   }, []);

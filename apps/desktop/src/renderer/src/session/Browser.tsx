@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
 import { Icon } from "../icons";
+import { useCovered } from "../overlays";
 
 // The embedded browser's panel (browser-design §8.3.4), drawn as a browser: the session's
 // tabs and a new-tab button on top, then back, forward, reload and the address, and below
@@ -68,6 +69,8 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
     if (currentBlank) address.current?.focus();
   }, [currentId]);
   const [resizing, setResizing] = useState(false);
+  // A dialog, the search palette or the settings' dim is over the window: the tab steps aside.
+  const covered = useCovered();
 
   /** The widest the panel may be: the conversation keeps its room. */
   const maxWidth = () => {
@@ -115,7 +118,7 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
   useLayoutEffect(() => {
     const el = room.current;
     const finx = window.finx;
-    if (!el || !finx || resizing) return;
+    if (!el || !finx || resizing || covered) return;
     const report = () => {
       const r = el.getBoundingClientRect();
       finx.setBrowserPanel({ session, rect: { x: r.left, y: r.top, width: r.width, height: r.height } });
@@ -129,7 +132,7 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
       window.removeEventListener("resize", report);
       finx.setBrowserPanel({ session: null, rect: null });
     };
-  }, [session, resizing]);
+  }, [session, resizing, covered]);
 
   return (
     <aside

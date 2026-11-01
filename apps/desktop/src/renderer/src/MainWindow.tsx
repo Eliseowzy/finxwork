@@ -9,6 +9,7 @@ import { layoutOf, setSidebar, usePeekEnd } from "./layout";
 import { SearchPalette } from "./search/Search";
 import { SessionPage } from "./session/SessionPage";
 import { Sidebar } from "./sidebar/Sidebar";
+import { useOverlay } from "./overlays";
 import { useStore } from "./store";
 
 export function MainWindow() {
@@ -38,6 +39,7 @@ export function MainWindow() {
     return () => document.removeEventListener("keydown", esc);
   }, [peeking, st.set]);
   const settingsOpen = useSettingsOpen();
+  useOverlay(settingsOpen);
   const onboarding = useOnboarding();
   if (onboarding.open) return <Onboarding onDone={onboarding.close} />;
   const { sidebar, narrow } = layoutOf(st);

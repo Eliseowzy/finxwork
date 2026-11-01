@@ -12,6 +12,7 @@ import { typedURL } from "./url";
 // hidden window, so they keep painting for snapshots and screenshots.
 
 export const partition = "persist:finx-browser";
+
 /** The size of a tab no panel shows. */
 const parkedSize = { width: 1280, height: 800 };
 
@@ -59,7 +60,9 @@ export const electronPages: PageHost = {
       webPreferences: { partition, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false },
     });
     browserSession();
-    // Pages without a background of their own (a blank tab) are white, as in a browser.
+    // A page without a background of its own is white, as in any browser, whatever the app's
+    // theme: such pages draw dark text. Pages that support a dark scheme follow the app's
+    // appearance (prefers-color-scheme), and so does a blank tab.
     view.setBackgroundColor("#ffffff");
     const wc = view.webContents;
     const tab: Tab = { targetId, finxSession, view, events, seq: ++seq };

@@ -5,6 +5,7 @@ import { i18n } from "../../../shared/i18n";
 import { StatusDot } from "../components";
 import { modelTitle, shortTime } from "../format";
 import { Icon } from "../icons";
+import { useOverlay } from "../overlays";
 import { useStore, type Store } from "../store";
 
 type Action = { label: string; shortcut: string; run: (st: Store) => void };
@@ -17,6 +18,7 @@ const actions = (): Action[] => [
 // The ⌘K search palette: find a session by its title, first message,
 // project or model, narrowed by its filters; or run an action.
 export function SearchPalette() {
+  useOverlay();
   const st = useStore();
   const { t } = useTranslation("common");
   const [query, setQuery] = useState("");
