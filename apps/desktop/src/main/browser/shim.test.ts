@@ -29,11 +29,11 @@ function fakeHost() {
 function browser() {
   const fake = fakeHost();
   const out: Record<string, unknown>[] = [];
-  const b = new EmbeddedBrowser(fake.host, (data) => out.push(JSON.parse(data)));
+  const b = new EmbeddedBrowser(fake.host, (message) => out.push(message as Record<string, unknown>));
   let id = 0;
   const call = async (method: string, params: object = {}, sessionId?: string) => {
     const n = ++id;
-    b.receive(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) }));
+    b.receive({ id: n, method, params, ...(sessionId ? { sessionId } : {}) });
     for (let i = 0; i < 50 && !out.some((m) => m.id === n); i++) await new Promise((r) => setTimeout(r, 1));
     return out.find((m) => m.id === n) as { result?: Record<string, unknown>; error?: { message: string } };
   };

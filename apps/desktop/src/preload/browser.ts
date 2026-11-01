@@ -21,16 +21,25 @@ if (process.isMainFrame) {
   let editing: Spot | null = null;
   let hover: Element | null = null;
   let pending = false, frame = 0;
-  let notice: { text: string; error: boolean; timer: number } | null = null;
+  /** A failure to say, for a moment. */
+  let notice: { text: string; timer: number } | null = null;
   /** What was added to the chat from this page, shown as numbered markers while the page lives. */
   let added: (Spot & { body: string })[] = [];
   /** Unsaved text, by element, kept while the page lives. */
   const drafts = new Map<string, Draft>();
   const copy = {
-    "zh-CN": { hint: "点击页面上的内容，添加到对话", done: "完成", title: "添加到对话", placeholder: "说说这里要怎么改（可选）", add: "添加到对话", cancel: "收起", failed: "未能添加，请重试。你的文字仍保留在这里。", adding: "添加中…", added: "已添加到对话", shortcut: "↩ 添加 · ⇧↩ 换行 · Esc 收起", readError: "无法使用添加到对话，请重试", draft: "未添加的草稿", sent: "已添加", noMatch: "页面内容已变化" },
-    en: { hint: "Click part of the page to add it to the chat", done: "Done", title: "Add to chat", placeholder: "What should change here? (optional)", add: "Add to chat", cancel: "Close", failed: "Could not add. Retry; your text is still here.", adding: "Adding…", added: "Added to the chat", shortcut: "↩ to add · ⇧↩ new line · Esc to close", readError: "Add to chat is unavailable. Please retry.", draft: "Draft not added", sent: "Added", noMatch: "The page has changed" },
+    "zh-CN": { title: "添加到对话", placeholder: "补充说明（可选）", add: "添加", cancel: "关闭", failed: "未能添加，请重试", adding: "添加中…", shortcut: "↩ 添加 · ⇧↩ 换行", readError: "无法使用添加到对话，请重试", draft: "未添加的草稿", sent: "已添加", noMatch: "页面内容已变化",
+      kinds: { a: "链接", button: "按钮", img: "图片", input: "输入框", textarea: "输入框", select: "选择框", heading: "标题", p: "段落", li: "列表项", table: "表格", video: "视频", other: "内容" } },
+    en: { title: "Add to chat", placeholder: "Add a note (optional)", add: "Add", cancel: "Close", failed: "Could not add. Please retry.", adding: "Adding…", shortcut: "↩ to add · ⇧↩ new line", readError: "Add to chat is unavailable. Please retry.", draft: "Draft not added", sent: "Added", noMatch: "The page has changed",
+      kinds: { a: "Link", button: "Button", img: "Image", input: "Field", textarea: "Field", select: "Menu", heading: "Heading", p: "Paragraph", li: "List item", table: "Table", video: "Video", other: "Content" } },
   };
   const t = () => state.language === "zh-CN" ? copy["zh-CN"] : copy.en;
+  /** What an element is, in words the person uses ("Link"), not its tag or classes. */
+  function kind(tag: string) {
+    const k = t().kinds;
+    if (/^h[1-6]$/.test(tag)) return k.heading;
+    return (k as Record<string, string>)[tag] ?? k.other;
+  }
   const text = (el: Element) => (el.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 240);
   const supported = () => /^https?:/.test(location.href);
   const draftKey = (anchor: AnnotationAnchor) => anchor.selector;
@@ -64,18 +73,19 @@ if (process.isMainFrame) {
       .pin,.draft-pin{position:fixed;pointer-events:auto;width:26px;height:26px;border-radius:13px 13px 13px 3px;border:2px solid #fff;background:var(--blue);color:#fff;font-size:11px;font-weight:650;padding:0;box-shadow:0 2px 8px #0003;transform:translate(-5px,-21px);transition:scale .1s}
       .pin{cursor:default}.pin:hover{background:var(--blue)}
       .draft-pin{background:var(--bg);color:var(--blue);border:2px dashed var(--blue);font-size:14px;line-height:1}.draft-pin:hover,.draft-pin.active{background:var(--blue-dark);color:#fff;scale:1.12}
-      .tray{position:fixed;right:16px;bottom:16px;max-width:calc(100vw - 32px);pointer-events:auto;background:var(--bg);border:1px solid var(--line);border-radius:12px;box-shadow:0 6px 28px #0002;overflow:hidden}
-      .bar{display:flex;gap:4px;align-items:center;padding:4px 4px 4px 12px}.hint{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.hint.ok{color:var(--blue);font-weight:600}.hint.error{color:var(--red)}.done{font-weight:600;white-space:nowrap}
-      .card{position:fixed;width:320px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;pointer-events:auto;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:16px;padding:14px;box-shadow:0 12px 44px #0003;animation:appear .12s ease-out}
-      .head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600}.close{padding:2px 8px;font-size:16px;line-height:1.2;color:var(--muted)}
-      .quote{border-left:2px solid var(--blue);padding-left:9px;margin:8px 0;color:var(--muted);font-size:12px;max-height:42px;overflow:hidden;overflow-wrap:anywhere}.quote.lost{border-color:var(--red)}
-      textarea{display:block;resize:none;min-height:72px;max-height:40vh;width:100%;border:0;border-radius:8px;padding:9px;background:var(--wash);color:var(--fg);margin:10px 0;line-height:1.6}textarea:focus{outline:2px solid #2388f560;outline-offset:0}
-      .footer{display:flex;align-items:center;justify-content:space-between;gap:8px}.add{background:var(--blue);color:#fff;font-weight:600;padding:7px 14px}.add:hover{background:var(--blue-dark)}.add:disabled:hover{background:var(--blue)}
-      .status{font-size:11px;color:var(--muted);min-width:0}.error{color:var(--red)}.over{color:#d98a12}
+      .toast{position:fixed;left:50%;bottom:16px;translate:-50% 0;max-width:calc(100vw - 32px);pointer-events:none;background:var(--bg);color:var(--red);border:.5px solid var(--line);border-radius:8px;padding:6px 12px;font-size:12px;box-shadow:0 4px 18px #0002;animation:appear .12s ease-out}
+      .card{position:fixed;width:296px;max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);overflow:auto;pointer-events:auto;background:var(--bg);color:var(--fg);border:.5px solid var(--line);border-radius:12px;padding:12px;box-shadow:0 10px 32px #00000030,0 1px 3px #0000001a;animation:appear .12s ease-out}
+      .head{display:flex;align-items:flex-start;gap:8px}
+      .kind{flex:none;font-size:11px;font-weight:600;line-height:18px;padding:0 6px;border-radius:4px;color:var(--blue);background:#2388f51c}
+      .quote{flex:1;min-width:0;font-size:12.5px;line-height:18px;color:var(--fg);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.quote.lost{color:var(--red)}
+      .close{flex:none;width:20px;height:20px;padding:0;margin:-1px -3px 0 0;border-radius:5px;font-size:15px;line-height:20px;color:var(--muted)}
+      textarea{display:block;resize:none;min-height:56px;max-height:40vh;width:100%;border:1px solid var(--line);border-radius:8px;padding:7px 9px;background:var(--wash);color:var(--fg);margin:10px 0 8px;line-height:1.55;font-size:13px}textarea::placeholder{color:var(--muted)}textarea:focus{outline:0;border-color:var(--blue);background:var(--bg)}
+      .footer{display:flex;align-items:center;justify-content:space-between;gap:8px}.add{background:var(--blue);color:#fff;font-size:12.5px;font-weight:600;line-height:18px;padding:4px 12px;border-radius:7px}.add:hover{background:var(--blue-dark)}.add:disabled:hover{background:var(--blue)}
+      .status{font-size:11px;color:var(--muted);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.error{color:var(--red)}.over{color:#d98a12}
       @keyframes appear{from{opacity:0;translate:0 3px}to{opacity:1;translate:0 0}}@media(prefers-reduced-motion:reduce){.card{animation:none}.pin,.draft-pin{transition:none}}
     `;
     highlight = node("div", "highlight"); highlightLabel = node("span"); highlight.append(highlightLabel);
-    markers = node("div"); tray = node("div", "tray");
+    markers = node("div"); tray = node("div");
     // Keys typed in the editor stay out of the page's shortcuts (e.g. "/" to search).
     for (const name of ["keydown", "keyup", "keypress"] as const) root.addEventListener(name, (e) => e.stopPropagation());
     root.append(style, highlight, markers, tray); document.documentElement.append(host);
@@ -89,10 +99,10 @@ if (process.isMainFrame) {
     }
     return parts.join(" > ") || "html";
   }
+  /** The outline's label: what the element is, and the start of its text. */
   function describe(el: Element) {
-    const id = el.id ? `#${el.id}` : "";
-    const cls = !id && typeof el.className === "string" ? el.className.trim().split(/\s+/).filter(Boolean).slice(0, 2).map((c) => `.${c}`).join("") : "";
-    return el.localName + id + cls;
+    const words = text(el) || (el.getAttribute("alt") ?? el.getAttribute("aria-label") ?? "").trim();
+    return words ? `${kind(el.localName)} · ${short(words, 24)}` : kind(el.localName);
   }
   function point(el: Element, a: AnnotationAnchor) {
     const r = el.getBoundingClientRect();
@@ -133,9 +143,9 @@ if (process.isMainFrame) {
     positionCard();
   }
   function schedule() { if (state.enabled && !frame) frame = requestAnimationFrame(refresh); }
-  function showNotice(text: string, error = false) {
+  function showNotice(text: string) {
     if (notice) clearTimeout(notice.timer);
-    notice = { text, error, timer: window.setTimeout(() => { notice = null; render(); }, error ? 4000 : 2000) };
+    notice = { text, timer: window.setTimeout(() => { notice = null; render(); }, 4000) };
     render();
   }
   /** Keep what was typed: an unsent draft shows as a dashed marker the person can come back to. */
@@ -155,8 +165,10 @@ if (process.isMainFrame) {
     editing = { anchor, element };
     card = node("form", "card"); card.setAttribute("role", "dialog"); card.setAttribute("aria-label", t().title);
     const close = button("×", closeEditor, "close"); close.setAttribute("aria-label", t().cancel); close.title = t().cancel;
-    const head = node("div", "head"); head.append(node("span", "", t().title), close);
-    const quote = node("div", element ? "quote" : "quote lost", element ? anchor.text || `<${anchor.tag}>` : t().noMatch);
+    // What was picked: its kind, and its text (two lines at most), so the person sees what the note is about.
+    const quote = node("div", element ? "quote" : "quote lost", element ? anchor.text || kind(anchor.tag) : t().noMatch);
+    quote.title = anchor.text;
+    const head = node("div", "head"); head.append(node("span", "kind", kind(anchor.tag)), quote, close);
     input = node("textarea"); input.placeholder = t().placeholder; input.setAttribute("aria-label", t().title); input.maxLength = maxComment;
     input.value = drafts.get(draftKey(anchor))?.body ?? "";
     const footer = node("div", "footer");
@@ -178,7 +190,7 @@ if (process.isMainFrame) {
       if (event.isComposing || event.key !== "Enter" || event.shiftKey) return;
       event.preventDefault(); void submit();
     };
-    card.append(head, quote, input, footer); card.onsubmit = (e) => { e.preventDefault(); void submit(); };
+    card.append(head, input, footer); card.onsubmit = (e) => { e.preventDefault(); void submit(); };
     card.addEventListener("keydown", (e) => {
       if (e.key !== "Tab") return;
       const controls = Array.from(card!.querySelectorAll<HTMLElement>("button:not(:disabled),textarea:not(:disabled)"));
@@ -198,8 +210,9 @@ if (process.isMainFrame) {
     try {
       await ipcRenderer.invoke("browser-annotation", { action: "chat", url: state.url, anchor: spot.anchor, body });
       pending = false; dropCard(); drafts.delete(draftKey(spot.anchor));
+      // The numbered marker and the card in the composer say it was added.
       added.push({ ...spot, body: body.trim() });
-      showNotice(t().added);
+      render();
     } catch {
       pending = false;
       card?.querySelectorAll("button").forEach((b) => b.disabled = false);
@@ -221,11 +234,13 @@ if (process.isMainFrame) {
       pin.dataset.draft = key; pin.setAttribute("aria-label", `${t().draft}: ${short(d.body)}`); pin.title = `${t().draft}\n${short(d.body)}`;
       markers.append(pin);
     }
+    // Nothing stays at the bottom of the page: the toolbar's button and Esc leave; only a failure is said here.
     tray.replaceChildren();
-    const bar = node("div", "bar");
-    const hint = node("span", notice ? (notice.error ? "hint error" : "hint ok") : "hint", notice?.text ?? t().hint);
-    hint.setAttribute("role", "status");
-    bar.append(hint, button(t().done, exit, "done")); tray.append(bar);
+    if (notice) {
+      const toast = node("div", "toast", notice.text);
+      toast.setAttribute("role", "alert");
+      tray.append(toast);
+    }
     schedule();
   }
   function accept(next: AnnotationState) {
@@ -238,7 +253,7 @@ if (process.isMainFrame) {
   function exit() {
     if (pending) return;
     closeEditor();
-    void ipcRenderer.invoke("browser-annotation", { action: "exit", url: state.url }).then(accept).catch(() => showNotice(t().readError, true));
+    void ipcRenderer.invoke("browser-annotation", { action: "exit", url: state.url }).then(accept).catch(() => showNotice(t().readError));
   }
   const ownEvent = (e: Event) => !!host && e.composedPath().includes(host);
   // On the window, in the capture phase, before anything the page registers: the preload runs first.

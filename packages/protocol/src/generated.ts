@@ -100,8 +100,8 @@ export type AuthSetResult = {
 
 /** Parameters of the `browser/cdp` notification, in both directions. */
 export type BrowserCdpParams = {
-  /** One CDP message as JSON text: a command from the kernel; a response or an event from the host. */
-  data: string;
+  /** One CDP message, as a JSON object: a command from the kernel; a response or an event from the host. Carried as is, so a large one (a screenshot, an accessibility tree) is neither escaped into a string nor parsed on the way through. */
+  data: { [key: string]: unknown };
   /** Which browser on the host: each one the kernel starts gets a new number, and the host answers with the number of the command. Messages of an earlier browser are dropped. */
   stream: number;
 };
@@ -111,7 +111,19 @@ export type BrowserHostKind = "embedded" | "extension";
 
 /** Parameters of `browser/host`. Older hosts send none: the embedded browser. */
 export type BrowserHostParams = {
+  /** The browser the host is in, as it names itself: "Google Chrome 141.0.7390.54". */
+  browser?: string | null;
+  /** The FinxWork extension's version, for an extension host. */
+  extension_version?: string | null;
   kind?: BrowserHostKind;
+};
+
+/** The result of `browser/status`, and the parameters of `browser/changed`. */
+export type BrowserStatus = {
+  /** Whether a desktop app shows embedded browsers. */
+  embedded: boolean;
+  /** Set while the FinxWork extension is connected. */
+  extension?: ExtensionStatus | null;
 };
 
 /** Parameters of the `$/cancel_request` notification. */
@@ -503,6 +515,10 @@ export type Event = {
   type: "task_interrupted";
   usage: UsageTotals;
 } | {
+  message: UserMessage;
+  mode: PromptMode;
+  type: "input_queued";
+} | {
   context_window: number;
   model: string;
   permission_mode: PermissionMode;
@@ -565,6 +581,13 @@ export type EventClass = "text_delta" | "thinking_delta" | "tool_call_delta" | "
 
 export type EventFilter = {
   exclude?: EventClass[];
+};
+
+/** The user's own browser, lent through the FinxWork extension (browser-design §8.4). */
+export type ExtensionStatus = {
+  /** "Google Chrome 141.0.7390.54", when the extension said. */
+  browser?: string | null;
+  extension_version?: string | null;
 };
 
 export type GrantAuthority = "navigate" | "act";
@@ -1079,6 +1102,12 @@ export type ProviderSummary = {
   name: string;
 };
 
+/** A prompt waiting for the running task. */
+export type QueuedInput = {
+  message: UserMessage;
+  mode: PromptMode;
+};
+
 /** A JSON-RPC request id. */
 export type RequestId = number | string;
 
@@ -1235,6 +1264,8 @@ export type SessionSnapshot = {
   last_seq: number;
   /** The latest status of each MCP server, by name. */
   mcp_servers?: McpServerInfo[];
+  /** Prompts waiting for the running task (`input_queued`), oldest first. */
+  queued?: QueuedInput[];
   session: SessionInfo;
   transcript: TranscriptPage;
   usage: UsageTotals;
@@ -1529,6 +1560,7 @@ export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
   "browser/host": [BrowserHostParams, Empty];
+  "browser/status": [Record<string, never>, BrowserStatus];
   "config/read": [ConfigReadParams, ConfigReadResult];
   "config/write": [ConfigWriteParams, ConfigWriteResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];
@@ -1578,6 +1610,7 @@ export interface Methods {
 /** Notifications: their params. */
 export interface ServerNotifications {
   "browser/cdp": BrowserCdpParams;
+  "browser/changed": BrowserStatus;
   "config/changed": ConfigChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;

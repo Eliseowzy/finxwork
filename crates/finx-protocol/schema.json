@@ -17,6 +17,9 @@
       "$ref": "#/definitions/BrowserHostParams"
     },
     {
+      "$ref": "#/definitions/BrowserStatus"
+    },
+    {
       "$ref": "#/definitions/CancelRequestParams"
     },
     {
@@ -625,8 +628,9 @@
       "description": "Parameters of the `browser/cdp` notification, in both directions.",
       "properties": {
         "data": {
-          "description": "One CDP message as JSON text: a command from the kernel; a response or an event from the host.",
-          "type": "string"
+          "additionalProperties": true,
+          "description": "One CDP message, as a JSON object: a command from the kernel; a response or an event from the host. Carried as is, so a large one (a screenshot, an accessibility tree) is neither escaped into a string nor parsed on the way through.",
+          "type": "object"
         },
         "stream": {
           "description": "Which browser on the host: each one the kernel starts gets a new number, and the host answers with the number of the command. Messages of an earlier browser are dropped.",
@@ -663,11 +667,49 @@
     "BrowserHostParams": {
       "description": "Parameters of `browser/host`. Older hosts send none: the embedded browser.",
       "properties": {
+        "browser": {
+          "description": "The browser the host is in, as it names itself: \"Google Chrome 141.0.7390.54\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extension_version": {
+          "description": "The FinxWork extension's version, for an extension host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "kind": {
           "$ref": "#/definitions/BrowserHostKind",
           "default": "embedded"
         }
       },
+      "type": "object"
+    },
+    "BrowserStatus": {
+      "description": "The result of `browser/status`, and the parameters of `browser/changed`.",
+      "properties": {
+        "embedded": {
+          "description": "Whether a desktop app shows embedded browsers.",
+          "type": "boolean"
+        },
+        "extension": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExtensionStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set while the FinxWork extension is connected."
+        }
+      },
+      "required": [
+        "embedded"
+      ],
       "type": "object"
     },
     "CancelRequestParams": {
@@ -2390,6 +2432,29 @@
           "type": "object"
         },
         {
+          "description": "A prompt arrived while a task runs and waits: for the next turn boundary (`steer`) or for the task to finish (`follow_up`). It joins the history then, as a user message with the same `ts`; a failed task discards it and an interrupted one hands it back.",
+          "properties": {
+            "message": {
+              "$ref": "#/definitions/UserMessage"
+            },
+            "mode": {
+              "$ref": "#/definitions/PromptMode"
+            },
+            "type": {
+              "enum": [
+                "input_queued"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "mode",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "context_window": {
               "default": 0,
@@ -2736,6 +2801,25 @@
             "$ref": "#/definitions/EventClass"
           },
           "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ExtensionStatus": {
+      "description": "The user's own browser, lent through the FinxWork extension (browser-design §8.4).",
+      "properties": {
+        "browser": {
+          "description": "\"Google Chrome 141.0.7390.54\", when the extension said.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extension_version": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -4955,6 +5039,22 @@
       ],
       "type": "object"
     },
+    "QueuedInput": {
+      "description": "A prompt waiting for the running task.",
+      "properties": {
+        "message": {
+          "$ref": "#/definitions/UserMessage"
+        },
+        "mode": {
+          "$ref": "#/definitions/PromptMode"
+        }
+      },
+      "required": [
+        "message",
+        "mode"
+      ],
+      "type": "object"
+    },
     "RequestId": {
       "anyOf": [
         {
@@ -5509,6 +5609,13 @@
           "description": "The latest status of each MCP server, by name.",
           "items": {
             "$ref": "#/definitions/McpServerInfo"
+          },
+          "type": "array"
+        },
+        "queued": {
+          "description": "Prompts waiting for the running task (`input_queued`), oldest first.",
+          "items": {
+            "$ref": "#/definitions/QueuedInput"
           },
           "type": "array"
         },
@@ -6657,6 +6764,9 @@
       "params": "BrowserHostParams",
       "result": "Empty"
     },
+    "browser/status": {
+      "result": "BrowserStatus"
+    },
     "config/read": {
       "params": "ConfigReadParams",
       "result": "ConfigReadResult"
@@ -6832,6 +6942,7 @@
   "x-protocol-version": 2,
   "x-server-notifications": {
     "browser/cdp": "BrowserCdpParams",
+    "browser/changed": "BrowserStatus",
     "config/changed": "ConfigChangedParams",
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",

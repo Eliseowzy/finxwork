@@ -8,13 +8,13 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::Notify;
 use tokio::sync::mpsc;
 use url::Url;
@@ -27,6 +27,14 @@ use crate::cdp::Conn;
 const CONSOLE_KEPT: usize = 500;
 /// Notes kept per tab until a result reports them.
 const NOTES_KEPT: usize = 50;
+/// Events waiting to be handled before the router warns.
+const BACKLOG_WARN: usize = 10_000;
+/// How long an attach waits for its `attachedToTarget`.
+const ATTACH_WAIT: Duration = Duration::from_secs(2);
+/// Closed tabs an owner remembers, so a call naming one hears why it is gone.
+const CLOSED_KEPT: usize = 20;
+/// A request open this long is a long poll or a stream, not part of loading the page.
+const LONG_REQUEST: Duration = Duration::from_secs(5);
 
 /// What the kernel says about navigations that the page makes on its own: the model did not
 /// ask for them, so only refusals apply (§7.2), never a question.
@@ -88,7 +96,10 @@ pub struct TabState {
     /// Load events of the main frame so far.
     pub loads: u64,
     pub loading: bool,
-    pub inflight: HashSet<String>,
+    /// Requests under way, by request id.
+    pub inflight: HashMap<String, Request>,
+    /// When a request last started or ended.
+    pub network_at: Option<Instant>,
     pub file_chooser: Option<i64>,
     pub closed: Option<String>,
 }
@@ -127,6 +138,36 @@ impl TabState {
     pub fn main(&self) -> Option<&Frame> {
         self.main_frame.as_ref().and_then(|id| self.frames.get(id))
     }
+
+    /// No request that loads the page is under way, and none started or ended in the last
+    /// `quiet`. Streams (EventSource, WebSocket, media) and requests open longer than
+    /// [`LONG_REQUEST`] do not count, so a page that keeps a connection open still settles.
+    pub fn network_idle(&self, quiet: Duration) -> bool {
+        let busy = self.inflight.values().any(|r| !r.stream && r.started.elapsed() < LONG_REQUEST);
+        !busy && self.network_at.is_none_or(|at| at.elapsed() >= quiet)
+    }
+
+    /// No request that started at or after `since` is still under way: what an action set
+    /// off has finished, whatever the page had open before.
+    pub fn requests_done_since(&self, since: Instant) -> bool {
+        !self.inflight.values().any(|r| !r.stream && r.started >= since)
+    }
+
+    fn request_ended(&mut self, id: &str) {
+        if self.inflight.remove(id).is_some() {
+            self.network_at = Some(Instant::now());
+        }
+    }
+}
+
+/// A request under way.
+#[derive(Clone, Debug)]
+pub struct Request {
+    /// The document it belongs to.
+    pub loader: String,
+    pub started: Instant,
+    /// Stays open by design: EventSource, WebSocket, media.
+    pub stream: bool,
 }
 
 /// A page target owned by one session.
@@ -191,6 +232,8 @@ pub struct Router {
     incoming: PathBuf,
     /// The desktop app's embedded browser (§8.3), which places tabs by `finxSession`.
     embedded: bool,
+    /// Woken whenever a target is registered.
+    registered: Notify,
 }
 
 impl Router {
@@ -200,6 +243,7 @@ impl Router {
             state: Mutex::new(State::default()),
             incoming,
             embedded,
+            registered: Notify::new(),
         });
         tokio::spawn(route(Arc::downgrade(&router), events));
         router
@@ -314,12 +358,16 @@ impl Router {
         let mut tab = None;
         if let Ok(attached) = &attached {
             let session = str_of(attached, "sessionId");
-            for _ in 0..200 {
+            let deadline = tokio::time::Instant::now() + ATTACH_WAIT;
+            loop {
+                let registered = self.registered.notified();
                 tab = self.tab_of_session(session);
                 if tab.is_some() {
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                if tokio::time::timeout_at(deadline, registered).await.is_err() {
+                    break;
+                }
             }
         }
         self.state.lock().claims.remove(target_id);
@@ -366,6 +414,7 @@ impl Router {
             },
         );
         state.attached.insert(target_id.to_string(), session.to_string());
+        self.registered.notify_waiters();
         Some(tab)
     }
 
@@ -505,11 +554,47 @@ impl Router {
             let mut state = target.tab.state.lock();
             if target.page {
                 state.closed.get_or_insert_with(|| why.to_string());
+                // Only the reason is kept; what the page logged and loaded goes.
+                state.frames.clear();
+                state.console.clear();
+                state.inflight.clear();
+                state.notes.clear();
             } else {
                 state.frames.retain(|_, frame| frame.session != session);
             }
         }
+        if target.page {
+            self.forget_closed(target.owner, &target.tab);
+        }
         target.tab.changed.notify_waiters();
+    }
+
+    /// After a tab closed: its frames' sessions go, and the owner remembers only the latest
+    /// [`CLOSED_KEPT`] closed tabs.
+    fn forget_closed(&self, owner: OwnerId, tab: &Arc<Tab>) {
+        let mut state = self.state.lock();
+        let state = &mut *state;
+        let frames: Vec<String> = state
+            .sessions
+            .iter()
+            .filter(|(_, t)| Arc::ptr_eq(&t.tab, tab))
+            .map(|(s, _)| s.clone())
+            .collect();
+        for session in &frames {
+            state.sessions.remove(session);
+        }
+        state.attached.retain(|_, session| !frames.contains(session));
+        if let Some(owner) = state.owners.get_mut(&owner) {
+            let closed = owner.tabs.iter().filter(|t| t.is_closed()).count();
+            let mut extra = closed.saturating_sub(CLOSED_KEPT);
+            owner.tabs.retain(|t| {
+                if extra > 0 && t.is_closed() {
+                    extra -= 1;
+                    return false;
+                }
+                true
+            });
+        }
     }
 
     /// `attachedToTarget`: an explicit attach (`parent` none), or an auto-attached child of a
@@ -582,6 +667,9 @@ impl Router {
                     state.url = url.clone();
                     // A new document: the old frames' children report their own detach.
                     state.loading = true;
+                    // The old document's requests may never report their end.
+                    let loader = str_of(frame, "loaderId");
+                    state.inflight.retain(|_, r| r.loader == loader);
                 }
                 state.frames.insert(
                     id,
@@ -684,14 +772,22 @@ impl Router {
                 }
             }
             "Network.requestWillBeSent" => {
-                tab.state.lock().inflight.insert(str_of(params, "requestId").to_string());
+                let now = Instant::now();
+                let request = Request {
+                    loader: str_of(params, "loaderId").to_string(),
+                    started: now,
+                    stream: matches!(str_of(params, "type"), "EventSource" | "WebSocket" | "Media"),
+                };
+                let mut state = tab.state.lock();
+                state.inflight.insert(str_of(params, "requestId").to_string(), request);
+                state.network_at = Some(now);
             }
             "Network.loadingFinished" => {
-                tab.state.lock().inflight.remove(str_of(params, "requestId"));
+                tab.state.lock().request_ended(str_of(params, "requestId"));
             }
             "Network.loadingFailed" => {
                 let mut state = tab.state.lock();
-                state.inflight.remove(str_of(params, "requestId"));
+                state.request_ended(str_of(params, "requestId"));
                 let canceled = params.get("canceled").and_then(Value::as_bool).unwrap_or(false);
                 if !canceled {
                     let text = format!("{} request failed: {}", str_of(params, "type"), str_of(params, "errorText"));
@@ -903,11 +999,20 @@ pub(crate) fn str_of<'a>(value: &'a Value, key: &str) -> &'a str {
 }
 
 async fn route(router: std::sync::Weak<Router>, mut events: mpsc::UnboundedReceiver<CdpEvent>) {
+    // The queue is unbounded so that the reader never stalls the browser; say so if it grows.
+    let mut warn_at = BACKLOG_WARN;
     while let Some(event) = events.recv().await {
         let Some(router) = router.upgrade() else {
             break;
         };
         router.handle(event);
+        let backlog = events.len();
+        if backlog >= warn_at {
+            tracing::warn!(backlog, "CDP events are piling up faster than they are handled");
+            warn_at = backlog * 2;
+        } else if backlog < BACKLOG_WARN / 2 {
+            warn_at = BACKLOG_WARN;
+        }
     }
     // The browser is gone: every tab says so.
     if let Some(router) = router.upgrade() {

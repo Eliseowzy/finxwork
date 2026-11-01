@@ -13,6 +13,7 @@ import { applyAppearance } from "./preferences";
 import { startUpdater } from "./updater";
 import { devURL, showMain } from "./windows";
 import { forgetSitesOnStart } from "./browser/menu";
+import { refreshSystemBrowser } from "./browser/system";
 
 const rendererDir = path.join(import.meta.dirname, "../renderer");
 const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
@@ -76,6 +77,7 @@ app.whenReady().then(async () => {
   }
   forgetSitesOnStart();
   startKernel();
+  void refreshSystemBrowser();
   startUpdater();
   setAppMenu();
   showMain();

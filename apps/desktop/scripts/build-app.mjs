@@ -13,6 +13,7 @@
 //   Contents/Resources/app.asar          main, preload and the page
 //   Contents/Resources/kernel.json       the kernel's version and protocol version
 //   Contents/Resources/catalog/skills    the 自定义 page's catalog skills (resources/catalog/skills, checked against src/shared/catalog.ts)
+//   Contents/Resources/chrome-extension  the FinxWork extension (apps/chrome-extension), which the settings help load into the user's browser
 //   Contents/Resources/Assets.car        the icon (assets/brand/macos/AppIcon.icon, compiled by actool): light and dark, macOS 26 on
 //   Contents/Resources/electron.icns     the icon before macOS 26 (assets/brand/macos/AppIcon-light.icns: the solid mark at 16 and 32 px)
 //
@@ -160,6 +161,11 @@ fs.copyFileSync(path.join(icons, "Assets.car"), path.join(contents, "Resources/A
 const problems = catalogProblems(catalogSkills);
 if (problems.length) throw new Error(`the catalog's skills differ from src/shared/catalog.ts:\n  ${problems.join("\n  ")}`);
 if (fs.existsSync(catalogSkillsDir)) fs.cpSync(catalogSkillsDir, path.join(contents, "Resources/catalog/skills"), { recursive: true, filter: (f) => path.basename(f) !== ".DS_Store" });
+// The extension as it loads: the manifest, the scripts and the icons; not its tests or types.
+fs.cpSync(path.join(root, "apps/chrome-extension"), path.join(contents, "Resources/chrome-extension"), {
+  recursive: true,
+  filter: (f) => !f.endsWith(".test.js") && !f.endsWith(".d.ts") && !["package.json", "node_modules", ".DS_Store"].includes(path.basename(f)),
+});
 
 step(`embedding the kernel: finx ${kernelVersion}, protocol ${protocolVersion}`);
 // Helper tools go in Contents/MacOS, next to the app's executable, never in Resources,

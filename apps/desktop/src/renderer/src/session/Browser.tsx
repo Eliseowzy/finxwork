@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { BrowserStill, BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
 import { Icon } from "../icons";
 import { useCovered } from "../overlays";
+import { allEngines, type SearchEngine } from "../../../shared/search";
+import { EngineIcon } from "../settings/BuiltInBrowser";
 import { BrowserMenu } from "./BrowserMenu";
 import { NewTabPage } from "./NewTabPage";
 
@@ -63,6 +65,12 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
   /** What the person is typing in the address field; null shows the tab's address. */
   const [draft, setDraft] = useState<string | null>(null);
   const address = useRef<HTMLInputElement>(null);
+  /** The engine picked by its keyword (keyword, then Tab or Space): what is typed is searched with it. */
+  const [keyword, setKeyword] = useState<SearchEngine | null>(null);
+  const [engines, setEngines] = useState<SearchEngine[]>(() => allEngines());
+  // The engine a keyword being typed would pick: shown as a hint, taken with Tab.
+  const typed = draft?.trim().toLowerCase() ?? "";
+  const hinted = !keyword && typed.length >= 2 && !/\s/.test(typed) ? engines.find((e) => e.keyword.toLowerCase().startsWith(typed)) : undefined;
   // A new blank tab waits for an address.
   const currentId = current?.targetId;
   const currentBlank = current ? blank(current.url) : false;
@@ -206,28 +214,64 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
           className="brp-addr"
           onSubmit={(e) => {
             e.preventDefault();
-            if (draft !== null && draft.trim()) command(current, { command: "go", url: draft });
+            if (draft !== null && draft.trim()) command(current, { command: "go", url: draft, ...(keyword && { engine: keyword.id }) });
             setDraft(null);
+            setKeyword(null);
             address.current?.blur();
           }}
         >
+          {keyword && (
+            <span className="brp-keyword">
+              <EngineIcon engine={keyword} />
+              {t("browser.searchWith", { name: keyword.name })}
+            </span>
+          )}
           <input
             ref={address}
             className="brp-url"
             aria-label={t("browser.address")}
-            placeholder={t("browser.typeUrl")}
+            placeholder={keyword ? "" : t("browser.typeUrl")}
             spellCheck={false}
-            value={draft ?? (current && !blank(current.url) ? current.url : "")}
+            value={draft ?? (keyword ? "" : current && !blank(current.url) ? current.url : "")}
             onChange={(e) => setDraft(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-            onBlur={() => setDraft(null)}
+            onFocus={(e) => {
+              e.currentTarget.select();
+              // The person's engines may have changed in the settings meanwhile.
+              void window.finx?.getPreferences().then((p) => setEngines(allEngines(p.searchEngines)));
+            }}
+            onBlur={() => {
+              setDraft(null);
+              setKeyword(null);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 setDraft(null);
+                setKeyword(null);
                 e.currentTarget.blur();
+                return;
+              }
+              // Tab takes the hinted engine; Space after a whole keyword does too, as in Chrome.
+              const whole = !keyword && engines.find((x) => x.keyword.toLowerCase() === typed);
+              const pick = e.key === "Tab" && !e.shiftKey ? hinted : e.key === " " ? whole : undefined;
+              if (pick && e.currentTarget.selectionStart === e.currentTarget.value.length) {
+                e.preventDefault();
+                setKeyword(pick);
+                setDraft("");
+                return;
+              }
+              // Backspace at the start leaves keyword mode, with the keyword back as text.
+              if (keyword && e.key === "Backspace" && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+                e.preventDefault();
+                setDraft(keyword.keyword + (draft ?? ""));
+                setKeyword(null);
               }
             }}
           />
+          {hinted && (
+            <span className="brp-hint" aria-live="polite">
+              {t("browser.tabToSearch", { name: hinted.name })}
+            </span>
+          )}
         </form>
       </div>
       <div className="brp-view" ref={room}>

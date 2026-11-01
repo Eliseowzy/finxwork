@@ -1,7 +1,7 @@
 // Generated from crates/finx-browser/src/methods.rs; do not edit. Regenerate with
 // FINX_UPDATE_SNAPSHOTS=1 cargo test -p finx-browser methods.
 
-/** Browser-level commands, which the extension answers itself. */
+/** Browser-level commands, which the browser end answers itself. */
 export const browserMethods = Object.freeze([
   "Browser.close",
   "Browser.setDownloadBehavior",
@@ -15,7 +15,7 @@ export const browserMethods = Object.freeze([
   "Target.setDiscoverTargets",
 ]);
 
-/** Page-level commands, forwarded to a tab's debugger; any other is refused (D-192). */
+/** Page-level commands, forwarded to a page's debugger; any other is refused (D-192). */
 export const pageMethods = Object.freeze([
   "Accessibility.getFullAXTree",
   "DOM.describeNode",

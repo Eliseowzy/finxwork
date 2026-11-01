@@ -7,6 +7,7 @@ import { SheetHost, ToastView } from "../components";
 import { agoText } from "../format";
 import { useUpdates } from "../updates";
 import { Icon, Mark } from "../icons";
+import { BrowserSettings } from "./BrowserSettings";
 import { ModelConnections } from "./ModelConnections";
 import { useStore } from "../store";
 import "../styles/settings.css";
@@ -14,6 +15,7 @@ import "../styles/settings.css";
 const pages = [
   { id: "general", icon: "gear" },
   { id: "models", icon: "cube" },
+  { id: "browser", icon: "globe" },
   { id: "about", icon: "info" },
 ] as const;
 
@@ -59,6 +61,7 @@ export function SettingsWindow() {
         <div className="set-body">
           {page === "general" && <General />}
           {page === "models" && <ModelConnections />}
+          {page === "browser" && <BrowserSettings />}
           {page === "about" && <About />}
         </div>
       </main>

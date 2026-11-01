@@ -482,9 +482,21 @@ impl NativeProtocol {
                 }
                 match kind {
                     BrowserHostKind::Embedded => server.0.browser_pool.set_host(Some(link)),
-                    BrowserHostKind::Extension => server.0.browser_pool.set_extension(Some(link)),
+                    BrowserHostKind::Extension => {
+                        let p = finx_rpc::params::<finx_protocol::api::BrowserHostParams>(params).unwrap_or_default();
+                        *server.0.extension.lock() = Some(finx_protocol::api::ExtensionStatus {
+                            browser: p.browser,
+                            extension_version: p.extension_version,
+                        });
+                        server.0.browser_pool.set_extension(Some(link));
+                    }
                 }
                 conn.send(reply(id, Ok::<_, RpcError>(finx_protocol::api::Empty {})));
+                server.browser_changed();
+            }
+            method::BROWSER_STATUS => {
+                server.watch_browser(conn);
+                conn.send(reply(id, Ok::<_, RpcError>(server.browser_status())));
             }
             method::MCP_LOGOUT => self.call(id, params, conn, |server, p: McpLogoutParams| async move { server.mcp_logout(p).await }),
             method::SKILLS_LIST => match finx_rpc::params::<SkillsListParams>(params) {
@@ -623,7 +635,7 @@ impl Protocol for NativeProtocol {
                     && let Some((host, _)) = self.browser_host.lock().clone()
                     && let Ok(p) = finx_rpc::params::<finx_protocol::api::BrowserCdpParams>(params)
                 {
-                    host.receive(p.stream, p.data);
+                    host.receive(p.stream, Box::<str>::from(p.data).into_string());
                 }
             }
             Kind::Response { .. } => {}
@@ -647,8 +659,14 @@ impl Protocol for NativeProtocol {
             host.close();
             match kind {
                 finx_protocol::api::BrowserHostKind::Embedded => self.server.0.browser_pool.remove_host(host.id()),
-                finx_protocol::api::BrowserHostKind::Extension => self.server.0.browser_pool.remove_extension(host.id()),
+                finx_protocol::api::BrowserHostKind::Extension => {
+                    self.server.0.browser_pool.remove_extension(host.id());
+                    if !self.server.0.browser_pool.has_extension() {
+                        *self.server.0.extension.lock() = None;
+                    }
+                }
             }
+            self.server.browser_changed();
         }
     }
 }

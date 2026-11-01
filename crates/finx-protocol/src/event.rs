@@ -17,6 +17,7 @@ use std::sync::Arc;
 use crate::op::ApprovalDecision;
 use crate::op::CommandRule;
 use crate::op::PermissionMode;
+use crate::op::PromptMode;
 use crate::op::SiteGrant;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -180,6 +181,13 @@ pub enum EventMsg {
         task_id: String,
         returned_input: Vec<UserMessage>,
         usage: UsageTotals,
+    },
+    /// A prompt arrived while a task runs and waits: for the next turn boundary (`steer`) or for
+    /// the task to finish (`follow_up`). It joins the history then, as a user message with the
+    /// same `ts`; a failed task discards it and an interrupted one hands it back.
+    InputQueued {
+        message: UserMessage,
+        mode: PromptMode,
     },
     SettingsChanged {
         model: String,

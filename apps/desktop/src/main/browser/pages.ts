@@ -5,6 +5,9 @@ import { homeBrowserSession } from "../../shared/bridge";
 import type { BrowserPanel, BrowserTab, BrowserTabCommand } from "../../shared/bridge";
 import type { Download, Page, PageEvents, PageHost } from "./shim";
 import { browserUserAgent, typedURL } from "./url";
+import { chromeOverride, clientHintHeaders, hintsGo } from "./identity";
+import { preferences } from "../preferences";
+import { allEngines } from "../../shared/search";
 import { language } from "../../shared/i18n";
 import { webComment, type BrowserComment } from "../../shared/annotations";
 
@@ -65,6 +68,16 @@ function browserSession() {
   sessionReady = true;
   // Pages here ask for nothing: no camera, location or notifications.
   s.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  // And say so when asked: otherwise a page reads Notification.permission as "granted" while
+  // every request is refused, which no real browser does.
+  s.setPermissionCheckHandler(() => false);
+  // The client hints Chrome sends, which Electron leaves out (identity.ts).
+  const hints = clientHintHeaders(process.versions.chrome, process.platform);
+  s.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders;
+    if (hintsGo(details.url) && !Object.keys(headers).some((h) => h.toLowerCase() === "sec-ch-ua")) Object.assign(headers, hints);
+    callback({ requestHeaders: headers });
+  });
   // Sites see Chrome, not Electron or the app: some serve a reduced page to browsers they do
   // not know (Google's sign-in, for one, without its images).
   s.setUserAgent(browserUserAgent(s.getUserAgent()));
@@ -104,6 +117,14 @@ export const electronPages: PageHost = {
     const tab: Tab = { targetId, finxSession, view, events, seq: ++seq };
     tabs.set(targetId, tab);
     wc.debugger.attach("1.3");
+    // Sites see the Chrome this is, the same way in headers and in page scripts (identity.ts).
+    void wc.debugger
+      .sendCommand("Emulation.setUserAgentOverride", chromeOverride(ses.getUserAgent(), process.versions.chrome, language(), {
+        os: process.platform,
+        arch: process.arch,
+        systemVersion: process.getSystemVersion(),
+      }))
+      .catch(() => {});
     // A tab acts as if focused even when its window is not (or is hidden): otherwise the
     // first mouse press only focuses it, and a click never reaches the page.
     void wc.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
@@ -281,7 +302,8 @@ export function tabCommand(targetId: string, c: BrowserTabCommand) {
       wc.stop();
       break;
     case "go": {
-      const url = typedURL(c.url);
+      const p = preferences();
+      const url = typedURL(c.url, { engines: allEngines(p.searchEngines), engine: p.searchEngine, keyword: c.engine });
       if (url) void wc.loadURL(url).catch(() => {});
       break;
     }

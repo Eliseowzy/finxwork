@@ -6,6 +6,8 @@ import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, MenuI
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
+import { searchEngineIcon } from "./browser/searchIcons";
+import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
@@ -38,7 +40,10 @@ export function command(c: Command) {
 function tabCommandOk(c: unknown): c is BrowserTabCommand {
   if (typeof c !== "object" || c === null) return false;
   const { command, url } = c as Record<string, unknown>;
-  if (command === "go") return typeof url === "string" && url.length <= 8192;
+  if (command === "go") {
+    const { engine } = c as Record<string, unknown>;
+    return typeof url === "string" && url.length <= 8192 && (engine === undefined || (typeof engine === "string" && engine.length <= 80));
+  }
   return ["back", "forward", "reload", "stop", "close", "new", "annotate"].includes(command as string);
 }
 
@@ -142,6 +147,12 @@ export function registerIPC() {
     trusted(e) && (targetId === null || typeof targetId === "string") && menuActionOk(a) && tabMenuAction(e.sender, targetId, a));
   ipcMain.handle("browser-local-servers", (e) => (trusted(e) ? devServers(new Set(app.getAppMetrics().map((m) => m.pid))) : []));
   ipcMain.handle("kernel-status", (e) => (trusted(e) ? kernelStatus() : null));
+  ipcMain.handle("system-browsers", (e) => (trusted(e) ? systemBrowsers() : []));
+  ipcMain.handle("system-browser-set-up", (e) => (trusted(e) ? setUpSystemBrowser() : null));
+  ipcMain.handle("system-browser-open", (e, id: unknown, page: unknown) => (trusted(e) ? openSystemBrowser(id, page === "extensions" ? "extensions" : undefined) : false));
+  ipcMain.handle("search-engine-icon", (e, template: unknown) => (trusted(e) ? searchEngineIcon(template) : null));
+  ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
+  ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
   ipcMain.on("open-settings", (e, page?: string) => trusted(e) && showSettings(typeof page === "string" ? page : undefined));

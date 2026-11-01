@@ -22,11 +22,11 @@ function fakeTabs() {
 function browser() {
   const fake = fakeTabs();
   const out = [];
-  const b = new ExtensionBrowser(fake.tabs, (data) => out.push(JSON.parse(data)));
+  const b = new ExtensionBrowser(fake.tabs, (message) => out.push(message));
   let id = 0;
   const call = async (method, params = {}, sessionId) => {
     const n = ++id;
-    b.receive(JSON.stringify({ id: n, method, params, ...(sessionId ? { sessionId } : {}) }));
+    b.receive({ id: n, method, params, ...(sessionId ? { sessionId } : {}) });
     for (let i = 0; i < 50 && !out.some((m) => m.id === n); i++) await new Promise((r) => setTimeout(r, 1));
     return out.find((m) => m.id === n);
   };

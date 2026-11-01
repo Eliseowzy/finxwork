@@ -280,7 +280,8 @@ impl BrowserPool {
             Ok(launched) => launched,
             Err(err) => {
                 if temporary {
-                    let _ = std::fs::remove_dir_all(&user_data_dir);
+                    let dir = user_data_dir.clone();
+                    let _ = tokio::task::spawn_blocking(move || std::fs::remove_dir_all(dir)).await;
                 }
                 return Err(err);
             }
@@ -411,9 +412,30 @@ async fn close(conn: Arc<Conn>, mut closing: Closing) {
         let _ = child.kill().await;
     }
     drop(closing.lock.take());
-    if let Some(dir) = &closing.temporary {
-        let _ = std::fs::remove_dir_all(dir);
-    }
-    let _ = std::fs::remove_dir_all(&closing.downloads);
+    // A profile can be large: removing it must not hold up a runtime thread.
+    let dirs: Vec<PathBuf> = closing.temporary.take().into_iter().chain([closing.downloads.clone()]).collect();
+    let _ = tokio::task::spawn_blocking(move || {
+        for dir in dirs {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    })
+    .await;
     let _ = closing.done.send(true);
+    // Nothing more to wait for on this key: forget it, unless a newer browser took it over.
+    if let Some(pool) = closing.pool.upgrade() {
+        let mut waiting = pool.closing.lock();
+        if waiting.get(&closing.key).is_some_and(|rx| rx.same_channel(&closing.done.subscribe())) {
+            waiting.remove(&closing.key);
+        }
+        drop(waiting);
+        let mut browsers = pool.browsers.lock();
+        if browsers.get(&closing.key).is_some_and(|b| b.strong_count() == 0) {
+            browsers.remove(&closing.key);
+        }
+        drop(browsers);
+        let mut starting = pool.starting.lock();
+        if starting.get(&closing.key).is_some_and(|gate| Arc::strong_count(gate) == 1) {
+            starting.remove(&closing.key);
+        }
+    }
 }

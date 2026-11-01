@@ -24,6 +24,12 @@ export type Settings = {
   onThinking: (l: ThinkingLevel) => void;
 };
 
+/**
+ * How a message written while a task runs goes: `steer` (interject) is taken
+ * in at the task's next turn, `follow_up` (queue) once the task would finish.
+ */
+export type SendMode = "steer" | "follow_up";
+
 /** Where a new session works: its project, from the recent ones or picked, or none (null). */
 export type Place = { cwd: string | null; recent: string[]; names: Map<string, string>; onCwd: (cwd: string | null) => void; onPick: () => void };
 
@@ -36,14 +42,14 @@ export type Place = { cwd: string | null; recent: string[]; names: Map<string, s
  * session runs and in which project.
  */
 export type Form =
-  | { mode: "session"; running: boolean; onStop: () => void; above?: ReactNode; onHeight: (h: number) => void }
+  | { mode: "session"; running: boolean; onStop: () => void; above?: ReactNode; onHeight: (h: number) => void; sendMode: SendMode; onSendMode: (m: SendMode) => void }
   | { mode: "new"; place: Place };
 
 /**
  * Where the owner writes to finx: one line while empty — "+", the text,
  * Send — growing with what is written. ↩ sends, ⇧↩ breaks the line, nothing
- * is sent while an input method composes; ⌥↩ sends as a follow-up when a
- * task runs. `/` opens the session's commands; a skill chosen there, or
+ * is sent while an input method composes. While a task runs a switch under
+ * the text picks whether ↩ interjects or queues; ⌥↩ sends the other way. `/` opens the session's commands; a skill chosen there, or
  * written as `/skill:name`, shows as a tag (PromptEditor). What is attached
  * shows as tiles above the text. What the message goes with is a row of
  * quiet buttons under it, outside.
@@ -111,6 +117,15 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             </>
           )}
           <PermissionPicker value={settings.permission} onChange={settings.onPermission} />
+          {form.mode === "session" && form.running && (
+            <div className="seg cmp-sendmode" role="radiogroup" aria-label={t("composer.sendMode")}>
+              {(["steer", "follow_up"] as const).map((m) => (
+                <button key={m} role="radio" aria-checked={form.sendMode === m} className={form.sendMode === m ? "on" : ""} title={t(`composer.${m}Desc`)} onClick={() => (form.onSendMode(m), area.current?.focus())}>
+                  {t(`composer.${m}Mode`)}
+                </button>
+              ))}
+            </div>
+          )}
           <span className="sp" />
           <ModelPicker settings={settings} />
         </div>

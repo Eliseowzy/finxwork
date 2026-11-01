@@ -159,7 +159,7 @@
     "thinking": "Thinking",
     "permission": "Permissions",
     "archived": "Unarchive the session to write in it",
-    "steer": "Steer the task: taken in at its next turn (⌥↩ to queue after it)",
+    "steer": "Interject: taken in at the task's next turn (⌥↩ to queue it instead)",
     "reply": "Reply to finx…",
     "stop": "Stop ⌘.",
     "noKey": "No key",
@@ -168,7 +168,13 @@
     "thinkingChanged": "{{model}} has no “{{from}}” level; thinking is now “{{to}}”",
     "thinkingDefault": "The provider decides",
     "webComment": "Page comment",
-    "webElement": "Page element"
+    "webElement": "Page element",
+    "follow_up": "Queue: sent once the task finishes (⌥↩ to interject instead)",
+    "sendMode": "How to send while the task runs",
+    "steerMode": "Interject",
+    "follow_upMode": "Queue",
+    "steerDesc": "Taken in at the task's next turn, before it carries on",
+    "follow_upDesc": "Sent once the task would finish"
   },
   "inspector": {
     "label": "Session info",
@@ -299,7 +305,7 @@
     "reload": "Reload",
     "stop": "Stop loading",
     "address": "Address",
-    "typeUrl": "Type a URL",
+    "typeUrl": "Search or type a URL",
     "localServers": "Local servers",
     "rescan": "Look again",
     "noLocalServers": "No web server is running on this machine. Start one and it shows here.",
@@ -319,7 +325,17 @@
       "keepCookies": "Keep cookies",
       "always": "Always",
       "untilQuit": "Until quit",
-      "clearData": "Clear browsing data"
-    }
+      "clearData": "Clear browsing data",
+      "connectSystem": "Connect My Browser…"
+    },
+    "searchWith": "Search {{name}}",
+    "tabToSearch": "Press Tab to search {{name}}"
+  },
+  "queued": {
+    "label": "Waiting for the task",
+    "attachments_one": "{{count}} attachment",
+    "attachments_other": "{{count}} attachments",
+    "more_one": "+{{count}} attachment",
+    "more_other": "+{{count}} attachments"
   }
 }

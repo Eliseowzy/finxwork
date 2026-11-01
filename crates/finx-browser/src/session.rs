@@ -37,6 +37,23 @@ const NEW_PAGE_CHARS: usize = 16_000;
 const SNAPSHOT_CHARS: usize = 60_000;
 /// Iframes expanded inside one another, at most.
 const FRAME_DEPTH: usize = 3;
+/// How long the network must stay quiet for `browser_wait` to call it idle.
+const NETWORK_QUIET: Duration = Duration::from_millis(500);
+
+tokio::task_local! {
+    static BRIEF: bool;
+}
+
+/// Runs `f` with brief results: calls that change the page say what they did and where the
+/// page is, without its snapshot or changes. For the steps of a batch before its last, whose
+/// last step then reports every change since the batch began (§5.3).
+pub async fn brief<F: std::future::Future>(f: F) -> F::Output {
+    BRIEF.scope(true, f).await
+}
+
+fn is_brief() -> bool {
+    BRIEF.try_with(|brief| *brief).unwrap_or(false)
+}
 
 pub struct SessionOptions {
     pub guard: Arc<dyn NavigationGuard>,
@@ -341,9 +358,19 @@ impl BrowserSession {
         let (tab_id, frame_id, loader, backend, label) = {
             let refs = self.refs.lock();
             let entry = refs.by_ref.get(reference).ok_or_else(|| {
-                BrowserError::StaleRef(format!(
-                    "Unknown ref {reference}. Refs come from the latest browser_snapshot or action result; take a snapshot."
-                ))
+                let given = reference
+                    .strip_prefix('e')
+                    .and_then(|n| n.parse::<u64>().ok())
+                    .is_some_and(|n| n >= 1 && n <= refs.next);
+                BrowserError::StaleRef(if given {
+                    format!(
+                        "Ref {reference} is from before the page navigated or its tab closed. Take a new snapshot."
+                    )
+                } else {
+                    format!(
+                        "Unknown ref {reference}. Refs come from the latest browser_snapshot or action result; take a snapshot."
+                    )
+                })
             })?;
             (entry.tab.clone(), entry.frame.clone(), entry.loader.clone(), entry.backend, entry.label.clone())
         };
@@ -495,6 +522,7 @@ impl BrowserSession {
                 BrowserError::failed(if step < 0 { "There is no page to go back to." } else { "There is no page to go forward to." })
             })?;
         let before = self.main_loader(&tab);
+        let since = Instant::now();
         self.conn()
             .send(
                 Some(&tab.session),
@@ -502,7 +530,7 @@ impl BrowserSession {
                 json!({ "entryId": entry["id"] }),
             )
             .await?;
-        self.settle(&tab, before).await;
+        self.settle(&tab, before, since).await;
         drop(_busy);
         self.report(&tab, None, if step < 0 { "Went back." } else { "Went forward." }).await
     }
@@ -511,8 +539,9 @@ impl BrowserSession {
         let tab = self.resolve_tab(tab)?;
         let _busy = tab.busy.lock().await;
         let before = self.main_loader(&tab);
+        let since = Instant::now();
         self.conn().send(Some(&tab.session), "Page.reload", json!({})).await?;
-        self.settle(&tab, before).await;
+        self.settle(&tab, before, since).await;
         drop(_busy);
         self.report(&tab, None, "Reloaded the page.").await
     }
@@ -522,7 +551,8 @@ impl BrowserSession {
     }
 
     /// Waits for what an action set off: a navigation to load, requests to finish.
-    async fn settle(&self, tab: &Arc<Tab>, loader_before: Option<String>) {
+    /// `since`: when the action began; requests the page had open before do not count.
+    async fn settle(&self, tab: &Arc<Tab>, loader_before: Option<String>, since: Instant) {
         tokio::time::sleep(Duration::from_millis(150)).await;
         let navigating = {
             let state = tab.state.lock();
@@ -532,7 +562,7 @@ impl BrowserSession {
             self.wait_for(tab, self.options.navigation_timeout, |state| !state.loading)
                 .await;
         }
-        self.wait_for(tab, Duration::from_millis(1500), |state| state.inflight.is_empty())
+        self.wait_for(tab, Duration::from_millis(1500), |state| state.requests_done_since(since))
             .await;
     }
 
@@ -668,14 +698,39 @@ impl BrowserSession {
         nesting: usize,
     ) -> Result<Vec<String>, BrowserError> {
         let s = Some(frame.session.as_str());
+        // One DOM snapshot covers every document in the frame's process, so the same-process
+        // iframes expanded below use it too.
         let (tree, dom) = futures::join!(
             self.conn().send(s, "Accessibility.getFullAXTree", json!({ "frameId": frame_id })),
             self.conn().send(s, "DOMSnapshot.captureSnapshot", json!({ "computedStyles": [] })),
         );
         let tree = tree?;
         let attrs = dom.map(|d| snapshot::attrs_from_dom_snapshot(&d)).unwrap_or_default();
+        self.tree_lines(tab, frame_id, frame, &tree, &attrs, root, nesting).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn tree_lines(
+        &self,
+        tab: &Tab,
+        frame_id: &str,
+        frame: &Frame,
+        tree: &Value,
+        attrs: &HashMap<i64, snapshot::Attrs>,
+        root: Option<i64>,
+        nesting: usize,
+    ) -> Result<Vec<String>, BrowserError> {
+        self.prune(&tab.id, frame_id, &frame.loader);
         let nodes = tree["nodes"].as_array().map(Vec::as_slice).unwrap_or_default();
-        let items = snapshot::build(nodes, &attrs, root);
+        let items = snapshot::build(nodes, attrs, root);
+        // The frames behind the iframes, looked up all at once.
+        let iframes: Vec<i64> = items.iter().filter(|i| i.iframe).filter_map(|i| i.backend).collect();
+        let found = futures::future::join_all(iframes.iter().map(|b| self.child_frame(tab, &frame.session, *b))).await;
+        let mut children: HashMap<i64, (String, Frame)> = iframes
+            .into_iter()
+            .zip(found)
+            .filter_map(|(backend, child)| child.map(|c| (backend, c)))
+            .collect();
         let mut lines = Vec::with_capacity(items.len());
         for item in items {
             let reference = item
@@ -688,10 +743,7 @@ impl BrowserSession {
             }
             // Same-origin iframes in the same process are shown inline; others as one line
             // whose content `frame` opens, labelled with its origin (§5.2, §7.7).
-            let child = match item.backend {
-                Some(backend) => self.child_frame(tab, &frame.session, backend).await,
-                None => None,
-            };
+            let child = item.backend.and_then(|backend| children.remove(&backend));
             let mut item = item;
             match child {
                 Some((child_id, child))
@@ -700,7 +752,12 @@ impl BrowserSession {
                         && nesting < FRAME_DEPTH =>
                 {
                     lines.push(item.render(reference.as_deref()));
-                    let inner = Box::pin(self.tree(tab, &child_id, &child, None, nesting + 1)).await?;
+                    let s = Some(frame.session.as_str());
+                    let tree = self
+                        .conn()
+                        .send(s, "Accessibility.getFullAXTree", json!({ "frameId": child_id }))
+                        .await?;
+                    let inner = Box::pin(self.tree_lines(tab, &child_id, &child, &tree, attrs, None, nesting + 1)).await?;
                     let indent = "  ".repeat(item.depth + 1);
                     lines.extend(inner.into_iter().map(|line| format!("{indent}{line}")));
                 }
@@ -712,6 +769,28 @@ impl BrowserSession {
             }
         }
         Ok(lines)
+    }
+
+    /// Forgets the refs and snapshots that can no longer resolve: those of this frame's
+    /// earlier documents, and those of tabs that closed.
+    fn prune(&self, tab: &str, frame: &str, loader: &str) {
+        let open: Vec<String> = self.tabs().into_iter().map(|t| t.id.clone()).collect();
+        let keep = |t: &str, f: &str, l: &str| open.iter().any(|o| o == t) && !(t == tab && f == frame && l != loader);
+        let mut refs = self.refs.lock();
+        refs.by_ref.retain(|_, e| keep(&e.tab, &e.frame, &e.loader));
+        refs.by_node.retain(|(t, f, l, _), _| keep(t, f, l));
+        drop(refs);
+        self.last.lock().retain(|(t, f), (l, _)| keep(t, f, l));
+    }
+
+    /// A frame's tree now, kept as its last snapshot: brief results leave it for the next
+    /// full one to diff against.
+    async fn fresh_tree(&self, tab: &Tab, frame_id: &str, frame: &Frame) -> Vec<String> {
+        let lines = self.tree(tab, frame_id, frame, None, 0).await.unwrap_or_default();
+        self.last
+            .lock()
+            .insert((tab.id.clone(), frame_id.to_string()), (frame.loader.clone(), lines.clone()));
+        lines
     }
 
     async fn child_frame(&self, tab: &Tab, session: &str, backend: i64) -> Option<(String, Frame)> {
@@ -893,9 +972,10 @@ impl BrowserSession {
         };
         let before = match before {
             Some(lines) => lines,
-            None => self.tree(&tab, &frame_id, &frame, None, 0).await.unwrap_or_default(),
+            None => self.fresh_tree(&tab, &frame_id, &frame).await,
         };
         let main_before = self.main_loader(&tab);
+        let since = Instant::now();
         let done = tokio::time::timeout(self.options.action_timeout, self.perform(action, place, &tab, cancel)).await;
         let summary = match done {
             Ok(Ok(summary)) => summary,
@@ -909,7 +989,7 @@ impl BrowserSession {
                 }));
             }
         };
-        self.settle(&tab, main_before.clone()).await;
+        self.settle(&tab, main_before.clone(), since).await;
         drop(_busy);
         let navigated = self.main_loader(&tab) != main_before;
         let changes = if navigated {
@@ -932,9 +1012,10 @@ impl BrowserSession {
         };
         let before = match before {
             Some(lines) => lines,
-            None => self.tree(&tab, &page.frame, &frame, None, 0).await.unwrap_or_default(),
+            None => self.fresh_tree(&tab, &page.frame, &frame).await,
         };
         let main_before = self.main_loader(&tab);
+        let since = Instant::now();
         let timeout = self.options.action_timeout;
         // No contextId: the main world of the session's top frame, which is the approved one.
         let sent = self
@@ -981,7 +1062,7 @@ impl BrowserSession {
             "Ran the script. Its value:\n{}",
             snapshot::wrap_page_content(&origin, &cut(&shown, 20_000, "The value was cut."))
         );
-        self.settle(&tab, main_before.clone()).await;
+        self.settle(&tab, main_before.clone(), since).await;
         drop(_busy);
         let changes = if self.main_loader(&tab) != main_before {
             None
@@ -1506,7 +1587,7 @@ impl BrowserSession {
                 WaitFor::Url(part) => tab.state.lock().url.contains(part.as_str()),
                 WaitFor::NetworkIdle => {
                     let state = tab.state.lock();
-                    !state.loading && state.inflight.is_empty()
+                    !state.loading && state.network_idle(NETWORK_QUIET)
                 }
                 WaitFor::Text(text) | WaitFor::TextGone(text) => {
                     let found = self.page_has_text(&tab, text).await.unwrap_or(false);
@@ -1638,6 +1719,10 @@ impl BrowserSession {
         let _busy = tab.busy.lock().await;
         self.refresh(tab).await;
         let mut text = format!("{done}\n{}", self.header(tab));
+        if is_brief() {
+            // The last snapshot stays as it was, so the next full result diffs against it.
+            return Ok(self.finish(tab, text));
+        }
         match same_document {
             Some((frame_id, frame, before)) => {
                 let still = tab.state.lock().frames.get(&frame_id).is_some_and(|f| f.loader == frame.loader);

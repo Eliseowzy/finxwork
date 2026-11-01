@@ -156,6 +156,7 @@ pub fn document() -> Value {
         (method::MCP_LOGIN, Some(name::<customize::McpLoginParams>(g)), name::<customize::McpLoginResult>(g)),
         (method::MCP_LOGOUT, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),
@@ -163,6 +164,7 @@ pub fn document() -> Value {
     ];
     let server_notifications = [
         (method::MODELS_CHANGED, name::<api::Empty>(g)),
+        (method::BROWSER_CHANGED, name::<api::BrowserStatus>(g)),
         (method::CONFIG_CHANGED, name::<customize::ConfigChangedParams>(g)),
         (method::SKILLS_CHANGED, name::<customize::SkillsChangedParams>(g)),
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),

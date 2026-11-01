@@ -530,7 +530,16 @@ button.insp-row:active{background:var(--fill2)}
 .brp-annotate:hover:not(:disabled){color:#3294ff}
 .brp-annotate:focus-visible{outline:2px solid #3294ff;outline-offset:2px}
 .brp-annotate:disabled{opacity:.35;cursor:default}
-.brp-addr{flex:1;min-width:0;margin-left:6px}
+.brp-addr{flex:1;min-width:0;margin-left:6px;position:relative;display:flex;align-items:center;height:30px;border-radius:8px;background:var(--fill2)}
+.brp-addr:focus-within{box-shadow:0 0 0 2px var(--sel)}
+.brp-addr .brp-url,.brp-addr .brp-url:focus{background:none;box-shadow:none}
+.engine-icon{width:20px;height:20px;flex:none;border-radius:5px;object-fit:contain}
+.engine-initial{display:grid;place-items:center;background:var(--fill2);color:var(--l2);font-size:11px;font-weight:600}
+.brp-keyword{display:inline-flex;align-items:center;gap:6px;flex:none;height:22px;margin-left:4px;padding:0 8px 0 5px;border-radius:6px;background:var(--accent-bg);color:var(--accent-t);font-size:12px;white-space:nowrap}
+.brp-keyword .engine-icon{width:14px;height:14px;border-radius:3px}
+.brp-keyword .engine-initial{font-size:9px}
+.brp-keyword+.brp-url{padding-left:8px}
+.brp-hint{position:absolute;right:10px;top:50%;transform:translateY(-50%);pointer-events:none;font-size:11.5px;color:var(--l3);padding-left:8px;white-space:nowrap}
 .brp-url{width:100%;height:30px;padding:0 12px;border:0;border-radius:8px;background:var(--fill2);color:var(--l1);font:inherit;font-size:13px;outline:none}
 .brp-url::placeholder{color:var(--l3)}
 .brp-url:focus{box-shadow:0 0 0 2px var(--sel)}

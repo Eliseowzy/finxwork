@@ -146,6 +146,8 @@ export function BrowserMenu({ targetId }: { targetId: string | null }) {
           <div className="mh">{t("browser.menu.cookies")}</div>
           {paneRow("cookies", t("browser.menu.keepCookies"), t(`browser.menu.${state.cookies}`))}
           {item(t("browser.menu.clearData"), { action: "clear" }, false, true)}
+          <div className="msep" role="separator" />
+          {item(t("browser.menu.connectSystem"), () => window.finx?.openSettings("browser"))}
         </div>
       )}
       {open && state && pane && (

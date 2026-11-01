@@ -6,7 +6,6 @@
 use finx_browser::BrowserError;
 use finx_browser::EmbeddedHost;
 use finx_browser::Stream;
-use finx_protocol::api::BrowserCdpParams;
 use finx_protocol::api::method;
 use parking_lot::Mutex;
 use std::sync::atomic::AtomicU64;
@@ -81,8 +80,7 @@ impl EmbeddedHost for HostLink {
                 pending.extend_from_slice(&chunk[..n]);
                 while let Some(end) = pending.iter().position(|b| *b == 0) {
                     let message: Vec<u8> = pending.drain(..=end).collect();
-                    let data = String::from_utf8_lossy(&message[..end]).into_owned();
-                    conn.send(finx_rpc::notification(method::BROWSER_CDP, &BrowserCdpParams { stream, data }));
+                    conn.send(cdp_notification(stream, &message[..end]));
                 }
             }
         });
@@ -103,6 +101,17 @@ impl EmbeddedHost for HostLink {
         let (reader, writer) = tokio::io::split(ours);
         Ok((Box::new(reader), Box::new(writer)))
     }
+}
+
+/// The `browser/cdp` line for one of the kernel's CDP messages, with the message embedded as
+/// is: finx-browser wrote it as compact JSON (no newline), so it need not be parsed again.
+fn cdp_notification(stream: u64, message: &[u8]) -> Vec<u8> {
+    let head = format!("{{\"jsonrpc\":\"2.0\",\"method\":\"{}\",\"params\":{{\"stream\":{stream},\"data\":", method::BROWSER_CDP);
+    let mut line = Vec::with_capacity(head.len() + message.len() + 3);
+    line.extend_from_slice(head.as_bytes());
+    line.extend_from_slice(message);
+    line.extend_from_slice(b"}}\n");
+    line
 }
 
 #[cfg(test)]
@@ -216,7 +225,7 @@ mod tests {
         let writer = tokio::spawn(async move {
             while let Some(data) = out_rx.recv().await {
                 let stream = current.load(std::sync::atomic::Ordering::Relaxed);
-                let line = write(json!({"jsonrpc": "2.0", "method": "browser/cdp", "params": {"stream": stream, "data": data.to_string()}}));
+                let line = write(json!({"jsonrpc": "2.0", "method": "browser/cdp", "params": {"stream": stream, "data": data}}));
                 if client_writes.write_all(line.as_bytes()).await.is_err() {
                     break;
                 }
@@ -242,7 +251,7 @@ mod tests {
                     continue;
                 }
                 stream.store(message["params"]["stream"].as_u64().unwrap(), std::sync::atomic::Ordering::Relaxed);
-                let mut command: Value = serde_json::from_str(message["params"]["data"].as_str().unwrap()).unwrap();
+                let mut command: Value = message["params"]["data"].clone();
                 noted.lock().push(command.clone());
                 if let Some(params) = command["params"].as_object_mut() {
                     params.remove("finxSession");

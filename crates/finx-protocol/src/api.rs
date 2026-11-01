@@ -5,6 +5,7 @@ use finx_llm::Message;
 use finx_llm::ThinkingLevel;
 use finx_llm::ToolResultMessage;
 use finx_llm::UsageTotals;
+use finx_llm::UserMessage;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -22,6 +23,7 @@ use crate::event::ToolCategory;
 use crate::op::CommandRule;
 use crate::op::Op;
 use crate::op::PermissionMode;
+use crate::op::PromptMode;
 use crate::op::SiteGrant;
 use finx_llm::Timestamp;
 
@@ -99,6 +101,10 @@ pub mod method {
     pub const BROWSER_HOST: &str = "browser/host";
     /// One CDP message between the kernel and the browser host, either way.
     pub const BROWSER_CDP: &str = "browser/cdp";
+    /// Which browsers are connected; the connection hears `browser/changed` from then on.
+    pub const BROWSER_STATUS: &str = "browser/status";
+    /// Server notification to connections that called `browser/status`.
+    pub const BROWSER_CHANGED: &str = "browser/changed";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -210,17 +216,45 @@ pub enum BrowserHostKind {
 pub struct BrowserHostParams {
     #[serde(default)]
     pub kind: BrowserHostKind,
+    /// The browser the host is in, as it names itself: "Google Chrome 141.0.7390.54".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser: Option<String>,
+    /// The FinxWork extension's version, for an extension host.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension_version: Option<String>,
+}
+
+/// The user's own browser, lent through the FinxWork extension (browser-design §8.4).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionStatus {
+    /// "Google Chrome 141.0.7390.54", when the extension said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension_version: Option<String>,
+}
+
+/// The result of `browser/status`, and the parameters of `browser/changed`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserStatus {
+    /// Set while the FinxWork extension is connected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extension: Option<ExtensionStatus>,
+    /// Whether a desktop app shows embedded browsers.
+    pub embedded: bool,
 }
 
 /// Parameters of the `browser/cdp` notification, in both directions.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct BrowserCdpParams {
     /// Which browser on the host: each one the kernel starts gets a new number, and the host
     /// answers with the number of the command. Messages of an earlier browser are dropped.
     pub stream: u64,
-    /// One CDP message as JSON text: a command from the kernel; a response or an event from
-    /// the host.
-    pub data: String,
+    /// One CDP message, as a JSON object: a command from the kernel; a response or an event
+    /// from the host. Carried as is, so a large one (a screenshot, an accessibility tree) is
+    /// neither escaped into a string nor parsed on the way through.
+    #[schemars(with = "serde_json::Map<String, serde_json::Value>")]
+    pub data: Box<serde_json::value::RawValue>,
 }
 
 // ---- Initialization ----
@@ -543,6 +577,16 @@ pub struct SessionSnapshot {
     /// The sub-agents started since the session was loaded, in the order they started.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<AgentSnapshot>,
+    /// Prompts waiting for the running task (`input_queued`), oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub queued: Vec<QueuedInput>,
+}
+
+/// A prompt waiting for the running task.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct QueuedInput {
+    pub message: UserMessage,
+    pub mode: PromptMode,
 }
 
 /// A sub-agent as a snapshot shows it: what `agent_started` and `agent_status` said, and its own

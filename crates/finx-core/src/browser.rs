@@ -40,6 +40,7 @@ use finx_tools::ToolKind;
 use finx_tools::ToolOutput;
 use finx_tools::Typed;
 use finx_tools::TypedTool;
+use futures::FutureExt;
 use parking_lot::Mutex;
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -1216,7 +1217,11 @@ impl TypedTool for BrowserBatch {
                 authorities,
                 ..ctx.clone()
             };
-            let output = match tool.execute(step_args, step_ctx).await {
+            // Steps before the last report briefly; the last one shows every change since
+            // the batch began.
+            let run = tool.execute(step_args, step_ctx);
+            let run = if n < total { finx_browser::session::brief(run).boxed() } else { run };
+            let output = match run.await {
                 Ok(output) => output,
                 Err(ToolError::Cancelled) => return Err(ToolError::Cancelled),
                 Err(err) => ToolOutput::error(err.to_string()),
@@ -1239,7 +1244,9 @@ impl TypedTool for BrowserBatch {
         }
         let ran = texts.len();
         if let Some(why) = &stopped {
-            texts.push(format!("{why} {ran} of {total} steps ran; the rest did not."));
+            texts.push(format!(
+                "{why} {ran} of {total} steps ran; the rest did not. Take a snapshot to see the page."
+            ));
         }
         content.insert(0, UserContent::Text { text: texts.join("\n\n") });
         Ok(ToolOutput {

@@ -150,7 +150,7 @@
     "thinking": "思考强度",
     "permission": "权限",
     "archived": "取消归档后才能继续这个会话",
-    "steer": "插话：下一轮生效（⌥↩ 排到任务之后）",
+    "steer": "插话：任务下一步时就交给它（⌥↩ 改为排队）",
     "reply": "回复 finx…",
     "stop": "停止 ⌘.",
     "noKey": "未设置密钥",
@@ -159,7 +159,13 @@
     "thinkingChanged": "{{model}} 没有「{{from}}」档，思考强度改为「{{to}}」",
     "thinkingDefault": "由服务商决定",
     "webComment": "网页批注",
-    "webElement": "网页元素"
+    "webElement": "网页元素",
+    "follow_up": "排队：当前任务完成后再发（⌥↩ 改为插话）",
+    "sendMode": "任务进行中的发送方式",
+    "steerMode": "插话",
+    "follow_upMode": "排队",
+    "steerDesc": "任务下一步时就交给它，不等任务结束",
+    "follow_upDesc": "等当前任务完成后再发"
   },
   "inspector": {
     "label": "会话信息",
@@ -290,7 +296,7 @@
     "reload": "刷新",
     "stop": "停止加载",
     "address": "网址",
-    "typeUrl": "输入网址",
+    "typeUrl": "搜索或输入网址",
     "localServers": "本地服务",
     "rescan": "重新检测",
     "noLocalServers": "本机没有正在运行的网页服务。启动后会显示在这里。",
@@ -310,7 +316,15 @@
       "keepCookies": "保留 Cookie",
       "always": "始终",
       "untilQuit": "直到退出",
-      "clearData": "清除浏览数据"
-    }
+      "clearData": "清除浏览数据",
+      "connectSystem": "连接我的浏览器…"
+    },
+    "searchWith": "用 {{name}} 搜索",
+    "tabToSearch": "按 Tab 用 {{name}} 搜索"
+  },
+  "queued": {
+    "label": "等待任务处理",
+    "attachments_other": "{{count}} 个附件",
+    "more_other": "+{{count}} 个附件"
   }
 }

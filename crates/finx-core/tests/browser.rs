@@ -519,7 +519,9 @@ async fn a_batch_runs_its_steps_and_stops_where_approval_is_needed() {
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     assert_eq!(events.iter().filter(|e| matches!(e.msg, EventMsg::ApprovalRequested { .. })).count(), 0);
     let text = last_results(&h.api).pop().unwrap();
-    assert!(text.contains("Another page"), "the first step ran: {text}");
+    // Steps before the last report briefly: where the page is, not its snapshot.
+    assert!(text.contains("Page: \"Other\"") && !text.contains("Another page"), "the first step ran: {text}");
+    assert!(text.contains("Take a snapshot to see the page."), "{text}");
     assert!(text.contains("Step 2 (browser_act) needs approval") && text.contains("1 of 3 steps ran"), "{text}");
 
     // Batches do not nest, and an unknown tool fails before anything runs.

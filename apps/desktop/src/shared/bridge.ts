@@ -4,6 +4,7 @@ export const homeBrowserSession = "finxwork:home-browser";
 import type { Language, LanguageChoice } from "./i18n";
 import type { UpdateInfo } from "./update";
 import type { BrowserComment } from "./annotations";
+import type { SearchEngine } from "./search";
 
 // What the preload script gives the page (window.finx). Everything about
 // sessions comes from finx itself, over the port connectKernel hands out.
@@ -51,6 +52,10 @@ export type Preferences = {
   moveDeclined?: boolean;
   /** The embedded browser's cookies and site data: kept until the app quits, or (unset) always. */
   browserCookies?: "untilQuit";
+  /** The id of the engine the embedded browser's address field searches with, for text that is not an address. */
+  searchEngine: string;
+  /** The search engines the person added, beside the built-in ones. */
+  searchEngines: SearchEngine[];
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
@@ -92,12 +97,26 @@ export type BrowserMenuAction =
 export type DevServer = { port: number; url: string; title: string; framework?: string; process: string };
 
 /** What the person does to a tab in the panel. "new" opens a tab beside it, for its session. */
-export type BrowserTabCommand = { command: "back" | "forward" | "reload" | "stop" | "close" | "new" | "annotate" } | { command: "go"; url: string };
+export type BrowserTabCommand =
+  | { command: "back" | "forward" | "reload" | "stop" | "close" | "new" | "annotate" }
+  /** `engine`: the person picked a search engine by its keyword, so this is a search with it. */
+  | { command: "go"; url: string; engine?: string };
 
 /** Where the window's sessions come from: finx, or the demo's mock server (FINXWORK_KERNEL=mock). */
 export type KernelKind = "mock" | "finx";
 
 /** How finx's service is, as the main process's supervisor sees it (desktop-kernel-integration §6.1). */
+/** A browser on this machine that can run the FinxWork extension (browser-design §8.4). */
+export type SystemBrowserId = "chrome" | "edge" | "brave" | "chromium";
+export type SystemBrowser = {
+  id: SystemBrowserId;
+  name: string;
+  /** finx is registered as the extension's host for it. */
+  registered: boolean;
+  /** It is running now. */
+  running: boolean;
+};
+
 export type KernelStatusView = {
   state: "starting" | "ready" | "reconnecting" | "failed";
   /** The running service's version. */
@@ -160,8 +179,16 @@ export type Bridge = {
   retryKernel(): void;
   /** Starts finx again with a fresh login environment: now (running tasks are interrupted), or once no task runs. */
   restartKernel(now: boolean): void;
-  /** The settings window, on a page ("general", "models"). */
+  /** The settings window, on a page ("general", "models", "browser"). */
   openSettings(page?: string): void;
+  /** The user's own browser: the ones here, setting finx up as the extension's host, opening one, the extension's folder. */
+  systemBrowsers(): Promise<SystemBrowser[]>;
+  setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; message: string }>;
+  openSystemBrowser(id: SystemBrowserId, page?: "extensions"): Promise<boolean>;
+  revealBrowserExtension(): void;
+  systemBrowserIcon(id: SystemBrowserId): Promise<string | null>;
+  /** A search engine's icon (its site's favicon) by its URL template, as a data URL. */
+  searchEngineIcon(template: string): Promise<string | null>;
   /** In the settings window: another page was asked for while it is open. */
   onSettingsPage(cb: (page: string) => void): () => void;
   /** In the main window: whether the settings window is open now, and as that changes (the window dims behind it). */

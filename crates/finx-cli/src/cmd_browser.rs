@@ -6,13 +6,19 @@
 //! a 4-byte length in native byte order, then that much JSON. The finx service speaks the
 //! native protocol on its Unix socket: the host calls `browser/host {kind: "extension"}` and
 //! then carries CDP in `browser/cdp` notifications, as the desktop app does. To the extension
-//! it sends `{stream, data}` (one CDP message of the browser numbered `stream`), or `{stream,
-//! part, more}` pieces of one that is over Chrome's 1 MB limit, and `{status}` when the
-//! service comes or goes; from it, it takes `{stream, data}`.
+//! it sends `{stream, data}` (one CDP message of the browser numbered `stream`, as a JSON
+//! object), or `{stream, part, more}` pieces of one that is over Chrome's 1 MB limit (parts of
+//! the message's JSON text), and `{status}` when the service comes or goes; from it, it takes
+//! `{stream, data}`, and first `{hello: {browser, extension_version}}`, which it passes on so
+//! the app can say which browser is connected. CDP messages pass through as JSON text: only
+//! the stream number is read.
 
 use anyhow::Context as _;
+use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
+use serde_json::value::RawValue;
+use std::borrow::Cow;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -35,6 +41,8 @@ const PIECE: usize = 256 << 10;
 const MAX_INBOUND: usize = 64 << 20;
 /// How often the host looks for the service while it is not running.
 const RETRY: Duration = Duration::from_secs(2);
+/// How long the host waits for the extension's hello before connecting without it.
+const HELLO_WAIT: Duration = Duration::from_secs(3);
 
 // ---- The host ----
 
@@ -46,7 +54,7 @@ pub async fn native_host() -> anyhow::Result<u8> {
     let socket = home.root().join("run").join("finx.sock");
     tracing::info!(socket = %socket.display(), "extension host started");
 
-    let (to_chrome, mut outbox) = mpsc::unbounded_channel::<Value>();
+    let (to_chrome, mut outbox) = mpsc::unbounded_channel::<String>();
     let writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
         while let Some(message) = outbox.recv().await {
@@ -59,7 +67,7 @@ pub async fn native_host() -> anyhow::Result<u8> {
     });
 
     // Messages from the extension go to the service connection of the moment.
-    let (from_chrome, inbox) = mpsc::unbounded_channel::<Value>();
+    let (from_chrome, inbox) = mpsc::unbounded_channel::<String>();
     let reader = tokio::spawn(async move {
         let mut stdin = tokio::io::stdin();
         while let Ok(Some(message)) = read_message(&mut stdin).await {
@@ -79,16 +87,25 @@ pub async fn native_host() -> anyhow::Result<u8> {
 }
 
 /// Connects to the service again and again, relaying while connected.
-async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<Value>, mut inbox: mpsc::UnboundedReceiver<Value>) {
+async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<String>, mut inbox: mpsc::UnboundedReceiver<String>) {
+    // The extension says who it is as soon as it connects.
+    let hello = match tokio::time::timeout(HELLO_WAIT, inbox.recv()).await {
+        Ok(None) => return,
+        Ok(Some(message)) => serde_json::from_str::<Value>(&message)
+            .ok()
+            .and_then(|m| m.get("hello").cloned())
+            .unwrap_or_default(),
+        Err(_) => Value::Null,
+    };
     let mut said = String::new();
     loop {
-        let status = match serve_once(&socket, &to_chrome, &mut inbox).await {
+        let status = match serve_once(&socket, &hello, &to_chrome, &mut inbox).await {
             Ok(()) => "FinxWork stopped".to_string(),
             Err(err) => format!("{err:#}"),
         };
         if status != said {
             tracing::info!(%status, "extension host waiting");
-            let _ = to_chrome.send(json!({"status": "waiting", "reason": status}));
+            let _ = to_chrome.send(json!({"status": "waiting", "reason": status}).to_string());
             said = status;
         }
         // While waiting, the extension's messages belong to no browser.
@@ -106,8 +123,9 @@ async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<Value>, mut inb
 /// One connection to the service, until it ends.
 async fn serve_once(
     socket: &Path,
-    to_chrome: &mpsc::UnboundedSender<Value>,
-    inbox: &mut mpsc::UnboundedReceiver<Value>,
+    hello: &Value,
+    to_chrome: &mpsc::UnboundedSender<String>,
+    inbox: &mut mpsc::UnboundedReceiver<String>,
 ) -> anyhow::Result<()> {
     let stream = tokio::net::UnixStream::connect(socket)
         .await
@@ -123,28 +141,64 @@ async fn serve_once(
         .await?;
     answer(&mut lines, 1).await.context("the FinxWork service did not start a session with the extension")?;
     write
-        .write_all(&line(json!({"jsonrpc": "2.0", "id": 2, "method": "browser/host", "params": {"kind": "extension"}})))
+        .write_all(&line(json!({"jsonrpc": "2.0", "id": 2, "method": "browser/host", "params": {
+            "kind": "extension",
+            "browser": hello["browser"].as_str(),
+            "extension_version": hello["extension_version"].as_str(),
+        }})))
         .await?;
     answer(&mut lines, 2).await.context("the FinxWork service refused the extension")?;
     tracing::info!("extension host connected");
-    let _ = to_chrome.send(json!({"status": "connected"}));
+    let _ = to_chrome.send(json!({"status": "connected"}).to_string());
     loop {
         tokio::select! {
             next = lines.next_line() => {
                 let Some(text) = next? else { return Ok(()) };
-                let Ok(message) = serde_json::from_str::<Value>(&text) else { continue };
-                if message["method"] == "browser/cdp" {
-                    let _ = to_chrome.send(message["params"].clone());
+                let Ok(message) = serde_json::from_str::<Incoming>(&text) else { continue };
+                if message.method.as_deref() == Some("browser/cdp") && let Some(params) = message.params {
+                    let _ = to_chrome.send(params.get().to_string());
                 }
             }
             message = inbox.recv() => {
                 let Some(message) = message else { return Ok(()) };
-                if message["stream"].is_u64() && message["data"].is_string() {
-                    write.write_all(&line(json!({"jsonrpc": "2.0", "method": "browser/cdp", "params": message}))).await?;
+                if let Some(line) = cdp_line(&message) {
+                    write.write_all(&line).await?;
                 }
             }
         }
     }
+}
+
+/// A line from the service, with its params left as JSON text.
+#[derive(Deserialize)]
+struct Incoming<'a> {
+    #[serde(borrow, default)]
+    method: Option<Cow<'a, str>>,
+    #[serde(borrow, default)]
+    params: Option<&'a RawValue>,
+}
+
+/// `{stream, data}`, with the CDP message left as JSON text.
+#[derive(Deserialize)]
+struct Cdp<'a> {
+    stream: u64,
+    #[serde(borrow)]
+    data: &'a RawValue,
+}
+
+/// The `browser/cdp` line for a message from the extension, if it is one: `{stream, data}`
+/// with an object for data. It goes on as Chrome wrote it, unless it spans lines.
+fn cdp_line(message: &str) -> Option<Vec<u8>> {
+    let cdp = serde_json::from_str::<Cdp>(message).ok()?;
+    if !cdp.data.get().starts_with('{') {
+        return None;
+    }
+    let params: Cow<str> = if message.contains('\n') {
+        Cow::Owned(serde_json::from_str::<Value>(message).ok()?.to_string())
+    } else {
+        Cow::Borrowed(message)
+    };
+    Some(format!("{{\"jsonrpc\":\"2.0\",\"method\":\"browser/cdp\",\"params\":{params}}}\n").into_bytes())
 }
 
 /// Waits for the response to request `id`; an error response is an error.
@@ -162,18 +216,17 @@ async fn answer<R: tokio::io::AsyncBufRead + Unpin>(lines: &mut tokio::io::Lines
     anyhow::bail!("the connection closed")
 }
 
-/// The frames for one message: one, or pieces when it is over Chrome's limit.
-fn frames(message: &Value) -> Vec<Vec<u8>> {
-    let whole = message.to_string();
-    if whole.len() <= CHROME_LIMIT - 4 {
-        return vec![frame(whole.as_bytes())];
+/// The frames for one message (JSON text): one, or pieces when it is over Chrome's limit.
+fn frames(message: &str) -> Vec<Vec<u8>> {
+    if message.len() <= CHROME_LIMIT - 4 {
+        return vec![frame(message.as_bytes())];
     }
-    let (Some(stream), Some(data)) = (message["stream"].as_u64(), message["data"].as_str()) else {
-        tracing::warn!(bytes = whole.len(), "dropped a message too large for Chrome");
+    let Ok(Cdp { stream, data }) = serde_json::from_str::<Cdp>(message) else {
+        tracing::warn!(bytes = message.len(), "dropped a message too large for Chrome");
         return Vec::new();
     };
     let mut out = Vec::new();
-    let mut rest = data;
+    let mut rest = data.get();
     while !rest.is_empty() {
         let mut end = rest.len().min(PIECE);
         while !rest.is_char_boundary(end) {
@@ -193,8 +246,8 @@ fn frame(json: &[u8]) -> Vec<u8> {
     out
 }
 
-/// One message from Chrome; `None` at the end of input.
-async fn read_message<R: tokio::io::AsyncRead + Unpin>(input: &mut R) -> anyhow::Result<Option<Value>> {
+/// One message from Chrome, as JSON text; `None` at the end of input.
+async fn read_message<R: tokio::io::AsyncRead + Unpin>(input: &mut R) -> anyhow::Result<Option<String>> {
     let mut length = [0u8; 4];
     match input.read_exact(&mut length).await {
         Ok(_) => {}
@@ -205,7 +258,7 @@ async fn read_message<R: tokio::io::AsyncRead + Unpin>(input: &mut R) -> anyhow:
     anyhow::ensure!(length <= MAX_INBOUND, "a message of {length} bytes is too large");
     let mut body = vec![0u8; length];
     input.read_exact(&mut body).await?;
-    Ok(Some(serde_json::from_slice(&body)?))
+    Ok(Some(String::from_utf8(body)?))
 }
 
 // ---- Installing ----
@@ -346,10 +399,11 @@ mod tests {
 
     #[test]
     fn large_messages_go_in_pieces_under_chromes_limit() {
-        let small = json!({"stream": 1, "data": "{\"id\":1}"});
+        let small = json!({"stream": 1, "data": {"id": 1}}).to_string();
         assert_eq!(frames(&small).len(), 1);
-        let data = "é\"".repeat(400_000); // Escaping makes the JSON larger than the text.
-        let big = json!({"stream": 3, "data": data});
+        // Escaping the parts makes them larger than the text.
+        let data = json!({"id": 2, "result": {"text": "é\"".repeat(400_000)}}).to_string();
+        let big = format!("{{\"stream\":3,\"data\":{data}}}");
         let pieces = frames(&big);
         assert!(pieces.len() > 1);
         let mut joined = String::new();
@@ -368,12 +422,24 @@ mod tests {
     #[tokio::test]
     async fn messages_from_chrome_are_read_in_order() {
         let mut input = Vec::new();
-        input.extend(frame(b"{\"stream\":1,\"data\":\"a\"}"));
-        input.extend(frame(b"{\"stream\":2,\"data\":\"b\"}"));
+        input.extend(frame(b"{\"stream\":1,\"data\":{\"id\":1}}"));
+        input.extend(frame(b"{\"stream\":2,\"data\":{\"id\":2}}"));
         let mut reader = &input[..];
-        assert_eq!(read_message(&mut reader).await.unwrap().unwrap()["data"], "a");
-        assert_eq!(read_message(&mut reader).await.unwrap().unwrap()["stream"], 2);
+        assert_eq!(read_message(&mut reader).await.unwrap().unwrap(), "{\"stream\":1,\"data\":{\"id\":1}}");
+        assert_eq!(read_message(&mut reader).await.unwrap().unwrap(), "{\"stream\":2,\"data\":{\"id\":2}}");
         assert!(read_message(&mut reader).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn messages_from_chrome_go_to_the_service_as_they_are() {
+        let message = "{\"stream\":4,\"data\":{\"id\":7,\"result\":{}}}";
+        let line = String::from_utf8(cdp_line(message).unwrap()).unwrap();
+        assert_eq!(line, format!("{{\"jsonrpc\":\"2.0\",\"method\":\"browser/cdp\",\"params\":{message}}}\n"));
+        let spread = "{\"stream\":4,\n\"data\":{\"id\":7}}";
+        let line = String::from_utf8(cdp_line(spread).unwrap()).unwrap();
+        assert_eq!(line.matches('\n').count(), 1, "one line: {line}");
+        assert!(cdp_line("{\"stream\":4,\"data\":\"text\"}").is_none());
+        assert!(cdp_line("{\"hello\":{}}").is_none());
     }
 
     #[test]

@@ -50,6 +50,8 @@ async function host(endpoint: string, trace: (message: string) => void) {
       return;
     }
     rpc.on("browser/cdp", ({ stream, data }) => {
+      // A late message of a browser that has ended (streams count up on a connection).
+      if (live.current && stream < live.current.stream) return;
       if (live.current?.stream !== stream) {
         live.current?.browser.close();
         live.current = { stream, browser: new EmbeddedBrowser(electronPages, (out) => rpc.notify("browser/cdp", { stream, data: out })) };

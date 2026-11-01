@@ -663,6 +663,25 @@ pub trait Backend: Send + Sync {
 - **用户接手**：用户在面板里直接点、输入即可。智能体下一次调用若页面已变化，§7.4 的再核对会报"页面已变化"。
 - **登录状态**：内嵌浏览器的 cookie 在 `persist:finx-browser` 里，与托管浏览器的用户目录、与应用自己的页面都分开。
 
+#### 8.3.5 对网站的身份（D-218）
+
+内嵌浏览器以"它所基于的那个版本的 Chrome"出现，并且请求头和页面脚本读到的说法一致（`main/browser/identity.ts`）。2026-11-01 用同一个探测页对比了 Chrome 156 和内嵌浏览器：
+
+| 项 | 修正前 | 修正后 |
+|---|---|---|
+| User-Agent | 带完整版本 `Chrome/152.0.7977.167`，Chrome 早已不这样报 | 只报主版本 `Chrome/152.0.0.0`，与 Chrome 的 UA 精简一致 |
+| `Sec-CH-UA` 系列请求头 | 没有：Electron 改了 UA 以后就不再发客户端提示 | 会话的 `webRequest` 给安全来源（https、本机）补上 `sec-ch-ua`、`-mobile`、`-platform` |
+| `navigator.userAgentData` | 只有 Chromium，与 UA 自称的 Chrome 矛盾 | 每个标签页附加调试器后用 `Emulation.setUserAgentOverride` 设品牌（含 Google Chrome）、平台、完整版本 |
+| 通知权限 | 请求被拒，但查询返回 `granted` | 查询也拒绝（`setPermissionCheckHandler`），页面读到 `denied` |
+| 语言 | 页面 `zh-CN, zh-Hans-CN, ja-CN, ko-CN`，请求头只有 `zh-CN` | 两边都跟随应用语言：`zh-CN, zh` / `zh-CN,zh;q=0.9` |
+
+- **不做**：
+  - 伪造 `window.chrome`（要往每个页面注入脚本，本身又是可检测点）；
+  - Widevine（Electron 没有）；
+  - 版本号追平最新 Chrome（只能升级 Electron；报一个与引擎不符的版本反而更容易识破）。
+- **调试器**：标签页始终附着调试器，智能体操作时会打开 `Runtime`，检测脚本有可能察觉，这一点去不掉。
+- **百度的验证码**：修正后，全新配置的第一次搜索仍会被转到验证码页，后面的搜索正常；用全新配置的真 Chrome 做同样的三次搜索，结果完全一样。所以剩下的是"没有 Cookie 的新访客"问题，不是内嵌浏览器本身。保留内嵌浏览器的 Cookie 比继续伪装更有用。需要用户账号的网站仍交给用户自己的浏览器（§8.4）。
+
 ### 8.4 用户自己的 Chrome（三期）
 
 用户自己的 Chrome 有真实的登录状态。智能体在里面开标签页、读页面、点击，用户在自己的窗口里看得到。
@@ -732,18 +751,33 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   - 不做代码签名校验（理由同 D-198）。
 - **协议**：`browser/host` 新增可选参数 `{kind: "embedded" | "extension"}`，缺省为 `embedded`，旧的桌面端不用改。
 
-#### 8.4.4 安装与使用
+#### 8.4.4 在桌面端连接（D-217）
 
-```sh
-finx browser extension install    # 为本机的 Chrome、Chromium、Edge、Brave 写清单和启动脚本
-finx browser extension status     # 看装在哪里
-finx browser extension uninstall
-```
+用户不碰命令行和配置文件，在桌面端"设置 › 浏览器"里完成连接；内置浏览器面板的 ⋯ 菜单里有"连接我的浏览器…"直达这里。
 
-1. 运行 `finx browser extension install`；
-2. Chrome → 扩展程序 → 开发者模式 → 加载已解压的扩展程序 → 选 `apps/chrome-extension`；
-3. 在 `~/.finx/config.toml` 里设 `[browser] enabled = true`、`backend = "extension"`；
-4. 打开 FinxWork。扩展图标没有角标就是连上了，带 `!` 时，鼠标悬停可以看到原因。
+- **状态行**：一行写明系统浏览器的状态，并给出当下唯一要做的事：
+
+  | 状态 | 说明 | 按钮 |
+  |---|---|---|
+  | 未连接 | 连接后能用自己的登录状态 | 连接 |
+  | 使用中 | 显示"Google Chrome 156"和它的图标 | 停止使用 |
+  | 已连接 | 扩展连着，但智能体还在用内置浏览器 | 开始使用 |
+  | 未连接（之前在用） | 浏览器没开，或者扩展被停用、没装 | 打开 Chrome、重新连接 |
+  | 没有浏览器 | 本机没有 Chrome、Edge、Brave | 下载 Chrome |
+
+- **连接引导**（对话框，三步）：
+  1. **准备**：应用自己完成，用户只看到打勾。把扩展复制到 `~/.finx/browser/FinxWork Extension`（应用移动或更新都不影响它），并用正在运行服务的那个 finx（取自服务记录里的 `exe`）运行 `finx browser extension install`，这样宿主与服务一定是同一个程序（D-216）；
+  2. **添加扩展**：唯一要用户动手的一步。上架前：按钮打开浏览器的扩展程序页面，另一个按钮在访达里显示扩展文件夹，图文说明"打开开发者模式，把文件夹拖进来"。上架后（`STORE_URL` 设上）换成一个"添加到 Chrome"按钮；
+  3. **连接**：等内核报告扩展连上，然后自动写入 `[browser] enabled = true`、`backend = "extension"`。用户点"连接"就是同意，不再另外确认。
+- **状态从哪来**：
+  - 扩展连上后先发 `{hello: {browser, extension_version}}`，宿主把它放进 `browser/host` 的参数；
+  - 客户端调用 `browser/status` 取得 `{extension?: {browser, extension_version}, embedded}`，之后在扩展来去时收到 `browser/changed`；
+  - 本机装了哪些浏览器、是否已经注册、是否正在运行，由桌面端主进程查（`main/browser/system.ts`）。
+- **应用启动时**：如果之前设置过，重新复制扩展、重写清单，让它们跟上应用的位置和版本。
+- **打包**：扩展放在 `Contents/Resources/chrome-extension`。
+- **命令行**留给开发者：`finx browser extension install | status | uninstall`。
+- 设置改动对新的对话生效（会话第一次用浏览器时选后端，§8.3.3）。
+- 内置浏览器的定位相应收窄：用来查看工作成果（本地文件、PDF、网页预览）；需要登录账号的网站交给用户自己的浏览器，嵌入式浏览器容易被网站的风控拦下。
 
 #### 8.4.5 以后再做
 
@@ -847,6 +881,7 @@ action_timeout_secs = 10
 | `finx exec` | 没有配置 `browser.sites` 时访问外部站点得到说明配置方法的结果；配置以后能完成任务 |
 | 用户自己的 Chrome（三期） | 真实 Chrome 用 `Extensions.loadUnpacked` 装入扩展，ID 与 key 一致；扩展经 `install` 写的清单拉起真实的 `finx browser native-host`，宿主通过可执行文件核对连上 `finx serve`；会话打开页面、点击、看到结果，结果里说明这是用户的 Chrome；用户自己的标签页不出现在结果里；会话关闭后只关掉智能体的标签页（`crates/finx-cli/tests/e2e_browser_extension.rs`） |
 | 冒充扩展宿主 | 不是 finx 程序的连接声明 `kind: "extension"` 被拒，池里没有扩展 |
+| 设置里连接浏览器 | 私有 HOME 下启动桌面端，"设置 › 浏览器"显示未连接；点连接后写好清单、复制扩展；真实 Chrome 从那个文件夹装入扩展后，引导显示已连接并写入配置；状态行显示"Google Chrome 156 · 使用中"；停止使用后配置改回 `auto`；Chrome 退出后显示未连接（`apps/desktop/e2e/system-browser.mjs`） |
 
 CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收时显示窗口。
 
@@ -953,6 +988,8 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-214 | 扩展沿用 D-210 实现浏览器级方法；只附加智能体开的和由它们打开的标签页，放在独立窗口的 FinxWork 标签组里；用户关掉调试提示条即收回该标签页，不重新附加；内核断开时只放开、不关标签页 |
 | D-215 | 扩展后端只在 `browser.backend = "extension"` 时使用，`auto` 不选它 |
 | D-216 | 扩展后端下 bypass 不跳过 Navigate/Act/Upload 的询问（`SitePolicy.real_logins`）；服务核对扩展宿主的可执行文件与自己相同 |
+| D-217 | 用户在桌面端"设置 › 浏览器"里连接：应用自动注册宿主、复制扩展，只请用户添加扩展；连上后自动启用；状态经 `browser/status` 与 `browser/changed` 取得 |
+| D-218 | 内嵌浏览器以所基于版本的 Chrome 出现：UA 只报主版本，客户端提示（请求头与 `userAgentData`）含 Google Chrome，权限查询与请求一致地拒绝，语言跟随应用；不伪造 `window.chrome`，不虚报版本 |
 
 ### 待定问题
 

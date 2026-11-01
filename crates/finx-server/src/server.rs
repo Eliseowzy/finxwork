@@ -108,6 +108,9 @@ pub struct Server(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) connections: Arc<finx_connections::Manager>,
     pub(crate) model_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
+    /// Connections that called `browser/status`, and the extension's last word (crate::browser_status).
+    pub(crate) browser_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
+    pub(crate) extension: Mutex<Option<finx_protocol::api::ExtensionStatus>>,
     /// Model lists and the catalog (crate::models).
     pub(crate) model_upkeep: crate::models::Upkeep,
     pub(crate) home: FinxHome,
@@ -151,6 +154,8 @@ impl Server {
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
+            browser_watchers: Mutex::new(HashMap::new()),
+            extension: Mutex::new(None),
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
             defaults,
@@ -220,6 +225,7 @@ impl Server {
     pub fn connection_closed(&self, conn: &ConnHandle) {
         self.forget_model_watcher(conn.id);
         self.forget_customize(conn.id);
+        self.0.browser_watchers.lock().remove(&conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {

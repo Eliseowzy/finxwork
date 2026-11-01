@@ -123,13 +123,17 @@ function letGo() {
 
 function onMessage(message) {
   if (typeof message.status === "string") {
-    // The service came or went: a browser of the one before is gone.
-    if (message.status !== "connected") letGo();
+    // The service came or went: a browser of the connection before is gone, and the new
+    // connection numbers its streams from the start again.
+    letGo();
     show(message.status === "connected" ? "connected" : "waiting", message.reason);
     return;
   }
   const stream = message.stream;
   if (typeof stream !== "number") return;
+  // Streams count up while the host stays connected (a reconnect says so first, which lets
+  // the browser go): a late message of a browser that has ended is dropped.
+  if (live && stream < live.stream) return;
   let data = message.data;
   if (typeof message.part === "string") {
     const soFar = (pieces.get(stream) ?? "") + message.part;
@@ -138,15 +142,35 @@ function onMessage(message) {
       return;
     }
     pieces.delete(stream);
-    data = soFar;
+    // Pieces are of the message's JSON text.
+    try {
+      data = JSON.parse(soFar);
+    } catch {
+      return;
+    }
   }
-  if (typeof data !== "string") return;
+  if (typeof data !== "object" || data === null) return;
   if (live?.stream !== stream) {
     letGo();
-    const out = (text) => port?.postMessage({ stream, data: text });
+    const out = (message) => port?.postMessage({ stream, data: message });
     live = { stream, browser: new ExtensionBrowser(tabs, out) };
   }
   live.browser.receive(data);
+}
+
+/** Tells the host which browser this is, so FinxWork can show it. */
+async function hello() {
+  let browser = navigator.userAgent;
+  try {
+    // Brands name Edge, Brave and Chrome apart; the generic ones ("Chromium", "Not A;Brand") last.
+    const data = await navigator.userAgentData.getHighEntropyValues(["fullVersionList"]);
+    const brands = (data.fullVersionList ?? []).filter((b) => !/Not.?A.?Brand/i.test(b.brand));
+    const named = brands.find((b) => b.brand !== "Chromium") ?? brands[0];
+    if (named) browser = `${named.brand} ${named.version}`;
+  } catch {
+    // The user agent string says enough.
+  }
+  port?.postMessage({ hello: { browser, extension_version: chrome.runtime.getManifest().version } });
 }
 
 function connect() {
@@ -158,6 +182,7 @@ function connect() {
     return;
   }
   port.onMessage.addListener(onMessage);
+  void hello();
   port.onDisconnect.addListener(() => {
     const error = chrome.runtime.lastError?.message;
     port = null;
