@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ListSession, SessionView } from "@finx/client";
 import type { Attachment } from "../composer/attachments";
-import { toInput } from "../composer/attachments";
+import { addAttachments, toInput } from "../composer/attachments";
+import { useBrowserComments } from "../composer/browserComments";
 import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
 import { useStore } from "../store";
@@ -30,6 +31,10 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     setDraft(d);
     drafts.set(id, d);
   };
+  useBrowserComments(id, (more) => {
+    const d = drafts.get(id) ?? { text: "", attachments: [] };
+    change({ ...d, attachments: addAttachments(d.attachments, more) });
+  });
   // What an interrupt handed back goes back into an empty composer.
   const returned = view.returned?.map((m) => m.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n")).join("\n\n");
   useEffect(() => {

@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { BrowserWindow, session, WebContentsView, type WebContents } from "electron";
+import { BrowserWindow, ipcMain, session, WebContentsView, type WebContents } from "electron";
+import { homeBrowserSession } from "../../shared/bridge";
 import type { BrowserPanel, BrowserTab, BrowserTabCommand } from "../../shared/bridge";
 import type { Download, Page, PageEvents, PageHost } from "./shim";
 import { browserUserAgent, typedURL } from "./url";
+import { language } from "../../shared/i18n";
+import { webComment, type BrowserComment } from "../../shared/annotations";
 
 // The embedded browser's pages (browser-design §8.3.4): each tab is a WebContentsView with
 // its debugger attached, on a partition of its own, apart from the app's pages and from the
@@ -16,7 +19,7 @@ export const partition = "persist:finx-browser";
 /** The size of a tab no panel shows. */
 const parkedSize = { width: 1280, height: 800 };
 
-type Tab = { targetId: string; finxSession?: string; view: WebContentsView; events: PageEvents; seq: number };
+type Tab = { targetId: string; finxSession?: string; view: WebContentsView; events: PageEvents; seq: number; annotating?: boolean; managed?: boolean };
 
 const tabs = new Map<string, Tab>();
 /** The tab each finx session shows: the one it opened or selected last. */
@@ -28,6 +31,33 @@ let seq = 0;
 let downloadDir: string | null = null;
 let reportDownload: ((d: Download) => void) | null = null;
 let sessionReady = false;
+function annotationState(tab: Tab) {
+  return { url: tab.view.webContents.getURL(), enabled: !!tab.annotating, language: language() };
+}
+function syncAnnotations(tab: Tab) {
+  if (!tab.view.webContents.isDestroyed()) tab.view.webContents.send("browser-annotation-state", annotationState(tab));
+}
+// Only the embedded tab's isolated preload can use this channel. No app bridge is
+// exposed to the website, and subframes and requests from a page since left are rejected.
+// "chat" hands a part of the page to the composer of the conversation the tab belongs to.
+ipcMain.handle("browser-annotation", (event, request: unknown) => {
+  const tab = [...tabs.values()].find((t) => t.view.webContents === event.sender);
+  if (!tab || event.senderFrame !== event.sender.mainFrame || !request || typeof request !== "object") throw new Error("Invalid annotation source");
+  const r = request as Record<string, unknown>;
+  const url = event.sender.getURL();
+  if (r.url !== url || !/^https?:/.test(url)) throw new Error("Page changed");
+  if (r.action === "exit") { tab.annotating = false; broadcast(); }
+  else if (r.action === "chat") {
+    if (!tab.annotating) throw new Error("Annotation mode is closed");
+    if (!tab.finxSession) throw new Error("This tab belongs to no conversation");
+    const message: BrowserComment = { session: tab.finxSession, comment: webComment(url, event.sender.getTitle(), r) };
+    // The window whose panel shows the tab: its composer is the one in front of the person.
+    const win = BrowserWindow.getAllWindows().find((w) => w !== parking && !w.isDestroyed() && w.contentView.children.includes(tab.view));
+    if (!win) throw new Error("No window to add the comment to");
+    win.webContents.send("browser-comment", message);
+  } else if (r.action !== "read") throw new Error("Invalid annotation request");
+  return annotationState(tab);
+});
 
 function browserSession() {
   const s = session.fromPartition(partition);
@@ -62,7 +92,8 @@ export const electronPages: PageHost = {
     // The session first: a tab takes its user agent when it is made.
     const ses = browserSession();
     const view = new WebContentsView({
-      webPreferences: { partition, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false },
+      webPreferences: { partition, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false,
+        preload: path.join(import.meta.dirname, "../preload/browser.cjs") },
     });
     // A page without a background of its own is white, as in any browser, whatever the app's
     // theme: such pages draw dark text. Pages that support a dark scheme follow the app's
@@ -77,30 +108,43 @@ export const electronPages: PageHost = {
     // first mouse press only focuses it, and a click never reaches the page.
     void wc.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
     wc.debugger.on("message", (_e, method: string, params: Record<string, unknown>, sessionId?: string) =>
-      events.message(method, params, sessionId || undefined),
+      tab.events.message(method, params, sessionId || undefined),
     );
-    wc.debugger.on("detach", (_e, reason: string) => events.gone(`the browser stopped controlling the tab (${reason})`));
-    const changed = () => (events.changed(), broadcast());
+    wc.debugger.on("detach", (_e, reason: string) => tab.events.gone(`the browser stopped controlling the tab (${reason})`));
+    // A blank tab leaves the panel to the new-tab page, and comes back once it has a page.
+    const changed = () => (tab.events.changed(), layout());
     wc.on("page-title-updated", changed);
     wc.on("did-navigate", changed);
     wc.on("did-navigate-in-page", changed);
     wc.on("did-start-loading", broadcast);
     wc.on("did-stop-loading", broadcast);
-    wc.on("render-process-gone", () => events.gone("the tab crashed"));
+    wc.on("dom-ready", () => syncAnnotations(tab));
+    wc.on("did-navigate-in-page", (_e, _url, mainFrame) => { if (mainFrame) syncAnnotations(tab); });
+    wc.on("did-start-navigation", (_e, _url, inPlace, mainFrame) => {
+      if (mainFrame && !inPlace) { tab.annotating = false; broadcast(); }
+    });
+    wc.on("render-process-gone", () => tab.events.gone("the tab crashed"));
     // New windows become tabs the kernel takes over, never windows of their own.
     wc.setWindowOpenHandler(({ url: next }) => {
-      events.open(next);
+      tab.events.open(next);
       return { action: "deny" };
     });
     if (finxSession) shown.set(finxSession, targetId);
     void wc.loadURL(url).catch(() => {});
     layout();
-    return {
-      send: (method, params, sessionId) => wc.debugger.sendCommand(method, params, sessionId),
-      url: () => (wc.isDestroyed() ? "" : wc.getURL()),
-      title: () => (wc.isDestroyed() ? "" : wc.getTitle()),
-      close: () => close(targetId),
-    };
+    return pageFor(tab);
+  },
+  pending(finxSession) {
+    return [...tabs.values()].filter((t) => t.finxSession === finxSession && !t.managed)
+      .sort((a, b) => Number(shown.get(finxSession) === a.targetId) - Number(shown.get(finxSession) === b.targetId))
+      .map((t) => t.targetId);
+  },
+  adopt(targetId, events) {
+    const tab = tabs.get(targetId);
+    if (!tab || tab.managed) throw new Error("Browser tab is no longer available");
+    tab.managed = true;
+    tab.events = events;
+    return pageFor(tab);
   },
   activate(targetId) {
     const tab = tabs.get(targetId);
@@ -112,6 +156,29 @@ export const electronPages: PageHost = {
     reportDownload = report;
   },
 };
+
+function pageFor(tab: Tab): Page {
+  const wc = tab.view.webContents;
+  return {
+    send: (method, params, sessionId) => wc.debugger.sendCommand(method, params, sessionId),
+    url: () => wc.isDestroyed() ? "" : wc.getURL(),
+    title: () => wc.isDestroyed() ? "" : wc.getTitle(),
+    close: () => close(tab.targetId),
+  };
+}
+
+/** Move only the home browser's tabs into the newly created conversation. */
+export function claimHomeBrowser(finxSession: string) {
+  const selected = shown.get(homeBrowserSession);
+  for (const tab of tabs.values()) {
+    if (tab.finxSession !== homeBrowserSession) continue;
+    tab.finxSession = finxSession;
+  }
+  shown.delete(homeBrowserSession);
+  if (selected) shown.set(finxSession, selected);
+  layout();
+  return currentTabs().filter((t) => t.session === finxSession);
+}
 
 function close(targetId: string) {
   const tab = tabs.get(targetId);
@@ -138,7 +205,9 @@ function layout() {
   for (const [win, panel] of panels) {
     if (win.isDestroyed() || !panel.session || !panel.rect) continue;
     const targetId = shown.get(panel.session);
-    if (targetId && tabs.has(targetId) && !placed.has(targetId)) placed.set(targetId, { win, bounds: rounded(panel.rect) });
+    const tab = targetId ? tabs.get(targetId) : undefined;
+    // A blank tab stays out of sight: the panel draws the new-tab page in its room.
+    if (targetId && tab && !blankPage(tab.view.webContents.getURL()) && !placed.has(targetId)) placed.set(targetId, { win, bounds: rounded(panel.rect) });
   }
   for (const tab of tabs.values()) {
     const place = placed.get(tab.targetId);
@@ -149,6 +218,8 @@ function layout() {
   }
   broadcast();
 }
+
+const blankPage = (url: string) => url === "" || url === "about:blank";
 
 const rounded = (r: Electron.Rectangle) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
 
@@ -191,6 +262,12 @@ export function tabCommand(targetId: string, c: BrowserTabCommand) {
   if (!tab || tab.view.webContents.isDestroyed()) return;
   const wc = tab.view.webContents;
   switch (c.command) {
+    case "annotate":
+      if (!/^https?:/.test(wc.getURL()) || wc.isLoading()) return;
+      tab.annotating = !tab.annotating;
+      syncAnnotations(tab);
+      broadcast();
+      break;
     case "back":
       if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
       break;
@@ -217,6 +294,29 @@ export function tabCommand(targetId: string, c: BrowserTabCommand) {
   }
 }
 
+/** Open the browser the person asked for: the home page's, or a conversation's, with a blank tab when it has none. */
+export function openBrowser(finxSession = homeBrowserSession) {
+  const existing = currentTabs().find((t) => t.session === finxSession && t.shown);
+  if (existing) showTab(existing.targetId);
+  else createHomeTab("about:blank", finxSession);
+}
+
+function createHomeTab(url: string, owner = homeBrowserSession) {
+  const targetId = randomUUID();
+  electronPages.create({ targetId, url, finxSession: owner }, {
+    message() {},
+    changed() {},
+    open: (next) => { createHomeTab(next, tabs.get(targetId)?.finxSession ?? owner); },
+    gone: () => close(targetId),
+  });
+}
+
+/** A tab's page, for the panel's menu; none once it is gone. */
+export function tabContents(targetId: string): WebContents | undefined {
+  const wc = tabs.get(targetId)?.view.webContents;
+  return wc && !wc.isDestroyed() ? wc : undefined;
+}
+
 /** The person picked a tab in a panel. */
 export function showTab(targetId: string) {
   electronPages.activate(targetId);
@@ -235,6 +335,7 @@ export function currentTabs(): BrowserTab[] {
       loading: t.view.webContents.isLoading(),
       canGoBack: t.view.webContents.navigationHistory.canGoBack(),
       canGoForward: t.view.webContents.navigationHistory.canGoForward(),
+      annotating: !!t.annotating,
     }));
 }
 

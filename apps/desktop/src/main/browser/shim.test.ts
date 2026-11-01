@@ -121,3 +121,35 @@ test("closing, new tabs from a page, downloads, and the browser closing", async 
   await call("Browser.close");
   assert.equal(fake.pages.get(popup.targetId)!.closed, true);
 });
+
+test("handoff discovers only the conversation's existing pages and preserves their state", async () => {
+  const { fake, call, events } = browser();
+  let adopted = 0;
+  let callbacks: PageEvents | undefined;
+  fake.host.pending = (session) => session === "new-conversation" && !adopted ? ["home-page"] : [];
+  fake.host.adopt = (id, next) => {
+    assert.equal(id, "home-page");
+    adopted++;
+    callbacks = next;
+    return {
+      url: () => "https://example.com/unsaved-form",
+      title: () => "Existing page",
+      send: async () => ({ value: "unsaved text" }),
+      close: () => {},
+    };
+  };
+  assert.deepEqual((await call("Target.getTargets", { finxSession: "other" })).result, { targetInfos: [] });
+  assert.deepEqual((await call("Target.getTargets")).result, { targetInfos: [] });
+  const found = await call("Target.getTargets", { finxSession: "new-conversation" });
+  const infos = found.result!.targetInfos as { targetId: string; url: string }[];
+  assert.equal(infos[0].targetId, "home-page");
+  assert.equal(infos[0].url, "https://example.com/unsaved-form");
+  assert.equal(fake.pages.size, 0, "handoff must not reload or recreate the page");
+  const attached = await call("Target.attachToTarget", { targetId: "home-page" });
+  const sessionId = attached.result!.sessionId as string;
+  assert.deepEqual((await call("Runtime.evaluate", { expression: "document.body.innerText" }, sessionId)).result, { value: "unsaved text" });
+  callbacks!.message("Page.loadEventFired", {});
+  assert.equal(events("Page.loadEventFired").at(-1)!.sessionId, sessionId);
+  assert.deepEqual((await call("Target.getTargets", { finxSession: "new-conversation" })).result, { targetInfos: [] });
+  assert.equal(adopted, 1);
+});

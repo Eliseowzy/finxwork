@@ -12,6 +12,7 @@ import { platform } from "./platform";
 import { applyAppearance } from "./preferences";
 import { startUpdater } from "./updater";
 import { devURL, showMain } from "./windows";
+import { forgetSitesOnStart } from "./browser/menu";
 
 const rendererDir = path.join(import.meta.dirname, "../renderer");
 const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+  forgetSitesOnStart();
   startKernel();
   startUpdater();
   setAppMenu();

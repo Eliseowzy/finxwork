@@ -78,5 +78,11 @@
   },
   "dialog": {
     "skillSource": "Skills"
+  },
+  "browserMenu": {
+    "clearConfirm": "Clear browsing data?",
+    "clearDetail": "The built-in browser forgets every site's cookies, storage and cache. Sites you are signed in to will ask you to sign in again.",
+    "clear": "Clear",
+    "cancel": "Cancel"
   }
 }

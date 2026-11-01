@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import type { BrowserStill, BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
 import { Icon } from "../icons";
 import { useCovered } from "../overlays";
+import { BrowserMenu } from "./BrowserMenu";
+import { NewTabPage } from "./NewTabPage";
 
 // The embedded browser's panel (browser-design §8.3.4), drawn as a browser: the session's
 // tabs and a new-tab button on top, then back, forward, reload and the address, and below
@@ -44,8 +46,8 @@ function hostOf(url: string): string {
 /** The panel's width the person dragged it to, kept for later. */
 const widthKey = "finxwork.browserPanelWidth";
 const minWidth = 360;
-/** What the conversation keeps beside the panel at least (layout.ts). */
-const conversationRoom = 560;
+/** What the conversation keeps beside the panel at least: a strip, as the person may want the page most of the window. */
+const conversationRoom = 160;
 
 function savedWidth(): number | null {
   const n = Number(localStorage.getItem(widthKey));
@@ -177,6 +179,7 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
         <button className="tb no-drag" aria-label={t("browser.newTab")} title={t("browser.newTab")} onClick={() => command(current, { command: "new" })}>
           <Icon name="plus" />
         </button>
+        <BrowserMenu targetId={current?.targetId ?? null} />
       </div>
       <div className="brp-bar">
         <button className="tb" aria-label={t("browser.back")} title={t("browser.back")} disabled={!current?.canGoBack} onClick={() => command(current, { command: "back" })}>
@@ -194,6 +197,11 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
             <Icon name="retry" />
           </button>
         )}
+        <button className={`brp-annotate ${current?.annotating ? "on" : ""}`} aria-pressed={!!current?.annotating}
+          disabled={!current || current.loading || !/^https?:/.test(current.url)}
+          title={t("browser.annotate")} aria-label={t("browser.annotate")} onClick={() => command(current, { command: "annotate" })}>
+          <Icon name="edit" />
+        </button>
         <form
           className="brp-addr"
           onSubmit={(e) => {
@@ -223,7 +231,9 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
         </form>
       </div>
       <div className="brp-view" ref={room}>
-        {covered && still && <img className="brp-still" src={still.image} style={{ width: still.width }} alt="" />}
+        {/* Keyed by tab: each new tab looks again. */}
+        {current && currentBlank && !current.loading && <NewTabPage key={current.targetId} open={(url) => command(current, { command: "go", url })} />}
+        {covered && still && !currentBlank && <img className="brp-still" src={still.image} style={{ width: still.width }} alt="" />}
       </div>
       {/* Last: the window's drag areas are laid in page order, and the edge must win over the tab strip's. */}
       <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />

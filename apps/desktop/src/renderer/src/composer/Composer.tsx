@@ -124,7 +124,7 @@ function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number)
   return (
     <div className="cmp-att">
       {items.map((a, i) => (
-        <Tile key={a.path} kind={a.kind} path={a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} onRemove={() => onRemove(i)} />
+        <Tile key={a.path} kind={a.kind} path={a.kind === "web" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} onRemove={() => onRemove(i)} />
       ))}
     </div>
   );
