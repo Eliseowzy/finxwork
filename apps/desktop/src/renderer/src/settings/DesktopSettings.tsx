@@ -115,42 +115,26 @@ export function DesktopSettings() {
         </section>
       )}
 
-      <section>
-        <h3 className="fhead">{t("desktop.program")}</h3>
-        <div className="fgroup">
-          <div className="frow">
-            <div className="ft">
-              <div className="fn">
-                agent-desktop{" "}
-                {status?.program ? (
-                  <span className="badge ok">{t(status.program.bundled ? "desktop.bundled" : "desktop.installed")}</span>
-                ) : (
-                  status && <span className="badge warn">{t("desktop.missing")}</span>
-                )}
+      {/* Where agent-desktop lives is FinxWork's business while it works; the row is only for
+          when it cannot be found, to say how to get it. */}
+      {status && !status.program && (
+        <section>
+          <h3 className="fhead">{t("desktop.program")}</h3>
+          <div className="fgroup">
+            <div className="frow">
+              <div className="ft">
+                <div className="fn">
+                  agent-desktop <span className="badge warn">{t("desktop.missing")}</span>
+                </div>
+                <div className="fdesc">
+                  {t("desktop.install")} <code className="sel-text">npm install -g agent-desktop</code>
+                </div>
               </div>
-              <div className="fdesc">
-                {!status ? t("desktop.checking")
-                : status.program ? (
-                  <>
-                    {status.program.version ? t("desktop.version", { version: status.program.version }) : t("desktop.noVersion")}
-                    {" · "}
-                    <span className="mono sel-text">{status.program.path}</span>
-                  </>
-                ) : (
-                  <>
-                    {t("desktop.install")} <code className="sel-text">npm install -g agent-desktop</code>
-                  </>
-                )}
-              </div>
+              <button className="btn" onClick={refresh}>{t("desktop.recheck")}</button>
             </div>
-            {status?.program ? (
-              <button className="btn" onClick={() => window.finx?.revealPath(status.program!.path)}>{t("desktop.show")}</button>
-            ) : (
-              <button className="btn" disabled={!status} onClick={refresh}>{t("desktop.recheck")}</button>
-            )}
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
