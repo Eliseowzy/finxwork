@@ -38,6 +38,7 @@ pub struct ConfigFile {
     pub skills: Option<SkillsFile>,
     pub mcp: Option<McpFile>,
     pub browser: Option<BrowserFile>,
+    pub desktop: Option<DesktopFile>,
     pub models: Option<ModelsFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
@@ -148,6 +149,63 @@ impl BrowserSettings {
             navigation_timeout: Duration::from_secs(file.navigation_timeout_secs.unwrap_or(30).clamp(1, 600)),
             action_timeout: Duration::from_secs(file.action_timeout_secs.unwrap_or(10).clamp(1, 600)),
         })
+    }
+}
+
+/// `[desktop]`: the desktop app tools, through the agent-desktop CLI.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopFile {
+    pub enabled: Option<bool>,
+    /// The agent-desktop program; by default `~/.finx/desktop/bin`, then `PATH`.
+    pub executable: Option<PathBuf>,
+    /// Bundle id (or name) → `deny`, `read` or `act`.
+    pub apps: Option<BTreeMap<String, String>>,
+}
+
+/// What `[desktop.apps]` allows for an app without asking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppLevel {
+    Deny,
+    Read,
+    Act,
+}
+
+/// `[desktop]` with its defaults applied.
+#[derive(Debug, Clone, Default)]
+pub struct DesktopSettings {
+    pub enabled: bool,
+    pub executable: Option<PathBuf>,
+    /// Keyed by lowercased bundle id or name.
+    pub apps: std::sync::Arc<BTreeMap<String, AppLevel>>,
+}
+
+impl DesktopSettings {
+    fn from_file(file: DesktopFile) -> Result<Self, ConfigError> {
+        let mut apps = BTreeMap::new();
+        for (app, level) in file.apps.unwrap_or_default() {
+            let level = match level.as_str() {
+                "deny" => AppLevel::Deny,
+                "read" => AppLevel::Read,
+                "act" => AppLevel::Act,
+                _ => {
+                    return Err(ConfigError::Invalid(format!(
+                        "desktop.apps.\"{app}\" must be deny, read or act, got \"{level}\""
+                    )));
+                }
+            };
+            apps.insert(app.trim().to_lowercase(), level);
+        }
+        Ok(Self {
+            enabled: file.enabled.unwrap_or(false),
+            executable: file.executable.filter(|p| !p.as_os_str().is_empty()),
+            apps: std::sync::Arc::new(apps),
+        })
+    }
+
+    /// The configured level of `app`, by bundle id or name.
+    pub fn app(&self, app: &str) -> Option<AppLevel> {
+        self.apps.get(&app.trim().to_lowercase()).copied()
     }
 }
 
@@ -361,6 +419,7 @@ pub struct Config {
     pub skills: SkillsSettings,
     pub mcp: McpSettings,
     pub browser: BrowserSettings,
+    pub desktop: DesktopSettings,
     /// Refresh model lists and the public catalog in the background (`[models] network`).
     pub models_network: bool,
     /// The configured servers by name, names filled in; not yet validated.
@@ -406,6 +465,7 @@ impl Config {
         skills.max_catalog_tokens = skills_file.max_catalog_tokens.unwrap_or(0);
         let mcp = file.mcp.unwrap_or_default();
         let browser = BrowserSettings::from_file(file.browser.unwrap_or_default())?;
+        let desktop = DesktopSettings::from_file(file.desktop.unwrap_or_default())?;
         let threshold = compaction.threshold.unwrap_or(0.9);
         if !(0.1..=1.0).contains(&threshold) {
             return Err(ConfigError::Invalid(format!(
@@ -481,6 +541,7 @@ impl Config {
                 client_metadata_url: mcp.client_metadata_url.filter(|u| !u.trim().is_empty()).or_else(|| crate::mcp::CLIENT_METADATA_URL.map(String::from)),
             },
             browser,
+            desktop,
             models_network: file.models.and_then(|m| m.network).unwrap_or(true),
             mcp_servers: file
                 .mcp_servers
@@ -612,6 +673,14 @@ pub fn load_layers_with(
         if !loosened.is_empty() {
             warnings.push(format!(
                 "ignored {} in {}: a project can only tighten the browser settings",
+                loosened.join(", "),
+                project_file.display()
+            ));
+        }
+        let loosened = tighten_desktop(&mut table);
+        if !loosened.is_empty() {
+            warnings.push(format!(
+                "ignored {} in {}: only your own config can turn on desktop control",
                 loosened.join(", "),
                 project_file.display()
             ));
@@ -843,6 +912,30 @@ fn tighten_browser(table: &mut toml::Table, user: &toml::Table, trusted: bool) -
     dropped
 }
 
+/// A project's `[desktop]` may only turn the tools off and deny apps: operating the user's apps is the
+/// user's own choice, trusted project or not. Returns what was dropped.
+fn tighten_desktop(table: &mut toml::Table) -> Vec<String> {
+    let Some(toml::Value::Table(desktop)) = table.get_mut("desktop") else {
+        return Vec::new();
+    };
+    let mut dropped = Vec::new();
+    if desktop.remove("executable").is_some() {
+        dropped.push("desktop.executable".into());
+    }
+    if desktop.get("enabled").and_then(toml::Value::as_bool) == Some(true) {
+        desktop.remove("enabled");
+        dropped.push("desktop.enabled".into());
+    }
+    if let Some(toml::Value::Table(apps)) = desktop.get_mut("apps") {
+        let before = apps.len();
+        apps.retain(|_, level| level.as_str() == Some("deny"));
+        if apps.len() != before {
+            dropped.push("desktop.apps other than deny".into());
+        }
+    }
+    dropped
+}
+
 fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
     let mut removed = Vec::new();
     for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file"] {
@@ -1022,6 +1115,36 @@ mod tests {
         assert!(load(&user, Some(&project), true, &[]).unwrap().config.browser.enabled);
         let bad = load(&user, None, true, &["browser.sites.\"github.com\"=\"act\"".into()]);
         assert!(bad.is_err());
+    }
+
+    #[test]
+    fn desktop_is_the_users_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("config.toml");
+        let project = dir.path().join("project.toml");
+        std::fs::write(&user, "").unwrap();
+        assert!(!load(&user, None, true, &[]).unwrap().config.desktop.enabled, "off by default");
+
+        std::fs::write(&project, "[desktop]\nenabled = true\nexecutable = \"/tmp/evil\"\n").unwrap();
+        let loaded = load(&user, Some(&project), true, &[]).unwrap();
+        assert!(!loaded.config.desktop.enabled, "not even a trusted project turns it on");
+        assert_eq!(loaded.config.desktop.executable, None);
+        assert!(loaded.warnings.iter().any(|w| w.contains("desktop.enabled")), "{:?}", loaded.warnings);
+
+        std::fs::write(&user, "[desktop]\nenabled = true\nexecutable = \"/opt/ad\"\n").unwrap();
+        std::fs::write(&project, "[desktop]\nenabled = false\n").unwrap();
+        assert!(load(&user, None, false, &[]).unwrap().config.desktop.enabled);
+        assert_eq!(load(&user, None, false, &[]).unwrap().config.desktop.executable, Some(PathBuf::from("/opt/ad")));
+        assert!(!load(&user, Some(&project), true, &[]).unwrap().config.desktop.enabled, "a project may turn it off");
+
+        std::fs::write(&user, "[desktop.apps]\n\"com.apple.TextEdit\" = \"act\"\n\"com.tencent.xinWeChat\" = \"read\"\n").unwrap();
+        std::fs::write(&project, "[desktop.apps]\n\"com.tencent.xinWeChat\" = \"deny\"\n\"com.evil\" = \"act\"\n").unwrap();
+        let desktop = load(&user, None, true, &[]).unwrap().config.desktop;
+        assert_eq!(desktop.app("COM.APPLE.TEXTEDIT"), Some(AppLevel::Act), "keys ignore case");
+        let desktop = load(&user, Some(&project), true, &[]).unwrap().config.desktop;
+        assert_eq!(desktop.app("com.tencent.xinWeChat"), Some(AppLevel::Deny), "a project may deny an app");
+        assert_eq!(desktop.app("com.evil"), None, "but not allow one");
+        assert!(load(&user, None, true, &["desktop.apps.x=\"all\"".into()]).is_err());
     }
 
     #[test]

@@ -16,6 +16,7 @@ use finx_tools::Authority;
 use std::path::PathBuf;
 use url::Url;
 
+use crate::config::AppLevel;
 use crate::hooks::Gate;
 use crate::hooks::SessionView;
 
@@ -75,6 +76,47 @@ async fn judge(authority: &Authority, view: &SessionView) -> Verdict {
         Authority::Act { origin, action, .. } => act(origin, action, view).await,
         Authority::Upload { origin, paths, .. } => upload(origin, paths, view).await,
         Authority::Script { origin, .. } => script(origin, view).await,
+        Authority::AppObserve { app } => desktop_app(app, None, view),
+        Authority::AppAct { app, action } => desktop_app(app, Some(action), view),
+    }
+}
+
+/// The origin a desktop app's grant is kept under.
+pub(crate) fn app_origin(app: &str) -> String {
+    format!("{APP_SCHEME}{app}")
+}
+
+const APP_SCHEME: &str = "app://";
+
+/// Desktop apps: reading a window and acting in it are asked about once per app and session,
+/// unless `[desktop.apps]` decides. The permission mode never skips them: the apps carry the
+/// user's real accounts, like their own Chrome (§8.4).
+fn desktop_app(app: &str, action: Option<&str>, view: &SessionView) -> Verdict {
+    let level = view.desktop.app(app);
+    if level == Some(AppLevel::Deny) {
+        return Verdict::Deny(format!("{app} is denied under [desktop.apps]"));
+    }
+    let origin = app_origin(app);
+    let acting = action.is_some();
+    let granted = view
+        .site_grants
+        .iter()
+        .any(|g| g.origin == origin && (g.authority == GrantAuthority::Act || !acting));
+    if granted || level == Some(AppLevel::Act) || (level == Some(AppLevel::Read) && !acting) {
+        return Verdict::Allow;
+    }
+    let (summary, word, authority) = match action {
+        Some(action) => (format!("{action} in {app}"), "act", GrantAuthority::Act),
+        None => (format!("read the window of {app}"), "read", GrantAuthority::Navigate),
+    };
+    Verdict::Ask {
+        summary,
+        reason: format!(
+            "First time this session {} {app}. To allow it without asking, add \"{app}\" = \"{word}\" under \
+             [desktop.apps] in ~/.finx/config.toml.",
+            if acting { "acts in" } else { "reads" }
+        ),
+        grants: vec![grant(authority, &origin)],
     }
 }
 
@@ -243,6 +285,7 @@ async fn upload(origin: &str, paths: &[PathBuf], view: &SessionView) -> Verdict 
 /// Writes a grant into `[browser.sites]` of the user's configuration (D-197): never "any
 /// site", never over a `deny`, and never down from `act` to `navigate`. Comments and the rest
 /// of the file stay as they are.
+/// A desktop app's grant goes into `[desktop.apps]` instead, as `read` or `act`.
 pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), String> {
     if grant.origin == "*" {
         return Err("\"any site\" is never kept".into());
@@ -253,27 +296,31 @@ pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), 
         Err(err) => return Err(err.to_string()),
     };
     let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| e.to_string())?;
-    let browser = doc
-        .entry("browser")
+    let (section, table, key, weaker) = match grant.origin.strip_prefix(APP_SCHEME) {
+        Some(app) => ("desktop", "apps", app.to_string(), "read"),
+        None => ("browser", "sites", grant.origin.clone(), "navigate"),
+    };
+    let parent = doc
+        .entry(section)
         .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
         .as_table_mut()
-        .ok_or("browser is not a table")?;
-    let sites = browser
-        .entry("sites")
+        .ok_or(format!("{section} is not a table"))?;
+    let entries = parent
+        .entry(table)
         .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
         .as_table_like_mut()
-        .ok_or("browser.sites is not a table")?;
+        .ok_or(format!("{section}.{table} is not a table"))?;
     let level = match grant.authority {
-        GrantAuthority::Navigate => "navigate",
+        GrantAuthority::Navigate => weaker,
         GrantAuthority::Act => "act",
     };
-    let current = sites.get(&grant.origin).and_then(|v| v.as_str()).map(str::to_string);
+    let current = entries.get(&key).and_then(|v| v.as_str()).map(str::to_string);
     match current.as_deref() {
         Some("deny") | Some("act") => return Ok(()),
-        Some("navigate") if level == "navigate" => return Ok(()),
+        Some(kept) if kept == weaker && level == weaker => return Ok(()),
         _ => {}
     }
-    sites.insert(&grant.origin, toml_edit::value(level));
+    entries.insert(&key, toml_edit::value(level));
     if let Some(dir) = file.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -299,6 +346,7 @@ mod tests {
             skill_roots: Arc::from([]),
             site_grants: grants,
             browser: Arc::new(policy),
+            desktop: Default::default(),
         }
     }
 
@@ -460,5 +508,54 @@ mod tests {
             target: page(),
         };
         assert!(asks(&evaluate(&[outside_upload], &bypass).await).is_some(), "files outside the workspace always ask");
+    }
+
+    #[tokio::test]
+    async fn desktop_apps_once_per_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let read = Authority::AppObserve { app: "com.apple.TextEdit".into() };
+        let act = Authority::AppAct { app: "com.apple.TextEdit".into(), action: "type @s1:e2".into() };
+        let manual = view(PermissionMode::Manual, vec![], SitePolicy::default(), dir.path());
+        let read_grant = grant(GrantAuthority::Navigate, "app://com.apple.TextEdit");
+        let act_grant = grant(GrantAuthority::Act, "app://com.apple.TextEdit");
+        assert_eq!(asks(&evaluate(std::slice::from_ref(&read), &manual).await), Some(vec![read_grant.clone()]));
+        assert_eq!(asks(&evaluate(std::slice::from_ref(&act), &manual).await), Some(vec![act_grant.clone()]));
+
+        let mut bypass = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), dir.path());
+        assert!(asks(&evaluate(std::slice::from_ref(&act), &bypass).await).is_some(), "real apps ask even in bypass");
+
+        bypass.site_grants = vec![read_grant];
+        assert_eq!(evaluate(std::slice::from_ref(&read), &bypass).await, Gate::Allow);
+        assert!(asks(&evaluate(std::slice::from_ref(&act), &bypass).await).is_some(), "reading does not cover acting");
+        bypass.site_grants = vec![act_grant];
+        assert_eq!(evaluate(&[read.clone(), act.clone()], &bypass).await, Gate::Allow, "acting covers reading");
+        let other = Authority::AppObserve { app: "com.tencent.xinWeChat".into() };
+        assert!(asks(&evaluate(&[other], &bypass).await).is_some(), "a grant names one app");
+
+        let mut configured = view(PermissionMode::Manual, vec![], SitePolicy::default(), dir.path());
+        let toml = "[desktop.apps]\n\"com.apple.textedit\" = \"read\"\n\"com.tencent.xinWeChat\" = \"deny\"\n";
+        let file: crate::config::ConfigFile = toml::from_str(toml).unwrap();
+        configured.desktop = crate::config::Config::from_file(file).unwrap().desktop;
+        assert_eq!(evaluate(std::slice::from_ref(&read), &configured).await, Gate::Allow, "read in config");
+        assert!(asks(&evaluate(std::slice::from_ref(&act), &configured).await).is_some());
+        let wechat = Authority::AppObserve { app: "com.tencent.xinWeChat".into() };
+        assert!(matches!(evaluate(&[wechat], &configured).await, Gate::Deny(_)));
+    }
+
+    #[test]
+    fn app_grants_are_kept_under_desktop_apps() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        std::fs::write(&file, "[desktop.apps]\n\"com.tencent.xinWeChat\" = \"deny\"\n").unwrap();
+        remember(&file, &grant(GrantAuthority::Navigate, "app://com.apple.TextEdit")).unwrap();
+        remember(&file, &grant(GrantAuthority::Act, "app://com.apple.Notes")).unwrap();
+        remember(&file, &grant(GrantAuthority::Navigate, "app://com.apple.Notes")).unwrap();
+        remember(&file, &grant(GrantAuthority::Act, "app://com.tencent.xinWeChat")).unwrap();
+        let kept: toml::Table = toml::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+        let apps = kept["desktop"]["apps"].as_table().unwrap();
+        assert_eq!(apps["com.apple.TextEdit"].as_str(), Some("read"));
+        assert_eq!(apps["com.apple.Notes"].as_str(), Some("act"), "never down from act");
+        assert_eq!(apps["com.tencent.xinWeChat"].as_str(), Some("deny"), "never over deny");
+        assert!(kept.get("browser").is_none());
     }
 }

@@ -41,6 +41,7 @@ use crate::agents::AgentTree;
 use crate::agents::ChildDeps;
 use crate::approval::ApprovalPolicy;
 use crate::browser::BrowserHandle;
+use crate::desktop::DesktopHandle;
 use crate::config::Config;
 use crate::context;
 use crate::emitter::Emitter;
@@ -198,6 +199,9 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
             launch.root_id.clone(),
         )));
     }
+    if launch.config.desktop.enabled {
+        tool_state.insert(Arc::new(DesktopHandle::new(launch.config.desktop.clone(), launch.root_id.clone())));
+    }
     let session = Arc::new(Session {
         id: launch.id.clone(),
         llm: launch.deps.llm,
@@ -295,6 +299,14 @@ fn add_browser_tools(deps: &mut KernelDeps, config: &Config) {
         } else {
             extended(&deps.tools, "browser", crate::browser::browser_tools)
         };
+    }
+}
+
+/// Adds the desktop tools when `[desktop]` turns them on; before the agent tree is built, so
+/// sub-agents get them too.
+fn add_desktop_tools(deps: &mut KernelDeps, config: &Config) {
+    if config.desktop.enabled {
+        deps.tools = extended(&deps.tools, "desktop", crate::desktop::desktop_tools);
     }
 }
 
@@ -483,6 +495,7 @@ impl Kernel {
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         add_browser_tools(&mut deps, &opts.config);
+        add_desktop_tools(&mut deps, &opts.config);
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
         let mut warnings = Vec::new();
         if resolved.ad_hoc {
@@ -573,6 +586,7 @@ impl Kernel {
         let loaded = deps.store.open(&opts.session)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         add_browser_tools(&mut deps, &opts.config);
+        add_desktop_tools(&mut deps, &opts.config);
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
         let history = History::from_entries(loaded.entries);
         let mut system_prompt = None;

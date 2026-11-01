@@ -125,6 +125,12 @@
     "grantAnySite": "Allow Any Site for This Session",
     "grantAnySiteRisk": "Only opening pages; actions still ask. Risk: a page with injected instructions could get data sent out inside URLs.",
     "grantDesc": "Won't ask again for this site in this session",
+    "grantAppRead": "Allow Reading {{app}} for This Session",
+    "grantAppAct": "Allow Actions in {{app}} for This Session",
+    "grantAppDesc": "Won't ask again for this app in this session",
+    "desktopNoAccessibility": "FinxWork doesn't have Accessibility permission yet, so this will fail even if you allow it.",
+    "desktopNoScreen": "FinxWork doesn't have Screen Recording permission yet, so the screenshot will fail.",
+    "desktopGrant": "Grant Access",
     "denyWhy": "Deny…",
     "deny": "Deny",
     "cancel": "Cancel",
@@ -132,7 +138,7 @@
     "more_one": "{{count}} more line",
     "more_other": "{{count}} more lines",
     "remember": "Remember",
-    "rememberDesc": "Also save the site's permission in ~/.finx/config.toml, so later sessions don't ask"
+    "rememberDesc": "Also save the permission in ~/.finx/config.toml, so later sessions don't ask"
   },
   "notice": {
     "label": "Notice",

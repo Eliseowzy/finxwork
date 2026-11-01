@@ -28,6 +28,10 @@
 /* Browser: the user's own browser, one row; the guide's steps in a dialog. */
 .browser-set .mrow{min-height:52px}
 .browser-set .mrow .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
+.desktop-set .mrow{min-height:52px}
+.desktop-set .mrow .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
+.desktop-set .app-icon{width:28px;height:28px;flex:none;border-radius:var(--r-sm)}
+.desktop-set span.app-icon{background:var(--fill)}
 .browser-set .fn .badge{margin-left:6px;vertical-align:1px}
 .browser-set .fdesc{white-space:normal}
 .browser-set .fdesc.warn{color:var(--orange)}

@@ -117,13 +117,19 @@
     "grantAnySite": "本会话允许打开任何网站",
     "grantAnySiteRisk": "只放行打开网页，操作仍会询问。风险：被注入指令的页面可能诱导把数据拼进网址带出去。",
     "grantDesc": "这个会话里对这个网站不再询问",
+    "grantAppRead": "本会话允许读取 {{app}}",
+    "grantAppAct": "本会话允许在 {{app}} 里操作",
+    "grantAppDesc": "这个会话里对这个应用不再询问",
+    "desktopNoAccessibility": "FinxWork 还没有辅助功能权限，允许了这一步也会失败。",
+    "desktopNoScreen": "FinxWork 还没有屏幕录制权限，截图会失败。",
+    "desktopGrant": "去授权",
     "denyWhy": "拒绝…",
     "deny": "拒绝",
     "cancel": "取消",
     "feedback": "告诉 finx 为什么拒绝，或者应该怎么做（可选）",
     "more_other": "还有 {{count}} 行",
     "remember": "记住",
-    "rememberDesc": "同时把这个网站的授权写入 ~/.finx/config.toml，以后的会话也不再询问"
+    "rememberDesc": "同时把这项授权写入 ~/.finx/config.toml，以后的会话也不再询问"
   },
   "notice": {
     "label": "关键提醒",

@@ -1,14 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, shell, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
+import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
 import { searchEngineIcon } from "./browser/searchIcons";
 import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
+import { desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { platform } from "./platform";
@@ -106,6 +107,58 @@ function folder(p: unknown): p is string {
   return typeof p === "string" && path.isAbsolute(p) && fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() === true;
 }
 
+/**
+ * Desktop control's state. The permissions are the app's own: macOS counts what it starts
+ * (finx, and agent-desktop under it) as FinxWork. Windows and Linux ask for none.
+ */
+async function desktopControlStatus(configured: unknown): Promise<DesktopControlStatus> {
+  // The packaged app carries its own copy beside finx, in Contents/MacOS (scripts/build-app.mjs).
+  const beside = app.isPackaged ? path.dirname(process.execPath) : null;
+  const found = locateDesktopProgram(typeof configured === "string" && configured ? configured : undefined, undefined, undefined, beside);
+  const program = found ? { path: found, version: await desktopProgramVersion(found), bundled: !!beside && path.dirname(found) === beside } : null;
+  if (process.platform !== "darwin") return { program, accessibility: "unsupported", screen: "unsupported" };
+  const screen = systemPreferences.getMediaAccessStatus("screen");
+  return {
+    program,
+    accessibility: systemPreferences.isTrustedAccessibilityClient(false) ? "granted" : "denied",
+    screen: (screen === "granted" || screen === "not-determined" ? screen : "denied") as DesktopPermission,
+  };
+}
+
+const PRIVACY_PANES = {
+  accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  screen: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+};
+
+async function requestDesktopPermission(kind: unknown) {
+  if (process.platform !== "darwin" || (kind !== "accessibility" && kind !== "screen")) return;
+  // Asking puts FinxWork in the list, so the person only has to switch it on. macOS lists an
+  // app under Screen Recording only once it has tried to capture: one tiny capture does that.
+  if (kind === "accessibility") systemPreferences.isTrustedAccessibilityClient(true);
+  else if (systemPreferences.getMediaAccessStatus("screen") !== "granted") {
+    await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } }).catch(() => []);
+  }
+  void shell.openExternal(PRIVACY_PANES[kind]);
+}
+
+/** The desktop apps asked about, by key, for the session: a name and an icon don't change while it runs. */
+const desktopApps = new Map<string, Promise<DesktopApp>>();
+
+/** A desktop app's name and icon by its key in `[desktop.apps]` (a bundle id, or a name). */
+function desktopApp(key: unknown): Promise<DesktopApp> | null {
+  if (typeof key !== "string" || !key || key.length > 255) return null;
+  let found = desktopApps.get(key);
+  if (!found) {
+    found = findApp(key).then(async (installed) => {
+      if (!installed) return { key, name: key, icon: null };
+      const icon = await app.getFileIcon(installed.path, { size: "normal" }).then((i) => i.toDataURL(), () => null);
+      return { key, name: installed.name, icon };
+    });
+    desktopApps.set(key, found);
+  }
+  return found;
+}
+
 export function registerIPC() {
   ipcMain.handle("open-source-app", async (e, adapter: unknown = "qwenwork") => {
     if (!trusted(e)) return;
@@ -150,6 +203,9 @@ export function registerIPC() {
   ipcMain.handle("system-browsers", (e) => (trusted(e) ? systemBrowsers() : []));
   ipcMain.handle("system-browser-set-up", (e) => (trusted(e) ? setUpSystemBrowser() : null));
   ipcMain.handle("system-browser-open", (e, id: unknown, page: unknown) => (trusted(e) ? openSystemBrowser(id, page === "extensions" ? "extensions" : undefined) : false));
+  ipcMain.handle("desktop-control-status", (e, configured: unknown) => (trusted(e) ? desktopControlStatus(configured) : null));
+  ipcMain.on("desktop-permission", (e, kind: unknown) => trusted(e) && void requestDesktopPermission(kind));
+  ipcMain.handle("desktop-app", (e, key: unknown) => (trusted(e) ? desktopApp(key) : null));
   ipcMain.handle("search-engine-icon", (e, template: unknown) => (trusted(e) ? searchEngineIcon(template) : null));
   ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());

@@ -884,6 +884,7 @@ dependencies = [
  "chrono",
  "dirs",
  "finx-browser",
+ "finx-desktop",
  "finx-llm",
  "finx-mcp",
  "finx-mock",
@@ -909,6 +910,18 @@ dependencies = [
  "uuid",
  "yaml-rust2",
  "zip",
+]
+
+[[package]]
+name = "finx-desktop"
+version = "0.1.0"
+dependencies = [
+ "dirs",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]

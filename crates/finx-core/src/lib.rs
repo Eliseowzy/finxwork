@@ -14,6 +14,7 @@ pub mod config;
 pub mod config_edit;
 pub mod context;
 pub mod context_report;
+mod desktop;
 mod emitter;
 pub mod history;
 pub mod hooks;

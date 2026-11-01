@@ -4,7 +4,8 @@
     "general": "General",
     "models": "Models",
     "about": "About",
-    "browser": "Browser"
+    "browser": "Browser",
+    "desktop": "Desktop control"
   },
   "appearance": {
     "title": "Appearance",
@@ -284,5 +285,38 @@
         "url": "The URL starts with http:// or https://, with %s where the search words go."
       }
     }
+  },
+  "desktop": {
+    "enable": "Allow FinxWork to operate desktop apps",
+    "enableDesc": "The agent can read other apps' windows, click and type in them. It asks you before each read and each action. Applies to new conversations.",
+    "blockedProgram": "On, but agent-desktop is not installed, so the desktop tools cannot work yet.",
+    "blockedPermission": "On, but FinxWork does not have Accessibility permission, so the desktop tools cannot work yet.",
+    "note": "Use desktop control only when you ask for it. The agent does not send messages, pay or delete things on its own; it stops and asks you first.",
+    "apps": "App Access",
+    "appsEmpty": "No apps remembered yet. Check “Remember” when you approve, and they show up here.",
+    "appsNote": "Read: reading windows no longer asks. Act: reading, clicking and typing no longer ask. Deny: the agent can't read or operate the app. Removing it asks again the first time in each conversation.",
+    "appLevel": "Access for {{name}}",
+    "level": {"read": "Read", "act": "Act", "deny": "Deny"},
+    "forget": "Remove",
+    "forgetNamed": "Remove access for {{name}}",
+    "permissions": "System permissions",
+    "permissionsNote": "Switch FinxWork on in System Settings, then come back: this page updates by itself. A permission just granted may need FinxWork to restart.",
+    "accessibility": "Accessibility",
+    "accessibilityDesc": "Reads windows and clicks and types in them; desktop control needs it.",
+    "screen": "Screen Recording",
+    "screenDesc": "For screenshots of windows; reading and operating windows work without it.",
+    "granted": "Granted",
+    "notGranted": "Not granted",
+    "openSettings": "Open System Settings",
+    "program": "Program",
+    "installed": "Installed",
+    "bundled": "Built In",
+    "missing": "Not installed",
+    "checking": "Checking…",
+    "version": "Version {{version}}",
+    "noVersion": "Version unknown",
+    "install": "Run in Terminal:",
+    "show": "Show in Finder",
+    "recheck": "Check again"
   }
 }
