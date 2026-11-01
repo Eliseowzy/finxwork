@@ -1,4 +1,5 @@
-// What the person types in the browser panel's address field, as a URL to open.
+// The embedded browser's web-facing strings: what the person types in the address field, as a
+// URL to open, and the user agent sites see.
 
 /** A URL as typed: kept when it has a scheme the panel opens, else https (http for this machine) in front; null for nothing to open. */
 export function typedURL(text: string): string | null {
@@ -11,4 +12,12 @@ export function typedURL(text: string): string | null {
   if (/\s/.test(t)) return null;
   const local = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(t);
   return `${local ? "http" : "https"}://${t}`;
+}
+
+/** Electron's user agent without its own token and the app's: what Chrome would send. */
+export function browserUserAgent(ua: string): string {
+  return ua
+    .split(" ")
+    .filter((token) => !/^(Electron|FinxWork|finxwork)\//i.test(token))
+    .join(" ");
 }

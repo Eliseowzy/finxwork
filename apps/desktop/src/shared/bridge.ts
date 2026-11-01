@@ -48,7 +48,15 @@ export type Preferences = {
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
-export type BrowserPanel = { session: string | null; rect: { x: number; y: number; width: number; height: number } | null };
+export type BrowserPanel = {
+  session: string | null;
+  rect: { x: number; y: number; width: number; height: number } | null;
+  /** The tab steps aside for now (a dialog is over the window): the page gets a picture of it to show meanwhile. */
+  hold?: boolean;
+};
+
+/** A picture of a session's shown tab, taken as it stepped aside; `width` in CSS pixels. */
+export type BrowserStill = { session: string; image: string; width: number };
 
 /** A tab of the embedded browser. */
 export type BrowserTab = {
@@ -95,6 +103,7 @@ export type Bridge = {
   browserTabs(): Promise<BrowserTab[]>;
   onBrowserTabs(cb: (tabs: BrowserTab[]) => void): () => void;
   showBrowserTab(targetId: string): void;
+  onBrowserStill(cb: (still: BrowserStill) => void): () => void;
   browserTabCommand(targetId: string, command: BrowserTabCommand): void;
   openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */

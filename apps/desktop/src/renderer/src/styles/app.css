@@ -479,9 +479,10 @@ button.insp-row:active{background:var(--fill2)}
 /* Drag to resize; while dragging the page's own view steps aside (it would take the pointer). */
 .brp-grip{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:2}
 .brp-grip:hover,.brp.resizing .brp-grip{background:var(--sel)}
-.brp.resizing .brp-view{background:var(--fill2)}
 /* Under the tab's view: the window's own ground, so nothing flashes white in the dark. */
-.brp-view{flex:1;min-height:0;background:var(--win)}
+.brp-view{position:relative;flex:1;min-height:0;overflow:hidden;background:var(--win)}
+/* The tab's picture while a dialog is over the window. */
+.brp-still{position:absolute;left:0;top:0;display:block;max-width:none;height:auto;pointer-events:none;user-select:none}
 /* Tabs on top, like a browser's: the shown one raised; a tab's close button shows on hover and on the shown one. */
 .brp-strip{height:var(--top);flex:none;display:flex;align-items:center;gap:4px;padding:0 calc(8px + var(--caption)) 0 10px;min-width:0}
 .brp-tabs{display:flex;align-items:center;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}

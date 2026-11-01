@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
+import type { BrowserStill, BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
 import { Icon } from "../icons";
 import { useCovered } from "../overlays";
 
@@ -69,8 +69,11 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
     if (currentBlank) address.current?.focus();
   }, [currentId]);
   const [resizing, setResizing] = useState(false);
-  // A dialog, the search palette or the settings' dim is over the window: the tab steps aside.
+  // A dialog, the search palette or the settings' dim is over the window: the tab steps aside,
+  // a picture of it in its place.
   const covered = useCovered();
+  const [still, setStill] = useState<BrowserStill | null>(null);
+  useEffect(() => window.finx?.onBrowserStill((s) => s.session === session && setStill(s)), [session]);
 
   /** The widest the panel may be: the conversation keeps its room. */
   const maxWidth = () => {
@@ -92,13 +95,12 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
     e.preventDefault();
   };
 
-  // Dragging the left edge. The tab's view sits above the page and would take the pointer,
-  // so it steps aside (rect null) until the drag ends.
+  // Dragging the left edge. The tab's view stays and follows the width: the drag's events keep
+  // coming to the page that got the press, even over the view.
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
     const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
     const max = maxWidth();
-    window.finx?.setBrowserPanel({ session, rect: null });
     setResizing(true);
     const move = (ev: PointerEvent) => setWidth(Math.round(Math.min(max, Math.max(minWidth, right - ev.clientX))));
     const up = () => {
@@ -118,7 +120,11 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
   useLayoutEffect(() => {
     const el = room.current;
     const finx = window.finx;
-    if (!el || !finx || resizing || covered) return;
+    if (!el || !finx) return;
+    if (covered) {
+      finx.setBrowserPanel({ session, rect: null, hold: true });
+      return;
+    }
     const report = () => {
       const r = el.getBoundingClientRect();
       finx.setBrowserPanel({ session, rect: { x: r.left, y: r.top, width: r.width, height: r.height } });
@@ -130,9 +136,10 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", report);
-      finx.setBrowserPanel({ session: null, rect: null });
     };
-  }, [session, resizing, covered]);
+  }, [session, covered]);
+  // Gone (another session, or the panel closed): no room for a tab here.
+  useEffect(() => () => window.finx?.setBrowserPanel({ session: null, rect: null }), [session]);
 
   return (
     <aside
@@ -141,7 +148,6 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
       style={width !== null ? ({ "--brp-w": `${width}px` } as React.CSSProperties) : undefined}
       aria-label={t("browser.title")}
     >
-      <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />
       <div className="brp-strip drag">
         <div className="brp-tabs" role="tablist">
           {tabs.map((x) => {
@@ -216,7 +222,11 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
           />
         </form>
       </div>
-      <div className="brp-view" ref={room} />
+      <div className="brp-view" ref={room}>
+        {covered && still && <img className="brp-still" src={still.image} style={{ width: still.width }} alt="" />}
+      </div>
+      {/* Last: the window's drag areas are laid in page order, and the edge must win over the tab strip's. */}
+      <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />
     </aside>
   );
 }

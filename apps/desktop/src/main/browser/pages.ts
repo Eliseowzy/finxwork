@@ -3,7 +3,7 @@ import path from "node:path";
 import { BrowserWindow, session, WebContentsView, type WebContents } from "electron";
 import type { BrowserPanel, BrowserTab, BrowserTabCommand } from "../../shared/bridge";
 import type { Download, Page, PageEvents, PageHost } from "./shim";
-import { typedURL } from "./url";
+import { browserUserAgent, typedURL } from "./url";
 
 // The embedded browser's pages (browser-design §8.3.4): each tab is a WebContentsView with
 // its debugger attached, on a partition of its own, apart from the app's pages and from the
@@ -35,6 +35,9 @@ function browserSession() {
   sessionReady = true;
   // Pages here ask for nothing: no camera, location or notifications.
   s.setPermissionRequestHandler((_wc, _permission, callback) => callback(false));
+  // Sites see Chrome, not Electron or the app: some serve a reduced page to browsers they do
+  // not know (Google's sign-in, for one, without its images).
+  s.setUserAgent(browserUserAgent(s.getUserAgent()));
   s.on("will-download", (_e, item, wc) => {
     const tab = [...tabs.values()].find((t) => t.view.webContents === wc);
     if (!downloadDir || !reportDownload || !tab) return item.cancel();
@@ -56,15 +59,17 @@ function parkingWindow(): BrowserWindow {
 
 export const electronPages: PageHost = {
   create({ targetId, url, finxSession }, events): Page {
+    // The session first: a tab takes its user agent when it is made.
+    const ses = browserSession();
     const view = new WebContentsView({
       webPreferences: { partition, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false },
     });
-    browserSession();
     // A page without a background of its own is white, as in any browser, whatever the app's
     // theme: such pages draw dark text. Pages that support a dark scheme follow the app's
     // appearance (prefers-color-scheme), and so does a blank tab.
     view.setBackgroundColor("#ffffff");
     const wc = view.webContents;
+    wc.setUserAgent(ses.getUserAgent());
     const tab: Tab = { targetId, finxSession, view, events, seq: ++seq };
     tabs.set(targetId, tab);
     wc.debugger.attach("1.3");
@@ -147,11 +152,31 @@ function layout() {
 
 const rounded = (r: Electron.Rectangle) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
 
-/** A window's page says where its panel is, or that it has none (session null). */
-export function setPanel(wc: WebContents, panel: BrowserPanel) {
+/** The latest report of each window, so a slow picture does not undo a newer one. */
+const reports = new WeakMap<BrowserWindow, number>();
+
+/**
+ * A window's page says where its panel is, or that it has none (session null). On `hold` the
+ * shown tab steps aside, and first the page gets a picture of it to show in its place.
+ */
+export async function setPanel(wc: WebContents, panel: BrowserPanel) {
   const win = BrowserWindow.fromWebContents(wc);
   if (!win) return;
   if (!panels.has(win)) win.once("closed", () => (panels.delete(win), layout()));
+  const report = (reports.get(win) ?? 0) + 1;
+  reports.set(win, report);
+  const before = panels.get(win);
+  const targetId = panel.session ? shown.get(panel.session) : undefined;
+  const tab = targetId ? tabs.get(targetId) : undefined;
+  if (panel.hold && panel.session && before?.rect && tab && !tab.view.webContents.isDestroyed()) {
+    try {
+      const image = await tab.view.webContents.capturePage();
+      if (!wc.isDestroyed()) wc.send("browser-still", { session: panel.session, image: image.toDataURL(), width: before.rect.width });
+    } catch {
+      // No picture: the room shows empty for the moment.
+    }
+    if (reports.get(win) !== report) return;
+  }
   panels.set(win, panel);
   layout();
 }
