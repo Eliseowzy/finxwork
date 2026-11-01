@@ -288,7 +288,7 @@
   },
   "desktop": {
     "enable": "Allow FinxWork to operate desktop apps",
-    "enableDesc": "The agent can read other apps' windows, click and type in them. It asks you before each read and each action. Applies to new conversations.",
+    "enableDesc": "The agent can read other apps' windows, click and type in them. It asks the first time it reads or acts in an app in each conversation; in Bypass Permissions mode it doesn't ask, but apps you set to Deny stay off limits. Applies to new conversations.",
     "blockedProgram": "On, but agent-desktop is not installed, so the desktop tools cannot work yet.",
     "blockedPermission": "On, but FinxWork does not have Accessibility permission, so the desktop tools cannot work yet.",
     "note": "Use desktop control only when you ask for it. The agent does not send messages, pay or delete things on its own; it stops and asks you first.",
@@ -309,14 +309,8 @@
     "notGranted": "Not granted",
     "openSettings": "Open System Settings",
     "program": "Program",
-    "installed": "Installed",
-    "bundled": "Built In",
     "missing": "Not installed",
-    "checking": "Checking…",
-    "version": "Version {{version}}",
-    "noVersion": "Version unknown",
     "install": "Run in Terminal:",
-    "show": "Show in Finder",
     "recheck": "Check again"
   }
 }

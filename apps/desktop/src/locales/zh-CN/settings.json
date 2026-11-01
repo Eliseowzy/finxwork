@@ -288,7 +288,7 @@
   },
   "desktop": {
     "enable": "允许 FinxWork 操作桌面应用",
-    "enableDesc": "智能体可以读取其他应用的窗口，并点击、输入。每次读取窗口和执行操作前都会先问你。对新的对话生效。",
+    "enableDesc": "智能体可以读取其他应用的窗口，并点击、输入。每个对话里第一次读取或操作一个应用前会先问你；权限模式为“绕过权限”时不问，但你设为“禁止”的应用始终不能碰。对新的对话生效。",
     "blockedProgram": "已开启，但还没有安装 agent-desktop，桌面工具暂时用不了。",
     "blockedPermission": "已开启，但 FinxWork 还没有辅助功能权限，桌面工具暂时用不了。",
     "note": "只在你要求时使用桌面控制。智能体不会自己发送消息、付款或删除内容；这些操作前它会停下来问你。",
@@ -309,14 +309,8 @@
     "notGranted": "未授权",
     "openSettings": "打开系统设置",
     "program": "程序",
-    "installed": "已安装",
-    "bundled": "FinxWork 内置",
     "missing": "未安装",
-    "checking": "正在检查…",
-    "version": "版本 {{version}}",
-    "noVersion": "无法读取版本",
     "install": "在终端里运行：",
-    "show": "在访达中显示",
     "recheck": "重新检查"
   }
 }

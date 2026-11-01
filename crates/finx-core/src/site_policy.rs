@@ -89,12 +89,16 @@ pub(crate) fn app_origin(app: &str) -> String {
 const APP_SCHEME: &str = "app://";
 
 /// Desktop apps: reading a window and acting in it are asked about once per app and session,
-/// unless `[desktop.apps]` decides. The permission mode never skips them: the apps carry the
-/// user's real accounts, like their own Chrome (§8.4).
+/// unless `[desktop.apps]` decides. Bypass skips the question, like it does for commands: there
+/// a shell could drive the same apps without asking, and a desktop tool that asks only pushes
+/// the model to it. A `deny` is the user's own word and holds in every mode.
 fn desktop_app(app: &str, action: Option<&str>, view: &SessionView) -> Verdict {
     let level = view.desktop.app(app);
     if level == Some(AppLevel::Deny) {
         return Verdict::Deny(format!("{app} is denied under [desktop.apps]"));
+    }
+    if view.permission_mode == PermissionMode::BypassPermissions {
+        return Verdict::Allow;
     }
     let origin = app_origin(app);
     let acting = action.is_some();
@@ -521,16 +525,19 @@ mod tests {
         assert_eq!(asks(&evaluate(std::slice::from_ref(&read), &manual).await), Some(vec![read_grant.clone()]));
         assert_eq!(asks(&evaluate(std::slice::from_ref(&act), &manual).await), Some(vec![act_grant.clone()]));
 
-        let mut bypass = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), dir.path());
-        assert!(asks(&evaluate(std::slice::from_ref(&act), &bypass).await).is_some(), "real apps ask even in bypass");
-
-        bypass.site_grants = vec![read_grant];
-        assert_eq!(evaluate(std::slice::from_ref(&read), &bypass).await, Gate::Allow);
-        assert!(asks(&evaluate(std::slice::from_ref(&act), &bypass).await).is_some(), "reading does not cover acting");
-        bypass.site_grants = vec![act_grant];
-        assert_eq!(evaluate(&[read.clone(), act.clone()], &bypass).await, Gate::Allow, "acting covers reading");
+        let mut granted = view(PermissionMode::Manual, vec![read_grant], SitePolicy::default(), dir.path());
+        assert_eq!(evaluate(std::slice::from_ref(&read), &granted).await, Gate::Allow);
+        assert!(asks(&evaluate(std::slice::from_ref(&act), &granted).await).is_some(), "reading does not cover acting");
+        granted.site_grants = vec![act_grant];
+        assert_eq!(evaluate(&[read.clone(), act.clone()], &granted).await, Gate::Allow, "acting covers reading");
         let other = Authority::AppObserve { app: "com.tencent.xinWeChat".into() };
-        assert!(asks(&evaluate(&[other], &bypass).await).is_some(), "a grant names one app");
+        assert!(asks(&evaluate(&[other], &granted).await).is_some(), "a grant names one app");
+
+        let mut bypass = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), dir.path());
+        assert_eq!(evaluate(&[read.clone(), act.clone()], &bypass).await, Gate::Allow, "bypass does not ask");
+        let toml = "[desktop.apps]\n\"com.apple.TextEdit\" = \"deny\"\n";
+        bypass.desktop = crate::config::Config::from_file(toml::from_str(toml).unwrap()).unwrap().desktop;
+        assert!(matches!(evaluate(std::slice::from_ref(&read), &bypass).await, Gate::Deny(_)), "a deny holds in bypass");
 
         let mut configured = view(PermissionMode::Manual, vec![], SitePolicy::default(), dir.path());
         let toml = "[desktop.apps]\n\"com.apple.textedit\" = \"read\"\n\"com.tencent.xinWeChat\" = \"deny\"\n";

@@ -52,6 +52,7 @@ libc = "0.2"
 md-5 = "0.10"
 memchr = "2"
 parking_lot = "0.12"
+png = "0.18"
 rand = "0.9"
 ring = "0.17"
 reqwest = { version = "0.12", default-features = false, features = [
