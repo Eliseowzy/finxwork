@@ -83,7 +83,11 @@ function copyExtension() {
   fs.rmSync(to, { recursive: true, force: true });
   fs.cpSync(from, to, {
     recursive: true,
-    filter: (f) => !f.endsWith(".test.js") && path.basename(f) !== "package.json" && path.basename(f) !== "node_modules",
+    filter: (f) =>
+      !f.endsWith(".test.js") &&
+      !["package.json", "node_modules"].includes(path.basename(f)) &&
+      // The store packaging, in a development checkout.
+      !["scripts", "store", "dist"].includes(path.relative(from, f).split(path.sep)[0]),
   });
 }
 

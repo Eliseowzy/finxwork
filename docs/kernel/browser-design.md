@@ -783,8 +783,28 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 
 - 把用户已有的标签页交给某个会话（扩展弹窗里选会话，对应 `Target.getTargets`）；
 - 下载放进会话目录；
-- 发布到 Chrome 应用商店：商店会分配另一个 ID，用 `--extension-id` 加进清单；
 - Windows：命名管道，清单写在注册表里。
+
+#### 8.4.6 上架商店与版本协商（D-219）
+
+给最终用户的扩展走 Chrome 应用商店：Mac 和 Windows 上的 Chrome 不允许静默安装商店外的扩展，"加载已解压的扩展程序"又要打开开发者模式，只适合开发者。上架后，扩展由商店自动更新，和 FinxWork 应用各自发版，两边一定会错开。所以先要协商版本。
+
+- **bridge 版本**：一个整数，表示 finx 对扩展的要求：帧格式、`CDP_METHODS` 里的命令、浏览器级方法的做法。
+  - finx 一侧：`finx-browser/src/methods.rs` 的 `BRIDGE`（当前）和 `BRIDGE_MIN`（还能驱动的最旧扩展）；
+  - 扩展一侧：生成的 `methods.js` 里的 `bridge`，以及 `background.js` 的 `BRIDGE_MIN`（还能处理的最旧帧格式和命令）。扩展的 `BRIDGE_MIN` 要尽量低：应用的更新总比扩展慢；
+  - 新增命令必须调高 `BRIDGE`，测试会检查（新命令不在上次生成的 `methods.js` 里，而 `bridge` 没变，就失败）。
+- **协商**：
+  - 扩展在 hello 里带 `bridge: {min, max}`，宿主原样放进 `browser/host`。没带的是协商之前的扩展，按 `{1, 1}` 算；
+  - 服务取两边都支持的最高版本，在 `browser/host` 的结果 `{bridge}` 里返回；宿主再发 `{status: "connected", bridge}` 给扩展；
+  - 没有共同版本时，结果是 `{problem: "update_extension" | "update_finx"}`。服务不把这个扩展放进池子，但记进 `ExtensionStatus.problem`，让 `browser/status` 照样报出来；宿主给扩展发 `{status: "outdated", update, reason}`，然后保持连接、不转发命令，直到某一边更新（任一边更新都会让宿主重启，重新协商）；
+  - 内嵌浏览器随应用一起发布，不协商。
+- **更新**：
+  - 宿主的端口一直开着，service worker 不会空闲，Chrome 也就不会自己装上已经下载好的更新。所以扩展收到 `onUpdateAvailable` 后，等到智能体在这里没有标签页时调用 `chrome.runtime.reload()`（立即检查一次，之后每分钟的 alarm 再查）；
+  - 收到 `update: "extension"` 时，扩展调用 `chrome.runtime.requestUpdateCheck()`，不用等商店的例行检查。
+- **桌面端**：`problem` 显示为"需要更新"。扩展太旧：说明它会自动更新，并给出"打开扩展程序页面"；应用太旧：给出"检查更新"。引导的等待步骤也显示这条提示，而且不会把这样的扩展当作已连接、自动启用。
+- **发版顺序**：调高 `BRIDGE_MIN` 会让旧扩展停用。所以先发能说新版本的扩展，等商店推送开，再发要求新版本的 FinxWork。
+- **商店 ID**：商店不接受 manifest 里的 `key`。第一次上传如果带上对应的 `key.pem`，就有机会沿用现有的 ID；否则商店会分配新 ID，填进 `cmd_browser.rs` 的 `STORE_EXTENSION_ID`，`finx browser extension install` 会同时放行两个 ID。
+- **打包与提交材料**：`pnpm --filter @finx/chrome-extension store-zip` 生成 `dist/finxwork-extension-<version>.zip`（去掉 `key`、测试和类型声明）。条目文案、权限说明、隐私政策草稿和步骤见 `apps/chrome-extension/store/listing.md`。可见性先选"不公开"。上架后在 `BrowserSettings.tsx` 填上 `STORE_URL`，引导第 2 步就换成"添加到 Chrome"。
 
 ## 9. 对外协议与界面
 
@@ -990,6 +1010,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-216 | 扩展后端下 bypass 不跳过 Navigate/Act/Upload 的询问（`SitePolicy.real_logins`）；服务核对扩展宿主的可执行文件与自己相同 |
 | D-217 | 用户在桌面端"设置 › 浏览器"里连接：应用自动注册宿主、复制扩展，只请用户添加扩展；连上后自动启用；状态经 `browser/status` 与 `browser/changed` 取得 |
 | D-218 | 内嵌浏览器以所基于版本的 Chrome 出现：UA 只报主版本，客户端提示（请求头与 `userAgentData`）含 Google Chrome，权限查询与请求一致地拒绝，语言跟随应用；不伪造 `window.chrome`，不虚报版本 |
+| D-219 | 扩展上架商店、与应用分开更新：扩展和 finx 各自声明支持的 bridge 版本范围，服务取共同的最高版本；没有共同版本时连接保留但不可用，`ExtensionStatus.problem` 说明该更新哪一边；扩展有更新时，等到没有智能体标签页再重新加载 |
 
 ### 待定问题
 

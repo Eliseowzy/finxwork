@@ -77,7 +77,8 @@
     "failed": "{{reason}}\n\nYou can drag FinxWork to the Applications folder in Finder."
   },
   "dialog": {
-    "skillSource": "Skills"
+    "skillSource": "Skills",
+    "application": "Applications"
   },
   "browserMenu": {
     "clearConfirm": "Clear browsing data?",

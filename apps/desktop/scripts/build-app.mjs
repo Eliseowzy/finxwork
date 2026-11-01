@@ -10,6 +10,8 @@
 // The bundle:
 //   Contents/MacOS/FinxWork              Electron
 //   Contents/MacOS/finx                  the kernel, started by the app as finx's service (desktop-kernel-integration §4)
+//   Contents/MacOS/agent-desktop         desktop control's program, which finx's desktop tools find beside finx,
+//   Contents/MacOS/agent-desktop-macos-helper   and its helper (scripts/agent-desktop.mjs: a pinned release, checked)
 //   Contents/Resources/app.asar          main, preload and the page
 //   Contents/Resources/kernel.json       the kernel's version and protocol version
 //   Contents/Resources/catalog/skills    the 自定义 page's catalog skills (resources/catalog/skills, checked against src/shared/catalog.ts)
@@ -42,6 +44,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { agentDesktopBinaries, agentDesktopRelease } from "./agent-desktop.mjs";
 import { catalogProblems, catalogSkillsDir } from "./catalog-hash.mjs";
 import { ensureRustTarget, rustTriples } from "./rust-target.mjs";
 import { catalogSkills } from "../src/shared/catalog.ts";
@@ -161,10 +164,16 @@ fs.copyFileSync(path.join(icons, "Assets.car"), path.join(contents, "Resources/A
 const problems = catalogProblems(catalogSkills);
 if (problems.length) throw new Error(`the catalog's skills differ from src/shared/catalog.ts:\n  ${problems.join("\n  ")}`);
 if (fs.existsSync(catalogSkillsDir)) fs.cpSync(catalogSkillsDir, path.join(contents, "Resources/catalog/skills"), { recursive: true, filter: (f) => path.basename(f) !== ".DS_Store" });
-// The extension as it loads: the manifest, the scripts and the icons; not its tests or types.
-fs.cpSync(path.join(root, "apps/chrome-extension"), path.join(contents, "Resources/chrome-extension"), {
+// The extension as it loads: the manifest, the scripts and the icons; not its tests, types,
+// store packaging (scripts/, store/, dist/) or package.json.
+const extensionRoot = path.join(root, "apps/chrome-extension");
+fs.cpSync(extensionRoot, path.join(contents, "Resources/chrome-extension"), {
   recursive: true,
-  filter: (f) => !f.endsWith(".test.js") && !f.endsWith(".d.ts") && !["package.json", "node_modules", ".DS_Store"].includes(path.basename(f)),
+  filter: (f) =>
+    !f.endsWith(".test.js") &&
+    !f.endsWith(".d.ts") &&
+    !["package.json", "node_modules", ".DS_Store"].includes(path.basename(f)) &&
+    !["scripts", "store", "dist"].includes(path.relative(extensionRoot, f).split(path.sep)[0]),
 });
 
 step(`embedding the kernel: finx ${kernelVersion}, protocol ${protocolVersion}`);
@@ -174,6 +183,16 @@ const embedded = path.join(contents, "MacOS/finx");
 fs.copyFileSync(kernel, embedded);
 fs.chmodSync(embedded, 0o755);
 fs.writeFileSync(path.join(contents, "Resources/kernel.json"), JSON.stringify({ version: kernelVersion, protocol_version: protocolVersion }) + "\n");
+
+step(`embedding agent-desktop ${agentDesktopRelease.version}`);
+// Beside finx, which looks there first (crates/finx-desktop); the helper must stay beside the program.
+const desktopTools = Object.entries(agentDesktopBinaries(arch, path.join(desktop, "node_modules/.cache/agent-desktop"))).map(([name, file]) => {
+  if (execFileSync("lipo", ["-archs", file], { encoding: "utf8" }).trim() !== machO) throw new Error(`${file} is not ${machO}`);
+  const to = path.join(contents, "MacOS", name);
+  fs.copyFileSync(file, to);
+  fs.chmodSync(to, 0o755);
+  return to;
+});
 
 step("flipping Electron fuses");
 await flipFuses(path.join(contents, "MacOS/FinxWork"), {
@@ -188,6 +207,8 @@ await flipFuses(path.join(contents, "MacOS/FinxWork"), {
 });
 
 step(`signing with: ${identity === "-" ? "ad-hoc" : identity}`);
+// The helper tools beside the app's executable, which run without Electron's entitlements.
+const helpers = [embedded, ...desktopTools].map((f) => `/${path.relative(app, f)}`);
 await sign({
   app,
   identity,
@@ -196,18 +217,22 @@ await sign({
   // The hardened runtime's library validation needs one team ID across the
   // bundle, which an ad-hoc signature does not have.
   // The kernel needs no entitlement: it reads and writes the user's files, starts processes
-  // and opens connections, all of which the hardened runtime allows. V8's JIT is Electron's.
+  // and opens connections, all of which the hardened runtime allows. Nor does agent-desktop:
+  // the accessibility API and window capture are TCC permissions, granted to FinxWork, and it
+  // sends no Apple Events. V8's JIT is Electron's.
   optionsForFile: (file) => ({
     hardenedRuntime: identity !== "-",
-    entitlements: file.endsWith("/Contents/MacOS/finx") ? undefined : path.join(desktop, "build/darwin/entitlements.plist"),
+    entitlements: helpers.some((h) => file.endsWith(h)) ? undefined : path.join(desktop, "build/darwin/entitlements.plist"),
   }),
 });
 sh("codesign", ["--verify", "--strict", "--deep", app]);
-sh("codesign", ["--verify", "--strict", embedded]);
+for (const f of [embedded, ...desktopTools]) sh("codesign", ["--verify", "--strict", f]);
 // The signed copy still runs and reports the version the app expects (where it can run).
 if (arch === nativeArch) {
   const signedVersion = execFileSync(embedded, ["--version"], { encoding: "utf8" }).trim().split(/\s+/).pop();
   if (signedVersion !== kernelVersion) throw new Error(`the embedded finx reports ${signedVersion}, expected ${kernelVersion}`);
+  const desktopVersion = JSON.parse(execFileSync(desktopTools[0], ["version"], { encoding: "utf8" }).trim().split("\n").pop()).data?.version;
+  if (desktopVersion !== agentDesktopRelease.version) throw new Error(`the embedded agent-desktop reports ${desktopVersion}, expected ${agentDesktopRelease.version}`);
 }
 
 if (notaryAuth) {

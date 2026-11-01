@@ -59,6 +59,36 @@ pub const CDP_METHODS: &[&str] = &[
     "Target.setAutoAttach",
 ];
 
+/// The version of what finx needs from the extension (browser-design D-219): the frames
+/// between it and the host, the commands above, and how it answers the browser-level ones.
+/// Raise it when finx starts to need something an extension of this version does not do,
+/// such as a command added above; the test below asks for that. The store updates the
+/// extension apart from the app, so each side says the range it speaks and the host picks.
+pub const BRIDGE: u32 = 1;
+/// The oldest extension finx can still drive. Raising it stops older extensions until the
+/// store updates them; ship an extension that speaks the new version first.
+pub const BRIDGE_MIN: u32 = 1;
+
+/// Which side is too old when the extension and finx share no bridge version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BridgeMismatch {
+    /// The extension speaks only versions older than [`BRIDGE_MIN`].
+    ExtensionTooOld,
+    /// The extension speaks only versions newer than [`BRIDGE`].
+    FinxTooOld,
+}
+
+/// The newest version both speak, for an extension that speaks `min..=max`.
+pub fn negotiate(min: u32, max: u32) -> Result<u32, BridgeMismatch> {
+    if max < BRIDGE_MIN {
+        Err(BridgeMismatch::ExtensionTooOld)
+    } else if min > BRIDGE {
+        Err(BridgeMismatch::FinxTooOld)
+    } else {
+        Ok(max.min(BRIDGE))
+    }
+}
+
 /// How many of [`CDP_METHODS`] are browser level.
 pub const BROWSER_LEVEL: usize = 10;
 
@@ -98,11 +128,15 @@ pub fn extension_module() -> String {
         "// Generated from crates/finx-browser/src/methods.rs; do not edit. Regenerate with\n\
          // FINX_UPDATE_SNAPSHOTS=1 cargo test -p finx-browser methods.\n\
          \n\
+         /** The version of what finx needs from the extension: BRIDGE in methods.rs (D-219). */\n\
+         export const bridge = {};\n\
+         \n\
          /** Browser-level commands, which the browser end answers itself. */\n\
          export const browserMethods = Object.freeze([\n{}]);\n\
          \n\
          /** Page-level commands, forwarded to a page's debugger; any other is refused (D-192). */\n\
          export const pageMethods = Object.freeze([\n{}]);\n",
+        BRIDGE,
         quoted(&CDP_METHODS[..BROWSER_LEVEL]),
         quoted(&CDP_METHODS[BROWSER_LEVEL..]),
     )
@@ -153,6 +187,41 @@ mod tests {
         assert!(unused.is_empty(), "no longer used: {unused:?}");
         for browser in &CDP_METHODS[..BROWSER_LEVEL] {
             assert!(browser.starts_with("Browser.") || browser.starts_with("Target."), "{browser}");
+        }
+    }
+
+    #[test]
+    fn the_newest_shared_version_wins() {
+        assert_eq!(negotiate(1, BRIDGE), Ok(BRIDGE));
+        assert_eq!(negotiate(BRIDGE_MIN, BRIDGE + 5), Ok(BRIDGE));
+        assert_eq!(negotiate(BRIDGE + 1, BRIDGE + 2), Err(BridgeMismatch::FinxTooOld));
+        if BRIDGE_MIN > 1 {
+            assert_eq!(negotiate(1, BRIDGE_MIN - 1), Err(BridgeMismatch::ExtensionTooOld));
+        }
+    }
+
+    /// The bridge version and the quoted commands of a saved methods.js.
+    fn saved_module(text: &str) -> (Option<u32>, BTreeSet<String>) {
+        let bridge = text
+            .lines()
+            .find_map(|l| l.strip_prefix("export const bridge = ")?.trim_end_matches(';').parse().ok());
+        let commands = text.split('"').skip(1).step_by(2).filter(|q| q.contains('.')).map(str::to_string).collect();
+        (bridge, commands)
+    }
+
+    /// An extension already out there may not forward a command added since: adding one
+    /// raises BRIDGE, so the host can tell that extension to update (D-219).
+    #[test]
+    fn a_new_command_raises_the_bridge_version() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/chrome-extension/src/methods.js");
+        let (bridge, saved) = saved_module(&std::fs::read_to_string(&path).unwrap_or_default());
+        const { assert!(BRIDGE_MIN <= BRIDGE) };
+        // methods.js from before the bridge version speaks version 1.
+        let bridge = bridge.unwrap_or(1);
+        assert!(BRIDGE >= bridge, "BRIDGE went down from {bridge}");
+        if BRIDGE == bridge {
+            let added: Vec<_> = CDP_METHODS.iter().filter(|m| !saved.contains(**m)).collect();
+            assert!(added.is_empty(), "new commands {added:?}: raise BRIDGE in methods.rs, then regenerate methods.js");
         }
     }
 

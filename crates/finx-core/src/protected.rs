@@ -251,6 +251,7 @@ mod tests {
             skill_roots: Arc::from([]),
             site_grants: Vec::new(),
             browser: Arc::default(),
+            desktop: Default::default(),
         }
     }
 

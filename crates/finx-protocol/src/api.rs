@@ -222,6 +222,39 @@ pub struct BrowserHostParams {
     /// The FinxWork extension's version, for an extension host.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension_version: Option<String>,
+    /// The bridge versions the extension speaks (browser-design D-219). An extension host
+    /// that sends none has an extension from before them: version 1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge: Option<BridgeRange>,
+}
+
+/// A range of bridge versions, both ends included.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BridgeRange {
+    pub min: u32,
+    pub max: u32,
+}
+
+/// Why a connected extension cannot be used: it and finx share no bridge version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtensionProblem {
+    /// The extension is older than this finx can drive; the store updates it by itself.
+    UpdateExtension,
+    /// The extension is newer than this finx; update FinxWork.
+    UpdateFinx,
+}
+
+/// The result of `browser/host`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserHostResult {
+    /// The bridge version to speak, for an extension host that finx can use.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bridge: Option<u32>,
+    /// Set when the extension cannot be used. The connection stays, so clients can say what
+    /// to update, but carries no browser.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<ExtensionProblem>,
 }
 
 /// The user's own browser, lent through the FinxWork extension (browser-design §8.4).
@@ -232,12 +265,15 @@ pub struct ExtensionStatus {
     pub browser: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension_version: Option<String>,
+    /// Set when the extension is connected but cannot be used until one side is updated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub problem: Option<ExtensionProblem>,
 }
 
 /// The result of `browser/status`, and the parameters of `browser/changed`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct BrowserStatus {
-    /// Set while the FinxWork extension is connected.
+    /// Set while the FinxWork extension is connected; with `problem` when it cannot be used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionStatus>,
     /// Whether a desktop app shows embedded browsers.

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { approvalPreview, argsOf, describe, toolObject, type ApprovalPreview, type ListSession, type SessionView } from "@finx/client";
 import type { ApprovalDecision, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
+import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
 import { toolDo } from "../format";
 import { Mark } from "../icons";
 import { useStore } from "../store";
@@ -17,7 +18,8 @@ import { Code } from "./Code";
  * once from anywhere; outside the composer ↩ allows, 2 allows for the
  * session, Esc (or 3) denies. Several waiting are answered in order.
  * A browser call offers each proposed site grant as its own button; 2 picks
- * the first.
+ * the first. A desktop call names the app by its name and icon, and says so
+ * when FinxWork lacks the system permission the call needs.
  */
 export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const { t } = useTranslation("session");
@@ -43,6 +45,12 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
 
   // The keys work unless the person types elsewhere or another layer is open.
   const grants = a.proposed_grants ?? [];
+  const appKey = grants.find((g) => g.origin.startsWith(APP_ORIGIN))?.origin.slice(APP_ORIGIN.length);
+  const desktopApp = useDesktopApp(appKey);
+  // Screenshots need Screen Recording; reading and acting, Accessibility.
+  const { status } = useDesktopStatus(undefined, a.name.startsWith("desktop_"));
+  const permission = a.name === "desktop_screenshot" ? "screen" : "accessibility";
+  const missing = a.name.startsWith("desktop_") && status && status[permission] !== "granted" && status[permission] !== "unsupported";
   const keys = useRef({ give, denying, blocked: false, grants: false });
   keys.current = { give, denying, blocked: st.sheet !== null || st.searching, grants: grants.length > 0 };
   useEffect(() => {
@@ -75,10 +83,22 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
       <div className="appr-h">
         <Mark size={16} />
         <b>{question}</b>
+        {desktopApp && (
+          <span className="appr-app" title={desktopApp.key}>
+            {desktopApp.icon && <img src={desktopApp.icon} alt="" />}
+            {desktopApp.name}
+          </span>
+        )}
         {a.reason && <span className="why" title={a.reason}>{a.reason}</span>}
         {live.approvals.length > 1 && <span className="qx-tag">{t("approval.queue", { n: 1, total: live.approvals.length })}</span>}
       </div>
       <Preview p={preview} />
+      {missing && (
+        <div className="appr-warn" role="alert">
+          <span>{t(permission === "screen" ? "approval.desktopNoScreen" : "approval.desktopNoAccessibility")}</span>
+          <button className="btn" onClick={() => window.finx?.requestDesktopPermission(permission)}>{t("approval.desktopGrant")}</button>
+        </div>
+      )}
       <div className="appr-f">
         {denying ? (
           <>
@@ -114,7 +134,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
             {grants.length > 0 ? (
               grants.map((g, i) => (
                 <button key={i} className="btn" disabled={busy} title={grantTitle(g, t)} onClick={() => give({ type: "approve_for_session", grant: i, persist: remember && g.origin !== "*" ? true : undefined })}>
-                  {grantLabel(g, t)}
+                  {grantLabel(g, t, desktopApp?.name)}
                 </button>
               ))
             ) : (
@@ -135,15 +155,21 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
 
 type T = ReturnType<typeof useTranslation<"session">>["t"];
 
-/** A site grant as a button: the site by host, "any site" with its risk. */
-function grantLabel(g: SiteGrant, t: T): string {
+/** A site grant as a button: the site by host, "any site" with its risk; a desktop app
+ * (`app://<bundle id>`) by its name once known, else its bundle id. */
+function grantLabel(g: SiteGrant, t: T, appName?: string): string {
   if (g.origin === "*") return t("approval.grantAnySite");
+  if (g.origin.startsWith(APP_ORIGIN)) {
+    const app = appName ?? g.origin.slice(APP_ORIGIN.length);
+    return g.authority === "act" ? t("approval.grantAppAct", { app }) : t("approval.grantAppRead", { app });
+  }
   const site = g.origin.replace(/^https:\/\//, "");
   return g.authority === "act" ? t("approval.grantAct", { site }) : t("approval.grantNavigate", { site });
 }
 
 function grantTitle(g: SiteGrant, t: T): string {
-  return g.origin === "*" ? t("approval.grantAnySiteRisk") : t("approval.grantDesc");
+  if (g.origin === "*") return t("approval.grantAnySiteRisk");
+  return g.origin.startsWith(APP_ORIGIN) ? t("approval.grantAppDesc") : t("approval.grantDesc");
 }
 
 /** The call itself: a command coloured as shell, a change as removed and added lines, or what it writes. */

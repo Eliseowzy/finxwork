@@ -4,7 +4,8 @@
     "general": "General",
     "models": "Models",
     "about": "About",
-    "browser": "Browser"
+    "browser": "Browser",
+    "desktop": "Desktop control"
   },
   "appearance": {
     "title": "Appearance",
@@ -38,7 +39,6 @@
     "default": "Default",
     "reasoning": "Thinking",
     "context": "{{size}} context",
-    "note": "Providers and models come from finx’s configuration (~/.finx/config.toml and models.toml). A key set here is saved by finx in this Mac’s keychain and works for the command line too; keys in the configuration or the environment come first.",
     "local": "Local applications",
     "api": "Use an API key",
     "qwen": "QwenWork",
@@ -201,7 +201,8 @@
       "on": "In use",
       "ready": "Connected",
       "lost": "Not connected",
-      "off": "Not connected"
+      "off": "Not connected",
+      "outdated": "Needs update"
     },
     "off": "Once connected, the agent opens pages in your own browser, signed in to your accounts, where sites are less likely to block it.",
     "on": "The agent opens pages in this browser, with your sign-ins. It only sees the tabs it opens.",
@@ -209,12 +210,17 @@
     "lost": "The extension is not connected: it may be turned off, or not added yet.",
     "closed": "{{name}} is not open. It connects by itself once you open it.",
     "none": "No Chrome, Edge or Brave was found on this Mac.",
+    "outdated": {
+      "extension": "The FinxWork extension in {{name}} is too old for this version of FinxWork. It updates by itself shortly; you can also update it on the extensions page.",
+      "finx": "The FinxWork extension in {{name}} is newer than this app. Update FinxWork to use it."
+    },
     "connect": "Connect",
     "start": "Start Using",
     "stop": "Stop Using",
     "reconnect": "Reconnect…",
     "open": "Open {{name}}",
     "getChrome": "Get Chrome",
+    "checkUpdates": "Check for Updates",
     "note": "The built-in browser is for looking at your work: local files, PDFs and page previews. Sites that need your accounts go to your own browser. Changes apply to new conversations.",
     "guide": {
       "title": "Connect Your Browser",
@@ -278,5 +284,32 @@
         "url": "The URL starts with http:// or https://, with %s where the search words go."
       }
     }
+  },
+  "desktop": {
+    "enable": "Allow FinxWork to operate desktop apps",
+    "blockedProgram": "On, but agent-desktop is not installed, so the desktop tools cannot work yet.",
+    "blockedPermission": "On, but FinxWork does not have Accessibility permission, so the desktop tools cannot work yet.",
+    "note": "Use desktop control only when you ask for it. The agent does not send messages, pay or delete things on its own; it stops and asks you first.",
+    "apps": "App permissions",
+    "appsIntro": "For apps not set here, the agent asks you the first time it needs one in each conversation. Set an app's permission here and it follows that instead, without asking each time.",
+    "appsEmpty": "No apps set yet. Click “Add App” to pick one, or check “Remember” when the agent asks, and the app shows up here.",
+    "appLevel": "Permission for {{name}}",
+    "level": {"read": "Can view", "act": "Can view and use", "deny": "Blocked"},
+    "add": "Add App…",
+    "forget": "Remove",
+    "forgetNamed": "Remove the setting for {{name}}",
+    "permissions": "System permissions",
+    "permissionsNote": "Switch FinxWork on in System Settings, then come back: this page updates by itself. A permission just granted may need FinxWork to restart.",
+    "accessibility": "Accessibility",
+    "accessibilityDesc": "Reads windows and clicks and types in them; desktop control needs it.",
+    "screen": "Screen Recording",
+    "screenDesc": "For screenshots of windows; reading and operating windows work without it.",
+    "granted": "Granted",
+    "notGranted": "Not granted",
+    "openSettings": "Open System Settings",
+    "program": "Program",
+    "missing": "Not installed",
+    "install": "Run in Terminal:",
+    "recheck": "Check again"
   }
 }

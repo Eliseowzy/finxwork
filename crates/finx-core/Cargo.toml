@@ -13,6 +13,7 @@ chrono.workspace = true
 dirs.workspace = true
 futures.workspace = true
 finx-browser.workspace = true
+finx-desktop.workspace = true
 finx-llm.workspace = true
 finx-mcp.workspace = true
 finx-protocol.workspace = true
@@ -38,6 +39,7 @@ zip.workspace = true
 
 [dev-dependencies]
 finx-mock.workspace = true
+png.workspace = true
 tempfile.workspace = true
 
 [lints]

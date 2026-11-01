@@ -1,12 +1,20 @@
 import { ExtensionBrowser } from "./browser.js";
+import { bridge } from "./methods.js";
 
 // The FinxWork extension (browser-design §8.4): a Native Messaging port to `finx browser
 // native-host`, which relays to the finx service, and an ExtensionBrowser for each browser
 // the kernel starts on it. A new stream number is a new browser; the one before is let go.
 // The open port keeps this worker alive; an alarm brings it back if Chrome stopped it.
+//
+// The store updates this extension apart from FinxWork, so the hello says which bridge
+// versions it speaks (D-219): `bridge` from methods.js, down to BRIDGE_MIN, the oldest whose
+// frames and commands it still handles. Keep BRIDGE_MIN low: a FinxWork app updates later
+// than its extension. A kept-alive worker never takes an update by itself; it reloads for
+// one while the agent has no tab here.
 
 const HOST = "com.finxwork.browser";
 const PROTOCOL = "1.3";
+const BRIDGE_MIN = 1;
 const GROUP_TITLE = "FinxWork";
 
 /** @type {chrome.runtime.Port | null} */
@@ -121,12 +129,34 @@ function letGo() {
   pieces.clear();
 }
 
+// ---- Updates ----
+
+/** Set when the store has a newer version waiting for this worker to restart. */
+let updateWaiting = false;
+
+/** Restarts into the waiting update, unless the agent is using a tab here. */
+function takeUpdate() {
+  if (updateWaiting && !(live && live.browser.byTab.size > 0)) chrome.runtime.reload();
+}
+
+chrome.runtime.onUpdateAvailable.addListener(() => {
+  updateWaiting = true;
+  takeUpdate();
+});
+
 function onMessage(message) {
   if (typeof message.status === "string") {
     // The service came or went: a browser of the connection before is gone, and the new
     // connection numbers its streams from the start again.
     letGo();
-    show(message.status === "connected" ? "connected" : "waiting", message.reason);
+    if (message.status === "outdated") {
+      show("missing", message.reason);
+      // Too old for this FinxWork: ask the store now rather than within hours.
+      if (message.update === "extension") chrome.runtime.requestUpdateCheck?.().catch(() => {});
+    } else {
+      show(message.status === "connected" ? "connected" : "waiting", message.reason);
+    }
+    takeUpdate();
     return;
   }
   const stream = message.stream;
@@ -170,7 +200,9 @@ async function hello() {
   } catch {
     // The user agent string says enough.
   }
-  port?.postMessage({ hello: { browser, extension_version: chrome.runtime.getManifest().version } });
+  port?.postMessage({
+    hello: { browser, extension_version: chrome.runtime.getManifest().version, bridge: { min: BRIDGE_MIN, max: bridge } },
+  });
 }
 
 function connect() {
@@ -194,7 +226,10 @@ function connect() {
 
 chrome.alarms.create("finx-connect", { periodInMinutes: 1 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "finx-connect") connect();
+  if (alarm.name === "finx-connect") {
+    connect();
+    takeUpdate();
+  }
 });
 chrome.runtime.onStartup.addListener(connect);
 chrome.runtime.onInstalled.addListener(connect);

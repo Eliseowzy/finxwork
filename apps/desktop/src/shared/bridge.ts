@@ -117,6 +117,20 @@ export type SystemBrowser = {
   running: boolean;
 };
 
+/** Desktop control (finx's desktop tools, through agent-desktop): the program and the app's own permissions. */
+export type DesktopPermission = "granted" | "denied" | "not-determined" | "unsupported";
+export type DesktopControlStatus = {
+  /** The program finx would run, its version, and whether it is the one inside FinxWork; null when there is none. */
+  program: { path: string; version: string | null; bundled: boolean } | null;
+  /** Reading and operating other apps' windows; required. */
+  accessibility: DesktopPermission;
+  /** Screenshots of windows. */
+  screen: DesktopPermission;
+};
+
+/** A desktop app as `[desktop.apps]` names it, with its name in the system's language and its icon (a data URL) when installed. */
+export type DesktopApp = { key: string; name: string; icon: string | null };
+
 export type KernelStatusView = {
   state: "starting" | "ready" | "reconnecting" | "failed";
   /** The running service's version. */
@@ -187,6 +201,14 @@ export type Bridge = {
   openSystemBrowser(id: SystemBrowserId, page?: "extensions"): Promise<boolean>;
   revealBrowserExtension(): void;
   systemBrowserIcon(id: SystemBrowserId): Promise<string | null>;
+  /** Desktop control's program and the app's permissions for it; `configured` is `desktop.executable`. */
+  desktopControlStatus(configured?: string): Promise<DesktopControlStatus>;
+  /** Asks for a permission: the system's prompt where there is one, and its page in System Settings. */
+  requestDesktopPermission(kind: "accessibility" | "screen"): void;
+  /** A desktop app's name and icon by its bundle id; the key itself as the name when it is not found. */
+  desktopApp(key: string): Promise<DesktopApp>;
+  /** An app chosen in the system's dialog (macOS), for Settings › Desktop control; null when cancelled or it has no bundle id. */
+  pickDesktopApp(): Promise<DesktopApp | null>;
   /** A search engine's icon (its site's favicon) by its URL template, as a data URL. */
   searchEngineIcon(template: string): Promise<string | null>;
   /** In the settings window: another page was asked for while it is open. */

@@ -376,6 +376,7 @@ impl Session {
             skill_roots: self.skill_roots.clone(),
             site_grants: state.site_grants.clone(),
             browser: self.config.browser.policy.clone(),
+            desktop: self.config.desktop.clone(),
         }
     }
 

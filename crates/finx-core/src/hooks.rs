@@ -58,6 +58,8 @@ pub struct SessionView {
     pub site_grants: Vec<SiteGrant>,
     /// The `[browser]` policy: domain lists and configured sites.
     pub browser: Arc<finx_browser::policy::SitePolicy>,
+    /// The `[desktop]` settings: which apps are allowed or denied without asking.
+    pub desktop: crate::config::DesktopSettings,
 }
 
 #[async_trait]

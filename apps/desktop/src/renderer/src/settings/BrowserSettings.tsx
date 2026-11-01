@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { BrowserStatus } from "@finx/protocol";
+import type { BrowserStatus, ExtensionProblem } from "@finx/protocol";
 import type { SystemBrowser, SystemBrowserId } from "../../../shared/bridge";
 import { Dialog } from "../components";
 import { Icon } from "../icons";
@@ -77,7 +77,9 @@ export function BrowserSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const connected = status?.extension ?? null;
+  // An extension that cannot be used (it or finx is too old, D-219) is not connected, but says what to update.
+  const problem = status?.extension?.problem ?? null;
+  const connected = problem ? null : (status?.extension ?? null);
   const inUse = !!config?.enabled && config.backend === "extension";
   const registered = browsers?.filter((b) => b.registered) ?? [];
   // The connected one, by the name it gave; else the one it was set up for; else the first here.
@@ -96,8 +98,9 @@ export function BrowserSettings() {
     }
   };
 
-  let state: "none" | "on" | "ready" | "lost" | "off";
-  if (browsers && browsers.length === 0 && !connected) state = "none";
+  let state: "none" | "on" | "ready" | "lost" | "off" | "outdated";
+  if (problem) state = "outdated";
+  else if (browsers && browsers.length === 0 && !connected) state = "none";
   else if (connected) state = inUse ? "on" : "ready";
   else state = inUse ? "lost" : "off";
 
@@ -108,11 +111,13 @@ export function BrowserSettings() {
     : state === "on" ? t("browser.on")
     : state === "ready" ? t("browser.ready")
     : state === "lost" ? (mine && !mine.running ? t("browser.closed", { name: mine.name }) : t("browser.lost"))
+    : state === "outdated" ? t(`browser.outdated.${problem === "update_finx" ? "finx" : "extension"}`, { name: mine?.name ?? "Chrome" })
     : t("browser.off");
   const badge =
     state === "on" ? <span className="badge ok">{t("browser.badge.on")}</span>
     : state === "ready" ? <span className="badge acc">{t("browser.badge.ready")}</span>
     : state === "lost" ? <span className="badge warn">{t("browser.badge.lost")}</span>
+    : state === "outdated" ? <span className="badge warn">{t("browser.badge.outdated")}</span>
     : <span className="badge">{t("browser.badge.off")}</span>;
 
   return (
@@ -126,7 +131,7 @@ export function BrowserSettings() {
               <div className="fn">
                 {state === "on" || state === "ready" ? name : t("browser.title")} {badge}
               </div>
-              <div className={`fdesc ${state === "lost" ? "warn" : ""}`}>{desc}</div>
+              <div className={`fdesc ${state === "lost" || state === "outdated" ? "warn" : ""}`}>{desc}</div>
             </div>
             {state === "none" && (
               <button className="btn" onClick={() => window.finx?.openExternal("https://www.google.com/chrome/")}>{t("browser.getChrome")}</button>
@@ -139,6 +144,12 @@ export function BrowserSettings() {
             )}
             {state === "on" && (
               <button className="btn" disabled={busy} onClick={() => void act(() => use(false))}>{t("browser.stop")}</button>
+            )}
+            {state === "outdated" && problem === "update_extension" && mine && (
+              <button className="btn" onClick={() => void window.finx?.openSystemBrowser(mine.id, "extensions")}>{t("browser.guide.openExtensions")}</button>
+            )}
+            {state === "outdated" && problem === "update_finx" && (
+              <button className="btn primary" onClick={() => window.finx?.checkForUpdates()}>{t("browser.checkUpdates")}</button>
             )}
             {state === "lost" && (
               <>
@@ -158,6 +169,7 @@ export function BrowserSettings() {
         <Guide
           browsers={browsers}
           connected={!!connected}
+          problem={problem}
           onConnected={() => use(true)}
           refresh={refresh}
           onClose={() => {
@@ -188,17 +200,19 @@ type Step = "pick" | "prepare" | "install" | "wait" | "done";
 
 /** The setup, one step at a time. Only adding the extension needs the user; the rest the app does. */
 /** How long the extension gets to connect before the guide says what to check. */
-const WAIT_SECONDS = 10;
+const WAIT_SECONDS = 5;
 
 function Guide({
   browsers,
   connected,
+  problem,
   onConnected,
   refresh,
   onClose,
 }: {
   browsers: SystemBrowser[];
   connected: boolean;
+  problem: ExtensionProblem | null;
   onConnected: () => Promise<void>;
   refresh: () => void;
   onClose: () => void;
@@ -342,18 +356,20 @@ function Guide({
           <div className="bg-status">
             {error ? (
               <p className="mrow-err">{error}</p>
+            ) : problem ? (
+              <p className="mrow-err">{t(`browser.outdated.${problem === "update_finx" ? "finx" : "extension"}`, { name: browser.name })}</p>
             ) : !browser.running ? (
               <p className="bg-lead">{t("browser.guide.notOpen", { name: browser.name })}</p>
             ) : (
               <p className="bg-lead"><span className="mini-spin" />{t("browser.guide.waiting", { name: browser.name })}{!slow && <span className="bg-count">{t("browser.guide.countdown", { count: left })}</span>}</p>
             )}
-            {!error && browser.running && slow && <p className="set-note">{t("browser.guide.waitHint", { name: browser.name })}</p>}
+            {!error && !problem && browser.running && slow && <p className="set-note">{t("browser.guide.waitHint", { name: browser.name })}</p>}
             <div className="bg-actions">
               <button className="btn" onClick={() => setStep("install")}>{t("browser.guide.back")}</button>
               {!error && !browser.running && (
                 <button className="btn primary" onClick={() => void window.finx?.openSystemBrowser(browser.id).then(refresh)}>{t("browser.open", { name: browser.name })}</button>
               )}
-              {!error && browser.running && slow && (
+              {!error && !problem && browser.running && slow && (
                 <button className="btn" onClick={() => void window.finx?.openSystemBrowser(browser.id, "extensions")}>{t("browser.guide.openExtensions")}</button>
               )}
             </div>

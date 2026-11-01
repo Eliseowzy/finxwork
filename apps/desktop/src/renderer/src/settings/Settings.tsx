@@ -8,6 +8,7 @@ import { agoText } from "../format";
 import { useUpdates } from "../updates";
 import { Icon, Mark } from "../icons";
 import { BrowserSettings } from "./BrowserSettings";
+import { DesktopSettings } from "./DesktopSettings";
 import { ModelConnections } from "./ModelConnections";
 import { useStore } from "../store";
 import "../styles/settings.css";
@@ -16,6 +17,7 @@ const pages = [
   { id: "general", icon: "gear" },
   { id: "models", icon: "cube" },
   { id: "browser", icon: "globe" },
+  { id: "desktop", icon: "laptop" },
   { id: "about", icon: "info" },
 ] as const;
 
@@ -62,6 +64,7 @@ export function SettingsWindow() {
           {page === "general" && <General />}
           {page === "models" && <ModelConnections />}
           {page === "browser" && <BrowserSettings />}
+          {page === "desktop" && <DesktopSettings />}
           {page === "about" && <About />}
         </div>
       </main>

@@ -4,7 +4,8 @@
     "general": "通用",
     "models": "模型",
     "about": "关于",
-    "browser": "浏览器"
+    "browser": "浏览器",
+    "desktop": "桌面控制"
   },
   "appearance": {
     "title": "外观",
@@ -38,7 +39,6 @@
     "default": "默认",
     "reasoning": "支持思考",
     "context": "上下文 {{size}}",
-    "note": "服务商和模型来自 finx 的配置（~/.finx/config.toml 与 models.toml）。这里设置的密钥由 finx 保存在本机钥匙串里，命令行同样可以使用；配置文件或环境变量里的密钥优先。",
     "local": "本机应用",
     "api": "用 API Key",
     "qwen": "千问办公",
@@ -201,7 +201,8 @@
       "on": "使用中",
       "ready": "已连接",
       "lost": "未连接",
-      "off": "未连接"
+      "off": "未连接",
+      "outdated": "需要更新"
     },
     "off": "连接后，智能体会在你自己的浏览器里打开网页，使用你已经登录的账号，不容易被网站拦下。",
     "on": "智能体会在这个浏览器里打开网页，使用你的登录状态。它只能看到自己打开的标签页。",
@@ -209,12 +210,17 @@
     "lost": "扩展没有连上：可能被停用了，或者还没有添加。",
     "closed": "{{name}} 没有打开，打开后会自动连上。",
     "none": "这台 Mac 上没有找到 Chrome、Edge 或 Brave。",
+    "outdated": {
+      "extension": "{{name}} 里的 FinxWork 扩展版本太旧，这个版本的 FinxWork 用不了。它很快会自动更新，也可以在扩展程序页面手动更新。",
+      "finx": "{{name}} 里的 FinxWork 扩展比这个应用新，请更新 FinxWork 后再用。"
+    },
     "connect": "连接",
     "start": "开始使用",
     "stop": "停止使用",
     "reconnect": "重新连接…",
     "open": "打开 {{name}}",
     "getChrome": "下载 Chrome",
+    "checkUpdates": "检查更新",
     "note": "内置浏览器用来查看工作成果，如本地文件、PDF 和网页预览；需要登录账号的网站，交给你自己的浏览器。设置改动对新的对话生效。",
     "guide": {
       "title": "连接你的浏览器",
@@ -278,5 +284,32 @@
         "url": "网址要以 http:// 或 https:// 开头，并用 %s 表示搜索词。"
       }
     }
+  },
+  "desktop": {
+    "enable": "允许 FinxWork 操作桌面应用",
+    "blockedProgram": "已开启，但还没有安装 agent-desktop，桌面工具暂时用不了。",
+    "blockedPermission": "已开启，但 FinxWork 还没有辅助功能权限，桌面工具暂时用不了。",
+    "note": "只在你要求时使用桌面控制。智能体不会自己发送消息、付款或删除内容；这些操作前它会停下来问你。",
+    "apps": "应用权限",
+    "appsIntro": "没设置过的应用，智能体在每个对话里第一次用到时都会先问你。在这里给应用设好权限，以后就直接按设置来，不用每次确认。",
+    "appsEmpty": "还没有设置任何应用。点“添加应用”选一个；或者在智能体询问时勾选“记住”，应用也会出现在这里。",
+    "appLevel": "{{name}} 的权限",
+    "level": {"read": "允许查看", "act": "允许查看和操作", "deny": "禁止使用"},
+    "add": "添加应用…",
+    "forget": "移除",
+    "forgetNamed": "移除 {{name}} 的权限设置",
+    "permissions": "系统权限",
+    "permissionsNote": "在系统设置里打开 FinxWork 的开关后回到这里，状态会自动刷新。权限刚打开时，可能需要重启 FinxWork 才生效。",
+    "accessibility": "辅助功能",
+    "accessibilityDesc": "读取窗口内容并执行点击、输入，桌面控制必须要有。",
+    "screen": "屏幕录制",
+    "screenDesc": "给窗口截图时需要；不打开也能读取和操作窗口。",
+    "granted": "已授权",
+    "notGranted": "未授权",
+    "openSettings": "打开系统设置",
+    "program": "程序",
+    "missing": "未安装",
+    "install": "在终端里运行：",
+    "recheck": "重新检查"
   }
 }

@@ -77,7 +77,8 @@
     "failed": "{{reason}}\n\n可以在访达里把 FinxWork 拖到“应用程序”文件夹。"
   },
   "dialog": {
-    "skillSource": "技能"
+    "skillSource": "技能",
+    "application": "应用程序"
   },
   "browserMenu": {
     "clearConfirm": "清除浏览数据？",
