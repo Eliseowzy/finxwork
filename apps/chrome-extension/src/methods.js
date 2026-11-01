@@ -11,6 +11,7 @@ export const browserMethods = Object.freeze([
   "Target.createTarget",
   "Target.detachFromTarget",
   "Target.getTargetInfo",
+  "Target.getTargets",
   "Target.setDiscoverTargets",
 ]);
 
