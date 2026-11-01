@@ -116,6 +116,12 @@ fn granted(view: &SessionView, origin: &str, act: bool) -> bool {
     }
 }
 
+/// Whether the mode skips the questions that it may skip. Not on the user's own Chrome,
+/// whose sign-ins are real (§8.4): there only grants and configured sites skip them.
+fn bypass(view: &SessionView) -> bool {
+    view.permission_mode == PermissionMode::BypassPermissions && !view.browser.real_logins
+}
+
 fn config_hint(origin: &str, level: &str) -> String {
     format!("To allow it without asking, add \"{origin}\" = \"{level}\" under [browser.sites] in ~/.finx/config.toml.")
 }
@@ -172,7 +178,7 @@ async fn navigate(raw: &str, view: &SessionView) -> Verdict {
         .site_grants
         .iter()
         .any(|g| g.origin == "*" && g.authority == GrantAuthority::Navigate);
-    if granted(view, &origin, false) || any_site || view.permission_mode == PermissionMode::BypassPermissions {
+    if granted(view, &origin, false) || any_site || bypass(view) {
         return Verdict::Allow;
     }
     Verdict::Ask {
@@ -203,7 +209,7 @@ async fn act(origin: &str, action: &str, view: &SessionView) -> Verdict {
         },
         AddressClass::Private | AddressClass::Loopback => Verdict::Allow,
         AddressClass::Public if granted(view, origin, true) => Verdict::Allow,
-        AddressClass::Public if view.permission_mode == PermissionMode::BypassPermissions => Verdict::Allow,
+        AddressClass::Public if bypass(view) => Verdict::Allow,
         AddressClass::Public => Verdict::Ask {
             summary,
             reason: format!("First action on {origin} in this session. {}", config_hint(origin, "act")),
@@ -220,7 +226,7 @@ async fn upload(origin: &str, paths: &[PathBuf], view: &SessionView) -> Verdict 
     if let Verdict::Deny(reason) = acting {
         return Verdict::Deny(reason);
     }
-    if in_workspace && view.permission_mode == PermissionMode::BypassPermissions && matches!(acting, Verdict::Allow) {
+    if in_workspace && bypass(view) && matches!(acting, Verdict::Allow) {
         return Verdict::Allow;
     }
     Verdict::Ask {
@@ -365,6 +371,29 @@ mod tests {
         assert!(matches!(evaluate(&[nav("https://www.evil.test/")], &bypass).await, Gate::Deny(_)));
         assert!(matches!(evaluate(&[nav("javascript:alert(1)")], &bypass).await, Gate::Deny(_)));
         assert!(matches!(evaluate(&[act_on("https://evil.test")], &bypass).await, Gate::Deny(_)));
+    }
+
+    /// On the user's own Chrome the logins are real: bypass skips nothing, while grants,
+    /// configured sites and loopback still do (§8.4).
+    #[tokio::test]
+    async fn the_users_chrome_asks_even_in_bypass() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut real = SitePolicy {
+            real_logins: true,
+            ..SitePolicy::default()
+        };
+        real.sites.insert("https://93.184.215.15".into(), SiteLevel::Act);
+        let bypass = view(PermissionMode::BypassPermissions, vec![], real.clone(), dir.path());
+        assert!(asks(&evaluate(&[nav("https://93.184.215.14/")], &bypass).await).is_some(), "navigation asks");
+        assert_eq!(
+            asks(&evaluate(&[act_on("https://93.184.215.14")], &bypass).await).unwrap(),
+            vec![grant(GrantAuthority::Act, "https://93.184.215.14")],
+            "acting asks, offering the session grant"
+        );
+        assert_eq!(evaluate(&[act_on("https://93.184.215.15")], &bypass).await, Gate::Allow, "configured");
+        assert_eq!(evaluate(&[act_on("http://localhost:5173")], &bypass).await, Gate::Allow, "loopback");
+        let granted = view(PermissionMode::BypassPermissions, vec![grant(GrantAuthority::Act, "https://93.184.215.14")], real, dir.path());
+        assert_eq!(evaluate(&[act_on("https://93.184.215.14")], &granted).await, Gate::Allow, "granted");
     }
 
     #[test]

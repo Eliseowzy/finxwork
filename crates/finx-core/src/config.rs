@@ -63,7 +63,7 @@ pub struct McpFile {
 #[serde(deny_unknown_fields)]
 pub struct BrowserFile {
     pub enabled: Option<bool>,
-    /// `auto`, `embedded` or `managed` (§8.3.3).
+    /// `auto`, `embedded`, `managed` or `extension` (§8.3.3, §8.4).
     pub backend: Option<String>,
     pub executable: Option<PathBuf>,
     pub profile: Option<String>,
@@ -107,9 +107,10 @@ impl BrowserSettings {
             None | Some("auto") => finx_browser::Backend::Auto,
             Some("embedded") => finx_browser::Backend::Embedded,
             Some("managed") => finx_browser::Backend::Managed,
+            Some("extension") => finx_browser::Backend::Extension,
             Some(other) => {
                 return Err(ConfigError::Invalid(format!(
-                    "browser.backend must be auto, embedded or managed, got \"{other}\""
+                    "browser.backend must be auto, embedded, managed or extension, got \"{other}\""
                 )));
             }
         };
@@ -142,6 +143,7 @@ impl BrowserSettings {
                 denied_domains: file.denied_domains.unwrap_or_default(),
                 sites,
                 script_enabled: file.script_enabled.unwrap_or(false),
+                real_logins: backend == finx_browser::Backend::Extension,
             }),
             navigation_timeout: Duration::from_secs(file.navigation_timeout_secs.unwrap_or(30).clamp(1, 600)),
             action_timeout: Duration::from_secs(file.action_timeout_secs.unwrap_or(10).clamp(1, 600)),
@@ -1006,6 +1008,7 @@ mod tests {
         let browser = loaded.config.browser;
         assert_eq!(browser.config.executable, None, "a project never picks the program");
         assert_eq!(browser.config.backend, finx_browser::Backend::Managed, "nor the backend");
+        assert!(!browser.policy.real_logins);
         assert_eq!(browser.policy.allowed_domains, vec!["github.com"], "allow lists intersect");
         assert_eq!(browser.policy.denied_domains, vec!["ads.test", "evil.test"], "deny lists add up");
         assert_eq!(browser.policy.site("https://github.com"), Some(SiteLevel::Deny));

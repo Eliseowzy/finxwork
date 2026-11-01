@@ -14,6 +14,9 @@
       "$ref": "#/definitions/BrowserCdpParams"
     },
     {
+      "$ref": "#/definitions/BrowserHostParams"
+    },
+    {
       "$ref": "#/definitions/CancelRequestParams"
     },
     {
@@ -636,6 +639,35 @@
         "data",
         "stream"
       ],
+      "type": "object"
+    },
+    "BrowserHostKind": {
+      "description": "Which browser a `browser/host` connection provides.",
+      "oneOf": [
+        {
+          "description": "The desktop app's embedded browser (browser-design §8.3).",
+          "enum": [
+            "embedded"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The user's own Chrome, through the finx extension and `finx browser native-host` (§8.4). Only that program may say so: the service checks the peer's executable.",
+          "enum": [
+            "extension"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "BrowserHostParams": {
+      "description": "Parameters of `browser/host`. Older hosts send none: the embedded browser.",
+      "properties": {
+        "kind": {
+          "$ref": "#/definitions/BrowserHostKind",
+          "default": "embedded"
+        }
+      },
       "type": "object"
     },
     "CancelRequestParams": {
@@ -6622,6 +6654,7 @@
       "result": "AuthSetResult"
     },
     "browser/host": {
+      "params": "BrowserHostParams",
       "result": "Empty"
     },
     "config/read": {

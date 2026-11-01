@@ -57,8 +57,8 @@ pub struct NativeProtocol {
     initialized: AtomicBool,
     /// Spawned requests that `$/cancel_request` can abort.
     running: Arc<Mutex<HashMap<Id, AbortHandle>>>,
-    /// Set once the connection called `browser/host`.
-    browser_host: Mutex<Option<Arc<crate::browser_host::HostLink>>>,
+    /// Set once the connection called `browser/host`, with what it hosts.
+    browser_host: Mutex<Option<(Arc<crate::browser_host::HostLink>, finx_protocol::api::BrowserHostKind)>>,
 }
 
 #[derive(Serialize)]
@@ -459,12 +459,31 @@ impl NativeProtocol {
             method::MCP_PROBE_CANCEL => self.call(id, params, conn, |server, p: McpProbeCancelParams| async move { server.mcp_probe_cancel(p).await }),
             method::MCP_LOGIN => self.call(id, params, conn, |server, p: McpLoginParams| async move { server.mcp_login(p).await }),
             method::BROWSER_HOST => {
+                use finx_protocol::api::BrowserHostKind;
+                // No params at all is an older desktop app.
+                let kind = match params {
+                    None => BrowserHostKind::Embedded,
+                    Some(_) => match finx_rpc::params::<finx_protocol::api::BrowserHostParams>(params) {
+                        Ok(p) => p.kind,
+                        Err(err) => return conn.send_error(Some(id), &err),
+                    },
+                };
+                // Only finx's own native messaging host lends the user's Chrome (D-198).
+                if kind == BrowserHostKind::Extension
+                    && let Err(reason) = crate::peer::is_this_program(conn.peer_pid)
+                {
+                    tracing::warn!(%reason, "refused an extension host");
+                    return conn.send_error(Some(id), &RpcError::invalid_request(format!("not finx's extension host: {reason}")));
+                }
                 // A later host replaces the one before it (browser-design §8.3.1).
                 let link = Arc::new(crate::browser_host::HostLink::new(conn.clone()));
-                if let Some(before) = self.browser_host.lock().replace(link.clone()) {
+                if let Some((before, _)) = self.browser_host.lock().replace((link.clone(), kind)) {
                     before.close();
                 }
-                server.0.browser_pool.set_host(Some(link));
+                match kind {
+                    BrowserHostKind::Embedded => server.0.browser_pool.set_host(Some(link)),
+                    BrowserHostKind::Extension => server.0.browser_pool.set_extension(Some(link)),
+                }
                 conn.send(reply(id, Ok::<_, RpcError>(finx_protocol::api::Empty {})));
             }
             method::MCP_LOGOUT => self.call(id, params, conn, |server, p: McpLogoutParams| async move { server.mcp_logout(p).await }),
@@ -601,7 +620,7 @@ impl Protocol for NativeProtocol {
                 {
                     self.cancel(&p.id, conn);
                 } else if method == method::BROWSER_CDP
-                    && let Some(host) = self.browser_host.lock().clone()
+                    && let Some((host, _)) = self.browser_host.lock().clone()
                     && let Ok(p) = finx_rpc::params::<finx_protocol::api::BrowserCdpParams>(params)
                 {
                     host.receive(p.stream, p.data);
@@ -623,10 +642,13 @@ impl Protocol for NativeProtocol {
         for (_, task) in self.running.lock().drain() {
             task.abort();
         }
-        if let Some(host) = self.browser_host.lock().take() {
+        if let Some((host, kind)) = self.browser_host.lock().take() {
             use finx_browser::EmbeddedHost;
             host.close();
-            self.server.0.browser_pool.remove_host(host.id());
+            match kind {
+                finx_protocol::api::BrowserHostKind::Embedded => self.server.0.browser_pool.remove_host(host.id()),
+                finx_protocol::api::BrowserHostKind::Extension => self.server.0.browser_pool.remove_extension(host.id()),
+            }
         }
     }
 }

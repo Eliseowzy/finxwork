@@ -1,0 +1,384 @@
+//! The user's own Chrome (browser-design §8.4): `finx browser native-host`, which Chrome
+//! starts for the FinxWork extension, and `finx browser extension install`, which tells
+//! Chrome where that host is.
+//!
+//! The host relays between two framings. Chrome speaks Native Messaging on stdin and stdout:
+//! a 4-byte length in native byte order, then that much JSON. The finx service speaks the
+//! native protocol on its Unix socket: the host calls `browser/host {kind: "extension"}` and
+//! then carries CDP in `browser/cdp` notifications, as the desktop app does. To the extension
+//! it sends `{stream, data}` (one CDP message of the browser numbered `stream`), or `{stream,
+//! part, more}` pieces of one that is over Chrome's 1 MB limit, and `{status}` when the
+//! service comes or goes; from it, it takes `{stream, data}`.
+
+use anyhow::Context as _;
+use serde_json::Value;
+use serde_json::json;
+use std::path::Path;
+use std::path::PathBuf;
+use std::time::Duration;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
+
+use crate::setup;
+
+/// The Native Messaging host's name, as the manifest and the extension call it.
+pub const HOST_NAME: &str = "com.finxwork.browser";
+/// The FinxWork extension's ID, fixed by the `key` in its manifest.json.
+pub const EXTENSION_ID: &str = "fgaadfmkicjchgjlomjemofnllanlcoo";
+/// Chrome refuses messages from a host larger than this.
+const CHROME_LIMIT: usize = 1 << 20;
+/// Pieces of a larger message stay well under it, JSON escaping included.
+const PIECE: usize = 256 << 10;
+/// Messages from the extension: an accessibility tree or a screenshot can be large.
+const MAX_INBOUND: usize = 64 << 20;
+/// How often the host looks for the service while it is not running.
+const RETRY: Duration = Duration::from_secs(2);
+
+// ---- The host ----
+
+/// `finx browser native-host`: runs until Chrome closes stdin. Nothing but messages may go
+/// to stdout.
+pub async fn native_host() -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let _guard = setup::init_logging(&home);
+    let socket = home.root().join("run").join("finx.sock");
+    tracing::info!(socket = %socket.display(), "extension host started");
+
+    let (to_chrome, mut outbox) = mpsc::unbounded_channel::<Value>();
+    let writer = tokio::spawn(async move {
+        let mut stdout = tokio::io::stdout();
+        while let Some(message) = outbox.recv().await {
+            for frame in frames(&message) {
+                if stdout.write_all(&frame).await.is_err() || stdout.flush().await.is_err() {
+                    return;
+                }
+            }
+        }
+    });
+
+    // Messages from the extension go to the service connection of the moment.
+    let (from_chrome, inbox) = mpsc::unbounded_channel::<Value>();
+    let reader = tokio::spawn(async move {
+        let mut stdin = tokio::io::stdin();
+        while let Ok(Some(message)) = read_message(&mut stdin).await {
+            if from_chrome.send(message).is_err() {
+                break;
+            }
+        }
+    });
+
+    let relay = tokio::spawn(relay(socket, to_chrome, inbox));
+    // Chrome closed the port (the extension stopped, or Chrome quit).
+    let _ = reader.await;
+    relay.abort();
+    writer.abort();
+    tracing::info!("extension host stopped");
+    Ok(0)
+}
+
+/// Connects to the service again and again, relaying while connected.
+async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<Value>, mut inbox: mpsc::UnboundedReceiver<Value>) {
+    let mut said = String::new();
+    loop {
+        let status = match serve_once(&socket, &to_chrome, &mut inbox).await {
+            Ok(()) => "FinxWork stopped".to_string(),
+            Err(err) => format!("{err:#}"),
+        };
+        if status != said {
+            tracing::info!(%status, "extension host waiting");
+            let _ = to_chrome.send(json!({"status": "waiting", "reason": status}));
+            said = status;
+        }
+        // While waiting, the extension's messages belong to no browser.
+        let wait = tokio::time::sleep(RETRY);
+        tokio::pin!(wait);
+        loop {
+            tokio::select! {
+                _ = &mut wait => break,
+                message = inbox.recv() => if message.is_none() { return },
+            }
+        }
+    }
+}
+
+/// One connection to the service, until it ends.
+async fn serve_once(
+    socket: &Path,
+    to_chrome: &mpsc::UnboundedSender<Value>,
+    inbox: &mut mpsc::UnboundedReceiver<Value>,
+) -> anyhow::Result<()> {
+    let stream = tokio::net::UnixStream::connect(socket)
+        .await
+        .map_err(|_| anyhow::anyhow!("FinxWork is not running"))?;
+    let (read, mut write) = stream.into_split();
+    let mut lines = tokio::io::BufReader::new(read).lines();
+    let line = |value: Value| format!("{value}\n").into_bytes();
+    write
+        .write_all(&line(json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocol_version": finx_protocol::PROTOCOL_VERSION,
+            "client_info": {"name": "finx-browser-extension", "version": env!("CARGO_PKG_VERSION")},
+        }})))
+        .await?;
+    answer(&mut lines, 1).await.context("the FinxWork service did not start a session with the extension")?;
+    write
+        .write_all(&line(json!({"jsonrpc": "2.0", "id": 2, "method": "browser/host", "params": {"kind": "extension"}})))
+        .await?;
+    answer(&mut lines, 2).await.context("the FinxWork service refused the extension")?;
+    tracing::info!("extension host connected");
+    let _ = to_chrome.send(json!({"status": "connected"}));
+    loop {
+        tokio::select! {
+            next = lines.next_line() => {
+                let Some(text) = next? else { return Ok(()) };
+                let Ok(message) = serde_json::from_str::<Value>(&text) else { continue };
+                if message["method"] == "browser/cdp" {
+                    let _ = to_chrome.send(message["params"].clone());
+                }
+            }
+            message = inbox.recv() => {
+                let Some(message) = message else { return Ok(()) };
+                if message["stream"].is_u64() && message["data"].is_string() {
+                    write.write_all(&line(json!({"jsonrpc": "2.0", "method": "browser/cdp", "params": message}))).await?;
+                }
+            }
+        }
+    }
+}
+
+/// Waits for the response to request `id`; an error response is an error.
+async fn answer<R: tokio::io::AsyncBufRead + Unpin>(lines: &mut tokio::io::Lines<R>, id: u64) -> anyhow::Result<Value> {
+    while let Some(text) = lines.next_line().await? {
+        let Ok(message) = serde_json::from_str::<Value>(&text) else { continue };
+        if message["id"] != json!(id) {
+            continue;
+        }
+        if let Some(error) = message.get("error") {
+            anyhow::bail!("{}", error["message"].as_str().unwrap_or("error"));
+        }
+        return Ok(message["result"].clone());
+    }
+    anyhow::bail!("the connection closed")
+}
+
+/// The frames for one message: one, or pieces when it is over Chrome's limit.
+fn frames(message: &Value) -> Vec<Vec<u8>> {
+    let whole = message.to_string();
+    if whole.len() <= CHROME_LIMIT - 4 {
+        return vec![frame(whole.as_bytes())];
+    }
+    let (Some(stream), Some(data)) = (message["stream"].as_u64(), message["data"].as_str()) else {
+        tracing::warn!(bytes = whole.len(), "dropped a message too large for Chrome");
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut rest = data;
+    while !rest.is_empty() {
+        let mut end = rest.len().min(PIECE);
+        while !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        let (part, tail) = rest.split_at(end);
+        rest = tail;
+        out.push(frame(json!({"stream": stream, "part": part, "more": !rest.is_empty()}).to_string().as_bytes()));
+    }
+    out
+}
+
+fn frame(json: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(json.len() + 4);
+    out.extend_from_slice(&(json.len() as u32).to_ne_bytes());
+    out.extend_from_slice(json);
+    out
+}
+
+/// One message from Chrome; `None` at the end of input.
+async fn read_message<R: tokio::io::AsyncRead + Unpin>(input: &mut R) -> anyhow::Result<Option<Value>> {
+    let mut length = [0u8; 4];
+    match input.read_exact(&mut length).await {
+        Ok(_) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(err) => return Err(err.into()),
+    }
+    let length = u32::from_ne_bytes(length) as usize;
+    anyhow::ensure!(length <= MAX_INBOUND, "a message of {length} bytes is too large");
+    let mut body = vec![0u8; length];
+    input.read_exact(&mut body).await?;
+    Ok(Some(serde_json::from_slice(&body)?))
+}
+
+// ---- Installing ----
+
+/// Where each Chromium-family browser looks for the user's Native Messaging hosts.
+fn browser_dirs() -> Vec<(&'static str, PathBuf)> {
+    let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+        return Vec::new();
+    };
+    let list: &[(&str, &str)] = if cfg!(target_os = "macos") {
+        &[
+            ("Google Chrome", "Library/Application Support/Google/Chrome"),
+            ("Google Chrome Beta", "Library/Application Support/Google/Chrome Beta"),
+            ("Google Chrome Canary", "Library/Application Support/Google/Chrome Canary"),
+            ("Chrome for Testing", "Library/Application Support/Google/Chrome for Testing"),
+            ("Chromium", "Library/Application Support/Chromium"),
+            ("Microsoft Edge", "Library/Application Support/Microsoft Edge"),
+            ("Brave", "Library/Application Support/BraveSoftware/Brave-Browser"),
+        ]
+    } else {
+        &[
+            ("Google Chrome", ".config/google-chrome"),
+            ("Google Chrome Beta", ".config/google-chrome-beta"),
+            ("Chromium", ".config/chromium"),
+            ("Microsoft Edge", ".config/microsoft-edge"),
+            ("Brave", ".config/BraveSoftware/Brave-Browser"),
+        ]
+    };
+    list.iter().map(|(name, dir)| (*name, home.join(dir))).collect()
+}
+
+fn manifest_path(user_data_dir: &Path) -> PathBuf {
+    user_data_dir.join("NativeMessagingHosts").join(format!("{HOST_NAME}.json"))
+}
+
+/// The script Chrome runs: Chrome passes no environment of ours and allows no arguments in
+/// the manifest, so the script holds both.
+fn launcher_script(exe: &Path, home: &Path) -> String {
+    let quote = |path: &Path| format!("'{}'", path.display().to_string().replace('\'', r"'\''"));
+    format!(
+        "#!/bin/sh\n# Written by `finx browser extension install`: Chrome runs this for the FinxWork extension.\n\
+         FINX_HOME={} exec {} browser native-host \"$@\"\n",
+        quote(home),
+        quote(exe)
+    )
+}
+
+/// `finx browser extension install`: the launcher script, and a manifest for every
+/// Chromium-family browser on this machine (or for one user data directory).
+pub fn install(extension_ids: &[String], user_data_dir: Option<PathBuf>) -> anyhow::Result<u8> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let home = setup::home()?;
+    let exe = std::env::current_exe().context("cannot find the finx program")?;
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let launcher = home.browser_dir().join("native-host");
+    std::fs::create_dir_all(home.browser_dir())?;
+    std::fs::write(&launcher, launcher_script(&exe, home.root()))?;
+    std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
+
+    let mut ids: Vec<&str> = vec![EXTENSION_ID];
+    ids.extend(extension_ids.iter().map(String::as_str));
+    for id in &ids {
+        anyhow::ensure!(
+            id.len() == 32 && id.bytes().all(|b| (b'a'..=b'p').contains(&b)),
+            "\"{id}\" is not an extension ID (32 letters a to p)"
+        );
+    }
+    let manifest = json!({
+        "name": HOST_NAME,
+        "description": "FinxWork: lets the agent use the tabs it opens in this browser",
+        "path": launcher,
+        "type": "stdio",
+        "allowed_origins": ids.iter().map(|id| format!("chrome-extension://{id}/")).collect::<Vec<_>>(),
+    });
+    let targets: Vec<(String, PathBuf)> = match user_data_dir {
+        Some(dir) => vec![(dir.display().to_string(), dir)],
+        // Only browsers that are installed: their directory exists.
+        None => browser_dirs().into_iter().filter(|(_, dir)| dir.is_dir()).map(|(n, d)| (n.to_string(), d)).collect(),
+    };
+    if targets.is_empty() {
+        anyhow::bail!("no Chrome, Chromium, Edge or Brave found for this user; start one once, then run this again");
+    }
+    for (name, dir) in &targets {
+        let path = manifest_path(dir);
+        std::fs::create_dir_all(path.parent().unwrap_or(dir))?;
+        std::fs::write(&path, serde_json::to_string_pretty(&manifest)? + "\n")?;
+        println!("{name}: {}", path.display());
+    }
+    println!("host: {}", launcher.display());
+    println!(
+        "Next: load the FinxWork extension in Chrome, and set browser.backend = \"extension\" under [browser] in {}.",
+        home.root().join("config.toml").display()
+    );
+    Ok(0)
+}
+
+/// `finx browser extension uninstall`: removes the manifests and the script.
+pub fn uninstall() -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    for (name, dir) in browser_dirs() {
+        let path = manifest_path(&dir);
+        if path.exists() {
+            std::fs::remove_file(&path)?;
+            println!("removed for {name}: {}", path.display());
+        }
+    }
+    let launcher = home.browser_dir().join("native-host");
+    if launcher.exists() {
+        std::fs::remove_file(&launcher)?;
+        println!("removed {}", launcher.display());
+    }
+    Ok(0)
+}
+
+/// `finx browser extension status`: where the host is installed.
+pub fn status() -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let launcher = home.browser_dir().join("native-host");
+    let mut any = false;
+    for (name, dir) in browser_dirs() {
+        let path = manifest_path(&dir);
+        if path.exists() {
+            println!("{name}: installed ({})", path.display());
+            any = true;
+        }
+    }
+    if !any {
+        println!("not installed; run `finx browser extension install`");
+    } else if !launcher.exists() {
+        println!("the host script {} is missing; run `finx browser extension install` again", launcher.display());
+    }
+    Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn large_messages_go_in_pieces_under_chromes_limit() {
+        let small = json!({"stream": 1, "data": "{\"id\":1}"});
+        assert_eq!(frames(&small).len(), 1);
+        let data = "é\"".repeat(400_000); // Escaping makes the JSON larger than the text.
+        let big = json!({"stream": 3, "data": data});
+        let pieces = frames(&big);
+        assert!(pieces.len() > 1);
+        let mut joined = String::new();
+        for (i, frame) in pieces.iter().enumerate() {
+            let length = u32::from_ne_bytes(frame[..4].try_into().unwrap()) as usize;
+            assert_eq!(length, frame.len() - 4);
+            assert!(length < CHROME_LIMIT, "piece {i} is {length} bytes");
+            let piece: Value = serde_json::from_slice(&frame[4..]).unwrap();
+            assert_eq!(piece["stream"], 3);
+            assert_eq!(piece["more"], i + 1 < pieces.len());
+            joined.push_str(piece["part"].as_str().unwrap());
+        }
+        assert_eq!(joined, data);
+    }
+
+    #[tokio::test]
+    async fn messages_from_chrome_are_read_in_order() {
+        let mut input = Vec::new();
+        input.extend(frame(b"{\"stream\":1,\"data\":\"a\"}"));
+        input.extend(frame(b"{\"stream\":2,\"data\":\"b\"}"));
+        let mut reader = &input[..];
+        assert_eq!(read_message(&mut reader).await.unwrap().unwrap()["data"], "a");
+        assert_eq!(read_message(&mut reader).await.unwrap().unwrap()["stream"], 2);
+        assert!(read_message(&mut reader).await.unwrap().is_none());
+    }
+
+    #[test]
+    fn the_launcher_quotes_its_paths() {
+        let script = launcher_script(Path::new("/Apps/Finx Work/finx"), Path::new("/Users/o'brien/.finx"));
+        assert!(script.contains("FINX_HOME='/Users/o'\\''brien/.finx' exec '/Apps/Finx Work/finx' browser native-host \"$@\""), "{script}");
+    }
+}

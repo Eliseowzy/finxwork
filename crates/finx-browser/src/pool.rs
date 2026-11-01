@@ -44,6 +44,8 @@ pub enum Backend {
     Auto,
     Embedded,
     Managed,
+    /// The user's own Chrome through the finx extension (§8.4); only when configured.
+    Extension,
 }
 
 /// The `[browser]` settings that decide which browser a session gets.
@@ -69,8 +71,9 @@ impl Default for BrowserConfig {
 /// Both ends of a CDP byte stream.
 pub type Stream = (Box<dyn AsyncRead + Send + Unpin>, Box<dyn AsyncWrite + Send + Unpin>);
 
-/// A desktop app that shows embedded browsers (§8.3.1). Each `connect` is a new browser: a
-/// CDP stream to the app, which acts as the browser end.
+/// A desktop app that shows embedded browsers (§8.3.1), or the finx extension in the user's
+/// Chrome (§8.4). Each `connect` is a new browser: a CDP stream to the host, which acts as
+/// the browser end.
 pub trait EmbeddedHost: Send + Sync + 'static {
     /// Tells hosts apart: a host that replaced another gets its own browser.
     fn id(&self) -> u64;
@@ -80,6 +83,14 @@ pub trait EmbeddedHost: Send + Sync + 'static {
 const NO_HOST: &str = "No desktop app is connected to show the embedded browser. Open FinxWork, \
     or set browser.backend = \"managed\" in ~/.finx/config.toml to use a separate browser window.";
 
+/// Said in the first result of every session on the user's Chrome.
+const EXTENSION_NOTE: &str = "This browser is the user's own Chrome: the tabs you open appear in their window, \
+    in a tab group named FinxWork, and their sign-ins are real. Act as carefully as with their accounts.";
+
+const NO_EXTENSION: &str = "The FinxWork extension is not connected, so the user's Chrome cannot be used. \
+    Ask the user to open Chrome with the FinxWork extension (after running `finx browser extension install` once), \
+    or to set browser.backend = \"managed\" in ~/.finx/config.toml.";
+
 pub struct BrowserPool {
     /// `~/.finx/browser`.
     root: PathBuf,
@@ -88,6 +99,8 @@ pub struct BrowserPool {
     launcher: Arc<dyn Launcher>,
     /// The desktop app connected to this process, if any.
     host: Mutex<Option<Arc<dyn EmbeddedHost>>>,
+    /// The finx extension in the user's Chrome, if connected.
+    extension: Mutex<Option<Arc<dyn EmbeddedHost>>>,
     inner: Arc<PoolInner>,
 }
 
@@ -113,6 +126,7 @@ impl BrowserPool {
             auto_headless: !auto_headless_off,
             launcher,
             host: Mutex::new(None),
+            extension: Mutex::new(None),
             inner: Arc::default(),
         }
     }
@@ -135,17 +149,42 @@ impl BrowserPool {
         self.host.lock().is_some()
     }
 
+    /// The finx extension that lends the user's Chrome from now on (§8.4); `None` when it
+    /// left. Like the desktop app, a later one replaces the one before.
+    pub fn set_extension(&self, host: Option<Arc<dyn EmbeddedHost>>) {
+        *self.extension.lock() = host;
+    }
+
+    /// Clears the extension only if it is still `id`.
+    pub fn remove_extension(&self, id: u64) {
+        let mut host = self.extension.lock();
+        if host.as_ref().is_some_and(|h| h.id() == id) {
+            *host = None;
+        }
+    }
+
+    pub fn has_extension(&self) -> bool {
+        self.extension.lock().is_some()
+    }
+
     /// The browser for `config`: the embedded one or the managed one for `config.profile`,
     /// started when there is none.
     pub async fn acquire(&self, config: &BrowserConfig) -> Result<Arc<Browser>, BrowserError> {
         let host = match config.backend {
             Backend::Managed => None,
             Backend::Auto | Backend::Embedded => self.host.lock().clone(),
+            Backend::Extension => self.extension.lock().clone(),
         };
-        if config.backend == Backend::Embedded && host.is_none() {
-            return Err(BrowserError::Launch(NO_HOST.into()));
+        if host.is_none() {
+            match config.backend {
+                Backend::Embedded => return Err(BrowserError::Launch(NO_HOST.into())),
+                Backend::Extension => return Err(BrowserError::Launch(NO_EXTENSION.into())),
+                Backend::Auto | Backend::Managed => {}
+            }
         }
+        let extension = config.backend == Backend::Extension;
         let key = match &host {
+            Some(host) if extension => format!("extension#{}", host.id()),
             Some(host) => format!("embedded#{}", host.id()),
             None => config.profile.clone(),
         };
@@ -165,15 +204,16 @@ impl BrowserPool {
             let _ = tokio::time::timeout(CLOSE_WAIT, done.wait_for(|done| *done)).await;
         }
         let browser = match host {
-            Some(host) => self.embedded(host.as_ref(), &key).await?,
+            Some(host) => self.hosted(host.as_ref(), &key, extension).await?,
             None => self.launch(config).await?,
         };
         self.inner.browsers.lock().insert(key, Arc::downgrade(&browser));
         Ok(browser)
     }
 
-    /// A browser in the desktop app: no process or profile of ours, only the stream.
-    async fn embedded(&self, host: &dyn EmbeddedHost, key: &str) -> Result<Arc<Browser>, BrowserError> {
+    /// A browser in the desktop app or in the user's Chrome: no process or profile of ours,
+    /// only the stream.
+    async fn hosted(&self, host: &dyn EmbeddedHost, key: &str, extension: bool) -> Result<Arc<Browser>, BrowserError> {
         let (reader, writer) = host.connect()?;
         let (conn, events) = Conn::start(reader, writer, crate::launch::COMMAND_TIMEOUT);
         let downloads = self.root.join("downloads").join(format!("{}-{}", std::process::id(), key.replace('#', "-")));
@@ -183,8 +223,8 @@ impl BrowserPool {
         Ok(Arc::new(Browser {
             conn,
             router,
-            note: None,
-            embedded: true,
+            note: extension.then(|| EXTENSION_NOTE.to_string()),
+            kind: if extension { BrowserKind::Extension } else { BrowserKind::Embedded },
             close: Mutex::new(Some(Closing {
                 child: None,
                 lock: None,
@@ -253,7 +293,7 @@ impl BrowserPool {
             conn: launched.conn,
             router,
             note,
-            embedded: false,
+            kind: BrowserKind::Managed,
             close: Mutex::new(Some(Closing {
                 child: launched.child,
                 lock,
@@ -287,14 +327,24 @@ pub fn has_display() -> bool {
     std::env::var_os("DISPLAY").is_some() || std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
+/// Where a running browser is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BrowserKind {
+    /// Started by finx, with a profile of its own.
+    Managed,
+    /// In the desktop app's window.
+    Embedded,
+    /// The user's own Chrome, through the finx extension.
+    Extension,
+}
+
 /// A running browser shared by the sessions that use its profile.
 pub struct Browser {
     pub(crate) conn: Arc<Conn>,
     pub(crate) router: Arc<Router>,
     /// Said in the first result of every session: the profile was taken.
     pub(crate) note: Option<String>,
-    /// The desktop app's embedded browser rather than a managed one.
-    embedded: bool,
+    kind: BrowserKind,
     close: Mutex<Option<Closing>>,
     runtime: tokio::runtime::Handle,
 }
@@ -321,7 +371,11 @@ impl Browser {
     }
 
     pub fn is_embedded(&self) -> bool {
-        self.embedded
+        self.kind == BrowserKind::Embedded
+    }
+
+    pub fn kind(&self) -> BrowserKind {
+        self.kind
     }
 }
 

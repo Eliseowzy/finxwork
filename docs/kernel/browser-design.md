@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.4 |
-| 日期 | 2026-10-31 |
-| 状态 | 一期、二期已实现（feature/browser-control） |
+| 版本 | v0.5 |
+| 日期 | 2026-11-01 |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -33,7 +33,7 @@
 - **分期**：
   - 一期：托管浏览器 + 7 个工具 + 权限与审批改造，约 3.5 周；
   - 二期：桌面内嵌浏览器 + 批量执行；
-  - 三期：Chrome 扩展。
+  - 三期：Chrome 扩展 + Native Messaging 宿主（§8.4），只在配置 `browser.backend = "extension"` 时使用。
 
 ## 目录
 
@@ -153,7 +153,7 @@
 | **托管浏览器（一期）** | 用本机已安装的 Chrome / Edge / Chromium，用户目录放在 `~/.finx/browser/profiles/<name>`，与日常浏览器隔离；登录状态在这个目录里保留 | 选用 |
 | 下载专用的 Chromium | 版本可控，但安装包大 100MB 以上 | 不自动下载；二期提供显式的 `finx browser install`（D-194） |
 | 桌面内嵌（二期） | 用户能看着操作；只在桌面端可用 | 二期 |
-| 用户 Chrome + 扩展（三期） | 能使用用户的登录状态；需要发布扩展和 Native Messaging 宿主 | 三期 |
+| 用户 Chrome + 扩展（三期） | 能使用用户的登录状态；需要扩展和 Native Messaging 宿主 | 三期，显式配置才用（D-215） |
 
 ### 3.4 怎么连托管浏览器（D-163）
 
@@ -185,7 +185,7 @@ Windows 也用 pipe（D-195）：
                  └─ Backend（trait）
                      ├─ Managed：pipe（mac/linux）/ 本机端口（Windows）  一期
                      ├─ Embedded：经内核与桌面端的连接转发               二期
-                     └─ Extension：Native Messaging 宿主                 三期
+                     └─ Extension：扩展 ⇄ finx browser native-host ⇄ 内核 socket   三期
 ```
 
 ### 4.2 crate 划分
@@ -665,21 +665,92 @@ pub trait Backend: Send + Sync {
 
 ### 8.4 用户自己的 Chrome（三期）
 
-做法：
+用户自己的 Chrome 有真实的登录状态。智能体在里面开标签页、读页面、点击，用户在自己的窗口里看得到。
 
-- 扩展申请 `debugger` 和 `nativeMessaging` 权限，只附加智能体打开或者用户交给它的标签页，并把这些标签页放进一个标签组；
-- CDP 命令和事件通过 Native Messaging（4 字节长度前缀 + JSON）在扩展与一个小的宿主程序之间传递，宿主再连到内核；
-- 用户关掉 Chrome 顶部"正在调试此浏览器"的提示条，调试器就会断开，下一条命令重新附加；
-- 宿主到内核的连接复用内核 socket 现有的保护（D-198）：
-  - 目录权限 0700、socket 文件权限 0600，并用 `peer_cred` 识别对端，只有同一个用户的进程能连上；
-  - Native Messaging 清单的 `allowed_origins` 只写 finx 扩展的 ID，别的扩展拉不起宿主；
-  - 宿主连上后声明身份，内核根据对端 pid 核对它的可执行文件是 finx 安装目录里的宿主；
-  - Windows 用命名管道，ACL 只开放给当前用户；
-  - 不做代码签名校验：同一个用户的恶意进程本来就能直接读浏览器的用户目录，签名挡不住这一层。
+#### 8.4.1 组成与连接（D-213）
 
-这一期用的是用户的真实账号，§7 的闸全部照用，并且默认对所有 origin 的 `Act` 都询问，不预设"回环地址免询问"以外的任何放行。
+```
+扩展（MV3 service worker）
+  ⇅ Native Messaging：4 字节长度（本机字节序）+ JSON
+finx browser native-host（Chrome 拉起的同一个 finx 程序）
+  ⇅ 原生协议：browser/host {kind:"extension"}，之后 browser/cdp
+finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
+```
 
-要发布扩展、安装 Native Messaging 清单，工作量和维护成本都不小，等前两期用下来再定。
+- **扩展**在 `apps/chrome-extension`：MV3，权限 `debugger`、`nativeMessaging`、`tabs`、`tabGroups`、`alarms`。不需要构建，"加载已解压的扩展程序"直接装入。`manifest.json` 里的 `key` 把扩展 ID 固定为 `fgaadfmkicjchgjlomjemofnllanlcoo`，Native Messaging 清单按这个 ID 放行。
+- **宿主**就是 `finx browser native-host`（隐藏的子命令），不另做二进制。Chrome 的清单不能带参数，也不传环境变量，所以 `finx browser extension install` 写一个启动脚本 `~/.finx/browser/native-host`，内容是 `FINX_HOME=<home> exec <finx> browser native-host "$@"`，清单指向它。
+- **服务端**与内嵌浏览器共用 §8.3.1 的做法：把这条连接接到内存字节流上，finx-browser 在上面照常建 `Conn`。池里另有一个扩展的位置（与桌面端的宿主互不替换），`BrowserKind::Extension` 标明来源。
+- **帧**：
+  - 扩展 → 宿主：`{stream, data}`，一条 CDP 响应或事件；
+  - 宿主 → 扩展：`{stream, data}`。超过 Chrome 1 MB 上限的拆成 `{stream, part, more}`，扩展拼回去；
+  - 宿主 → 扩展：服务来去时发 `{status: "connected" | "waiting", reason}`，扩展据此放开旧浏览器，并在工具栏图标上显示状态。
+  - `stream` 的含义与 §8.3.1 相同：新的编号就是新的浏览器。
+- **生命周期**：
+  - 扩展启动时就 `connectNative`，宿主随之启动；
+  - 找不到服务时，宿主每 2 秒重试，不退出。端口一直开着，service worker 也就不会被回收；
+  - 扩展另设每分钟一次的 alarm，宿主没了就重连；
+  - Chrome 关掉端口（扩展停用、Chrome 退出）时，宿主退出。
+- **只连 socket 服务**：`finx` 交互界面和 `finx exec` 在自己的进程里运行内核，不开 socket，用不了这个后端。这时报"扩展没有连上"。
+
+#### 8.4.2 扩展里的"浏览器"（D-214）
+
+`chrome.debugger` 与 `webContents.debugger` 一样只附加一个标签页，所以沿用 D-210：扩展自己实现 finx-browser 用到的浏览器级方法，页面级命令按白名单转给 `chrome.debugger.sendCommand`。白名单 `src/methods.js` 也由 `CDP_METHODS` 生成，测试保证一致（D-192）。
+
+| 方法 | 扩展的做法 |
+|---|---|
+| `Target.createTarget` | 在 FinxWork 自己的窗口里开标签页：第一次需要时新建窗口，不抢焦点。按 `finxSession` 放进名为 FinxWork 的标签组 |
+| `Target.attachToTarget` | `chrome.debugger.attach` 这个标签页，分配会话 id |
+| `Target.closeTarget` / `activateTarget` / `getTargetInfo` | 关闭标签页 / 在它的窗口里切到它 / 返回 URL 和标题 |
+| `Browser.setDownloadBehavior` | 不处理：下载按用户 Chrome 自己的设置保存，内核不知道 |
+| `Target.getTargets` | 返回空：这一期不提供把用户已有的标签页交给智能体 |
+| `Browser.close` | 放开所有标签页（detach），不关 |
+| 带会话 id 的其他方法 | 白名单内的转给标签页；子 target（跨源 iframe）带着自己的会话 id 转发 |
+
+- **只看得到智能体的标签页**：
+  - 只附加智能体开的标签页，以及由它们打开的标签页（`openerTabId`，按 D-205 归 opener 的会话）；
+  - 用户自己的标签页从不附加，事件也不转发。
+- **智能体用独立窗口，不用用户的当前窗口**：
+  - 不会占用用户正在看的标签页；
+  - 智能体的标签页在自己的窗口里是活动标签页，不会像后台标签页那样被节流，截图和渲染照常。
+- **用户收回控制**：
+  - 用户关掉 Chrome 顶部"正在调试此浏览器"的提示条，调试器断开（`canceled_by_user`）。标签页留着，但不再归智能体；
+  - 内核按"标签页已关闭"处理，结果里写明是用户收回的。
+  - 这里不按原草案"下一条命令重新附加"：重新附加会丢掉内核已经开启的域和自动附加，后续结果不可靠；而且用户关提示条，就是想收回控制。
+- **内核断开**（服务退出，或者换了新的 stream）：放开所有标签页，不关，用户可能还在看。
+
+#### 8.4.3 选用与安全（D-215、D-216）
+
+- **只在显式配置时使用**：`browser.backend = "extension"`。`auto` 不会选它：用真实账号必须是用户自己的决定。项目配置不能设 `backend`（D-178）。没有连上时报错，说明怎么安装扩展，或者改用 `managed`。
+- **bypass 也询问**：
+  - 配置为 `extension` 时，`SitePolicy.real_logins` 为真，`bypass-permissions` 不再跳过公网站点的 `Navigate` 和 `Act` 询问，也不再跳过工作区内文件的 `Upload` 询问；
+  - 会话授权、永久允许（`browser.sites`）和回环地址照常放行，§7 的其他闸不变。
+- **告诉模型**：每个会话的第一次结果里写明"这是用户自己的 Chrome，标签页在 FinxWork 标签组里，登录状态是真的"。
+- **宿主身份**（D-198 的落地）：
+  - socket 本来就只接受同一个用户的进程（0700/0600、`peer_cred` 的 uid）；
+  - 服务另从 `peer_cred` 取对端 pid，用 macOS 的 `proc_pidpath` 或 Linux 的 `/proc/<pid>/exe` 找到它的程序，要求与服务自己的可执行文件是同一个文件。宿主就是 finx 本身，所以这条检查成立。不满足时，`browser/host {kind: "extension"}` 返回错误；
+  - Native Messaging 清单的 `allowed_origins` 只写 finx 扩展的 ID，别的扩展拉不起宿主。`--extension-id` 可以追加 ID，例如商店版的；
+  - 不做代码签名校验（理由同 D-198）。
+- **协议**：`browser/host` 新增可选参数 `{kind: "embedded" | "extension"}`，缺省为 `embedded`，旧的桌面端不用改。
+
+#### 8.4.4 安装与使用
+
+```sh
+finx browser extension install    # 为本机的 Chrome、Chromium、Edge、Brave 写清单和启动脚本
+finx browser extension status     # 看装在哪里
+finx browser extension uninstall
+```
+
+1. 运行 `finx browser extension install`；
+2. Chrome → 扩展程序 → 开发者模式 → 加载已解压的扩展程序 → 选 `apps/chrome-extension`；
+3. 在 `~/.finx/config.toml` 里设 `[browser] enabled = true`、`backend = "extension"`；
+4. 打开 FinxWork。扩展图标没有角标就是连上了，带 `!` 时，鼠标悬停可以看到原因。
+
+#### 8.4.5 以后再做
+
+- 把用户已有的标签页交给某个会话（扩展弹窗里选会话，对应 `Target.getTargets`）；
+- 下载放进会话目录；
+- 发布到 Chrome 应用商店：商店会分配另一个 ID，用 `--extension-id` 加进清单；
+- Windows：命名管道，清单写在注册表里。
 
 ## 9. 对外协议与界面
 
@@ -705,7 +776,7 @@ pub trait Backend: Send + Sync {
 ```toml
 [browser]
 enabled = false              # 打开后加入 7 个浏览器工具
-backend = "auto"             # auto | embedded | managed；auto：桌面端连着时用内嵌浏览器（§8.3.3）
+backend = "auto"             # auto | embedded | managed | extension；auto：桌面端连着时用内嵌浏览器（§8.3.3）；extension：用户自己的 Chrome（§8.4）
 executable = ""              # 留空则自动查找
 profile = "default"          # 用户目录 ~/.finx/browser/profiles/<profile>
 headless = "auto"            # auto | true | false；auto：finx exec 和没有显示器时无界面
@@ -774,6 +845,8 @@ action_timeout_secs = 10
 | 随意浏览 | 选"本会话允许打开任何网站"后导航不再询问，但第一次在新站点上的操作仍然询问，私有地址仍然询问 |
 | 审批 | manual 模式下第一次操作某个 origin 时发出带 `proposed_grants` 的 `approval_requested`；选"本会话允许"后不再询问；之后子智能体也能使用这条授权 |
 | `finx exec` | 没有配置 `browser.sites` 时访问外部站点得到说明配置方法的结果；配置以后能完成任务 |
+| 用户自己的 Chrome（三期） | 真实 Chrome 用 `Extensions.loadUnpacked` 装入扩展，ID 与 key 一致；扩展经 `install` 写的清单拉起真实的 `finx browser native-host`，宿主通过可执行文件核对连上 `finx serve`；会话打开页面、点击、看到结果，结果里说明这是用户的 Chrome；用户自己的标签页不出现在结果里；会话关闭后只关掉智能体的标签页（`crates/finx-cli/tests/e2e_browser_extension.rs`） |
+| 冒充扩展宿主 | 不是 finx 程序的连接声明 `kind: "extension"` 被拒，池里没有扩展 |
 
 CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收时显示窗口。
 
@@ -792,7 +865,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 |---|---|---|
 | 一期 | finx-browser（CDP 客户端、托管后端、`BrowserPool` 池化、快照与正文模式、输入、再核对、私有网络检查）；7 个工具；`Tool::authorities()` 与审批改造、`proposed_grants`、`site_grants`；`SessionState` 改造；配置（含 `browser.sites`）；桌面端显示截图和站点授权按钮；单元测试和端到端测试 | 约 3.5 周 |
 | 二期 | 桌面内嵌浏览器（含方法白名单）；`browser_batch`、`browser_eval`；永久允许写进配置；`finx browser install` | 约 2.5 周 |
-| 三期 | Chrome 扩展 + Native Messaging 宿主 | 待定 |
+| 三期 | Chrome 扩展 + Native Messaging 宿主（§8.4）：`browser.backend = "extension"`、`finx browser native-host`、`finx browser extension install`、宿主身份核对、bypass 下照常询问 | 已完成 |
 
 一期内部的顺序：
 1. CDP 客户端和托管后端，先验证 Windows 的 pipe（D-195）；
@@ -876,6 +949,10 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-210 | 主进程实现 finx-browser 用到的浏览器级 `Target`/`Browser` 方法，页面级命令按白名单转给 `webContents.debugger`；白名单由 finx-browser 的 `CDP_METHODS` 生成并有测试保证一致 |
 | D-211 | `browser.backend` 默认 `auto`：有宿主用内嵌，否则托管；会话第一次使用时决定；项目配置不能设 |
 | D-212 | 新标签页带 `finxSession`，显示在该会话所在窗口右侧的浏览器面板里；不显示的标签页照常运行；内嵌浏览器的登录状态在独立的 partition |
+| D-213 | 扩展后端：MV3 扩展经 Native Messaging 连 `finx browser native-host`（同一个 finx 程序，由 `install` 写的启动脚本拉起），宿主用 `browser/host {kind:"extension"}` 连 socket 服务，之后同 D-209；超过 1 MB 的消息分片 |
+| D-214 | 扩展沿用 D-210 实现浏览器级方法；只附加智能体开的和由它们打开的标签页，放在独立窗口的 FinxWork 标签组里；用户关掉调试提示条即收回该标签页，不重新附加；内核断开时只放开、不关标签页 |
+| D-215 | 扩展后端只在 `browser.backend = "extension"` 时使用，`auto` 不选它 |
+| D-216 | 扩展后端下 bypass 不跳过 Navigate/Act/Upload 的询问（`SitePolicy.real_logins`）；服务核对扩展宿主的可执行文件与自己相同 |
 
 ### 待定问题
 

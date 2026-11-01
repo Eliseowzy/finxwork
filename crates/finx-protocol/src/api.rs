@@ -94,7 +94,8 @@ pub mod method {
     pub const MCP_PROBE_PROGRESS: &str = "mcp/probe_progress";
     pub const MCP_LOGIN: &str = "mcp/login";
     pub const MCP_LOGOUT: &str = "mcp/logout";
-    /// This connection shows embedded browsers (browser-design §8.3.1).
+    /// This connection shows embedded browsers (browser-design §8.3.1), or lends the user's
+    /// Chrome through the finx extension (§8.4).
     pub const BROWSER_HOST: &str = "browser/host";
     /// One CDP message between the kernel and the browser host, either way.
     pub const BROWSER_CDP: &str = "browser/cdp";
@@ -190,6 +191,25 @@ pub enum RequestId {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CancelRequestParams {
     pub id: RequestId,
+}
+
+/// Which browser a `browser/host` connection provides.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserHostKind {
+    /// The desktop app's embedded browser (browser-design §8.3).
+    #[default]
+    Embedded,
+    /// The user's own Chrome, through the finx extension and `finx browser native-host`
+    /// (§8.4). Only that program may say so: the service checks the peer's executable.
+    Extension,
+}
+
+/// Parameters of `browser/host`. Older hosts send none: the embedded browser.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserHostParams {
+    #[serde(default)]
+    pub kind: BrowserHostKind,
 }
 
 /// Parameters of the `browser/cdp` notification, in both directions.

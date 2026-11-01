@@ -91,7 +91,7 @@ enabled = true
 
 - **一期**（已完成）：托管浏览器 + 7 个工具 + 审批改造。
 - **二期**（已完成）：桌面端内嵌浏览器（用户能看着智能体操作）、`browser_batch` 批量执行、`browser_eval` 执行脚本、"永久允许"写入配置、`finx browser install`。
-- **三期**：Chrome 扩展，可以使用用户自己的 Chrome 和登录状态。
+- **三期**（已完成）：Chrome 扩展，可以使用用户自己的 Chrome 和登录状态。`finx browser extension install` 后在 Chrome 里加载 `apps/chrome-extension`，并配置 `browser.backend = "extension"`；这时 bypass 模式也会询问（browser-design §8.4）。
 
 ---
 

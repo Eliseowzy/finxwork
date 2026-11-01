@@ -1,6 +1,7 @@
 //! `finx`: command-line front end of the kernel.
 
 mod approval_prompt;
+mod cmd_browser;
 mod cmd_chat;
 mod cmd_customize;
 mod cmd_exec;
@@ -179,6 +180,35 @@ enum BrowserCommand {
     /// Download Chrome for Testing into ~/.finx/browser/chromium, for machines without Chrome,
     /// Edge or Chromium (used only when none is installed)
     Install,
+    /// Let the agent use your own Chrome through the FinxWork extension
+    Extension {
+        #[command(subcommand)]
+        command: ExtensionCommand,
+    },
+    /// The Native Messaging host that Chrome starts for the FinxWork extension
+    #[command(hide = true)]
+    NativeHost {
+        /// What Chrome passes: the extension's origin, and on Windows the parent window
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ExtensionCommand {
+    /// Register finx with Chrome, Chromium, Edge and Brave as the extension's host
+    Install {
+        /// Also allow this extension ID (a copy from a store or loaded from another folder)
+        #[arg(long = "extension-id", value_name = "ID")]
+        extension_ids: Vec<String>,
+        /// Register for this browser user data directory only
+        #[arg(long, value_name = "DIR")]
+        user_data_dir: Option<PathBuf>,
+    },
+    /// Remove what install wrote
+    Uninstall,
+    /// Show where the host is registered
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -421,6 +451,16 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         Command::Browser {
             command: BrowserCommand::Install,
         } => cmd_info::browser_install().await,
+        Command::Browser {
+            command: BrowserCommand::NativeHost { .. },
+        } => cmd_browser::native_host().await,
+        Command::Browser {
+            command: BrowserCommand::Extension { command },
+        } => match command {
+            ExtensionCommand::Install { extension_ids, user_data_dir } => cmd_browser::install(&extension_ids, user_data_dir),
+            ExtensionCommand::Uninstall => cmd_browser::uninstall(),
+            ExtensionCommand::Status => cmd_browser::status(),
+        },
         Command::Mcp {
             command: McpCommand::List { check: true, json },
         } => cmd_mcp::check(overrides, json).await,

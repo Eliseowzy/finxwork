@@ -234,6 +234,8 @@ pub struct ConnHandle {
     pub queue: Arc<OutQueue>,
     /// Whether adjacent deltas may be merged (the client's `coalesce` capability).
     pub coalesce: Arc<AtomicBool>,
+    /// The process on the other end of a Unix socket, when the system says.
+    pub peer_pid: Option<u32>,
 }
 
 impl ConnHandle {
@@ -269,7 +271,17 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    let conn = server.new_connection();
+    run_peer_connection(server, reader, writer, protocol, None).await;
+}
+
+/// [`run_connection`] for a peer whose process is known.
+pub async fn run_peer_connection<R, W>(server: Server, reader: R, writer: W, protocol: Arc<dyn Protocol>, peer_pid: Option<u32>)
+where
+    R: AsyncRead + Unpin + Send + 'static,
+    W: AsyncWrite + Unpin + Send + 'static,
+{
+    let mut conn = server.new_connection();
+    conn.peer_pid = peer_pid;
     let encoder = protocol.encoder(&conn);
     let writer_task = tokio::spawn(write_loop(conn.clone(), encoder, writer));
     let mut frames = FrameReader::new(reader, server.settings().max_frame_bytes);

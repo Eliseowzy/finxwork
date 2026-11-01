@@ -157,6 +157,9 @@ pub struct SitePolicy {
     pub sites: BTreeMap<String, SiteLevel>,
     /// `browser.script_enabled`: `browser_eval` may be asked about at all (§7.6).
     pub script_enabled: bool,
+    /// The browser is the user's own Chrome (`browser.backend = "extension"`, §8.4): its
+    /// logins are real, so no permission mode skips a question.
+    pub real_logins: bool,
 }
 
 impl SitePolicy {
@@ -266,6 +269,7 @@ mod tests {
             denied_domains: vec!["evil.test".into()],
             sites: BTreeMap::new(),
             script_enabled: false,
+            real_logins: false,
         };
         policy.sites.insert("https://bank.example.com".into(), SiteLevel::Deny);
         assert!(policy.refusal(&url("https://www.evil.test/")).is_some());

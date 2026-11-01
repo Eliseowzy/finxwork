@@ -309,4 +309,43 @@ mod tests {
         let err = pool.acquire(&config).await.err().expect("no host");
         assert!(err.to_string().contains("No desktop app"), "{err}");
     }
+
+    /// Only finx's own native messaging host may lend the user's Chrome (D-198): a connection
+    /// whose process is not known (or not finx) is refused, and the pool has no extension.
+    #[tokio::test]
+    async fn an_unknown_peer_cannot_claim_to_be_the_extension() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = FinxHome::new(dir.path().join("home"));
+        home.ensure().unwrap();
+        let server = Server::new(ServerOptions {
+            home,
+            cwd: dir.path().to_path_buf(),
+            overrides: Vec::new(),
+            mcp_servers: Vec::new(),
+        })
+        .unwrap();
+        let (client, ours) = tokio::io::duplex(1 << 20);
+        let (server_reads, server_writes) = tokio::io::split(ours);
+        tokio::spawn(crate::conn::run_connection(server.clone(), server_reads, server_writes, NativeProtocol::new(server.clone())));
+        let (client_reads, mut client_writes) = tokio::io::split(client);
+        let mut lines = tokio::io::BufReader::new(client_reads).lines();
+        for request in [
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {"protocol_version": finx_protocol::PROTOCOL_VERSION, "client_info": {"name": "test"}}}),
+            json!({"jsonrpc": "2.0", "id": 2, "method": "browser/host", "params": {"kind": "extension"}}),
+        ] {
+            client_writes.write_all(format!("{request}\n").as_bytes()).await.unwrap();
+        }
+        let _init = lines.next_line().await.unwrap().unwrap();
+        let refused: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(refused["id"], json!(2));
+        assert!(refused["error"]["message"].as_str().unwrap().contains("not finx's extension host"), "{refused}");
+        assert!(!server.0.browser_pool.has_extension() && !server.0.browser_pool.has_host());
+        let config = BrowserConfig {
+            backend: Backend::Extension,
+            ..BrowserConfig::default()
+        };
+        let err = server.0.browser_pool.acquire(&config).await.err().expect("no extension");
+        assert!(err.to_string().contains("extension is not connected"), "{err}");
+    }
 }

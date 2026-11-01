@@ -106,6 +106,14 @@ export type BrowserCdpParams = {
   stream: number;
 };
 
+/** Which browser a `browser/host` connection provides. */
+export type BrowserHostKind = "embedded" | "extension";
+
+/** Parameters of `browser/host`. Older hosts send none: the embedded browser. */
+export type BrowserHostParams = {
+  kind?: BrowserHostKind;
+};
+
 /** Parameters of the `$/cancel_request` notification. */
 export type CancelRequestParams = {
   id: RequestId;
@@ -1520,7 +1528,7 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
-  "browser/host": [Record<string, never>, Empty];
+  "browser/host": [BrowserHostParams, Empty];
   "config/read": [ConfigReadParams, ConfigReadResult];
   "config/write": [ConfigWriteParams, ConfigWriteResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];

@@ -1,0 +1,177 @@
+import { ExtensionBrowser } from "./browser.js";
+
+// The FinxWork extension (browser-design §8.4): a Native Messaging port to `finx browser
+// native-host`, which relays to the finx service, and an ExtensionBrowser for each browser
+// the kernel starts on it. A new stream number is a new browser; the one before is let go.
+// The open port keeps this worker alive; an alarm brings it back if Chrome stopped it.
+
+const HOST = "com.finxwork.browser";
+const PROTOCOL = "1.3";
+const GROUP_TITLE = "FinxWork";
+
+/** @type {chrome.runtime.Port | null} */
+let port = null;
+/** @type {{ stream: number, browser: ExtensionBrowser } | null} */
+let live = null;
+/** Pieces of a message over Chrome's 1 MB limit, by stream. */
+const pieces = new Map();
+
+// ---- The tabs of the agent ----
+
+/** The window the agent's tabs open in: its own, so the user's tabs are never taken. */
+let windowId = null;
+/** Tab group by finx session. */
+const groups = new Map();
+
+async function agentWindow() {
+  if (windowId !== null) {
+    try {
+      await chrome.windows.get(windowId);
+      return windowId;
+    } catch {
+      windowId = null;
+    }
+  }
+  return null;
+}
+
+async function group(tabId, label) {
+  const key = label ?? "";
+  const known = groups.get(key);
+  try {
+    if (known !== undefined) {
+      await chrome.tabs.group({ groupId: known, tabIds: [tabId] });
+      return;
+    }
+  } catch {
+    groups.delete(key);
+  }
+  try {
+    const groupId = await chrome.tabs.group({ tabIds: [tabId] });
+    groups.set(key, groupId);
+    await chrome.tabGroups.update(groupId, { title: GROUP_TITLE, color: "blue" });
+  } catch {
+    // Tab groups are a nicety; a tab outside one works the same.
+  }
+}
+
+/** @type {import("./browser.js").Tabs} */
+const tabs = {
+  async create(url, label) {
+    let tab;
+    const existing = await agentWindow();
+    if (existing === null) {
+      const win = await chrome.windows.create({ url, focused: false, type: "normal" });
+      windowId = win.id;
+      tab = win.tabs[0];
+    } else {
+      tab = await chrome.tabs.create({ windowId: existing, url, active: true });
+    }
+    await group(tab.id, label);
+    return tab.id;
+  },
+  adopt(tabId, label) {
+    void group(tabId, label);
+  },
+  close(tabId) {
+    chrome.tabs.remove(tabId).catch(() => {});
+  },
+  activate(tabId) {
+    chrome.tabs.update(tabId, { active: true }).catch(() => {});
+  },
+  async attach(tabId) {
+    await chrome.debugger.attach({ tabId }, PROTOCOL);
+  },
+  detach(tabId) {
+    chrome.debugger.detach({ tabId }).catch(() => {});
+  },
+  send(tabId, child, method, params) {
+    const target = child ? { tabId, sessionId: child } : { tabId };
+    return chrome.debugger.sendCommand(target, method, params);
+  },
+};
+
+chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (source.tabId !== undefined) live?.browser.event(source.tabId, source.sessionId, method, params ?? {});
+});
+chrome.debugger.onDetach.addListener((source, reason) => {
+  if (source.tabId !== undefined) live?.browser.detached(source.tabId, reason);
+});
+chrome.tabs.onCreated.addListener((tab) => live?.browser.tabCreated(tab.id, tab.openerTabId, tab.pendingUrl ?? tab.url));
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  if (change.url !== undefined || change.title !== undefined) live?.browser.tabUpdated(tabId, change);
+});
+chrome.tabs.onRemoved.addListener((tabId) => live?.browser.tabRemoved(tabId));
+chrome.windows.onRemoved.addListener((id) => {
+  if (id === windowId) windowId = null;
+});
+
+// ---- The host ----
+
+function show(state, detail) {
+  const title = { connected: "FinxWork: connected", waiting: `FinxWork: ${detail ?? "waiting"}`, missing: `FinxWork: ${detail}` }[state];
+  chrome.action.setTitle({ title }).catch(() => {});
+  chrome.action.setBadgeText({ text: state === "connected" ? "" : "!" }).catch(() => {});
+  chrome.action.setBadgeBackgroundColor({ color: state === "missing" ? "#d93025" : "#9aa0a6" }).catch(() => {});
+}
+
+function letGo() {
+  live?.browser.close();
+  live = null;
+  pieces.clear();
+}
+
+function onMessage(message) {
+  if (typeof message.status === "string") {
+    // The service came or went: a browser of the one before is gone.
+    if (message.status !== "connected") letGo();
+    show(message.status === "connected" ? "connected" : "waiting", message.reason);
+    return;
+  }
+  const stream = message.stream;
+  if (typeof stream !== "number") return;
+  let data = message.data;
+  if (typeof message.part === "string") {
+    const soFar = (pieces.get(stream) ?? "") + message.part;
+    if (message.more) {
+      pieces.set(stream, soFar);
+      return;
+    }
+    pieces.delete(stream);
+    data = soFar;
+  }
+  if (typeof data !== "string") return;
+  if (live?.stream !== stream) {
+    letGo();
+    const out = (text) => port?.postMessage({ stream, data: text });
+    live = { stream, browser: new ExtensionBrowser(tabs, out) };
+  }
+  live.browser.receive(data);
+}
+
+function connect() {
+  if (port) return;
+  try {
+    port = chrome.runtime.connectNative(HOST);
+  } catch (e) {
+    show("missing", String(e));
+    return;
+  }
+  port.onMessage.addListener(onMessage);
+  port.onDisconnect.addListener(() => {
+    const error = chrome.runtime.lastError?.message;
+    port = null;
+    letGo();
+    show("missing", error?.includes("not found") ? "run `finx browser extension install`, then reload this extension" : (error ?? "the host stopped"));
+  });
+  show("waiting", "looking for FinxWork");
+}
+
+chrome.alarms.create("finx-connect", { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "finx-connect") connect();
+});
+chrome.runtime.onStartup.addListener(connect);
+chrome.runtime.onInstalled.addListener(connect);
+chrome.action.onClicked.addListener(connect);
+connect();

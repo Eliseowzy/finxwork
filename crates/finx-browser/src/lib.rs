@@ -17,6 +17,7 @@ pub use cdp::CdpError;
 pub use pool::Backend;
 pub use pool::Browser;
 pub use pool::BrowserConfig;
+pub use pool::BrowserKind;
 pub use pool::BrowserPool;
 pub use pool::EmbeddedHost;
 pub use pool::Headless;

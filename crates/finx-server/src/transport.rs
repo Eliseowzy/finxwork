@@ -120,8 +120,8 @@ pub async fn serve_unix(
                         continue;
                     }
                 };
-                match stream.peer_cred() {
-                    Ok(cred) if cred.uid() == uid => {}
+                let peer_pid = match stream.peer_cred() {
+                    Ok(cred) if cred.uid() == uid => cred.pid().and_then(|pid| u32::try_from(pid).ok()),
                     Ok(cred) => {
                         tracing::warn!(uid = cred.uid(), "refused a connection from another user");
                         continue;
@@ -131,14 +131,14 @@ pub async fn serve_unix(
                         tracing::debug!(%err, "dropped a connection whose peer could not be identified");
                         continue;
                     }
-                }
+                };
                 let server = server.clone();
                 let protocol = (protocol)();
                 let active = active.clone();
                 active.fetch_add(1, Ordering::Relaxed);
                 tokio::spawn(async move {
                     let (read, write) = stream.into_split();
-                    run_connection(server, read, write, protocol).await;
+                    crate::conn::run_peer_connection(server, read, write, protocol, peer_pid).await;
                     active.fetch_sub(1, Ordering::Relaxed);
                 });
             }

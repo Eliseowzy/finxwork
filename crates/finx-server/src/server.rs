@@ -212,6 +212,7 @@ impl Server {
                 coalesce.clone(),
             )),
             coalesce,
+            peer_pid: None,
         }
     }
 
