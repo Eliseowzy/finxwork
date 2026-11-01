@@ -9,7 +9,7 @@ import { devServers } from "./browser/devservers";
 import { searchEngineIcon } from "./browser/searchIcons";
 import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
-import { desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
+import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { platform } from "./platform";
@@ -151,7 +151,9 @@ function desktopApp(key: unknown): Promise<DesktopApp> | null {
   if (!found) {
     found = findApp(key).then(async (installed) => {
       if (!installed) return { key, name: key, icon: null };
-      const icon = await app.getFileIcon(installed.path, { size: "normal" }).then((i) => i.toDataURL(), () => null);
+      // Quick Look draws the app's own icon; the file icon of a .app is often the generic one.
+      const drawn = await nativeImage.createThumbnailFromPath(installed.path, { width: 64, height: 64 }).catch(() => null);
+      const icon = drawn && !drawn.isEmpty() ? drawn.toDataURL() : await app.getFileIcon(installed.path, { size: "normal" }).then((i) => i.toDataURL(), () => null);
       return { key, name: installed.name, icon };
     });
     desktopApps.set(key, found);
@@ -206,6 +208,20 @@ export function registerIPC() {
   ipcMain.handle("desktop-control-status", (e, configured: unknown) => (trusted(e) ? desktopControlStatus(configured) : null));
   ipcMain.on("desktop-permission", (e, kind: unknown) => trusted(e) && void requestDesktopPermission(kind));
   ipcMain.handle("desktop-app", (e, key: unknown) => (trusted(e) ? desktopApp(key) : null));
+  // An app to set access for (Settings › Desktop control › Add app): chosen in the system's dialog, by its bundle id.
+  ipcMain.handle("pick-desktop-app", async (e): Promise<DesktopApp | null> => {
+    if (!trusted(e) || process.platform !== "darwin") return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      defaultPath: "/Applications",
+      properties: ["openFile"] as "openFile"[],
+      filters: [{ name: i18n.t("main:dialog.application"), extensions: ["app"] }],
+    };
+    const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+    const picked = r.canceled ? undefined : r.filePaths[0];
+    const key = picked ? await bundleIdOf(picked) : null;
+    return key ? desktopApp(key) : null;
+  });
   ipcMain.handle("search-engine-icon", (e, template: unknown) => (trusted(e) ? searchEngineIcon(template) : null));
   ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());

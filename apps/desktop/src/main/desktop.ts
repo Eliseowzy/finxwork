@@ -47,6 +47,18 @@ export function desktopProgramVersion(program: string): Promise<string | null> {
 /** A bundle id as macOS writes them; anything else (an app known only by name) is not looked up. */
 const BUNDLE_ID = /^[A-Za-z0-9][A-Za-z0-9.\-_]*$/;
 
+/** The bundle id of the app at `appPath` (a `.app` folder), from its Info.plist; null when it has none. */
+export function bundleIdOf(appPath: string): Promise<string | null> {
+  if (process.platform !== "darwin" || !appPath.endsWith(".app")) return Promise.resolve(null);
+  const plist = path.join(appPath, "Contents", "Info.plist");
+  return new Promise((resolve) =>
+    execFile("/usr/bin/plutil", ["-extract", "CFBundleIdentifier", "raw", "-o", "-", plist], { timeout: 5000 }, (err, stdout) => {
+      const id = stdout?.trim() ?? "";
+      resolve(!err && BUNDLE_ID.test(id) ? id : null);
+    }),
+  );
+}
+
 /** The installed app with `bundleId`, by Spotlight: its path and its name in the system's language. */
 export function findApp(bundleId: string): Promise<{ path: string; name: string } | null> {
   if (process.platform !== "darwin" || !BUNDLE_ID.test(bundleId)) return Promise.resolve(null);

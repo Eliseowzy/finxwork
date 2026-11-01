@@ -128,7 +128,7 @@ async function quit() {
 }
 
 const shows = (...texts) => `${JSON.stringify(texts)}.some(t => document.body.innerText.includes(t))`;
-const finderRow = `[...document.querySelectorAll('.desktop-set .mrow')].find(r => r.textContent.includes('com.apple.finder'))`;
+const finderRow = `[...document.querySelectorAll('.desktop-set .mrow')].find(r => r.querySelector('[title="com.apple.finder"]'))`;
 
 let failed = false;
 try {
@@ -177,14 +177,20 @@ try {
   check((await set.run(`${finderRow}.querySelector('select').value`)) === "read", "Finder is not listed as read");
   check(await set.run(`${finderRow}.querySelector('img.app-icon')?.src.startsWith('data:image/') === true`), "the app list shows no icon");
   await set.shot("3-apps");
+  check(await set.run(`/添加应用|Add App/.test(document.querySelector('.desktop-set .mrow-add')?.textContent ?? '')`), "no way to add an app in Settings");
   await set.run(`(() => { const s = ${finderRow}.querySelector('select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'deny'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
   for (let i = 0; i < 50 && !/"com\.apple\.finder" = "deny"/.test(config()); i++) await sleep(100);
   check(/"com\.apple\.finder" = "deny"/.test(config()), `not denied: ${config()}`);
   await set.until("shown as denied", `${finderRow}?.querySelector('select').value === 'deny'`);
   await set.run(`[...${finderRow}.querySelectorAll('button')].pop().click()`);
-  await set.until("forgotten", `!${finderRow} && ${shows("还没有记住的应用", "No apps remembered yet")}`);
+  await set.until("forgotten", `!${finderRow} && ${shows("还没有设置任何应用", "No apps set yet")}`);
   check(!config().includes("com.apple.finder"), `not forgotten: ${config()}`);
   await set.shot("4-forgotten");
+  // Switched off, the rest of the page is shown but cannot be changed.
+  await set.run(`document.querySelector('.desktop-set button.sw').click()`);
+  await set.until("switched off", `document.querySelector('.desktop-sub')?.disabled === true`);
+  check(await set.run(`document.querySelector('.desktop-sub .mrow-add').matches(':disabled')`), "Add App works while desktop control is off");
+  await set.shot("5-off");
   console.log("desktop approval: ok");
 } catch (e) {
   failed = true;

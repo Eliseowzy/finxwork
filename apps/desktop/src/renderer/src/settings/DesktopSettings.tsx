@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { DesktopPermission } from "../../../shared/bridge";
 import { useDesktopApp, useDesktopStatus } from "../desktopControl";
+import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 
 // Settings › Desktop control: finx's desktop tools, which read and operate the person's
@@ -84,9 +85,7 @@ export function DesktopSettings() {
           <div className="frow">
             <div className="ft">
               <div className="fn">{t("desktop.enable")}</div>
-              <div className={`fdesc ${blocked ? "warn" : ""}`}>
-                {blocked ? t(!status!.program ? "desktop.blockedProgram" : "desktop.blockedPermission") : t("desktop.enableDesc")}
-              </div>
+              {blocked && <div className="fdesc warn">{t(!status!.program ? "desktop.blockedProgram" : "desktop.blockedPermission")}</div>}
             </div>
             <button
               className={`sw ${on ? "on" : ""}`}
@@ -99,21 +98,23 @@ export function DesktopSettings() {
           </div>
         </div>
         {error && <p className="mrow-err">{error}</p>}
-        <p className="set-note">{t("desktop.note")}</p>
       </section>
 
-      {config && <AppsSection apps={config.apps} setApp={setApp} />}
+      {/* Off, the rest is only shown: a fieldset disables every control in it. */}
+      <fieldset className="desktop-sub" disabled={!on}>
+        {config && <AppsSection apps={config.apps} setApp={setApp} />}
 
-      {status && status.accessibility !== "unsupported" && (
-        <section>
-          <h3 className="fhead">{t("desktop.permissions")}</h3>
-          <div className="fgroup">
-            <PermissionRow kind="accessibility" state={status.accessibility} />
-            <PermissionRow kind="screen" state={status.screen} />
-          </div>
-          <p className="set-note">{t("desktop.permissionsNote")}</p>
-        </section>
-      )}
+        {status && status.accessibility !== "unsupported" && (
+          <section>
+            <h3 className="fhead">{t("desktop.permissions")}</h3>
+            <div className="fgroup">
+              <PermissionRow kind="accessibility" state={status.accessibility} />
+              <PermissionRow kind="screen" state={status.screen} />
+            </div>
+            <p className="set-note">{t("desktop.permissionsNote")}</p>
+          </section>
+        )}
+      </fieldset>
 
       {/* Where agent-desktop lives is FinxWork's business while it works; the row is only for
           when it cannot be found, to say how to get it. */}
@@ -147,22 +148,41 @@ function AppsSection({ apps, setApp }: { apps: [string, AppLevel][]; setApp: (ke
     setError("");
     setApp(key, level).catch((e) => setError(errorText(e)));
   };
+  // Picking an app is macOS's own dialog; elsewhere apps come only from approvals.
+  const canPick = window.finx?.platform === "mac";
+  /** An app picked in the system's dialog: added as "can view", the cautious choice, unless it is listed already. */
+  const add = async () => {
+    setError("");
+    try {
+      const app = await window.finx?.pickDesktopApp();
+      if (app && !apps.some(([key]) => key.toLowerCase() === app.key.toLowerCase())) await setApp(app.key, "read");
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
   return (
     <section>
       <h3 className="fhead">{t("desktop.apps")}</h3>
+      <p className="set-note apps-intro">{t("desktop.appsIntro")}</p>
       <div className="fgroup">
-        {apps.length === 0 ? (
+        {apps.length === 0 && (
           <div className="frow">
             <div className="ft">
               <div className="fdesc">{t("desktop.appsEmpty")}</div>
             </div>
           </div>
-        ) : (
-          apps.map(([key, level]) => <AppRow key={key} appKey={key} level={level} change={change} />)
+        )}
+        {apps.map(([key, level]) => (
+          <AppRow key={key} appKey={key} level={level} change={change} />
+        ))}
+        {canPick && (
+          <button className="frow mrow-add" onClick={() => void add()}>
+            <Icon name="plus" />
+            {t("desktop.add")}
+          </button>
         )}
       </div>
       {error && <p className="mrow-err">{error}</p>}
-      <p className="set-note">{t("desktop.appsNote")}</p>
     </section>
   );
 }
@@ -175,8 +195,9 @@ function AppRow({ appKey, level, change }: { appKey: string; level: AppLevel; ch
     <div className="frow mrow">
       {app?.icon ? <img className="app-icon" src={app.icon} alt="" /> : <span className="app-icon" />}
       <div className="ft">
-        <div className="fn">{name}</div>
-        <div className="fdesc mono sel-text">{appKey}</div>
+        <div className="fn" title={appKey}>
+          {name}
+        </div>
       </div>
       <select className="psel" aria-label={t("desktop.appLevel", { name })} value={level} onChange={(e) => change(appKey, e.target.value as AppLevel)}>
         {LEVELS.map((l) => (

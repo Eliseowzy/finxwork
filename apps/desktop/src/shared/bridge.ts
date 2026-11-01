@@ -207,6 +207,8 @@ export type Bridge = {
   requestDesktopPermission(kind: "accessibility" | "screen"): void;
   /** A desktop app's name and icon by its bundle id; the key itself as the name when it is not found. */
   desktopApp(key: string): Promise<DesktopApp>;
+  /** An app chosen in the system's dialog (macOS), for Settings › Desktop control; null when cancelled or it has no bundle id. */
+  pickDesktopApp(): Promise<DesktopApp | null>;
   /** A search engine's icon (its site's favicon) by its URL template, as a data URL. */
   searchEngineIcon(template: string): Promise<string | null>;
   /** In the settings window: another page was asked for while it is open. */

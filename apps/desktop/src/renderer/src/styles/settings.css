@@ -32,6 +32,9 @@
 .desktop-set .mrow .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
 .desktop-set .app-icon{width:28px;height:28px;flex:none;border-radius:var(--r-sm)}
 .desktop-set span.app-icon{background:var(--fill)}
+.desktop-set .apps-intro{margin:0 4px 8px}
+.desktop-sub{display:flex;flex-direction:column;gap:inherit;border:0;margin:0;padding:0;min-width:0}
+.desktop-sub:disabled{opacity:.45}
 .browser-set .fn .badge{margin-left:6px;vertical-align:1px}
 .browser-set .fdesc{white-space:normal}
 .browser-set .fdesc.warn{color:var(--orange)}

@@ -57,6 +57,7 @@ const bridge: Bridge = {
   desktopControlStatus: (configured?: string) => ipcRenderer.invoke("desktop-control-status", configured),
   requestDesktopPermission: (kind: "accessibility" | "screen") => ipcRenderer.send("desktop-permission", kind),
   desktopApp: (key: string) => ipcRenderer.invoke("desktop-app", key),
+  pickDesktopApp: () => ipcRenderer.invoke("pick-desktop-app"),
   onSettingsPage: (cb: (page: string) => void) => listen("settings-page", cb),
   settingsOpen: () => ipcRenderer.invoke("settings-open"),
   onSettingsOpen: (cb: (open: boolean) => void) => listen("settings-open", cb),
