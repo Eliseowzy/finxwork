@@ -7,7 +7,8 @@
   "chat": {
     "archived": "Archived: read only until you unarchive it.",
     "unarchive": "Unarchive",
-    "earlier": "Earlier messages aren't shown yet",
+    "earlier": "Show earlier messages",
+    "loadingEarlier": "Loading earlier messages",
     "log": "Conversation",
     "inProgress": "In progress",
     "thinking": "Thinking",
