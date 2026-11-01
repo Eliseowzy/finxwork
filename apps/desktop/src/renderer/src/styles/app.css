@@ -480,13 +480,26 @@ button.insp-row:active{background:var(--fill2)}
 .brp-grip{position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:2}
 .brp-grip:hover,.brp.resizing .brp-grip{background:var(--sel)}
 .brp.resizing .brp-view{background:var(--side-sel)}
-.brp-tabs{flex:none;display:flex;gap:4px;padding:0 10px 6px;overflow-x:auto;scrollbar-width:none}
-.brp-tab{flex:none;max-width:180px;padding:3px 9px;border-radius:6px;font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.brp-tab:hover{background:var(--side-sel)}
-.brp-tab.on{background:var(--sel);color:var(--l1)}
-.brp-url{flex:none;display:flex;align-items:center;gap:6px;margin:0 10px 8px;padding:4px 8px;border-radius:6px;background:var(--side-sel);font-size:12px;color:var(--l2)}
-.brp-url span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brp-view{flex:1;min-height:0;background:#fff}
+/* Tabs on top, like a browser's: the shown one raised; a tab's close button shows on hover and on the shown one. */
+.brp-strip{height:var(--top);flex:none;display:flex;align-items:center;gap:4px;padding:0 calc(8px + var(--caption)) 0 10px;min-width:0}
+.brp-tabs{display:flex;align-items:center;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
+.brp-tab{flex:0 1 180px;min-width:72px;height:30px;display:flex;align-items:center;gap:6px;padding:0 4px 0 12px;border-radius:8px;font-size:13px;color:var(--l2);cursor:default;user-select:none}
+.brp-tab:hover{background:var(--side-sel);color:var(--l1)}
+.brp-tab.on{background:var(--side-sel);color:var(--l1)}
+.brp-tab .mini-spin{flex:none}
+.brp-tab-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brp-tab-x{flex:none;width:20px;height:20px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;background:none;color:var(--l2);opacity:0}
+.brp-tab:hover .brp-tab-x,.brp-tab.on .brp-tab-x,.brp-tab-x:focus-visible{opacity:1}
+.brp-tab-x:hover{background:var(--l4);color:var(--l1)}
+.brp-tab-x .ic{width:12px;height:12px}
+/* Back, forward, reload and the address, under a line. */
+.brp-bar{flex:none;display:flex;align-items:center;gap:2px;padding:6px 10px;border-top:.5px solid var(--sep);border-bottom:.5px solid var(--sep)}
+.brp-bar .tb:disabled{opacity:.35}
+.brp-addr{flex:1;min-width:0;margin-left:6px}
+.brp-url{width:100%;height:30px;padding:0 12px;border:0;border-radius:8px;background:var(--side-sel);color:var(--l1);font:inherit;font-size:13px;outline:none}
+.brp-url::placeholder{color:var(--l3)}
+.brp-url:focus{box-shadow:0 0 0 2px var(--sel)}
 .bgp .srow{align-items:center}
 .bgp .sl2{font-size:12px;color:var(--l2)}
 .bgp .sl2t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -21,8 +21,9 @@ export interface PageEvents {
   message(method: string, params: Record<string, unknown>, session?: string): void;
   /** The URL or the title changed. */
   changed(): void;
-  /** The page asked to open a new tab (window.open, target=_blank). */
-  open(url: string): void;
+  /** A new tab beside this one: the page asked (window.open, target=_blank), or the person
+   * did in the panel (`byPerson`). */
+  open(url: string, byPerson?: boolean): void;
   /** The page is gone: closed by the person, crashed, or its debugger detached. */
   gone(reason: string): void;
 }
@@ -50,6 +51,8 @@ type Target = {
   sessionId?: string;
   /** The page's main frame, as its events name it (for downloads). */
   mainFrame?: string;
+  /** Opened by the person in the panel, not by a page. */
+  byPerson?: boolean;
 };
 
 const browserLevel = new Set(browserMethods);
@@ -152,17 +155,17 @@ export class EmbeddedBrowser {
     return t;
   }
 
-  private create(url: string, finxSession?: string, openerId?: string): Target {
+  private create(url: string, finxSession?: string, openerId?: string, byPerson?: boolean): Target {
     const targetId = `T${this.next++}`;
-    const t = { targetId, finxSession, openerId } as Target;
+    const t = { targetId, finxSession, openerId, byPerson } as Target;
     t.page = this.host.create({ targetId, url, finxSession, openerId }, {
       message: (method, params, session) => this.pageEvent(t, method, params, session),
       changed: () => {
         if (this.targets.has(targetId)) this.emit("Target.targetInfoChanged", { targetInfo: this.info(t) });
       },
       // A page's new tab is the kernel's to take, owned like its opener (D-205).
-      open: (next) => {
-        if (!this.closed && this.targets.has(targetId)) this.create(next, t.finxSession, targetId);
+      open: (next, byPerson) => {
+        if (!this.closed && this.targets.has(targetId)) this.create(next, t.finxSession, targetId, byPerson);
       },
       gone: (reason) => this.drop(t, reason, false),
     });
@@ -180,6 +183,8 @@ export class EmbeddedBrowser {
       attached: !!t.sessionId,
       canAccessOpener: false,
       ...(t.openerId ? { openerId: t.openerId } : {}),
+      // So the kernel tells the model who opened it.
+      ...(t.byPerson ? { finxOpenedBy: "person" } : {}),
     };
   }
 

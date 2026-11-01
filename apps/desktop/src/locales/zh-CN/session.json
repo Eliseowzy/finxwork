@@ -279,7 +279,14 @@
   },
   "browser": {
     "title": "浏览器",
-    "close": "收起",
-    "resize": "调整浏览器面板宽度"
+    "resize": "调整浏览器面板宽度",
+    "newTab": "新标签页",
+    "closeTab": "关闭 {{name}}",
+    "back": "后退",
+    "forward": "前进",
+    "reload": "刷新",
+    "stop": "停止加载",
+    "address": "网址",
+    "typeUrl": "输入网址"
   }
 }

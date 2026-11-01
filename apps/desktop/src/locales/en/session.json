@@ -288,7 +288,14 @@
   },
   "browser": {
     "title": "Browser",
-    "close": "Hide",
-    "resize": "Resize the browser panel"
+    "resize": "Resize the browser panel",
+    "newTab": "New tab",
+    "closeTab": "Close {{name}}",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "stop": "Stop loading",
+    "address": "Address",
+    "typeUrl": "Type a URL"
   }
 }

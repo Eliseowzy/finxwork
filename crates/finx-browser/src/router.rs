@@ -417,6 +417,7 @@ impl Router {
                     return;
                 };
                 let target_id = str_of(info, "targetId").to_string();
+                let by_person = str_of(info, "finxOpenedBy") == "person";
                 let router = self.clone();
                 tokio::spawn(async move {
                     // The opener's own auto-attach may take the popup first.
@@ -425,7 +426,7 @@ impl Router {
                         return;
                     }
                     match router.attach(owner, &target_id, Some(&opener_tab)).await {
-                        Ok(tab) => router.announce(owner, &opener_tab, &tab),
+                        Ok(tab) => router.announce(owner, &opener_tab, &tab, by_person),
                         Err(err) => tracing::debug!(%err, "attaching to a new tab"),
                     }
                 });
@@ -517,20 +518,22 @@ impl Router {
         if kind == "page"
             && let Some(opener) = &parent_tab
         {
-            self.announce(owner, &opener.id, &tab);
+            self.announce(owner, &opener.id, &tab, false);
         }
         let router = self.clone();
         tokio::spawn(async move { router.set_up(&session, &tab).await });
     }
 
     /// Tells the opener's tab about a tab it opened.
-    fn announce(&self, owner: OwnerId, opener: &str, tab: &Arc<Tab>) {
+    /// `by_person`: the person opened it in the desktop app's panel (§8.3.4), not the page.
+    fn announce(&self, owner: OwnerId, opener: &str, tab: &Arc<Tab>, by_person: bool) {
         let opener_tab = self.tabs(owner).into_iter().find(|t| t.id == opener);
         if let Some(opener_tab) = opener_tab {
+            let who = if by_person { "The user" } else { "The page" };
             opener_tab
                 .state
                 .lock()
-                .note(format!("The page opened a new tab: tab {} (select it with browser_tabs).", tab.id));
+                .note(format!("{who} opened a new tab: tab {} (select it with browser_tabs).", tab.id));
         }
     }
 

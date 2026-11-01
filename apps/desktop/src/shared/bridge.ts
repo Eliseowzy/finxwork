@@ -51,7 +51,19 @@ export type Preferences = {
 export type BrowserPanel = { session: string | null; rect: { x: number; y: number; width: number; height: number } | null };
 
 /** A tab of the embedded browser. */
-export type BrowserTab = { targetId: string; session: string | null; url: string; title: string; shown: boolean };
+export type BrowserTab = {
+  targetId: string;
+  session: string | null;
+  url: string;
+  title: string;
+  shown: boolean;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+};
+
+/** What the person does to a tab in the panel. "new" opens a tab beside it, for its session. */
+export type BrowserTabCommand = { command: "back" | "forward" | "reload" | "stop" | "close" | "new" } | { command: "go"; url: string };
 
 /** Where the window's sessions come from: finx, or the demo's mock server (FINXWORK_KERNEL=mock). */
 export type KernelKind = "mock" | "finx";
@@ -83,6 +95,7 @@ export type Bridge = {
   browserTabs(): Promise<BrowserTab[]>;
   onBrowserTabs(cb: (tabs: BrowserTab[]) => void): () => void;
   showBrowserTab(targetId: string): void;
+  browserTabCommand(targetId: string, command: BrowserTabCommand): void;
   openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */
   sourceAppIcon(adapter?: "qwenwork" | "qoder"): Promise<string | null>;

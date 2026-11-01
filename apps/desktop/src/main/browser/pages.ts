@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { BrowserWindow, session, WebContentsView, type WebContents } from "electron";
-import type { BrowserPanel, BrowserTab } from "../../shared/bridge";
+import type { BrowserPanel, BrowserTab, BrowserTabCommand } from "../../shared/bridge";
 import type { Download, Page, PageEvents, PageHost } from "./shim";
+import { typedURL } from "./url";
 
 // The embedded browser's pages (browser-design §8.3.4): each tab is a WebContentsView with
 // its debugger attached, on a partition of its own, apart from the app's pages and from the
@@ -58,6 +59,8 @@ export const electronPages: PageHost = {
       webPreferences: { partition, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false },
     });
     browserSession();
+    // Pages without a background of their own (a blank tab) are white, as in a browser.
+    view.setBackgroundColor("#ffffff");
     const wc = view.webContents;
     const tab: Tab = { targetId, finxSession, view, events, seq: ++seq };
     tabs.set(targetId, tab);
@@ -73,6 +76,8 @@ export const electronPages: PageHost = {
     wc.on("page-title-updated", changed);
     wc.on("did-navigate", changed);
     wc.on("did-navigate-in-page", changed);
+    wc.on("did-start-loading", broadcast);
+    wc.on("did-stop-loading", broadcast);
     wc.on("render-process-gone", () => events.gone("the tab crashed"));
     // New windows become tabs the kernel takes over, never windows of their own.
     wc.setWindowOpenHandler(({ url: next }) => {
@@ -148,6 +153,42 @@ export function setPanel(wc: WebContents, panel: BrowserPanel) {
   layout();
 }
 
+/**
+ * The person drives a tab in the panel: they take over, and the agent's next call finds the
+ * page changed (browser-design §7.4). What they open still passes the kernel's checks: a
+ * refused site is stopped as one a page would open.
+ */
+export function tabCommand(targetId: string, c: BrowserTabCommand) {
+  const tab = tabs.get(targetId);
+  if (!tab || tab.view.webContents.isDestroyed()) return;
+  const wc = tab.view.webContents;
+  switch (c.command) {
+    case "back":
+      if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+      break;
+    case "forward":
+      if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
+      break;
+    case "reload":
+      wc.reload();
+      break;
+    case "stop":
+      wc.stop();
+      break;
+    case "go": {
+      const url = typedURL(c.url);
+      if (url) void wc.loadURL(url).catch(() => {});
+      break;
+    }
+    case "close":
+      tab.events.gone("the user closed the tab");
+      break;
+    case "new":
+      tab.events.open("about:blank", true);
+      break;
+  }
+}
+
 /** The person picked a tab in a panel. */
 export function showTab(targetId: string) {
   electronPages.activate(targetId);
@@ -163,6 +204,9 @@ export function currentTabs(): BrowserTab[] {
       url: t.view.webContents.getURL(),
       title: t.view.webContents.getTitle(),
       shown: !!t.finxSession && shown.get(t.finxSession) === t.targetId,
+      loading: t.view.webContents.isLoading(),
+      canGoBack: t.view.webContents.navigationHistory.canGoBack(),
+      canGoForward: t.view.webContents.navigationHistory.canGoForward(),
     }));
 }
 

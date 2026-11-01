@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { BrowserTab } from "../../../shared/bridge";
+import type { BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
 import { Icon } from "../icons";
-import { useStore } from "../store";
 
-// The embedded browser's panel (browser-design §8.3.4): the session's tabs, the address of
-// the one shown, and below them the room where the main process lays the tab's own view.
-// The page itself never draws a website: it only says where the room is.
+// The embedded browser's panel (browser-design §8.3.4), drawn as a browser: the session's
+// tabs and a new-tab button on top, then back, forward, reload and the address, and below
+// them the room where the main process lays the tab's own view. The page itself never draws
+// a website: it only says where the room is. What the person does here takes the tab over
+// from the agent, whose next call finds the page changed.
 
 /** The embedded browser's tabs, as the main process has them. */
 export function useBrowserTabs(): BrowserTab[] {
@@ -26,7 +27,10 @@ export function useBrowserTabs(): BrowserTab[] {
   return tabs;
 }
 
-const label = (t: BrowserTab) => t.title || hostOf(t.url) || t.url || "about:blank";
+/** A blank page: the address field shows empty, the tab "New tab". */
+const blank = (url: string) => url === "" || url === "about:blank";
+
+const command = (t: BrowserTab | undefined, c: BrowserTabCommand) => t && window.finx?.browserTabCommand(t.targetId, c);
 
 function hostOf(url: string): string {
   try {
@@ -49,11 +53,20 @@ function savedWidth(): number | null {
 
 export function BrowserPanel({ session, tabs }: { session: string; tabs: BrowserTab[] }) {
   const { t } = useTranslation("session");
-  const st = useStore();
   const room = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
   const current = tabs.find((x) => x.shown) ?? tabs[tabs.length - 1];
   const [width, setWidth] = useState<number | null>(savedWidth);
+  /** What the person is typing in the address field; null shows the tab's address. */
+  const [draft, setDraft] = useState<string | null>(null);
+  const address = useRef<HTMLInputElement>(null);
+  // A new blank tab waits for an address.
+  const currentId = current?.targetId;
+  const currentBlank = current ? blank(current.url) : false;
+  useEffect(() => {
+    setDraft(null);
+    if (currentBlank) address.current?.focus();
+  }, [currentId]);
   const [resizing, setResizing] = useState(false);
 
   /** The widest the panel may be: the conversation keeps its room. */
@@ -126,29 +139,79 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
       aria-label={t("browser.title")}
     >
       <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />
-      <div className="bgp-top drag">
-        <h3>{t("browser.title")}</h3>
-        <button className="tb" aria-label={t("browser.close")} title={t("browser.close")} onClick={() => st.set({ browser: false })}>
-          <Icon name="x" />
+      <div className="brp-strip drag">
+        <div className="brp-tabs" role="tablist">
+          {tabs.map((x) => {
+            const on = x.targetId === current?.targetId;
+            // A page without a title of its own shows its URL as one: name it by its host.
+            const untitled = !x.title || x.title === x.url || blank(x.title);
+            const name = blank(x.url) ? t("browser.newTab") : untitled ? hostOf(x.url) || x.url : x.title;
+            return (
+              <div key={x.targetId} role="tab" aria-selected={on} className={`brp-tab no-drag ${on ? "on" : ""}`} title={x.url || name} onClick={() => window.finx?.showBrowserTab(x.targetId)}>
+                {x.loading && <span className="mini-spin" aria-hidden="true" />}
+                <span className="brp-tab-t">{name}</span>
+                <button
+                  className="brp-tab-x"
+                  aria-label={t("browser.closeTab", { name })}
+                  title={t("browser.closeTab", { name })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    command(x, { command: "close" });
+                  }}
+                >
+                  <Icon name="x" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <button className="tb no-drag" aria-label={t("browser.newTab")} title={t("browser.newTab")} onClick={() => command(current, { command: "new" })}>
+          <Icon name="plus" />
         </button>
       </div>
-      <div className="brp-tabs no-drag" role="tablist">
-        {tabs.map((x) => (
-          <button
-            key={x.targetId}
-            role="tab"
-            aria-selected={x.targetId === current?.targetId}
-            className={`brp-tab ${x.targetId === current?.targetId ? "on" : ""}`}
-            title={x.url}
-            onClick={() => window.finx?.showBrowserTab(x.targetId)}
-          >
-            {label(x)}
+      <div className="brp-bar">
+        <button className="tb" aria-label={t("browser.back")} title={t("browser.back")} disabled={!current?.canGoBack} onClick={() => command(current, { command: "back" })}>
+          <Icon name="arrowLeft" />
+        </button>
+        <button className="tb" aria-label={t("browser.forward")} title={t("browser.forward")} disabled={!current?.canGoForward} onClick={() => command(current, { command: "forward" })}>
+          <Icon name="arrowRight" />
+        </button>
+        {current?.loading ? (
+          <button className="tb" aria-label={t("browser.stop")} title={t("browser.stop")} onClick={() => command(current, { command: "stop" })}>
+            <Icon name="x" />
           </button>
-        ))}
-      </div>
-      <div className="brp-url sel-text" title={current?.url}>
-        <Icon name="globe" />
-        <span>{current?.url || "about:blank"}</span>
+        ) : (
+          <button className="tb" aria-label={t("browser.reload")} title={t("browser.reload")} disabled={!current} onClick={() => command(current, { command: "reload" })}>
+            <Icon name="retry" />
+          </button>
+        )}
+        <form
+          className="brp-addr"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (draft !== null && draft.trim()) command(current, { command: "go", url: draft });
+            setDraft(null);
+            address.current?.blur();
+          }}
+        >
+          <input
+            ref={address}
+            className="brp-url"
+            aria-label={t("browser.address")}
+            placeholder={t("browser.typeUrl")}
+            spellCheck={false}
+            value={draft ?? (current && !blank(current.url) ? current.url : "")}
+            onChange={(e) => setDraft(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={() => setDraft(null)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setDraft(null);
+                e.currentTarget.blur();
+              }
+            }}
+          />
+        </form>
       </div>
       <div className="brp-view" ref={room} />
     </aside>

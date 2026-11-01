@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { Bridge, BrowserPanel, BrowserTab, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
+import type { Bridge, BrowserPanel, BrowserTab, BrowserTabCommand, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
 import type { Language } from "../shared/i18n";
 import type { UpdateInfo } from "../shared/update";
 
@@ -25,6 +25,7 @@ const bridge: Bridge = {
   browserTabs: () => ipcRenderer.invoke("browser-tabs"),
   onBrowserTabs: (cb: (tabs: BrowserTab[]) => void) => listen("browser-tabs", cb),
   showBrowserTab: (targetId: string) => ipcRenderer.send("browser-show", targetId),
+  browserTabCommand: (targetId: string, command: BrowserTabCommand) => ipcRenderer.send("browser-command", targetId, command),
   openSourceApp: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("open-source-app", adapter),
   sourceAppIcon: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("source-app-icon", adapter),
   platform: arg("platform") as PlatformId,
