@@ -405,6 +405,7 @@ impl AcpProtocol {
     }
 
     /// The client answered one of our permission requests.
+    /// (See [`decode_option`] for the option ids.)
     fn permission_answer(&self, id: &Id, result: Result<&RawValue, &RpcError>, conn: &ConnHandle) {
         let Some((session, call_id)) = self.shared.permissions.lock().remove(id) else {
             return;
@@ -412,11 +413,7 @@ impl AcpProtocol {
         let decision = match result {
             Ok(raw) => match serde_json::from_str::<RequestPermissionResponse>(raw.get()) {
                 Ok(response) => match response.outcome {
-                    Outcome::Selected { option_id } => match option_id.as_str() {
-                        "approve" => ApprovalDecision::Approve,
-                        "approve_for_session" => ApprovalDecision::ApproveForSession,
-                        _ => ApprovalDecision::Deny { feedback: None },
-                    },
+                    Outcome::Selected { option_id } => decode_option(&option_id),
                     Outcome::Cancelled => ApprovalDecision::Abort,
                 },
                 Err(_) => ApprovalDecision::Deny { feedback: None },
@@ -498,5 +495,60 @@ impl Protocol for AcpProtocol {
         for (_, task) in self.running.lock().drain() {
             task.abort();
         }
+    }
+}
+
+/// The decision for a permission option the client picked: `approve`, `approve_for_session`,
+/// `approve_for_session:<index>` for one of the proposed site grants, or
+/// `approve_always:<index>` to keep that grant in the configuration.
+fn decode_option(option_id: &str) -> ApprovalDecision {
+    match option_id {
+        "approve" => ApprovalDecision::Approve,
+        "approve_for_session" => ApprovalDecision::ApproveForSession { grant: None, persist: false },
+        other => {
+            let (index, persist) = match (other.strip_prefix("approve_for_session:"), other.strip_prefix("approve_always:")) {
+                (Some(index), _) => (index, false),
+                (_, Some(index)) => (index, true),
+                _ => return ApprovalDecision::Deny { feedback: None },
+            };
+            match index.parse::<usize>() {
+                Ok(index) => ApprovalDecision::ApproveForSession { grant: Some(index), persist },
+                Err(_) => ApprovalDecision::Deny { feedback: None },
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finx_protocol::GrantAuthority;
+    use finx_protocol::SiteGrant;
+
+    #[test]
+    fn site_grants_round_trip_through_permission_options() {
+        let grants = [
+            SiteGrant {
+                authority: GrantAuthority::Navigate,
+                origin: "https://example.com".into(),
+            },
+            SiteGrant {
+                authority: GrantAuthority::Navigate,
+                origin: "*".into(),
+            },
+        ];
+        let options = out::permission_options(None, None, &grants);
+        let ids: Vec<&str> = options.as_array().unwrap().iter().map(|o| o["optionId"].as_str().unwrap()).collect();
+        assert_eq!(
+            ids,
+            ["approve", "approve_for_session:0", "approve_for_session:1", "approve_always:0", "deny"],
+            "any site is never kept"
+        );
+        assert_eq!(decode_option("approve"), ApprovalDecision::Approve);
+        assert_eq!(decode_option("approve_for_session"), ApprovalDecision::ApproveForSession { grant: None, persist: false });
+        assert_eq!(decode_option("approve_for_session:1"), ApprovalDecision::ApproveForSession { grant: Some(1), persist: false });
+        assert_eq!(decode_option("approve_always:0"), ApprovalDecision::ApproveForSession { grant: Some(0), persist: true });
+        assert_eq!(decode_option("approve_always:x"), ApprovalDecision::Deny { feedback: None });
+        assert_eq!(decode_option("deny"), ApprovalDecision::Deny { feedback: None });
     }
 }

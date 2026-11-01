@@ -45,6 +45,10 @@ export type AgentStatus = "running" | "completed" | "failed" | "interrupted" | "
 export type ApprovalDecision = {
   type: "approve";
 } | {
+  /** Which of `proposed_grants` to keep, by index; the first when left out. */
+  grant?: number | null;
+  /** Keep that grant beyond the session too: written to the user's configuration under `[browser.sites]` (browser-design D-197). Not for "any site". */
+  persist?: boolean;
   type: "approve_for_session";
 } | {
   feedback?: string | null;
@@ -92,6 +96,34 @@ export type AuthSetResult = {
   models?: number | null;
   /** The provider accepted the key (its model list answered). `false` when it could not be asked; the key is saved either way. */
   verified: boolean;
+};
+
+/** Parameters of the `browser/cdp` notification, in both directions. */
+export type BrowserCdpParams = {
+  /** One CDP message, as a JSON object: a command from the kernel; a response or an event from the host. Carried as is, so a large one (a screenshot, an accessibility tree) is neither escaped into a string nor parsed on the way through. */
+  data: { [key: string]: unknown };
+  /** Which browser on the host: each one the kernel starts gets a new number, and the host answers with the number of the command. Messages of an earlier browser are dropped. */
+  stream: number;
+};
+
+/** Which browser a `browser/host` connection provides. */
+export type BrowserHostKind = "embedded" | "extension";
+
+/** Parameters of `browser/host`. Older hosts send none: the embedded browser. */
+export type BrowserHostParams = {
+  /** The browser the host is in, as it names itself: "Google Chrome 141.0.7390.54". */
+  browser?: string | null;
+  /** The FinxWork extension's version, for an extension host. */
+  extension_version?: string | null;
+  kind?: BrowserHostKind;
+};
+
+/** The result of `browser/status`, and the parameters of `browser/changed`. */
+export type BrowserStatus = {
+  /** Whether a desktop app shows embedded browsers. */
+  embedded: boolean;
+  /** Set while the FinxWork extension is connected. */
+  extension?: ExtensionStatus | null;
 };
 
 /** Parameters of the `$/cancel_request` notification. */
@@ -428,7 +460,9 @@ export type Event = {
   args: unknown;
   call_id: string;
   name: string;
-  /** Mode that `approve_for_session` switches the session to. With neither this nor `proposed_rule`, approving for the session approves this call only. */
+  /** Site permissions that `approve_for_session` may keep; its `grant` picks one, the first by default. */
+  proposed_grants?: SiteGrant[];
+  /** Mode that `approve_for_session` switches the session to. With none of this, `proposed_rule` and `proposed_grants`, approving for the session approves this call only. */
   proposed_mode?: PermissionMode | null;
   /** Command prefix that `approve_for_session` allows from then on. */
   proposed_rule?: CommandRule | null;
@@ -480,6 +514,10 @@ export type Event = {
   task_id: string;
   type: "task_interrupted";
   usage: UsageTotals;
+} | {
+  message: UserMessage;
+  mode: PromptMode;
+  type: "input_queued";
 } | {
   context_window: number;
   model: string;
@@ -544,6 +582,15 @@ export type EventClass = "text_delta" | "thinking_delta" | "tool_call_delta" | "
 export type EventFilter = {
   exclude?: EventClass[];
 };
+
+/** The user's own browser, lent through the FinxWork extension (browser-design §8.4). */
+export type ExtensionStatus = {
+  /** "Google Chrome 141.0.7390.54", when the extension said. */
+  browser?: string | null;
+  extension_version?: string | null;
+};
+
+export type GrantAuthority = "navigate" | "act";
 
 export type InitializeParams = {
   capabilities?: ClientCapabilities;
@@ -1015,6 +1062,7 @@ export type PendingApproval = {
   args: unknown;
   call_id: string;
   name: string;
+  proposed_grants?: SiteGrant[];
   proposed_mode?: PermissionMode | null;
   proposed_rule?: CommandRule | null;
   reason?: string | null;
@@ -1054,6 +1102,12 @@ export type ProviderSummary = {
   name: string;
 };
 
+/** A prompt waiting for the running task. */
+export type QueuedInput = {
+  message: UserMessage;
+  mode: PromptMode;
+};
+
 /** A JSON-RPC request id. */
 export type RequestId = number | string;
 
@@ -1082,6 +1136,8 @@ export type ServerCapabilities = {
   auth: boolean;
   /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */
   customize: boolean;
+  /** `browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3). */
+  embedded_browser: boolean;
   event_filter: boolean;
   max_frame_bytes: number;
   model_connections: boolean;
@@ -1208,6 +1264,8 @@ export type SessionSnapshot = {
   last_seq: number;
   /** The latest status of each MCP server, by name. */
   mcp_servers?: McpServerInfo[];
+  /** Prompts waiting for the running task (`input_queued`), oldest first. */
+  queued?: QueuedInput[];
   session: SessionInfo;
   transcript: TranscriptPage;
   usage: UsageTotals;
@@ -1248,6 +1306,13 @@ export type SessionsChangedParams = {
   deleted?: string[];
   /** Whole summaries of the sessions that changed or appeared. */
   sessions: SessionSummary[];
+};
+
+/** Permission for the browser tools on one origin, for the rest of the session (docs/kernel/browser-design.md §7.3). */
+export type SiteGrant = {
+  authority: GrantAuthority;
+  /** `https://example.com`, or `*` for every site (navigation only). */
+  origin: string;
 };
 
 /** One `SKILL.md` that was found, and what became of it. */
@@ -1494,6 +1559,8 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "browser/host": [BrowserHostParams, Empty];
+  "browser/status": [Record<string, never>, BrowserStatus];
   "config/read": [ConfigReadParams, ConfigReadResult];
   "config/write": [ConfigWriteParams, ConfigWriteResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];
@@ -1542,6 +1609,8 @@ export interface Methods {
 
 /** Notifications: their params. */
 export interface ServerNotifications {
+  "browser/cdp": BrowserCdpParams;
+  "browser/changed": BrowserStatus;
   "config/changed": ConfigChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
@@ -1555,6 +1624,7 @@ export interface ServerNotifications {
 /** Notifications: their params. */
 export interface ClientNotifications {
   "$/cancel_request": CancelRequestParams;
+  "browser/cdp": BrowserCdpParams;
 }
 
 /** JSON-RPC error codes and the `kind` their data carries. */

@@ -11,6 +11,15 @@
       "$ref": "#/definitions/AuthSetResult"
     },
     {
+      "$ref": "#/definitions/BrowserCdpParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserHostParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserStatus"
+    },
+    {
       "$ref": "#/definitions/CancelRequestParams"
     },
     {
@@ -394,7 +403,21 @@
           "type": "object"
         },
         {
+          "description": "Approves this call and what the request proposed for the rest of the session.",
           "properties": {
+            "grant": {
+              "description": "Which of `proposed_grants` to keep, by index; the first when left out.",
+              "format": "uint",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "persist": {
+              "description": "Keep that grant beyond the session too: written to the user's configuration under `[browser.sites]` (browser-design D-197). Not for \"any site\".",
+              "type": "boolean"
+            },
             "type": {
               "enum": [
                 "approve_for_session"
@@ -599,6 +622,94 @@
           "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "BrowserCdpParams": {
+      "description": "Parameters of the `browser/cdp` notification, in both directions.",
+      "properties": {
+        "data": {
+          "additionalProperties": true,
+          "description": "One CDP message, as a JSON object: a command from the kernel; a response or an event from the host. Carried as is, so a large one (a screenshot, an accessibility tree) is neither escaped into a string nor parsed on the way through.",
+          "type": "object"
+        },
+        "stream": {
+          "description": "Which browser on the host: each one the kernel starts gets a new number, and the host answers with the number of the command. Messages of an earlier browser are dropped.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "data",
+        "stream"
+      ],
+      "type": "object"
+    },
+    "BrowserHostKind": {
+      "description": "Which browser a `browser/host` connection provides.",
+      "oneOf": [
+        {
+          "description": "The desktop app's embedded browser (browser-design §8.3).",
+          "enum": [
+            "embedded"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The user's own Chrome, through the finx extension and `finx browser native-host` (§8.4). Only that program may say so: the service checks the peer's executable.",
+          "enum": [
+            "extension"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "BrowserHostParams": {
+      "description": "Parameters of `browser/host`. Older hosts send none: the embedded browser.",
+      "properties": {
+        "browser": {
+          "description": "The browser the host is in, as it names itself: \"Google Chrome 141.0.7390.54\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extension_version": {
+          "description": "The FinxWork extension's version, for an extension host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/definitions/BrowserHostKind",
+          "default": "embedded"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserStatus": {
+      "description": "The result of `browser/status`, and the parameters of `browser/changed`.",
+      "properties": {
+        "embedded": {
+          "description": "Whether a desktop app shows embedded browsers.",
+          "type": "boolean"
+        },
+        "extension": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExtensionStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set while the FinxWork extension is connected."
+        }
+      },
+      "required": [
+        "embedded"
+      ],
       "type": "object"
     },
     "CancelRequestParams": {
@@ -2030,6 +2141,13 @@
             "name": {
               "type": "string"
             },
+            "proposed_grants": {
+              "description": "Site permissions that `approve_for_session` may keep; its `grant` picks one, the first by default.",
+              "items": {
+                "$ref": "#/definitions/SiteGrant"
+              },
+              "type": "array"
+            },
             "proposed_mode": {
               "anyOf": [
                 {
@@ -2039,7 +2157,7 @@
                   "type": "null"
                 }
               ],
-              "description": "Mode that `approve_for_session` switches the session to. With neither this nor `proposed_rule`, approving for the session approves this call only."
+              "description": "Mode that `approve_for_session` switches the session to. With none of this, `proposed_rule` and `proposed_grants`, approving for the session approves this call only."
             },
             "proposed_rule": {
               "anyOf": [
@@ -2310,6 +2428,29 @@
             "task_id",
             "type",
             "usage"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A prompt arrived while a task runs and waits: for the next turn boundary (`steer`) or for the task to finish (`follow_up`). It joins the history then, as a user message with the same `ts`; a failed task discards it and an interrupted one hands it back.",
+          "properties": {
+            "message": {
+              "$ref": "#/definitions/UserMessage"
+            },
+            "mode": {
+              "$ref": "#/definitions/PromptMode"
+            },
+            "type": {
+              "enum": [
+                "input_queued"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message",
+            "mode",
+            "type"
           ],
           "type": "object"
         },
@@ -2663,6 +2804,43 @@
         }
       },
       "type": "object"
+    },
+    "ExtensionStatus": {
+      "description": "The user's own browser, lent through the FinxWork extension (browser-design §8.4).",
+      "properties": {
+        "browser": {
+          "description": "\"Google Chrome 141.0.7390.54\", when the extension said.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "extension_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "GrantAuthority": {
+      "oneOf": [
+        {
+          "description": "Open pages of the origin.",
+          "enum": [
+            "navigate"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Open pages of the origin and act on them: click, type, select.",
+          "enum": [
+            "act"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "InitializeParams": {
       "properties": {
@@ -4676,6 +4854,12 @@
         "name": {
           "type": "string"
         },
+        "proposed_grants": {
+          "items": {
+            "$ref": "#/definitions/SiteGrant"
+          },
+          "type": "array"
+        },
         "proposed_mode": {
           "anyOf": [
             {
@@ -4855,6 +5039,22 @@
       ],
       "type": "object"
     },
+    "QueuedInput": {
+      "description": "A prompt waiting for the running task.",
+      "properties": {
+        "message": {
+          "$ref": "#/definitions/UserMessage"
+        },
+        "mode": {
+          "$ref": "#/definitions/PromptMode"
+        }
+      },
+      "required": [
+        "message",
+        "mode"
+      ],
+      "type": "object"
+    },
     "RequestId": {
       "anyOf": [
         {
@@ -4950,6 +5150,11 @@
         "customize": {
           "default": false,
           "description": "The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6).",
+          "type": "boolean"
+        },
+        "embedded_browser": {
+          "default": false,
+          "description": "`browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3).",
           "type": "boolean"
         },
         "event_filter": {
@@ -5407,6 +5612,13 @@
           },
           "type": "array"
         },
+        "queued": {
+          "description": "Prompts waiting for the running task (`input_queued`), oldest first.",
+          "items": {
+            "$ref": "#/definitions/QueuedInput"
+          },
+          "type": "array"
+        },
         "session": {
           "$ref": "#/definitions/SessionInfo"
         },
@@ -5552,6 +5764,23 @@
       },
       "required": [
         "sessions"
+      ],
+      "type": "object"
+    },
+    "SiteGrant": {
+      "description": "Permission for the browser tools on one origin, for the rest of the session (docs/kernel/browser-design.md §7.3).",
+      "properties": {
+        "authority": {
+          "$ref": "#/definitions/GrantAuthority"
+        },
+        "origin": {
+          "description": "`https://example.com`, or `*` for every site (navigation only).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "authority",
+        "origin"
       ],
       "type": "object"
     },
@@ -6488,7 +6717,8 @@
   "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
   "title": "finx native protocol",
   "x-client-notifications": {
-    "$/cancel_request": "CancelRequestParams"
+    "$/cancel_request": "CancelRequestParams",
+    "browser/cdp": "BrowserCdpParams"
   },
   "x-error-codes": {
     "-32002": "session_not_found",
@@ -6529,6 +6759,13 @@
     "auth/set": {
       "params": "AuthSetParams",
       "result": "AuthSetResult"
+    },
+    "browser/host": {
+      "params": "BrowserHostParams",
+      "result": "Empty"
+    },
+    "browser/status": {
+      "result": "BrowserStatus"
     },
     "config/read": {
       "params": "ConfigReadParams",
@@ -6704,6 +6941,8 @@
   },
   "x-protocol-version": 2,
   "x-server-notifications": {
+    "browser/cdp": "BrowserCdpParams",
+    "browser/changed": "BrowserStatus",
     "config/changed": "ConfigChangedParams",
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",

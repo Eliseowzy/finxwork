@@ -1,0 +1,464 @@
+//! Approval of browser calls by what they do on which site (docs/kernel/browser-design.md
+//! §7.2, §7.3): the URL, the address class, the domain lists, the configured sites and the
+//! session's grants, then the permission mode. Reads only the `SessionView`.
+
+use finx_browser::policy::AddressClass;
+use finx_browser::policy::SiteLevel;
+use finx_browser::policy::UrlKind;
+use finx_browser::policy::classify_url;
+use finx_browser::policy::inside;
+use finx_browser::policy::origin_of;
+use finx_browser::policy::url_kind;
+use finx_protocol::GrantAuthority;
+use finx_protocol::PermissionMode;
+use finx_protocol::SiteGrant;
+use finx_tools::Authority;
+use std::path::PathBuf;
+use url::Url;
+
+use crate::hooks::Gate;
+use crate::hooks::SessionView;
+
+/// The verdict on one authority.
+enum Verdict {
+    Allow,
+    Deny(String),
+    Ask {
+        summary: String,
+        reason: String,
+        grants: Vec<SiteGrant>,
+    },
+}
+
+pub(crate) async fn evaluate(authorities: &[Authority], view: &SessionView) -> Gate {
+    let mut summaries = Vec::new();
+    let mut reasons = Vec::new();
+    let mut grants: Vec<SiteGrant> = Vec::new();
+    for authority in authorities {
+        match judge(authority, view).await {
+            Verdict::Allow => {}
+            Verdict::Deny(reason) => return Gate::Deny(reason),
+            Verdict::Ask {
+                summary,
+                reason,
+                grants: proposed,
+            } => {
+                summaries.push(summary);
+                reasons.push(reason);
+                for grant in proposed {
+                    if !grants.contains(&grant) {
+                        grants.push(grant);
+                    }
+                }
+            }
+        }
+    }
+    if summaries.is_empty() {
+        return Gate::Allow;
+    }
+    Gate::Ask {
+        summary: summaries.join("; "),
+        reason: Some(reasons.join(" ")),
+        proposed_rule: None,
+        proposed_mode: None,
+        // A grant covers what it names only, so one is offered only when it covers every
+        // question: with more than one question none is.
+        proposed_grants: if summaries.len() == 1 { grants } else { Vec::new() },
+    }
+}
+
+async fn judge(authority: &Authority, view: &SessionView) -> Verdict {
+    match authority {
+        Authority::Navigate { url } => navigate(url, view).await,
+        // Reading the page a session already has open asks nothing; getting there did.
+        Authority::Observe { .. } => Verdict::Allow,
+        Authority::Act { origin, action, .. } => act(origin, action, view).await,
+        Authority::Upload { origin, paths, .. } => upload(origin, paths, view).await,
+        Authority::Script { origin, .. } => script(origin, view).await,
+    }
+}
+
+/// Scripts: only with `browser.script_enabled`, never on a refused site, and asked about every
+/// time in every mode (§7.3, §7.6).
+async fn script(origin: &str, view: &SessionView) -> Verdict {
+    if !view.browser.script_enabled {
+        return Verdict::Deny("running scripts is off (browser.script_enabled)".into());
+    }
+    if let Ok(url) = Url::parse(origin) {
+        if let Some(reason) = view.browser.refusal(&url) {
+            return Verdict::Deny(reason);
+        }
+        if classify_url(&url).await == AddressClass::Metadata {
+            return Verdict::Deny(format!("{origin} is a cloud metadata address"));
+        }
+    }
+    Verdict::Ask {
+        summary: format!("run a script on {origin}"),
+        reason: "A script can read and change anything on the page, so every one is asked about.".into(),
+        grants: Vec::new(),
+    }
+}
+
+fn grant(authority: GrantAuthority, origin: &str) -> SiteGrant {
+    SiteGrant {
+        authority,
+        origin: origin.to_string(),
+    }
+}
+
+fn granted(view: &SessionView, origin: &str, act: bool) -> bool {
+    view.site_grants.iter().any(|g| {
+        g.origin == origin && (g.authority == GrantAuthority::Act || !act)
+    }) || match view.browser.site(origin) {
+        Some(SiteLevel::Act) => true,
+        Some(SiteLevel::Navigate) => !act,
+        _ => false,
+    }
+}
+
+/// Whether the mode skips the questions that it may skip. Not on the user's own Chrome,
+/// whose sign-ins are real (§8.4): there only grants and configured sites skip them.
+fn bypass(view: &SessionView) -> bool {
+    view.permission_mode == PermissionMode::BypassPermissions && !view.browser.real_logins
+}
+
+fn config_hint(origin: &str, level: &str) -> String {
+    format!("To allow it without asking, add \"{origin}\" = \"{level}\" under [browser.sites] in ~/.finx/config.toml.")
+}
+
+fn private_reason(origin: &str, level: &str) -> String {
+    format!(
+        "{origin} is on a private network: every such site needs its own permission, in every permission mode. {}",
+        config_hint(origin, level)
+    )
+}
+
+async fn navigate(raw: &str, view: &SessionView) -> Verdict {
+    let Ok(url) = Url::parse(raw) else {
+        return Verdict::Deny(format!("\"{raw}\" is not a valid URL"));
+    };
+    let summary = format!("open {url}");
+    match url_kind(&url) {
+        UrlKind::Refused(reason) => return Verdict::Deny(reason),
+        UrlKind::Blank => return Verdict::Allow,
+        UrlKind::File(path) => {
+            return if inside(&path, view.env.workspace_roots()) {
+                Verdict::Allow
+            } else {
+                Verdict::Ask {
+                    summary,
+                    reason: "The file is outside the workspace.".into(),
+                    grants: Vec::new(),
+                }
+            };
+        }
+        UrlKind::Web => {}
+    }
+    if let Some(reason) = view.browser.refusal(&url) {
+        return Verdict::Deny(reason);
+    }
+    let origin = origin_of(&url);
+    match classify_url(&url).await {
+        AddressClass::Metadata => return Verdict::Deny(format!("{origin} is a cloud metadata address")),
+        AddressClass::Private => {
+            return if granted(view, &origin, false) {
+                Verdict::Allow
+            } else {
+                Verdict::Ask {
+                    summary,
+                    reason: private_reason(&origin, "navigate"),
+                    grants: vec![grant(GrantAuthority::Navigate, &origin)],
+                }
+            };
+        }
+        AddressClass::Loopback => return Verdict::Allow,
+        AddressClass::Public => {}
+    }
+    let any_site = view
+        .site_grants
+        .iter()
+        .any(|g| g.origin == "*" && g.authority == GrantAuthority::Navigate);
+    if granted(view, &origin, false) || any_site || bypass(view) {
+        return Verdict::Allow;
+    }
+    Verdict::Ask {
+        summary,
+        reason: format!("First visit to {origin} in this session. {}", config_hint(&origin, "navigate")),
+        grants: vec![grant(GrantAuthority::Navigate, &origin), grant(GrantAuthority::Navigate, "*")],
+    }
+}
+
+async fn act(origin: &str, action: &str, view: &SessionView) -> Verdict {
+    // Blank pages and local files of the workspace: nothing to send anywhere.
+    if origin == "null" || origin == "file://" {
+        return Verdict::Allow;
+    }
+    let Ok(url) = Url::parse(origin) else {
+        return Verdict::Deny(format!("cannot act on a page of origin {origin}"));
+    };
+    if let Some(reason) = view.browser.refusal(&url) {
+        return Verdict::Deny(reason);
+    }
+    let summary = format!("{action} on {origin}");
+    match classify_url(&url).await {
+        AddressClass::Metadata => Verdict::Deny(format!("{origin} is a cloud metadata address")),
+        AddressClass::Private if !granted(view, origin, true) => Verdict::Ask {
+            summary,
+            reason: private_reason(origin, "act"),
+            grants: vec![grant(GrantAuthority::Act, origin)],
+        },
+        AddressClass::Private | AddressClass::Loopback => Verdict::Allow,
+        AddressClass::Public if granted(view, origin, true) => Verdict::Allow,
+        AddressClass::Public if bypass(view) => Verdict::Allow,
+        AddressClass::Public => Verdict::Ask {
+            summary,
+            reason: format!("First action on {origin} in this session. {}", config_hint(origin, "act")),
+            grants: vec![grant(GrantAuthority::Act, origin)],
+        },
+    }
+}
+
+async fn upload(origin: &str, paths: &[PathBuf], view: &SessionView) -> Verdict {
+    let roots = view.env.workspace_roots();
+    let names: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
+    let in_workspace = paths.iter().all(|p| inside(p, roots));
+    let acting = act(origin, "upload", view).await;
+    if let Verdict::Deny(reason) = acting {
+        return Verdict::Deny(reason);
+    }
+    if in_workspace && bypass(view) && matches!(acting, Verdict::Allow) {
+        return Verdict::Allow;
+    }
+    Verdict::Ask {
+        summary: format!("upload {} to {origin}", names.join(", ")),
+        reason: if in_workspace {
+            "Uploading sends the files to the site.".into()
+        } else {
+            "Uploading sends the files to the site, and some are outside the workspace.".into()
+        },
+        grants: Vec::new(),
+    }
+}
+
+/// Writes a grant into `[browser.sites]` of the user's configuration (D-197): never "any
+/// site", never over a `deny`, and never down from `act` to `navigate`. Comments and the rest
+/// of the file stay as they are.
+pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), String> {
+    if grant.origin == "*" {
+        return Err("\"any site\" is never kept".into());
+    }
+    let text = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => return Err(err.to_string()),
+    };
+    let mut doc: toml_edit::DocumentMut = text.parse().map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let browser = doc
+        .entry("browser")
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_mut()
+        .ok_or("browser is not a table")?;
+    let sites = browser
+        .entry("sites")
+        .or_insert_with(|| toml_edit::Item::Table(toml_edit::Table::new()))
+        .as_table_like_mut()
+        .ok_or("browser.sites is not a table")?;
+    let level = match grant.authority {
+        GrantAuthority::Navigate => "navigate",
+        GrantAuthority::Act => "act",
+    };
+    let current = sites.get(&grant.origin).and_then(|v| v.as_str()).map(str::to_string);
+    match current.as_deref() {
+        Some("deny") | Some("act") => return Ok(()),
+        Some("navigate") if level == "navigate" => return Ok(()),
+        _ => {}
+    }
+    sites.insert(&grant.origin, toml_edit::value(level));
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    crate::config_edit::replace_file(file, doc.to_string().as_bytes()).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finx_browser::policy::SitePolicy;
+    use finx_tools::LocalEnvironment;
+    use finx_tools::PageTarget;
+    use std::sync::Arc;
+
+    fn view(mode: PermissionMode, grants: Vec<SiteGrant>, policy: SitePolicy, root: &std::path::Path) -> SessionView {
+        SessionView {
+            permission_mode: mode,
+            config_rules: Vec::new(),
+            session_rules: Vec::new(),
+            trusted: true,
+            env: Arc::new(LocalEnvironment::new(root.to_path_buf())),
+            data_dir: root.join(".finx-data"),
+            skill_roots: Arc::from([]),
+            site_grants: grants,
+            browser: Arc::new(policy),
+        }
+    }
+
+    fn page() -> PageTarget {
+        PageTarget {
+            tab: "1".into(),
+            frame: "F".into(),
+            loader: "L".into(),
+        }
+    }
+
+    fn nav(url: &str) -> Authority {
+        Authority::Navigate { url: url.into() }
+    }
+
+    fn act_on(origin: &str) -> Authority {
+        Authority::Act {
+            origin: origin.into(),
+            target: page(),
+            action: "click button \"Go\"".into(),
+        }
+    }
+
+    fn asks(gate: &Gate) -> Option<Vec<SiteGrant>> {
+        match gate {
+            Gate::Ask { proposed_grants, .. } => Some(proposed_grants.clone()),
+            _ => None,
+        }
+    }
+
+    #[tokio::test]
+    async fn manual_mode_asks_once_per_origin_and_offers_grants() {
+        let dir = tempfile::tempdir().unwrap();
+        let manual = view(PermissionMode::Manual, vec![], SitePolicy::default(), dir.path());
+        let gate = evaluate(&[nav("https://93.184.215.14/docs")], &manual).await;
+        let grants = asks(&gate).expect("asks");
+        assert_eq!(grants, vec![grant(GrantAuthority::Navigate, "https://93.184.215.14"), grant(GrantAuthority::Navigate, "*")]);
+        let Gate::Ask { reason, summary, .. } = &gate else { unreachable!() };
+        assert_eq!(summary, "open https://93.184.215.14/docs");
+        assert!(reason.as_deref().unwrap().contains("[browser.sites]"));
+        // Reading asks nothing; local and loopback pages neither.
+        assert_eq!(evaluate(&[Authority::Observe { origin: "https://93.184.215.14".into() }], &manual).await, Gate::Allow);
+        assert_eq!(evaluate(&[nav("http://localhost:5173/")], &manual).await, Gate::Allow);
+        assert_eq!(evaluate(&[act_on("http://127.0.0.1:3000")], &manual).await, Gate::Allow);
+        assert_eq!(evaluate(&[nav("about:blank")], &manual).await, Gate::Allow);
+        // The first action on an origin asks, with the act grant.
+        let gate = evaluate(&[act_on("https://93.184.215.14")], &manual).await;
+        assert_eq!(asks(&gate).unwrap(), vec![grant(GrantAuthority::Act, "https://93.184.215.14")]);
+
+        // An act grant covers both; "any site" covers navigation only.
+        let granted = view(PermissionMode::Manual, vec![grant(GrantAuthority::Act, "https://93.184.215.14")], SitePolicy::default(), dir.path());
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/x"), act_on("https://93.184.215.14")], &granted).await, Gate::Allow);
+        let browsing = view(PermissionMode::Manual, vec![grant(GrantAuthority::Navigate, "*")], SitePolicy::default(), dir.path());
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/x")], &browsing).await, Gate::Allow);
+        assert!(asks(&evaluate(&[act_on("https://93.184.215.14")], &browsing).await).is_some());
+    }
+
+    #[tokio::test]
+    async fn private_and_metadata_addresses_and_policy_hold_in_every_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut policy = SitePolicy::default();
+        policy.denied_domains.push("evil.test".into());
+        policy.sites.insert("http://192.168.1.10:8080".into(), SiteLevel::Act);
+        let bypass = view(PermissionMode::BypassPermissions, vec![], policy, dir.path());
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/")], &bypass).await, Gate::Allow);
+        let private = evaluate(&[nav("http://192.168.0.7/")], &bypass).await;
+        assert_eq!(asks(&private).unwrap(), vec![grant(GrantAuthority::Navigate, "http://192.168.0.7")], "bypass still asks");
+        assert_eq!(evaluate(&[nav("http://192.168.1.10:8080/admin")], &bypass).await, Gate::Allow, "configured");
+        assert!(matches!(evaluate(&[nav("http://169.254.169.254/latest")], &bypass).await, Gate::Deny(_)));
+        assert!(matches!(evaluate(&[nav("https://www.evil.test/")], &bypass).await, Gate::Deny(_)));
+        assert!(matches!(evaluate(&[nav("javascript:alert(1)")], &bypass).await, Gate::Deny(_)));
+        assert!(matches!(evaluate(&[act_on("https://evil.test")], &bypass).await, Gate::Deny(_)));
+    }
+
+    /// On the user's own Chrome the logins are real: bypass skips nothing, while grants,
+    /// configured sites and loopback still do (§8.4).
+    #[tokio::test]
+    async fn the_users_chrome_asks_even_in_bypass() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut real = SitePolicy {
+            real_logins: true,
+            ..SitePolicy::default()
+        };
+        real.sites.insert("https://93.184.215.15".into(), SiteLevel::Act);
+        let bypass = view(PermissionMode::BypassPermissions, vec![], real.clone(), dir.path());
+        assert!(asks(&evaluate(&[nav("https://93.184.215.14/")], &bypass).await).is_some(), "navigation asks");
+        assert_eq!(
+            asks(&evaluate(&[act_on("https://93.184.215.14")], &bypass).await).unwrap(),
+            vec![grant(GrantAuthority::Act, "https://93.184.215.14")],
+            "acting asks, offering the session grant"
+        );
+        assert_eq!(evaluate(&[act_on("https://93.184.215.15")], &bypass).await, Gate::Allow, "configured");
+        assert_eq!(evaluate(&[act_on("http://localhost:5173")], &bypass).await, Gate::Allow, "loopback");
+        let granted = view(PermissionMode::BypassPermissions, vec![grant(GrantAuthority::Act, "https://93.184.215.14")], real, dir.path());
+        assert_eq!(evaluate(&[act_on("https://93.184.215.14")], &granted).await, Gate::Allow, "granted");
+    }
+
+    #[test]
+    fn remembered_grants_go_into_the_user_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("config.toml");
+        std::fs::write(&file, "# mine\nmodel = \"x\"\n\n[browser]\nenabled = true\n[browser.sites]\n\"https://bank.test\" = \"deny\"\n").unwrap();
+        remember(&file, &grant(GrantAuthority::Navigate, "https://a.test")).unwrap();
+        remember(&file, &grant(GrantAuthority::Act, "https://a.test")).unwrap();
+        remember(&file, &grant(GrantAuthority::Navigate, "https://a.test")).unwrap();
+        remember(&file, &grant(GrantAuthority::Act, "https://bank.test")).unwrap();
+        assert!(remember(&file, &grant(GrantAuthority::Navigate, "*")).is_err());
+        let text = std::fs::read_to_string(&file).unwrap();
+        assert!(text.starts_with("# mine\nmodel = \"x\""), "{text}");
+        let parsed: toml::Table = text.parse().unwrap();
+        let sites = &parsed["browser"]["sites"];
+        assert_eq!(sites["https://a.test"].as_str(), Some("act"), "never down from act");
+        assert_eq!(sites["https://bank.test"].as_str(), Some("deny"), "never over a deny");
+        // A file that does not exist yet.
+        let fresh = dir.path().join("new/config.toml");
+        remember(&fresh, &grant(GrantAuthority::Act, "http://192.168.1.10:8080")).unwrap();
+        assert!(std::fs::read_to_string(&fresh).unwrap().contains("[browser.sites]\n\"http://192.168.1.10:8080\" = \"act\""));
+    }
+
+    #[tokio::test]
+    async fn scripts_ask_every_time_and_only_when_enabled() {
+        let dir = tempfile::tempdir().unwrap();
+        let script = Authority::Script {
+            origin: "http://localhost:3000".into(),
+            target: page(),
+        };
+        let off = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), dir.path());
+        assert!(matches!(evaluate(std::slice::from_ref(&script), &off).await, Gate::Deny(r) if r.contains("script_enabled")));
+        let on = SitePolicy {
+            script_enabled: true,
+            ..SitePolicy::default()
+        };
+        let granted = vec![grant(GrantAuthority::Act, "http://localhost:3000")];
+        let bypass = view(PermissionMode::BypassPermissions, granted, on, dir.path());
+        assert_eq!(asks(&evaluate(std::slice::from_ref(&script), &bypass).await), Some(vec![]), "asks even in bypass, never for the session");
+    }
+
+    #[tokio::test]
+    async fn files_and_uploads() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join("index.html"), "<p>hi</p>").unwrap();
+        let manual = view(PermissionMode::Manual, vec![], SitePolicy::default(), &root);
+        let inside_url = Url::from_file_path(root.join("index.html")).unwrap().to_string();
+        assert_eq!(evaluate(&[nav(&inside_url)], &manual).await, Gate::Allow);
+        let outside = evaluate(&[nav("file:///etc/hosts")], &manual).await;
+        assert_eq!(asks(&outside).unwrap(), vec![], "no grant for files outside");
+        let upload = Authority::Upload {
+            origin: "http://localhost:3000".into(),
+            paths: vec![root.join("index.html")],
+            target: page(),
+        };
+        assert!(asks(&evaluate(std::slice::from_ref(&upload), &manual).await).is_some(), "uploads ask in manual mode");
+        let bypass = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), &root);
+        assert_eq!(evaluate(std::slice::from_ref(&upload), &bypass).await, Gate::Allow);
+        let outside_upload = Authority::Upload {
+            origin: "http://localhost:3000".into(),
+            paths: vec![PathBuf::from("/etc/hosts")],
+            target: page(),
+        };
+        assert!(asks(&evaluate(&[outside_upload], &bypass).await).is_some(), "files outside the workspace always ask");
+    }
+}

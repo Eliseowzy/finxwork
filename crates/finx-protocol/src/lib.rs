@@ -40,6 +40,8 @@ pub use mcp::McpServerState;
 pub use op::ApprovalDecision;
 pub use op::PermissionMode;
 pub use op::CommandRule;
+pub use op::GrantAuthority;
+pub use op::SiteGrant;
 pub use op::Op;
 pub use op::PromptMode;
 pub use op::RuleDecision;

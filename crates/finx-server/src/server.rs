@@ -108,6 +108,9 @@ pub struct Server(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) connections: Arc<finx_connections::Manager>,
     pub(crate) model_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
+    /// Connections that called `browser/status`, and the extension's last word (crate::browser_status).
+    pub(crate) browser_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
+    pub(crate) extension: Mutex<Option<finx_protocol::api::ExtensionStatus>>,
     /// Model lists and the catalog (crate::models).
     pub(crate) model_upkeep: crate::models::Upkeep,
     pub(crate) home: FinxHome,
@@ -129,6 +132,8 @@ pub(crate) struct Inner {
     pub(crate) defaults: SessionDefaults,
     /// The 自定义 page's subscriptions and file watching (crate::customize).
     pub(crate) customize: crate::customize::State,
+    /// The browsers of every session here, one per profile (browser-design §6.1).
+    pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
 }
 
 impl Server {
@@ -144,9 +149,13 @@ impl Server {
             permission_mode: workspace.config.permission_mode,
         };
         let connections = finx_connections::Manager::new(options.home.root().to_path_buf(), &llm);
+        // A person may watch: show a window where there is a display.
+        let browser_pool = Arc::new(finx_core::BrowserPool::new(options.home.browser_dir(), true));
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
+            browser_watchers: Mutex::new(HashMap::new()),
+            extension: Mutex::new(None),
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
             defaults,
@@ -163,6 +172,8 @@ impl Server {
             shutdown: CancellationToken::new(),
             closing: AtomicBool::new(false),
             customize: Default::default(),
+            // A person may watch: show a window where there is a display.
+            browser_pool,
         }));
         let weak = Arc::downgrade(&server.0);
         connections.on_change(Arc::new(move || {
@@ -206,6 +217,7 @@ impl Server {
                 coalesce.clone(),
             )),
             coalesce,
+            peer_pid: None,
         }
     }
 
@@ -213,6 +225,7 @@ impl Server {
     pub fn connection_closed(&self, conn: &ConnHandle) {
         self.forget_model_watcher(conn.id);
         self.forget_customize(conn.id);
+        self.0.browser_watchers.lock().remove(&conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -367,6 +380,7 @@ impl Server {
         let mut deps = workspace
             .kernel_deps(self.0.llm.clone(), store, &args.extra_roots)
             .map_err(errors::from_runtime)?;
+        deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &args.mcp_servers);
         let options = StartOptions {
             model: args.model.unwrap_or_else(|| workspace.config.model.clone()),
@@ -429,6 +443,7 @@ impl Server {
         let mut deps = workspace
             .kernel_deps(self.0.llm.clone(), store, &[])
             .map_err(errors::from_runtime)?;
+        deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &overrides.mcp_servers);
         let base = match self.0.store.summary(&SessionRef::Path(location.clone())) {
             Ok(found) => SummaryBase {

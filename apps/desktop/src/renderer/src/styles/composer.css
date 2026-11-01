@@ -26,6 +26,7 @@
 .appr-f .btn{height:30px;padding:0 14px}
 .appr-f .field{flex:1;height:30px;border-radius:var(--r-sm)}
 .appr-sp{flex:1}
+.appr-keep{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--l2);cursor:pointer}
 
 /* A key notice (session/Notice.tsx), above the composer in an approval's shape: a warning sign and
    what holds now, a few lines on why it matters, the answers on one row. */
@@ -80,6 +81,8 @@
 .tile.img .tile-open:hover img{opacity:.88}
 .tile.doc .tile-open{padding:9px 9px 8px;gap:5px}
 .tile-name{flex:1;min-height:0;width:100%;font-size:11.5px;line-height:15px;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
+.tile-web{flex:none;display:flex;align-items:center;gap:3px;font-size:9.5px;font-weight:600;line-height:13px;color:#3294ff}.tile-web svg{width:11px;height:11px}
+.tile.web .tile-name{-webkit-line-clamp:3}
 .tile-kind{flex:none;max-width:100%;overflow:hidden;font-size:9.5px;font-weight:600;line-height:15px;letter-spacing:.03em;color:var(--l2);padding:0 5px;border-radius:var(--r-xs);box-shadow:inset 0 0 0 .5px var(--l4)}
 .tile-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:var(--l1);color:var(--win);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--pill);opacity:0;transition:opacity .12s}
 .tile:hover .tile-x,.tile-x:focus-visible{opacity:1}
@@ -92,6 +95,18 @@
 /* Under the composer, outside it: what the message goes with, as quiet buttons. */
 .cmp-meta{display:flex;align-items:center;gap:2px;padding:0 12px;margin-top:-4px;min-width:0}
 .cmp-meta .sp{flex:1}
+.cmp-meta .cmp-sendmode{margin-left:6px}
+.cmp-meta .cmp-sendmode button{height:22px;padding:0 10px;font-size:12px;color:var(--l2)}
+.cmp-meta .cmp-sendmode button.on{color:var(--l1)}
+
+/* Messages sent while the task runs, waiting for it (session/Dock.tsx): one
+   quiet line each above the composer, with how it waits. */
+.qd{background:var(--pill);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:8px 12px;display:flex;flex-direction:column;gap:4px;animation:cbarup .32s cubic-bezier(.2,0,0,1);max-height:132px;overflow-y:auto}
+.qd-i{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;line-height:22px}
+.qd-m{flex:none;font-size:11.5px;line-height:18px;padding:0 7px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
+.qd-m.steer{color:var(--accent-fg)}
+.qd-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--l1)}
+.qd-n{flex:none;font-size:12px;color:var(--l3)}
 .mb{height:26px;border:0;border-radius:var(--r-sm);background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
 .mb:hover,.mb[aria-expanded="true"]{background:var(--fill);color:var(--l1)}
 .mb:disabled{opacity:.5}

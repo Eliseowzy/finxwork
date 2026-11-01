@@ -13,7 +13,7 @@
     "thinking": "Thinking",
     "thought": "Thought",
     "thinkingHidden": "The provider keeps this reasoning private",
-    "image": "Image",
+    "image": "Image (click to enlarge or shrink)",
     "copy": "Copy",
     "compacted": "Context compacted: {{before}} → {{after}} tokens",
     "interrupted": "You interrupted this task. Send a message to go on.",
@@ -120,12 +120,19 @@
     "session": "Allow for This Session",
     "sessionDesc": "Calls like this one won't ask again in this session",
     "sessionRule": "Commands starting with “{{rule}}” won't ask again in this session",
+    "grantNavigate": "Allow {{site}} for This Session",
+    "grantAct": "Allow Actions on {{site}} for This Session",
+    "grantAnySite": "Allow Any Site for This Session",
+    "grantAnySiteRisk": "Only opening pages; actions still ask. Risk: a page with injected instructions could get data sent out inside URLs.",
+    "grantDesc": "Won't ask again for this site in this session",
     "denyWhy": "Deny…",
     "deny": "Deny",
     "cancel": "Cancel",
     "feedback": "Tell finx why, or what to do instead (optional)",
     "more_one": "{{count}} more line",
-    "more_other": "{{count}} more lines"
+    "more_other": "{{count}} more lines",
+    "remember": "Remember",
+    "rememberDesc": "Also save the site's permission in ~/.finx/config.toml, so later sessions don't ask"
   },
   "notice": {
     "label": "Notice",
@@ -152,14 +159,22 @@
     "thinking": "Thinking",
     "permission": "Permissions",
     "archived": "Unarchive the session to write in it",
-    "steer": "Steer the task: taken in at its next turn (⌥↩ to queue after it)",
+    "steer": "Interject: taken in at the task's next turn (⌥↩ to queue it instead)",
     "reply": "Reply to finx…",
     "stop": "Stop ⌘.",
     "noKey": "No key",
     "hidden": "Hidden",
     "gone": "Not in the model list",
     "thinkingChanged": "{{model}} has no “{{from}}” level; thinking is now “{{to}}”",
-    "thinkingDefault": "The provider decides"
+    "thinkingDefault": "The provider decides",
+    "webComment": "Page comment",
+    "webElement": "Page element",
+    "follow_up": "Queue: sent once the task finishes (⌥↩ to interject instead)",
+    "sendMode": "How to send while the task runs",
+    "steerMode": "Interject",
+    "follow_upMode": "Queue",
+    "steerDesc": "Taken in at the task's next turn, before it carries on",
+    "follow_upDesc": "Sent once the task would finish"
   },
   "inspector": {
     "label": "Session info",
@@ -278,5 +293,49 @@
       "manage": "Add more in Settings › Models",
       "start": "Start your first task"
     }
+  },
+  "browser": {
+    "annotate": "Add to chat",
+    "title": "Browser",
+    "resize": "Resize the browser panel",
+    "newTab": "New tab",
+    "closeTab": "Close {{name}}",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "stop": "Stop loading",
+    "address": "Address",
+    "typeUrl": "Search or type a URL",
+    "localServers": "Local servers",
+    "rescan": "Look again",
+    "noLocalServers": "No web server is running on this machine. Start one and it shows here.",
+    "more": "More",
+    "menu": {
+      "openIn": "Open in {{browser}}",
+      "openInDefault": "Open in default browser",
+      "copyUrl": "Copy URL",
+      "screenshot": "Save screenshot",
+      "viewport": "Viewport",
+      "viewports": {
+        "responsive": "Responsive",
+        "mobile": "Mobile (375 × 812)",
+        "tablet": "Tablet (768 × 1024)"
+      },
+      "cookies": "Cookies",
+      "keepCookies": "Keep cookies",
+      "always": "Always",
+      "untilQuit": "Until quit",
+      "clearData": "Clear browsing data",
+      "connectSystem": "Connect My Browser…"
+    },
+    "searchWith": "Search {{name}}",
+    "tabToSearch": "Press Tab to search {{name}}"
+  },
+  "queued": {
+    "label": "Waiting for the task",
+    "attachments_one": "{{count}} attachment",
+    "attachments_other": "{{count}} attachments",
+    "more_one": "+{{count}} attachment",
+    "more_other": "+{{count}} attachments"
   }
 }

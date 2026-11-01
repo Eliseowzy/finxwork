@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { approvalPreview, argsOf, describe, toolObject, type ApprovalPreview, type ListSession, type SessionView } from "@finx/client";
-import type { ApprovalDecision } from "@finx/protocol";
+import type { ApprovalDecision, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { toolDo } from "../format";
 import { Mark } from "../icons";
@@ -16,6 +16,8 @@ import { Code } from "./Code";
  * whole task is the composer's Stop. Keys: ⌘↩ (the menu's Approve) allows
  * once from anywhere; outside the composer ↩ allows, 2 allows for the
  * session, Esc (or 3) denies. Several waiting are answered in order.
+ * A browser call offers each proposed site grant as its own button; 2 picks
+ * the first.
  */
 export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const { t } = useTranslation("session");
@@ -27,6 +29,8 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const [denying, setDenying] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
+  // "Always": the chosen site grant also goes into ~/.finx/config.toml (never "any site").
+  const [remember, setRemember] = useState(false);
   const field = useRef<HTMLInputElement>(null);
 
   const give = async (decision: ApprovalDecision) => {
@@ -38,15 +42,16 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const deny = () => give({ type: "deny", feedback: feedback.trim() || undefined });
 
   // The keys work unless the person types elsewhere or another layer is open.
-  const keys = useRef({ give, denying, blocked: false });
-  keys.current = { give, denying, blocked: st.sheet !== null || st.searching };
+  const grants = a.proposed_grants ?? [];
+  const keys = useRef({ give, denying, blocked: false, grants: false });
+  keys.current = { give, denying, blocked: st.sheet !== null || st.searching, grants: grants.length > 0 };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = keys.current;
       if (k.blocked || k.denying || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) return;
       if (e.key === "Enter" || e.key === "1") k.give({ type: "approve" });
-      else if (e.key === "2") k.give({ type: "approve_for_session" });
+      else if (e.key === "2") k.give({ type: "approve_for_session", grant: k.grants ? 0 : undefined });
       else if (e.key === "Escape" || e.key === "3") setDenying(true);
       else return;
       e.preventDefault();
@@ -100,9 +105,23 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
           <>
             <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("approval.denyWhy")}</button>
             <span className="appr-sp" />
-            <button className="btn" disabled={busy} title={rule ? t("approval.sessionRule", { rule }) : t("approval.sessionDesc")} onClick={() => give({ type: "approve_for_session" })}>
-              {t("approval.session")}
-            </button>
+            {grants.some((g) => g.origin !== "*") && (
+              <label className="appr-keep" title={t("approval.rememberDesc")}>
+                <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
+                {t("approval.remember")}
+              </label>
+            )}
+            {grants.length > 0 ? (
+              grants.map((g, i) => (
+                <button key={i} className="btn" disabled={busy} title={grantTitle(g, t)} onClick={() => give({ type: "approve_for_session", grant: i, persist: remember && g.origin !== "*" ? true : undefined })}>
+                  {grantLabel(g, t)}
+                </button>
+              ))
+            ) : (
+              <button className="btn" disabled={busy} title={rule ? t("approval.sessionRule", { rule }) : t("approval.sessionDesc")} onClick={() => give({ type: "approve_for_session" })}>
+                {t("approval.session")}
+              </button>
+            )}
             <button className="btn primary" disabled={busy} onClick={() => give({ type: "approve" })}>
               {t("approval.once")}
               <span className="kret">⌘↩</span>
@@ -112,6 +131,19 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
       </div>
     </div>
   );
+}
+
+type T = ReturnType<typeof useTranslation<"session">>["t"];
+
+/** A site grant as a button: the site by host, "any site" with its risk. */
+function grantLabel(g: SiteGrant, t: T): string {
+  if (g.origin === "*") return t("approval.grantAnySite");
+  const site = g.origin.replace(/^https:\/\//, "");
+  return g.authority === "act" ? t("approval.grantAct", { site }) : t("approval.grantNavigate", { site });
+}
+
+function grantTitle(g: SiteGrant, t: T): string {
+  return g.origin === "*" ? t("approval.grantAnySiteRisk") : t("approval.grantDesc");
 }
 
 /** The call itself: a command coloured as shell, a change as removed and added lines, or what it writes. */

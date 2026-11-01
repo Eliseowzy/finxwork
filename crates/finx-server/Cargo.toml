@@ -11,6 +11,7 @@ futures.workspace = true
 finx-connections.workspace = true
 bytes.workspace = true
 chrono.workspace = true
+finx-browser.workspace = true
 finx-core.workspace = true
 finx-llm.workspace = true
 finx-mcp.workspace = true
@@ -28,6 +29,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+url.workspace = true
 
 [lints]
 workspace = true

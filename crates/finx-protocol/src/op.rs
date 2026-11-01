@@ -86,7 +86,16 @@ pub enum PromptMode {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ApprovalDecision {
     Approve,
-    ApproveForSession,
+    /// Approves this call and what the request proposed for the rest of the session.
+    ApproveForSession {
+        /// Which of `proposed_grants` to keep, by index; the first when left out.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        grant: Option<usize>,
+        /// Keep that grant beyond the session too: written to the user's configuration under
+        /// `[browser.sites]` (browser-design D-197). Not for "any site".
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        persist: bool,
+    },
     Deny {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         feedback: Option<String>,
@@ -184,6 +193,24 @@ pub struct CommandRule {
     pub reason: Option<String>,
 }
 
+/// Permission for the browser tools on one origin, for the rest of the session
+/// (docs/kernel/browser-design.md §7.3).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct SiteGrant {
+    pub authority: GrantAuthority,
+    /// `https://example.com`, or `*` for every site (navigation only).
+    pub origin: String,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GrantAuthority {
+    /// Open pages of the origin.
+    Navigate,
+    /// Open pages of the origin and act on them: click, type, select.
+    Act,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleDecision {
@@ -229,6 +256,26 @@ mod tests {
         let legacy: Op = serde_json::from_str(r#"{"type":"set_approval_mode","mode":"full-auto"}"#).unwrap();
         assert_eq!(legacy, Op::SetPermissionMode { mode: PermissionMode::BypassPermissions });
         assert_eq!(serde_json::to_string(&Op::Interrupt).unwrap(), r#"{"type":"interrupt"}"#);
+    }
+
+    #[test]
+    fn approve_for_session_takes_an_optional_grant() {
+        // Clients that predate site grants send no index.
+        let plain: ApprovalDecision = serde_json::from_str(r#"{"type":"approve_for_session"}"#).unwrap();
+        assert_eq!(plain, ApprovalDecision::ApproveForSession { grant: None, persist: false });
+        assert_eq!(serde_json::to_string(&plain).unwrap(), r#"{"type":"approve_for_session"}"#);
+        let second: ApprovalDecision = serde_json::from_str(r#"{"type":"approve_for_session","grant":1}"#).unwrap();
+        assert_eq!(second, ApprovalDecision::ApproveForSession { grant: Some(1), persist: false });
+        let kept: ApprovalDecision = serde_json::from_str(r#"{"type":"approve_for_session","grant":0,"persist":true}"#).unwrap();
+        assert_eq!(kept, ApprovalDecision::ApproveForSession { grant: Some(0), persist: true });
+        let grant = SiteGrant {
+            authority: GrantAuthority::Act,
+            origin: "https://example.com".into(),
+        };
+        assert_eq!(
+            serde_json::to_string(&grant).unwrap(),
+            r#"{"authority":"act","origin":"https://example.com"}"#
+        );
     }
 
     #[test]

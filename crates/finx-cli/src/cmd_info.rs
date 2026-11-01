@@ -616,6 +616,44 @@ pub fn skills(overrides: &[String], dir: Option<PathBuf>, all: bool, as_json: bo
     Ok(0)
 }
 
+/// `finx browser install` (browser-design D-194).
+pub async fn browser_install() -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let dir = home.browser_dir();
+    if let Some(found) = finx_browser::launch::find_executable() {
+        eprintln!("note: {} is installed; the browser tools use it, not the one installed now", found.display());
+    }
+    eprintln!("installing Chrome for Testing into {}", dir.join("chromium").display());
+    let shown = std::sync::atomic::AtomicU64::new(0);
+    let result = finx_core::browser_install::install(&dir, |received, total| {
+        // About every 5 MB.
+        let mb = received >> 20;
+        if mb >= shown.load(std::sync::atomic::Ordering::Relaxed) + 5 {
+            shown.store(mb, std::sync::atomic::Ordering::Relaxed);
+            match total {
+                Some(total) => eprint!("\r  {mb} / {} MB", total >> 20),
+                None => eprint!("\r  {mb} MB"),
+            }
+        }
+    })
+    .await;
+    eprintln!();
+    match result {
+        Ok(installed) if installed.unchanged => {
+            println!("Chrome for Testing {} is installed already: {}", installed.version, installed.executable.display());
+            Ok(0)
+        }
+        Ok(installed) => {
+            println!("installed Chrome for Testing {}: {}", installed.version, installed.executable.display());
+            Ok(0)
+        }
+        Err(err) => {
+            eprintln!("finx: {err}");
+            Ok(1)
+        }
+    }
+}
+
 pub fn trust(dir: Option<PathBuf>) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let dir = match dir {

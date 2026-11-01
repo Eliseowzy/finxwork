@@ -12,12 +12,18 @@ import { platform } from "./platform";
 import { applyAppearance } from "./preferences";
 import { startUpdater } from "./updater";
 import { devURL, showMain } from "./windows";
+import { forgetSitesOnStart } from "./browser/menu";
+import { refreshSystemBrowser } from "./browser/system";
 
 const rendererDir = path.join(import.meta.dirname, "../renderer");
 const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 // The name people see is FinxWork; the profile stays in the folder it always had (Application Support/finxwork).
 app.setName("FinxWork");
+// Electron's warnings about a page's security settings are for the app's own pages, which set
+// them; in the embedded browser's tabs they would only show in a site's console, where the
+// agent reads them as the site's.
+process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = "true";
 if (process.env.FINXWORK_USER_DATA) app.setPath("userData", process.env.FINXWORK_USER_DATA);
 else if (testHome) app.setPath("userData", path.join(testHome, "userData"));
 else app.setPath("userData", path.join(app.getPath("appData"), "finxwork"));
@@ -69,7 +75,9 @@ app.whenReady().then(async () => {
     app.quit();
     return;
   }
+  forgetSitesOnStart();
   startKernel();
+  void refreshSystemBrowser();
   startUpdater();
   setAppMenu();
   showMain();

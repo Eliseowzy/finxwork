@@ -1,5 +1,10 @@
+/** Tabs opened from the new-session page, before a conversation exists. */
+export const homeBrowserSession = "finxwork:home-browser";
+
 import type { Language, LanguageChoice } from "./i18n";
 import type { UpdateInfo } from "./update";
+import type { BrowserComment } from "./annotations";
+import type { SearchEngine } from "./search";
 
 // What the preload script gives the page (window.finx). Everything about
 // sessions comes from finx itself, over the port connectKernel hands out.
@@ -45,12 +50,73 @@ export type Preferences = {
   language: LanguageChoice;
   /** "Don't ask again" when the app offered to move to the Applications folder. */
   moveDeclined?: boolean;
+  /** The embedded browser's cookies and site data: kept until the app quits, or (unset) always. */
+  browserCookies?: "untilQuit";
+  /** The id of the engine the embedded browser's address field searches with, for text that is not an address. */
+  searchEngine: string;
+  /** The search engines the person added, beside the built-in ones. */
+  searchEngines: SearchEngine[];
 };
+
+/** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
+export type BrowserPanel = {
+  session: string | null;
+  rect: { x: number; y: number; width: number; height: number } | null;
+  /** The tab steps aside for now (a dialog is over the window): the page gets a picture of it to show meanwhile. */
+  hold?: boolean;
+};
+
+/** A picture of a session's shown tab, taken as it stepped aside; `width` in CSS pixels. */
+export type BrowserStill = { session: string; image: string; width: number };
+
+/** A tab of the embedded browser. */
+export type BrowserTab = {
+  targetId: string;
+  session: string | null;
+  url: string;
+  title: string;
+  shown: boolean;
+  loading: boolean;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  annotating?: boolean;
+};
+
+/** The size a tab lays out at: the panel's, or a phone's or a tablet's. */
+export type BrowserViewport = "responsive" | "mobile" | "tablet";
+
+/** What the browser panel's ⋯ menu shows: the system's browser by name (when known), whether the tab has a web page, and the choices in effect. */
+export type BrowserMenuState = { browser: string | null; web: boolean; viewport: BrowserViewport; cookies: "always" | "untilQuit" };
+
+export type BrowserMenuAction =
+  | { action: "open" | "copy" | "screenshot" | "clear" }
+  | { action: "viewport"; viewport: BrowserViewport }
+  | { action: "cookies"; cookies: "always" | "untilQuit" };
+
+/** A web server running on this machine, for the new tab to offer; `framework` when its page shows it. */
+export type DevServer = { port: number; url: string; title: string; framework?: string; process: string };
+
+/** What the person does to a tab in the panel. "new" opens a tab beside it, for its session. */
+export type BrowserTabCommand =
+  | { command: "back" | "forward" | "reload" | "stop" | "close" | "new" | "annotate" }
+  /** `engine`: the person picked a search engine by its keyword, so this is a search with it. */
+  | { command: "go"; url: string; engine?: string };
 
 /** Where the window's sessions come from: finx, or the demo's mock server (FINXWORK_KERNEL=mock). */
 export type KernelKind = "mock" | "finx";
 
 /** How finx's service is, as the main process's supervisor sees it (desktop-kernel-integration §6.1). */
+/** A browser on this machine that can run the FinxWork extension (browser-design §8.4). */
+export type SystemBrowserId = "chrome" | "edge" | "brave" | "chromium";
+export type SystemBrowser = {
+  id: SystemBrowserId;
+  name: string;
+  /** finx is registered as the extension's host for it. */
+  registered: boolean;
+  /** It is running now. */
+  running: boolean;
+};
+
 export type KernelStatusView = {
   state: "starting" | "ready" | "reconnecting" | "failed";
   /** The running service's version. */
@@ -72,6 +138,25 @@ export type KernelStatusView = {
 };
 
 export type Bridge = {
+  /** The embedded browser: where this window's panel is, the tabs there are, and picking one. */
+  setBrowserPanel(panel: BrowserPanel): void;
+  /** Shows the home page's browser, or the given conversation's, opening a blank tab when it has none. */
+  openBrowser(session?: string): Promise<void>;
+  claimHomeBrowser(session: string): Promise<BrowserTab[]>;
+  browserTabs(): Promise<BrowserTab[]>;
+  /** A part of a page the person added to a conversation from the browser panel. */
+  onBrowserComment(cb: (c: BrowserComment) => void): () => void;
+  onBrowserTabs(cb: (tabs: BrowserTab[]) => void): () => void;
+  showBrowserTab(targetId: string): void;
+  onBrowserStill(cb: (still: BrowserStill) => void): () => void;
+  browserTabCommand(targetId: string, command: BrowserTabCommand): void;
+  /** The panel's ⋯ menu: what it shows for a tab, and doing what the person picked there. */
+  browserMenuState(targetId: string | null): Promise<BrowserMenuState>;
+  browserMenuAction(targetId: string | null, action: BrowserMenuAction): void;
+  /** System Settings' Full Disk Access, where the person lets the app read another browser's data. */
+  openPrivacySettings(): void;
+  /** The web servers running on this machine now, for a new tab. */
+  localServers(): Promise<DevServer[]>;
   openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */
   sourceAppIcon(adapter?: "qwenwork" | "qoder"): Promise<string | null>;
@@ -94,8 +179,16 @@ export type Bridge = {
   retryKernel(): void;
   /** Starts finx again with a fresh login environment: now (running tasks are interrupted), or once no task runs. */
   restartKernel(now: boolean): void;
-  /** The settings window, on a page ("general", "models"). */
+  /** The settings window, on a page ("general", "models", "browser"). */
   openSettings(page?: string): void;
+  /** The user's own browser: the ones here, setting finx up as the extension's host, opening one, the extension's folder. */
+  systemBrowsers(): Promise<SystemBrowser[]>;
+  setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; message: string }>;
+  openSystemBrowser(id: SystemBrowserId, page?: "extensions"): Promise<boolean>;
+  revealBrowserExtension(): void;
+  systemBrowserIcon(id: SystemBrowserId): Promise<string | null>;
+  /** A search engine's icon (its site's favicon) by its URL template, as a data URL. */
+  searchEngineIcon(template: string): Promise<string | null>;
   /** In the settings window: another page was asked for while it is open. */
   onSettingsPage(cb: (page: string) => void): () => void;
   /** In the main window: whether the settings window is open now, and as that changes (the window dims behind it). */

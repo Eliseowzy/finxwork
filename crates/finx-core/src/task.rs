@@ -98,10 +98,12 @@ pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: P
         // New input ends the hold after an interruption.
         state.hold = false;
         if state.active_task.is_some() {
+            let queued = message.message.clone();
             match mode {
                 PromptMode::Steer => state.steer.push_back(message),
                 PromptMode::FollowUp => state.follow_up.push_back(message),
             }
+            session.emit(EventMsg::InputQueued { message: queued, mode });
             session.input_seq.send_modify(|n| *n += 1);
             return;
         }

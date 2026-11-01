@@ -179,7 +179,8 @@ mod tests {
             cancel: CancellationToken::new(),
             model_accepts_images: images,
             output_dir: dir.join("tool-output"),
-            session_state: None,
+            session_state: Default::default(),
+            authorities: Default::default(),
         }
     }
 

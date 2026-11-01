@@ -61,6 +61,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         store: Arc::new(JsonlStore::new(home.sessions_dir())),
         hooks: vec![],
         mcp_servers: Vec::new(),
+        browser_pool: None,
     }
 }
 
@@ -313,7 +314,7 @@ async fn approving_an_edit_for_the_session_switches_to_accept_edits() {
     h.kernel
         .submit(Op::Approval {
             call_id: call_id.clone(),
-            decision: ApprovalDecision::ApproveForSession,
+            decision: ApprovalDecision::ApproveForSession { grant: None, persist: false },
         })
         .await
         .unwrap();
@@ -683,6 +684,17 @@ async fn follow_up_runs_after_the_task_would_end() {
         other => panic!("unexpected {other:?}"),
     }
     assert_eq!(h.api.requests().len(), 2);
+    // It was announced as waiting, and joined the history with the time it was sent.
+    let queued = events
+        .iter()
+        .find_map(|e| match &e.msg {
+            EventMsg::InputQueued { message, mode } => Some((message.ts, *mode)),
+            _ => None,
+        })
+        .expect("input_queued");
+    assert_eq!(queued.1, finx_protocol::PromptMode::FollowUp);
+    assert!(events.iter().any(|e| matches!(&e.msg,
+        EventMsg::MessageCompleted { message: Message::User(u), .. } if u.ts == queued.0 && u.text_content() == "later")));
 }
 
 /// A file-changing tool for kernel tests: it records the arguments it runs with, its check can

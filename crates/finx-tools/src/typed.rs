@@ -9,6 +9,7 @@ use serde_json::Value;
 use serde_json::json;
 
 use crate::env::Environment;
+use crate::tool::Authority;
 use crate::tool::Tool;
 use crate::tool::ToolCtx;
 use crate::tool::ToolDescription;
@@ -26,8 +27,20 @@ pub trait TypedTool: Send + Sync + 'static {
         ToolKind::ReadOnly
     }
 
+    /// See [`Tool::kind_for`]. Receives the raw arguments.
+    fn kind_for(&self, args: &Value) -> ToolKind {
+        let _ = args;
+        self.kind()
+    }
+
     fn guidelines(&self) -> &[&'static str] {
         &[]
+    }
+
+    /// See [`Tool::authorities`].
+    async fn authorities(&self, args: &Self::Args, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        let _ = (args, ctx);
+        Ok(Vec::new())
     }
 
     /// See [`Tool::describe`]. Receives the raw arguments, which may not deserialize.
@@ -77,8 +90,17 @@ impl<T: TypedTool> Tool for Typed<T> {
         self.inner.kind()
     }
 
+    fn kind_for(&self, args: &Value) -> ToolKind {
+        self.inner.kind_for(args)
+    }
+
     fn guidelines(&self) -> &[&'static str] {
         self.inner.guidelines()
+    }
+
+    async fn authorities(&self, args: &Value, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        let args = parse_args::<T>(args.clone())?;
+        self.inner.authorities(&args, ctx).await
     }
 
     fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {

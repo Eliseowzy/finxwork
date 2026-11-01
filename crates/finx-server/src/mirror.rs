@@ -1,6 +1,7 @@
 //! The session as the events describe it, kept by the session hub to answer attaches with a
 //! snapshot that lines up exactly with the following events.
 
+use finx_llm::Message;
 use finx_llm::Timestamp;
 use finx_llm::UsageTotals;
 use finx_protocol::AgentStatus;
@@ -17,6 +18,7 @@ use finx_protocol::api::PartialMessage;
 use finx_protocol::api::PendingApproval;
 use finx_protocol::api::SessionInfo;
 use finx_protocol::api::SessionSnapshot;
+use finx_protocol::api::QueuedInput;
 use finx_protocol::api::SessionState;
 use finx_protocol::api::TaskOutcome;
 use finx_protocol::api::ToolState;
@@ -40,6 +42,8 @@ pub struct SessionMirror {
     mcp_servers: std::collections::BTreeMap<String, finx_protocol::McpServerInfo>,
     /// Sub-agents started since the session was loaded, in the order they started.
     agents: Vec<AgentMirror>,
+    /// Prompts waiting for the running task, oldest first.
+    queued: Vec<QueuedInput>,
 }
 
 /// A sub-agent: what `agent_started` and `agent_status` said, and its own session as its
@@ -73,6 +77,7 @@ impl SessionMirror {
             failed: failed.unwrap_or(false),
             mcp_servers: std::collections::BTreeMap::new(),
             agents: Vec::new(),
+            queued: Vec::new(),
         }
     }
 
@@ -217,6 +222,12 @@ impl SessionMirror {
                 {
                     task.streaming = None;
                 }
+                // A queued prompt joins the history with the time it was sent.
+                if let Message::User(user) = message
+                    && let Some(i) = self.queued.iter().position(|q| q.message.ts == user.ts)
+                {
+                    self.queued.remove(i);
+                }
             }
             EventMsg::ToolStarted {
                 call_id,
@@ -267,6 +278,7 @@ impl SessionMirror {
                 reason,
                 proposed_rule,
                 proposed_mode,
+                proposed_grants,
             } => {
                 if let Some(task) = &mut self.active {
                     task.approvals.push(PendingApproval {
@@ -277,6 +289,7 @@ impl SessionMirror {
                         reason: reason.clone(),
                         proposed_rule: proposed_rule.clone(),
                         proposed_mode: *proposed_mode,
+                        proposed_grants: proposed_grants.clone(),
                     });
                 }
             }
@@ -288,10 +301,16 @@ impl SessionMirror {
             EventMsg::TaskCompleted {
                 task_id, usage, reason, ..
             } => self.end_task(event.ts, task_id, TaskOutcome::Completed, Some(*reason), None, usage),
+            EventMsg::InputQueued { message, mode } => self.queued.push(QueuedInput {
+                message: message.clone(),
+                mode: *mode,
+            }),
             EventMsg::TaskFailed { task_id, error, usage } => {
+                self.queued.clear();
                 self.end_task(event.ts, task_id, TaskOutcome::Failed, None, Some(error.clone()), usage)
             }
             EventMsg::TaskInterrupted { task_id, usage, .. } => {
+                self.queued.clear();
                 self.end_task(event.ts, task_id, TaskOutcome::Interrupted, None, None, usage)
             }
             EventMsg::AgentStarted {
@@ -389,6 +408,7 @@ impl SessionMirror {
             usage: self.usage.clone(),
             mcp_servers: self.mcp_servers.values().cloned().collect(),
             agents: self.agents.iter().map(|a| a.snapshot(limit)).collect(),
+            queued: self.queued.clone(),
         }
     }
 
@@ -591,6 +611,56 @@ mod tests {
     }
 
     #[test]
+    fn queued_prompts_wait_until_they_join_the_history() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        let queued = |text: &str, ts| UserMessage {
+            ts,
+            ..UserMessage::text(text)
+        };
+        m.apply(&ev(
+            1,
+            EventMsg::TaskStarted {
+                task_id: "t1".into(),
+                trigger: Default::default(),
+            },
+        ));
+        for (seq, text, ts, mode) in [
+            (2, "now", 10, finx_protocol::PromptMode::Steer),
+            (3, "later", 11, finx_protocol::PromptMode::FollowUp),
+        ] {
+            m.apply(&ev(
+                seq,
+                EventMsg::InputQueued {
+                    message: queued(text, ts),
+                    mode,
+                },
+            ));
+        }
+        assert_eq!(m.snapshot(None).queued.len(), 2);
+        m.apply(&ev(
+            4,
+            EventMsg::MessageCompleted {
+                message_id: "u1".into(),
+                message: queued("now", 10).into(),
+                mail: None,
+                skills: Vec::new(),
+            },
+        ));
+        let snap = m.snapshot(None);
+        assert_eq!(snap.queued.len(), 1);
+        assert_eq!(snap.queued[0].message.ts, 11);
+        m.apply(&ev(
+            5,
+            EventMsg::TaskInterrupted {
+                task_id: "t1".into(),
+                returned_input: vec![queued("later", 11)],
+                usage: UsageTotals::default(),
+            },
+        ));
+        assert!(m.snapshot(None).queued.is_empty());
+    }
+
+    #[test]
     fn tracks_a_task_until_it_ends() {
         let mut m = SessionMirror::new(info(), Vec::new());
         m.apply(&ev(
@@ -649,6 +719,7 @@ mod tests {
                 reason: None,
                 proposed_rule: None,
                 proposed_mode: None,
+                proposed_grants: Vec::new(),
             },
         ));
         let snap = m.snapshot(None);
@@ -707,6 +778,7 @@ mod tests {
                 reason: None,
                 proposed_rule: None,
                 proposed_mode: None,
+                proposed_grants: Vec::new(),
             },
         ));
         assert_eq!(m.state(), SessionState::AwaitingApproval);

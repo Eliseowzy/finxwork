@@ -2,8 +2,13 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, type Ipc
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
+import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
+import { claimHomeBrowser, currentTabs, openBrowser, setPanel, showTab, tabCommand } from "./browser/pages";
+import { devServers } from "./browser/devservers";
+import { searchEngineIcon } from "./browser/searchIcons";
+import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { gitBranch } from "./git";
 import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { platform } from "./platform";
@@ -29,6 +34,38 @@ export function command(c: Command) {
   const win = showMain();
   if (menuState.main) win.webContents.send("command", c);
   else pending = c;
+}
+
+/** A tab command as the page sends it. */
+function tabCommandOk(c: unknown): c is BrowserTabCommand {
+  if (typeof c !== "object" || c === null) return false;
+  const { command, url } = c as Record<string, unknown>;
+  if (command === "go") {
+    const { engine } = c as Record<string, unknown>;
+    return typeof url === "string" && url.length <= 8192 && (engine === undefined || (typeof engine === "string" && engine.length <= 80));
+  }
+  return ["back", "forward", "reload", "stop", "close", "new", "annotate"].includes(command as string);
+}
+
+/** A menu pick as the page sends it. */
+function menuActionOk(a: unknown): a is BrowserMenuAction {
+  if (typeof a !== "object" || a === null) return false;
+  const { action, viewport, cookies } = a as Record<string, unknown>;
+  if (action === "viewport") return viewport === "responsive" || viewport === "mobile" || viewport === "tablet";
+  if (action === "cookies") return cookies === "always" || cookies === "untilQuit";
+  return ["open", "copy", "screenshot", "clear"].includes(action as string);
+}
+
+/** A panel as the page reports it: a session id or null, a rectangle of finite numbers or null. */
+function browserPanel(p: unknown): p is BrowserPanel {
+  if (typeof p !== "object" || p === null) return false;
+  const { session, rect, hold } = p as Record<string, unknown>;
+  if (session !== null && typeof session !== "string") return false;
+  if (hold !== undefined && typeof hold !== "boolean") return false;
+  if (rect === null) return true;
+  if (typeof rect !== "object" || rect === undefined) return false;
+  const r = rect as Record<string, unknown>;
+  return ["x", "y", "width", "height"].every((k) => typeof r[k] === "number" && Number.isFinite(r[k]));
 }
 
 /** The images an attachment sends as image content; any other file goes by its path. */
@@ -88,7 +125,34 @@ export function registerIPC() {
     }
   });
   ipcMain.on("connect-kernel", (e) => trusted(e) && connectKernel(e.sender));
+  ipcMain.on("browser-panel", (e, panel: unknown) => trusted(e) && browserPanel(panel) && setPanel(e.sender, panel));
+  ipcMain.handle("browser-open", (e, session: unknown) => {
+    if (!trusted(e)) return;
+    if (session !== undefined && (typeof session !== "string" || !session)) throw new Error("Invalid browser session");
+    openBrowser(session as string | undefined);
+  });
+  ipcMain.handle("browser-claim-home", (e, session: unknown) => {
+    if (!trusted(e) || typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid browser session");
+    return claimHomeBrowser(session);
+  });
+  ipcMain.handle("browser-tabs", (e) => (trusted(e) ? currentTabs() : []));
+  ipcMain.on("browser-show", (e, targetId: unknown) => trusted(e) && typeof targetId === "string" && showTab(targetId));
+  ipcMain.on("browser-command", (e, targetId: unknown, c: unknown) => trusted(e) && typeof targetId === "string" && tabCommandOk(c) && tabCommand(targetId, c));
+  // The app's own processes (its helpers, finx) are not servers to offer.
+  ipcMain.handle("browser-menu-state", (e, targetId: unknown) => {
+    if (!trusted(e) || (targetId !== null && typeof targetId !== "string")) throw new Error("Invalid browser tab");
+    return tabMenuState(targetId);
+  });
+  ipcMain.on("browser-menu-action", (e, targetId: unknown, a: unknown) =>
+    trusted(e) && (targetId === null || typeof targetId === "string") && menuActionOk(a) && tabMenuAction(e.sender, targetId, a));
+  ipcMain.handle("browser-local-servers", (e) => (trusted(e) ? devServers(new Set(app.getAppMetrics().map((m) => m.pid))) : []));
   ipcMain.handle("kernel-status", (e) => (trusted(e) ? kernelStatus() : null));
+  ipcMain.handle("system-browsers", (e) => (trusted(e) ? systemBrowsers() : []));
+  ipcMain.handle("system-browser-set-up", (e) => (trusted(e) ? setUpSystemBrowser() : null));
+  ipcMain.handle("system-browser-open", (e, id: unknown, page: unknown) => (trusted(e) ? openSystemBrowser(id, page === "extensions" ? "extensions" : undefined) : false));
+  ipcMain.handle("search-engine-icon", (e, template: unknown) => (trusted(e) ? searchEngineIcon(template) : null));
+  ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
+  ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
   ipcMain.on("open-settings", (e, page?: string) => trusted(e) && showSettings(typeof page === "string" ? page : undefined));

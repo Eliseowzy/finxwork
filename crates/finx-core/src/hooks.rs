@@ -6,6 +6,8 @@ use finx_llm::Context;
 use finx_llm::ToolCall;
 use finx_protocol::CommandRule;
 use finx_protocol::PermissionMode;
+use finx_protocol::SiteGrant;
+use finx_tools::Authority;
 use finx_tools::Environment;
 use finx_tools::Tool;
 use finx_tools::ToolOutput;
@@ -21,9 +23,11 @@ pub enum Gate {
         reason: Option<String>,
         /// Command prefix that approving for the session allows from then on.
         proposed_rule: Option<CommandRule>,
-        /// Mode that approving for the session switches to. Without this or a rule, an
-        /// approval covers this call only.
+        /// Mode that approving for the session switches to. Without this, a rule or a
+        /// grant, an approval covers this call only.
         proposed_mode: Option<PermissionMode>,
+        /// Site permissions that approving for the session may keep, one of them.
+        proposed_grants: Vec<SiteGrant>,
     },
 }
 
@@ -50,6 +54,10 @@ pub struct SessionView {
     /// Configured skill paths (canonical). What is written there becomes instructions for
     /// later sessions, so they are protected like `.agents`.
     pub skill_roots: Arc<[PathBuf]>,
+    /// Site permissions given for the session (the main session's, in a sub-agent).
+    pub site_grants: Vec<SiteGrant>,
+    /// The `[browser]` policy: domain lists and configured sites.
+    pub browser: Arc<finx_browser::policy::SitePolicy>,
 }
 
 #[async_trait]
@@ -58,7 +66,8 @@ pub trait Hooks: Send + Sync + 'static {
     fn transform_context(&self, _ctx: &mut Context) {}
 
     /// Allow, deny, or ask before a tool runs. The first non-`Allow` answer wins.
-    async fn before_tool(&self, _call: &ToolCall, _tool: &dyn Tool, _view: &SessionView) -> Gate {
+    /// `authorities` is what the call does on which site (`Tool::authorities`).
+    async fn before_tool(&self, _call: &ToolCall, _tool: &dyn Tool, _authorities: &[Authority], _view: &SessionView) -> Gate {
         Gate::Allow
     }
 

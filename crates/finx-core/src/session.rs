@@ -13,6 +13,7 @@ use finx_protocol::ApprovalDecision;
 use finx_protocol::CommandRule;
 use finx_protocol::EventMsg;
 use finx_protocol::PermissionMode;
+use finx_protocol::SiteGrant;
 use finx_protocol::SkillUse;
 use finx_protocol::WarningCode;
 use finx_tools::Environment;
@@ -75,6 +76,8 @@ pub(crate) struct SessionState {
     pub(crate) thinking: ThinkingLevel,
     pub(crate) permission_mode: PermissionMode,
     pub(crate) session_rules: Vec<CommandRule>,
+    /// Site permissions from "approve for this session"; in memory only, like the rules.
+    pub(crate) site_grants: Vec<SiteGrant>,
     pub(crate) active_task: Option<ActiveTask>,
     pub(crate) steer: VecDeque<Input>,
     pub(crate) follow_up: VecDeque<Input>,
@@ -115,6 +118,7 @@ impl SessionState {
             thinking,
             permission_mode,
             session_rules: Vec::new(),
+            site_grants: Vec::new(),
             active_task: None,
             steer: VecDeque::new(),
             follow_up: VecDeque::new(),
@@ -145,7 +149,11 @@ pub(crate) enum Internal {
     /// A sub-agent's report for this session.
     Mail(Mail),
     /// The main session's permissions changed; a sub-agent takes them over.
-    Permissions { mode: PermissionMode, rules: Vec<CommandRule> },
+    Permissions {
+        mode: PermissionMode,
+        rules: Vec<CommandRule>,
+        grants: Vec<SiteGrant>,
+    },
 }
 
 pub(crate) struct Session {
@@ -195,6 +203,8 @@ pub(crate) struct Session {
     pub(crate) agents: Option<Arc<AgentTree>>,
     /// A sub-agent's session: nobody can answer its approval requests.
     pub(crate) sub_agent: bool,
+    /// What the kernel's tools keep for this session: its sub-agents, its browser.
+    pub(crate) tool_state: Arc<finx_tools::SessionState>,
     /// Bumped whenever input is queued during a task; tools waiting for a sub-agent watch it.
     pub(crate) input_seq: watch::Sender<u64>,
     /// Never held across an await, and no I/O happens under it.
@@ -364,6 +374,8 @@ impl Session {
             env: self.env.clone(),
             data_dir: self.data_dir.clone(),
             skill_roots: self.skill_roots.clone(),
+            site_grants: state.site_grants.clone(),
+            browser: self.config.browser.policy.clone(),
         }
     }
 
@@ -489,24 +501,57 @@ impl Session {
         self.share_permissions();
     }
 
+    /// A site permission from "approve for this session".
+    pub(crate) fn add_site_grant(&self, grant: SiteGrant) {
+        {
+            let mut state = self.state.lock();
+            if !state.site_grants.contains(&grant) {
+                state.site_grants.push(grant);
+            }
+        }
+        self.sync_browser_grants();
+        self.share_permissions();
+    }
+
+    /// "Always allow": the grant goes into the user's configuration as well (D-197). A
+    /// failure to write is a warning; the grant still holds for the session.
+    pub(crate) fn remember_site(&self, grant: &SiteGrant) {
+        let file = self.data_dir.join("config.toml");
+        if let Err(err) = crate::site_policy::remember(&file, grant) {
+            self.emit(EventMsg::Warning {
+                message: format!("could not save the site permission in {}: {err}", file.display()),
+                code: None,
+            });
+        }
+    }
+
+    /// Navigations the page makes may reach the private sites the session allowed.
+    fn sync_browser_grants(&self) {
+        if let Some(browser) = self.tool_state.get::<crate::browser::BrowserHandle>() {
+            browser.set_grants(self.state.lock().site_grants.clone());
+        }
+    }
+
     /// Sub-agents always judge tool calls by the main session's current permissions.
     fn share_permissions(&self) {
         if let Some(tree) = &self.agents {
-            let (mode, rules) = {
+            let (mode, rules, grants) = {
                 let state = self.state.lock();
-                (state.permission_mode, state.session_rules.clone())
+                (state.permission_mode, state.session_rules.clone(), state.site_grants.clone())
             };
-            tree.share_permissions(mode, rules);
+            tree.share_permissions(mode, rules, grants);
         }
     }
 
     /// A sub-agent takes over the main session's permissions.
-    pub(crate) fn apply_permissions(&self, mode: PermissionMode, rules: Vec<CommandRule>) {
+    pub(crate) fn apply_permissions(&self, mode: PermissionMode, rules: Vec<CommandRule>, grants: Vec<SiteGrant>) {
         let changed = {
             let mut state = self.state.lock();
             state.session_rules = rules;
+            state.site_grants = grants;
             std::mem::replace(&mut state.permission_mode, mode) != mode
         };
+        self.sync_browser_grants();
         if changed {
             self.record(EntryKind::Settings {
                 model: None,

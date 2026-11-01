@@ -3,7 +3,8 @@
   "pages": {
     "general": "General",
     "models": "Models",
-    "about": "About"
+    "about": "About",
+    "browser": "Browser"
   },
   "appearance": {
     "title": "Appearance",
@@ -192,5 +193,90 @@
     "connectSource": "Connect {{name}}",
     "sourceConsent": "Use the local {{name}} login to create independent model authorization. Requests count toward the same account usage.",
     "degraded": "Temporarily offline. The next request will try again."
+  },
+  "browser": {
+    "system": "System Browser",
+    "title": "Your browser",
+    "badge": {
+      "on": "In use",
+      "ready": "Connected",
+      "lost": "Not connected",
+      "off": "Not connected"
+    },
+    "off": "Once connected, the agent opens pages in your own browser, signed in to your accounts, where sites are less likely to block it.",
+    "on": "The agent opens pages in this browser, with your sign-ins. It only sees the tabs it opens.",
+    "ready": "The extension is connected, but the agent still uses the built-in browser.",
+    "lost": "The extension is not connected: it may be turned off, or not added yet.",
+    "closed": "{{name}} is not open. It connects by itself once you open it.",
+    "none": "No Chrome, Edge or Brave was found on this Mac.",
+    "connect": "Connect",
+    "start": "Start Using",
+    "stop": "Stop Using",
+    "reconnect": "Reconnect…",
+    "open": "Open {{name}}",
+    "getChrome": "Get Chrome",
+    "note": "The built-in browser is for looking at your work: local files, PDFs and page previews. Sites that need your accounts go to your own browser. Changes apply to new conversations.",
+    "guide": {
+      "title": "Connect Your Browser",
+      "steps": {
+        "prepare": "Prepare",
+        "install": "Add extension",
+        "wait": "Connect"
+      },
+      "pick": "Choose the browser to connect:",
+      "next": "Continue",
+      "preparing": "Preparing…",
+      "prepareFailed": "Could not prepare: {{message}}",
+      "retry": "Try Again",
+      "install": "Add the FinxWork extension to {{name}}. You only do this once:",
+      "howto": {
+        "open": "Open the extensions page of {{name}}.",
+        "developer": "Turn on “Developer mode” at the top right of the page.",
+        "drag": "Drag the “FinxWork Extension” folder onto the extensions page."
+      },
+      "openExtensions": "Open Extensions Page",
+      "showFolder": "Show Extension Folder",
+      "already": "Added it before? Find FinxWork on the extensions page and click its reload button.",
+      "store": "Add the FinxWork extension to {{name}}. You only do this once.",
+      "addToBrowser": "Add to {{name}}",
+      "added": "I've Added It",
+      "waiting": "Waiting for the extension in {{name}} to connect…",
+      "notOpen": "{{name}} isn't open yet. Open it and the extension connects by itself.",
+      "countdown": "{{count}}s",
+      "waitHint": "Still not connected? On {{name}}'s extensions page, find FinxWork, make sure its switch is on, then click its reload button.",
+      "back": "Back",
+      "done": "Connected to {{name}}",
+      "doneHint": "In new conversations the agent opens pages in your browser. You can stop using it here at any time; closing the “is debugging this browser” bar takes a tab back.",
+      "finish": "Done"
+    },
+    "builtIn": {
+      "title": "Built-in Browser",
+      "search": "Address Bar Search",
+      "searchDesc": "What the address bar searches with when what you type is not an address.",
+      "engines": "Search Engines",
+      "default": "Default",
+      "keyword": "Keyword",
+      "keywordHint": "Type a keyword in the address bar, then press Tab or Space to search with that engine.",
+      "add": "Add Search Engine",
+      "remove": "Remove",
+      "removeNamed": "Remove {{name}}",
+      "cancel": "Cancel",
+      "addButton": "Add",
+      "field": {
+        "name": "Name",
+        "keyword": "Keyword",
+        "url": "URL"
+      },
+      "placeholder": {
+        "name": "For example: Wikipedia",
+        "keyword": "For example: wiki"
+      },
+      "problem": {
+        "name": "Give it a name.",
+        "keyword": "A keyword is one word, with no spaces.",
+        "keywordTaken": "Another search engine uses this keyword.",
+        "url": "The URL starts with http:// or https://, with %s where the search words go."
+      }
+    }
   }
 }

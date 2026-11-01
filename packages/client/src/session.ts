@@ -1,6 +1,6 @@
 import type {
-  AgentSnapshot, AgentStatus, ContextReport, Delta, ErrorInfo, Event, Location, PartialBlock, PartialMessage, PendingApproval, PermissionMode, SessionInfo,
-  SessionSnapshot, TaskEndItem, ThinkingLevel, ToolCategory, TranscriptItem, UsageTotals, UserMessage, WarningCode,
+  AgentSnapshot, AgentStatus, ContextReport, Delta, ErrorInfo, Event, Location, PartialBlock, PartialMessage, PendingApproval, PermissionMode, QueuedInput,
+  SessionInfo, SessionSnapshot, TaskEndItem, ThinkingLevel, ToolCategory, TranscriptItem, UsageTotals, UserMessage, WarningCode,
 } from "@finx/protocol";
 import { addTotals, usageTokens } from "./text.ts";
 
@@ -105,6 +105,8 @@ export interface SessionView {
   descriptions: Record<string, ToolDescription>;
   /** What an interrupt handed back, for the composer. */
   returned?: UserMessage[];
+  /** Prompts sent while a task runs, waiting for it, oldest first. */
+  queued: QueuedInput[];
   /** Warnings with a code, oldest first. */
   notices: Notice[];
   /** Sub-agents started since the session was loaded, in the order they started. */
@@ -164,6 +166,7 @@ export function fromSnapshot(s: SessionSnapshot): SessionView {
     context,
     failure: !live && last?.type === "task_end" && last.outcome === "failed" ? (last.error ?? undefined) : undefined,
     descriptions,
+    queued: s.queued ?? [],
     notices: [],
     agents: (s.agents ?? []).map((a) => agentFrom(s.session, a)),
     closed: false,
@@ -256,8 +259,13 @@ function step(v: SessionView, e: Event): SessionView {
       const entries = [...v.entries, { type: "message" as const, message_id: e.message_id, message: m, mail: e.mail ?? undefined, skills: e.skills }];
       const context = m.role === "assistant" ? usageTokens(m.usage) : v.context;
       const live = v.live && v.live.streaming?.message_id === e.message_id ? { ...v.live, streaming: undefined } : v.live;
-      return { ...v, entries, context, live };
+      // A queued prompt joins the history with the time it was sent.
+      const i = m.role === "user" ? v.queued.findIndex((q) => q.message.ts === m.ts) : -1;
+      const queued = i < 0 ? v.queued : v.queued.filter((_, j) => j !== i);
+      return { ...v, entries, context, live, queued };
     }
+    case "input_queued":
+      return { ...v, queued: [...v.queued, { message: e.message, mode: e.mode }] };
     case "stream_retry":
       return withLive(v, (live) => ({ ...live, retry: { attempt: e.attempt, delay_ms: e.delay_ms, error: e.error, at: e.ts } }));
     case "tool_started": {
@@ -295,9 +303,9 @@ function step(v: SessionView, e: Event): SessionView {
     case "task_completed":
       return endTask(v, { type: "task_end", task_id: e.task_id, outcome: "completed", reason: e.reason, usage: e.usage, ts: e.ts });
     case "task_failed":
-      return { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "failed", error: e.error, usage: e.usage, ts: e.ts }), failure: e.error };
+      return { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "failed", error: e.error, usage: e.usage, ts: e.ts }), failure: e.error, queued: [] };
     case "task_interrupted":
-      return { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "interrupted", usage: e.usage, ts: e.ts }), returned: e.returned_input };
+      return { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "interrupted", usage: e.usage, ts: e.ts }), returned: e.returned_input, queued: [] };
     case "settings_changed": {
       const info = settings(v.info, e.model, e.thinking, e.permission_mode, e.context_window);
       // Out of bypass-permissions, its warning no longer holds.
@@ -337,7 +345,7 @@ function step(v: SessionView, e: Event): SessionView {
         return view === a.view ? a : { ...a, view };
       });
     case "session_closed":
-      return { ...v, live: null, closed: true };
+      return { ...v, live: null, queued: [], closed: true };
     default:
       return v; // A newer kernel's event: ignored (technical-design §8.4).
   }

@@ -82,6 +82,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpSe
         store: Arc::new(JsonlStore::new(home.sessions_dir())),
         hooks: vec![],
         mcp_servers: servers,
+        browser_pool: None,
     }
 }
 

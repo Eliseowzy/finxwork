@@ -8,6 +8,8 @@ importers:
 
   .: {}
 
+  apps/chrome-extension: {}
+
   apps/desktop:
     dependencies:
       '@finx/client':

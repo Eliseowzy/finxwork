@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import type { Bridge, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
+import type { Bridge, BrowserPanel, BrowserStill, BrowserTab, BrowserTabCommand, Command, KernelKind, KernelStatusView, MenuItem, MenuState, PlatformId, Preferences } from "../shared/bridge";
 import type { Language } from "../shared/i18n";
 import type { UpdateInfo } from "../shared/update";
 
@@ -21,6 +21,19 @@ const listen = <T>(channel: string, cb: (v: T) => void) => {
 ipcRenderer.on("finx-kernel", (e) => window.postMessage("finx-kernel", "*", e.ports));
 
 const bridge: Bridge = {
+  setBrowserPanel: (panel: BrowserPanel) => ipcRenderer.send("browser-panel", panel),
+  openBrowser: (session) => ipcRenderer.invoke("browser-open", session),
+  claimHomeBrowser: (session) => ipcRenderer.invoke("browser-claim-home", session),
+  browserTabs: () => ipcRenderer.invoke("browser-tabs"),
+  onBrowserTabs: (cb: (tabs: BrowserTab[]) => void) => listen("browser-tabs", cb),
+  onBrowserComment: (cb) => listen("browser-comment", cb),
+  showBrowserTab: (targetId: string) => ipcRenderer.send("browser-show", targetId),
+  onBrowserStill: (cb: (still: BrowserStill) => void) => listen("browser-still", cb),
+  browserTabCommand: (targetId: string, command: BrowserTabCommand) => ipcRenderer.send("browser-command", targetId, command),
+  browserMenuState: (targetId) => ipcRenderer.invoke("browser-menu-state", targetId),
+  browserMenuAction: (targetId, action) => ipcRenderer.send("browser-menu-action", targetId, action),
+  openPrivacySettings: () => ipcRenderer.send("open-privacy-settings"),
+  localServers: () => ipcRenderer.invoke("browser-local-servers"),
   openSourceApp: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("open-source-app", adapter),
   sourceAppIcon: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("source-app-icon", adapter),
   platform: arg("platform") as PlatformId,
@@ -35,6 +48,12 @@ const bridge: Bridge = {
   retryKernel: () => ipcRenderer.send("retry-kernel"),
   restartKernel: (now: boolean) => ipcRenderer.send("restart-kernel", now),
   openSettings: (page?: string) => ipcRenderer.send("open-settings", page),
+  systemBrowsers: () => ipcRenderer.invoke("system-browsers"),
+  setUpSystemBrowser: () => ipcRenderer.invoke("system-browser-set-up"),
+  openSystemBrowser: (id: string, page?: "extensions") => ipcRenderer.invoke("system-browser-open", id, page),
+  revealBrowserExtension: () => ipcRenderer.send("system-browser-reveal-extension"),
+  systemBrowserIcon: (id: string) => ipcRenderer.invoke("system-browser-icon", id),
+  searchEngineIcon: (template: string) => ipcRenderer.invoke("search-engine-icon", template),
   onSettingsPage: (cb: (page: string) => void) => listen("settings-page", cb),
   settingsOpen: () => ipcRenderer.invoke("settings-open"),
   onSettingsOpen: (cb: (open: boolean) => void) => listen("settings-open", cb),

@@ -289,6 +289,7 @@ impl AcpEncoder {
                 summary,
                 proposed_rule,
                 proposed_mode,
+                proposed_grants,
                 ..
             } => {
                 let id = Id::Str(format!("finx-{}", self.shared.next_request.fetch_add(1, Ordering::Relaxed)));
@@ -304,7 +305,7 @@ impl AcpEncoder {
                 let params = json!({
                     "sessionId": sid,
                     "toolCall": { "toolCallId": call_id, "title": title, "kind": kind, "status": "pending" },
-                    "options": out::permission_options(proposed_rule.as_ref().map(|r| r.prefix.as_slice()), *proposed_mode),
+                    "options": out::permission_options(proposed_rule.as_ref().map(|r| r.prefix.as_slice()), *proposed_mode, proposed_grants),
                 });
                 out.push(Bytes::from(finx_rpc::request(&id, out::REQUEST_PERMISSION, &params)));
             }

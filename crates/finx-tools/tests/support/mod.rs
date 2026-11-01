@@ -141,7 +141,8 @@ fn ctx(dir: &Path) -> ToolCtx {
         cancel: CancellationToken::new(),
         model_accepts_images: false,
         output_dir: dir.join(".finx-output"),
-        session_state: None,
+        session_state: Default::default(),
+            authorities: Default::default(),
     }
 }
 

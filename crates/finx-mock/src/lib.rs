@@ -28,6 +28,7 @@
 //! | `agent:LABEL` | a coding task in seven requests (see [`agent_step`]) |
 //! | `fanout:K[:LABEL]` | K `spawn_agent` calls with wait=true, each running `agent`, then a summary |
 //! | `read:PATH` | a read of PATH, then `read done` |
+//! | `browser:URL` | `browser_navigate` to URL, a click on the first button of the page, then `browser done: <the click's result>` |
 //! | `churn:N[:SEED]` | N tool turns in one task, each picked at random: read, write or edit `notes/state.txt`, append to `notes/log.txt`, search with grep, find or rg, read part of a file; then `churn done` (see [`churn_step`]) |
 //! | `mcp:SERVER:PROJECT` | `tool_search` for the vault tool, `call_tool` on `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
@@ -524,6 +525,22 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
         "read" => match step {
             0 => Plan::Step(Step::calls(vec![("read", json!({"path": arg}))])),
             _ => done("read"),
+        },
+        "browser" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg}))])),
+            1 => {
+                // The first button's ref in the page the navigation reported.
+                let page = last_tool_result(messages);
+                let button = page
+                    .lines()
+                    .find(|line| line.contains("button"))
+                    .and_then(|line| line.split("[ref=").nth(1))
+                    .and_then(|rest| rest.split(']').next())
+                    .unwrap_or("e1")
+                    .to_string();
+                Plan::Step(Step::calls(vec![("browser_act", json!({"ref": button, "action": "click"}))]))
+            }
+            _ => Plan::Step(Step::text(format!("browser done: {}", last_tool_result(messages)))),
         },
         "cut" => Plan::Step(Step {
             parts: vec![Part::Text("this reply is cut".into())],

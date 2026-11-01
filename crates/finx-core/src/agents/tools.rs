@@ -26,8 +26,7 @@ pub(crate) fn agent_tools() -> Vec<Arc<dyn Tool>> {
 /// The sub-agents of the session that made the call.
 fn tree(ctx: &ToolCtx) -> Result<Arc<AgentTree>, ToolError> {
     ctx.session_state
-        .clone()
-        .and_then(|state| state.downcast::<AgentTree>().ok())
+        .get::<AgentTree>()
         .ok_or_else(|| ToolError::Failed("this session cannot start sub-agents".into()))
 }
 

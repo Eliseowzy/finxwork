@@ -34,6 +34,9 @@ pub use transport::default_socket_path;
 pub use transport::serve_stdio;
 pub use transport::serve_unix;
 
+mod browser_host;
+mod browser_status;
 mod connections;
 mod customize;
 mod models;
+mod peer;

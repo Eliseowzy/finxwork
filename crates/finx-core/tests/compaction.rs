@@ -113,6 +113,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         store: Arc::new(JsonlStore::new(home.sessions_dir())),
         hooks: vec![],
         mcp_servers: Vec::new(),
+        browser_pool: None,
     }
 }
 

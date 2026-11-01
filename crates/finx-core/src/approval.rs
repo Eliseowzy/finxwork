@@ -14,6 +14,7 @@ use finx_llm::ToolCall;
 use finx_protocol::CommandRule;
 use finx_protocol::PermissionMode;
 use finx_protocol::RuleDecision;
+use finx_tools::Authority;
 use finx_tools::Tool;
 use finx_tools::ToolKind;
 use finx_tools::ToolOrigin;
@@ -41,12 +42,16 @@ pub struct ApprovalPolicy;
 
 #[async_trait]
 impl Hooks for ApprovalPolicy {
-    async fn before_tool(&self, call: &ToolCall, tool: &dyn Tool, view: &SessionView) -> Gate {
+    async fn before_tool(&self, call: &ToolCall, tool: &dyn Tool, authorities: &[Authority], view: &SessionView) -> Gate {
         // MCP tools are not approved for now: they run in every mode.
         if tool.origin() == ToolOrigin::Mcp {
             return Gate::Allow;
         }
-        evaluate(call, tool.kind(), view)
+        // Tools that say what they do on which site are judged by that (browser-design §7.1).
+        if !authorities.is_empty() {
+            return crate::site_policy::evaluate(authorities, view).await;
+        }
+        evaluate(call, tool.kind_for(&call.arguments.to_value()), view)
     }
 }
 
@@ -70,6 +75,7 @@ fn ask(summary: String, reason: Option<String>) -> Gate {
         reason,
         proposed_rule: None,
         proposed_mode: None,
+        proposed_grants: Vec::new(),
     }
 }
 
@@ -157,6 +163,7 @@ fn evaluate_bash(command: &str, view: &SessionView) -> Gate {
         reason: None,
         proposed_rule,
         proposed_mode: None,
+        proposed_grants: Vec::new(),
     }
 }
 
@@ -347,6 +354,7 @@ fn evaluate_file_change(call: &ToolCall, args: &serde_json::Value, raw_path: &st
             reason: None,
             proposed_rule: None,
             proposed_mode: Some(PermissionMode::AcceptEdits),
+            proposed_grants: Vec::new(),
         },
         PermissionMode::AcceptEdits | PermissionMode::BypassPermissions => Gate::Allow,
     }
@@ -372,6 +380,8 @@ mod tests {
             env: Arc::new(LocalEnvironment::new(dir.to_path_buf())),
             data_dir: canonical_lossy(&dir.join("finx-home")),
             skill_roots: Arc::from([]),
+            site_grants: vec![],
+            browser: Arc::default(),
         }
     }
 

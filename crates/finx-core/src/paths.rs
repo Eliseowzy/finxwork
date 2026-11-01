@@ -88,6 +88,11 @@ impl FinxHome {
         self.skills_dir().join(".system")
     }
 
+    /// `browser`: the managed browser's profiles, temporary profiles and downloads.
+    pub fn browser_dir(&self) -> PathBuf {
+        self.root.join("browser")
+    }
+
     /// `mcp/cache`: each MCP server's last connection and tool list.
     pub fn mcp_cache_dir(&self) -> PathBuf {
         self.root.join("mcp").join("cache")
