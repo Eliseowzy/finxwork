@@ -17,3 +17,13 @@ test("multi-byte text split anywhere stays intact", () => {
   for (const ch of line) out += c.push(ch);
   assert.equal(out, line);
 });
+
+test("a line of megabytes in 8 KB chunks takes time in step with its size", () => {
+  const line = JSON.stringify({ text: "截图".repeat(1000) + "A".repeat(6_000_000) }) + "\n";
+  const c = new LineCutter();
+  const start = performance.now();
+  let out = "";
+  for (let i = 0; i < line.length; i += 8192) out += c.push(line.slice(i, i + 8192));
+  assert.equal(out, line);
+  assert.ok(performance.now() - start < 300, "cutting stays linear");
+});
