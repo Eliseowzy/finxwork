@@ -11,7 +11,11 @@ impl Server {
     pub(crate) fn browser_status(&self) -> BrowserStatus {
         let pool = &self.0.browser_pool;
         BrowserStatus {
-            extension: pool.has_extension().then(|| self.0.extension.lock().clone().unwrap_or_default()),
+            // One that cannot be used is shown too, with its problem, so clients can say what to update.
+            extension: match (pool.has_extension(), self.0.extension.lock().clone()) {
+                (true, status) => Some(status.unwrap_or_default()),
+                (false, status) => status.filter(|s| s.problem.is_some()),
+            },
             embedded: pool.has_host(),
         }
     }

@@ -201,7 +201,8 @@
       "on": "In use",
       "ready": "Connected",
       "lost": "Not connected",
-      "off": "Not connected"
+      "off": "Not connected",
+      "outdated": "Needs update"
     },
     "off": "Once connected, the agent opens pages in your own browser, signed in to your accounts, where sites are less likely to block it.",
     "on": "The agent opens pages in this browser, with your sign-ins. It only sees the tabs it opens.",
@@ -209,12 +210,17 @@
     "lost": "The extension is not connected: it may be turned off, or not added yet.",
     "closed": "{{name}} is not open. It connects by itself once you open it.",
     "none": "No Chrome, Edge or Brave was found on this Mac.",
+    "outdated": {
+      "extension": "The FinxWork extension in {{name}} is too old for this version of FinxWork. It updates by itself shortly; you can also update it on the extensions page.",
+      "finx": "The FinxWork extension in {{name}} is newer than this app. Update FinxWork to use it."
+    },
     "connect": "Connect",
     "start": "Start Using",
     "stop": "Stop Using",
     "reconnect": "Reconnect…",
     "open": "Open {{name}}",
     "getChrome": "Get Chrome",
+    "checkUpdates": "Check for Updates",
     "note": "The built-in browser is for looking at your work: local files, PDFs and page previews. Sites that need your accounts go to your own browser. Changes apply to new conversations.",
     "guide": {
       "title": "Connect Your Browser",

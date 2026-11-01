@@ -1,6 +1,9 @@
 // Generated from crates/finx-browser/src/methods.rs; do not edit. Regenerate with
 // FINX_UPDATE_SNAPSHOTS=1 cargo test -p finx-browser methods.
 
+/** The version of what finx needs from the extension: BRIDGE in methods.rs (D-219). */
+export const bridge = 1;
+
 /** Browser-level commands, which the browser end answers itself. */
 export const browserMethods = Object.freeze([
   "Browser.close",

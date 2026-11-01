@@ -2,7 +2,8 @@
 //! A real Chrome loads apps/chrome-extension, starts the real `finx browser native-host`
 //! through the manifest that `finx browser extension install` wrote, and that host lends the
 //! browser to a real `finx serve`, whose session (driven by the mock model) opens a page and
-//! clicks on it. Skipped when no Chromium-family browser is installed.
+//! clicks on it. Skipped when no Chromium-family browser is installed. Another test stands in
+//! for the extension to check the bridge versions (D-219) without a browser.
 
 mod common;
 
@@ -183,6 +184,96 @@ async fn a_session_drives_the_users_chrome_through_the_extension() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
     assert!(!urls.contains(&page) && urls.contains(&mine), "{urls:?}");
+
+    client.request("server/shutdown", json!({})).await.unwrap();
+    let _ = tokio::time::timeout(Duration::from_secs(20), service.wait()).await;
+}
+
+/// One Native Messaging frame, as Chrome writes it.
+fn frame(message: &Value) -> Vec<u8> {
+    let json = message.to_string();
+    let mut out = (json.len() as u32).to_ne_bytes().to_vec();
+    out.extend_from_slice(json.as_bytes());
+    out
+}
+
+/// The host's next message with a `status`, skipping CDP.
+async fn next_status(out: &mut tokio::process::ChildStdout) -> Value {
+    use tokio::io::AsyncReadExt as _;
+    loop {
+        let mut length = [0u8; 4];
+        tokio::time::timeout(Duration::from_secs(20), out.read_exact(&mut length)).await.expect("the host answers").unwrap();
+        let mut body = vec![0u8; u32::from_ne_bytes(length) as usize];
+        out.read_exact(&mut body).await.unwrap();
+        let message: Value = serde_json::from_slice(&body).unwrap();
+        if message.get("status").is_some() {
+            return message;
+        }
+    }
+}
+
+/// Stands in for the extension: starts the real host, says hello, and returns its first status.
+async fn hello(env: &TestEnv, hello: Value) -> (tokio::process::Child, Value) {
+    let mut host = env
+        .finx(&["browser", "native-host"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    host.stdin.as_mut().unwrap().write_all(&frame(&json!({"hello": hello}))).await.unwrap();
+    let status = next_status(host.stdout.as_mut().unwrap()).await;
+    (host, status)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_extension_and_finx_agree_on_a_bridge_version_or_say_which_to_update() {
+    let env = TestEnv::new("manual", "").await;
+    let socket = env.home.path().join("run").join("finx.sock");
+    let mut service = env
+        .finx(&["serve", "--listen", &format!("unix://{}", socket.display())])
+        .spawn()
+        .unwrap();
+    for _ in 0..200 {
+        if UnixStream::connect(&socket).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let stream = UnixStream::connect(&socket).await.expect("the service listens");
+    let (read, write) = stream.into_split();
+    let (client, incoming) = Client::connect(read, write);
+    native_init(&client).await;
+    let _demux = Demux::spawn(incoming);
+    let status = || async { client.request("browser/status", json!({})).await.unwrap() };
+
+    // An extension newer than this finx: held, not used, and the app is told to update.
+    let future = finx_browser::methods::BRIDGE + 1;
+    let (mut host, said) =
+        hello(&env, json!({"browser": "Google Chrome 999", "extension_version": "9.0.0", "bridge": {"min": future, "max": future}}))
+            .await;
+    assert_eq!(said["status"], "outdated", "{said}");
+    assert_eq!(said["update"], "finx", "{said}");
+    let now = status().await;
+    assert_eq!(now["extension"]["problem"], "update_finx", "{now}");
+    assert_eq!(now["extension"]["extension_version"], "9.0.0", "{now}");
+    host.kill().await.unwrap();
+    let _ = host.wait().await;
+    let mut gone = Value::Null;
+    for _ in 0..100 {
+        gone = status().await;
+        if gone.get("extension").is_none() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(gone.get("extension").is_none(), "its status goes with it: {gone}");
+
+    // An extension from before bridge versions speaks version 1, which this finx still drives.
+    let (mut host, said) = hello(&env, json!({"browser": "Google Chrome 141", "extension_version": "0.1.0"})).await;
+    assert_eq!(said, json!({"status": "connected", "bridge": 1}), "{said}");
+    let now = status().await;
+    assert!(now["extension"].get("problem").is_none(), "{now}");
+    host.kill().await.unwrap();
 
     client.request("server/shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(20), service.wait()).await;

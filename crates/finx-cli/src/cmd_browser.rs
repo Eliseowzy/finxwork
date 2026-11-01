@@ -9,9 +9,12 @@
 //! it sends `{stream, data}` (one CDP message of the browser numbered `stream`, as a JSON
 //! object), or `{stream, part, more}` pieces of one that is over Chrome's 1 MB limit (parts of
 //! the message's JSON text), and `{status}` when the service comes or goes; from it, it takes
-//! `{stream, data}`, and first `{hello: {browser, extension_version}}`, which it passes on so
-//! the app can say which browser is connected. CDP messages pass through as JSON text: only
-//! the stream number is read.
+//! `{stream, data}`, and first `{hello: {browser, extension_version, bridge: {min, max}}}`,
+//! which it passes on so the app can say which browser is connected, and the service can pick
+//! the bridge version both speak (D-219). Connected, it says `{status: "connected", bridge}`;
+//! when they share none, `{status: "outdated", update: "extension" | "finx", reason}`, and it
+//! stays connected without a browser until one side is updated (either restarts the host).
+//! CDP messages pass through as JSON text: only the stream number is read.
 
 use anyhow::Context as _;
 use serde::Deserialize;
@@ -33,6 +36,10 @@ use crate::setup;
 pub const HOST_NAME: &str = "com.finxwork.browser";
 /// The FinxWork extension's ID, fixed by the `key` in its manifest.json.
 pub const EXTENSION_ID: &str = "fgaadfmkicjchgjlomjemofnllanlcoo";
+/// The extension's ID in the Chrome Web Store, once published, when the store gave it
+/// another ID than [`EXTENSION_ID`] (it keeps that one only when the first upload carried
+/// its key.pem). Every install lets both start the host.
+pub const STORE_EXTENSION_ID: Option<&str> = None;
 /// Chrome refuses messages from a host larger than this.
 const CHROME_LIMIT: usize = 1 << 20;
 /// Pieces of a larger message stay well under it, JSON escaping included.
@@ -145,11 +152,28 @@ async fn serve_once(
             "kind": "extension",
             "browser": hello["browser"].as_str(),
             "extension_version": hello["extension_version"].as_str(),
+            "bridge": hello.get("bridge").filter(|b| b["min"].is_u64() && b["max"].is_u64()),
         }})))
         .await?;
-    answer(&mut lines, 2).await.context("the FinxWork service refused the extension")?;
-    tracing::info!("extension host connected");
-    let _ = to_chrome.send(json!({"status": "connected"}).to_string());
+    let result = answer(&mut lines, 2).await.context("the FinxWork service refused the extension")?;
+    if let Some(update) = outdated(&result) {
+        tracing::warn!(update, "the extension and finx share no bridge version");
+        let reason = match update {
+            "extension" => "this extension is too old for FinxWork; it updates by itself, or update it on the extensions page",
+            _ => "this extension is newer than FinxWork; update FinxWork",
+        };
+        let _ = to_chrome.send(json!({"status": "outdated", "update": update, "reason": reason}).to_string());
+        // Held open, so the app can say so, until the service goes; the extension's messages
+        // belong to no browser.
+        loop {
+            tokio::select! {
+                next = lines.next_line() => if next?.is_none() { return Ok(()) },
+                message = inbox.recv() => if message.is_none() { return Ok(()) },
+            }
+        }
+    }
+    tracing::info!(bridge = %result["bridge"], "extension host connected");
+    let _ = to_chrome.send(json!({"status": "connected", "bridge": result["bridge"]}).to_string());
     loop {
         tokio::select! {
             next = lines.next_line() => {
@@ -166,6 +190,14 @@ async fn serve_once(
                 }
             }
         }
+    }
+}
+
+/// Which side to update, when the service found no bridge version the extension speaks.
+fn outdated(result: &Value) -> Option<&'static str> {
+    match result["problem"].as_str()? {
+        "update_extension" => Some("extension"),
+        _ => Some("finx"),
     }
 }
 
@@ -319,6 +351,7 @@ pub fn install(extension_ids: &[String], user_data_dir: Option<PathBuf>) -> anyh
     std::fs::set_permissions(&launcher, std::fs::Permissions::from_mode(0o755))?;
 
     let mut ids: Vec<&str> = vec![EXTENSION_ID];
+    ids.extend(STORE_EXTENSION_ID);
     ids.extend(extension_ids.iter().map(String::as_str));
     for id in &ids {
         anyhow::ensure!(

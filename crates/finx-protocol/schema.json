@@ -17,6 +17,9 @@
       "$ref": "#/definitions/BrowserHostParams"
     },
     {
+      "$ref": "#/definitions/BrowserHostResult"
+    },
+    {
       "$ref": "#/definitions/BrowserStatus"
     },
     {
@@ -624,6 +627,26 @@
       },
       "type": "object"
     },
+    "BridgeRange": {
+      "description": "A range of bridge versions, both ends included.",
+      "properties": {
+        "max": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "min": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max",
+        "min"
+      ],
+      "type": "object"
+    },
     "BrowserCdpParams": {
       "description": "Parameters of the `browser/cdp` notification, in both directions.",
       "properties": {
@@ -667,6 +690,17 @@
     "BrowserHostParams": {
       "description": "Parameters of `browser/host`. Older hosts send none: the embedded browser.",
       "properties": {
+        "bridge": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BridgeRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The bridge versions the extension speaks (browser-design D-219). An extension host that sends none has an extension from before them: version 1."
+        },
         "browser": {
           "description": "The browser the host is in, as it names itself: \"Google Chrome 141.0.7390.54\".",
           "type": [
@@ -688,6 +722,32 @@
       },
       "type": "object"
     },
+    "BrowserHostResult": {
+      "description": "The result of `browser/host`.",
+      "properties": {
+        "bridge": {
+          "description": "The bridge version to speak, for an extension host that finx can use.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExtensionProblem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when the extension cannot be used. The connection stays, so clients can say what to update, but carries no browser."
+        }
+      },
+      "type": "object"
+    },
     "BrowserStatus": {
       "description": "The result of `browser/status`, and the parameters of `browser/changed`.",
       "properties": {
@@ -704,7 +764,7 @@
               "type": "null"
             }
           ],
-          "description": "Set while the FinxWork extension is connected."
+          "description": "Set while the FinxWork extension is connected; with `problem` when it cannot be used."
         }
       },
       "required": [
@@ -2805,6 +2865,25 @@
       },
       "type": "object"
     },
+    "ExtensionProblem": {
+      "description": "Why a connected extension cannot be used: it and finx share no bridge version.",
+      "oneOf": [
+        {
+          "description": "The extension is older than this finx can drive; the store updates it by itself.",
+          "enum": [
+            "update_extension"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The extension is newer than this finx; update FinxWork.",
+          "enum": [
+            "update_finx"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "ExtensionStatus": {
       "description": "The user's own browser, lent through the FinxWork extension (browser-design §8.4).",
       "properties": {
@@ -2820,6 +2899,17 @@
             "string",
             "null"
           ]
+        },
+        "problem": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ExtensionProblem"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Set when the extension is connected but cannot be used until one side is updated."
         }
       },
       "type": "object"
@@ -6762,7 +6852,7 @@
     },
     "browser/host": {
       "params": "BrowserHostParams",
-      "result": "Empty"
+      "result": "BrowserHostResult"
     },
     "browser/status": {
       "result": "BrowserStatus"

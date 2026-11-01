@@ -98,6 +98,12 @@ export type AuthSetResult = {
   verified: boolean;
 };
 
+/** A range of bridge versions, both ends included. */
+export type BridgeRange = {
+  max: number;
+  min: number;
+};
+
 /** Parameters of the `browser/cdp` notification, in both directions. */
 export type BrowserCdpParams = {
   /** One CDP message, as a JSON object: a command from the kernel; a response or an event from the host. Carried as is, so a large one (a screenshot, an accessibility tree) is neither escaped into a string nor parsed on the way through. */
@@ -111,6 +117,8 @@ export type BrowserHostKind = "embedded" | "extension";
 
 /** Parameters of `browser/host`. Older hosts send none: the embedded browser. */
 export type BrowserHostParams = {
+  /** The bridge versions the extension speaks (browser-design D-219). An extension host that sends none has an extension from before them: version 1. */
+  bridge?: BridgeRange | null;
   /** The browser the host is in, as it names itself: "Google Chrome 141.0.7390.54". */
   browser?: string | null;
   /** The FinxWork extension's version, for an extension host. */
@@ -118,11 +126,19 @@ export type BrowserHostParams = {
   kind?: BrowserHostKind;
 };
 
+/** The result of `browser/host`. */
+export type BrowserHostResult = {
+  /** The bridge version to speak, for an extension host that finx can use. */
+  bridge?: number | null;
+  /** Set when the extension cannot be used. The connection stays, so clients can say what to update, but carries no browser. */
+  problem?: ExtensionProblem | null;
+};
+
 /** The result of `browser/status`, and the parameters of `browser/changed`. */
 export type BrowserStatus = {
   /** Whether a desktop app shows embedded browsers. */
   embedded: boolean;
-  /** Set while the FinxWork extension is connected. */
+  /** Set while the FinxWork extension is connected; with `problem` when it cannot be used. */
   extension?: ExtensionStatus | null;
 };
 
@@ -583,11 +599,16 @@ export type EventFilter = {
   exclude?: EventClass[];
 };
 
+/** Why a connected extension cannot be used: it and finx share no bridge version. */
+export type ExtensionProblem = "update_extension" | "update_finx";
+
 /** The user's own browser, lent through the FinxWork extension (browser-design §8.4). */
 export type ExtensionStatus = {
   /** "Google Chrome 141.0.7390.54", when the extension said. */
   browser?: string | null;
   extension_version?: string | null;
+  /** Set when the extension is connected but cannot be used until one side is updated. */
+  problem?: ExtensionProblem | null;
 };
 
 export type GrantAuthority = "navigate" | "act";
@@ -1559,7 +1580,7 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
-  "browser/host": [BrowserHostParams, Empty];
+  "browser/host": [BrowserHostParams, BrowserHostResult];
   "browser/status": [Record<string, never>, BrowserStatus];
   "config/read": [ConfigReadParams, ConfigReadResult];
   "config/write": [ConfigWriteParams, ConfigWriteResult];

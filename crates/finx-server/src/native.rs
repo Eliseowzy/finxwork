@@ -480,18 +480,39 @@ impl NativeProtocol {
                 if let Some((before, _)) = self.browser_host.lock().replace((link.clone(), kind)) {
                     before.close();
                 }
+                let mut result = finx_protocol::api::BrowserHostResult::default();
                 match kind {
                     BrowserHostKind::Embedded => server.0.browser_pool.set_host(Some(link)),
                     BrowserHostKind::Extension => {
+                        use finx_browser::methods::BridgeMismatch;
+                        use finx_protocol::api::ExtensionProblem;
                         let p = finx_rpc::params::<finx_protocol::api::BrowserHostParams>(params).unwrap_or_default();
-                        *server.0.extension.lock() = Some(finx_protocol::api::ExtensionStatus {
+                        // An extension from before bridge versions speaks version 1 (D-219).
+                        let range = p.bridge.unwrap_or(finx_protocol::api::BridgeRange { min: 1, max: 1 });
+                        let bridge = finx_browser::methods::negotiate(range.min, range.max);
+                        let problem = bridge.err().map(|mismatch| match mismatch {
+                            BridgeMismatch::ExtensionTooOld => ExtensionProblem::UpdateExtension,
+                            BridgeMismatch::FinxTooOld => ExtensionProblem::UpdateFinx,
+                        });
+                        let status = finx_protocol::api::ExtensionStatus {
                             browser: p.browser,
                             extension_version: p.extension_version,
-                        });
-                        server.0.browser_pool.set_extension(Some(link));
+                            problem,
+                        };
+                        if bridge.is_ok() {
+                            *server.0.extension.lock() = Some(status);
+                            server.0.browser_pool.set_extension(Some(link));
+                        } else {
+                            // Kept for clients to say what to update, unless a usable one is here.
+                            tracing::warn!(?range, ?problem, "an extension finx cannot use connected");
+                            if !server.0.browser_pool.has_extension() {
+                                *server.0.extension.lock() = Some(status);
+                            }
+                        }
+                        result = finx_protocol::api::BrowserHostResult { bridge: bridge.ok(), problem };
                     }
                 }
-                conn.send(reply(id, Ok::<_, RpcError>(finx_protocol::api::Empty {})));
+                conn.send(reply(id, Ok::<_, RpcError>(result)));
                 server.browser_changed();
             }
             method::BROWSER_STATUS => {

@@ -161,10 +161,16 @@ fs.copyFileSync(path.join(icons, "Assets.car"), path.join(contents, "Resources/A
 const problems = catalogProblems(catalogSkills);
 if (problems.length) throw new Error(`the catalog's skills differ from src/shared/catalog.ts:\n  ${problems.join("\n  ")}`);
 if (fs.existsSync(catalogSkillsDir)) fs.cpSync(catalogSkillsDir, path.join(contents, "Resources/catalog/skills"), { recursive: true, filter: (f) => path.basename(f) !== ".DS_Store" });
-// The extension as it loads: the manifest, the scripts and the icons; not its tests or types.
-fs.cpSync(path.join(root, "apps/chrome-extension"), path.join(contents, "Resources/chrome-extension"), {
+// The extension as it loads: the manifest, the scripts and the icons; not its tests, types,
+// store packaging (scripts/, store/, dist/) or package.json.
+const extensionRoot = path.join(root, "apps/chrome-extension");
+fs.cpSync(extensionRoot, path.join(contents, "Resources/chrome-extension"), {
   recursive: true,
-  filter: (f) => !f.endsWith(".test.js") && !f.endsWith(".d.ts") && !["package.json", "node_modules", ".DS_Store"].includes(path.basename(f)),
+  filter: (f) =>
+    !f.endsWith(".test.js") &&
+    !f.endsWith(".d.ts") &&
+    !["package.json", "node_modules", ".DS_Store"].includes(path.basename(f)) &&
+    !["scripts", "store", "dist"].includes(path.relative(extensionRoot, f).split(path.sep)[0]),
 });
 
 step(`embedding the kernel: finx ${kernelVersion}, protocol ${protocolVersion}`);
