@@ -200,7 +200,7 @@ type Step = "pick" | "prepare" | "install" | "wait" | "done";
 
 /** The setup, one step at a time. Only adding the extension needs the user; the rest the app does. */
 /** How long the extension gets to connect before the guide says what to check. */
-const WAIT_SECONDS = 10;
+const WAIT_SECONDS = 5;
 
 function Guide({
   browsers,
