@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { Trans, useTranslation } from "react-i18next";
-import type { ConfigLayer, McpServerView } from "@finx/protocol";
+import type { McpServerView } from "@finx/protocol";
 import { catalogConnectors, catalogSkills, type CatalogConnector, type CatalogSkill } from "../../../shared/catalog";
 import { Icon } from "../icons";
 import type { CustomizeView } from "../store";
@@ -22,7 +22,7 @@ export type Actions = {
   showBroken: () => void;
   discover: () => void;
   installSkill: (c: CatalogSkill) => void;
-  addConnector: (c: CatalogConnector, layer?: ConfigLayer, token?: string) => void;
+  addConnector: (c: CatalogConnector) => void;
   toggleSkill: (item: SkillItem, on: boolean) => void;
   toggleServer: (s: McpServerView, on: boolean) => void;
 };

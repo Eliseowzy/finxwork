@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Trans, useTranslation } from "react-i18next";
 import type { McpServerView, McpToolsResult, SkillsFilesResult } from "@finx/protocol";
-import { catalogConnectors, catalogSkills, commandLine, type CatalogConnector } from "../../../shared/catalog";
+import { catalogConnectors, catalogSkills, commandLine, oneClick, type CatalogConnector } from "../../../shared/catalog";
 import { agoText } from "../format";
 import { Icon } from "../icons";
 import { errorText, useNow, useStore, type CustomizeView } from "../store";
@@ -542,19 +542,12 @@ function Note({ kind, title, children, action }: { kind: "warn" | "bad" | "info"
 /** A catalog connector not added yet: what it is, what will run, and where it will be written. */
 function CatalogConnectorPage({ c, a, cat, project, onBack }: { c: Customize; a: Actions; cat: CatalogConnector; project: string | null; onBack: () => void }) {
   const { t } = useTranslation("customize");
-  const [token, setToken] = useState("");
-  const [missing, setMissing] = useState(false);
-  const auth = cat.install.auth;
   const command = commandLine(cat);
   const busy = c.adding.has(`server:${cat.id}`);
   const file = c.layerInfo("user")?.file;
-  const add = () => {
-    if (auth.kind === "token" && !token.trim()) {
-      setMissing(true);
-      return;
-    }
-    a.addConnector(cat, "user", token.trim() || undefined);
-  };
+  // How to sign in is chosen when adding; the page shows the ways, the recommended first.
+  const ways = cat.install.auth;
+  const add = () => a.addConnector(cat);
   return (
     <>
       <Back label={t("connector.back")} onBack={onBack} />
@@ -583,29 +576,19 @@ function CatalogConnectorPage({ c, a, cat, project, onBack }: { c: Customize; a:
               <pre className="cz-code cz-line">{"url" in cat.install ? cat.install.url : ""}</pre>
             </div>
           )}
-          {auth.kind === "token" && (
-            <div className="cz-dsec">
-              <h4>{catalogText(t, `catalog.tokens.${cat.id}`, { env: auth.env })}</h4>
-              <input
-                className={`field mono ${missing ? "bad" : ""}`}
-                type="password"
-                autoFocus
-                placeholder={auth.placeholder}
-                value={token}
-                onChange={(e) => (setToken(e.target.value), setMissing(false))}
-                onKeyDown={(e) => e.key === "Enter" && add()}
-              />
-              <p className="hint">
-                {t("connector.tokenHint")}{" "}
-                <button className="link" onClick={() => window.finx?.openExternal(auth.createURL)}>
-                  {t("connector.getToken", { by: cat.by })}
-                </button>
-              </p>
-            </div>
-          )}
         </div>
         <aside className="cz-side">
           <Fact k={t("connector.provider")}>{cat.by}</Fact>
+          {!oneClick(cat) && (
+            <Fact k={t("connector.ways")} stack>
+              {ways.map((w, i) => (
+                <span key={w.kind} className="cz-way">
+                  {t(`addc.${w.kind}`)}
+                  {i === 0 && <span className="badge acc">{t("addc.recommended")}</span>}
+                </span>
+              ))}
+            </Fact>
+          )}
           {file && (
             <Fact k={t("connector.writes")} stack mono>
               {tilde(file)}

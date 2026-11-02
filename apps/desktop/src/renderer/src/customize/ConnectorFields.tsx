@@ -74,14 +74,38 @@ export type RemoteState = {
   setTransport: (t: Transport) => void;
 };
 
+/** What a catalog entry offers (§10.6): the ways its provider accepts, the recommended first. */
+export type Offer = { ways: Auth[]; note: (a: Auth) => string; tokenURL?: string; by: string };
+
+/** The choices a catalog entry offers, in its order, each with the entry's own words. */
+function narrow(choices: Choice<Auth>[], offer: Offer): Choice<Auth>[] {
+  return offer.ways.map((w) => choices.find((c) => c.id === w)!).map((c) => ({ ...c, desc: offer.note(c.id) || c.desc }));
+}
+
+/** "去 X 获取", where the provider hands out tokens. */
+function GetToken({ offer }: { offer: Offer }) {
+  const { t } = useTranslation("customize");
+  if (!offer.tokenURL) return null;
+  return (
+    <>
+      {" "}
+      <button className="link" onClick={() => window.finx?.openExternal(offer.tokenURL!)}>
+        {t("connector.getToken", { by: offer.by })}
+      </button>
+    </>
+  );
+}
+
 /**
  * 登录方式, its footnote and 高级选项. `probed` is what a check of the address found: absent
  * while it runs (`probing`) or when it could not run, and the choices then stay open.
- * `saved` marks secrets already in the keychain, which an empty field keeps.
+ * `saved` marks secrets already in the keychain, which an empty field keeps. `offer` narrows
+ * the choices to a catalog entry's.
  */
-export function RemoteFields({ s, probed, probing, host, saved }: { s: RemoteState; probed: McpProbeResult | null; probing?: boolean; host: string; saved?: { token?: boolean; secret?: boolean } }) {
+export function RemoteFields({ s, probed, probing, host, saved, offer }: { s: RemoteState; probed: McpProbeResult | null; probing?: boolean; host: string; saved?: { token?: boolean; secret?: boolean }; offer?: Offer }) {
   const { t } = useTranslation("customize");
-  const [sendAs, setSendAs] = useState(s.header !== "Authorization" || s.prefix !== "Bearer ");
+  // A catalog entry's header is the provider's, so it stays folded like the usual one.
+  const [sendAs, setSendAs] = useState(!offer && (s.header !== "Authorization" || s.prefix !== "Bearer "));
   const [adv, setAdv] = useState(false);
   const reached = probed && !probed.error ? probed : null;
   const oauthFound = reached?.auth?.oauth ?? null;
@@ -92,6 +116,7 @@ export function RemoteFields({ s, probed, probing, host, saved }: { s: RemoteSta
     { id: "token", label: t("addc.token"), desc: t("addc.tokenDesc") },
     { id: "none", label: t("addc.none"), desc: t("addc.noneDesc") },
   ];
+  const offered = offer ? narrow(authChoices, offer) : authChoices;
   const ownRequired = reached?.suggested.client === "own";
   const clientChoices: Choice<Client>[] = [
     { id: "auto", label: t("addc.clientAuto"), desc: t("addc.clientAutoDesc"), off: ownRequired && t("addc.clientAutoOff", { issuer }) },
@@ -105,7 +130,7 @@ export function RemoteFields({ s, probed, probing, host, saved }: { s: RemoteSta
   const found = probing ? null : !reached ? (probed ? t("addc.found.unreached") : null) : !reached.auth?.required ? t("addc.found.open") : oauthFound ? t(ownRequired ? "addc.found.oauthOwn" : "addc.found.oauth", { issuer }) : t("addc.found.token");
   // Sentences run on without a space in Chinese, with one in English.
   const sep = t("addc.sep");
-  const what = s.auth === "oauth" ? t("addc.oauthDesc", { issuer }) : s.auth === "token" ? t("addc.what.token") : null;
+  const what = offer?.note(s.auth) || (s.auth === "oauth" ? t("addc.oauthDesc", { issuer }) : s.auth === "token" ? t("addc.what.token") : null);
   const lead = (text: string | null) => (found ? sep + text : text);
   return (
     <>
@@ -114,7 +139,7 @@ export function RemoteFields({ s, probed, probing, host, saved }: { s: RemoteSta
         <div className="frow">
           <span className="fl">{t("addc.method")}</span>
           <span className="fv">
-            <PopUp label={t("addc.method")} value={s.auth} choices={authChoices} found={reached?.suggested.auth} onChange={s.setAuth} />
+            <PopUp label={t("addc.method")} value={s.auth} choices={offered} found={reached?.suggested.auth} recommended={offer?.ways[0]} onChange={s.setAuth} />
           </span>
         </div>
         {s.auth === "oauth" && s.client === "own" && (
@@ -178,6 +203,7 @@ export function RemoteFields({ s, probed, probing, host, saved }: { s: RemoteSta
           </>
         )}
         {s.auth === "oauth" && ownRequired && lead(t("addc.patHint"))}
+        {offer && s.auth === "token" && <GetToken offer={offer} />}
       </p>
       <button className={`cz-fold ${adv ? "open" : ""}`} aria-expanded={adv} onClick={() => setAdv(!adv)}>
         <Icon name="chevR" />
@@ -206,6 +232,49 @@ export function RemoteFields({ s, probed, probing, host, saved }: { s: RemoteSta
             <Rows rows={s.headers} set={s.setHeaders} keyHint="Header" valueHint={t("addc.value")} />
           </div>
         </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * A catalog entry's command signs in by an environment variable (§10.6): 登录方式 among the
+ * ways it accepts, and the token given to the command as `env`.
+ */
+export function LocalSignIn({ auth, setAuth, token, setToken, env, offer }: { auth: Auth; setAuth: (a: Auth) => void; token: string; setToken: (v: string) => void; env: string; offer: Offer }) {
+  const { t } = useTranslation("customize");
+  const choices = narrow(
+    [
+      { id: "token", label: t("addc.token"), desc: t("addc.tokenDesc") },
+      { id: "none", label: t("addc.none"), desc: t("addc.noneDesc") },
+    ],
+    offer,
+  );
+  const what = offer.note(auth) || (auth === "token" ? t("addc.what.tokenEnv", { env }) : null);
+  return (
+    <>
+      <div className="cz-gh">{t("addc.auth")}</div>
+      <div className="fgroup">
+        <div className="frow">
+          <span className="fl">{t("addc.method")}</span>
+          <span className="fv">
+            <PopUp label={t("addc.method")} value={auth} choices={choices} recommended={offer.ways[0]} onChange={setAuth} />
+          </span>
+        </div>
+        {auth === "token" && (
+          <div className="frow">
+            <label className="fl" htmlFor="cz-token">{t("addc.tokenRow")}</label>
+            <span className="fv">
+              <input id="cz-token" className="field mono" type="password" value={token} placeholder={t("addc.tokenPlaceholder")} autoComplete="off" onChange={(e) => setToken(e.target.value)} />
+            </span>
+          </div>
+        )}
+      </div>
+      {(what || auth === "token") && (
+        <p className="cz-fn">
+          {what}
+          {auth === "token" && <GetToken offer={offer} />}
+        </p>
       )}
     </>
   );
