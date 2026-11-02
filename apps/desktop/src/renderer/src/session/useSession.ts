@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { applyEvents, fromSnapshot, type SessionView } from "@finx/client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { applyEvents, fromSnapshot, withHistory, type SessionView } from "@finx/client";
 import type { Event } from "@finx/protocol";
 import { errorText, useStore } from "../store";
 
@@ -25,11 +25,13 @@ function keep(id: string, v: SessionView) {
  * A session's state while its page shows it (desktop-design §6.2): attached
  * with a snapshot, then every event after it. Events are applied once a
  * frame, however many arrive in it; a detach from finx's side attaches again.
+ * Earlier history comes a page at a time when asked for.
  */
-export function useSession(id: string): SessionView | null {
+export function useSession(id: string): [SessionView | null, () => Promise<void>] {
   const st = useStore();
   const { rpc, show } = st;
   const [got, setGot] = useState<{ id: string; view: SessionView | null }>(() => ({ id, view: kept.get(id) ?? null }));
+  const earlier = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     if (!rpc) return;
@@ -55,6 +57,25 @@ export function useSession(id: string): SessionView | null {
       keep(id, view);
       setGot({ id, view });
     };
+    let paging: Promise<void> | null = null;
+    earlier.current = () => {
+      const cursor = view?.before;
+      if (!cursor) return Promise.resolve();
+      paging ??= rpc
+        .request("session/history", { session_id: id, before: cursor })
+        .then((page) => {
+          // A fresh snapshot since (finx detached and attached again) has its own cursor.
+          if (stop || !view || view.before !== cursor) return;
+          view = withHistory(view, page);
+          keep(id, view);
+          setGot({ id, view });
+        })
+        .catch((e) => {
+          if (!stop) show(errorText(e), undefined, true);
+        })
+        .finally(() => (paging = null));
+      return paging;
+    };
     const offEvent = rpc.on("session/event", (p) => {
       if (p.session_id !== id) return;
       pending.push(p.event);
@@ -66,6 +87,7 @@ export function useSession(id: string): SessionView | null {
     attach().catch((e) => !stop && show(errorText(e), undefined, true));
     return () => {
       stop = true;
+      earlier.current = async () => {};
       offEvent();
       offDetached();
       cancelAnimationFrame(frame);
@@ -73,5 +95,6 @@ export function useSession(id: string): SessionView | null {
     };
   }, [rpc, id, show]);
 
-  return got.id === id ? got.view : (kept.get(id) ?? null);
+  const loadEarlier = useCallback(() => earlier.current(), []);
+  return [got.id === id ? got.view : (kept.get(id) ?? null), loadEarlier];
 }

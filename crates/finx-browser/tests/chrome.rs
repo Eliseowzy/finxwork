@@ -112,6 +112,14 @@ fn pages() -> HashMap<&'static str, String> {
         <p>Second paragraph.</p><a href="https://blocked.test/x">Bad link</a></main>"#
             .to_string(),
     );
+    pages.insert(
+        "/clickable",
+        r#"<title>Clickable</title><style>.card { cursor: pointer }</style>
+        <div class="card" onclick="document.title='opened'"><span>Open the report</span></div>
+        <div class="card"><button onclick="document.title='bought'">Buy</button></div>
+        <p>Plain text</p>"#
+            .to_string(),
+    );
     pages.insert("/cookie", "<title>Cookie</title><p id=c>cookie={{cookie}}</p>".to_string());
     pages.insert("/download", "<title>Download</title><a href=\"/file.txt\">Get report</a>".to_string());
     pages.insert(
@@ -260,6 +268,19 @@ async fn a_covered_button_is_not_clicked() {
     assert!(err.contains("covered by div#banner"), "{err}");
     let page = session.snapshot(&SnapshotRequest::default()).await.unwrap();
     assert_eq!(page.title, "Covered", "nothing was clicked");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_div_that_looks_clickable_gets_a_ref_and_clicks() {
+    let Some(fx) = Fixture::new().await else { return };
+    let session = fx.session().await;
+    let opened = session.navigate(None, &fx.url("/clickable"), false).await.unwrap();
+    let card = ref_of(&opened.text, "clickable \"Open the report\"");
+    assert_eq!(opened.text.matches("[ref=").count(), 2, "the button's wrapper gets none: {}", opened.text);
+    assert!(!opened.text.contains("Plain text\" [ref="), "{}", opened.text);
+    act(&session, Action::Click, &card).await.unwrap();
+    let page = session.snapshot(&SnapshotRequest::default()).await.unwrap();
+    assert_eq!(page.title, "opened");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

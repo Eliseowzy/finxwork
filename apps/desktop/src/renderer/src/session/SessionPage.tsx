@@ -19,7 +19,7 @@ import { useSession } from "./useSession";
 export function SessionPage({ s }: { s: ListSession }) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const view = useSession(s.session_id);
+  const [view, loadEarlier] = useSession(s.session_id);
   const agents = view?.agents.length ?? 0;
   const running = view ? runningAgents(view).length : 0;
   const browserTabs = useBrowserTabs().filter((t) => t.session === s.session_id);
@@ -109,7 +109,7 @@ export function SessionPage({ s }: { s: ListSession }) {
         </GlassBar>
         {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
         <div className={`dwrap ${info && layout.card === "docked" ? "dock" : ""}`}>
-          <div className="dmain">{view ? <Chat s={s} view={view} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
+          <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
           {view && info && <Inspector s={s} view={view} />}
         </div>
       </div>

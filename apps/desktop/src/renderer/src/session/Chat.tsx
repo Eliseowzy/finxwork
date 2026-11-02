@@ -19,7 +19,7 @@ import { RunningCalls, ToolRow, Work } from "./Steps";
  * still writing; the composer and, while a task runs, its bar sit over the
  * bottom edge.
  */
-export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
+export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionView; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const steps = useMemo(() => conversation(view), [view]);
@@ -28,13 +28,37 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
   const retry = view.live?.retry;
   useResumeAfterCompact(s.session_id, view);
 
+  // Earlier history, a page at a time, as the person nears the top. While a page comes in above
+  // what they read, it stays where it was: how far it sat from the bottom is taken from the page
+  // still on screen, while this render's rows are not in it yet.
+  const [paging, setPaging] = useState(false);
+  const asking = useRef(false);
+  const earlier = () => {
+    if (asking.current || !view.before) return;
+    asking.current = true;
+    setPaging(true);
+    loadEarlier().finally(() => {
+      asking.current = false;
+      setPaging(false);
+    });
+  };
+  const first = useRef(view.entries[0]);
+  const fromEnd = useRef<number | null>(null);
+  if (view.entries[0] !== first.current && scroll.current && view.entries.includes(first.current)) {
+    fromEnd.current = scroll.current.scrollHeight - scroll.current.scrollTop;
+  }
+
   // Follow the conversation: open at its end, and stay there as it grows unless the person scrolled up;
   // scrolled well up, a button takes them back down.
   const atEnd = useRef(true);
   const [away, setAway] = useState(false);
   useLayoutEffect(() => {
     const el = scroll.current;
+    first.current = view.entries[0];
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
+    else if (el && fromEnd.current !== null) el.scrollTop = el.scrollHeight - fromEnd.current;
+    fromEnd.current = null;
+    if (el && nearTop(el)) earlier();
   }, [steps, dock, retry]);
   const onScroll = () => {
     const el = scroll.current;
@@ -42,6 +66,7 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
     atEnd.current = below < 80;
     setAway(below > 240);
+    if (nearTop(el)) earlier();
   };
   const toEnd = () => {
     const el = scroll.current;
@@ -63,7 +88,11 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
               <button className="link" onClick={() => unarchive(st, s)}>{t("chat.unarchive")}</button>
             </div>
           )}
-          {view.before && <div className="tdiv">{t("chat.earlier")}</div>}
+          {view.before && (
+            <div className="tdiv earlier">
+              {paging ? <span className="mini-spin" aria-label={t("chat.loadingEarlier")} /> : <button className="link" onClick={earlier}>{t("chat.earlier")}</button>}
+            </div>
+          )}
           <div className="tr" role="log" aria-label={t("chat.log")}>
             {steps.map((step, i) => (
               <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
@@ -81,6 +110,9 @@ export function Chat({ s, view }: { s: ListSession; view: SessionView }) {
     </>
   );
 }
+
+/** Close enough to the top to ask for earlier history: a page or so ahead, so it is there before the person is. */
+const nearTop = (el: HTMLElement) => el.scrollTop < el.clientHeight * 1.5;
 
 /** A call that runs, or waits its turn to: drawn at the end of the conversation, in the working line. */
 const runs = (it: WorkItem) => it.kind === "tool" && (it.tool.state === "running" || it.tool.state === "pending");

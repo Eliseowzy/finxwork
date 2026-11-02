@@ -7,7 +7,8 @@
   "chat": {
     "archived": "已归档：取消归档之前只读。",
     "unarchive": "取消归档",
-    "earlier": "更早的记录暂未显示",
+    "earlier": "显示更早的记录",
+    "loadingEarlier": "正在加载更早的记录",
     "log": "对话",
     "working": {
       "thinking": "思考中",

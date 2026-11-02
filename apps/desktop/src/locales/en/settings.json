@@ -292,6 +292,7 @@
     "note": "Use desktop control only when you ask for it. The agent does not send messages, pay or delete things on its own; it stops and asks you first.",
     "apps": "App permissions",
     "appsIntro": "For apps not set here, the agent asks you the first time it needs one in each conversation. Set an app's permission here and it follows that instead, without asking each time.",
+    "appsLocked": "Grant Accessibility above first; then you can set what the agent may do in each app.",
     "appsEmpty": "No apps set yet. Click “Add App” to pick one, or check “Remember” when the agent asks, and the app shows up here.",
     "appLevel": "Permission for {{name}}",
     "level": {"read": "Can view", "act": "Can view and use", "deny": "Blocked"},
