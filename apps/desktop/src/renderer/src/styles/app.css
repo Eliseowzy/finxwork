@@ -225,7 +225,7 @@ input:disabled,textarea:disabled{cursor:default}
 .ctitle h2{margin:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctitle .crename{flex:1;min-width:0;max-width:520px;font:inherit;font-size:14px;font-weight:500;color:var(--l1);background:var(--field);border:0;border-radius:var(--r-sm);outline:none;box-shadow:0 0 0 1.5px var(--accent);padding:2px 6px;margin:0 0 0 -6px}
 .ctitle .sub{font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cscroll{flex:1;overflow-y:auto;min-height:0}
+.cscroll{flex:1;overflow-y:auto;min-height:0;scrollbar-gutter:stable both-edges}
 
 /* session page */
 .dwrap{flex:1;min-height:0;display:flex;position:relative;border-top:.5px solid var(--sep)}
@@ -253,9 +253,10 @@ input:disabled,textarea:disabled{cursor:default}
 .insp-stack{position:absolute;top:var(--sp-3);right:var(--sp-3);z-index:4;width:252px;display:flex;flex-direction:column;gap:var(--sp-2)}
 .insp{background:color-mix(in srgb,var(--win) 86%,transparent);backdrop-filter:blur(24px) saturate(1.5);-webkit-backdrop-filter:blur(24px) saturate(1.5);
   border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--sep);padding:8px}
-.dwrap.dock .cscroll{padding-right:270px}
+/* The scroller itself ends before the card, so its scrollbar runs beside the conversation, not under the card. */
+.dwrap.dock .cscroll{margin-right:calc(252px + var(--sp-3) + var(--sp-1))}
 /* The composer centres under the conversation too. */
-.dwrap.dock .cmp-zone{right:270px}
+.dwrap.dock .cmp-zone{right:calc(252px + var(--sp-3) + var(--sp-1))}
 /* Back to the end of the conversation, above the composer in the column's middle, while the person is
    scrolled well up: glass like the bars, fading in. --dock is the composer column's height; 12px is its
    zone's bottom padding (composer.css). */
@@ -263,7 +264,7 @@ input:disabled,textarea:disabled{cursor:default}
 .tobottom.on{opacity:1;transform:none;pointer-events:auto}
 .tobottom:hover{background:var(--menu-solid)}
 .tobottom .ic{width:15px;height:15px}
-.dwrap.dock .tobottom{left:calc(50% - 135px)}
+.dwrap.dock .tobottom{left:calc(50% - (252px + var(--sp-3) + var(--sp-1)) / 2)}
 /* Inside, the sidebar's measures: a group's heading (.grp-h), then rows as its own (.nav-i), the heading's text in line with the rows' icons. */
 .insp h3{margin:0;padding:6px 9px;font-size:12px;line-height:16px;font-weight:400;color:var(--l2)}
 .insp ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
@@ -311,6 +312,8 @@ button.insp-row:active{background:var(--fill2)}
 .tr{display:flex;flex-direction:column;gap:var(--sp-2)}
 /* A time line before a message, only after a pause: centred, no rule. */
 .tdiv{align-self:center;font-size:11.5px;color:var(--l3);margin:10px 0 2px}
+/* Earlier history: the link, or while it comes the spinner, in the same height so nothing below moves. */
+.tdiv.earlier{display:flex;align-items:center;justify-content:center;height:16px}
 /* The owner speaks in a dark bubble on the right; the model writes plain text across the page. */
 .um{position:relative;align-self:flex-end;max-width:78%;margin-top:var(--sp-1)}
 .um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}

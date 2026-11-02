@@ -830,6 +830,7 @@ dependencies = [
  "finx-acp",
  "finx-browser",
  "finx-core",
+ "finx-eval",
  "finx-llm",
  "finx-mcp",
  "finx-mock",
@@ -933,6 +934,21 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+]
+
+[[package]]
+name = "finx-eval"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "toml",
+ "url",
 ]
 
 [[package]]

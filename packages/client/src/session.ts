@@ -1,6 +1,6 @@
 import type {
   AgentSnapshot, AgentStatus, ContextReport, Delta, ErrorInfo, Event, Location, PartialBlock, PartialMessage, PendingApproval, PermissionMode, QueuedInput,
-  SessionInfo, SessionSnapshot, TaskEndItem, ThinkingLevel, ToolCategory, TranscriptItem, UsageTotals, UserMessage, WarningCode,
+  SessionInfo, SessionSnapshot, TaskEndItem, ThinkingLevel, ToolCategory, TranscriptItem, TranscriptPage, UsageTotals, UserMessage, WarningCode,
 } from "@finx/protocol";
 import { addTotals, usageTokens } from "./text.ts";
 
@@ -173,6 +173,11 @@ export function fromSnapshot(s: SessionSnapshot): SessionView {
     agents: (s.agents ?? []).map((a) => agentFrom(s.session, a)),
     closed: false,
   };
+}
+
+/** Earlier history (session/history) put before what the view has, with the cursor to what came before it. */
+export function withHistory(v: SessionView, page: TranscriptPage): SessionView {
+  return { ...v, entries: [...page.items, ...v.entries], before: page.before ?? undefined };
 }
 
 /** A sub-agent from a snapshot: its own session shares the main one's settings. */

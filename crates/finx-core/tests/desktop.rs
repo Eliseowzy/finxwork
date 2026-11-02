@@ -39,6 +39,9 @@ use tempfile::TempDir;
 
 const TEXTEDIT: &str = "com.apple.TextEdit";
 
+/// The tests share TextEdit's first document: one at a time.
+static TEXTEDIT_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 struct Harness {
     kernel: Kernel,
     api: Arc<ScriptedApi>,
@@ -182,7 +185,10 @@ async fn reads_and_types_into_textedit_with_per_app_approval() {
     if !enabled() {
         return;
     }
+    let _turn = TEXTEDIT_TURN.lock().await;
+    // Document 1 is the new one, focused, with TextEdit at the front.
     osascript("tell application \"TextEdit\" to make new document");
+    osascript("tell application \"TextEdit\" to activate");
     tokio::time::sleep(Duration::from_secs(1)).await;
     let mut h = harness(PermissionMode::Manual).await;
     let app_origin = format!("app://{TEXTEDIT}");
@@ -267,4 +273,51 @@ async fn reads_and_types_into_textedit_with_per_app_approval() {
     assert_eq!(kept["desktop"]["apps"]["com.apple.finder"].as_str(), Some("deny"));
 
     osascript("tell application \"TextEdit\" to close document 1 saving no");
+}
+
+fn clipboard() -> String {
+    String::from_utf8_lossy(&Command::new("pbpaste").output().unwrap().stdout).to_string()
+}
+
+fn frontmost() -> String {
+    osascript("tell application \"System Events\" to get bundle identifier of first process whose frontmost is true")
+}
+
+#[tokio::test]
+async fn types_and_presses_into_textedit_in_the_background() {
+    if !enabled() {
+        return;
+    }
+    let _turn = TEXTEDIT_TURN.lock().await;
+    // TextEdit's new document has the focus inside TextEdit, while another app is at the front.
+    osascript("tell application \"TextEdit\" to make new document");
+    // A TextEdit that was not running comes to the front once it has started.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    osascript("tell application \"Finder\" to activate");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let front = frontmost();
+    assert_ne!(front, TEXTEDIT, "another app must be at the front");
+    let clip = clipboard();
+    let mut h = harness(PermissionMode::BypassPermissions).await;
+
+    let act = |action: &str, text: &str| json!({ "app": TEXTEDIT, "action": action, "text": text });
+    h.api.push(
+        Script::tool_call("c1", "desktop_act", act("type_text", "你好 background"))
+            .then_tool_call("c2", "desktop_act", act("press", "return"))
+            .then_tool_call("c3", "desktop_act", act("type_text", "second")),
+    );
+    h.api.push(Script::text("typed"));
+    h.kernel.submit(Op::prompt("write two lines")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let results = last_results(&h.api);
+    assert!(results[0].contains("type_text: done, and the app confirmed it."), "{}", results[0]);
+    assert!(results[1].contains("press: sent to the app, whose window stayed where it was."), "{}", results[1]);
+    assert!(results[2].contains("type_text: done"), "{}", results[2]);
+    // The key reached the field before the text that followed it.
+    assert!(results[2].contains(r#"你好 background\nsecond"."#), "{}", results[2]);
+    // The user may bring another app forward meanwhile; TextEdit is never brought.
+    assert_ne!(frontmost(), TEXTEDIT, "TextEdit stayed behind");
+    assert_eq!(clipboard(), clip, "the clipboard was not touched");
+
+    osascript("tell application \"TextEdit\" to close (every document whose text contains \"你好 background\") saving no");
 }
