@@ -5,7 +5,8 @@ import type { ApprovalDecision, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
 import { toolDo } from "../format";
-import { Mark } from "../icons";
+import { Icon, Mark } from "../icons";
+import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { Code } from "./Code";
 
@@ -128,7 +129,10 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
         </div>
         <div className="appr-site">
           {own && <span>{t(bypass ? "approval.siteYoursBypass" : "approval.siteYours")}</span>}
-          <code className="sel-text" title={url}>{url}</code>
+          <span className="appr-url">
+            <SiteIcon origin={siteOrigin(origin)} fallback={<Icon name="globe" />} />
+            <code className="sel-text" title={url}>{url}</code>
+          </span>
         </div>
         <div className="appr-f">
           {denying ? (

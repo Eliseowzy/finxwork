@@ -78,6 +78,8 @@
 /* Settings › Browser: site rows like the apps' on 电脑操控 (an icon, the site, its level, a trash button). */
 .browser-set .site-icon{width:28px;height:28px;flex:none;border-radius:var(--r-sm);background:var(--fill);color:var(--l2);display:flex;align-items:center;justify-content:center}
 .browser-set .site-icon .ic{width:15px;height:15px}
+.browser-set .site-icon img{width:18px;height:18px;object-fit:contain}
+.site-ic img{object-fit:contain}
 .browser-set .site-row.denied .fn,.browser-set .site-row.denied .site-icon{opacity:.6}
 .browser-set .site-row .tb,.engines-sheet .engine-row .tb{flex:none;color:var(--l2)}
 .browser-set .site-row .tb:hover,.engines-sheet .engine-row .tb:hover{background:var(--fill);color:var(--l1)}

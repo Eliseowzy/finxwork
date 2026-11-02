@@ -20,6 +20,12 @@
       "$ref": "#/definitions/BrowserHostResult"
     },
     {
+      "$ref": "#/definitions/BrowserSiteIconParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserSiteIconResult"
+    },
+    {
       "$ref": "#/definitions/BrowserStatus"
     },
     {
@@ -756,6 +762,32 @@
             }
           ],
           "description": "Set when the extension cannot be used. The connection stays, so clients can say what to update, but carries no browser."
+        }
+      },
+      "type": "object"
+    },
+    "BrowserSiteIconParams": {
+      "description": "Parameters of `browser/site_icon`.",
+      "properties": {
+        "origin": {
+          "description": "The site as its permission is kept: an origin such as `https://github.com`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin"
+      ],
+      "type": "object"
+    },
+    "BrowserSiteIconResult": {
+      "description": "The result of `browser/site_icon`.",
+      "properties": {
+        "icon": {
+          "description": "A `data:` URI; not set when the site has none to give, or is not an https site.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"
@@ -7099,6 +7131,10 @@
     "browser/host": {
       "params": "BrowserHostParams",
       "result": "BrowserHostResult"
+    },
+    "browser/site_icon": {
+      "params": "BrowserSiteIconParams",
+      "result": "BrowserSiteIconResult"
     },
     "browser/status": {
       "result": "BrowserStatus"

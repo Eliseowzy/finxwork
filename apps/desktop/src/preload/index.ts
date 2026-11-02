@@ -53,7 +53,6 @@ const bridge: Bridge = {
   openSystemBrowser: (id: string, page?: "extensions") => ipcRenderer.invoke("system-browser-open", id, page),
   revealBrowserExtension: () => ipcRenderer.send("system-browser-reveal-extension"),
   systemBrowserIcon: (id: string) => ipcRenderer.invoke("system-browser-icon", id),
-  searchEngineIcon: (template: string) => ipcRenderer.invoke("search-engine-icon", template),
   desktopControlStatus: (configured?: string) => ipcRenderer.invoke("desktop-control-status", configured),
   requestDesktopPermission: (kind: "accessibility" | "screen") => ipcRenderer.send("desktop-permission", kind),
   desktopApp: (key: string) => ipcRenderer.invoke("desktop-app", key),

@@ -6,7 +6,6 @@ import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, Deskt
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
-import { searchEngineIcon } from "./browser/searchIcons";
 import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
@@ -224,7 +223,6 @@ export function registerIPC() {
     const key = picked ? await bundleIdOf(picked) : null;
     return key ? desktopApp(key) : null;
   });
-  ipcMain.handle("search-engine-icon", (e, template: unknown) => (trusted(e) ? searchEngineIcon(template) : null));
   ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());

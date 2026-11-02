@@ -730,6 +730,8 @@ export class MockServer {
         return this.customize.configRead(!!(p as P<"config/read">).layers) satisfies R<"config/read">;
       case "browser/status":
         return this.customize.browserStatus() satisfies R<"browser/status">;
+      case "browser/site_icon":
+        return {} satisfies R<"browser/site_icon">;
       case "config/write": {
         const q = p as P<"config/write">;
         return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;

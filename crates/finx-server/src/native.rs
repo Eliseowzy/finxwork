@@ -6,6 +6,7 @@ use finx_protocol::Op;
 use finx_protocol::PROTOCOL_VERSION;
 use finx_protocol::api::AuthDeleteParams;
 use finx_protocol::api::AuthSetParams;
+use finx_protocol::api::BrowserSiteIconParams;
 use finx_protocol::api::InitializeParams;
 use finx_protocol::api::InitializeResult;
 use finx_protocol::api::ModelsListResult;
@@ -535,6 +536,7 @@ impl NativeProtocol {
                 server.watch_browser(conn);
                 conn.send(reply(id, Ok::<_, RpcError>(server.browser_status())));
             }
+            method::BROWSER_SITE_ICON => self.call(id, params, conn, |server, p: BrowserSiteIconParams| async move { Ok::<_, RpcError>(server.site_icon(p).await) }),
             method::MCP_LOGOUT => self.call(id, params, conn, |server, p: McpLogoutParams| async move { server.mcp_logout(p).await }),
             method::SKILLS_LIST => match finx_rpc::params::<SkillsListParams>(params) {
                 Ok(p) => {

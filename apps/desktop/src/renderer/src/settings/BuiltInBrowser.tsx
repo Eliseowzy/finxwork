@@ -1,26 +1,19 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Preferences } from "../../../shared/bridge";
-import { allEngines, engineProblem, templateOf, type SearchEngine } from "../../../shared/search";
+import { allEngines, engineOrigin, engineProblem, templateOf, type SearchEngine } from "../../../shared/search";
 import { Dialog } from "../components";
 import { Icon } from "../icons";
+import { useSiteIcon } from "../siteIcon";
 
 // Settings › Browser › 内置浏览器: how the address field of FinxWork's own browser panel searches,
 // which is not the user's own browser's. The engine on the page; the engines with their keywords
 // (typed in the address field, then Tab or Space: a search with it) in a dialog, where the
 // person's own can be added and removed.
 
-/** An engine's icon: its site's favicon, or its initial while there is none. */
+/** An engine's icon: its site's (browser-design §10.2), or its initial while there is none. */
 export function EngineIcon({ engine, className = "" }: { engine: Pick<SearchEngine, "name" | "url">; className?: string }) {
-  const [icon, setIcon] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    setIcon(null);
-    void window.finx?.searchEngineIcon(engine.url).then((src) => live && setIcon(src));
-    return () => {
-      live = false;
-    };
-  }, [engine.url]);
+  const icon = useSiteIcon(engineOrigin(engine));
   return icon ? (
     <img className={`engine-icon ${className}`} src={icon} alt="" draggable={false} />
   ) : (

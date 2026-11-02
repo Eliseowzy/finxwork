@@ -93,6 +93,11 @@ impl FinxHome {
         self.root.join("browser")
     }
 
+    /// The icons of the sites the browsers may open (browser-design §10.1).
+    pub fn site_icons_dir(&self) -> PathBuf {
+        self.browser_dir().join("icons")
+    }
+
     /// `mcp/cache`: each MCP server's last connection and tool list.
     pub fn mcp_cache_dir(&self) -> PathBuf {
         self.root.join("mcp").join("cache")

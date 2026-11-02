@@ -10,7 +10,7 @@ import { activate, hoverFocus } from "./ConnectorsMenu";
 // Settings › 浏览器 and Settings › 电脑操控, where the rest of their settings are
 // (computer-use-design §4, browser-design §10.1). Each reaches every conversation's next step.
 // The menu stays open, as for the connectors. Computer use that cannot work yet says what it
-// needs, and a click takes to its settings.
+// needs, and a click takes to its settings. Until the config is read a switch cannot be used.
 
 export function QuickSwitches({ close }: { close: () => void }) {
   const { t } = useTranslation("session");
@@ -47,6 +47,7 @@ export function QuickSwitches({ close }: { close: () => void }) {
         className={`mi cn-row quick ${browserOn ? "" : "off"}`}
         role="menuitemcheckbox"
         aria-checked={browserOn}
+        aria-disabled={!browser.config || undefined}
         tabIndex={-1}
         onMouseMove={hoverFocus}
         onClick={toggleBrowser}
@@ -61,6 +62,7 @@ export function QuickSwitches({ close }: { close: () => void }) {
           className={`mi cn-row quick ${shownOn ? "" : "off"}`}
           role="menuitemcheckbox"
           aria-checked={shownOn}
+          aria-disabled={!desktop.config || undefined}
           tabIndex={-1}
           onMouseMove={hoverFocus}
           onClick={toggleComputer}
