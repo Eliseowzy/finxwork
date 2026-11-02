@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { test } from "node:test";
 import { catalogProblems } from "../../scripts/catalog-hash.mjs";
 import { catalogConnectors, catalogSkills, commandLine } from "../shared/catalog.ts";
@@ -16,6 +17,7 @@ test("catalog connectors have names finx accepts and ways to sign in", () => {
     if ("url" in c.install) assert.match(c.install.url, /^https:\/\//, c.id);
     else assert.ok(commandLine(c)?.startsWith(c.install.command), c.id);
     assert.ok(c.install.auth.length > 0, `${c.id}: no way to sign in`);
+    if (c.logo) assert.ok(existsSync(new URL(`../renderer/src/assets/connectors/${c.logo}`, import.meta.url)), `${c.id}: ${c.logo} missing`);
     assert.equal(new Set(c.install.auth.map((a) => a.kind)).size, c.install.auth.length, `${c.id}: a way twice`);
     for (const auth of c.install.auth) {
       if (auth.kind === "token") assert.ok("url" in c.install ? auth.header : auth.env, `${c.id}: where the token goes`);

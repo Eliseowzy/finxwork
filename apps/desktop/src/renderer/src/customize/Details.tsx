@@ -7,7 +7,7 @@ import { Icon } from "../icons";
 import { errorText, useNow, useStore, type CustomizeView } from "../store";
 import { skillMenu, type Actions } from "./Lists";
 import { addedConnector, addedSkill, catalogOf, catalogText, fromRepo, statusOf, type SkillItem } from "./model";
-import { MoreButton, ServerTile, SkillTile, Switch, tilde, type MenuItem } from "./parts";
+import { catalogLogo, MoreButton, ServerTile, SkillTile, Switch, tilde, type MenuItem } from "./parts";
 import type { Customize } from "./useCustomize";
 
 // A card's own page (customize-design §10.1): back to the list, the item with its actions,
@@ -448,7 +448,7 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
       <div className="cz-dhead">
         {/* The controls belong to the item, so they sit on its line, centred on the logo. */}
         <div className="cz-dtitle">
-          <ServerTile name={name} mono={cat?.mono} icon={s.icon} size="xl" />
+          <ServerTile name={name} mono={cat?.mono} icon={s.icon ?? catalogLogo(cat)} size="xl" />
           <h1>{name}</h1>
           {!cat && <span className="badge">{repo ? t("connector.providerRepo") : t("connector.custom")}</span>}
           <div className="cz-dacts">
@@ -552,7 +552,7 @@ function CatalogConnectorPage({ c, a, cat, project, onBack }: { c: Customize; a:
     <>
       <Back label={t("connector.back")} onBack={onBack} />
       <Hero
-        tile={<ServerTile name={cat.name} mono={cat.mono} size="xl" />}
+        tile={<ServerTile name={cat.name} mono={cat.mono} icon={catalogLogo(cat)} size="xl" />}
         name={cat.name}
         meta={[cat.by]}
         acts={<SolidAdd busy={busy} label={t("connector.add")} busyLabel={t("connector.adding")} onAdd={add} />}

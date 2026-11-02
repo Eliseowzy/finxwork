@@ -8,7 +8,7 @@ import { localIdentity, remoteIdentity } from "../../../shared/identity";
 import type { CatalogConnector, OAuthAuth, TokenAuth } from "../../../shared/catalog";
 import { catalogText, credentialName, joinCommand, splitCommand } from "./model";
 import { LocalFields, LocalSignIn, RemoteFields, row, type Auth, type Client, type Offer, type RemoteState, type Row, type Transport } from "./ConnectorFields";
-import { ServerTile } from "./parts";
+import { catalogLogo, ServerTile } from "./parts";
 import type { Customize } from "./useCustomize";
 
 // 添加 › 添加连接器 (customize-design §10.9; the steps are docs/desktop/connector-add-demo.html,
@@ -397,7 +397,7 @@ export function AddConnector({ c, catalog, onClose, onAdded, onOpen }: { c: Cust
         {probed?.icon ? (
           <ServerTile name={name} icon={probed.icon} />
         ) : catalog ? (
-          <ServerTile name={catalog.name} mono={catalog.mono} />
+          <ServerTile name={catalog.name} mono={catalog.mono} icon={catalogLogo(catalog)} />
         ) : (
           <div className="cz-tile">
             <Icon name={remote ? "globe" : "terminal"} />
