@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { projectNames, recentProjects } from "@finx/client";
-import type { ConfigLayer, McpServerView } from "@finx/protocol";
-import type { CatalogConnector, CatalogSkill } from "../../../shared/catalog";
+import type { McpServerView } from "@finx/protocol";
+import { oneClick, type CatalogConnector, type CatalogSkill } from "../../../shared/catalog";
 import { SidebarToggle } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore, type CustomizeView } from "../store";
@@ -22,7 +22,7 @@ import "../styles/customize.css";
 // and the catalog's (发现), each card opening a page of its own. finx manages them; this page
 // shows what it says and asks it for changes.
 
-type Sheet = { kind: "upload" } | { kind: "add" } | { kind: "connector"; edit: McpServerView } | { kind: "broken" };
+type Sheet = { kind: "upload" } | { kind: "add"; catalog?: CatalogConnector } | { kind: "connector"; edit: McpServerView } | { kind: "broken" };
 
 export function Customize() {
   const st = useStore();
@@ -109,12 +109,12 @@ export function Customize() {
         .catch((e) => st.show(errorText(e), undefined, true))
         .finally(() => adding(`skill:${cat.id}`, false));
     },
-    // A connector that needs a token is added from its page, where the token is asked for.
-    addConnector: (cat: CatalogConnector, layer: ConfigLayer = "user", token?: string) => {
-      if (cat.install.auth.kind === "token" && !token) return open({ kind: "connector", id: cat.id, catalog: true, tab: "overview" });
-      const { server, secrets } = catalogServer(cat, token ?? null);
+    // Added with one click only when it needs nothing; otherwise the add sheet, where the
+    // person picks how to sign in among the ways the provider accepts (§10.6).
+    addConnector: (cat: CatalogConnector) => {
+      if (!oneClick(cat)) return setSheet({ kind: "add", catalog: cat });
       adding(`server:${cat.id}`, true);
-      c.saveServer(layer, cat.id, server, secrets)
+      c.saveServer("user", cat.id, catalogServer(cat), [])
         .then(({ check }) => {
           if (check?.server.status.state === "ok") st.show(t("toast.serverAdded", { name: cat.name, count: check.tools.length }));
           else st.show(t("toast.serverAddedFailed", { name: cat.name, error: check?.server.status.error ?? "" }), undefined, true);
@@ -244,6 +244,7 @@ export function Customize() {
       {sheet?.kind === "add" && (
         <AddConnector
           c={c}
+          catalog={sheet.catalog}
           onClose={() => setSheet(null)}
           onAdded={() => setView({ tab: "connectors", view: "mine", detail: null })}
           onOpen={(name) => (setSheet(null), setView({ tab: "connectors", view: "mine", detail: { kind: "connector", id: name, tab: "overview" } }))}

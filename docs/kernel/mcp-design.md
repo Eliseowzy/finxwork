@@ -105,6 +105,7 @@
 | v0.2 | 2026-10-29 | 按评审意见修改：MCP 调用一期不审批（§9、D-107）；子智能体拿到父的全部工具，只去掉两个智能体工具（§10、D-110）；子进程环境用白名单（D-112，确认）；`.mcp.json` 默认不读（D-118）。新增第 7 章渐进式加载：默认按需加载，分目录、`tool_search`、`call_tool` 三层，工具列表与系统提示词整个会话不变（D-119–D-123）；原第 7 章起的章节号顺延 |
 | v1.0 | 2026-10-29 | 定稿：确认 MCP 工具默认按需加载、不按工具数量自动切换（D-119），DeepSeek 等没有原生能力的厂商上经 `call_tool` 调用搜到的工具（D-122） |
 | v1.3 | 2026-10-31 | 二期的远程鉴权与传输定稿（随桌面端添加连接器的新流程，customize-design §10.9）：新增 §13.6 探测、§13.7 旧版 SSE、§13.8 OAuth；配置新增 `transport`、`auth`、`oauth`（§4.3、§12.1）；命令行新增 `finx mcp login/logout`，`finx mcp add` 先探测后写入（§12.2）。调研了其他产品的做法并实测了几个服务器公布的登录设置（§13.8.6）。新增决策 D-180–D-187、待定问题 Q-118、Q-119；Q-102 已定 |
+| v1.5 | 2026-11-02 | 客户端元数据文档已公布在 `https://finxwork.ai/oauth/client.json`，Q-119 已定（§13.8.3）；`CLIENT_METADATA_URL` 改为这个地址（§16.2） |
 
 ## 1. 目标与原则
 
@@ -1018,17 +1019,18 @@ impl McpClient {
 - **内容**：
   ```json
   {
-    "client_id": "https://<finx 的域名>/oauth/client.json",
+    "client_id": "https://finxwork.ai/oauth/client.json",
     "client_name": "FinxWork",
-    "client_uri": "https://<finx 的域名>",
-    "logo_uri": "https://<finx 的域名>/oauth/logo.png",
+    "client_uri": "https://finxwork.ai",
+    "logo_uri": "https://finxwork.ai/oauth/logo.png",
     "redirect_uris": ["http://127.0.0.1/callback", "http://localhost/callback"],
     "grant_types": ["authorization_code", "refresh_token"],
     "response_types": ["code"],
     "token_endpoint_auth_method": "none"
   }
   ```
-- **地址永远不变**：地址就是身份，换了就等于换了一个应用，所有用户都要重新授权。所以放在 finx 自己的域名下，不放在第三方托管服务的子域名上。具体地址见 Q-119。
+- **地址永远不变**：地址就是身份，换了就等于换了一个应用，所有用户都要重新授权。所以放在 finx 自己的域名下，不放在第三方托管服务的子域名上。地址是 `https://finxwork.ai/oauth/client.json`（Q-119）。
+- **托管**：源文件在仓库的 `site/`（`oauth/client.json`、`oauth/logo.png` 和一个首页），部署为 Cloudflare Pages 项目 `finxwork`，绑定 `finxwork.ai`。改内容时重新上传整个 `site/`，地址不变。
 - **不含密钥**：公开客户端，公开放着就行。
 - **能防什么、不能防什么**：它省掉注册，给出稳定、可核实的身份；但桌面应用的回调在本机，本机的其他程序理论上也能用这个 `client_id` 发起登录，所以对桌面应用来说，它防冒充的作用不如对网页应用。真正的保护仍然是 PKCE 和用户在授权页上的确认。
 - **测试与自建分支**：`mcp.client_metadata_url` 可以改成别的地址。
@@ -1222,7 +1224,7 @@ impl McpClient {
   - `McpServerState` 新增 `NeedsLogin`。连接失败分三类：可重试、配置错误、需要登录。需要登录的服务器一旦钥匙串里有了这个地址的令牌，下一次调用就重连，不等 30 秒的重连间隔。
 - **凭据缓存**：`finx_llm::credentials` 新增 `forget`。读令牌、刷新前后都先丢掉进程内的缓存再读，别的进程刷新过的令牌才看得到。
 - **动态注册的回调地址带端口**：注册时登记的是带端口的 `http://127.0.0.1:<端口>/callback`，因为不少登录服务严格比较回调地址。复用注册时先尝试绑定同一个端口，端口被占用就重新注册。元数据文档里登记的仍是不带端口的本机地址，按 RFC 8252 由登录服务忽略端口。
-- **元数据文档的地址**：`finx_core::mcp::CLIENT_METADATA_URL` 现在是 `None`（Q-119），所以登录走动态注册或用户自己的应用。地址定下来后改这一个常量即可，`mcp.client_metadata_url` 可以临时覆盖。
+- **元数据文档的地址**：`finx_core::mcp::CLIENT_METADATA_URL` 是 `https://finxwork.ai/oauth/client.json`（v1.5，之前是 `None`，登录只走动态注册或用户自己的应用）。`mcp.client_metadata_url` 可以临时覆盖。
 - **选择身份**：`mcp/login` 新增可选的 `client`。调用方指定了哪种身份，服务器允许就用那一种，否则按 D-182 的顺序。桌面端不再指定，由内核按顺序选（customize-design DD-59）；`client` 留给命令行和以后的调用方。
 - **新错误码**：−32031 `mcp_login_failed`，表示服务器没有可用的登录方式，或者登录没能开始。
 - **打开浏览器**：
@@ -1268,7 +1270,7 @@ impl McpClient {
 - OAuth：`finx mcp login/logout`，授权码加 PKCE，本机回调，令牌存钥匙串，客户端身份按"自己的应用 → 元数据文档 → 动态注册"（§13.8）。
 - 旧版 SSE 传输（§13.7）。
 - 探测：添加前检查，通过才写配置（§13.6）。
-- 公布 finx 的客户端元数据文档（§13.8.3，地址见 Q-119）。
+- 公布 finx 的客户端元数据文档（§13.8.3，`https://finxwork.ai/oauth/client.json`，已完成）。
 - `finx mcp add/remove`（引入 toml_edit）。
 - 重连：`Op::McpReconnect`，以及是否自动重启（Q-103）。
 - resources：服务器声明了 resources 能力时，提供列出和读取资源的工具（Q-105）。
@@ -1388,7 +1390,7 @@ impl McpClient {
 | Q-116 | 是否让模型写脚本调用工具（沙箱里批量调用、过滤结果，只把脚本输出交回上下文） | 以后再评估。它最省 token，但要内置沙箱化的脚本运行时，模型还得写对代码；先看通用做法跑起来之后的瓶颈 | §7.10 |
 | Q-117 | 哪些厂商、哪些模型走原生的中途声明工具 | 随 openai-responses 适配器和 Anthropic 官方端点的实测确定。DeepSeek 的两种端点都不支持，一直走通用做法 | §7.7 |
 | Q-118 | 是否支持"用到时再登录"：先不带凭据连接，用到需要登录的工具时再请用户登录 | 暂不（D-187）。等有服务器只对部分工具要求登录时，复用审批通道，让会话停下来等用户登录 | §13.8.5 |
-| Q-119 | 客户端元数据文档放在哪个地址 | 用户有自己的域名，地址待定；定下来以后永远不改（D-183） | §13.8.3 |
+| Q-119 | 客户端元数据文档放在哪个地址 | 已定（v1.5）：`https://finxwork.ai/oauth/client.json`，以后永远不改（D-183） | §13.8.3 |
 
 ## 附录 A：配置示例
 

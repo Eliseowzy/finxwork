@@ -43,9 +43,9 @@ const DESCRIPTION_LIMIT: usize = 250;
 /// Longest server instructions shown to the model, in bytes.
 pub(crate) const INSTRUCTIONS_LIMIT: usize = 16 * 1024;
 
-/// finx's OAuth client metadata document (mcp-design §13.8.3, Q-119). `None` until the
-/// address is published: sign-ins then use dynamic registration or the user's own client.
-pub const CLIENT_METADATA_URL: Option<&str> = None;
+/// finx's OAuth client metadata document (mcp-design §13.8.3). The address is finx's client
+/// id, so it never changes; the file's source is `site/oauth/client.json`.
+pub const CLIENT_METADATA_URL: Option<&str> = Some("https://finxwork.ai/oauth/client.json");
 
 const CATALOG_INTRO: &str = "Tools of these groups are not in your tool list. Find them with tool_search, then run them with call_tool.";
 

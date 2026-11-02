@@ -151,13 +151,13 @@
     "enabled": "启用",
     "enabledForYou": "对你启用",
     "provider": "提供方",
+    "ways": "登录方式",
     "providerRepo": "仓库",
     "tools": "工具",
     "toolsFromSessions_other": "来自 {{count}} 个打开的会话里的连接",
     "noTools": "还没有工具列表：检测一次就有了。",
     "runsHere": "将在本机运行",
     "runsHereHint": "添加和检测时都会运行这条命令；第一次运行可能要下载这个包。",
-    "tokenHint": "存进系统钥匙串，配置文件里只写引用，不写明文。",
     "getToken": "去 {{by}} 获取 ↗",
     "add": "添加",
     "adding": "添加中…",
@@ -234,11 +234,22 @@
     "signedOut": "已退出登录 {{name}}"
   },
   "catalog": {
-    "by": "finx 精选"
+    "by": "finx 精选",
+    "connectors": {
+      "exa": "Exa 的网页搜索、网页读取和研究智能体工具，通过 MCP 提供给 AI 智能体。"
+    },
+    "ways": {
+      "exa": {
+        "none": "不用账号，免费额度内可以搜索和读网页，没有研究智能体。经代理或 IPv6 连接时可能被拒。",
+        "oauth": "在浏览器里用你的 Exa 账号登录，用量算在你的 Exa 团队。全部工具都能用，包括研究智能体。",
+        "token": "用 Exa 控制台里创建的 API Key，存进系统钥匙串。全部工具都能用，包括研究智能体。"
+      }
+    }
   },
   "addc": {
     "title": "添加连接器",
     "titleLocal": "添加本地连接器",
+    "titleCatalog": "添加 {{name}}",
     "sub": "连接器是一个 MCP 服务器，给 finx 增加工具。粘贴它的地址或启动命令就行，其余的 finx 会去检查。",
     "name": "名称",
     "namePlaceholder": "例如 github",
@@ -298,6 +309,7 @@
     "finish": "完成",
     "auth": "鉴权",
     "detected": "检测到",
+    "recommended": "推荐",
     "oauth": "用账号登录",
     "oauthDesc": "在浏览器里用你的 {{issuer}} 账号登录，令牌存进系统钥匙串，过期自动续期。",
     "noOAuth": "服务器没有公布登录服务",
@@ -354,7 +366,8 @@
       "unreached": "检测：这次没连上这个地址，下面是现在保存的设置。"
     },
     "what": {
-      "token": "令牌存进系统钥匙串，配置文件里只写引用。"
+      "token": "令牌存进系统钥匙串，配置文件里只写引用。",
+      "tokenEnv": "令牌存进系统钥匙串，启动时作为环境变量 {{env}} 交给命令。"
     },
     "patHint": "如果服务商也提供个人访问令牌，选「令牌或 API Key」更省事。",
     "envNote": "名字像密钥的变量自动上锁：值存进系统钥匙串，配置文件里只写引用。点锁可以切换。",

@@ -176,21 +176,7 @@ export function withCredential(old: string | null, name: string): string {
   return old && credentialRef(old) ? old.replace(/\$\{credential:[^}]+\}/, ref) : ref;
 }
 
-/** What adding a catalog connector writes, and the secret to keep for it (§10.4). */
-export function catalogServer(c: CatalogConnector, token: string | null): { server: Record<string, unknown>; secrets: [string, string][] } {
-  const auth = c.install.auth;
-  const secrets: [string, string][] = [];
-  const secret = (key: string, prefix = "") => {
-    const name = credentialName(c.id, key);
-    if (token) secrets.push([name, token]);
-    return `${prefix}\${credential:${name}}`;
-  };
-  if ("url" in c.install) {
-    const server: Record<string, unknown> = { url: c.install.url };
-    if (auth.kind === "token" && auth.header) server.headers = { [auth.header]: secret(auth.header, auth.prefix) };
-    return { server, secrets };
-  }
-  const server: Record<string, unknown> = { command: c.install.command, args: c.install.args };
-  if (auth.kind === "token" && auth.env) server.env = { [auth.env]: secret(auth.env) };
-  return { server, secrets };
+/** What adding a one-click catalog connector writes (§10.6); the others go through the add sheet. */
+export function catalogServer(c: CatalogConnector): Record<string, unknown> {
+  return "url" in c.install ? { url: c.install.url } : { command: c.install.command, args: c.install.args };
 }

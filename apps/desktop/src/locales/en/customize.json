@@ -156,6 +156,7 @@
     "enabled": "On",
     "enabledForYou": "On for you",
     "provider": "Provider",
+    "ways": "Sign-in",
     "providerRepo": "Repository",
     "tools": "Tools",
     "toolsFromSessions_one": "From the connection in {{count}} open session",
@@ -163,7 +164,6 @@
     "noTools": "No tool list yet: check it once to get one.",
     "runsHere": "Runs on this Mac",
     "runsHereHint": "Adding and checking it run this command; the first run may download the package.",
-    "tokenHint": "Kept in the system keychain; the configuration file holds only a reference, never the value.",
     "getToken": "Get one from {{by}} ↗",
     "add": "Add",
     "adding": "Adding…",
@@ -241,11 +241,22 @@
     "signedOut": "Signed out of {{name}}"
   },
   "catalog": {
-    "by": "finx featured"
+    "by": "finx featured",
+    "connectors": {
+      "exa": "Exa web search, page fetching and research-agent tools for AI agents over MCP."
+    },
+    "ways": {
+      "exa": {
+        "none": "No account: search and page reading within a free rate limit, without the research agent. May be refused over a proxy or IPv6.",
+        "oauth": "Sign in with your Exa account in the browser; usage counts toward your Exa team. Every tool, the research agent included.",
+        "token": "An API key created in the Exa dashboard, kept in the system keychain. Every tool, the research agent included."
+      }
+    }
   },
   "addc": {
     "title": "Add connector",
     "titleLocal": "Add local connector",
+    "titleCatalog": "Add {{name}}",
     "sub": "A connector is an MCP server that gives finx more tools. Paste its address or the command that starts it; finx checks the rest.",
     "name": "Name",
     "namePlaceholder": "e.g. github",
@@ -307,6 +318,7 @@
     "finish": "Done",
     "auth": "Authentication",
     "detected": "Detected",
+    "recommended": "Recommended",
     "oauth": "Sign in with an account",
     "oauthDesc": "Sign in with your {{issuer}} account in the browser; the token is kept in the system keychain and renewed when it expires.",
     "noOAuth": "No sign-in provider published",
@@ -365,7 +377,8 @@
       "unreached": "Checked: the address didn't answer this time; below are the saved settings."
     },
     "what": {
-      "token": "The token is kept in the system keychain; the config file holds only a reference."
+      "token": "The token is kept in the system keychain; the config file holds only a reference.",
+      "tokenEnv": "The token is kept in the system keychain and given to the command as {{env}}."
     },
     "patHint": "If the provider also offers personal access tokens, choosing \"Token or API key\" is simpler.",
     "envNote": "Variables whose names look like secrets are locked: their values go to the system keychain and the config file holds only a reference. Click the lock to switch.",

@@ -51,7 +51,7 @@ const paths: Record<string, string> = {
   bulb: "<path d=\"M6 12.2h4M6.7 14h2.6\"/><path d=\"M8 2.2a4.2 4.2 0 0 0-2.5 7.6c.4.3.7.8.7 1.3v.1h3.6v-.1c0-.5.3-1 .7-1.3A4.2 4.2 0 0 0 8 2.2z\"/>",
   paperclip: "<path d=\"M13 7.4l-5.1 5.1a3.1 3.1 0 0 1-4.4-4.4l5.5-5.5a2.1 2.1 0 0 1 3 3l-5.4 5.4a1.1 1.1 0 0 1-1.6-1.6l4.9-4.9\"/>",
   retry: "<path d=\"M13.1 8.4A5.2 5.2 0 1 1 11.6 4.4\"/><path d=\"M13.3 2.4v2.8h-2.8\"/>",
-  filter: "<path d=\"M2.5 4.2h11M4.6 8h6.8M6.7 11.8h2.6\"/>",
+  filter: "<path d=\"M2.5 5h11M4.6 8.8h6.8M6.7 12.6h2.6\"/>",
   cube: "<path d=\"M8 1.9l5.3 3v6.2L8 14.1l-5.3-3V4.9z\"/><path d=\"M2.7 4.9L8 7.9l5.3-3M8 7.9v6.2\"/>",
   // Stacked sheets: work going on in the background.
   layers: "<path d=\"M8 2.3l5.6 2.9L8 8.1 2.4 5.2z\"/><path d=\"M2.4 8l5.6 2.9L13.6 8\"/><path d=\"M2.4 10.8l5.6 2.9 5.6-2.9\"/>",

@@ -321,12 +321,13 @@ export type Choice<T extends string> = { id: T; label: string; desc?: string; ta
 /**
  * A pop-up button, as a native form has: the chosen item and the up-down chevrons. Its menu
  * lists the choices with what each does; one that can't be had is greyed with the reason, and
- * the one a check found is marked.
+ * the one a check found is marked, as is the one a catalog entry recommends.
  */
-export function PopUp<T extends string>({ label, value, choices, found, onChange }: { label: string; value: T; choices: Choice<T>[]; found?: T | null; onChange: (id: T) => void }) {
+export function PopUp<T extends string>({ label, value, choices, found, recommended, onChange }: { label: string; value: T; choices: Choice<T>[]; found?: T | null; recommended?: T; onChange: (id: T) => void }) {
   const { t } = useTranslation("customize");
   const [at, setAt] = useState<DOMRect | null>(null);
   const mark = <span className="badge acc">{t("addc.detected")}</span>;
+  const recommends = <span className="badge acc">{t("addc.recommended")}</span>;
   const chosen = choices.find((c) => c.id === value);
   return (
     <>
@@ -340,11 +341,13 @@ export function PopUp<T extends string>({ label, value, choices, found, onChange
           setAt(at ? null : e.currentTarget.getBoundingClientRect());
         }}
       >
-        {value === found && (
+        {value === found ? (
           <span className="badge acc">
             <Icon name="check" className="sm" />
             {t("addc.detected")}
           </span>
+        ) : (
+          value === recommended && recommends
         )}
         <span className="lbl">{chosen?.label}</span>
         <Icon name="updown" className="chev" />
@@ -363,7 +366,7 @@ export function PopUp<T extends string>({ label, value, choices, found, onChange
             extra: (
               <>
                 {c.tag && <span className="badge">{c.tag}</span>}
-                {c.id === found && mark}
+                {c.id === found ? mark : c.id === recommended && recommends}
               </>
             ),
             run: () => onChange(c.id),
