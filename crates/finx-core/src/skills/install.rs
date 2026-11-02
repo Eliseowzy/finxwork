@@ -616,7 +616,7 @@ mod tests {
         let root = dir.path().join("skills");
         let trash = Trash::at(&dir.path().join("trash"));
         let mine = skill(&root, "mine", "Mine.");
-        let builtin = skill(&root.join(".system"), "skill-creator", "Built in.");
+        let builtin = skill(&root.join(".system"), "builtin-example", "Built in.");
         let elsewhere = skill(&dir.path().join("repo/.finx/skills"), "repo-skill", "Theirs.");
 
         let listed = files(&mine.join(SKILL_FILE)).unwrap();

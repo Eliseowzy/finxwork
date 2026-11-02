@@ -275,6 +275,11 @@ async fn the_page_manages_configuration_skills_and_servers_through_the_service()
     assert_eq!(weekly["state"], "disabled");
     let builtin = scanned["skills"].as_array().unwrap().iter().find(|s| s["name"] == "skill-creator").unwrap().clone();
     assert_eq!((builtin["scope"].as_str(), builtin.get("removable")), (Some("system"), None));
+    let bundled = client.request("skills/files", json!({"path": builtin["path"]})).await.unwrap();
+    let paths: Vec<&str> = bundled["files"].as_array().unwrap().iter().filter_map(|f| f["path"].as_str()).collect();
+    assert!(paths.contains(&"agents/grader.md") && paths.contains(&"eval-viewer/viewer.html"));
+    assert!(paths.contains(&"LICENSE.txt") && paths.contains(&"UPSTREAM.md"));
+    assert!(!paths.contains(&"scripts/run_eval.py"));
     let err = client.request("skills/remove", json!({"path": builtin["path"]})).await.unwrap_err();
     assert_eq!(error_kind(&err), "not_removable");
     client.request("skills/remove", json!({"path": target})).await.unwrap();

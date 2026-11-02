@@ -89,7 +89,7 @@ export function suggestName(d: Detected | null): string {
     .slice(0, 32);
 }
 
-export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Customize; project: string | null; onClose: () => void; onAdded: (name: string) => void; onOpen: (name: string) => void }) {
+export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; onClose: () => void; onAdded: (name: string) => void; onOpen: (name: string) => void }) {
   const { t } = useTranslation("customize");
   const st = useStore();
   const [step, setStep] = useState<Step>("entry");
@@ -165,7 +165,7 @@ export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Cust
     setStepIds(ids);
     setSteps([]);
     try {
-      return await rpc!.request("mcp/probe", { probe_id: id, server, cwd: project ?? undefined });
+      return await rpc!.request("mcp/probe", { probe_id: id, server, cwd: c.cwd ?? undefined });
     } finally {
       probeId.current = null;
     }
@@ -276,7 +276,7 @@ export function AddConnector({ c, project, onClose, onAdded, onOpen }: { c: Cust
       }
       const server = await remoteServer();
       if (auth === "oauth") {
-        const login = await rpc.request("mcp/login", { name, cwd: project ?? undefined, server });
+        const login = await rpc.request("mcp/login", { name, cwd: c.cwd ?? undefined, server });
         setAuthorizeUrl(login.authorize_url);
         window.finx?.openExternal(login.authorize_url);
         setStep("login");

@@ -18,6 +18,18 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8766", "--bind", "127.0.0.1", "--directory", "assets/brand"],
       "port": 8766
+    },
+    {
+      "name": "desktop-demos",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8767", "--bind", "127.0.0.1", "--directory", ".claude/worktrees/input-queue/docs/desktop"],
+      "port": 8767
+    },
+    {
+      "name": "desktop-web-queue",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", ".claude/worktrees/input-queue/apps/desktop", "web"],
+      "port": 5176
     }
   ]
 }

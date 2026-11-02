@@ -15,7 +15,7 @@ import type { Customize } from "./useCustomize";
 export type Actions = {
   open: (detail: NonNullable<CustomizeView["detail"]>) => void;
   upload: () => void;
-  create: () => void;
+  create?: () => void;
   useSkill: (name: string) => void;
   addCustom: () => void;
   edit: (s: McpServerView) => void;
@@ -86,10 +86,12 @@ export function MySkills({ c, a, project }: { c: Customize; a: Actions; project:
                 <Icon name="upload" />
                 {t("add.upload").replace("…", "")}
               </button>
-              <button className="btn" onClick={a.create}>
-                <Icon name="chat" />
-                {t("add.create")}
-              </button>
+              {a.create && (
+                <button className="btn" onClick={a.create}>
+                  <Icon name="chat" />
+                  {t("add.create")}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -275,10 +277,12 @@ export function DiscoverSkills({ c, a }: { c: Customize; a: Actions }) {
               <Icon name="upload" />
               {t("add.upload").replace("…", "")}
             </button>
-            <button className="btn" onClick={a.create}>
-              <Icon name="chat" />
-              {t("add.create")}
-            </button>
+            {a.create && (
+              <button className="btn" onClick={a.create}>
+                <Icon name="chat" />
+                {t("add.create")}
+              </button>
+            )}
           </div>
         </div>
       </section>

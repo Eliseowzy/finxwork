@@ -29,7 +29,7 @@ function demoSkills(): Skill[] {
     { name: "kernel-e2e", description: "用真实模型跑一遍内核验收：启动 finx、发起会话、核对事件流和落盘的会话文件。", dir: `${project}/.agents/skills/kernel-e2e`, scope: "project", on: true, files: skillFiles(["scripts/run.sh", 1100]) },
     // In the repository's .claude: another app's folder, off until turned on (skill-design D-173).
     { name: "frontend-design", description: "做网页和界面时使用：给出有个性的排版、配色和动效，避免千篇一律的模板感。", dir: `${project}/.claude/skills/frontend-design`, scope: "project", on: false, offByDefault: true, files: skillFiles() },
-    { name: "skill-creator", description: "Writes a new skill, or improves an existing one, from what the user describes.", dir: `${home}/.finx/skills/.system/skill-creator`, scope: "system", on: true, userOnly: true, files: skillFiles() },
+    { name: "skill-creator", description: "Create, improve, and evaluate skills using realistic test cases, baseline comparisons, and user feedback.", dir: `${home}/.finx/skills/.system/skill-creator`, scope: "system", on: true, userOnly: true, files: skillFiles() },
   ];
 }
 

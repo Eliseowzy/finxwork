@@ -55,7 +55,7 @@ function tableOf(rows: Row[], credential: (key: string) => string, secrets: [str
 
 const PROBE_DELAY = 600;
 
-export function EditConnector({ c, server, project, onClose, onSaved }: { c: Customize; server: McpServerView; project: string | null; onClose: () => void; onSaved: (name: string) => void }) {
+export function EditConnector({ c, server, onClose, onSaved }: { c: Customize; server: McpServerView; onClose: () => void; onSaved: (name: string) => void }) {
   const { t } = useTranslation("customize");
   const st = useStore();
   const rpc = st.rpc;
@@ -112,7 +112,7 @@ export function EditConnector({ c, server, project, onClose, onSaved }: { c: Cus
       const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
       probeId.current = id;
       try {
-        const result = await rpc.request("mcp/probe", { probe_id: id, server: { name, url: address }, cwd: project ?? undefined });
+        const result = await rpc.request("mcp/probe", { probe_id: id, server: { name, url: address }, cwd: c.cwd ?? undefined });
         if (probeId.current !== id) return;
         setProbed(result);
         if (result.transport && !raw.transport) setTransport(result.transport);

@@ -341,7 +341,7 @@ async fn acp_announces_commands_and_runs_skills() {
             json!({"name": "skill:commit-style", "description": "Commit messages."}),
             json!({"name": "skill:gen-report", "description": "Generate the weekly report.", "input": {"hint": "[week]"}}),
             // Built into finx (docs/desktop/customize-design.md §4.6).
-            json!({"name": "skill:skill-creator", "description": "Writes a new skill, or improves an existing one, from what the user describes. Use when the user asks to create, write or turn something into a skill."}),
+            json!({"name": "skill:skill-creator", "description": "Create, improve, and evaluate skills using realistic test cases, baseline comparisons, and user feedback."}),
         ]
     );
 

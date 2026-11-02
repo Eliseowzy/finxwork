@@ -87,7 +87,9 @@ export function Customize() {
     open,
     upload: () => setSheet({ kind: "upload" }),
     // A conversation without a project, the built-in skill already in the message (§10.4).
-    create: () => st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: null, noProject: true }, prefill: "/skill:skill-creator " }),
+    create: c.items.some((item) => item.on && item.entry.name === "skill-creator")
+      ? () => st.set({ selection: { kind: "new" }, draft: { ...st.draft, cwd: null, noProject: true }, prefill: "/skill:skill-creator " })
+      : undefined,
     useSkill: (name) => st.set({ selection: { kind: "new" }, prefill: `/skill:${name} ` }),
     addCustom: () => setSheet({ kind: "add" }),
     edit: (s) => setSheet({ kind: "connector", edit: s }),
@@ -140,7 +142,7 @@ export function Customize() {
   const addMenu = [
     { header: t("add.skills") },
     { id: "upload", label: t("add.upload"), desc: t("add.uploadDesc"), icon: "upload", run: a.upload },
-    { id: "create", label: t("add.create"), desc: t("add.createDesc"), icon: "chat", run: a.create },
+    ...(a.create ? [{ id: "create", label: t("add.create"), desc: t("add.createDesc"), icon: "chat", run: a.create }] : []),
     null,
     { header: t("add.connectors") },
     { id: "custom", label: t("add.custom"), desc: t("add.customDesc"), icon: "plug", run: a.addCustom },
@@ -226,7 +228,6 @@ export function Customize() {
       {sheet?.kind === "add" && (
         <AddConnector
           c={c}
-          project={project}
           onClose={() => setSheet(null)}
           onAdded={() => setView({ tab: "connectors", view: "mine", detail: null })}
           onOpen={(name) => (setSheet(null), setView({ tab: "connectors", view: "mine", detail: { kind: "connector", id: name, tab: "overview" } }))}
@@ -236,7 +237,6 @@ export function Customize() {
         <EditConnector
           c={c}
           server={sheet.edit}
-          project={project}
           onClose={() => setSheet(null)}
           onSaved={(name) => setView({ tab: "connectors", view: "mine", detail: { kind: "connector", id: name, tab: "overview" } })}
         />
