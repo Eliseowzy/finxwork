@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { displayTitle, runningAgents, type ListSession } from "@finx/client";
-import { rename } from "../actions";
-import { RenameField, SidebarToggle } from "../components";
+import { SidebarToggle } from "../components";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { layoutOf, setCard } from "../layout";
@@ -40,29 +39,14 @@ export function SessionPage({ s }: { s: ListSession }) {
     setCard(st, true);
     st.set({ contextOpen: true });
   }, [asked]);
-  // The session whose title the bar is editing; another session's page shows its title.
-  const [editing, setEditing] = useState<string | null>(null);
   return (
     <div className={`spage ${background || browser ? "bgopen" : ""} ${background && !layout.panelFits ? "bgover" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
-          {/* Double-click the title to edit it in place; the rest of the bar still moves the window. */}
+          {/* The title moves the window like the rest of the bar; renaming lives in the sidebar. */}
           <div className="ctitle">
-            {editing === s.session_id ? (
-              <RenameField
-                s={s}
-                className="crename"
-                end={(title) => {
-                  setEditing(null);
-                  if (title !== null) rename(st, s, title);
-                }}
-              />
-            ) : (
-              <h2 className="no-drag" title={displayTitle(s)} onDoubleClick={() => setEditing(s.session_id)}>
-                {displayTitle(s)}
-              </h2>
-            )}
+            <h2 title={displayTitle(s)}>{displayTitle(s)}</h2>
           </div>
           {/* The background panel's button, with how many tasks run; only for a session that has some. */}
           {agents > 0 && (
