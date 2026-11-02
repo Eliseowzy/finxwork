@@ -115,19 +115,35 @@ input:disabled,textarea:disabled{cursor:default}
 .nav-i .cnt{margin-left:auto;font-size:11.5px;color:var(--l2);font-variant-numeric:tabular-nums}
 .side-list{flex:1;overflow-y:auto;min-height:0;padding:0 8px 8px}
 .side-list>[role=group]{display:flex;flex-direction:column;gap:2px}
+/* The list's heading, a step below the actions so the list reads as its own part: its name, and ▾ to collapse every group (▸ when all are shut). */
+.side-lh{display:flex;align-items:center;padding:12px 8px 4px;flex:none}
+.side-lh-t{display:flex;align-items:center;gap:4px;height:24px;padding:0 10px;border:0;background:none;font:inherit;font-size:12px;color:var(--l2);border-radius:var(--r-sm)}
+.side-lh-t:hover:not(:disabled){color:var(--l1)}
+.side-lh-t .ic{width:14px;height:14px;transition:transform .15s var(--ease-out)}
+.side-lh-t.shut .ic{transform:rotate(-90deg)}
 /* A group's heading: its title, its count, and ▾ (▸ when collapsed); a click collapses or opens it. */
 .grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:400;color:var(--l2);padding:24px 10px 6px;margin-bottom:2px;display:flex;align-items:center;gap:6px;background:var(--side-head);border:0;width:100%;text-align:left}
-.side-list>[role=group]:first-child .grp-h{padding-top:20px}
+.side-list>[role=group]:first-child .grp-h{padding-top:8px}
 .grp-h:hover{color:var(--l1)}
 .grp-h .n{font-weight:500;color:var(--l3)}
 .grp-h .ic{width:16px;height:16px;color:var(--l2);transition:transform .15s var(--ease-out)}
-.grp-h.shut .ic{transform:rotate(-90deg)}
+.grp-h.shut .ic:not(.gi){transform:rotate(-90deg)}
 .grp-h .gt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* In the list a heading sits in a row that sticks; a project's row shows + on hover, for a new session there. */
 .grp-row{position:sticky;top:0;z-index:2;display:flex;align-items:flex-end;background:var(--side-head)}
 .grp-row .grp-h{position:static;background:none;flex:1;min-width:0}
 .grp-row .grpact{display:none;flex:none;margin-bottom:2px}
 .grp-row:hover .grpact,.grp-row .grpact:focus-visible{display:flex}
+/* Grouped by project, a heading is a row like the list's own: the folder, the name in full colour, close to its neighbours. */
+.side-list.by-project .grp-h{padding:7px 10px;margin:0;font-size:13.5px;color:var(--l1);gap:8px}
+.side-list.by-project>[role=group]:first-child .grp-h{padding-top:7px}
+.side-list.by-project .grp-h .gi{width:16px;height:16px;flex:none;color:var(--l2)}
+.side-list.by-project .grp-h .ic:not(.gi){color:var(--l3)}
+.side-list.by-project .grp-row{border-radius:var(--r-md);align-items:center}
+.side-list.by-project .grp-row:hover{background:linear-gradient(var(--fill),var(--fill)),var(--side-head)}
+html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
+.side-list.by-project .grp-row .grpact{margin:0 4px 0 0}
+.side-list.by-project>[role=group]+[role=group]{margin-top:2px}
 .srow{display:flex;padding:7px 10px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
 .srow:hover{background:var(--fill)}
 .srow.sel{background:var(--side-sel)}
