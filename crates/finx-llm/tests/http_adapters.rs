@@ -310,7 +310,7 @@ fn paced_registry(base: &str, idle: Duration) -> ModelRegistry {
             ..Default::default()
         },
         retry: RetryPolicy {
-            max_retries: 0,
+            max_retries: Some(0),
             ..Default::default()
         },
         ..Default::default()

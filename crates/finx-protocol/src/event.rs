@@ -84,6 +84,8 @@ pub enum EventMsg {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         skills: Vec<SkillUse>,
     },
+    /// The model request failed and is tried again. The assistant message being streamed, if
+    /// any, is dropped: the next attempt starts a new one.
     StreamRetry {
         attempt: u32,
         delay_ms: u64,

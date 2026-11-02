@@ -644,7 +644,7 @@ async fn stream_turn(
     thinking: ThinkingLevel,
     ctx: Context,
 ) -> Arc<AssistantMessage> {
-    let message_id = session.allocate_id();
+    let mut message_id = session.allocate_id();
     let options = RequestOptions {
         thinking,
         cache_key: Some(session.id.clone()),
@@ -661,11 +661,19 @@ async fn stream_turn(
             event = stream.next() => match event {
                 None => break acc.fail(LlmError::new(ErrorKind::Protocol, "the model stream ended unexpectedly")),
                 Some(StreamEvent::Done(message)) | Some(StreamEvent::Failed(message)) => break message,
-                Some(StreamEvent::Retrying { attempt, delay, error }) => session.emit(EventMsg::StreamRetry {
-                    attempt,
-                    delay_ms: delay.as_millis() as u64,
-                    error: ErrorInfo::from(&error),
-                }),
+                Some(StreamEvent::Retrying { attempt, delay, error }) => {
+                    // The failed attempt's text is dropped; the next one streams a new message.
+                    if started {
+                        acc = MessageAccumulator::for_model(model);
+                        message_id = session.allocate_id();
+                        started = false;
+                    }
+                    session.emit(EventMsg::StreamRetry {
+                        attempt,
+                        delay_ms: delay.as_millis() as u64,
+                        error: ErrorInfo::from(&error),
+                    });
+                }
                 Some(event) => {
                     acc.apply(&event);
                     if !started {

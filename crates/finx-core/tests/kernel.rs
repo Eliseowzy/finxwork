@@ -639,6 +639,37 @@ async fn model_failures_fail_the_task() {
 }
 
 #[tokio::test]
+async fn a_reply_cut_off_is_asked_again_and_only_the_new_one_stays() {
+    use finx_llm::api::scripted::ScriptStep;
+    let cut_off = Script {
+        steps: vec![ScriptStep::Text("half a re".into()), ScriptStep::Fail(ErrorKind::Network, "stream interrupted".into())],
+        ..Default::default()
+    };
+    let mut h = harness(PermissionMode::BypassPermissions, false, vec![cut_off, Script::text("the whole reply")]).await;
+    h.kernel.submit(Op::prompt("hi")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }));
+    assert!(events.iter().any(|e| matches!(e.msg, EventMsg::StreamRetry { attempt: 1, .. })));
+    let started: Vec<&String> = events
+        .iter()
+        .filter_map(|e| match &e.msg {
+            EventMsg::MessageStarted { message_id, role: finx_protocol::Role::Assistant } => Some(message_id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(started.len(), 2);
+    assert_ne!(started[0], started[1]);
+    let replies: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.msg {
+            EventMsg::MessageCompleted { message: Message::Assistant(a), .. } => Some(a.text()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replies, ["the whole reply"]);
+}
+
+#[tokio::test]
 async fn bad_tool_calls_become_error_results() {
     let mut h = harness(
         PermissionMode::BypassPermissions,

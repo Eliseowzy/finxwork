@@ -194,6 +194,11 @@ impl SessionMirror {
                     });
                 }
             }
+            EventMsg::StreamRetry { .. } => {
+                if let Some(task) = &mut self.active {
+                    task.streaming = None;
+                }
+            }
             EventMsg::MessageDelta { message_id, delta } => {
                 if let Some(partial) = self
                     .active

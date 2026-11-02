@@ -363,6 +363,7 @@ pub struct CompactionFile {
 #[serde(deny_unknown_fields)]
 pub struct LlmFile {
     pub max_retries: Option<u32>,
+    pub retry_window_secs: Option<u64>,
     pub connect_timeout_secs: Option<u64>,
     pub idle_timeout_secs: Option<u64>,
 }
@@ -416,7 +417,10 @@ pub struct Config {
     pub limits: OutputLimits,
     pub max_parallel_tools: usize,
     pub compaction: CompactionSettings,
-    pub llm_max_retries: u32,
+    /// At most this many retries of a model request; `None` leaves it to `llm_retry_window`.
+    pub llm_max_retries: Option<u32>,
+    /// How long a model request keeps retrying after it first failed.
+    pub llm_retry_window: Duration,
     pub llm_connect_timeout: Duration,
     pub llm_idle_timeout: Duration,
     pub rules: Vec<CommandRule>,
@@ -521,7 +525,8 @@ impl Config {
                 keep_user_tokens: compaction.keep_user_tokens.unwrap_or(20_000),
                 keep_skill_tokens: compaction.keep_skill_tokens.unwrap_or(20_000),
             },
-            llm_max_retries: llm.max_retries.unwrap_or(4),
+            llm_max_retries: llm.max_retries,
+            llm_retry_window: Duration::from_secs(llm.retry_window_secs.unwrap_or(600)),
             llm_connect_timeout: Duration::from_secs(llm.connect_timeout_secs.unwrap_or(10).max(1)),
             llm_idle_timeout: Duration::from_secs(llm.idle_timeout_secs.unwrap_or(300).max(5)),
             rules: file.rules.unwrap_or_default(),

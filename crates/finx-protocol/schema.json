@@ -2060,6 +2060,7 @@
           "type": "object"
         },
         {
+          "description": "The model request failed and is tried again. The assistant message being streamed, if any, is dropped: the next attempt starts a new one.",
           "properties": {
             "attempt": {
               "format": "uint32",

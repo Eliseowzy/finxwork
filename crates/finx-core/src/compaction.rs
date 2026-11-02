@@ -288,11 +288,14 @@ async fn request_summary(
             event = stream.next() => match event {
                 None => return Ok(acc.fail(LlmError::new(ErrorKind::Protocol, "the model stream ended unexpectedly"))),
                 Some(StreamEvent::Done(message)) | Some(StreamEvent::Failed(message)) => return Ok(message),
-                Some(StreamEvent::Retrying { attempt, delay, error }) => session.emit(EventMsg::StreamRetry {
-                    attempt,
-                    delay_ms: delay.as_millis() as u64,
-                    error: ErrorInfo::from(&error),
-                }),
+                Some(StreamEvent::Retrying { attempt, delay, error }) => {
+                    acc = MessageAccumulator::for_model(model);
+                    session.emit(EventMsg::StreamRetry {
+                        attempt,
+                        delay_ms: delay.as_millis() as u64,
+                        error: ErrorInfo::from(&error),
+                    });
+                }
                 Some(event) => acc.apply(&event),
             },
         }

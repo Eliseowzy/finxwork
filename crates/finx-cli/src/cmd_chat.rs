@@ -163,6 +163,13 @@ async fn stream_once(
                 text_open = true;
             }
             StreamEvent::Retrying { attempt, delay, error } => {
+                // What was printed belongs to the failed attempt; the next one starts over.
+                if std::mem::take(&mut thinking_open) {
+                    eprintln!();
+                }
+                if std::mem::take(&mut text_open) {
+                    println!();
+                }
                 eprintln!(
                     "{}",
                     style.yellow(&format!("retrying in {:.1}s (attempt {attempt}): {}", delay.as_secs_f64(), error.message))

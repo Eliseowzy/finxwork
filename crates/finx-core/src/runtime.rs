@@ -242,6 +242,7 @@ pub fn model_registry(home: &FinxHome, config: &Config) -> Result<ModelRegistry,
             idle: config.llm_idle_timeout,
         },
         retry: RetryPolicy {
+            window: config.llm_retry_window,
             max_retries: config.llm_max_retries,
             ..Default::default()
         },

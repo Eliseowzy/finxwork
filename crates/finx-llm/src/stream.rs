@@ -31,7 +31,8 @@ pub enum StreamEvent {
     ThinkingDelta { index: usize, text: String },
     ToolCallStart { index: usize, id: String, name: String },
     ToolCallArgs { index: usize, json: String },
-    /// Produced by the registry's retry layer only.
+    /// Produced by the registry's retry layer only. Deltas before it belong to the attempt that
+    /// failed: drop them, the next attempt starts over.
     Retrying { attempt: u32, delay: Duration, error: LlmError },
     Done(AssistantMessage),
     Failed(AssistantMessage),

@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.25 |
-| 日期 | 2026-10-30 |
+| 版本 | v1.27 |
+| 日期 | 2026-11-02 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -73,6 +73,7 @@
 | v1.24 | 2026-10-30 | 新增模型目录与发现方案 [model-catalog-design.md](model-catalog-design.md)，回答 Q-08：有哪些模型由服务商的列表接口决定（保存密钥时顺便验证、常驻服务每 24 小时刷新、手动刷新），参数按字段合并 models.toml、内置修正、列表自带参数和公开维护的模型目录（随版本打包快照，常驻服务在后台刷新）；推理档位从公共目录推导；菜单只显示有凭据、参数已知、未停用的模型，每家最多最新的 12 个，用户可逐个调整。§4.8、§9.1 随之更新。决策 D-130–D-144，待定问题 Q-120–Q-125。一期、二期已实现，端到端测试与真实 DeepSeek 验收通过 |
 | v1.26 | 2026-10-30 | 上下文明细（§7.5.8，D-150–D-153）：内核给出当前上下文由哪几部分组成——消息、系统提示词、内置工具、Skill、MCP，加上预留空间和剩余空间。总量就是用量计算的结果，各部分相加等于总量；按需计算，固定部分随系统提示词的缓存一起保存，整份结果在会话没有变化时直接复用。新增内置命令 `/context`（只汇报、不调模型、不写日志）、事件 `context_reported`（§8.2）和原生协议方法 `session/context`（protocol-design.md v0.16）；`finx exec` 的文本输出打印明细，JSON 结果带 `context`（§12）；ACP 把明细作为助手文字发出 |
 | v1.25 | 2026-10-30 | 思考强度改用服务商自己的档位（model-catalog-design §18，D-145–D-149）：`ThinkingLevel` 新增 `default`（不发参数，配置的默认值）、`on`、`xhigh`；每个模型只提供它支持且请求格式发得出去的档位，不提供的按 `default` 处理；换模型时保留新模型也有的档位，否则用这个模型上次选的档位；§4.13 改写 |
+| v1.27 | 2026-11-02 | 模型请求的重试改为按时长（§4.11，D-230–D-232）：从第一次失败算起最多再试 10 分钟（`llm.retry_window_secs`），次数默认不限；退避升到 30 秒封顶；Retry-After 在剩余时长内都遵守；回复中途断开也重发，前一次的半截内容丢弃；连接授权遇到网络错误同样重试；408 和流中的中文错误提示纳入分类。§6.5、§6.9、§10.2 随之更新 |
 
 ## 1. 目标与范围
 
@@ -919,21 +920,26 @@ pub enum ErrorKind {
 | 判定依据 | kind | 自动重试 |
 |---|---|---|
 | 401 / 403 | Auth | 否 |
-| 402，或表示余额、配额不足的错误码 | QuotaExceeded | 否 |
+| 402，或表示余额、配额不足的错误码或提示（含"余额不足""欠费"） | QuotaExceeded | 否 |
 | 429 | RateLimited | 是 |
 | 503 / 529 / overloaded | Overloaded | 是 |
 | 其他 5xx | Server | 是 |
 | 连接失败、连接被重置 | Network | 是 |
-| 超时 | Timeout | 是 |
+| 超时，或 408 | Timeout | 是 |
 | 4xx，且错误信息匹配"上下文超限"的模式 | ContextOverflow | 否（由内核压缩后重试，§6.4） |
 | 其他 4xx | InvalidRequest | 否 |
 | 被内容审查拦截 | ContentFiltered | 否 |
 | 流的格式无法解析 | Protocol | 否 |
 
+流里的错误事件没有状态码，只能按措辞判断。先排除不会自己好的：上下文超限、余额不足；再认过载（overloaded、busy、capacity、繁忙）、限流（rate limit、too many requests、throttl、限流、频率、并发）、服务端错误（server、internal、内部错误）、超时（timeout、超时）。都不像的归为 Unknown，不重试。"billing""balance"这类宽泛的词只在 429 里算余额不足，别处可能是负载均衡器（load balancer）报的错。
+
 重试规则：
-- **时机**：只在**收到第一个内容增量之前**自动重试。已经输出过内容再失败的，直接返回 `Failed`，避免重复输出。
-- **退避**：第 n 次重试前等待 `min(30s, 0.5s × 2^(n−1))`，再乘以 0.8–1.2 之间的随机抖动。默认最多重试 4 次。
-- **Retry-After**：遵守服务端的 `retry-after` 或 `retry-after-ms`。如果要求等待超过 60 秒，就不等了，直接失败并说明原因。
+- **时长**：从第一次失败算起，最多再重试 10 分钟（`llm.retry_window_secs`，0 表示不重试）。次数默认不限，`llm.max_retries` 可以另设上限。时长用单调时钟计；最后一次等待截到时长用完的那一刻，到点再试最后一次。
+- **也重试已经开始输出的回复**：前一次收到的增量作废。消费者看到 `Retrying` 就丢掉它们，下一次尝试重新开始一条消息。失败的回复本来就不会发回给模型（§7.1），重发只多花一次输入。
+- **退避**：第 n 次重试前等待 `min(30s, 0.5s × 2^(n−1))`，再乘以 0.8–1.2 之间的随机抖动。前 6 次约 30 秒内用完，之后每 30 秒一次，网络恢复后最多 30 秒就能接上。
+- **Retry-After**：遵守服务端的 `retry-after` 或 `retry-after-ms`。要求的等待超过剩余时长时，不等了，直接失败并说明原因。
+- **连接**：经由模型连接的请求，每次尝试各取一个租约，等待重试期间不占用，连接断开时不必等它；取授权时遇到网络错误，和请求本身的错误一样重试。
+- **放弃时**：错误信息末尾注明重试了几次、多长时间。
 - **通知**：每次重试前发出 `Retrying` 事件，供界面展示。
 
 超时设置（都可以配置）：
@@ -1540,7 +1546,7 @@ async fn run_task(sess: &Session, task: &TaskCtx, input: Option<UserMessage>) ->
    - 先交给 `MessageAccumulator`；
    - 在第一个内容事件之前发出 `message_started`；
    - 把增量转发为 `message_delta`；
-   - 遇到 `Retrying` 时发出 `stream_retry`。
+   - 遇到 `Retrying` 时发出 `stream_retry`。已经开始输出的，丢掉累积器里的内容，换一个新的消息 ID：客户端收到 `stream_retry` 就去掉正在显示的半截回复，下一次尝试从新的 `message_started` 开始。
 3. 收到 `Done` 或 `Failed` 时，取其中携带的消息作为最终消息。
 4. 任务被取消时：
    - drop 流，HTTP 连接随之关闭；
@@ -1603,8 +1609,8 @@ async fn run_task(sess: &Session, task: &TaskCtx, input: Option<UserMessage>) ->
 
 | 错误 | 来源 | 处理方式 |
 |---|---|---|
-| 首个增量之前发生的限流、过载、5xx、网络错误、超时 | finx-llm | 自动重试（§4.11），发出 stream_retry |
-| 同类错误，但已经输出过内容 | finx-llm | task_failed；已输出的部分保留在日志中；用户可以发 continue 重试 |
+| 限流、过载、5xx、网络错误、超时，包括已经输出过内容之后 | finx-llm | 自动重试（§4.11），发出 stream_retry；已经输出的半截丢弃 |
+| 同类错误，重试时长用完 | finx-llm | task_failed，错误信息注明重试了多久；用户可以发 continue 重试 |
 | 上下文超限 | finx-llm | 压缩后重试一次；仍然失败则 task_failed（retryable：下一次请求前会先压缩）。见 §7.6.1、§7.6.6 |
 | 鉴权失败、余额不足、请求无效、被内容审查拦截 | finx-llm | task_failed，错误信息中给出处理建议 |
 | 输出被截断，且包含工具调用 | finx-llm | 这些调用以错误结果返回给模型，任务继续 |
@@ -2032,7 +2038,7 @@ pub enum EventMsg {
     MessageStarted { message_id: String, role: Role },
     MessageDelta { message_id: String, delta: Delta },
     MessageCompleted { message_id: String, message: Message, mail: Option<MailInfo> },
-    StreamRetry { attempt: u32, delay_ms: u64, error: ErrorInfo },
+    StreamRetry { attempt: u32, delay_ms: u64, error: ErrorInfo }, // 正在输出的那条消息作废（§6.5）
     ToolStarted { call_id: String, name: String, args: Value },
     ToolProgress { call_id: String, text: String },
     ToolCompleted { call_id: String, result: ToolResultMessage },
@@ -2312,8 +2318,9 @@ token_limit = 0                     # 软阈值的绝对上限（token），0 �
 keep_user_tokens = 20000            # 保留用户原话的预算，实际取它与硬上限 15% 的较小值
 keep_skill_tokens = 20000           # 压缩后重新附上在用 Skill 的预算，实际取它与硬上限 10% 的较小值（§7.6.4）
 
-[llm]
-max_retries = 4
+[llm]                               # §4.11
+retry_window_secs = 600             # 请求失败后继续重试的时长，从第一次失败算起；0 表示不重试
+# max_retries = 8                   # 重试次数上限，默认不限，只看时长
 connect_timeout_secs = 10
 idle_timeout_secs = 300
 
@@ -2918,6 +2925,9 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | D-151 | 明细由内核计算，原生协议 `session/context` 和内置命令 `/context` 两个入口共用 | 命令行、ACP、桌面端看到的是同一份数据，计算规则只有一处 | §7.5.8 protocol-design §6.4 |
 | D-152 | 明细按需计算，不随事件推送；固定部分与系统提示词的估算缓存合并，整份明细在会话没有变化时直接复用 | 推送会让所有客户端和每轮事件都多带一份数据，多数前端不需要；按需询问加上缓存，频繁询问也只花查表的时间 | §7.5.8 |
 | D-153 | `/context` 作为一个只汇报的任务运行，不调模型，不写会话日志 | 等任务结束的前端（`finx exec`、ACP 的 prompt）需要一个结束；它不改变会话，日志里不必留下一个空任务 | §7.5.8 |
+| D-230 | 模型请求的重试按时长而不是次数：从第一次失败算起最多 10 分钟，退避 30 秒封顶，次数默认不限 | 断网、限流、过载多数在一两分钟内恢复，留一倍余量；更长的服务商事故（中位数约 1 小时）多等十几分钟也救不回来，却让人和父智能体干等。界面一直显示倒计时，可以随时停止 | §4.11 |
+| D-231 | 已经开始输出的回复中途断开也重发，前一次的半截丢弃 | 失败的回复本来就不发回给模型，重发对模型一侧是干净的；推理模型思考几分钟后断网，不该让整个任务失败、等人来点重试 | §4.11、§6.5 |
+| D-232 | 经由连接的请求每次尝试各取一个租约，取授权的网络错误也重试 | 等待重试时不占着连接，断开连接不用陪着等；换发凭据失败多是一时连不上来源应用的服务 | §4.11 |
 
 ## 20. 待定问题
 

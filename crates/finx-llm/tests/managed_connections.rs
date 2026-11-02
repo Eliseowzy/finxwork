@@ -79,7 +79,7 @@ fn setup(server: &MockServer) -> (ModelRegistry, Arc<AtomicUsize>, Arc<AtomicUsi
         Catalog::builtin().unwrap(),
         RegistryOptions {
             retry: RetryPolicy {
-                max_retries: 0,
+                max_retries: Some(0),
                 ..Default::default()
             },
             ..Default::default()
@@ -159,4 +159,100 @@ async fn second_401_is_terminal_and_cannot_loop_or_expose_upstream_diagnostics()
     );
     assert_eq!(calls.load(Ordering::Relaxed), 2);
     assert_eq!(released.load(Ordering::Relaxed), 1);
+}
+/// Fails the first `failures` authorizations as a network error, as when the application's
+/// token service cannot be reached.
+struct Flaky {
+    base: String,
+    failures: Arc<AtomicUsize>,
+    leases: Arc<AtomicUsize>,
+}
+struct FlakyLease {
+    base: String,
+    failures: Arc<AtomicUsize>,
+}
+#[async_trait]
+impl ConnectionAuthorizer for Flaky {
+    async fn begin(
+        &self,
+        _: &str,
+        _: &str,
+        _: reqwest::Client,
+    ) -> Result<Box<dyn ConnectionRequest>, LlmError> {
+        self.leases.fetch_add(1, Ordering::Relaxed);
+        Ok(Box::new(FlakyLease {
+            base: self.base.clone(),
+            failures: self.failures.clone(),
+        }))
+    }
+}
+#[async_trait]
+impl ConnectionRequest for FlakyLease {
+    async fn authorize(&self, _: bool) -> Result<Authorization, LlmError> {
+        let failures = self.failures.load(Ordering::Relaxed);
+        if failures > 0 {
+            self.failures.store(failures - 1, Ordering::Relaxed);
+            return Err(LlmError::new(ErrorKind::Network, "token service unreachable"));
+        }
+        Ok(Authorization {
+            base_url: self.base.clone(),
+            credentials: Credentials::with_key("token".into()),
+            transport: None,
+        })
+    }
+    fn cancellation(&self) -> CancellationToken {
+        CancellationToken::new()
+    }
+    fn failed(&self, _: &mut LlmError) {}
+}
+#[tokio::test]
+async fn authorization_network_failures_are_retried_each_with_its_own_lease() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST")).and(path("/v1/chat/completions")).respond_with(ResponseTemplate::new(200).insert_header("content-type","text/event-stream").set_body_string("data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"reply\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")).expect(1).mount(&server).await;
+    let registry = ModelRegistry::new(
+        Catalog::builtin().unwrap(),
+        RegistryOptions {
+            retry: RetryPolicy {
+                base_delay: std::time::Duration::from_millis(1),
+                max_delay: std::time::Duration::from_millis(5),
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+    );
+    let mut p = ProviderConfig {
+        id: "local-test".into(),
+        name: "Managed".into(),
+        api: "openai-chat".into(),
+        base_url: "https://unused.invalid/v1".into(),
+        auth: AuthConfig::Managed,
+        headers: BTreeMap::new(),
+        currency: Default::default(),
+        compat: Compat::default(),
+        models: vec![],
+        listing: Default::default(),
+    };
+    p.models.push(Arc::new(p.ad_hoc_model("flash")));
+    registry.replace_source("connections", vec![p]).unwrap();
+    let leases = Arc::new(AtomicUsize::new(0));
+    registry.install_authorizer(Arc::new(Flaky {
+        base: format!("{}/v1", server.uri()),
+        failures: Arc::new(AtomicUsize::new(2)),
+        leases: leases.clone(),
+    }));
+    let model = registry.resolve("local-test/flash").unwrap().model;
+    let events: Vec<_> = registry
+        .stream(model, context(), RequestOptions::default())
+        .collect()
+        .await;
+    let retries: Vec<_> = events
+        .iter()
+        .filter_map(|e| match e {
+            StreamEvent::Retrying { error, .. } => Some(error.kind),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(retries, vec![ErrorKind::Network, ErrorKind::Network]);
+    assert!(matches!(events.last(), Some(StreamEvent::Done(m)) if m.text() == "reply"));
+    assert_eq!(leases.load(Ordering::Relaxed), 3);
 }

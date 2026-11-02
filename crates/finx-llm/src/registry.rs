@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
+use tokio::time::Instant;
 
 use crate::api::Timeouts;
 use crate::api::WireApi;
@@ -62,43 +63,58 @@ fn build_http(options: &RegistryOptions) -> Result<reqwest::Client, LlmError> {
 
 #[derive(Clone, Debug)]
 pub struct RetryPolicy {
-    pub max_retries: u32,
+    /// How long a request keeps retrying, counted from its first failure.
+    pub window: Duration,
+    /// At most this many retries; `None` leaves it to `window`.
+    pub max_retries: Option<u32>,
     pub base_delay: Duration,
     pub max_delay: Duration,
-    /// Longer server-requested waits fail immediately instead.
-    pub max_retry_after: Duration,
 }
 
 impl Default for RetryPolicy {
     fn default() -> Self {
         Self {
-            max_retries: 4,
+            window: Duration::from_secs(600),
+            max_retries: None,
             base_delay: Duration::from_millis(500),
             max_delay: Duration::from_secs(30),
-            max_retry_after: Duration::from_secs(60),
         }
     }
 }
 
 impl RetryPolicy {
-    /// Delay before retry number `attempt` (1-based). `Err` carries a server-requested delay
-    /// that exceeds `max_retry_after`.
-    pub fn delay(&self, attempt: u32, retry_after_ms: Option<u64>) -> Result<Duration, Duration> {
+    /// Whether a request that has been retried `attempt` times, and first failed at `since`,
+    /// may be retried again.
+    fn allows(&self, attempt: u32, since: Instant) -> bool {
+        self.max_retries.is_none_or(|max| attempt < max) && since.elapsed() < self.window
+    }
+
+    /// Delay before retry number `attempt` (1-based), with `remaining` of the window left: the
+    /// last one ends with the window. `Err` carries a server-requested delay longer than that.
+    pub fn delay(&self, attempt: u32, retry_after_ms: Option<u64>, remaining: Duration) -> Result<Duration, Duration> {
         if let Some(ms) = retry_after_ms {
             let requested = Duration::from_millis(ms);
-            return if requested > self.max_retry_after {
-                Err(requested)
-            } else {
-                Ok(requested)
-            };
+            return if requested > remaining { Err(requested) } else { Ok(requested) };
         }
         let exp = self
             .base_delay
             .saturating_mul(2u32.saturating_pow(attempt.saturating_sub(1)));
         let capped = exp.min(self.max_delay);
         let jitter = 0.8 + rand::random::<f64>() * 0.4;
-        Ok(capped.mul_f64(jitter))
+        Ok(capped.mul_f64(jitter).min(remaining))
     }
+}
+
+/// The error a request ends with: after retries, it says for how long they went on.
+fn gave_up(mut error: LlmError, attempt: u32, since: Option<Instant>) -> LlmError {
+    if let Some(since) = since.filter(|_| attempt > 0) {
+        error.message = format!(
+            "{} (gave up after {attempt} retries in {}s)",
+            error.message,
+            since.elapsed().as_secs()
+        );
+    }
+    error
 }
 
 #[derive(Clone, Debug, Default)]
@@ -412,105 +428,124 @@ impl ModelRegistry {
                 )));
                 return;
             };
-            let managed = if matches!(auth, crate::AuthConfig::Managed) {
+            let authorizer = if matches!(auth, crate::AuthConfig::Managed) {
                 let Some(authorizer) = authorizer else {
                     yield StreamEvent::Failed(base.fail(LlmError::new(ErrorKind::Auth, "connection manager unavailable")));
                     return;
                 };
-                match authorizer.begin(&model.provider, &model.id, http.clone()).await {
-                    Ok(request) => Some(request),
-                    Err(error) => { yield StreamEvent::Failed(base.fail(error)); return; }
-                }
+                Some(authorizer)
             } else { None };
-            let credentials = if managed.is_some() { crate::Credentials::default() } else {
+            let credentials = if authorizer.is_some() { crate::Credentials::default() } else {
                 match auth.resolve(&model.provider).await {
                     Ok(credentials) => credentials,
                     Err(error) => { yield StreamEvent::Failed(base.fail(error)); return; }
                 }
             };
-            let cancellation = managed.as_ref().map(|m| m.cancellation()).unwrap_or_default();
+            let retry = &registry_options.retry;
+            // Held while an attempt runs, not while it waits to be retried: a connection
+            // disconnected meanwhile need not wait, and refuses the next attempt.
+            let mut managed: Option<Box<dyn crate::connection::ConnectionRequest>> = None;
             let mut auth_retried = false;
             let mut refresh_auth = false;
             let context = Arc::new(transform_for(&model, context));
             let mut attempt: u32 = 0;
+            // The retry window counts from the first failure.
+            let mut first_failure: Option<Instant> = None;
             'requests: loop {
-                let (request_model, request_credentials, request_api) = if let Some(managed) = &managed {
-                    let authorization = tokio::select! {
-                        _ = cancellation.cancelled() => Err(LlmError::new(ErrorKind::Auth, "connection cancelled")),
-                        value = managed.authorize(refresh_auth) => value,
-                    };
-                    refresh_auth = false;
-                    match authorization {
-                        Ok(a) => { let mut current = (*model).clone(); current.base_url = a.base_url; (Arc::new(current), a.credentials, a.transport.unwrap_or_else(|| api.clone())) }
-                        Err(error) => { yield StreamEvent::Failed(base.fail(error)); return; }
+                let error = 'attempt: {
+                    if let Some(authorizer) = &authorizer && managed.is_none() {
+                        match authorizer.begin(&model.provider, &model.id, http.clone()).await {
+                            Ok(request) => managed = Some(request),
+                            Err(error) => { yield StreamEvent::Failed(base.fail(gave_up(error, attempt, first_failure))); return; }
+                        }
                     }
-                } else { (model.clone(), credentials.clone(), api.clone()) };
-                let request = WireRequest {
-                    model: request_model,
-                    credentials: request_credentials,
-                    context: context.clone(),
-                    options: options.clone(),
-                    http: http.clone(),
-                    timeouts: registry_options.timeouts.clone(),
-                };
-                let mut inner = request_api.stream(request);
-                let mut produced = false;
-                let mut retry_error: Option<LlmError> = None;
-                loop {
-                    let event = tokio::select! {
-                        _ = cancellation.cancelled() => {
-                            yield StreamEvent::Failed(base.fail(LlmError::new(ErrorKind::Auth, "connection cancelled")));
-                            return;
-                        }
-                        event = inner.next() => event,
-                    };
-                    let Some(event) = event else { break };
-
-                    match event {
-                        StreamEvent::Done(mut message) => {
-                            apply_cost(&model, &mut message.usage);
-                            yield StreamEvent::Done(message);
-                            return;
-                        }
-                        StreamEvent::Failed(mut message) => {
-                            if let Some(managed) = &managed {
-                                if !produced && !auth_retried && message.error.as_ref().is_some_and(|e| e.status == Some(401) && e.kind == ErrorKind::Auth) {
-                                    auth_retried = true; refresh_auth = true;
-                                    continue 'requests;
+                    let cancellation = managed.as_ref().map(|m| m.cancellation()).unwrap_or_default();
+                    let (request_model, request_credentials, request_api) = if let Some(managed) = &managed {
+                        let authorization = tokio::select! {
+                            _ = cancellation.cancelled() => Err(LlmError::new(ErrorKind::Auth, "connection cancelled")),
+                            value = managed.authorize(refresh_auth) => value,
+                        };
+                        refresh_auth = false;
+                        match authorization {
+                            Ok(a) => { let mut current = (*model).clone(); current.base_url = a.base_url; (Arc::new(current), a.credentials, a.transport.unwrap_or_else(|| api.clone())) }
+                            Err(error) => {
+                                if error.kind.is_retryable() && retry.allows(attempt, *first_failure.get_or_insert_with(Instant::now)) {
+                                    break 'attempt error;
                                 }
-                                if let Some(error) = message.error.as_mut() { managed.failed(error); }
+                                yield StreamEvent::Failed(base.fail(gave_up(error, attempt, first_failure)));
+                                return;
                             }
-                            let retryable = !produced
-                                && attempt < registry_options.retry.max_retries
-                                && message.error.as_ref().is_some_and(|e| e.kind.is_retryable());
-                            if retryable {
-                                retry_error = message.error.take().map(|e| *e);
-                                break;
-                            }
-                            if message.error.as_ref().is_some_and(|e| e.is_missing_model()) {
-                                missing.lock().insert(model.provider.clone());
-                            }
-                            apply_cost(&model, &mut message.usage);
-                            yield StreamEvent::Failed(message);
-                            return;
                         }
-                        StreamEvent::Retrying { .. } => {}
-                        other => {
-                            produced |= other.is_content();
-                            yield other;
+                    } else { (model.clone(), credentials.clone(), api.clone()) };
+                    let request = WireRequest {
+                        model: request_model,
+                        credentials: request_credentials,
+                        context: context.clone(),
+                        options: options.clone(),
+                        http: http.clone(),
+                        timeouts: registry_options.timeouts.clone(),
+                    };
+                    let mut inner = request_api.stream(request);
+                    let mut produced = false;
+                    loop {
+                        let event = tokio::select! {
+                            _ = cancellation.cancelled() => {
+                                yield StreamEvent::Failed(base.fail(LlmError::new(ErrorKind::Auth, "connection cancelled")));
+                                return;
+                            }
+                            event = inner.next() => event,
+                        };
+                        let Some(event) = event else {
+                            yield StreamEvent::Failed(base.fail(LlmError::new(
+                                ErrorKind::Protocol,
+                                "the adapter stream ended without a terminal event",
+                            )));
+                            return;
+                        };
+
+                        match event {
+                            StreamEvent::Done(mut message) => {
+                                apply_cost(&model, &mut message.usage);
+                                yield StreamEvent::Done(message);
+                                return;
+                            }
+                            StreamEvent::Failed(mut message) => {
+                                if let Some(managed) = &managed {
+                                    if !produced && !auth_retried && message.error.as_ref().is_some_and(|e| e.status == Some(401) && e.kind == ErrorKind::Auth) {
+                                        auth_retried = true; refresh_auth = true;
+                                        continue 'requests;
+                                    }
+                                    if let Some(error) = message.error.as_mut() { managed.failed(error); }
+                                }
+                                // Also after content: the consumer drops this attempt's deltas
+                                // when it sees `Retrying`.
+                                if message.error.as_ref().is_some_and(|e| e.kind.is_retryable())
+                                    && retry.allows(attempt, *first_failure.get_or_insert_with(Instant::now))
+                                    && let Some(error) = message.error.take()
+                                {
+                                    break 'attempt *error;
+                                }
+                                if message.error.as_ref().is_some_and(|e| e.is_missing_model()) {
+                                    missing.lock().insert(model.provider.clone());
+                                }
+                                message.error = message.error.take().map(|e| Box::new(gave_up(*e, attempt, first_failure)));
+                                apply_cost(&model, &mut message.usage);
+                                yield StreamEvent::Failed(message);
+                                return;
+                            }
+                            StreamEvent::Retrying { .. } => {}
+                            other => {
+                                produced |= other.is_content();
+                                yield other;
+                            }
                         }
                     }
-                }
-                let Some(error) = retry_error else {
-                    yield StreamEvent::Failed(base.fail(LlmError::new(
-                        ErrorKind::Protocol,
-                        "the adapter stream ended without a terminal event",
-                    )));
-                    return;
                 };
-                attempt += 1;
-                match registry_options.retry.delay(attempt, error.retry_after_ms) {
+                managed = None;
+                let since = first_failure.unwrap_or_else(Instant::now);
+                match retry.delay(attempt + 1, error.retry_after_ms, retry.window.saturating_sub(since.elapsed())) {
                     Ok(delay) => {
+                        attempt += 1;
                         tracing::info!(attempt, ?delay, kind = %error.kind, "retrying model request");
                         yield StreamEvent::Retrying { attempt, delay, error };
                         tokio::time::sleep(delay).await;
@@ -522,7 +557,7 @@ impl ModelRegistry {
                             error.message,
                             requested.as_secs()
                         );
-                        yield StreamEvent::Failed(base.fail(error));
+                        yield StreamEvent::Failed(base.fail(gave_up(error, attempt, first_failure)));
                         return;
                     }
                 }
@@ -608,7 +643,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn does_not_retry_after_content() {
+    async fn retries_after_content_and_the_new_attempt_replaces_it() {
         let script = Script {
             steps: vec![
                 crate::api::scripted::ScriptStep::Text("partial".into()),
@@ -618,17 +653,106 @@ mod tests {
         };
         let api = ScriptedApi::new();
         api.push(script);
+        api.push(Script::text("whole"));
         let registry = registry(api.clone());
         let model = registry.resolve("test/scripted").unwrap().model;
         let events: Vec<StreamEvent> = registry
             .stream(model, context(), RequestOptions::default())
             .collect()
             .await;
+        assert!(matches!(&events[0], StreamEvent::TextDelta { text, .. } if text == "partial"));
+        assert!(matches!(events[1], StreamEvent::Retrying { attempt: 1, .. }));
         match events.last().unwrap() {
-            StreamEvent::Failed(msg) => assert_eq!(msg.text(), "partial"),
+            StreamEvent::Done(msg) => assert_eq!(msg.text(), "whole"),
             other => panic!("unexpected {other:?}"),
         }
-        assert_eq!(api.requests().len(), 1);
+        assert_eq!(api.requests().len(), 2);
+    }
+
+    fn failing(api: &ScriptedApi, times: usize) {
+        for _ in 0..times {
+            api.push(Script::fail(ErrorKind::Network, "unreachable"));
+        }
+    }
+
+    #[tokio::test]
+    async fn retries_until_the_window_ends() {
+        let api = ScriptedApi::new();
+        failing(&api, 1000);
+        let mut registry = ModelRegistry::new(
+            Catalog::default(),
+            RegistryOptions {
+                retry: RetryPolicy {
+                    window: Duration::from_millis(40),
+                    base_delay: Duration::from_millis(1),
+                    max_delay: Duration::from_millis(5),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        registry.register_api(api.clone());
+        registry.insert_provider(ScriptedApi::provider());
+        let model = registry.resolve("test/scripted").unwrap().model;
+        let started = std::time::Instant::now();
+        let events: Vec<StreamEvent> = registry
+            .stream(model, context(), RequestOptions::default())
+            .collect()
+            .await;
+        assert!(started.elapsed() >= Duration::from_millis(40));
+        match events.last().unwrap() {
+            StreamEvent::Failed(msg) => {
+                let error = msg.error.as_ref().unwrap();
+                assert_eq!(error.kind, ErrorKind::Network);
+                assert!(error.message.contains("gave up after"), "{}", error.message);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(api.requests().len() > 2);
+    }
+
+    #[tokio::test]
+    async fn max_retries_caps_the_count() {
+        let api = ScriptedApi::new();
+        failing(&api, 10);
+        let mut registry = ModelRegistry::new(
+            Catalog::default(),
+            RegistryOptions {
+                retry: RetryPolicy {
+                    max_retries: Some(2),
+                    base_delay: Duration::from_millis(1),
+                    max_delay: Duration::from_millis(5),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        );
+        registry.register_api(api.clone());
+        registry.insert_provider(ScriptedApi::provider());
+        let model = registry.resolve("test/scripted").unwrap().model;
+        let events: Vec<StreamEvent> = registry
+            .stream(model, context(), RequestOptions::default())
+            .collect()
+            .await;
+        match events.last().unwrap() {
+            StreamEvent::Failed(msg) => {
+                assert!(msg.error.as_ref().unwrap().message.contains("gave up after 2 retries"))
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert_eq!(api.requests().len(), 3);
+    }
+
+    #[test]
+    fn delays_back_off_and_end_with_the_window() {
+        let policy = RetryPolicy::default();
+        let first = policy.delay(1, None, Duration::from_secs(600)).unwrap();
+        assert!(first >= Duration::from_millis(400) && first <= Duration::from_millis(600));
+        let late = policy.delay(20, None, Duration::from_secs(600)).unwrap();
+        assert!(late >= Duration::from_secs(24) && late <= Duration::from_secs(36));
+        assert_eq!(policy.delay(20, None, Duration::from_secs(2)).unwrap(), Duration::from_secs(2));
+        assert_eq!(policy.delay(1, Some(90_000), Duration::from_secs(600)), Ok(Duration::from_secs(90)));
+        assert_eq!(policy.delay(1, Some(90_000), Duration::from_secs(60)), Err(Duration::from_secs(90)));
     }
 
     #[test]

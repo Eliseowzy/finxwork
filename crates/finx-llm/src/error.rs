@@ -89,10 +89,20 @@ const QUOTA_PATTERNS: &[&str] = &[
     "insufficient_quota",
     "insufficient quota",
     "exceeded your current quota",
-    "billing",
-    "balance",
+    "current_quota",
     "arrears",
+    "余额不足",
+    "欠费",
 ];
+/// Point to money only in a 429: elsewhere "balance" may be a load balancer's.
+const QUOTA_WORDS: &[&str] = &["billing", "balance"];
+
+// Error events inside a stream carry no status, only wording.
+const OVERLOADED_PATTERNS: &[&str] = &["overloaded", "overload", "busy", "capacity", "繁忙", "过载"];
+const RATE_LIMIT_PATTERNS: &[&str] =
+    &["rate_limit", "rate limit", "too many requests", "throttl", "限流", "频率", "请求过多", "并发"];
+const SERVER_PATTERNS: &[&str] = &["api_error", "server", "internal", "内部错误", "服务异常"];
+const TIMEOUT_PATTERNS: &[&str] = &["timeout", "timed out", "超时"];
 
 impl LlmError {
     pub fn new(kind: ErrorKind, message: impl Into<String>) -> Self {
@@ -141,22 +151,29 @@ impl LlmError {
         let (message, code) = extract_error_fields(&serde_json::json!({ "error": error }));
         let message = message.unwrap_or_else(|| error.to_string());
         let haystack = format!("{} {}", message, code.clone().unwrap_or_default()).to_lowercase();
+        let has = |patterns: &[&str]| patterns.iter().any(|p| haystack.contains(p));
+        // Errors that will not pass come first, so that a broad word below cannot make them
+        // retried.
         let kind = if haystack.contains("connection_login_required")
             || haystack.contains("local_auth_invalid")
         {
             ErrorKind::Auth
-        } else if haystack.contains("overloaded") {
-            ErrorKind::Overloaded
-        } else if haystack.contains("rate_limit") || haystack.contains("rate limit") {
-            ErrorKind::RateLimited
         } else if matches_any(&haystack, DEFAULT_OVERFLOW_PATTERNS, overflow_patterns) {
             ErrorKind::ContextOverflow
+        } else if has(QUOTA_PATTERNS) {
+            ErrorKind::QuotaExceeded
+        } else if has(OVERLOADED_PATTERNS) {
+            ErrorKind::Overloaded
+        } else if has(RATE_LIMIT_PATTERNS) {
+            ErrorKind::RateLimited
         } else if haystack.contains("authentication") || haystack.contains("permission") {
             ErrorKind::Auth
         } else if haystack.contains("invalid_request") {
             ErrorKind::InvalidRequest
-        } else if haystack.contains("api_error") || haystack.contains("server") {
+        } else if has(SERVER_PATTERNS) {
             ErrorKind::Server
+        } else if has(TIMEOUT_PATTERNS) {
+            ErrorKind::Timeout
         } else {
             ErrorKind::Unknown
         };
@@ -209,7 +226,8 @@ fn classify(status: u16, haystack: &str, overflow_patterns: &[String]) -> ErrorK
     match status {
         401 | 403 => ErrorKind::Auth,
         402 => ErrorKind::QuotaExceeded,
-        429 if QUOTA_PATTERNS.iter().any(|p| haystack.contains(p)) => ErrorKind::QuotaExceeded,
+        408 => ErrorKind::Timeout,
+        429 if QUOTA_PATTERNS.iter().chain(QUOTA_WORDS).any(|p| haystack.contains(p)) => ErrorKind::QuotaExceeded,
         429 => ErrorKind::RateLimited,
         503 | 529 => ErrorKind::Overloaded,
         500..=599 if haystack.contains("overloaded") => ErrorKind::Overloaded,
@@ -317,6 +335,28 @@ mod tests {
         assert!(openai.is_missing_model());
         assert!(!LlmError::from_http(400, r#"{"error":{"message":"bad tool schema"}}"#, None, &[]).is_missing_model());
         assert!(!LlmError::from_http(401, r#"{"error":{"message":"model not found"}}"#, None, &[]).is_missing_model());
+    }
+
+    #[test]
+    fn passing_trouble_is_told_from_lasting_trouble() {
+        let none: Vec<String> = Vec::new();
+        assert_eq!(LlmError::from_http(408, "", None, &none).kind, ErrorKind::Timeout);
+        let quota = |body: &str| LlmError::from_http(429, body, None, &none).kind;
+        assert_eq!(quota(r#"{"error":{"message":"您的账户已欠费，请充值后重试","code":"1113"}}"#), ErrorKind::QuotaExceeded);
+        assert_eq!(quota(r#"{"error":{"type":"exceeded_current_quota_error","message":"suspended"}}"#), ErrorKind::QuotaExceeded);
+        assert_eq!(quota(r#"{"error":{"message":"Requests rate limit exceeded"}}"#), ErrorKind::RateLimited);
+        let stream = |error: serde_json::Value| LlmError::from_stream_error(&error, &none).kind;
+        assert_eq!(stream(serde_json::json!({"code": "Throttling.RateQuota", "message": "Requests rate limit exceeded"})), ErrorKind::RateLimited);
+        assert_eq!(stream(serde_json::json!({"message": "系统繁忙，请稍后再试"})), ErrorKind::Overloaded);
+        assert_eq!(stream(serde_json::json!({"message": "请求频率过高"})), ErrorKind::RateLimited);
+        assert_eq!(stream(serde_json::json!({"type": "overloaded_error", "message": "Overloaded"})), ErrorKind::Overloaded);
+        assert_eq!(stream(serde_json::json!({"message": "upstream timed out"})), ErrorKind::Timeout);
+        assert_eq!(stream(serde_json::json!({"message": "Internal error"})), ErrorKind::Server);
+        // Broad words do not make lasting errors retried.
+        assert_eq!(stream(serde_json::json!({"message": "input exceeds the maximum context length of the model's capacity"})), ErrorKind::ContextOverflow);
+        assert_eq!(stream(serde_json::json!({"code": "insufficient_quota", "message": "server says no"})), ErrorKind::QuotaExceeded);
+        assert_eq!(stream(serde_json::json!({"message": "tool schema is malformed"})), ErrorKind::Unknown);
+        assert_eq!(stream(serde_json::json!({"message": "load balancer: server unavailable"})), ErrorKind::Server);
     }
 
     #[test]

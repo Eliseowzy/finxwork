@@ -273,7 +273,8 @@ function step(v: SessionView, e: Event): SessionView {
     case "input_withdrawn":
       return { ...v, withdrawn: e.id };
     case "stream_retry":
-      return withLive(v, (live) => ({ ...live, retry: { attempt: e.attempt, delay_ms: e.delay_ms, error: e.error, at: e.ts } }));
+      // The reply streamed so far belonged to the failed attempt.
+      return withLive(v, (live) => ({ ...live, streaming: undefined, retry: { attempt: e.attempt, delay_ms: e.delay_ms, error: e.error, at: e.ts } }));
     case "tool_started": {
       const d: ToolDescription = { category: e.category, title: e.title, locations: e.locations };
       const tool: LiveTool = { call_id: e.call_id, name: e.name, category: e.category, title: e.title, args: argsOf(e.args), locations: e.locations, phase: "pending", progress: "" };

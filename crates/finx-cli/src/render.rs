@@ -165,6 +165,8 @@ impl Renderer {
                 delay_ms,
                 error,
             } => {
+                self.end_thinking();
+                self.end_line();
                 eprintln!(
                     "{}",
                     self.style.yellow(&format!(
