@@ -97,9 +97,13 @@
     "yesterday": "Yesterday",
     "seconds_one": "{{count}} s",
     "seconds_other": "{{count}} s",
-    "minutesSeconds": "{{m}} min {{s}} s",
-    "secondsAgo_one": "{{count}} sec ago",
-    "secondsAgo_other": "{{count}} sec ago",
+    "minutes_one": "{{count}} min",
+    "minutes_other": "{{count}} min",
+    "hours_one": "{{count}} hr",
+    "hours_other": "{{count}} hr",
+    "days_one": "{{count}} d",
+    "days_other": "{{count}} d",
+    "pair": "{{big}} {{small}}",
     "daysAgo_one": "{{count}} day ago",
     "daysAgo_other": "{{count}} days ago"
   },
@@ -109,56 +113,72 @@
       "doing": "Reading",
       "do": "Read",
       "count_one": "Read {{count}} file",
-      "count_other": "Read {{count}} files"
+      "count_other": "Read {{count}} files",
+      "doingCount_one": "Reading {{count}} file",
+      "doingCount_other": "Reading {{count}} files"
     },
     "edit": {
       "done": "Edited",
       "doing": "Editing",
       "do": "Edit",
       "count_one": "Edited {{count}} file",
-      "count_other": "Edited {{count}} files"
+      "count_other": "Edited {{count}} files",
+      "doingCount_one": "Editing {{count}} file",
+      "doingCount_other": "Editing {{count}} files"
     },
     "delete": {
       "done": "Deleted",
       "doing": "Deleting",
       "do": "Delete",
       "count_one": "Deleted {{count}} file",
-      "count_other": "Deleted {{count}} files"
+      "count_other": "Deleted {{count}} files",
+      "doingCount_one": "Deleting {{count}} file",
+      "doingCount_other": "Deleting {{count}} files"
     },
     "move": {
       "done": "Moved",
       "doing": "Moving",
       "do": "Move",
       "count_one": "Moved {{count}} file",
-      "count_other": "Moved {{count}} files"
+      "count_other": "Moved {{count}} files",
+      "doingCount_one": "Moving {{count}} file",
+      "doingCount_other": "Moving {{count}} files"
     },
     "search": {
       "done": "Searched",
       "doing": "Searching",
       "do": "Search",
       "count_one": "Searched once",
-      "count_other": "Searched {{count}} times"
+      "count_other": "Searched {{count}} times",
+      "doingCount_one": "Running {{count}} search",
+      "doingCount_other": "Running {{count}} searches"
     },
     "execute": {
       "done": "Ran",
       "doing": "Running",
       "do": "Run",
       "count_one": "Ran {{count}} command",
-      "count_other": "Ran {{count}} commands"
+      "count_other": "Ran {{count}} commands",
+      "doingCount_one": "Running {{count}} command",
+      "doingCount_other": "Running {{count}} commands"
     },
     "fetch": {
       "done": "Fetched",
       "doing": "Fetching",
       "do": "Fetch",
       "count_one": "Fetched {{count}} page",
-      "count_other": "Fetched {{count}} pages"
+      "count_other": "Fetched {{count}} pages",
+      "doingCount_one": "Fetching {{count}} page",
+      "doingCount_other": "Fetching {{count}} pages"
     },
     "other": {
       "done": "Called",
       "doing": "Calling",
       "do": "Call",
       "count_one": "Called {{count}} tool",
-      "count_other": "Called {{count}} tools"
+      "count_other": "Called {{count}} tools",
+      "doingCount_one": "Calling {{count}} tool",
+      "doingCount_other": "Calling {{count}} tools"
     },
     "denied": {
       "done": "Denied",
@@ -171,6 +191,8 @@
     },
     "cancelled": "Not run",
     "awaiting": "Needs approval:",
+    "doingMixed_one": "Working on {{count}} step",
+    "doingMixed_other": "Working on {{count}} steps",
     "separator": ", "
   },
   "permission": {

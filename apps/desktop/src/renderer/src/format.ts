@@ -24,20 +24,20 @@ export function agoText(d: Date, now: Date): string {
   return monthDay(d, language());
 }
 
-/** A message's time under it: "12 秒前", "5 分钟前", "3 小时前", "2 天前" within a week, else the date and time. */
+/** A message's time under it: "刚刚" in its first minute, "5 分钟前", "3 小时前", "2 天前" within a week, else the date and time. */
 export function messageAgo(d: Date, now: Date): string {
   const s = Math.max(0, (now.getTime() - d.getTime()) / 1000);
-  if (s < 60) return t("time.secondsAgo", { count: Math.max(1, Math.trunc(s)) });
+  if (s < 60) return t("time.justNow");
   if (s < 3600) return t("time.minutesAgo", { count: Math.trunc(s / 60) });
   if (s < 86400) return t("time.hoursAgo", { count: Math.trunc(s / 3600) });
   if (s < 7 * 86400) return t("time.daysAgo", { count: Math.trunc(s / 86400) });
   return `${monthDay(d, language())} ${hourMinute(d)}`;
 }
 
-/** How often a message's time needs redrawing: every second in its first minute, then every minute, then every ten. */
+/** How often a message's time needs redrawing: every ten seconds in its first minute (to turn from "just now" soon after it ends), then every minute, then every ten. */
 export function agoInterval(d: Date): number {
   const s = (Date.now() - d.getTime()) / 1000;
-  return s < 60 ? 1000 : s < 3600 ? 60_000 : 600_000;
+  return s < 60 ? 10_000 : s < 3600 ? 60_000 : 600_000;
 }
 
 /** The session list's time: how long ago today, then "Yesterday", a weekday, or the date. */
@@ -52,10 +52,15 @@ export function timeLine(at: Date, previous: Date | undefined, now: Date): strin
   return `${day} ${hourMinute(at)}`;
 }
 
-/** "2 min 14 s", "48 s". */
+/** How long something took or has run, in its two largest units: "48 s", "2 min 14 s", "3 hr 5 min", "2 d 4 hr", "1 hr". */
 export function durationText(ms: number): string {
   const s = Math.max(1, Math.round(ms / 1000));
-  return s < 60 ? t("time.seconds", { count: s }) : t("time.minutesSeconds", { m: Math.trunc(s / 60), s: s % 60 });
+  const part = (unit: "seconds" | "minutes" | "hours" | "days", count: number) => t(`time.${unit}`, { count });
+  const pair = (big: string, small: string, rest: number) => (rest > 0 ? t("time.pair", { big, small }) : big);
+  if (s < 60) return part("seconds", s);
+  if (s < 3600) return pair(part("minutes", Math.trunc(s / 60)), part("seconds", s % 60), s % 60);
+  if (s < 86400) return pair(part("hours", Math.trunc(s / 3600)), part("minutes", Math.trunc(s / 60) % 60), Math.trunc(s / 60) % 60);
+  return pair(part("days", Math.trunc(s / 86400)), part("hours", Math.trunc(s / 3600) % 24), Math.trunc(s / 3600) % 24);
 }
 
 export function bucketTitle(b: Bucket): string {
@@ -74,6 +79,12 @@ export function toolVerb(tool: ToolView): string {
 /** A group's line: "Read 2 files, ran 3 commands", kinds in the order they first appear. */
 export function workText(items: WorkItem[]): string {
   return workSummary(items).map(({ kind, count }) => t(`steps.${kind}.count`, { count })).join(t("steps.separator"));
+}
+
+/** Calls running at once, as one line: "Reading 2 files", or "Working on 3 steps" for calls of different kinds. */
+export function doingText(tools: ToolView[]): string {
+  const kinds = new Set(tools.map((x) => x.category));
+  return kinds.size === 1 ? t(`steps.${tools[0].category}.doingCount`, { count: tools.length }) : t("steps.doingMixed", { count: tools.length });
 }
 
 /** The verb for asking to do a step: "Run", "Edit". */

@@ -25,6 +25,7 @@ const paths: Record<string, string> = {
   stop: "<rect x=\"4.3\" y=\"4.3\" width=\"7.4\" height=\"7.4\" rx=\"1.6\"/>",
   stopFill: "<rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"2.4\" fill=\"currentColor\" stroke=\"none\"/>",
   arrowUp: "<path d=\"M8 13.2V3.2M3.8 7.4L8 3.2l4.2 4.2\"/>",
+  arrowDown: "<path d=\"M8 2.8v10M3.8 8.6L8 12.8l4.2-4.2\"/>",
   archive: "<rect x=\"2\" y=\"2.8\" width=\"12\" height=\"3.4\" rx=\"1\"/><path d=\"M3.2 6.2v6c0 .7.5 1.2 1.2 1.2h7.2c.7 0 1.2-.5 1.2-1.2v-6M6.4 9h3.2\"/>",
   // A window with a card floating at its right: the session's info card.
   infoCard: "<rect x=\"1.8\" y=\"2.8\" width=\"12.4\" height=\"10.4\" rx=\"2.4\"/><rect x=\"8.3\" y=\"5.1\" width=\"3.8\" height=\"5.8\" rx=\"1\" fill=\"currentColor\" stroke=\"none\"/>",
@@ -89,11 +90,11 @@ export function Mark({ size = 18 }: { size?: number }) {
 }
 
 /** The mark in motion (assets/brand/motion): its data points flowing along the stroke. The "strands" look from 96 px up, "solid" below; sized by `size` or by CSS through className. */
-export function MarkMotion({ size, className, theme, look, speed, intro }: MarkMotionOptions & { size?: number; className?: string }) {
+export function MarkMotion({ size, className, theme, look, speed, intro, rewrite }: MarkMotionOptions & { size?: number; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const motion = animateMark(ref.current!, { theme, look, speed, intro });
+    const motion = animateMark(ref.current!, { theme, look, speed, intro, rewrite });
     return () => motion.stop();
-  }, [theme, look, speed, intro]);
+  }, [theme, look, speed, intro, rewrite]);
   return <canvas ref={ref} className={className} aria-hidden="true" style={size ? { display: "block", flex: "none", width: size, height: size } : undefined} />;
 }

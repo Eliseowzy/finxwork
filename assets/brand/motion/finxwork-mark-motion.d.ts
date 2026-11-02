@@ -7,6 +7,8 @@ export interface MarkMotionOptions {
   speed?: number;
   /** First write the stroke on in writing order. */
   intro?: boolean;
+  /** The solid mark written on, held and faded over and over (3 s a round), for something in progress. */
+  rewrite?: boolean;
 }
 
 /** Draws the mark into a canvas sized by CSS and keeps it moving until stop(); one still frame with reduced motion. */
