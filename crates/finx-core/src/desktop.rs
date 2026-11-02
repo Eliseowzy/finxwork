@@ -236,9 +236,14 @@ fn handle(ctx: &ToolCtx) -> Result<Arc<DesktopHandle>, ToolError> {
 }
 
 async fn run(ctx: &ToolCtx, command: &str, args: Vec<String>) -> Result<Value, ToolError> {
+    attempt(ctx, command, args).await?.map_err(|err| ToolError::Failed(err.to_string()))
+}
+
+/// Like `run`, with the CLI's own error kept for a caller that may try another way.
+async fn attempt(ctx: &ToolCtx, command: &str, args: Vec<String>) -> Result<Result<Value, DesktopError>, ToolError> {
     let handle = handle(ctx)?;
     match handle.cli()?.run(command, &args, &ctx.cancel).await {
-        Ok(data) => Ok(data),
+        Ok(data) => Ok(Ok(data)),
         Err(DesktopError::Cancelled) => Err(ToolError::Cancelled),
         Err(err) => {
             // An app that quit or a window that closed: resolve names again.
@@ -247,7 +252,7 @@ async fn run(ctx: &ToolCtx, command: &str, args: Vec<String>) -> Result<Value, T
             {
                 handle.shared.apps.lock().clear();
             }
-            Err(ToolError::Failed(err.to_string()))
+            Ok(Err(err))
         }
     }
 }
@@ -604,7 +609,7 @@ pub(crate) enum ActAction {
     Drag,
     /// Turns the wheel at `x`, `y` of screenshot `shot` by `dx`, `dy` lines (positive: right, up).
     Wheel,
-    /// Types `text` where the app's keyboard focus is (pasted, so any language works); needs no ref.
+    /// Types `text` where the app's keyboard focus is, in any language; needs no ref.
     TypeText,
 }
 
@@ -654,7 +659,9 @@ impl ActAction {
         matches!(self, Self::ClickAt | Self::DoubleClickAt | Self::RightClickAt | Self::Drag | Self::Wheel)
     }
 
-    /// Physical input: the window comes to the front, and keys or the pointer are synthesized.
+    /// Input without a ref: keys or the pointer, synthesized. Those at a point bring the window
+    /// to the front first; press and type_text do only when the app could not take them where
+    /// its window is.
     fn physical(self) -> bool {
         self.at_point() || matches!(self, Self::Press | Self::TypeText)
     }
@@ -789,8 +796,9 @@ impl TypedTool for DesktopAct {
     const DESCRIPTION: &'static str = "Act in a desktop app. By ref from desktop_snapshot: click, type, set a \
         value, select, toggle, expand, scroll, through the accessibility API without moving the pointer. For apps \
         whose snapshot shows no contents: click_at, double_click_at, right_click_at, drag and wheel at pixel \
-        coordinates of a screenshot, and type_text where the keyboard focus is; these bring the window to the \
-        front, move the pointer, and return a new screenshot. press sends a key combo to the app.";
+        coordinates of a screenshot, which bring the window to the front and move the pointer; and type_text \
+        where the keyboard focus is. press sends a key or key combo to the app. type_text and press leave the \
+        window where it is when they can. All of these return a new screenshot.";
 
     fn kind(&self) -> ToolKind {
         ToolKind::Mutating
@@ -840,12 +848,13 @@ impl TypedTool for DesktopAct {
             Some(shot) => shot.window.clone(),
             None => pick_window(&windows(&ctx, &key).await?, None, false, &args.app)?.id.clone(),
         };
-        // Physical input goes to the front window only: bring this one there, or fail.
-        run(&ctx, "focus-window", vec!["--window-id".into(), window.clone(), "--headed".into()]).await?;
-        let data = match args.action {
-            ActAction::Press => press(&ctx, &key, args.text.as_deref().unwrap_or("")).await?,
-            ActAction::TypeText => paste(&ctx, &key, args.text.as_deref().unwrap_or("")).await?,
+        let text = args.text.as_deref().unwrap_or("");
+        let (data, route) = match args.action {
+            ActAction::Press => press(&ctx, &key, text, &window).await?,
+            ActAction::TypeText => type_focused(&ctx, &key, text, &window).await?,
             _ => {
+                // The pointer reaches the front window only: bring this one there, or fail.
+                to_front(&ctx, &window).await?;
                 let shot = shot.as_ref().ok_or_else(|| ToolError::InvalidArgs("shot is required".into()))?;
                 let now = windows(&ctx, &key).await?;
                 if !now.iter().any(|w| w.id == shot.window && w.bounds.same(&shot.bounds)) {
@@ -856,12 +865,20 @@ impl TypedTool for DesktopAct {
                 }
                 let mut cli_args = args.point_args(shot)?;
                 cli_args.push("--headed".into());
-                run(&ctx, args.action.command(), cli_args).await?
+                (run(&ctx, args.action.command(), cli_args).await?, Route::Front)
             }
         };
-        let mut text = format!("{}: {}", args.action.name(), delivered(&data));
+        let mut text = format!("{}: {}", args.action.name(), delivered(&data, route));
+        if let Some(line) = finx_desktop::value_line(&data) {
+            text.push('\n');
+            text.push_str(&line);
+        }
         let mut content = Vec::new();
-        let mut details = json!({ "app": args.app, "disposition": data.get("disposition") });
+        let mut details = json!({
+            "app": args.app,
+            "disposition": data.get("disposition"),
+            "front": route == Route::Front,
+        });
         // The result to check, and the next screenshot to act on.
         if ctx.model_accepts_images {
             let found = windows(&ctx, &key).await?;
@@ -887,18 +904,90 @@ impl TypedTool for DesktopAct {
     }
 }
 
-/// Whether the app confirmed a physical action. Physical input is never confirmed by the app;
-/// what was proved is that it reached the window at the front.
-fn delivered(data: &Value) -> &'static str {
-    match data.pointer("/disposition/delivery").and_then(Value::as_str) {
-        Some("not_delivered") => "not delivered.",
-        Some("delivered_verified") => "done, and the app confirmed it.",
-        _ => "sent to the window, which is at the front. Check the screenshot.",
+/// How input without a ref reached the app.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Route {
+    /// To the app's process or its focused element; the window stayed where it was.
+    Background,
+    /// To the window, brought to the front first.
+    Front,
+}
+
+/// Whether the app confirmed the input, and where it went. Physical input is never confirmed
+/// by the app; what was proved is that it reached the app.
+fn delivered(data: &Value, route: Route) -> &'static str {
+    match (data.pointer("/disposition/delivery").and_then(Value::as_str), route) {
+        (Some("not_delivered"), _) => "not delivered.",
+        (Some("delivered_verified"), _) => "done, and the app confirmed it.",
+        (_, Route::Background) => "sent to the app, whose window stayed where it was. Check the screenshot.",
+        (_, Route::Front) => "sent to the window, which is at the front. Check the screenshot.",
     }
 }
 
-async fn press(ctx: &ToolCtx, key: &str, combo: &str) -> Result<Value, ToolError> {
+/// Brings `window` to the front, or fails.
+async fn to_front(ctx: &ToolCtx, window: &str) -> Result<(), ToolError> {
+    run(ctx, "focus-window", vec!["--window-id".into(), window.to_string(), "--headed".into()]).await.map(drop)
+}
+
+/// A key goes to the app's process, its window left where it is. A combo goes to `window` at
+/// the front, where the app's menus can take it; so does a key the app had no focused element
+/// for.
+async fn press(ctx: &ToolCtx, key: &str, combo: &str, window: &str) -> Result<(Value, Route), ToolError> {
+    if !combo.contains('+') {
+        match attempt(ctx, "press", vec![combo.to_string(), "--app".into(), key.to_string()]).await? {
+            Ok(data) => return Ok((data, Route::Background)),
+            Err(err) if !err.not_delivered() => return Err(ToolError::Failed(err.to_string())),
+            Err(_) => {}
+        }
+    }
+    to_front(ctx, window).await?;
+    Ok((press_headed(ctx, key, combo).await?, Route::Front))
+}
+
+async fn press_headed(ctx: &ToolCtx, key: &str, combo: &str) -> Result<Value, ToolError> {
     run(ctx, "press", vec![combo.to_string(), "--app".into(), key.to_string(), "--headed".into()]).await
+}
+
+/// `text` typed where the app's keyboard focus is. Into its focused text element through
+/// accessibility when `window` holds one: the window stays where it is and the clipboard is not
+/// touched. Otherwise pasted, with `window` at the front.
+async fn type_focused(ctx: &ToolCtx, key: &str, text: &str, window: &str) -> Result<(Value, Route), ToolError> {
+    if let Some(reference) = focused_text(ctx, key, window).await? {
+        // The CLI's own default, given so that finx waits as long.
+        let budget = 5000 + 30 * text.chars().count();
+        let args = vec![reference, "--timeout-ms".into(), budget.to_string(), "--".into(), text.to_string()];
+        match attempt(ctx, "type", args).await? {
+            Ok(data) => return Ok((data, Route::Background)),
+            Err(err) if !err.not_delivered() => return Err(ToolError::Failed(err.to_string())),
+            Err(_) => {}
+        }
+    }
+    to_front(ctx, window).await?;
+    Ok((paste(ctx, key, text).await?, Route::Front))
+}
+
+/// The ref of the focused element of `key`'s focused window, when that window is `window` and
+/// the element takes typed text.
+async fn focused_text(ctx: &ToolCtx, key: &str, window: &str) -> Result<Option<String>, ToolError> {
+    let args = ["--app", key, "--surface", "focused", "--compact", "-i"].map(str::to_string).to_vec();
+    let Ok(data) = attempt(ctx, "snapshot", args).await? else {
+        return Ok(None);
+    };
+    if data.pointer("/window/id").and_then(Value::as_str) != Some(window) {
+        return Ok(None);
+    }
+    Ok(data.get("tree").and_then(focused_typable).map(str::to_string))
+}
+
+/// The ref of the focused element at or under `node` that takes typed text.
+fn focused_typable(node: &Value) -> Option<&str> {
+    let has = |list: &str, word: &str| {
+        node.get(list).and_then(Value::as_array).is_some_and(|items| items.iter().any(|item| item == word))
+    };
+    if has("states", "focused") && has("available_actions", "TypeText") {
+        return node.get("ref_id").and_then(Value::as_str);
+    }
+    node.get("children")?.as_array()?.iter().find_map(focused_typable)
 }
 
 /// `text` typed where `key`'s focus is, by pasting it: any language and any length, as one
@@ -910,7 +999,7 @@ async fn paste(ctx: &ToolCtx, key: &str, text: &str) -> Result<Value, ToolError>
         .filter(|d| d.get("type").and_then(Value::as_str) == Some("text"))
         .and_then(|d| d.get("text").and_then(Value::as_str).map(str::to_string));
     run(ctx, "clipboard-set", vec!["--".into(), text.to_string()]).await?;
-    let pasted = press(ctx, key, "cmd+v").await;
+    let pasted = press_headed(ctx, key, "cmd+v").await;
     tokio::time::sleep(PASTE_SETTLE).await;
     let restored = match saved {
         Some(saved) => run(ctx, "clipboard-set", vec!["--".into(), saved]).await,
@@ -1189,7 +1278,9 @@ mod tests {
     }
 
     /// A stand-in for agent-desktop: logs each call's arguments, one line each, and answers
-    /// with `windows.json` for list-windows and a copy of `shot.png` for screenshot.
+    /// with `windows.json` for list-windows and a copy of `shot.png` for screenshot. A
+    /// snapshot answers with `focused.json`, else as an app that shows nothing; `type` and a
+    /// press without `--headed` with `type.json` and `press.json` when they are there.
     #[cfg(unix)]
     struct FakeCli {
         dir: tempfile::TempDir,
@@ -1210,6 +1301,10 @@ case "$1" in
   list-windows) cat "{d}/windows.json" ;;
   screenshot) for a; do last="$a"; done; cp "{d}/shot.png" "$last"; echo '{{"ok":true,"data":{{"scale_factor":2.0}}}}' ;;
   clipboard-get) echo '{{"ok":true,"data":{{"type":"text","text":"mine"}}}}' ;;
+  snapshot) if [ -f "{d}/focused.json" ]; then cat "{d}/focused.json"; else echo '{{"ok":false,"error":{{"code":"ACTION_NOT_SUPPORTED","message":"Nothing shown","disposition":{{"delivery":"not_delivered","retry":"safe"}}}}}}'; fi ;;
+  type) if [ -f "{d}/type.json" ]; then cat "{d}/type.json"; else echo '{{"ok":true,"data":{{"disposition":{{"delivery":"delivered_verified"}}}}}}'; fi ;;
+  press) case "$*" in *--headed*) echo '{{"ok":true,"data":{{"disposition":{{"delivery":"delivered_unverified"}}}}}}' ;;
+    *) if [ -f "{d}/press.json" ]; then cat "{d}/press.json"; else echo '{{"ok":true,"data":{{"disposition":{{"delivery":"delivered_unverified"}}}}}}'; fi ;; esac ;;
   *) echo '{{"ok":true,"data":{{"disposition":{{"delivery":"delivered_unverified"}}}}}}' ;;
 esac
 "#
@@ -1241,6 +1336,11 @@ esac
             let windows = json!({"ok": true, "data": [{"id": "w-1", "title": "Chat", "is_focused": true, "accessible": false,
                 "bounds": {"x": x, "y": y, "width": 300.0, "height": 200.0}}]});
             std::fs::write(self.dir.path().join("windows.json"), windows.to_string()).unwrap();
+        }
+
+        /// Answers `name` (focused, type or press) with `answer` from now on.
+        fn answer(&self, name: &str, answer: Value) {
+            std::fs::write(self.dir.path().join(format!("{name}.json")), answer.to_string()).unwrap();
         }
 
         /// The calls since the last time, without the session.
@@ -1314,25 +1414,123 @@ esac
         assert!(!fake.calls().iter().any(|c| c.starts_with("mouse-click")));
     }
 
+    /// The calls that act, without listing windows and taking screenshots.
+    #[cfg(unix)]
+    fn acting(calls: &[String]) -> Vec<&str> {
+        calls.iter().map(String::as_str).filter(|c| !c.starts_with("list-windows") && !c.starts_with("screenshot")).collect()
+    }
+
+    #[cfg(unix)]
+    const FOCUSED: &str = "snapshot --app com.example.chat --surface focused --compact -i";
+
+    /// A focused-surface snapshot of `window` whose text field is focused.
+    #[cfg(unix)]
+    fn focused_field(window: &str) -> Value {
+        json!({"ok": true, "data": {"snapshot_id": "s9", "window": {"id": window}, "tree": {"role": "window", "children": [
+            {"role": "button", "ref_id": "@s9:e1", "available_actions": ["Click"]},
+            {"role": "scrollarea", "ref_id": "@s9:e2", "children": [
+                {"role": "textfield", "ref_id": "@s9:e3", "states": ["focused"], "available_actions": ["SetValue", "TypeText"]}
+            ]}
+        ]}}})
+    }
+
+    #[test]
+    fn the_focused_text_element_is_found() {
+        let tree = &focused_field("w-1")["data"]["tree"];
+        assert_eq!(focused_typable(tree), Some("@s9:e3"));
+        // Focus on something that takes no text is no place to type.
+        let button = json!({"role": "window", "children": [{"ref_id": "@s9:e1", "states": ["focused"], "available_actions": ["Click"]}]});
+        assert_eq!(focused_typable(&button), None);
+    }
+
     #[cfg(unix)]
     #[tokio::test]
-    async fn typed_text_is_pasted_and_the_clipboard_put_back() {
+    async fn text_goes_into_the_focused_field_in_the_background() {
         let fake = FakeCli::new();
-        let ctx = fake.ctx("fake-cli-type");
+        let ctx = fake.ctx("fake-cli-type-ax");
+        fake.answer("focused", focused_field("w-1"));
         let args = json!({"app": "Chat", "action": "type_text", "text": "你好 --headed"});
-        Typed::new(DesktopAct).execute(args, ctx).await.unwrap();
+        let typed = Typed::new(DesktopAct).execute(args, ctx).await.unwrap();
         let calls = fake.calls();
-        let typing: Vec<&str> = calls.iter().map(String::as_str).filter(|c| !c.starts_with("list-windows") && !c.starts_with("screenshot")).collect();
+        // No window comes forward and the clipboard is left alone; text after `--` stays text.
+        assert_eq!(acting(&calls), [FOCUSED, "type @s9:e3 --timeout-ms 5330 -- 你好 --headed"]);
+        assert!(text_of(&typed).contains("type_text: done, and the app confirmed it."), "{}", text_of(&typed));
+        assert_eq!(typed.details.unwrap()["front"], false);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn text_is_pasted_where_no_field_takes_it() {
+        let fake = FakeCli::new();
+        // An app that shows nothing through accessibility: pasted at the front, the user's
+        // clipboard put back.
+        let ctx = fake.ctx("fake-cli-type-paste");
+        let args = json!({"app": "Chat", "action": "type_text", "text": "你好"});
+        let typed = Typed::new(DesktopAct).execute(args.clone(), ctx.clone()).await.unwrap();
+        let pasted = [
+            FOCUSED,
+            "focus-window --window-id w-1 --headed",
+            "clipboard-get",
+            "clipboard-set -- 你好",
+            "press cmd+v --app com.example.chat --headed",
+            "clipboard-set -- mine",
+        ];
+        assert_eq!(acting(&fake.calls()), pasted);
+        assert!(text_of(&typed).contains("which is at the front"), "{}", text_of(&typed));
+        assert_eq!(typed.details.unwrap()["front"], true);
+
+        // The focus is in another window than the one to type into.
+        fake.answer("focused", focused_field("w-2"));
+        Typed::new(DesktopAct).execute(args.clone(), ctx.clone()).await.unwrap();
+        assert_eq!(acting(&fake.calls()), pasted);
+
+        // The field refused the text before it took any.
+        fake.answer("focused", focused_field("w-1"));
+        fake.answer("type", json!({"ok": false, "error": {"code": "ACTION_FAILED", "message": "Not written",
+            "disposition": {"delivery": "not_delivered", "retry": "safe"}}}));
+        Typed::new(DesktopAct).execute(args.clone(), ctx.clone()).await.unwrap();
+        let calls = fake.calls();
+        assert_eq!(acting(&calls)[..2], [FOCUSED, "type @s9:e3 --timeout-ms 5060 -- 你好"]);
+        assert_eq!(acting(&calls)[2..], pasted[1..]);
+
+        // It may have taken some: never typed twice.
+        fake.answer("type", json!({"ok": false, "error": {"code": "TIMEOUT", "message": "Timed out",
+            "disposition": {"delivery": "delivered_unverified", "retry": "unsafe"}}}));
+        let failed = Typed::new(DesktopAct).execute(args, ctx).await.unwrap_err().to_string();
+        assert!(failed.contains("TIMEOUT"), "{failed}");
+        assert!(!fake.calls().iter().any(|c| c.starts_with("clipboard") || c.starts_with("focus-window")));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn keys_go_to_the_app_and_combos_through_the_front() {
+        let fake = FakeCli::new();
+        let ctx = fake.ctx("fake-cli-press");
+        let press = |text: &str| json!({"app": "Chat", "action": "press", "text": text});
+        let pressed = Typed::new(DesktopAct).execute(press("return"), ctx.clone()).await.unwrap();
+        assert_eq!(acting(&fake.calls()), ["press return --app com.example.chat"]);
+        assert!(text_of(&pressed).contains("whose window stayed where it was"), "{}", text_of(&pressed));
+        assert_eq!(pressed.details.unwrap()["front"], false);
+
+        // A combo may need the app's menus, which answer at the front.
+        Typed::new(DesktopAct).execute(press("cmd+s"), ctx.clone()).await.unwrap();
+        assert_eq!(acting(&fake.calls()), ["focus-window --window-id w-1 --headed", "press cmd+s --app com.example.chat --headed"]);
+
+        // No focused element took the key: again at the front.
+        fake.answer("press", json!({"ok": false, "error": {"code": "ACTION_FAILED",
+            "message": "Application has no verified focused element for keyboard delivery",
+            "disposition": {"delivery": "not_delivered", "retry": "safe"}}}));
+        Typed::new(DesktopAct).execute(press("escape"), ctx.clone()).await.unwrap();
         assert_eq!(
-            typing,
-            [
-                "focus-window --window-id w-1 --headed",
-                "clipboard-get",
-                "clipboard-set -- 你好 --headed",
-                "press cmd+v --app com.example.chat --headed",
-                "clipboard-set -- mine",
-            ]
+            acting(&fake.calls()),
+            ["press escape --app com.example.chat", "focus-window --window-id w-1 --headed", "press escape --app com.example.chat --headed"]
         );
+
+        // A key that may have been delivered is not sent again.
+        fake.answer("press", json!({"ok": false, "error": {"code": "TIMEOUT", "message": "Timed out",
+            "disposition": {"delivery": "delivered_unverified", "retry": "unsafe"}}}));
+        assert!(Typed::new(DesktopAct).execute(press("tab"), ctx).await.is_err());
+        assert_eq!(acting(&fake.calls()), ["press tab --app com.example.chat"]);
     }
 
     #[tokio::test]

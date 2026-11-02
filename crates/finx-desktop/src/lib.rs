@@ -42,13 +42,23 @@ pub enum DesktopError {
     Cancelled,
     #[error("agent-desktop printed no result: {0}")]
     BadOutput(String),
-    /// The CLI's own error: its code, message and suggestion.
+    /// The CLI's own error: its code, message and suggestion, and whether it says nothing
+    /// reached the app.
     #[error("{code}: {message}{}", suggestion.as_deref().map(|s| format!(" {s}")).unwrap_or_default())]
     Command {
         code: String,
         message: String,
         suggestion: Option<String>,
+        not_delivered: bool,
     },
+}
+
+impl DesktopError {
+    /// Whether the CLI said nothing reached the app, so the call can be made another way
+    /// without doing it twice.
+    pub fn not_delivered(&self) -> bool {
+        matches!(self, Self::Command { not_delivered: true, .. })
+    }
 }
 
 /// Where the CLI is: `configured`, else the copy beside finx (FinxWork.app's
@@ -168,6 +178,7 @@ pub fn parse_envelope(stdout: &str) -> Result<Value, DesktopError> {
         message: without_cli(&message).unwrap_or_else(|| "agent-desktop refused the command.".into()),
         code,
         suggestion,
+        not_delivered: error.pointer("/disposition/delivery").and_then(Value::as_str) == Some("not_delivered"),
     })
 }
 
@@ -498,10 +509,17 @@ pub fn render_action(data: &Value) -> String {
         "delivered_verified" => format!("{action}: done, and the app confirmed it."),
         _ => format!("{action}: sent; the app did not confirm it. Take a snapshot to check."),
     };
-    if let Some(value) = data.pointer("/post_state/value").and_then(Value::as_str) {
-        out.push_str(&format!("\nThe element's value is now \"{}\".", clip(value, MAX_TEXT)));
+    if let Some(line) = value_line(data) {
+        out.push('\n');
+        out.push_str(&line);
     }
     out
+}
+
+/// The element's value after an action, when the CLI read it back.
+pub fn value_line(data: &Value) -> Option<String> {
+    let value = data.pointer("/post_state/value").and_then(Value::as_str)?;
+    Some(format!("The element's value is now \"{}\".", clip(value, MAX_TEXT)))
 }
 
 /// An app's text inside markers that the app cannot close early, like browser pages.
@@ -535,6 +553,11 @@ mod tests {
             err.to_string(),
             "APP_NOT_FOUND: No running application matches 'X' Start the app or open its window with desktop_launch, which waits for the window."
         );
+        assert!(!err.not_delivered(), "no disposition says nothing of delivery");
+        let refused = r#"{"error":{"code":"ACTION_FAILED","message":"Application has no verified focused element for keyboard delivery","disposition":{"delivery":"not_delivered","retry":"safe"}},"ok":false}"#;
+        assert!(parse_envelope(refused).unwrap_err().not_delivered());
+        let partly = r#"{"error":{"code":"TIMEOUT","message":"Timed out","disposition":{"delivery":"delivered_unverified","retry":"unsafe"}},"ok":false}"#;
+        assert!(!parse_envelope(partly).unwrap_err().not_delivered());
         assert!(matches!(parse_envelope("Segmentation fault"), Err(DesktopError::BadOutput(_))));
         let ambiguous = r#"{"error":{"code":"AMBIGUOUS_TARGET","message":"More than one window matches the target",
             "details":{"candidates":[{"id":"w-2","title":"未命名2"},{"id":"w-1","title":"未命名"}]},
