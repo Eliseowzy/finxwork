@@ -2,6 +2,7 @@
 //! §7.2, §7.3): the URL, the address class, the domain lists, the configured sites and the
 //! session's grants, then the permission mode. Reads only the `SessionView`.
 
+use finx_browser::policy::ANY_SITE;
 use finx_browser::policy::AddressClass;
 use finx_browser::policy::SiteLevel;
 use finx_browser::policy::UrlKind;
@@ -155,7 +156,19 @@ fn grant(authority: GrantAuthority, origin: &str) -> SiteGrant {
 fn granted(view: &SessionView, origin: &str, act: bool) -> bool {
     view.site_grants.iter().any(|g| {
         g.origin == origin && (g.authority == GrantAuthority::Act || !act)
-    }) || match view.browser.site(origin) {
+    }) || covers(view.browser.site(origin), act)
+}
+
+/// "Every site", granted for the session or kept as `"*"` in `browser.sites`: public sites
+/// only, so a private address never asks this (D-221).
+fn any_site(view: &SessionView, act: bool) -> bool {
+    view.site_grants.iter().any(|g| {
+        g.origin == ANY_SITE && (g.authority == GrantAuthority::Act || !act)
+    }) || covers(view.browser.any_site(), act)
+}
+
+fn covers(level: Option<SiteLevel>, act: bool) -> bool {
+    match level {
         Some(SiteLevel::Act) => true,
         Some(SiteLevel::Navigate) => !act,
         _ => false,
@@ -166,6 +179,23 @@ fn granted(view: &SessionView, origin: &str, act: bool) -> bool {
 /// whose sign-ins are real (§8.4): there only grants and configured sites skip them.
 fn bypass(view: &SessionView) -> bool {
     view.permission_mode == PermissionMode::BypassPermissions && !view.browser.real_logins
+}
+
+/// Why a public site asks: the first use in the session, and on the user's own Chrome in
+/// bypass, why the mode did not skip it.
+fn first_use_reason(view: &SessionView, origin: &str) -> String {
+    let own = if view.browser.real_logins && view.permission_mode == PermissionMode::BypassPermissions {
+        " This is the user's own Chrome with real sign-ins, so bypass-permissions still asks."
+    } else {
+        ""
+    };
+    format!("First use of {origin} in this session.{own} {}", config_hint(origin, "act"))
+}
+
+/// One question per site, as one grant: a site allowed is a site both opened and acted on
+/// (D-221). The second grant is every public site.
+fn site_grants(origin: &str) -> Vec<SiteGrant> {
+    vec![grant(GrantAuthority::Act, origin), grant(GrantAuthority::Act, ANY_SITE)]
 }
 
 fn config_hint(origin: &str, level: &str) -> String {
@@ -212,25 +242,21 @@ async fn navigate(raw: &str, view: &SessionView) -> Verdict {
             } else {
                 Verdict::Ask {
                     summary,
-                    reason: private_reason(&origin, "navigate"),
-                    grants: vec![grant(GrantAuthority::Navigate, &origin)],
+                    reason: private_reason(&origin, "act"),
+                    grants: vec![grant(GrantAuthority::Act, &origin)],
                 }
             };
         }
         AddressClass::Loopback => return Verdict::Allow,
         AddressClass::Public => {}
     }
-    let any_site = view
-        .site_grants
-        .iter()
-        .any(|g| g.origin == "*" && g.authority == GrantAuthority::Navigate);
-    if granted(view, &origin, false) || any_site || bypass(view) {
+    if granted(view, &origin, false) || any_site(view, false) || bypass(view) {
         return Verdict::Allow;
     }
     Verdict::Ask {
         summary,
-        reason: format!("First visit to {origin} in this session. {}", config_hint(&origin, "navigate")),
-        grants: vec![grant(GrantAuthority::Navigate, &origin), grant(GrantAuthority::Navigate, "*")],
+        reason: first_use_reason(view, &origin),
+        grants: site_grants(&origin),
     }
 }
 
@@ -254,12 +280,12 @@ async fn act(origin: &str, action: &str, view: &SessionView) -> Verdict {
             grants: vec![grant(GrantAuthority::Act, origin)],
         },
         AddressClass::Private | AddressClass::Loopback => Verdict::Allow,
-        AddressClass::Public if granted(view, origin, true) => Verdict::Allow,
+        AddressClass::Public if granted(view, origin, true) || any_site(view, true) => Verdict::Allow,
         AddressClass::Public if bypass(view) => Verdict::Allow,
         AddressClass::Public => Verdict::Ask {
             summary,
-            reason: format!("First action on {origin} in this session. {}", config_hint(origin, "act")),
-            grants: vec![grant(GrantAuthority::Act, origin)],
+            reason: first_use_reason(view, origin),
+            grants: site_grants(origin),
         },
     }
 }
@@ -286,14 +312,11 @@ async fn upload(origin: &str, paths: &[PathBuf], view: &SessionView) -> Verdict 
     }
 }
 
-/// Writes a grant into `[browser.sites]` of the user's configuration (D-197): never "any
-/// site", never over a `deny`, and never down from `act` to `navigate`. Comments and the rest
-/// of the file stay as they are.
+/// Writes a grant into `[browser.sites]` of the user's configuration (D-197): never over a
+/// `deny`, and never down from `act` to `navigate`; every site is kept as `"*"` (D-221).
+/// Comments and the rest of the file stay as they are.
 /// A desktop app's grant goes into `[desktop.apps]` instead, as `read` or `act`.
 pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), String> {
-    if grant.origin == "*" {
-        return Err("\"any site\" is never kept".into());
-    }
     let text = match std::fs::read_to_string(file) {
         Ok(text) => text,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -387,7 +410,7 @@ mod tests {
         let manual = view(PermissionMode::Manual, vec![], SitePolicy::default(), dir.path());
         let gate = evaluate(&[nav("https://93.184.215.14/docs")], &manual).await;
         let grants = asks(&gate).expect("asks");
-        assert_eq!(grants, vec![grant(GrantAuthority::Navigate, "https://93.184.215.14"), grant(GrantAuthority::Navigate, "*")]);
+        assert_eq!(grants, vec![grant(GrantAuthority::Act, "https://93.184.215.14"), grant(GrantAuthority::Act, "*")]);
         let Gate::Ask { reason, summary, .. } = &gate else { unreachable!() };
         assert_eq!(summary, "open https://93.184.215.14/docs");
         assert!(reason.as_deref().unwrap().contains("[browser.sites]"));
@@ -396,16 +419,40 @@ mod tests {
         assert_eq!(evaluate(&[nav("http://localhost:5173/")], &manual).await, Gate::Allow);
         assert_eq!(evaluate(&[act_on("http://127.0.0.1:3000")], &manual).await, Gate::Allow);
         assert_eq!(evaluate(&[nav("about:blank")], &manual).await, Gate::Allow);
-        // The first action on an origin asks, with the act grant.
+        // The first action on an origin asks the same question.
         let gate = evaluate(&[act_on("https://93.184.215.14")], &manual).await;
-        assert_eq!(asks(&gate).unwrap(), vec![grant(GrantAuthority::Act, "https://93.184.215.14")]);
+        assert_eq!(asks(&gate).unwrap(), grants);
 
-        // An act grant covers both; "any site" covers navigation only.
+        // An act grant covers both; "any site" covers what its level names.
         let granted = view(PermissionMode::Manual, vec![grant(GrantAuthority::Act, "https://93.184.215.14")], SitePolicy::default(), dir.path());
         assert_eq!(evaluate(&[nav("https://93.184.215.14/x"), act_on("https://93.184.215.14")], &granted).await, Gate::Allow);
         let browsing = view(PermissionMode::Manual, vec![grant(GrantAuthority::Navigate, "*")], SitePolicy::default(), dir.path());
         assert_eq!(evaluate(&[nav("https://93.184.215.14/x")], &browsing).await, Gate::Allow);
         assert!(asks(&evaluate(&[act_on("https://93.184.215.14")], &browsing).await).is_some());
+        let every = view(PermissionMode::Manual, vec![grant(GrantAuthority::Act, "*")], SitePolicy::default(), dir.path());
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/x"), act_on("https://93.184.215.14")], &every).await, Gate::Allow);
+        assert!(asks(&evaluate(&[nav("http://192.168.0.7/")], &every).await).is_some(), "never a private site");
+    }
+
+    /// `"*"` in `browser.sites`: every public site, without a question, in every mode and on
+    /// the user's own Chrome; a site's own `deny` and private addresses still hold (D-221).
+    #[tokio::test]
+    async fn every_site_kept_in_the_configuration() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut policy = SitePolicy {
+            real_logins: true,
+            ..SitePolicy::default()
+        };
+        policy.sites.insert("*".into(), SiteLevel::Act);
+        policy.sites.insert("https://93.184.215.15".into(), SiteLevel::Deny);
+        let manual = view(PermissionMode::Manual, vec![], policy.clone(), dir.path());
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/x"), act_on("https://93.184.215.14")], &manual).await, Gate::Allow);
+        assert!(matches!(evaluate(&[nav("https://93.184.215.15/")], &manual).await, Gate::Deny(_)), "a deny holds");
+        assert!(asks(&evaluate(&[nav("http://192.168.0.7/")], &manual).await).is_some(), "private still asks");
+        policy.sites.insert("*".into(), SiteLevel::Navigate);
+        let browsing = view(PermissionMode::Manual, vec![], policy, dir.path());
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/x")], &browsing).await, Gate::Allow);
+        assert!(asks(&evaluate(&[act_on("https://93.184.215.14")], &browsing).await).is_some(), "navigate does not act");
     }
 
     #[tokio::test]
@@ -417,7 +464,7 @@ mod tests {
         let bypass = view(PermissionMode::BypassPermissions, vec![], policy, dir.path());
         assert_eq!(evaluate(&[nav("https://93.184.215.14/")], &bypass).await, Gate::Allow);
         let private = evaluate(&[nav("http://192.168.0.7/")], &bypass).await;
-        assert_eq!(asks(&private).unwrap(), vec![grant(GrantAuthority::Navigate, "http://192.168.0.7")], "bypass still asks");
+        assert_eq!(asks(&private).unwrap(), vec![grant(GrantAuthority::Act, "http://192.168.0.7")], "bypass still asks, never for every site");
         assert_eq!(evaluate(&[nav("http://192.168.1.10:8080/admin")], &bypass).await, Gate::Allow, "configured");
         assert!(matches!(evaluate(&[nav("http://169.254.169.254/latest")], &bypass).await, Gate::Deny(_)));
         assert!(matches!(evaluate(&[nav("https://www.evil.test/")], &bypass).await, Gate::Deny(_)));
@@ -436,11 +483,13 @@ mod tests {
         };
         real.sites.insert("https://93.184.215.15".into(), SiteLevel::Act);
         let bypass = view(PermissionMode::BypassPermissions, vec![], real.clone(), dir.path());
-        assert!(asks(&evaluate(&[nav("https://93.184.215.14/")], &bypass).await).is_some(), "navigation asks");
+        let gate = evaluate(&[nav("https://93.184.215.14/")], &bypass).await;
+        let Gate::Ask { reason, .. } = &gate else { panic!("navigation asks") };
+        assert!(reason.as_deref().unwrap().contains("own Chrome"), "says why bypass asks");
         assert_eq!(
             asks(&evaluate(&[act_on("https://93.184.215.14")], &bypass).await).unwrap(),
-            vec![grant(GrantAuthority::Act, "https://93.184.215.14")],
-            "acting asks, offering the session grant"
+            vec![grant(GrantAuthority::Act, "https://93.184.215.14"), grant(GrantAuthority::Act, "*")],
+            "acting asks, offering the site and every site"
         );
         assert_eq!(evaluate(&[act_on("https://93.184.215.15")], &bypass).await, Gate::Allow, "configured");
         assert_eq!(evaluate(&[act_on("http://localhost:5173")], &bypass).await, Gate::Allow, "loopback");
@@ -457,13 +506,14 @@ mod tests {
         remember(&file, &grant(GrantAuthority::Act, "https://a.test")).unwrap();
         remember(&file, &grant(GrantAuthority::Navigate, "https://a.test")).unwrap();
         remember(&file, &grant(GrantAuthority::Act, "https://bank.test")).unwrap();
-        assert!(remember(&file, &grant(GrantAuthority::Navigate, "*")).is_err());
+        remember(&file, &grant(GrantAuthority::Act, "*")).unwrap();
         let text = std::fs::read_to_string(&file).unwrap();
         assert!(text.starts_with("# mine\nmodel = \"x\""), "{text}");
         let parsed: toml::Table = text.parse().unwrap();
         let sites = &parsed["browser"]["sites"];
         assert_eq!(sites["https://a.test"].as_str(), Some("act"), "never down from act");
         assert_eq!(sites["https://bank.test"].as_str(), Some("deny"), "never over a deny");
+        assert_eq!(sites["*"].as_str(), Some("act"), "every site is kept too");
         // A file that does not exist yet.
         let fresh = dir.path().join("new/config.toml");
         remember(&fresh, &grant(GrantAuthority::Act, "http://192.168.1.10:8080")).unwrap();

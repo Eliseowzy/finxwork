@@ -17,9 +17,11 @@ import { Code } from "./Code";
  * whole task is the composer's Stop. Keys: ⌘↩ (the menu's Approve) allows
  * once from anywhere; outside the composer ↩ allows, 2 allows for the
  * session, Esc (or 3) denies. Several waiting are answered in order.
- * A browser call offers each proposed site grant as its own button; 2 picks
- * the first. A desktop call names the app by its name and icon, and says so
- * when FinxWork lacks the system permission the call needs.
+ * A website asks one question, the site by name (SiteApproval): once, always
+ * this site, or always every site, both kept in ~/.finx/config.toml; 2
+ * picks "always this site". A desktop call offers each proposed app grant as
+ * its own button, names the app by its name and icon, and says so when
+ * FinxWork lacks the system permission the call needs.
  */
 export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const { t } = useTranslation("session");
@@ -31,7 +33,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const [denying, setDenying] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
-  // "Always": the chosen site grant also goes into ~/.finx/config.toml (never "any site").
+  // "Always": the chosen app grant also goes into ~/.finx/config.toml.
   const [remember, setRemember] = useState(false);
   const field = useRef<HTMLInputElement>(null);
 
@@ -51,15 +53,17 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const { status } = useDesktopStatus(undefined, a.name.startsWith("desktop_"));
   const permission = a.name === "desktop_screenshot" ? "screen" : "accessibility";
   const missing = a.name.startsWith("desktop_") && status && status[permission] !== "granted" && status[permission] !== "unsupported";
-  const keys = useRef({ give, denying, blocked: false, grants: false });
-  keys.current = { give, denying, blocked: st.sheet !== null || st.searching, grants: grants.length > 0 };
+  // A website: its grants are the site and every site, never an app (D-221).
+  const site = grants.length > 0 && !grants.some((g) => g.origin.startsWith(APP_ORIGIN));
+  const keys = useRef({ give, denying, blocked: false, grants: false, site: false });
+  keys.current = { give, denying, blocked: st.sheet !== null || st.searching, grants: grants.length > 0, site };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = keys.current;
       if (k.blocked || k.denying || e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return;
       if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName ?? "")) return;
       if (e.key === "Enter" || e.key === "1") k.give({ type: "approve" });
-      else if (e.key === "2") k.give({ type: "approve_for_session", grant: k.grants ? 0 : undefined });
+      else if (e.key === "2") k.give({ type: "approve_for_session", grant: k.grants ? 0 : undefined, persist: k.site || undefined });
       else if (e.key === "Escape" || e.key === "3") setDenying(true);
       else return;
       e.preventDefault();
@@ -78,6 +82,72 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
 
   const question = tool.category === "execute" ? t("approval.runCommand") : t("approval.useTool", { verb: toolDo(tool.category), object: toolObject(tool) });
   const rule = a.proposed_rule?.prefix.join(" ");
+  const denyField = (
+    <>
+      <input
+        ref={field}
+        className="field"
+        placeholder={t("approval.feedback")}
+        aria-label={t("approval.feedback")}
+        value={feedback}
+        onChange={(e) => setFeedback(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter") (e.preventDefault(), deny());
+          else if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), setDenying(false));
+        }}
+      />
+      <button className="btn" onClick={() => setDenying(false)}>{t("approval.cancel")}</button>
+      <button className="btn danger" disabled={busy} onClick={deny}>
+        {t("approval.deny")}
+        <span className="kret">↩</span>
+      </button>
+    </>
+  );
+  const queue = live.approvals.length > 1 && <span className="qx-tag">{t("approval.queue", { n: 1, total: live.approvals.length })}</span>;
+  if (site) {
+    const origin = grants[0].origin;
+    const every = grants.findIndex((g) => g.origin === "*");
+    // Bypass skips a public site's question everywhere but on the user's own Chrome, so a
+    // question that offers every site in bypass is that browser's (browser-design §8.4.3).
+    const ownChrome = every >= 0 && view.info.permission_mode === "bypass-permissions";
+    const url = typeof argsOf(a.args).url === "string" ? (argsOf(a.args).url as string) : a.summary;
+    return (
+      <div className="appr" role="region" aria-label={t("approval.label")}>
+        <div className="appr-h">
+          <Mark size={16} />
+          <b title={origin}>{t("approval.siteQuestion", { site: hostOf(origin) })}</b>
+          {queue}
+        </div>
+        <div className="appr-site">
+          {ownChrome && <span>{t("approval.siteOwnChrome")}</span>}
+          <code className="sel-text" title={url}>{url}</code>
+        </div>
+        <div className="appr-f">
+          {denying ? (
+            denyField
+          ) : (
+            <>
+              <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("approval.denyWhy")}</button>
+              <span className="appr-sp" />
+              {every >= 0 && (
+                <button className="btn" disabled={busy} title={t("approval.siteEveryDesc")} onClick={() => give({ type: "approve_for_session", grant: every, persist: true })}>
+                  {t("approval.siteEvery")}
+                </button>
+              )}
+              <button className="btn" disabled={busy} title={t("approval.siteAlwaysDesc")} onClick={() => give({ type: "approve_for_session", grant: 0, persist: true })}>
+                {t("approval.siteAlways")}
+              </button>
+              <button className="btn primary" disabled={busy} onClick={() => give({ type: "approve" })}>
+                {t("approval.siteOnce")}
+                <span className="kret">⌘↩</span>
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="appr" role="region" aria-label={t("approval.label")}>
       <div className="appr-h">
@@ -90,7 +160,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
           </span>
         )}
         {a.reason && <span className="why" title={a.reason}>{a.reason}</span>}
-        {live.approvals.length > 1 && <span className="qx-tag">{t("approval.queue", { n: 1, total: live.approvals.length })}</span>}
+        {queue}
       </div>
       <Preview p={preview} />
       {missing && (
@@ -101,31 +171,12 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
       )}
       <div className="appr-f">
         {denying ? (
-          <>
-            <input
-              ref={field}
-              className="field"
-              placeholder={t("approval.feedback")}
-              aria-label={t("approval.feedback")}
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.nativeEvent.isComposing) return;
-                if (e.key === "Enter") (e.preventDefault(), deny());
-                else if (e.key === "Escape") (e.preventDefault(), e.stopPropagation(), setDenying(false));
-              }}
-            />
-            <button className="btn" onClick={() => setDenying(false)}>{t("approval.cancel")}</button>
-            <button className="btn danger" disabled={busy} onClick={deny}>
-              {t("approval.deny")}
-              <span className="kret">↩</span>
-            </button>
-          </>
+          denyField
         ) : (
           <>
             <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("approval.denyWhy")}</button>
             <span className="appr-sp" />
-            {grants.some((g) => g.origin !== "*") && (
+            {grants.length > 0 && (
               <label className="appr-keep" title={t("approval.rememberDesc")}>
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                 {t("approval.remember")}
@@ -133,7 +184,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
             )}
             {grants.length > 0 ? (
               grants.map((g, i) => (
-                <button key={i} className="btn" disabled={busy} title={grantTitle(g, t)} onClick={() => give({ type: "approve_for_session", grant: i, persist: remember && g.origin !== "*" ? true : undefined })}>
+                <button key={i} className="btn" disabled={busy} title={t("approval.grantAppDesc")} onClick={() => give({ type: "approve_for_session", grant: i, persist: remember || undefined })}>
                   {grantLabel(g, t, desktopApp?.name)}
                 </button>
               ))
@@ -155,21 +206,15 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
 
 type T = ReturnType<typeof useTranslation<"session">>["t"];
 
-/** A site grant as a button: the site by host, "any site" with its risk; a desktop app
- * (`app://<bundle id>`) by its name once known, else its bundle id. */
+/** A desktop app's grant (`app://<bundle id>`) as a button: the app by its name once known, else its bundle id. */
 function grantLabel(g: SiteGrant, t: T, appName?: string): string {
-  if (g.origin === "*") return t("approval.grantAnySite");
-  if (g.origin.startsWith(APP_ORIGIN)) {
-    const app = appName ?? g.origin.slice(APP_ORIGIN.length);
-    return g.authority === "act" ? t("approval.grantAppAct", { app }) : t("approval.grantAppRead", { app });
-  }
-  const site = g.origin.replace(/^https:\/\//, "");
-  return g.authority === "act" ? t("approval.grantAct", { site }) : t("approval.grantNavigate", { site });
+  const app = appName ?? g.origin.slice(APP_ORIGIN.length);
+  return g.authority === "act" ? t("approval.grantAppAct", { app }) : t("approval.grantAppRead", { app });
 }
 
-function grantTitle(g: SiteGrant, t: T): string {
-  if (g.origin === "*") return t("approval.grantAnySiteRisk");
-  return g.origin.startsWith(APP_ORIGIN) ? t("approval.grantAppDesc") : t("approval.grantDesc");
+/** A site as people read it: the host, with the scheme only when it is not https. */
+function hostOf(origin: string): string {
+  return origin.replace(/^https:\/\//, "");
 }
 
 /** The call itself: a command coloured as shell, a change as removed and added lines, or what it writes. */

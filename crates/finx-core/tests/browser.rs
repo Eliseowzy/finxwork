@@ -294,28 +294,25 @@ async fn approvals_grants_and_the_approved_page() {
     };
     let login = format!("{}/login", h.origin);
 
-    // 1. Opening a site asks, offering this site and any site; approving the site for the
-    // session opens it.
+    // 1. Opening a site asks, offering this site and every site; approving once opens it.
     h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": login })));
     h.api.push(Script::text("opened"));
     h.kernel.submit(Op::prompt("sign in")).await.unwrap();
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
     let (call_id, summary, grants) = approval(&events);
     assert_eq!(summary, format!("open {login}"));
-    assert_eq!(
-        grants,
-        vec![
-            SiteGrant {
-                authority: GrantAuthority::Navigate,
-                origin: h.origin.clone(),
-            },
-            SiteGrant {
-                authority: GrantAuthority::Navigate,
-                origin: "*".into(),
-            },
-        ]
-    );
-    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(0), persist: false }).await;
+    let site_grants = vec![
+        SiteGrant {
+            authority: GrantAuthority::Act,
+            origin: h.origin.clone(),
+        },
+        SiteGrant {
+            authority: GrantAuthority::Act,
+            origin: "*".into(),
+        },
+    ];
+    assert_eq!(grants, site_grants);
+    approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     let page = last_results(&h.api).pop().unwrap();
     assert!(page.contains("Sign in") && page.contains("<page-content"), "{page}");
@@ -324,7 +321,7 @@ async fn approvals_grants_and_the_approved_page() {
     let password = ref_of(&page, "Password");
     let button = ref_of(&page, "Continue");
 
-    // 2. Reading asks nothing; the first action on the site asks, with the act grant.
+    // 2. Reading asks nothing; the first action on the site asks the same question again.
     h.api.push(
         Script::tool_call("c2", "browser_snapshot", json!({ "query": "continue" }))
             .then_tool_call("c3", "browser_act", json!({ "action": "fill", "ref": email, "text": "ada@example.com" })),
@@ -334,13 +331,7 @@ async fn approvals_grants_and_the_approved_page() {
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
     let (call_id, summary, grants) = approval(&events);
     assert!(summary.starts_with("fill") && summary.ends_with(&format!("on {}", h.origin)), "{summary}");
-    assert_eq!(
-        grants,
-        vec![SiteGrant {
-            authority: GrantAuthority::Act,
-            origin: h.origin.clone(),
-        }]
-    );
+    assert_eq!(grants, site_grants);
     approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: None, persist: false }).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     let results = last_results(&h.api);
@@ -587,8 +578,34 @@ async fn always_allowing_a_site_writes_it_to_the_user_configuration() {
     approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(0), persist: true }).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     let saved: toml::Table = std::fs::read_to_string(&h.config).unwrap().parse().unwrap();
-    assert_eq!(saved["browser"]["sites"][&h.origin].as_str(), Some("navigate"), "{saved}");
+    assert_eq!(saved["browser"]["sites"][&h.origin].as_str(), Some("act"), "{saved}");
     assert_eq!(saved["browser"]["enabled"].as_bool(), Some(true), "the rest of the file stays");
+    h.kernel.shutdown().await;
+}
+
+#[tokio::test]
+async fn always_allowing_every_site_writes_it_to_the_user_configuration() {
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("opened"));
+    h.kernel.submit(Op::prompt("open")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    let (call_id, _, grants) = approval(&events);
+    assert_eq!(grants[1].origin, "*");
+    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(1), persist: true }).await;
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let saved: toml::Table = std::fs::read_to_string(&h.config).unwrap().parse().unwrap();
+    assert_eq!(saved["browser"]["sites"]["*"].as_str(), Some("act"), "{saved}");
+    // Acting on the page asks nothing from then on.
+    let page = last_results(&h.api).pop().unwrap();
+    let email = ref_of(&page, "Email");
+    h.api.push(Script::tool_call("c2", "browser_act", json!({ "action": "fill", "ref": email, "text": "ada@example.com" })));
+    h.api.push(Script::text("filled"));
+    let result = run(&mut h.kernel, "fill").await;
+    assert!(!asked(&result.events), "every site is allowed");
     h.kernel.shutdown().await;
 }
 

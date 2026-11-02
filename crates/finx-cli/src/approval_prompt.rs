@@ -37,9 +37,10 @@ pub struct Question<'a> {
 
 fn grant_label(grant: &SiteGrant) -> String {
     match (grant.authority, grant.origin.as_str()) {
-        (_, "*") => "allow opening any site in this session (an injected page could make the model leak data in URLs)".into(),
+        (GrantAuthority::Navigate, "*") => "allow opening every site in this session".into(),
+        (GrantAuthority::Act, "*") => "allow every site in this session (an injected page could make the model act on sites you are signed in to)".into(),
         (GrantAuthority::Navigate, origin) => format!("allow opening {origin} in this session"),
-        (GrantAuthority::Act, origin) => format!("allow acting on {origin} in this session"),
+        (GrantAuthority::Act, origin) => format!("allow {origin} in this session"),
     }
 }
 
@@ -63,9 +64,8 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
     for (index, grant) in question.grants.iter().enumerate() {
         eprintln!("  [{}] {}", index + 1, grant_label(grant));
     }
-    // "Always": kept in ~/.finx/config.toml; never for any site (D-197, D-201).
-    let keepable = question.grants.iter().any(|g| g.origin != "*");
-    if keepable {
+    // "Always": kept in ~/.finx/config.toml, every site included (D-197, D-221).
+    if !question.grants.is_empty() {
         eprintln!("  {}", style.dim("[number]! also saves it in ~/.finx/config.toml, e.g. 1!"));
     }
     let pick_grant = |answer: &str| {
@@ -77,7 +77,6 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
             .parse::<usize>()
             .ok()
             .filter(|n| (1..=question.grants.len()).contains(n))
-            .filter(|n| !persist || question.grants[n - 1].origin != "*")
             .map(|n| (n - 1, persist))
     };
     loop {

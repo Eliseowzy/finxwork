@@ -541,8 +541,8 @@ mod tests {
         let ids: Vec<&str> = options.as_array().unwrap().iter().map(|o| o["optionId"].as_str().unwrap()).collect();
         assert_eq!(
             ids,
-            ["approve", "approve_for_session:0", "approve_for_session:1", "approve_always:0", "deny"],
-            "any site is never kept"
+            ["approve", "approve_for_session:0", "approve_for_session:1", "approve_always:0", "approve_always:1", "deny"],
+            "every site can be kept too"
         );
         assert_eq!(decode_option("approve"), ApprovalDecision::Approve);
         assert_eq!(decode_option("approve_for_session"), ApprovalDecision::ApproveForSession { grant: None, persist: false });

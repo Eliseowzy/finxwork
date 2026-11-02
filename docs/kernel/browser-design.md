@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.5 |
-| 日期 | 2026-11-01 |
+| 版本 | v0.6 |
+| 日期 | 2026-11-02 |
 | 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
@@ -497,35 +497,36 @@ pub trait Tool {
 - 跳到被拒绝的域名或未授权的私有地址时，停止加载，并在工具结果里说明。
 - 页面自己跳转到一个普通的新 origin 不需要审批，因为导航本身不是模型发起的；但之后在新 origin 上的 `Act` 照常检查。
 
-### 7.3 审批规则（D-173、D-180）
+### 7.3 审批规则（D-173、D-180、D-221）
 
 | 权限 | manual / accept-edits | bypass-permissions |
 |---|---|---|
-| `Navigate` | 第一次访问一个 origin 时询问；回环地址不询问 | 不询问（私有地址除外，§7.2） |
+| `Navigate` | 第一次使用一个 origin 时询问；回环地址不询问 | 不询问（私有地址除外，§7.2） |
 | `Observe` | 不询问 | 不询问 |
-| `Act` | 每个 origin 第一次操作时询问 | 不询问 |
+| `Act` | 第一次使用一个 origin 时询问（打开时已经允许过就不再问） | 不询问 |
 | `Upload` | 每次询问，列出文件 | 工作区内的文件不询问 |
 | 下载 | 不询问，保存到会话的下载目录 | 不询问 |
 | `Script` | 每次询问 | 每次询问 |
 
 - **会话授权**（D-180）：
-  - `Gate::Ask` 新增 `proposed_grants: Vec<Grant>`，`Grant = { authority: navigate | act | upload, origin }`。一般只有一条（本站点）；导航时多一条随意浏览（D-201），所以是列表而不是 `Option`（D-208）；
+  - `Gate::Ask` 新增 `proposed_grants: Vec<Grant>`，`Grant = { authority: navigate | act | upload, origin }`。公网站点提议两条：本站点和所有网站（D-221）；私有地址只提议本站点。所以是列表而不是 `Option`（D-208）；
   - 用户选"本会话允许"时，`ApprovalDecision::ApproveForSession` 新增可选的 `grant: Option<usize>`，指明选的是 `proposed_grants` 里的哪一条，缺省为第一条。内核只接受提议过的授权，客户端不能自己构造一条更宽的；
   - 选中的授权加入会话的 `site_grants`。它与 `session_rules` 并列：只在内存中，恢复会话后要重新批准；子智能体通过 `share_permissions` 共享主会话当前的授权；
   - `SessionView` 新增 `site_grants`（与 `session_rules` 一样，取的是共享后的那一份），以及配置里的 `browser.sites` 和域名策略。`site_policy.rs` 只读 `SessionView`，不直接碰会话；
   - `Act` 的授权包含同一 origin 的 `Navigate`；
-  - **随意浏览**（D-201）：导航的审批框另有一个选项"本会话允许打开任何网站"，对应 `Grant = { authority: navigate, origin: * }`：
-    - 只放行导航；`Act` 仍然按站点询问，私有地址、云元数据地址和域名策略照常生效；
-    - 只能由用户在审批框里主动选择，不是默认值，不能写进配置；
-    - 审批框在这个选项旁写明风险：被注入的页面可以诱导模型把数据拼进网址带出去；
+  - **一个网站一个问题**（D-221）：打开和操作提议的都是 `Act` 级别的授权。允许一个网站，就是允许在上面浏览和操作，不再为同一个网站先问打开、再问操作；
+  - **所有网站**（D-221，取代 D-201）：提议里的第二条是 `Grant = { authority: act, origin: * }`：
+    - 放行所有公网站点的打开和操作；私有地址、云元数据地址、域名策略、站点的 `deny`、`Upload` 和 `Script` 照常检查；
+    - 可以只在本会话有效，也可以写进配置（见"永久允许"）；
+    - 只能由用户在审批框里主动选择，不是默认值。界面写明风险：被注入指令的页面可能诱导模型在用户登录的网站上操作；
   - `Upload` 和 `Script` 不提出会话授权，每次都问。
 - **不管什么模式都拒绝**：域名策略和站点授权里的 `deny`、云元数据地址。
 - **没有审批人**：`finx exec`、子智能体和非交互会话遇到需要审批的调用时，得到"没有人可以批准"的结果，结果里写明需要在配置的 `browser.sites` 里允许哪个 origin。
 - **永久允许**（D-197）：审批时选"永久允许"，写入用户配置（`~/.finx/config.toml`）的 `browser.sites`，与命令审批的 `[[rules]]` 放在同一个文件，用户在一处查看和修改所有权限。只写用户配置，不写项目配置。
   - 协议：`ApproveForSession` 加可选的 `persist: true`，对它选中的那条授权生效；旧客户端不发这个字段，行为不变；
-  - "任何网站"那条不写；已有的 `deny` 不覆盖，`act` 不降成 `navigate`；文件里其他内容和注释保持原样；
+  - "所有网站"写成 `"*" = "act"`（D-221）；已有的 `deny` 不覆盖，`act` 不降成 `navigate`；文件里其他内容和注释保持原样；
   - 写入失败时这次批准照样生效（只在本会话），并发出一条警告；
-  - 入口：ACP 为每条授权另加一个 `approve_always:<序号>` 选项；`finx exec` 输入序号加 `!`（如 `1!`）；桌面端审批框里勾选"记住"再点授权按钮。
+  - 入口：ACP 为每条授权另加一个 `approve_always:<序号>` 选项；`finx exec` 输入序号加 `!`（如 `1!`）；桌面端网站审批框里的"始终允许此网站""允许所有网站"都直接写入（D-222）。
 
 ### 7.4 执行前再核对（D-181）
 
@@ -747,7 +748,8 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 - **只在显式配置时使用**：`browser.backend = "extension"`。`auto` 不会选它：用真实账号必须是用户自己的决定。项目配置不能设 `backend`（D-178）。没有连上时报错，说明怎么安装扩展，或者改用 `managed`。
 - **bypass 也询问**：
   - 配置为 `extension` 时，`SitePolicy.real_logins` 为真，`bypass-permissions` 不再跳过公网站点的 `Navigate` 和 `Act` 询问，也不再跳过工作区内文件的 `Upload` 询问；
-  - 会话授权、永久允许（`browser.sites`）和回环地址照常放行，§7 的其他闸不变。
+  - 会话授权、永久允许（`browser.sites`，包括 `"*"` 所有网站，D-221）和回环地址照常放行，§7 的其他闸不变；
+  - 询问的原因里写明"这是用户自己的 Chrome，登录状态是真实的，所以 bypass 也询问"，桌面端据此显示一行说明（D-222）。
 - **告诉模型**：每个会话的第一次结果里写明"这是用户自己的 Chrome，标签页在 FinxWork 标签组里，登录状态是真的"。
 - **宿主身份**（D-198 的落地）：
   - socket 本来就只接受同一个用户的进程（0700/0600、`peer_cred` 的 uid）；
@@ -823,10 +825,14 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 - **审批事件**：`approval_requested` 新增可选的 `proposed_grants`（D-180、D-208）。对浏览器操作附带 `origin` 和当前页面的截图路径。
 - **审批的下游**（D-208）：现在凡是读 `proposed_rule` 的地方都要同样处理 `proposed_grants`，否则"本会话允许"在这些入口上用不了：
   - **finx-server 的 mirror**：`PendingApproval` 保存 `proposed_grants`，客户端重新连上时补发的待审批里也要带上；
-  - **ACP**：`permission_options` 为每条授权生成一个 `allow_always` 选项，`optionId` 为 `approve_for_session:<序号>`，解码时映射回 `ApproveForSession { grant: Some(序号) }`；随意浏览的选项名写明风险；
+  - **ACP**：`permission_options` 为每条授权生成一个 `allow_always` 选项，`optionId` 为 `approve_for_session:<序号>`，解码时映射回 `ApproveForSession { grant: Some(序号) }`；"所有网站"的选项名写明风险；
   - **`finx exec` 的交互审批**（`approval_prompt`）：列出每条授权供选择；非交互时照常得到"没有人可以批准"（§7.3）；
   - **桌面端**：见下一条。
-- **审批界面**：桌面端在审批框里显示"在 example.com 上点击 'Continue'"、截图，以及"本会话允许 example.com"的按钮；导航的审批框另有"本会话允许打开任何网站"（D-201），旁边写明风险。
+- **审批界面**（D-222）：桌面端的网站审批框只问一件事：
+  - 标题"允许 finx 使用 dash.cloudflare.com？"，下面一行是完整网址；
+  - 只有在绕过权限模式下、用户自己的 Chrome 仍然询问时，多一行说明原因："这是你自己的 Chrome，登录状态是真实的，所以绕过权限也会先问你。"判断依据是：bypass 下还提议"所有网站"的询问只会来自扩展后端，不需要新的协议字段；
+  - 按钮：拒绝… ／ 允许所有网站 ／ 始终允许此网站 ／ 允许一次（⌘↩）。两个"始终"都写入配置，没有"本会话"一档，也没有"记住"勾选框；"允许所有网站"的提示里写明风险；私有地址不提议"所有网站"，所以不出现这个按钮；
+  - 桌面应用的审批（`app://`）不变：按应用提议授权，可勾选"记住"。
 - **步骤显示**：桌面端一期在步骤里显示网址、操作和截图缩略图，点开看大图。二期加内嵌浏览器面板。
 - **协议版本**：新增字段都是可选的，旧客户端忽略即可，不升版本。旧客户端不认识 `proposed_grants`，不会为浏览器调用显示"本会话允许"，批准只放行这一次调用，与现在没有提议时的行为相同；`ApproveForSession` 不带 `grant` 时取第一条，旧的发送方式仍然合法。
 
@@ -847,6 +853,7 @@ action_timeout_secs = 10
 
 [browser.sites]              # 一期手写；二期审批时选"永久允许"会写到这里（只写用户配置）
 "https://github.com" = "act"             # deny | navigate | act
+"*" = "act"                              # 所有公网站点（D-221）：navigate | act，不能是 deny；私有地址不受影响
 "http://192.168.1.10:8080" = "act"       # 私有地址要在这里或审批时单独允许
 "https://bank.example.com" = "deny"
 ```
@@ -901,8 +908,8 @@ action_timeout_secs = 10
 | 子智能体结束 | 子智能体交回报告后它的标签页被关闭，主会话的标签页不受影响 |
 | finx 进程被强制结束 | 浏览器进程随之退出，下次启动能接管用户目录锁 |
 | `file:` 网址 | 工作区内的 HTML 直接打开；工作区外的路径每次询问；页面跳到工作区外的 file 时被拦下 |
-| 随意浏览 | 选"本会话允许打开任何网站"后导航不再询问，但第一次在新站点上的操作仍然询问，私有地址仍然询问 |
-| 审批 | manual 模式下第一次操作某个 origin 时发出带 `proposed_grants` 的 `approval_requested`；选"本会话允许"后不再询问；之后子智能体也能使用这条授权 |
+| 所有网站 | 审批时选"所有网站"并写入配置后，配置里出现 `"*" = "act"`，之后在任何公网站点上打开和操作都不再询问；私有地址仍然询问（`always_allowing_every_site_writes_it_to_the_user_configuration`） |
+| 审批 | manual 模式下第一次打开某个 origin 时发出带 `proposed_grants`（本站点、所有网站）的 `approval_requested`；只允许一次时，第一次操作再问同一个问题；选"本会话允许"后不再询问；之后子智能体也能使用这条授权 |
 | `finx exec` | 没有配置 `browser.sites` 时访问外部站点得到说明配置方法的结果；配置以后能完成任务 |
 | 用户自己的 Chrome（三期） | 真实 Chrome 用 `Extensions.loadUnpacked` 装入扩展，ID 与 key 一致；扩展经 `install` 写的清单拉起真实的 `finx browser native-host`，宿主通过可执行文件核对连上 `finx serve`；会话打开页面、点击、看到结果，结果里说明这是用户的 Chrome；用户自己的标签页不出现在结果里；会话关闭后只关掉智能体的标签页（`crates/finx-cli/tests/e2e_browser_extension.rs`） |
 | 冒充扩展宿主 | 不是 finx 程序的连接声明 `kind: "extension"` 被拒，池里没有扩展 |
@@ -1004,7 +1011,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-198 | 扩展宿主复用内核 socket 的保护（0700/0600、`peer_cred`），加上清单的 `allowed_origins` 和对端可执行文件核对；Windows 命名管道 ACL；不做代码签名校验 |
 | D-199 | 托管浏览器的窗口在内核所在的机器上，没有显示器时无界面，启动时决定；用户直接在窗口里接手，智能体靠执行前再核对发现变化 |
 | D-200 | 用户目录被另一个 finx 进程占用时，改用临时用户目录，并在第一次结果里说明；不加配置项 |
-| D-201 | 导航审批提供"本会话允许打开任何网站"：只放行导航，只能在审批框里主动选择，不能写进配置，界面写明外带数据的风险 |
+| D-201 | 导航审批提供"本会话允许打开任何网站"：只放行导航，只能在审批框里主动选择，不能写进配置，界面写明外带数据的风险（被 D-221 取代） |
 | D-209 | 内嵌浏览器的宿主是桌面端主进程自己的一条连接（`browser/host`），CDP 文本装在双向的 `browser/cdp` 通知里；一个服务一个宿主 |
 | D-210 | 主进程实现 finx-browser 用到的浏览器级 `Target`/`Browser` 方法，页面级命令按白名单转给 `webContents.debugger`；白名单由 finx-browser 的 `CDP_METHODS` 生成并有测试保证一致 |
 | D-211 | `browser.backend` 默认 `auto`：有宿主用内嵌，否则托管；会话第一次使用时决定；项目配置不能设 |
@@ -1017,6 +1024,8 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-218 | 内嵌浏览器以所基于版本的 Chrome 出现：UA 只报主版本，客户端提示（请求头与 `userAgentData`）含 Google Chrome，权限查询与请求一致地拒绝，语言跟随应用；不伪造 `window.chrome`，不虚报版本 |
 | D-219 | 扩展上架商店、与应用分开更新：扩展和 finx 各自声明支持的 bridge 版本范围，服务取共同的最高版本；没有共同版本时连接保留但不可用，`ExtensionStatus.problem` 说明该更新哪一边；扩展有更新时，等到没有智能体标签页再重新加载 |
 | D-220 | 只是看起来能点的元素（自己的 `cursor: pointer` 或 `onclick` 属性）也给 ref，取自 DOM 快照的计算样式，不注入脚本；外面或里面已有 ref 时不给 |
+| D-221 | 一个网站一个问题：打开和操作公网站点都提议 `act` 级别的本站点和所有网站（`*`）两条授权；"所有网站"可以写进用户配置（`browser.sites."*"`，navigate 或 act），覆盖所有公网站点，不覆盖私有地址、站点 `deny`、域名策略、`Upload` 和 `Script`；扩展后端下 bypass 询问时，原因里写明是用户自己的 Chrome。取代 D-201 |
+| D-222 | 桌面端网站审批框：标题点名网站，下面一行是网址；按钮为拒绝、允许所有网站、始终允许此网站、允许一次，两个"始终"都写入配置；只在 bypass 下仍然询问时说明是用户自己的 Chrome |
 
 ### 待定问题
 

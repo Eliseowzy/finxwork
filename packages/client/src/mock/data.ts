@@ -310,6 +310,40 @@ export function replyScript(prompt: string): TaskScript {
   };
 }
 
+/** A message about a website opens it in the user's own Chrome, which asks first. */
+export function wantsSite(text: string): boolean {
+  return /cloudflare|网站|website/i.test(text);
+}
+
+export function siteScript(): TaskScript {
+  const url = "https://dash.cloudflare.com/";
+  return {
+    turns: [
+      {
+        say: "我用浏览器打开 Cloudflare 控制台看看。",
+        tools: [
+          {
+            name: "browser_navigate",
+            args: { url },
+            output: "Opened Cloudflare | Web Performance & Security",
+            ms: 600,
+            approval: {
+              summary: `open ${url}`,
+              reason: "First use of https://dash.cloudflare.com in this session.",
+              grants: [
+                { authority: "act", origin: "https://dash.cloudflare.com" },
+                { authority: "act", origin: "*" },
+              ],
+              own_chrome: true,
+            },
+          },
+        ],
+      },
+      { say: "控制台已经打开，账户首页列出了 hermesh.io 的流量概览。" },
+    ],
+  };
+}
+
 /** What a steering message gets: an acknowledgement in the next turn. */
 export function steerScript(text: string): TaskScript {
   return { turns: [{ say: `收到：「${text.trim().slice(0, 40)}」。我会在接下来的步骤里一并考虑。` }] };

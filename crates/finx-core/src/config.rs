@@ -117,6 +117,14 @@ impl BrowserSettings {
         };
         let mut sites = BTreeMap::new();
         for (origin, level) in file.sites.unwrap_or_default() {
+            // Every public site: navigate or act; refusing them all is `allowed_domains`' job.
+            if origin == finx_browser::policy::ANY_SITE {
+                let level = SiteLevel::parse(&level).filter(|l| *l != SiteLevel::Deny).ok_or_else(|| {
+                    ConfigError::Invalid(format!("browser.sites.\"*\" must be navigate or act, got \"{level}\""))
+                })?;
+                sites.insert(origin, level);
+                continue;
+            }
             let normalized = finx_browser::policy::normalize_origin(&origin).ok_or_else(|| {
                 ConfigError::Invalid(format!(
                     "browser.sites: \"{origin}\" is not an origin such as \"https://example.com\""
@@ -1081,19 +1089,20 @@ mod tests {
         std::fs::write(
             &user,
             "[browser]\nenabled = true\nheadless = true\nallowed_domains = [\"github.com\", \"example.com\"]\n\
-             denied_domains = [\"evil.test\"]\nbackend = \"managed\"\n[browser.sites]\n\"https://GitHub.com/\" = \"act\"\n\"http://192.168.1.10:8080\" = \"act\"\n",
+             denied_domains = [\"evil.test\"]\nbackend = \"managed\"\n[browser.sites]\n\"https://GitHub.com/\" = \"act\"\n\"http://192.168.1.10:8080\" = \"act\"\n\"*\" = \"navigate\"\n",
         )
         .unwrap();
         std::fs::write(
             &project,
             "[browser]\nexecutable = \"/tmp/evil\"\nbackend = \"embedded\"\nallowed_domains = [\"github.com\", \"other.com\"]\n\
-             denied_domains = [\"ads.test\"]\n[browser.sites]\n\"https://github.com\" = \"deny\"\n\"https://bank.test\" = \"act\"\n",
+             denied_domains = [\"ads.test\"]\n[browser.sites]\n\"https://github.com\" = \"deny\"\n\"https://bank.test\" = \"act\"\n\"*\" = \"act\"\n",
         )
         .unwrap();
         let user_only = load(&user, None, true, &[]).unwrap().config.browser;
         assert!(user_only.enabled);
         assert_eq!(user_only.config.headless, finx_browser::Headless::On);
         assert_eq!(user_only.policy.site("https://github.com"), Some(SiteLevel::Act), "origins are normalized");
+        assert_eq!(user_only.policy.any_site(), Some(SiteLevel::Navigate), "every site");
         assert_eq!(user_only.navigation_timeout, Duration::from_secs(30));
         assert_eq!(user_only.config.backend, finx_browser::Backend::Managed);
 
@@ -1106,6 +1115,7 @@ mod tests {
         assert_eq!(browser.policy.denied_domains, vec!["ads.test", "evil.test"], "deny lists add up");
         assert_eq!(browser.policy.site("https://github.com"), Some(SiteLevel::Deny));
         assert_eq!(browser.policy.site("https://bank.test"), None, "a project cannot allow a site");
+        assert_eq!(browser.policy.any_site(), Some(SiteLevel::Navigate), "nor every site");
         assert_eq!(browser.policy.site("http://192.168.1.10:8080"), Some(SiteLevel::Act));
         assert!(loaded.warnings.iter().any(|w| w.contains("browser.executable") && w.contains("only tighten")), "{:?}", loaded.warnings);
 
@@ -1115,6 +1125,7 @@ mod tests {
         assert!(load(&user, Some(&project), true, &[]).unwrap().config.browser.enabled);
         let bad = load(&user, None, true, &["browser.sites.\"github.com\"=\"act\"".into()]);
         assert!(bad.is_err());
+        assert!(load(&user, None, true, &["browser.sites.\"*\"=\"deny\"".into()]).is_err(), "every site is navigate or act");
     }
 
     #[test]

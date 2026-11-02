@@ -182,7 +182,15 @@ impl SitePolicy {
     pub fn site(&self, origin: &str) -> Option<SiteLevel> {
         self.sites.get(origin).copied()
     }
+
+    /// `"*"` in `browser.sites`: every public site, never a private one (D-221).
+    pub fn any_site(&self) -> Option<SiteLevel> {
+        self.sites.get(ANY_SITE).copied()
+    }
 }
+
+/// The key of "every site" in `browser.sites` and in a session's grants.
+pub const ANY_SITE: &str = "*";
 
 /// `example.com` matches the domain and its subdomains; `*.example.com` only the subdomains.
 pub fn domain_matches(pattern: &str, host: &str) -> bool {

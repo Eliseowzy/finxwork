@@ -5,7 +5,7 @@ import type {
 import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
-import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, steerScript, type DemoSession, type DemoTask } from "./data.ts";
+import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, siteScript, steerScript, wantsSite, type DemoSession, type DemoTask } from "./data.ts";
 import { CustomizeMock, Failure as CustomizeFailure } from "./customize.ts";
 import { asks, type TaskScript, type ToolScript, type TurnScript } from "./script.ts";
 import { snake } from "./snake.ts";
@@ -581,9 +581,9 @@ export class MockServer {
       const call_id = calls[k].id;
       this.toolStarted(s, call_id, t);
       pending[k].started = true;
-      if (t.approval && asks(s.view.info.permission_mode, describe(t.name, t.args, s.view.info.cwd).category)) {
+      if (t.approval && (t.approval.own_chrome || asks(s.view.info.permission_mode, describe(t.name, t.args, s.view.info.cwd).category))) {
         const d = describe(t.name, t.args, s.view.info.cwd);
-        this.emit(s, { type: "approval_requested", call_id, name: t.name, args: t.args, summary: t.approval.summary || d.title, reason: t.approval.reason });
+        this.emit(s, { type: "approval_requested", call_id, name: t.name, args: t.args, summary: t.approval.summary || d.title, reason: t.approval.reason, proposed_grants: t.approval.grants });
         const decision = await new Promise<ApprovalDecision>((resolve) => run.approvals.set(call_id, resolve));
         run.approvals.delete(call_id);
         if (stopped()) return false;
@@ -634,6 +634,7 @@ export class MockServer {
       s.scenario = sc;
       script = { turns: [...sc.lead, { say: sc.started }] };
     }
+    if (!script && wantsSite(text)) script = siteScript();
     script = this.unkeyed(s) ?? script ?? replyScript(text);
     s.run = { cancelled: false, approvals: new Map() };
     this.startTask(s, input, id);

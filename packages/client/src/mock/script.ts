@@ -1,4 +1,4 @@
-import type { PermissionMode, ErrorInfo, ToolCategory } from "@finx/protocol";
+import type { PermissionMode, ErrorInfo, SiteGrant, ToolCategory } from "@finx/protocol";
 
 // What a scripted task does, turn by turn: the mock server plays it as finx
 // would, event by event.
@@ -13,8 +13,9 @@ export interface ToolScript {
   progress?: string[];
   /** How long it runs (ms, before the speed factor). */
   ms?: number;
-  /** Asks for approval in the approval modes that ask for this kind of call. */
-  approval?: { summary: string; reason?: string };
+  /** Asks for approval in the approval modes that ask for this kind of call; a website on
+   * the user's own Chrome (`own_chrome`) asks in every mode, offering its `grants`. */
+  approval?: { summary: string; reason?: string; grants?: SiteGrant[]; own_chrome?: boolean };
 }
 
 export interface TurnScript {

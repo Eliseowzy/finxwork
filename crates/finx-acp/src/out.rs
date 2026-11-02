@@ -291,17 +291,19 @@ pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>,
     }
     for (index, grant) in grants.iter().enumerate() {
         let name = match (grant.authority, grant.origin.as_str()) {
-            (_, "*") => "本会话允许打开任何网站（风险：被注入的页面可能诱导把数据拼进网址带出去）".to_string(),
+            (GrantAuthority::Navigate, "*") => "本会话允许打开所有网站".to_string(),
+            (GrantAuthority::Act, "*") => "本会话允许所有网站".to_string(),
             (GrantAuthority::Navigate, origin) => format!("本会话允许打开 {origin}"),
-            (GrantAuthority::Act, origin) => format!("本会话允许在 {origin} 上操作"),
+            (GrantAuthority::Act, origin) => format!("本会话允许 {origin}"),
         };
         options.push(json!({ "optionId": format!("approve_for_session:{index}"), "name": name, "kind": "allow_always" }));
     }
-    // Kept in the configuration: a named site only, never "any site" (D-197, D-201).
-    for (index, grant) in grants.iter().enumerate().filter(|(_, g)| g.origin != "*") {
-        let name = match grant.authority {
-            GrantAuthority::Navigate => format!("总是允许打开 {}（写入配置）", grant.origin),
-            GrantAuthority::Act => format!("总是允许在 {} 上操作（写入配置）", grant.origin),
+    // Kept in the configuration, every site included (D-197, D-221).
+    for (index, grant) in grants.iter().enumerate() {
+        let name = match (grant.authority, grant.origin.as_str()) {
+            (_, "*") => "总是允许所有网站（写入配置；风险：被注入指令的页面可能诱导操作你登录的网站）".to_string(),
+            (GrantAuthority::Navigate, origin) => format!("总是允许打开 {origin}（写入配置）"),
+            (GrantAuthority::Act, origin) => format!("总是允许 {origin}（写入配置）"),
         };
         options.push(json!({ "optionId": format!("approve_always:{index}"), "name": name, "kind": "allow_always" }));
     }
