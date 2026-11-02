@@ -39,6 +39,10 @@ struct Args {
     /// Where to write the JSON report (every run with its answer and requests).
     #[arg(long)]
     out: Option<PathBuf>,
+    /// Keep each run's session log (in the report as `session_file`), to read a run back.
+    /// Each shows in the session list as a project of its own.
+    #[arg(long)]
+    keep_sessions: bool,
     /// List the cases and exit.
     #[arg(long)]
     list: bool,
@@ -75,6 +79,7 @@ async fn main() -> anyhow::Result<()> {
             config: args.config.clone(),
             env: Vec::new(),
             timeout: Duration::from_secs(args.timeout),
+            keep_sessions: args.keep_sessions,
         };
         let mut first = true;
         'cases: for case in &cases {

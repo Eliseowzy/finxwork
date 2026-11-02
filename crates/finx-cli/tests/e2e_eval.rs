@@ -37,6 +37,7 @@ fn runner(env: &TestEnv) -> Runner {
             ("FINX_MODEL_CATALOG_URL".into(), env.mock.catalog_url().into()),
         ],
         timeout: Duration::from_secs(120),
+        keep_sessions: false,
     }
 }
 

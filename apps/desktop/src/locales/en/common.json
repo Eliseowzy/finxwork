@@ -14,6 +14,9 @@
     "search": "Search",
     "customize": "Customize",
     "sessions": "Sessions",
+    "projects": "Projects",
+    "collapseAll": "Collapse all",
+    "expandAll": "Expand all",
     "loading": "Loading sessions…",
     "empty": "No sessions yet<br/>Start one with New Session",
     "showArchived": "Show Archived"
