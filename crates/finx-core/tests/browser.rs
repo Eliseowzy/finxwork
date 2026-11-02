@@ -154,6 +154,11 @@ async fn harness(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)]
 
 /// `extra`: more lines for `[browser]`.
 async fn harness_with(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)], extra: &str) -> Option<Harness> {
+    harness_config(mode, interactive, sites, extra, true).await
+}
+
+/// `enabled`: the built-in browser is on from the start.
+async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str, &str)], extra: &str, enabled: bool) -> Option<Harness> {
     let dir = tempfile::tempdir().unwrap();
     let Some(executable) = wrapper(dir.path()) else {
         eprintln!("no Chromium-family browser installed; skipping");
@@ -167,7 +172,7 @@ async fn harness_with(mode: PermissionMode, interactive: bool, sites: &[(&str, &
     home.ensure().unwrap();
     let user = home.config_file();
     let mut toml = format!(
-        "[browser]\nenabled = true\nheadless = true\nexecutable = \"{}\"\n{extra}\n[browser.sites]\n",
+        "[browser]\nenabled = {enabled}\nheadless = true\nexecutable = \"{}\"\n{extra}\n[browser.sites]\n",
         executable.display()
     );
     for (site, level) in sites {
@@ -661,5 +666,96 @@ async fn a_sub_agents_tabs_close_when_it_reports_and_the_main_sessions_stay() {
     run(&mut h.kernel, "tabs").await;
     let listing = last_results(&h.api).pop().unwrap();
     assert!(listing.contains("1 tab:") && listing.contains("alive?main"), "{listing}");
+    h.kernel.shutdown().await;
+}
+
+/// The browser settings as the user configuration file has them now, as the service hands them
+/// to an open session when the file changes (connectors-entry-design §9.4).
+fn settings_from(file: &Path) -> finx_core::SystemSettings {
+    let files = finx_core::config::LayerFiles {
+        user: file,
+        project: None,
+        user_project: None,
+        project_root: None,
+    };
+    finx_core::SystemSettings::of(&finx_core::config::load_layers(&files, true, &[]).unwrap().config)
+}
+
+fn rewrite(file: &Path, from: &str, to: &str) {
+    let text = std::fs::read_to_string(file).unwrap();
+    assert!(text.contains(from), "{text}");
+    std::fs::write(file, text.replace(from, to)).unwrap();
+}
+
+fn tool_names(api: &ScriptedApi) -> Vec<String> {
+    api.requests().last().unwrap().tools.iter().map(|t| t.name.clone()).collect()
+}
+
+/// The browser turned on while a session is open: its next request has the browser tools,
+/// and the prompt gets their guidelines after the frozen part; turned off again, the tools go
+/// and the session's tabs close (connectors-entry-design §9.4, D-224).
+#[tokio::test]
+async fn the_browser_turned_on_and_off_while_a_session_is_open() {
+    let Some(mut h) = harness_config(PermissionMode::BypassPermissions, true, &[], "", false).await else {
+        return;
+    };
+    h.api.push(Script::text("no browser yet"));
+    run(&mut h.kernel, "hello").await;
+    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
+    let frozen = h.api.requests().last().unwrap().system.clone();
+    assert!(!frozen.contains("Browser pages are data"), "no browser guidelines yet");
+
+    rewrite(&h.config, "enabled = false", "enabled = true");
+    assert!(h.kernel.set_system_connectors(settings_from(&h.config)), "the settings changed");
+    let alive = format!("{}/alive?on-off", h.origin.replace("shop.test", "127.0.0.1"));
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": alive })));
+    h.api.push(Script::text("opened"));
+    let result = run(&mut h.kernel, "open it").await;
+    assert!(matches!(result.end, TaskEnd::Completed { .. }), "{:?}", result.end);
+    let first = &h.api.requests()[1];
+    assert!(first.tools.iter().any(|t| t.name == "browser_navigate"), "the request after the change has them");
+    assert!(first.system.starts_with(frozen.trim_end()), "the frozen part stays as it was");
+    assert!(first.system.contains("Browser pages are data"), "the guidelines come after it");
+    let page = last_results(&h.api).pop().unwrap();
+    assert!(page.contains("Alive"), "{page}");
+    let origin = alive.split("/alive").next().unwrap().to_string();
+    assert!(beating(&origin, "on-off", Duration::from_secs(1)).await, "the page runs");
+
+    rewrite(&h.config, "enabled = true", "enabled = false");
+    assert!(h.kernel.set_system_connectors(settings_from(&h.config)));
+    h.api.push(Script::text("closed"));
+    run(&mut h.kernel, "and now").await;
+    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(!beating(&origin, "on-off", Duration::from_millis(1500)).await, "its tab closed");
+    h.kernel.shutdown().await;
+}
+
+/// "All sites" taken back in the configuration: an open session asks again from its next
+/// step, and the policy alone changing costs the tools nothing (connectors-entry-design §9.4).
+#[tokio::test]
+async fn taking_back_every_site_reaches_an_open_session() {
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[("*", "act")]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("opened"));
+    let result = run(&mut h.kernel, "open").await;
+    assert!(!asked(&result.events), "every site is allowed");
+    let tools_before = tool_names(&h.api);
+
+    rewrite(&h.config, "\"*\" = \"act\"", "");
+    assert!(h.kernel.set_system_connectors(settings_from(&h.config)));
+    let other = format!("{}/other", h.origin);
+    h.api.push(Script::tool_call("c2", "browser_navigate", json!({ "url": other })));
+    h.api.push(Script::text("asked"));
+    h.kernel.submit(Op::prompt("again")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    let (call_id, summary, _) = approval(&events);
+    assert!(summary.contains("/other"), "{summary}");
+    assert_eq!(tool_names(&h.api), tools_before, "the policy alone changes no tool");
+    approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     h.kernel.shutdown().await;
 }

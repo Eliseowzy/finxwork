@@ -68,6 +68,8 @@ use crate::store::SessionWriter;
 use crate::store::WriterClosed;
 use crate::store::StoreError;
 use crate::store::TaskStatus;
+use crate::system::SystemCell;
+use crate::system::SystemSettings;
 use crate::task;
 
 const OP_CHANNEL_CAPACITY: usize = 64;
@@ -169,6 +171,8 @@ struct Launch {
     sub_agent: bool,
     locks: Arc<PathLocks>,
     mcp: Option<Arc<McpManager>>,
+    /// The tree's browser and desktop settings (connectors-entry-design §9.4).
+    system: Arc<SystemCell>,
 }
 
 fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
@@ -180,33 +184,46 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let log_closed = launch.writer.closed();
     let (session_dir, temporary) = FinxHome::session_data_dir(&launch.location, &launch.id);
     let shown = Arc::new(Mutex::new(Shown::default()));
-    let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &shown);
+    let settings = launch.system.get();
+    let pool = launch.deps.browser_pool.clone();
+    let embedded = pool.as_ref().is_some_and(|p| p.has_host());
+    let base_tools = mcp::base_tools(
+        &with_system_tools(&launch.deps.tools, &settings, pool.is_some(), embedded),
+        launch.mcp.as_ref(),
+        &shown,
+    );
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
     let tool_state = Arc::new(finx_tools::SessionState::default());
     if let Some(tree) = &launch.agents {
         tool_state.insert(tree.clone());
     }
-    if launch.config.browser.enabled
-        && let Some(pool) = &launch.deps.browser_pool
-    {
+    // A browser handle whenever there is a pool: the browsers may be turned on later (§9.4).
+    if let Some(pool) = &pool {
         tool_state.insert(Arc::new(BrowserHandle::new(
             pool.clone(),
-            launch.config.browser.clone(),
+            settings.browser.clone(),
+            embedded,
             session_dir.join("downloads"),
             launch.deps.env.workspace_roots().to_vec(),
             launch.state.site_grants.clone(),
             launch.root_id.clone(),
         )));
     }
-    if launch.config.desktop.enabled {
-        tool_state.insert(Arc::new(DesktopHandle::new(launch.config.desktop.clone(), launch.root_id.clone())));
+    if settings.desktop.enabled {
+        tool_state.insert(Arc::new(DesktopHandle::new(settings.desktop.clone(), launch.root_id.clone())));
     }
     let session = Arc::new(Session {
         id: launch.id.clone(),
         llm: launch.deps.llm,
         tools: Mutex::new(base_tools.clone()),
-        base_tools,
+        core_tools: launch.deps.tools.clone(),
+        base_tools: Mutex::new(base_tools),
+        // The first request after a start or a resume brings the prompt up to the tools.
+        system_applied: AtomicU64::new(u64::MAX),
+        system: launch.system,
+        browser_pool: pool,
+        root_id: launch.root_id.clone(),
         mcp: launch.mcp,
         mcp_applied: AtomicU64::new(u64::MAX),
         mcp_settled: AtomicBool::new(false),
@@ -290,24 +307,30 @@ fn agent_tree(
     Some(tree)
 }
 
-/// Adds the browser tools when `[browser]` turns them on and the process has a pool; before
-/// the agent tree is built, so sub-agents get them too.
-fn add_browser_tools(deps: &mut KernelDeps, config: &Config) {
-    if config.browser.enabled && deps.browser_pool.is_some() {
-        deps.tools = if config.browser.policy.script_enabled {
-            extended(&deps.tools, "browser+scripts", crate::browser::browser_tools_with_scripts)
-        } else {
-            extended(&deps.tools, "browser", crate::browser::browser_tools)
+/// `tools` plus the system connectors' tools: the browsers' while one is on (and the process has
+/// a pool), desktop control's while it is on (connectors-entry-design §9.3). Every session of a
+/// tree, sub-agents too, builds its tools from these settings.
+pub(crate) fn with_system_tools(
+    tools: &Arc<ToolRegistry>,
+    settings: &SystemSettings,
+    pool: bool,
+    embedded: bool,
+) -> Arc<ToolRegistry> {
+    let mut tools = tools.clone();
+    let builtin = settings.browser.builtin_on(embedded);
+    let yours = settings.browser.extension;
+    if pool && (builtin || yours) {
+        tools = match (builtin && yours, settings.browser.policy.script_enabled) {
+            (false, false) => extended(&tools, "browser", crate::browser::one_browser),
+            (false, true) => extended(&tools, "browser+scripts", crate::browser::one_browser_with_scripts),
+            (true, false) => extended(&tools, "browsers", crate::browser::two_browsers),
+            (true, true) => extended(&tools, "browsers+scripts", crate::browser::two_browsers_with_scripts),
         };
     }
-}
-
-/// Adds the desktop tools when `[desktop]` turns them on; before the agent tree is built, so
-/// sub-agents get them too.
-fn add_desktop_tools(deps: &mut KernelDeps, config: &Config) {
-    if config.desktop.enabled {
-        deps.tools = extended(&deps.tools, "desktop", crate::desktop::desktop_tools);
+    if settings.desktop.enabled {
+        tools = extended(&tools, "desktop", crate::desktop::desktop_tools);
     }
+    tools
 }
 
 /// `tools` plus `spawn_agent` and `send_message`, built once for each registry: the two tools
@@ -359,6 +382,8 @@ pub(crate) struct ChildLaunch {
     pub(crate) config: Arc<Config>,
     pub(crate) trusted: bool,
     pub(crate) locks: Arc<PathLocks>,
+    /// The main session's browser and desktop settings, which the sub-agent follows.
+    pub(crate) system: Arc<SystemCell>,
 }
 
 /// Starts a sub-agent's session: an ordinary session with its own log, which never asks for
@@ -395,6 +420,7 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
         sub_agent: true,
         locks: child.locks,
         mcp: child.mcp,
+        system: child.system,
     });
     // The main session has waited for the servers already: their tools are in from the start.
     session.refresh_mcp();
@@ -451,17 +477,24 @@ struct BuiltPrompt {
 }
 
 /// `context_window` sizes the skill catalog.
+/// The tools a session starts with, before MCP: what its prompt describes.
+fn starting_tools(deps: &KernelDeps, system: &SystemCell) -> Arc<ToolRegistry> {
+    let embedded = deps.browser_pool.as_ref().is_some_and(|p| p.has_host());
+    with_system_tools(&deps.tools, &system.get(), deps.browser_pool.is_some(), embedded)
+}
+
 fn build_prompt(
     home: &FinxHome,
     config: &Config,
     deps: &KernelDeps,
+    tools: &ToolRegistry,
     project_root: Option<&Path>,
     context_window: u64,
 ) -> Result<BuiltPrompt, KernelError> {
     let cwd = deps.env.cwd().to_path_buf();
     let (files, mut warnings) = instructions::discover(home, &cwd, project_root, &config.instruction_files);
     let sources = skills::Sources::new(home, &cwd, project_root, &config.skills);
-    let scan = skills::Scan::new(&sources, &deps.tools.names(), context_window);
+    let scan = skills::Scan::new(&sources, &tools.names(), context_window);
     for shadowed in scan.set.entries.iter().filter(|e| e.state == SkillState::Shadowed) {
         let path = shadowed.path.display();
         tracing::info!(skill = %shadowed.name, %path, by = ?shadowed.detail, "skill shadowed");
@@ -469,7 +502,7 @@ fn build_prompt(
     warnings.extend(scan.warnings());
     let text = prompt::build_system_prompt(&PromptInputs {
         config,
-        tools: &deps.tools,
+        tools,
         env: deps.env.as_ref(),
         instructions: &files,
         skills: &scan.catalog.text,
@@ -494,9 +527,9 @@ impl Kernel {
     pub async fn start(opts: StartOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
-        add_browser_tools(&mut deps, &opts.config);
-        add_desktop_tools(&mut deps, &opts.config);
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
+        let system = SystemCell::new(&opts.config);
+        let starting = starting_tools(&deps, &system);
         let mut warnings = Vec::new();
         if resolved.ad_hoc {
             warnings.push(format!("model '{}' is not in the catalog; default limits apply", opts.model));
@@ -506,7 +539,7 @@ impl Kernel {
             text: system_prompt,
             skills,
             warnings: prompt_warnings,
-        } = build_prompt(&opts.home, &opts.config, &deps, opts.project_root.as_deref(), context_window)?;
+        } = build_prompt(&opts.home, &opts.config, &deps, &starting, opts.project_root.as_deref(), context_window)?;
         warnings.extend(prompt_warnings);
         let id = uuid::Uuid::now_v7().to_string();
         let created = deps.store.create(&SessionHeader::new(id.clone(), opts.cwd.clone()))?;
@@ -545,6 +578,7 @@ impl Kernel {
             sub_agent: false,
             locks: Arc::new(PathLocks::new()),
             mcp: mcp.clone(),
+            system,
         });
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
@@ -585,9 +619,9 @@ impl Kernel {
     pub async fn resume(opts: ResumeOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let loaded = deps.store.open(&opts.session)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
-        add_browser_tools(&mut deps, &opts.config);
-        add_desktop_tools(&mut deps, &opts.config);
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
+        let system = SystemCell::new(&opts.config);
+        let starting = starting_tools(&deps, &system);
         let history = History::from_entries(loaded.entries);
         let mut system_prompt = None;
         let mut last_prompt: Option<(Vec<String>, Option<String>)> = None;
@@ -671,7 +705,7 @@ impl Kernel {
             Some(text) => text,
             None => {
                 let project_root = opts.project_root.as_deref();
-                let built = build_prompt(&opts.home, &opts.config, &deps, project_root, context_window)?;
+                let built = build_prompt(&opts.home, &opts.config, &deps, &starting, project_root, context_window)?;
                 warnings.extend(built.warnings);
                 skills = built.skills;
                 built.text.into()
@@ -709,6 +743,7 @@ impl Kernel {
             sub_agent: false,
             locks: Arc::new(PathLocks::new()),
             mcp: mcp.clone(),
+            system,
         });
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
@@ -759,6 +794,13 @@ impl Kernel {
             mcp.start(session.emitter.clone());
         }
         Ok(kernel)
+    }
+
+    /// The browsers' and desktop control's settings, after the configuration changed: the
+    /// session and its sub-agents take them up before their next request
+    /// (connectors-entry-design §9.4). Returns whether they differ from the current ones.
+    pub fn set_system_connectors(&self, settings: SystemSettings) -> bool {
+        self.session.upgrade().is_some_and(|session| session.system.set(settings))
     }
 
     pub fn session_id(&self) -> &str {

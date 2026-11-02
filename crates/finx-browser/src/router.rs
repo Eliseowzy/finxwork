@@ -195,6 +195,8 @@ struct Owner {
     /// The finx session whose window shows the tabs, for an embedded browser (§8.3.4).
     label: Option<String>,
     tabs: Vec<Arc<Tab>>,
+    /// Before each tab's number.
+    tab_prefix: &'static str,
     next_tab: u32,
 }
 
@@ -267,7 +269,7 @@ impl Router {
         Ok(())
     }
 
-    pub fn add_owner(&self, guard: Arc<dyn NavigationGuard>, downloads: PathBuf, label: Option<String>) -> OwnerId {
+    pub fn add_owner(&self, guard: Arc<dyn NavigationGuard>, downloads: PathBuf, label: Option<String>, tab_prefix: &'static str) -> OwnerId {
         let mut state = self.state.lock();
         state.next_owner += 1;
         let id = state.next_owner;
@@ -278,6 +280,7 @@ impl Router {
                 downloads,
                 label,
                 tabs: Vec::new(),
+                tab_prefix,
                 next_tab: 1,
             },
         );
@@ -391,7 +394,7 @@ impl Router {
         let (tab, page) = match parent {
             Some(tab) => (tab, false),
             None => {
-                let id = owner_entry.next_tab.to_string();
+                let id = format!("{}{}", owner_entry.tab_prefix, owner_entry.next_tab);
                 owner_entry.next_tab += 1;
                 let tab = Arc::new(Tab {
                     id,

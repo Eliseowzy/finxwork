@@ -212,19 +212,20 @@ pub struct PageTarget {
     pub loader: String,
 }
 
-/// What one call does on which site. Origins are written as `https://example.com`.
+/// What one call does on which site. Origins are written as `https://example.com`. `own`: in
+/// the user's own browser, with their real sign-ins, rather than the built-in one.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Authority {
     /// Opens a URL.
-    Navigate { url: String },
+    Navigate { url: String, own: bool },
     /// Reads the page of an origin.
     Observe { origin: String },
     /// Acts on a page: clicks, types, selects. `action` says what, for the user.
-    Act { origin: String, target: PageTarget, action: String },
+    Act { origin: String, target: PageTarget, action: String, own: bool },
     /// Hands local files to a page.
-    Upload { origin: String, paths: Vec<PathBuf>, target: PageTarget },
+    Upload { origin: String, paths: Vec<PathBuf>, target: PageTarget, own: bool },
     /// Runs a script on a page: it can read and change anything there.
-    Script { origin: String, target: PageTarget },
+    Script { origin: String, target: PageTarget, own: bool },
     /// Reads a desktop app's window. `app` is its bundle id, or its name when it has none.
     AppObserve { app: String },
     /// Acts on a desktop app. `action` says what, for the user.

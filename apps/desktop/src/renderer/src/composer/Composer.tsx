@@ -8,6 +8,7 @@ import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
 import { addAttachments, attachEvent, pickFiles, pickFolder, type Attachment } from "./attachments";
+import { ConnectorsItem } from "./ConnectorsMenu";
 import { keyEvent } from "./KeySetup";
 import { PromptEditor, type EditorHandle } from "./PromptEditor";
 import { Tile } from "./Tile";
@@ -138,7 +139,7 @@ function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number)
   );
 }
 
-/** "+": add files or photos (⌘U), or a folder. The app menu's items reach it too. */
+/** "+": add files or photos (⌘U), or a folder; then the connectors (connectors-entry-design §7). The app menu's items reach it too. */
 function PlusMenu({ attachments, onAttachments }: { attachments: Attachment[]; onAttachments: (a: Attachment[]) => void }) {
   const { t } = useTranslation("session");
   const latest = useRef({ attachments, onAttachments });
@@ -159,6 +160,8 @@ function PlusMenu({ attachments, onAttachments }: { attachments: Attachment[]; o
         <>
           <MenuItem icon="paperclip" label={t("composer.addFiles")} kbd="⌘U" onClick={() => (close(), void add("files"))} />
           <MenuItem icon="folder" label={t("composer.addFolder")} onClick={() => (close(), void add("folder"))} />
+          <div className="msep" role="separator" />
+          <ConnectorsItem close={close} />
         </>
       )}
     </MenuButton>
@@ -246,18 +249,35 @@ export function MenuButton({ className, title, label, align = "left", below, dis
  * ←/Esc goes back. The submenu lives inside the menu's element, so a click
  * in it is not a click outside.
  */
-export function SubMenuItem({ label, value, title, children }: { label: string; value: string; title: string; children: ReactNode }) {
+export function SubMenuItem({ label, value, title, icon, className, children }: {
+  label: string;
+  value: string;
+  title: string;
+  /** In place of the check column, as a menu item's icon. */
+  icon?: string;
+  /** The submenu's own class, beside `vmenu`. */
+  className?: string;
+  children: ReactNode;
+}) {
   const [open, setOpen] = useState<{ key: boolean } | null>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
   const row = useRef<HTMLButtonElement>(null);
   const sub = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!open || !row.current || !sub.current) return setAt(null);
-    const m = row.current.closest("[role=menu]")!.getBoundingClientRect();
-    const r = row.current.getBoundingClientRect();
-    const { offsetWidth: w, offsetHeight: h } = sub.current;
-    setAt({ left: m.right + w + 4 > innerWidth ? m.left - w - 2 : m.right + 2, top: Math.max(8, Math.min(r.top - 5, innerHeight - 8 - h)) });
+    const place = () => {
+      if (!row.current || !sub.current) return;
+      const m = row.current.closest("[role=menu]")!.getBoundingClientRect();
+      const r = row.current.getBoundingClientRect();
+      const { offsetWidth: w, offsetHeight: h } = sub.current;
+      setAt({ left: m.right + w + 4 > innerWidth ? m.left - w - 2 : m.right + 2, top: Math.max(8, Math.min(r.top - 5, innerHeight - 8 - h)) });
+    };
+    place();
     if (open.key) (sub.current.querySelector<HTMLElement>("[aria-checked=true]") ?? sub.current.querySelector<HTMLElement>("[role^=menuitem]"))?.focus();
+    // Rows read after it opened (the connectors) make it taller: placed again to stay on screen.
+    const resized = new ResizeObserver(place);
+    resized.observe(sub.current);
+    return () => resized.disconnect();
   }, [open]);
   const back = () => (setOpen(null), row.current?.focus());
   return (
@@ -278,14 +298,14 @@ export function SubMenuItem({ label, value, title, children }: { label: string; 
           setOpen({ key: true });
         }}
       >
-        <span className="ck" />
+        {icon ? <Icon name={icon} /> : <span className="ck" />}
         <span>{label}</span>
         <span className="val">{value}</span>
         <Icon name="chevR" className="sm" />
       </button>
       {open && (
         <div
-          className="vmenu"
+          className={className ? `vmenu ${className}` : "vmenu"}
           role="menu"
           aria-label={title}
           tabIndex={-1}

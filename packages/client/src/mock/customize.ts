@@ -107,6 +107,11 @@ export class CustomizeMock {
   /** `mcp_servers.<name>.enabled` as each of the person's files says it. */
   private enabled: Record<"user" | "user_project", Map<string, boolean>> = { user: new Map([["sentry", false]]), user_project: new Map([["staging-db", false]]) };
   private readonly saved = new Set(["mcp.github.Authorization", "mcp.postgres-dev.DATABASE_URL", "mcp.sentry.Authorization"]);
+  /** `[browser]` and `[desktop]` of the person's own file: the system connectors' switches, sites and apps (connectors-entry-design §4.3). */
+  private readonly system: Record<string, Record<string, unknown>> = {
+    browser: { extension: true, sites: { "*": "navigate", "https://github.com": "act" } },
+    desktop: { apps: { "com.apple.Safari": "read" } },
+  };
   private versions: Record<string, number> = { user: 1, user_project: 1, project: 1 };
   private readonly notify: (method: string, params: unknown) => void;
 
@@ -209,7 +214,13 @@ export class CustomizeMock {
       mcp_servers[s.name] = { ...s.config, ...(on ? {} : { enabled: false }) };
       for (const k of Object.keys(s.config)) origins[`mcp_servers.${s.name}.${k}`] = s.layer;
     }
-    return { config: { model: "deepseek/deepseek-chat", mcp_servers }, origins, ...(withLayers ? { layers: this.layers() } : {}) };
+    for (const [table, keys] of Object.entries(this.system)) for (const k of Object.keys(keys)) origins[`${table}.${k}`] = "user";
+    return { config: { model: "deepseek/deepseek-chat", mcp_servers, ...structuredClone(this.system) }, origins, ...(withLayers ? { layers: this.layers() } : {}) };
+  }
+
+  /** Whether the person's own browser is on: the extension then answers, as if Chrome were open. */
+  browserStatus() {
+    return { embedded: false, extension: this.system.browser.extension === true ? { browser: "Google Chrome 141.0.7390.54", extension_version: "0.1.0" } : null };
   }
 
   private isEnabled(s: Server): boolean {
@@ -221,6 +232,12 @@ export class CustomizeMock {
     if (expected && expected !== `v${this.versions[layer]}`) throw new Failure(-32023, "config_version_conflict", "the configuration changed since it was read; read it again", { version: `v${this.versions[layer]}` });
     let dropped: string[] = [];
     for (const e of edits) {
+      const path = segments(e.key_path);
+      if (layer === "user" && path[0] in this.system && path.length > 1) {
+        setPath(this.system[path[0]], path.slice(1), e.value);
+        if (e.key_path === "browser.extension") this.notify("browser/changed", this.browserStatus());
+        continue;
+      }
       const m = /^mcp_servers\.("?)([^".]+)\1(?:\.(enabled))?$/.exec(e.key_path);
       if (!m) continue;
       const name = m[2];
@@ -434,6 +451,20 @@ export class CustomizeMock {
 }
 
 /** A logo as the kernel sends one: a `data:` URI. */
+/** A key path's keys: `desktop.apps."com.apple.Safari"` is desktop, apps and com.apple.Safari. */
+function segments(keyPath: string): string[] {
+  return [...keyPath.matchAll(/"((?:[^"\\]|\\.)*)"|([^.]+)/g)].map((m) => (m[1] !== undefined ? m[1].replace(/\\(.)/g, "$1") : m[2]));
+}
+
+/** Sets a value under a table by its keys; null removes it. */
+function setPath(table: Record<string, unknown>, keys: string[], value: unknown) {
+  let at = table;
+  for (const k of keys.slice(0, -1)) at = (at[k] ??= {}) as Record<string, unknown>;
+  const last = keys[keys.length - 1];
+  if (value === null) delete at[last];
+  else at[last] = value;
+}
+
 function svgLogo(color: string, path: string): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" rx="5" fill="${color}"/><path d="${path}" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>`;
   return `data:image/svg+xml;base64,${btoa(svg)}`;

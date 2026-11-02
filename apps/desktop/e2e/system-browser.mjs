@@ -1,10 +1,12 @@
 #!/usr/bin/env node
-// Verify Settings › Browser connects the user's own browser (browser-design §8.4): the row
-// says it is not connected; Connect registers finx and puts the extension in its folder;
-// once the extension (in a real Chrome, loaded from that folder) connects, the guide turns
-// it on and the row says so; Stop Using turns it off. Everything stays in a private HOME,
-// so the developer's own Chrome is never touched. Needs `pnpm build`, `cargo build -p
-// finx-cli` and Google Chrome.
+// Verify Settings › Browser connects the user's own browser (browser-design §8.4,
+// connectors-entry-design §6.1): the row says it is not connected; Connect registers finx and
+// puts the extension in its folder; once the extension (in a real Chrome, loaded from that
+// folder) connects, the guide turns it on (`browser.extension`) and the row says so; the
+// composer's + › Connectors switches it too, and Settings follows at once; Stop Using turns it
+// off; the built-in browser has its own switch (`browser.enabled`). Everything stays in a
+// private HOME, so the developer's own Chrome is never touched. Needs `pnpm build`, `cargo
+// build -p finx-cli` and Google Chrome.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -150,7 +152,10 @@ const config = () => fs.readFileSync(path.join(home, "config.toml"), "utf8");
 /** A button by its label in either language. */
 const button = (...labels) => `[...document.querySelectorAll('button')].find(b => ${JSON.stringify(labels)}.includes(b.textContent.trim()))`;
 const shows = (...texts) => `${JSON.stringify(texts)}.some(t => document.body.innerText.includes(t))`;
-const badge = (...texts) => `${JSON.stringify(texts)}.includes(document.querySelector('.browser-set .badge')?.textContent)`;
+const badge = (...texts) => `${JSON.stringify(texts)}.includes(document.querySelector('.browser-set .mrow .badge')?.textContent)`;
+/** A row of the open menus by its text in either language. */
+const menuRow = (selector, ...texts) => `[...document.querySelectorAll(${JSON.stringify(selector)})].find(r => ${JSON.stringify(texts)}.some(t => r.textContent.includes(t)))`;
+const yoursRow = menuRow(".cn-sub .cn-row", "你的浏览器", "Your Browser");
 
 let failed = false;
 try {
@@ -171,6 +176,12 @@ try {
 
   // Connect: the app registers finx and copies the extension, then asks the user to add it.
   await set.run(`(${button("连接", "Connect")}).click()`);
+  // With more than one browser here, the guide first asks which: Chrome.
+  await set.until("the guide", `!!document.querySelector('.bg-pick') || ${shows("开发者模式", "Developer mode")}`, 30000);
+  if (await set.run(`!!document.querySelector('.bg-pick')`)) {
+    await set.run(`[...document.querySelectorAll('.bg-pick [role=radio]')].find(b => b.textContent.includes("Google Chrome")).click()`);
+    await set.run(`(${button("继续", "Continue")}).click()`);
+  }
   await set.until("the install step", shows("开发者模式", "Developer mode"), 30000);
   await set.shot("2-add-extension");
   const manifest = JSON.parse(fs.readFileSync(path.join(chromeData, "NativeMessagingHosts/com.finxwork.browser.json"), "utf8"));
@@ -185,29 +196,55 @@ try {
   await chromeWithExtension(folder);
   await set.until("connected", shows("已连接 Google Chrome", "Connected to Google Chrome"), 30000);
   await set.shot("4-connected");
-  check(/backend = "extension"/.test(config()) && /enabled = true/.test(config()), `not turned on: ${config()}`);
+  check(/\[browser\][\s\S]*extension = true/.test(config()) && !/backend/.test(config()), `not turned on: ${config()}`);
 
   // Done: the row says which browser, in use.
   await set.run(`(${button("完成", "Done")}).click()`);
   await set.until("in use", badge("使用中", "In use"));
-  const name = await set.run(`document.querySelector('.browser-set .fn').textContent`);
+  const name = await set.run(`document.querySelector('.browser-set .mrow .fn').textContent`);
   check(/Chrome \d+/.test(name), `the row does not name the browser: ${name}`);
   await set.shot("5-in-use");
+
+  // The composer's + › Connectors lists it, on; its switch there is the same setting, and
+  // Settings shows the change at once.
+  await main.until("onboarding left", `(() => { const skip = [...document.querySelectorAll("button")].find(b => /稍后|later|skip/i.test(b.textContent)); if (skip) { skip.click(); return false; } return !!document.querySelector(".cmp-plus"); })()`);
+  await main.run(`document.querySelector('.cmp-plus').click()`);
+  await main.until("the + menu", `!!${menuRow(".vmenu [role=menuitem]", "连接器", "Connectors")}`);
+  await main.run(`${menuRow(".vmenu [role=menuitem]", "连接器", "Connectors")}.click()`);
+  await main.until("the connectors menu", `${yoursRow}?.getAttribute('aria-checked') === 'true'`);
+  await main.shot("6-connectors-menu");
+  await main.run(`${yoursRow}.click()`);
+  await main.until("off in the menu", `${yoursRow}?.getAttribute('aria-checked') === 'false'`);
+  await set.until("off in Settings", badge("已连接", "Connected"));
+  check(/\[browser\][\s\S]*extension = false/.test(config()), `not turned off from the menu: ${config()}`);
+  // Start Using in Settings: on again, and the menu follows.
+  await set.run(`(${button("开始使用", "Start Using")}).click()`);
+  await set.until("in use again", badge("使用中", "In use"));
+  await main.until("on in the menu", `${yoursRow}?.getAttribute('aria-checked') === 'true'`);
+  await main.run(`document.querySelector('.cmp-plus').click()`);
 
   // Stop Using: back to the built-in browser, still connected.
   await set.run(`(${button("停止使用", "Stop Using")}).click()`);
   await set.until("stopped", badge("已连接", "Connected"));
-  check(/backend = "auto"/.test(config()), `not turned off: ${config()}`);
-  await set.shot("6-stopped");
+  check(/\[browser\][\s\S]*extension = false/.test(config()), `not turned off: ${config()}`);
+  await set.shot("7-stopped");
 
   // Chrome goes away: the row says the extension is not connected.
   chrome.kill("SIGKILL");
   await set.until("lost", badge("未连接", "Not connected"), 20000);
 
+  // The built-in browser: on by default, with a switch of its own.
+  const builtin = `document.querySelector('.browser-set [role=switch]')`;
+  check((await set.run(`${builtin}.getAttribute('aria-checked')`)) === "true", "the built-in browser is off by default");
+  await set.run(`${builtin}.click()`);
+  await set.until("the built-in browser off", `${builtin}.getAttribute('aria-checked') === 'false'`);
+  check(/\[browser\][^[]*enabled = false/.test(config()), `the built-in browser not turned off: ${config()}`);
+  await set.run(`${builtin}.click()`);
+  await set.until("the built-in browser on", `${builtin}.getAttribute('aria-checked') === 'true'`);
+
   // The built-in browser's address bar searches with Google, or the engine picked here.
-  const select = `document.querySelectorAll('.browser-set select')[0]`;
+  const select = `[...document.querySelectorAll('.browser-set select')].find(s => !s.closest('.site-row'))`;
   check((await set.run(`${select}.value`)) === "google", "the address bar does not search with Google by default");
-  await main.until("onboarding left", `(() => { const skip = [...document.querySelectorAll("button")].find(b => /稍后|later|skip/i.test(b.textContent)); if (skip) { skip.click(); return false; } return !!document.querySelector(".ctool button[aria-pressed]"); })()`);
   // The home page's browser button opens the panel, a blank tab in it.
   await main.run(`document.querySelector('.ctool button[aria-pressed]').click()`);
   await main.until("the panel", `!!document.querySelector('.brp-url')`);
@@ -217,7 +254,7 @@ try {
   await main.until("a Google search", `window.finx.browserTabs().then(t => t[0].url.startsWith("https://www.google.com/search?q=finx%20work"))`, 20000);
   await set.run(`(() => { const s = ${select}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, "baidu"); s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   await set.until("Baidu saved", `window.finx.getPreferences().then(p => p.searchEngine === "baidu")`);
-  await set.shot("7-built-in");
+  await set.shot("8-built-in");
   await main.run(`window.finx.browserTabCommand(${JSON.stringify((await tab()).targetId)}, { command: "go", url: "天气" })`);
   // Baidu may send an embedded browser to its captcha first, with the search as the way back.
   await main.until("a Baidu search", `window.finx.browserTabs().then(t => [t[0].url, decodeURIComponent(t[0].url)].some(u => u.includes("www.baidu.com/s?wd=%E5%A4%A9%E6%B0%94")))`, 20000);
@@ -244,7 +281,7 @@ try {
   await set.run(`(${button("添加", "Add")}).click()`);
   await set.until("the engine saved", `window.finx.getPreferences().then(p => p.searchEngines.length === 1 && p.searchEngines[0].keyword === "wk" && p.searchEngines[0].url === "http://127.0.0.1:9/search?q={searchTerms}")`);
   check(await set.run(shows("wk")), "the list does not show the new keyword");
-  await set.shot("8-engines");
+  await set.shot("9-engines");
 
   // "keyword words" in one go, with the person's own engine.
   await main.run(`window.finx.browserTabCommand(${JSON.stringify((await tab()).targetId)}, { command: "go", url: "wk 北京" })`);
@@ -264,10 +301,10 @@ try {
   await main.run(`document.querySelector('.brp-url').focus()`);
   await main.cdp("Input.insertText", { text: "duck" });
   await main.until("the Tab hint", `document.querySelector('.brp-hint')?.textContent.includes('DuckDuckGo')`);
-  await main.shot("9-hint");
+  await main.shot("10-hint");
   await key("Tab", "Tab");
   await main.until("keyword mode", `document.querySelector('.brp-keyword')?.textContent.includes('DuckDuckGo')`);
-  await main.shot("10-keyword");
+  await main.shot("11-keyword");
   await main.cdp("Input.insertText", { text: "example.com" });
   await key("Enter", "Enter", "\r");
   await main.until("a DuckDuckGo search", `window.finx.browserTabs().then(t => t[0].url.startsWith("https://duckduckgo.com/?q=example.com"))`, 20000);

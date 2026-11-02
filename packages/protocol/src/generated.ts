@@ -492,6 +492,8 @@ export type Event = {
   args: unknown;
   call_id: string;
   name: string;
+  /** The call works in the user's own browser, with their real sign-ins, rather than the built-in one (connectors-entry-design §3.4): clients say so. */
+  own_browser?: boolean;
   /** Site permissions that `approve_for_session` may keep; its `grant` picks one, the first by default. */
   proposed_grants?: SiteGrant[];
   /** Mode that `approve_for_session` switches the session to. With none of this, `proposed_rule` and `proposed_grants`, approving for the session approves this call only. */
@@ -1112,6 +1114,7 @@ export type PendingApproval = {
   args: unknown;
   call_id: string;
   name: string;
+  own_browser?: boolean;
   proposed_grants?: SiteGrant[];
   proposed_mode?: PermissionMode | null;
   proposed_rule?: CommandRule | null;

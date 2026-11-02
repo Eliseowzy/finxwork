@@ -63,6 +63,9 @@ pub struct SessionOptions {
     pub action_timeout: Duration,
     /// The finx session whose window shows the tabs, for an embedded browser (§8.3.4).
     pub label: Option<String>,
+    /// Put before each tab's number and each ref, so that the tabs and refs of two browsers in
+    /// one finx session differ (connectors-entry-design §9.2): "" for the built-in browser.
+    pub prefix: &'static str,
 }
 
 /// A page as approved: the tab, the frame, its document and origin. Execution runs only if
@@ -231,7 +234,7 @@ impl BrowserSession {
         });
         let owner = browser
             .router
-            .add_owner(guard.clone(), options.downloads.clone(), options.label.clone());
+            .add_owner(guard.clone(), options.downloads.clone(), options.label.clone(), options.prefix);
         let pending_note = Mutex::new(browser.note.clone());
         Self {
             browser,
@@ -359,7 +362,8 @@ impl BrowserSession {
             let refs = self.refs.lock();
             let entry = refs.by_ref.get(reference).ok_or_else(|| {
                 let given = reference
-                    .strip_prefix('e')
+                    .strip_prefix(self.options.prefix)
+                    .and_then(|r| r.strip_prefix('e'))
                     .and_then(|n| n.parse::<u64>().ok())
                     .is_some_and(|n| n >= 1 && n <= refs.next);
                 BrowserError::StaleRef(if given {
@@ -811,7 +815,7 @@ impl BrowserSession {
             return existing.clone();
         }
         refs.next += 1;
-        let reference = format!("e{}", refs.next);
+        let reference = format!("{}e{}", self.options.prefix, refs.next);
         let label = if item.name.is_empty() {
             item.role.clone()
         } else {

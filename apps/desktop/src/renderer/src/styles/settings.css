@@ -113,3 +113,6 @@
 .mrow-add .ic{color:var(--accent-t)}
 .models .mrow-add>.ic{color:var(--accent-t)}
 .mlogo.source-icon,.connection-logo.source-icon{background:none}
+
+/* Settings › Browser › 网站权限: an origin as written. */
+.site-row .fn.mono{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

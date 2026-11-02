@@ -13,9 +13,9 @@ export interface ToolScript {
   progress?: string[];
   /** How long it runs (ms, before the speed factor). */
   ms?: number;
-  /** Asks for approval in the approval modes that ask for this kind of call; a website on
-   * the user's own Chrome (`own_chrome`) asks in every mode, offering its `grants`. */
-  approval?: { summary: string; reason?: string; grants?: SiteGrant[]; own_chrome?: boolean };
+  /** Asks for approval in the approval modes that ask for this kind of call; a website in
+   * the user's own browser (`own_browser`) asks in every mode, offering its `grants`. */
+  approval?: { summary: string; reason?: string; grants?: SiteGrant[]; own_browser?: boolean };
 }
 
 export interface TurnScript {

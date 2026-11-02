@@ -140,6 +140,10 @@ impl DesktopHandle {
         }
     }
 
+    pub(crate) fn settings(&self) -> &DesktopSettings {
+        &self.settings
+    }
+
     fn cli(&self) -> Result<&Cli, ToolError> {
         self.cli
             .get_or_init(|| finx_desktop::locate(self.settings.executable.as_deref()).map(|p| Cli::new(p, &self.label)))

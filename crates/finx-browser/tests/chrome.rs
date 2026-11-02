@@ -187,6 +187,7 @@ impl Fixture {
                 navigation_timeout: Duration::from_secs(15),
                 action_timeout: Duration::from_secs(10),
                 label: None,
+                prefix: "",
             },
         )
     }

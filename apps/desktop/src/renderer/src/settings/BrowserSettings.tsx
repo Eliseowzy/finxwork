@@ -7,26 +7,45 @@ import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { BuiltInBrowser } from "./BuiltInBrowser";
 
-// Settings › Browser: the user's own browser (browser-design §8.4). One row says whether it
-// is connected and in use, and offers the one thing to do; "Connect" walks through the
-// setup: pick the browser, the app registers finx, the user adds the extension, and the
-// app waits for it to connect, then turns it on.
+// Settings › Browser: what the agent's two browsers share (connectors-entry-design §8). The
+// built-in browser's switch; the user's own browser, whose row says whether it is connected and
+// in use and offers the one thing to do ("Connect" walks through the setup: pick the browser,
+// the app registers finx, the user adds the extension, and the app waits for it to connect,
+// then turns it on); the site permissions of both; scripts; and the address bar of the
+// browser panel.
 
 /** The extension's page in the Chrome Web Store, once it is published; until then the guide loads it from its folder. */
 const STORE_URL = "";
 
-type Config = { enabled: boolean; backend: string };
+/** `[browser]` as this page reads it. `builtin` and `extension` are null when not set: the built-in browser is then on in this app, the user's own browser not connected yet. */
+export type BrowserConfig = {
+  builtin: boolean | null;
+  extension: boolean | null;
+  /** The old way of choosing the user's own browser, rewritten on the next write. */
+  legacyBackend: boolean;
+  sites: [string, string][];
+  scripts: boolean;
+};
 
 /** finx's word on the browsers (browser/status, then browser/changed), and the [browser] settings. */
-function useBrowserState() {
+export function useBrowserState() {
   const st = useStore();
   const [status, setStatus] = useState<BrowserStatus | null>(null);
-  const [config, setConfig] = useState<Config | null>(null);
+  const [config, setConfig] = useState<BrowserConfig | null>(null);
   const readConfig = useCallback(async () => {
     if (!st.rpc) return;
     const r = await st.rpc.request("config/read", {});
     const browser = ((r.config as Record<string, unknown>)?.browser ?? {}) as Record<string, unknown>;
-    setConfig({ enabled: browser.enabled === true, backend: typeof browser.backend === "string" ? browser.backend : "auto" });
+    const legacyBackend = browser.backend === "extension";
+    const sites = Object.entries((browser.sites ?? {}) as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string");
+    setConfig({
+      builtin: typeof browser.enabled === "boolean" ? browser.enabled : null,
+      extension: typeof browser.extension === "boolean" ? browser.extension : legacyBackend ? true : null,
+      legacyBackend,
+      // "All sites" first, then by origin.
+      sites: sites.sort(([a], [b]) => (a === "*" ? -1 : b === "*" ? 1 : a.localeCompare(b))),
+      scripts: browser.script_enabled === true,
+    });
   }, [st.rpc]);
   useEffect(() => {
     const rpc = st.rpc;
@@ -42,22 +61,30 @@ function useBrowserState() {
       offConfig();
     };
   }, [st.rpc, readConfig]);
-  /** Turns the user's browser on for the browser tools (new conversations), or back to the built-in one. */
-  const use = useCallback(
-    async (on: boolean) => {
-      const edits = on
-        ? [{ key_path: "browser.enabled", value: true }, { key_path: "browser.backend", value: "extension" }]
-        : [{ key_path: "browser.backend", value: "auto" }];
-      await st.call("config/write", { layer: "user", edits });
+  /** Edits of `[browser]` in the user's own file, then the page reads it again; finx's answer says whether another file overrides them. */
+  const write = useCallback(
+    async (edits: { key_path: string; value: unknown }[]) => {
+      const r = await st.call("config/write", { layer: "user", edits });
       await readConfig();
+      return r;
     },
     [st, readConfig],
   );
-  return { status, config, use };
+  /** The user's own browser on or off: every conversation from its next step (connectors-entry-design §5). */
+  const use = useCallback(
+    (on: boolean) =>
+      write([
+        { key_path: "browser.extension", value: on },
+        // From before the user's own browser had its own switch.
+        ...(config?.legacyBackend ? [{ key_path: "browser.backend", value: null }] : []),
+      ]),
+    [write, config?.legacyBackend],
+  );
+  return { status, config, use, write };
 }
 
 /** The browsers here, asked again whenever the window comes back to the front (the user may have opened or installed one). */
-function useSystemBrowsers() {
+export function useSystemBrowsers() {
   const [browsers, setBrowsers] = useState<SystemBrowser[] | null>(null);
   const refresh = useCallback(() => void window.finx?.systemBrowsers().then(setBrowsers), []);
   useEffect(() => {
@@ -71,7 +98,7 @@ function useSystemBrowsers() {
 export function BrowserSettings() {
   const { t } = useTranslation("settings");
   const st = useStore();
-  const { status, config, use } = useBrowserState();
+  const { status, config, use, write } = useBrowserState();
   const { browsers, refresh } = useSystemBrowsers();
   const [guide, setGuide] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -80,7 +107,7 @@ export function BrowserSettings() {
   // An extension that cannot be used (it or finx is too old, D-219) is not connected, but says what to update.
   const problem = status?.extension?.problem ?? null;
   const connected = problem ? null : (status?.extension ?? null);
-  const inUse = !!config?.enabled && config.backend === "extension";
+  const inUse = config?.extension === true;
   const registered = browsers?.filter((b) => b.registered) ?? [];
   // The connected one, by the name it gave; else the one it was set up for; else the first here.
   const mine =
@@ -123,8 +150,21 @@ export function BrowserSettings() {
   return (
     <div className="form browser-set">
       <section>
-        <h3 className="fhead">{t("browser.system")}</h3>
+        <h3 className="fhead">{t("browser.agent")}</h3>
         <div className="fgroup">
+          <div className="frow">
+            <div className="ft">
+              <div className="fn">{t("browser.builtin")}</div>
+              <div className="fdesc">{t("browser.builtinDesc")}</div>
+            </div>
+            {/* Not set: on in this app (connectors-entry-design §9.1). */}
+            <Switch
+              on={config?.builtin ?? true}
+              label={t("browser.builtin")}
+              disabled={!config || busy}
+              onChange={(on) => void act(() => write([{ key_path: "browser.enabled", value: on }]))}
+            />
+          </div>
           <div className="frow mrow">
             <BrowserMark id={mine?.id} />
             <div className="ft">
@@ -164,6 +204,24 @@ export function BrowserSettings() {
         {error && <p className="mrow-err">{error}</p>}
         <p className="set-note">{t("browser.note")}</p>
       </section>
+      {config && <SitePermissions sites={config.sites} write={(edits) => act(() => write(edits))} />}
+      <section>
+        <h3 className="fhead">{t("browser.scripts")}</h3>
+        <div className="fgroup">
+          <div className="frow">
+            <div className="ft">
+              <div className="fn">{t("browser.scriptsOn")}</div>
+              <div className="fdesc">{t("browser.scriptsDesc")}</div>
+            </div>
+            <Switch
+              on={!!config?.scripts}
+              label={t("browser.scriptsOn")}
+              disabled={!config || busy}
+              onChange={(on) => void act(() => write([{ key_path: "browser.script_enabled", value: on }]))}
+            />
+          </div>
+        </div>
+      </section>
       <BuiltInBrowser />
       {guide && browsers && (
         <Guide
@@ -183,7 +241,7 @@ export function BrowserSettings() {
 }
 
 /** The browser's own icon, read from the installed app; a globe while there is none. */
-function BrowserMark({ id }: { id?: SystemBrowserId }) {
+export function BrowserMark({ id }: { id?: SystemBrowserId }) {
   const [icon, setIcon] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
@@ -202,7 +260,7 @@ type Step = "pick" | "prepare" | "install" | "wait" | "done";
 /** How long the extension gets to connect before the guide says what to check. */
 const WAIT_SECONDS = 5;
 
-function Guide({
+export function Guide({
   browsers,
   connected,
   problem,
@@ -213,7 +271,7 @@ function Guide({
   browsers: SystemBrowser[];
   connected: boolean;
   problem: ExtensionProblem | null;
-  onConnected: () => Promise<void>;
+  onConnected: () => Promise<unknown>;
   refresh: () => void;
   onClose: () => void;
 }) {
@@ -387,5 +445,65 @@ function Guide({
         )}
       </div>
     </Dialog>
+  );
+}
+
+function Switch({ on, label, disabled, onChange }: { on: boolean; label: string; disabled?: boolean; onChange: (on: boolean) => void }) {
+  return <button className={`sw ${on ? "on" : ""}`} role="switch" aria-checked={on} aria-label={label} disabled={disabled} onClick={() => onChange(!on)} />;
+}
+
+const LEVELS = ["act", "navigate", "deny"] as const;
+
+/** A site as `browser.sites` keys it: an origin is quoted, as it has dots and a colon. */
+const siteKey = (origin: string) => `browser.sites.${JSON.stringify(origin)}`;
+
+/**
+ * The sites of both browsers (browser-design §7.3, D-221): each with its level, which can be
+ * changed or removed. "All sites" comes first; removing it takes back what "allow all sites"
+ * gave. The agent's "always allow" adds sites here.
+ */
+function SitePermissions({ sites, write }: { sites: [string, string][]; write: (edits: { key_path: string; value: unknown }[]) => Promise<unknown> }) {
+  const { t } = useTranslation("settings");
+  return (
+    <section>
+      <h3 className="fhead">{t("browser.sites")}</h3>
+      <div className="fgroup">
+        {sites.length === 0 && (
+          <div className="frow">
+            <div className="ft">
+              <div className="fdesc">{t("browser.sitesEmpty")}</div>
+            </div>
+          </div>
+        )}
+        {sites.map(([origin, level]) => {
+          const name = origin === "*" ? t("browser.allSites") : origin;
+          return (
+            <div className="frow site-row" key={origin}>
+              <div className="ft">
+                <div className={`fn ${origin === "*" ? "" : "mono"}`}>{name}</div>
+                {origin === "*" && <div className="fdesc">{t("browser.allSitesDesc")}</div>}
+              </div>
+              <select
+                className="psel"
+                aria-label={t("browser.siteLevel", { site: name })}
+                value={level}
+                onChange={(e) => void write([{ key_path: siteKey(origin), value: e.target.value }])}
+              >
+                {/* "All sites" is never refused as a whole: that is the domain lists' job. */}
+                {LEVELS.filter((l) => origin !== "*" || l !== "deny").map((l) => (
+                  <option key={l} value={l}>
+                    {t(`browser.level.${l}`)}
+                  </option>
+                ))}
+              </select>
+              <button className="btn" aria-label={t("browser.removeSite", { site: name })} onClick={() => void write([{ key_path: siteKey(origin), value: null }])}>
+                {t("browser.remove")}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="set-note">{t("browser.sitesNote")}</p>
+    </section>
   );
 }

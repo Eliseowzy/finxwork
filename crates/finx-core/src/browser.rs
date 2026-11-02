@@ -61,35 +61,98 @@ const MAX_WAIT: Duration = Duration::from_secs(60);
 const NO_PAGE: &str = "No page is open in this session. Open one with browser_navigate. \
     (Tabs from before the session was resumed are closed.)";
 const RESTARTED: &str = "The browser had stopped, so it was started again: earlier tabs and refs are gone.";
+const BUILTIN_OFF: &str = "The built-in browser is turned off in FinxWork's settings.";
+const YOURS_OFF: &str = "The user's own browser is turned off. If the task needs their accounts, ask the user to \
+    turn it on in FinxWork; the built-in browser does not have their sign-ins.";
 
 /// Most steps a `browser_batch` runs.
 const MAX_STEPS: usize = 20;
 
-/// The tools added to a session's tools when `browser.enabled` is on: the seven, and
-/// `browser_batch` (D-193).
-pub(crate) fn browser_tools() -> Vec<Arc<dyn Tool>> {
-    let mut tools = step_tools();
-    tools.push(Arc::new(Typed::new(BrowserBatch)));
+/// Which browser a call works in (connectors-entry-design §3, D-225).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Which {
+    /// The built-in browser: a profile of its own, without the user's sign-ins.
+    Builtin,
+    /// The user's own browser, through the FinxWork extension, with their real sign-ins.
+    Yours,
+}
+
+/// Before the tabs and refs of the user's own browser: tab y2, ref ye14.
+const YOURS: &str = "y";
+
+impl Which {
+    /// The browser of a tab or a ref, by its prefix.
+    fn of(id: &str) -> Self {
+        if id.starts_with(YOURS) { Self::Yours } else { Self::Builtin }
+    }
+
+    fn own(self) -> bool {
+        self == Self::Yours
+    }
+
+    fn prefix(self) -> &'static str {
+        match self {
+            Self::Builtin => "",
+            Self::Yours => YOURS,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Builtin => "built-in browser",
+            Self::Yours => "user's own browser",
+        }
+    }
+}
+
+/// The tools a session gets while a browser is on: the seven and `browser_batch` (D-193), with
+/// `browser_eval` when scripts are on (§7.6). While both browsers are on, `browser_navigate` and
+/// `browser_tabs` take the browser to open a page in (connectors-entry-design §9.2).
+fn tools(both: bool, scripts: bool) -> Vec<Arc<dyn Tool>> {
+    let mut tools = step_tools(both);
+    tools.push(Arc::new(Typed::new(BrowserBatch { both })));
+    if scripts {
+        tools.push(Arc::new(Typed::new(BrowserEval)));
+    }
     tools
 }
 
-/// [`browser_tools`] and `browser_eval`, with `browser.script_enabled` (§7.6).
-pub(crate) fn browser_tools_with_scripts() -> Vec<Arc<dyn Tool>> {
-    let mut tools = browser_tools();
-    tools.push(Arc::new(Typed::new(BrowserEval)));
-    tools
+/// For registries built once per kind (`kernel::extended`).
+pub(crate) fn one_browser() -> Vec<Arc<dyn Tool>> {
+    tools(false, false)
+}
+
+pub(crate) fn one_browser_with_scripts() -> Vec<Arc<dyn Tool>> {
+    tools(false, true)
+}
+
+pub(crate) fn two_browsers() -> Vec<Arc<dyn Tool>> {
+    tools(true, false)
+}
+
+pub(crate) fn two_browsers_with_scripts() -> Vec<Arc<dyn Tool>> {
+    tools(true, true)
 }
 
 /// The tools a batch may run.
-fn step_tools() -> Vec<Arc<dyn Tool>> {
+fn step_tools(both: bool) -> Vec<Arc<dyn Tool>> {
+    let (navigate, tabs) = if both {
+        (Typed::new(BrowserNavigate), Typed::new(BrowserTabs))
+    } else {
+        (
+            Typed::new(BrowserNavigate).without_parameter("browser"),
+            Typed::new(BrowserTabs).without_parameter("browser"),
+        )
+    };
     vec![
-        Arc::new(Typed::new(BrowserNavigate)),
+        Arc::new(navigate),
         Arc::new(Typed::new(BrowserSnapshot)),
         Arc::new(Typed::new(BrowserAct)),
         Arc::new(Typed::new(BrowserScreenshot)),
         Arc::new(Typed::new(BrowserWait)),
         Arc::new(Typed::new(BrowserConsole)),
-        Arc::new(Typed::new(BrowserTabs)),
+        Arc::new(tabs),
     ]
 }
 
@@ -98,10 +161,14 @@ fn step_tools() -> Vec<Arc<dyn Tool>> {
 pub(crate) type Judge = Arc<dyn Fn(Vec<Authority>) -> futures::future::BoxFuture<'static, Gate> + Send + Sync>;
 
 /// What a session's browser tools need: the process's pool and the session's `[browser]`
-/// settings (D-207). Without it in the session's state the tools refuse.
+/// settings (D-207), which change when the configuration does (connectors-entry-design §9.4).
+/// Without it in the session's state the tools refuse.
 pub(crate) struct BrowserHandle {
     pool: Arc<BrowserPool>,
-    settings: BrowserSettings,
+    state: Mutex<Browsers>,
+    /// The `[browser]` policy, shared with the guards of the browsers already started, so that a
+    /// change reaches the pages the session has open.
+    policy: Arc<Mutex<Arc<SitePolicy>>>,
     downloads: PathBuf,
     roots: Vec<PathBuf>,
     /// The session's site grants, so navigations the page makes may reach a private site
@@ -115,18 +182,46 @@ pub(crate) struct BrowserHandle {
     judge: std::sync::OnceLock<Judge>,
 }
 
+/// The browsers a session may use, and the one of its current tab.
+struct Browsers {
+    settings: BrowserSettings,
+    builtin: bool,
+    yours: bool,
+    /// Where a call that names no tab goes.
+    current: Which,
+}
+
+impl Browsers {
+    fn on(&self, which: Which) -> bool {
+        match which {
+            Which::Builtin => self.builtin,
+            Which::Yours => self.yours,
+        }
+    }
+}
+
 impl BrowserHandle {
+    /// `embedded`: a desktop app shows browsers, where the built-in browser is on by default.
     pub(crate) fn new(
         pool: Arc<BrowserPool>,
         settings: BrowserSettings,
+        embedded: bool,
         downloads: PathBuf,
         roots: Vec<PathBuf>,
         grants: Vec<SiteGrant>,
         label: String,
     ) -> Self {
+        let builtin = settings.builtin_on(embedded);
+        let yours = settings.extension;
         Self {
             pool,
-            settings,
+            policy: Arc::new(Mutex::new(settings.policy.clone())),
+            state: Mutex::new(Browsers {
+                current: if builtin || !yours { Which::Builtin } else { Which::Yours },
+                settings,
+                builtin,
+                yours,
+            }),
             downloads,
             roots,
             grants: Arc::new(Mutex::new(grants)),
@@ -143,19 +238,65 @@ impl BrowserHandle {
     pub(crate) fn set_grants(&self, grants: Vec<SiteGrant>) {
         *self.grants.lock() = grants;
     }
+
+    /// New `[browser]` settings (connectors-entry-design §9.4). Returns the browsers whose
+    /// sessions have to go: turned off, or now set up differently.
+    pub(crate) fn update(&self, settings: BrowserSettings, embedded: bool) -> Vec<Which> {
+        *self.policy.lock() = settings.policy.clone();
+        let mut state = self.state.lock();
+        let builtin = settings.builtin_on(embedded);
+        let yours = settings.extension;
+        // Timeouts are a session's own; the program, profile and window only the built-in
+        // browser's.
+        let timeouts = state.settings.navigation_timeout != settings.navigation_timeout
+            || state.settings.action_timeout != settings.action_timeout;
+        let mut gone = Vec::new();
+        if state.builtin && (!builtin || timeouts || state.settings.config != settings.config) {
+            gone.push(Which::Builtin);
+        }
+        if state.yours && (!yours || timeouts) {
+            gone.push(Which::Yours);
+        }
+        state.settings = settings;
+        state.builtin = builtin;
+        state.yours = yours;
+        if !state.on(state.current) {
+            state.current = if builtin { Which::Builtin } else { Which::Yours };
+        }
+        gone
+    }
+
+    fn touch(&self, which: Which) {
+        self.state.lock().current = which;
+    }
+}
+
+/// The user's own browser's session, kept beside the built-in one's in the session state.
+pub(crate) struct YoursSession(Arc<BrowserSession>);
+
+/// Ends a browser's session in a session's state: its tabs close.
+pub(crate) fn forget(state: &finx_tools::SessionState, which: Which) {
+    match which {
+        Which::Builtin => drop(state.remove::<BrowserSession>()),
+        Which::Yours => drop(state.remove::<YoursSession>()),
+    }
 }
 
 /// Navigations the page makes on its own: only refusals apply, never a question (§7.2).
 struct KernelGuard {
-    policy: Arc<SitePolicy>,
+    policy: Arc<Mutex<Arc<SitePolicy>>>,
     roots: Vec<PathBuf>,
     grants: Arc<Mutex<Vec<SiteGrant>>>,
 }
 
 impl KernelGuard {
+    fn policy(&self) -> Arc<SitePolicy> {
+        self.policy.lock().clone()
+    }
+
     fn private_allowed(&self, origin: &str) -> bool {
         self.grants.lock().iter().any(|g| g.origin == origin)
-            || matches!(self.policy.site(origin), Some(SiteLevel::Navigate | SiteLevel::Act))
+            || matches!(self.policy().site(origin), Some(SiteLevel::Navigate | SiteLevel::Act))
     }
 }
 
@@ -169,7 +310,7 @@ impl NavigationGuard for KernelGuard {
             UrlKind::File(path) => return Err(format!("{} is outside the workspace", path.display())),
             UrlKind::Web => {}
         }
-        if let Some(reason) = self.policy.refusal(url) {
+        if let Some(reason) = self.policy().refusal(url) {
             return Err(reason);
         }
         let origin = origin_of(url);
@@ -204,31 +345,91 @@ fn handle(ctx: &ToolCtx) -> Result<Arc<BrowserHandle>, ToolError> {
         .ok_or_else(|| ToolError::Failed("the browser tools are not enabled in this session".into()))
 }
 
-/// The session's browser, as it is; for `authorities`, which must not start one.
-fn existing(ctx: &ToolCtx) -> Result<Arc<BrowserSession>, ToolError> {
-    match ctx.session_state.get::<BrowserSession>() {
+/// A browser's session in this finx session, as it is.
+fn session_of(ctx: &ToolCtx, which: Which) -> Option<Arc<BrowserSession>> {
+    match which {
+        Which::Builtin => ctx.session_state.get::<BrowserSession>(),
+        Which::Yours => ctx.session_state.get::<YoursSession>().map(|s| s.0.clone()),
+    }
+}
+
+/// The browser a call means: the one it asks for, else the one of the tab or ref it names,
+/// else the current tab's. Errs when that browser is off, or the two disagree.
+fn pick(ctx: &ToolCtx, asked: Option<Which>, id: Option<&str>) -> Result<Which, ToolError> {
+    let handle = handle(ctx)?;
+    let state = handle.state.lock();
+    let named = id.map(Which::of);
+    if let (Some(asked), Some(named), Some(id)) = (asked, named, id)
+        && asked != named
+    {
+        return Err(ToolError::InvalidArgs(format!(
+            "{id} is in the {}, not the {}",
+            named.name(),
+            asked.name()
+        )));
+    }
+    let which = asked.or(named).unwrap_or(state.current);
+    if state.on(which) {
+        Ok(which)
+    } else {
+        Err(ToolError::Failed(match which {
+            Which::Builtin => BUILTIN_OFF.into(),
+            Which::Yours => YOURS_OFF.into(),
+        }))
+    }
+}
+
+/// The browser a page opens in: the one asked for, else the one of the tab named, else the
+/// built-in one while it is on. The user's own browser is never the default
+/// (connectors-entry-design §3.2).
+fn pick_new(ctx: &ToolCtx, asked: Option<Which>, tab: Option<&str>) -> Result<Which, ToolError> {
+    let fallback = if handle(ctx)?.state.lock().builtin { Which::Builtin } else { Which::Yours };
+    pick(ctx, asked.or(tab.map(Which::of)).or(Some(fallback)), tab)
+}
+
+/// A browser's session, as it is; for `authorities`, which must not start one.
+fn existing(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolError> {
+    match session_of(ctx, which) {
         Some(session) if !session.is_dead() => Ok(session),
         Some(_) => Err(ToolError::Failed(format!("{RESTARTED} Open a page with browser_navigate."))),
+        None if which == Which::Yours => Err(ToolError::Failed(
+            "No page is open in the user's own browser. Open one with browser_navigate.".into(),
+        )),
         None => Err(ToolError::Failed(NO_PAGE.into())),
     }
 }
 
-/// The session's browser, started on first use or again after it stopped; with a note to
-/// pass on when it was restarted.
-async fn browser(ctx: &ToolCtx) -> Result<(Arc<BrowserSession>, Option<&'static str>), ToolError> {
+/// A browser's session for a call that runs: its tab becomes the current one.
+fn in_use(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolError> {
+    let session = existing(ctx, which)?;
+    handle(ctx)?.touch(which);
+    Ok(session)
+}
+
+/// A browser's session, started on first use or again after it stopped; with a note to pass
+/// on when it was restarted.
+async fn start(ctx: &ToolCtx, which: Which) -> Result<(Arc<BrowserSession>, Option<&'static str>), ToolError> {
     let handle = handle(ctx)?;
     let _starting = handle.starting.lock().await;
     let mut note = None;
-    if let Some(session) = ctx.session_state.get::<BrowserSession>() {
+    if let Some(session) = session_of(ctx, which) {
         if !session.is_dead() {
             return Ok((session, None));
         }
-        ctx.session_state.remove::<BrowserSession>();
+        forget(&ctx.session_state, which);
         note = Some(RESTARTED);
     }
-    let browser = handle.pool.acquire(&handle.settings.config).await.map_err(failed)?;
+    let settings = handle.state.lock().settings.clone();
+    let config = match which {
+        Which::Builtin => settings.config.clone(),
+        Which::Yours => finx_browser::BrowserConfig {
+            backend: finx_browser::Backend::Extension,
+            ..settings.config.clone()
+        },
+    };
+    let browser = handle.pool.acquire(&config).await.map_err(failed)?;
     let guard = Arc::new(KernelGuard {
-        policy: handle.settings.policy.clone(),
+        policy: handle.policy.clone(),
         roots: handle.roots.clone(),
         grants: handle.grants.clone(),
     });
@@ -237,29 +438,41 @@ async fn browser(ctx: &ToolCtx) -> Result<(Arc<BrowserSession>, Option<&'static 
         SessionOptions {
             guard,
             downloads: handle.downloads.clone(),
-            navigation_timeout: handle.settings.navigation_timeout,
-            action_timeout: handle.settings.action_timeout,
+            navigation_timeout: settings.navigation_timeout,
+            action_timeout: settings.action_timeout,
             label: Some(handle.label.clone()),
+            prefix: which.prefix(),
         },
     ));
     session.adopt_pending().await.map_err(failed)?;
-    ctx.session_state.insert(session.clone());
+    match which {
+        Which::Builtin => ctx.session_state.insert(session.clone()),
+        Which::Yours => ctx.session_state.insert(Arc::new(YoursSession(session.clone()))),
+    }
     Ok((session, note))
 }
 
-/// The page the call was approved for (§7.4).
-fn approved(ctx: &ToolCtx) -> Option<finx_browser::session::PageTarget> {
+/// [`start`], for a call that runs: its tab becomes the current one.
+async fn browser(ctx: &ToolCtx, which: Which) -> Result<(Arc<BrowserSession>, Option<&'static str>), ToolError> {
+    let started = start(ctx, which).await?;
+    handle(ctx)?.touch(which);
+    Ok(started)
+}
+
+/// The page the call was approved for (§7.4), and its browser.
+fn approved(ctx: &ToolCtx) -> Option<(finx_browser::session::PageTarget, Which)> {
     ctx.authorities.iter().find_map(|authority| match authority {
-        Authority::Act { origin, target, .. }
-        | Authority::Upload { origin, target, .. }
-        | Authority::Script { origin, target } => {
-            Some(finx_browser::session::PageTarget {
+        Authority::Act { origin, target, own, .. }
+        | Authority::Upload { origin, target, own, .. }
+        | Authority::Script { origin, target, own } => Some((
+            finx_browser::session::PageTarget {
                 tab: target.tab.clone(),
                 frame: target.frame.clone(),
                 loader: target.loader.clone(),
                 origin: origin.clone(),
-            })
-        }
+            },
+            if *own { Which::Yours } else { Which::Builtin },
+        )),
         _ => None,
     })
 }
@@ -280,12 +493,14 @@ fn output(report: finx_browser::session::Report, note: Option<&str>) -> ToolOutp
     ToolOutput::text(text).with_details(json!({ "url": report.url, "title": report.title, "tab_id": report.tab }))
 }
 
-/// The origin of the tab's page, for `Observe`.
-async fn observe(ctx: &ToolCtx, tab: Option<&str>) -> Result<Vec<Authority>, ToolError> {
-    if ctx.session_state.get::<BrowserSession>().is_none() && handle(ctx)?.pool.has_host() {
-        browser(ctx).await?;
+/// The origin of a tab's page, for `Observe`. `id`: the tab or ref the call names.
+async fn observe(ctx: &ToolCtx, tab: Option<&str>, id: Option<&str>) -> Result<Vec<Authority>, ToolError> {
+    let which = pick(ctx, None, id)?;
+    // An embedded host may have pages the user handed over before any tool ran.
+    if which == Which::Builtin && session_of(ctx, which).is_none() && handle(ctx)?.pool.has_host() {
+        start(ctx, which).await?;
     }
-    let page = existing(ctx)?.page(tab).map_err(failed)?;
+    let page = existing(ctx, which)?.page(tab).map_err(failed)?;
     Ok(vec![Authority::Observe {
         origin: page.origin,
     }])
@@ -327,6 +542,24 @@ pub(crate) struct NavigateArgs {
     /// Tab id; the current tab by default.
     #[serde(default)]
     tab: Option<String>,
+    /// Which browser to open the url in. "builtin" (the default): a browser of its own, without
+    /// the user's sign-ins, for local pages, files and sites that need no account. "yours": the
+    /// user's own browser, with their real sign-ins; use it only when the task needs their
+    /// account or they ask for it, and the user is asked before each site's first use there.
+    /// Calls that name a tab or ref work in that tab's browser.
+    #[serde(default)]
+    browser: Option<Which>,
+}
+
+impl NavigateArgs {
+    /// A URL opens where `pick_new` says; back, forward and reload stay with the tab.
+    fn browser(&self, ctx: &ToolCtx) -> Result<Which, ToolError> {
+        if self.url.is_some() {
+            pick_new(ctx, self.browser, self.tab.as_deref())
+        } else {
+            pick(ctx, self.browser, self.tab.as_deref())
+        }
+    }
 }
 
 struct BrowserNavigate;
@@ -358,18 +591,20 @@ impl TypedTool for BrowserNavigate {
     }
 
     async fn authorities(&self, args: &NavigateArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        let which = args.browser(ctx)?;
         match (&args.url, args.action.as_deref()) {
             (Some(url), None) => Ok(vec![Authority::Navigate {
                 url: parse_url(url)?.to_string(),
+                own: which.own(),
             }]),
             (None, Some("reload")) => {
-                let session = existing(ctx)?;
+                let session = existing(ctx, which)?;
                 let tab = session.resolve_tab(args.tab.as_deref()).map_err(failed)?;
                 let url = tab.state.lock().url.clone();
-                Ok(vec![Authority::Navigate { url }])
+                Ok(vec![Authority::Navigate { url, own: which.own() }])
             }
             // History entries were visited already; the guard still stops refused ones.
-            (None, Some("back" | "forward")) => observe(ctx, args.tab.as_deref()).await,
+            (None, Some("back" | "forward")) => observe(ctx, args.tab.as_deref(), args.tab.as_deref()).await,
             (None, Some(other)) => Err(ToolError::InvalidArgs(format!(
                 "action must be back, forward or reload, got \"{other}\""
             ))),
@@ -380,6 +615,7 @@ impl TypedTool for BrowserNavigate {
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
         let title = match (str_arg(args, "url"), str_arg(args, "action")) {
+            (Some(url), _) if str_arg(args, "browser") == Some("yours") => format!("open {} in your browser", host_of(url)),
             (Some(url), _) => format!("open {}", host_of(url)),
             (None, Some(action)) => format!("browser {action}"),
             _ => "open a page".into(),
@@ -392,7 +628,8 @@ impl TypedTool for BrowserNavigate {
     }
 
     async fn run(&self, args: NavigateArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let (session, note) = browser(&ctx).await?;
+        let which = args.browser(&ctx)?;
+        let (session, note) = browser(&ctx, which).await?;
         let tab = args.tab.as_deref();
         let report = match (&args.url, args.action.as_deref()) {
             (Some(url), _) => {
@@ -431,6 +668,13 @@ pub(crate) struct SnapshotArgs {
     tab: Option<String>,
 }
 
+impl SnapshotArgs {
+    /// The tab or ref that says which browser.
+    fn id(&self) -> Option<&str> {
+        self.tab.as_deref().or(self.reference.as_deref()).or(self.frame.as_deref())
+    }
+}
+
 struct BrowserSnapshot;
 
 #[async_trait]
@@ -443,7 +687,7 @@ impl TypedTool for BrowserSnapshot {
         region, and mode \"text\" to read an article.";
 
     async fn authorities(&self, args: &SnapshotArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref()).await
+        observe(ctx, args.tab.as_deref(), args.id()).await
     }
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -459,7 +703,7 @@ impl TypedTool for BrowserSnapshot {
     }
 
     async fn run(&self, args: SnapshotArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let session = existing(&ctx)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.id())?)?;
         let mode = match args.mode.as_deref() {
             None | Some("tree") => SnapshotMode::Tree,
             Some("text") => SnapshotMode::Text,
@@ -577,7 +821,8 @@ impl TypedTool for BrowserAct {
 
     async fn authorities(&self, args: &ActArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
         let action = args.action(ctx.env.as_ref())?;
-        let session = existing(ctx)?;
+        let which = pick(ctx, None, args.tab.as_deref().or(args.reference.as_deref()))?;
+        let session = existing(ctx, which)?;
         let (page, label) = match (&args.reference, args.point()?) {
             (Some(_), Some(_)) => return Err(ToolError::InvalidArgs("give either ref or x and y, not both".into())),
             (Some(reference), None) => {
@@ -593,11 +838,13 @@ impl TypedTool for BrowserAct {
                 origin: page.origin,
                 paths,
                 target,
+                own: which.own(),
             },
             action => Authority::Act {
                 origin: page.origin,
                 target,
                 action: format!("{} {label}", action.verb()),
+                own: which.own(),
             },
         }])
     }
@@ -618,8 +865,8 @@ impl TypedTool for BrowserAct {
 
     async fn run(&self, args: ActArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         let action = args.action(ctx.env.as_ref())?;
-        let session = existing(&ctx)?;
-        let page = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
+        let (page, which) = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
+        let session = in_use(&ctx, which)?;
         let changed = || {
             let now = session
                 .resolve_tab(Some(&page.tab))
@@ -679,7 +926,7 @@ impl TypedTool for BrowserScreenshot {
         check how the page looks. To read or act on the page, use browser_snapshot instead.";
 
     async fn authorities(&self, args: &ScreenshotArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref()).await
+        observe(ctx, args.tab.as_deref(), args.tab.as_deref().or(args.reference.as_deref())).await
     }
 
     fn describe(&self, _args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -696,7 +943,7 @@ impl TypedTool for BrowserScreenshot {
 
     async fn run(&self, args: ScreenshotArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         no_images(&ctx)?;
-        let session = existing(&ctx)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref().or(args.reference.as_deref()))?)?;
         let element = match &args.reference {
             Some(reference) => Some(session.element(reference).await.map_err(failed)?),
             None => None,
@@ -773,7 +1020,7 @@ impl TypedTool for BrowserWait {
         what happens later.";
 
     async fn authorities(&self, args: &WaitArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref()).await
+        observe(ctx, args.tab.as_deref(), args.tab.as_deref()).await
     }
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -791,7 +1038,7 @@ impl TypedTool for BrowserWait {
     }
 
     async fn run(&self, args: WaitArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let session = existing(&ctx)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref())?)?;
         let conditions = [args.text.is_some(), args.text_gone.is_some(), args.url.is_some(), args.network_idle];
         if conditions.iter().filter(|c| **c).count() > 1 {
             return Err(ToolError::InvalidArgs("wait for one condition at a time".into()));
@@ -846,7 +1093,7 @@ impl TypedTool for BrowserConsole {
         the last read.";
 
     async fn authorities(&self, args: &ConsoleArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref()).await
+        observe(ctx, args.tab.as_deref(), args.tab.as_deref()).await
     }
 
     fn describe(&self, _args: &Value, _env: &dyn Environment) -> ToolDescription {
@@ -865,7 +1112,7 @@ impl TypedTool for BrowserConsole {
                 "level must be error, warning, info or debug, got \"{level}\""
             )));
         }
-        let session = existing(&ctx)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref())?)?;
         let report = session
             .console(args.tab.as_deref(), args.level.as_deref(), args.from_start)
             .map_err(failed)?;
@@ -886,6 +1133,9 @@ pub(crate) struct TabsArgs {
     /// For open: a URL to load in the new tab.
     #[serde(default)]
     url: Option<String>,
+    /// For open: which browser, as for browser_navigate; builtin when left out.
+    #[serde(default)]
+    browser: Option<Which>,
 }
 
 struct BrowserTabs;
@@ -913,12 +1163,14 @@ impl TypedTool for BrowserTabs {
         match (args.action.as_deref(), &args.url) {
             (Some("open"), Some(url)) => Ok(vec![Authority::Navigate {
                 url: parse_url(url)?.to_string(),
+                own: pick_new(ctx, args.browser, None)?.own(),
             }]),
             (Some("open"), None) => Ok(vec![Authority::Navigate {
                 url: "about:blank".into(),
+                own: pick_new(ctx, args.browser, None)?.own(),
             }]),
             (Some("select" | "close"), None) => match &args.tab {
-                Some(tab) => observe(ctx, Some(tab)).await,
+                Some(tab) => observe(ctx, Some(tab), Some(tab)).await,
                 None => Err(ToolError::InvalidArgs("give the tab id".into())),
             },
             (None | Some("list"), None) => Ok(Vec::new()),
@@ -950,21 +1202,9 @@ impl TypedTool for BrowserTabs {
     async fn run(&self, args: TabsArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         let tab_id = || args.tab.clone().ok_or_else(|| ToolError::InvalidArgs("give the tab id".into()));
         match args.action.as_deref().unwrap_or("list") {
-            "list" => {
-                // An embedded host may have pages the user handed over before any tool ran.
-                let session = match ctx
-                    .session_state
-                    .get::<BrowserSession>()
-                    .filter(|s| !s.is_dead())
-                {
-                    Some(session) => session,
-                    None if handle(&ctx)?.pool.has_host() => browser(&ctx).await?.0,
-                    None => return Ok(ToolOutput::text("No tabs are open.")),
-                };
-                Ok(ToolOutput::text(list(&session)))
-            }
+            "list" => Ok(ToolOutput::text(list(&ctx).await?)),
             "open" => {
-                let (session, note) = browser(&ctx).await?;
+                let (session, note) = browser(&ctx, pick_new(&ctx, args.browser, None)?).await?;
                 let tab = session.open_tab().await.map_err(failed)?;
                 match &args.url {
                     Some(url) => {
@@ -980,15 +1220,16 @@ impl TypedTool for BrowserTabs {
                 }
             }
             "select" => {
-                let session = existing(&ctx)?;
-                let tab = session.select_tab(&tab_id()?).map_err(failed)?;
+                let id = tab_id()?;
+                let session = in_use(&ctx, pick(&ctx, None, Some(&id))?)?;
+                let tab = session.select_tab(&id).map_err(failed)?;
                 Ok(ToolOutput::text(format!("Selected tab {}.\n{}", tab.id, session.header(&tab))))
             }
             "close" => {
-                let session = existing(&ctx)?;
                 let id = tab_id()?;
+                let session = existing(&ctx, pick(&ctx, None, Some(&id))?)?;
                 session.close_tab(&id).await.map_err(failed)?;
-                Ok(ToolOutput::text(format!("Closed tab {id}.\n{}", list(&session))))
+                Ok(ToolOutput::text(format!("Closed tab {id}.\n{}", list(&ctx).await?)))
             }
             other => Err(ToolError::InvalidArgs(format!(
                 "action must be list, open, select or close, got \"{other}\""
@@ -1004,23 +1245,46 @@ fn prefixed(note: Option<&str>, text: String) -> String {
     }
 }
 
-fn list(session: &BrowserSession) -> String {
-    let tabs = session.tabs();
-    if tabs.is_empty() {
-        return "No tabs are open.".into();
-    }
-    let current = session.current_tab_id();
-    let mut lines = vec![format!("{} tab{}:", tabs.len(), if tabs.len() == 1 { "" } else { "s" })];
-    for tab in tabs {
-        let (url, title) = {
-            let state = tab.state.lock();
-            (state.url.clone(), state.title.clone())
+/// The tabs of the session's browsers; each browser said by name while both are on.
+async fn list(ctx: &ToolCtx) -> Result<String, ToolError> {
+    let handle = handle(ctx)?;
+    let (builtin, yours, current) = {
+        let state = handle.state.lock();
+        (state.builtin, state.yours, state.current)
+    };
+    let mut lines = Vec::new();
+    for which in [Which::Builtin, Which::Yours] {
+        if !(if which == Which::Builtin { builtin } else { yours }) {
+            continue;
+        }
+        let session = match session_of(ctx, which).filter(|s| !s.is_dead()) {
+            Some(session) => Some(session),
+            // An embedded host may have pages the user handed over before any tool ran.
+            None if which == Which::Builtin && handle.pool.has_host() => Some(start(ctx, which).await?.0),
+            None => None,
         };
-        let marker = if current.as_deref() == Some(tab.id.as_str()) { " (current)" } else { "" };
-        lines.push(format!("- tab {}{marker}: \"{}\" {url}", tab.id, title.replace('"', "'")));
+        let tabs = session.as_ref().map(|s| s.tabs()).unwrap_or_default();
+        if tabs.is_empty() {
+            continue;
+        }
+        let session = session.expect("tabs come from a session");
+        let current_tab = (which == current).then(|| session.current_tab_id()).flatten();
+        let place = if builtin && yours { format!(" in the {}", which.name()) } else { String::new() };
+        lines.push(format!("{} tab{}{place}:", tabs.len(), if tabs.len() == 1 { "" } else { "s" }));
+        for tab in tabs {
+            let (url, title) = {
+                let state = tab.state.lock();
+                (state.url.clone(), state.title.clone())
+            };
+            let marker = if current_tab.as_deref() == Some(tab.id.as_str()) { " (current)" } else { "" };
+            lines.push(format!("- tab {}{marker}: \"{}\" {url}", tab.id, title.replace('"', "'")));
+        }
+    }
+    if lines.is_empty() {
+        return Ok("No tabs are open.".into());
     }
     // Titles and URLs come from pages.
-    finx_browser::snapshot::wrap_page_content("browser", &lines.join("\n"))
+    Ok(finx_browser::snapshot::wrap_page_content("browser", &lines.join("\n")))
 }
 
 // ---- browser_eval ----
@@ -1052,10 +1316,12 @@ impl TypedTool for BrowserEval {
         if args.expression.trim().is_empty() {
             return Err(ToolError::InvalidArgs("expression must not be empty".into()));
         }
-        let page = existing(ctx)?.page(args.tab.as_deref()).map_err(failed)?;
+        let which = pick(ctx, None, args.tab.as_deref())?;
+        let page = existing(ctx, which)?.page(args.tab.as_deref()).map_err(failed)?;
         Ok(vec![Authority::Script {
             target: page_target(&page),
             origin: page.origin,
+            own: which.own(),
         }])
     }
 
@@ -1071,8 +1337,8 @@ impl TypedTool for BrowserEval {
     }
 
     async fn run(&self, args: EvalArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let session = existing(&ctx)?;
-        let page = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
+        let (page, which) = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
+        let session = in_use(&ctx, which)?;
         let report = session.eval(&page, &args.expression).await.map_err(failed)?;
         Ok(output(report, None))
     }
@@ -1095,21 +1361,24 @@ pub(crate) struct BatchStep {
     args: Value,
 }
 
-struct BrowserBatch;
+struct BrowserBatch {
+    /// Both browsers are on: steps are the tools that take a browser.
+    both: bool,
+}
 
 /// A batch step's tool and its arguments.
 type Step = (Arc<dyn Tool>, Value);
 
 impl BatchArgs {
     /// Each step with its tool; an unknown or nested tool fails the whole call.
-    fn tools(&self) -> Result<Vec<Step>, ToolError> {
+    fn tools(&self, both: bool) -> Result<Vec<Step>, ToolError> {
         if self.steps.is_empty() {
             return Err(ToolError::InvalidArgs("give at least one step".into()));
         }
         if self.steps.len() > MAX_STEPS {
             return Err(ToolError::InvalidArgs(format!("at most {MAX_STEPS} steps")));
         }
-        let tools = step_tools();
+        let tools = step_tools(both);
         self.steps
             .iter()
             .enumerate()
@@ -1145,7 +1414,7 @@ impl TypedTool for BrowserBatch {
 
     /// The first step's: later steps may run on another page, so they are judged as they come.
     async fn authorities(&self, args: &BatchArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        let steps = args.tools()?;
+        let steps = args.tools(self.both)?;
         let (tool, step_args) = &steps[0];
         tool.authorities(step_args, ctx).await
     }
@@ -1164,7 +1433,7 @@ impl TypedTool for BrowserBatch {
     }
 
     async fn run(&self, args: BatchArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let steps = args.tools()?;
+        let steps = args.tools(self.both)?;
         let judge = handle(&ctx)?.judge.get().cloned();
         let total = steps.len();
         let mut content = Vec::new();
@@ -1282,7 +1551,7 @@ mod tests {
         let mut policy = SitePolicy::default();
         policy.denied_domains.push("evil.test".into());
         let guard = KernelGuard {
-            policy: Arc::new(policy),
+            policy: Arc::new(Mutex::new(Arc::new(policy))),
             roots: vec![dir.path().to_path_buf()],
             grants: Arc::new(Mutex::new(vec![SiteGrant {
                 authority: finx_protocol::GrantAuthority::Navigate,

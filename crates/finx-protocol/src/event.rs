@@ -135,6 +135,10 @@ pub enum EventMsg {
         /// first by default.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         proposed_grants: Vec<SiteGrant>,
+        /// The call works in the user's own browser, with their real sign-ins, rather than
+        /// the built-in one (connectors-entry-design §3.4): clients say so.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        own_browser: bool,
     },
     ApprovalResolved {
         call_id: String,

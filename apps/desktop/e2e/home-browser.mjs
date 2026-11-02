@@ -26,6 +26,8 @@ const userHome = path.join(work, "home");
 fs.mkdirSync(home, { recursive: true });
 fs.mkdirSync(userHome, { recursive: true });
 const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINX_CREDENTIAL_STORE: "file", FINX_NO_BROWSER: "1" };
+// No model key either, so the first-run page always opens, once the models arrive, and can be left.
+for (const k of Object.keys(env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete env[k];
 // ── the app, driven over the DevTools protocol (as e2e/stale-model.mjs) ──
 let app = null;
 async function launch() {
@@ -108,8 +110,10 @@ try {
   const page = await launch();
   // Leave onboarding without configuring a model: browsing must work independently.
   await page.until("app loaded", `!!document.querySelector("button")`);
-  // The onboarding page may show up after the first check: keep leaving it until the home page is there.
-  await page.until("onboarding left", `(() => { const skip = [...document.querySelectorAll("button")].find(b => /稍后|later|skip/i.test(b.textContent)); if (skip) { skip.click(); return false; } return !!document.querySelector(".ctool button[aria-pressed]"); })()`);
+  // It opens only once the models have arrived, after the home page has shown: wait for it, then leave it.
+  const skip = `[...document.querySelectorAll("button")].find(b => /稍后|later|skip/i.test(b.textContent))`;
+  await page.until("the first-run page", `!!${skip}`);
+  await page.run(`${skip}.click()`);
   const button = '.ctool button[aria-pressed]';
   await page.until("home browser button", `!!document.querySelector(${JSON.stringify(button)})`);
   await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);

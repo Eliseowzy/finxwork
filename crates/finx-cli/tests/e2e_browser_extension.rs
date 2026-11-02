@@ -2,8 +2,10 @@
 //! A real Chrome loads apps/chrome-extension, starts the real `finx browser native-host`
 //! through the manifest that `finx browser extension install` wrote, and that host lends the
 //! browser to a real `finx serve`, whose session (driven by the mock model) opens a page and
-//! clicks on it. Skipped when no Chromium-family browser is installed. Another test stands in
-//! for the extension to check the bridge versions (D-219) without a browser.
+//! clicks on it. Then the built-in browser is turned on while the session is open, and the
+//! session uses both (connectors-entry-design §9.2, §9.4). Skipped when no Chromium-family
+//! browser is installed. Another test stands in for the extension to check the bridge versions
+//! (D-219) without a browser.
 
 mod common;
 
@@ -78,7 +80,8 @@ async fn a_session_drives_the_users_chrome_through_the_extension() {
         eprintln!("no Chromium-family browser installed; skipping");
         return;
     };
-    let env = TestEnv::new("bypass-permissions", "[browser]\nenabled = true\nbackend = \"extension\"\n").await;
+    // Only the user's own browser: there is no desktop app, so the built-in one stays off.
+    let env = TestEnv::new("bypass-permissions", "[browser]\nextension = true\n").await;
     let profile = env.work().join("chrome-profile");
     let socket = env.home.path().join("run").join("finx.sock");
 
@@ -173,17 +176,60 @@ async fn a_session_drives_the_users_chrome_through_the_extension() {
     let urls = pages(&chrome).await;
     assert!(urls.contains(&page) && urls.contains(&mine), "{urls:?}");
 
-    // Closing the session closes the agent's tab, and only that one.
-    client.request("session/close", json!({"session_id": session})).await.unwrap();
-    let mut urls = Vec::new();
-    for _ in 0..100 {
-        urls = pages(&chrome).await;
-        if !urls.contains(&page) {
+    // The built-in browser, turned on while the session is open, is there from its next request:
+    // a page opens in it, another in the user's Chrome, and the tabs of both are listed.
+    let written = client
+        .request(
+            "config/write",
+            json!({"layer": "user", "edits": [
+                {"key_path": "browser.enabled", "value": true},
+                {"key_path": "browser.headless", "value": true},
+                {"key_path": "browser.executable", "value": chrome_exe.display().to_string()},
+            ]}),
+        )
+        .await
+        .expect("the configuration is written");
+    assert_eq!(written["status"], "ok", "{written}");
+    let builtin_page = serve_page("<title>Built in</title><h1>In the built-in browser</h1>").await;
+    let yours_page = serve_page("<title>Yours</title><h1>Again in the user's Chrome</h1>").await;
+    let mut both = None;
+    // The service hands the new settings to the session a moment after the write: until then
+    // the session has the user's browser alone, and the tabs say so.
+    for _ in 0..50 {
+        let turn = native_prompt(&client, &mut events, &session, &format!("[[mock:browsers:{builtin_page} {yours_page}]] both"), true).await;
+        if turn.text.contains("in the built-in browser") {
+            both = Some(turn);
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    assert!(!urls.contains(&page) && urls.contains(&mine), "{urls:?}");
+    let both = both.expect("the session takes up the new settings");
+    assert_eq!(both.end["type"], "task_completed", "{:?}", both.events);
+    let results: Vec<String> = both
+        .events
+        .iter()
+        .filter(|e| e["type"] == "tool_completed")
+        .map(|e| e["result"].to_string())
+        .collect();
+    assert!(results[0].contains("In the built-in browser"), "{results:?}");
+    assert!(results[1].contains("Again in the user's Chrome"), "{results:?}");
+    assert!(both.text.contains("in the built-in browser") && both.text.contains("in the user's own browser"), "{}", both.text);
+    assert!(both.text.contains("tab y"), "the user's tabs are told apart: {}", both.text);
+    let urls = pages(&chrome).await;
+    assert!(urls.contains(&yours_page) && !urls.contains(&builtin_page), "the built-in page is not in the user's Chrome: {urls:?}");
+
+    // Closing the session closes the agent's tab, and only that one.
+    client.request("session/close", json!({"session_id": session})).await.unwrap();
+    let mut urls = Vec::new();
+    // Two browsers' tabs close, on a machine that may be busy: up to 30 seconds.
+    for _ in 0..300 {
+        urls = pages(&chrome).await;
+        if !urls.contains(&page) && !urls.contains(&yours_page) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(!urls.contains(&page) && !urls.contains(&yours_page) && urls.contains(&mine), "{urls:?}");
 
     client.request("server/shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(20), service.wait()).await;

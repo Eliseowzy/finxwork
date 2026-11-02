@@ -48,6 +48,7 @@ const bridge: Bridge = {
   retryKernel: () => ipcRenderer.send("retry-kernel"),
   restartKernel: (now: boolean) => ipcRenderer.send("restart-kernel", now),
   openSettings: (page?: string) => ipcRenderer.send("open-settings", page),
+  showInMain: (command: string) => ipcRenderer.send("main-command", command),
   systemBrowsers: () => ipcRenderer.invoke("system-browsers"),
   setUpSystemBrowser: () => ipcRenderer.invoke("system-browser-set-up"),
   openSystemBrowser: (id: string, page?: "extensions") => ipcRenderer.invoke("system-browser-open", id, page),

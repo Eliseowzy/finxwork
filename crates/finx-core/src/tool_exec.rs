@@ -122,6 +122,7 @@ pub(crate) async fn execute_batch(
                 proposed_rule,
                 proposed_mode,
                 proposed_grants,
+                own_browser,
             } => {
                 // Nobody should be asked about a call that cannot succeed.
                 if !runs_before && let Err(err) = check(session, task, tool.as_ref(), &call).await {
@@ -136,6 +137,7 @@ pub(crate) async fn execute_batch(
                     rule: proposed_rule,
                     mode: proposed_mode,
                     grants: proposed_grants,
+                    own_browser,
                 };
                 match request_approval(session, task, &call, summary, reason, proposal).await {
                     Approval::Granted => {
@@ -231,11 +233,12 @@ async fn gate(session: &Session, call: &ToolCall, tool: &dyn Tool, authorities: 
     Gate::Allow
 }
 
-/// What approving for the session would keep.
+/// What approving for the session would keep, and where the call works.
 struct Proposal {
     rule: Option<CommandRule>,
     mode: Option<PermissionMode>,
     grants: Vec<SiteGrant>,
+    own_browser: bool,
 }
 
 async fn request_approval(
@@ -260,6 +263,7 @@ async fn request_approval(
         proposed_rule: proposal.rule.clone(),
         proposed_mode: proposal.mode,
         proposed_grants: proposal.grants.clone(),
+        own_browser: proposal.own_browser,
     });
     let decision = tokio::select! {
         decision = rx => decision.unwrap_or(ApprovalDecision::Abort),

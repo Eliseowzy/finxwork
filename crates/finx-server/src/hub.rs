@@ -107,6 +107,8 @@ pub(crate) enum HubCmd {
         op: Op,
         reply: oneshot::Sender<Result<(), RpcError>>,
     },
+    /// The browsers' and desktop control's settings, after the configuration changed.
+    System(Box<finx_core::SystemSettings>),
 }
 
 /// What the session's log says about it that its events do not: when it was created and how
@@ -460,6 +462,11 @@ impl Hub {
                 self.subscribers.retain(|s| s.conn.id != conn);
                 self.count_attached();
                 self.update_idle();
+            }
+            HubCmd::System(settings) => {
+                if let Some(kernel) = &self.kernel {
+                    kernel.set_system_connectors(*settings);
+                }
             }
             HubCmd::Meta { op, reply } => {
                 let result = if self.closing {

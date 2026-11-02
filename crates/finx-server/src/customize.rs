@@ -195,6 +195,30 @@ impl Server {
 
     fn config_changed(&self, file: &Path) {
         self.notify(Topic::Config, method::CONFIG_CHANGED, json!({ "file": file }));
+        self.push_system_connectors();
+    }
+
+    /// Every open session's browser and desktop settings, from the configuration as it is now:
+    /// each takes them up before its next request (connectors-entry-design §9.4). Sessions of
+    /// one folder share one read of their files.
+    fn push_system_connectors(&self) {
+        let server = self.clone();
+        tokio::spawn(async move {
+            let mut by_folder: std::collections::BTreeMap<PathBuf, Vec<crate::hub::HubHandle>> = Default::default();
+            for hub in server.hubs() {
+                let cwd = hub.shared.summary.lock().cwd.clone();
+                by_folder.entry(cwd).or_default().push(hub);
+            }
+            for (cwd, hubs) in by_folder {
+                let (home, overrides) = (server.0.home.clone(), server.0.overrides.clone());
+                let opened = tokio::task::spawn_blocking(move || finx_core::Workspace::open(&home, &cwd, &overrides)).await;
+                let Ok(Ok(workspace)) = opened else { continue };
+                let settings = finx_core::SystemSettings::of(&workspace.config);
+                for hub in hubs {
+                    let _ = hub.send(crate::hub::HubCmd::System(Box::new(settings.clone()))).await;
+                }
+            }
+        });
     }
 
     fn skills_changed(&self) {

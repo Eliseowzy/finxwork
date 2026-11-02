@@ -108,19 +108,23 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   if (site) {
     const origin = grants[0].origin;
     const every = grants.findIndex((g) => g.origin === "*");
-    // Bypass skips a public site's question everywhere but on the user's own Chrome, so a
-    // question that offers every site in bypass is that browser's (browser-design §8.4.3).
-    const ownChrome = every >= 0 && view.info.permission_mode === "bypass-permissions";
+    // In the user's own browser the accounts are real: the question says so, and in bypass why
+    // it is asked at all (connectors-entry-design §3.4).
+    const own = a.own_browser === true;
+    const bypass = view.info.permission_mode === "bypass-permissions";
+    const opening = a.name === "browser_navigate" || a.name === "browser_tabs";
     const url = typeof argsOf(a.args).url === "string" ? (argsOf(a.args).url as string) : a.summary;
     return (
       <div className="appr" role="region" aria-label={t("approval.label")}>
         <div className="appr-h">
           <Mark size={16} />
-          <b title={origin}>{t("approval.siteQuestion", { site: hostOf(origin) })}</b>
+          <b title={origin}>
+            {t(!own ? "approval.siteQuestion" : opening ? "approval.siteQuestionYours" : "approval.siteActYours", { site: hostOf(origin) })}
+          </b>
           {queue}
         </div>
         <div className="appr-site">
-          {ownChrome && <span>{t("approval.siteOwnChrome")}</span>}
+          {own && <span>{t(bypass ? "approval.siteYoursBypass" : "approval.siteYours")}</span>}
           <code className="sel-text" title={url}>{url}</code>
         </div>
         <div className="appr-f">

@@ -793,6 +793,8 @@ pub struct PendingApproval {
     pub proposed_mode: Option<PermissionMode>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proposed_grants: Vec<SiteGrant>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub own_browser: bool,
 }
 
 // ---- Resources and models ----

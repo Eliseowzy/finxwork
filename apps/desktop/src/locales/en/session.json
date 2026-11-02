@@ -127,7 +127,6 @@
     "sessionDesc": "Calls like this one won't ask again in this session",
     "sessionRule": "Commands starting with “{{rule}}” won't ask again in this session",
     "siteQuestion": "Allow finx to use {{site}}?",
-    "siteOwnChrome": "This is your own Chrome with your real sign-ins, so it asks even when permissions are bypassed.",
     "siteOnce": "Allow Once",
     "siteAlways": "Always Allow This Site",
     "siteAlwaysDesc": "Browsing and acting on this site won't ask again; saved in ~/.finx/config.toml",
@@ -146,7 +145,11 @@
     "more_one": "{{count}} more line",
     "more_other": "{{count}} more lines",
     "remember": "Remember",
-    "rememberDesc": "Also save the permission in ~/.finx/config.toml, so later sessions don't ask"
+    "rememberDesc": "Also save the permission in ~/.finx/config.toml, so later sessions don't ask",
+    "siteQuestionYours": "Open {{site}} in your browser?",
+    "siteActYours": "Allow finx to use {{site}} in your browser?",
+    "siteYours": "It uses the accounts you're signed in to.",
+    "siteYoursBypass": "It uses the accounts you're signed in to, so it asks even when permissions are bypassed."
   },
   "notice": {
     "label": "Notice",
@@ -184,7 +187,10 @@
     "webComment": "Page comment",
     "webElement": "Page element",
     "steerMode": "Interject",
-    "follow_upMode": "Queue"
+    "follow_upMode": "Queue",
+    "connectors": "Connectors",
+    "browseConnectors": "Browse Connectors",
+    "manageConnectors": "Manage Connectors"
   },
   "inspector": {
     "label": "Session info",

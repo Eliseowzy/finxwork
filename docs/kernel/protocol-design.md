@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.18 |
-| 日期 | 2026-10-30 |
+| 版本 | v0.19 |
+| 日期 | 2026-11-02 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.19 | 2026-11-02 | 两个浏览器并存（desktop/connectors-entry-design §3.4、§9），版本 2 之内：`approval_requested` 和快照里的待审批项（PendingApproval）新增可选的 `own_browser`，为 true 时这次调用落在用户自己的浏览器里（用的是用户的真实登录状态），桌面端据此写"在你的浏览器里"；为 false 时不出现在 JSON 里，旧客户端忽略即可 |
 | v0.18 | 2026-10-30 | 模型不可用（desktop-design §7 P15），都在版本 2 之内：`session/new` 要的模型所属服务商不存在（例如本机连接已断开或删除）时，返回新错误码 −32022 `model_unavailable`，data 带 `provider`，不再是 invalid_params；引用格式不对仍是 invalid_params |
 | v0.17 | 2026-10-30 | 无项目会话，都在版本 2 之内：`session/new` 的 `cwd` 改为可选，省略时会话没有项目，内核在 `~/.finx/chats/` 下为它新建一个空文件夹作为工作目录，不向上查找项目根、不读项目配置；SessionSummary 增加 `no_project`；`skills/list` 两个参数都不给时，返回无项目会话能找到的 Skill（§6.4） |
 | v0.16 | 2026-10-30 | 上下文明细（technical-design §7.5.8），都在版本 2 之内：新增方法 `session/context`，返回已加载会话的 ContextReport；新增事件 `context_reported`（`/context` 的答复）；`skills/list` 的内置命令多了 `context`；ACP 把 `/context` 的明细作为 `agent_message_chunk` 发出 |

@@ -76,6 +76,7 @@ fn ask(summary: String, reason: Option<String>) -> Gate {
         proposed_rule: None,
         proposed_mode: None,
         proposed_grants: Vec::new(),
+        own_browser: false,
     }
 }
 
@@ -164,6 +165,7 @@ fn evaluate_bash(command: &str, view: &SessionView) -> Gate {
         proposed_rule,
         proposed_mode: None,
         proposed_grants: Vec::new(),
+        own_browser: false,
     }
 }
 
@@ -355,6 +357,7 @@ fn evaluate_file_change(call: &ToolCall, args: &serde_json::Value, raw_path: &st
             proposed_rule: None,
             proposed_mode: Some(PermissionMode::AcceptEdits),
             proposed_grants: Vec::new(),
+        own_browser: false,
         },
         PermissionMode::AcceptEdits | PermissionMode::BypassPermissions => Gate::Allow,
     }

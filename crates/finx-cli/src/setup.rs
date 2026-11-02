@@ -174,7 +174,7 @@ impl Runtime {
         let mut deps = runtime::kernel_deps(&self.config, &self.cwd, self.project_root.as_deref(), self.llm.clone(), store, &[])?;
         deps.mcp_servers = self.mcp_servers.clone();
         // `finx exec` runs one session: its own pool, without a window unless configured.
-        if self.config.browser.enabled {
+        if self.config.browser.configured_on() {
             deps.browser_pool = Some(Arc::new(finx_core::BrowserPool::new(self.home.browser_dir(), false)));
         }
         Ok(deps)
