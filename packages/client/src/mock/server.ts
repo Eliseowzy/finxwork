@@ -722,6 +722,10 @@ export class MockServer {
       }
       case "skills/files":
         return this.customize.skillsFiles((p as P<"skills/files">).path) satisfies R<"skills/files">;
+      case "skills/read": {
+        const q = p as P<"skills/read">;
+        return this.customize.skillsRead(q.path, q.file) satisfies R<"skills/read">;
+      }
       case "config/read":
         return this.customize.configRead(!!(p as P<"config/read">).layers) satisfies R<"config/read">;
       case "browser/status":

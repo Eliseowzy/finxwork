@@ -461,6 +461,7 @@ impl NativeProtocol {
                 self.call(id, params, conn, |server, p: SkillsSetEnabledParams| async move { server.skills_set_enabled(p).await })
             }
             method::SKILLS_FILES => self.call(id, params, conn, |server, p: SkillsFilesParams| async move { server.skills_files(p).await }),
+            method::SKILLS_READ => self.call(id, params, conn, |server, p: SkillsReadParams| async move { server.skills_read(p).await }),
             method::MCP_LIST => {
                 let conn2 = conn.clone();
                 self.call(id, params, conn, move |server, p: McpListParams| async move { server.mcp_list(p, &conn2).await })

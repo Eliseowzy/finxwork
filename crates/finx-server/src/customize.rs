@@ -481,6 +481,12 @@ impl Server {
             .map_err(blocking_error)?
     }
 
+    pub async fn skills_read(&self, params: SkillsReadParams) -> Result<SkillsReadResult, RpcError> {
+        tokio::task::spawn_blocking(move || install::read(&params.path, &params.file).map_err(install_error))
+            .await
+            .map_err(blocking_error)?
+    }
+
     // ---- MCP servers ----
 
     /// Open sessions' view of the workspace's servers.

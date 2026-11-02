@@ -200,6 +200,12 @@
       "$ref": "#/definitions/SkillsListResult"
     },
     {
+      "$ref": "#/definitions/SkillsReadParams"
+    },
+    {
+      "$ref": "#/definitions/SkillsReadResult"
+    },
+    {
       "$ref": "#/definitions/SkillsRemoveParams"
     },
     {
@@ -6147,6 +6153,22 @@
       ],
       "type": "object"
     },
+    "SkillImage": {
+      "properties": {
+        "data": {
+          "description": "Base64.",
+          "type": "string"
+        },
+        "mime_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "mime_type"
+      ],
+      "type": "object"
+    },
     "SkillInstallScope": {
       "oneOf": [
         {
@@ -6472,6 +6494,56 @@
         "enabled",
         "skills",
         "warnings"
+      ],
+      "type": "object"
+    },
+    "SkillsReadParams": {
+      "properties": {
+        "file": {
+          "description": "A file in it, as `skills/files` lists it.",
+          "type": "string"
+        },
+        "path": {
+          "description": "The skill's directory or its `SKILL.md`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "path"
+      ],
+      "type": "object"
+    },
+    "SkillsReadResult": {
+      "properties": {
+        "binary": {
+          "description": "Not UTF-8 text (an image, an archive, a program).",
+          "type": "boolean"
+        },
+        "image": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SkillImage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The file is a PNG, JPEG, GIF or WebP image, by its signature: its bytes, to show."
+        },
+        "text": {
+          "description": "Empty when the file is not text.",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "`text` was cut at 256 KB.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "binary",
+        "text",
+        "truncated"
       ],
       "type": "object"
     },
@@ -7206,6 +7278,10 @@
     "skills/list": {
       "params": "SkillsListParams",
       "result": "SkillsListResult"
+    },
+    "skills/read": {
+      "params": "SkillsReadParams",
+      "result": "SkillsReadResult"
     },
     "skills/remove": {
       "params": "SkillsRemoveParams",

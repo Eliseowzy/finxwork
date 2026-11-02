@@ -8,6 +8,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::SystemTime;
 
+use base64::Engine as _;
 use finx_protocol::api::SkillEntry;
 use finx_protocol::api::SkillScope;
 use finx_protocol::api::SkillState;
@@ -15,10 +16,13 @@ use finx_protocol::customize::ConfigEdit;
 use finx_protocol::customize::ConfigLayer;
 use finx_protocol::customize::ConfigMerge;
 use finx_protocol::customize::SkillFileInfo;
+use finx_protocol::customize::SkillImage;
 use finx_protocol::customize::SkillSource;
 use finx_protocol::customize::SkillSourceKind;
 use finx_protocol::customize::SkillsFilesResult;
+use finx_protocol::customize::SkillsReadResult;
 use finx_protocol::customize::SkillsSetEnabledResult;
+use finx_tools::image::ImageFormat;
 
 use super::SKILL_FILE;
 use super::expand;
@@ -406,6 +410,52 @@ pub fn files(path: &Path) -> Result<SkillsFilesResult, InstallError> {
     Ok(SkillsFilesResult { skill_md, truncated, files })
 }
 
+/// `skills/read`: one file of a skill, for the detail page's contents (§9.4). Only files
+/// inside the skill's directory are read; a path out of it, or a link that leads out, is
+/// refused. Text that is not UTF-8 comes back as `binary` with no text; an image (by its
+/// signature) also with its bytes, up to the size a whole skill may have (§9.1).
+pub fn read(path: &Path, file: &str) -> Result<SkillsReadResult, InstallError> {
+    let dir = skill_dir(path);
+    let outside = || InstallError::Invalid(format!("{file} is not a file of the skill in {}", dir.display()));
+    let relative = Path::new(file);
+    if relative.components().any(|c| !matches!(c, std::path::Component::Normal(_))) {
+        return Err(outside());
+    }
+    let root = std::fs::canonicalize(&dir).map_err(io_err(format!("cannot read {}", dir.display())))?;
+    let real = std::fs::canonicalize(root.join(relative)).map_err(io_err(format!("cannot read {file}")))?;
+    if !real.starts_with(&root) || !real.is_file() {
+        return Err(outside());
+    }
+    let mut bytes = Vec::new();
+    File::open(&real)
+        .map_err(io_err(format!("cannot read {file}")))?
+        .take(MAX_SKILL_MD as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(io_err(format!("cannot read {file}")))?;
+    if let Some(format) = ImageFormat::detect(&bytes) {
+        let whole = std::fs::metadata(&real).is_ok_and(|m| m.len() <= MAX_TOTAL_BYTES);
+        let image = if whole {
+            let bytes = std::fs::read(&real).map_err(io_err(format!("cannot read {file}")))?;
+            Some(SkillImage { mime_type: format.mime_type().to_owned(), data: base64::engine::general_purpose::STANDARD.encode(bytes) })
+        } else {
+            None
+        };
+        return Ok(SkillsReadResult { text: String::new(), truncated: false, binary: true, image });
+    }
+    let truncated = bytes.len() > MAX_SKILL_MD;
+    bytes.truncate(MAX_SKILL_MD);
+    // A cut can split a character: only what comes after the last whole one may be invalid.
+    let text = match std::str::from_utf8(&bytes) {
+        Ok(text) => Some(text),
+        Err(e) if truncated && e.error_len().is_none() => std::str::from_utf8(&bytes[..e.valid_up_to()]).ok(),
+        Err(_) => None,
+    };
+    Ok(match text.filter(|t| !t.contains('\0')) {
+        Some(text) => SkillsReadResult { text: text.to_owned(), truncated, binary: false, image: None },
+        None => SkillsReadResult { text: String::new(), truncated: false, binary: true, image: None },
+    })
+}
+
 /// `skills/set_enabled` (§9.3, skill-design D-175). A skill that is on by default is turned
 /// off by adding its directory to the user's `skills.disabled`; one that is off by default
 /// (a project's `.claude/skills`) is turned on by adding it to `skills.opt_in`. Turning
@@ -628,6 +678,40 @@ mod tests {
         assert!(matches!(remove(&elsewhere, &root, &trash), Err(InstallError::NotRemovable(_))));
         remove(&mine.join(SKILL_FILE), &root, &trash).unwrap();
         assert!(!mine.exists());
+    }
+
+    #[test]
+    fn reads_files_inside_the_skill_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let at = skill(dir.path(), "reader", "Reads.");
+        let run = read(&at, "scripts/run.sh").unwrap();
+        assert_eq!((run.text.as_str(), run.truncated, run.binary), ("echo hi\n", false, false));
+        assert!(read(&at.join(SKILL_FILE), "SKILL.md").unwrap().text.contains("name: reader"));
+
+        std::fs::write(at.join("logo.png"), b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR").unwrap();
+        let png = read(&at, "logo.png").unwrap();
+        assert!(png.binary && png.text.is_empty());
+        let image = png.image.unwrap();
+        assert_eq!(image.mime_type, "image/png");
+        assert_eq!(base64::engine::general_purpose::STANDARD.decode(image.data).unwrap(), b"\x89PNG\r\n\x1a\n\0\0\0\x0dIHDR");
+        std::fs::write(at.join("data.bin"), [0, 0xff, 0xfe]).unwrap();
+        let bin = read(&at, "data.bin").unwrap();
+        assert!(bin.binary && bin.image.is_none());
+
+        // A cut in the middle of a character is still text.
+        std::fs::write(at.join("long.md"), "中".repeat(MAX_SKILL_MD)).unwrap();
+        let long = read(&at, "long.md").unwrap();
+        assert!(long.truncated && !long.binary && long.text.len() <= MAX_SKILL_MD);
+
+        std::fs::write(dir.path().join("secret.txt"), "s").unwrap();
+        for out in ["../secret.txt", "/etc/hosts", "scripts"] {
+            assert!(matches!(read(&at, out), Err(InstallError::Invalid(_))), "{out}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path().join("secret.txt"), at.join("secret.txt")).unwrap();
+            assert!(matches!(read(&at, "secret.txt"), Err(InstallError::Invalid(_))));
+        }
     }
 
     #[test]

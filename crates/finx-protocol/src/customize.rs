@@ -208,6 +208,34 @@ pub struct SkillsFilesResult {
     pub files: Vec<SkillFileInfo>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillsReadParams {
+    /// The skill's directory or its `SKILL.md`.
+    pub path: PathBuf,
+    /// A file in it, as `skills/files` lists it.
+    pub file: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillsReadResult {
+    /// Empty when the file is not text.
+    pub text: String,
+    /// `text` was cut at 256 KB.
+    pub truncated: bool,
+    /// Not UTF-8 text (an image, an archive, a program).
+    pub binary: bool,
+    /// The file is a PNG, JPEG, GIF or WebP image, by its signature: its bytes, to show.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<SkillImage>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SkillImage {
+    pub mime_type: String,
+    /// Base64.
+    pub data: String,
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SkillInstallScope {

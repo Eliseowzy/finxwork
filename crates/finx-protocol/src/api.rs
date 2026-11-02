@@ -83,6 +83,7 @@ pub mod method {
     pub const CREDENTIALS_SET: &str = "credentials/set";
     pub const CREDENTIALS_DELETE: &str = "credentials/delete";
     pub const SKILLS_FILES: &str = "skills/files";
+    pub const SKILLS_READ: &str = "skills/read";
     pub const SKILLS_INSTALL: &str = "skills/install";
     pub const SKILLS_REMOVE: &str = "skills/remove";
     pub const SKILLS_SET_ENABLED: &str = "skills/set_enabled";

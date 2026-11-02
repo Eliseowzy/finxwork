@@ -15,13 +15,15 @@
 .cz-bar.stuck{box-shadow:0 .5px 0 var(--sep)}
 .cz-bar .grow{flex:1}
 .cz-tabs{display:flex;gap:2px}
-.cz-tab{height:30px;padding:0 13px;border:0;border-radius:var(--r-sm);background:none;font-size:14px;color:var(--l1)}
+.cz-tab{height:26px;padding:0 12px;border:0;border-radius:var(--r-sm);background:none;font-size:14px;color:var(--l1)}
 .cz-tab:hover{background:var(--fill)}
-.cz-tab.on{background:var(--fill2)}
-.cz-vsep{width:1px;height:18px;background:var(--sep);flex:none}
-.seg.cz-seg button{height:26px;padding:0 13px;font-size:14px}
-.btn.cz-addbtn{height:30px;padding:0 12px 0 11px;font-size:13.5px}
-.btn.cz-addbtn .chev{width:12px;height:12px;opacity:.6;margin-right:-3px}
+.cz-tab.on{background:var(--fill3)}
+.cz-vsep{width:1px;height:18px;margin:0 3px;background:var(--fill);flex:none}
+.seg.cz-seg button{font-size:14px}
+/* Add: the plus large, the chevron greyer, both close to the edges. */
+.btn.cz-addbtn{height:26px;padding:0 5px 0 6px;gap:5px;font-size:14px}
+.btn.cz-addbtn .ic{width:18px;height:18px}
+.btn.cz-addbtn .chev{width:16px;height:16px;opacity:.6}
 
 .cz-sect{animation:fadein .3s cubic-bezier(.2,0,0,1)}
 .cz-sect+.cz-sect{margin-top:var(--sp-3)}
@@ -125,7 +127,9 @@
 /* A connector's page (customize-design §10.12, docs/desktop/connector-detail-demo.html): one column,
    at most 852 wide so a line stays readable. Back has the top line to itself; then the
    logo and name with the item's controls at the right, one sentence, the facts in a row, a note when one is due, the tools a line each.
-   No boxes and no rules: 21 under the top line, 34 to the facts, 55 to the tools. */
+   No boxes and no rules; the spacing is the structure, in three steps: 8 within a group (the name
+   and its sentence, the facts and their caption, a heading and its list), 21 between the groups of
+   the head, 34 between the head and the list. */
 .cz-dpage{max-width:852px}
 .cz-dbar{display:flex;align-items:center;height:28px}
 .cz-dbar .cz-back{margin-top:0;margin-left:-8px;padding:0 10px 0 7px;font-size:13px;gap:5px}
@@ -139,24 +143,23 @@
 .cz-dtitle .cz-tile.xl{width:48px;height:48px;font-size:19px;box-shadow:0 1px 2px rgba(0,0,0,.1)}
 .cz-dtitle h1{margin:0;font-size:26px;font-weight:650;letter-spacing:-.5px;line-height:32px}
 .cz-dtitle .badge{margin:2px 0 0 -3px}
-.cz-lede{margin:var(--sp-2) 0 0;max-width:600px;font-size:13.5px;line-height:22px;color:var(--l2);user-select:text;-webkit-user-select:text}
-.cz-facts{display:flex;flex-wrap:wrap;gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-4)}
+.cz-facts{display:flex;flex-wrap:wrap;gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-3)}
 .cz-fact{min-width:0}
 /* The address or command takes the rest of the row and ends in … rather than wrapping alone. */
 .cz-fact.grow{flex:1 1 240px}
-.cz-fact.grow .v .mono{min-width:0}
 .cz-fact .k{font-size:11.5px;line-height:16px;color:var(--l3)}
 .cz-fact .v{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:13px;line-height:22px;color:var(--l1);white-space:nowrap}
 .cz-fact .v.cz-st.ok{color:var(--green)}
 .cz-fact .v.cz-st.bad{color:var(--red)}
 .cz-fact .v.cz-st.warn{color:var(--orange)}
-.cz-fact .v .mono{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;user-select:text;-webkit-user-select:text}
+/* Every value in the one font of the row; a long one (an address, a path) ends in …. */
+.cz-fact .v .cut{min-width:0;overflow:hidden;text-overflow:ellipsis;user-select:text;-webkit-user-select:text}
 .cz-fact .v .sub{color:var(--l3)}
 .cz-ghost{width:20px;height:20px;margin-left:-2px;flex:none;border:0;border-radius:var(--r-xs);background:none;color:var(--l3);display:grid;place-items:center;padding:0;opacity:0;transition:opacity .15s,background .15s,color .15s}
 .cz-fact:hover .cz-ghost,.cz-ghost:focus-visible{opacity:1}
 .cz-ghost:hover{background:var(--fill2);color:var(--l1)}
 .cz-ghost .ic{width:12px;height:12px}
-.cz-note{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-4);padding:var(--sp-2) var(--sp-2) var(--sp-2) 15px;border-radius:var(--r-lg);background:var(--fill);font-size:13px;line-height:20px;animation:fadein .25s cubic-bezier(.2,0,0,1)}
+.cz-note{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-3);padding:var(--sp-2) var(--sp-2) var(--sp-2) 15px;border-radius:var(--r-lg);background:var(--fill);font-size:13px;line-height:20px;animation:fadein .25s cubic-bezier(.2,0,0,1)}
 .cz-note>.ic{align-self:flex-start;margin-top:2px;width:15px;height:15px;color:var(--l3)}
 .cz-note .tx{flex:1;min-width:0;color:var(--l2)}
 .cz-note .tx b{display:block;font-weight:550;color:var(--l1)}
@@ -166,7 +169,7 @@
 .cz-note.bad{background:var(--red-bg)}.cz-note.bad>.ic{color:var(--red)}
 .cz-note .btn{flex:none}
 .cz-note-wait{display:flex;align-items:center;gap:var(--sp-1);flex:none;font-size:12.5px;color:var(--l2)}
-.cz-dtools{margin-top:var(--sp-5);animation:fadein .45s cubic-bezier(.2,0,0,1)}
+.cz-dtools{margin-top:var(--sp-4);animation:fadein .45s cubic-bezier(.2,0,0,1)}
 .cz-th{display:flex;align-items:baseline;gap:7px;margin-bottom:var(--sp-1)}
 .cz-th h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.1px}
 .cz-th .n{font-size:13px;color:var(--l3);font-variant-numeric:tabular-nums}
@@ -180,8 +183,8 @@
 .cz-dempty{margin:var(--sp-1) 0 0;font-size:13px;color:var(--l3)}
 /* Off: the page steps back; the controls at the top do not. */
 .cz-dpage.off .cz-dtitle .cz-tile{opacity:.45}
-.cz-dpage.off .cz-facts,.cz-dpage.off .cz-tlist{opacity:.5}
-@media (prefers-reduced-motion:reduce){.cz-dhead,.cz-note,.cz-dtools{animation:none}}
+.cz-dpage.off .cz-facts,.cz-dpage.off .cz-tlist,.cz-dpage.off .cz-contents{opacity:.5}
+@media (prefers-reduced-motion:reduce){.cz-dhead,.cz-note,.cz-dtools,.cz-dfiles{animation:none}}
 
 /* The page's one main action: solid in the text colour, quieter than the accent on a dark window. */
 .btn.cz-solid{background:var(--l1);color:var(--win);box-shadow:none}
@@ -213,22 +216,58 @@
 .cz-kv.stack .v{text-align:left}
 .cz-way{display:flex;align-items:center;gap:6px}
 .cz-way+.cz-way{margin-top:5px}
-.cz-filebar{display:flex;align-items:center;gap:7px;margin-bottom:var(--sp-1);font-size:12px;color:var(--l2);min-width:0}
-.cz-filebar .ic{width:14px;height:14px}
-.cz-filebar .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cz-filebar .link{margin-left:auto;font-size:12px;flex:none}
 .cz-code{margin:0;font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--l1);background:var(--code);border-radius:var(--r-md);box-shadow:inset 0 0 0 .5px var(--sep);padding:14px 16px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 .cz-code .fm{color:var(--l2)}
 .cz-code.cz-line{padding:10px 14px}
+/* 技能简介, 连接器简介 (§10.12, §10.13): what the item does, set as one more fact: the facts' small
+   grey label over the text in the facts' size, 21 under the facts (or the note) like the head's
+   other groups. */
+.cz-dsum{margin-top:var(--sp-3)}
+.cz-dsum .k{font-size:11.5px;line-height:16px;color:var(--l3)}
+.cz-dsum p{margin:3px 0 0;max-width:680px;font-size:13px;line-height:22px;color:var(--l1);user-select:text;-webkit-user-select:text;cursor:text}
+/* A skill's note (§10.13): nothing to act on, so no box. It sits under the facts as their caption,
+   in the facts' small grey, as wide as the description. */
+.cz-aside{margin:var(--sp-1) 0 0;max-width:600px;font-size:12px;line-height:18px;color:var(--l3)}
+.cz-aside code{font-family:var(--mono);font-size:11.5px;color:var(--l2)}
+/* A skill's files (§10.13), under the facts as a connector's tools are: a heading, then the folder
+   as a tree and the open file side by side in one frame. The frame has a fixed height, about the
+   window's once scrolled to, so the tree and the file each scroll inside it and a long file never
+   stretches the page. The bar over the file holds its path, preview / source and 在访达中显示. */
+.cz-dfiles{margin-top:var(--sp-4);animation:fadein .45s cubic-bezier(.2,0,0,1)}
+.cz-contents{display:grid;grid-template-columns:clamp(176px,26%,220px) minmax(0,1fr);height:clamp(320px,calc(100vh - 140px),640px);border-radius:var(--r-lg);box-shadow:inset 0 0 0 .5px var(--sep)}
+.cz-contents.single{grid-template-columns:minmax(0,1fr)}
+.cz-tree{display:flex;flex-direction:column;gap:1px;min-width:0;min-height:0;overflow-y:auto;padding:var(--sp-1);border-right:.5px solid var(--sep)}
+.cz-trow{display:flex;align-items:center;gap:5px;height:28px;flex:none;padding-right:8px;border:0;border-radius:var(--r-sm);background:none;font-size:13px;color:var(--l1);text-align:left;min-width:0}
+.cz-trow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cz-trow .ic{width:12px;height:12px;flex:none;color:var(--l3)}
+.cz-tsp{width:12px;flex:none}
+.cz-trow:hover{background:var(--fill)}
+.cz-trow.on{background:var(--fill2);font-weight:500}
+.cz-viewer{display:flex;flex-direction:column;min-width:0;min-height:0}
+.cz-vbody{flex:1;min-height:0;overflow:auto}
+.cz-vbar{display:flex;align-items:center;flex:none;gap:var(--sp-1);height:44px;padding:0 var(--sp-1) 0 var(--sp-3)}
+.cz-vbar .mono{flex:1;min-width:0;font-size:12px;color:var(--l2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cz-vbar .seg button{padding:0 7px}
+.cz-vbar .seg .ic{width:14px;height:14px}
+.cz-vbtn{width:26px;height:26px;flex:none;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:grid;place-items:center;padding:0}
+.cz-vbtn:hover{background:var(--fill);color:var(--l1)}
+.cz-vbtn .ic{width:14px;height:14px}
+.cz-vmd{padding:0 var(--sp-3) var(--sp-3);font-size:14px;line-height:1.65}
+.cz-vbody>.cz-code{background:none;box-shadow:none;border-radius:0;padding:0 var(--sp-3) var(--sp-3)}
+.cz-vbody>.cz-wait,.cz-vnote{padding:0 var(--sp-3) var(--sp-3)}
+.cz-vnote{font-size:12.5px;color:var(--l2)}
+/* An image at its own size, at most the frame's width, on a checkerboard so a transparent one
+   still shows its edges; a click shows it over the window. */
+.cz-vimg{display:block;max-width:100%;padding:0;border:0;border-radius:var(--r-md);background:repeating-conic-gradient(var(--fill2) 0 25%,transparent 0 50%) 0 0/16px 16px;box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden;cursor:zoom-in;line-height:0}
+.cz-vimg img{display:block;max-width:100%;height:auto}
+.cz-vnote.cut{padding-bottom:var(--sp-1);font-size:12px;color:var(--l3)}
+@media (max-width:720px){.cz-contents{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}.cz-tree{max-height:160px;border-right:0;border-bottom:.5px solid var(--sep)}}
 /* Rows of facts in a panel: the label left, the value after it. */
 .cz .fgroup .frow{gap:12px;padding:9px 13px}
 .cz .fgroup .frow>.fl{width:72px;color:var(--l2);font-size:12.5px}
 .cz .fgroup .frow>.fv{justify-content:flex-start;text-align:left;color:var(--l1);overflow-wrap:anywhere}
 .cz .fgroup .frow>.fv.mono{font-size:12px}
 .cz .fgroup .frow>.ic{color:var(--l2)}
-.cz-files .frow{min-height:34px;padding:6px 13px;gap:9px}
-.cz-files .frow .mono{font-size:12px}
-.cz-files .sz{margin-left:auto;color:var(--l3);font-size:11.5px;font-variant-numeric:tabular-nums}
 .cz-errbox{font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--red);background:var(--red-bg);border-radius:var(--r-md);padding:9px 13px;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
 /* A note on a page: why something is read-only, what a choice will do. */
 .cz-callout{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:9px 13px;line-height:1.55}
@@ -302,7 +341,7 @@
 .cz-advgroup{margin-top:var(--sp-1)}
 .cz-fn{margin:7px 2px 0;font-size:11.5px;color:var(--l2);line-height:1.55}
 .cz-fn .det{color:var(--accent-t)}
-.cz-code{font-family:var(--mono);font-size:11px;color:var(--l2);background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs);white-space:nowrap}
+code.cz-code{font-family:var(--mono);font-size:11px;color:var(--l2);background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs);white-space:nowrap}
 .cz-trust{margin:var(--sp-3) 2px 0;font-size:11.5px;color:var(--l3);line-height:1.55}
 /* A pop-up button: the choice, and the up-down chevrons. */
 .cz-pop{height:24px;display:inline-flex;align-items:center;gap:6px;padding:0 5px 0 9px;border:0;border-radius:var(--r-sm);background:var(--btn);box-shadow:var(--btn-sh);font-size:12.5px;color:var(--l1);max-width:280px;white-space:nowrap}

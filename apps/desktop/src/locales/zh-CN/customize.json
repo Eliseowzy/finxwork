@@ -12,12 +12,9 @@
     "button": "添加",
     "skills": "技能",
     "upload": "上传技能…",
-    "uploadDesc": "文件夹、.zip 或单个 SKILL.md，只给你自己用",
     "create": "在对话中创建",
-    "createDesc": "说说你要什么，finx 帮你写成技能",
     "connectors": "连接器",
-    "custom": "添加连接器…",
-    "customDesc": "粘贴地址或启动命令，finx 先检查再添加"
+    "custom": "添加连接器…"
   },
   "more": "更多",
   "loading": "正在读取…",
@@ -68,10 +65,21 @@
     "offByDefault": "默认不启用",
     "turnOn": "启用",
     "turnOff": "停用",
-    "files_other": "{{count}} 个文件",
     "use": "在对话中使用",
     "reveal": "在访达中显示",
+    "summary": "技能简介",
+    "filesTitle": "文件",
+    "invoke": "调用",
+    "userOnly": "只能手动调用",
+    "copy": "复制",
+    "copied": "已复制 {{command}}",
+    "preview": "预览",
+    "raw": "原文",
+    "binary": "这个文件不是文本，不能在这里查看。",
+    "enlarge": "放大查看",
+    "truncated": "只显示了前 256 KB。",
     "remove": "删除",
+    "removeSkill": "删除技能",
     "view": "查看详情",
     "add": "添加",
     "adding": "添加中…",
@@ -79,9 +87,7 @@
     "back": "技能",
     "scope": {
       "user": "个人",
-      "project": "随仓库共享 · {{project}}",
-      "system": "内置",
-      "extra": "配置里的路径"
+      "project": "随仓库共享 · {{project}}"
     },
     "source": {
       "system": "finx 内置",
@@ -91,16 +97,6 @@
       "repo": "仓库",
       "extra": "配置里的路径"
     },
-    "tabs": {
-      "overview": "概览",
-      "skillmd": "SKILL.md",
-      "files": "文件"
-    },
-    "description": "描述",
-    "howTo": "怎样使用",
-    "howToText": "finx 会在用得上的时候自己调用它。也可以在输入框里输入 <code>/skill:{{name}}</code> 直接点名。",
-    "howToUserOnly": "这个技能只在你点名时使用：在输入框里输入 <code>/skill:{{name}}</code>。",
-    "systemNote": "内置技能随 finx 一起更新。可以停用；直接改它的文件，会在下次升级时被覆盖。",
     "repoNote": "这个技能在仓库里，随仓库共享。这里只能停用：停用写进你的个人配置，不改仓库。要修改内容，请在访达中打开它。",
     "sharedNote": "这个技能在 <code>{{folder}}</code> 里，归那个工具管理。这里只能停用，不能删除。",
     "offByDefaultNote": "这个技能在仓库的 <code>{{folder}}</code> 里，那是另一个应用的目录，所以默认不启用。打开它只对你生效：写在你的个人配置里，不改仓库。",
@@ -153,6 +149,7 @@
     "provider": "提供方",
     "ways": "登录方式",
     "providerRepo": "仓库",
+    "summary": "连接器简介",
     "tools": "工具",
     "toolsFromSessions_other": "来自 {{count}} 个打开的会话里的连接",
     "noTools": "还没有工具列表：检测一次就有了。",

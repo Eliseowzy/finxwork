@@ -141,11 +141,11 @@ export function Customize() {
 
   const addMenu = [
     { header: t("add.skills") },
-    { id: "upload", label: t("add.upload"), desc: t("add.uploadDesc"), icon: "upload", run: a.upload },
-    ...(a.create ? [{ id: "create", label: t("add.create"), desc: t("add.createDesc"), icon: "chat", run: a.create }] : []),
+    { id: "upload", label: t("add.upload"), icon: "upload", run: a.upload },
+    ...(a.create ? [{ id: "create", label: t("add.create"), icon: "chat", run: a.create }] : []),
     null,
     { header: t("add.connectors") },
-    { id: "custom", label: t("add.custom"), desc: t("add.customDesc"), icon: "plug", run: a.addCustom },
+    { id: "custom", label: t("add.custom"), icon: "plug", run: a.addCustom },
   ];
 
   let body;
@@ -183,7 +183,7 @@ export function Customize() {
         <div className="dbody cz-body">
           {detail && c.loaded ? (
             detail.kind === "skill" ? (
-              <SkillPage key={detail.id} c={c} a={a} detail={detail} project={project} onBack={back} onTab={onTab} />
+              <SkillPage key={detail.id} c={c} a={a} detail={detail} project={project} onBack={back} />
             ) : (
               <ConnectorPage key={detail.id} c={c} a={a} detail={detail} project={project} onBack={back} onTab={onTab} />
             )

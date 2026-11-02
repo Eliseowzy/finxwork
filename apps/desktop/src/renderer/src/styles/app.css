@@ -10,6 +10,9 @@ html.vibrant,html.vibrant body{background:transparent}
 html.vibrant .side{background:var(--side-tint)}
 html.vibrant .grp-h,html.vibrant .grp-row{position:static;background:transparent}
 input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
+/* Text that can be selected shows the text cursor, as in a text field; its buttons stay arrows. */
+.sel-text{cursor:text}
+.sel-text button{cursor:default}
 :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .fadein{animation:fadein .35s cubic-bezier(.2,0,0,1)}
@@ -54,9 +57,11 @@ input:disabled,textarea:disabled{cursor:default}
 .cb.on .box{background:var(--accent);box-shadow:none;color:#fff}
 .cb .box .ic{width:11px;height:11px;stroke-width:2.2}
 .cb:not(.on) .box .ic{display:none}
-.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
-.seg button{border:0;background:transparent;height:24px;padding:0 13px;border-radius:var(--r-xs);font-size:12.5px;display:flex;align-items:center;gap:5px;white-space:nowrap}
-.seg button.on{background:var(--seg-on);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+/* A segmented control: a quiet track as tall as its buttons; the one chosen is a raised block
+   filling it, with a hairline edge. */
+.seg{display:inline-flex;background:var(--fill);border-radius:var(--r-sm);padding:0;gap:0;flex:none}
+.seg button{border:0;background:transparent;height:26px;padding:0 12px;border-radius:var(--r-sm);font-size:12.5px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.seg button.on{background:var(--seg-on);box-shadow:inset 0 0 0 .5px var(--seg-bd)}
 .field{height:26px;border-radius:var(--r-sm);border:0;box-shadow:inset 0 0 0 1px var(--field-bd);background:var(--field);padding:0 9px;font-size:13px;color:var(--l1);outline:none;width:100%}
 .field:focus{box-shadow:inset 0 0 0 1px var(--accent),0 0 0 3px var(--accent-bg)}
 .kbd{font-size:11.5px;color:var(--l3);letter-spacing:.04em}

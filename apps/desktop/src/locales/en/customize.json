@@ -12,12 +12,9 @@
     "button": "Add",
     "skills": "Skills",
     "upload": "Upload a Skill…",
-    "uploadDesc": "A folder, a .zip or a single SKILL.md, for you",
     "create": "Create in a Conversation",
-    "createDesc": "Say what you need; finx writes it as a skill",
     "connectors": "Connectors",
-    "custom": "Add connector…",
-    "customDesc": "Paste an address or a command; finx checks it first"
+    "custom": "Add connector…"
   },
   "more": "More",
   "loading": "Reading…",
@@ -70,11 +67,21 @@
     "offByDefault": "Off by default",
     "turnOn": "Turn on",
     "turnOff": "Turn off",
-    "files_one": "{{count}} file",
-    "files_other": "{{count}} files",
     "use": "Use in a Conversation",
     "reveal": "Show in Finder",
+    "summary": "About",
+    "filesTitle": "Files",
+    "invoke": "Invoke",
+    "userOnly": "only when you name it",
+    "copy": "Copy",
+    "copied": "Copied {{command}}",
+    "preview": "Preview",
+    "raw": "Source",
+    "binary": "This file isn't text, so it can't be shown here.",
+    "enlarge": "Show larger",
+    "truncated": "Only the first 256 KB is shown.",
     "remove": "Delete",
+    "removeSkill": "Remove skill",
     "view": "View Details",
     "add": "Add",
     "adding": "Adding…",
@@ -82,9 +89,7 @@
     "back": "Skills",
     "scope": {
       "user": "Personal",
-      "project": "Shared in the repository · {{project}}",
-      "system": "Built in",
-      "extra": "Configured paths"
+      "project": "Shared in the repository · {{project}}"
     },
     "source": {
       "system": "Built into finx",
@@ -94,16 +99,6 @@
       "repo": "Repository",
       "extra": "Configured paths"
     },
-    "tabs": {
-      "overview": "Overview",
-      "skillmd": "SKILL.md",
-      "files": "Files"
-    },
-    "description": "Description",
-    "howTo": "How to use it",
-    "howToText": "finx uses it by itself when it helps. You can also name it by typing <code>/skill:{{name}}</code> in the message box.",
-    "howToUserOnly": "This skill is used only when you name it: type <code>/skill:{{name}}</code> in the message box.",
-    "systemNote": "Built-in skills are updated with finx. You can turn this one off; changes to its files are overwritten by the next update.",
     "repoNote": "This skill is in the repository and shared with it. It can only be turned off here, in your own configuration; the repository is not changed. To edit it, show it in Finder.",
     "sharedNote": "This skill is in <code>{{folder}}</code>, which another tool manages. It can be turned off here, not deleted.",
     "offByDefaultNote": "This skill is in the repository's <code>{{folder}}</code>, another app's folder, so it is off by default. Turning it on affects only you: it is written in your own configuration; the repository is unchanged.",
@@ -158,6 +153,7 @@
     "provider": "Provider",
     "ways": "Sign-in",
     "providerRepo": "Repository",
+    "summary": "About",
     "tools": "Tools",
     "toolsFromSessions_one": "From the connection in {{count}} open session",
     "toolsFromSessions_other": "From the connections in {{count}} open sessions",

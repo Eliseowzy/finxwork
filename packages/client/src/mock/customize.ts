@@ -1,7 +1,7 @@
 import type {
   CommandInfo, ConfigEdit, ConfigLayer, ConfigLayerInfo, ConfigReadResult, ConfigWriteResult, McpCheckResult, McpListResult, McpLoginParams, McpLoginResult,
   McpProbeParams, McpProbeResult, McpProbeStep, McpServerView, McpToolSummary,
-  McpToolsResult, SkillEntry, SkillsFilesResult, SkillsInstallParams, SkillsInstallResult, SkillsListResult, SkillsSetEnabledResult,
+  McpToolsResult, SkillEntry, SkillsFilesResult, SkillsInstallParams, SkillsReadResult, SkillsInstallResult, SkillsListResult, SkillsSetEnabledResult,
 } from "@finx/protocol";
 
 // The 自定义 page's side of the mock (customize-design §10.8): skills, MCP servers, the
@@ -18,12 +18,14 @@ const files: Record<"user" | "user_project" | "project", string> = {
 
 type Skill = { name: string; description: string; dir: string; scope: SkillEntry["scope"]; on: boolean; offByDefault?: boolean; removable?: boolean; source?: SkillEntry["source"]; userOnly?: boolean; files: [string, number][] };
 
+/** Four colour bands, for a skill's image file. */
+const previewPng = "iVBORw0KGgoAAAANSUhEUgAAAKAAAABgCAIAAAAVRe7OAAAA+ElEQVR42u3RMQ0AIAwAMJyghOCGhwcVmEEMkoYD3j1N6qClzkjR704Rp+UYK0URLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsWLFiwYMGCBQsW/PMAyCy8+2BYNjoAAAAASUVORK5CYII=";
 const skillFiles = (...extra: [string, number][]): [string, number][] => [["SKILL.md", 2100], ...extra];
 
 function demoSkills(): Skill[] {
   return [
     { name: "gen-report", description: "生成团队周报：读取本周的提交和任务，按固定格式写出 report.md", dir: `${home}/.finx/skills/gen-report`, scope: "user", on: true, removable: true, source: { kind: "upload" }, files: skillFiles(["references/format.md", 3000]) },
-    { name: "pdf-tools", description: "提取 PDF 里的文字和表格。读取、转换或检查 PDF 文件时使用。", dir: `${home}/.finx/skills/pdf-tools`, scope: "user", on: true, removable: true, source: { kind: "upload" }, files: skillFiles(["scripts/extract.py", 6400], ["references/formats.md", 3000]) },
+    { name: "pdf-tools", description: "提取 PDF 里的文字和表格。读取、转换或检查 PDF 文件时使用。", dir: `${home}/.finx/skills/pdf-tools`, scope: "user", on: true, removable: true, source: { kind: "upload" }, files: skillFiles(["scripts/extract.py", 6400], ["references/formats.md", 3000], ["assets/preview.png", 305]) },
     { name: "release-notes", description: "Turns the commits between two versions into release notes, grouped as new, improved and fixed.", dir: `${home}/.finx/skills/release-notes`, scope: "user", on: true, removable: true, source: { kind: "catalog", id: "release-notes", version: "1.0.0" }, files: skillFiles() },
     { name: "commit-style", description: "本仓库提交信息的格式要求，写提交信息时使用", dir: `${project}/.agents/skills/commit-style`, scope: "project", on: true, files: skillFiles() },
     { name: "kernel-e2e", description: "用真实模型跑一遍内核验收：启动 finx、发起会话、核对事件流和落盘的会话文件。", dir: `${project}/.agents/skills/kernel-e2e`, scope: "project", on: true, files: skillFiles(["scripts/run.sh", 1100]) },
@@ -223,16 +225,38 @@ export class CustomizeMock {
     return { file: files.user };
   }
 
-  skillsFiles(path: string): SkillsFilesResult {
+  private skillOrCatalog(path: string) {
     const catalog = /\/catalog\/skills\/([^/]+)$/.exec(path.replace(/\/SKILL\.md$/i, ""));
-    const s = catalog ? { name: catalog[1], description: `The ${catalog[1]} skill from finx's catalog.`, files: skillFiles() } : this.skillAt(path);
-    const skill_md = `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n# ${s.name}\n\nRead \`references/\` first, then work through the steps.\n\n## Steps\n\n1. Find out what the user wants done, and with which files.\n2. Run the script in \`scripts/\` that fits; do not rewrite it.\n3. Check the result, and say why when something is skipped.\n`;
+    return catalog ? { name: catalog[1], description: `The ${catalog[1]} skill from finx's catalog.`, files: skillFiles() } : this.skillAt(path);
+  }
+
+  private skillMd(s: { name: string; description: string }): string {
+    return `---\nname: ${s.name}\ndescription: ${s.description}\n---\n\n# ${s.name}\n\nRead \`references/\` first, then work through the steps.\n\n## Steps\n\n1. Find out what the user wants done, and with which files.\n2. Run the script in \`scripts/\` that fits; do not rewrite it.\n3. Check the result, and say why when something is skipped.\n`;
+  }
+
+  skillsFiles(path: string): SkillsFilesResult {
+    const s = this.skillOrCatalog(path);
+    const skill_md = this.skillMd(s);
     const dirs = new Set(s.files.flatMap(([f]) => (f.includes("/") ? [f.split("/")[0]] : [])));
     return {
       skill_md,
       truncated: false,
       files: [...[...dirs].map((d) => ({ path: d, size: 0, dir: true })), ...s.files.map(([f, size]) => ({ path: f, size, dir: false }))].sort((a, b) => a.path.localeCompare(b.path)),
     };
+  }
+
+  skillsRead(path: string, file: string): SkillsReadResult {
+    const s = this.skillOrCatalog(path);
+    if (!s.files.some(([f]) => f === file)) throw new Failure(-32027, "skill_invalid", `${file} is not a file of the skill`);
+    if (file === "SKILL.md") return { text: this.skillMd(s), truncated: false, binary: false };
+    if (/\.png$/i.test(file)) return { text: "", truncated: false, binary: true, image: { mime_type: "image/png", data: previewPng } };
+    if (/\.(jpe?g|gif|zip|pdf)$/i.test(file)) return { text: "", truncated: false, binary: true };
+    const text = file.endsWith(".md")
+      ? `# ${file.split("/").pop()!.replace(/\.md$/, "")}\n\nWhat ${s.name} needs to know, read only when a step asks for it.\n\n| Field | Meaning |\n|---|---|\n| \`title\` | One line, no period |\n| \`items\` | One per change, newest first |\n\n\`\`\`json\n{ "title": "Week 44", "items": [] }\n\`\`\`\n`
+      : file.endsWith(".py")
+        ? `#!/usr/bin/env python3\n"""${s.name}: ${file}."""\n\nimport sys\n\n\ndef main(path: str) -> int:\n    with open(path, "rb") as f:\n        print(len(f.read()), "bytes")\n    return 0\n\n\nif __name__ == "__main__":\n    sys.exit(main(sys.argv[1]))\n`
+        : `#!/bin/sh\nset -eu\necho "${s.name}: ${file}"\n`;
+    return { text, truncated: false, binary: false };
   }
 
   // ---- configuration ----

@@ -71,7 +71,7 @@ export function Tile({ kind, path, name, src, web, onRemove }: {
 }
 
 /** An image over the whole window; a click anywhere or Esc closes it. */
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+export function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
     // Ahead of everything else that listens for Esc (an approval, a menu).
     const key = (e: KeyboardEvent) => {

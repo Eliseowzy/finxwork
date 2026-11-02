@@ -1405,6 +1405,12 @@ export type SkillFileInfo = {
   size: number;
 };
 
+export type SkillImage = {
+  /** Base64. */
+  data: string;
+  mime_type: string;
+};
+
 export type SkillInstallScope = "user" | "project";
 
 /** Where a skill comes from. Earlier layers win when names collide. */
@@ -1491,6 +1497,24 @@ export type SkillsListResult = {
   /** In priority order. */
   skills: SkillEntry[];
   warnings: string[];
+};
+
+export type SkillsReadParams = {
+  /** A file in it, as `skills/files` lists it. */
+  file: string;
+  /** The skill's directory or its `SKILL.md`. */
+  path: string;
+};
+
+export type SkillsReadResult = {
+  /** Not UTF-8 text (an image, an archive, a program). */
+  binary: boolean;
+  /** The file is a PNG, JPEG, GIF or WebP image, by its signature: its bytes, to show. */
+  image?: SkillImage | null;
+  /** Empty when the file is not text. */
+  text: string;
+  /** `text` was cut at 256 KB. */
+  truncated: boolean;
 };
 
 export type SkillsRemoveParams = {
@@ -1664,6 +1688,7 @@ export interface Methods {
   "skills/files": [SkillsFilesParams, SkillsFilesResult];
   "skills/install": [SkillsInstallParams, SkillsInstallResult];
   "skills/list": [SkillsListParams, SkillsListResult];
+  "skills/read": [SkillsReadParams, SkillsReadResult];
   "skills/remove": [SkillsRemoveParams, Empty];
   "skills/set_enabled": [SkillsSetEnabledParams, SkillsSetEnabledResult];
 }

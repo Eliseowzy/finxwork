@@ -149,6 +149,7 @@ pub fn document() -> Value {
         (method::CREDENTIALS_SET, Some(name::<customize::CredentialsSetParams>(g)), name::<api::Empty>(g)),
         (method::CREDENTIALS_DELETE, Some(name::<customize::CredentialsDeleteParams>(g)), name::<api::Empty>(g)),
         (method::SKILLS_FILES, Some(name::<customize::SkillsFilesParams>(g)), name::<customize::SkillsFilesResult>(g)),
+        (method::SKILLS_READ, Some(name::<customize::SkillsReadParams>(g)), name::<customize::SkillsReadResult>(g)),
         (method::SKILLS_INSTALL, Some(name::<customize::SkillsInstallParams>(g)), name::<customize::SkillsInstallResult>(g)),
         (method::SKILLS_REMOVE, Some(name::<customize::SkillsRemoveParams>(g)), name::<api::Empty>(g)),
         (method::SKILLS_SET_ENABLED, Some(name::<customize::SkillsSetEnabledParams>(g)), name::<customize::SkillsSetEnabledResult>(g)),

@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>技能详情页</title>
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css, as connector-detail-demo.html has them. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --win:#ffffff;--win2:#f4f4f7;--side:#f4f4f7;--code:#f6f7f9;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.04);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --accent-t:var(--accent-fg);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --seg-on:#ffffff;
+  --menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);--lift:0 1px 2px rgba(0,0,0,.1);
+  --hl-k:#cf222e;--hl-s:#0a3069;--hl-c:#6e7781;--hl-f:#8250df;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;--side:#25252a;--code:#242428;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.045);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --seg-on:rgba(255,255,255,.16);
+  --menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);--lift:0 1px 3px rgba(0,0,0,.4);
+  --hl-k:#ff7b72;--hl-s:#a5d6ff;--hl-c:#8b949e;--hl-f:#d2a8ff;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font:13px/1.38 var(--font);-webkit-font-smoothing:antialiased;user-select:none;cursor:default;overflow:hidden}
+button{font:inherit;color:inherit;cursor:default}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+@keyframes fade{from{opacity:0}}
+@keyframes rise{from{opacity:0;transform:translateY(4px)}}
+.btn{height:28px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:13px;color:var(--l1)}
+.btn .ic{width:14px;height:14px}
+.btn.solid{background:var(--l1);color:var(--win);box-shadow:none}
+.badge{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:var(--r-xs);background:var(--fill2);font-size:11px;font-weight:450;color:var(--l2);white-space:nowrap}
+.sw{width:32px;height:19px;border-radius:999px;border:0;background:var(--fill3);position:relative;flex:none;transition:background .2s;padding:0}
+.sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .2s cubic-bezier(.2,0,0,1)}
+.sw.on{background:var(--accent)}
+.sw.on::after{transform:translateX(13px)}
+.mono{font-family:var(--mono)}
+code{font-family:var(--mono)}
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
+.seg button{border:0;background:transparent;height:22px;padding:0 7px;border-radius:var(--r-xs);display:grid;place-items:center;color:var(--l2)}
+.seg button.on{background:var(--seg-on);color:var(--l1);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.seg .ic{width:14px;height:14px}
+
+.win{height:100%;display:flex}
+.side{width:248px;flex:none;background:var(--side);padding:52px 10px 0}
+.side .it{display:flex;align-items:center;gap:9px;height:32px;padding:0 10px;border-radius:var(--r-md);font-size:13.5px}
+.side .it.on{background:var(--fill2)}
+.main{flex:1;min-width:0;overflow-y:auto}
+
+/* The page: the connector page's one column (customize-design §10.12), at most 920 wide;
+   34 to the window's sides. Spacing in three steps: 8 within a group, 21 between the head's
+   groups, 34 between the head and the files. */
+.body{max-width:920px;padding:44px var(--sp-4) 72px}
+
+/* ── The top line: back, alone. ── */
+.bar{display:flex;align-items:center;height:28px}
+.back{display:inline-flex;align-items:center;gap:5px;height:28px;margin-left:-8px;padding:0 10px 0 7px;border:0;border-radius:var(--r-sm);background:none;font-size:13px;color:var(--l2)}
+.back:hover{color:var(--l1);background:var(--fill)}
+.back .ic{width:14px;height:14px}
+
+/* ── The head: the tile, the name large, its controls at the right of that line; then what it does. ── */
+.head{animation:rise .35s cubic-bezier(.2,0,0,1)}
+.title{display:flex;align-items:center;gap:var(--sp-2);margin-top:var(--sp-3)}
+.tile{width:48px;height:48px;border-radius:var(--r-lg);flex:none;background:var(--fill2);display:grid;place-items:center;color:var(--l2);box-shadow:var(--lift);transition:opacity .2s}
+.tile .ic{width:22px;height:22px;stroke-width:1.2}
+h1{margin:0;font-size:26px;font-weight:650;letter-spacing:-.5px;line-height:32px}
+.title .badge{margin-left:-3px;margin-top:2px}
+.acts{display:flex;align-items:center;gap:var(--sp-1);margin-left:auto;padding-left:var(--sp-3)}
+.swl{display:inline-flex;align-items:center;gap:var(--sp-1);height:28px;padding:0 var(--sp-1);font-size:13px;color:var(--l2)}
+.more{width:28px;height:28px;margin-right:-6px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:grid;place-items:center}
+.more:hover,.more.open{background:var(--fill2);color:var(--l1)}
+
+/* ── The facts: one row, a small label over each value; the value's own action waits beside it. ── */
+.facts{display:flex;flex-wrap:wrap;gap:var(--sp-3) var(--sp-4);margin-top:var(--sp-3)}
+.fact{min-width:0}
+.fact.grow{flex:1 1 240px}
+.fact .k{font-size:11.5px;line-height:16px;color:var(--l3)}
+.fact .v{display:flex;align-items:center;gap:6px;margin-top:3px;font-size:13px;line-height:22px;white-space:nowrap}
+/* Every value in the row's one font; a long one ends in …. */
+.fact .v .cut{overflow:hidden;text-overflow:ellipsis;min-width:0;user-select:text;cursor:text}
+.fact .v .sub{color:var(--l3)}
+.ghost{width:20px;height:20px;margin-left:-2px;flex:none;border:0;border-radius:var(--r-xs);background:none;color:var(--l3);display:grid;place-items:center;padding:0;opacity:0;transition:opacity .15s,background .15s,color .15s}
+.fact:hover .ghost{opacity:1}
+.ghost:hover{background:var(--fill2);color:var(--l1)}
+.ghost .ic{width:12px;height:12px}
+
+/* ── A note: nothing to act on, so no box; a grey caption under the facts it explains. ── */
+.aside{margin:var(--sp-1) 0 0;max-width:600px;font-size:12px;line-height:18px;color:var(--l3)}
+.aside code{font-family:var(--mono);font-size:11.5px;color:var(--l2)}
+
+/* ── What it does: one more fact, the facts' small grey label over the text in their size. ── */
+.sum{margin-top:var(--sp-3)}
+.sum .k{font-size:11.5px;line-height:16px;color:var(--l3)}
+.sum p{margin:3px 0 0;max-width:680px;font-size:13px;line-height:22px;color:var(--l1);user-select:text;cursor:text}
+
+/* ── The files: a heading like 工具's, then the folder and the open file in one frame of a fixed
+   height: the tree and the file each scroll inside it, so a long file never stretches the page. ── */
+.files{margin-top:var(--sp-4);animation:rise .45s cubic-bezier(.2,0,0,1)}
+.th{display:flex;align-items:baseline;gap:7px;margin-bottom:var(--sp-1)}
+.th h2{margin:0;font-size:15px;font-weight:600;letter-spacing:-.1px}
+.th .n{font-size:13px;color:var(--l3);font-variant-numeric:tabular-nums}
+.frame{display:grid;grid-template-columns:200px minmax(0,1fr);height:clamp(320px,calc(100vh - 150px),640px);border-radius:var(--r-lg);box-shadow:inset 0 0 0 .5px var(--sep)}
+.frame.single{grid-template-columns:minmax(0,1fr)}
+.tree{display:flex;flex-direction:column;gap:1px;min-height:0;overflow-y:auto;padding:var(--sp-1);border-right:.5px solid var(--sep)}
+.trow{display:flex;align-items:center;gap:5px;height:28px;flex:none;padding-right:8px;border:0;border-radius:var(--r-sm);background:none;font-size:13px;text-align:left;min-width:0}
+.trow span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow .ic{width:12px;height:12px;color:var(--l3)}
+.trow .sp{width:12px;flex:none}
+.trow:hover{background:var(--fill)}
+.trow.on{background:var(--fill2);font-weight:500}
+.viewer{display:flex;flex-direction:column;min-width:0;min-height:0}
+.vbar{display:flex;align-items:center;flex:none;gap:var(--sp-1);height:44px;padding:0 var(--sp-1) 0 var(--sp-3)}
+.vbar .path{flex:1;min-width:0;font-family:var(--mono);font-size:12px;color:var(--l2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vbtn{width:26px;height:26px;flex:none;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:grid;place-items:center;padding:0}
+.vbtn:hover{background:var(--fill);color:var(--l1)}
+.vbtn .ic{width:14px;height:14px}
+.vbody{flex:1;min-height:0;overflow:auto;padding:0 var(--sp-3) var(--sp-3);user-select:text;cursor:text}
+.vbody button{cursor:default}
+.raw{margin:0;font:12px/1.7 var(--mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.raw .fm{color:var(--l2)}
+.raw .k{color:var(--hl-k)}.raw .s{color:var(--hl-s)}.raw .c{color:var(--hl-c)}.raw .f{color:var(--hl-f)}
+.vnote{font-size:12.5px;color:var(--l2)}
+
+/* The app's Markdown (app.css .md), as the conversation shows it. */
+.md{font-size:14px;line-height:1.65;overflow-wrap:anywhere}
+.md>*{margin:0}.md>*+*{margin-top:12px}
+.md :is(h1,h2,h3){font-weight:600;line-height:1.4}
+.md h1{font-size:18px}.md h2{font-size:16.5px}.md h3{font-size:15px}
+.md ul,.md ol{padding-left:20px}.md li+li{margin-top:4px}.md li::marker{color:var(--l3)}
+.md code{font-size:13px;background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs)}
+.md pre{background:var(--code);border-radius:var(--r-md);padding:10px 12px;overflow-x:auto;box-shadow:inset 0 0 0 .5px var(--sep);font-size:13px;line-height:1.6}
+.md pre code{background:none;padding:0}
+.md blockquote{border-left:2px solid var(--fill3);padding-left:12px;color:var(--l2)}
+.md table{border-collapse:collapse;font-size:14px;line-height:20px}
+.md :is(th,td){padding:6px 14px 6px 0;border-bottom:.5px solid var(--sep);text-align:left}
+.md th{font-weight:600}
+
+/* The variant that keeps two tabs: the head, then 概览 / 内容 on a hairline. */
+.tabs{display:flex;gap:var(--sp-3);margin-top:var(--sp-4);border-bottom:.5px solid var(--sep)}
+.tab{position:relative;height:38px;padding:0 1px;border:0;background:none;font-size:13.5px}
+.tab .n{color:var(--l3)}
+.tab.on{font-weight:500}
+.tab.on::after{content:"";position:absolute;left:0;right:0;bottom:-.5px;height:2px;border-radius:1px;background:var(--l1)}
+.tabbed .facts{margin-top:var(--sp-3)}
+.tabbed .files{margin-top:var(--sp-3)}
+
+/* The page rises in once, when it opens; a click on it does not replay that. */
+.settled :is(.head,.files){animation:none}
+@media (prefers-reduced-motion:reduce){:is(.head,.files){animation:none}}
+
+/* Off: the page steps back; the controls at the top do not. */
+.off .head .tile{opacity:.45}
+.off .facts,.off .frame{opacity:.55}
+
+/* ── The ⋯ menu. ── */
+.menu{position:fixed;z-index:20;min-width:208px;padding:5px;border-radius:var(--r-lg);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 10px 32px rgba(0,0,0,.22);animation:fade .12s}
+.menu .mi{display:flex;align-items:center;gap:9px;width:100%;height:28px;padding:0 9px;border:0;border-radius:var(--r-sm);background:none;font-size:13px;text-align:left}
+.menu .mi:hover{background:var(--accent);color:#fff}
+.menu .mi.danger{color:var(--danger)}
+.menu .mi.danger:hover{background:var(--danger);color:#fff}
+.menu .mi .ic{width:14px;height:14px}
+.menu .msep{height:.5px;margin:5px 9px;background:var(--sep)}
+
+/* The demo's own controls, not part of the design. */
+.demo{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:4px;padding:5px;border-radius:var(--r-lg);background:rgba(20,20,24,.88);box-shadow:0 6px 24px rgba(0,0,0,.3);backdrop-filter:blur(12px);z-index:30;max-width:calc(100vw - 20px);overflow-x:auto}
+.demo button{height:26px;padding:0 10px;border:0;border-radius:var(--r-sm);background:none;color:rgba(255,255,255,.7);font-size:12px;white-space:nowrap}
+.demo button.on{background:rgba(255,255,255,.18);color:#fff}
+.demo i{width:1px;flex:none;background:rgba(255,255,255,.15);margin:4px 3px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-back" viewBox="0 0 16 16"><path d="M13 8H3.5M7.5 4 3.5 8l4 4"/></symbol>
+  <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r=".95" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r=".95" fill="currentColor" stroke="none"/><circle cx="12.5" cy="8" r=".95" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="7.5" height="7.5" rx="1.5"/><path d="M10.5 5.5V4a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 4v5A1.5 1.5 0 0 0 4 10.5h1.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2.5 4.5A1.5 1.5 0 0 1 4 3h2.6l1.4 1.5h4A1.5 1.5 0 0 1 13.5 6v5.5A1.5 1.5 0 0 1 12 13H4a1.5 1.5 0 0 1-1.5-1.5z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2a1 1 0 0 0 1 .8h3.8a1 1 0 0 0 1-.8l.6-8.2"/></symbol>
+  <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6"/><path d="M8 7.3v3.6M8 5.2v.1"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 16 16"><path d="M3 4.2c0-.7.5-1.2 1.2-1.2h7.6c.7 0 1.2.5 1.2 1.2v5.6c0 .7-.5 1.2-1.2 1.2H7l-3 2.3V11h.2C3.5 11 3 10.5 3 9.8z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.3"/><path d="m10.2 10.2 3.3 3.3"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1"/><path d="M11.2 9v4.5M9 11.2h4.5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 16 16"><path d="M8 4.2C6.8 3.3 5 3 2.8 3.2v9c2.2-.2 4 .1 5.2 1 1.2-.9 3-1.2 5.2-1v-9C11 3 9.2 3.3 8 4.2zM8 4.2v9"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.8 8s2.3-4.3 6.2-4.3S14.2 8 14.2 8s-2.3 4.3-6.2 4.3S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.9"/></symbol>
+  <symbol id="i-code" viewBox="0 0 16 16"><path d="M5.4 4.6 2 8l3.4 3.4M10.6 4.6 14 8l-3.4 3.4M9.2 3.2 6.8 12.8"/></symbol>
+  <symbol id="i-chevD" viewBox="0 0 16 16"><path d="M4.5 6.3 8 9.8l3.5-3.5"/></symbol>
+  <symbol id="i-chevR" viewBox="0 0 16 16"><path d="M6.3 4.5 9.8 8l-3.5 3.5"/></symbol>
+</svg>
+
+<div class="win">
+  <aside class="side">
+    <div class="it"><svg class="ic"><use href="#i-plus"/></svg>新会话</div>
+    <div class="it"><svg class="ic"><use href="#i-search"/></svg>搜索</div>
+    <div class="it on"><svg class="ic"><use href="#i-grid"/></svg>自定义</div>
+  </aside>
+  <main class="main" id="main"><div class="body" id="page"></div></main>
+</div>
+<div class="demo" id="demo"></div>
+
+<script>
+const icon = (n) => `<svg class="ic"><use href="#i-${n}"/></svg>`;
+const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const BT = "`";
+
+// ── The skills the demo can show. ──
+const PDF_MD = [
+  "---",
+  "name: pdf-tools",
+  "description: 提取 PDF 里的文字和表格。读取、转换或检查 PDF 文件时使用。",
+  "---",
+  "",
+  "# pdf-tools",
+  "",
+  "先读 `references/formats.md`，再按步骤做。扫描件先看 `references/limits.md`。",
+  "",
+  "## 步骤",
+  "",
+  "1. 判断文件是文字版还是扫描件。",
+  "2. 文字版用 `scripts/extract.py` 取出文字；有表格时再跑 `scripts/tables.py`。",
+  "3. 检查结果，跳过的页要说明原因。",
+  "",
+  "> 不要改写脚本本身；脚本出错时把错误原文告诉用户。",
+  "",
+  "## 输出",
+  "",
+  "| 内容 | 文件 |",
+  "|---|---|",
+  "| 文字 | `out/text.md` |",
+  "| 表格 | `out/tables/*.csv` |",
+  "",
+  "```bash",
+  "python3 scripts/extract.py input.pdf --out out/",
+  "```",
+].join("\n");
+const FORMATS_MD = ["# 支持的格式", "", "- PDF 1.4 到 2.0", "- 加密的 PDF 需要用户给出密码", "- 表单字段按 `name: value` 输出", "", "```json", '{ "pages": 12, "tables": 3 }', "```"].join("\n");
+const LIMITS_MD = ["# 限制", "", "扫描件没有文字层，这个技能**不做** OCR。遇到扫描件时告诉用户，并建议先用其他工具识别。", "", "单个文件超过 200 页时分批处理，每批 50 页。"].join("\n");
+const EXTRACT_PY = [
+  "#!/usr/bin/env python3",
+  '"""Extract the text of a PDF, page by page."""',
+  "import argparse",
+  "import sys",
+  "",
+  "from pypdf import PdfReader",
+  "",
+  "",
+  "def main() -> int:",
+  "    parser = argparse.ArgumentParser()",
+  '    parser.add_argument("pdf")',
+  '    parser.add_argument("--out", default="out")',
+  "    args = parser.parse_args()",
+  "    reader = PdfReader(args.pdf)",
+  "    for number, page in enumerate(reader.pages, 1):",
+  "        # A page without a text layer is a scan: say so and go on.",
+  '        text = page.extract_text() or ""',
+  '        print(f"## Page {number}\\n\\n{text}\\n")',
+  "    return 0",
+  "",
+  "",
+  'if __name__ == "__main__":',
+  "    sys.exit(main())",
+].join("\n");
+const TABLES_PY = ["#!/usr/bin/env python3", '"""Write each table of a PDF as a CSV file."""', "import csv", "", "", "def write(rows, path):", '    with open(path, "w", newline="") as f:', "        csv.writer(f).writerows(rows)", ""].join("\n");
+const LICENSE = ["MIT License", "", "Copyright (c) 2026", "", "Permission is hereby granted, free of charge, to any person obtaining a copy", "of this software and associated documentation files (the \"Software\"), to deal", "in the Software without restriction."].join("\n");
+const simpleMd = (name, d, body) => ["---", `name: ${name}`, `description: ${d}`, "---", "", `# ${name}`, "", body].join("\n");
+
+const SKILLS = {
+  mine: {
+    name: "pdf-tools", desc: "提取 PDF 里的文字和表格。读取、转换或检查 PDF 文件时使用。",
+    facts: [["来源", "上传"], ["范围", "个人 · 所有项目"], ["调用", "/skill:pdf-tools", "mono", "copy"], ["位置", "~/.finx/skills/pdf-tools", "mono grow", "folder"]],
+    files: { "SKILL.md": PDF_MD, "references/formats.md": FORMATS_MD, "references/limits.md": LIMITS_MD, "scripts/extract.py": EXTRACT_PY, "scripts/tables.py": TABLES_PY, "assets/sample.pdf": null, "LICENSE.txt": LICENSE },
+    menu: "mine",
+  },
+  repo: {
+    name: "commit-style", badge: "仓库", desc: "本仓库提交信息的格式要求，写提交信息时使用。",
+    facts: [["来源", "仓库"], ["范围", "finxwork"], ["调用", "/skill:commit-style", "mono", "copy"], ["位置", "finxwork/.agents/skills/commit-style", "mono grow", "folder"]],
+    note: "随仓库共享。在这里停用只写在你的个人配置里，不改仓库。",
+    files: { "SKILL.md": simpleMd("commit-style", "本仓库提交信息的格式要求，写提交信息时使用。", "第一行写改了哪个部分和做了什么，不超过 72 个字符：\n\n```\nDesktop: skills submenu in the + menu\n```\n\n正文说明为什么这样改。"), "examples.md": "# 示例\n\n- `Kernel: skills/read for one file of a skill`\n- `Desktop: the skill page is one column`" },
+    menu: "repo",
+  },
+  claude: {
+    name: "frontend-design", badge: "仓库", off: true, desc: "做网页和界面时使用：给出有个性的排版、配色和动效，避免千篇一律的模板感。",
+    facts: [["来源", "仓库 · .claude"], ["范围", "finxwork"], ["调用", "/skill:frontend-design", "mono", "copy"], ["位置", "finxwork/.claude/skills/frontend-design", "mono grow", "folder"]],
+    note: "它在仓库的 <code>.claude/skills</code> 里，默认不启用。打开只对你生效，写在你的个人配置里。",
+    files: { "SKILL.md": simpleMd("frontend-design", "做网页和界面时使用。", "先定一个方向，再动手：\n\n1. 字体：一个标题字体，一个正文字体。\n2. 颜色：一个主色，其余用中性色。\n3. 动效：只在进入和状态变化时出现。") },
+    menu: "repo",
+  },
+  system: {
+    name: "skill-creator", badge: "内置", desc: "Create, improve, and evaluate skills using realistic test cases, baseline comparisons, and user feedback.",
+    facts: [["来源", "finx 内置"], ["范围", "个人 · 所有项目"], ["调用", "/skill:skill-creator", "mono", "copy", "只能手动调用"], ["位置", "~/.finx/skills/.system/skill-creator", "mono grow", "folder"]],
+    files: { "SKILL.md": simpleMd("skill-creator", "Create, improve, and evaluate skills.", "## Creating a skill\n\n1. Capture what the skill should do.\n2. Write a draft `SKILL.md`.\n3. Run the test cases in `agents/`."), "agents/grader.md": "# Grader\n\nScore each run against the expectations.", "agents/analyzer.md": "# Analyzer\n\nCompare the runs with and without the skill.", "eval-viewer/viewer.html": "<!doctype html>\n<title>Eval viewer</title>", "LICENSE.txt": LICENSE, "UPSTREAM.md": "# Upstream\n\nBundled with finx." },
+    menu: "system",
+  },
+  catalog: {
+    name: "release-notes", desc: "Turns the commits between two versions into release notes, grouped as new, improved and fixed.", notAdded: true,
+    facts: [["来源", "finx 精选"], ["许可", "MIT"], ["添加到", "~/.finx/skills/release-notes", "mono grow"]],
+    files: { "SKILL.md": simpleMd("release-notes", "Turns the commits between two versions into release notes.", "## Steps\n\n1. List the commits between the two tags.\n2. Group them as **new**, **improved** and **fixed**.\n3. Write one line each, in the reader's words."), "template.md": "## What's new\n\n- …\n\n## Fixed\n\n- …" },
+  },
+  single: {
+    name: "gen-report", desc: "生成团队周报：读取本周的提交和任务，按固定格式写出 report.md。",
+    facts: [["来源", "上传"], ["范围", "个人 · 所有项目"], ["调用", "/skill:gen-report", "mono", "copy"], ["位置", "~/.finx/skills/gen-report", "mono grow", "folder"]],
+    files: { "SKILL.md": simpleMd("gen-report", "生成团队周报。", "读取本周的提交和任务，按下面的格式写出 `report.md`：\n\n- 本周完成\n- 下周计划\n- 风险") },
+    menu: "mine",
+  },
+};
+const STATES = { mine: "我的", repo: "仓库", claude: ".claude 默认不启用", system: "内置", catalog: "发现 · 未添加", single: "只有 SKILL.md" };
+
+let state = "mine", layout = "page", tab = "overview", open = "SKILL.md", source = false, enabled = {}, closed = new Set(), menuAt = null;
+const skill = () => SKILLS[state];
+const isOn = () => (state in enabled ? enabled[state] : !skill().off);
+
+// ── A small Markdown renderer for the demo; the app uses its own Markdown component. ──
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+}
+function md(text) {
+  const lines = text.replace(/^---\n[\s\S]*?\n---\n?/, "").split("\n");
+  let out = "", i = 0;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (!l.trim()) { i++; continue; }
+    if (l.startsWith("```")) {
+      const body = [];
+      for (i++; i < lines.length && !lines[i].startsWith("```"); i++) body.push(lines[i]);
+      out += `<pre><code>${esc(body.join("\n"))}</code></pre>`; i++; continue;
+    }
+    const h = /^(#{1,3}) (.*)/.exec(l);
+    if (h) { out += `<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; i++; continue; }
+    if (l.startsWith("> ")) { out += `<blockquote>${inline(l.slice(2))}</blockquote>`; i++; continue; }
+    if (l.startsWith("|")) {
+      const rows = [];
+      for (; i < lines.length && lines[i].startsWith("|"); i++) if (!/^\|[-| ]+\|$/.test(lines[i])) rows.push(lines[i].slice(1, -1).split("|").map((c) => c.trim()));
+      out += `<table><tr>${rows[0].map((c) => `<th>${inline(c)}</th>`).join("")}</tr>${rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</table>`;
+      continue;
+    }
+    const list = /^(\d+\.|-) /.exec(l);
+    if (list) {
+      const tag = list[1] === "-" ? "ul" : "ol", items = [];
+      for (; i < lines.length && /^(\d+\.|-) /.test(lines[i]); i++) items.push(lines[i].replace(/^(\d+\.|-) /, ""));
+      out += `<${tag}>${items.map((x) => `<li>${inline(x)}</li>`).join("")}</${tag}>`;
+      continue;
+    }
+    const para = [];
+    for (; i < lines.length && lines[i].trim() && !/^(#|```|> |\||\d+\. |- )/.test(lines[i]); i++) para.push(inline(lines[i]));
+    out += `<p>${para.join("<br>")}</p>`;
+  }
+  return `<div class="md">${out}</div>`;
+}
+function rawMd(text) {
+  const m = /^(---\n[\s\S]*?\n---)/.exec(text);
+  return `<pre class="raw">${m ? `<span class="fm">${esc(m[1])}</span>${esc(text.slice(m[1].length))}` : esc(text)}</pre>`;
+}
+function python(text) {
+  const kw = /\b(import|from|def|return|for|in|if|with|as|or|not|None|True|False)\b/;
+  return `<pre class="raw">${text.split("\n").map((line) => {
+    const c = line.indexOf("#") >= 0 && !line.includes('"#') ? line.indexOf("#") : -1;
+    const code = c >= 0 ? line.slice(0, c) : line, comment = c >= 0 ? line.slice(c) : "";
+    const body = esc(code)
+      .replace(/(f?"[^"]*")/g, '<span class="s">$1</span>')
+      .replace(new RegExp(kw.source, "g"), '<span class="k">$1</span>')
+      .replace(/(<span class="k">def<\/span> )(\w+)/, '$1<span class="f">$2</span>');
+    return body + (comment ? `<span class="c">${esc(comment)}</span>` : "");
+  }).join("\n")}</pre>`;
+}
+
+// ── The folder as a tree: SKILL.md first, then folders, then files, each by name. ──
+function tree(paths) {
+  const root = { kids: [] };
+  for (const p of paths) {
+    let at = root;
+    p.split("/").forEach((name, i, parts) => {
+      const path = parts.slice(0, i + 1).join("/"), dir = i < parts.length - 1;
+      let n = at.kids.find((k) => k.name === name);
+      if (!n) at.kids.push((n = { name, path, dir, kids: [] }));
+      at = n;
+    });
+  }
+  const rank = (n) => (n.path === "SKILL.md" ? 0 : n.dir ? 1 : 2);
+  const sort = (n) => { n.kids.sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name)); n.kids.forEach(sort); };
+  sort(root);
+  const rows = [];
+  const walk = (list, depth) => list.forEach((n) => { rows.push([n, depth]); if (n.dir && !closed.has(n.path)) walk(n.kids, depth + 1); });
+  walk(root.kids, 0);
+  return rows;
+}
+
+function filesHtml(s) {
+  const paths = Object.keys(s.files);
+  const count = paths.length;
+  const text = s.files[open];
+  const isMd = /\.md$/.test(open);
+  let view;
+  if (text === null) view = `<div class="vnote">这个文件不是文本，不能在这里查看。</div>`;
+  else if (isMd && !source) view = md(text);
+  else if (isMd) view = rawMd(text);
+  else if (/\.py$/.test(open)) view = python(text);
+  else view = `<pre class="raw">${esc(text)}</pre>`;
+  const single = count === 1;
+  const rows = single ? "" : tree(paths).map(([n, d]) =>
+    `<button class="trow ${n.path === open ? "on" : ""}" style="padding-left:${8 + d * 14}px" data-file="${n.dir ? "" : n.path}" data-dir="${n.dir ? n.path : ""}" title="${n.path}">${n.dir ? icon(closed.has(n.path) ? "chevR" : "chevD") : '<i class="sp"></i>'}<span>${esc(n.name)}</span></button>`).join("");
+  return `
+    <section class="files">
+      ${layout === "page" ? `<div class="th"><h2>文件</h2><span class="n">${count}</span></div>` : ""}
+      <div class="frame ${single ? "single" : ""}">
+        ${single ? "" : `<nav class="tree">${rows}</nav>`}
+        <section class="viewer">
+          <div class="vbar">
+            <span class="path">/${esc(open)}</span>
+            ${isMd && text !== null ? `<div class="seg"><button class="${source ? "" : "on"}" data-src="0" title="预览">${icon("eye")}</button><button class="${source ? "on" : ""}" data-src="1" title="原文">${icon("code")}</button></div>` : ""}
+            ${s.notAdded ? "" : `<button class="vbtn" title="在访达中显示">${icon("folder")}</button>`}
+          </div>
+          <div class="vbody">${view}</div>
+        </section>
+      </div>
+    </section>`;
+}
+
+function factsHtml(s) {
+  return `<div class="facts">${s.facts.map(([k, v, cls = "", act, sub]) => `
+    <div class="fact ${cls.includes("grow") ? "grow" : ""}">
+      <div class="k">${k}</div>
+      <div class="v"><span class="cut" title="${esc(v)}">${esc(v)}</span>${sub ? `<span class="sub">${sub}</span>` : ""}${act ? `<button class="ghost" title="${act === "copy" ? "复制" : "在访达中显示"}">${icon(act)}</button>` : ""}</div>
+    </div>`).join("")}</div>`;
+}
+
+function render() {
+  const s = skill();
+  const on = isOn();
+  if (!(open in s.files)) open = "SKILL.md";
+  const acts = s.notAdded
+    ? `<button class="btn solid">${icon("plus")}添加</button>`
+    : `<button class="btn" ${on ? "" : "disabled style='opacity:.5'"}>${icon("chat")}在对话中使用</button>
+       <label class="swl">启用<button class="sw ${on ? "on" : ""}" id="sw"></button></label>
+       <button class="more ${menuAt ? "open" : ""}" id="more">${icon("more")}</button>`;
+  const note = s.note ? `<p class="aside">${s.note}</p>` : "";
+  const summary = `<section class="sum"><div class="k">技能简介</div><p>${esc(s.desc)}</p></section>`;
+  const head = `
+    <div class="head">
+      <div class="title">
+        <div class="tile">${icon("book")}</div>
+        <h1>${s.name}</h1>
+        ${s.badge ? `<span class="badge">${s.badge}</span>` : ""}
+        <div class="acts">${acts}</div>
+      </div>
+    </div>`;
+  const count = Object.keys(s.files).length;
+  const page = document.getElementById("page");
+  page.className = `body ${on || s.notAdded ? "" : "off"} ${layout === "tabs" ? "tabbed" : ""}`;
+  page.innerHTML = `
+    <div class="bar"><button class="back" id="back">${icon("back")}技能</button></div>
+    ${head}
+    ${layout === "page"
+      ? factsHtml(s) + note + summary + filesHtml(s)
+      : `<div class="tabs"><button class="tab ${tab === "overview" ? "on" : ""}" data-tab="overview">概览</button><button class="tab ${tab === "files" ? "on" : ""}" data-tab="files">内容<span class="n"> · ${count}</span></button></div>
+         ${tab === "overview" ? factsHtml(s) + note + summary : filesHtml(s)}`}`;
+  document.querySelector(".menu")?.remove();
+  if (menuAt) {
+    const m = document.createElement("div");
+    m.className = "menu";
+    const items = [
+      [`<button class="mi">${icon("folder")}在访达中显示</button>`],
+      [`<button class="mi">${icon("copy")}复制路径</button>`],
+      ...(s.menu === "mine" ? [[`<div class="msep"></div>`], [`<button class="mi danger">${icon("trash")}删除技能</button>`]] : []),
+    ];
+    m.innerHTML = items.map((x) => x[0]).join("");
+    m.style.top = `${menuAt.bottom + 4}px`;
+    m.style.left = `${menuAt.right - 208}px`;
+    document.body.appendChild(m);
+  }
+  const row = (opts, key, cur) => Object.entries(opts).map(([k, v]) => `<button class="${k === cur ? "on" : ""}" data-${key}="${k}">${v}</button>`).join("");
+  document.getElementById("demo").innerHTML = `${row(STATES, "state", state)}<i></i>${row({ page: "一页到底", tabs: "保留页签" }, "layout", layout)}<i></i>${row({ light: "浅色", dark: "深色" }, "theme", document.documentElement.dataset.theme)}`;
+}
+
+document.addEventListener("click", (e) => {
+  const t = e.target.closest("button");
+  if (!e.target.closest("#more") && menuAt) { menuAt = null; render(); if (!t) return; }
+  if (!t) return;
+  const d = t.dataset;
+  if (d.state) { state = d.state; open = "SKILL.md"; closed = new Set(); menuAt = null; }
+  else if (d.layout) layout = d.layout;
+  else if (d.theme) document.documentElement.dataset.theme = d.theme;
+  else if (d.tab) tab = d.tab;
+  else if (d.file) open = d.file;
+  else if (d.dir) closed.has(d.dir) ? closed.delete(d.dir) : closed.add(d.dir);
+  else if (d.src) source = d.src === "1";
+  else if (t.id === "sw") enabled[state] = !isOn();
+  else if (t.id === "more") menuAt = menuAt ? null : t.getBoundingClientRect();
+  else return;
+  render();
+});
+render();
+setTimeout(() => document.body.classList.add("settled"), 500);
+</script>
+</body>
+</html>

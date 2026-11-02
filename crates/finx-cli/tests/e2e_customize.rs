@@ -180,6 +180,7 @@ async fn the_page_manages_configuration_skills_and_servers_through_the_service()
         "ConfigWriteResult",
         "SkillsInstallResult",
         "SkillsFilesResult",
+        "SkillsReadResult",
         "SkillsSetEnabledResult",
         "SkillsListResult",
         "McpListResult",
@@ -268,6 +269,11 @@ async fn the_page_manages_configuration_skills_and_servers_through_the_service()
     schema.check("SkillsFilesResult", &files);
     let paths: Vec<&str> = files["files"].as_array().unwrap().iter().filter_map(|f| f["path"].as_str()).collect();
     assert_eq!(paths, vec!["SKILL.md", "scripts", "scripts/run.sh"]);
+    let script = client.request("skills/read", json!({"path": target, "file": "scripts/run.sh"})).await.unwrap();
+    schema.check("SkillsReadResult", &script);
+    assert_eq!(script["text"], "echo hi\n");
+    let err = client.request("skills/read", json!({"path": target, "file": "../weekly/SKILL.md"})).await.unwrap_err();
+    assert_eq!(error_kind(&err), "skill_invalid");
     let switched = client.request("skills/set_enabled", json!({"path": target, "enabled": false})).await.unwrap();
     schema.check("SkillsSetEnabledResult", &switched);
     let scanned = client.request("skills/list", json!({"cwd": work})).await.unwrap();

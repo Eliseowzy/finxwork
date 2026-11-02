@@ -5,7 +5,8 @@ import { catalogConnectors, catalogSkills, commandLine, oneClick, type CatalogCo
 import { agoText } from "../format";
 import { Icon } from "../icons";
 import { errorText, useNow, useStore, type CustomizeView } from "../store";
-import { skillMenu, type Actions } from "./Lists";
+import type { Actions } from "./Lists";
+import { SkillContents } from "./SkillContents";
 import { addedConnector, addedSkill, catalogOf, catalogText, fromRepo, statusOf, type SkillItem } from "./model";
 import { catalogLogo, MoreButton, ServerTile, SkillTile, Switch, tilde, type MenuItem } from "./parts";
 import type { Customize } from "./useCustomize";
@@ -74,16 +75,6 @@ function Fact({ k, children, stack, mono }: { k: string; children: ReactNode; st
   );
 }
 
-function Callout({ icon = "info", warn, children, action }: { icon?: string; warn?: boolean; children: ReactNode; action?: ReactNode }) {
-  return (
-    <div className={`cz-callout ${warn ? "warn" : ""}`}>
-      <Icon name={icon} />
-      <span>{children}</span>
-      {action}
-    </div>
-  );
-}
-
 function SolidAdd({ busy, label, busyLabel, onAdd }: { busy: boolean; label: string; busyLabel: string; onAdd: () => void }) {
   return busy ? (
     <button className="btn cz-solid" disabled>
@@ -98,28 +89,13 @@ function SolidAdd({ busy, label, busyLabel, onAdd }: { busy: boolean; label: str
   );
 }
 
-/** The text of a SKILL.md, its header set apart. */
-function SkillMd({ text }: { text: string }) {
-  const m = /^(---\r?\n[\s\S]*?\r?\n---)(\r?\n|$)/.exec(text);
-  return (
-    <pre className="cz-code">
-      {m ? (
-        <>
-          <span className="fm">{m[1]}</span>
-          {text.slice(m[1].length)}
-        </>
-      ) : (
-        text
-      )}
-    </pre>
-  );
-}
-
-function sizeText(n: number): string {
-  return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
-}
-
-export function SkillPage({ c, a, detail, project, onBack, onTab }: { c: Customize; a: Actions; detail: Detail; project: string | null; onBack: () => void; onTab: (tab: string) => void }) {
+/**
+ * A skill's page (customize-design §10.13; the look is docs/desktop/skill-detail-demo.html): the
+ * connector page's one column. Back alone on the top line; the tile and name large with the
+ * item's controls at the right; its facts in a row, with a line under them when there is
+ * something to know about where it lives; then what it does, under its own heading; then its files, the folder as a tree beside the open file.
+ */
+export function SkillPage({ c, a, detail, project, onBack }: { c: Customize; a: Actions; detail: Detail; project: string | null; onBack: () => void }) {
   const { t } = useTranslation("customize");
   const st = useStore();
   const item: SkillItem | null = detail.catalog ? null : (c.items.find((i) => i.dir === detail.id) ?? null);
@@ -152,22 +128,6 @@ export function SkillPage({ c, a, detail, project, onBack, onTab }: { c: Customi
   const name = item?.entry.name ?? cat!.id;
   const count = files ? files.files.filter((f) => !f.dir).length : (cat?.files ?? 0);
   const description = item?.entry.description ?? catalogText(t, `catalog.skills.${cat!.id}`);
-  const scope = item ? t(`skill.scope.${item.group}`, { project }) : null;
-  const meta = item ? [scope, t("skill.files", { count })] : [t("catalog.by"), t("skill.files", { count })];
-  if (item && !item.on) meta.push(t("skill.off"));
-  const acts = item ? (
-    <>
-      {item.on && (
-        <button className="btn" onClick={() => a.useSkill(item.entry.name)}>
-          <Icon name="chat" />
-          {t("skill.use")}
-        </button>
-      )}
-      <MoreButton label={t("more")} items={() => skillMenu(item, a, c, t, false)} />
-    </>
-  ) : (
-    <SolidAdd busy={c.adding.has(`skill:${cat!.id}`)} label={t("skill.add")} busyLabel={t("skill.adding")} onAdd={() => a.installSkill(cat!)} />
-  );
   const source = item
     ? item.group === "system"
       ? t("skill.source.system")
@@ -179,113 +139,116 @@ export function SkillPage({ c, a, detail, project, onBack, onTab }: { c: Customi
             ? t("skill.source.extra")
             : t(`skill.source.${item.entry.source?.kind ?? "local"}` as "skill.source.local")
     : t("catalog.by");
-  let main: ReactNode;
-  if (detail.tab === "skillmd") {
-    main = (
-      <div className="cz-pane">
-        <div className="cz-filebar">
-          <Icon name="file" />
-          <span className="mono">{tilde(`${dir}/SKILL.md`)}</span>
-          {item && (
-            <button className="link" onClick={() => window.finx?.revealPath(`${dir}/SKILL.md`)}>
-              {t("skill.reveal")}
-            </button>
-          )}
-        </div>
-        {files ? <SkillMd text={files.skill_md} /> : <div className="cz-wait">{filesError ? t("skill.noFiles", { error: filesError }) : t("loading")}</div>}
+  const command = `/skill:${name}`;
+  const copy = () => {
+    void navigator.clipboard?.writeText(command);
+    st.show(t("skill.copied", { command }));
+  };
+  const menu = (): MenuItem[] =>
+    item
+      ? [
+          { id: "reveal", label: t("skill.reveal"), icon: "folder", run: () => window.finx?.revealPath(item.dir) },
+          // Only the person's own, in ~/.finx/skills (DD-35, DD-36).
+          ...(item.entry.removable ? [null, { id: "remove", label: t("skill.removeSkill"), icon: "trash", danger: true, run: () => c.removeSkill(item) }] : []),
+        ]
+      : [];
+  const badge = item?.group === "system" ? t("skill.builtIn") : item?.group === "project" ? t("skill.source.repo") : null;
+  // A built-in skill needs none: its badge says what it is.
+  const note = item?.offByDefault ? (
+    <Trans t={t} i18nKey="skill.offByDefaultNote" values={{ folder: `${item.from ?? ".claude"}/skills` }} components={{ code: <code /> }} />
+  ) : item?.group === "project" ? (
+    t("skill.repoNote")
+  ) : item?.from ? (
+    <Trans t={t} i18nKey="skill.sharedNote" values={{ folder: `~/${item.from}/skills` }} components={{ code: <code /> }} />
+  ) : item?.group === "extra" ? (
+    t("skill.extraNote")
+  ) : null;
+  return (
+    <div className={`cz-dpage ${item && !item.on ? "off" : ""}`}>
+      <div className="cz-dbar">
+        <Back label={t("skill.back")} onBack={onBack} />
       </div>
-    );
-  } else if (detail.tab === "files") {
-    main = (
-      <div className="cz-pane">
-        {files ? (
-          <div className="fgroup cz-files">
-            {files.files.map((f) => (
-              <div key={f.path} className="frow">
-                <Icon name={f.dir ? "folder" : "file"} />
-                <span className="mono">{f.path}</span>
-                {!f.dir && <span className="sz">{sizeText(f.size)}</span>}
-              </div>
-            ))}
+      <div className="cz-dhead">
+        <div className="cz-dtitle">
+          <SkillTile size="xl" />
+          <h1>{name}</h1>
+          {badge && <span className="badge">{badge}</span>}
+          <div className="cz-dacts">
+            {item ? (
+              <>
+                {/* A skill turned off is not offered to the message box. */}
+                <button className="btn" disabled={!item.on} onClick={() => a.useSkill(item.entry.name)}>
+                  <Icon name="chat" />
+                  {t("skill.use")}
+                </button>
+                <label className="cz-swl">
+                  {t("skill.enabled")}
+                  <Switch on={item.on} label={item.on ? t("skill.turnOff") : t("skill.turnOn")} onChange={(on) => a.toggleSkill(item, on)} />
+                </label>
+                <MoreButton label={t("more")} items={menu} />
+              </>
+            ) : (
+              <SolidAdd busy={c.adding.has(`skill:${cat!.id}`)} label={t("skill.add")} busyLabel={t("skill.adding")} onAdd={() => a.installSkill(cat!)} />
+            )}
           </div>
-        ) : (
-          <div className="cz-wait">{filesError ? t("skill.noFiles", { error: filesError }) : t("loading")}</div>
-        )}
-      </div>
-    );
-  } else {
-    const note =
-      item?.group === "system" ? (
-        <Callout>{t("skill.systemNote")}</Callout>
-      ) : item?.offByDefault ? (
-        <Callout>
-          <Trans t={t} i18nKey="skill.offByDefaultNote" values={{ folder: `${item.from ?? ".claude"}/skills` }} components={{ code: <code /> }} />
-        </Callout>
-      ) : item?.group === "project" ? (
-        <Callout>{t("skill.repoNote")}</Callout>
-      ) : item?.from ? (
-        <Callout>
-          <Trans t={t} i18nKey="skill.sharedNote" values={{ folder: `~/${item.from}/skills` }} components={{ code: <code /> }} />
-        </Callout>
-      ) : item?.group === "extra" ? (
-        <Callout>{t("skill.extraNote")}</Callout>
-      ) : null;
-    main = (
-      <div className="cz-cols">
-        <div>
-          <div className="cz-dsec">
-            <h4>{t("skill.description")}</h4>
-            <p>{description}</p>
-          </div>
-          <div className="cz-dsec">
-            <h4>{t("skill.howTo")}</h4>
-            <p>
-              <Trans t={t} i18nKey={item && !item.entry.model_invocable ? "skill.howToUserOnly" : "skill.howToText"} values={{ name }} components={{ code: <code /> }} />
-            </p>
-          </div>
-          {note && <div className="cz-dsec">{note}</div>}
         </div>
-        <aside className="cz-side">
-          {item && (
-            <Fact k={t("skill.enabled")}>
-              <Switch on={item.on} label={item.on ? t("skill.turnOff") : t("skill.turnOn")} onChange={(on) => a.toggleSkill(item, on)} />
-            </Fact>
-          )}
-          <Fact k={t("skill.sourceLabel")}>{source}</Fact>
+        <div className="cz-facts">
+          <DFact k={t("skill.sourceLabel")}>{source}</DFact>
           {item ? (
             <>
-              <Fact k={t("skill.scopeLabel")}>{scope}</Fact>
-              <Fact k={t("skill.path")} stack mono>
-                {tilde(item.dir)}
-              </Fact>
+              {(item.group === "user" || item.group === "project") && <DFact k={t("skill.scopeLabel")}>{t(`skill.scope.${item.group}`, { project })}</DFact>}
+              <DFact k={t("skill.invoke")}>
+                <span className="cut">{command}</span>
+                {!item.entry.model_invocable && <span className="sub">{t("skill.userOnly")}</span>}
+                <button className="cz-ghost" title={t("skill.copy")} aria-label={t("skill.copy")} onClick={copy}>
+                  <Icon name="copy" />
+                </button>
+              </DFact>
+              <DFact k={t("skill.path")} grow>
+                <span className="cut" title={item.dir}>
+                  {tilde(item.dir)}
+                </span>
+                <button className="cz-ghost" title={t("skill.reveal")} aria-label={t("skill.reveal")} onClick={() => window.finx?.revealPath(item.dir)}>
+                  <Icon name="folder" />
+                </button>
+              </DFact>
             </>
           ) : (
             <>
-              <Fact k={t("skill.license")}>{cat!.license === "finxwork" ? t("skill.licenseFinxwork") : cat!.license}</Fact>
-              <Fact k={t("skill.addTo")} stack mono>
-                {t("skill.addToValue", { path: `~/.finx/skills/${cat!.id}` })}
-              </Fact>
+              <DFact k={t("skill.license")}>{cat!.license === "finxwork" ? t("skill.licenseFinxwork") : cat!.license}</DFact>
+              <DFact k={t("skill.addTo")} grow>
+                <span className="cut">{`~/.finx/skills/${cat!.id}`}</span>
+              </DFact>
             </>
           )}
-        </aside>
+        </div>
+        {/* Only something to know, never to do: a quiet line under the facts it explains. */}
+        {note && <p className="cz-aside">{note}</p>}
       </div>
-    );
-  }
+      {description && (
+        <section className="cz-dsum">
+          <div className="k">{t("skill.summary")}</div>
+          <p>{description}</p>
+        </section>
+      )}
+      <section className="cz-dfiles">
+        <div className="cz-th">
+          <h2>{t("skill.filesTitle")}</h2>
+          <span className="n">{count}</span>
+        </div>
+        {dir && <SkillContents key={dir} dir={dir} files={files} error={filesError} reveal={!!item} />}
+      </section>
+    </div>
+  );
+}
+
+/** One of a page's facts: a small label over its value. */
+function DFact({ k, grow, children }: { k: string; grow?: boolean; children: ReactNode }) {
   return (
-    <>
-      <Back label={t("skill.back")} onBack={onBack} />
-      <Hero tile={<SkillTile size="xl" />} name={name} badge={item?.group === "system" && <span className="badge">{t("skill.builtIn")}</span>} meta={meta} acts={acts} />
-      <Tabs
-        tabs={[
-          { id: "overview", label: t("skill.tabs.overview") },
-          { id: "skillmd", label: t("skill.tabs.skillmd") },
-          { id: "files", label: t("skill.tabs.files"), n: count },
-        ]}
-        on={detail.tab}
-        onTab={onTab}
-      />
-      {main}
-    </>
+    <div className={`cz-fact ${grow ? "grow" : ""}`}>
+      <div className="k">{k}</div>
+      <div className="v">{children}</div>
+    </div>
   );
 }
 
@@ -314,8 +277,9 @@ function accountHost(url: string): string {
 
 /**
  * A connector's page (customize-design §10.12; the look is docs/desktop/connector-detail-demo.html):
- * back and the item's controls on one line, the logo and name large, what it does, its facts in
- * one row, a note when something needs the person, then its tools a line each.
+ * back on the top line, the logo and name large with the item's controls at the right, its facts
+ * in one row, a note when something needs the person, what it does under its own heading, then
+ * its tools a line each.
  */
 function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServerView; onBack: () => void }) {
   const { t } = useTranslation("customize");
@@ -461,7 +425,6 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
             <MoreButton label={t("more")} items={menu} />
           </div>
         </div>
-        {description && <p className="cz-lede">{description}</p>}
         <div className="cz-facts">
           <div className="cz-fact">
             <div className="k">{t("connector.state")}</div>
@@ -482,7 +445,7 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
           <div className="cz-fact grow">
             <div className="k">{remote ? t("connector.address") : t("connector.command")}</div>
             <div className="v">
-              <span className="mono" title={s.summary}>
+              <span className="cut" title={s.summary}>
                 {s.summary}
               </span>
               <button className="cz-ghost" title={remote ? t("connector.copyAddress") : t("connector.copyCommand")} aria-label={remote ? t("connector.copyAddress") : t("connector.copyCommand")} onClick={copy}>
@@ -493,6 +456,12 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
         </div>
       </div>
       {note}
+      {description && (
+        <section className="cz-dsum">
+          <div className="k">{t("connector.summary")}</div>
+          <p>{description}</p>
+        </section>
+      )}
       {!untrusted && (
         <section className="cz-dtools">
           <div className="cz-th">
