@@ -101,9 +101,50 @@ export class Failure extends Error {
   }
 }
 
+/**
+ * A page opened with `?many`: dozens more skills and servers, names short and long, for
+ * checking how long lists look (the "+" menu's submenus, the 自定义 page).
+ */
+const many = typeof location !== "undefined" && new URLSearchParams(location.search).has("many");
+
+const manyNames = [
+  "notion", "slack", "jira", "confluence", "figma", "google-drive", "gmail", "google-calendar", "asana", "trello", "hubspot", "salesforce-crm-production",
+  "stripe", "shopify", "zendesk", "intercom", "datadog", "grafana-observability", "pagerduty", "cloudflare", "vercel", "supabase", "mongodb-atlas", "redis",
+  "airtable", "dropbox", "box", "miro", "canva", "zoom",
+];
+
+function manySkills(): Skill[] {
+  const names = [
+    "api-docs", "brand-voice", "changelog", "code-review-checklist", "csv-cleaner", "db-migrations", "deploy-staging", "design-tokens", "docx", "excel-reports",
+    "i18n-strings", "incident-postmortem-writer-with-timeline-and-action-items", "invoice-parser", "meeting-notes", "onboarding-guide", "perf-profiling",
+    "pptx", "pr-description", "security-audit", "seo-audit", "sql-optimizer", "test-plan", "translate-zh-en", "ui-copy", "weekly-okr", "xlsx",
+    "数据看板", "合同审阅", "周会纪要", "竞品分析报告", "面试题库", "用户访谈整理", "财报要点", "招聘JD", "发布检查清单", "客服话术",
+  ];
+  return names.map((name, i) => ({
+    name,
+    description: i % 3 === 0 ? `用于${name}相关的任务：读取上下文，按团队的固定格式产出结果，并在结尾列出待确认的事项。` : `Helps with ${name}: reads what is there, follows the team's format, and lists what to check.`,
+    dir: `${home}/.finx/skills/${name}`,
+    scope: "user" as const,
+    on: i % 7 !== 3,
+    removable: true,
+    source: { kind: "upload" as const },
+    files: skillFiles(),
+  }));
+}
+
+function manyServers(): Server[] {
+  return manyNames.map((name, i) => ({
+    name,
+    layer: "user" as const,
+    config: { url: `https://mcp.${name}.example/mcp` },
+    status: i % 9 === 4 ? { state: "needs_login" as const } : i % 11 === 6 ? { state: "failed" as const, source: "cache" as const, error: "connection refused", checked_at: ago(5) } : { state: "ok" as const, source: "cache" as const, tools: 3, checked_at: ago(60) },
+    tools: tools(["search", "Search"], ["read", "Read one item"], ["list", "List items"]),
+  }));
+}
+
 export class CustomizeMock {
-  private skills = demoSkills();
-  private servers = demoServers();
+  private skills = many ? [...demoSkills(), ...manySkills()] : demoSkills();
+  private servers = many ? [...demoServers(), ...manyServers()] : demoServers();
   /** `mcp_servers.<name>.enabled` as each of the person's files says it. */
   private enabled: Record<"user" | "user_project", Map<string, boolean>> = { user: new Map([["sentry", false]]), user_project: new Map([["staging-db", false]]) };
   private readonly saved = new Set(["mcp.github.Authorization", "mcp.postgres-dev.DATABASE_URL", "mcp.sentry.Authorization"]);

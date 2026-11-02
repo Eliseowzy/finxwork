@@ -1,4 +1,4 @@
-import { useMemo, type KeyboardEvent, type MouseEvent } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { recentProjects } from "@finx/client";
 import type { McpServerView } from "@finx/protocol";
@@ -45,7 +45,31 @@ export const activate = (run: () => void) => (e: KeyboardEvent) => {
   run();
 };
 
-export const hoverFocus = (e: MouseEvent<HTMLElement>) => document.activeElement !== e.currentTarget && e.currentTarget.focus();
+// Without scrolling: a row half out of a list that scrolls would otherwise jump in under the pointer.
+export const hoverFocus = (e: MouseEvent<HTMLElement>) => document.activeElement !== e.currentTarget && e.currentTarget.focus({ preventScroll: true });
+
+/**
+ * A submenu's own rows, scrolling inside it past eight while what is above them stays put. An
+ * edge with more beyond it fades out, so a cut row reads as "more", not as a clipped menu.
+ */
+export function MenuList({ children }: { children: ReactNode }) {
+  const list = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ up: false, down: false });
+  const measure = () => {
+    const el = list.current;
+    if (!el) return;
+    const up = el.scrollTop > 1;
+    const down = el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+    setMore((m) => (m.up === up && m.down === down ? m : { up, down }));
+  };
+  // Rows read later, or a shorter window, change what is beyond the edges.
+  useLayoutEffect(measure);
+  return (
+    <div ref={list} className={`cn-list${more.up ? " more-up" : ""}${more.down ? " more-down" : ""}`} onScroll={measure}>
+      {children}
+    </div>
+  );
+}
 
 function Connectors({ close, c }: { close: () => void; c: Customize }) {
   const { t } = useTranslation("session");
@@ -67,12 +91,12 @@ function Connectors({ close, c }: { close: () => void; c: Customize }) {
         <span>{t("composer.manageConnectors")}</span>
       </button>
       <div className="msep" role="separator" />
-      <div className="cn-list">
+      <MenuList>
         {servers.length === 0 && <div className="mi cn-none-row">{t("composer.noConnectors")}</div>}
         {servers.map((s) => (
           <ServerRow key={s.name} s={s} c={c} name={name(s)} open={() => go("mine", { kind: "connector", id: s.name, tab: "overview" })} />
         ))}
-      </div>
+      </MenuList>
     </>
   );
 }

@@ -198,7 +198,11 @@
     "browserOff": "Turned off browser control; no conversation uses a browser from its next step",
     "computerOn": "Turned on computer use; every conversation can use it from its next step",
     "computerOff": "Turned off computer use; no conversation uses other apps from its next step",
-    "noConnectors": "No connectors yet"
+    "noConnectors": "No connectors yet",
+    "skills": "Skills",
+    "browseSkills": "Browse skills",
+    "manageSkills": "Manage skills",
+    "noSkills": "No skills available"
   },
   "inspector": {
     "label": "Session info",

@@ -172,7 +172,10 @@
    line, then the connectors, eight rows high before they scroll; each row is its connector's
    switch, the system ones offer to connect until they are. */
 .cn-sub{width:296px}
-.cn-list{max-height:calc(8 * 32px);overflow-y:auto;margin:0 -4px;padding:0 4px}
+/* Eight rows, fewer when the window is short (the two rows and line above stay on screen); it scrolls on its own, not the page under it. */
+.cn-list{max-height:min(calc(8 * 32px),calc(100vh - 140px));overflow-y:auto;overscroll-behavior:contain;margin:0 -4px;padding:0 4px;scroll-padding-block:24px;--fu:0px;--fd:0px;-webkit-mask-image:linear-gradient(to bottom,transparent,#000 var(--fu),#000 calc(100% - var(--fd)),transparent);mask-image:linear-gradient(to bottom,transparent,#000 var(--fu),#000 calc(100% - var(--fd)),transparent)}
+.cn-list.more-up{--fu:24px}
+.cn-list.more-down{--fd:24px}
 .cn-row{height:32px;min-height:32px;gap:9px;cursor:default}
 .cn-row .cz-tile{width:18px;height:18px;border-radius:var(--r-xs);font-size:7.5px;font-weight:650;letter-spacing:0}
 .cn-row .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
