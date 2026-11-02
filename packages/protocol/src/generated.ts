@@ -134,6 +134,18 @@ export type BrowserHostResult = {
   problem?: ExtensionProblem | null;
 };
 
+/** Parameters of `browser/site_icon`. */
+export type BrowserSiteIconParams = {
+  /** The site as its permission is kept: an origin such as `https://github.com`. */
+  origin: string;
+};
+
+/** The result of `browser/site_icon`. */
+export type BrowserSiteIconResult = {
+  /** A `data:` URI; not set when the site has none to give, or is not an https site. */
+  icon?: string | null;
+};
+
 /** The result of `browser/status`, and the parameters of `browser/changed`. */
 export type BrowserStatus = {
   /** Whether a desktop app shows embedded browsers. */
@@ -1617,6 +1629,7 @@ export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
   "browser/host": [BrowserHostParams, BrowserHostResult];
+  "browser/site_icon": [BrowserSiteIconParams, BrowserSiteIconResult];
   "browser/status": [Record<string, never>, BrowserStatus];
   "chatgpt/cancel": [ChatGptCancelParams, ChatGptStatus];
   "chatgpt/login": [Record<string, never>, ChatGptStatus];

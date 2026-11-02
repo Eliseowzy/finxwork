@@ -108,6 +108,8 @@ pub mod method {
     pub const BROWSER_STATUS: &str = "browser/status";
     /// Server notification to connections that called `browser/status`.
     pub const BROWSER_CHANGED: &str = "browser/changed";
+    /// A site's icon, for the lists of sites the browsers may open (browser-design §10.1).
+    pub const BROWSER_SITE_ICON: &str = "browser/site_icon";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -281,6 +283,21 @@ pub struct BrowserStatus {
     pub extension: Option<ExtensionStatus>,
     /// Whether a desktop app shows embedded browsers.
     pub embedded: bool,
+}
+
+/// Parameters of `browser/site_icon`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserSiteIconParams {
+    /// The site as its permission is kept: an origin such as `https://github.com`.
+    pub origin: String,
+}
+
+/// The result of `browser/site_icon`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserSiteIconResult {
+    /// A `data:` URI; not set when the site has none to give, or is not an https site.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// Parameters of the `browser/cdp` notification, in both directions.

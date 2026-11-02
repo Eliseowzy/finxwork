@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { BrowserStill, BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
 import { Icon } from "../icons";
 import { useCovered } from "../overlays";
+import { SiteIcon, siteOrigin } from "../siteIcon";
 import { allEngines, type SearchEngine } from "../../../shared/search";
 import { EngineIcon } from "../settings/BuiltInBrowser";
 import { BrowserMenu } from "./BrowserMenu";
@@ -167,7 +168,12 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
             const name = blank(x.url) ? t("browser.newTab") : untitled ? hostOf(x.url) || x.url : x.title;
             return (
               <div key={x.targetId} role="tab" aria-selected={on} className={`brp-tab no-drag ${on ? "on" : ""}`} title={x.url || name} onClick={() => window.finx?.showBrowserTab(x.targetId)}>
-                {x.loading && <span className="mini-spin" aria-hidden="true" />}
+                {/* Loading, the spinner; then the site's icon (browser-design §10.2), as a browser's tab shows. */}
+                {x.loading ? (
+                  <span className="mini-spin" aria-hidden="true" />
+                ) : (
+                  !blank(x.url) && <SiteIcon origin={siteOrigin(x.url)} className="brp-tab-ic" fallback={<Icon name="globe" />} />
+                )}
                 <span className="brp-tab-t">{name}</span>
                 <button
                   className="brp-tab-x"

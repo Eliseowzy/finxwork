@@ -161,6 +161,7 @@ pub fn document() -> Value {
         (method::MCP_LOGOUT, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
+        (method::BROWSER_SITE_ICON, Some(name::<api::BrowserSiteIconParams>(g)), name::<api::BrowserSiteIconResult>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),

@@ -209,8 +209,6 @@ export type Bridge = {
   desktopApp(key: string): Promise<DesktopApp>;
   /** An app chosen in the system's dialog (macOS), for Settings › Desktop control; null when cancelled or it has no bundle id. */
   pickDesktopApp(): Promise<DesktopApp | null>;
-  /** A search engine's icon (its site's favicon) by its URL template, as a data URL. */
-  searchEngineIcon(template: string): Promise<string | null>;
   /** In the settings window: another page was asked for while it is open. */
   onSettingsPage(cb: (page: string) => void): () => void;
   /** In the main window: whether the settings window is open now, and as that changes (the window dims behind it). */

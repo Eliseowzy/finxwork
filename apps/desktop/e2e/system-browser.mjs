@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verify Settings › Browser connects the user's own browser (browser-design §8.4,
+// Verify Settings › Browser shows each site's icon (browser-design §10.1) and connects the user's own browser (browser-design §8.4,
 // connectors-entry-design §6.1): the row says it is not connected; Connect registers finx and
 // puts the extension in its folder; once the extension (in a real Chrome, loaded from that
 // folder) connects, the guide turns it on (`browser.extension`) and the row says so; the
@@ -39,7 +39,11 @@ const chromeData = path.join(userHome, "Library/Application Support/Google/Chrom
 fs.mkdirSync(home, { recursive: true });
 fs.mkdirSync(chromeData, { recursive: true });
 const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINX_CREDENTIAL_STORE: "file", FINX_NO_BROWSER: "1" };
-fs.writeFileSync(path.join(home, "config.toml"), `permission_mode = "manual"\n[models]\nnetwork = false\n`);
+// Two sites already allowed: one on the internet, whose icon the page shows, and a local one.
+fs.writeFileSync(
+  path.join(home, "config.toml"),
+  `permission_mode = "manual"\n[models]\nnetwork = false\n[browser]\n[browser.sites]\n"https://github.com" = "act"\n"http://localhost:3000" = "navigate"\n`,
+);
 
 // ── the app, driven over the DevTools protocol ──
 let app = null;
@@ -175,6 +179,12 @@ try {
   await set.until("the browser page", `!!document.querySelector('.browser-set .yours-row') && !!(${button("连接", "Connect")})`);
   check(await set.run(shows("连接你的浏览器", "Connect Your Browser")), "the row does not offer to connect");
   check((await set.run(`document.querySelector('.default-browser select').options.length`)) === 1, "a default other than the built-in browser before connecting");
+  // Each site's icon, asked of finx as the rows show and kept in the finx home: GitHub's own,
+  // the globe for the local page, which has no site to ask.
+  const siteRow = (text) => `[...document.querySelectorAll('.browser-set .site-row')].find(r => r.textContent.includes(${JSON.stringify(text)}))`;
+  await set.until("GitHub's icon", `!!${siteRow("github.com")}?.querySelector('.site-icon img')?.naturalWidth`, 30000);
+  check(await set.run(`!${siteRow("localhost:3000")}.querySelector('.site-icon img')`), "the local page has an icon");
+  check(fs.readdirSync(path.join(home, "browser/icons")).length === 1, "the icon is not kept");
   await set.shot("1-not-connected");
 
   // Connect: the app registers finx and copies the extension, then asks the user to add it.
@@ -218,7 +228,7 @@ try {
   // the menu, written, and Settings shows it at once; on again.
   await main.until("onboarding left", `(() => { const skip = [...document.querySelectorAll("button")].find(b => /稍后|later|skip/i.test(b.textContent)); if (skip) { skip.click(); return false; } return !!document.querySelector(".cmp-plus"); })()`);
   await main.run(`document.querySelector('.cmp-plus').click()`);
-  await main.until("the + menu", `${quick}?.getAttribute('aria-checked') === 'true'`);
+  await main.until("the + menu", `${quick}?.getAttribute('aria-checked') === 'true' && !${quick}.hasAttribute('aria-disabled')`);
   await main.shot("6-plus-menu");
   await main.run(`${quick}.click()`);
   await main.until("off in the menu", `${quick}?.getAttribute('aria-checked') === 'false'`);
@@ -257,6 +267,9 @@ try {
   await main.until("a tab", `window.finx.browserTabs().then(t => t.length === 1)`);
   await main.run(`window.finx.browserTabCommand(${JSON.stringify((await tab()).targetId)}, { command: "go", url: "finx work" })`);
   await main.until("a Google search", `window.finx.browserTabs().then(t => t[0].url.startsWith("https://www.google.com/search?q=finx%20work"))`, 20000);
+  // The tab shows the site's icon once the page is loaded.
+  await main.until("the tab's icon", `!!document.querySelector('.brp-tab.on .brp-tab-ic img')?.naturalWidth`, 30000);
+  await main.shot("8-tab-icon");
   await set.run(`(() => { const s = ${select}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, "baidu"); s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   await set.until("Baidu saved", `window.finx.getPreferences().then(p => p.searchEngine === "baidu")`);
   await set.shot("8-built-in");
@@ -271,6 +284,8 @@ try {
   // The person adds an engine of their own, in the shortcuts' dialog: name, keyword, URL with %s.
   await set.run(`(${button("管理…", "Manage…")}).click()`);
   await set.until("the shortcuts", `!!document.querySelector('.engines-sheet')`);
+  // Each engine shows its site's icon, as the site permissions do: Google's own.
+  await set.until("Google's icon", `[...document.querySelectorAll('.engines-sheet .engine-row')].some(r => r.textContent.includes("Google") && r.querySelector('img.engine-icon')?.naturalWidth)`, 30000);
   await set.run(`(${button("添加搜索引擎", "Add Search Engine")}).click()`);
   const typeInto = async (index, text) => {
     await set.run(`document.querySelectorAll('.engine-add input')[${index}].focus()`);

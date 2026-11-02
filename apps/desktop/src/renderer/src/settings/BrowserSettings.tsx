@@ -4,6 +4,7 @@ import type { BrowserStatus, ExtensionProblem } from "@finx/protocol";
 import type { SystemBrowser, SystemBrowserId } from "../../../shared/bridge";
 import { Dialog } from "../components";
 import { Icon } from "../icons";
+import { SiteIcon } from "../siteIcon";
 import { errorText, useStore } from "../store";
 import { BuiltInBrowser } from "./BuiltInBrowser";
 
@@ -485,9 +486,7 @@ function SitePermissions({ sites, write }: { sites: [string, string][]; write: (
           const name = all ? t("browser.allSites") : origin.replace(/^https:\/\//, "");
           return (
             <div className={`frow mrow site-row ${level === "deny" ? "denied" : ""}`} key={origin}>
-              <span className="site-icon">
-                <Icon name="globe" />
-              </span>
+              <SiteIcon origin={all ? null : origin} className="site-icon" fallback={<Icon name="globe" />} />
               <div className="ft">
                 <div className={`fn ${all ? "" : "mono"}`} title={all ? undefined : origin}>{name}</div>
                 {all && <div className="fdesc">{t("browser.allSitesDesc")}</div>}

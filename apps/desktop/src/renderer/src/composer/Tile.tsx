@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { WebComment } from "@finx/client";
 import { Icon } from "../icons";
+import { SiteIcon, siteOrigin } from "../siteIcon";
 
 // What a message carries, as square tiles, the same in the composer and in
 // the conversation: an image shows itself and opens large over the window;
@@ -51,7 +52,7 @@ export function Tile({ kind, path, name, src, web, onRemove }: {
           <>
             {web && (
               <span className="tile-web">
-                <Icon name="globe" />
+                <SiteIcon origin={siteOrigin(web.url)} fallback={<Icon name="globe" />} />
                 {web.comment ? t("composer.webComment") : t("composer.webElement")}
               </span>
             )}

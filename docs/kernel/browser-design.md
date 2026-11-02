@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.9 |
+| 版本 | v1.0 |
 | 日期 | 2026-11-02 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1） |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -886,6 +886,27 @@ action_timeout_secs = 10
   4. **内置浏览器**：说明这些设置只影响 FinxWork 自带的浏览器（浏览器面板），不改用户自己浏览器的设置；一行"地址栏搜索引擎"，一行"搜索快捷词 · N 个 · 管理…"，搜索引擎和快捷词的列表、添加和删除都在弹出的对话框里。
 - 页面脚本不再显示开关，默认开。
 - **输入框"+"菜单**：有一个"浏览器"快捷开关，就是这里的总开关；其余设置只在这里（connectors-entry-design §14）。
+
+### 10.2 网站的图标（v1.0）
+
+凡是界面上网站和图标一起出现的地方，图标都用这一套取（桌面端 `siteIcon.tsx` 的 `SiteIcon`、`useSiteIcon`），没有时退回原来的地球或首字母：
+
+- 设置 › 浏览器的网站权限，每一行；
+- 网站的审批卡片，地址那一行的开头；
+- 搜索引擎（设置里的引擎、快捷词对话框、地址栏里的快捷词标签）。原来桌面端主进程只取 `/favicon.ico`、另存一份缓存，已去掉；
+- 输入框里从网页加进来的元素，"网页元素"标签前；
+- 浏览器面板的标签页：加载时是转圈，加载完是网站的图标，空白的新标签页没有图标。按网站取，不是按页面取：同一个网站的各个页面用同一个图标，不为每个页面另外去取。
+
+- **怎么找**：与 MCP 服务的网站图标同一套（mcp-design §13.9，`finx-mcp/src/icon.rs` 的 `find_site`）：读首页 `<head>`（读到 `</head>` 就停，最多 512 KB），取 `rel="icon"`、`rel="apple-touch-icon"` 和网页应用清单里的图标，按尺寸排好，最后试 `/favicon.ico`。
+  - **挑多大的**：一行里显示 18 点，3 倍屏 54 像素，所以挑最接近 64 像素的；比 32 像素还小的排到最后。连接器的图块仍按 180 像素挑。
+  - **从哪里取**：与 MCP 不同，图标可以放在任何公网 https 地址上（GitHub 的图标在 `github.githubassets.com`），浏览器也是这样。其余限制不变：不带 Cookie 和凭据、按内容判断类型、不超过 256 KB、SVG 里不能有脚本和外部引用；本机地址、IP、http 页面不找。
+  - **不用第三方图标服务**：那样会把用户允许过的网站列表发给别人。
+- **什么时候找**：不预先加载。一行滚到可见区域（提前 200 像素）时，桌面端调 `browser/site_icon { origin }`，同一个窗口里同一个网站只问一次。
+- **缓存**：`~/.finx/browser/icons/<origin 的 SHA-256 前 8 字节>.json`，格式与 MCP 的相同；没有图标也记下，免得每次都去找。
+  - 有缓存就立刻返回；超过一周的也先返回旧的，同时在后台重找，下次显示用新的，界面从不因为过期而等待。
+  - 一个站点都没连上（断网）时什么也不记，下次显示再找；只有网站回答了（哪怕是 404）才记下"没有"。
+  - 只有第一次显示时要等探测，实测常见网站 0.1–2.4 秒，之后读缓存约 2 毫秒。
+- **协议**：`browser/site_icon`，参数 `{ origin }`，结果 `{ icon? }`（`data:` URI）。
 
 ## 11. 测试
 

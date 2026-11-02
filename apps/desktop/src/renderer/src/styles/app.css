@@ -565,10 +565,11 @@ button.insp-row:active{background:var(--fill2)}
 .brp-strip{height:var(--top);flex:none;display:flex;align-items:center;gap:4px;padding:0 calc(8px + var(--caption)) 0 10px;min-width:0}
 .brp-more{margin-left:auto}
 .brp-tabs{display:flex;align-items:center;gap:2px;min-width:0;overflow-x:auto;scrollbar-width:none}
-.brp-tab{flex:0 1 180px;min-width:72px;height:30px;display:flex;align-items:center;gap:6px;padding:0 4px 0 12px;border-radius:8px;font-size:13px;color:var(--l2);cursor:default;user-select:none}
+.brp-tab{flex:0 1 180px;min-width:72px;height:30px;display:flex;align-items:center;gap:6px;padding:0 4px 0 10px;border-radius:8px;font-size:13px;color:var(--l2);cursor:default;user-select:none}
 .brp-tab:hover{background:var(--fill);color:var(--l1)}
 .brp-tab.on{background:var(--fill2);color:var(--l1)}
 .brp-tab .mini-spin{flex:none}
+.brp-tab-ic{flex:none;display:flex;color:var(--l3)}.brp-tab-ic img,.brp-tab-ic svg{width:16px;height:16px}
 .brp-tab-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .brp-tab-x{flex:none;width:20px;height:20px;display:grid;place-items:center;padding:0;border:0;border-radius:5px;background:none;color:var(--l2);opacity:0}
 .brp-tab:hover .brp-tab-x,.brp-tab.on .brp-tab-x,.brp-tab-x:focus-visible{opacity:1}

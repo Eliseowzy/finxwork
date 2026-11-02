@@ -3,8 +3,14 @@
 //! https or `data:` addresses, no credentials or cookies, no redirects off the site, a size
 //! limit, the type read from the bytes, and SVG without scripts. What is found is kept in
 //! `~/.finx/mcp/icons`, one file per service, so showing a list never fetches anything.
+//! The browsers' sites get theirs the same way ([`refresh_site`]), except that a page's icon
+//! may be kept on another host, a CDN, as browsers allow.
 
 use std::collections::HashSet;
+use parking_lot::Mutex;
+use std::sync::LazyLock;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -26,6 +32,8 @@ const MAX_PAGE_BYTES: usize = 512 * 1024;
 const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 const MAX_DIMENSION: u32 = 2048;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+/// A whole search, all its requests.
+const LOOKUP_TIMEOUT: Duration = Duration::from_secs(12);
 /// At most this many candidate images are fetched for one server.
 const MAX_ATTEMPTS: usize = 6;
 /// At most this many services' results are kept.
@@ -202,10 +210,27 @@ fn registrable(host: &str) -> String {
     labels[labels.len().saturating_sub(keep)..].join(".")
 }
 
-/// A client with no cookies and no credentials, that follows redirects only within `hosts`.
-fn client(hosts: HashSet<String>) -> Option<reqwest::Client> {
+/// Where an icon may come from: a server's own sites (MCP requires it), or, for a site the
+/// browsers open, any https host on the internet, as a browser takes a page's icon from its CDN.
+#[derive(Clone)]
+enum Scope {
+    Sites(HashSet<String>),
+    Internet,
+}
+
+impl Scope {
+    fn allows(&self, url: &Url) -> bool {
+        match self {
+            Scope::Sites(hosts) => url.scheme() == "https" && url.host_str().is_some_and(|h| hosts.contains(&h.to_ascii_lowercase())),
+            Scope::Internet => public_host(url).is_some(),
+        }
+    }
+}
+
+/// A client with no cookies and no credentials, that follows redirects only within `scope`.
+fn client(scope: Scope) -> Option<reqwest::Client> {
     let policy = reqwest::redirect::Policy::custom(move |attempt| {
-        let allowed = attempt.previous().len() < 3 && attempt.url().scheme() == "https" && attempt.url().host_str().is_some_and(|h| hosts.contains(&h.to_ascii_lowercase()));
+        let allowed = attempt.previous().len() < 3 && scope.allows(attempt.url());
         if allowed { attempt.follow() } else { attempt.stop() }
     });
     reqwest::Client::builder()
@@ -217,34 +242,65 @@ fn client(hosts: HashSet<String>) -> Option<reqwest::Client> {
         .ok()
 }
 
-/// The body, up to `limit` bytes, and the address it came from after redirects. A longer body
-/// is refused, unless `head` says its beginning will do (a page, whose icons are in `<head>`).
-async fn get(http: &reqwest::Client, url: &Url, limit: usize, head: bool) -> Option<(Vec<u8>, Url)> {
-    let mut response = http.get(url.clone()).send().await.ok()?;
-    if !response.status().is_success() {
-        return None;
-    }
-    let final_url = response.url().clone();
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.ok()? {
-        body.extend_from_slice(&chunk);
-        if body.len() > limit {
-            if !head {
-                return None;
-            }
-            body.truncate(limit);
-            break;
-        }
-    }
-    Some((body, final_url))
+/// One search: its client, where icons may come from, the size the icon is shown at, and
+/// whether any site answered at all (none did: the network is down, so nothing is learnt).
+struct Lookup {
+    http: reqwest::Client,
+    scope: Scope,
+    target: u32,
+    answered: AtomicBool,
 }
 
-fn allowed(url: &Url, hosts: &HashSet<String>) -> bool {
-    url.scheme() == "https" && url.host_str().is_some_and(|h| hosts.contains(&h.to_ascii_lowercase()))
+/// A connector's tile: the size icons are picked for (mcp-design §13.9).
+const TILE: u32 = 180;
+/// A site's row in a list, at most 18 points on a 3x screen: 64 px, the common size nearest 54.
+const SITE_ROW: u32 = 64;
+
+/// No site answered: nothing can be said about its icon.
+#[derive(Debug)]
+pub struct Unreachable;
+
+impl Lookup {
+    fn new(scope: Scope, target: u32) -> Option<Self> {
+        Some(Lookup { http: client(scope.clone())?, scope, target, answered: AtomicBool::new(false) })
+    }
+
+    /// The body, up to `limit` bytes, and the address it came from after redirects. A longer
+    /// body is refused, unless `head` says its beginning will do: a page, whose icons are in
+    /// `<head>`, which is read no further than its end.
+    async fn get(&self, url: &Url, limit: usize, head: bool) -> Option<(Vec<u8>, Url)> {
+        let mut response = self.http.get(url.clone()).send().await.ok()?;
+        // A server error may pass; any other answer says what the site has.
+        if !response.status().is_server_error() {
+            self.answered.store(true, Ordering::Relaxed);
+        }
+        if !response.status().is_success() {
+            return None;
+        }
+        let final_url = response.url().clone();
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.ok()? {
+            let seen = body.len().saturating_sub(HEAD_END.len() - 1);
+            body.extend_from_slice(&chunk);
+            if head && body[seen..].windows(HEAD_END.len()).any(|w| w.eq_ignore_ascii_case(HEAD_END)) {
+                break;
+            }
+            if body.len() > limit {
+                if !head {
+                    return None;
+                }
+                body.truncate(limit);
+                break;
+            }
+        }
+        Some((body, final_url))
+    }
 }
+
+const HEAD_END: &[u8] = b"</head>";
 
 /// Fetches one address and checks the image; `data:` addresses are decoded instead.
-async fn fetch(http: &reqwest::Client, src: &str, hosts: &HashSet<String>, declared: bool) -> Option<Icon> {
+async fn fetch(look: &Lookup, src: &str, declared: bool) -> Option<Icon> {
     if let Some(rest) = src.strip_prefix("data:") {
         let (head, data) = rest.split_once(',')?;
         let bytes = if head.ends_with(";base64") {
@@ -256,10 +312,10 @@ async fn fetch(http: &reqwest::Client, src: &str, hosts: &HashSet<String>, decla
         return Some(Icon { bytes, mime, source: "data:".into(), declared });
     }
     let url = Url::parse(src).ok()?;
-    if !allowed(&url, hosts) {
+    if !look.scope.allows(&url) {
         return None;
     }
-    let (bytes, _) = get(http, &url, MAX_BYTES, false).await?;
+    let (bytes, _) = look.get(&url, MAX_BYTES, false).await?;
     match check(&bytes) {
         Ok(mime) => Some(Icon { bytes, mime, source: url.to_string(), declared }),
         Err(why) => {
@@ -276,13 +332,15 @@ struct Candidate {
     score: i64,
 }
 
-/// How well an image of this size fits a tile: around 180 px is best; scalable is nearly as
-/// good; tiny ones come last.
-fn score(size: Option<u32>, svg: bool, apple: bool) -> i64 {
-    match size {
-        Some(s) if s >= 64 => 1000 - (s as i64 - 180).abs(),
-        Some(s) => s as i64,
-        None if apple => 990,
+/// How well an image of this size fits where it is shown at `target` px: about that size is
+/// best, a larger one needlessly heavy; scalable is nearly as good; ones under half of it (or
+/// under 64 px) come last. An Apple touch icon with no size is 180 px.
+fn score(size: Option<u32>, svg: bool, apple: bool, target: u32) -> i64 {
+    let target = i64::from(target);
+    match size.map(i64::from) {
+        Some(s) if s >= (target / 2).min(64) => 1000 - (s - target).abs(),
+        Some(s) => s,
+        None if apple => 990 - (180 - target).abs(),
         None if svg => 900,
         None => 100,
     }
@@ -358,10 +416,10 @@ fn attributes(tag: &str) -> Vec<(String, String)> {
 
 /// The icons a site's home page and its web app manifest offer, best first, then
 /// `/favicon.ico`.
-async fn site_candidates(http: &reqwest::Client, site: &str, hosts: &HashSet<String>) -> Vec<Candidate> {
+async fn site_candidates(look: &Lookup, site: &str) -> Vec<Candidate> {
     let mut found = Vec::new();
     let Ok(home) = Url::parse(&format!("https://{site}/")) else { return found };
-    if let Some((page, base)) = get(http, &home, MAX_PAGE_BYTES, true).await {
+    if let Some((page, base)) = look.get(&home, MAX_PAGE_BYTES, true).await {
         let html = String::from_utf8_lossy(&page);
         let mut manifest = None;
         for attrs in links(&html) {
@@ -379,10 +437,10 @@ async fn site_candidates(http: &reqwest::Client, site: &str, hosts: &HashSet<Str
                 continue;
             }
             let svg = attr("type").is_some_and(|t| t.contains("svg")) || url.path().ends_with(".svg");
-            found.push(Candidate { score: score(attr("sizes").as_deref().and_then(largest), svg, apple), url });
+            found.push(Candidate { score: score(attr("sizes").as_deref().and_then(largest), svg, apple, look.target), url });
         }
-        if let Some(url) = manifest.filter(|u| allowed(u, hosts))
-            && let Some((body, base)) = get(http, &url, MAX_MANIFEST_BYTES, false).await
+        if let Some(url) = manifest.filter(|u| look.scope.allows(u))
+            && let Some((body, base)) = look.get(&url, MAX_MANIFEST_BYTES, false).await
             && let Ok(manifest) = serde_json::from_slice::<Value>(&body)
         {
             for icon in manifest.get("icons").and_then(Value::as_array).into_iter().flatten() {
@@ -392,7 +450,7 @@ async fn site_candidates(http: &reqwest::Client, site: &str, hosts: &HashSet<Str
                 }
                 let Ok(url) = base.join(src) else { continue };
                 let svg = icon.get("type").and_then(Value::as_str).is_some_and(|t| t.contains("svg")) || url.path().ends_with(".svg");
-                found.push(Candidate { score: score(icon.get("sizes").and_then(Value::as_str).and_then(largest), svg, false), url });
+                found.push(Candidate { score: score(icon.get("sizes").and_then(Value::as_str).and_then(largest), svg, false, look.target), url });
             }
         }
     }
@@ -411,7 +469,7 @@ fn declared_order(icons: &[IconSpec]) -> Vec<&IconSpec> {
     list.sort_by_key(|i| {
         let svg = i.sizes.iter().any(|s| s == "any") || i.mime_type.as_deref().is_some_and(|m| m.contains("svg"));
         let dark = i.theme.as_deref() == Some("dark");
-        (dark, -score(i.sizes.iter().filter_map(|s| largest(s)).max(), svg, false))
+        (dark, -score(i.sizes.iter().filter_map(|s| largest(s)).max(), svg, false, TILE))
     });
     list
 }
@@ -419,12 +477,34 @@ fn declared_order(icons: &[IconSpec]) -> Vec<&IconSpec> {
 /// Finds the server's icon: the ones it declares, then its website's. `server_url` is the
 /// remote server's address; a local server has none, and only its declared `data:` icons or
 /// those on the website it names are used.
-pub async fn find(server_url: Option<&str>, info: Option<&Implementation>) -> Option<Icon> {
+pub async fn find(server_url: Option<&str>, info: Option<&Implementation>) -> Result<Option<Icon>, Unreachable> {
     let server_url = server_url.and_then(|u| Url::parse(u).ok());
     let website = info.and_then(|i| i.website_url.as_deref()).and_then(|u| Url::parse(u).ok());
     let sites = sites(server_url.as_ref(), website.as_ref());
-    let hosts: HashSet<String> = sites.iter().cloned().collect();
-    let http = client(hosts.clone())?;
+    let Some(look) = Lookup::new(Scope::Sites(sites.iter().cloned().collect()), TILE) else { return Ok(None) };
+    let found = search(&look, &sites, info).await;
+    // A declared `data:` icon needs no site.
+    if found.is_none() && !look.answered.load(Ordering::Relaxed) && !sites.is_empty() {
+        return Err(Unreachable);
+    }
+    Ok(found)
+}
+
+/// A site's icon, for the browsers' lists of sites (browser-design §10.1): the icons its home
+/// page names, wherever they are kept, picked for a row, then its `/favicon.ico`. `origin` is
+/// an https origin on the internet; any other has none to look for.
+pub async fn find_site(origin: &str) -> Result<Option<Icon>, Unreachable> {
+    let Some(host) = Url::parse(origin).ok().as_ref().and_then(public_host) else { return Ok(None) };
+    let Some(look) = Lookup::new(Scope::Internet, SITE_ROW) else { return Ok(None) };
+    let found = search(&look, &[host], None).await;
+    if found.is_none() && !look.answered.load(Ordering::Relaxed) {
+        return Err(Unreachable);
+    }
+    Ok(found)
+}
+
+/// The declared icons, then those of each site in turn, at most [`MAX_ATTEMPTS`] fetched.
+async fn search(look: &Lookup, sites: &[String], info: Option<&Implementation>) -> Option<Icon> {
     let mut attempts = 0;
     if let Some(info) = info {
         for spec in declared_order(&info.icons) {
@@ -432,14 +512,14 @@ pub async fn find(server_url: Option<&str>, info: Option<&Implementation>) -> Op
                 return None;
             }
             attempts += 1;
-            if let Some(icon) = fetch(&http, &spec.src, &hosts, true).await {
+            if let Some(icon) = fetch(look, &spec.src, true).await {
                 return Some(icon);
             }
         }
     }
     let mut tried = HashSet::new();
-    for site in &sites {
-        for candidate in site_candidates(&http, site, &hosts).await {
+    for site in sites {
+        for candidate in site_candidates(look, site).await {
             if attempts >= MAX_ATTEMPTS {
                 return None;
             }
@@ -447,7 +527,7 @@ pub async fn find(server_url: Option<&str>, info: Option<&Implementation>) -> Op
                 continue;
             }
             attempts += 1;
-            if let Some(icon) = fetch(&http, candidate.url.as_str(), &hosts, false).await {
+            if let Some(icon) = fetch(look, candidate.url.as_str(), false).await {
                 return Some(icon);
             }
         }
@@ -553,11 +633,43 @@ pub async fn refresh(dir: &Path, identity: &str, server_url: Option<&str>, info:
     if fresh {
         return previous;
     }
-    let found = tokio::time::timeout(Duration::from_secs(12), find(server_url, info)).await.ok().flatten();
+    // Out of time or unreachable, nothing was learnt: what was kept stays, and the next check asks again.
+    let Ok(Ok(found)) = tokio::time::timeout(LOOKUP_TIMEOUT, find(server_url, info)).await else { return previous };
     if let Err(err) = store(dir, identity, found.as_ref()) {
         tracing::warn!("could not keep the icon of {identity}: {err}");
     }
     load(dir, identity)
+}
+
+/// A site's icon, for a list showing it now: what is kept is given at once, even when old, and
+/// an old one is looked for again in the background, for the next time it is shown. Only a site
+/// never looked for is waited on.
+pub async fn site(dir: &Path, origin: &str) -> Option<Stored> {
+    match load(dir, origin) {
+        Some(previous) if !previous.stale() => Some(previous),
+        Some(previous) => {
+            let (dir, origin) = (dir.to_path_buf(), origin.to_string());
+            if SITES_LOOKED_FOR.lock().insert(origin.clone()) {
+                tokio::spawn(async move {
+                    look_for_site(&dir, &origin).await;
+                    SITES_LOOKED_FOR.lock().remove(&origin);
+                });
+            }
+            Some(previous)
+        }
+        None => look_for_site(dir, origin).await,
+    }
+}
+
+/// The sites whose icons are being looked for in the background, each once at a time.
+static SITES_LOOKED_FOR: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(Default::default);
+
+async fn look_for_site(dir: &Path, origin: &str) -> Option<Stored> {
+    let Ok(Ok(found)) = tokio::time::timeout(LOOKUP_TIMEOUT, find_site(origin)).await else { return load(dir, origin) };
+    if let Err(err) = store(dir, origin, found.as_ref()) {
+        tracing::warn!("could not keep the icon of {origin}: {err}");
+    }
+    load(dir, origin)
 }
 
 #[cfg(test)]
@@ -607,8 +719,12 @@ mod tests {
             .collect();
         assert_eq!(found[1], ("icon".into(), "/logo.svg".into()));
         assert_eq!(found[2], ("apple-touch-icon".into(), "/apple.png".into()));
-        assert!(score(Some(180), false, true) > score(None, true, false));
-        assert!(score(None, true, false) > score(Some(16), false, false));
+        assert!(score(Some(180), false, true, TILE) > score(None, true, false, TILE));
+        assert!(score(None, true, false, TILE) > score(Some(16), false, false, TILE));
+        // A row wants a small one: 64 px over a touch icon, 32 px over 16.
+        assert!(score(Some(64), false, false, SITE_ROW) > score(None, false, true, SITE_ROW));
+        assert!(score(Some(32), false, false, SITE_ROW) > score(Some(180), false, true, SITE_ROW));
+        assert!(score(Some(32), false, false, SITE_ROW) > score(Some(16), false, false, SITE_ROW));
     }
 
     #[test]
@@ -639,5 +755,31 @@ mod tests {
         assert!(kept.declared);
         assert!(kept.data_uri().unwrap().starts_with("data:image/png;base64,"));
         assert!(load(dir.path(), "https://b.example/mcp").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_site_unreached_keeps_what_it_had_and_learns_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        // `.invalid` never resolves: the network as good as down.
+        let origin = "https://icons.invalid";
+        assert!(matches!(find_site(origin).await, Err(Unreachable)));
+        assert!(site(dir.path(), origin).await.is_none());
+        assert!(load(dir.path(), origin).is_none(), "a miss was kept while offline");
+
+        // A week-old icon is given at once, and stays when looking again finds nothing.
+        let icon = Icon { bytes: PNG.to_vec(), mime: "image/png", source: format!("{origin}/favicon.ico"), declared: false };
+        store(dir.path(), origin, Some(&icon)).unwrap();
+        let mut old = load(dir.path(), origin).unwrap();
+        old.fetched_at = 0;
+        std::fs::write(file(dir.path(), origin), serde_json::to_vec(&old).unwrap()).unwrap();
+        let given = tokio::time::timeout(Duration::from_millis(100), site(dir.path(), origin)).await.expect("waited for the site");
+        assert_eq!(given.unwrap().data_uri(), Some(icon.data_uri()));
+        for _ in 0..50 {
+            if !SITES_LOOKED_FOR.lock().contains(origin) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(load(dir.path(), origin).unwrap().fetched_at, 0, "the old icon was dropped");
     }
 }
