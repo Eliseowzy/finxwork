@@ -34,6 +34,10 @@ export function Sidebar() {
   latest.current = st;
   const title = (sec: Section) =>
     sec.grouping === "project" ? (sec.key === "" ? t("sidebar.noProject") : (names.get(sec.key) ?? sec.key)) : bucketTitle(sec.key as Parameters<typeof bucketTitle>[0]);
+  const byProject = st.view.group === "project";
+  // The list's own heading collapses every group, or opens them all once every one is shut.
+  const ids = secs.map((sec) => `${sec.grouping}:${sec.key}`);
+  const allShut = ids.length > 0 && ids.every((id) => st.collapsed.includes(id));
   return (
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
@@ -58,7 +62,19 @@ export function Sidebar() {
           <span>{t("sidebar.customize")}</span>
         </button>
       </nav>
-      <div className="side-list" role="list" aria-label={t("sidebar.sessions")}>
+      <div className="side-lh">
+        <button
+          className={`side-lh-t ${allShut ? "shut" : ""}`}
+          title={allShut ? t("sidebar.expandAll") : t("sidebar.collapseAll")}
+          aria-expanded={!allShut}
+          disabled={ids.length === 0}
+          onClick={() => st.set({ collapsed: allShut ? st.collapsed.filter((c) => !ids.includes(c)) : [...new Set([...st.collapsed, ...ids])] })}
+        >
+          <span>{byProject ? t("sidebar.projects") : t("sidebar.sessions")}</span>
+          <Icon name="caret" className="sm" />
+        </button>
+      </div>
+      <div className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
         {secs.map((sec) => {
           const id = `${sec.grouping}:${sec.key}`;
           const open = !st.collapsed.includes(id);
@@ -71,6 +87,7 @@ export function Sidebar() {
                   title={sec.grouping === "project" && sec.key ? sec.key : undefined}
                   onClick={() => st.set({ collapsed: open ? [...st.collapsed, id] : st.collapsed.filter((c) => c !== id) })}
                 >
+                  {sec.grouping === "project" && <Icon name="folder" className="gi" />}
                   <span className="gt">{title(sec)}</span>
                   {sectionCounted(sec) && <span className="n">{sec.sessions.length}</span>}
                   <Icon name="caret" className="sm" />

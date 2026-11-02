@@ -1,6 +1,8 @@
 //! Model connection management hosted by the existing kernel process.
-//! No listener, child service, heartbeat, or periodic token refresh is created.
+//! No child service, heartbeat, or periodic token refresh. ChatGPT sign-in alone opens
+//! a temporary loopback callback listener while browser authorization is pending.
 mod adapter;
+pub mod chatgpt;
 pub mod platform;
 mod qoder;
 mod qwenwork;
@@ -123,6 +125,7 @@ pub struct Manager {
     changed: RwLock<Option<Changed>>,
     myself: Weak<Manager>,
     load_error: Option<ConnectionError>,
+    pub chatgpt: Arc<chatgpt::ChatGpt>,
 }
 impl Manager {
     /// Loads only non-secret configuration. No network, Keychain, timers, or spawned processes.
@@ -154,6 +157,7 @@ impl Manager {
             Ok(v) => (v, None),
             Err(e) => (vec![], Some(e)),
         };
+        let chatgpt = chatgpt::ChatGpt::new(&home, registry);
         let result = Arc::new_cyclic(|myself| Self {
             home,
             registry: Arc::downgrade(registry),
@@ -164,6 +168,7 @@ impl Manager {
             changed: RwLock::new(None),
             myself: myself.clone(),
             load_error,
+            chatgpt,
         });
         for r in records {
             if result.environments.contains_key(&r.adapter_id) {
@@ -172,9 +177,16 @@ impl Manager {
         }
         registry.install_authorizer(result.clone());
         result.publish();
+        let _ = result.chatgpt.sync();
         result
     }
     pub fn on_change(&self, callback: Changed) {
+        let weak = self.myself.clone();
+        let notify = callback.clone();
+        self.chatgpt.on_change(Arc::new(move || {
+            if let Some(manager) = weak.upgrade() { manager.revision.fetch_add(1, Ordering::AcqRel); }
+            notify();
+        }));
         *self.changed.write() = Some(callback);
     }
     fn check(&self) -> Result<()> {
@@ -182,15 +194,9 @@ impl Manager {
     }
     pub fn snapshot(&self) -> Result<ConnectionsSnapshot> {
         self.check()?;
-        Ok(ConnectionsSnapshot {
-            revision: self.revision.load(Ordering::Acquire),
-            connections: self
-                .entries
-                .read()
-                .values()
-                .map(|e| e.view.read().clone())
-                .collect(),
-        })
+        let mut connections: Vec<_> = self.entries.read().values().map(|e| e.view.read().clone()).collect();
+        if let Some(view) = self.chatgpt.sync()? { connections.push(view); }
+        Ok(ConnectionsSnapshot { revision: self.revision.load(Ordering::Acquire), connections })
     }
     pub async fn discover(&self) -> Result<Vec<ConnectionDiscovery>> {
         let mut discoveries = Vec::new();
@@ -512,6 +518,7 @@ impl Manager {
         self.snapshot()
     }
     pub async fn retry(&self, id: &str) -> Result<ConnectionsSnapshot> {
+        if id == chatgpt::ID { self.chatgpt.refresh().await?; return self.snapshot(); }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
@@ -521,6 +528,7 @@ impl Manager {
         self.snapshot()
     }
     pub async fn disconnect(&self, id: &str) -> Result<ConnectionsSnapshot> {
+        if id == chatgpt::ID { self.chatgpt.logout().await?; return self.snapshot(); }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
@@ -532,6 +540,7 @@ impl Manager {
         self.snapshot()
     }
     pub async fn remove(&self, id: &str) -> Result<ConnectionsSnapshot> {
+        if id == chatgpt::ID { self.chatgpt.forget().await?; return self.snapshot(); }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
@@ -627,6 +636,7 @@ impl ConnectionAuthorizer for Manager {
         model: &str,
         http: reqwest::Client,
     ) -> std::result::Result<Box<dyn ConnectionRequest>, LlmError> {
+        if provider.starts_with("local-chatgpt-api-") { return self.chatgpt.begin(provider, model).await; }
         self.check().map_err(|e| e.llm())?;
         let e = self
             .entries

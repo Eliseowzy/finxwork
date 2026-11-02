@@ -41,6 +41,10 @@ pub mod method {
     pub const SESSION_CLOSE: &str = "session/close";
     pub const SESSION_DELETE: &str = "session/delete";
     pub const RESOURCE_READ: &str = "resource/read";
+    pub const CHATGPT_LOGIN: &str = "chatgpt/login";
+    pub const CHATGPT_STATUS: &str = "chatgpt/status";
+    pub const CHATGPT_CANCEL: &str = "chatgpt/cancel";
+    pub const CHATGPT_LOGOUT: &str = "chatgpt/logout";
     pub const CONNECTIONS_LIST: &str = "connections/list";
     pub const CONNECTIONS_DISCOVER: &str = "connections/discover";
     pub const CONNECTIONS_CONNECT: &str = "connections/connect";
@@ -1236,3 +1240,20 @@ pub struct ConnectionIdParams { pub connection_id: String }
 
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionsDiscoveryResult { pub discoveries: Vec<ConnectionDiscovery> }
+
+/// Only public login progress crosses RPC. OAuth tokens stay in the kernel credential store.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ChatGptLoginState { Idle, Pending, Connected, Failed, Cancelled }
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ChatGptStatus {
+    pub state: ChatGptLoginState,
+    pub login_id: Option<String>,
+    pub authorize_url: Option<String>,
+    pub account: Option<String>,
+    pub message: Option<String>,
+    pub connection: Option<ConnectionView>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChatGptCancelParams { pub login_id: String }

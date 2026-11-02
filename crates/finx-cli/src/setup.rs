@@ -25,6 +25,7 @@ pub struct Runtime {
     pub home: FinxHome,
     pub config: Config,
     pub llm: Arc<ModelRegistry>,
+    pub connections: Arc<finx_connections::Manager>,
     pub cwd: PathBuf,
     pub project_root: Option<PathBuf>,
     pub trusted: bool,
@@ -109,11 +110,13 @@ pub fn init(cwd: PathBuf, overrides: &[String], logging: Logging) -> anyhow::Res
         mcp_sources.insert(name.clone(), vec![source.clone()]);
     }
     let llm = Arc::new(runtime::model_registry(&home, &workspace.config)?);
+    let connections = finx_connections::Manager::new(home.root().to_path_buf(), &llm);
     tracing::info!(cwd = %workspace.cwd.display(), project_root = ?workspace.project_root, trusted = workspace.trusted, "finx started");
     Ok(Runtime {
         home,
         config: workspace.config,
         llm,
+        connections,
         cwd: workspace.cwd,
         project_root: workspace.project_root,
         trusted: workspace.trusted,

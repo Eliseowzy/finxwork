@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>思考过程</title>
+<!--
+  原型：模型思考时，会话页怎么把思考的内容露出来。
+  会话页的部分照 app.css、composer.css 抄；新增的只有「运行行里的思考」一段（.tk-*），标了「新增」。
+  页面里的任务是脚本模拟的：三次模型调用，中间读两个文件、跑一条命令，最后写回答。
+  「现在」照 Steps.tsx、Chat.tsx 现在的做法画；A、B、C 是三种改法，共同点是：正在进行的思考
+  不再留在步骤列表里，而像运行中的工具调用一样移到最下面的运行行；想完回到步骤列表。
+-->
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --ease-out:cubic-bezier(.2,0,0,1);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --fs:13px;--top:44px;
+  --win:#ffffff;--win2:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);--l4:rgba(0,0,0,.14);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --red:var(--danger);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --bub:var(--l1);--bub-fg:var(--win);--msg:var(--l1);
+  --code:#f6f7fa;
+  --pill:#ffffff;--pill-bd:rgba(0,0,0,.12);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);--l4:rgba(255,255,255,.14);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.05);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --bub:rgba(255,255,255,.09);--bub-fg:var(--l1);--msg:rgba(255,255,255,.95);
+  --code:#18181b;
+  --pill:#28282c;--pill-bd:rgba(255,255,255,.09);
+  color-scheme:dark;
+}
+
+/* Base and controls, as app.css. */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
+button{font:inherit;color:inherit;cursor:default}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.btn{height:26px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:var(--l1);flex:none}
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
+.seg button{border:0;background:transparent;height:22px;padding:0 10px;border-radius:var(--r-xs);font-size:12px;color:var(--l1)}
+.seg button.on{background:var(--btn);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.shimmer{-webkit-mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);-webkit-mask-size:300% 100%;mask-size:300% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:shimmer 2.4s linear infinite}
+@keyframes shimmer{from{-webkit-mask-position:93% 0;mask-position:93% 0}to{-webkit-mask-position:7% 0;mask-position:7% 0}}
+@media (prefers-reduced-motion:reduce){.shimmer{animation:none;-webkit-mask-image:none;mask-image:none}}
+
+/* The prototype's own bar: which way to show it, and the clock. Not part of the app. */
+.page{display:flex;flex-direction:column;height:100%}
+.pbar{height:var(--top);flex:none;display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-4);border-bottom:.5px solid var(--sep)}
+.pbar h1{margin:0;font-size:14px;font-weight:500;flex:none}
+.pbar .sp{flex:1}
+.pnote{flex:none;display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-1) var(--sp-4);border-bottom:.5px solid var(--sep);font-size:12.5px;line-height:18px;color:var(--l2)}
+.pnote p{margin:0;flex:1;min-width:0}
+.pnote input{flex:none;width:160px;accent-color:var(--accent)}
+.pnote .clock{flex:none;width:44px;text-align:right;color:var(--l3);font-variant-numeric:tabular-nums}
+
+/* The conversation, as app.css. */
+.content{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+.cscroll{flex:1;overflow-y:auto;min-height:0}
+.dbody{max-width:798px;margin:0 auto;padding:var(--sp-3) var(--sp-4) 160px}
+.tr{display:flex;flex-direction:column;gap:var(--sp-2)}
+.um{position:relative;align-self:flex-end;max-width:78%;margin:var(--sp-1) 0 var(--sp-3)}
+.um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}
+.am{position:relative;font-size:15px;line-height:21px;color:var(--msg);user-select:text;-webkit-user-select:text}
+.md{overflow-wrap:anywhere}
+.md>*{margin:0}
+.md>*+*{margin-top:12px}
+.md ul{padding-left:20px}
+.md li+li{margin-top:4px}
+.md li::marker{color:var(--l3)}
+.md code{font-family:var(--mono);font-size:13px;background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs)}
+.tool{border-radius:var(--r-md);font-size:14px}
+.tool .th{display:flex;align-items:center;gap:6px;padding:2px 0;border-radius:var(--r-sm);border:0;background:none;max-width:100%;text-align:left;color:var(--l2)}
+.tool .th:hover{color:var(--l1)}
+.tool .th .vb{flex:none}
+.tool .th .sm2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tool .th .cmd{font-family:var(--mono);font-size:12.5px;opacity:.9}
+.tool .th .chev{flex:none}
+.tgroup{font-size:14px}
+.tg-h{display:flex;align-items:center;gap:6px;padding:2px 0;border:0;background:none;color:var(--l2);text-align:left}
+.tg-h:hover{color:var(--l1)}
+.working{display:flex;align-items:flex-start;gap:8px;font-size:14px;color:var(--l2)}
+.working .mk{width:18px;height:18px;margin-top:2px;flex:none;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.5}}
+.wk-now{flex:1;min-width:0;display:flex;flex-direction:column}
+.wk-line{display:flex;align-items:baseline;gap:4px;padding:2px 0;line-height:19px}
+.wk-meta,.wk-time{flex:none;font-size:12.5px;color:var(--l3);font-variant-numeric:tabular-nums}
+.wk-time{margin-left:2px}
+.tg-h .chev,.tool .th .chev{width:14px;height:14px;margin-left:-3px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s}
+.tgroup.open .tg-h .chev,.tool.open .th .chev{transform:none}
+.tool .out{display:none;margin:4px 0 6px;background:var(--code);border-radius:var(--r-md);padding:8px 10px;font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;color:var(--l2);line-height:1.5;max-height:360px;overflow:auto}
+.tool.open .out{display:block}
+.tool.think .out{font-family:var(--font);font-size:13px;line-height:1.6;white-space:pre-wrap}
+.tgroup .tg-b{display:none}
+.tgroup.open .tg-b{display:flex}
+.tg-b{flex-direction:column;margin:var(--sp-1) 0 2px;border:1px solid var(--sep);border-radius:var(--r-md);overflow:hidden}
+.tg-b .tool{border-radius:0;font-size:13px}
+.tg-b .tool+.tool{border-top:1px solid var(--sep)}
+.tg-b .tool .th{width:100%;gap:5px;padding:var(--sp-1) var(--sp-2);border-radius:0}
+.tg-b .tool .th[aria-expanded]:hover,.tg-b .tool.open .th{background:var(--fill)}
+.tg-b .tool .out{margin:0;border-radius:0;padding:var(--sp-1) var(--sp-2) 10px;background:var(--fill);color:var(--l2);max-height:320px;overflow:auto}
+
+/* ———— 新增：运行行里的思考（拟加入 app.css） ————
+   正在进行的思考移到运行行：标记右边是「思考中 · 时间 · tokens」，下面是它正写到哪儿。
+   字号、行高、颜色与展开后的思考全文（.tool.think .out）一致：13 px、行高 20、--l2。 */
+.wk-line.tk-h{border:0;background:none;padding:2px 0;color:inherit;text-align:left;font:inherit;width:max-content;max-width:100%}
+.wk-line.tk-h:hover{color:var(--l1)}
+.wk-line.tk-h .chev{width:14px;height:14px;margin-left:-3px;align-self:center;color:var(--l3);transform:rotate(-90deg);transition:transform .15s}
+.wk-line.tk-h[aria-expanded="true"] .chev{transform:none}
+.tk-text{font-size:13px;line-height:20px;color:var(--l2);white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+/* A：三行小窗。新字从底部出来，旧的往上推出去，顶部渐隐；点「思考中」展开全文。 */
+.tk-peek{margin-top:2px;max-height:60px;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end}
+.tk-peek.over{-webkit-mask-image:linear-gradient(to bottom,transparent,#000 24px);mask-image:linear-gradient(to bottom,transparent,#000 24px)}
+.tk-peek.open{max-height:320px;overflow-y:auto;display:block;-webkit-mask-image:none;mask-image:none}
+/* B：只露出正在写的这一句，句尾一直看得见，前面渐隐。 */
+.tk-one{margin-top:2px;display:flex;justify-content:flex-end;overflow:hidden;white-space:nowrap}
+.tk-one>span{flex:none;white-space:nowrap}
+.tk-one.over{justify-content:flex-start;direction:rtl;-webkit-mask-image:linear-gradient(to right,transparent,#000 34px);mask-image:linear-gradient(to right,transparent,#000 34px)}
+.tk-one.over>span{direction:ltr;unicode-bidi:isolate}
+/* C：全文直接展开，最高 12 行，跟着滚到底。 */
+.tk-full{margin:4px 0 2px;max-height:240px;overflow-y:auto;padding-left:var(--sp-2);border-left:2px solid var(--fill3)}
+
+/* The composer, as composer.css (static here). */
+.cmp-zone{position:absolute;left:0;right:0;bottom:0;z-index:4;pointer-events:none;padding:28px calc(var(--sp-4) - 12px) 12px;background:linear-gradient(to bottom,transparent,var(--win) 28px)}
+.cmp-col{pointer-events:auto;max-width:754px;margin:0 auto}
+.cmp{background:var(--pill);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;align-items:flex-end;gap:4px}
+.cmp-plus{width:32px;height:32px;border-radius:var(--r-sm);border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
+.cmp-plus .ic{width:18px;height:18px;stroke-width:1.5}
+.cmp-ph{flex:1;min-width:0;font-size:15px;line-height:21px;color:var(--l3);padding:5.5px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.send{width:32px;height:32px;border-radius:var(--r-sm);border:0;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none}
+.send:disabled{background:var(--fill3);color:var(--win)}
+.send.stop{background:var(--red)}
+.send .ic{width:16px;height:16px;stroke-width:1.9}
+.send.stop .ic{width:12px;height:12px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="pbar">
+    <h1>思考过程</h1>
+    <div class="seg" id="ways"></div>
+    <div class="sp"></div>
+    <div class="seg" id="speed"></div>
+    <div class="seg" id="theme"></div>
+    <button class="btn" id="replay">重放</button>
+  </div>
+  <div class="pnote"><p id="note"></p><input type="range" id="scrub" min="0" step="0.1" aria-label="时间"><span class="clock" id="clock"></span></div>
+  <div class="content">
+    <div class="cscroll" id="scroll"><div class="dbody"><div class="tr" id="tr"></div></div></div>
+    <div class="cmp-zone"><div class="cmp-col"><div class="cmp">
+      <button class="cmp-plus" aria-label="添加"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+      <div class="cmp-ph">要求后续变更</div>
+      <button class="send" id="send" aria-label="发送"></button>
+    </div></div></div>
+  </div>
+</div>
+<script>
+const MARK = '<svg class="mk" viewBox="187 187 650 650" aria-hidden="true"><defs><linearGradient id="fx-a" gradientUnits="userSpaceOnUse" x1="212" y1="711.9" x2="812" y2="296.1"><stop offset="0" stop-color="#1B36D9"/><stop offset=".5" stop-color="#1F6BFF"/><stop offset="1" stop-color="#2EB8FF"/></linearGradient></defs><path fill="url(#fx-a)" d="M708.3 300.4L700.5 297L696.9 296.3L694 296.1L691.6 296.1L689.4 296.3L687.4 296.6L685.5 297L683.8 297.5L682.1 298L680.6 298.6L679.1 299.3L677.7 300L676.4 300.7L675.1 301.5L673.9 302.4L672.8 303.2L671.7 304.1L670.6 305L669.6 306L668.7 307L667.8 308L666.9 309L666.1 310.1L665.3 311.2L664.5 312.3L663.8 313.4L663 314.5L662.2 315.6L661.5 316.7L660.7 317.8L656.2 324.4L651.7 331.1L647.3 337.7L642.9 344.4L638.6 351.1L634.3 357.8L630 364.5L625.8 371.2L621.6 377.9L617.4 384.6L613.3 391.3L609.1 398L605 404.7L600.8 411.4L596.7 418L592.6 424.6L588.5 431.2L584.4 437.8L580.3 444.4L576.2 450.9L572 457.4L567.9 463.8L563.7 470.2L559.5 476.6L555.4 482.9L551.1 489.2L546.9 495.4L542.6 501.5L538.3 507.6L534 513.5L529.6 519.4L525.2 525.2L520.7 530.9L516.2 536.5L511.7 541.9L507.1 547.2L502.4 552.4L497.7 557.4L493 562.2L488.2 566.8L483.4 571.2L478.5 575.3L473.5 579.4L468.4 583.2L463.2 586.8L458 590.3L452.6 593.6L447.2 596.6L441.7 599.5L436.1 602.1L430.5 604.5L424.9 606.7L419.3 608.6L413.7 610.2L408.1 611.6L402.5 612.8L397 613.6L391.6 614.2L386.2 614.5L381 614.5L375.8 614.2L370.8 613.6L366 612.8L361.3 611.6L356.8 610.3L352.5 608.6L348.3 606.6L344.3 604.4L340.4 602L336.6 599.2L333 596.2L329.7 592.9L326.6 589.6L323.8 586L321.1 582.1L318.6 577.8L316.3 573.3L314.1 568.6L312.2 563.6L310.5 558.4L309 553L307.8 547.5L306.8 541.8L306 536L305.5 530.2L305.2 524.3L305.1 518.4L305.3 512.4L305.8 506.5L306.4 500.5L307.3 494.7L308.5 488.9L309.9 483.1L311.5 477.5L313.3 472.1L315.4 466.8L317.6 461.6L320.1 456.7L322.8 452L325.6 447.6L328.7 443.4L331.9 439.5L335.2 436L338.8 432.7L342.8 429.5L347.3 426.2L351.9 423.2L356.7 420.5L361.4 418.1L366.3 416.1L371.2 414.3L376.2 412.8L381.3 411.6L386.4 410.8L391.5 410.3L396.7 410.1L401.9 410.2L407.2 410.7L412.4 411.5L417.7 412.6L423 414L428.2 415.8L433.4 417.9L438.6 420.3L443.7 423L448.8 425.9L453.7 429.2L458.6 432.7L463.3 436.5L467.9 440.6L472.4 444.8L476.8 449.3L481 454L485 458.9L489 464L492.7 469.3L496.3 474.7L499.7 480.3L503 486L506.2 492.1L509.6 498.8L513 505.7L516.4 512.6L519.9 519.6L523.3 526.6L526.7 533.7L530.1 540.7L533.6 547.9L537 555L540.5 562.2L544.1 569.3L547.7 576.6L551.4 583.8L555.1 591.1L559 598.3L562.9 605.6L567 612.9L571.2 620.2L575.6 627.5L580.2 634.9L585 642.2L590.1 649.5L595.6 656.8L601.4 664.1L607.7 671.2L614.6 678.3L622.2 685.2L630.6 691.8L640 697.9L650.3 703.2L661.5 707.5L673.5 710.5L685.8 711.8L698.4 711.5L710.9 709.5L722.9 705.7L734 700.6L743.9 694.4L752.7 687.5L760.4 680.2L767.3 672.7L773.4 665L778.9 657.3L783.9 649.5L788.5 641.6L792.7 633.8L796.6 625.9L800.2 618L803.5 610.2L806.7 602.3L807.2 601L807.7 599.7L808.2 598.4L808.6 597L809.1 595.7L809.6 594.4L810.1 593.1L810.5 591.8L810.9 590.4L811.2 589.1L811.5 587.7L811.7 586.3L811.9 584.8L812 583.4L812 581.9L812 580.5L811.9 578.9L811.7 577.4L811.4 575.9L811.1 574.3L810.7 572.7L810.1 571L809.5 569.3L808.7 567.6L807.7 565.8L806.5 564L805 562L803 559.9L800.3 557.5L792.8 553.4L791.8 553.1L783.5 551.5L779.8 551.6L777 552L774.6 552.5L772.5 553.1L770.6 553.8L768.9 554.5L767.4 555.3L765.9 556.1L764.6 556.9L763.3 557.8L762.2 558.7L761.1 559.6L760 560.5L759.1 561.5L758.1 562.5L757.3 563.5L756.5 564.5L755.7 565.5L755.1 566.6L754.4 567.6L753.8 568.7L753.3 569.8L752.7 570.9L752.2 572L751.7 573.1L751.1 574.2L750.6 575.3L750.1 576.4L749.5 577.5L746.3 584L743 590.4L739.6 596.6L736.1 602.6L732.5 608.4L728.8 613.9L725 619.1L721.2 624L717.2 628.4L713.3 632.3L709.4 635.6L705.7 638.2L702.2 640.2L698.9 641.5L695.9 642.3L692.9 642.5L689.7 642.4L686.5 641.9L683.3 640.9L679.9 639.4L676.4 637.3L672.7 634.7L668.8 631.4L664.9 627.5L661 623.2L657.1 618.5L653.3 613.3L649.5 607.9L645.8 602.2L642.2 596.3L638.6 590.2L635.1 583.9L631.7 577.5L628.3 571L625 564.3L621.7 557.6L618.4 550.8L615.2 543.9L612 536.9L608.8 529.9L605.6 522.9L602.5 515.8L599.3 508.6L596.1 501.4L592.9 494.2L589.7 487L586.4 479.7L583.1 472.4L579.8 465.1L576.4 457.7L572.6 449.8L568.3 441.7L563.8 433.7L559 425.8L553.9 418.1L548.5 410.5L542.9 403.1L536.9 395.8L530.5 388.8L523.9 382L516.9 375.4L509.6 369.1L502 363L494.1 357.3L485.8 352L477.2 347L468.3 342.4L459.1 338.3L449.6 334.6L439.8 331.5L429.8 328.9L419.6 326.9L409.2 325.6L398.7 324.8L388.2 324.8L377.7 325.3L367.2 326.6L356.8 328.5L346.6 331L336.6 334.1L326.9 337.8L317.4 342.1L308.3 346.8L299.5 351.9L291 357.5L282.5 363.8L274.2 370.9L266.5 378.5L259.4 386.4L252.8 394.7L246.8 403.3L241.4 412L236.5 421L232 430L228.1 439.3L224.6 448.6L221.6 458L219 467.5L216.8 477L215.1 486.7L213.7 496.3L212.7 506L212.2 515.8L212 525.5L212.2 535.3L212.9 545.2L214 555L215.6 564.9L217.6 574.7L220.1 584.5L223.1 594.3L226.7 604L230.9 613.7L235.7 623.2L241.1 632.5L247.2 641.6L254 650.4L261.5 658.7L269.4 666.4L277.8 673.5L286.7 680.1L296.1 686.1L305.9 691.4L316 696L326.3 699.9L336.8 703.1L347.5 705.5L358.1 707.2L368.8 708.3L379.3 708.7L389.8 708.6L400.1 707.8L410.3 706.6L420.3 704.8L430.1 702.6L439.6 700L449 696.9L458.2 693.5L467.1 689.8L475.9 685.7L484.4 681.3L492.7 676.6L500.8 671.6L508.6 666.4L516.3 661L523.7 655.3L530.9 649.3L537.9 643.2L544.7 636.8L551.2 630.3L557.4 623.6L563.4 616.9L569.1 610.2L574.6 603.3L580 596.5L585.1 589.5L590.1 582.6L594.9 575.6L599.6 568.6L604.2 561.5L608.6 554.5L613 547.4L617.2 540.4L621.4 533.3L625.5 526.2L629.5 519.1L633.4 512L637.3 504.9L641.1 497.8L644.9 490.7L648.6 483.6L652.3 476.5L656 469.5L659.6 462.4L663.2 455.3L666.8 448.2L670.3 441.2L673.8 434.1L677.3 427.1L680.8 420.1L684.3 413.1L687.8 406.1L691.3 399.1L694.8 392.1L698.2 385.1L701.7 378.2L705.2 371.3L708.7 364.3L712.2 357.4L715.6 350.5L716.2 349.4L716.8 348.2L717.4 347.1L718 345.9L718.6 344.8L719.1 343.7L719.7 342.5L720.2 341.3L720.7 340.1L721.2 338.9L721.6 337.7L722 336.4L722.3 335.1L722.5 333.7L722.8 332.4L722.9 331L723 329.5L723.1 328L723.1 326.5L723 325L722.8 323.3L722.6 321.7L722.2 319.9L721.7 318.1L721.1 316.2L720.3 314.2L719.2 311.9L717.8 309.5L715.6 306.6L709.2 301Z"/></svg>';
+const CARET = '<svg class="ic chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.8 6.4h6.4L8 10z" fill="currentColor" stroke="none"/></svg>';
+const SEND = '<svg class="ic" viewBox="0 0 16 16"><path d="M8 13.2V3.2M3.8 7.4L8 3.2l4.2 4.2"/></svg>';
+const STOP = '<svg class="ic" viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="2.4" fill="currentColor" stroke="none"/></svg>';
+
+const WAYS = [
+  { id: "now", label: "现在", note: "现在的做法：正在进行的思考和读文件、跑命令折在同一行里，默认收起；只有它单独一步时才露出一行，而且是整段的开头，常被截断。最下面只有「思考中 · 时间 · tokens」，tokens 要等这次调用结束才变。" },
+  { id: "a", label: "A 三行小窗", note: "A（已选定，见 Steps.tsx 的 LiveThinking）：正在进行的思考移到最下面的运行行，下面开一个三行小窗，新字从底部出来，顶部渐隐。点「思考中」展开全文。想完回到上面的步骤列表。" },
+  { id: "top", label: "A 放在上面", note: "A 放在上面：思考留在步骤里原来的位置，只是不再折进上面那行；它下面是一个三行小窗，新字从底部出来，顶部渐隐，点一下展开全文。最下面的「思考中 · 时间 · tokens」不变。想完折回上面那行。" },
+  { id: "b", label: "B 最新一句", note: "B：同样移到运行行，但只露出正在写的这一句，句尾一直看得见，前面渐隐。最省地方，但一句很长时只看得到半句。" },
+  { id: "c", label: "C 展开全文", note: "C：同样移到运行行，思考全文直接展开，最高 12 行，跟着滚到底；想完收起回到步骤列表。看得最全，但长思考会占满半屏。" },
+];
+const SPEEDS = [1, 2, 4];
+
+// The scripted task: three model calls, two files read, one command run, then the answer.
+const T1 = "用户说设置页的模型列表有时候不刷新。可能的原因有几个：一是连接的模型列表有缓存，刷新时没有让缓存失效；二是前端订阅的事件在窗口重连之后没有重新订阅；三是请求失败被静默吞掉了。我先看看 ModelConnections.tsx 是怎么拿列表的，再看内核 models.rs 里列表的缓存策略，这两处最可能有问题。";
+const T2 = "ModelConnections.tsx 在挂载时调用一次 models/list，之后只监听 connection_changed 事件来刷新。models.rs 那边，列表按连接缓存，缓存键是连接 ID，十分钟过期，但是连接的凭据更新之后并没有清掉对应的缓存，所以重新登录换了账号以后，前端收到 connection_changed 去重新拉列表，拿到的还是旧缓存。\n这能解释「有时候不刷新」：只有在十分钟内重新登录或者换账号时才会出现，过了十分钟就自己好了。不过也要排除前端的问题：如果 connection_changed 在窗口重连之后丢了，现象也差不多。先跑一下 models 相关的测试，看看缓存失效有没有测试覆盖，再决定改哪边。";
+const T3 = "测试只覆盖了缓存过期，没有覆盖凭据更新后的失效，和推断一致。修法是连接更新凭据时清掉这个连接的模型缓存，再补一条测试。";
+const ANSWER = "原因在内核的模型列表缓存：\n\n- `models.rs` 按连接缓存模型列表，十分钟过期；\n- 连接换了账号或更新凭据后，这份缓存没有清掉，前端收到 `connection_changed` 重新拉取，拿到的还是旧列表。\n\n所以只在十分钟内重新登录时出现，之后会自己恢复。修法是更新凭据时一并清掉该连接的缓存，再补一条测试。要我现在改吗？";
+const THINK_RATE = 36, TEXT_RATE = 60; // characters a second
+const READS = [
+  { id: "r1", cat: "read", obj: "apps/desktop/src/renderer/src/settings/ModelConnections.tsx", out: "export function ModelConnections() {\n  const models = useModels();\n  …" },
+  { id: "r2", cat: "read", obj: "crates/finx-server/src/models.rs", out: "/// Model lists, cached per connection for ten minutes.\nconst TTL: Duration = …" },
+];
+const EXEC = { id: "x1", cat: "execute", obj: "cargo test -p finx-server models", out: "running 6 tests\n......\ntest result: ok. 6 passed" };
+const SEGS = [];
+let at = 0;
+const seg = (s) => { SEGS.push({ ...s, t0: at, t1: at + s.d }); at += s.d; };
+const think = (id, text) => seg({ kind: "think", id, text, d: text.length / THINK_RATE });
+seg({ kind: "wait", d: 1.4 });
+think("k1", T1);
+seg({ kind: "args", tools: READS, d: 0.5, call: 12300 });
+seg({ kind: "run", tools: READS, d: 1.3 });
+seg({ kind: "wait", d: 1.1 });
+think("k2", T2);
+seg({ kind: "args", tools: [EXEC], d: 0.5, call: 16800 });
+seg({ kind: "run", tools: [EXEC], d: 2.8 });
+seg({ kind: "wait", d: 0.9 });
+think("k3", T3);
+seg({ kind: "text", text: ANSWER, d: ANSWER.length / TEXT_RATE, call: 18900 });
+const TOTAL = at;
+const TOKENS_PER_CHAR = 0.7;
+
+const VERB = { read: ["读取", "正在读取", "已读取", "读取了 {n} 个文件", "正在读取 {n} 个文件"], execute: ["运行", "正在运行", "已运行", "运行了 {n} 条命令", "正在运行 {n} 条命令"] };
+
+/** Everything on the page at time t: the steps, what is live, and the tokens of finished calls. */
+function stateAt(t) {
+  const items = []; let text = null; let tokens = 0; let streaming = false;
+  for (const s of SEGS) {
+    if (t < s.t0) break;
+    const on = t < s.t1;
+    if (s.kind === "think") {
+      const n = on ? Math.floor((t - s.t0) * THINK_RATE) : s.text.length;
+      items.push({ kind: "thinking", key: s.id, text: s.text.slice(0, n), live: on });
+      streaming = on;
+    } else if (s.kind === "args") {
+      for (const it of items) if (it.kind === "thinking") it.live = false;
+      for (const x of s.tools) items.push({ kind: "tool", key: x.id, tool: x, state: on ? "streaming" : "done" });
+      streaming = on;
+      if (!on) tokens += s.call + callOutput(s);
+    } else if (s.kind === "run") {
+      for (const it of items) if (it.kind === "tool" && s.tools.includes(it.tool)) it.state = on ? "running" : "done";
+      streaming = false;
+    } else if (s.kind === "text") {
+      for (const it of items) if (it.kind === "thinking") it.live = false;
+      const n = on ? Math.floor((t - s.t0) * TEXT_RATE) : s.text.length;
+      text = { text: s.text.slice(0, n), live: on };
+      if (!on) tokens += s.call + callOutput(s);
+    } else if (s.kind === "wait") streaming = false;
+  }
+  return { items, text, tokens, running: t < TOTAL };
+}
+/** The output tokens of the call a segment ends: its thinking and what it wrote. */
+function callOutput(s) {
+  const i = SEGS.indexOf(s); let chars = s.kind === "text" ? s.text.length : 40;
+  for (let j = i - 1; j >= 0 && SEGS[j].kind !== "run"; j--) if (SEGS[j].kind === "think") chars += SEGS[j].text.length;
+  return Math.round(chars * TOKENS_PER_CHAR);
+}
+
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const tokensText = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(n);
+function durationText(sec) {
+  const s = Math.max(1, Math.round(sec));
+  return s < 60 ? `${s} 秒` : s % 60 ? `${Math.trunc(s / 60)} 分 ${s % 60} 秒` : `${s / 60} 分`;
+}
+function md(src) {
+  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+  return src.split(/\n\n+/).map((b) => {
+    const lines = b.split("\n");
+    if (lines.every((l) => l.startsWith("- "))) return `<ul>${lines.map((l) => `<li>${inline(l.slice(2))}</li>`).join("")}</ul>`;
+    return `<p>${inline(b)}</p>`;
+  }).join("");
+}
+
+// What the owner opened stays open across frames.
+const open = new Set();
+const lines = (text) => text.trim().split("\n").filter((l) => l.trim() !== "");
+
+function thinkingRow(it, inGroup) {
+  const gist = (it.live ? lines(it.text).at(-1) : lines(it.text)[0]) ?? "";
+  const body = it.text.trim() !== "";
+  const o = open.has(it.key) && body;
+  return `<div class="tool think ${o ? "open" : ""}"><button class="th ${it.live ? "shimmer" : ""}" data-open="${it.key}" ${body ? `aria-expanded="${o}"` : ""}><span class="vb">${it.live ? "正在思考" : "思考"}</span><span class="sm2">${esc(gist)}</span>${body ? CARET : ""}</button>${body ? `<div class="out">${esc(it.text.trim())}</div>` : ""}</div>`;
+}
+function toolRow(it, after = "") {
+  const [, doing, done] = VERB[it.tool.cat];
+  const spin = it.state !== "done";
+  const unknown = it.state === "streaming";
+  const verb = unknown ? `${VERB[it.tool.cat][0]}…` : it.state === "running" ? doing : done;
+  const obj = unknown ? "" : it.tool.cat === "execute" ? `<code class="sm2 cmd">${esc(it.tool.obj)}</code>` : `<span class="sm2">${esc(it.tool.obj.split("/").at(-1))}</span>`;
+  const out = it.state === "done";
+  const o = open.has(it.key) && out;
+  return `<div class="tool ${o ? "open" : ""}"><button class="th ${spin ? "shimmer" : ""}" data-open="${it.key}" ${out ? `aria-expanded="${o}"` : ""}><span class="vb">${verb}</span>${obj}${after}${out ? CARET : ""}</button>${out ? `<div class="out">${esc(it.tool.out)}</div>` : ""}</div>`;
+}
+const item = (it, g) => (it.kind === "thinking" ? thinkingRow(it, g) : toolRow(it));
+function workText(items) {
+  const counts = new Map();
+  for (const it of items) { const k = it.kind === "thinking" ? "thinking" : it.tool.cat; counts.set(k, (counts.get(k) ?? 0) + 1); }
+  return [...counts].map(([k, n]) => (k === "thinking" ? `思考了 ${n} 次` : VERB[k][3].replace("{n}", n))).join("，");
+}
+function fold(key, title, live, body, after = "") {
+  const o = open.has(key);
+  return `<div class="tgroup ${o ? "open" : ""}"><button class="tg-h ${live ? "shimmer" : ""}" data-open="${key}" aria-expanded="${o}"><span>${esc(title)}</span>${after}${CARET}</button><div class="tg-b">${body}</div></div>`;
+}
+function work(items) {
+  if (items.length === 0) return "";
+  if (items.length === 1) return item(items[0], false);
+  const live = items.some((it) => (it.kind === "thinking" ? it.live : it.state !== "done"));
+  return fold("group", workText(items), live, items.map((it) => item(it, true)).join(""));
+}
+
+/** The line at the bottom while the task runs. `thought`: the live thinking it shows (A, B, C). */
+function working(way, st, t, live) {
+  const time = `<span class="wk-time">${durationText(t)}</span>`;
+  const runs = st.items.filter((it) => it.kind === "tool" && it.state === "running");
+  if (runs.length) {
+    const calls = runs.length === 1 ? toolRow(runs[0], time) : fold("calls", VERB[runs[0].tool.cat][4].replace("{n}", runs.length), true, runs.map((it) => toolRow(it)).join(""), time);
+    return `<div class="working">${MARK}<div class="wk-now">${calls}</div></div>`;
+  }
+  const end = st.items.at(-1);
+  const writing = (st.text && st.text.live) || (end?.kind === "tool" && end.state === "streaming" && !st.text);
+  const meta = `<span class="wk-meta">· ${durationText(t)}${st.tokens > 0 ? ` · ${tokensText(st.tokens)} tokens` : ""}</span>`;
+  if (!live || writing) return `<div class="working">${MARK}<div class="wk-now"><div class="wk-line"><span class="shimmer">${writing ? "生成中" : "思考中"}</span>${meta}</div></div></div>`;
+  // 新增：思考中，和它正写到哪儿。
+  const has = live.text.trim() !== "";
+  let peek = "";
+  if (has && way === "a") peek = `<div class="tk-peek tk-text ${open.has("peek") ? "open" : ""}" data-keep="peek"><div>${esc(live.text.trim())}</div></div>`;
+  if (has && way === "b") peek = `<div class="tk-one tk-text" data-fit><span>${esc(sentence(live.text))}</span></div>`;
+  if (has && way === "c") peek = `<div class="tk-full tk-text" data-keep="full">${esc(live.text.trim())}</div>`;
+  const toggle = way === "a" && has;
+  const head = toggle
+    ? `<button class="wk-line tk-h" data-open="peek" aria-expanded="${open.has("peek")}"><span class="shimmer">思考中</span>${meta}${CARET}</button>`
+    : `<div class="wk-line"><span class="shimmer">思考中</span>${meta}</div>`;
+  return `<div class="working">${MARK}<div class="wk-now">${head}${peek}</div></div>`;
+}
+/** The sentence it is writing; the last one it finished when it is between two. */
+function sentence(text) {
+  const parts = text.trim().split(/(?<=[。！？!?\n])/).map((s) => s.trim()).filter(Boolean);
+  return parts.at(-1) ?? "";
+}
+
+let way = WAYS.some((w) => `#${w.id}` === location.hash) ? location.hash.slice(1) : "a";
+let speed = 1, t = 0, playing = true;
+
+function render() {
+  const st = stateAt(t);
+  const tr = document.getElementById("tr");
+  const sc = document.getElementById("scroll");
+  const stick = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 40;
+  const keep = {};
+  tr.querySelectorAll("[data-keep]").forEach((el) => { keep[el.dataset.keep] = { top: el.scrollTop, bottom: el.scrollHeight - el.scrollTop - el.clientHeight < 8 }; });
+  // In A, B and C the thinking in progress leaves the steps for the line at the bottom.
+  const live = way === "now" ? null : st.items.find((it) => it.kind === "thinking" && it.live);
+  const shown = st.items.filter((it) => !(it.kind === "tool" && it.state === "running") && it !== live);
+  let h = `<div class="um"><div class="bub">设置页的模型列表有时候不刷新，帮我看看是什么原因</div></div>`;
+  h += work(shown);
+  // A 放在上面：正在进行的思考跟在步骤后面，一个三行小窗；运行行照旧。
+  if (way === "top" && live && live.text.trim() !== "") h += `<div class="tk-peek tk-text tk-top ${open.has("peek") ? "open" : ""}" data-keep="peek" data-open="peek" aria-expanded="${open.has("peek")}"><div>${esc(live.text.trim())}</div></div>`;
+  if (st.text && st.text.text) h += `<div class="am"><div class="md">${md(st.text.text)}</div></div>`;
+  if (st.running) h += working(way, st, t, way === "top" ? null : live);
+  tr.innerHTML = h;
+  tr.querySelectorAll("[data-keep]").forEach((el) => {
+    const k = keep[el.dataset.keep];
+    el.scrollTop = !k || k.bottom ? el.scrollHeight : k.top;
+  });
+  // Text pushed out at the top is not in scrollHeight: measure what is inside.
+  tr.querySelectorAll(".tk-peek").forEach((el) => el.classList.toggle("over", el.firstChild.offsetHeight > el.clientHeight + 1));
+  tr.querySelectorAll("[data-fit]").forEach((el) => el.classList.toggle("over", el.firstChild.offsetWidth > el.clientWidth));
+  if (stick) sc.scrollTop = sc.scrollHeight;
+  const send = document.getElementById("send");
+  send.className = `send ${st.running ? "stop" : ""}`;
+  send.innerHTML = st.running ? STOP : SEND;
+  send.disabled = !st.running;
+  document.getElementById("scrub").value = t;
+  document.getElementById("clock").textContent = `${t.toFixed(1)} s`;
+}
+
+// pointerdown: the page redraws ten times a second, so a click's button may be gone by mouseup.
+document.getElementById("tr").addEventListener("pointerdown", (e) => {
+  const b = e.target.closest("[data-open]");
+  if (!b || !b.hasAttribute("aria-expanded")) return;
+  const k = b.dataset.open;
+  open.has(k) ? open.delete(k) : open.add(k);
+  render();
+});
+
+function segs(id, list, get, set) {
+  const el = document.getElementById(id);
+  el.innerHTML = list.map(([v, l]) => `<button data-v="${v}">${l}</button>`).join("");
+  const mark = () => el.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.v === String(get())));
+  el.addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { set(b.dataset.v); mark(); } });
+  mark();
+}
+const note = () => (document.getElementById("note").textContent = WAYS.find((w) => w.id === way).note);
+segs("ways", WAYS.map((w) => [w.id, w.label]), () => way, (v) => { way = v; history.replaceState(null, "", `#${v}`); note(); render(); });
+segs("speed", SPEEDS.map((s) => [s, `${s}×`]), () => speed, (v) => (speed = Number(v)));
+const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+document.documentElement.dataset.theme = dark ? "dark" : "light";
+segs("theme", [["light", "浅色"], ["dark", "深色"]], () => document.documentElement.dataset.theme, (v) => (document.documentElement.dataset.theme = v));
+note();
+
+const scrub = document.getElementById("scrub");
+scrub.max = TOTAL.toFixed(1);
+scrub.addEventListener("input", () => { t = Number(scrub.value); playing = true; render(); });
+document.getElementById("replay").addEventListener("click", () => { t = 0; playing = true; open.clear(); render(); });
+// setInterval, not requestAnimationFrame: a hidden preview pane runs no frames.
+setInterval(() => {
+  if (!playing) return;
+  t = Math.min(TOTAL, t + 0.1 * speed);
+  if (t >= TOTAL) playing = false;
+  render();
+}, 100);
+render();
+</script>
+</body>
+</html>

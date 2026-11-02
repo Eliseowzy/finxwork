@@ -26,6 +26,12 @@
       "$ref": "#/definitions/CancelRequestParams"
     },
     {
+      "$ref": "#/definitions/ChatGptCancelParams"
+    },
+    {
+      "$ref": "#/definitions/ChatGptStatus"
+    },
+    {
       "$ref": "#/definitions/ConfigChangedParams"
     },
     {
@@ -824,6 +830,74 @@
         "budget",
         "listed",
         "tokens"
+      ],
+      "type": "object"
+    },
+    "ChatGptCancelParams": {
+      "additionalProperties": false,
+      "properties": {
+        "login_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "login_id"
+      ],
+      "type": "object"
+    },
+    "ChatGptLoginState": {
+      "description": "Only public login progress crosses RPC. OAuth tokens stay in the kernel credential store.",
+      "enum": [
+        "idle",
+        "pending",
+        "connected",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "ChatGptStatus": {
+      "properties": {
+        "account": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "authorize_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConnectionView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "login_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/ChatGptLoginState"
+        }
+      },
+      "required": [
+        "state"
       ],
       "type": "object"
     },
@@ -6956,6 +7030,19 @@
     },
     "browser/status": {
       "result": "BrowserStatus"
+    },
+    "chatgpt/cancel": {
+      "params": "ChatGptCancelParams",
+      "result": "ChatGptStatus"
+    },
+    "chatgpt/login": {
+      "result": "ChatGptStatus"
+    },
+    "chatgpt/logout": {
+      "result": "ChatGptStatus"
+    },
+    "chatgpt/status": {
+      "result": "ChatGptStatus"
     },
     "config/read": {
       "params": "ConfigReadParams",

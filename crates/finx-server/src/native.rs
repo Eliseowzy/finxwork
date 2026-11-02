@@ -401,6 +401,20 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::CHATGPT_STATUS => conn.send(reply(id, server.0.connections.chatgpt.status().map_err(crate::connections::rpc_error))),
+            method::CHATGPT_LOGIN | method::CHATGPT_LOGOUT => {
+                let reply_id = id.clone(); let login = method_name == method::CHATGPT_LOGIN;
+                self.spawn(id.clone(), conn, async move {
+                    let chatgpt = &server.0.connections.chatgpt;
+                    let result = if login { chatgpt.start().await } else { chatgpt.logout().await };
+                    Some(reply(&reply_id, result.map_err(crate::connections::rpc_error)))
+                });
+            }
+            method::CHATGPT_CANCEL => {
+                let result = finx_rpc::params::<finx_protocol::api::ChatGptCancelParams>(params)
+                    .and_then(|p| server.0.connections.chatgpt.cancel(&p.login_id).map_err(crate::connections::rpc_error));
+                conn.send(reply(id, result));
+            }
             method::CONNECTIONS_LIST => conn.send(reply(id, server.0.connections.snapshot().map_err(crate::connections::rpc_error))),
             method::CONNECTIONS_DISCOVER => {
                 let reply_id = id.clone();

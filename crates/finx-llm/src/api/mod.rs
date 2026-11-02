@@ -5,6 +5,7 @@ pub mod anthropic;
 mod body_snapshots;
 pub(crate) mod http;
 pub mod openai_chat;
+pub mod openai_responses;
 pub mod scripted;
 
 use std::sync::Arc;

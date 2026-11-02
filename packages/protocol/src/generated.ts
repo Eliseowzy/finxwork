@@ -159,6 +159,22 @@ export type CatalogInfo = {
   tokens: number;
 };
 
+export type ChatGptCancelParams = {
+  login_id: string;
+};
+
+/** Only public login progress crosses RPC. OAuth tokens stay in the kernel credential store. */
+export type ChatGptLoginState = "idle" | "pending" | "connected" | "failed" | "cancelled";
+
+export type ChatGptStatus = {
+  account?: string | null;
+  authorize_url?: string | null;
+  connection?: ConnectionView | null;
+  login_id?: string | null;
+  message?: string | null;
+  state: ChatGptLoginState;
+};
+
 export type ClientCapabilities = {
   /** Adjacent deltas may be merged while the connection is backlogged. */
   coalesce?: boolean;
@@ -1602,6 +1618,10 @@ export interface Methods {
   "auth/set": [AuthSetParams, AuthSetResult];
   "browser/host": [BrowserHostParams, BrowserHostResult];
   "browser/status": [Record<string, never>, BrowserStatus];
+  "chatgpt/cancel": [ChatGptCancelParams, ChatGptStatus];
+  "chatgpt/login": [Record<string, never>, ChatGptStatus];
+  "chatgpt/logout": [Record<string, never>, ChatGptStatus];
+  "chatgpt/status": [Record<string, never>, ChatGptStatus];
   "config/read": [ConfigReadParams, ConfigReadResult];
   "config/write": [ConfigWriteParams, ConfigWriteResult];
   "connections/connect": [ConnectionConnectParams, ConnectionsSnapshot];

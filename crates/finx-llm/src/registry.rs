@@ -172,6 +172,7 @@ impl ModelRegistry {
             options,
         };
         registry.register_api(Arc::new(OpenAiChatApi));
+        registry.register_api(Arc::new(crate::api::openai_responses::OpenAiResponsesApi));
         registry.register_api(Arc::new(AnthropicApi));
         registry
     }

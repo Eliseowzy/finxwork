@@ -321,6 +321,14 @@ enum SkillsAction {
 
 #[derive(Subcommand)]
 pub(crate) enum ModelsAction {
+    /// Sign in with ChatGPT to use subscription models (no API key)
+    Login { #[arg(value_parser = ["chatgpt-api"])] connection: String },
+    /// Disconnect and revoke the ChatGPT subscription connection
+    Logout { #[arg(value_parser = ["chatgpt-api"])] connection: String },
+    /// Forget a signed-out ChatGPT registration so another account can be connected
+    Forget { #[arg(value_parser = ["chatgpt-api"])] connection: String },
+    /// Show ChatGPT connection status, without credentials
+    Status { #[arg(value_parser = ["chatgpt-api"])] connection: String },
     /// Put a model in the model menu
     Show {
         /// provider/model-id

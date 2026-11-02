@@ -19,6 +19,7 @@ finx-acp.workspace = true
 finx-browser.workspace = true
 finx-core.workspace = true
 finx-llm.workspace = true
+finx-connections.workspace = true
 finx-mcp.workspace = true
 finx-protocol.workspace = true
 finx-server.workspace = true

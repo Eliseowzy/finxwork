@@ -82,6 +82,7 @@ impl Server {
     /// Models, providers with where their keys and models come from, and the defaults of new
     /// sessions. May read saved keys (the keychain), so it blocks.
     pub fn list_models(&self) -> ModelsListResult {
+        let _ = self.0.connections.chatgpt.sync();
         let llm = &self.0.llm;
         let refreshing = self.0.model_upkeep.refreshing.lock().clone();
         let result = finx_core::models::list(llm, &self.0.defaults, &|id| refreshing.contains(id));

@@ -25,6 +25,10 @@ pub struct Runner {
     /// Extra environment, e.g. a private `FINX_HOME`.
     pub env: Vec<(OsString, OsString)>,
     pub timeout: Duration,
+    /// Keep each run's session log. Off by default: every run works in a temporary folder,
+    /// so a kept session shows in the session list (and the desktop's sidebar) as a project
+    /// of its own.
+    pub keep_sessions: bool,
 }
 
 /// Counts of one tool's calls.
@@ -131,10 +135,13 @@ impl Runner {
 
     /// The `--output json` result of `finx exec`.
     async fn exec(&self, case: &Case, base: &str) -> Result<Value, String> {
-        // A fresh project per run, so sessions and project config stay out of the way.
+        // A fresh project per run, so project config stays out of the way.
         let work = tempfile::tempdir().map_err(|e| format!("temp dir: {e}"))?;
         let mut cmd = Command::new(&self.finx);
         cmd.arg("exec").arg("--output").arg("json").arg("--max-turns").arg(case.max_turns.to_string());
+        if !self.keep_sessions {
+            cmd.arg("--no-save");
+        }
         if let Some(model) = &self.model {
             cmd.arg("--model").arg(model);
         }
