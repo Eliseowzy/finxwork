@@ -33,6 +33,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::Weak;
@@ -102,6 +103,9 @@ struct Shared {
     snaps: Mutex<HashMap<String, Snap>>,
     shots: Mutex<HashMap<String, Shot>>,
     apps: Mutex<HashMap<String, String>>,
+    /// Apps, by key, whose text fields took nothing written through accessibility: type_text
+    /// pastes into them from then on.
+    ignores_typing: Mutex<HashSet<String>>,
     next_shot: AtomicU64,
 }
 
@@ -950,25 +954,52 @@ async fn press_headed(ctx: &ToolCtx, key: &str, combo: &str) -> Result<Value, To
 
 /// `text` typed where the app's keyboard focus is. Into its focused text element through
 /// accessibility when `window` holds one: the window stays where it is and the clipboard is not
-/// touched. Otherwise pasted, with `window` at the front.
+/// touched. Otherwise pasted, with `window` at the front: also when the field took nothing of
+/// what was written, which the app is then remembered for.
 async fn type_focused(ctx: &ToolCtx, key: &str, text: &str, window: &str) -> Result<(Value, Route), ToolError> {
-    if let Some(reference) = focused_text(ctx, key, window).await? {
+    let handle = handle(ctx)?;
+    let ignores = handle.shared.ignores_typing.lock().contains(key);
+    if !ignores && let Some(field) = focused_text(ctx, key, window).await? {
         // The CLI's own default, given so that finx waits as long.
         let budget = 5000 + 30 * text.chars().count();
-        let args = vec![reference, "--timeout-ms".into(), budget.to_string(), "--".into(), text.to_string()];
+        let args = vec![field.reference.clone(), "--timeout-ms".into(), budget.to_string(), "--".into(), text.to_string()];
         match attempt(ctx, "type", args).await? {
             Ok(data) => return Ok((data, Route::Background)),
-            Err(err) if !err.not_delivered() => return Err(ToolError::Failed(err.to_string())),
-            Err(_) => {}
+            Err(err) if err.not_delivered() => {}
+            // Pasting is safe only when the field still holds what it held before, read once
+            // more: an app that applies the text late must not get it twice.
+            Err(err) if field.value.is_some() && err.value_after() == field.value.as_deref() => {
+                match focused_text(ctx, key, window).await? {
+                    Some(now) if now.value == field.value => {
+                        handle.shared.ignores_typing.lock().insert(key.to_string());
+                    }
+                    Some(now) => {
+                        let data = json!({
+                            "disposition": { "delivery": "delivered_unverified" },
+                            "post_state": { "value": now.value },
+                        });
+                        return Ok((data, Route::Background));
+                    }
+                    None => return Err(ToolError::Failed(err.to_string())),
+                }
+            }
+            Err(err) => return Err(ToolError::Failed(err.to_string())),
         }
     }
     to_front(ctx, window).await?;
     Ok((paste(ctx, key, text).await?, Route::Front))
 }
 
-/// The ref of the focused element of `key`'s focused window, when that window is `window` and
-/// the element takes typed text.
-async fn focused_text(ctx: &ToolCtx, key: &str, window: &str) -> Result<Option<String>, ToolError> {
+/// The focused text element of a window: its ref, and its value when the app shows it.
+#[derive(Debug, PartialEq, Eq)]
+struct Field {
+    reference: String,
+    value: Option<String>,
+}
+
+/// The focused element of `key`'s focused window, when that window is `window` and the element
+/// takes typed text.
+async fn focused_text(ctx: &ToolCtx, key: &str, window: &str) -> Result<Option<Field>, ToolError> {
     let args = ["--app", key, "--surface", "focused", "--compact", "-i"].map(str::to_string).to_vec();
     let Ok(data) = attempt(ctx, "snapshot", args).await? else {
         return Ok(None);
@@ -976,35 +1007,78 @@ async fn focused_text(ctx: &ToolCtx, key: &str, window: &str) -> Result<Option<S
     if data.pointer("/window/id").and_then(Value::as_str) != Some(window) {
         return Ok(None);
     }
-    Ok(data.get("tree").and_then(focused_typable).map(str::to_string))
+    let Some(node) = data.get("tree").and_then(focused_typable) else {
+        return Ok(None);
+    };
+    Ok(node.get("ref_id").and_then(Value::as_str).map(|reference| Field {
+        reference: reference.to_string(),
+        value: node.get("value").and_then(Value::as_str).map(str::to_string),
+    }))
 }
 
-/// The ref of the focused element at or under `node` that takes typed text.
-fn focused_typable(node: &Value) -> Option<&str> {
+/// The focused element at or under `node` that takes typed text.
+fn focused_typable(node: &Value) -> Option<&Value> {
     let has = |list: &str, word: &str| {
         node.get(list).and_then(Value::as_array).is_some_and(|items| items.iter().any(|item| item == word))
     };
     if has("states", "focused") && has("available_actions", "TypeText") {
-        return node.get("ref_id").and_then(Value::as_str);
+        return Some(node);
     }
     node.get("children")?.as_array()?.iter().find_map(focused_typable)
 }
 
+/// What the clipboard held before a paste, to put back.
+enum Saved {
+    Text(String),
+    /// A PNG the CLI wrote into its own session directory, removed once put back.
+    Image(String),
+    Files(Vec<String>),
+    Nothing,
+}
+
+impl Saved {
+    fn from(data: Option<Value>) -> Self {
+        let Some(data) = data else { return Self::Nothing };
+        let text = |k: &str| data.get(k).and_then(Value::as_str).map(str::to_string);
+        match data.get("type").and_then(Value::as_str) {
+            Some("text") => text("text").map_or(Self::Nothing, Self::Text),
+            Some("image") => text("path").map_or(Self::Nothing, Self::Image),
+            Some("file_urls") => {
+                let paths: Vec<String> = data
+                    .get("file_urls")
+                    .and_then(Value::as_array)
+                    .map(|urls| urls.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                    .unwrap_or_default();
+                if paths.is_empty() { Self::Nothing } else { Self::Files(paths) }
+            }
+            _ => Self::Nothing,
+        }
+    }
+
+    /// The CLI call that puts it back.
+    fn restore_args(&self) -> (&'static str, Vec<String>) {
+        match self {
+            Self::Text(text) => ("clipboard-set", vec!["--".into(), text.clone()]),
+            Self::Image(path) => ("clipboard-set", vec!["--image".into(), path.clone()]),
+            Self::Files(paths) => ("clipboard-set", paths.iter().flat_map(|p| ["--file-url".to_string(), p.clone()]).collect()),
+            Self::Nothing => ("clipboard-clear", Vec::new()),
+        }
+    }
+}
+
 /// `text` typed where `key`'s focus is, by pasting it: any language and any length, as one
-/// edit. The user's clipboard is put back afterwards (emptied, when it held no text).
+/// edit. The user's clipboard is put back afterwards: text, an image or files (emptied, when it
+/// held none of these).
 async fn paste(ctx: &ToolCtx, key: &str, text: &str) -> Result<Value, ToolError> {
-    let saved = run(ctx, "clipboard-get", Vec::new())
-        .await
-        .ok()
-        .filter(|d| d.get("type").and_then(Value::as_str) == Some("text"))
-        .and_then(|d| d.get("text").and_then(Value::as_str).map(str::to_string));
+    let saved = Saved::from(run(ctx, "clipboard-get", vec!["--format".into(), "auto".into()]).await.ok());
     run(ctx, "clipboard-set", vec!["--".into(), text.to_string()]).await?;
     let pasted = press_headed(ctx, key, "cmd+v").await;
     tokio::time::sleep(PASTE_SETTLE).await;
-    let restored = match saved {
-        Some(saved) => run(ctx, "clipboard-set", vec!["--".into(), saved]).await,
-        None => run(ctx, "clipboard-clear", Vec::new()).await,
-    };
+    let (command, args) = saved.restore_args();
+    let restored = run(ctx, command, args).await;
+    if let Saved::Image(path) = &saved {
+        let _ = std::fs::remove_file(path);
+    }
     let data = pasted?;
     restored?;
     Ok(data)
@@ -1300,7 +1374,7 @@ case "$1" in
   list-apps) echo '{{"ok":true,"data":{{"apps":[{{"name":"Chat","bundle_id":"com.example.chat","presentation":"foreground"}}]}}}}' ;;
   list-windows) cat "{d}/windows.json" ;;
   screenshot) for a; do last="$a"; done; cp "{d}/shot.png" "$last"; echo '{{"ok":true,"data":{{"scale_factor":2.0}}}}' ;;
-  clipboard-get) echo '{{"ok":true,"data":{{"type":"text","text":"mine"}}}}' ;;
+  clipboard-get) if [ -f "{d}/clipboard.json" ]; then cat "{d}/clipboard.json"; else echo '{{"ok":true,"data":{{"type":"text","text":"mine"}}}}'; fi ;;
   snapshot) if [ -f "{d}/focused.json" ]; then cat "{d}/focused.json"; else echo '{{"ok":false,"error":{{"code":"ACTION_NOT_SUPPORTED","message":"Nothing shown","disposition":{{"delivery":"not_delivered","retry":"safe"}}}}}}'; fi ;;
   type) if [ -f "{d}/type.json" ]; then cat "{d}/type.json"; else echo '{{"ok":true,"data":{{"disposition":{{"delivery":"delivered_verified"}}}}}}'; fi ;;
   press) case "$*" in *--headed*) echo '{{"ok":true,"data":{{"disposition":{{"delivery":"delivered_unverified"}}}}}}' ;;
@@ -1338,7 +1412,7 @@ esac
             std::fs::write(self.dir.path().join("windows.json"), windows.to_string()).unwrap();
         }
 
-        /// Answers `name` (focused, type or press) with `answer` from now on.
+        /// Answers `name` (focused, type, press or clipboard) with `answer` from now on.
         fn answer(&self, name: &str, answer: Value) {
             std::fs::write(self.dir.path().join(format!("{name}.json")), answer.to_string()).unwrap();
         }
@@ -1429,7 +1503,7 @@ esac
         json!({"ok": true, "data": {"snapshot_id": "s9", "window": {"id": window}, "tree": {"role": "window", "children": [
             {"role": "button", "ref_id": "@s9:e1", "available_actions": ["Click"]},
             {"role": "scrollarea", "ref_id": "@s9:e2", "children": [
-                {"role": "textfield", "ref_id": "@s9:e3", "states": ["focused"], "available_actions": ["SetValue", "TypeText"]}
+                {"role": "textfield", "ref_id": "@s9:e3", "value": "", "states": ["focused"], "available_actions": ["SetValue", "TypeText"]}
             ]}
         ]}}})
     }
@@ -1437,10 +1511,10 @@ esac
     #[test]
     fn the_focused_text_element_is_found() {
         let tree = &focused_field("w-1")["data"]["tree"];
-        assert_eq!(focused_typable(tree), Some("@s9:e3"));
+        assert_eq!(focused_typable(tree).and_then(|n| n["ref_id"].as_str()), Some("@s9:e3"));
         // Focus on something that takes no text is no place to type.
         let button = json!({"role": "window", "children": [{"ref_id": "@s9:e1", "states": ["focused"], "available_actions": ["Click"]}]});
-        assert_eq!(focused_typable(&button), None);
+        assert!(focused_typable(&button).is_none());
     }
 
     #[cfg(unix)]
@@ -1470,7 +1544,7 @@ esac
         let pasted = [
             FOCUSED,
             "focus-window --window-id w-1 --headed",
-            "clipboard-get",
+            "clipboard-get --format auto",
             "clipboard-set -- 你好",
             "press cmd+v --app com.example.chat --headed",
             "clipboard-set -- mine",
@@ -1499,6 +1573,59 @@ esac
         let failed = Typed::new(DesktopAct).execute(args, ctx).await.unwrap_err().to_string();
         assert!(failed.contains("TIMEOUT"), "{failed}");
         assert!(!fake.calls().iter().any(|c| c.starts_with("clipboard") || c.starts_with("focus-window")));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn an_app_that_ignores_written_text_gets_it_pasted() {
+        let fake = FakeCli::new();
+        let ctx = fake.ctx("fake-cli-type-ignored");
+        fake.answer("focused", focused_field("w-1"));
+        // Written, read back unchanged, and still unchanged when read once more.
+        fake.answer("type", json!({"ok": false, "error": {"code": "ACTION_FAILED",
+            "message": "Post-action state does not match the requested change",
+            "details": {"kind": "post_action_verification", "post_state": {"role": "textfield", "value": ""}},
+            "disposition": {"delivery": "delivered_unverified", "retry": "unsafe"}}}));
+        let args = json!({"app": "Chat", "action": "type_text", "text": "hi"});
+        let typed = Typed::new(DesktopAct).execute(args.clone(), ctx.clone()).await.unwrap();
+        let pasted = [
+            "focus-window --window-id w-1 --headed",
+            "clipboard-get --format auto",
+            "clipboard-set -- hi",
+            "press cmd+v --app com.example.chat --headed",
+            "clipboard-set -- mine",
+        ];
+        let calls = fake.calls();
+        assert_eq!(acting(&calls)[..3], [FOCUSED, "type @s9:e3 --timeout-ms 5060 -- hi", FOCUSED]);
+        assert_eq!(acting(&calls)[3..], pasted);
+        assert_eq!(typed.details.unwrap()["front"], true);
+
+        // From then on the app gets it pasted straight away.
+        Typed::new(DesktopAct).execute(args, ctx).await.unwrap();
+        assert_eq!(acting(&fake.calls()), pasted);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn a_copied_image_is_put_back_after_pasting() {
+        let fake = FakeCli::new();
+        let ctx = fake.ctx("fake-cli-paste-image");
+        let image = fake.dir.path().join("clipboard-1.png");
+        std::fs::write(&image, b"png").unwrap();
+        let path = image.display().to_string();
+        fake.answer("clipboard", json!({"ok": true, "data": {"type": "image", "path": path, "width": 1, "height": 1}}));
+        let args = json!({"app": "Chat", "action": "type_text", "text": "hi"});
+        Typed::new(DesktopAct).execute(args.clone(), ctx.clone()).await.unwrap();
+        assert_eq!(acting(&fake.calls()).last().copied(), Some(format!("clipboard-set --image {path}").as_str()));
+        assert!(!image.exists(), "the CLI's copy of the image is removed");
+
+        fake.answer("clipboard", json!({"ok": true, "data": {"type": "file_urls", "file_urls": ["/tmp/a b.txt", "/tmp/c"]}}));
+        Typed::new(DesktopAct).execute(args.clone(), ctx.clone()).await.unwrap();
+        assert_eq!(acting(&fake.calls()).last().copied(), Some("clipboard-set --file-url /tmp/a b.txt --file-url /tmp/c"));
+
+        fake.answer("clipboard", json!({"ok": true, "data": {"type": "text", "found": false}}));
+        Typed::new(DesktopAct).execute(args, ctx).await.unwrap();
+        assert_eq!(acting(&fake.calls()).last().copied(), Some("clipboard-clear"));
     }
 
     #[cfg(unix)]

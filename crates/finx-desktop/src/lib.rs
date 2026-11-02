@@ -42,14 +42,15 @@ pub enum DesktopError {
     Cancelled,
     #[error("agent-desktop printed no result: {0}")]
     BadOutput(String),
-    /// The CLI's own error: its code, message and suggestion, and whether it says nothing
-    /// reached the app.
+    /// The CLI's own error: its code, message and suggestion, whether it says nothing
+    /// reached the app, and the element's value it read back after the action, if it did.
     #[error("{code}: {message}{}", suggestion.as_deref().map(|s| format!(" {s}")).unwrap_or_default())]
     Command {
         code: String,
         message: String,
         suggestion: Option<String>,
         not_delivered: bool,
+        value_after: Option<String>,
     },
 }
 
@@ -58,6 +59,15 @@ impl DesktopError {
     /// without doing it twice.
     pub fn not_delivered(&self) -> bool {
         matches!(self, Self::Command { not_delivered: true, .. })
+    }
+
+    /// The element's value as the CLI read it back after an action whose result it could not
+    /// confirm.
+    pub fn value_after(&self) -> Option<&str> {
+        match self {
+            Self::Command { value_after, .. } => value_after.as_deref(),
+            _ => None,
+        }
     }
 }
 
@@ -179,6 +189,7 @@ pub fn parse_envelope(stdout: &str) -> Result<Value, DesktopError> {
         code,
         suggestion,
         not_delivered: error.pointer("/disposition/delivery").and_then(Value::as_str) == Some("not_delivered"),
+        value_after: error.pointer("/details/post_state/value").and_then(Value::as_str).map(str::to_string),
     })
 }
 
@@ -558,6 +569,11 @@ mod tests {
         assert!(parse_envelope(refused).unwrap_err().not_delivered());
         let partly = r#"{"error":{"code":"TIMEOUT","message":"Timed out","disposition":{"delivery":"delivered_unverified","retry":"unsafe"}},"ok":false}"#;
         assert!(!parse_envelope(partly).unwrap_err().not_delivered());
+        assert_eq!(parse_envelope(partly).unwrap_err().value_after(), None);
+        let ignored = r#"{"error":{"code":"ACTION_FAILED","message":"Post-action state does not match the requested change",
+            "details":{"kind":"post_action_verification","post_state":{"role":"textfield","value":"before"}},
+            "disposition":{"delivery":"delivered_unverified","retry":"unsafe"}},"ok":false}"#.replace('\n', "");
+        assert_eq!(parse_envelope(&ignored).unwrap_err().value_after(), Some("before"));
         assert!(matches!(parse_envelope("Segmentation fault"), Err(DesktopError::BadOutput(_))));
         let ambiguous = r#"{"error":{"code":"AMBIGUOUS_TARGET","message":"More than one window matches the target",
             "details":{"candidates":[{"id":"w-2","title":"未命名2"},{"id":"w-1","title":"未命名"}]},
