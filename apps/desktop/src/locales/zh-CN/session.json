@@ -281,15 +281,14 @@
     "title": "欢迎使用 FinxWork",
     "tagline": "专业金融从业者的办公智能体。",
     "steps": {
-      "connect": "启用 FinxWork",
+      "connect": "连接模型",
       "start": "开始第一个任务"
     },
     "later": "稍后再说，先看看",
     "connect": {
-      "eyebrow": "STEP 1 OF 2 · ENABLE FINXWORK",
-      "title": "使用你现有的 AI 账号，启用 FinxWork",
-      "intro": "用千问办公的账号，或者填一个 API Key，任选其一就能开始。",
-      "api": "用 API Key",
+      "eyebrow": "第 1 步 / 共 2 步 · 连接模型",
+      "title": "连接模型，开始使用 FinxWork",
+      "intro": "使用已有订阅，或添加 API Key，连接后即可开始。",
       "apiNote": "选一家服务商，粘贴它的 API Key。",
       "models": "{{count}} 个模型"
     },
@@ -300,9 +299,9 @@
       "save": "保存并继续"
     },
     "ready": {
-      "eyebrow": "STEP 2 OF 2 · READY",
+      "eyebrow": "第 2 步 / 共 2 步 · 准备就绪",
       "title": "一切就绪",
-      "intro": "FinxWork 已启用，新任务默认使用 {{model}}，随时可以在输入框下方切换。",
+      "intro": "已连接模型。新任务默认使用 {{model}}，随时可以在输入框下方切换。",
       "active": "可以使用 {{count}} 个模型",
       "default": "默认",
       "manage": "可以在设置 › 模型里继续添加",

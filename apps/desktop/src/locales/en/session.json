@@ -290,15 +290,14 @@
     "title": "Welcome to FinxWork",
     "tagline": "The AI work agent for finance professionals.",
     "steps": {
-      "connect": "Enable FinxWork",
+      "connect": "Connect a model",
       "start": "Start your first task"
     },
     "later": "Not now, just look around",
     "connect": {
-      "eyebrow": "STEP 1 OF 2 · ENABLE FINXWORK",
-      "title": "Enable FinxWork with the AI account you already have",
-      "intro": "Use your QwenWork account, or an API key. Either one is enough to start.",
-      "api": "Use an API key",
+      "eyebrow": "STEP 1 OF 2 · CONNECT A MODEL",
+      "title": "Connect a model to get started",
+      "intro": "Use an existing subscription or add an API key to start working with FinxWork.",
       "apiNote": "Pick a provider and paste its API key.",
       "models": "{{count}} models"
     },
@@ -311,7 +310,7 @@
     "ready": {
       "eyebrow": "STEP 2 OF 2 · READY",
       "title": "You're all set",
-      "intro": "FinxWork is enabled. New tasks use {{model}} by default; switch any time below the composer.",
+      "intro": "Your model is connected. New tasks use {{model}} by default; switch any time below the composer.",
       "active": "{{count}} models ready",
       "default": "Default",
       "manage": "Add more in Settings › Models",

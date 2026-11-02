@@ -86,9 +86,9 @@ export function ChatGptConnection() {
   return (
     <>
       <div className="frow mrow" data-testid="chatgpt-connection">
-        <Brand id="openai" name="ChatGPT API" />
+        <Brand id="openai" name="ChatGPT" />
         <div className="ft">
-          <div className="fn">ChatGPT API</div>
+          <div className="fn">ChatGPT</div>
           <div className="fdesc" aria-live="polite">{[status?.account, line].filter(Boolean).join(" · ")}</div>
         </div>
         {pending ? <>
@@ -96,19 +96,15 @@ export function ChatGptConnection() {
           <button className="btn" disabled={busy} onClick={() => void act("cancel")}>{t("models.cancel")}</button>
         </> : <>
           {ready ? <button className="btn" disabled={busy} onClick={() => setManaging(true)}>{t("models.manage.open")}</button>
-            : <button className="btn primary" disabled={busy || !st.rpc || !status} onClick={() => void act("login")}>{t("models.chatgpt.signIn")}</button>}
+            : <button className="btn primary" disabled={busy || !st.rpc || !status} onClick={() => void act("login")}>{t("models.connect")}</button>}
           {connection && <button className="btn" disabled={busy} onClick={() => void act("logout")}>{t("models.disconnect")}</button>}
           {!connection && status?.account && <button className="btn" disabled={busy} onClick={() => void act("forget")}>{t("models.chatgpt.forget")}</button>}
           {connection?.state === "unavailable" && <button className="btn" disabled={busy} onClick={() => void act("models")}>{t("models.manage.refresh")}</button>}
         </>}
       </div>
       {(error || status?.message) && <p className="mrow-err" role="status">{error || status?.message}</p>}
-      <div className="frow">
-        <span className="fdesc ft">{t("models.chatgpt.billing")}</span>
-        <button className="btn" onClick={() => void open("https://chatgpt.com/settings/usage")}>{t("models.chatgpt.usage")}</button>
-      </div>
       {managing && connection && <ManageModels source={{
-        id: connection.provider_id, name: "ChatGPT API", mark: <Brand id="openai" name="ChatGPT API" />,
+        id: connection.provider_id, name: "ChatGPT", mark: <Brand id="openai" name="ChatGPT" />,
         origin: t("models.chatgpt.origin"), fetchedAt: connection.models_fetched_at,
         failure: error || undefined, refresh: () => act("models"),
       }} onClose={() => setManaging(false)} />}
