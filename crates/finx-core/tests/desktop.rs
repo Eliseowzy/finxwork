@@ -196,8 +196,8 @@ async fn reads_and_types_into_textedit_with_per_app_approval() {
     // 1. Listing apps asks nothing; the first read of TextEdit asks, named by its bundle id
     // whatever case the model used, and offers the read grant.
     h.api.push(
-        Script::tool_call("c1", "desktop_apps", json!({}))
-            .then_tool_call("c2", "desktop_snapshot", json!({ "app": "com.apple.textedit" })),
+        Script::tool_call("c1", "cua_apps", json!({}))
+            .then_tool_call("c2", "cua_snapshot", json!({ "app": "com.apple.textedit" })),
     );
     h.api.push(Script::text("read"));
     h.kernel.submit(Op::prompt("look at my TextEdit window")).await.unwrap();
@@ -221,7 +221,7 @@ async fn reads_and_types_into_textedit_with_per_app_approval() {
             .unwrap_or_else(|| panic!("our window {ours} is not listed: {window}"))
             .to_string();
         snapshot["window_id"] = json!(id);
-        h.api.push(Script::tool_call("c2b", "desktop_snapshot", snapshot.clone()));
+        h.api.push(Script::tool_call("c2b", "cua_snapshot", snapshot.clone()));
         h.api.push(Script::text("read"));
         h.kernel.submit(Op::prompt("that window")).await.unwrap();
         let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
@@ -234,8 +234,8 @@ async fn reads_and_types_into_textedit_with_per_app_approval() {
     // 2. Reading again asks nothing; the first action asks, with the act grant.
     let typed = "hello from the finx desktop e2e";
     h.api.push(
-        Script::tool_call("c3", "desktop_snapshot", snapshot.clone())
-            .then_tool_call("c4", "desktop_act", json!({ "app": TEXTEDIT, "action": "set_value", "ref": field, "text": typed })),
+        Script::tool_call("c3", "cua_snapshot", snapshot.clone())
+            .then_tool_call("c4", "cua_act", json!({ "app": TEXTEDIT, "action": "set_value", "ref": field, "text": typed })),
     );
     h.api.push(Script::text("typed"));
     h.kernel.submit(Op::prompt("write a line")).await.unwrap();
@@ -254,9 +254,9 @@ async fn reads_and_types_into_textedit_with_per_app_approval() {
     // without asking.
     let finder_ref = field.clone();
     h.api.push(
-        Script::tool_call("c5", "desktop_act", json!({ "app": TEXTEDIT, "action": "press", "text": "cmd+a" }))
-            .then_tool_call("c6", "desktop_snapshot", json!({ "app": "com.apple.finder" }))
-            .then_tool_call("c7", "desktop_act", json!({ "app": "com.apple.finder", "action": "click", "ref": finder_ref })),
+        Script::tool_call("c5", "cua_act", json!({ "app": TEXTEDIT, "action": "press", "text": "cmd+a" }))
+            .then_tool_call("c6", "cua_snapshot", json!({ "app": "com.apple.finder" }))
+            .then_tool_call("c7", "cua_act", json!({ "app": "com.apple.finder", "action": "click", "ref": finder_ref })),
     );
     h.api.push(Script::text("done"));
     h.kernel.submit(Op::prompt("more")).await.unwrap();
@@ -302,9 +302,9 @@ async fn types_and_presses_into_textedit_in_the_background() {
 
     let act = |action: &str, text: &str| json!({ "app": TEXTEDIT, "action": action, "text": text });
     h.api.push(
-        Script::tool_call("c1", "desktop_act", act("type_text", "你好 background"))
-            .then_tool_call("c2", "desktop_act", act("press", "return"))
-            .then_tool_call("c3", "desktop_act", act("type_text", "second")),
+        Script::tool_call("c1", "cua_act", act("type_text", "你好 background"))
+            .then_tool_call("c2", "cua_act", act("press", "return"))
+            .then_tool_call("c3", "cua_act", act("type_text", "second")),
     );
     h.api.push(Script::text("typed"));
     h.kernel.submit(Op::prompt("write two lines")).await.unwrap();

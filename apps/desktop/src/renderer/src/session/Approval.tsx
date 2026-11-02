@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { approvalPreview, argsOf, describe, toolObject, type ApprovalPreview, type ListSession, type SessionView } from "@finx/client";
+import { approvalPreview, argsOf, callTarget, describe, toolObject, type ApprovalPreview, type ListSession, type SessionView } from "@finx/client";
 import type { ApprovalDecision, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
@@ -28,8 +28,10 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const st = useStore();
   const live = view.live!;
   const a = live.approvals[0];
+  // What the call runs: a browser's or computer use's tool comes through call_tool.
+  const target = callTarget(a.name, a.args);
   const tool = live.tools.find((x) => x.call_id === a.call_id) ?? { ...describe(a.name, argsOf(a.args), view.info.cwd), name: a.name };
-  const preview = approvalPreview(a.name, argsOf(a.args), a.summary);
+  const preview = approvalPreview(target.name, target.args, a.summary);
   const [denying, setDenying] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [busy, setBusy] = useState(false);
@@ -50,9 +52,10 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const appKey = grants.find((g) => g.origin.startsWith(APP_ORIGIN))?.origin.slice(APP_ORIGIN.length);
   const desktopApp = useDesktopApp(appKey);
   // Screenshots need Screen Recording; reading and acting, Accessibility.
-  const { status } = useDesktopStatus(undefined, a.name.startsWith("desktop_"));
-  const permission = a.name === "desktop_screenshot" ? "screen" : "accessibility";
-  const missing = a.name.startsWith("desktop_") && status && status[permission] !== "granted" && status[permission] !== "unsupported";
+  const cua = target.name.startsWith("cua_");
+  const { status } = useDesktopStatus(undefined, cua);
+  const permission = target.name === "cua_screenshot" ? "screen" : "accessibility";
+  const missing = cua && status && status[permission] !== "granted" && status[permission] !== "unsupported";
   // A website: its grants are the site and every site, never an app (D-221).
   const site = grants.length > 0 && !grants.some((g) => g.origin.startsWith(APP_ORIGIN));
   const keys = useRef({ give, denying, blocked: false, grants: false, site: false });
@@ -112,8 +115,8 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
     // it is asked at all (connectors-entry-design §3.4).
     const own = a.own_browser === true;
     const bypass = view.info.permission_mode === "bypass-permissions";
-    const opening = a.name === "browser_navigate" || a.name === "browser_tabs";
-    const url = typeof argsOf(a.args).url === "string" ? (argsOf(a.args).url as string) : a.summary;
+    const opening = target.name === "browser_navigate" || target.name === "browser_tabs";
+    const url = typeof target.args.url === "string" ? (target.args.url as string) : a.summary;
     return (
       <div className="appr" role="region" aria-label={t("approval.label")}>
         <div className="appr-h">
@@ -210,10 +213,9 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
 
 type T = ReturnType<typeof useTranslation<"session">>["t"];
 
-/** A desktop app's grant (`app://<bundle id>`) as a button: the app by its name once known, else its bundle id. */
+/** A desktop app's grant (`app://<bundle id>`) as a button: the app by its name once known, else its bundle id. One grant allows the app, reading and acting alike. */
 function grantLabel(g: SiteGrant, t: T, appName?: string): string {
-  const app = appName ?? g.origin.slice(APP_ORIGIN.length);
-  return g.authority === "act" ? t("approval.grantAppAct", { app }) : t("approval.grantAppRead", { app });
+  return t("approval.grantApp", { app: appName ?? g.origin.slice(APP_ORIGIN.length) });
 }
 
 /** A site as people read it: the host, with the scheme only when it is not https. */

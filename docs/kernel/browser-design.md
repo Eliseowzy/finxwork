@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.7 |
+| 版本 | v0.9 |
 | 日期 | 2026-11-02 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现） |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -845,15 +845,16 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 
 ```toml
 [browser]
-enabled = true               # 内置浏览器；不写时桌面端连着就开，命令行里关（connectors-entry-design §9.1）
-extension = false            # 用户自己的浏览器（§8.4），与内置浏览器并存；只能写在用户配置里
+enabled = true               # 浏览器控制总开关；不写时桌面端连着或已连接用户的浏览器就开（§10.1）
+extension = false            # 用户自己的浏览器（§8.4）已连接、可以使用；与内置浏览器并存；只能写在用户配置里
+default = "builtin"          # 智能体没指定浏览器时，新网页开在哪：builtin | yours（§10.1）
 backend = "auto"             # 内置浏览器用哪种：auto | embedded | managed；auto：桌面端连着时用内嵌浏览器（§8.3.3）。旧值 extension 读作 extension = true
 executable = ""              # 留空则自动查找
 profile = "default"          # 用户目录 ~/.finx/browser/profiles/<profile>
 headless = "auto"            # auto | true | false；auto：finx exec 和没有显示器时无界面
 allowed_domains = []         # 非空时只允许这些域名（支持 *.example.com）
 denied_domains = []
-script_enabled = false       # browser_eval，二期
+script_enabled = true        # browser_eval；默认开，每次运行前仍先询问（§7.6）。设置页不显示
 navigation_timeout_secs = 30
 action_timeout_secs = 10
 
@@ -868,7 +869,22 @@ action_timeout_secs = 10
 - 项目里的 `allowed_domains` 与用户配置取交集，`denied_domains` 取并集；
 - `browser.sites` 里只认 `deny`；
 - `script_enabled` 不能设为 true；
-- `extension` 不能设为 true。
+- `extension` 不能设为 true；
+- `default` 不认（选哪个浏览器是用户自己的事）。
+
+### 10.1 总开关、默认浏览器与设置页（v0.9）
+
+- **总开关 `browser.enabled`**：关掉以后两个浏览器都不给智能体用。不写时，桌面端连着，或者已经连接了用户的浏览器，就是开的。
+- **内置浏览器**：总开关开着、桌面端连着时可用；命令行里要写明 `enabled = true` 才启动 finx 自己的浏览器（DQ-36 的做法不变）。
+- **用户的浏览器**：总开关开着、`extension = true` 时可用。
+- **默认浏览器 `browser.default`**：两个都可用时，`browser_navigate`、`browser_tabs open` 不写 `browser` 参数就开在默认的那个里；另一个仍可以点名使用。默认的那个不可用时（比如用户的浏览器断开了），退回到可用的那个。参数说明写"不写就是用户的默认浏览器"，目录里浏览器组那一行写明默认是哪个，所以改默认值会让下一次请求的提示词变一次。
+- 这与 connectors-entry-design §3.3"不做首选浏览器"不同：现在由用户选默认；"需要用户账号时用用户的浏览器"的说明仍在参数里，默认只决定没指定时开在哪。
+- **设置 › 浏览器**，从上到下：
+  1. "允许 FinxWork 控制浏览器"开关；开着时下面一行"默认使用的浏览器"下拉框：没连接时只有内置浏览器，连接后多一项"Google Chrome（你的浏览器）"；
+  2. **你的浏览器**：没连接时是"连接你的浏览器"和"连接"按钮，走原来的扩展引导；连接后显示"Google Chrome 156 · 使用中"和"断开"（写 `extension = false`）；浏览器没打开、扩展要更新等状态照旧；
+  3. **网站权限**：规则不变，每行是网站图标、网址、级别下拉框和删除图标，与电脑操控的应用权限同一种样式；
+  4. **内置浏览器**：说明这些设置只影响 FinxWork 自带的浏览器（浏览器面板），不改用户自己浏览器的设置；一行"地址栏搜索引擎"，一行"搜索快捷词 · N 个 · 管理…"，搜索引擎和快捷词的列表、添加和删除都在弹出的对话框里。
+- 页面脚本不再显示开关，默认开。
 
 ## 11. 测试
 

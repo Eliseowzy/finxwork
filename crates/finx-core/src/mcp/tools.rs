@@ -1,5 +1,6 @@
-//! `tool_search` and `call_tool`: how the model reaches the tools of deferred servers. Their
-//! definitions never change, so the tool list stays the same for the whole session.
+//! `tool_search` and `call_tool`: how the model reaches deferred tools, those of the built-in
+//! groups (the browsers, computer use) and of deferred MCP servers. Their definitions never
+//! change, so the tool list stays the same for the whole session.
 
 use async_trait::async_trait;
 use finx_llm::ToolSpec;
@@ -10,6 +11,7 @@ use finx_tools::ToolCtx;
 use finx_tools::ToolDescription;
 use finx_tools::ToolError;
 use finx_tools::ToolKind;
+use finx_tools::Authority;
 use finx_tools::ToolOrigin;
 use finx_tools::ToolOutput;
 use parking_lot::Mutex;
@@ -20,6 +22,8 @@ use std::fmt::Write as _;
 use std::sync::Arc;
 
 use super::Catalog;
+use crate::deferred::DeferredCell;
+use crate::deferred::Group;
 use super::Entry;
 use super::INSTRUCTIONS_LIMIT;
 use super::McpManager;
@@ -47,23 +51,24 @@ impl Shown {
     }
 }
 
-/// The two tools for one session, sharing its `shown` record.
-pub(crate) fn kernel_tools(manager: &Arc<McpManager>, shown: &Arc<Mutex<Shown>>) -> Vec<Arc<dyn Tool>> {
+/// The two tools for one session, sharing its `shown` record and its deferred built-in tools.
+pub(crate) fn kernel_tools(manager: Option<&Arc<McpManager>>, deferred: &DeferredCell, shown: &Arc<Mutex<Shown>>) -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(ToolSearch {
-            manager: manager.clone(),
+            manager: manager.cloned(),
+            deferred: deferred.clone(),
             shown: shown.clone(),
             spec: ToolSpec {
                 name: SEARCH_TOOL.into(),
-                description: "Search the tools of the MCP servers listed in <mcp_servers> and return their \
+                description: "Search the tools of the groups listed in <deferred_tools> and return their \
                     definitions. Those tools are not in your tool list: run them with call_tool. With `server` and no \
-                    `query`, lists all tools of that server."
+                    `query`, lists all tools of that group."
                     .into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
                         "query": { "type": "string", "description": "Keywords, or a tool's full name. Several full names load several tools." },
-                        "server": { "type": "string", "description": "Only search this server." },
+                        "server": { "type": "string", "description": "Only search this group." },
                         "limit": { "type": "integer", "description": "Maximum number of tools to return (default 5, at most 20)." }
                     },
                     "additionalProperties": false
@@ -71,14 +76,15 @@ pub(crate) fn kernel_tools(manager: &Arc<McpManager>, shown: &Arc<Mutex<Shown>>)
             },
         }),
         Arc::new(CallTool {
-            manager: manager.clone(),
+            manager: manager.cloned(),
+            deferred: deferred.clone(),
             spec: ToolSpec {
                 name: CALL_TOOL.into(),
-                description: "Run an MCP tool found with tool_search.".into(),
+                description: "Run a tool found with tool_search.".into(),
                 parameters: json!({
                     "type": "object",
                     "properties": {
-                        "name": { "type": "string", "description": "The tool's full name, e.g. mcp__github__create_issue." },
+                        "name": { "type": "string", "description": "The tool's full name, e.g. browser_navigate or mcp__github__create_issue." },
                         "arguments": { "type": "object", "description": "Arguments matching the tool's parameters." }
                     },
                     "required": ["name", "arguments"],
@@ -90,12 +96,35 @@ pub(crate) fn kernel_tools(manager: &Arc<McpManager>, shown: &Arc<Mutex<Shown>>)
 }
 
 struct ToolSearch {
-    manager: Arc<McpManager>,
+    manager: Option<Arc<McpManager>>,
+    deferred: DeferredCell,
     shown: Arc<Mutex<Shown>>,
     spec: ToolSpec,
 }
 
 impl ToolSearch {
+    /// A built-in group, whole: it is small, and its tools work together. Its guidelines come
+    /// the first time it appears, as an MCP server's instructions do.
+    fn describe_group(&self, out: &mut String, group: &Group) {
+        let first = self.shown.lock().servers.insert(group.name.to_string());
+        let _ = writeln!(out, "Group {}: {}.", group.name, group.summary);
+        if first {
+            for line in group.guidelines() {
+                let _ = writeln!(out, "  {line}");
+            }
+        }
+        for tool in &group.tools {
+            let spec = tool.spec();
+            let first = self.shown.lock().tools.insert(spec.name.clone());
+            if first {
+                let _ = writeln!(out, "- {}: {}", spec.name, spec.description);
+                let _ = writeln!(out, "  {}", spec.parameters);
+            } else {
+                let _ = writeln!(out, "- {}: {} (definition shown earlier)", spec.name, first_sentence(&spec.description));
+            }
+        }
+    }
+
     /// Writes a server's header (its instructions, the first time it appears).
     fn server_header(&self, out: &mut String, entry: &Entry) {
         let server = entry.server.name();
@@ -126,7 +155,7 @@ impl ToolSearch {
         let Some(first) = entries.first() else {
             return ToolOutput::error(format!(
                 "No deferred MCP server named '{server}' has tools. Servers: {}.",
-                self.deferred_servers(catalog).join(", ")
+                self.deferred_servers().join(", ")
             ));
         };
         let mut out = String::new();
@@ -151,15 +180,39 @@ impl ToolSearch {
         ToolOutput::text(out)
     }
 
-    fn deferred_servers(&self, _catalog: &Catalog) -> Vec<String> {
-        self.manager
-            .servers()
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| self.manager.is_deferred(*i))
-            .map(|(_, s)| s.name().to_string())
-            .collect()
+    /// The groups and deferred servers there are, by name.
+    fn deferred_servers(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.deferred.lock().groups.iter().map(|g| g.name.to_string()).collect();
+        if let Some(manager) = &self.manager {
+            names.extend(
+                manager
+                    .servers()
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| manager.is_deferred(*i))
+                    .map(|(_, s)| s.name().to_string()),
+            );
+        }
+        names
     }
+}
+
+/// Whether `query` is about `group`: its name, a tool's name or a part of it, or a word of its
+/// summary.
+fn group_matches(group: &Group, query: &str) -> bool {
+    let summary = group.summary.to_lowercase();
+    query
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .map(str::to_lowercase)
+        .filter(|w| !w.is_empty())
+        .any(|word| {
+            word == group.name
+                || group.tools.iter().any(|t| {
+                    let name = t.spec().name.as_str();
+                    name == word || name.split('_').skip(1).any(|part| part == word)
+                })
+                || (word.chars().count() >= 4 && summary.split(|c: char| !c.is_alphanumeric()).any(|w| w == word))
+        })
 }
 
 fn first_sentence(text: &str) -> &str {
@@ -205,11 +258,38 @@ impl Tool for ToolSearch {
         if query.is_empty() && server.is_none() {
             return Ok(ToolOutput::error("Give a `query`, or a `server` to list its tools."));
         }
-        self.manager.wait_for_deferred(&ctx.cancel).await;
+        // The built-in groups first: one asked for by name, or those the query is about.
+        let deferred = self.deferred.lock().clone();
+        let mut out = String::new();
+        match server {
+            Some(name) => {
+                if let Some(group) = deferred.group(name) {
+                    self.describe_group(&mut out, group);
+                    out.push_str("Run a tool with call_tool(name, arguments).\n");
+                    return Ok(ToolOutput::text(out));
+                }
+            }
+            None => {
+                for group in deferred.groups.iter().filter(|g| group_matches(g, &query)) {
+                    self.describe_group(&mut out, group);
+                }
+            }
+        }
+        let Some(manager) = &self.manager else {
+            if out.is_empty() {
+                return Ok(ToolOutput::text(format!(
+                    "No matching tools. Groups: {}. Try other words, or set `server` to list a group's tools.",
+                    self.deferred_servers().join(", ")
+                )));
+            }
+            out.push_str("Run a tool with call_tool(name, arguments).\n");
+            return Ok(ToolOutput::text(out));
+        };
+        manager.wait_for_deferred(&ctx.cancel).await;
         if ctx.cancel.is_cancelled() {
             return Err(ToolError::Cancelled);
         }
-        let catalog = self.manager.catalog();
+        let catalog = manager.catalog();
         if query.is_empty() {
             return Ok(self.list_server(&catalog, server.unwrap_or_default()));
         }
@@ -221,11 +301,15 @@ impl Tool for ToolSearch {
             .filter(|entry| server.is_none_or(|s| entry.server.name() == s))
             .take(limit)
             .collect();
-        let unavailable = self.manager.unavailable();
+        let unavailable = manager.unavailable();
+        if hits.is_empty() && !out.is_empty() {
+            out.push_str("Run a tool with call_tool(name, arguments).\n");
+            return Ok(ToolOutput::text(out));
+        }
         if hits.is_empty() {
             let mut out = format!(
                 "No matching tools. Deferred servers: {}. Try other words, or set `server` to list a server's tools.",
-                self.deferred_servers(&catalog).join(", ")
+                self.deferred_servers().join(", ")
             );
             if !unavailable.is_empty() {
                 let _ = write!(out, "\nUnavailable now: {}.", unavailable.join("; "));
@@ -239,7 +323,6 @@ impl Tool for ToolSearch {
                 order.push(hit.server.name());
             }
         }
-        let mut out = String::new();
         for name in order {
             let group: Vec<&&Entry> = hits.iter().filter(|e| e.server.name() == name).collect();
             self.server_header(&mut out, group[0]);
@@ -256,17 +339,44 @@ impl Tool for ToolSearch {
 }
 
 struct CallTool {
-    manager: Arc<McpManager>,
+    manager: Option<Arc<McpManager>>,
+    deferred: DeferredCell,
     spec: ToolSpec,
 }
 
+/// What a call runs: a deferred built-in tool, judged and run as itself; or an MCP server's
+/// tool, with whether it may run beside others.
+enum Target {
+    Builtin(Arc<dyn Tool>),
+    Mcp(Arc<finx_mcp::McpServer>, String, bool),
+}
+
 impl CallTool {
-    fn target(&self, args: &Value) -> Option<(Arc<finx_mcp::McpServer>, String, bool)> {
+    fn target(&self, args: &Value) -> Option<Target> {
         let name = args.get("name").and_then(Value::as_str)?;
-        let catalog = self.manager.catalog();
+        if let Some((_, tool)) = self.deferred.lock().find(name) {
+            return Some(Target::Builtin(tool.clone()));
+        }
+        let catalog = self.manager.as_ref()?.catalog();
         let entry = catalog.find(name)?;
         let parallel = entry.info.read_only || entry.server.config().parallel_tools;
-        Some((entry.server.clone(), entry.info.name.clone(), parallel))
+        Some(Target::Mcp(entry.server.clone(), entry.info.name.clone(), parallel))
+    }
+
+    /// A built-in target, with the arguments it gets.
+    fn builtin(&self, args: &Value) -> Option<(Arc<dyn Tool>, Value)> {
+        match self.target(args)? {
+            Target::Builtin(tool) => Some((tool, inner(args))),
+            Target::Mcp(..) => None,
+        }
+    }
+}
+
+/// The arguments for the tool called: an object, empty when none were given.
+fn inner(args: &Value) -> Value {
+    match args.get("arguments") {
+        Some(arguments @ Value::Object(_)) => arguments.clone(),
+        _ => json!({}),
     }
 }
 
@@ -282,13 +392,21 @@ impl Tool for CallTool {
 
     fn kind_for(&self, args: &Value) -> ToolKind {
         match self.target(args) {
-            Some((_, _, parallel)) => finx_mcp::tool::kind(parallel),
+            Some(Target::Builtin(tool)) => tool.kind_for(&inner(args)),
+            Some(Target::Mcp(_, _, parallel)) => finx_mcp::tool::kind(parallel),
             None => ToolKind::Mutating,
         }
     }
 
     fn origin(&self) -> ToolOrigin {
         ToolOrigin::Mcp
+    }
+
+    fn origin_for(&self, args: &Value) -> ToolOrigin {
+        match self.builtin(args) {
+            Some((tool, inner)) => tool.origin_for(&inner),
+            None => ToolOrigin::Mcp,
+        }
     }
 
     fn prepare_arguments(&self, mut args: Value) -> Value {
@@ -300,12 +418,17 @@ impl Tool for CallTool {
         if let Some(parsed) = parsed {
             args["arguments"] = parsed;
         }
+        // A built-in tool repairs its own arguments, as when it is called directly.
+        if let Some((tool, inner)) = self.builtin(&args) {
+            args["arguments"] = tool.prepare_arguments(inner);
+        }
         args
     }
 
-    fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
+    fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {
         match self.target(args) {
-            Some((server, tool, _)) => finx_mcp::tool::describe_call(&server, &tool),
+            Some(Target::Builtin(tool)) => tool.describe(&inner(args), env),
+            Some(Target::Mcp(server, tool, _)) => finx_mcp::tool::describe_call(&server, &tool),
             None => ToolDescription {
                 category: ToolCategory::Other,
                 title: match args.get("name").and_then(Value::as_str) {
@@ -317,23 +440,42 @@ impl Tool for CallTool {
         }
     }
 
+    async fn authorities(&self, args: &Value, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
+        match self.builtin(args) {
+            Some((tool, inner)) => tool.authorities(&inner, ctx).await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    async fn check(&self, args: &Value, ctx: &ToolCtx) -> Result<(), ToolError> {
+        match self.builtin(args) {
+            Some((tool, inner)) => tool.check(&inner, ctx).await,
+            None => Ok(()),
+        }
+    }
+
     async fn execute(&self, args: Value, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         let Some(name) = args.get("name").and_then(Value::as_str) else {
             return Ok(ToolOutput::error("call_tool needs `name`: the full name of a tool found with tool_search."));
         };
         let mut target = self.target(&args);
-        if target.is_none() {
+        if target.is_none()
+            && let Some(manager) = &self.manager
+        {
             // Its server may still be connecting, for example right after a resume.
-            self.manager.wait_for_deferred(&ctx.cancel).await;
+            manager.wait_for_deferred(&ctx.cancel).await;
             if ctx.cancel.is_cancelled() {
                 return Err(ToolError::Cancelled);
             }
             target = self.target(&args);
         }
-        let Some((server, tool, _)) = target else {
-            return Ok(ToolOutput::error(format!("Unknown MCP tool '{name}'. Use tool_search to find tools.")));
-        };
-        let arguments = args.get("arguments").cloned().unwrap_or(Value::Null);
-        finx_mcp::tool::call(&server, &tool, arguments, ctx).await
+        match target {
+            Some(Target::Builtin(tool)) => tool.execute(inner(&args), ctx).await,
+            Some(Target::Mcp(server, tool, _)) => {
+                let arguments = args.get("arguments").cloned().unwrap_or(Value::Null);
+                finx_mcp::tool::call(&server, &tool, arguments, ctx).await
+            }
+            None => Ok(ToolOutput::error(format!("Unknown tool '{name}'. Use tool_search to find tools."))),
+        }
     }
 }

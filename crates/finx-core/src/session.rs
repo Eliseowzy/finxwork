@@ -183,8 +183,8 @@ pub(crate) struct Session {
     pub(crate) tools: Mutex<Arc<ToolRegistry>>,
     /// Built-in tools and the agent tools: what every session of the tree has.
     pub(crate) core_tools: Arc<ToolRegistry>,
-    /// `core_tools`, the system connectors' tools and the MCP search tools: everything but the
-    /// MCP tools that go into the list directly. Replaced when the system connectors change.
+    /// `core_tools` and the search tools: everything but the MCP tools that go into the list
+    /// directly. Replaced when the system connectors change.
     pub(crate) base_tools: Mutex<Arc<ToolRegistry>>,
     /// The browsers' and desktop control's settings, shared with the sub-agents.
     pub(crate) system: Arc<crate::system::SystemCell>,
@@ -202,6 +202,8 @@ pub(crate) struct Session {
     pub(crate) mcp_settled: AtomicBool,
     /// What tool searches showed since the last compaction.
     pub(crate) mcp_shown: Arc<Mutex<Shown>>,
+    /// The browsers' and computer use's tools, out of the tool list (computer-use-design §5).
+    pub(crate) deferred: crate::deferred::DeferredCell,
     pub(crate) env: Arc<dyn Environment>,
     pub(crate) hooks: Vec<Arc<dyn Hooks>>,
     pub(crate) config: Arc<Config>,
@@ -249,6 +251,12 @@ impl Session {
     /// The current tool list.
     pub(crate) fn tools(&self) -> Arc<ToolRegistry> {
         self.tools.lock().clone()
+    }
+
+    /// A tool to run by its name: in the tool list, or a deferred built-in tool the model called
+    /// directly rather than through call_tool, as it may once it has seen the definition.
+    pub(crate) fn tool(&self, tools: &ToolRegistry, name: &str) -> Option<Arc<dyn finx_tools::Tool>> {
+        tools.get(name).or_else(|| self.deferred.lock().find(name).map(|(_, tool)| tool.clone()))
     }
 
     pub(crate) fn warn(&self, message: impl Into<String>) {

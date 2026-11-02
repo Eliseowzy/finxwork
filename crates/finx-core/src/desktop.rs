@@ -43,7 +43,7 @@ use std::time::Duration;
 
 use crate::config::DesktopSettings;
 
-/// The tools added to a session's tools when `desktop.enabled` is on.
+/// The computer use tools, added to a session's tools while `desktop.enabled` is on (`DesktopSettings::on`).
 pub(crate) fn desktop_tools() -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(Typed::new(DesktopApps)),
@@ -54,7 +54,7 @@ pub(crate) fn desktop_tools() -> Vec<Arc<dyn Tool>> {
     ]
 }
 
-/// How long `desktop_launch` waits for the app's window, in milliseconds.
+/// How long `cua_launch` waits for the app's window, in milliseconds.
 const LAUNCH_TIMEOUT_MS: u64 = 20_000;
 
 /// How long a paste is given before the clipboard is put back.
@@ -155,7 +155,7 @@ impl DesktopHandle {
     fn ref_belongs_to(&self, reference: &str, app: &str) -> Result<String, ToolError> {
         let Some(snapshot) = finx_desktop::snapshot_of(reference) else {
             return Err(ToolError::InvalidArgs(format!(
-                "\"{reference}\" is not a ref: use one such as @s2efx:e6 from desktop_snapshot"
+                "\"{reference}\" is not a ref: use one such as @s2efx:e6 from cua_snapshot"
             )));
         };
         match self.shared.snaps.lock().get(snapshot) {
@@ -165,7 +165,7 @@ impl DesktopHandle {
                 snap.asked
             ))),
             None => Err(ToolError::Failed(format!(
-                "{reference} is not from a snapshot taken in this session. Take one with desktop_snapshot."
+                "{reference} is not from a snapshot taken in this session. Take one with cua_snapshot."
             ))),
         }
     }
@@ -176,7 +176,7 @@ impl DesktopHandle {
             Some(shot) if same_app(&shot.asked, app) || same_app(&shot.key, app) => Ok(shot.clone()),
             Some(shot) => Err(ToolError::Failed(format!("screenshot {id} is of {}, not {app}", shot.asked))),
             None => Err(ToolError::Failed(format!(
-                "\"{id}\" is not a screenshot taken in this session. Take one with desktop_screenshot."
+                "\"{id}\" is not a screenshot taken in this session. Take one with cua_screenshot."
             ))),
         }
     }
@@ -219,7 +219,7 @@ async fn resolve(ctx: &ToolCtx, app: &str) -> Result<String, ToolError> {
     let apps = run(ctx, "list-apps", Vec::new()).await?;
     let key = app_key(&apps, app).ok_or_else(|| {
         ToolError::Failed(format!(
-            "No running app is called {app}. Start it with desktop_launch, or list them with desktop_apps."
+            "No running app is called {app}. Start it with cua_launch, or list them with cua_apps."
         ))
     })?;
     handle.shared.apps.lock().insert(asked, key.clone());
@@ -333,7 +333,7 @@ fn pick_window<'a>(windows: &'a [Window], wanted: Option<&str>, readable: bool, 
     windows
         .iter()
         .max_by(|a, b| rank(a).cmp(&rank(b)).then(std::cmp::Ordering::Greater))
-        .ok_or_else(|| ToolError::Failed(format!("{app} has no open window. Open one with desktop_launch.")))
+        .ok_or_else(|| ToolError::Failed(format!("{app} has no open window. Open one with cua_launch.")))
 }
 
 /// ` Other windows: w-2 "Notes", …` (or ` Windows: …`), for picking another with window_id;
@@ -351,7 +351,7 @@ fn others(windows: &[Window], chosen: Option<&Window>) -> String {
     }
 }
 
-// ---- desktop_apps ----
+// ---- cua_apps ----
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct AppsArgs {
@@ -365,11 +365,11 @@ struct DesktopApps;
 #[async_trait]
 impl TypedTool for DesktopApps {
     type Args = AppsArgs;
-    const NAME: &'static str = "desktop_apps";
+    const NAME: &'static str = "cua_apps";
     const DESCRIPTION: &'static str = "List the running desktop apps, by display name and bundle id. Use one of \
         these as `app` in the other desktop tools: names are in the system's language (\"访达\" for Finder on a \
         Chinese system), so the bundle id is the surer choice. Start an app that is not running with \
-        desktop_launch.";
+        cua_launch.";
 
     fn guidelines(&self) -> &[&'static str] {
         &[
@@ -378,12 +378,12 @@ impl TypedTool for DesktopApps {
             "On the desktop, use the desktop tools only for apps the user asked about, and only the desktop tools: \
              no scripts or programs of your own to click or type. Unless the user asked for exactly that, stop and \
              ask before sending messages, deleting, paying, or changing settings.",
-            "Desktop: start an app, or bring up its window, with desktop_launch; it waits for the window, so never \
+            "Computer use: start an app, or bring up its window, with cua_launch; it waits for the window, so never \
              sleep or retry for it.",
-            "Desktop: read a window with desktop_snapshot and act by ref. Refs belong to their snapshot: after an \
+            "Computer use: read a window with cua_snapshot and act by ref. Refs belong to their snapshot: after an \
              action that changes the window, take a new snapshot before using refs again.",
-            "Desktop: when a snapshot says the app does not expose its contents, do not snapshot it again. Take a \
-             desktop_screenshot and use desktop_act click_at, type_text and press with that screenshot's id and \
+            "Computer use: when a snapshot says the app does not expose its contents, do not snapshot it again. Take a \
+             cua_screenshot and use cua_act click_at, type_text and press with that screenshot's id and \
              pixel coordinates; each such action returns a new screenshot to check the result and act on next.",
         ]
     }
@@ -402,7 +402,7 @@ impl TypedTool for DesktopApps {
     }
 }
 
-// ---- desktop_launch ----
+// ---- cua_launch ----
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct LaunchArgs {
@@ -442,7 +442,7 @@ async fn installed_key(app: &str) -> String {
 #[async_trait]
 impl TypedTool for DesktopLaunch {
     type Args = LaunchArgs;
-    const NAME: &'static str = "desktop_launch";
+    const NAME: &'static str = "cua_launch";
     const DESCRIPTION: &'static str = "Start a desktop app, or bring up a window of one that runs without any, \
         and wait until its window is there. Returns its windows. Brings the app to the front.";
 
@@ -484,7 +484,7 @@ impl TypedTool for DesktopLaunch {
                 w.id,
                 w.title.replace('"', "'"),
                 if w.focused { " [focused]" } else { "" },
-                if w.accessible { "" } else { " [contents not exposed: use desktop_screenshot]" }
+                if w.accessible { "" } else { " [contents not exposed: use cua_screenshot]" }
             ));
         }
         Ok(ToolOutput {
@@ -494,11 +494,11 @@ impl TypedTool for DesktopLaunch {
     }
 }
 
-// ---- desktop_snapshot ----
+// ---- cua_snapshot ----
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct SnapshotArgs {
-    /// App name or bundle id, from desktop_apps.
+    /// App name or bundle id, from cua_apps.
     app: String,
     /// Window id, when the app has several windows. Default: its focused window.
     #[serde(default)]
@@ -519,9 +519,9 @@ struct DesktopSnapshot;
 #[async_trait]
 impl TypedTool for DesktopSnapshot {
     type Args = SnapshotArgs;
-    const NAME: &'static str = "desktop_snapshot";
+    const NAME: &'static str = "cua_snapshot";
     const DESCRIPTION: &'static str = "Read a desktop app's window as an accessibility tree. Elements you can act \
-        on carry a ref such as @s2efx:e6 for desktop_act. Does not move the pointer or bring the app to the front.";
+        on carry a ref such as @s2efx:e6 for cua_act. Does not move the pointer or bring the app to the front.";
 
     async fn authorities(&self, args: &SnapshotArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
         let app = match &args.reference {
@@ -584,7 +584,7 @@ impl TypedTool for DesktopSnapshot {
     }
 }
 
-// ---- desktop_act ----
+// ---- cua_act ----
 
 #[derive(Clone, Copy, Debug, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -681,10 +681,10 @@ impl ActAction {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct ActArgs {
-    /// The app the ref or screenshot is from, as named in desktop_snapshot or desktop_screenshot.
+    /// The app the ref or screenshot is from, as named in cua_snapshot or cua_screenshot.
     app: String,
     action: ActAction,
-    /// The element, a ref from desktop_snapshot. For the actions that are not at a point, nor press or type_text.
+    /// The element, a ref from cua_snapshot. For the actions that are not at a point, nor press or type_text.
     #[serde(default, rename = "ref")]
     reference: Option<String>,
     /// Text for type, set_value and type_text, the option for select, the key combo for press.
@@ -696,7 +696,7 @@ pub(crate) struct ActArgs {
     /// For scroll: how many units. Default 3.
     #[serde(default)]
     amount: Option<u32>,
-    /// For the actions at a point: the screenshot's id (p1, p2, …), from desktop_screenshot or the last
+    /// For the actions at a point: the screenshot's id (p1, p2, …), from cua_screenshot or the last
     /// action. For press and type_text, optional: the window to type into.
     #[serde(default)]
     shot: Option<String>,
@@ -726,7 +726,7 @@ impl ActArgs {
         }
         if self.action.at_point() {
             if self.shot.is_none() || self.x.is_none() || self.y.is_none() {
-                return Some(format!("{name} needs shot, x and y from a desktop_screenshot"));
+                return Some(format!("{name} needs shot, x and y from a cua_screenshot"));
             }
             if self.action == ActAction::Drag && (self.to_x.is_none() || self.to_y.is_none()) {
                 return Some("drag needs to_x and to_y".into());
@@ -800,8 +800,8 @@ struct DesktopAct;
 #[async_trait]
 impl TypedTool for DesktopAct {
     type Args = ActArgs;
-    const NAME: &'static str = "desktop_act";
-    const DESCRIPTION: &'static str = "Act in a desktop app. By ref from desktop_snapshot: click, type, set a \
+    const NAME: &'static str = "cua_act";
+    const DESCRIPTION: &'static str = "Act in a desktop app. By ref from cua_snapshot: click, type, set a \
         value, select, toggle, expand, scroll, through the accessibility API without moving the pointer. For apps \
         whose snapshot shows no contents: click_at, double_click_at, right_click_at, drag and wheel at pixel \
         coordinates of a screenshot, which bring the window to the front and move the pointer; and type_text \
@@ -867,7 +867,7 @@ impl TypedTool for DesktopAct {
                 let now = windows(&ctx, &key).await?;
                 if !now.iter().any(|w| w.id == shot.window && w.bounds.same(&shot.bounds)) {
                     return Err(ToolError::Failed(format!(
-                        "The window moved, changed size or closed since screenshot {}. Take a new desktop_screenshot.",
+                        "The window moved, changed size or closed since screenshot {}. Take a new cua_screenshot.",
                         args.shot.as_deref().unwrap_or("")
                     )));
                 }
@@ -1098,11 +1098,11 @@ fn act_title(action: &str, reference: &str, text: &str) -> String {
     }
 }
 
-// ---- desktop_screenshot ----
+// ---- cua_screenshot ----
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct ScreenshotArgs {
-    /// App name or bundle id, from desktop_apps.
+    /// App name or bundle id, from cua_apps.
     app: String,
     /// Window id, when the app has several windows. Default: its focused window.
     #[serde(default)]
@@ -1153,10 +1153,10 @@ async fn capture(
 #[async_trait]
 impl TypedTool for DesktopScreenshot {
     type Args = ScreenshotArgs;
-    const NAME: &'static str = "desktop_screenshot";
+    const NAME: &'static str = "cua_screenshot";
     const DESCRIPTION: &'static str = "Take a screenshot of a desktop app's window, cropped to the window. Its \
-        id and pixel coordinates are what desktop_act click_at and the other actions at a point take. To read or \
-        act by ref, use desktop_snapshot instead.";
+        id and pixel coordinates are what cua_act click_at and the other actions at a point take. To read or \
+        act by ref, use cua_snapshot instead.";
 
     async fn authorities(&self, args: &ScreenshotArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
         Ok(vec![Authority::AppObserve {
@@ -1177,7 +1177,7 @@ impl TypedTool for DesktopScreenshot {
         if ctx.model_accepts_images {
             Ok(())
         } else {
-            Err(ToolError::Failed("This model cannot see images. Use desktop_snapshot instead.".into()))
+            Err(ToolError::Failed("This model cannot see images. Use cua_snapshot instead.".into()))
         }
     }
 
@@ -1188,7 +1188,7 @@ impl TypedTool for DesktopScreenshot {
         let window = pick_window(&found, args.window_id.as_deref(), false, &args.app)?;
         let (id, image) = capture(&ctx, &handle, &key, &args.app, window).await?;
         let text = format!(
-            "Screenshot {id} of {}, window {} \"{}\", {}×{} px. To act at a point of it, call desktop_act with \
+            "Screenshot {id} of {}, window {} \"{}\", {}×{} px. To act at a point of it, call cua_act with \
              shot \"{id}\" and x, y in this image's pixels.{}",
             args.app,
             window.id,
@@ -1300,7 +1300,7 @@ mod tests {
         assert_eq!(pick_window(&found, Some("w-1"), false, "A").unwrap().id, "w-1");
         let missing = pick_window(&found, Some("w-9"), false, "A").unwrap_err().to_string();
         assert!(missing.contains("w-1 \"Prefs\"") && missing.contains("w-2 \"Chat\""), "{missing}");
-        assert!(pick_window(&[], None, false, "A").unwrap_err().to_string().contains("desktop_launch"));
+        assert!(pick_window(&[], None, false, "A").unwrap_err().to_string().contains("cua_launch"));
         assert_eq!(others(&found, Some(&found[1])), " Other windows (pass window_id): w-1 \"Prefs\".");
         assert_eq!(others(&found[..1], Some(&found[0])), "");
     }

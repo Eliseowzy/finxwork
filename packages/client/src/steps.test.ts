@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
-import { applyEvents, fromSnapshot, type SessionView } from "./session.ts";
+import { applyEvents, callTarget, fromSnapshot, type SessionView } from "./session.ts";
 import { approvalPreview, attachedBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
@@ -123,4 +123,11 @@ test("a coded warning becomes a notice, the latest per code, and leaving bypass-
   assert.deepEqual(v.entries.map((e) => (e.type === "note" && e.note === "warning" ? e.message : e.type)), ["nothing to compact"]);
   assert.equal(play([bypass, mode("bypass-permissions")]).notices.length, 1);
   assert.deepEqual(play([bypass, mode("manual")]).notices, []);
+});
+
+test("a call through call_tool is told as the tool it runs", () => {
+  assert.deepEqual(callTarget("call_tool", { name: "cua_snapshot", arguments: { app: "com.apple.finder" } }), { name: "cua_snapshot", args: { app: "com.apple.finder" } });
+  assert.deepEqual(callTarget("read", { path: "a" }), { name: "read", args: { path: "a" } });
+  assert.deepEqual(callTarget("call_tool", {}), { name: "call_tool", args: {} });
+  assert.equal(describe("call_tool", { name: "read", arguments: { path: "/p/a.md" } }, "/p").title, "read a.md");
 });

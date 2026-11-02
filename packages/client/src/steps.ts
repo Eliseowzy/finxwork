@@ -1,6 +1,6 @@
 import type { AgentView, NoteEntry, SessionView } from "./session.ts";
 import type { AgentStatus, AssistantContent, TaskEndItem, ToolCategory, ToolResultMessage, UsageTotals, UserContent } from "@finx/protocol";
-import { argsOf, type ToolDescription } from "./session.ts";
+import { argsOf, callTarget, type ToolDescription } from "./session.ts";
 import { addTotals } from "./text.ts";
 
 // How the conversation shows a session: the owner's messages, the model's
@@ -339,6 +339,10 @@ export function describe(name: string, args: Record<string, unknown>, cwd: strin
     case "find":
     case "ls":
       return { category: "search", title: `${name} ${rel(str("path") || str("pattern"))}`.trim() };
+    case "call_tool": {
+      const target = callTarget(name, args);
+      return target.name === name ? { category: "other", title: name } : describe(target.name, target.args, cwd);
+    }
     default:
       return { category: "other", title: name };
   }

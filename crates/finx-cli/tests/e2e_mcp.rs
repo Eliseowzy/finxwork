@@ -101,7 +101,7 @@ async fn exec_finds_and_runs_a_deferred_tool() {
     assert!(tools.contains(&"tool_search") && tools.contains(&"call_tool"), "{tools:?}");
     assert!(!tools.iter().any(|t| t.starts_with("mcp__")), "{tools:?}");
     let section = prompts[0]["mcp"].as_str().unwrap();
-    assert!(section.contains("<mcp_servers>") && section.contains("- vault"), "{section}");
+    assert!(section.contains("<deferred_tools>") && section.contains("- vault"), "{section}");
 
     // Text mode shows the server's status line.
     let output = env.finx(&["exec", "[[mock:mcp:vault:Apollo]] again"]).output().await.unwrap();

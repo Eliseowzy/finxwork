@@ -63,10 +63,12 @@ pub struct McpFile {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BrowserFile {
-    /// The built-in browser.
+    /// Whether FinxWork controls browsers at all (browser-design §10.1).
     pub enabled: Option<bool>,
-    /// The user's own browser through the FinxWork extension (§8.4).
+    /// The user's own browser through the FinxWork extension (§8.4): connected for the agent.
     pub extension: Option<bool>,
+    /// Where pages open when a call names no browser: `builtin` or `yours`.
+    pub default: Option<String>,
     /// Which built-in browser: `auto`, `embedded` or `managed` (§8.3.3). `extension`, from before
     /// the user's own browser had its own switch, reads as `extension = true`.
     pub backend: Option<String>,
@@ -83,14 +85,24 @@ pub struct BrowserFile {
     pub sites: Option<BTreeMap<String, String>>,
 }
 
+/// Where a page opens when a call names no browser (`browser.default`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum DefaultBrowser {
+    #[default]
+    Builtin,
+    Yours,
+}
+
 /// `[browser]` with its defaults applied.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BrowserSettings {
-    /// The built-in browser (`browser.enabled`); `None` when not set: on where a desktop app
-    /// shows the browser, off elsewhere (connectors-entry-design §9.1).
-    pub builtin: Option<bool>,
+    /// Whether FinxWork controls browsers (`browser.enabled`); `None` when not set: on where a
+    /// desktop app shows browsers or the user's own browser is connected (browser-design §10.1).
+    pub enabled: Option<bool>,
     /// The user's own browser, through the FinxWork extension (`browser.extension`).
     pub extension: bool,
+    /// Where pages open when a call names no browser, while both are on.
+    pub default: DefaultBrowser,
     /// The built-in browser's: its backend is never `Extension`.
     pub config: finx_browser::BrowserConfig,
     pub policy: std::sync::Arc<finx_browser::policy::SitePolicy>,
@@ -147,9 +159,15 @@ impl BrowserSettings {
         if profile.is_empty() || profile.contains(['/', '\\']) || profile.starts_with('.') {
             return Err(ConfigError::Invalid(format!("browser.profile \"{profile}\" must be a plain name")));
         }
+        let default = match file.default.as_deref() {
+            None | Some("builtin") => DefaultBrowser::Builtin,
+            Some("yours") => DefaultBrowser::Yours,
+            Some(other) => return Err(ConfigError::Invalid(format!("browser.default must be builtin or yours, got \"{other}\""))),
+        };
         Ok(Self {
-            builtin: file.enabled,
+            enabled: file.enabled,
             extension: file.extension.unwrap_or(file.backend.as_deref() == Some("extension")),
+            default,
             config: finx_browser::BrowserConfig {
                 backend,
                 executable: file.executable.filter(|p| !p.as_os_str().is_empty()),
@@ -160,22 +178,34 @@ impl BrowserSettings {
                 allowed_domains: file.allowed_domains.unwrap_or_default(),
                 denied_domains: file.denied_domains.unwrap_or_default(),
                 sites,
-                script_enabled: file.script_enabled.unwrap_or(false),
+                // On: each script still asks before it runs (browser-design §7.6).
+                script_enabled: file.script_enabled.unwrap_or(true),
             }),
             navigation_timeout: Duration::from_secs(file.navigation_timeout_secs.unwrap_or(30).clamp(1, 600)),
             action_timeout: Duration::from_secs(file.action_timeout_secs.unwrap_or(10).clamp(1, 600)),
         })
     }
 
-    /// Whether the built-in browser is on, given whether a desktop app shows browsers.
+    /// Whether FinxWork controls browsers, given whether a desktop app shows them.
+    pub fn control_on(&self, embedded: bool) -> bool {
+        self.enabled.unwrap_or(embedded || self.extension)
+    }
+
+    /// Whether the built-in browser is on: with browser control, where a desktop app shows it
+    /// or the user asked for it in so many words (the command line starts a browser of its own).
     pub fn builtin_on(&self, embedded: bool) -> bool {
-        self.builtin.unwrap_or(embedded)
+        self.control_on(embedded) && (embedded || self.enabled == Some(true))
+    }
+
+    /// Whether the user's own browser is on: with browser control, once connected.
+    pub fn yours_on(&self, embedded: bool) -> bool {
+        self.control_on(embedded) && self.extension
     }
 
     /// Whether some browser is turned on in so many words: what a process without a desktop
     /// app needs a browser pool for.
     pub fn configured_on(&self) -> bool {
-        self.builtin == Some(true) || self.extension
+        self.enabled == Some(true) || (self.enabled != Some(false) && self.extension)
     }
 }
 
@@ -201,7 +231,9 @@ pub enum AppLevel {
 /// `[desktop]` with its defaults applied.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct DesktopSettings {
-    pub enabled: bool,
+    /// Computer use. Not set: on while the desktop app is connected, as the built-in browser is
+    /// (docs/desktop/computer-use-design.md); the user's own switch otherwise.
+    pub enabled: Option<bool>,
     pub executable: Option<PathBuf>,
     /// Keyed by lowercased bundle id or name.
     pub apps: std::sync::Arc<BTreeMap<String, AppLevel>>,
@@ -213,21 +245,28 @@ impl DesktopSettings {
         for (app, level) in file.apps.unwrap_or_default() {
             let level = match level.as_str() {
                 "deny" => AppLevel::Deny,
+                // Two levels now, allow and deny (computer-use-design §4); `read` and `act`
+                // from before keep their meaning.
+                "allow" | "act" => AppLevel::Act,
                 "read" => AppLevel::Read,
-                "act" => AppLevel::Act,
                 _ => {
                     return Err(ConfigError::Invalid(format!(
-                        "desktop.apps.\"{app}\" must be deny, read or act, got \"{level}\""
+                        "desktop.apps.\"{app}\" must be allow or deny, got \"{level}\""
                     )));
                 }
             };
             apps.insert(app.trim().to_lowercase(), level);
         }
         Ok(Self {
-            enabled: file.enabled.unwrap_or(false),
+            enabled: file.enabled,
             executable: file.executable.filter(|p| !p.as_os_str().is_empty()),
             apps: std::sync::Arc::new(apps),
         })
+    }
+
+    /// Whether the computer use tools are on, `app` saying whether the desktop app is connected.
+    pub fn on(&self, app: bool) -> bool {
+        self.enabled.unwrap_or(app)
     }
 
     /// The configured level of `app`, by bundle id or name.
@@ -904,7 +943,7 @@ fn tighten_browser(table: &mut toml::Table, user: &toml::Table, trusted: bool) -
             .unwrap_or_default()
     };
     let mut dropped = Vec::new();
-    for key in ["backend", "executable", "profile"] {
+    for key in ["backend", "executable", "profile", "default"] {
         if browser.remove(key).is_some() {
             dropped.push(format!("browser.{key}"));
         }
@@ -1129,7 +1168,8 @@ mod tests {
         )
         .unwrap();
         let user_only = load(&user, None, true, &[]).unwrap().config.browser;
-        assert_eq!(user_only.builtin, Some(true));
+        assert_eq!(user_only.enabled, Some(true));
+        assert!(user_only.policy.script_enabled, "scripts are on unless turned off");
         assert!(!user_only.extension);
         assert_eq!(user_only.config.headless, finx_browser::Headless::On);
         assert_eq!(user_only.policy.site("https://github.com"), Some(SiteLevel::Act), "origins are normalized");
@@ -1153,9 +1193,9 @@ mod tests {
         std::fs::write(&project, "[browser]\nenabled = true\n").unwrap();
         std::fs::write(&user, "").unwrap();
         let untrusted = load(&user, Some(&project), false, &[]).unwrap().config.browser;
-        assert_eq!(untrusted.builtin, None, "untrusted projects cannot turn it on");
+        assert_eq!(untrusted.enabled, None, "untrusted projects cannot turn it on");
         assert!(!untrusted.builtin_on(false) && untrusted.builtin_on(true), "not set: on where a desktop app shows it");
-        assert_eq!(load(&user, Some(&project), true, &[]).unwrap().config.browser.builtin, Some(true));
+        assert_eq!(load(&user, Some(&project), true, &[]).unwrap().config.browser.enabled, Some(true));
         let bad = load(&user, None, true, &["browser.sites.\"github.com\"=\"act\"".into()]);
         assert!(bad.is_err());
         assert!(load(&user, None, true, &["browser.sites.\"*\"=\"deny\"".into()]).is_err(), "every site is navigate or act");
@@ -1171,8 +1211,18 @@ mod tests {
         std::fs::write(&user, "[browser]\nextension = true\n").unwrap();
         let browser = load(&user, None, true, &[]).unwrap().config.browser;
         assert!(browser.extension);
-        assert_eq!(browser.builtin, None);
+        assert_eq!(browser.enabled, None);
         assert!(browser.configured_on());
+        assert!(browser.yours_on(false) && !browser.builtin_on(false), "connected: the command line has it alone");
+        assert!(browser.yours_on(true) && browser.builtin_on(true), "the desktop app has both");
+        assert_eq!(browser.default, crate::config::DefaultBrowser::Builtin);
+
+        std::fs::write(&user, "[browser]\nextension = true\nenabled = false\ndefault = \"yours\"\n").unwrap();
+        let off = load(&user, None, true, &[]).unwrap().config.browser;
+        assert!(!off.yours_on(true) && !off.builtin_on(true), "browser control off: neither");
+        assert!(!off.configured_on());
+        assert_eq!(off.default, crate::config::DefaultBrowser::Yours);
+        assert!(load(&user, None, true, &["browser.default=\"chrome\"".into()]).is_err());
 
         std::fs::write(&user, "[browser]\nenabled = true\nbackend = \"extension\"\n").unwrap();
         let old = load(&user, None, true, &[]).unwrap().config.browser;
@@ -1193,19 +1243,20 @@ mod tests {
         let user = dir.path().join("config.toml");
         let project = dir.path().join("project.toml");
         std::fs::write(&user, "").unwrap();
-        assert!(!load(&user, None, true, &[]).unwrap().config.desktop.enabled, "off by default");
+        let unset = load(&user, None, true, &[]).unwrap().config.desktop;
+        assert!(unset.on(true) && !unset.on(false), "on with the desktop app, off without it");
 
         std::fs::write(&project, "[desktop]\nenabled = true\nexecutable = \"/tmp/evil\"\n").unwrap();
         let loaded = load(&user, Some(&project), true, &[]).unwrap();
-        assert!(!loaded.config.desktop.enabled, "not even a trusted project turns it on");
+        assert_eq!(loaded.config.desktop.enabled, None, "not even a trusted project turns it on");
         assert_eq!(loaded.config.desktop.executable, None);
         assert!(loaded.warnings.iter().any(|w| w.contains("desktop.enabled")), "{:?}", loaded.warnings);
 
         std::fs::write(&user, "[desktop]\nenabled = true\nexecutable = \"/opt/ad\"\n").unwrap();
         std::fs::write(&project, "[desktop]\nenabled = false\n").unwrap();
-        assert!(load(&user, None, false, &[]).unwrap().config.desktop.enabled);
+        assert_eq!(load(&user, None, false, &[]).unwrap().config.desktop.enabled, Some(true));
         assert_eq!(load(&user, None, false, &[]).unwrap().config.desktop.executable, Some(PathBuf::from("/opt/ad")));
-        assert!(!load(&user, Some(&project), true, &[]).unwrap().config.desktop.enabled, "a project may turn it off");
+        assert!(!load(&user, Some(&project), true, &[]).unwrap().config.desktop.on(true), "a project may turn it off");
 
         std::fs::write(&user, "[desktop.apps]\n\"com.apple.TextEdit\" = \"act\"\n\"com.tencent.xinWeChat\" = \"read\"\n").unwrap();
         std::fs::write(&project, "[desktop.apps]\n\"com.tencent.xinWeChat\" = \"deny\"\n\"com.evil\" = \"act\"\n").unwrap();

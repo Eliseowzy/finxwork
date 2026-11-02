@@ -18,9 +18,7 @@ export type Command =
   | "newSession" | "openProject" | "attachFiles" | "attachFolder" | "search" | "nextAttention" | "nextActive"
   | "toggleInspector" | "toggleSidebar"
   | "approve" | "interrupt" | "rename" | "archive" | "unarchive" | "copySessionId" | "revealSessionFile"
-  | "undo"
-  /** Desktop control's page on 自定义, asked for from the settings window. */
-  | "showDesktopControl";
+  | "undo";
 
 /** What the page shows, so the app menu's items enable and check right. */
 export type MenuState = {
@@ -197,8 +195,6 @@ export type Bridge = {
   restartKernel(now: boolean): void;
   /** The settings window, on a page ("general", "models", "browser"). */
   openSettings(page?: string): void;
-  /** From the settings window: desktop control's page in the main window, brought to the front. */
-  showInMain(command: "showDesktopControl"): void;
   /** The user's own browser: the ones here, setting finx up as the extension's host, opening one, the extension's folder. */
   systemBrowsers(): Promise<SystemBrowser[]>;
   setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; message: string }>;

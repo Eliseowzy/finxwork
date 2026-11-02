@@ -69,7 +69,7 @@ pub(crate) async fn execute_batch(
     // was read), so from then on checks could refuse calls that would succeed.
     let mut runs_before = false;
     for mut call in calls {
-        let tool = tools.get(&call.name);
+        let tool = session.tool(&tools, &call.name);
         if let Some(tool) = &tool
             && call.arguments_error.is_none()
         {
@@ -181,7 +181,7 @@ pub(crate) fn reject_all(session: &Session, calls: &[ToolCall], text: &str) -> V
     calls
         .iter()
         .map(|call| {
-            let tool = session.tools().get(&call.name);
+            let tool = session.tool(&session.tools(), &call.name);
             session.emit(started(session, call, tool.as_deref()));
             immediate(session, call, text)
         })

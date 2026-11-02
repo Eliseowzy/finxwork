@@ -169,9 +169,10 @@ try {
   const set = await attach((t) => t.type === "page" && t.url.includes("#settings"), "the settings window");
   await set.cdp("Emulation.setDeviceMetricsOverride", { width: 760, height: 560, deviceScaleFactor: 0, mobile: false });
 
-  // Not connected yet: the row offers Connect.
-  await set.until("the browser page", `!!document.querySelector('.browser-set .badge') && !!(${button("连接", "Connect")})`);
-  check(await set.run(badge("未连接", "Not connected")), "the badge does not say not connected");
+  // Not connected yet: the row offers Connect, and the built-in browser is the only default.
+  await set.until("the browser page", `!!document.querySelector('.browser-set .yours-row') && !!(${button("连接", "Connect")})`);
+  check(await set.run(shows("连接你的浏览器", "Connect Your Browser")), "the row does not offer to connect");
+  check((await set.run(`document.querySelector('.default-browser select').options.length`)) === 1, "a default other than the built-in browser before connecting");
   await set.shot("1-not-connected");
 
   // Connect: the app registers finx and copies the extension, then asks the user to add it.
@@ -203,6 +204,12 @@ try {
   await set.until("in use", badge("使用中", "In use"));
   const name = await set.run(`document.querySelector('.browser-set .mrow .fn').textContent`);
   check(/Chrome \d+/.test(name), `the row does not name the browser: ${name}`);
+  // Connected: it can be the default browser, written as `browser.default`.
+  const choice = `document.querySelector('.default-browser select')`;
+  await set.until("a second default", `${choice}.options.length === 2`);
+  await set.run(`(() => { const s = ${choice}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(s, "yours"); s.dispatchEvent(new Event("change", { bubbles: true })); })()`);
+  for (let i = 0; i < 50 && !/default = "yours"/.test(config()); i++) await sleep(100);
+  check(/\[browser\][^[]*default = "yours"/.test(config()), `the default was not written: ${config()}`);
   await set.shot("5-in-use");
 
   // The composer's + › Connectors lists it, on; its switch there is the same setting, and
@@ -217,33 +224,33 @@ try {
   await main.until("off in the menu", `${yoursRow}?.getAttribute('aria-checked') === 'false'`);
   await set.until("off in Settings", badge("已连接", "Connected"));
   check(/\[browser\][\s\S]*extension = false/.test(config()), `not turned off from the menu: ${config()}`);
-  // Start Using in Settings: on again, and the menu follows.
-  await set.run(`(${button("开始使用", "Start Using")}).click()`);
+  // Connect in Settings (the extension is still there): on again, and the menu follows.
+  await set.run(`(${button("连接", "Connect")}).click()`);
   await set.until("in use again", badge("使用中", "In use"));
   await main.until("on in the menu", `${yoursRow}?.getAttribute('aria-checked') === 'true'`);
   await main.run(`document.querySelector('.cmp-plus').click()`);
 
-  // Stop Using: back to the built-in browser, still connected.
-  await set.run(`(${button("停止使用", "Stop Using")}).click()`);
+  // Disconnect: back to the built-in browser, the extension still there.
+  await set.run(`(${button("断开", "Disconnect")}).click()`);
   await set.until("stopped", badge("已连接", "Connected"));
   check(/\[browser\][\s\S]*extension = false/.test(config()), `not turned off: ${config()}`);
   await set.shot("7-stopped");
 
-  // Chrome goes away: the row says the extension is not connected.
+  // Chrome goes away: the row offers to connect again.
   chrome.kill("SIGKILL");
-  await set.until("lost", badge("未连接", "Not connected"), 20000);
+  await set.until("lost", shows("连接你的浏览器", "Connect Your Browser"), 20000);
 
-  // The built-in browser: on by default, with a switch of its own.
-  const builtin = `document.querySelector('.browser-set [role=switch]')`;
-  check((await set.run(`${builtin}.getAttribute('aria-checked')`)) === "true", "the built-in browser is off by default");
-  await set.run(`${builtin}.click()`);
-  await set.until("the built-in browser off", `${builtin}.getAttribute('aria-checked') === 'false'`);
-  check(/\[browser\][^[]*enabled = false/.test(config()), `the built-in browser not turned off: ${config()}`);
-  await set.run(`${builtin}.click()`);
-  await set.until("the built-in browser on", `${builtin}.getAttribute('aria-checked') === 'true'`);
+  // Browser control: on by default; off, written, and the default browser goes with it.
+  const control = `document.querySelector('.browser-set [role=switch]')`;
+  check((await set.run(`${control}.getAttribute('aria-checked')`)) === "true", "browser control is off by default");
+  await set.run(`${control}.click()`);
+  await set.until("browser control off", `${control}.getAttribute('aria-checked') === 'false' && document.querySelector('.default-browser select').disabled`);
+  check(/\[browser\][^[]*enabled = false/.test(config()), `browser control not turned off: ${config()}`);
+  await set.run(`${control}.click()`);
+  await set.until("browser control on", `${control}.getAttribute('aria-checked') === 'true'`);
 
   // The built-in browser's address bar searches with Google, or the engine picked here.
-  const select = `[...document.querySelectorAll('.browser-set select')].find(s => !s.closest('.site-row'))`;
+  const select = `document.querySelector('.search-engine select')`;
   check((await set.run(`${select}.value`)) === "google", "the address bar does not search with Google by default");
   // The home page's browser button opens the panel, a blank tab in it.
   await main.run(`document.querySelector('.ctool button[aria-pressed]').click()`);
@@ -263,7 +270,9 @@ try {
   await main.run(`window.finx.browserTabCommand(${JSON.stringify((await tab()).targetId)}, { command: "go", url: "readme.txt" })`);
   await main.until("readme.txt searched", `window.finx.browserTabs().then(t => [t[0].url, decodeURIComponent(t[0].url)].some(u => u.includes("wd=readme.txt")))`, 20000);
 
-  // The person adds an engine of their own: name, keyword, URL with %s.
+  // The person adds an engine of their own, in the shortcuts' dialog: name, keyword, URL with %s.
+  await set.run(`(${button("管理…", "Manage…")}).click()`);
+  await set.until("the shortcuts", `!!document.querySelector('.engines-sheet')`);
   await set.run(`(${button("添加搜索引擎", "Add Search Engine")}).click()`);
   const typeInto = async (index, text) => {
     await set.run(`document.querySelectorAll('.engine-add input')[${index}].focus()`);

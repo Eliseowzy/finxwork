@@ -28,7 +28,7 @@ export const kernelKind: KernelKind = process.env.FINXWORK_KERNEL === "mock" ? "
 export const finxHome = process.env.FINX_HOME || (testHome ? path.join(testHome, "finx") : path.join(os.homedir(), ".finx"));
 
 /** The finx this app starts: FINXWORK_FINX, the one inside the app, or the repository's debug build. */
-function kernelBinary(): string | null {
+export function kernelBinary(): string | null {
   const candidates = [
     process.env.FINXWORK_FINX,
     app.isPackaged ? platform.kernelBinary() : path.resolve(app.getAppPath(), "../../target/debug/finx"),

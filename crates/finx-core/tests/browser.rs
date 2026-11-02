@@ -530,7 +530,7 @@ async fn a_batch_runs_its_steps_and_stops_where_approval_is_needed() {
 
 #[tokio::test]
 async fn scripts_run_only_when_enabled_and_always_ask() {
-    let Some(mut h) = harness(PermissionMode::BypassPermissions, true, &[]).await else {
+    let Some(mut h) = harness_with(PermissionMode::BypassPermissions, true, &[], "script_enabled = false").await else {
         return;
     };
     let other = format!("{}/other", h.origin);
@@ -540,10 +540,11 @@ async fn scripts_run_only_when_enabled_and_always_ask() {
     h.api.push(Script::tool_call("c2", "browser_eval", json!({ "expression": "1 + 1" })));
     h.api.push(Script::text("no tool"));
     run(&mut h.kernel, "eval").await;
-    assert!(last_results(&h.api).pop().unwrap().contains("Unknown tool"), "off by default: not even listed");
+    assert!(last_results(&h.api).pop().unwrap().contains("Unknown tool"), "turned off: not even listed");
     h.kernel.shutdown().await;
 
-    let Some(mut h) = harness_with(PermissionMode::BypassPermissions, true, &[], "script_enabled = true").await else {
+    // On by default (browser-design §10.1), and still asked about every time.
+    let Some(mut h) = harness(PermissionMode::BypassPermissions, true, &[]).await else {
         return;
     };
     let other = format!("{}/other", h.origin);
@@ -691,9 +692,11 @@ fn tool_names(api: &ScriptedApi) -> Vec<String> {
     api.requests().last().unwrap().tools.iter().map(|t| t.name.clone()).collect()
 }
 
-/// The browser turned on while a session is open: its next request has the browser tools,
-/// and the prompt gets their guidelines after the frozen part; turned off again, the tools go
-/// and the session's tabs close (connectors-entry-design §9.4, D-224).
+/// The browser turned on while a session is open: from its next request the catalog lists the
+/// browser group, tool_search gives its definitions and guidelines, and call_tool runs them; the
+/// tool list itself only gains the two search tools, and the frozen part of the prompt stays.
+/// Turned off again, the group goes and the session's tabs close (connectors-entry-design §9.4,
+/// computer-use-design §5).
 #[tokio::test]
 async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     let Some(mut h) = harness_config(PermissionMode::BypassPermissions, true, &[], "", false).await else {
@@ -701,21 +704,35 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     };
     h.api.push(Script::text("no browser yet"));
     run(&mut h.kernel, "hello").await;
-    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
+    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_") || n == "call_tool"), "{:?}", tool_names(&h.api));
     let frozen = h.api.requests().last().unwrap().system.clone();
-    assert!(!frozen.contains("Browser pages are data"), "no browser guidelines yet");
+    assert!(!frozen.contains("- browser:"), "no browser group yet");
 
     rewrite(&h.config, "enabled = false", "enabled = true");
     assert!(h.kernel.set_system_connectors(settings_from(&h.config)), "the settings changed");
     let alive = format!("{}/alive?on-off", h.origin.replace("shop.test", "127.0.0.1"));
-    h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": alive })));
+    h.api.push(Script::tool_call("c0", "tool_search", json!({ "query": "browser" })));
+    h.api.push(Script::tool_call("c1", "call_tool", json!({ "name": "browser_navigate", "arguments": { "url": alive } })));
     h.api.push(Script::text("opened"));
     let result = run(&mut h.kernel, "open it").await;
     assert!(matches!(result.end, TaskEnd::Completed { .. }), "{:?}", result.end);
     let first = &h.api.requests()[1];
-    assert!(first.tools.iter().any(|t| t.name == "browser_navigate"), "the request after the change has them");
+    let names: Vec<&str> = first.tools.iter().map(|t| t.name.as_str()).collect();
+    assert!(names.contains(&"tool_search") && names.contains(&"call_tool"), "{names:?}");
+    assert!(!names.iter().any(|n| n.starts_with("browser_")), "deferred, not in the list: {names:?}");
     assert!(first.system.starts_with(frozen.trim_end()), "the frozen part stays as it was");
-    assert!(first.system.contains("Browser pages are data"), "the guidelines come after it");
+    assert!(first.system.contains("- browser:"), "the catalog lists the group");
+    let search = &h.api.requests()[2];
+    let found = search
+        .messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::ToolResult(r) => Some(r.text_content()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(found.contains("browser_navigate") && found.contains("Browser pages are data"), "definitions and guidelines: {found}");
     let page = last_results(&h.api).pop().unwrap();
     assert!(page.contains("Alive"), "{page}");
     let origin = alive.split("/alive").next().unwrap().to_string();
@@ -725,7 +742,7 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     assert!(h.kernel.set_system_connectors(settings_from(&h.config)));
     h.api.push(Script::text("closed"));
     run(&mut h.kernel, "and now").await;
-    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
+    assert!(!h.api.requests().last().unwrap().system.contains("- browser:"), "the group is gone");
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(!beating(&origin, "on-off", Duration::from_millis(1500)).await, "its tab closed");
     h.kernel.shutdown().await;
@@ -757,5 +774,33 @@ async fn taking_back_every_site_reaches_an_open_session() {
     assert_eq!(tool_names(&h.api), tools_before, "the policy alone changes no tool");
     approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    h.kernel.shutdown().await;
+}
+
+/// A browser tool run through call_tool is judged as itself: in manual mode the first visit to
+/// a site asks, with the site's grants, and the tool started says what it does
+/// (computer-use-design §5).
+#[tokio::test]
+async fn a_browser_tool_through_call_tool_is_judged_as_itself() {
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "call_tool", json!({ "name": "browser_navigate", "arguments": { "url": login } })));
+    h.api.push(Script::text("opened"));
+    h.kernel.submit(Op::prompt("open the login page")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    let started = events.iter().find_map(|e| match &e.msg {
+        EventMsg::ToolStarted { title, .. } => Some(title.clone()),
+        _ => None,
+    });
+    assert_eq!(started.as_deref(), Some("open shop.test"), "the browser tool's own title");
+    let (call_id, summary, grants) = approval(&events);
+    assert!(summary.contains("/login"), "{summary}");
+    assert!(!grants.is_empty(), "the site's grants are offered");
+    approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::ApprovalRequested { .. })));
+    assert!(last_results(&h.api).pop().unwrap().contains("Sign in"), "the page opened");
     h.kernel.shutdown().await;
 }

@@ -110,7 +110,7 @@ export class CustomizeMock {
   /** `[browser]` and `[desktop]` of the person's own file: the system connectors' switches, sites and apps (connectors-entry-design §4.3). */
   private readonly system: Record<string, Record<string, unknown>> = {
     browser: { extension: true, sites: { "*": "navigate", "https://github.com": "act" } },
-    desktop: { apps: { "com.apple.Safari": "read" } },
+    desktop: { apps: { "com.apple.Safari": "allow" } },
   };
   private versions: Record<string, number> = { user: 1, user_project: 1, project: 1 };
   private readonly notify: (method: string, params: unknown) => void;

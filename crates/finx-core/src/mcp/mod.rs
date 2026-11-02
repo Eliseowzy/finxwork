@@ -47,7 +47,7 @@ pub(crate) const INSTRUCTIONS_LIMIT: usize = 16 * 1024;
 /// address is published: sign-ins then use dynamic registration or the user's own client.
 pub const CLIENT_METADATA_URL: Option<&str> = None;
 
-const CATALOG_INTRO: &str = "Tools of these MCP servers are not in your tool list. Find them with tool_search, then run them with call_tool.";
+const CATALOG_INTRO: &str = "Tools of these groups are not in your tool list. Find them with tool_search, then run them with call_tool.";
 
 /// One offered tool, deferred or direct.
 pub(crate) struct Entry {
@@ -331,21 +331,21 @@ impl McpManager {
         }
     }
 
-    /// The system prompt's MCP part: the catalog of deferred servers, then the instructions
-    /// of direct servers. The catalog comes from the configuration alone, so it is the same
-    /// from the first request on, whatever the servers' state.
-    pub(crate) fn prompt_section(&self) -> Option<String> {
-        let mut parts = Vec::new();
-        let deferred: Vec<(&str, Option<&str>)> = self
-            .servers
+    /// The deferred servers for the catalog, with their descriptions. They come from the
+    /// configuration alone, so the catalog is the same from the first request on, whatever the
+    /// servers' state.
+    fn deferred_servers(&self) -> Vec<(&str, Option<&str>)> {
+        self.servers
             .iter()
             .enumerate()
             .filter(|(i, _)| self.is_deferred(*i))
             .map(|(_, s)| (s.name(), s.config().description.as_deref()))
-            .collect();
-        if !deferred.is_empty() {
-            parts.push(catalog_section(&deferred));
-        }
+            .collect()
+    }
+
+    /// The instructions of direct servers, each in its own part.
+    fn direct_instructions(&self) -> Vec<String> {
+        let mut parts = Vec::new();
         for (i, server) in self.servers.iter().enumerate() {
             if self.is_deferred(i) {
                 continue;
@@ -358,7 +358,7 @@ impl McpManager {
                 ));
             }
         }
-        (!parts.is_empty()).then(|| parts.join("\n\n"))
+        parts
     }
 
     pub(crate) async fn shutdown(&self) {
@@ -494,10 +494,27 @@ pub(crate) fn cap(text: &str, limit: usize) -> String {
     format!("{}…", &text[..end])
 }
 
-/// The `<mcp_servers>` section: every name first; descriptions share the space left.
+/// The prompt's part after the frozen base: the catalog of deferred tools (the built-in groups,
+/// then the deferred MCP servers), then the instructions of direct MCP servers.
+pub(crate) fn prompt_section(mcp: Option<&Arc<McpManager>>, deferred: &crate::deferred::Deferred) -> Option<String> {
+    let mut groups: Vec<(&str, Option<&str>)> = deferred.groups.iter().map(|g| (g.name, Some(g.summary.as_str()))).collect();
+    if let Some(mcp) = mcp {
+        groups.extend(mcp.deferred_servers());
+    }
+    let mut parts = Vec::new();
+    if !groups.is_empty() {
+        parts.push(catalog_section(&groups));
+    }
+    if let Some(mcp) = mcp {
+        parts.extend(mcp.direct_instructions());
+    }
+    (!parts.is_empty()).then(|| parts.join("\n\n"))
+}
+
+/// The `<deferred_tools>` section: every name first; descriptions share the space left.
 pub(crate) fn catalog_section(servers: &[(&str, Option<&str>)]) -> String {
-    let open = format!("<mcp_servers>\n{CATALOG_INTRO}\n");
-    let close = "</mcp_servers>";
+    let open = format!("<deferred_tools>\n{CATALOG_INTRO}\n");
+    let close = "</deferred_tools>";
     let mut budget = CATALOG_LIMIT.saturating_sub(open.len() + close.len());
     let mut lines: Vec<String> = Vec::new();
     let mut dropped = 0;
@@ -698,18 +715,19 @@ pub(crate) fn compose(base: &str, section: Option<&str>) -> String {
 }
 
 /// The tools a session starts with: `tools`, plus `tool_search` and `call_tool` when some
-/// server is deferred. Without such a server the session shares `tools` itself, like every
-/// other session with the same tools.
+/// tools are deferred, built-in or of an MCP server. Without any the session shares `tools`
+/// itself, like every other session with the same tools.
 pub(crate) fn base_tools(
     tools: &Arc<finx_tools::ToolRegistry>,
     manager: Option<&Arc<McpManager>>,
+    deferred: &crate::deferred::DeferredCell,
     shown: &Arc<Mutex<tools::Shown>>,
 ) -> Arc<finx_tools::ToolRegistry> {
-    let Some(manager) = manager.filter(|m| m.has_deferred()) else {
+    if !manager.is_some_and(|m| m.has_deferred()) && deferred.lock().is_empty() {
         return tools.clone();
-    };
+    }
     let mut registry = (**tools).clone();
-    for tool in tools::kernel_tools(manager, shown) {
+    for tool in tools::kernel_tools(manager, deferred, shown) {
         // A custom registry may already define these names; it wins.
         let _ = registry.register(tool);
     }
@@ -739,13 +757,12 @@ impl crate::session::Session {
             None => {}
         }
         let mut tools = (**self.base_tools.lock()).clone();
-        let mut mcp_section = None;
         if let Some(mcp) = &self.mcp {
             for tool in &mcp.catalog().direct {
                 let _ = tools.register(tool.clone());
             }
-            mcp_section = mcp.prompt_section();
         }
+        let mcp_section = prompt_section(self.mcp.as_ref(), &self.deferred.lock());
         let late = late_guidelines(&self.state.lock().base_prompt, &tools);
         let section = match (late, mcp_section) {
             (Some(late), Some(mcp)) => Some(format!("{late}\n\n{mcp}")),
@@ -866,7 +883,7 @@ mod tests {
     fn sessions_without_deferred_servers_share_the_registry() {
         let tools = Arc::new(finx_tools::builtin_registry(finx_tools::BashTool::default()));
         let shown = Arc::new(Mutex::new(tools::Shown::default()));
-        assert!(Arc::ptr_eq(&base_tools(&tools, None, &shown), &tools));
+        assert!(Arc::ptr_eq(&base_tools(&tools, None, &Default::default(), &shown), &tools));
         let settings = McpSettings {
             enabled: true,
             project_json: false,
@@ -883,7 +900,7 @@ mod tests {
         };
         // Not started: building the manager runs nothing.
         let manager = McpManager::new(vec![server], &settings, None, Vec::new(), PathBuf::from("/"), None).unwrap();
-        let with = base_tools(&tools, Some(&manager), &shown);
+        let with = base_tools(&tools, Some(&manager), &Default::default(), &shown);
         assert!(!Arc::ptr_eq(&with, &tools));
         assert!(with.get("tool_search").is_some() && with.get("call_tool").is_some());
         // The servers go away with the session: the status callback does not keep them.
@@ -895,7 +912,7 @@ mod tests {
     #[test]
     fn catalog_lists_every_server_within_the_limit() {
         let small = catalog_section(&[("github", Some("Issues and pull requests")), ("docs", None)]);
-        assert!(small.starts_with("<mcp_servers>\n") && small.ends_with("</mcp_servers>"));
+        assert!(small.starts_with("<deferred_tools>\n") && small.ends_with("</deferred_tools>"));
         assert!(small.contains("- github: Issues and pull requests\n- docs\n"), "{small}");
         let long_description = "x".repeat(500);
         let many: Vec<(String, Option<&str>)> = (0..100).map(|i| (format!("server{i:03}"), Some(long_description.as_str()))).collect();

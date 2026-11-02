@@ -7,8 +7,8 @@
 // clicks), nothing may ask, no CLI flag may reach the model, and the user's clipboard is put
 // back. Then a window that moved after its screenshot must be refused, not clicked off target.
 // macOS only, with the screen unlocked; it moves the pointer for a few seconds. Needs `pnpm
-// build`, `cargo build -p finx-cli`, swiftc, and agent-desktop in ~/.finx/desktop/bin or
-// AGENT_DESKTOP; FinxWork (Electron here) needs Accessibility and Screen Recording.
+// build` (which puts agent-desktop beside the debug finx), `cargo build -p finx-cli` and swiftc;
+// FinxWork (Electron here) needs Accessibility and Screen Recording.
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -21,7 +21,7 @@ const root = path.resolve(desktop, "../..");
 const finx = path.join(root, "target/debug/finx");
 const electron = createRequire(import.meta.url)("electron");
 const shots = process.env.FINXWORK_E2E_SHOTS;
-const realProgram = process.env.AGENT_DESKTOP ?? path.join(os.homedir(), ".finx/desktop/bin/agent-desktop");
+const program = path.join(path.dirname(finx), "agent-desktop");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (message) => {
   throw new Error(message);
@@ -31,7 +31,7 @@ if (process.platform !== "darwin") {
   console.log("desktop opaque: macOS only, skipped");
   process.exit(0);
 }
-check(fs.existsSync(realProgram), `no agent-desktop at ${realProgram}`);
+check(fs.existsSync(program), `no agent-desktop at ${program}: run pnpm build`);
 const locked = execFileSync("ioreg", ["-n", "Root", "-d1", "-a"], { encoding: "utf8" });
 check(!/CGSSessionScreenIsLocked<\/key>\s*<true\/>/.test(locked), "the screen is locked: unlock it and run again");
 
@@ -68,13 +68,8 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxo-"));
 const home = path.join(work, "finx");
 const profile = path.join(work, "profile");
 const userHome = path.join(work, "home");
-const bin = path.join(userHome, ".finx/desktop/bin");
 fs.mkdirSync(home, { recursive: true });
-fs.mkdirSync(bin, { recursive: true });
-for (const name of ["agent-desktop", "agent-desktop-macos-helper"]) {
-  const from = path.join(path.dirname(realProgram), name);
-  if (fs.existsSync(from)) fs.copyFileSync(from, path.join(bin, name)), fs.chmodSync(path.join(bin, name), 0o755);
-}
+fs.mkdirSync(userHome, { recursive: true });
 const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINX_CREDENTIAL_STORE: "file", FINX_NO_BROWSER: "1" };
 
 // ── the model: a fixed script per task, each step one tool call, coordinates from the fixture's layout ──
@@ -82,20 +77,20 @@ const titleBar = () => JSON.parse(fs.readFileSync(path.join(chatDir, "layout.jso
 const textOf = (m) => (typeof m.content === "string" ? m.content : (m.content ?? []).map((c) => c.text ?? "").join("\n"));
 const tasks = {
   OPAQUE_SEND: [
-    () => ["desktop_launch", { app: BUNDLE }],
-    () => ["desktop_snapshot", { app: BUNDLE }],
-    () => ["desktop_screenshot", { app: BUNDLE }],
-    (shot) => ["desktop_act", { app: BUNDLE, action: "click_at", shot, x: 100, y: titleBar() + 90 }], // Bob
-    (shot) => ["desktop_act", { app: BUNDLE, action: "click_at", shot, x: 400, y: titleBar() + 352 }], // the field
-    (shot) => ["desktop_act", { app: BUNDLE, action: "type_text", shot, text: "你好，这是 finx" }],
-    (shot) => ["desktop_act", { app: BUNDLE, action: "press", shot, text: "return" }],
+    () => ["cua_launch", { app: BUNDLE }],
+    () => ["cua_snapshot", { app: BUNDLE }],
+    () => ["cua_screenshot", { app: BUNDLE }],
+    (shot) => ["cua_act", { app: BUNDLE, action: "click_at", shot, x: 100, y: titleBar() + 90 }], // Bob
+    (shot) => ["cua_act", { app: BUNDLE, action: "click_at", shot, x: 400, y: titleBar() + 352 }], // the field
+    (shot) => ["cua_act", { app: BUNDLE, action: "type_text", shot, text: "你好，这是 finx" }],
+    (shot) => ["cua_act", { app: BUNDLE, action: "press", shot, text: "return" }],
   ],
   OPAQUE_MOVED: [
-    () => ["desktop_screenshot", { app: BUNDLE }],
+    () => ["cua_screenshot", { app: BUNDLE }],
     (shot) => {
       execFileSync("pkill", ["-USR1", "-x", "OpaqueChat"]);
       execFileSync("sleep", ["0.6"]);
-      return ["desktop_act", { app: BUNDLE, action: "click_at", shot, x: 100, y: titleBar() + 30 }];
+      return ["cua_act", { app: BUNDLE, action: "click_at", shot, x: 100, y: titleBar() + 30 }];
     },
   ],
 };

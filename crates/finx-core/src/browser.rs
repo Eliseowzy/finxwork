@@ -81,6 +81,15 @@ pub(crate) enum Which {
 /// Before the tabs and refs of the user's own browser: tab y2, ref ye14.
 const YOURS: &str = "y";
 
+impl From<crate::config::DefaultBrowser> for Which {
+    fn from(default: crate::config::DefaultBrowser) -> Self {
+        match default {
+            crate::config::DefaultBrowser::Builtin => Self::Builtin,
+            crate::config::DefaultBrowser::Yours => Self::Yours,
+        }
+    }
+}
+
 impl Which {
     /// The browser of a tab or a ref, by its prefix.
     fn of(id: &str) -> Self {
@@ -198,6 +207,19 @@ impl Browsers {
             Which::Yours => self.yours,
         }
     }
+
+    /// Where a page opens when the call names no browser: the user's default while it is on,
+    /// else the one that is (browser-design §10.1).
+    fn default(&self) -> Which {
+        let default = Which::from(self.settings.default);
+        if self.on(default) {
+            default
+        } else if self.builtin {
+            Which::Builtin
+        } else {
+            Which::Yours
+        }
+    }
 }
 
 impl BrowserHandle {
@@ -211,17 +233,17 @@ impl BrowserHandle {
         grants: Vec<SiteGrant>,
         label: String,
     ) -> Self {
-        let builtin = settings.builtin_on(embedded);
-        let yours = settings.extension;
+        let mut browsers = Browsers {
+            builtin: settings.builtin_on(embedded),
+            yours: settings.yours_on(embedded),
+            current: Which::Builtin,
+            settings: settings.clone(),
+        };
+        browsers.current = browsers.default();
         Self {
             pool,
             policy: Arc::new(Mutex::new(settings.policy.clone())),
-            state: Mutex::new(Browsers {
-                current: if builtin || !yours { Which::Builtin } else { Which::Yours },
-                settings,
-                builtin,
-                yours,
-            }),
+            state: Mutex::new(browsers),
             downloads,
             roots,
             grants: Arc::new(Mutex::new(grants)),
@@ -245,7 +267,7 @@ impl BrowserHandle {
         *self.policy.lock() = settings.policy.clone();
         let mut state = self.state.lock();
         let builtin = settings.builtin_on(embedded);
-        let yours = settings.extension;
+        let yours = settings.yours_on(embedded);
         // Timeouts are a session's own; the program, profile and window only the built-in
         // browser's.
         let timeouts = state.settings.navigation_timeout != settings.navigation_timeout
@@ -261,7 +283,7 @@ impl BrowserHandle {
         state.builtin = builtin;
         state.yours = yours;
         if !state.on(state.current) {
-            state.current = if builtin { Which::Builtin } else { Which::Yours };
+            state.current = state.default();
         }
         gone
     }
@@ -380,10 +402,9 @@ fn pick(ctx: &ToolCtx, asked: Option<Which>, id: Option<&str>) -> Result<Which, 
 }
 
 /// The browser a page opens in: the one asked for, else the one of the tab named, else the
-/// built-in one while it is on. The user's own browser is never the default
-/// (connectors-entry-design §3.2).
+/// user's default (`browser.default`, browser-design §10.1).
 fn pick_new(ctx: &ToolCtx, asked: Option<Which>, tab: Option<&str>) -> Result<Which, ToolError> {
-    let fallback = if handle(ctx)?.state.lock().builtin { Which::Builtin } else { Which::Yours };
+    let fallback = handle(ctx)?.state.lock().default();
     pick(ctx, asked.or(tab.map(Which::of)).or(Some(fallback)), tab)
 }
 
@@ -542,11 +563,12 @@ pub(crate) struct NavigateArgs {
     /// Tab id; the current tab by default.
     #[serde(default)]
     tab: Option<String>,
-    /// Which browser to open the url in. "builtin" (the default): a browser of its own, without
-    /// the user's sign-ins, for local pages, files and sites that need no account. "yours": the
-    /// user's own browser, with their real sign-ins; use it only when the task needs their
-    /// account or they ask for it, and the user is asked before each site's first use there.
-    /// Calls that name a tab or ref work in that tab's browser.
+    /// Which browser to open the url in; left out, the user's default (the browser group's line
+    /// in <deferred_tools> says which). "builtin": a browser of its own, without the user's
+    /// sign-ins, for local pages, files and sites that need no account. "yours": the user's own
+    /// browser, with their real sign-ins, for sites that need their account; the user is asked
+    /// before each site's first use there. Calls that name a tab or ref work in that tab's
+    /// browser.
     #[serde(default)]
     browser: Option<Which>,
 }
@@ -1133,7 +1155,7 @@ pub(crate) struct TabsArgs {
     /// For open: a URL to load in the new tab.
     #[serde(default)]
     url: Option<String>,
-    /// For open: which browser, as for browser_navigate; builtin when left out.
+    /// For open: which browser, as for browser_navigate; the user's default when left out.
     #[serde(default)]
     browser: Option<Which>,
 }
@@ -1529,6 +1551,25 @@ impl TypedTool for BrowserBatch {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A page opens in the user's default browser while it is on, else in the one that is
+    /// (browser-design §10.1).
+    #[test]
+    fn new_pages_open_in_the_default_browser() {
+        let mut settings = crate::config::Config::default().browser;
+        let browsers = |settings: &BrowserSettings, builtin: bool, yours: bool| Browsers {
+            settings: settings.clone(),
+            builtin,
+            yours,
+            current: Which::Builtin,
+        };
+        assert_eq!(browsers(&settings, true, true).default(), Which::Builtin, "the built-in browser unless set");
+        settings.default = crate::config::DefaultBrowser::Yours;
+        assert_eq!(browsers(&settings, true, true).default(), Which::Yours);
+        assert_eq!(browsers(&settings, true, false).default(), Which::Builtin, "the user's browser not connected");
+        settings.default = crate::config::DefaultBrowser::Builtin;
+        assert_eq!(browsers(&settings, false, true).default(), Which::Yours, "only the user's browser on");
+    }
 
     #[test]
     fn urls_without_a_scheme_are_https() {

@@ -64,10 +64,10 @@ impl SystemCell {
 
 impl crate::session::Session {
     /// At a turn boundary, before the request (with the MCP refresh): takes up the browsers' and
-    /// desktop control's settings when they changed, or the first time. The tools, the handles
-    /// and the policy follow; a browser turned off closes this session's tabs in it; the prompt
-    /// gets the guidelines of tools that came after it was written. A change is recorded, and
-    /// costs one prompt-cache miss (connectors-entry-design §9.4).
+    /// computer use's settings when they changed, or the first time. Their deferred tools, the
+    /// handles and the policy follow; a browser turned off closes this session's tabs in it; the
+    /// catalog in the prompt says which groups there are. A change is recorded, and costs one
+    /// prompt-cache miss (connectors-entry-design §9.4).
     pub(crate) fn prepare_system(&self) {
         let generation = self.system.generation();
         if self.system_applied.swap(generation, Ordering::AcqRel) == generation {
@@ -81,7 +81,7 @@ impl crate::session::Session {
             }
         }
         let desktop = self.tool_state.get::<crate::desktop::DesktopHandle>();
-        match (desktop, settings.desktop.enabled) {
+        match (desktop, settings.desktop.on(embedded)) {
             (Some(handle), true) if *handle.settings() == settings.desktop => {}
             (_, true) => self.tool_state.insert(Arc::new(crate::desktop::DesktopHandle::new(
                 settings.desktop.clone(),
@@ -90,8 +90,8 @@ impl crate::session::Session {
             (Some(_), false) => drop(self.tool_state.remove::<crate::desktop::DesktopHandle>()),
             (None, false) => {}
         }
-        let with_system = crate::kernel::with_system_tools(&self.core_tools, &settings, self.browser_pool.is_some(), embedded);
-        *self.base_tools.lock() = crate::mcp::base_tools(&with_system, self.mcp.as_ref(), &self.mcp_shown);
+        *self.deferred.lock() = Arc::new(crate::deferred::Deferred::of(&settings, self.browser_pool.is_some(), embedded));
+        *self.base_tools.lock() = crate::mcp::base_tools(&self.core_tools, self.mcp.as_ref(), &self.deferred, &self.mcp_shown);
         if self.refresh_tools(true) {
             self.record_system_prompt();
         }

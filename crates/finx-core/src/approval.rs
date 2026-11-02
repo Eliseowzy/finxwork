@@ -43,8 +43,9 @@ pub struct ApprovalPolicy;
 #[async_trait]
 impl Hooks for ApprovalPolicy {
     async fn before_tool(&self, call: &ToolCall, tool: &dyn Tool, authorities: &[Authority], view: &SessionView) -> Gate {
-        // MCP tools are not approved for now: they run in every mode.
-        if tool.origin() == ToolOrigin::Mcp {
+        // MCP tools are not approved for now: they run in every mode. A built-in tool run
+        // through call_tool is judged as itself.
+        if tool.origin_for(&call.arguments.to_value()) == ToolOrigin::Mcp {
             return Gate::Allow;
         }
         // Tools that say what they do on which site are judged by that (browser-design §7.1).

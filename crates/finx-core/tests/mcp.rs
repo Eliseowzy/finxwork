@@ -267,7 +267,7 @@ async fn deferred_tools_are_searched_and_called_without_changing_the_request() {
     let names = tool_names(&requests[0]);
     assert!(names.contains(&"tool_search".to_string()) && names.contains(&"call_tool".to_string()), "{names:?}");
     assert!(!names.iter().any(|n| n.starts_with("mcp__")), "deferred tools stay out of the list: {names:?}");
-    assert!(requests[0].system.contains("<mcp_servers>\n"));
+    assert!(requests[0].system.contains("<deferred_tools>\n"));
     assert!(requests[0].system.contains("- test: Test tools: echo, arithmetic, a vault"));
 
     let search = &tool_results(&requests[1])[0];
@@ -288,8 +288,8 @@ async fn deferred_tools_are_searched_and_called_without_changing_the_request() {
     // The log keeps the fixed prompt and the MCP part apart.
     let entries = prompt_entries(&h.home);
     assert_eq!(entries.len(), 1, "nothing changed, so one entry: {entries:?}");
-    assert!(entries[0]["mcp"].as_str().unwrap().starts_with("<mcp_servers>"));
-    assert!(!entries[0]["text"].as_str().unwrap().contains("<mcp_servers>"));
+    assert!(entries[0]["mcp"].as_str().unwrap().starts_with("<deferred_tools>"));
+    assert!(!entries[0]["text"].as_str().unwrap().contains("<deferred_tools>"));
     let _ = h.kernel.shutdown().await;
 }
 
@@ -421,7 +421,7 @@ async fn direct_servers_put_their_tools_in_the_list() {
     assert!(!names.contains(&"tool_search".to_string()), "no deferred server, no search tool");
     assert!(!names.iter().any(|n| n.contains("bad_schema") || n.contains("ui_panel")), "{names:?}");
     assert!(requests[0].system.contains("<mcp_instructions server=\"tools\">\nTest server for finx."));
-    assert!(!requests[0].system.contains("<mcp_servers>"));
+    assert!(!requests[0].system.contains("<deferred_tools>"));
     assert_eq!(tool_results(&requests[1])[0], "echo: direct");
     assert!(events.iter().any(|e| matches!(e, EventMsg::Warning { message, .. } if message.contains("bad_schema"))));
     // Start without tools, then the first request has them: one more entry, before any request.
@@ -502,7 +502,7 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let names = tool_names(helper[0]);
     assert!(names.contains(&"call_tool".to_string()) && names.contains(&"tool_search".to_string()), "{names:?}");
     assert!(!names.contains(&"spawn_agent".to_string()), "{names:?}");
-    assert!(helper[0].system.contains("<mcp_servers>"));
+    assert!(helper[0].system.contains("<deferred_tools>"));
     assert_eq!(tool_results(helper[1])[0], "echo: from the helper");
     assert_eq!(h.server.as_ref().unwrap().calls(), 1, "one call on the shared connection");
 }

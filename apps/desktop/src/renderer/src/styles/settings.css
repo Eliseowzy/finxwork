@@ -33,11 +33,24 @@
 .desktop-set .app-icon{width:28px;height:28px;flex:none;border-radius:var(--r-sm)}
 .desktop-set span.app-icon{background:var(--fill)}
 .desktop-set .apps-intro{margin:0 4px 8px}
+.desktop-set .app-row .tb{flex:none;color:var(--l2)}
+.desktop-set .app-row .tb:hover{background:var(--fill);color:var(--l1)}
+.desktop-set .app-row .app-toggle[aria-pressed=true]{color:var(--green)}
+.desktop-set .app-row.denied .app-icon,.desktop-set .app-row.denied .fn{opacity:.6}
+.desktop-set .app-row .fn .badge{opacity:1}
 .desktop-sub{display:flex;flex-direction:column;gap:inherit;border:0;margin:0;padding:0;min-width:0}
 .desktop-sub:disabled{opacity:.45}
 .browser-set .fn .badge{margin-left:6px;vertical-align:1px}
 .browser-set .fdesc{white-space:normal}
-.browser-set .fdesc.warn{color:var(--orange)}
+.browser-set .fdesc.warn,.desktop-set .fdesc.warn{color:var(--orange)}
+.desktop-set .fdesc .link{font-size:inherit}
+/* Settings › 电脑操控 › 去授权: the two permissions, over the page. */
+.cu-grant .fgroup .frow{gap:var(--sp-2);padding:9px 13px;min-height:48px}
+.cu-grant .fgroup .frow:first-child{border-top:0}
+.cu-grant .ft{flex:1;min-width:0}
+.cu-grant .fn{display:flex;align-items:center;gap:6px;font-size:13px}
+.cu-grant .fdesc{font-size:12px;color:var(--l2);margin-top:2px}
+.cu-grant .set-note{margin:var(--sp-1) 0 0;font-size:12px;color:var(--l3);line-height:1.55}
 .browser-mark{background:none;object-fit:contain}
 .browser-guide .bg-body{padding:4px 22px 20px;display:flex;flex-direction:column;gap:14px}
 .bg-steps{display:flex;gap:6px;margin:4px 0 2px;padding:0;list-style:none;font-size:12px;color:var(--l3)}
@@ -62,7 +75,18 @@
 .bg-status{display:flex;flex-direction:column;gap:8px}
 .bg-actions{display:flex;justify-content:flex-end;gap:8px}
 .browser-guide .set-note{margin:0}
-.browser-set .engines-head{margin-top:14px}
+/* Settings › Browser: site rows like the apps' on 电脑操控 (an icon, the site, its level, a trash button). */
+.browser-set .site-icon{width:28px;height:28px;flex:none;border-radius:var(--r-sm);background:var(--fill);color:var(--l2);display:flex;align-items:center;justify-content:center}
+.browser-set .site-icon .ic{width:15px;height:15px}
+.browser-set .site-row.denied .fn,.browser-set .site-row.denied .site-icon{opacity:.6}
+.browser-set .site-row .tb,.engines-sheet .engine-row .tb{flex:none;color:var(--l2)}
+.browser-set .site-row .tb:hover,.engines-sheet .engine-row .tb:hover{background:var(--fill);color:var(--l1)}
+.browser-set .fcount{flex:none;font-size:12.5px;color:var(--l3)}
+.browser-set .default-browser.off .ft{opacity:.5}
+.browser-set .engines-manage{flex:none}
+/* The search shortcuts, over the page. */
+.engines-sheet .fgroup{background:var(--win2)}
+.engines-sheet .fgroup .frow:first-child{border-top:0}
 .engine-row{min-height:46px}
 .engine-row .fn{display:flex;align-items:center;gap:6px}
 .engine-row .fdesc code{font-family:var(--mono);font-size:11px;color:var(--l2)}

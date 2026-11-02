@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Verify desktop control's authorization, as a person meets it: the model asks to read
+// Verify computer use's authorization, as a person meets it: the model asks to read
 // Finder's window; the approval names the app by its name and icon (and says so when FinxWork
-// lacks Accessibility); "remember" + "allow reading" writes `[desktop.apps]`; the call runs (a
-// snapshot, or PERM_DENIED with the hint to send the user to Settings); desktop control's page
-// among the connectors lists the remembered app, changes its level and forgets it, and its
-// switch turns it off. macOS only; everything stays in a private HOME. Needs `pnpm build`, `cargo build -p finx-cli`, and agent-desktop in
-// ~/.finx/desktop/bin or AGENT_DESKTOP.
+// lacks Accessibility); "remember" + "allow" writes `[desktop.apps]`; the call runs (a
+// snapshot, or PERM_DENIED with the hint to send the user to Settings); Settings › 电脑操控
+// lists the remembered app, denies it with one click and removes it. macOS only; everything
+// stays in a private HOME. Needs `pnpm build` (which puts agent-desktop beside the debug finx,
+// where finx finds it) and `cargo build -p finx-cli`.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -18,7 +18,7 @@ const root = path.resolve(desktop, "../..");
 const finx = path.join(root, "target/debug/finx");
 const electron = createRequire(import.meta.url)("electron");
 const shots = process.env.FINXWORK_E2E_SHOTS;
-const realProgram = process.env.AGENT_DESKTOP ?? path.join(os.homedir(), ".finx/desktop/bin/agent-desktop");
+const program = path.join(path.dirname(finx), "agent-desktop");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (message) => {
   throw new Error(message);
@@ -28,23 +28,18 @@ if (process.platform !== "darwin") {
   console.log("desktop approval: macOS only, skipped");
   process.exit(0);
 }
-check(fs.existsSync(realProgram), `no agent-desktop at ${realProgram}`);
+check(fs.existsSync(program), `no agent-desktop at ${program}: run pnpm build`);
 
 // Short: the kernel's socket lives under it, and a socket path has at most 103 bytes.
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxa-"));
 const home = path.join(work, "finx");
 const profile = path.join(work, "profile");
 const userHome = path.join(work, "home");
-const bin = path.join(userHome, ".finx/desktop/bin");
 fs.mkdirSync(home, { recursive: true });
-fs.mkdirSync(bin, { recursive: true });
-for (const name of ["agent-desktop", "agent-desktop-macos-helper"]) {
-  const from = path.join(path.dirname(realProgram), name);
-  if (fs.existsSync(from)) fs.copyFileSync(from, path.join(bin, name)), fs.chmodSync(path.join(bin, name), 0o755);
-}
+fs.mkdirSync(userHome, { recursive: true });
 const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINX_CREDENTIAL_STORE: "file", FINX_NO_BROWSER: "1" };
 
-// The model: first a snapshot of Finder, then what the tool said.
+// The model: first a snapshot of Finder (through call_tool), then what the tool said.
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finish }] })}\n\ndata: [DONE]\n\n`;
 const provider = http.createServer((req, res) => {
@@ -59,7 +54,8 @@ const provider = http.createServer((req, res) => {
       const text = typeof last.content === "string" ? last.content : JSON.stringify(last.content);
       return res.end(sse({ role: "assistant", content: `DESKTOP_DONE ${text.slice(0, 400)}` }, "stop"));
     }
-    const call = { index: 0, id: "call_desktop_1", type: "function", function: { name: "desktop_snapshot", arguments: JSON.stringify({ app: "com.apple.finder" }) } };
+    // Computer use's tools are deferred: the model runs them through call_tool.
+    const call = { index: 0, id: "call_desktop_1", type: "function", function: { name: "call_tool", arguments: JSON.stringify({ name: "cua_snapshot", arguments: { app: "com.apple.finder" } }) } };
     res.end(sse({ role: "assistant", tool_calls: [call] }, "tool_calls"));
   });
 });
@@ -128,9 +124,7 @@ async function quit() {
 }
 
 const shows = (...texts) => `${JSON.stringify(texts)}.some(t => document.body.innerText.includes(t))`;
-const finderRow = `[...document.querySelectorAll('.cz-dpage .cn-line')].find(r => r.textContent.includes("com.apple.finder"))`;
-/** Picks a level (or Remove) from the Finder row's pop-up, by its label in either language. */
-const pick = (...labels) => `(() => { ${finderRow}.querySelector('.cz-pop').click(); return new Promise(r => setTimeout(() => { [...document.querySelectorAll('.cz-menu [role^=menuitem]')].find(i => ${JSON.stringify(labels)}.some(l => i.textContent.includes(l))).click(); r(true); }, 50)); })()`;
+const finderRow = `[...document.querySelectorAll('.desktop-set .mrow')].find(r => r.querySelector('[title="com.apple.finder"]'))`;
 
 let failed = false;
 try {
@@ -152,13 +146,14 @@ try {
   await main.run(`document.querySelector('button.send').click()`);
   await main.until("the approval naming Finder", `/访达|Finder/.test(document.querySelector('.appr .appr-app')?.textContent ?? '')`, 60000);
   check(await main.run(`document.querySelector('.appr .appr-app img')?.src.startsWith('data:image/') === true`), "the approval shows no app icon");
-  const grant = `[...document.querySelectorAll('.appr button')].find(b => /允许读取 (访达|Finder)|Allow Reading (访达|Finder)/.test(b.textContent))`;
+  // One question per app: allowing it allows reading and acting in it.
+  const grant = `[...document.querySelectorAll('.appr button')].find(b => /允许使用 (访达|Finder)|Allow (访达|Finder) for This Session/.test(b.textContent))`;
   check(await main.run(`!!(${grant})`), `no grant button by the app's name: ${await main.run(`document.querySelector('.appr').innerText`)}`);
   const warned = await main.run(`!!document.querySelector('.appr .appr-warn')`);
   check(warned === (status.accessibility === "denied"), `the permission warning is ${warned ? "shown" : "missing"} with Accessibility ${status.accessibility}`);
   await main.shot("1-approval");
 
-  // Remember, and allow reading Finder.
+  // Remember, and allow Finder.
   await main.run(`document.querySelector('.appr .appr-keep input').click()`);
   await main.run(`(${grant}).click()`);
   await main.until("the reply", shows("DESKTOP_DONE"), 60000);
@@ -168,33 +163,35 @@ try {
     status.accessibility === "granted" ? !reply.includes("PERM_DENIED") : /PERM_DENIED[\s\S]*The user has to grant it/.test(reply),
     `the call's result does not match Accessibility ${status.accessibility}: ${reply.slice(reply.indexOf("DESKTOP_DONE"), reply.indexOf("DESKTOP_DONE") + 400)}`,
   );
-  check(/\[desktop\.apps\][\s\S]*"com\.apple\.finder" = "read"/.test(config()), `the grant was not remembered: ${config()}`);
+  check(/\[desktop\.apps\][\s\S]*"com\.apple\.finder" = "allow"/.test(config()), `the grant was not remembered: ${config()}`);
   await main.shot("2-after");
 
-  // Its page among the connectors (from Settings › Desktop control) lists it; its level
-  // changes; forgetting it asks again.
+  // Settings › 电脑操控 lists it, allowed; one click denies it; removing it asks again.
   await main.run(`window.finx.openSettings("desktop")`);
   const set = await attach((t) => t.type === "page" && t.url.includes("#settings"), "the settings window");
-  await set.until("the link to its page", `!!document.querySelector('.desktop-set .btn')`);
-  await set.run(`document.querySelector('.desktop-set .btn').click()`);
-  await main.until("Finder in the app list", `/访达|Finder/.test(${finderRow}?.querySelector('.tn')?.textContent ?? '')`);
-  check(/允许查看|Can View/.test(await main.run(`${finderRow}.querySelector('.cz-pop').textContent`)), "Finder is not listed as read");
-  check(await main.run(`${finderRow}.querySelector('img.cn-app')?.src.startsWith('data:image/') === true`), "the app list shows no icon");
-  await main.shot("3-apps");
-  check(await main.run(`/添加应用|Add App/.test(document.querySelector('.cz-dpage .cn-add')?.textContent ?? '')`), "no way to add an app on its page");
-  await main.run(pick("禁止使用", "Never"));
+  await set.cdp("Emulation.setDeviceMetricsOverride", { width: 820, height: 760, deviceScaleFactor: 0, mobile: false });
+  await set.until("Finder in the app list", `/访达|Finder/.test(${finderRow}?.querySelector('.fn')?.textContent ?? '')`);
+  const toggle = `${finderRow}?.querySelector('.app-toggle')`;
+  check((await set.run(`${toggle}.getAttribute('aria-pressed')`)) === "true", "Finder is not listed as allowed");
+  check(await set.run(`${finderRow}.querySelector('img.app-icon')?.src.startsWith('data:image/') === true`), "the app list shows no icon");
+  await set.shot("3-apps");
+  check(await set.run(`/添加应用|Add App/.test(document.querySelector('.desktop-set .mrow-add')?.textContent ?? '')`), "no way to add an app in Settings");
+  await set.run(`${toggle}.click()`);
   for (let i = 0; i < 50 && !/"com\.apple\.finder" = "deny"/.test(config()); i++) await sleep(100);
   check(/"com\.apple\.finder" = "deny"/.test(config()), `not denied: ${config()}`);
-  await main.until("shown as denied", `/禁止使用|Never/.test(${finderRow}?.querySelector('.cz-pop').textContent ?? '')`);
-  await main.run(pick("移除", "Remove"));
-  await main.until("forgotten", `!${finderRow} && ${shows("还没有设置任何应用", "No apps yet")}`);
+  await set.until("shown as denied", `${toggle}?.getAttribute('aria-pressed') === 'false'`);
+  await set.run(`[...${finderRow}.querySelectorAll('button')].pop().click()`);
+  await set.until("forgotten", `!${finderRow} && ${shows("还没有应用", "No apps yet")}`);
   check(!config().includes("com.apple.finder"), `not forgotten: ${config()}`);
-  await main.shot("4-forgotten");
-  // Its switch: off for every conversation.
-  await main.run(`document.querySelector('.cz-dacts [role=switch]').click()`);
-  await main.until("switched off", `document.querySelector('.cz-dacts [role=switch]').getAttribute('aria-checked') === 'false'`);
-  check(/\[desktop\][^[]*enabled = false/.test(config()), `not switched off: ${config()}`);
-  await main.shot("5-off");
+  await set.shot("4-forgotten");
+  // Switched off, the rest of the page is shown but cannot be changed. Without Accessibility the
+  // switch asks for it instead (computer-use.mjs).
+  if (status.accessibility === "granted") {
+    await set.run(`document.querySelector('.desktop-set button.sw').click()`);
+    await set.until("switched off", `document.querySelector('.desktop-sub')?.disabled === true`);
+    check(await set.run(`document.querySelector('.desktop-sub .mrow-add').matches(':disabled')`), "Add App works while computer use is off");
+    await set.shot("5-off");
+  }
   console.log("desktop approval: ok");
 } catch (e) {
   failed = true;

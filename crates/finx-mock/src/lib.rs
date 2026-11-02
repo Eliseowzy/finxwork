@@ -554,6 +554,11 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("browsers done: {}", last_tool_result(messages)))),
             }
         }
+        // A page opened without naming a browser: where the user's default sends it.
+        "default_browser" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim()}))])),
+            _ => Plan::Step(Step::text(format!("default opened: {}", last_tool_result(messages)))),
+        },
         "cut" => Plan::Step(Step {
             parts: vec![Part::Text("this reply is cut".into())],
             finish: "length",

@@ -72,11 +72,9 @@ function Connectors({ close, system, c }: { close: () => void; system: System; c
       </button>
       <div className="msep" role="separator" />
       <div className="cn-list">
-        {system.views
-          .filter((v) => !v.unsupported)
-          .map((v) => (
-            <SystemRow key={v.key} v={v} system={system} close={close} open={() => go("mine", { kind: "connector", id: systemId(v.key), tab: "overview" })} />
-          ))}
+        {system.views.map((v) => (
+          <SystemRow key={v.key} v={v} system={system} close={close} open={() => go("mine", { kind: "connector", id: systemId(v.key), tab: "overview" })} />
+        ))}
         {servers.map((s) => (
           <ServerRow key={s.name} s={s} c={c} name={name(s)} open={() => go("mine", { kind: "connector", id: s.name, tab: "overview" })} />
         ))}

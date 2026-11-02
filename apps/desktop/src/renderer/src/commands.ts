@@ -62,12 +62,6 @@ export function run(st: Store, c: Command) {
   switch (c) {
     case "newSession":
       return st.set({ selection: { kind: "new" }, searching: false });
-    case "showDesktopControl":
-      return st.set({
-        selection: { kind: "customize" },
-        searching: false,
-        customize: { tab: "connectors", view: "mine", detail: { kind: "connector", id: "system:desktop", tab: "overview" } },
-      });
     case "openProject":
       return openProject(st);
     case "search":

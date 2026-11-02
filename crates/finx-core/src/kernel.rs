@@ -187,11 +187,9 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let settings = launch.system.get();
     let pool = launch.deps.browser_pool.clone();
     let embedded = pool.as_ref().is_some_and(|p| p.has_host());
-    let base_tools = mcp::base_tools(
-        &with_system_tools(&launch.deps.tools, &settings, pool.is_some(), embedded),
-        launch.mcp.as_ref(),
-        &shown,
-    );
+    let deferred: crate::deferred::DeferredCell =
+        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded))));
+    let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &deferred, &shown);
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
     let tool_state = Arc::new(finx_tools::SessionState::default());
@@ -210,7 +208,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
             launch.root_id.clone(),
         )));
     }
-    if settings.desktop.enabled {
+    if settings.desktop.on(embedded) {
         tool_state.insert(Arc::new(DesktopHandle::new(settings.desktop.clone(), launch.root_id.clone())));
     }
     let session = Arc::new(Session {
@@ -228,6 +226,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         mcp_applied: AtomicU64::new(u64::MAX),
         mcp_settled: AtomicBool::new(false),
         mcp_shown: shown,
+        deferred,
         env: launch.deps.env,
         hooks,
         emitter: Arc::new(Emitter::new(event_tx)),
@@ -305,32 +304,6 @@ fn agent_tree(
     });
     deps.tools = with_agent_tools(&deps.tools);
     Some(tree)
-}
-
-/// `tools` plus the system connectors' tools: the browsers' while one is on (and the process has
-/// a pool), desktop control's while it is on (connectors-entry-design §9.3). Every session of a
-/// tree, sub-agents too, builds its tools from these settings.
-pub(crate) fn with_system_tools(
-    tools: &Arc<ToolRegistry>,
-    settings: &SystemSettings,
-    pool: bool,
-    embedded: bool,
-) -> Arc<ToolRegistry> {
-    let mut tools = tools.clone();
-    let builtin = settings.browser.builtin_on(embedded);
-    let yours = settings.browser.extension;
-    if pool && (builtin || yours) {
-        tools = match (builtin && yours, settings.browser.policy.script_enabled) {
-            (false, false) => extended(&tools, "browser", crate::browser::one_browser),
-            (false, true) => extended(&tools, "browser+scripts", crate::browser::one_browser_with_scripts),
-            (true, false) => extended(&tools, "browsers", crate::browser::two_browsers),
-            (true, true) => extended(&tools, "browsers+scripts", crate::browser::two_browsers_with_scripts),
-        };
-    }
-    if settings.desktop.enabled {
-        tools = extended(&tools, "desktop", crate::desktop::desktop_tools);
-    }
-    tools
 }
 
 /// `tools` plus `spawn_agent` and `send_message`, built once for each registry: the two tools
@@ -477,10 +450,16 @@ struct BuiltPrompt {
 }
 
 /// `context_window` sizes the skill catalog.
-/// The tools a session starts with, before MCP: what its prompt describes.
-fn starting_tools(deps: &KernelDeps, system: &SystemCell) -> Arc<ToolRegistry> {
+/// The deferred built-in tools a session starts with, for the catalog in its first prompt.
+fn starting_deferred(deps: &KernelDeps, system: &SystemCell) -> crate::deferred::Deferred {
     let embedded = deps.browser_pool.as_ref().is_some_and(|p| p.has_host());
-    with_system_tools(&deps.tools, &system.get(), deps.browser_pool.is_some(), embedded)
+    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded)
+}
+
+/// The tools a session starts with, before MCP: what its prompt describes. The browsers' and
+/// computer use's are deferred, and their guidelines come with their definitions.
+fn starting_tools(deps: &KernelDeps, _system: &SystemCell) -> Arc<ToolRegistry> {
+    deps.tools.clone()
 }
 
 fn build_prompt(
@@ -544,7 +523,7 @@ impl Kernel {
         let id = uuid::Uuid::now_v7().to_string();
         let created = deps.store.create(&SessionHeader::new(id.clone(), opts.cwd.clone()))?;
         let model_ref = resolved.model.reference();
-        let mcp_section = mcp.as_ref().and_then(|m| m.prompt_section());
+        let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
         // The level asked for, when the model offers it; else the provider decides. A level
         // asked for is remembered for the model, as one chosen in a session is (§18).
         let thinking = resolved.model.resolve_thinking(opts.thinking);
@@ -711,7 +690,7 @@ impl Kernel {
                 built.text.into()
             }
         };
-        let mcp_section = mcp.as_ref().and_then(|m| m.prompt_section());
+        let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
         let mut state = SessionState::new(
             history,
             mcp::compose(&system_prompt, mcp_section.as_deref()).into(),
@@ -1050,5 +1029,20 @@ mod tests {
         assert!(base.get("spawn_agent").is_none(), "sub-agents keep the tools without these two");
         let other = Arc::new(builtin_registry(BashTool::default()));
         assert!(!Arc::ptr_eq(&with_agent_tools(&other), &with));
+    }
+
+    /// Computer use is on by default with the desktop app, off in the command line, and the
+    /// user's switch decides either way (computer-use-design §3); its tools are a deferred
+    /// group, never in the tool list.
+    #[test]
+    fn computer_use_is_on_with_the_desktop_app_unless_turned_off() {
+        let mut settings = SystemSettings::of(&Config::default());
+        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app).find("cua_snapshot").is_some();
+        assert!(has(&settings, true), "the desktop app connected");
+        assert!(!has(&settings, false), "the command line");
+        settings.desktop.enabled = Some(false);
+        assert!(!has(&settings, true), "turned off");
+        settings.desktop.enabled = Some(true);
+        assert!(has(&settings, false), "turned on");
     }
 }

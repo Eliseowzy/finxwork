@@ -11,7 +11,7 @@ import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIc
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { gitBranch } from "./git";
-import { connectKernel, kernelStatus, restartKernel, retryKernel } from "./kernel";
+import { connectKernel, kernelBinary, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { platform } from "./platform";
 import { preferences, setPreferences } from "./preferences";
 import { check, download, install, setAutoDownload, snooze, updateInfo } from "./updater";
@@ -112,8 +112,10 @@ function folder(p: unknown): p is string {
  * (finx, and agent-desktop under it) as FinxWork. Windows and Linux ask for none.
  */
 async function desktopControlStatus(configured: unknown): Promise<DesktopControlStatus> {
-  // The packaged app carries its own copy beside finx, in Contents/MacOS (scripts/build-app.mjs).
-  const beside = app.isPackaged ? path.dirname(process.execPath) : null;
+  // FinxWork carries its own copy beside finx: in Contents/MacOS (scripts/build-app.mjs), and
+  // beside the repository's debug build in development (scripts/dev-agent-desktop.mjs).
+  const finx = kernelBinary();
+  const beside = finx ? path.dirname(finx) : null;
   const found = locateDesktopProgram(typeof configured === "string" && configured ? configured : undefined, undefined, undefined, beside);
   const program = found ? { path: found, version: await desktopProgramVersion(found), bundled: !!beside && path.dirname(found) === beside } : null;
   if (process.platform !== "darwin") return { program, accessibility: "unsupported", screen: "unsupported" };
@@ -228,9 +230,6 @@ export function registerIPC() {
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
   ipcMain.on("open-settings", (e, page?: string) => trusted(e) && showSettings(typeof page === "string" ? page : undefined));
-  ipcMain.on("main-command", (e, c: unknown) => {
-    if (trusted(e) && c === "showDesktopControl") command(c);
-  });
   ipcMain.handle("settings-open", (e) => trusted(e) && settingsVisible());
   ipcMain.on("relaunch", (e) => {
     if (!trusted(e)) return;

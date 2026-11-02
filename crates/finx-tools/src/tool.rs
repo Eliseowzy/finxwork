@@ -44,6 +44,13 @@ pub trait Tool: Send + Sync + 'static {
         ToolOrigin::Builtin
     }
 
+    /// Where one call's tool comes from. Differs from [`Tool::origin`] only for tools that run
+    /// another tool named in their arguments.
+    fn origin_for(&self, args: &Value) -> ToolOrigin {
+        let _ = args;
+        self.origin()
+    }
+
     /// Lines added to the "tool guidelines" part of the system prompt.
     fn guidelines(&self) -> &[&'static str] {
         &[]

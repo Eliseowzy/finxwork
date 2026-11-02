@@ -62,7 +62,7 @@ type UI = {
   renaming: string | null;
   sheet: Sheet | null;
   /** A system connector's way of connecting, open over the window (connectors-entry-design §6). */
-  connect: "yours" | "desktop" | null;
+  connect: "yours" | null;
   toast: Toast | null;
   draft: Draft;
   customize: CustomizeView;

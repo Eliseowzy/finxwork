@@ -237,6 +237,15 @@ export function argsOf(args: unknown): Record<string, unknown> {
   return args && typeof args === "object" && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
 }
 
+/**
+ * The tool a call runs: itself, or the one `call_tool` names, with that tool's arguments. The
+ * browsers' and computer use's tools are reached through call_tool (computer-use-design §5).
+ */
+export function callTarget(name: string, args: unknown): { name: string; args: Record<string, unknown> } {
+  const a = argsOf(args);
+  return name === "call_tool" && typeof a.name === "string" ? { name: a.name, args: argsOf(a.arguments) } : { name, args: a };
+}
+
 function step(v: SessionView, e: Event): SessionView {
   switch (e.type) {
     case "session_started":

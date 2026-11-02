@@ -202,10 +202,10 @@ fn next_step(code: &str, error: &Value) -> Option<&'static str> {
     Some(match code {
         PERMISSION_DENIED => PERMISSION_HINT,
         _ if kind == "window_without_accessibility_element" => OPAQUE_HINT,
-        "ACTION_NOT_SUPPORTED" => "The element cannot do that. Take a desktop_screenshot and use click_at or type_text.",
-        "POLICY_DENIED" => "This needs physical input: take a desktop_screenshot, then desktop_act with click_at, type_text or press.",
-        "APP_NOT_FOUND" | "WINDOW_NOT_FOUND" => "Start the app or open its window with desktop_launch, which waits for the window.",
-        "STALE_REF" | "ELEMENT_NOT_FOUND" | "SNAPSHOT_NOT_FOUND" => "Take a new desktop_snapshot and use its refs.",
+        "ACTION_NOT_SUPPORTED" => "The element cannot do that. Take a cua_screenshot and use click_at or type_text.",
+        "POLICY_DENIED" => "This needs physical input: take a cua_screenshot, then cua_act with click_at, type_text or press.",
+        "APP_NOT_FOUND" | "WINDOW_NOT_FOUND" => "Start the app or open its window with cua_launch, which waits for the window.",
+        "STALE_REF" | "ELEMENT_NOT_FOUND" | "SNAPSHOT_NOT_FOUND" => "Take a new cua_snapshot and use its refs.",
         "APP_UNRESPONSIVE" => "The app is not answering. Take a new snapshot or screenshot before trying again.",
         _ => return None,
     })
@@ -213,7 +213,7 @@ fn next_step(code: &str, error: &Value) -> Option<&'static str> {
 
 /// What a snapshot of an app that shows nothing through accessibility says to do instead.
 pub const OPAQUE_HINT: &str = "This app does not expose its contents through accessibility, so snapshots cannot \
-    reach them. Do not snapshot it again: take a desktop_screenshot and act with desktop_act click_at, \
+    reach them. Do not snapshot it again: take a cua_screenshot and act with cua_act click_at, \
     type_text and press, using the screenshot's pixel coordinates.";
 
 /// Whether `text` names the CLI's own commands or flags.
@@ -562,7 +562,7 @@ mod tests {
         let err = parse_envelope(failed).unwrap_err();
         assert_eq!(
             err.to_string(),
-            "APP_NOT_FOUND: No running application matches 'X' Start the app or open its window with desktop_launch, which waits for the window."
+            "APP_NOT_FOUND: No running application matches 'X' Start the app or open its window with cua_launch, which waits for the window."
         );
         assert!(!err.not_delivered(), "no disposition says nothing of delivery");
         let refused = r#"{"error":{"code":"ACTION_FAILED","message":"Application has no verified focused element for keyboard delivery","disposition":{"delivery":"not_delivered","retry":"safe"}},"ok":false}"#;
@@ -596,9 +596,9 @@ mod tests {
         assert!(err.contains("click_at") && !err.contains("--") && !err.contains("Retry with"), "{err}");
         let opaque = r#"{"error":{"code":"ACTION_NOT_SUPPORTED","details":{"kind":"window_without_accessibility_element"},"message":"Window 'w-1' exists but is not exposed through accessibility","suggestion":"Target another window from 'list-windows'."},"ok":false}"#;
         let err = parse_envelope(opaque).unwrap_err().to_string();
-        assert!(err.contains("desktop_screenshot") && !err.contains("list-windows"), "{err}");
+        assert!(err.contains("cua_screenshot") && !err.contains("list-windows"), "{err}");
         let gone = r#"{"error":{"code":"APP_NOT_FOUND","message":"No running application matches 'X'","suggestion":"Run `agent-desktop launch X`."},"ok":false}"#;
-        assert!(parse_envelope(gone).unwrap_err().to_string().contains("desktop_launch"));
+        assert!(parse_envelope(gone).unwrap_err().to_string().contains("cua_launch"));
         let other = r#"{"error":{"code":"INTERNAL","message":"AX call failed","suggestion":"Run agent-desktop status --verbose."},"ok":false}"#;
         assert_eq!(parse_envelope(other).unwrap_err().to_string(), "INTERNAL: AX call failed");
         let only_flags = r#"{"error":{"code":"INVALID_ARGS","message":"--xy needs two numbers"},"ok":false}"#;

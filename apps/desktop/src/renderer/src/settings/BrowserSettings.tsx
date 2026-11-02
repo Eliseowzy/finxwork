@@ -7,24 +7,25 @@ import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { BuiltInBrowser } from "./BuiltInBrowser";
 
-// Settings › Browser: what the agent's two browsers share (connectors-entry-design §8). The
-// built-in browser's switch; the user's own browser, whose row says whether it is connected and
-// in use and offers the one thing to do ("Connect" walks through the setup: pick the browser,
-// the app registers finx, the user adds the extension, and the app waits for it to connect,
-// then turns it on); the site permissions of both; scripts; and the address bar of the
-// browser panel.
+// Settings › Browser (browser-design §10.1): whether FinxWork controls browsers, and which one a
+// page opens in by default; the user's own browser, whose row says whether it is connected and
+// offers the one thing to do ("Connect" walks through the setup: pick the browser, the app
+// registers finx, the user adds the extension, and the app waits for it to connect, then turns
+// it on); the site permissions of both; and the built-in browser's own search, for the browser
+// panel. Page scripts are on and not shown (each still asks before it runs).
 
 /** The extension's page in the Chrome Web Store, once it is published; until then the guide loads it from its folder. */
 const STORE_URL = "";
 
-/** `[browser]` as this page reads it. `builtin` and `extension` are null when not set: the built-in browser is then on in this app, the user's own browser not connected yet. */
+/** `[browser]` as this page reads it. `enabled` and `extension` are null when not set: browser control is then on in this app, the user's own browser not connected yet. */
 export type BrowserConfig = {
-  builtin: boolean | null;
+  enabled: boolean | null;
   extension: boolean | null;
+  /** Where a page opens when the agent names no browser. */
+  default: "builtin" | "yours";
   /** The old way of choosing the user's own browser, rewritten on the next write. */
   legacyBackend: boolean;
   sites: [string, string][];
-  scripts: boolean;
 };
 
 /** finx's word on the browsers (browser/status, then browser/changed), and the [browser] settings. */
@@ -39,12 +40,12 @@ export function useBrowserState() {
     const legacyBackend = browser.backend === "extension";
     const sites = Object.entries((browser.sites ?? {}) as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string");
     setConfig({
-      builtin: typeof browser.enabled === "boolean" ? browser.enabled : null,
+      enabled: typeof browser.enabled === "boolean" ? browser.enabled : null,
       extension: typeof browser.extension === "boolean" ? browser.extension : legacyBackend ? true : null,
+      default: browser.default === "yours" ? "yours" : "builtin",
       legacyBackend,
       // "All sites" first, then by origin.
       sites: sites.sort(([a], [b]) => (a === "*" ? -1 : b === "*" ? 1 : a.localeCompare(b))),
-      scripts: browser.script_enabled === true,
     });
   }, [st.rpc]);
   useEffect(() => {
@@ -147,29 +148,51 @@ export function BrowserSettings() {
     : state === "outdated" ? <span className="badge warn">{t("browser.badge.outdated")}</span>
     : <span className="badge">{t("browser.badge.off")}</span>;
 
+  // Browser control: not set, on in this app.
+  const control = config?.enabled !== false;
+  // The user's browser can be the default once it is connected for the agent.
+  const yoursName = inUse ? (connected?.browser?.replace(/ (\d+)(\.\d+)+$/, "") ?? mine?.name ?? "Chrome") : null;
+  const defaultBrowser = config?.default === "yours" && yoursName ? "yours" : "builtin";
+
   return (
     <div className="form browser-set">
       <section>
-        <h3 className="fhead">{t("browser.agent")}</h3>
         <div className="fgroup">
           <div className="frow">
             <div className="ft">
-              <div className="fn">{t("browser.builtin")}</div>
-              <div className="fdesc">{t("browser.builtinDesc")}</div>
+              <div className="fn">{t("browser.control")}</div>
+              <div className="fdesc">{t(control ? "browser.controlOn" : "browser.controlOff")}</div>
             </div>
-            {/* Not set: on in this app (connectors-entry-design §9.1). */}
-            <Switch
-              on={config?.builtin ?? true}
-              label={t("browser.builtin")}
-              disabled={!config || busy}
-              onChange={(on) => void act(() => write([{ key_path: "browser.enabled", value: on }]))}
-            />
+            <Switch on={control} label={t("browser.control")} disabled={!config || busy} onChange={(on) => void act(() => write([{ key_path: "browser.enabled", value: on }]))} />
           </div>
-          <div className="frow mrow">
+          {/* Always there; while browser control is off, it cannot be changed. */}
+          <div className={`frow default-browser ${control ? "" : "off"}`}>
+            <div className="ft">
+              <div className="fn">{t("browser.default")}</div>
+              <div className="fdesc">{t("browser.defaultDesc")}</div>
+            </div>
+            <select
+              className="psel"
+              aria-label={t("browser.default")}
+              value={defaultBrowser}
+              disabled={!config || busy || !control}
+              onChange={(e) => void act(() => write([{ key_path: "browser.default", value: e.target.value }]))}
+            >
+              <option value="builtin">{t("browser.builtin")}</option>
+              {yoursName && <option value="yours">{t("browser.yoursOption", { name: yoursName })}</option>}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h3 className="fhead">{t("browser.title")}</h3>
+        <div className="fgroup">
+          <div className="frow mrow yours-row">
             <BrowserMark id={mine?.id} />
             <div className="ft">
               <div className="fn">
-                {state === "on" || state === "ready" ? name : t("browser.title")} {badge}
+                {state === "on" || state === "ready" ? name : t("browser.connectTitle")} {state !== "none" && state !== "off" && badge}
               </div>
               <div className={`fdesc ${state === "lost" || state === "outdated" ? "warn" : ""}`}>{desc}</div>
             </div>
@@ -180,10 +203,10 @@ export function BrowserSettings() {
               <button className="btn primary" disabled={!st.rpc} onClick={() => setGuide(true)}>{t("browser.connect")}</button>
             )}
             {state === "ready" && (
-              <button className="btn primary" disabled={busy} onClick={() => void act(() => use(true))}>{t("browser.start")}</button>
+              <button className="btn primary" disabled={busy} onClick={() => void act(() => use(true))}>{t("browser.connect")}</button>
             )}
             {state === "on" && (
-              <button className="btn" disabled={busy} onClick={() => void act(() => use(false))}>{t("browser.stop")}</button>
+              <button className="btn" disabled={busy} onClick={() => void act(() => use(false))}>{t("browser.disconnect")}</button>
             )}
             {state === "outdated" && problem === "update_extension" && mine && (
               <button className="btn" onClick={() => void window.finx?.openSystemBrowser(mine.id, "extensions")}>{t("browser.guide.openExtensions")}</button>
@@ -202,26 +225,8 @@ export function BrowserSettings() {
           </div>
         </div>
         {error && <p className="mrow-err">{error}</p>}
-        <p className="set-note">{t("browser.note")}</p>
       </section>
       {config && <SitePermissions sites={config.sites} write={(edits) => act(() => write(edits))} />}
-      <section>
-        <h3 className="fhead">{t("browser.scripts")}</h3>
-        <div className="fgroup">
-          <div className="frow">
-            <div className="ft">
-              <div className="fn">{t("browser.scriptsOn")}</div>
-              <div className="fdesc">{t("browser.scriptsDesc")}</div>
-            </div>
-            <Switch
-              on={!!config?.scripts}
-              label={t("browser.scriptsOn")}
-              disabled={!config || busy}
-              onChange={(on) => void act(() => write([{ key_path: "browser.script_enabled", value: on }]))}
-            />
-          </div>
-        </div>
-      </section>
       <BuiltInBrowser />
       {guide && browsers && (
         <Guide
@@ -476,12 +481,16 @@ function SitePermissions({ sites, write }: { sites: [string, string][]; write: (
           </div>
         )}
         {sites.map(([origin, level]) => {
-          const name = origin === "*" ? t("browser.allSites") : origin;
+          const all = origin === "*";
+          const name = all ? t("browser.allSites") : origin.replace(/^https:\/\//, "");
           return (
-            <div className="frow site-row" key={origin}>
+            <div className={`frow mrow site-row ${level === "deny" ? "denied" : ""}`} key={origin}>
+              <span className="site-icon">
+                <Icon name="globe" />
+              </span>
               <div className="ft">
-                <div className={`fn ${origin === "*" ? "" : "mono"}`}>{name}</div>
-                {origin === "*" && <div className="fdesc">{t("browser.allSitesDesc")}</div>}
+                <div className={`fn ${all ? "" : "mono"}`} title={all ? undefined : origin}>{name}</div>
+                {all && <div className="fdesc">{t("browser.allSitesDesc")}</div>}
               </div>
               <select
                 className="psel"
@@ -490,14 +499,14 @@ function SitePermissions({ sites, write }: { sites: [string, string][]; write: (
                 onChange={(e) => void write([{ key_path: siteKey(origin), value: e.target.value }])}
               >
                 {/* "All sites" is never refused as a whole: that is the domain lists' job. */}
-                {LEVELS.filter((l) => origin !== "*" || l !== "deny").map((l) => (
+                {LEVELS.filter((l) => !all || l !== "deny").map((l) => (
                   <option key={l} value={l}>
                     {t(`browser.level.${l}`)}
                   </option>
                 ))}
               </select>
-              <button className="btn" aria-label={t("browser.removeSite", { site: name })} onClick={() => void write([{ key_path: siteKey(origin), value: null }])}>
-                {t("browser.remove")}
+              <button className="tb" title={t("browser.removeSite", { site: name })} aria-label={t("browser.removeSite", { site: name })} onClick={() => void write([{ key_path: siteKey(origin), value: null }])}>
+                <Icon name="trash" />
               </button>
             </div>
           );

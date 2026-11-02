@@ -7,9 +7,9 @@
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node scripts/dev-agent-desktop.mjs && electron-vite dev",
     "web": "vite --config vite.web.config.ts",
-    "build": "electron-vite build",
+    "build": "node scripts/dev-agent-desktop.mjs && electron-vite build",
     "start": "electron-vite preview",
     "app": "node scripts/build-app.mjs",
     "release": "node scripts/release.mjs",

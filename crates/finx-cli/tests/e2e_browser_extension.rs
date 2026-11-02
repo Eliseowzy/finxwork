@@ -218,6 +218,25 @@ async fn a_session_drives_the_users_chrome_through_the_extension() {
     let urls = pages(&chrome).await;
     assert!(urls.contains(&yours_page) && !urls.contains(&builtin_page), "the built-in page is not in the user's Chrome: {urls:?}");
 
+    // The user's own browser made the default: a page opened without naming a browser goes there.
+    let written = client
+        .request("config/write", json!({"layer": "user", "edits": [{"key_path": "browser.default", "value": "yours"}]}))
+        .await
+        .expect("the default is written");
+    assert_eq!(written["status"], "ok", "{written}");
+    let default_page = serve_page("<title>Default</title><h1>Where the default sends it</h1>").await;
+    let mut opened = false;
+    for _ in 0..50 {
+        let turn = native_prompt(&client, &mut events, &session, &format!("[[mock:default_browser:{default_page}]] default"), true).await;
+        assert_eq!(turn.end["type"], "task_completed", "{:?}", turn.events);
+        if pages(&chrome).await.contains(&default_page) {
+            opened = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(opened, "the page did not open in the user's Chrome: {:?}", pages(&chrome).await);
+
     // Closing the session closes the agent's tab, and only that one.
     client.request("session/close", json!({"session_id": session})).await.unwrap();
     let mut urls = Vec::new();
