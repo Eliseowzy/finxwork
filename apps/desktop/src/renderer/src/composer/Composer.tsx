@@ -10,6 +10,7 @@ import { useStore } from "../store";
 import { addAttachments, attachEvent, pickFiles, pickFolder, type Attachment } from "./attachments";
 import { ConnectorsItem } from "./ConnectorsMenu";
 import { QuickSwitches } from "./QuickSwitches";
+import { SkillsItem } from "./SkillsMenu";
 import { keyEvent } from "./KeySetup";
 import { PromptEditor, type EditorHandle } from "./PromptEditor";
 import { Tile } from "./Tile";
@@ -100,7 +101,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
         <div className="cmp" onMouseDown={(e) => e.target instanceof HTMLElement && e.target.matches(".cmp,.cmp-row,.cmp-att") && (e.preventDefault(), area.current?.focus())}>
           {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} />}
           <div className="cmp-row">
-            <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} />
+            <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} commands={commands} onSkill={(name) => area.current?.insertSkill(name)} />
             <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} placeholder={placeholder} label={t("composer.label")} commands={commands} />
             {stop ? (
               <button className="send stop" onClick={stop} title={t("composer.stop")} aria-label={t("composer.stop")}>
@@ -140,8 +141,14 @@ function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number)
   );
 }
 
-/** "+": add files or photos (⌘U), or a folder; then the connectors (connectors-entry-design §7). The app menu's items reach it too. */
-function PlusMenu({ attachments, onAttachments }: { attachments: Attachment[]; onAttachments: (a: Attachment[]) => void }) {
+/** "+": add files or photos (⌘U), or a folder; the browser and computer use switches; then the connectors (connectors-entry-design §7) and the skills. The app menu's items reach it too. */
+function PlusMenu({ attachments, onAttachments, commands, onSkill }: {
+  attachments: Attachment[];
+  onAttachments: (a: Attachment[]) => void;
+  commands: CommandInfo[];
+  /** Puts a skill in the message, as a tag where the caret was. */
+  onSkill: (name: string) => void;
+}) {
   const { t } = useTranslation("session");
   const latest = useRef({ attachments, onAttachments });
   latest.current = { attachments, onAttachments };
@@ -165,6 +172,7 @@ function PlusMenu({ attachments, onAttachments }: { attachments: Attachment[]; o
           <QuickSwitches close={close} />
           <div className="msep" role="separator" />
           <ConnectorsItem close={close} />
+          <SkillsItem commands={commands} close={close} onPick={onSkill} />
         </>
       )}
     </MenuButton>
@@ -270,10 +278,13 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
     if (!open || !row.current || !sub.current) return setAt(null);
     const place = () => {
       if (!row.current || !sub.current) return;
-      const m = row.current.closest("[role=menu]")!.getBoundingClientRect();
+      const menu = row.current.closest("[role=menu]")!;
+      const m = menu.getBoundingClientRect();
       const r = row.current.getBoundingClientRect();
       const { offsetWidth: w, offsetHeight: h } = sub.current;
-      setAt({ left: m.right + w + 4 > innerWidth ? m.left - w - 2 : m.right + 2, top: Math.max(8, Math.min(r.top - 5, innerHeight - 8 - h)) });
+      // It grows the way its menu does: from the row's top down, or (a menu over the composer) from the row's bottom up.
+      const top = menu.classList.contains("down") ? r.top - 5 : r.bottom + 5 - h;
+      setAt({ left: m.right + w + 4 > innerWidth ? m.left - w - 2 : m.right + 2, top: Math.max(8, Math.min(top, innerHeight - 8 - h)) });
     };
     place();
     if (open.key) (sub.current.querySelector<HTMLElement>("[aria-checked=true]") ?? sub.current.querySelector<HTMLElement>("[role^=menuitem]"))?.focus();
@@ -313,7 +324,8 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
           aria-label={title}
           tabIndex={-1}
           ref={sub}
-          style={at ? { left: at.left, top: at.top } : { visibility: "hidden", left: 0, top: 0 }}
+          // Not yet placed: unseen, but focusable, for the keyboard's first item.
+          style={at ? { left: at.left, top: at.top } : { opacity: 0, left: 0, top: 0 }}
           onKeyDown={(e) => {
             if (e.key === "ArrowLeft" || e.key === "Escape") {
               e.preventDefault();

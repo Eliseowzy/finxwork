@@ -13,10 +13,13 @@ import {
   $createLineBreakNode,
   $createParagraphNode,
   $createTextNode,
+  $getNodeByKey,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
   $isTextNode,
+  $setSelection,
   BLUR_COMMAND,
   CLEAR_HISTORY_COMMAND,
   COMMAND_PRIORITY_LOW,
@@ -28,13 +31,19 @@ import {
   TextNode,
   type ElementNode,
   type LexicalEditor,
+  type PointType,
+  type RangeSelection,
 } from "lexical";
 import { isMentionable, mentions } from "@finx/client";
 import type { CommandInfo } from "@finx/protocol";
 import { Icon } from "../icons";
 import { $createSkillNode, $isSkillNode, CommandsContext, SkillNode } from "./SkillNode";
 
-export type EditorHandle = { focus: () => void };
+export type EditorHandle = {
+  focus: () => void;
+  /** Puts a skill's tag where the caret was (at the end when it was nowhere), as choosing it from `/` does. */
+  insertSkill: (name: string) => void;
+};
 
 /**
  * The composer's text, on Lexical's plain text mode. It holds plain text, as the composer
@@ -356,10 +365,29 @@ function $insertCommand(command: CommandInfo, node: TextNode | null) {
     return;
   }
   const tag = $createSkillNode(command.name.slice("skill:".length));
-  const before = node.getPreviousSibling()?.getTextContent().slice(-1) ?? "";
   node.replace(tag);
+  $standAlone(tag);
+}
+
+/** Puts a skill's tag at `caret`, still where it was (or at the end), in place of what it selected. */
+function $insertSkill(name: string, caret: RangeSelection | null) {
+  const fits = (p: PointType) => {
+    const n = $getNodeByKey(p.key);
+    return n !== null && n.isAttached() && p.offset <= (p.type === "text" ? n.getTextContentSize() : $isElementNode(n) ? n.getChildrenSize() : 0);
+  };
+  if (caret && fits(caret.anchor) && fits(caret.focus)) $setSelection(caret.clone());
+  else $getRoot().selectEnd();
+  const selection = $getSelection();
+  if (!$isRangeSelection(selection)) return;
+  const tag = $createSkillNode(name);
+  selection.insertNodes([tag]);
+  $standAlone(tag);
+}
+
+/** A space after a tag just put in, with the caret after it, and one before it when the text there would hold on to it. */
+function $standAlone(tag: SkillNode) {
   // Right after a letter or a tag, a mention would not stand on its own.
-  if (/[A-Za-z0-9/\\.:~_\-@#%&=?+$*]/.test(before)) tag.insertBefore($createTextNode(" "));
+  if (/[A-Za-z0-9/\\.:~_\-@#%&=?+$*]/.test(tag.getPreviousSibling()?.getTextContent().slice(-1) ?? "")) tag.insertBefore($createTextNode(" "));
   const space = $createTextNode(" ");
   tag.insertAfter(space);
   space.select(1, 1);
@@ -409,9 +437,31 @@ function CommandMenu({ editor, options, selected, onPick, onHover, label }: {
   );
 }
 
-/** Lets the composer put the caret in the editor. */
+/** Lets the composer put the caret in the editor, and a skill where the caret was. */
 const Handle = forwardRef<EditorHandle>(function Handle(_, ref) {
   const [editor] = useLexicalComposerContext();
-  useImperativeHandle(ref, () => ({ focus: () => editor.focus() }), [editor]);
+  // Where the caret was last: the "+" menu has taken the focus by the time a skill is chosen there.
+  const caret = useRef<RangeSelection | null>(null);
+  useEffect(
+    () =>
+      editor.registerUpdateListener(({ editorState }) =>
+        editorState.read(() => {
+          const selection = $getSelection();
+          if ($isRangeSelection(selection)) caret.current = selection.clone();
+        }),
+      ),
+    [editor],
+  );
+  useImperativeHandle(
+    ref,
+    () => ({
+      focus: () => editor.focus(),
+      insertSkill: (name) => {
+        editor.update(() => $insertSkill(name, caret.current));
+        editor.focus();
+      },
+    }),
+    [editor],
+  );
   return null;
 });

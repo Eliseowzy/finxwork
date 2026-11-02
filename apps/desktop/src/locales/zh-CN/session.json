@@ -189,7 +189,11 @@
     "browserOff": "已关闭浏览器控制，所有对话从下一步起不再使用浏览器",
     "computerOn": "已打开电脑操控，所有对话从下一步起可以使用",
     "computerOff": "已关闭电脑操控，所有对话从下一步起不再操作其他应用",
-    "noConnectors": "还没有连接器"
+    "noConnectors": "还没有连接器",
+    "skills": "技能",
+    "browseSkills": "浏览技能",
+    "manageSkills": "管理技能",
+    "noSkills": "还没有可用的技能"
   },
   "inspector": {
     "label": "会话信息",
