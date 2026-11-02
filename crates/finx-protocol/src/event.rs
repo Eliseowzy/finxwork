@@ -241,7 +241,11 @@ pub enum EventMsg {
     /// `spawn_agent` started a sub-agent: a session of its own, hidden from session lists.
     AgentStarted {
         agent_id: String,
+        /// Its handle: how the main agent addresses it.
         name: String,
+        /// What the user sees for it: a few words on what it works on.
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        description: String,
         session_file: PathBuf,
         /// The `spawn_agent` call that started it.
         call_id: String,

@@ -369,15 +369,16 @@ export class MockServer {
   /** spawn_agent's call completed: the agent starts, in the background. Its result's details. */
   private spawnAgent(root: Session, call_id: string, t: ToolScript): Record<string, unknown> {
     const name = typeof t.args.name === "string" ? t.args.name : "agent";
+    const description = typeof t.args.description === "string" ? t.args.description : "";
     const task = typeof t.args.task === "string" ? t.args.task : "";
     const script = root.scenario?.agents.find((a) => a.name === name)?.script ?? { turns: [{ say: "完成了。" }] };
     const id = crypto.randomUUID();
     const session_file = root.view.info.session_file.replace(/[^/]*\.jsonl$/, `${id}.jsonl`);
-    const info: SessionInfo = { ...root.view.info, session_id: id, session_file, title: name, archived: false };
+    const info: SessionInfo = { ...root.view.info, session_id: id, session_file, title: description || name, archived: false };
     const view = fromSnapshot({ session: info, last_seq: 0, transcript: { items: [] }, usage: { per_model: {} } });
     const child: Session = { id, view, summary: root.summary, seq: 0, queue: [], tasks: 0, children: [], mails: [], parent: { root, name }, roundStart: this.now() };
     root.children.push(child);
-    this.emit(root, { type: "agent_started", agent_id: id, name, session_file, call_id });
+    this.emit(root, { type: "agent_started", agent_id: id, name, description, session_file, call_id });
     child.run = { cancelled: false, approvals: new Map() };
     this.startTask(child, [{ type: "text", text: agentTask(name, task) }]);
     void this.play(child, script);
@@ -964,7 +965,7 @@ function snapshotOf(v: SessionView, limit = 100): SessionSnapshot {
     agents: v.agents.map((a) => {
       const own = snapshotOf(a.view, limit);
       return {
-        agent_id: a.id, name: a.name, call_id: a.call_id, session_file: a.view.info.session_file, status: a.status, since: a.since,
+        agent_id: a.id, name: a.name, description: a.description, call_id: a.call_id, session_file: a.view.info.session_file, status: a.status, since: a.since,
         summary: a.summary, usage: a.usage, error: a.error, elapsed_ms: a.elapsed_ms, transcript: own.transcript, active_task: own.active_task,
       };
     }),

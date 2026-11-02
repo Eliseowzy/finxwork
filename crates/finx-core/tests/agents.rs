@@ -164,7 +164,7 @@ impl Harness {
 }
 
 fn spawn(id: &str, name: &str, task: &str, wait: bool) -> Script {
-    Script::tool_call(id, "spawn_agent", json!({ "task": task, "name": name, "wait": wait }))
+    Script::tool_call(id, "spawn_agent", json!({ "description": format!("{name} work"), "task": task, "name": name, "wait": wait }))
 }
 
 fn user_texts(context: &Context) -> Vec<String> {
@@ -257,6 +257,15 @@ async fn a_background_agent_reports_and_wakes_the_main_agent() {
     let child_tools: Vec<&str> = child[0].tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(child_tools, ["read", "write", "edit", "bash"], "no agent tools for a sub-agent");
 
+    // The label the user sees comes with its start and stays in the main session's log.
+    let label = events.iter().find_map(|e| match &e.msg {
+        EventMsg::AgentStarted { description, .. } => Some(description.clone()),
+        _ => None,
+    });
+    assert_eq!(label.as_deref(), Some("counter work"));
+    let log = std::fs::read_to_string(h.kernel.session_file()).unwrap();
+    assert!(log.lines().any(|l| l.contains("\"agent_spawned\"") && l.contains("\"description\":\"counter work\"")), "{log}");
+
     // Its session is an ordinary log that names the parent, but it is not listed.
     let (agent_id, _, file) = agent_ids(&events).pop().unwrap();
     let store = h.store();
@@ -293,9 +302,9 @@ async fn waiting_spawns_in_one_reply_run_in_parallel() {
     let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
     h.script(
         ROOT,
-        Script::tool_call("c1", "spawn_agent", json!({ "task": "a", "name": "a", "wait": true }))
-            .then_tool_call("c2", "spawn_agent", json!({ "task": "b", "name": "b", "wait": true }))
-            .then_tool_call("c3", "spawn_agent", json!({ "task": "c", "name": "c", "wait": true })),
+        Script::tool_call("c1", "spawn_agent", json!({ "description": "a work", "task": "a", "name": "a", "wait": true }))
+            .then_tool_call("c2", "spawn_agent", json!({ "description": "b work", "task": "b", "name": "b", "wait": true }))
+            .then_tool_call("c3", "spawn_agent", json!({ "description": "c work", "task": "c", "name": "c", "wait": true })),
     );
     h.script(ROOT, Script::text("all done"));
     for name in ["a", "b", "c"] {

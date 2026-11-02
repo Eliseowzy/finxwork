@@ -184,6 +184,9 @@ pub struct SystemPromptEntry {
 pub struct AgentSpawnedEntry {
     pub agent_id: String,
     pub name: String,
+    /// What the user sees for it; agents from before the label have none.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     pub session_file: PathBuf,
     pub call_id: String,
 }

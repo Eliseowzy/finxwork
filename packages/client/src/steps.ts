@@ -34,6 +34,8 @@ export type WorkItem =
 export interface AgentLaunch {
   call_id: string;
   name: string;
+  /** What the user sees for it; empty for calls from before it had one. */
+  description: string;
   task: string;
   agent?: AgentView;
 }
@@ -171,7 +173,8 @@ export function conversation(v: SessionView): Step[] {
         const agent = byCall.get(c.id);
         const named = detailsOf(results.get(c.id)).name;
         const name = agent?.name ?? (typeof named === "string" ? named : typeof args.name === "string" ? args.name : "agent");
-        launch({ call_id: c.id, name, task: typeof args.task === "string" ? args.task : "", agent });
+        const description = agent?.description || (typeof args.description === "string" ? args.description.trim() : "");
+        launch({ call_id: c.id, name, description, task: typeof args.task === "string" ? args.task : "", agent });
       } else {
         work({ kind: "tool", key: c.id, tool: call(c) });
       }

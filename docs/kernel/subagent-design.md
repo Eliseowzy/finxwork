@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.9 |
-| 日期 | 2026-10-29 |
+| 版本 | v2.0 |
+| 日期 | 2026-11-02 |
 | 状态 | 已定稿；一期已实现并通过验收（§15）；二期、三期未开始 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §2 核心概念、§6 内核运行时、§8 对外协议、§9 会话持久化；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
 
@@ -11,10 +11,10 @@
 
 - **是什么**：主智能体按任务复杂度，把工作交给子智能体。子智能体是独立的普通会话，在后台并行工作，做完自动汇报。
 - **两个工具，只有主智能体有**：
-  - `spawn_agent(task, name, wait)`：创建子智能体；
+  - `spawn_agent(description, task, name, wait)`：创建子智能体，`description` 是给用户看的标签；
   - `send_message(to, message, wait, interrupt)`：给子智能体发消息。
   - 默认异步：调用立即返回，主智能体可以继续工作、继续和用户对话。
-  - `wait: true` 时同步，等子做完再返回汇报；同一条回复里的多个同步调用并发执行，相当于"等全部"。
+  - `wait: true` 时同步，等子做完再返回汇报；同一条回复里的多个同步调用并发执行。只有本条回复的下一步需要汇报时才用，要等后台的子智能体就结束本轮。
 - **子智能体只干活**：
   - 只有 read、write、edit、bash；
   - 不审批，不能再创建子智能体，也不能在运行中给父发消息；
@@ -113,6 +113,7 @@
 | v1.8 | 2026-10-29 | 二期的一部分：桌面端显示子智能体与后台任务面板（desktop-design §5.10）所需的协议能力：`agent_event`、`agent_status.elapsed_ms`、快照里的 `agents`、历史里汇报消息的 `mail`、Op `agent_interrupt`；服务层在子智能体工作时把会话列为进行中；`spawn_agent`、`send_message` 的结果 details 说明汇报怎么来（§11、§15、附录 A.4）。真实模型端到端测试见 §15 |
 | v1.7 | 2026-10-29 | 两个智能体工具不再随会话构造：`ToolCtx` 增加对 finx-tools 不透明的 `session_state`，工具调用时从中取发起调用的会话的智能体树；基础工具加这两个工具的注册表，按基础工具只建一份，工具相同的主会话共用。会话的内部通道改为传装箱的消息。合并一期后每个空闲主会话多出的约 15 KiB 内存回到合并前的水平，见总方案 §1.4（§2、§6.1、§14.2） |
 | v1.9 | 2026-10-29 | 没有回复的汇报：MailInfo 带 `no_reply`，`agent_status` 不带 summary，客户端显示自己的文字（§15 二期，protocol-design v0.12） |
+| v2.0 | 2026-11-02 | 两个工具的文本重写，更短：后台运行写成等待的方式，"结束本轮不是最终答复"；`wait` 只在本条回复的下一步需要汇报时用，写进描述和参数说明；删去"同一条回复里多个 `wait=true` 同时运行"（附录 A.1）。转入后台的工具结果也加上"这不是最终答复"（附录 A.4）。`spawn_agent` 新增必填参数 `description`：给用户看的标签，与给子的 `task` 分开；记入 `agent_spawned`，`agent_started` 和快照的 `agents` 带上它，桌面端、命令行和 ACP 用它显示子智能体（§6.2、§9.2、§11.1）。起因与对比实验见 §15 |
 
 ## 1. 目标与原则
 
@@ -380,9 +381,10 @@ impl AgentTree {
 
 | 参数 | 类型 | 默认 | 说明 |
 |---|---|---|---|
-| `task` | string，必填 | — | 完整的任务说明：目标、背景、约束、期望的产出 |
+| `description` | string，必填 | — | 给用户看的标签：它做什么，用用户的语言，20 个汉字或 5 个词以内。界面、命令行和 ACP 用它显示子智能体；不写进子的任务说明 |
+| `task` | string，必填 | — | 完整的任务说明，子知道的全部：目标、已知或已排除的情况、要读和可以改的文件、汇报什么 |
 | `name` | string | 自动生成 | 短名，之后用它寻址 |
-| `wait` | boolean | false | false：后台运行，立即返回；true：等它空闲，返回汇报 |
+| `wait` | boolean | false | false：后台运行，立即返回；true：等它空闲，返回汇报。只在本条回复的下一步需要汇报时用 |
 
 结果（文本见附录 A.4）：
 
@@ -400,7 +402,7 @@ impl AgentTree {
 |---|---|---|---|
 | `to` | string，必填 | — | 某个子智能体的名字或 id |
 | `message` | string，必填 | — | 消息正文 |
-| `wait` | boolean | false | 等它空闲，返回它的汇报 |
+| `wait` | boolean | false | 等它空闲，返回它的汇报。只在本条回复的下一步需要汇报时用 |
 | `interrupt` | boolean | false | 先中断它当前的任务，再处理这条消息 |
 
 按子的状态处理：
@@ -420,8 +422,10 @@ impl AgentTree {
 **给父**：只写在 `spawn_agent` 的工具描述里（附录 A.1），不在系统提示词里另加段落，两个工具的 `guidelines()` 都为空。主流产品也是把委派的指导写在委派工具的描述里。描述只讲四件事：
 - 什么样的工作值得委派：能独立完成、步骤多的工作，例如大范围搜索、互不相关的修改、长时间的排查、跑测试。很快能做完的、阻塞后续步骤的、和当前工作紧密耦合的，自己做。
 - 可以并行，但同一个文件不能同时改：互不依赖的任务在同一条回复里一起创建；只读的工作可以随意重叠；每个子分到自己要改的文件，必须改同一个文件的任务依次进行，主智能体自己也不改正在运行的子要改的文件（§6.5）。
-- 子看不到当前对话，它需要的背景都要写进 `task`。
-- 默认后台运行，汇报到达时会唤醒自己，所以可以继续工作，也可以结束这一轮；离开结果就无法继续时，才用 `wait: true`。
+- 子看不到当前对话，`task` 是它知道的全部；要写什么列在 `task` 的参数说明里。
+- 默认后台运行，汇报以新消息送达，结束本轮之后也会来；所以要等就结束本轮，这不是最终答复。只有本条回复的下一步需要汇报时，才用 `wait: true`。描述不再说"同一条回复里的多个同步调用同时运行"：后台运行本来就能并行，这句话把模型引向同步等待（§15）。
+
+`description` 是给用户看的标签，要求只写在它的参数说明里：用用户的语言，20 个汉字或 5 个词以内。它和 `task` 分开，界面不必再从任务说明里截一句来显示；它不写进子的任务说明。
 
 名字、状态、错误这些信息都在工具结果里，不需要提前说明。子不能审批这件事也不写进描述：模型不了解权限模式（D-35），子被拒绝的调用会写在汇报里。汇报用 `<agent_report agent="…">` 包起来，来源已经清楚，不再另加"这不是用户说的话"一类的提示；权限由内核判定，不受汇报内容影响。
 
@@ -598,7 +602,7 @@ pub struct AgentOrigin {
 
 | 条目 | 写在哪 | 内容 | 用途 |
 |---|---|---|---|
-| `agent_spawned` | 父会话 | `agent_id`、`name`、`session_file`、`call_id` | 恢复时重建登记表（§9.4） |
+| `agent_spawned` | 父会话 | `agent_id`、`name`、`description`（v2.0 起；之前的条目没有）、`session_file`、`call_id` | 恢复时重建登记表（§9.4） |
 | `mail` | 收件方会话 | `mail: {id, from, kind, status}` 加 `message` | 投递记录，同时就是模型看到的内容 |
 
 ### 9.3 列表与"最近会话"
@@ -663,7 +667,7 @@ pub struct AgentOrigin {
 
 | 事件 | 字段 | 发在哪 |
 |---|---|---|
-| `agent_started` | `agent_id`、`name`、`session_file`、`call_id` | 根会话 |
+| `agent_started` | `agent_id`、`name`、`description`（给用户看的标签，v2.0 起；没有时不出现）、`session_file`、`call_id`。快照的 `agents` 同样带 `description` | 根会话 |
 | `agent_status` | `agent_id`、`name`、`status`（§4.3）；进入空闲时另带 `summary`（汇报开头约 200 个字符）、`usage`（这轮工作的用量）、`error`、`elapsed_ms`（这轮工作的用时） | 根会话 |
 | `agent_event`（二期，已实现） | `agent_id`、`event`：子会话自己改变对话的事件，原样转发（§15 二期） | 根会话 |
 | `idle` | 无 | 每个会话进入空闲时发一次（§11.3） |
@@ -932,6 +936,40 @@ crates/finx-core/src/agents/
   - 中途接入的 B 与从头接入的 A 最终完全一致；
   - 只有子智能体在工作时，会话列表显示为进行中，最后回到空闲。
 
+- **v2.0：标签与更短的工具文本（2026-11-02）**
+  - **起因**：一次桌面端的真实运行（千问办公 `flash`，思考 medium）。第一轮回答了"恒生科技为什么持续下跌"，第二轮用户说"多派些 agent，从宏观、微观、分析师等各个角度充分研究一下"。主智能体先打算后台派出、结束本轮，随后改成 6 个 `wait=true`：思考里引用了旧描述的"没有结果就无法继续时才用 wait=true"，认为汇总需要结果；又看中"同一条回复里多个同步调用同时运行"，可以一次拿全汇报。同步等待期间没有模型请求，桌面端的运行行没有内容可显示，汇报也只作为工具结果返回，不出现汇报卡片。另外，派出卡片显示的是英文名字和任务的首句（"macro 你是一名宏观/流动性研究员。"），看不出各自在做什么。
+  - **修改**：附录 A.1 的工具文本；`spawn_agent.description`（§6.2）；`agent_spawned`、`agent_started`、快照的 `agents` 带上它（§9.2、§11.1）；桌面端、命令行和 ACP 显示它（desktop-design v0.9）。
+  - **测试**：内核端到端用例检查标签进入 `agent_started` 和日志；会话镜像 1 例；客户端 1 例（调用里的标签、`agent_started` 之后的标签、没有标签的旧调用）。
+  - **对比实验**：每次运行在全新目录里用 `finx exec`，记下主智能体派出时是否 `wait=true`，以及后台派出后的下一步，知道后就结束这次运行。旧版即改动前的提交。
+
+    | 场景 | 版本 | 有效次数 | `wait=true` | 后台派出后结束本轮 | 后台派出后 sleep | 后台派出后继续调用工具 |
+    |---|---|---|---|---|---|---|
+    | 千问 `flash`，单轮研究请求 | 旧 | 5 | 0 | 3 | 0 | 2 |
+    | 千问 `flash`，单轮研究请求 | 新 | 6 | 0 | 3 | 0 | 3 |
+    | DeepSeek `deepseek-flash`，单轮研究请求 | 旧 | 10 | 0 | 0 | 1 | 9 |
+    | DeepSeek `deepseek-flash`，单轮研究请求 | 新 | 10 | 1 | 0 | 0 | 9 |
+    | DeepSeek `deepseek-flash`（思考关闭），三个模块补测试并要求用子智能体 | 旧 | 10 | 0 | 10 | 0 | 0 |
+    | DeepSeek `deepseek-flash`（思考关闭），三个模块补测试并要求用子智能体 | 新 | 10 | 0 | 9 | 1 | 0 |
+
+    - 千问两组各跑 10 次，其余几次因为服务额度用尽（429 `quota_exceeded`）失败，不计入。并发的实验连同各自派出的子智能体会很快用完这个连接的额度，之后的实验只用 DeepSeek。
+    - 单轮发出的研究请求没有复现起因里的同步等待：两个模型的旧版都是 0 次。新版在 DeepSeek 上有 1 次 6 个调用全部 `wait=true`，补测试场景有 1 次 sleep。每组 10 次，这些差别都在 1 次以内，看不出新文本减少或增加了同步等待和 sleep。
+    - 研究请求里，DeepSeek 后台派出后大多接着自己调用工具（bash、`call_tool`），两版相同。
+    - 标签：新版 26 次派出（共 106 个子智能体）都填了 `description`，都用中文，最长 14 个字，例如"宏观与流动性研究""卖方分析师观点与预期""mathutil 单测"。
+  - **结论**：标签按设计工作。工具文本更短，行为与旧版持平；它没有解决起因里的同步等待，起因发生在多轮对话的第二轮，单轮请求复现不出来。要继续查，需要按起因的两轮对话做实验。
+  - **为什么 sleep**：上面的实验结束一次运行前，只记下了结果。之后改为保存派出时和派出后的整条回复，用 DeepSeek 重跑补测试场景：思考关闭 30 次，全部结束本轮；思考打开 20 次，2 次 sleep、2 次全部 `wait=true`。
+    - sleep 的回复都是同一个样子："三个子智能体已并行启动……等它们完成后，我会汇总并运行全量测试"，接着 `sleep 60; ls -la tests/`。模型想等子智能体做完，再在同一轮里自己验证。
+    - 选 `wait=true` 的推理是同一个想法："后台派出再结束本轮，这条回复里就做不了最后的验证；用 wait=true 能在同一轮接着跑测试"。它也满足"本条回复的下一步需要汇报"的说法。
+    - 两种做法都来自同一个误解：结束本轮就是交卷，之后的工作做不了。"这不是最终答复"只写在工具描述里；模型做决定时看到的是转入后台的工具结果，那里只说"结束本轮来等，汇报回来后从那里继续"。
+  - **改法**：转入后台的工具结果（附录 A.4）加上"这不是最终答复"，"继续"改为"继续你的工作"。对比实验：DeepSeek，思考打开，补测试场景。
+
+    | 工具结果 | 次数 | 结束本轮 | `wait=true` | sleep | 其他 |
+    |---|---|---|---|---|---|
+    | 改前（含上面的 20 次） | 60 | 48 | 6 | 5 | 1（运行 `python3 --version`） |
+    | 改后 | 40 | 32 | 6 | 1 | 1（调用不存在的 `wait` 工具） |
+
+    - sleep 从 5/60 降到 1/40。想在同一轮里等待的比例没有变（两版都约两成），只是转到了 `wait=true`：它不挡用户的输入，插话会结束等待（§8.2）；sleep 会把汇报和插话都挡到命令结束。
+    - 没有加内核兜底（例如有后台子智能体时拒绝执行 `sleep`）：用户决定只用文本引导，不加这类规则。
+
 **验收标准**：每一项都有端到端测试。
 
 ### 三期：恢复与扩展（暂不预估）
@@ -1009,7 +1047,7 @@ crates/finx-core/src/agents/
 | 编号 | 决策 | 理由 | 章节 |
 |---|---|---|---|
 | D-40 | 子智能体是独立的普通会话，由内核里每棵树一个的控制面管理；每个会话仍然同一时刻只运行一个任务（D-20 不变） | 复用会话、日志、权限和插话的全部机制；子会话可以单独查看和恢复 | §3 §4 |
-| D-41 | 只有主智能体有两个工具：`spawn_agent(task, name, wait)`、`send_message(to, message, wait, interrupt)`。默认异步，`wait: true` 时同步；不单独提供等待工具 | 满足 G1、G3；同一条回复里的多个同步调用就是"等全部" | §6 |
+| D-41 | 只有主智能体有两个工具：`spawn_agent(description, task, name, wait)`、`send_message(to, message, wait, interrupt)`。默认异步，`wait: true` 时同步；不单独提供等待工具 | 满足 G1、G3；同一条回复里的多个同步调用就是"等全部" | §6 |
 | D-42 | 子会话的设置与父相同：模型、推理等级、配置、工作目录、系统提示词（含项目指令）；工具为父的基础工具；不继承父的对话；缓存键用子会话自己的 id | 能力相同（G9）；不继承对话时，子的上下文干净、行为可预测 | §5 |
 | D-43 | 子智能体没有审批：需要询问的调用直接拒绝并说明原因，由子写进汇报、交给父处理。权限完全继承根会话：权限模式和会话规则始终取根会话当前的值，不提升，也不降低 | 主智能体没法替子确认（G11）；用户只面对一个审批入口；子拿到的权限不超过用户给主智能体的，委派不会变成绕开审批的后门；finx 没有沙箱，最大权限没有兜底 | §10 |
 | D-44 | 子空闲时汇报一次。结果路由在树的锁内决定：同步等待中就作为工具结果，否则作为信件，只交付一次 | 没有过时的中间汇报，也不会重复 | §7.4 |
@@ -1049,34 +1087,35 @@ crates/finx-core/src/agents/
 spawn_agent：
 
 ```
-Start a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it cannot start agents of its own. It works on one task and reports back. It does not see this conversation, so put everything it needs into task.
+Start a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it cannot start agents. It sees none of this conversation: the task you write is all it knows.
 
-Delegate only work that is self-contained and takes many steps, such as broad searches, independent changes, long investigations or test runs. Do quick, blocking or tightly coupled steps yourself.
+Delegate self-contained work that takes many steps: broad searches, independent changes, long investigations, test runs. Do quick, blocking or tightly coupled steps yourself.
 
-Several agents can run at once: call spawn_agent several times in one reply. All agents and you share one workspace. Work that only reads files may overlap freely, but never let two agents, or an agent and you, change the same file at the same time: give each agent its own files to change, and run tasks that must change the same file one after another.
+Several agents can run at once: call spawn_agent several times in one reply. You all share one workspace, so give each agent its own files to change, and run tasks that change the same file one after another.
 
-By default the agent runs in the background and this call returns at once. When it finishes, its report comes to you as a new message, even if you have ended your turn. So to wait for background agents, end your turn: each report brings you back, and you continue from there. Set wait=true only when you cannot continue without the result; the call then blocks until the agent is done and returns its report. Several such calls in one reply run at the same time.
+The agent runs in the background. Its report comes to you as a new message when it finishes, even after you end your turn. So to wait, end your turn: that is not your final answer. Set wait=true only when the next step of this reply needs the report.
 
-Leave delegated work to the agent: do not redo it yourself or guess its result while it runs, and if asked before its report arrives, say it is still working. Only you see the reports; the user sees just each agent's status, so relay what matters.
+Leave delegated work to the agent: do not redo it or guess its result, and if asked before it reports, say it is still working. Only you see the reports; the user sees each agent's status, so relay what matters.
 ```
 
 | 参数 | 参数说明 |
 |---|---|
-| `task` | `Everything the agent needs: the goal, the relevant context (files, decisions, constraints) and what its report should contain.` |
+| `description` | `A short label the user sees for this agent: what it works on, in the user's language, within 20 Chinese characters or 5 words.` |
+| `task` | `All the agent knows: the goal, what you know or ruled out, the files to read and the files it may change, and what to report.` |
 | `name` | `Short handle for addressing the agent later: lowercase letters, digits, '-' or '_'. Generated when omitted.` |
-| `wait` | `Block until the agent is done and return its report. Default false.` |
+| `wait` | `Block until the agent is done and return its report. Only when the next step of this reply needs it. Default false.` |
 
 send_message：
 
 ```
-Send a message to one of your sub-agents. The agent keeps the context of its earlier work, so use this for follow-ups and corrections and to let an interrupted agent continue; spawn_agent would start from scratch. A running agent reads the message at its next step; an idle agent starts working on it and reports back when done. wait=true blocks until the agent is done and returns its report; interrupt=true makes it stop its current work first.
+Send a message to one of your sub-agents. It keeps the context of its earlier work, so use this for follow-ups and corrections and to let an interrupted agent continue; spawn_agent would start from scratch. A running agent reads the message at its next step; an idle one works on it and reports back as after spawn_agent.
 ```
 
 | 参数 | 参数说明 |
 |---|---|
 | `to` | `Name or id of one of your sub-agents.` |
 | `message` | `The message.` |
-| `wait` | `Block until the agent is done and return its report. Default false.` |
+| `wait` | `Block until the agent is done and return its report. Only when the next step of this reply needs it. Default false.` |
 | `interrupt` | `Stop the agent's current work before delivering the message. Default false.` |
 
 ### A.2 任务说明模板
@@ -1128,11 +1167,11 @@ It keeps its work and context: send_message lets it continue where it stopped.
 
 | 情况 | 文本 |
 |---|---|
-| 异步开始 | `Agent "explore-api" started in the background. To wait for its report, end your turn: the report comes to you as a new message when the agent finishes, and you continue from there.` |
+| 异步开始 | `Agent "explore-api" started in the background. To wait for its report, end your turn: that is not your final answer. The report comes to you as a new message when the agent finishes, and you continue your work from there.` |
 | 同步完成 | `Agent "explore-api" {status} after {duration}.`，换行后接汇报正文；被中断时末尾再加 A.3 中的那一行 |
-| 同步等待被插话打断 | `Stopped waiting because the user sent a new message. Agent "explore-api" keeps running. To wait for its report, end your turn: the report comes to you as a new message when the agent finishes, and you continue from there.` |
+| 同步等待被插话打断 | `Stopped waiting because the user sent a new message. Agent "explore-api" keeps running. To wait for its report, end your turn: that is not your final answer. The report comes to you as a new message when the agent finishes, and you continue your work from there.` |
 | 消息已排队 | `Queued for "explore-api"; it reads the message at its next step.` |
-| 消息开启新工作 | `"explore-api" started working on your message. To wait for its report, end your turn: the report comes to you as a new message when the agent finishes, and you continue from there.` |
+| 消息开启新工作 | `"explore-api" started working on your message. To wait for its report, end your turn: that is not your final answer. The report comes to you as a new message when the agent finishes, and you continue your work from there.` |
 | 结果的 details（给界面，不发给模型） | `spawn_agent`：`agent_id`、`name`、`session_file`、`status`、`background`、`reported`；`send_message`：`agent_id`、`name`、`background`、`reported`。`background`：这次调用开始的一轮工作会以邮件汇报；`reported`：结果本身就是汇报 |
 | task 为空 | `task must not be empty.` |
 | 找不到 | `No agent named "{to}". Your agents: {names}.` |
@@ -1148,10 +1187,10 @@ It keeps its work and context: send_message lets it continue where it stopped.
 ```jsonl
 {"seq":1,"type":"session_started","session_id":"019a…r0",...}
 {"seq":2,"type":"task_started","task_id":"t1","trigger":"user"}
-{"seq":9,"type":"tool_started","call_id":"c1","name":"spawn_agent","args":{"task":"…parser…","name":"parser-tests"}}
-{"seq":10,"type":"tool_started","call_id":"c2","name":"spawn_agent","args":{"task":"…lexer…","name":"lexer-tests"}}
-{"seq":11,"type":"agent_started","agent_id":"019a…a1","name":"parser-tests","call_id":"c1"}
-{"seq":12,"type":"agent_started","agent_id":"019a…b2","name":"lexer-tests","call_id":"c2"}
+{"seq":9,"type":"tool_started","call_id":"c1","name":"spawn_agent","args":{"description":"给 parser 补测试","task":"…parser…","name":"parser-tests"}}
+{"seq":10,"type":"tool_started","call_id":"c2","name":"spawn_agent","args":{"description":"给 lexer 补测试","task":"…lexer…","name":"lexer-tests"}}
+{"seq":11,"type":"agent_started","agent_id":"019a…a1","name":"parser-tests","description":"给 parser 补测试","call_id":"c1"}
+{"seq":12,"type":"agent_started","agent_id":"019a…b2","name":"lexer-tests","description":"给 lexer 补测试","call_id":"c2"}
 {"seq":13,"type":"tool_completed","call_id":"c1",...}
 {"seq":14,"type":"tool_completed","call_id":"c2",...}
 {"seq":20,"type":"task_completed","task_id":"t1",...}

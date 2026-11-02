@@ -101,6 +101,21 @@ test("spawn calls show as one card of agents; reports as reports, not as the own
   assert.ok(r.kind === "report" && r.name === "text" && r.text === "**34** tests pass" && r.agent?.id === "ag2");
 });
 
+test("an agent goes by its label: the call's while it starts, agent_started's after; older calls have none", () => {
+  const labelled: AssistantContent = { type: "tool_call", id: "c1", name: "spawn_agent", arguments: { description: "为 math 写测试", task: "Test math.", name: "math" } };
+  let v = play([{ type: "task_started", task_id: "t1" }, user("u1", "go"), assistant("a1", [labelled, spawnCall("c2", "text")])]);
+  const launches = () => {
+    const card = conversation(v).find((x) => x.kind === "agents");
+    assert.ok(card?.kind === "agents");
+    return card.launches.map((l) => [l.description, l.agent?.id]);
+  };
+  assert.deepEqual(launches(), [["为 math 写测试", undefined], ["", undefined]]);
+  v = play([{ type: "agent_started", agent_id: "ag1", name: "math", description: "为 math 写测试", session_file: "/ag1.jsonl", call_id: "c1" }], v);
+  assert.equal(v.agents[0].description, "为 math 写测试");
+  assert.equal(v.agents[0].view.info.title, "为 math 写测试");
+  assert.deepEqual(launches(), [["为 math 写测试", "ag1"], ["", undefined]]);
+});
+
 test("the work ends where the last report is answered: one end line for all of it", () => {
   let v = play([
     { type: "task_started", task_id: "t1" },

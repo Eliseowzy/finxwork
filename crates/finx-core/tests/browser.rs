@@ -640,7 +640,7 @@ async fn a_sub_agents_tabs_close_when_it_reports_and_the_main_sessions_stay() {
     let child = format!("{}/alive?child", h.origin);
     // The main session opens a page, then waits for an agent that opens one of its own.
     h.api.push(Script::tool_call("c1", "browser_navigate", json!({ "url": main })));
-    h.api.push(Script::tool_call("c2", "spawn_agent", json!({ "task": "open the page", "name": "web", "wait": true })));
+    h.api.push(Script::tool_call("c2", "spawn_agent", json!({ "description": "open the page", "task": "open the page", "name": "web", "wait": true })));
     h.api.push(Script::tool_call("k1", "browser_navigate", json!({ "url": child })));
     // While the agent still works, its page runs beside the main one.
     h.api.push(Script::tool_call("k2", "browser_wait", json!({ "seconds": 1 })));

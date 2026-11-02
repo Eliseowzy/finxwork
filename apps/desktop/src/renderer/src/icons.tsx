@@ -53,6 +53,8 @@ const paths: Record<string, string> = {
   retry: "<path d=\"M13.1 8.4A5.2 5.2 0 1 1 11.6 4.4\"/><path d=\"M13.3 2.4v2.8h-2.8\"/>",
   filter: "<path d=\"M2.5 5h11M4.6 8.8h6.8M6.7 12.6h2.6\"/>",
   cube: "<path d=\"M8 1.9l5.3 3v6.2L8 14.1l-5.3-3V4.9z\"/><path d=\"M2.7 4.9L8 7.9l5.3-3M8 7.9v6.2\"/>",
+  // A robot's head: a sub-agent.
+  bot: "<rect x=\"2.8\" y=\"5\" width=\"10.4\" height=\"8.4\" rx=\"2.4\"/><path d=\"M8 5V3.2M1.3 8.3v2.4M14.7 8.3v2.4M6.6 11.1h2.8\"/><circle cx=\"8\" cy=\"2.5\" r=\".8\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6\" cy=\"8.4\" r=\".95\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"10\" cy=\"8.4\" r=\".95\" fill=\"currentColor\" stroke=\"none\"/>",
   // Stacked sheets: work going on in the background.
   layers: "<path d=\"M8 2.3l5.6 2.9L8 8.1 2.4 5.2z\"/><path d=\"M2.4 8l5.6 2.9L13.6 8\"/><path d=\"M2.4 10.8l5.6 2.9 5.6-2.9\"/>",
   pause: "<path d=\"M6 4.2v7.6M10 4.2v7.6\"/>",

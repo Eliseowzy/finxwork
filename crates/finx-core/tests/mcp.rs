@@ -486,7 +486,7 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let config = http_config("test", &server);
     let lanes = Arc::new(Lanes::default());
     let push = |lane: &str, script: Script| lanes.0.lock().entry(lane.to_string()).or_default().push_back(script);
-    push("root", Script::tool_call("r1", "spawn_agent", json!({ "task": "echo hello", "name": "helper", "wait": true })));
+    push("root", Script::tool_call("r1", "spawn_agent", json!({ "description": "say hello", "task": "echo hello", "name": "helper", "wait": true })));
     push("helper", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the helper" } })));
     push("helper", Script::text("helper done"));
     push("root", Script::text("root done"));

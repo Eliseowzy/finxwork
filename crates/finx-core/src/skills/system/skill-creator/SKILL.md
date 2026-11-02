@@ -181,7 +181,7 @@ Put results in `<skill-name>-workspace/` as a sibling to the skill directory. Wi
 
 ### Step 1: Run independent with-skill and baseline cases
 
-When `spawn_agent` is available, start separate agents for the with-skill and baseline cases. Finx accepts `spawn_agent {task, name, wait}`; use `wait: false` for concurrent cases, and `send_message {to, message, wait: true}` to collect reports when needed. Respect available agent capacity. Subagents cannot spawn further agents, so the main session coordinates grading. If independent agents are unavailable, run sequentially and disclose the weaker comparison instead of presenting it as independent evidence.
+When `spawn_agent` is available, start separate agents for the with-skill and baseline cases. Finx accepts `spawn_agent {description, task, name, wait}`; leave `wait` false so the cases run at the same time, and end your turn to collect their reports, which come back as messages. Respect available agent capacity. Subagents cannot spawn further agents, so the main session coordinates grading. If independent agents are unavailable, run sequentially and disclose the weaker comparison instead of presenting it as independent evidence.
 
 **With-skill run:**
 

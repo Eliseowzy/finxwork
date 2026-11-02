@@ -257,11 +257,13 @@ impl Outcome {
             EventMsg::AgentStarted {
                 agent_id,
                 name,
+                description,
                 session_file,
                 ..
             } => self.agents.push(AgentOutcome {
                 id: agent_id.clone(),
                 name: name.clone(),
+                description: description.clone(),
                 session_file: session_file.clone(),
                 status: AgentStatus::Running,
                 usage: UsageTotals::default(),
@@ -305,6 +307,7 @@ impl Outcome {
                 let tokens = a.usage.tokens();
                 json!({
                     "name": a.name,
+                    "description": a.description,
                     "status": a.status,
                     "session_file": a.session_file,
                     "usage": {
@@ -324,6 +327,7 @@ impl Outcome {
 struct AgentOutcome {
     id: String,
     name: String,
+    description: String,
     session_file: PathBuf,
     status: AgentStatus,
     usage: UsageTotals,

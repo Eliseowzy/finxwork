@@ -26,6 +26,8 @@ export type AgentSnapshot = {
   agent_id: string;
   /** The `spawn_agent` call that started it. */
   call_id: string;
+  /** What the user sees for it, as `agent_started` gave it. */
+  description?: string;
   /** How long its last finished round of work took. */
   elapsed_ms?: number | null;
   error?: ErrorInfo | null;
@@ -598,6 +600,9 @@ export type Event = {
   agent_id: string;
   /** The `spawn_agent` call that started it. */
   call_id: string;
+  /** What the user sees for it: a few words on what it works on. */
+  description?: string;
+  /** Its handle: how the main agent addresses it. */
   name: string;
   session_file: string;
   type: "agent_started";
