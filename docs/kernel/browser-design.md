@@ -238,7 +238,7 @@ Windows 也用 pipe（D-195）：
 - **默认不启用**：浏览器工具默认不在工具列表里，配置 `browser.enabled = true` 以后加入（D-165）。
 - **开销**：工具定义放在请求前缀里，7 个工具约 1.8k token；没启用时没有任何开销。
 
-### 5.2 快照与 ref（D-166、D-185、D-186）
+### 5.2 快照与 ref（D-166、D-185、D-186、D-220）
 
 - **数据来源**：`Accessibility.getFullAXTree`，加上 `DOMSnapshot.captureSnapshot` 补充可见性和位置。AX 树覆盖 shadow DOM。
 - **只保留有意义的节点**：有角色、有名字，或者可交互。
@@ -251,6 +251,11 @@ Windows 也用 pipe（D-195）：
   - textbox "Password" [ref=e4] [type=password] [value=<hidden>]
   - button "Continue" [ref=e5]
   ```
+- **看起来能点的元素**（D-220）：很多页面用 `<div>`、`<span>` 做按钮，无障碍树只把它们当作 generic，拿不到 ref。
+  - 判断：`DOMSnapshot.captureSnapshot` 顺带取计算样式 `cursor`，元素自己是 `pointer`（不是从最近的有布局的祖先继承来的），或者带 `onclick` 属性；`html`、`body`、表单控件和链接除外。不往页面注入脚本，三种后端都能用。
+  - 给 ref 的条件：节点没有被无障碍树忽略，外面没有已经带 ref 的祖先，里面也没有按角色就能拿到 ref 的后代（例如包着 `<button>` 的卡片，让模型点里面那个按钮）。
+  - 显示：原本是透明角色时显示为 `clickable`，其他角色保持原样；没有名字时用子树里的文字（截到 200 个字符）。
+  - 用 `addEventListener` 绑定、样式上又看不出来的点击区域识别不了，只能靠坐标点击兜底。
 - **ref 的有效期按文档**（D-185）：
   - 同一个文档里，同一个节点多次取快照拿到同一个 ref（`backendDOMNodeId` 在文档内稳定），模型手里的旧 ref 继续有效；
   - 节点被删除（`DOM.resolveNode` 失败），或者文档变了（导航、刷新），ref 失效；
@@ -1011,6 +1016,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-217 | 用户在桌面端"设置 › 浏览器"里连接：应用自动注册宿主、复制扩展，只请用户添加扩展；连上后自动启用；状态经 `browser/status` 与 `browser/changed` 取得 |
 | D-218 | 内嵌浏览器以所基于版本的 Chrome 出现：UA 只报主版本，客户端提示（请求头与 `userAgentData`）含 Google Chrome，权限查询与请求一致地拒绝，语言跟随应用；不伪造 `window.chrome`，不虚报版本 |
 | D-219 | 扩展上架商店、与应用分开更新：扩展和 finx 各自声明支持的 bridge 版本范围，服务取共同的最高版本；没有共同版本时连接保留但不可用，`ExtensionStatus.problem` 说明该更新哪一边；扩展有更新时，等到没有智能体标签页再重新加载 |
+| D-220 | 只是看起来能点的元素（自己的 `cursor: pointer` 或 `onclick` 属性）也给 ref，取自 DOM 快照的计算样式，不注入脚本；外面或里面已有 ref 时不给 |
 
 ### 待定问题
 

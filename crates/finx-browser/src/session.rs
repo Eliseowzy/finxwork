@@ -702,7 +702,7 @@ impl BrowserSession {
         // iframes expanded below use it too.
         let (tree, dom) = futures::join!(
             self.conn().send(s, "Accessibility.getFullAXTree", json!({ "frameId": frame_id })),
-            self.conn().send(s, "DOMSnapshot.captureSnapshot", json!({ "computedStyles": [] })),
+            self.conn().send(s, "DOMSnapshot.captureSnapshot", json!({ "computedStyles": snapshot::COMPUTED_STYLES })),
         );
         let tree = tree?;
         let attrs = dom.map(|d| snapshot::attrs_from_dom_snapshot(&d)).unwrap_or_default();
