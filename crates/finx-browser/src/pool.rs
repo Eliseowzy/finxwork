@@ -87,9 +87,9 @@ const NO_HOST: &str = "No desktop app is connected to show the embedded browser.
 const EXTENSION_NOTE: &str = "This browser is the user's own Chrome: the tabs you open appear in their window, \
     in a tab group named FinxWork, and their sign-ins are real. Act as carefully as with their accounts.";
 
-const NO_EXTENSION: &str = "The FinxWork extension is not connected, so the user's Chrome cannot be used. \
-    Ask the user to open Chrome with the FinxWork extension (after running `finx browser extension install` once), \
-    or to set browser.backend = \"managed\" in ~/.finx/config.toml.";
+const NO_EXTENSION: &str = "The FinxWork extension is not connected, so the user's own browser cannot be used. \
+    Ask the user to open their browser with the FinxWork extension, or to connect it again in FinxWork; \
+    the built-in browser does not have their sign-ins.";
 
 pub struct BrowserPool {
     /// `~/.finx/browser`.

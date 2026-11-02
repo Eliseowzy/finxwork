@@ -2202,6 +2202,10 @@
             "name": {
               "type": "string"
             },
+            "own_browser": {
+              "description": "The call works in the user's own browser, with their real sign-ins, rather than the built-in one (connectors-entry-design §3.4): clients say so.",
+              "type": "boolean"
+            },
             "proposed_grants": {
               "description": "Site permissions that `approve_for_session` may keep; its `grant` picks one, the first by default.",
               "items": {
@@ -5026,6 +5030,9 @@
         },
         "name": {
           "type": "string"
+        },
+        "own_browser": {
+          "type": "boolean"
         },
         "proposed_grants": {
           "items": {

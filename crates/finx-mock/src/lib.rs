@@ -542,6 +542,18 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             }
             _ => Plan::Step(Step::text(format!("browser done: {}", last_tool_result(messages)))),
         },
+        // Two pages, the first in the built-in browser and the second in the user's own, then
+        // the tabs of both (connectors-entry-design §9.2). The URLs are separated by a space.
+        "browsers" => {
+            let mut urls = arg.split_whitespace();
+            let (builtin, yours) = (urls.next().unwrap_or_default(), urls.next().unwrap_or_default());
+            match step {
+                0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": builtin}))])),
+                1 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": yours, "browser": "yours"}))])),
+                2 => Plan::Step(Step::calls(vec![("browser_tabs", json!({}))])),
+                _ => Plan::Step(Step::text(format!("browsers done: {}", last_tool_result(messages)))),
+            }
+        }
         "cut" => Plan::Step(Step {
             parts: vec![Part::Text("this reply is cut".into())],
             finish: "length",

@@ -2083,6 +2083,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 - `session_file` 是会话日志文件的路径，前端可以展示它，方便之后 resume。
 - 三种任务终止事件都带本任务累计的 `usage`，任务失败或被中断时也能显示用量。
 - `proposed_rule` 和 `proposed_mode` 说明选择 `approve_for_session` 会记下什么：加一条 allow 规则，或者把会话切换到这个模式。两者都为空时，`approve_for_session` 只批准这一次，前端不应提供"本会话总是允许"。
+- 浏览器调用的审批另带 `proposed_grants`（browser-design §9）和 `own_browser`：后者为 true 时调用落在用户自己的浏览器里，用的是真实登录状态（desktop/connectors-entry-design §3.4）。
 - `compaction_completed.summary` 是摘要全文，前端可以折叠展示，便于用户检查摘要质量。
 - `context` 字段为可选，旧前端忽略即可。
 - 上下文超限的 `ErrorInfo.retryable` 由内核决定：开启压缩时为 true，因为下一次请求前会先压缩（§7.6.1）。

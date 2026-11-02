@@ -74,7 +74,9 @@ pub(crate) struct SessionState {
     pub(crate) system_prompt: Arc<str>,
     /// Fixed when the session started, and kept on resume.
     pub(crate) base_prompt: Arc<str>,
-    /// MCP server catalog and instructions; changes only with the MCP servers.
+    /// What follows `base_prompt`: the guidelines of tools that came after it was written (a
+    /// browser turned on later, connectors-entry-design §9.4), then the MCP server catalog and
+    /// instructions. Changes only with those.
     pub(crate) mcp_section: Option<String>,
     /// The skills of the session, frozen with the system prompt (its catalog lists the ones
     /// the model may load). Sub-agents get the main session's.
@@ -176,11 +178,22 @@ pub(crate) enum Internal {
 pub(crate) struct Session {
     pub(crate) id: String,
     pub(crate) llm: Arc<ModelRegistry>,
-    /// The tool list; replaced between requests when MCP tools in it change.
+    /// The tool list; replaced between requests when MCP tools in it change, or the system
+    /// connectors do.
     pub(crate) tools: Mutex<Arc<ToolRegistry>>,
-    /// Built-in tools, the agent tools and the MCP search tools: everything but the MCP
-    /// tools that go into the list directly.
-    pub(crate) base_tools: Arc<ToolRegistry>,
+    /// Built-in tools and the agent tools: what every session of the tree has.
+    pub(crate) core_tools: Arc<ToolRegistry>,
+    /// `core_tools`, the system connectors' tools and the MCP search tools: everything but the
+    /// MCP tools that go into the list directly. Replaced when the system connectors change.
+    pub(crate) base_tools: Mutex<Arc<ToolRegistry>>,
+    /// The browsers' and desktop control's settings, shared with the sub-agents.
+    pub(crate) system: Arc<crate::system::SystemCell>,
+    /// Their generation in `base_tools`, the handles and the prompt.
+    pub(crate) system_applied: AtomicU64,
+    /// The process's browsers, when it has any.
+    pub(crate) browser_pool: Option<Arc<finx_browser::BrowserPool>>,
+    /// The main session's id: the desktop app shows its sub-agents' browsers in its window.
+    pub(crate) root_id: String,
     /// The agent tree's MCP servers, shared with sub-agents.
     pub(crate) mcp: Option<Arc<McpManager>>,
     /// MCP generation in `tools` and the system prompt.
@@ -467,8 +480,8 @@ impl Session {
             data_dir: self.data_dir.clone(),
             skill_roots: self.skill_roots.clone(),
             site_grants: state.site_grants.clone(),
-            browser: self.config.browser.policy.clone(),
-            desktop: self.config.desktop.clone(),
+            browser: self.system.get().browser.policy.clone(),
+            desktop: self.system.get().desktop.clone(),
         }
     }
 

@@ -411,7 +411,8 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
             session.record_user(message);
         }
         session.apply_pending_model();
-        // MCP tools join or change only here, between requests.
+        // System connectors' and MCP tools join or change only here, between requests.
+        session.prepare_system();
         if let Err(error) = session.prepare_mcp(&task.cancel, turn == 0).await {
             return TaskOutcome::Failed(error);
         }

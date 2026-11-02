@@ -63,8 +63,12 @@ pub struct McpFile {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BrowserFile {
+    /// The built-in browser.
     pub enabled: Option<bool>,
-    /// `auto`, `embedded`, `managed` or `extension` (§8.3.3, §8.4).
+    /// The user's own browser through the FinxWork extension (§8.4).
+    pub extension: Option<bool>,
+    /// Which built-in browser: `auto`, `embedded` or `managed` (§8.3.3). `extension`, from before
+    /// the user's own browser had its own switch, reads as `extension = true`.
     pub backend: Option<String>,
     pub executable: Option<PathBuf>,
     pub profile: Option<String>,
@@ -80,9 +84,14 @@ pub struct BrowserFile {
 }
 
 /// `[browser]` with its defaults applied.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BrowserSettings {
-    pub enabled: bool,
+    /// The built-in browser (`browser.enabled`); `None` when not set: on where a desktop app
+    /// shows the browser, off elsewhere (connectors-entry-design §9.1).
+    pub builtin: Option<bool>,
+    /// The user's own browser, through the FinxWork extension (`browser.extension`).
+    pub extension: bool,
+    /// The built-in browser's: its backend is never `Extension`.
     pub config: finx_browser::BrowserConfig,
     pub policy: std::sync::Arc<finx_browser::policy::SitePolicy>,
     pub navigation_timeout: Duration,
@@ -105,10 +114,9 @@ impl BrowserSettings {
             Some(other) => return Err(ConfigError::Invalid(format!("browser.headless must be auto, true or false, got {other}"))),
         };
         let backend = match file.backend.as_deref() {
-            None | Some("auto") => finx_browser::Backend::Auto,
+            None | Some("auto" | "extension") => finx_browser::Backend::Auto,
             Some("embedded") => finx_browser::Backend::Embedded,
             Some("managed") => finx_browser::Backend::Managed,
-            Some("extension") => finx_browser::Backend::Extension,
             Some(other) => {
                 return Err(ConfigError::Invalid(format!(
                     "browser.backend must be auto, embedded, managed or extension, got \"{other}\""
@@ -140,7 +148,8 @@ impl BrowserSettings {
             return Err(ConfigError::Invalid(format!("browser.profile \"{profile}\" must be a plain name")));
         }
         Ok(Self {
-            enabled: file.enabled.unwrap_or(false),
+            builtin: file.enabled,
+            extension: file.extension.unwrap_or(file.backend.as_deref() == Some("extension")),
             config: finx_browser::BrowserConfig {
                 backend,
                 executable: file.executable.filter(|p| !p.as_os_str().is_empty()),
@@ -152,11 +161,21 @@ impl BrowserSettings {
                 denied_domains: file.denied_domains.unwrap_or_default(),
                 sites,
                 script_enabled: file.script_enabled.unwrap_or(false),
-                real_logins: backend == finx_browser::Backend::Extension,
             }),
             navigation_timeout: Duration::from_secs(file.navigation_timeout_secs.unwrap_or(30).clamp(1, 600)),
             action_timeout: Duration::from_secs(file.action_timeout_secs.unwrap_or(10).clamp(1, 600)),
         })
+    }
+
+    /// Whether the built-in browser is on, given whether a desktop app shows browsers.
+    pub fn builtin_on(&self, embedded: bool) -> bool {
+        self.builtin.unwrap_or(embedded)
+    }
+
+    /// Whether some browser is turned on in so many words: what a process without a desktop
+    /// app needs a browser pool for.
+    pub fn configured_on(&self) -> bool {
+        self.builtin == Some(true) || self.extension
     }
 }
 
@@ -180,7 +199,7 @@ pub enum AppLevel {
 }
 
 /// `[desktop]` with its defaults applied.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct DesktopSettings {
     pub enabled: bool,
     pub executable: Option<PathBuf>,
@@ -869,8 +888,9 @@ fn anchor_skill_paths(table: &mut toml::Table, project_root: &Path) {
 
 /// A project's `[browser]` may only tighten the user's (browser-design D-178): its domain
 /// allow list narrows the user's, its deny list adds to it, and of its sites only `deny`
-/// counts. It never picks the program that runs, nor turns scripts on; an untrusted project
-/// cannot turn the tools on either. Returns what was dropped.
+/// counts. It never picks the program that runs, nor turns scripts or the user's own browser
+/// on; an untrusted project cannot turn the built-in browser on either. Returns what was
+/// dropped.
 fn tighten_browser(table: &mut toml::Table, user: &toml::Table, trusted: bool) -> Vec<String> {
     let Some(toml::Value::Table(browser)) = table.get_mut("browser") else {
         return Vec::new();
@@ -896,6 +916,11 @@ fn tighten_browser(table: &mut toml::Table, user: &toml::Table, trusted: bool) -
     if !trusted && browser.get("enabled").and_then(toml::Value::as_bool) == Some(true) {
         browser.remove("enabled");
         dropped.push("browser.enabled".into());
+    }
+    // The user's own browser has their real accounts: only the user turns it on.
+    if browser.get("extension").and_then(toml::Value::as_bool) == Some(true) {
+        browser.remove("extension");
+        dropped.push("browser.extension".into());
     }
     if let Some(toml::Value::Array(allowed)) = browser.get_mut("allowed_domains") {
         let user_allowed = user_list("allowed_domains");
@@ -1104,7 +1129,8 @@ mod tests {
         )
         .unwrap();
         let user_only = load(&user, None, true, &[]).unwrap().config.browser;
-        assert!(user_only.enabled);
+        assert_eq!(user_only.builtin, Some(true));
+        assert!(!user_only.extension);
         assert_eq!(user_only.config.headless, finx_browser::Headless::On);
         assert_eq!(user_only.policy.site("https://github.com"), Some(SiteLevel::Act), "origins are normalized");
         assert_eq!(user_only.policy.any_site(), Some(SiteLevel::Navigate), "every site");
@@ -1115,7 +1141,7 @@ mod tests {
         let browser = loaded.config.browser;
         assert_eq!(browser.config.executable, None, "a project never picks the program");
         assert_eq!(browser.config.backend, finx_browser::Backend::Managed, "nor the backend");
-        assert!(!browser.policy.real_logins);
+        assert!(!browser.extension);
         assert_eq!(browser.policy.allowed_domains, vec!["github.com"], "allow lists intersect");
         assert_eq!(browser.policy.denied_domains, vec!["ads.test", "evil.test"], "deny lists add up");
         assert_eq!(browser.policy.site("https://github.com"), Some(SiteLevel::Deny));
@@ -1126,11 +1152,39 @@ mod tests {
 
         std::fs::write(&project, "[browser]\nenabled = true\n").unwrap();
         std::fs::write(&user, "").unwrap();
-        assert!(!load(&user, Some(&project), false, &[]).unwrap().config.browser.enabled, "untrusted projects cannot turn it on");
-        assert!(load(&user, Some(&project), true, &[]).unwrap().config.browser.enabled);
+        let untrusted = load(&user, Some(&project), false, &[]).unwrap().config.browser;
+        assert_eq!(untrusted.builtin, None, "untrusted projects cannot turn it on");
+        assert!(!untrusted.builtin_on(false) && untrusted.builtin_on(true), "not set: on where a desktop app shows it");
+        assert_eq!(load(&user, Some(&project), true, &[]).unwrap().config.browser.builtin, Some(true));
         let bad = load(&user, None, true, &["browser.sites.\"github.com\"=\"act\"".into()]);
         assert!(bad.is_err());
         assert!(load(&user, None, true, &["browser.sites.\"*\"=\"deny\"".into()]).is_err(), "every site is navigate or act");
+    }
+
+    /// The user's own browser has a switch of its own; the old `backend = "extension"` reads as
+    /// it, and no project turns it on (connectors-entry-design §9.1, D-225).
+    #[test]
+    fn the_users_own_browser_is_the_users_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("user.toml");
+        let project = dir.path().join("project.toml");
+        std::fs::write(&user, "[browser]\nextension = true\n").unwrap();
+        let browser = load(&user, None, true, &[]).unwrap().config.browser;
+        assert!(browser.extension);
+        assert_eq!(browser.builtin, None);
+        assert!(browser.configured_on());
+
+        std::fs::write(&user, "[browser]\nenabled = true\nbackend = \"extension\"\n").unwrap();
+        let old = load(&user, None, true, &[]).unwrap().config.browser;
+        assert!(old.extension, "the old way reads as the switch");
+        assert_eq!(old.config.backend, finx_browser::Backend::Auto, "the built-in browser keeps its own backend");
+
+        std::fs::write(&user, "").unwrap();
+        std::fs::write(&project, "[browser]\nextension = true\n").unwrap();
+        let loaded = load(&user, Some(&project), true, &[]).unwrap();
+        assert!(!loaded.config.browser.extension, "not even a trusted project turns it on");
+        assert!(loaded.warnings.iter().any(|w| w.contains("browser.extension")), "{:?}", loaded.warnings);
+        assert!(!loaded.config.browser.configured_on());
     }
 
     #[test]

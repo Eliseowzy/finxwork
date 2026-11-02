@@ -2,9 +2,9 @@
 // Verify desktop control's authorization, as a person meets it: the model asks to read
 // Finder's window; the approval names the app by its name and icon (and says so when FinxWork
 // lacks Accessibility); "remember" + "allow reading" writes `[desktop.apps]`; the call runs (a
-// snapshot, or PERM_DENIED with the hint to send the user to Settings); Settings › Desktop
-// control lists the remembered app, changes its level and forgets it. macOS only; everything
-// stays in a private HOME. Needs `pnpm build`, `cargo build -p finx-cli`, and agent-desktop in
+// snapshot, or PERM_DENIED with the hint to send the user to Settings); desktop control's page
+// among the connectors lists the remembered app, changes its level and forgets it, and its
+// switch turns it off. macOS only; everything stays in a private HOME. Needs `pnpm build`, `cargo build -p finx-cli`, and agent-desktop in
 // ~/.finx/desktop/bin or AGENT_DESKTOP.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -128,7 +128,9 @@ async function quit() {
 }
 
 const shows = (...texts) => `${JSON.stringify(texts)}.some(t => document.body.innerText.includes(t))`;
-const finderRow = `[...document.querySelectorAll('.desktop-set .mrow')].find(r => r.querySelector('[title="com.apple.finder"]'))`;
+const finderRow = `[...document.querySelectorAll('.cz-dpage .cn-line')].find(r => r.textContent.includes("com.apple.finder"))`;
+/** Picks a level (or Remove) from the Finder row's pop-up, by its label in either language. */
+const pick = (...labels) => `(() => { ${finderRow}.querySelector('.cz-pop').click(); return new Promise(r => setTimeout(() => { [...document.querySelectorAll('.cz-menu [role^=menuitem]')].find(i => ${JSON.stringify(labels)}.some(l => i.textContent.includes(l))).click(); r(true); }, 50)); })()`;
 
 let failed = false;
 try {
@@ -169,28 +171,30 @@ try {
   check(/\[desktop\.apps\][\s\S]*"com\.apple\.finder" = "read"/.test(config()), `the grant was not remembered: ${config()}`);
   await main.shot("2-after");
 
-  // Settings › Desktop control lists it; its level changes; forgetting it asks again.
+  // Its page among the connectors (from Settings › Desktop control) lists it; its level
+  // changes; forgetting it asks again.
   await main.run(`window.finx.openSettings("desktop")`);
   const set = await attach((t) => t.type === "page" && t.url.includes("#settings"), "the settings window");
-  await set.cdp("Emulation.setDeviceMetricsOverride", { width: 820, height: 760, deviceScaleFactor: 0, mobile: false });
-  await set.until("Finder in the app list", `/访达|Finder/.test(${finderRow}?.querySelector('.fn')?.textContent ?? '')`);
-  check((await set.run(`${finderRow}.querySelector('select').value`)) === "read", "Finder is not listed as read");
-  check(await set.run(`${finderRow}.querySelector('img.app-icon')?.src.startsWith('data:image/') === true`), "the app list shows no icon");
-  await set.shot("3-apps");
-  check(await set.run(`/添加应用|Add App/.test(document.querySelector('.desktop-set .mrow-add')?.textContent ?? '')`), "no way to add an app in Settings");
-  await set.run(`(() => { const s = ${finderRow}.querySelector('select'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(s, 'deny'); s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
+  await set.until("the link to its page", `!!document.querySelector('.desktop-set .btn')`);
+  await set.run(`document.querySelector('.desktop-set .btn').click()`);
+  await main.until("Finder in the app list", `/访达|Finder/.test(${finderRow}?.querySelector('.tn')?.textContent ?? '')`);
+  check(/允许查看|Can View/.test(await main.run(`${finderRow}.querySelector('.cz-pop').textContent`)), "Finder is not listed as read");
+  check(await main.run(`${finderRow}.querySelector('img.cn-app')?.src.startsWith('data:image/') === true`), "the app list shows no icon");
+  await main.shot("3-apps");
+  check(await main.run(`/添加应用|Add App/.test(document.querySelector('.cz-dpage .cn-add')?.textContent ?? '')`), "no way to add an app on its page");
+  await main.run(pick("禁止使用", "Never"));
   for (let i = 0; i < 50 && !/"com\.apple\.finder" = "deny"/.test(config()); i++) await sleep(100);
   check(/"com\.apple\.finder" = "deny"/.test(config()), `not denied: ${config()}`);
-  await set.until("shown as denied", `${finderRow}?.querySelector('select').value === 'deny'`);
-  await set.run(`[...${finderRow}.querySelectorAll('button')].pop().click()`);
-  await set.until("forgotten", `!${finderRow} && ${shows("还没有设置任何应用", "No apps set yet")}`);
+  await main.until("shown as denied", `/禁止使用|Never/.test(${finderRow}?.querySelector('.cz-pop').textContent ?? '')`);
+  await main.run(pick("移除", "Remove"));
+  await main.until("forgotten", `!${finderRow} && ${shows("还没有设置任何应用", "No apps yet")}`);
   check(!config().includes("com.apple.finder"), `not forgotten: ${config()}`);
-  await set.shot("4-forgotten");
-  // Switched off, the rest of the page is shown but cannot be changed.
-  await set.run(`document.querySelector('.desktop-set button.sw').click()`);
-  await set.until("switched off", `document.querySelector('.desktop-sub')?.disabled === true`);
-  check(await set.run(`document.querySelector('.desktop-sub .mrow-add').matches(':disabled')`), "Add App works while desktop control is off");
-  await set.shot("5-off");
+  await main.shot("4-forgotten");
+  // Its switch: off for every conversation.
+  await main.run(`document.querySelector('.cz-dacts [role=switch]').click()`);
+  await main.until("switched off", `document.querySelector('.cz-dacts [role=switch]').getAttribute('aria-checked') === 'false'`);
+  check(/\[desktop\][^[]*enabled = false/.test(config()), `not switched off: ${config()}`);
+  await main.shot("5-off");
   console.log("desktop approval: ok");
 } catch (e) {
   failed = true;

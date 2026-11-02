@@ -78,6 +78,18 @@ impl<T: TypedTool> Typed<T> {
         };
         Self { inner, spec }
     }
+
+    /// The same tool without one of its parameters in the spec: for a parameter that means
+    /// nothing in some sessions. Arguments that still give it parse as before.
+    pub fn without_parameter(mut self, name: &str) -> Self {
+        if let Some(properties) = self.spec.parameters.get_mut("properties").and_then(Value::as_object_mut) {
+            properties.remove(name);
+        }
+        if let Some(required) = self.spec.parameters.get_mut("required").and_then(Value::as_array_mut) {
+            required.retain(|r| r != name);
+        }
+        self
+    }
 }
 
 #[async_trait]

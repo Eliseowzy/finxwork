@@ -382,7 +382,7 @@ pub fn install(extension_ids: &[String], user_data_dir: Option<PathBuf>) -> anyh
     }
     println!("host: {}", launcher.display());
     println!(
-        "Next: load the FinxWork extension in Chrome, and set browser.backend = \"extension\" under [browser] in {}.",
+        "Next: load the FinxWork extension in Chrome, and set extension = true under [browser] in {}.",
         home.root().join("config.toml").display()
     );
     Ok(0)

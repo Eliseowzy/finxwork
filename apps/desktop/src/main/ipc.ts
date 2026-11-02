@@ -228,6 +228,9 @@ export function registerIPC() {
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
   ipcMain.on("open-settings", (e, page?: string) => trusted(e) && showSettings(typeof page === "string" ? page : undefined));
+  ipcMain.on("main-command", (e, c: unknown) => {
+    if (trusted(e) && c === "showDesktopControl") command(c);
+  });
   ipcMain.handle("settings-open", (e) => trusted(e) && settingsVisible());
   ipcMain.on("relaunch", (e) => {
     if (!trusted(e)) return;

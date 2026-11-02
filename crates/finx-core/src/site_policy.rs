@@ -36,7 +36,15 @@ pub(crate) async fn evaluate(authorities: &[Authority], view: &SessionView) -> G
     let mut summaries = Vec::new();
     let mut reasons = Vec::new();
     let mut grants: Vec<SiteGrant> = Vec::new();
+    let mut own_browser = false;
     for authority in authorities {
+        let own = matches!(
+            authority,
+            Authority::Navigate { own: true, .. }
+                | Authority::Act { own: true, .. }
+                | Authority::Upload { own: true, .. }
+                | Authority::Script { own: true, .. }
+        );
         match judge(authority, view).await {
             Verdict::Allow => {}
             Verdict::Deny(reason) => return Gate::Deny(reason),
@@ -45,6 +53,7 @@ pub(crate) async fn evaluate(authorities: &[Authority], view: &SessionView) -> G
                 reason,
                 grants: proposed,
             } => {
+                own_browser |= own;
                 summaries.push(summary);
                 reasons.push(reason);
                 for grant in proposed {
@@ -66,16 +75,17 @@ pub(crate) async fn evaluate(authorities: &[Authority], view: &SessionView) -> G
         // A grant covers what it names only, so one is offered only when it covers every
         // question: with more than one question none is.
         proposed_grants: if summaries.len() == 1 { grants } else { Vec::new() },
+        own_browser,
     }
 }
 
 async fn judge(authority: &Authority, view: &SessionView) -> Verdict {
     match authority {
-        Authority::Navigate { url } => navigate(url, view).await,
+        Authority::Navigate { url, own } => navigate(url, *own, view).await,
         // Reading the page a session already has open asks nothing; getting there did.
         Authority::Observe { .. } => Verdict::Allow,
-        Authority::Act { origin, action, .. } => act(origin, action, view).await,
-        Authority::Upload { origin, paths, .. } => upload(origin, paths, view).await,
+        Authority::Act { origin, action, own, .. } => act(origin, action, *own, view).await,
+        Authority::Upload { origin, paths, own, .. } => upload(origin, paths, *own, view).await,
         Authority::Script { origin, .. } => script(origin, view).await,
         Authority::AppObserve { app } => desktop_app(app, None, view),
         Authority::AppAct { app, action } => desktop_app(app, Some(action), view),
@@ -175,19 +185,20 @@ fn covers(level: Option<SiteLevel>, act: bool) -> bool {
     }
 }
 
-/// Whether the mode skips the questions that it may skip. Not on the user's own Chrome,
-/// whose sign-ins are real (§8.4): there only grants and configured sites skip them.
-fn bypass(view: &SessionView) -> bool {
-    view.permission_mode == PermissionMode::BypassPermissions && !view.browser.real_logins
+/// Whether the mode skips the questions that it may skip. Not in the user's own browser,
+/// whose sign-ins are real (§8.4): there only grants and configured sites skip them. `own`
+/// says which browser the call works in.
+fn bypass(view: &SessionView, own: bool) -> bool {
+    view.permission_mode == PermissionMode::BypassPermissions && !own
 }
 
-/// Why a public site asks: the first use in the session, and on the user's own Chrome in
-/// bypass, why the mode did not skip it.
-fn first_use_reason(view: &SessionView, origin: &str) -> String {
-    let own = if view.browser.real_logins && view.permission_mode == PermissionMode::BypassPermissions {
-        " This is the user's own Chrome with real sign-ins, so bypass-permissions still asks."
-    } else {
-        ""
+/// Why a public site asks: the first use in the session, and in the user's own browser,
+/// that it uses their real sign-ins (why bypass did not skip it).
+fn first_use_reason(view: &SessionView, origin: &str, own: bool) -> String {
+    let own = match (own, view.permission_mode == PermissionMode::BypassPermissions) {
+        (true, true) => " It is in the user's own browser, with their real sign-ins, so bypass-permissions still asks.",
+        (true, false) => " It is in the user's own browser, with their real sign-ins.",
+        (false, _) => "",
     };
     format!("First use of {origin} in this session.{own} {}", config_hint(origin, "act"))
 }
@@ -209,7 +220,7 @@ fn private_reason(origin: &str, level: &str) -> String {
     )
 }
 
-async fn navigate(raw: &str, view: &SessionView) -> Verdict {
+async fn navigate(raw: &str, own: bool, view: &SessionView) -> Verdict {
     let Ok(url) = Url::parse(raw) else {
         return Verdict::Deny(format!("\"{raw}\" is not a valid URL"));
     };
@@ -250,17 +261,17 @@ async fn navigate(raw: &str, view: &SessionView) -> Verdict {
         AddressClass::Loopback => return Verdict::Allow,
         AddressClass::Public => {}
     }
-    if granted(view, &origin, false) || any_site(view, false) || bypass(view) {
+    if granted(view, &origin, false) || any_site(view, false) || bypass(view, own) {
         return Verdict::Allow;
     }
     Verdict::Ask {
         summary,
-        reason: first_use_reason(view, &origin),
+        reason: first_use_reason(view, &origin, own),
         grants: site_grants(&origin),
     }
 }
 
-async fn act(origin: &str, action: &str, view: &SessionView) -> Verdict {
+async fn act(origin: &str, action: &str, own: bool, view: &SessionView) -> Verdict {
     // Blank pages and local files of the workspace: nothing to send anywhere.
     if origin == "null" || origin == "file://" {
         return Verdict::Allow;
@@ -281,24 +292,24 @@ async fn act(origin: &str, action: &str, view: &SessionView) -> Verdict {
         },
         AddressClass::Private | AddressClass::Loopback => Verdict::Allow,
         AddressClass::Public if granted(view, origin, true) || any_site(view, true) => Verdict::Allow,
-        AddressClass::Public if bypass(view) => Verdict::Allow,
+        AddressClass::Public if bypass(view, own) => Verdict::Allow,
         AddressClass::Public => Verdict::Ask {
             summary,
-            reason: first_use_reason(view, origin),
+            reason: first_use_reason(view, origin, own),
             grants: site_grants(origin),
         },
     }
 }
 
-async fn upload(origin: &str, paths: &[PathBuf], view: &SessionView) -> Verdict {
+async fn upload(origin: &str, paths: &[PathBuf], own: bool, view: &SessionView) -> Verdict {
     let roots = view.env.workspace_roots();
     let names: Vec<String> = paths.iter().map(|p| p.display().to_string()).collect();
     let in_workspace = paths.iter().all(|p| inside(p, roots));
-    let acting = act(origin, "upload", view).await;
+    let acting = act(origin, "upload", own, view).await;
     if let Verdict::Deny(reason) = acting {
         return Verdict::Deny(reason);
     }
-    if in_workspace && bypass(view) && matches!(acting, Verdict::Allow) {
+    if in_workspace && bypass(view, own) && matches!(acting, Verdict::Allow) {
         return Verdict::Allow;
     }
     Verdict::Ask {
@@ -386,7 +397,7 @@ mod tests {
     }
 
     fn nav(url: &str) -> Authority {
-        Authority::Navigate { url: url.into() }
+        Authority::Navigate { url: url.into(), own: false }
     }
 
     fn act_on(origin: &str) -> Authority {
@@ -394,6 +405,16 @@ mod tests {
             origin: origin.into(),
             target: page(),
             action: "click button \"Go\"".into(),
+            own: false,
+        }
+    }
+
+    /// The same, in the user's own browser.
+    fn own(authority: Authority) -> Authority {
+        match authority {
+            Authority::Navigate { url, .. } => Authority::Navigate { url, own: true },
+            Authority::Act { origin, target, action, .. } => Authority::Act { origin, target, action, own: true },
+            other => other,
         }
     }
 
@@ -434,19 +455,21 @@ mod tests {
         assert!(asks(&evaluate(&[nav("http://192.168.0.7/")], &every).await).is_some(), "never a private site");
     }
 
-    /// `"*"` in `browser.sites`: every public site, without a question, in every mode and on
-    /// the user's own Chrome; a site's own `deny` and private addresses still hold (D-221).
+    /// `"*"` in `browser.sites`: every public site, without a question, in every mode and in
+    /// the user's own browser; a site's own `deny` and private addresses still hold (D-221).
     #[tokio::test]
     async fn every_site_kept_in_the_configuration() {
         let dir = tempfile::tempdir().unwrap();
-        let mut policy = SitePolicy {
-            real_logins: true,
-            ..SitePolicy::default()
-        };
+        let mut policy = SitePolicy::default();
         policy.sites.insert("*".into(), SiteLevel::Act);
         policy.sites.insert("https://93.184.215.15".into(), SiteLevel::Deny);
         let manual = view(PermissionMode::Manual, vec![], policy.clone(), dir.path());
         assert_eq!(evaluate(&[nav("https://93.184.215.14/x"), act_on("https://93.184.215.14")], &manual).await, Gate::Allow);
+        assert_eq!(
+            evaluate(&[own(nav("https://93.184.215.14/x")), own(act_on("https://93.184.215.14"))], &manual).await,
+            Gate::Allow,
+            "in the user's own browser too"
+        );
         assert!(matches!(evaluate(&[nav("https://93.184.215.15/")], &manual).await, Gate::Deny(_)), "a deny holds");
         assert!(asks(&evaluate(&[nav("http://192.168.0.7/")], &manual).await).is_some(), "private still asks");
         policy.sites.insert("*".into(), SiteLevel::Navigate);
@@ -472,29 +495,32 @@ mod tests {
         assert!(matches!(evaluate(&[act_on("https://evil.test")], &bypass).await, Gate::Deny(_)));
     }
 
-    /// On the user's own Chrome the logins are real: bypass skips nothing, while grants,
-    /// configured sites and loopback still do (§8.4).
+    /// In the user's own browser the logins are real: bypass skips nothing, while grants,
+    /// configured sites and loopback still do (§8.4). The same call in the built-in browser
+    /// asks nothing in bypass: which browser is the call's, not the session's (D-225).
     #[tokio::test]
-    async fn the_users_chrome_asks_even_in_bypass() {
+    async fn the_users_own_browser_asks_even_in_bypass() {
         let dir = tempfile::tempdir().unwrap();
-        let mut real = SitePolicy {
-            real_logins: true,
-            ..SitePolicy::default()
-        };
-        real.sites.insert("https://93.184.215.15".into(), SiteLevel::Act);
-        let bypass = view(PermissionMode::BypassPermissions, vec![], real.clone(), dir.path());
-        let gate = evaluate(&[nav("https://93.184.215.14/")], &bypass).await;
-        let Gate::Ask { reason, .. } = &gate else { panic!("navigation asks") };
-        assert!(reason.as_deref().unwrap().contains("own Chrome"), "says why bypass asks");
+        let mut policy = SitePolicy::default();
+        policy.sites.insert("https://93.184.215.15".into(), SiteLevel::Act);
+        let bypass = view(PermissionMode::BypassPermissions, vec![], policy.clone(), dir.path());
+        let gate = evaluate(&[own(nav("https://93.184.215.14/"))], &bypass).await;
+        let Gate::Ask { reason, own_browser, .. } = &gate else { panic!("navigation asks") };
+        assert!(reason.as_deref().unwrap().contains("user's own browser"), "says why bypass asks");
+        assert!(own_browser, "the question says which browser");
+        assert_eq!(evaluate(&[nav("https://93.184.215.14/")], &bypass).await, Gate::Allow, "the built-in browser does not ask");
         assert_eq!(
-            asks(&evaluate(&[act_on("https://93.184.215.14")], &bypass).await).unwrap(),
+            asks(&evaluate(&[own(act_on("https://93.184.215.14"))], &bypass).await).unwrap(),
             vec![grant(GrantAuthority::Act, "https://93.184.215.14"), grant(GrantAuthority::Act, "*")],
             "acting asks, offering the site and every site"
         );
-        assert_eq!(evaluate(&[act_on("https://93.184.215.15")], &bypass).await, Gate::Allow, "configured");
-        assert_eq!(evaluate(&[act_on("http://localhost:5173")], &bypass).await, Gate::Allow, "loopback");
-        let granted = view(PermissionMode::BypassPermissions, vec![grant(GrantAuthority::Act, "https://93.184.215.14")], real, dir.path());
-        assert_eq!(evaluate(&[act_on("https://93.184.215.14")], &granted).await, Gate::Allow, "granted");
+        assert_eq!(evaluate(&[own(act_on("https://93.184.215.15"))], &bypass).await, Gate::Allow, "configured");
+        assert_eq!(evaluate(&[own(act_on("http://localhost:5173"))], &bypass).await, Gate::Allow, "loopback");
+        let granted = view(PermissionMode::BypassPermissions, vec![grant(GrantAuthority::Act, "https://93.184.215.14")], policy, dir.path());
+        assert_eq!(evaluate(&[own(act_on("https://93.184.215.14"))], &granted).await, Gate::Allow, "granted");
+        let manual = view(PermissionMode::Manual, vec![], SitePolicy::default(), dir.path());
+        let Gate::Ask { own_browser, .. } = evaluate(&[nav("https://93.184.215.14/")], &manual).await else { panic!("asks") };
+        assert!(!own_browser, "a question about the built-in browser says so too");
     }
 
     #[test]
@@ -526,6 +552,7 @@ mod tests {
         let script = Authority::Script {
             origin: "http://localhost:3000".into(),
             target: page(),
+            own: false,
         };
         let off = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), dir.path());
         assert!(matches!(evaluate(std::slice::from_ref(&script), &off).await, Gate::Deny(r) if r.contains("script_enabled")));
@@ -552,6 +579,7 @@ mod tests {
             origin: "http://localhost:3000".into(),
             paths: vec![root.join("index.html")],
             target: page(),
+            own: false,
         };
         assert!(asks(&evaluate(std::slice::from_ref(&upload), &manual).await).is_some(), "uploads ask in manual mode");
         let bypass = view(PermissionMode::BypassPermissions, vec![], SitePolicy::default(), &root);
@@ -560,6 +588,7 @@ mod tests {
             origin: "http://localhost:3000".into(),
             paths: vec![PathBuf::from("/etc/hosts")],
             target: page(),
+            own: false,
         };
         assert!(asks(&evaluate(&[outside_upload], &bypass).await).is_some(), "files outside the workspace always ask");
     }

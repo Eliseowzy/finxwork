@@ -42,7 +42,7 @@
   "empty": {
     "skills": "No skills of your own yet",
     "skillsHint": "Upload one, or have finx write one with you in a conversation.",
-    "connectors": "No connectors yet",
+    "connectors": "No other connectors yet",
     "connectorsHint": "A connector is an MCP server: a local command, or a remote address.",
     "seeCatalog": "See recommended ones",
     "addCustom": "Add connector",
@@ -388,5 +388,127 @@
     "saveAndLogin": "Save and sign in",
     "errUrl": "The address must start with http:// or https://",
     "errCommand": "Enter the command that starts it"
+  },
+  "system": {
+    "group": "System",
+    "groupHint": "Built into FinxWork",
+    "cards": "System Connectors",
+    "by": "Built into FinxWork",
+    "badge": "System",
+    "connect": "Connect",
+    "connected": "Connected",
+    "notConnected": "Not connected",
+    "off": "Off",
+    "unsupported": "Not available on this computer",
+    "view": "View Details",
+    "cancel": "Cancel",
+    "available_one": "Available · {{count}} tool",
+    "available_other": "Available · {{count}} tools",
+    "availableShort": "Available",
+    "need": {
+      "reconnect": "Extension not connected",
+      "update": "Needs an update",
+      "permission": "Needs permission",
+      "program": "Not installed",
+      "login": "Needs sign-in",
+      "failed": "Can't connect",
+      "untrusted": "Not trusted"
+    },
+    "note": {
+      "reconnect": {
+        "title": "The extension is not connected",
+        "text": "The FinxWork extension may be turned off in your browser, or the browser isn't open. Until then, sites that need your accounts can't open; other pages still use the built-in browser."
+      },
+      "update": {
+        "title": "The extension needs an update",
+        "text": "The FinxWork extension and this version of FinxWork don't match; update either one to use it."
+      },
+      "permission": {
+        "title": "Accessibility permission is missing",
+        "text": "Desktop control can't work until it is granted."
+      },
+      "program": {
+        "title": "agent-desktop is not installed",
+        "text": "Desktop control uses it to see and use other apps. Run the command below in Terminal, then check again."
+      }
+    },
+    "yours": {
+      "name": "Your Browser",
+      "pitch": "Opens pages with the accounts you're signed in to; other pages still use the built-in browser",
+      "line": "{{browser}} · used when your accounts are needed",
+      "lineNoBrowser": "Used when your accounts are needed",
+      "card": "Opens pages, clicks and fills in forms with the accounts you're signed in to, in Chrome, Edge or Brave. The built-in browser stays; sites that need signing in go here.",
+      "lede": "Sites that need your accounts open in your own browser, with your sign-ins; other pages still use the built-in browser. Each site asks you the first time.",
+      "browser": "Browser",
+      "when": "Used when",
+      "whenValue": "Your accounts are needed, or you ask for it",
+      "change": "Change Browser…",
+      "reconnect": "Reconnect",
+      "update": "Update",
+      "sites": "Site Permissions",
+      "sitesText": "Both browsers share one list of site permissions. In your browser each site asks you the first time, even when permissions are bypassed.",
+      "sitesOpen": "Manage in Settings",
+      "sharedTools": "Shared with the built-in browser",
+      "turnedOn": "Turned on your browser; every conversation can use it from its next step",
+      "turnedOff": "Turned off your browser; every conversation uses only the built-in browser from its next step",
+      "connected": "Connected your browser. Sites that need your accounts can use it in every conversation from its next step"
+    },
+    "desktop": {
+      "name": "Desktop Control",
+      "pitch": "Lets the agent see and use the other apps on this Mac",
+      "line": "Sees and uses the other apps on this Mac",
+      "card": "Sees and uses the other apps on this Mac, such as Notes, Calendar and Finder.",
+      "lede": "The agent can see and use the other apps on this Mac. Each app asks you the first time; it also stops to ask before sending messages, paying or deleting.",
+      "connectTitle": "Connect Desktop Control",
+      "connectSub": "Lets finx see and use the other apps on this Mac. Each app asks you the first time; it also stops to ask before sending messages, paying or deleting.",
+      "accessibility": "Accessibility",
+      "accessibilityDesc": "Reads windows and clicks and types in them; required.",
+      "screen": "Screen Recording",
+      "screenDesc": "Needed for screenshots of windows; reading and using windows works without it.",
+      "screenWhen": "· for screenshots",
+      "required": "Required",
+      "optional": "Optional",
+      "program": "agent-desktop",
+      "programDesc": "The program that sees and uses other apps. In Terminal, run:",
+      "missing": "Not installed",
+      "recheck": "Check Again",
+      "install": "Install",
+      "granted": "Granted",
+      "notGranted": "Not granted",
+      "openSettings": "Open System Settings",
+      "permissionsNote": "Turn FinxWork on in System Settings, then come back: the state refreshes by itself. A permission just granted may need FinxWork to restart.",
+      "done": "Done",
+      "grant": "Grant",
+      "permissions": "System Permissions",
+      "apps": "App Permissions",
+      "appsHint": "An app not listed here asks you the first time",
+      "appsEmpty": "No apps yet. Check “Remember” when the agent asks, and the app shows up here.",
+      "addApp": "Add App…",
+      "appLevel": "Permission for {{name}}",
+      "level": {
+        "read": "Can View",
+        "act": "Can View and Use",
+        "deny": "Never"
+      },
+      "forget": "Remove",
+      "turnedOn": "Turned on desktop control; every conversation can use it from its next step",
+      "turnedOff": "Turned off desktop control; no conversation uses it from its next step",
+      "connected": "Connected desktop control. Every conversation can use it from its next step"
+    },
+    "tools": {
+      "browser_navigate": "Opens a URL, or goes back or forward; can choose which browser",
+      "browser_snapshot": "Reads the text and the elements one can act on",
+      "browser_act": "Clicks, types, selects and uploads files on the page",
+      "browser_screenshot": "Takes a screenshot to check how the page looks",
+      "browser_wait": "Waits for the page to load or for some text to appear",
+      "browser_tabs": "Lists, opens, selects and closes this conversation's tabs, saying which browser each is in",
+      "browser_console": "Reads the page's console messages and errors",
+      "browser_batch": "Runs several steps at once",
+      "desktop_apps": "Lists the open apps and their windows",
+      "desktop_launch": "Opens an app, or switches to it",
+      "desktop_snapshot": "Reads a window's text and the elements one can act on",
+      "desktop_act": "Clicks, types, presses keys and scrolls in a window",
+      "desktop_screenshot": "Takes a screenshot of a window"
+    }
   }
 }

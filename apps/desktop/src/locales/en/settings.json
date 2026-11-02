@@ -205,8 +205,8 @@
       "outdated": "Needs update"
     },
     "off": "Once connected, the agent opens pages in your own browser, signed in to your accounts, where sites are less likely to block it.",
-    "on": "The agent opens pages in this browser, with your sign-ins. It only sees the tabs it opens.",
-    "ready": "The extension is connected, but the agent still uses the built-in browser.",
+    "on": "Sites that need your accounts open here, with your sign-ins. The agent sees only the tabs it opened.",
+    "ready": "The extension is connected, but turned off.",
     "lost": "The extension is not connected: it may be turned off, or not added yet.",
     "closed": "{{name}} is not open. It connects by itself once you open it.",
     "none": "No Chrome, Edge or Brave was found on this Mac.",
@@ -221,7 +221,7 @@
     "open": "Open {{name}}",
     "getChrome": "Get Chrome",
     "checkUpdates": "Check for Updates",
-    "note": "The built-in browser is for looking at your work: local files, PDFs and page previews. Sites that need your accounts go to your own browser. Changes apply to new conversations.",
+    "note": "Sites that need your accounts open in your browser; other pages use the built-in one. Changes apply from each conversation's next step.",
     "guide": {
       "title": "Connect Your Browser",
       "steps": {
@@ -252,11 +252,11 @@
       "waitHint": "Still not connected? On {{name}}'s extensions page, find FinxWork, make sure its switch is on, then click its reload button.",
       "back": "Back",
       "done": "Connected to {{name}}",
-      "doneHint": "In new conversations the agent opens pages in your browser. You can stop using it here at any time; closing the “is debugging this browser” bar takes a tab back.",
+      "doneHint": "Sites that need your accounts now open in your browser, in every conversation from its next step. Turn it off here at any time; closing the “debugging” bar at the top of the browser also takes a tab back.",
       "finish": "Done"
     },
     "builtIn": {
-      "title": "Built-in Browser",
+      "title": "Address Bar",
       "search": "Address Bar Search",
       "searchDesc": "What the address bar searches with when what you type is not an address.",
       "engines": "Search Engines",
@@ -283,7 +283,26 @@
         "keywordTaken": "Another search engine uses this keyword.",
         "url": "The URL starts with http:// or https://, with %s where the search words go."
       }
-    }
+    },
+    "agent": "The Agent's Browsers",
+    "builtin": "Built-in Browser",
+    "builtinDesc": "Opens local pages, files and sites that need no account. It has its own sign-ins.",
+    "scripts": "Scripts",
+    "scriptsOn": "Allow Page Scripts",
+    "scriptsDesc": "The agent may run scripts in pages, asking you before each one.",
+    "sites": "Site Permissions",
+    "sitesEmpty": "No sites yet. Choose “Always Allow” when the agent asks, and the site shows up here.",
+    "allSites": "All Sites",
+    "allSitesDesc": "Private network addresses are not included",
+    "siteLevel": "Permission for {{site}}",
+    "level": {
+      "act": "Open and Act",
+      "navigate": "Open Only",
+      "deny": "Deny"
+    },
+    "remove": "Remove",
+    "removeSite": "Remove {{site}}",
+    "sitesNote": "Shared by both browsers. A site not listed here is asked about the first time; in your browser, even when permissions are bypassed."
   },
   "desktop": {
     "enable": "Allow FinxWork to operate desktop apps",
@@ -295,7 +314,11 @@
     "appsLocked": "Grant Accessibility above first; then you can set what the agent may do in each app.",
     "appsEmpty": "No apps set yet. Click “Add App” to pick one, or check “Remember” when the agent asks, and the app shows up here.",
     "appLevel": "Permission for {{name}}",
-    "level": {"read": "Can view", "act": "Can view and use", "deny": "Blocked"},
+    "level": {
+      "read": "Can view",
+      "act": "Can view and use",
+      "deny": "Blocked"
+    },
     "add": "Add App…",
     "forget": "Remove",
     "forgetNamed": "Remove the setting for {{name}}",
@@ -311,6 +334,9 @@
     "program": "Program",
     "missing": "Not installed",
     "install": "Run in Terminal:",
-    "recheck": "Check again"
+    "recheck": "Check again",
+    "moved": "Set Up Among the Connectors",
+    "movedDesc": "Its switch, system permissions and app permissions are in Customize › Connectors › Desktop Control.",
+    "open": "Open"
   }
 }

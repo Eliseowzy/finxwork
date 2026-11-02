@@ -28,6 +28,8 @@ pub enum Gate {
         proposed_mode: Option<PermissionMode>,
         /// Site permissions that approving for the session may keep, one of them.
         proposed_grants: Vec<SiteGrant>,
+        /// The call works in the user's own browser (connectors-entry-design §3.4).
+        own_browser: bool,
     },
 }
 

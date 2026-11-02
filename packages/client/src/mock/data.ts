@@ -310,7 +310,7 @@ export function replyScript(prompt: string): TaskScript {
   };
 }
 
-/** A message about a website opens it in the user's own Chrome, which asks first. */
+/** A message about a website opens it in the user's own browser, which asks first. */
 export function wantsSite(text: string): boolean {
   return /cloudflare|网站|website/i.test(text);
 }
@@ -324,17 +324,17 @@ export function siteScript(): TaskScript {
         tools: [
           {
             name: "browser_navigate",
-            args: { url },
+            args: { url, browser: "yours" },
             output: "Opened Cloudflare | Web Performance & Security",
             ms: 600,
             approval: {
               summary: `open ${url}`,
-              reason: "First use of https://dash.cloudflare.com in this session.",
+              reason: "First use of https://dash.cloudflare.com in this session. It is in the user's own browser, with their real sign-ins.",
               grants: [
                 { authority: "act", origin: "https://dash.cloudflare.com" },
                 { authority: "act", origin: "*" },
               ],
-              own_chrome: true,
+              own_browser: true,
             },
           },
         ],

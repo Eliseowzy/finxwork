@@ -298,6 +298,7 @@ impl AgentTree {
             },
             home: self.deps.home.clone(),
             config: self.deps.config.clone(),
+            system: root.system.clone(),
             trusted: self.deps.trusted,
             locks: root.locks.clone(),
         })

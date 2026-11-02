@@ -581,9 +581,9 @@ export class MockServer {
       const call_id = calls[k].id;
       this.toolStarted(s, call_id, t);
       pending[k].started = true;
-      if (t.approval && (t.approval.own_chrome || asks(s.view.info.permission_mode, describe(t.name, t.args, s.view.info.cwd).category))) {
+      if (t.approval && (t.approval.own_browser || asks(s.view.info.permission_mode, describe(t.name, t.args, s.view.info.cwd).category))) {
         const d = describe(t.name, t.args, s.view.info.cwd);
-        this.emit(s, { type: "approval_requested", call_id, name: t.name, args: t.args, summary: t.approval.summary || d.title, reason: t.approval.reason, proposed_grants: t.approval.grants });
+        this.emit(s, { type: "approval_requested", call_id, name: t.name, args: t.args, summary: t.approval.summary || d.title, reason: t.approval.reason, proposed_grants: t.approval.grants, ...(t.approval.own_browser ? { own_browser: true } : {}) });
         const decision = await new Promise<ApprovalDecision>((resolve) => run.approvals.set(call_id, resolve));
         run.approvals.delete(call_id);
         if (stopped()) return false;
@@ -724,6 +724,8 @@ export class MockServer {
         return this.customize.skillsFiles((p as P<"skills/files">).path) satisfies R<"skills/files">;
       case "config/read":
         return this.customize.configRead(!!(p as P<"config/read">).layers) satisfies R<"config/read">;
+      case "browser/status":
+        return this.customize.browserStatus() satisfies R<"browser/status">;
       case "config/write": {
         const q = p as P<"config/write">;
         return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;

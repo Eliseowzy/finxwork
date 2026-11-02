@@ -670,7 +670,26 @@ pub fn merge_servers(
 }
 
 
-/// `base`, then the MCP part when there is one.
+/// The guidelines of `tools` that the frozen base prompt lacks: those of tools that came after
+/// it was written, such as a browser turned on mid-session (connectors-entry-design §9.4).
+/// Guidelines of tools gone since stay in the base prompt; they cost a few lines, rewriting the
+/// prefix would cost the cache.
+fn late_guidelines(base: &str, tools: &finx_tools::ToolRegistry) -> Option<String> {
+    let missing: Vec<&str> = tools.guidelines().into_iter().filter(|line| !base.contains(line)).collect();
+    if missing.is_empty() {
+        return None;
+    }
+    let mut text = String::from("<tool_guidelines>\n");
+    for line in missing {
+        text.push_str("- ");
+        text.push_str(line);
+        text.push('\n');
+    }
+    text.push_str("</tool_guidelines>");
+    Some(text)
+}
+
+/// `base`, then the part after it when there is one.
 pub(crate) fn compose(base: &str, section: Option<&str>) -> String {
     match section {
         Some(section) => format!("{}\n\n{section}\n", base.trim_end()),
@@ -701,18 +720,37 @@ impl crate::session::Session {
     /// Brings the tool list and the system prompt up to the MCP servers' current state.
     /// Returns whether either changed. Records nothing.
     pub(crate) fn refresh_mcp(&self) -> bool {
+        self.refresh_tools(false)
+    }
+
+    /// The tool list and the system prompt from `base_tools` and the MCP servers: when the
+    /// servers changed, or always with `force` (the system connectors changed). Returns whether
+    /// either changed. Records nothing.
+    pub(crate) fn refresh_tools(&self, force: bool) -> bool {
         use std::sync::atomic::Ordering;
-        let Some(mcp) = &self.mcp else { return false };
-        let generation = mcp.generation();
-        if self.mcp_applied.swap(generation, Ordering::AcqRel) == generation {
-            return false;
+        match &self.mcp {
+            Some(mcp) => {
+                let generation = mcp.generation();
+                if self.mcp_applied.swap(generation, Ordering::AcqRel) == generation && !force {
+                    return false;
+                }
+            }
+            None if !force => return false,
+            None => {}
         }
-        let catalog = mcp.catalog();
-        let mut tools = (*self.base_tools).clone();
-        for tool in &catalog.direct {
-            let _ = tools.register(tool.clone());
+        let mut tools = (**self.base_tools.lock()).clone();
+        let mut mcp_section = None;
+        if let Some(mcp) = &self.mcp {
+            for tool in &mcp.catalog().direct {
+                let _ = tools.register(tool.clone());
+            }
+            mcp_section = mcp.prompt_section();
         }
-        let section = mcp.prompt_section();
+        let late = late_guidelines(&self.state.lock().base_prompt, &tools);
+        let section = match (late, mcp_section) {
+            (Some(late), Some(mcp)) => Some(format!("{late}\n\n{mcp}")),
+            (late, mcp) => late.or(mcp),
+        };
         let tools_changed = self.tools().specs() != tools.specs();
         let prompt_changed = {
             let mut state = self.state.lock();

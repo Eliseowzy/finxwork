@@ -287,6 +287,7 @@ mod tests {
                 navigation_timeout: Duration::from_secs(15),
                 action_timeout: Duration::from_secs(10),
                 label: Some("session-1".into()),
+                prefix: "",
             },
         );
         let url = serve_page("<title>Hosted</title><h1>Hello from the host</h1><button>Go</button>").await;

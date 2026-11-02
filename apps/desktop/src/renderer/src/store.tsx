@@ -61,6 +61,8 @@ type UI = {
   /** The session whose title is being edited in the list. */
   renaming: string | null;
   sheet: Sheet | null;
+  /** A system connector's way of connecting, open over the window (connectors-entry-design §6). */
+  connect: "yours" | "desktop" | null;
   toast: Toast | null;
   draft: Draft;
   customize: CustomizeView;
@@ -161,6 +163,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       searching: false,
       renaming: null,
       sheet: null,
+      connect: null,
       toast: null,
       draft: { cwd: null, model: null, thinking: null, permission: "manual", ...s.draft },
       customize: s.customize ?? { tab: "skills", view: "discover", detail: null },

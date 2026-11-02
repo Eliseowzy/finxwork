@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.6 |
+| 版本 | v0.7 |
 | 日期 | 2026-11-02 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension） |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -33,7 +33,7 @@
 - **分期**：
   - 一期：托管浏览器 + 7 个工具 + 权限与审批改造，约 3.5 周；
   - 二期：桌面内嵌浏览器 + 批量执行；
-  - 三期：Chrome 扩展 + Native Messaging 宿主（§8.4），只在配置 `browser.backend = "extension"` 时使用。
+  - 三期：Chrome 扩展 + Native Messaging 宿主（§8.4），用户在桌面端连接后由 `browser.extension` 打开，与内置浏览器并存（D-225）。
 
 ## 目录
 
@@ -745,11 +745,15 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 
 #### 8.4.3 选用与安全（D-215、D-216）
 
-- **只在显式配置时使用**：`browser.backend = "extension"`。`auto` 不会选它：用真实账号必须是用户自己的决定。项目配置不能设 `backend`（D-178）。没有连上时报错，说明怎么安装扩展，或者改用 `managed`。
+- **只在用户打开时使用**（D-225，取代 D-215 的"二选一"）：
+  - `browser.extension = true` 打开它，与内置浏览器并存。旧写法 `backend = "extension"` 读作 `extension = true`、`backend = "auto"`。项目配置不能打开它（D-178）；
+  - 两个浏览器都开着时，`browser_navigate` 和 `browser_tabs` 多一个参数 `browser`（`builtin` 或 `yours`）。新页面默认在内置浏览器里开，只在任务需要用户的账号或用户点名时用 `yours`；之后的读取、操作、截图跟着标签页走；
+  - 用户浏览器里的标签页和 ref 以 `y` 开头（`y2`、`ye14`），两个浏览器的编号不会撞上；`browser_tabs` 分别列出两个浏览器里的标签页；
+  - 没有连上时报错，说明需要用户在 FinxWork 里重新连接，不换到内置浏览器。
 - **bypass 也询问**：
-  - 配置为 `extension` 时，`SitePolicy.real_logins` 为真，`bypass-permissions` 不再跳过公网站点的 `Navigate` 和 `Act` 询问，也不再跳过工作区内文件的 `Upload` 询问；
+  - 调用落在用户的浏览器里时，`bypass-permissions` 不再跳过公网站点的 `Navigate` 和 `Act` 询问，也不再跳过工作区内文件的 `Upload` 询问。落在哪里按每次调用判断：新页面看 `browser` 参数，其余看标签页属于哪个浏览器（原来按配置判断的 `SitePolicy.real_logins` 已去掉）；
   - 会话授权、永久允许（`browser.sites`，包括 `"*"` 所有网站，D-221）和回环地址照常放行，§7 的其他闸不变；
-  - 询问的原因里写明"这是用户自己的 Chrome，登录状态是真实的，所以 bypass 也询问"，桌面端据此显示一行说明（D-222）。
+  - 询问的原因里写明"这是用户自己的浏览器，登录状态是真实的"（bypass 下再加"所以 bypass 也询问"）；`approval_requested` 带 `own_browser: true`，桌面端据此把标题写成"在你的浏览器里打开 X？"（connectors-entry-design DD-74）。
 - **告诉模型**：每个会话的第一次结果里写明"这是用户自己的 Chrome，标签页在 FinxWork 标签组里，登录状态是真的"。
 - **宿主身份**（D-198 的落地）：
   - socket 本来就只接受同一个用户的进程（0700/0600、`peer_cred` 的 uid）；
@@ -768,14 +772,14 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   |---|---|---|
   | 未连接 | 连接后能用自己的登录状态 | 连接 |
   | 使用中 | 显示"Google Chrome 156"和它的图标 | 停止使用 |
-  | 已连接 | 扩展连着，但智能体还在用内置浏览器 | 开始使用 |
+  | 已连接 | 扩展连着，但没有打开（`extension = false`），智能体只用内置浏览器 | 开始使用 |
   | 未连接（之前在用） | 浏览器没开，或者扩展被停用、没装 | 打开 Chrome、重新连接 |
   | 没有浏览器 | 本机没有 Chrome、Edge、Brave | 下载 Chrome |
 
 - **连接引导**（对话框，三步）：
   1. **准备**：应用自己完成，用户只看到打勾。把扩展复制到 `~/.finx/browser/FinxWork Extension`（应用移动或更新都不影响它），并用正在运行服务的那个 finx（取自服务记录里的 `exe`）运行 `finx browser extension install`，这样宿主与服务一定是同一个程序（D-216）；
   2. **添加扩展**：唯一要用户动手的一步。上架前：按钮打开浏览器的扩展程序页面，另一个按钮在访达里显示扩展文件夹，图文说明"打开开发者模式，把文件夹拖进来"。上架后（`STORE_URL` 设上）换成一个"添加到 Chrome"按钮；
-  3. **连接**：等内核报告扩展连上，然后自动写入 `[browser] enabled = true`、`backend = "extension"`。用户点"连接"就是同意，不再另外确认。
+  3. **连接**：等内核报告扩展连上，然后自动写入 `[browser] extension = true`。用户点"连接"就是同意，不再另外确认。
 - **状态从哪来**：
   - 扩展连上后先发 `{hello: {browser, extension_version}}`，宿主把它放进 `browser/host` 的参数；
   - 客户端调用 `browser/status` 取得 `{extension?: {browser, extension_version}, embedded}`，之后在扩展来去时收到 `browser/changed`；
@@ -783,7 +787,8 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 - **应用启动时**：如果之前设置过，重新复制扩展、重写清单，让它们跟上应用的位置和版本。
 - **打包**：扩展放在 `Contents/Resources/chrome-extension`。
 - **命令行**留给开发者：`finx browser extension install | status | uninstall`。
-- 设置改动对新的对话生效（会话第一次用浏览器时选后端，§8.3.3）。
+- 设置改动对已经打开的对话也生效，在它们各自的下一次模型请求之前（connectors-entry-design D-224）。
+- 同一个开关也在输入框"+ › 连接器"和"自定义 › 连接器"里：用户的浏览器是一个系统连接器（connectors-entry-design §4）。
 - 内置浏览器的定位相应收窄：用来查看工作成果（本地文件、PDF、网页预览）；需要登录账号的网站交给用户自己的浏览器，嵌入式浏览器容易被网站的风控拦下。
 
 #### 8.4.5 以后再做
@@ -830,7 +835,7 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   - **桌面端**：见下一条。
 - **审批界面**（D-222）：桌面端的网站审批框只问一件事：
   - 标题"允许 finx 使用 dash.cloudflare.com？"，下面一行是完整网址；
-  - 只有在绕过权限模式下、用户自己的 Chrome 仍然询问时，多一行说明原因："这是你自己的 Chrome，登录状态是真实的，所以绕过权限也会先问你。"判断依据是：bypass 下还提议"所有网站"的询问只会来自扩展后端，不需要新的协议字段；
+  - 落在用户自己的浏览器里时（`own_browser`），标题写"在你的浏览器里打开 dash.cloudflare.com？"，下面一行说明用的是用户已经登录的账号；绕过权限模式下改说"绕过权限也会先问你"。原来靠"bypass 下还提议所有网站"来推断，两个浏览器并存后推断不出来，所以加了这个可选字段；
   - 按钮：拒绝… ／ 允许所有网站 ／ 始终允许此网站 ／ 允许一次（⌘↩）。两个"始终"都写入配置，没有"本会话"一档，也没有"记住"勾选框；"允许所有网站"的提示里写明风险；私有地址不提议"所有网站"，所以不出现这个按钮；
   - 桌面应用的审批（`app://`）不变：按应用提议授权，可勾选"记住"。
 - **步骤显示**：桌面端一期在步骤里显示网址、操作和截图缩略图，点开看大图。二期加内嵌浏览器面板。
@@ -840,8 +845,9 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 
 ```toml
 [browser]
-enabled = false              # 打开后加入 7 个浏览器工具
-backend = "auto"             # auto | embedded | managed | extension；auto：桌面端连着时用内嵌浏览器（§8.3.3）；extension：用户自己的 Chrome（§8.4）
+enabled = true               # 内置浏览器；不写时桌面端连着就开，命令行里关（connectors-entry-design §9.1）
+extension = false            # 用户自己的浏览器（§8.4），与内置浏览器并存；只能写在用户配置里
+backend = "auto"             # 内置浏览器用哪种：auto | embedded | managed；auto：桌面端连着时用内嵌浏览器（§8.3.3）。旧值 extension 读作 extension = true
 executable = ""              # 留空则自动查找
 profile = "default"          # 用户目录 ~/.finx/browser/profiles/<profile>
 headless = "auto"            # auto | true | false；auto：finx exec 和没有显示器时无界面
@@ -861,7 +867,8 @@ action_timeout_secs = 10
 项目配置（`.finx/config.toml`）只能收紧，不能放宽（D-178）：
 - 项目里的 `allowed_domains` 与用户配置取交集，`denied_domains` 取并集；
 - `browser.sites` 里只认 `deny`；
-- `script_enabled` 不能设为 true。
+- `script_enabled` 不能设为 true；
+- `extension` 不能设为 true。
 
 ## 11. 测试
 
@@ -1018,8 +1025,8 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-212 | 新标签页带 `finxSession`，显示在该会话所在窗口右侧的浏览器面板里；不显示的标签页照常运行；内嵌浏览器的登录状态在独立的 partition |
 | D-213 | 扩展后端：MV3 扩展经 Native Messaging 连 `finx browser native-host`（同一个 finx 程序，由 `install` 写的启动脚本拉起），宿主用 `browser/host {kind:"extension"}` 连 socket 服务，之后同 D-209；超过 1 MB 的消息分片 |
 | D-214 | 扩展沿用 D-210 实现浏览器级方法；只附加智能体开的和由它们打开的标签页，放在独立窗口的 FinxWork 标签组里；用户关掉调试提示条即收回该标签页，不重新附加；内核断开时只放开、不关标签页 |
-| D-215 | 扩展后端只在 `browser.backend = "extension"` 时使用，`auto` 不选它 |
-| D-216 | 扩展后端下 bypass 不跳过 Navigate/Act/Upload 的询问（`SitePolicy.real_logins`）；服务核对扩展宿主的可执行文件与自己相同 |
+| D-215 | 扩展后端只在 `browser.backend = "extension"` 时使用，`auto` 不选它（"二选一"被 D-225 取代：`browser.extension` 打开它，与内置浏览器并存） |
+| D-216 | 扩展后端下 bypass 不跳过 Navigate/Act/Upload 的询问（D-225 起按调用落在哪个浏览器判断）；服务核对扩展宿主的可执行文件与自己相同 |
 | D-217 | 用户在桌面端"设置 › 浏览器"里连接：应用自动注册宿主、复制扩展，只请用户添加扩展；连上后自动启用；状态经 `browser/status` 与 `browser/changed` 取得 |
 | D-218 | 内嵌浏览器以所基于版本的 Chrome 出现：UA 只报主版本，客户端提示（请求头与 `userAgentData`）含 Google Chrome，权限查询与请求一致地拒绝，语言跟随应用；不伪造 `window.chrome`，不虚报版本 |
 | D-219 | 扩展上架商店、与应用分开更新：扩展和 finx 各自声明支持的 bridge 版本范围，服务取共同的最高版本；没有共同版本时连接保留但不可用，`ExtensionStatus.problem` 说明该更新哪一边；扩展有更新时，等到没有智能体标签页再重新加载 |
