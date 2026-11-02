@@ -57,8 +57,9 @@
   --bar-tint: rgba(255, 255, 255, .7);
   --code: #f6f7fa; --add-bg: rgba(23, 146, 79, .10); --del-bg: rgba(215, 51, 63, .08); --add-fg: #127443; --del-fg: #b0232f;
   --scrim: rgba(0, 0, 0, .18);
-  /* The composer's pill and the approval card over it. */
+  /* The composer's pill and the approval card over it; the tray of waiting messages behind it, a step below the window. */
   --pill: #ffffff; --pill-bd: rgba(0, 0, 0, .12);
+  --tray: #f4f4f7;
   color-scheme: light;
 }
 
@@ -90,6 +91,7 @@
     --code: #18181b; --add-bg: rgba(63, 207, 134, .12); --del-bg: rgba(255, 102, 112, .11); --add-fg: #5fe0a0; --del-fg: #ff8c94;
     --scrim: rgba(0, 0, 0, .35);
     --pill: #28282c; --pill-bd: rgba(255, 255, 255, .09);
+    --tray: #19191c;
     color-scheme: dark;
   }
 }

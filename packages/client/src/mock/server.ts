@@ -1,6 +1,6 @@
 import type {
-  ActiveTask, AgentStatus, ContextReport, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, RpcErrorObject,
-  SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent,
+  ActiveTask, AgentStatus, ContextReport, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
+  SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage,
 } from "@finx/protocol";
 import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
@@ -42,10 +42,21 @@ interface Conn {
 
 interface Run {
   cancelled: boolean;
+  /** `steer_now`: the turn under way ends, and the task goes on. */
+  cut?: boolean;
   approvals: Map<string, (d: ApprovalDecision) => void>;
   /** The assistant message being written, if one is (for an interrupt to complete it). */
   writing?: { message_id: string; content: AssistantContent[] };
-  steer: UserContent[][];
+  /** The turn's tool calls that have no result yet (for `steer_now` to end them). */
+  pending?: { call_id: string; tool: ToolScript; started: boolean }[];
+}
+
+/** Input that waits for the running task, as finx keeps it. */
+interface Waiting {
+  id: string;
+  mode: PromptMode;
+  input: UserContent[];
+  ts: number;
 }
 
 interface Session {
@@ -54,8 +65,8 @@ interface Session {
   summary: SessionSummary;
   seq: number;
   run?: Run;
-  /** Follow-ups waiting for the task to end. */
-  queued: UserContent[][];
+  /** Input waiting for the running task, in the order it came. */
+  queue: Waiting[];
   tasks: number;
   /** A sub-agent's session: whose agent it is. Its events reach the main session as agent_event. */
   parent?: { root: Session; name: string };
@@ -99,6 +110,8 @@ const providerOf = (model: string) => model.split("/")[0] ?? model;
 const iso = (ms: number) => new Date(ms).toISOString();
 let counter = 0;
 const newId = (prefix: string) => `${prefix}${Date.now().toString(36)}${(counter++).toString(36)}`;
+/** Waiting input in the order it joins: steering input first, each kind in the order it came. */
+const ordered = (queue: Waiting[]) => [...queue.filter((x) => x.mode === "steer"), ...queue.filter((x) => x.mode === "follow_up")];
 
 export class MockServer {
   private readonly sessions = new Map<string, Session>();
@@ -159,7 +172,7 @@ export class MockServer {
     const summary: SessionSummary = {
       session_id: id, cwd, no_project, created_at: iso(at), updated_at: iso(at), loaded: true, busy: false, attached_clients: 0, state: "idle", model, archived: false,
     };
-    const s: Session = { id, view, summary, seq: 0, queued: [], tasks: 0, children: [], mails: [] };
+    const s: Session = { id, view, summary, seq: 0, queue: [], tasks: 0, children: [], mails: [] };
     this.sessions.set(id, s);
     return s;
   }
@@ -198,7 +211,7 @@ export class MockServer {
 
   /** Writes a task's first turns at once, as history (the clock moves on a little per event). */
   private playNow(s: Session, t: DemoTask, turns: number, keepGoing = false) {
-    const run: Run = { cancelled: false, approvals: new Map(), steer: [] };
+    const run: Run = { cancelled: false, approvals: new Map() };
     s.run = run;
     this.startTask(s, [{ type: "text", text: t.prompt }]);
     t.script.turns.slice(0, turns).forEach((turn, i) => this.turnNow(s, turn, i + 1));
@@ -273,7 +286,7 @@ export class MockServer {
     for (const c of this.conns) c.peer.write(line);
   }
 
-  private startTask(s: Session, input: UserContent[]) {
+  private startTask(s: Session, input: UserContent[], id = newId("u")) {
     s.tasks++;
     const task_id = `t${s.tasks}`;
     this.emit(s, { type: "task_started", task_id });
@@ -282,13 +295,42 @@ export class MockServer {
     this.deliver(s);
     // The preview first, so the list hears of it with the message.
     if (!s.summary.preview) s.summary = { ...s.summary, preview: userText(input).text.slice(0, 120) };
-    this.emit(s, { type: "message_completed", message_id: newId("u"), message: { role: "user", content: input, ts: this.now() }, skills: demoSkillUses(userText(input).text) });
+    this.emit(s, { type: "message_completed", message_id: id, message: { role: "user", content: input, ts: this.now() }, skills: demoSkillUses(userText(input).text) });
+  }
+
+  /** The queue as finx announces it: steering input first, each kind in the order it came. */
+  private queueChanged(s: Session) {
+    const queued = ordered(s.queue).map((x) => ({ id: x.id, mode: x.mode, message: { content: x.input, ts: x.ts } }));
+    this.emit(s, { type: "queue_changed", queued });
+  }
+
+  /** Takes waiting input of one kind out of the queue: all of it, or the first. */
+  private take(s: Session, mode: PromptMode, all: boolean): Waiting[] {
+    const taken = s.queue.filter((x) => x.mode === mode).slice(0, all ? undefined : 1);
+    if (taken.length === 0) return taken;
+    s.queue = s.queue.filter((x) => !taken.includes(x));
+    this.queueChanged(s);
+    return taken;
+  }
+
+  /** Waiting input joins the history, under its id. */
+  private join(s: Session, x: Waiting) {
+    this.emit(s, { type: "message_completed", message_id: x.id, message: { role: "user", content: x.input, ts: x.ts }, skills: demoSkillUses(userText(x.input).text) });
+  }
+
+  /** A task that ends early hands what still waits back, in the order it would have joined. */
+  private handBack(s: Session): UserMessage[] {
+    if (s.queue.length === 0) return [];
+    const back = ordered(s.queue).map((x) => ({ content: x.input, ts: x.ts }));
+    s.queue = [];
+    this.queueChanged(s);
+    return back;
   }
 
   private endTask(s: Session, fail?: ErrorInfo) {
     const live = s.view.live;
     if (!live) return;
-    if (fail) this.emit(s, { type: "task_failed", task_id: live.task_id, error: fail, usage: live.usage });
+    if (fail) this.emit(s, { type: "task_failed", task_id: live.task_id, error: fail, usage: live.usage, returned_input: this.handBack(s) });
     else {
       const last = [...s.view.entries].reverse().find((e) => e.type === "message" && e.message.role === "assistant");
       const last_message = last?.type === "message" ? textOf(last.message.content) : undefined;
@@ -315,7 +357,7 @@ export class MockServer {
       this.complete(s, run.writing.message_id, run.writing.content, "aborted");
       run.writing = undefined;
     }
-    this.emit(s, { type: "task_interrupted", task_id: live.task_id, returned_input: [], usage: live.usage });
+    this.emit(s, { type: "task_interrupted", task_id: live.task_id, returned_input: this.handBack(s), usage: live.usage });
     s.run = undefined;
     if (s.parent) return this.agentDone(s, "interrupted");
     s.held = true;
@@ -333,10 +375,10 @@ export class MockServer {
     const session_file = root.view.info.session_file.replace(/[^/]*\.jsonl$/, `${id}.jsonl`);
     const info: SessionInfo = { ...root.view.info, session_id: id, session_file, title: name, archived: false };
     const view = fromSnapshot({ session: info, last_seq: 0, transcript: { items: [] }, usage: { per_model: {} } });
-    const child: Session = { id, view, summary: root.summary, seq: 0, queued: [], tasks: 0, children: [], mails: [], parent: { root, name }, roundStart: this.now() };
+    const child: Session = { id, view, summary: root.summary, seq: 0, queue: [], tasks: 0, children: [], mails: [], parent: { root, name }, roundStart: this.now() };
     root.children.push(child);
     this.emit(root, { type: "agent_started", agent_id: id, name, session_file, call_id });
-    child.run = { cancelled: false, approvals: new Map(), steer: [] };
+    child.run = { cancelled: false, approvals: new Map() };
     this.startTask(child, [{ type: "text", text: agentTask(name, task) }]);
     void this.play(child, script);
     return { agent_id: id, name, session_file, status: "running", background: true, reported: false };
@@ -372,14 +414,14 @@ export class MockServer {
 
   /** The main session has nothing running: a report that wakes it starts a task; else, once its agents rest, it is idle. */
   private settle(s: Session) {
-    if (s.parent || s.view.live || s.queued.length > 0) return;
+    if (s.parent || s.view.live || s.queue.length > 0) return;
     if (!s.held && s.mails.some((m) => m.wake)) return this.wake(s);
     if (runningAgents(s.view).length === 0) this.emit(s, { type: "idle" });
   }
 
   /** Reports start a task: what the model says on them, or its answer once all are in. */
   private wake(s: Session) {
-    s.run = { cancelled: false, approvals: new Map(), steer: [] };
+    s.run = { cancelled: false, approvals: new Map() };
     s.tasks++;
     this.emit(s, { type: "task_started", task_id: `t${s.tasks}`, trigger: "mail" });
     const names = this.deliver(s);
@@ -449,25 +491,55 @@ export class MockServer {
       await this.sleep(delay_ms);
       if (run.cancelled) return;
     }
-    for (let i = from; i < script.turns.length; i++) {
+    for (let i = from; ; i++) {
+      if (i >= script.turns.length) {
+        // The task would end here: a follow-up goes in, and the same task goes on.
+        const [next] = this.take(s, "follow_up", false);
+        if (!next) break;
+        this.join(s, next);
+        script = { ...script, turns: [...script.turns, ...replyScript(userText(next.input).text).turns] };
+      }
       await this.sleep(500 + Math.random() * 500);
       if (run.cancelled) return;
-      // Steering messages join at the turn boundary.
-      for (const input of run.steer.splice(0)) {
-        this.emit(s, { type: "message_completed", message_id: newId("u"), message: { role: "user", content: input, ts: this.now() }, skills: demoSkillUses(userText(input).text) });
-        script = { ...script, turns: [...script.turns, ...steerScript(userText(input).text).turns] };
+      // Steering input joins at the turn boundary, all of it, and is answered first.
+      const steers = this.take(s, "steer", true);
+      if (steers.length > 0) {
+        for (const x of steers) this.join(s, x);
+        const answer = steerScript(steers.map((x) => userText(x.input).text).join("；")).turns;
+        script = { ...script, turns: [...script.turns.slice(0, i), ...answer, ...script.turns.slice(i)] };
       }
       const turn = script.turns[i];
       this.emit(s, { type: "turn_started", task_id, turn: i + 1 });
       const ok = await this.playTurn(s, run, turn, i + 1);
-      if (!ok || run.cancelled) return;
+      if (run.cancelled) return;
+      if (!ok) {
+        if (!run.cut) return;
+        this.endCut(s, run, turn, i + 1);
+      }
     }
     await this.sleep(300);
     if (run.cancelled) return;
     this.endTask(s, script.fail);
-    const next = s.queued.shift();
-    if (next !== undefined) this.prompt(s, next);
+    // Input that came after the last boundary starts the next task, steering input first.
+    const next = this.take(s, "steer", false)[0] ?? this.take(s, "follow_up", false)[0];
+    if (next) this.prompt(s, next.input, undefined, next.id);
     else this.settle(s);
+  }
+
+  /** `steer_now` ended the turn under way: what was written stays, the calls without a result end, and the task goes on. */
+  private endCut(s: Session, run: Run, turn: TurnScript, n: number) {
+    run.cut = false;
+    if (run.writing) {
+      // As finx keeps a reply cut short: its words, not calls that may be incomplete.
+      this.complete(s, run.writing.message_id, run.writing.content.filter((c) => c.type !== "tool_call"), "aborted");
+      run.writing = undefined;
+    }
+    for (const p of run.pending ?? []) {
+      if (!p.started) this.toolStarted(s, p.call_id, p.tool);
+      this.toolCompleted(s, p.call_id, p.tool, p.started ? "Cancelled by user." : "Tool call was not executed (interrupted).");
+    }
+    run.pending = undefined;
+    this.emit(s, { type: "turn_completed", task_id: s.view.live!.task_id, turn: n, usage: usageFor(s.view.info.model, turn) });
   }
 
   private async playTurn(s: Session, run: Run, turn: TurnScript, n: number): Promise<boolean> {
@@ -475,16 +547,17 @@ export class MockServer {
     const content = this.contentOf(turn);
     const writing: Run["writing"] = { message_id, content: [] };
     run.writing = writing;
+    const stopped = () => run.cancelled || run.cut === true;
     this.emit(s, { type: "message_started", message_id, role: "assistant" });
     await this.sleep(350);
     for (const [index, c] of content.entries()) {
-      if (run.cancelled) return false;
+      if (stopped()) return false;
       if (c.type === "tool_call") {
         this.emit(s, { type: "message_delta", message_id, delta: { type: "tool_call_start", index, call_id: c.id, name: c.name } });
         const json = JSON.stringify(c.arguments);
         for (let k = 0; k < json.length; k += 48) {
           await this.sleep(25);
-          if (run.cancelled) return false;
+          if (stopped()) return false;
           this.emit(s, { type: "message_delta", message_id, delta: { type: "tool_call_args", index, json: json.slice(k, k + 48) } });
         }
         writing.content.push(c);
@@ -493,7 +566,7 @@ export class MockServer {
       writing.content.push({ ...c, text: "" });
       for (const piece of chunks(c.text)) {
         await this.sleep(c.type === "thinking" ? 14 + Math.random() * 20 : 22 + Math.random() * 30);
-        if (run.cancelled) return false;
+        if (stopped()) return false;
         (writing.content.at(-1) as { text: string }).text += piece;
         this.emit(s, { type: "message_delta", message_id, delta: { type: c.type, index, text: piece } });
       }
@@ -501,15 +574,19 @@ export class MockServer {
     run.writing = undefined;
     this.complete(s, message_id, content, turn.tools?.length ? "tool_use" : "stop");
     const calls = content.filter((c) => c.type === "tool_call");
+    const pending: NonNullable<Run["pending"]> = (turn.tools ?? []).map((tool, k) => ({ call_id: calls[k].id, tool, started: false }));
+    run.pending = pending;
+    const done = (k: number) => (run.pending = run.pending?.filter((p) => p !== pending[k]));
     for (const [k, t] of (turn.tools ?? []).entries()) {
       const call_id = calls[k].id;
       this.toolStarted(s, call_id, t);
+      pending[k].started = true;
       if (t.approval && asks(s.view.info.permission_mode, describe(t.name, t.args, s.view.info.cwd).category)) {
         const d = describe(t.name, t.args, s.view.info.cwd);
         this.emit(s, { type: "approval_requested", call_id, name: t.name, args: t.args, summary: t.approval.summary || d.title, reason: t.approval.reason });
         const decision = await new Promise<ApprovalDecision>((resolve) => run.approvals.set(call_id, resolve));
         run.approvals.delete(call_id);
-        if (run.cancelled) return false;
+        if (stopped()) return false;
         this.emit(s, { type: "approval_resolved", call_id, decision });
         if (decision.type === "abort") {
           this.interrupt(s);
@@ -517,28 +594,31 @@ export class MockServer {
         }
         if (decision.type === "deny") {
           this.toolCompleted(s, call_id, t, `Denied by user${decision.feedback ? `: ${decision.feedback}` : "."}`);
+          done(k);
           continue;
         }
       }
       await this.sleep(120);
-      if (run.cancelled) return false;
+      if (stopped()) return false;
       this.emit(s, { type: "tool_running", call_id });
       const lines = t.progress ?? [];
       const ms = t.ms ?? 400;
       for (const line of lines) {
         await this.sleep(ms / Math.max(1, lines.length));
-        if (run.cancelled) return false;
+        if (stopped()) return false;
         this.emit(s, { type: "tool_progress", call_id, text: line });
       }
       if (!lines.length) await this.sleep(ms);
-      if (run.cancelled) return false;
+      if (stopped()) return false;
       this.toolCompleted(s, call_id, t);
+      done(k);
     }
+    run.pending = undefined;
     this.emit(s, { type: "turn_completed", task_id: s.view.live!.task_id, turn: n, usage: usageFor(s.view.info.model, turn) });
     return true;
   }
 
-  private prompt(s: Session, input: UserContent[], script?: TaskScript) {
+  private prompt(s: Session, input: UserContent[], script?: TaskScript, id?: string) {
     const text = userText(input).text;
     // `/context`: a task of its own that only reports, as finx runs it.
     if (/^\s*\/context(\s|$)/.test(text)) {
@@ -555,8 +635,8 @@ export class MockServer {
       script = { turns: [...sc.lead, { say: sc.started }] };
     }
     script = this.unkeyed(s) ?? script ?? replyScript(text);
-    s.run = { cancelled: false, approvals: new Map(), steer: [] };
-    this.startTask(s, input);
+    s.run = { cancelled: false, approvals: new Map() };
+    this.startTask(s, input, id);
     void this.play(s, script);
   }
 
@@ -604,7 +684,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false };
+        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -774,14 +854,30 @@ export class MockServer {
     switch (op.type) {
       case "prompt": {
         if (!s.view.live) return this.prompt(s, op.input);
-        if (op.mode === "follow_up") s.queued.push(op.input);
-        else s.run?.steer.push(op.input);
-        return;
+        s.queue.push({ id: newId("u"), mode: op.mode ?? "steer", input: op.input, ts: this.now() });
+        return this.queueChanged(s);
       }
+      case "withdraw": {
+        const x = s.queue.find((y) => y.id === op.id);
+        if (!x) return;
+        s.queue = s.queue.filter((y) => y !== x);
+        this.emit(s, { type: "input_withdrawn", id: op.id });
+        return this.queueChanged(s);
+      }
+      case "requeue": {
+        const x = s.queue.find((y) => y.id === op.id);
+        if (!x || x.mode === op.mode) return;
+        // To the end of the other kind.
+        s.queue = [...s.queue.filter((y) => y !== x), { ...x, mode: op.mode }];
+        return this.queueChanged(s);
+      }
+      case "steer_now":
+        if (s.run && s.run.approvals.size === 0 && s.queue.some((x) => x.mode === "steer")) s.run.cut = true;
+        return;
       case "continue":
         if (s.view.live) throw new Failure(-32014, "prompt_in_progress", "a task is running");
         const limited = s.view.failure?.kind === "rate_limited";
-        s.run = { cancelled: false, approvals: new Map(), steer: [] };
+        s.run = { cancelled: false, approvals: new Map() };
         s.tasks++;
         this.emit(s, { type: "task_started", task_id: `t${s.tasks}` });
         // The demo's rate-limited review goes on after finx waits out the limit twice; anything else just goes on.
@@ -859,6 +955,7 @@ function snapshotOf(v: SessionView, limit = 100): SessionSnapshot {
     transcript: { items: items.slice(start), before: start > 0 ? String(start) : undefined } as SessionSnapshot["transcript"],
     active_task,
     usage: v.usage,
+    queued: v.queued,
     agents: v.agents.map((a) => {
       const own = snapshotOf(a.view, limit);
       return {

@@ -25,6 +25,7 @@ pub use event::EventMsg;
 pub use event::Location;
 pub use event::MailInfo;
 pub use event::MailKind;
+pub use event::QueuedInput;
 pub use event::Role;
 pub use event::SkillUse;
 pub use event::TaskTrigger;

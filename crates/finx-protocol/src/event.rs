@@ -176,18 +176,24 @@ pub enum EventMsg {
         task_id: String,
         error: ErrorInfo,
         usage: UsageTotals,
+        /// What still waited, handed back as with an interruption.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        returned_input: Vec<UserMessage>,
     },
     TaskInterrupted {
         task_id: String,
         returned_input: Vec<UserMessage>,
         usage: UsageTotals,
     },
-    /// A prompt arrived while a task runs and waits: for the next turn boundary (`steer`) or for
-    /// the task to finish (`follow_up`). It joins the history then, as a user message with the
-    /// same `ts`; a failed task discards it and an interrupted one hands it back.
-    InputQueued {
-        message: UserMessage,
-        mode: PromptMode,
+    /// The input waiting for the running task changed: the whole queue, in the order it joins
+    /// the history, steering input first. Each joins as a user message whose `message_id` is its
+    /// `id`; a task that fails or is interrupted hands what still waits back in `returned_input`.
+    QueueChanged {
+        queued: Vec<QueuedInput>,
+    },
+    /// `withdraw` took this input out of the queue before it joined the history.
+    InputWithdrawn {
+        id: String,
     },
     SettingsChanged {
         model: String,
@@ -494,6 +500,15 @@ pub struct SkillUse {
     pub name: String,
     /// The skill's SKILL.md.
     pub path: PathBuf,
+}
+
+/// Input waiting for the running task.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct QueuedInput {
+    /// Given when it was queued: the `message_id` it has once it joins the history.
+    pub id: String,
+    pub message: UserMessage,
+    pub mode: PromptMode,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -103,10 +103,12 @@ export interface SessionView {
   failure?: ErrorInfo;
   /** Tool calls as tool_started describes them, by call id. */
   descriptions: Record<string, ToolDescription>;
-  /** What an interrupt handed back, for the composer. */
+  /** What a stopped or failed task handed back, for the composer. */
   returned?: UserMessage[];
-  /** Prompts sent while a task runs, waiting for it, oldest first. */
+  /** Input sent while a task runs and waiting for it, in the order it joins: steering input first. */
   queued: QueuedInput[];
+  /** The last input `withdraw` took out of the queue: the window that asked puts it back in the composer. */
+  withdrawn?: string;
   /** Warnings with a code, oldest first. */
   notices: Notice[];
   /** Sub-agents started since the session was loaded, in the order they started. */
@@ -259,13 +261,12 @@ function step(v: SessionView, e: Event): SessionView {
       const entries = [...v.entries, { type: "message" as const, message_id: e.message_id, message: m, mail: e.mail ?? undefined, skills: e.skills }];
       const context = m.role === "assistant" ? usageTokens(m.usage) : v.context;
       const live = v.live && v.live.streaming?.message_id === e.message_id ? { ...v.live, streaming: undefined } : v.live;
-      // A queued prompt joins the history with the time it was sent.
-      const i = m.role === "user" ? v.queued.findIndex((q) => q.message.ts === m.ts) : -1;
-      const queued = i < 0 ? v.queued : v.queued.filter((_, j) => j !== i);
-      return { ...v, entries, context, live, queued };
+      return { ...v, entries, context, live };
     }
-    case "input_queued":
-      return { ...v, queued: [...v.queued, { message: e.message, mode: e.mode }] };
+    case "queue_changed":
+      return { ...v, queued: e.queued };
+    case "input_withdrawn":
+      return { ...v, withdrawn: e.id };
     case "stream_retry":
       return withLive(v, (live) => ({ ...live, retry: { attempt: e.attempt, delay_ms: e.delay_ms, error: e.error, at: e.ts } }));
     case "tool_started": {
@@ -302,8 +303,10 @@ function step(v: SessionView, e: Event): SessionView {
       return withLive(v, (live) => ({ ...live, usage: addTotals(live.usage, { per_model: { [v.info.model]: e.usage } }) }));
     case "task_completed":
       return endTask(v, { type: "task_end", task_id: e.task_id, outcome: "completed", reason: e.reason, usage: e.usage, ts: e.ts });
-    case "task_failed":
-      return { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "failed", error: e.error, usage: e.usage, ts: e.ts }), failure: e.error, queued: [] };
+    case "task_failed": {
+      const ended = { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "failed", error: e.error, usage: e.usage, ts: e.ts }), failure: e.error, queued: [] };
+      return e.returned_input?.length ? { ...ended, returned: e.returned_input } : ended;
+    }
     case "task_interrupted":
       return { ...endTask(v, { type: "task_end", task_id: e.task_id, outcome: "interrupted", usage: e.usage, ts: e.ts }), returned: e.returned_input, queued: [] };
     case "settings_changed": {

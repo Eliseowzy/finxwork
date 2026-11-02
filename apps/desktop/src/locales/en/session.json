@@ -180,12 +180,8 @@
     "thinkingDefault": "The provider decides",
     "webComment": "Page comment",
     "webElement": "Page element",
-    "follow_up": "Queue: sent once the task finishes (⌥↩ to interject instead)",
-    "sendMode": "How to send while the task runs",
     "steerMode": "Interject",
-    "follow_upMode": "Queue",
-    "steerDesc": "Taken in at the task's next turn, before it carries on",
-    "follow_upDesc": "Sent once the task would finish"
+    "follow_upMode": "Queue"
   },
   "inspector": {
     "label": "Session info",
@@ -347,6 +343,20 @@
     "attachments_one": "{{count}} attachment",
     "attachments_other": "{{count}} attachments",
     "more_one": "+{{count}} attachment",
-    "more_other": "+{{count}} attachments"
+    "more_other": "+{{count}} attachments",
+    "next": "Next step",
+    "after": "After the task",
+    "now": "Send now",
+    "nowTip": "End the current step and deliver it now (a running command is stopped)",
+    "nowApproval": "Answer the approval first",
+    "interject": "Interject instead",
+    "interjectTip": "Deliver it at the next step, without waiting for the task",
+    "edit": "Edit (back to the composer)",
+    "delete": "Delete",
+    "deleted": "Queued message deleted",
+    "delivered": "That message was just delivered",
+    "returned_one": "The queued message is back in the composer",
+    "returned_other": "{{count}} queued messages are back in the composer",
+    "image": "Image {{n}}"
   }
 }

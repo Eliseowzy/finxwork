@@ -522,6 +522,8 @@ export type Event = {
   usage: UsageTotals;
 } | {
   error: ErrorInfo;
+  /** What still waited, handed back as with an interruption. */
+  returned_input?: UserMessage[];
   task_id: string;
   type: "task_failed";
   usage: UsageTotals;
@@ -531,9 +533,11 @@ export type Event = {
   type: "task_interrupted";
   usage: UsageTotals;
 } | {
-  message: UserMessage;
-  mode: PromptMode;
-  type: "input_queued";
+  queued: QueuedInput[];
+  type: "queue_changed";
+} | {
+  id: string;
+  type: "input_withdrawn";
 } | {
   context_window: number;
   model: string;
@@ -1025,6 +1029,15 @@ export type Op = {
 } | {
   type: "interrupt";
 } | {
+  id: string;
+  type: "withdraw";
+} | {
+  id: string;
+  mode: PromptMode;
+  type: "requeue";
+} | {
+  type: "steer_now";
+} | {
   /** The agent's id or name. */
   agent: string;
   type: "agent_interrupt";
@@ -1123,8 +1136,10 @@ export type ProviderSummary = {
   name: string;
 };
 
-/** A prompt waiting for the running task. */
+/** Input waiting for the running task. */
 export type QueuedInput = {
+  /** Given when it was queued: the `message_id` it has once it joins the history. */
+  id: string;
   message: UserMessage;
   mode: PromptMode;
 };
@@ -1160,6 +1175,8 @@ export type ServerCapabilities = {
   /** `browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3). */
   embedded_browser: boolean;
   event_filter: boolean;
+  /** Input that waits for the running task, as a client shows and changes it: `queue_changed`, `input_withdrawn`, the `withdraw`, `requeue` and `steer_now` ops, and `returned_input` on `task_failed` (docs/kernel/input-queue-design.md). */
+  input_queue: boolean;
   max_frame_bytes: number;
   model_connections: boolean;
   /** Model lists asked from providers (docs/kernel/model-catalog-design.md §8): `shown`, `known`, `deprecated` on models, `listing` on providers, `models/refresh`, `models/show`, and a checked `auth/set`. */
@@ -1285,7 +1302,7 @@ export type SessionSnapshot = {
   last_seq: number;
   /** The latest status of each MCP server, by name. */
   mcp_servers?: McpServerInfo[];
-  /** Prompts waiting for the running task (`input_queued`), oldest first. */
+  /** Input waiting for the running task, as the last `queue_changed` gave it. */
   queued?: QueuedInput[];
   session: SessionInfo;
   transcript: TranscriptPage;

@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>插话与排队</title>
+<!--
+  原型：任务运行中发出的消息（插话、排队）在会话页上怎么显示、怎么改。
+  设计见 docs/kernel/input-queue-design.md。会话页的部分照 app.css、composer.css 抄，
+  新增的只有「排队托盘」一段（.cq*）和 --tray 色值，标了「新增」。
+  页面里的任务是脚本模拟的：工具调用之间是「下一步」，插话在那里送达；
+  任务本来要结束时，排队的消息一条一条送达。
+-->
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --ease-out:cubic-bezier(.2,0,0,1);--ease-in:cubic-bezier(.3,0,1,1);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --fs:13px;--top:44px;--lights:78px;
+  --win:#ffffff;--win2:#f4f4f7;--win3:#ebebf0;
+  --side:#f4f4f7;--side-head:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);--l4:rgba(0,0,0,.14);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --side-sel:rgba(0,0,0,.075);
+  --accent-t:var(--accent-fg);--accent-bg:rgba(31,107,255,.10);
+  --green:var(--ok);--orange:var(--warn);--red:var(--danger);--red-bg:rgba(215,51,63,.10);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --menu:rgba(248,248,250,.80);--menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);
+  --bub:var(--l1);--bub-fg:var(--win);--msg:var(--l1);
+  --code:#f6f7fa;
+  --pill:#ffffff;--pill-bd:rgba(0,0,0,.12);
+  /* 新增：排队托盘的底色。两套主题里都比窗口暗一级，像凹下去的一格，输入框浮在它上面。 */
+  --tray:#f4f4f7;
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;--win3:#323237;
+  --side:#25252a;--side-head:#25252a;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);--l4:rgba(255,255,255,.14);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.05);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --side-sel:rgba(255,255,255,.1);
+  --accent-bg:rgba(46,128,255,.16);--red-bg:rgba(255,102,112,.13);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --menu:rgba(44,44,48,.80);--menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);
+  --bub:rgba(255,255,255,.09);--bub-fg:var(--l1);--msg:rgba(255,255,255,.95);
+  --code:#18181b;
+  --pill:#28282c;--pill-bd:rgba(255,255,255,.09);
+  --tray:#19191c;
+  color-scheme:dark;
+}
+
+/* Base and controls, as app.css. */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
+button{font:inherit;color:inherit;cursor:default}
+textarea{font:inherit}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.ic.sm{width:13px;height:13px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.btn{height:26px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:var(--l1);flex:none}
+.btn.sm{height:22px;padding:0 10px;font-size:12px}
+.tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--l2);gap:5px;padding:0 6px}
+.tb:hover{background:var(--fill2);color:var(--l1)}
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
+.seg button{border:0;background:transparent;height:22px;padding:0 10px;border-radius:var(--r-xs);font-size:12px}
+.seg button.on{background:var(--btn);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+.shimmer{-webkit-mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);-webkit-mask-size:300% 100%;mask-size:300% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:shimmer 2.4s linear infinite}
+@keyframes shimmer{from{-webkit-mask-position:93% 0;mask-position:93% 0}to{-webkit-mask-position:7% 0;mask-position:7% 0}}
+
+/* The window: sidebar and content, as app.css. */
+.mainwrap{display:grid;grid-template-columns:272px minmax(0,1fr);height:100%}
+.side{background:var(--side);border-right:.5px solid var(--sep);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
+.side-nav{padding:0 8px 6px;display:flex;flex-direction:column;gap:2px;flex:none}
+.nav-i{display:flex;align-items:center;gap:9px;height:32px;padding:0 9px;border-radius:var(--r-md);font-size:14px;border:0;background:none;width:100%;text-align:left}
+.nav-i .ic{width:18px;height:18px;color:var(--l1)}
+.nav-i:hover{background:var(--fill)}
+.side-list{flex:1;overflow-y:auto;min-height:0;padding:0 8px 8px}
+.grp{display:flex;flex-direction:column;gap:2px}
+.grp-h{font-size:12px;color:var(--l2);padding:24px 10px 6px;margin-bottom:2px;display:flex;align-items:center;gap:6px}
+.grp:first-child .grp-h{padding-top:20px}
+.grp-h .n{font-weight:500;color:var(--l3)}
+.srow{display:flex;padding:7px 10px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
+.srow:hover{background:var(--fill)}
+.srow.sel{background:var(--side-sel)}
+.smain{min-width:0;flex:1}
+.sl1{display:flex;gap:8px;align-items:center;line-height:18px}
+.stitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.smeta{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
+.sl2{display:flex;align-items:center;gap:3px;font-size:11px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:2px}
+.sl2 .ic{width:11px;height:11px}
+.content{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--win)}
+.ctool{height:var(--top);flex:none;display:flex;align-items:center;gap:10px;padding:0 14px 0 22px}
+.ctitle{flex:1;min-width:0}
+.ctitle h2{margin:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dwrap{flex:1;min-height:0;display:flex;position:relative;border-top:.5px solid var(--sep)}
+.dmain{flex:1;min-width:0;display:flex;flex-direction:column;min-height:0;position:relative}
+.cscroll{flex:1;overflow-y:auto;min-height:0}
+
+/* The conversation, as app.css. */
+.dbody{max-width:798px;margin:0 auto;padding:var(--sp-3) var(--sp-4) 40px}
+.tr{display:flex;flex-direction:column;gap:var(--sp-2)}
+.tdiv{align-self:center;font-size:11.5px;color:var(--l3);margin:10px 0 2px}
+.um{position:relative;align-self:flex-end;max-width:78%;margin:var(--sp-1) 0 var(--sp-3)}
+.um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}
+.am{position:relative;font-size:15px;line-height:21px;color:var(--msg)}
+.md>*{margin:0}
+.md code{font-family:var(--mono);font-size:13px;background:var(--fill2);padding:1px 5px;border-radius:var(--r-xs)}
+.tool{border-radius:var(--r-md);font-size:14px}
+.tool .th{display:flex;align-items:center;gap:6px;padding:2px 0;border-radius:var(--r-sm);border:0;background:none;max-width:100%;text-align:left;color:var(--l2)}
+.tool .th:hover{color:var(--l1)}
+.tool .th .vb{flex:none}
+.tool .th .sm2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.tool .th .cmd{font-family:var(--mono);font-size:12.5px;opacity:.9}
+.tgroup{font-size:14px}
+.tg-h{display:flex;align-items:center;gap:6px;padding:2px 0;border:0;background:none;color:var(--l2);text-align:left}
+.tg-h:hover{color:var(--l1)}
+.tg-h .chev,.tool .th .chev{width:14px;height:14px;margin-left:-3px;color:var(--l3);transform:rotate(-90deg)}
+.working{display:flex;align-items:flex-start;gap:8px;font-size:14px;color:var(--l2)}
+.working .mk{width:18px;height:18px;margin-top:2px;flex:none;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.5}}
+.wk-now{flex:1;min-width:0;display:flex;flex-direction:column}
+.wk-line{display:flex;align-items:baseline;gap:4px;padding:2px 0;line-height:19px}
+.wk-meta,.wk-time{flex:none;font-size:12.5px;color:var(--l3);font-variant-numeric:tabular-nums}
+.wk-time{margin-left:2px}
+.tnote{align-self:center;font-size:12px;color:var(--l2);background:var(--fill);padding:5px 12px;border-radius:var(--r-sm);text-align:center;max-width:100%}
+.donebar{align-self:center;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--l3);margin:-4px 0 6px}
+.donebar .ic{color:var(--green)}
+.add-anim{animation:fadein .4s var(--ease-out)}
+/* A failure, as app.css's .fcard: the provider, what happened, one way out. */
+.fcard{display:flex;align-items:center;gap:12px;padding:11px 10px 11px 12px;border:1px solid var(--sep);border-radius:var(--r-xl);max-width:560px;margin-top:6px;animation:fadein .3s var(--ease-out)}
+.fc-av{position:relative;flex:none;width:36px;height:36px;border-radius:var(--r-md);background:var(--fill);display:grid;place-items:center;color:var(--l2);font-weight:600;font-size:14px}
+.fc-badge{position:absolute;right:-4px;bottom:-4px;width:17px;height:17px;border-radius:50%;background:var(--win);display:grid;place-items:center}
+.fc-badge i{width:13px;height:13px;border-radius:50%;background:var(--red)}
+.fc-tx{flex:1;min-width:0}
+.fc-tx b{display:block;font-size:13.5px;font-weight:600;line-height:19px}
+.fc-tx span{display:block;font-size:12px;line-height:17px;color:var(--l2);margin-top:1px}
+
+/* The composer's zone and the composer, as composer.css. */
+.cmp-zone{position:absolute;left:0;right:0;bottom:0;z-index:4;pointer-events:none;padding:28px calc(var(--sp-4) - 12px) 12px;background:linear-gradient(to bottom,transparent,var(--win) 28px)}
+.cmp-col{pointer-events:auto;max-width:754px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.cmp{cursor:text;background:var(--pill);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
+.cmp-row{display:flex;align-items:flex-end;gap:4px}
+.cmp-ed{position:relative;flex:1;min-width:0}
+.cmp-in{display:block;width:100%;resize:none;border:0;outline:none;background:none;font-size:15px;line-height:21px;color:var(--l1);padding:5.5px 4px;height:32px;max-height:220px;overflow-y:auto;caret-color:var(--l1);user-select:text;-webkit-user-select:text;cursor:text}
+.cmp-ph{position:absolute;top:5.5px;left:4px;right:4px;font-size:15px;line-height:21px;color:var(--l3);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp-plus{width:32px;height:32px;border-radius:var(--r-sm);border:0;background:none;color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none}
+.cmp-plus:hover{background:var(--fill2);color:var(--l1)}
+.cmp-plus .ic{width:18px;height:18px;stroke-width:1.5}
+.send{width:32px;height:32px;border-radius:var(--r-sm);border:0;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;box-shadow:0 1px 2px rgba(40,60,200,.3);transition:background .15s}
+.send:disabled{background:var(--fill3);color:var(--win);box-shadow:none}
+.send.stop{background:var(--red);color:#fff;box-shadow:0 1px 2px rgba(200,40,60,.3)}
+.send .ic{width:16px;height:16px;stroke-width:1.9}
+.send.stop .ic{width:12px;height:12px}
+.cmp-meta{display:flex;align-items:center;gap:2px;padding:0 12px;margin-top:-4px;min-width:0}
+.cmp-meta .sp{flex:1}
+.mb{height:26px;border:0;border-radius:var(--r-sm);background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap}
+.mb:hover{background:var(--fill);color:var(--l1)}
+.mb .ic{width:14px;height:14px}
+.mb .strong{color:var(--l1)}
+.mb .sub{color:var(--l3)}
+
+/* ———— 新增：排队托盘（拟加入 composer.css） ————
+   任务运行中发出、还没送达的消息。它贴在输入框上方，从输入框后面露出来：
+   与输入框同宽，下沿压在输入框下面 12 px。一条一行，图标列、文字列与输入框里的
+   「+」和正文对齐；右侧是送达时机，悬停时换成动作。按送达的先后排：插话在前，
+   排队的在后；送达的从上面离开，进到对话里。 */
+.cmp{position:relative;z-index:1}
+.cq{margin-bottom:-22px;padding:4px 6px 16px;border-radius:var(--r-xl) var(--r-xl) 0 0;background:var(--tray);box-shadow:0 0 0 .5px var(--pill-bd);max-height:184px;overflow-y:auto;scrollbar-width:thin;animation:cqup .3s var(--ease-out)}
+.cq[hidden]{display:none}
+.cq.out{opacity:0;transform:translateY(14px);transition:opacity .2s var(--ease-in),transform .2s var(--ease-in)}
+@keyframes cqup{from{opacity:0;transform:translateY(14px)}}
+.cq-row{display:flex;align-items:center;gap:4px;height:30px;border-radius:var(--r-md);overflow:hidden;transition:height .22s var(--ease-out),opacity .18s,transform .24s var(--ease-out),background .12s}
+.cq-row:hover,.cq-row:focus-within{background:var(--fill)}
+.cq-row.in,.cq-row.out{height:0;opacity:0}
+.cq-i{width:32px;flex:none;display:flex;justify-content:center;color:var(--l3)}
+.cq-i .ic{width:15px;height:15px}
+.cq-t{flex:1;min-width:0;padding:0 4px;font-size:14px;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cq-when{flex:none;padding:0 10px 0 6px;font-size:12px;color:var(--l3);white-space:nowrap}
+.cq-acts{display:none;flex:none;align-items:center;gap:2px;padding-right:4px}
+.cq-row:hover .cq-when,.cq-row:focus-within .cq-when{display:none}
+.cq-row:hover .cq-acts,.cq-row:focus-within .cq-acts{display:flex}
+.cq-b{height:24px;padding:0 8px;border:0;border-radius:var(--r-sm);background:none;font-size:12.5px;color:var(--l1);white-space:nowrap}
+.cq-b:hover{background:var(--fill2)}
+.cq-ib{width:24px;height:24px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:inline-flex;align-items:center;justify-content:center}
+.cq-ib:hover{background:var(--fill2);color:var(--l1)}
+.cq-ib .ic{width:14px;height:14px}
+/* 送达时：消息从托盘离开，同时在对话里从下面升起来。 */
+.um.land{animation:land .42s var(--ease-out)}
+@keyframes land{from{opacity:0;transform:translateY(16px)}}
+@media (prefers-reduced-motion:reduce){.cq,.cq.out,.cq-row,.um.land{animation:none;transition:none}}
+/* ———— 新增结束 ———— */
+
+/* A toast, as app.css. */
+.toast{position:absolute;left:50%;top:calc(var(--top) + 12px);transform:translateX(-50%);background:var(--menu);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);box-shadow:0 0 0 .5px var(--menu-bd),0 10px 30px rgba(0,0,0,.2);border-radius:var(--r-xl);padding:8px 10px 8px 16px;display:flex;align-items:center;gap:12px;font-size:13px;z-index:60;animation:pop2 .25s var(--ease-out);width:max-content;max-width:min(560px,calc(100% - 32px))}
+.toast[hidden]{display:none}
+.toast .ic{color:var(--green)}
+@keyframes pop2{from{opacity:0;transform:translate(-50%,-8px)}}
+
+/* The prototype's own controls, over the sidebar's bottom (not part of the design). */
+.demo{position:fixed;left:8px;bottom:8px;z-index:70;width:256px;display:flex;flex-direction:column;gap:6px;background:var(--menu);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);box-shadow:0 0 0 .5px var(--menu-bd),0 6px 20px rgba(0,0,0,.14);border-radius:var(--r-lg);padding:10px;font-size:11.5px;color:var(--l2)}
+.demo b{font-weight:600;color:var(--l1);font-size:12px}
+.demo .keys{line-height:1.6}
+.demo .keys span{color:var(--l1)}
+.demo .row{display:flex;flex-wrap:wrap;gap:4px}
+.demo .row .btn{height:24px;padding:0 9px;font-size:12px}
+.demo .row .btn.on{background:var(--accent);color:#fff;box-shadow:none}
+@media (max-width:900px){.mainwrap{grid-template-columns:0 minmax(0,1fr)}.side{visibility:hidden}.demo{left:auto;right:8px;top:52px;bottom:auto;width:228px}}
+</style>
+</head>
+<body>
+<div class="mainwrap">
+  <aside class="side">
+    <div class="side-top"><span></span><button class="tb" title="过滤" id="sideFilter"></button></div>
+    <nav class="side-nav">
+      <button class="nav-i" data-icon="plus">新会话</button>
+      <button class="nav-i" data-icon="search">搜索</button>
+      <button class="nav-i" data-icon="grid">自定义</button>
+    </nav>
+    <div class="side-list">
+      <div class="grp">
+        <div class="grp-h">进行中 <span class="n">1</span></div>
+        <button class="srow sel"><div class="smain"><div class="sl1"><span class="stitle">把登录页的表单校验改成实时提示</span><span class="smeta" id="sideTime">0:42</span></div><div class="sl2" data-folder>calc-lib</div></div></button>
+      </div>
+      <div class="grp">
+        <div class="grp-h">已完成</div>
+        <button class="srow"><div class="smain"><div class="sl1"><span class="stitle">给 calc 的三个模块补测试</span><span class="smeta">刚刚</span></div><div class="sl2" data-folder>calc-lib</div></div></button>
+        <button class="srow"><div class="smain"><div class="sl1"><span class="stitle">整理 README 的安装说明</span><span class="smeta">昨天</span></div><div class="sl2" data-folder>hermesh</div></div></button>
+        <button class="srow"><div class="smain"><div class="sl1"><span class="stitle">排查启动慢的原因</span><span class="smeta">周五</span></div><div class="sl2" data-folder>finxwork</div></div></button>
+      </div>
+    </div>
+  </aside>
+  <section class="content">
+    <header class="ctool"><div class="ctitle"><h2>把登录页的表单校验改成实时提示</h2></div><button class="tb" title="信息卡片" data-icon="infoCard"></button></header>
+    <div class="dwrap"><div class="dmain">
+      <div class="cscroll" id="scroll"><div class="dbody" id="dbody"><div class="tr" id="tr" role="log" aria-label="对话"></div></div></div>
+      <div class="cmp-zone"><div class="cmp-col" id="col">
+        <div class="cq" id="cq" role="list" aria-label="待送达的消息" hidden></div>
+        <div class="cmp" id="cmp">
+          <div class="cmp-row">
+            <button class="cmp-plus" title="添加" data-icon="plus"></button>
+            <div class="cmp-ed"><textarea class="cmp-in" id="ed" rows="1" aria-label="消息"></textarea><div class="cmp-ph" id="ph"></div></div>
+            <button class="send" id="send"></button>
+          </div>
+        </div>
+        <div class="cmp-meta">
+          <button class="mb"><span data-icon="shield"></span><span>询问权限</span></button>
+          <span class="sp"></span>
+          <button class="mb"><span class="strong">DeepSeek-V4.1-Flash</span><span class="sub">默认</span></button>
+        </div>
+      </div></div>
+    </div></div>
+    <div class="toast" id="toast" role="status" hidden></div>
+  </section>
+</div>
+
+<div class="demo" id="demo">
+  <b>原型：插话与排队</b>
+  <div class="keys"><span>↩</span> 插话，下一步送达　<span>⌥↩</span> 排队，任务完成后送达<br><span>↑</span> 编辑最后一条　<span>⌘.</span> 停止</div>
+  <div class="row"><button class="btn" data-d="steer">来一条插话</button><button class="btn" data-d="follow">来一条排队</button></div>
+  <div class="row"><button class="btn" data-d="fail">让任务失败</button><button class="btn" data-d="pause">暂停</button><button class="btn" data-d="reset">重来</button></div>
+  <div class="row"><div class="seg" id="theme"><button data-t="light">浅色</button><button data-t="dark">深色</button></div></div>
+</div>
+
+<script>
+/* ———— icons: apps/desktop/src/renderer/src/icons.tsx, plus the new "steer" ———— */
+const P = {
+  plus: '<path d="M8 3v10M3 8h10"/>',
+  search: '<circle cx="7" cy="7" r="4.4"/><path d="M10.3 10.3l3.4 3.4"/>',
+  grid: '<rect x="2.8" y="2.8" width="3.9" height="3.9" rx="1.1"/><rect x="9.3" y="2.8" width="3.9" height="3.9" rx="1.1"/><rect x="2.8" y="9.3" width="3.9" height="3.9" rx="1.1"/><rect x="9.3" y="9.3" width="3.9" height="3.9" rx="1.1"/>',
+  filter: '<path d="M2.5 4.2h11M4.6 8h6.8M6.7 11.8h2.6"/>',
+  infoCard: '<rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.4"/><rect x="8.3" y="5.1" width="3.8" height="5.8" rx="1" fill="currentColor" stroke="none"/>',
+  folder: '<path d="M1.8 4.4c0-.7.5-1.2 1.2-1.2h3l1.4 1.5H13c.7 0 1.2.5 1.2 1.2V12c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/>',
+  shield: '<path d="M8 1.8l5 2v4c0 3-2.2 5.3-5 6.4-2.8-1.1-5-3.4-5-6.4v-4z"/><path d="M5.8 8l1.6 1.6 2.9-3"/>',
+  x: '<path d="M4.3 4.3l7.4 7.4M11.7 4.3l-7.4 7.4"/>',
+  check: '<path d="M3.4 8.4l3 3 6.2-6.8"/>',
+  caret: '<path d="M4.8 6.4h6.4L8 10z" fill="currentColor" stroke="none"/>',
+  stopFill: '<rect x="3" y="3" width="10" height="10" rx="2.4" fill="currentColor" stroke="none"/>',
+  arrowUp: '<path d="M8 13.2V3.2M3.8 7.4L8 3.2l4.2 4.2"/>',
+  edit: '<path d="M10.6 2.7l2.7 2.7-7.6 7.6-3.2.5.5-3.2z"/>',
+  clock: '<circle cx="8" cy="8" r="6"/><path d="M8 4.6V8l2.3 1.5"/>',
+  // 新增：插话。一条线拐进来，接在当前这一步后面。
+  steer: '<path d="M4 3v4.6c0 1.1.9 2 2 2h6.6"/><path d="M10.2 7.1l2.5 2.5-2.5 2.5"/>',
+};
+const MARK = '<svg class="mk" viewBox="187 187 650 650" aria-hidden="true"><defs><linearGradient id="fx-a" gradientUnits="userSpaceOnUse" x1="212" y1="711.9" x2="812" y2="296.1"><stop offset="0" stop-color="#1B36D9"/><stop offset=".5" stop-color="#1F6BFF"/><stop offset="1" stop-color="#2EB8FF"/></linearGradient></defs><path fill="url(#fx-a)" d="M708.3 300.4L700.5 297L696.9 296.3L694 296.1L691.6 296.1L689.4 296.3L687.4 296.6L685.5 297L683.8 297.5L682.1 298L680.6 298.6L679.1 299.3L677.7 300L676.4 300.7L675.1 301.5L673.9 302.4L672.8 303.2L671.7 304.1L670.6 305L669.6 306L668.7 307L667.8 308L666.9 309L666.1 310.1L665.3 311.2L664.5 312.3L663.8 313.4L663 314.5L662.2 315.6L661.5 316.7L660.7 317.8L656.2 324.4L651.7 331.1L647.3 337.7L642.9 344.4L638.6 351.1L634.3 357.8L630 364.5L625.8 371.2L621.6 377.9L617.4 384.6L613.3 391.3L609.1 398L605 404.7L600.8 411.4L596.7 418L592.6 424.6L588.5 431.2L584.4 437.8L580.3 444.4L576.2 450.9L572 457.4L567.9 463.8L563.7 470.2L559.5 476.6L555.4 482.9L551.1 489.2L546.9 495.4L542.6 501.5L538.3 507.6L534 513.5L529.6 519.4L525.2 525.2L520.7 530.9L516.2 536.5L511.7 541.9L507.1 547.2L502.4 552.4L497.7 557.4L493 562.2L488.2 566.8L483.4 571.2L478.5 575.3L473.5 579.4L468.4 583.2L463.2 586.8L458 590.3L452.6 593.6L447.2 596.6L441.7 599.5L436.1 602.1L430.5 604.5L424.9 606.7L419.3 608.6L413.7 610.2L408.1 611.6L402.5 612.8L397 613.6L391.6 614.2L386.2 614.5L381 614.5L375.8 614.2L370.8 613.6L366 612.8L361.3 611.6L356.8 610.3L352.5 608.6L348.3 606.6L344.3 604.4L340.4 602L336.6 599.2L333 596.2L329.7 592.9L326.6 589.6L323.8 586L321.1 582.1L318.6 577.8L316.3 573.3L314.1 568.6L312.2 563.6L310.5 558.4L309 553L307.8 547.5L306.8 541.8L306 536L305.5 530.2L305.2 524.3L305.1 518.4L305.3 512.4L305.8 506.5L306.4 500.5L307.3 494.7L308.5 488.9L309.9 483.1L311.5 477.5L313.3 472.1L315.4 466.8L317.6 461.6L320.1 456.7L322.8 452L325.6 447.6L328.7 443.4L331.9 439.5L335.2 436L338.8 432.7L342.8 429.5L347.3 426.2L351.9 423.2L356.7 420.5L361.4 418.1L366.3 416.1L371.2 414.3L376.2 412.8L381.3 411.6L386.4 410.8L391.5 410.3L396.7 410.1L401.9 410.2L407.2 410.7L412.4 411.5L417.7 412.6L423 414L428.2 415.8L433.4 417.9L438.6 420.3L443.7 423L448.8 425.9L453.7 429.2L458.6 432.7L463.3 436.5L467.9 440.6L472.4 444.8L476.8 449.3L481 454L485 458.9L489 464L492.7 469.3L496.3 474.7L499.7 480.3L503 486L506.2 492.1L509.6 498.8L513 505.7L516.4 512.6L519.9 519.6L523.3 526.6L526.7 533.7L530.1 540.7L533.6 547.9L537 555L540.5 562.2L544.1 569.3L547.7 576.6L551.4 583.8L555.1 591.1L559 598.3L562.9 605.6L567 612.9L571.2 620.2L575.6 627.5L580.2 634.9L585 642.2L590.1 649.5L595.6 656.8L601.4 664.1L607.7 671.2L614.6 678.3L622.2 685.2L630.6 691.8L640 697.9L650.3 703.2L661.5 707.5L673.5 710.5L685.8 711.8L698.4 711.5L710.9 709.5L722.9 705.7L734 700.6L743.9 694.4L752.7 687.5L760.4 680.2L767.3 672.7L773.4 665L778.9 657.3L783.9 649.5L788.5 641.6L792.7 633.8L796.6 625.9L800.2 618L803.5 610.2L806.7 602.3L807.2 601L807.7 599.7L808.2 598.4L808.6 597L809.1 595.7L809.6 594.4L810.1 593.1L810.5 591.8L810.9 590.4L811.2 589.1L811.5 587.7L811.7 586.3L811.9 584.8L812 583.4L812 581.9L812 580.5L811.9 578.9L811.7 577.4L811.4 575.9L811.1 574.3L810.7 572.7L810.1 571L809.5 569.3L808.7 567.6L807.7 565.8L806.5 564L805 562L803 559.9L800.3 557.5L792.8 553.4L791.8 553.1L783.5 551.5L779.8 551.6L777 552L774.6 552.5L772.5 553.1L770.6 553.8L768.9 554.5L767.4 555.3L765.9 556.1L764.6 556.9L763.3 557.8L762.2 558.7L761.1 559.6L760 560.5L759.1 561.5L758.1 562.5L757.3 563.5L756.5 564.5L755.7 565.5L755.1 566.6L754.4 567.6L753.8 568.7L753.3 569.8L752.7 570.9L752.2 572L751.7 573.1L751.1 574.2L750.6 575.3L750.1 576.4L749.5 577.5L746.3 584L743 590.4L739.6 596.6L736.1 602.6L732.5 608.4L728.8 613.9L725 619.1L721.2 624L717.2 628.4L713.3 632.3L709.4 635.6L705.7 638.2L702.2 640.2L698.9 641.5L695.9 642.3L692.9 642.5L689.7 642.4L686.5 641.9L683.3 640.9L679.9 639.4L676.4 637.3L672.7 634.7L668.8 631.4L664.9 627.5L661 623.2L657.1 618.5L653.3 613.3L649.5 607.9L645.8 602.2L642.2 596.3L638.6 590.2L635.1 583.9L631.7 577.5L628.3 571L625 564.3L621.7 557.6L618.4 550.8L615.2 543.9L612 536.9L608.8 529.9L605.6 522.9L602.5 515.8L599.3 508.6L596.1 501.4L592.9 494.2L589.7 487L586.4 479.7L583.1 472.4L579.8 465.1L576.4 457.7L572.6 449.8L568.3 441.7L563.8 433.7L559 425.8L553.9 418.1L548.5 410.5L542.9 403.1L536.9 395.8L530.5 388.8L523.9 382L516.9 375.4L509.6 369.1L502 363L494.1 357.3L485.8 352L477.2 347L468.3 342.4L459.1 338.3L449.6 334.6L439.8 331.5L429.8 328.9L419.6 326.9L409.2 325.6L398.7 324.8L388.2 324.8L377.7 325.3L367.2 326.6L356.8 328.5L346.6 331L336.6 334.1L326.9 337.8L317.4 342.1L308.3 346.8L299.5 351.9L291 357.5L282.5 363.8L274.2 370.9L266.5 378.5L259.4 386.4L252.8 394.7L246.8 403.3L241.4 412L236.5 421L232 430L228.1 439.3L224.6 448.6L221.6 458L219 467.5L216.8 477L215.1 486.7L213.7 496.3L212.7 506L212.2 515.8L212 525.5L212.2 535.3L212.9 545.2L214 555L215.6 564.9L217.6 574.7L220.1 584.5L223.1 594.3L226.7 604L230.9 613.7L235.7 623.2L241.1 632.5L247.2 641.6L254 650.4L261.5 658.7L269.4 666.4L277.8 673.5L286.7 680.1L296.1 686.1L305.9 691.4L316 696L326.3 699.9L336.8 703.1L347.5 705.5L358.1 707.2L368.8 708.3L379.3 708.7L389.8 708.6L400.1 707.8L410.3 706.6L420.3 704.8L430.1 702.6L439.6 700L449 696.9L458.2 693.5L467.1 689.8L475.9 685.7L484.4 681.3L492.7 676.6L500.8 671.6L508.6 666.4L516.3 661L523.7 655.3L530.9 649.3L537.9 643.2L544.7 636.8L551.2 630.3L557.4 623.6L563.4 616.9L569.1 610.2L574.6 603.3L580 596.5L585.1 589.5L590.1 582.6L594.9 575.6L599.6 568.6L604.2 561.5L608.6 554.5L613 547.4L617.2 540.4L621.4 533.3L625.5 526.2L629.5 519.1L633.4 512L637.3 504.9L641.1 497.8L644.9 490.7L648.6 483.6L652.3 476.5L656 469.5L659.6 462.4L663.2 455.3L666.8 448.2L670.3 441.2L673.8 434.1L677.3 427.1L680.8 420.1L684.3 413.1L687.8 406.1L691.3 399.1L694.8 392.1L698.2 385.1L701.7 378.2L705.2 371.3L708.7 364.3L712.2 357.4L715.6 350.5L716.2 349.4L716.8 348.2L717.4 347.1L718 345.9L718.6 344.8L719.1 343.7L719.7 342.5L720.2 341.3L720.7 340.1L721.2 338.9L721.6 337.7L722 336.4L722.3 335.1L722.5 333.7L722.8 332.4L722.9 331L723 329.5L723.1 328L723.1 326.5L723 325L722.8 323.3L722.6 321.7L722.2 319.9L721.7 318.1L721.1 316.2L720.3 314.2L719.2 311.9L717.8 309.5L715.6 306.6L709.2 301Z"/></svg>';
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const icon = (n, cls = "") => `<svg class="ic ${cls}" viewBox="0 0 16 16" aria-hidden="true">${P[n]}</svg>`;
+const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+document.querySelectorAll("[data-icon]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon(el.dataset.icon)));
+document.querySelectorAll("[data-folder]").forEach((el) => el.insertAdjacentHTML("afterbegin", icon("folder")));
+$("#sideFilter").innerHTML = icon("filter");
+
+/* ———— time: the simulation's own clock, so Pause stops everything ———— */
+let now = 0, paused = false, last = performance.now();
+setInterval(() => {
+  const t = performance.now();
+  if (!paused) now += Math.min(t - last, 1000);
+  last = t;
+  frame();
+}, 50);
+const sleep = (ms, R) => new Promise((done) => {
+  const end = now + ms;
+  (function check() {
+    if (R.dead) return done("dead");
+    if (R.stop) return done("stop");
+    if (R.cut) return done("cut");
+    if (R.fail && R.model) return done("fail");
+    if (now >= end) return done("ok");
+    setTimeout(check, 30);
+  })();
+});
+const secs = (ms) => {
+  const s = Math.max(0, Math.round(ms / 1000));
+  return s < 60 ? `${s} 秒` : `${Math.floor(s / 60)} 分 ${s % 60} 秒`;
+};
+const clock = (ms) => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`; };
+const kilo = (n) => `${Math.round(n / 1000)}K`;
+
+/* ———— the conversation ———— */
+const tr = $("#tr"), scroll = $("#scroll");
+const working = document.createElement("div");
+working.className = "working";
+working.setAttribute("role", "status");
+let atEnd = true;
+scroll.addEventListener("scroll", () => (atEnd = scroll.scrollTop + scroll.clientHeight > scroll.scrollHeight - 80));
+const follow = () => atEnd && (scroll.scrollTop = scroll.scrollHeight);
+function add(html, cls = "") {
+  const t = document.createElement("template");
+  t.innerHTML = html.trim();
+  const el = t.content.firstElementChild;
+  if (cls) el.classList.add(...cls.split(" "));
+  tr.insertBefore(el, working.isConnected ? working : null);
+  follow();
+  return el;
+}
+const user = (text, land) => add(`<div class="um"><div class="bub sel-text">${esc(text)}</div></div>`, land ? "land" : "add-anim");
+const thought = (text) => add(`<div class="tool think"><button class="th"><span class="vb">思考</span><span class="sm2">${esc(text)}</span>${icon("caret", "chev")}</button></div>`);
+const VERB = { edit: ["正在修改", "已修改", "修改了 {n} 个文件"], read: ["正在读取", "已读取", "读取了 {n} 个文件"], execute: ["正在运行", "已运行", "运行了 {n} 条命令"], search: ["正在搜索", "已搜索", "搜索了 {n} 次"] };
+const objOf = (t) => (t.cat === "execute" ? `<code class="sm2 cmd">${esc(t.obj)}</code>` : `<span class="sm2">${esc(t.obj)}</span>`);
+function doneTools(tools) {
+  if (tools.length === 1) {
+    const t = tools[0];
+    return add(`<div class="tool"><button class="th"><span class="vb">${t.state === "cancelled" ? "未执行" : VERB[t.cat][1]}</span>${objOf(t)}${icon("caret", "chev")}</button></div>`);
+  }
+  const counts = new Map();
+  for (const t of tools) counts.set(t.cat, (counts.get(t.cat) ?? 0) + 1);
+  const title = [...counts].map(([c, n]) => VERB[c][2].replace("{n}", n)).join("，");
+  return add(`<div class="tgroup"><button class="tg-h"><span>${title}</span>${icon("caret", "chev")}</button></div>`);
+}
+
+/* The working line at the conversation's end, redrawn every frame while a task runs. */
+let live = null;
+function frame() {
+  if (live) {
+    if (live.model && !paused) live.tokens += 14 + Math.random() * 10;
+    const meta = `· ${secs(now - live.started)}${live.tokens > 0 ? ` · ${kilo(live.tokens)} tokens` : ""}`;
+    working.innerHTML = MARK + (live.tools.length
+      ? `<div class="wk-now">${live.tools.map((t) => `<div class="tool"><button class="th ${t.state === "running" ? "shimmer" : ""}"><span class="vb">${t.state === "running" ? VERB[t.cat][0] : VERB[t.cat][1]}</span>${objOf(t)}<span class="wk-time">${secs((t.end ?? now) - t.since)}</span></button></div>`).join("")}</div>`
+      : `<div class="wk-line"><span class="shimmer">${live.writing ? "生成中" : "思考中"}</span><span class="wk-meta">${meta}</span></div>`);
+    $("#sideTime").textContent = clock(now - live.started);
+  }
+}
+
+/* ———— the queue: what was sent while the task runs and is not in the conversation yet ———— */
+let Q = [], seq = 0;
+const order = () => [...Q].sort((a, b) => (a.mode === b.mode ? a.seq - b.seq : a.mode === "steer" ? -1 : 1));
+const rows = new Map();
+function rowHtml(it) {
+  const steer = it.mode === "steer";
+  return `<span class="cq-i" title="${steer ? "插话" : "排队"}">${icon(steer ? "steer" : "clock")}</span>
+    <span class="cq-t">${esc(it.text.split("\n")[0])}</span>
+    <span class="cq-when">${steer ? "下一步送达" : "完成后送达"}</span>
+    <span class="cq-acts">${steer
+      ? `<button class="cq-b" data-a="now" title="结束当前这一步，马上送达（正在运行的命令会被停下）">立即送达</button>`
+      : `<button class="cq-b" data-a="promote" title="下一步就送达，不等任务完成">改成插话</button>`}
+      <button class="cq-ib" data-a="edit" title="编辑：放回输入框">${icon("edit")}</button>
+      <button class="cq-ib" data-a="del" title="删除">${icon("x")}</button></span>`;
+}
+function renderQueue() {
+  const box = $("#cq");
+  const items = order();
+  const before = new Map([...rows].map(([id, el]) => [id, el.getBoundingClientRect().top]));
+  if (items.length && box.hidden) {
+    box.hidden = false;
+    box.classList.remove("out");
+  }
+  for (const [id, el] of rows) {
+    if (items.some((it) => it.id === id)) continue;
+    rows.delete(id);
+    el.classList.add("out");
+    setTimeout(() => el.remove(), 260);
+  }
+  let prev = null;
+  const added = [];
+  for (const it of items) {
+    let el = rows.get(it.id);
+    if (!el) {
+      el = document.createElement("div");
+      el.className = "cq-row in";
+      el.setAttribute("role", "listitem");
+      el.dataset.id = it.id;
+      rows.set(it.id, el);
+      added.push(el);
+    }
+    const sig = it.mode + it.text;
+    if (el.dataset.sig !== sig) {
+      el.dataset.sig = sig;
+      el.innerHTML = rowHtml(it);
+    }
+    const ref = prev ? prev.nextSibling : box.firstChild;
+    if (el !== ref) box.insertBefore(el, ref);
+    prev = el;
+  }
+  // Rows that moved (a follow-up made a steer) slide to their new place; new rows open up.
+  const moved = [];
+  for (const [id, el] of rows) {
+    const top = before.get(id);
+    if (top === undefined) continue;
+    const d = top - el.getBoundingClientRect().top;
+    if (Math.abs(d) < 1) continue;
+    el.style.transition = "none";
+    el.style.transform = `translateY(${d}px)`;
+    moved.push(el);
+  }
+  box.offsetHeight;
+  for (const el of added) el.classList.remove("in");
+  for (const el of moved) {
+    el.style.transition = "";
+    el.style.transform = "";
+  }
+  if (!items.length && !box.hidden) {
+    setTimeout(() => {
+      if (Q.length) return;
+      box.classList.add("out");
+      setTimeout(() => !Q.length && (box.hidden = true), 200);
+    }, 200);
+  }
+}
+const enqueue = (mode, text) => {
+  Q.push({ id: `q${++seq}`, seq, mode, text });
+  renderQueue();
+};
+
+/* ———— the composer ———— */
+const ed = $("#ed"), ph = $("#ph"), send = $("#send");
+function grow() {
+  ed.style.height = "32px";
+  ed.style.height = `${Math.min(220, ed.scrollHeight)}px`;
+}
+function composer() {
+  const empty = ed.value.trim() === "";
+  ph.textContent = live ? "插话：下一步送达（⌥↩ 任务完成后再发）" : "回复 finx…";
+  ph.hidden = !empty;
+  const stop = live && empty;
+  send.className = `send ${stop ? "stop" : ""}`;
+  send.disabled = !stop && empty;
+  send.innerHTML = icon(stop ? "stopFill" : "arrowUp");
+  send.title = stop ? "停止 ⌘." : "发送 ↩";
+}
+/* What comes back (a stop, a failure, an edit) goes before what is being written, a blank line between. */
+function putBack(texts) {
+  ed.value = [...texts, ed.value.trim()].filter(Boolean).join("\n\n");
+  grow();
+  composer();
+  ed.focus();
+  ed.setSelectionRange(ed.value.length, ed.value.length);
+}
+function submit(followUp) {
+  const text = ed.value.trim();
+  if (!text) return;
+  ed.value = "";
+  grow();
+  if (live) enqueue(followUp ? "follow" : "steer", text);
+  else start(text);
+  composer();
+}
+ed.addEventListener("input", () => (grow(), composer()));
+ed.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+    e.preventDefault();
+    submit(e.altKey);
+  } else if (e.key === "ArrowUp" && ed.value === "" && Q.length) {
+    e.preventDefault();
+    edit(order().at(-1).id);
+  }
+});
+send.addEventListener("click", () => (send.classList.contains("stop") ? stop() : submit(false)));
+$("#cmp").addEventListener("mousedown", (e) => {
+  if (e.target === e.currentTarget || e.target.classList.contains("cmp-row")) (e.preventDefault(), ed.focus());
+});
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey && e.key === ".") (e.preventDefault(), stop());
+});
+
+/* ———— a row's actions ———— */
+function take(id) {
+  const it = Q.find((x) => x.id === id);
+  Q = Q.filter((x) => x.id !== id);
+  renderQueue();
+  return it;
+}
+function edit(id) {
+  const it = take(id);
+  if (it) putBack([it.text]);
+}
+$("#cq").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-a]");
+  if (!b) return;
+  const id = b.closest(".cq-row").dataset.id;
+  const it = Q.find((x) => x.id === id);
+  if (!it) return;
+  if (b.dataset.a === "promote") {
+    it.mode = "steer";
+    it.seq = ++seq;
+    renderQueue();
+  } else if (b.dataset.a === "now") {
+    if (run) run.cut = true;
+  } else if (b.dataset.a === "edit") {
+    edit(id);
+  } else if (b.dataset.a === "del") {
+    take(id);
+    toast("已删除一条排队的消息", () => enqueue(it.mode, it.text));
+  }
+});
+
+let toastTimer = 0;
+function toast(text, undo) {
+  const el = $("#toast");
+  el.hidden = false;
+  el.innerHTML = `${icon("check")}<span>${esc(text)}</span>${undo ? '<button class="btn sm">撤销</button>' : ""}`;
+  el.style.animation = "none";
+  el.offsetHeight;
+  el.style.animation = "";
+  if (undo) el.querySelector("button").onclick = () => ((el.hidden = true), undo());
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 3600);
+}
+
+/* ———— the agent: a script of steps; between two steps is where steers go in ———— */
+const ORANGE = /橙/;
+const short = (s) => (s.length > 18 ? `${s.slice(0, 18)}…` : s);
+function ackSteers(items) {
+  if (items.length === 1 && ORANGE.test(items[0].text)) {
+    return { think: "错误提示要改成橙色：改样式里的颜色变量就行。", text: "好的，错误提示改用橙色。", tools: [{ cat: "edit", obj: "src/pages/Login.css", ms: 2400 }] };
+  }
+  const what = items.length === 1 ? `「${short(items[0].text)}」` : `这 ${items.length} 条补充`;
+  return { text: `收到${what}，我在接下来的步骤里一并处理。`, tools: [{ cat: "read", obj: "src/pages/Login.tsx", ms: 1800 }] };
+}
+function followSteps(it) {
+  if (/测试/.test(it.text)) {
+    return [{ think: "跑一遍全部测试，看有没有回归。", tools: [{ cat: "execute", obj: "pnpm test", ms: 5200 }] }, { text: "全部 148 个测试都通过了，没有回归。" }];
+  }
+  return [{ text: `好的，接着做：${short(it.text)}`, tools: [{ cat: "edit", obj: "NOTES.md", ms: 2600 }] }, { text: "做完了。" }];
+}
+const PLAN = () => [
+  { tools: [{ cat: "edit", obj: "src/pages/Login.tsx", ms: 7000 }] },
+  { text: "输入时就会校验了。再把规则抽到一处，表单和接口共用。", tools: [{ cat: "edit", obj: "src/lib/validate.ts", ms: 3400 }, { cat: "edit", obj: "src/lib/validate.test.ts", ms: 2800 }] },
+  { think: "规则抽出来了，跑一下登录相关的测试。", tools: [{ cat: "execute", obj: "pnpm test login", ms: 5600 }] },
+  { text: "改好了：登录页现在边输入边提示，规则在 `src/lib/validate.ts`，登录相关的 12 个测试都通过了。" },
+];
+
+let run = null, plan = [];
+async function step(s, R) {
+  if (s.think) {
+    live.model = R.model = true;
+    live.writing = false;
+    const r = await sleep(1300, R);
+    if (r !== "ok") return r;
+    thought(s.think);
+  }
+  if (s.text) {
+    live.model = R.model = true;
+    live.writing = true;
+    const el = add('<div class="am"><div class="md sel-text"><p></p></div></div>');
+    const p = el.querySelector("p");
+    for (let i = 1; i <= s.text.length; i += 2) {
+      const r = await sleep(30, R);
+      if (r === "dead") return r;
+      p.textContent = s.text.slice(0, i);
+      follow();
+      if (r !== "ok") return r;
+    }
+    p.innerHTML = inline(s.text);
+  }
+  live.model = R.model = false;
+  if (s.tools) {
+    live.tools = s.tools.map((t) => ({ ...t, since: now, state: "running" }));
+    for (;;) {
+      const r = await sleep(100, R);
+      if (r === "dead") return r;
+      for (const t of live.tools) {
+        if (t.state === "running" && now - t.since >= (R.fail ? Math.min(t.ms, 700) : t.ms)) (t.state = "done"), (t.end = now);
+      }
+      if (r === "stop" || r === "cut") {
+        for (const t of live.tools) if (t.state === "running") t.state = "cancelled";
+        doneTools(live.tools);
+        live.tools = [];
+        return r;
+      }
+      if (live.tools.every((t) => t.state !== "running")) break;
+    }
+    doneTools(live.tools);
+    live.tools = [];
+  }
+  return "ok";
+}
+/* `current`: a step already under way when the scene opens; the first boundary comes after it. */
+async function work(current) {
+  const R = (run = { stop: false, cut: false, fail: false, model: false });
+  composer();
+  if (current) {
+    const r = await step(current, R);
+    if (r === "dead") return;
+    if (r === "stop") return stopped();
+    if (r === "fail") return failed();
+  }
+  for (;;) {
+    // The boundary between two steps: every steer goes in, in the order sent.
+    const steers = order().filter((x) => x.mode === "steer");
+    if (steers.length) {
+      Q = Q.filter((x) => x.mode !== "steer");
+      renderQueue();
+      for (const it of steers) user(it.text, true);
+      plan.unshift(ackSteers(steers));
+    }
+    R.cut = false;
+    if (R.fail) return failed();
+    let s = plan.shift();
+    if (!s) {
+      // The task would end here: a follow-up goes in, and the same task goes on.
+      const fu = order().find((x) => x.mode === "follow");
+      if (!fu) return finished();
+      take(fu.id);
+      user(fu.text, true);
+      plan.push(...followSteps(fu));
+      continue;
+    }
+    const r = await step(s, R);
+    if (r === "dead") return;
+    if (r === "stop") return stopped();
+    if (r === "fail") return failed();
+  }
+}
+function begin(current) {
+  live = { started: now, tokens: 0, tools: [], model: false, writing: false };
+  tr.append(working);
+  composer();
+  work(current);
+}
+function end() {
+  live = null;
+  run = null;
+  working.remove();
+  composer();
+}
+function start(text) {
+  user(text, false);
+  plan = [{ think: "看一下要从哪里改。", text: `好的，${short(text)}`, tools: [{ cat: "read", obj: "src/pages/Login.tsx", ms: 2000 }] }, ...(plan.length ? plan : [{ text: "做完了。" }])];
+  begin();
+}
+function finished() {
+  const took = now - live.started, tokens = live.tokens;
+  end();
+  add(`<div class="donebar">${icon("check", "sm")}<span>完成 · 用时 ${secs(took)} · ${kilo(tokens)} tokens</span></div>`, "add-anim");
+}
+/* A stop and a failure hand what is queued back to the composer, never drop it. */
+function handBack() {
+  const items = order();
+  Q = [];
+  renderQueue();
+  if (items.length) {
+    putBack(items.map((x) => x.text));
+    toast(`排队的 ${items.length} 条消息已放回输入框`);
+  }
+}
+function stopped() {
+  end();
+  add('<div class="tnote">你打断了这个任务。再发一条消息就会接着做。</div>', "add-anim");
+  handBack();
+}
+function failed() {
+  end();
+  const card = add(`<div class="fcard"><div class="fc-av">D<span class="fc-badge"><i></i></span></div><div class="fc-tx"><b>连不上 DeepSeek</b><span>网络错误。检查网络后重试。</span></div><button class="btn">重试</button></div>`);
+  card.querySelector("button").onclick = () => {
+    card.querySelector("button").disabled = true;
+    begin();
+  };
+  handBack();
+}
+function stop() {
+  if (run) run.stop = true;
+}
+
+/* ———— the scene, and the prototype's controls ———— */
+function reset() {
+  // The old run stops where it is and touches nothing more.
+  if (run) run.dead = true;
+  run = null;
+  live = null;
+  Q = [];
+  for (const el of rows.values()) el.remove();
+  rows.clear();
+  $("#cq").hidden = true;
+  tr.innerHTML = "";
+  ed.value = "";
+  grow();
+  add('<div class="tdiv">今天 14:36</div>');
+  user("把登录页的表单校验改成实时提示");
+  thought("先看看登录页现在怎么校验，再决定改法。");
+  add('<div class="am"><div class="md sel-text"><p>好的，我先看一下登录页现在的校验逻辑。</p></div></div>');
+  doneTools([{ cat: "read", obj: "a" }, { cat: "read", obj: "b" }, { cat: "read", obj: "c" }, { cat: "search", obj: "d" }]);
+  add(`<div class="am"><div class="md sel-text"><p>${inline("现在只在提交时校验。我把校验挪到输入时，并把规则抽到 `validate.ts`。")}</p></div></div>`);
+  plan = PLAN();
+  // The first edit is under way; two messages were sent a moment ago and wait for their turn.
+  enqueue("steer", "顺便把错误提示的颜色改成橙色");
+  enqueue("follow", "最后跑一遍全部测试，确认没有回归");
+  begin(plan.shift());
+  live.started = now - 42_000;
+  live.tokens = 31_000;
+}
+const SAMPLES = {
+  steer: ["顺便把错误提示的颜色改成橙色", "密码框也加上长度提示", "别动接口那边的校验，只改前端"],
+  follow: ["最后跑一遍全部测试，确认没有回归", "做完更新一下 CHANGELOG", "把这次改动写成一段提交说明"],
+};
+const used = { steer: 0, follow: 0 };
+$("#demo").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  const d = b.dataset.d;
+  if (d === "steer" || d === "follow") {
+    if (!live) return toast("任务已经结束：现在发出的消息会直接开始新任务");
+    enqueue(d, SAMPLES[d][used[d]++ % 3]);
+  } else if (d === "fail") {
+    if (run) run.fail = true;
+  } else if (d === "pause") {
+    paused = !paused;
+    b.classList.toggle("on", paused);
+    b.textContent = paused ? "继续" : "暂停";
+  } else if (d === "reset") {
+    reset();
+  }
+  if (b.dataset.t) theme(b.dataset.t);
+});
+function theme(t) {
+  document.documentElement.dataset.theme = t;
+  document.querySelectorAll("#theme button").forEach((x) => x.classList.toggle("on", x.dataset.t === t));
+}
+theme(matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+// The conversation keeps clear of the composer's zone, as Chat.tsx does with the dock's height.
+new ResizeObserver(() => {
+  $("#dbody").style.paddingBottom = `${$("#col").offsetHeight + 40}px`;
+  follow();
+}).observe($("#col"));
+grow();
+reset();
+</script>
+</body>
+</html>

@@ -22,6 +22,7 @@ import {
   COMMAND_PRIORITY_LOW,
   COMMAND_PRIORITY_NORMAL,
   HISTORY_MERGE_TAG,
+  KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
   SELECTION_CHANGE_COMMAND,
   TextNode,
@@ -47,10 +48,12 @@ export const PromptEditor = forwardRef<EditorHandle, {
   onChange: (text: string) => void;
   /** ↩, or ⌥↩ for a follow-up; whether anything is sent is the composer's call. */
   onEnter: (followUp: boolean) => void;
+  /** ↑ while the text is empty; true when it was used (it takes back the last message that waits). */
+  onUp?: () => boolean;
   placeholder: string;
   label: string;
   commands: CommandInfo[];
-}>(function PromptEditor({ value, onChange, onEnter, placeholder, label, commands }, ref) {
+}>(function PromptEditor({ value, onChange, onEnter, onUp, placeholder, label, commands }, ref) {
   const known = useMemo(() => skillNames(commands), [commands]);
   const knownRef = useRef(known);
   knownRef.current = known;
@@ -77,7 +80,7 @@ export const PromptEditor = forwardRef<EditorHandle, {
         <HistoryPlugin />
         <ValuePlugin value={value} onChange={onChange} known={knownRef} />
         <TagsPlugin known={known} />
-        <KeysPlugin onEnter={onEnter} />
+        <KeysPlugin onEnter={onEnter} onUp={onUp} />
         <MenuPlugin commands={commands} />
         <Handle ref={ref} />
       </LexicalComposer>
@@ -227,22 +230,35 @@ function TagsPlugin({ known }: { known: Set<string> }) {
 }
 
 /** ↩ sends and ⌥↩ sends as a follow-up, unless an input method composes; ⇧↩ breaks the line. */
-function KeysPlugin({ onEnter }: { onEnter: (followUp: boolean) => void }) {
+function KeysPlugin({ onEnter, onUp }: { onEnter: (followUp: boolean) => void; onUp?: () => boolean }) {
   const [editor] = useLexicalComposerContext();
-  const latest = useRef(onEnter);
-  latest.current = onEnter;
+  const latest = useRef({ onEnter, onUp });
+  latest.current = { onEnter, onUp };
   useEffect(
     () =>
-      editor.registerCommand(
-        KEY_ENTER_COMMAND,
-        (event) => {
-          if (event === null || event.shiftKey) return false;
-          if (event.isComposing) return true;
-          event.preventDefault();
-          if (!event.metaKey && !event.ctrlKey) latest.current(event.altKey);
-          return true;
-        },
-        COMMAND_PRIORITY_LOW,
+      mergeRegister(
+        editor.registerCommand(
+          KEY_ENTER_COMMAND,
+          (event) => {
+            if (event === null || event.shiftKey) return false;
+            if (event.isComposing) return true;
+            event.preventDefault();
+            if (!event.metaKey && !event.ctrlKey) latest.current.onEnter(event.altKey);
+            return true;
+          },
+          COMMAND_PRIORITY_LOW,
+        ),
+        editor.registerCommand(
+          KEY_ARROW_UP_COMMAND,
+          (event) => {
+            const up = latest.current.onUp;
+            if (!up || event?.shiftKey || editor.getEditorState().read(() => $getRoot().getTextContent()) !== "") return false;
+            if (!up()) return false;
+            event?.preventDefault();
+            return true;
+          },
+          COMMAND_PRIORITY_LOW,
+        ),
       ),
     [editor],
   );

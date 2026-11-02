@@ -171,12 +171,8 @@
     "thinkingDefault": "由服务商决定",
     "webComment": "网页批注",
     "webElement": "网页元素",
-    "follow_up": "排队：当前任务完成后再发（⌥↩ 改为插话）",
-    "sendMode": "任务进行中的发送方式",
     "steerMode": "插话",
-    "follow_upMode": "排队",
-    "steerDesc": "任务下一步时就交给它，不等任务结束",
-    "follow_upDesc": "等当前任务完成后再发"
+    "follow_upMode": "排队"
   },
   "inspector": {
     "label": "会话信息",
@@ -336,6 +332,19 @@
   "queued": {
     "label": "等待任务处理",
     "attachments_other": "{{count}} 个附件",
-    "more_other": "+{{count}} 个附件"
+    "more_other": "+{{count}} 个附件",
+    "next": "下一步送达",
+    "after": "完成后送达",
+    "now": "立即送达",
+    "nowTip": "结束当前这一步，马上送达（正在运行的命令会被停下）",
+    "nowApproval": "先回答上面的审批",
+    "interject": "改成插话",
+    "interjectTip": "下一步就送达，不等任务完成",
+    "edit": "编辑：放回输入框",
+    "delete": "删除",
+    "deleted": "已删除一条排队的消息",
+    "delivered": "这条刚刚已经送达",
+    "returned_other": "排队的 {{count}} 条消息已放回输入框",
+    "image": "图片 {{n}}"
   }
 }

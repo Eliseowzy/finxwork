@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { Event, SessionSnapshot, SessionSummary } from "@finx/protocol";
+import type { Event, Op, SessionSnapshot, SessionSummary } from "@finx/protocol";
 import { RpcClient } from "../rpc.ts";
 import { applyEvent, fromSnapshot, statusOf, type SessionView } from "../session.ts";
 import { conversation } from "../steps.ts";
@@ -92,4 +92,57 @@ test("an interrupt ends the task, keeping what was written", async () => {
   assert.equal(v.entries.at(-1)?.type, "task_end");
   const end = v.entries.at(-1);
   assert.ok(end?.type === "task_end" && end.outcome === "interrupted");
+});
+
+test("input sent while the task runs waits in the queue and joins under its id: steering at the next step, a follow-up when the task would end", async () => {
+  const server = new MockServer({ speed: 50 });
+  const rpc = client(server);
+  const { session_id, snapshot } = await rpc.request("session/new", { cwd: "/tmp/demo", permission_mode: "bypass-permissions" });
+  let v = fromSnapshot(snapshot);
+  const queues: string[][] = [];
+  const idle = new Promise<void>((resolve) =>
+    rpc.on("session/event", ({ event }) => {
+      v = applyEvent(v, event as Event);
+      if (event.type === "queue_changed") queues.push(event.queued.map((q) => `${q.mode}:${q.id}`));
+      if (event.type === "idle") resolve();
+    }),
+  );
+  const say = (text: string, mode?: "steer" | "follow_up") => rpc.request("session/op", { session_id, op: { type: "prompt", input: [{ type: "text", text }], mode } });
+  await say("hi");
+  await say("later", "follow_up");
+  await say("now", "steer");
+  await idle;
+  const users = v.entries.flatMap((e) => (e.type === "message" && e.message.role === "user" ? [{ id: e.message_id, text: e.message.content.map((c) => (c.type === "text" ? c.text : "")).join("") }] : []));
+  assert.deepEqual(users.map((u) => u.text), ["hi", "now", "later"]);
+  // Announced with the ids they joined under, steering first; the queue ends empty.
+  const [later, now] = [users[2].id, users[1].id];
+  assert.ok(queues.some((q) => q.join() === `steer:${now},follow_up:${later}`), JSON.stringify(queues));
+  assert.deepEqual(queues.at(-1), []);
+  assert.equal(v.queued.length, 0);
+  // One task: the follow-up went in before it ended.
+  assert.equal(v.entries.filter((e) => e.type === "task_end").length, 1);
+});
+
+test("a stop hands what waits back, steering first, and a withdrawn message never joins", async () => {
+  const server = new MockServer({ speed: 50 });
+  const rpc = client(server);
+  const { session_id, snapshot } = await rpc.request("session/new", { cwd: "/tmp/demo" });
+  let v = fromSnapshot(snapshot);
+  let asked!: () => void;
+  const asking = new Promise<void>((resolve) => (asked = resolve));
+  rpc.on("session/event", ({ event }) => {
+    v = applyEvent(v, event as Event);
+    if (event.type === "approval_requested") asked();
+  });
+  const op = (o: Op) => rpc.request("session/op", { session_id, op: o });
+  await op({ type: "prompt", input: [{ type: "text", text: "hi" }] });
+  await asking;
+  for (const [text, mode] of [["after", "follow_up"], ["oops", "steer"], ["next", "steer"]] as const) await op({ type: "prompt", input: [{ type: "text", text }], mode });
+  await op({ type: "withdraw", id: v.queued.find((q) => q.message.content[0].type === "text" && q.message.content[0].text === "oops")!.id });
+  await new Promise((r) => setTimeout(r, 10));
+  assert.ok(v.withdrawn);
+  await op({ type: "interrupt" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.deepEqual(v.returned?.map((m) => (m.content[0].type === "text" ? m.content[0].text : "")), ["next", "after"]);
+  assert.equal(v.queued.length, 0);
 });

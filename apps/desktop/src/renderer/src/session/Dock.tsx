@@ -1,31 +1,31 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ListSession, SessionView } from "@finx/client";
-import type { QueuedInput } from "@finx/protocol";
+import type { QueuedInput, UserMessage } from "@finx/protocol";
 import type { Attachment } from "../composer/attachments";
-import { addAttachments, toInput } from "../composer/attachments";
+import { addAttachments, fromInput, toInput } from "../composer/attachments";
 import { useBrowserComments } from "../composer/browserComments";
-import { Composer, type SendMode } from "../composer/Composer";
+import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
 import { useStore } from "../store";
 import { Approval } from "./Approval";
 import { Notice } from "./Notice";
+import { Queue } from "./Queue";
 
 /** What the owner had written in each session and not sent yet. */
 const drafts = new Map<string, { text: string; attachments: Attachment[] }>();
 
-/** How ↩ sends while a task runs, the last one picked, kept across launches. */
-const sendModeKey = "send-mode";
-const savedSendMode = (): SendMode => (localStorage.getItem(sendModeKey) === "follow_up" ? "follow_up" : "steer");
+/** What stopped or failed tasks handed back that is in a composer already: a page opened again does not add it twice. */
+const handed = new WeakSet<UserMessage[]>();
 
 /** Notices the owner closed, as "session id:time" (the kernel sending one again shows it again). */
 const closed = new Set<string>();
 
 /**
  * The bottom of a session's page: the composer in its session form (it
- * stops a running task too), with the session's key notice and a pending
- * approval above it. Its height goes to the conversation, which keeps clear
- * of it.
+ * stops a running task too), with the session's key notice, a pending
+ * approval, and what waits for the task above it. Its height goes to the
+ * conversation, which keeps clear of it.
  */
 export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView; onHeight: (h: number) => void }) {
   const { t } = useTranslation("session");
@@ -40,11 +40,41 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     const d = drafts.get(id) ?? { text: "", attachments: [] };
     change({ ...d, attachments: addAttachments(d.attachments, more) });
   });
-  // What an interrupt handed back goes back into an empty composer.
-  const returned = view.returned?.map((m) => m.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n")).join("\n\n");
+  // Messages back from the kernel go before what is being written, a blank line between, with what they carry.
+  const putBack = (messages: UserMessage[]) => {
+    const back = messages.map((m) => fromInput(m.content));
+    const d = drafts.get(id) ?? { text: "", attachments: [] };
+    const text = [...back.map((b) => b.text), d.text.trim()].filter(Boolean).join("\n\n");
+    const attachments = back.reduce<Attachment[]>((list, b) => addAttachments(list, b.attachments), []);
+    change({ text, attachments: addAttachments(attachments, d.attachments) });
+  };
+  // What a stopped or failed task handed back.
   useEffect(() => {
-    if (returned && !drafts.get(id)?.text) change({ text: returned, attachments: [] });
-  }, [returned]);
+    const returned = view.returned;
+    if (!returned?.length || handed.has(returned)) return;
+    handed.add(returned);
+    putBack(returned);
+    st.show(t("queued.returned", { count: returned.length }));
+  }, [view.returned]);
+  // Messages taken back from the queue, to edit or to delete: the kernel says which went, and
+  // one that joined the conversation first was too late to take back.
+  const taking = useRef(new Map<string, { q: QueuedInput; edit: boolean }>());
+  const takeBack = (q: QueuedInput, edit: boolean) => {
+    taking.current.set(q.id, { q, edit });
+    void st.op(id, { type: "withdraw", id: q.id });
+  };
+  useEffect(() => {
+    for (const [qid, { q, edit }] of taking.current) {
+      if (view.withdrawn === qid) {
+        taking.current.delete(qid);
+        if (edit) putBack([q.message]);
+        else st.show(t("queued.deleted"), () => void st.op(id, { type: "prompt", input: q.message.content, mode: q.mode }));
+      } else if (!view.queued.some((x) => x.id === qid)) {
+        taking.current.delete(qid);
+        st.show(t("queued.delivered"));
+      }
+    }
+  }, [view.withdrawn, view.queued]);
 
   const live = view.live;
   const info = view.info;
@@ -57,18 +87,12 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     closed.add(`${id}:${n.ts}`);
     redraw((x) => x + 1);
   };
-  const [sendMode, setSendMode] = useState(savedSendMode);
-  const pickSendMode = (m: SendMode) => {
-    setSendMode(m);
-    localStorage.setItem(sendModeKey, m);
-  };
-  // ⌥↩ sends the other way.
-  const send = async (other: boolean) => {
+  // While a task runs ↩ interjects, ⌥↩ queues.
+  const send = async (followUp: boolean) => {
     const sent = draft;
     change({ text: "", attachments: [] });
     const input = toInput(sent.text, sent.attachments);
-    const mode = other ? (sendMode === "steer" ? "follow_up" : "steer") : sendMode;
-    const ok = await st.op(id, { type: "prompt", input, mode: live ? mode : undefined });
+    const ok = await st.op(id, { type: "prompt", input, mode: live ? (followUp ? "follow_up" : "steer") : undefined });
     if (!ok) change(sent);
   };
   return (
@@ -77,13 +101,25 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
         mode: "session",
         running: live !== null,
         onStop: () => st.op(id, { type: "interrupt" }),
-        sendMode,
-        onSendMode: pickSendMode,
+        onEditLast: () => {
+          const last = view.queued.at(-1);
+          if (last) takeBack(last, true);
+          return last !== undefined;
+        },
         above: (
           <>
-            {view.queued.length > 0 && <Queued items={view.queued} />}
             {notice && <Notice key={`${notice.code}:${notice.ts}`} notice={notice} onClose={() => close(notice)} />}
             {live !== null && live.approvals.length > 0 && <Approval key={live.approvals[0].call_id} s={s} view={view} />}
+            {view.queued.length > 0 && (
+              <Queue
+                items={view.queued}
+                approving={(live?.approvals.length ?? 0) > 0}
+                onNow={() => void st.op(id, { type: "steer_now" })}
+                onInterject={(q) => void st.op(id, { type: "requeue", id: q.id, mode: "steer" })}
+                onEdit={(q) => takeBack(q, true)}
+                onDelete={(q) => takeBack(q, false)}
+              />
+            )}
           </>
         ),
         onHeight,
@@ -95,7 +131,7 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
       onSend={send}
       commands={commands}
       canSend={!s.archived}
-      placeholder={s.archived ? t("composer.archived") : live ? t(`composer.${sendMode}`) : t("composer.reply")}
+      placeholder={s.archived ? t("composer.archived") : live ? t("composer.steer") : t("composer.reply")}
       settings={{
         permission: info.permission_mode,
         onPermission: (m) => st.op(id, { type: "set_permission_mode", mode: m }),
@@ -109,27 +145,3 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
   );
 }
 
-/**
- * What was sent while the task runs and it has not taken in yet, oldest
- * first, each with how it waits: interjected at the next turn, or queued
- * until the task finishes. One goes from here into the conversation when the
- * task takes it in.
- */
-function Queued({ items }: { items: QueuedInput[] }) {
-  const { t } = useTranslation("session");
-  return (
-    <div className="qd" role="list" aria-label={t("queued.label")}>
-      {items.map((q) => {
-        const text = q.message.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join(" ").trim();
-        const more = q.message.content.filter((c) => c.type !== "text").length;
-        return (
-          <div key={q.message.ts} className="qd-i" role="listitem">
-            <span className={`qd-m ${q.mode}`} title={t(`composer.${q.mode}Desc`)}>{t(`composer.${q.mode}Mode`)}</span>
-            <span className="qd-t">{text || t("queued.attachments", { count: more })}</span>
-            {text && more > 0 && <span className="qd-n">{t("queued.more", { count: more })}</span>}
-          </div>
-        );
-      })}
-    </div>
-  );
-}

@@ -13,6 +13,8 @@ use finx_protocol::ApprovalDecision;
 use finx_protocol::CommandRule;
 use finx_protocol::EventMsg;
 use finx_protocol::PermissionMode;
+use finx_protocol::PromptMode;
+use finx_protocol::QueuedInput;
 use finx_protocol::SiteGrant;
 use finx_protocol::SkillUse;
 use finx_protocol::WarningCode;
@@ -51,6 +53,9 @@ use crate::store::SkillText;
 /// User input on its way into the history: the message as the user wrote it, and the
 /// instructions of the skills it mentions, read when it arrived.
 pub(crate) struct Input {
+    /// Its entry's id once it joins the history, given when it arrived: queued input is known
+    /// by it (`withdraw`, `requeue`).
+    pub(crate) id: String,
     pub(crate) message: UserMessage,
     pub(crate) skills: Vec<SkillText>,
 }
@@ -58,6 +63,8 @@ pub(crate) struct Input {
 pub(crate) struct ActiveTask {
     pub(crate) id: String,
     pub(crate) cancel: CancellationToken,
+    /// The running turn's token, a child of `cancel`: `steer_now` ends the turn alone.
+    pub(crate) turn: Arc<Mutex<CancellationToken>>,
     pub(crate) handle: Option<JoinHandle<()>>,
 }
 
@@ -139,6 +146,16 @@ impl SessionState {
     /// A waiting report would start a task now.
     pub(crate) fn has_waking_mail(&self) -> bool {
         !self.hold && self.inbox.iter().any(|mail| mail.wake)
+    }
+
+    /// The id of input that arrives now: free in the history and among the input that waits.
+    pub(crate) fn input_id(&self) -> String {
+        loop {
+            let id = self.history.new_id();
+            if !self.steer.iter().chain(&self.follow_up).any(|input| input.id == id) {
+                return id;
+            }
+        }
     }
 }
 
@@ -266,11 +283,14 @@ impl Session {
                 path: skill.path.clone(),
             })
             .collect();
-        let entry = self.record(EntryKind::Message {
-            message: message.clone(),
-            skills: input.skills,
-            skill: None,
-        });
+        let entry = self.record_with_id(
+            input.id,
+            EntryKind::Message {
+                message: message.clone(),
+                skills: input.skills,
+                skill: None,
+            },
+        );
         self.emit(EventMsg::MessageCompleted {
             message_id: entry.id,
             message,
@@ -322,7 +342,13 @@ impl Session {
     }
 
     pub(crate) fn take_steer(&self) -> Vec<Input> {
-        self.state.lock().steer.drain(..).collect()
+        let mut state = self.state.lock();
+        if state.steer.is_empty() {
+            return Vec::new();
+        }
+        let taken = state.steer.drain(..).collect();
+        self.emit_queue(&state);
+        taken
     }
 
     pub(crate) fn has_steer(&self) -> bool {
@@ -330,7 +356,73 @@ impl Session {
     }
 
     pub(crate) fn take_follow_up(&self) -> Option<Input> {
-        self.state.lock().follow_up.pop_front()
+        let mut state = self.state.lock();
+        let taken = state.follow_up.pop_front();
+        if taken.is_some() {
+            self.emit_queue(&state);
+        }
+        taken
+    }
+
+    /// `queue_changed`, under the state lock so that events keep the order of the changes.
+    pub(crate) fn emit_queue(&self, state: &SessionState) {
+        let entries = |inputs: &VecDeque<Input>, mode| {
+            inputs
+                .iter()
+                .map(|input| QueuedInput {
+                    id: input.id.clone(),
+                    message: input.message.clone(),
+                    mode,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut queued = entries(&state.steer, PromptMode::Steer);
+        queued.extend(entries(&state.follow_up, PromptMode::FollowUp));
+        self.emit(EventMsg::QueueChanged { queued });
+    }
+
+    /// `withdraw`: takes waiting input out of the queue. Once it has joined the history there
+    /// is nothing to take, and nothing is said: its `message_completed` came before.
+    pub(crate) fn withdraw(&self, id: &str) {
+        let mut guard = self.state.lock();
+        let state = &mut *guard;
+        let found = [&mut state.steer, &mut state.follow_up]
+            .into_iter()
+            .any(|inputs| match inputs.iter().position(|input| input.id == id) {
+                Some(i) => inputs.remove(i).is_some(),
+                None => false,
+            });
+        if found {
+            self.emit(EventMsg::InputWithdrawn { id: id.to_string() });
+            self.emit_queue(state);
+        }
+    }
+
+    /// `requeue`: moves waiting input to the end of the other mode.
+    pub(crate) fn requeue(&self, id: &str, mode: PromptMode) {
+        let mut guard = self.state.lock();
+        let state = &mut *guard;
+        let (from, to) = match mode {
+            PromptMode::Steer => (&mut state.follow_up, &mut state.steer),
+            PromptMode::FollowUp => (&mut state.steer, &mut state.follow_up),
+        };
+        let Some(input) = from.iter().position(|input| input.id == id).and_then(|i| from.remove(i)) else {
+            return;
+        };
+        to.push_back(input);
+        self.emit_queue(state);
+    }
+
+    /// `steer_now`: ends the running turn so that waiting steering input joins the history now.
+    /// Not while an approval waits: answering it goes first, and the input follows.
+    pub(crate) fn steer_now(&self) {
+        let state = self.state.lock();
+        if state.steer.is_empty() || !state.pending_approvals.is_empty() {
+            return;
+        }
+        if let Some(task) = &state.active_task {
+            task.turn.lock().cancel();
+        }
     }
 
     pub(crate) fn is_busy(&self) -> bool {

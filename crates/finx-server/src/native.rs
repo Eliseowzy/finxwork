@@ -220,6 +220,7 @@ impl NativeProtocol {
                             model_discovery: true,
                             customize: true,
                             embedded_browser: true,
+                            input_queue: true,
                         },
                     })
                 });

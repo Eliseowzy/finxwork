@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-// Writing while a task runs (session/Dock.tsx): what is sent waits above the
-// composer, marked Interject or Queue as the switch under the text says (⌥↩
-// the other way), until the kernel takes it in; then it shows in the
-// conversation, interjections at the task's next turn, queued messages once
-// it would finish.
+// Writing while a task runs (session/Dock.tsx, Queue.tsx): what is sent waits
+// in the tray above the composer, interjected with ↩ or queued with ⌥↩ (the
+// placeholder says which is which), until the kernel takes it in; then it
+// shows in the conversation, interjections at the task's next turn, queued
+// messages once it would finish. Send now ends the step under way; ↑ takes the
+// last one back to edit; × deletes one; a stop or a failure hands back what
+// still waits.
 //
 // Runs the development build against the repository's target/debug/finx in a
 // temporary FINX_HOME and profile, with a slow model server on this Mac
@@ -36,7 +38,8 @@ const home = path.join(work, "finx");
 const profile = path.join(work, "profile");
 const socket = path.join(home, "run/finx.sock");
 
-// The provider: answers "re: <the last user message>", a word every 300 ms, the first answer slowly.
+// The provider: answers "re: <the last user message>", a word every 300 ms; the first answer and
+// any to a message starting "long" slowly, and "after fail" with an error that is not retried.
 const asked = [];
 const provider = http.createServer((req, res) => {
   let body = "";
@@ -47,8 +50,9 @@ const provider = http.createServer((req, res) => {
     const last = messages.at(-1).content;
     const said = typeof last === "string" ? last : last.map((c) => c.text ?? "").join("");
     asked.push(said);
+    if (said === "after fail") return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "bad request" } }));
     res.writeHead(200, { "content-type": "text/event-stream" });
-    const words = said === "first" ? 14 : 3;
+    const words = said === "first" || said.startsWith("long") ? 14 : 3;
     for (let i = 0; i < words; i++) {
       const text = i === 0 ? `re: ${said}` : " …";
       res.write(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: "assistant", content: text }, finish_reason: null }] })}\n\n`);
@@ -159,8 +163,21 @@ async function quit() {
   await exited;
 }
 
-const queued = `[...document.querySelectorAll(".qd-i")].map((i) => [i.querySelector(".qd-m").className.replace("qd-m ", ""), i.querySelector(".qd-t").textContent])`;
+const queued = `[...document.querySelectorAll(".cq-row")].map((r) => [r.dataset.mode, r.querySelector(".cq-t").textContent])`;
 const bubbles = `[...document.querySelectorAll(".um .bub")].map((b) => b.textContent)`;
+const composerText = `document.querySelector(".cmp-in").innerText.trim()`;
+const strings = Object.fromEntries(["en", "zh-CN"].map((l) => [l, JSON.parse(fs.readFileSync(path.join(desktop, "src/locales", l, "session.json"), "utf8"))]));
+const either = (pick) => JSON.stringify(Object.values(strings).map(pick));
+const idle = `${either((s) => s.composer.reply)}.includes(document.querySelector(".cmp-in")?.getAttribute("aria-placeholder"))`;
+/** Waits on this side for the provider to be asked `text`; how long it took. */
+const askedFor = async (text, ms = 15000) => {
+  const start = Date.now();
+  while (!asked.includes(text)) {
+    if (Date.now() - start > ms) fail(`the provider was never asked "${text}": ${JSON.stringify(asked)}`);
+    await sleep(25);
+  }
+  return Date.now() - start;
+};
 
 let failed = false;
 try {
@@ -170,50 +187,109 @@ try {
     sh("pnpm", ["--dir", desktop, "build"]);
   }
   const page = await launch();
+  const key = async (k, code, vk, modifiers = 0) => {
+    const ev = { key: k, code, windowsVirtualKeyCode: vk, modifiers };
+    await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...ev });
+    await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...ev });
+  };
+  const press = (alt = false) => key("Enter", "Enter", 13, alt ? 1 : 0);
   const write = async (text, alt = false) => {
     await page.run(`document.querySelector(".cmp-in").focus()`);
     await page.cdp("Input.insertText", { text });
     await page.until("send enabled", `!document.querySelector("button.send")?.disabled`);
-    const key = { key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, modifiers: alt ? 1 : 0 };
-    await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", ...key });
-    await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", ...key });
+    await press(alt);
+  };
+  /** Starts a task whose answer streams for a few seconds. */
+  const longTask = async (text) => {
+    await page.until("no task running", idle, 30000);
+    await write(text);
+    await page.until(`the answer to "${text}" streaming`, `document.body.innerText.includes("re: ${text}")`);
   };
 
   step("a task starts and is still answering");
   await page.until("the new session page", `!!document.querySelector(".cmp-in")`);
   await write("first");
   await page.until("the answer streaming", `document.body.innerText.includes("re: first")`);
-  await page.until("the send-mode switch", `!!document.querySelector(".cmp-sendmode")`);
-  check(await page.run(`document.querySelector(".cmp-sendmode button.on").textContent`) !== "", "a mode is picked");
+  await page.until("the placeholder tells ↩ from ⌥↩", `${either((s) => s.composer.steer)}.includes(document.querySelector(".cmp-in")?.getAttribute("aria-placeholder"))`);
+  check(!(await page.run(`!!document.querySelector(".cmp-sendmode")`)), "a send-mode switch is back");
 
-  step("↩ interjects: the message waits above the composer");
+  step("↩ interjects: the message waits in the tray above the composer");
   await write("interject me");
   await page.until("it waits", `${queued}.length === 1`);
   check(JSON.stringify(await page.run(queued)) === JSON.stringify([["steer", "interject me"]]), `waiting: ${JSON.stringify(await page.run(queued))}`);
   check(!(await page.run(bubbles)).includes("interject me"), "it is in the conversation before the task took it in");
 
-  step("the switch set to Queue; ⌥↩ still interjects");
-  await page.run(`document.querySelectorAll(".cmp-sendmode button")[1].click()`);
-  check(await page.run(`localStorage.getItem("send-mode")`) === "follow_up", "the choice is kept");
-  const placeholders = ["en", "zh-CN"].map((l) => JSON.parse(fs.readFileSync(path.join(desktop, "src/locales", l, "session.json"), "utf8")).composer.follow_up);
-  await page.until("the placeholder says so", `${JSON.stringify(placeholders)}.includes(document.querySelector(".cmp-in")?.getAttribute("aria-placeholder"))`);
-  await write("queue me");
-  await write("also now", true);
+  step("⌥↩ queues; interjections are listed first, as they go in");
+  await write("queue me", true);
+  await write("also now");
   await page.until("three waiting", `${queued}.length === 3`);
   const waiting = await page.run(queued);
-  check(JSON.stringify(waiting.map((q) => q[0])) === JSON.stringify(["steer", "follow_up", "steer"]), `waiting: ${JSON.stringify(waiting)}`);
+  check(JSON.stringify(waiting) === JSON.stringify([["steer", "interject me"], ["steer", "also now"], ["follow_up", "queue me"]]), `waiting: ${JSON.stringify(waiting)}`);
   await page.shot("1-waiting");
 
   step("they go into the conversation as the task takes them in");
-  await page.until("the queue emptied", `${queued}.length === 0 && !document.querySelector(".qd")`, 40000);
+  await page.until("the queue emptied", `${queued}.length === 0 && !document.querySelector(".cq")`, 40000);
   await page.until("the last answer", `document.body.innerText.includes("re: queue me")`, 20000);
   const said = await page.run(bubbles);
   check(JSON.stringify(said) === JSON.stringify(["first", "interject me", "also now", "queue me"]), `the conversation: ${JSON.stringify(said)}`);
   // Interjections at the next turn (both at once), the queued one after that answer.
   check(JSON.stringify(asked) === JSON.stringify(["first", "also now", "queue me"]), `the provider was asked: ${JSON.stringify(asked)}`);
   await page.shot("2-taken-in");
+
+  step("Send now ends the step under way: the interjection goes in at once and the task goes on");
+  await longTask("long cut");
+  await write("cut in");
+  await page.until("it waits", `${queued}.length === 1`);
+  await page.run(`document.querySelector(".cq-row[data-mode=steer] .cq-b").click()`);
+  const took = await askedFor("cut in");
+  check(took < 1500, `the interjection went in after ${took} ms, not at once`);
+  await page.until("its answer", `document.body.innerText.includes("re: cut in")`);
+  await page.until("the task done", idle, 20000);
+  const interrupted = Object.values(strings).map((s) => s.chat.interrupted);
+  check(!(await page.run(`${JSON.stringify(interrupted)}.some((t) => document.body.innerText.includes(t))`)), "the task was stopped, not just the step");
+
+  step("↑ in the empty composer takes the last waiting message back to edit");
+  await longTask("long edit");
+  await write("edit me", true);
+  await page.until("it waits", `${queued}.length === 1`);
+  await key("ArrowUp", "ArrowUp", 38);
+  await page.until("it is back in the composer", `${queued}.length === 0 && ${composerText} === "edit me"`);
+  await page.shot("3-edit");
+  await press();
+  await askedFor("edit me");
+  await page.until("the task done", idle, 20000);
+
+  step("× deletes a waiting message: it never goes in");
+  await longTask("long delete");
+  await write("drop me", true);
+  await page.until("it waits", `${queued}.length === 1`);
+  await page.run(`[...document.querySelectorAll(".cq-row .cq-ib")].at(-1).click()`);
+  await page.until("it is gone, with Undo offered", `${queued}.length === 0 && ${either((s) => s.queued.deleted)}.some((t) => document.querySelector(".toast")?.innerText.includes(t))`);
+  await page.until("the task done", idle, 20000);
+  check(!asked.includes("drop me"), `the deleted message was sent: ${JSON.stringify(asked)}`);
+
+  step("Stop hands what waits back to the composer");
+  await longTask("long stop");
+  await write("long again", true);
+  await page.until("it waits", `${queued}.length === 1`);
+  await page.run(`document.querySelector("button.send.stop").click()`);
+  await page.until("it is back in the composer", `${composerText} === "long again"`);
+  check(await page.run(`${JSON.stringify([strings.en.queued.returned_one, strings["zh-CN"].queued.returned_other.replace("{{count}}", "1")])}.some((t) => document.querySelector(".toast")?.innerText.includes(t))`), "no word on what came back");
+  await page.shot("4-stopped");
+
+  step("A failed task hands what still waits back too");
+  // What came back goes out as it is: a long answer, and two messages wait meanwhile.
+  await press();
+  await page.until("its answer streaming", `document.body.innerText.includes("re: long again")`);
+  await write("after fail", true);
+  await write("kept", true);
+  await page.until("two wait", `${queued}.length === 2`);
+  await askedFor("after fail");
+  await page.until("the one left is back in the composer", `${composerText} === "kept"`, 20000);
+  check(!asked.includes("kept"), `the message handed back was sent: ${JSON.stringify(asked)}`);
+  await page.shot("5-failed");
   page.close();
-  console.log("\n✔ messages sent during a task wait in view, by mode, and join the conversation when taken in");
+  console.log("\n✔ messages sent during a task wait in the tray, go in by mode, can be sent now, edited or deleted, and come back on a stop or a failure");
 } catch (e) {
   failed = true;
   console.error(`\n✘ ${e.message}`);

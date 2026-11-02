@@ -39,6 +39,7 @@ use crate::hooks::TurnDecision;
 use crate::session::ActiveTask;
 use crate::session::Input;
 use crate::session::Session;
+use crate::session::SessionState;
 use crate::store::EntryKind;
 use crate::store::TaskStatus;
 use crate::tool_exec;
@@ -49,7 +50,20 @@ const MANY_COMPACTIONS: u32 = 3;
 pub(crate) struct TaskCtx {
     pub(crate) id: String,
     pub(crate) cancel: CancellationToken,
+    /// The running turn's token, a child of `cancel`, shared with the session's `ActiveTask`:
+    /// the model's reply and the tool calls stop on it, so `steer_now` ends the turn alone.
+    turn: Arc<Mutex<CancellationToken>>,
     pub(crate) usage: Mutex<UsageTotals>,
+}
+
+impl TaskCtx {
+    pub(crate) fn turn(&self) -> CancellationToken {
+        self.turn.lock().clone()
+    }
+
+    fn next_turn(&self) {
+        *self.turn.lock() = self.cancel.child_token();
+    }
 }
 
 pub(crate) enum TaskOutcome {
@@ -86,28 +100,29 @@ pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: P
             }
         }
     }
-    let message = Input {
-        message: UserMessage {
-            content: input,
-            ts: now_ms(),
-        },
-        skills,
-    };
-    {
+    let message = {
         let mut state = session.state.lock();
         // New input ends the hold after an interruption.
         state.hold = false;
+        let message = Input {
+            id: state.input_id(),
+            message: UserMessage {
+                content: input,
+                ts: now_ms(),
+            },
+            skills,
+        };
         if state.active_task.is_some() {
-            let queued = message.message.clone();
             match mode {
                 PromptMode::Steer => state.steer.push_back(message),
                 PromptMode::FollowUp => state.follow_up.push_back(message),
             }
-            session.emit(EventMsg::InputQueued { message: queued, mode });
+            session.emit_queue(&state);
             session.input_seq.send_modify(|n| *n += 1);
             return;
         }
-    }
+        message
+    };
     start_task(session, Some(message));
 }
 
@@ -180,24 +195,34 @@ pub(crate) fn start_task(session: &Arc<Session>, input: Option<Input>) {
 }
 
 fn start(session: &Arc<Session>, work: Work, trigger: TaskTrigger) {
+    let task = reserve(&mut session.state.lock());
+    launch(session, task, work, trigger);
+}
+
+/// Makes the session busy with a new task. Under the state lock, so that input arriving
+/// meanwhile waits for it instead of starting a task of its own.
+fn reserve(state: &mut SessionState) -> TaskCtx {
     let cancel = CancellationToken::new();
-    let id = {
-        let mut state = session.state.lock();
-        state.idle = false;
-        state.next_task_no += 1;
-        let id = format!("t{}", state.next_task_no);
-        state.active_task = Some(ActiveTask {
-            id: id.clone(),
-            cancel: cancel.clone(),
-            handle: None,
-        });
-        id
-    };
-    let task = TaskCtx {
+    let turn = Arc::new(Mutex::new(cancel.child_token()));
+    state.idle = false;
+    state.next_task_no += 1;
+    let id = format!("t{}", state.next_task_no);
+    state.active_task = Some(ActiveTask {
         id: id.clone(),
+        cancel: cancel.clone(),
+        turn: turn.clone(),
+        handle: None,
+    });
+    TaskCtx {
+        id,
         cancel,
+        turn,
         usage: Mutex::new(UsageTotals::default()),
-    };
+    }
+}
+
+fn launch(session: &Arc<Session>, task: TaskCtx, work: Work, trigger: TaskTrigger) {
+    let id = task.id.clone();
     let handle = tokio::spawn(task_main(session.clone(), task, work, trigger));
     let mut state = session.state.lock();
     if let Some(active) = state.active_task.as_mut()
@@ -272,7 +297,7 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
             session.warn(format!("failed to save the session log: {err}"));
         }
     }
-    let (next_input, wake) = {
+    let next = {
         let mut guard = session.state.lock();
         let state = &mut *guard;
         if state.active_task.as_ref().is_some_and(|t| t.id == task.id) {
@@ -287,32 +312,24 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
                     reason,
                 });
                 // Input that arrived after the last turn boundary starts the next task.
-                state.steer.pop_front().or_else(|| state.follow_up.pop_front())
+                let next = state.steer.pop_front().or_else(|| state.follow_up.pop_front());
+                if next.is_some() {
+                    session.emit_queue(state);
+                }
+                next
             }
             TaskOutcome::Failed(error) => {
-                let dropped = state.steer.len() + state.follow_up.len();
-                state.steer.clear();
-                state.follow_up.clear();
+                let returned_input = hand_back(session, state);
                 session.emit(EventMsg::TaskFailed {
                     task_id: task.id.clone(),
                     error,
                     usage,
+                    returned_input,
                 });
-                if dropped > 0 {
-                    session.emit(EventMsg::Warning {
-                        message: format!("{dropped} queued message(s) were discarded because the task failed"),
-                        code: None,
-                    });
-                }
                 None
             }
             TaskOutcome::Interrupted => {
-                let returned_input = state
-                    .steer
-                    .drain(..)
-                    .chain(state.follow_up.drain(..))
-                    .map(|input| input.message)
-                    .collect();
+                let returned_input = hand_back(session, state);
                 // Stopped on purpose: reports do not restart the work until new input arrives.
                 state.hold = true;
                 session.emit(EventMsg::TaskInterrupted {
@@ -324,17 +341,34 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
             }
         };
         // Reports that arrived while the reply was being written start a task of their own,
-        // after the reply is complete.
-        let wake = next_input.is_none() && state.has_waking_mail();
-        (next_input, wake)
+        // after the reply is complete. The next task is the session's before the lock goes, so
+        // input arriving meanwhile waits for it instead of starting another.
+        match next_input {
+            Some(input) => Some((reserve(state), Work::Prompt(Some(input)), TaskTrigger::User)),
+            None if state.has_waking_mail() => Some((reserve(state), Work::Prompt(None), TaskTrigger::Mail)),
+            None => None,
+        }
     };
-    if let Some(input) = next_input {
-        start_task(session, Some(input));
-    } else if wake {
-        start(session, Work::Prompt(None), TaskTrigger::Mail);
-    } else {
-        session.check_idle();
+    match next {
+        Some((task, work, trigger)) => launch(session, task, work, trigger),
+        None => session.check_idle(),
     }
+}
+
+/// A task that ends early hands what still waits back to the front end, in the order it would
+/// have joined the history.
+fn hand_back(session: &Session, state: &mut SessionState) -> Vec<UserMessage> {
+    if state.steer.is_empty() && state.follow_up.is_empty() {
+        return Vec::new();
+    }
+    let returned = state
+        .steer
+        .drain(..)
+        .chain(state.follow_up.drain(..))
+        .map(|input| input.message)
+        .collect();
+    session.emit_queue(state);
+    returned
 }
 
 /// Compaction state of one task.
@@ -388,6 +422,12 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         if let Err(outcome) = check_context(session, task, &mut compactions).await {
             return outcome;
         }
+        // The turn starts: `steer_now` ends it alone. Steering input that came while the MCP
+        // servers or a compaction were awaited makes this request too.
+        task.next_turn();
+        for message in session.take_steer() {
+            session.record_user(message);
+        }
         let (model, thinking) = session.current_model();
         let ctx = session.build_context();
         let estimated = session.estimate_request(&ctx);
@@ -400,7 +440,12 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         match message.stop_reason {
             StopReason::Aborted => {
                 end_turn(session, task, turn, &message);
-                return TaskOutcome::Interrupted;
+                if task.cancel.is_cancelled() {
+                    return TaskOutcome::Interrupted;
+                }
+                // `steer_now` ended the reply: the steering input goes in at the boundary.
+                turn += 1;
+                continue;
             }
             StopReason::Error => {
                 end_turn(session, task, turn, &message);
@@ -608,10 +653,11 @@ async fn stream_turn(
     let mut stream = session.llm.stream(model.clone(), ctx, options);
     let mut acc = MessageAccumulator::for_model(model);
     let mut started = false;
+    let turn = task.turn();
     let message = loop {
         tokio::select! {
             biased;
-            _ = task.cancel.cancelled() => break acc.aborted(),
+            _ = turn.cancelled() => break acc.aborted(),
             event = stream.next() => match event {
                 None => break acc.fail(LlmError::new(ErrorKind::Protocol, "the model stream ended unexpectedly")),
                 Some(StreamEvent::Done(message)) | Some(StreamEvent::Failed(message)) => break message,

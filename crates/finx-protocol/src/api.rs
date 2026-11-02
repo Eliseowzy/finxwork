@@ -5,7 +5,6 @@ use finx_llm::Message;
 use finx_llm::ThinkingLevel;
 use finx_llm::ToolResultMessage;
 use finx_llm::UsageTotals;
-use finx_llm::UserMessage;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -18,12 +17,12 @@ use crate::event::CompletionReason;
 use crate::event::ErrorInfo;
 use crate::event::Event;
 use crate::event::MailInfo;
+pub use crate::event::QueuedInput;
 use crate::event::SkillUse;
 use crate::event::ToolCategory;
 use crate::op::CommandRule;
 use crate::op::Op;
 use crate::op::PermissionMode;
-use crate::op::PromptMode;
 use crate::op::SiteGrant;
 use finx_llm::Timestamp;
 
@@ -373,6 +372,11 @@ pub struct ServerCapabilities {
     /// (browser-design §8.3).
     #[serde(default)]
     pub embedded_browser: bool,
+    /// Input that waits for the running task, as a client shows and changes it:
+    /// `queue_changed`, `input_withdrawn`, the `withdraw`, `requeue` and `steer_now` ops, and
+    /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
+    #[serde(default)]
+    pub input_queue: bool,
 }
 
 // ---- Sessions ----
@@ -613,16 +617,9 @@ pub struct SessionSnapshot {
     /// The sub-agents started since the session was loaded, in the order they started.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub agents: Vec<AgentSnapshot>,
-    /// Prompts waiting for the running task (`input_queued`), oldest first.
+    /// Input waiting for the running task, as the last `queue_changed` gave it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub queued: Vec<QueuedInput>,
-}
-
-/// A prompt waiting for the running task.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct QueuedInput {
-    pub message: UserMessage,
-    pub mode: PromptMode,
 }
 
 /// A sub-agent as a snapshot shows it: what `agent_started` and `agent_status` said, and its own

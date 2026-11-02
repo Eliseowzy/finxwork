@@ -1,7 +1,6 @@
 //! The session as the events describe it, kept by the session hub to answer attaches with a
 //! snapshot that lines up exactly with the following events.
 
-use finx_llm::Message;
 use finx_llm::Timestamp;
 use finx_llm::UsageTotals;
 use finx_protocol::AgentStatus;
@@ -222,12 +221,6 @@ impl SessionMirror {
                 {
                     task.streaming = None;
                 }
-                // A queued prompt joins the history with the time it was sent.
-                if let Message::User(user) = message
-                    && let Some(i) = self.queued.iter().position(|q| q.message.ts == user.ts)
-                {
-                    self.queued.remove(i);
-                }
             }
             EventMsg::ToolStarted {
                 call_id,
@@ -301,16 +294,11 @@ impl SessionMirror {
             EventMsg::TaskCompleted {
                 task_id, usage, reason, ..
             } => self.end_task(event.ts, task_id, TaskOutcome::Completed, Some(*reason), None, usage),
-            EventMsg::InputQueued { message, mode } => self.queued.push(QueuedInput {
-                message: message.clone(),
-                mode: *mode,
-            }),
-            EventMsg::TaskFailed { task_id, error, usage } => {
-                self.queued.clear();
+            EventMsg::QueueChanged { queued } => self.queued = queued.clone(),
+            EventMsg::TaskFailed { task_id, error, usage, .. } => {
                 self.end_task(event.ts, task_id, TaskOutcome::Failed, None, Some(error.clone()), usage)
             }
             EventMsg::TaskInterrupted { task_id, usage, .. } => {
-                self.queued.clear();
                 self.end_task(event.ts, task_id, TaskOutcome::Interrupted, None, None, usage)
             }
             EventMsg::AgentStarted {
@@ -611,11 +599,12 @@ mod tests {
     }
 
     #[test]
-    fn queued_prompts_wait_until_they_join_the_history() {
+    fn the_queue_is_the_last_one_announced() {
         let mut m = SessionMirror::new(info(), Vec::new());
-        let queued = |text: &str, ts| UserMessage {
-            ts,
-            ..UserMessage::text(text)
+        let queued = |id: &str, text: &str, mode| QueuedInput {
+            id: id.into(),
+            message: UserMessage::text(text),
+            mode,
         };
         m.apply(&ev(
             1,
@@ -624,36 +613,32 @@ mod tests {
                 trigger: Default::default(),
             },
         ));
-        for (seq, text, ts, mode) in [
-            (2, "now", 10, finx_protocol::PromptMode::Steer),
-            (3, "later", 11, finx_protocol::PromptMode::FollowUp),
-        ] {
-            m.apply(&ev(
-                seq,
-                EventMsg::InputQueued {
-                    message: queued(text, ts),
-                    mode,
-                },
-            ));
-        }
-        assert_eq!(m.snapshot(None).queued.len(), 2);
+        let both = vec![
+            queued("a", "now", finx_protocol::PromptMode::Steer),
+            queued("b", "later", finx_protocol::PromptMode::FollowUp),
+        ];
+        m.apply(&ev(2, EventMsg::QueueChanged { queued: both.clone() }));
+        assert_eq!(m.snapshot(None).queued, both);
+        // "now" joins the history: the queue goes first, then its message, under the same id.
+        m.apply(&ev(3, EventMsg::QueueChanged { queued: both[1..].to_vec() }));
         m.apply(&ev(
             4,
             EventMsg::MessageCompleted {
-                message_id: "u1".into(),
-                message: queued("now", 10).into(),
+                message_id: "a".into(),
+                message: UserMessage::text("now").into(),
                 mail: None,
                 skills: Vec::new(),
             },
         ));
         let snap = m.snapshot(None);
-        assert_eq!(snap.queued.len(), 1);
-        assert_eq!(snap.queued[0].message.ts, 11);
+        assert_eq!(snap.queued, both[1..]);
+        assert!(matches!(&snap.transcript.items[0], TranscriptItem::Message { message_id, .. } if message_id == "a"));
+        m.apply(&ev(5, EventMsg::QueueChanged { queued: Vec::new() }));
         m.apply(&ev(
-            5,
+            6,
             EventMsg::TaskInterrupted {
                 task_id: "t1".into(),
-                returned_input: vec![queued("later", 11)],
+                returned_input: vec![UserMessage::text("later")],
                 usage: UsageTotals::default(),
             },
         ));
@@ -788,6 +773,7 @@ mod tests {
                 task_id: "t1".into(),
                 error: finx_protocol::ErrorInfo::new("auth", "no key"),
                 usage: Default::default(),
+                returned_input: Vec::new(),
             },
         ));
         assert_eq!(m.state(), SessionState::Failed);

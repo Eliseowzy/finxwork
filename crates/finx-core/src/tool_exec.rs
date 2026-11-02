@@ -76,7 +76,7 @@ pub(crate) async fn execute_batch(
             call.arguments = tool.prepare_arguments(call.arguments.to_value()).into();
         }
         session.emit(started(session, &call, tool.as_deref()));
-        if task.cancel.is_cancelled() {
+        if task.turn().is_cancelled() {
             prepared.push(Prepared::Done(immediate(session, &call, NOT_EXECUTED)));
             continue;
         }
@@ -393,7 +393,7 @@ fn tool_ctx(session: &Session, task: &TaskCtx, call: &ToolCall, authorities: Arc
                 text: text.to_string(),
             })
         }),
-        cancel: task.cancel.child_token(),
+        cancel: task.turn().child_token(),
         model_accepts_images: model.accepts_images(),
         output_dir: session.output_dir.clone(),
         session_state: session.tool_state.clone(),
@@ -408,13 +408,14 @@ async fn check(session: &Session, task: &TaskCtx, tool: &dyn Tool, call: &ToolCa
 }
 
 async fn execute(tool: &dyn Tool, call: &ToolCall, ctx: ToolCtx, task: &TaskCtx) -> Result<ToolOutput, ToolError> {
-    if task.cancel.is_cancelled() {
+    if task.turn().is_cancelled() {
         return Err(ToolError::Cancelled);
     }
     until_cancelled(task, tool.execute(call.arguments.to_value(), ctx)).await
 }
 
-/// Waits for a tool, but not forever once the task is cancelled: the tool gets a grace period to
+/// Waits for a tool, but not forever once the turn is cancelled (the task interrupted, or
+/// `steer_now`): the tool gets a grace period to
 /// stop on its own (a command is killed within about 2.5 s), then the kernel stops waiting and
 /// drops it, so a stuck call cannot hold the session.
 async fn until_cancelled<T>(
@@ -422,9 +423,10 @@ async fn until_cancelled<T>(
     run: impl Future<Output = Result<T, ToolError>>,
 ) -> Result<T, ToolError> {
     let mut run = std::pin::pin!(run);
+    let turn = task.turn();
     tokio::select! {
         result = &mut run => result,
-        _ = task.cancel.cancelled() => {
+        _ = turn.cancelled() => {
             tokio::time::timeout(CANCEL_GRACE, run).await.unwrap_or(Err(ToolError::Cancelled))
         }
     }

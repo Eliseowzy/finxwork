@@ -1,4 +1,4 @@
-import { attachedBlock, baseName, webCommentBlock, type WebComment } from "@finx/client";
+import { attachedBlock, baseName, userText, webCommentBlock, type WebComment } from "@finx/client";
 import type { UserContent } from "@finx/protocol";
 import type { PickedFile } from "../../../shared/bridge";
 import { i18n } from "../../../shared/i18n";
@@ -69,4 +69,22 @@ export function toInput(text: string, atts: Attachment[]): UserContent[] {
   const web = atts.flatMap((a) => (a.kind === "web" ? [a.comment] : []));
   if (web.length) out.push(webCommentBlock(web));
   return out;
+}
+
+let returnedCount = 0;
+
+/** A message's content back as the composer had it (toInput the other way): for what a stopped task hands back, or a waiting message taken back to edit. */
+export function fromInput(content: UserContent[]): { text: string; attachments: Attachment[] } {
+  const { text, files, comments } = userText(content);
+  const images = content.flatMap((c): Attachment[] => {
+    if (c.type !== "image") return [];
+    const name = i18n.t("session:queued.image", { n: ++returnedCount });
+    return [{ kind: "image", path: `returned:${returnedCount}`, name, mime_type: c.mime_type, data: c.data }];
+  });
+  const paths = files.map((p): Attachment => {
+    const folder = /[\\/]$/.test(p);
+    const path = folder ? p.slice(0, -1) : p;
+    return { kind: folder ? "folder" : "file", path, name: baseName(path) };
+  });
+  return { text, attachments: [...images, ...paths, ...comments.map(webAttachment)] };
 }

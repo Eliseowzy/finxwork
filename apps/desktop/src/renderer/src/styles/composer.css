@@ -100,18 +100,36 @@
 /* Under the composer, outside it: what the message goes with, as quiet buttons. */
 .cmp-meta{display:flex;align-items:center;gap:2px;padding:0 12px;margin-top:-4px;min-width:0}
 .cmp-meta .sp{flex:1}
-.cmp-meta .cmp-sendmode{margin-left:6px}
-.cmp-meta .cmp-sendmode button{height:22px;padding:0 10px;font-size:12px;color:var(--l2)}
-.cmp-meta .cmp-sendmode button.on{color:var(--l1)}
 
-/* Messages sent while the task runs, waiting for it (session/Dock.tsx): one
-   quiet line each above the composer, with how it waits. */
-.qd{background:var(--pill);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:8px 12px;display:flex;flex-direction:column;gap:4px;animation:cbarup .32s cubic-bezier(.2,0,0,1);max-height:132px;overflow-y:auto}
-.qd-i{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;line-height:22px}
-.qd-m{flex:none;font-size:11.5px;line-height:18px;padding:0 7px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
-.qd-m.steer{color:var(--accent-fg)}
-.qd-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--l1)}
-.qd-n{flex:none;font-size:12px;color:var(--l3)}
+/* Messages sent while the task runs, waiting for it (session/Queue.tsx): a
+   tray that comes out from behind the composer, as wide as it, its lower
+   edge 12 px under it (the composer sits on top). On the composer's grid: a
+   row's icon in a column as wide as "+", its words where the composer's text
+   starts. Its colour is a step below the window's in both schemes, a well
+   the composer floats over. */
+.cmp{position:relative;z-index:1}
+.cq{margin-bottom:-22px;padding:4px 6px 16px;border-radius:var(--r-xl) var(--r-xl) 0 0;background:var(--tray);box-shadow:0 0 0 .5px var(--pill-bd);max-height:184px;overflow-y:auto;scrollbar-width:thin;animation:cqup .3s var(--ease-out)}
+@keyframes cqup{from{opacity:0;transform:translateY(14px)}}
+.cq-row{display:flex;align-items:center;gap:4px;height:30px;border-radius:var(--r-md);animation:cqrow .22s var(--ease-out)}
+@keyframes cqrow{from{opacity:0;height:0}}
+.cq-row:hover,.cq-row:focus-within{background:var(--fill)}
+.cq-i{width:32px;flex:none;display:flex;justify-content:center;color:var(--l3)}
+.cq-i .ic{width:15px;height:15px}
+.cq-t{flex:1;min-width:0;padding:0 4px;font-size:14px;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cq-n{flex:none;font-size:12px;color:var(--l3);white-space:nowrap}
+/* When it goes in; on hover, what can be done with it. */
+.cq-when{flex:none;padding:0 10px 0 6px;font-size:12px;color:var(--l3);white-space:nowrap}
+.cq-acts{display:none;flex:none;align-items:center;gap:2px;padding-right:4px}
+.cq-row:hover .cq-when,.cq-row:focus-within .cq-when{display:none}
+.cq-row:hover .cq-acts,.cq-row:focus-within .cq-acts{display:flex}
+.cq-b{height:24px;padding:0 8px;border:0;border-radius:var(--r-sm);background:none;font-size:12.5px;color:var(--l1);white-space:nowrap}
+.cq-b:hover{background:var(--fill2)}
+.cq-b.off{opacity:.42}
+.cq-b.off:hover{background:none}
+.cq-ib{width:24px;height:24px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:inline-flex;align-items:center;justify-content:center}
+.cq-ib:hover{background:var(--fill2);color:var(--l1)}
+.cq-ib .ic{width:14px;height:14px}
+@media (prefers-reduced-motion:reduce){.cq,.cq-row{animation:none}}
 .mb{height:26px;border:0;border-radius:var(--r-sm);background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
 .mb:hover,.mb[aria-expanded="true"]{background:var(--fill);color:var(--l1)}
 .mb:disabled{opacity:.5}

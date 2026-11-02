@@ -23,6 +23,8 @@ use finx_protocol::Event;
 use finx_protocol::EventMsg;
 use finx_protocol::Op;
 use finx_protocol::PermissionMode;
+use finx_protocol::PromptMode;
+use finx_protocol::QueuedInput;
 use finx_llm::ToolSpec;
 use finx_tools::BashTool;
 use finx_tools::LocalEnvironment;
@@ -684,17 +686,271 @@ async fn follow_up_runs_after_the_task_would_end() {
         other => panic!("unexpected {other:?}"),
     }
     assert_eq!(h.api.requests().len(), 2);
-    // It was announced as waiting, and joined the history with the time it was sent.
-    let queued = events
+    // It was announced as waiting, and joined the history under the id it was announced with.
+    let queued = first_queued(&events);
+    assert_eq!(queued.mode, PromptMode::FollowUp);
+    assert!(events.iter().any(|e| matches!(&e.msg,
+        EventMsg::MessageCompleted { message_id, message: Message::User(u), .. } if *message_id == queued.id && u.text_content() == "later")));
+}
+
+/// The first input a `queue_changed` among `events` announced.
+fn first_queued(events: &[Event]) -> QueuedInput {
+    events
         .iter()
         .find_map(|e| match &e.msg {
-            EventMsg::InputQueued { message, mode } => Some((message.ts, *mode)),
+            EventMsg::QueueChanged { queued } => queued.first().cloned(),
             _ => None,
         })
-        .expect("input_queued");
-    assert_eq!(queued.1, finx_protocol::PromptMode::FollowUp);
-    assert!(events.iter().any(|e| matches!(&e.msg,
-        EventMsg::MessageCompleted { message: Message::User(u), .. } if u.ts == queued.0 && u.text_content() == "later")));
+        .expect("queue_changed")
+}
+
+/// Sends `op` while the task runs, and waits until the queue holds `len` items.
+async fn queue(h: &mut Harness, op: Op, len: usize) -> Vec<QueuedInput> {
+    h.kernel.submit(op).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::QueueChanged { queued } if queued.len() == len)).await;
+    match &events.last().unwrap().msg {
+        EventMsg::QueueChanged { queued } => queued.clone(),
+        _ => unreachable!(),
+    }
+}
+
+fn input(text: &str, mode: PromptMode) -> Op {
+    Op::Prompt {
+        input: prompt(text),
+        mode,
+        commands: true,
+    }
+}
+
+fn user_texts(context: &finx_llm::Context) -> Vec<String> {
+    context
+        .messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::User(u) => Some(u.text_content()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn queued_input_joins_under_its_id_steering_first() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![
+            Script::tool_call("call_1", "bash", json!({"command": "sleep 1"})),
+            Script::text("one"),
+            Script::text("two"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("first")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolStarted { .. })).await;
+    queue(&mut h, input("later", PromptMode::FollowUp), 1).await;
+    let both = queue(&mut h, input("now", PromptMode::Steer), 2).await;
+    // In the order they join: steering input first.
+    let modes: Vec<PromptMode> = both.iter().map(|q| q.mode).collect();
+    assert_eq!(modes, [PromptMode::Steer, PromptMode::FollowUp]);
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }));
+    // Each leaves the queue, then joins under its id.
+    for item in &both {
+        let left = events.iter().position(|e| matches!(&e.msg, EventMsg::QueueChanged { queued } if !queued.iter().any(|q| q.id == item.id))).unwrap();
+        let joined = events.iter().position(|e| matches!(&e.msg, EventMsg::MessageCompleted { message_id, .. } if *message_id == item.id)).unwrap();
+        assert_eq!(joined, left + 1, "{}", item.message.text_content());
+    }
+    let requests = h.api.requests();
+    assert_eq!(user_texts(&requests[1]), ["first", "now"]);
+    assert_eq!(user_texts(&requests[2]), ["first", "now", "later"]);
+}
+
+#[tokio::test]
+async fn withdrawn_input_never_joins() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![Script::tool_call("call_1", "bash", json!({"command": "sleep 1"})), Script::text("done")],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("first")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolStarted { .. })).await;
+    let queued = queue(&mut h, input("drop me", PromptMode::Steer), 1).await;
+    let id = queued[0].id.clone();
+    h.kernel.submit(Op::Withdraw { id: id.clone() }).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::QueueChanged { queued } if queued.is_empty())).await;
+    let withdrawn = events.iter().rev().nth(1).unwrap();
+    assert!(matches!(&withdrawn.msg, EventMsg::InputWithdrawn { id: gone } if *gone == id));
+    until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert_eq!(user_texts(&h.api.requests()[1]), ["first"]);
+
+    // Once it is gone, or has joined, withdrawing it again says nothing.
+    h.api.push(Script::text("again"));
+    h.kernel.submit(Op::Withdraw { id }).await.unwrap();
+    let result = h.kernel.run(prompt("next")).await.unwrap();
+    assert!(!result.events.iter().any(|e| matches!(e.msg, EventMsg::InputWithdrawn { .. })));
+}
+
+#[tokio::test]
+async fn a_follow_up_made_steering_joins_at_the_next_turn() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![Script::tool_call("call_1", "bash", json!({"command": "sleep 1"})), Script::text("done")],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("first")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolStarted { .. })).await;
+    let queued = queue(&mut h, input("soon", PromptMode::FollowUp), 1).await;
+    h.kernel
+        .submit(Op::Requeue {
+            id: queued[0].id.clone(),
+            mode: PromptMode::Steer,
+        })
+        .await
+        .unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::QueueChanged { .. })).await;
+    assert!(matches!(&events.last().unwrap().msg, EventMsg::QueueChanged { queued: now } if now[0].mode == PromptMode::Steer && now[0].id == queued[0].id));
+    until(&mut h.kernel, |m| m.is_task_end()).await;
+    // It went in with the tool's result, not after the task's last answer.
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(user_texts(&requests[1]), ["first", "soon"]);
+}
+
+#[tokio::test]
+async fn steer_now_ends_a_running_command_and_the_task_goes_on() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![Script::tool_call("call_1", "bash", json!({"command": "sleep 30"})), Script::text("changed course")],
+    )
+    .await;
+    let started = Instant::now();
+    h.kernel.submit(Op::prompt("build it")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolRunning { .. })).await;
+    queue(&mut h, input("stop, use the other way", PromptMode::Steer), 1).await;
+    h.kernel.submit(Op::SteerNow).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(started.elapsed() < Duration::from_secs(10));
+    match &events.last().unwrap().msg {
+        EventMsg::TaskCompleted { last_message, .. } => assert_eq!(last_message.as_deref(), Some("changed course")),
+        other => panic!("unexpected {other:?}"),
+    }
+    let requests = h.api.requests();
+    assert_eq!(tool_results(&requests[1]), ["Cancelled by user."]);
+    assert_eq!(user_texts(&requests[1]), ["build it", "stop, use the other way"]);
+}
+
+#[tokio::test]
+async fn steer_now_ends_a_reply_being_written() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![
+            Script::text("partial").then_sleep(Duration::from_secs(30)).then_text("never"),
+            Script::text("after"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("talk")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::MessageDelta { .. })).await;
+    queue(&mut h, input("shorter please", PromptMode::Steer), 1).await;
+    h.kernel.submit(Op::SteerNow).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    let replies: Vec<(String, finx_llm::StopReason)> = events
+        .iter()
+        .filter_map(|e| match &e.msg {
+            EventMsg::MessageCompleted { message: Message::Assistant(a), .. } => Some((a.text(), a.stop_reason)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replies[0], ("partial".to_string(), finx_llm::StopReason::Aborted));
+    assert!(matches!(&events.last().unwrap().msg, EventMsg::TaskCompleted { last_message, .. } if last_message.as_deref() == Some("after")));
+    assert_eq!(user_texts(&h.api.requests()[1]), ["talk", "shorter please"]);
+}
+
+#[tokio::test]
+async fn steer_now_without_steering_input_changes_nothing() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![Script::text("a").then_sleep(Duration::from_millis(400)).then_text("b")],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("talk")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::MessageDelta { .. })).await;
+    queue(&mut h, input("after it", PromptMode::FollowUp), 1).await;
+    h.api.push(Script::text("then this"));
+    h.kernel.submit(Op::SteerNow).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    let replies: Vec<String> = events
+        .iter()
+        .filter_map(|e| match &e.msg {
+            EventMsg::MessageCompleted { message: Message::Assistant(a), .. } => Some(a.text()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replies, ["ab", "then this"]);
+}
+
+#[tokio::test]
+async fn a_failed_task_hands_waiting_input_back() {
+    let mut h = harness(
+        PermissionMode::BypassPermissions,
+        false,
+        vec![
+            Script::tool_call("call_1", "bash", json!({"command": "sleep 1"})),
+            Script::fail(ErrorKind::Auth, "bad key"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("first")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolStarted { .. })).await;
+    queue(&mut h, input("after it", PromptMode::FollowUp), 1).await;
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    match &events.last().unwrap().msg {
+        EventMsg::TaskFailed { returned_input, .. } => {
+            assert_eq!(returned_input.iter().map(|m| m.text_content()).collect::<Vec<_>>(), ["after it"]);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
+    assert!(matches!(&events[events.len() - 2].msg, EventMsg::QueueChanged { queued } if queued.is_empty()));
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::Warning { .. })));
+}
+
+/// Input sent in a burst, some of it as tasks end: one task at a time, each input once, in order.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_burst_of_input_goes_in_once_each_in_order() {
+    let mut h = harness(PermissionMode::BypassPermissions, false, Vec::new()).await;
+    h.api.respond_with(|_| Some(Script::text("ok")));
+    let sent: Vec<String> = (0..40).map(|i| format!("p{i}")).collect();
+    for (i, text) in sent.iter().enumerate() {
+        h.kernel.submit(Op::prompt(text.clone())).await.unwrap();
+        // Some land while the task before them is ending.
+        if i % 3 == 0 {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
+    }
+    let mut running = 0;
+    let mut joined = Vec::new();
+    loop {
+        let events = until(&mut h.kernel, |m| m.is_task_end() || matches!(m, EventMsg::Idle)).await;
+        for event in &events {
+            match &event.msg {
+                EventMsg::TaskStarted { .. } => running += 1,
+                msg if msg.is_task_end() => running -= 1,
+                EventMsg::MessageCompleted { message: Message::User(u), .. } => joined.push(u.text_content()),
+                _ => {}
+            }
+            assert!(running <= 1, "two tasks ran at once");
+        }
+        if matches!(events.last().unwrap().msg, EventMsg::Idle) && joined.len() == sent.len() {
+            break;
+        }
+    }
+    // Each went in once, in the order sent.
+    assert_eq!(joined, sent);
 }
 
 /// A file-changing tool for kernel tests: it records the arguments it runs with, its check can

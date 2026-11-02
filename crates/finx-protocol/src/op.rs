@@ -23,6 +23,20 @@ pub enum Op {
     /// Continue from the current history (retry after a failure).
     Continue,
     Interrupt,
+    /// Takes input that waits for the running task out of the queue: `input_withdrawn` says it
+    /// went. Nothing happens once it has joined the history.
+    Withdraw {
+        id: String,
+    },
+    /// Moves waiting input to the other mode, at the end of it.
+    Requeue {
+        id: String,
+        mode: PromptMode,
+    },
+    /// Ends the running step, the model's reply or its tool calls, so that waiting steering input
+    /// joins the history now; the task goes on. Nothing happens when no steering input waits or
+    /// an approval does.
+    SteerNow,
     /// Stops one sub-agent's current task. It keeps its session and takes messages again; its
     /// report arrives as an interrupted one and does not wake the session.
     AgentInterrupt {
