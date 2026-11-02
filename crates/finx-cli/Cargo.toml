@@ -33,6 +33,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 agent-client-protocol-schema.workspace = true
+finx-eval.workspace = true
 finx-mock.workspace = true
 finx-rpc.workspace = true
 jsonschema.workspace = true
