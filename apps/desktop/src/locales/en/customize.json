@@ -28,7 +28,7 @@
     "systemHint": "updated with finx",
     "extra": "Configured paths",
     "extraHint": "folders in skills.paths",
-    "allProjects": "All projects",
+    "connected": "Connected",
     "thisProject": "{{project}} only",
     "forYou": "just for you",
     "repoConnectorsHint": "the repository's configuration, read-only here",

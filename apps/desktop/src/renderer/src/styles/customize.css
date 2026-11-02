@@ -59,11 +59,15 @@
   .cz-tile.glyph.dark{background:#f2f2f4}
 }
 
-/* 我的: one to a row, each its own rounded panel (not a table): the mark, the name over one
-   line of what it does, then on the right its state, its switch and its menu. */
-.cz-rows{display:flex;flex-direction:column;gap:var(--sp-1)}
-.cz-row{display:flex;align-items:center;gap:var(--sp-2);min-height:58px;padding:9px 8px 9px 13px;border-radius:var(--r-lg);background:var(--win2);transition:background .15s}
-.cz-row:hover{background:var(--win3)}
+/* 我的: one to a row, as the detail pages list their tools: no panels, a hairline between rows,
+   the content flush with the group's heading. The row under the pointer lights up as a rounded
+   block reaching 12 past the text, and the lines beside it give way to it. Each row is the mark,
+   the name over one line of what it does, then on the right its state, its switch and its menu. */
+.cz-rows{display:flex;flex-direction:column}
+.cz-row{position:relative;display:flex;align-items:center;gap:var(--sp-2);min-height:58px;margin:0 -12px;padding:9px 8px 9px 12px;border-radius:var(--r-lg);transition:background .12s}
+.cz-row+.cz-row::before{content:"";position:absolute;top:0;left:12px;right:12px;height:.5px;background:var(--sep);transition:opacity .12s}
+.cz-row:hover{background:var(--fill)}
+.cz-row:hover::before,.cz-row:hover+.cz-row::before{opacity:0}
 .cz-row.off .cz-tile,.cz-row.off .rt{opacity:.5}
 .cz-row .rt{flex:1;min-width:0}
 .cz-row .rn{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;line-height:18px;min-width:0}

@@ -167,7 +167,7 @@ export function MyConnectors({ c, a, project }: { c: Customize; a: Actions; proj
     </div>
   );
   const groups: { g: ConnectorGroup; title: string; hint?: string }[] = [
-    { g: "user", title: t("group.allProjects") },
+    { g: "user", title: t("group.connected") },
     { g: "user_project", title: t("group.thisProject", { project }), hint: t("group.forYou") },
     { g: "project", title: t("group.repo", { project }), hint: t("group.repoConnectorsHint") },
     { g: "flag", title: t("group.flag") },

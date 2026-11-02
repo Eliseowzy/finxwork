@@ -28,7 +28,7 @@
     "systemHint": "随 finx 一起更新",
     "extra": "配置里的路径",
     "extraHint": "skills.paths 里的目录",
-    "allProjects": "所有项目",
+    "connected": "已连接",
     "thisProject": "仅 {{project}}",
     "forYou": "只对你",
     "repoConnectorsHint": "仓库里的配置，这里只读",
