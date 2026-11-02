@@ -1,0 +1,10 @@
+{
+  "client_id": "https://finxwork.ai/oauth/client.json",
+  "client_name": "FinxWork",
+  "client_uri": "https://finxwork.ai",
+  "logo_uri": "https://finxwork.ai/oauth/logo.png",
+  "redirect_uris": ["http://127.0.0.1/callback", "http://localhost/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}

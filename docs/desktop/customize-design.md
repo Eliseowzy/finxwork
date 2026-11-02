@@ -1071,7 +1071,7 @@ logo 来自服务器声明或它的网站（mcp-design §13.9），形态各异�
 | 在线目录与技能更新（§9.5、DQ-30） | 一期的来源记录 |
 | 添加连接器的新流程（§10.9）、`mcp/probe` | 内核的探测（mcp-design §13.6） |
 | 旧版 SSE 连接器 | 内核的 SSE 传输（mcp-design §13.7） |
-| finx 的客户端元数据文档 | 一个固定的域名（mcp-design Q-119） |
+| finx 的客户端元数据文档 | 已公布在 `https://finxwork.ai/oauth/client.json`（mcp-design Q-119） |
 | 工具页签里逐个工具的开关（DQ-29） | `config/write` |
 
 ### 14.3 实现记录（一期，2026-10-31）

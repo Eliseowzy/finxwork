@@ -36,8 +36,10 @@ async fn run(env: &TestEnv, cwd: &Path, args: &[&str]) -> (i32, String) {
     (output.status.code().unwrap_or(-1), text)
 }
 
+/// A server whose sign-in offers dynamic registration but not finx's metadata document, which
+/// would otherwise come first (D-182), so these tests cover registering and reusing a client.
 async fn oauth_server(registration: bool) -> finx_mock::mcp::McpHttpServer {
-    let auth = McpTestAuth::OAuth(OAuthOptions { metadata_document: true, registration, token_ttl_secs: 3600 });
+    let auth = McpTestAuth::OAuth(OAuthOptions { metadata_document: false, registration, token_ttl_secs: 3600 });
     finx_mock::mcp::serve_http("127.0.0.1:0", McpTestOptions { auth, ..Default::default() }).await.unwrap()
 }
 
