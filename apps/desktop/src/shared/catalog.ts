@@ -35,8 +35,10 @@ export type CatalogConnector = {
   /** Also the server's name in the configuration. */
   id: string;
   name: string;
-  /** The tile's letters (no logos yet). */
+  /** The tile's letters, when there is no logo. */
   mono: string;
+  /** The provider's logo, a file in src/renderer/src/assets/connectors. */
+  logo?: string;
   by: string;
   docs: string;
   /** When the entry was last checked against the provider. */
@@ -57,6 +59,7 @@ export const catalogConnectors: CatalogConnector[] = [
     id: "exa",
     name: "Exa",
     mono: "Ex",
+    logo: "exa.svg",
     by: "Exa",
     docs: "https://exa.ai/docs/get-started/exa-mcp",
     verifiedAt: "2026-11-02",

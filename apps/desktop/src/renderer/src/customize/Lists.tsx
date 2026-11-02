@@ -6,7 +6,7 @@ import { catalogConnectors, catalogSkills, type CatalogConnector, type CatalogSk
 import { Icon } from "../icons";
 import type { CustomizeView } from "../store";
 import { addedConnector, addedSkill, brokenSkills, catalogOf, catalogText, connectorGroup, fromRepo, statusOf, type ConnectorGroup, type SkillGroup, type SkillItem } from "./model";
-import { MoreButton, Section, ServerTile, SkillTile, Status, Switch, tilde, type MenuItem } from "./parts";
+import { catalogLogo, MoreButton, Section, ServerTile, SkillTile, Status, Switch, tilde, type MenuItem } from "./parts";
 import type { Customize } from "./useCustomize";
 
 // 我的 (one to a row, grouped by where each lives) and 发现 (two to a row), for skills and
@@ -194,7 +194,7 @@ function ServerRow({ s, c, a }: { s: McpServerView; c: Customize; a: Actions }) 
   const description = cat ? catalogText(t, `catalog.connectors.${cat.id}`) : s.description;
   return (
     <div className={`cz-row ${s.enabled ? "" : "off"}`} role="button" tabIndex={0} onClick={open} onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && open()}>
-      <ServerTile name={cat?.name ?? s.name} mono={cat?.mono} icon={s.icon} />
+      <ServerTile name={cat?.name ?? s.name} mono={cat?.mono} icon={s.icon ?? catalogLogo(cat)} />
       <div className="rt">
         <div className="rn">
           <span className="nm">{cat?.name ?? s.name}</span>
@@ -336,7 +336,7 @@ export function DiscoverConnectors({ c, a }: { c: Customize; a: Actions }) {
           return (
             <Card
               key={cat.id}
-              tile={<ServerTile name={cat.name} mono={cat.mono} />}
+              tile={<ServerTile name={cat.name} mono={cat.mono} icon={mine?.icon ?? catalogLogo(cat)} />}
               name={cat.name}
               added={!!mine}
               description={catalogText(t, `catalog.connectors.${cat.id}`)}

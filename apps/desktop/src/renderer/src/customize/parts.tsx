@@ -4,6 +4,7 @@ import { agoText } from "../format";
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useNow } from "../store";
+import type { CatalogConnector } from "../../../shared/catalog";
 import { classify, type LogoLook } from "../../../shared/logo";
 import { monogram, type StatusLook } from "./model";
 
@@ -66,6 +67,13 @@ function useLogo(src?: string | null): Seen | null | undefined {
   }, [src]);
   if (!src) return null;
   return seen?.src === src ? seen.look : undefined;
+}
+
+const catalogLogos = import.meta.glob<string>("../assets/connectors/*.svg", { eager: true, query: "?url", import: "default" });
+
+/** A catalog entry's logo, which ships with the app: until the server's own is found, and before it is added. */
+export function catalogLogo(cat?: CatalogConnector | null): string | undefined {
+  return cat?.logo ? catalogLogos[`../assets/connectors/${cat.logo}`] : undefined;
 }
 
 /**
