@@ -38,13 +38,14 @@ export function Sidebar() {
   // The list's own heading collapses every group, or opens them all once every one is shut.
   const ids = secs.map((sec) => `${sec.grouping}:${sec.key}`);
   const allShut = ids.length > 0 && ids.every((id) => st.collapsed.includes(id));
+  const list = useRef<HTMLDivElement>(null);
+  const gutter = useGutter(list);
   return (
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
         <button className="tb" onClick={() => setSidebar(st, false)} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
           <Icon name="sidebar" />
         </button>
-        <ListViewMenu />
       </div>
       <nav className="side-nav">
         <button className={`nav-i ${st.selection.kind === "new" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "new" } })}>
@@ -62,7 +63,7 @@ export function Sidebar() {
           <span>{t("sidebar.customize")}</span>
         </button>
       </nav>
-      <div className="side-lh">
+      <div className="side-lh" style={{ paddingRight: 8 + gutter }}>
         <button
           className={`side-lh-t ${allShut ? "shut" : ""}`}
           title={allShut ? t("sidebar.expandAll") : t("sidebar.collapseAll")}
@@ -73,8 +74,9 @@ export function Sidebar() {
           <span>{byProject ? t("sidebar.projects") : t("sidebar.sessions")}</span>
           <Icon name="caret" className="sm" />
         </button>
+        <ListViewMenu />
       </div>
-      <div className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
+      <div ref={list} className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
         {secs.map((sec) => {
           const id = `${sec.grouping}:${sec.key}`;
           const open = !st.collapsed.includes(id);
@@ -482,6 +484,23 @@ function ListViewMenu() {
       )}
     </>
   );
+}
+
+/** The width a scroller's scrollbar takes from its content, so what sits above can line up with its rows. */
+function useGutter(ref: RefObject<HTMLElement | null>): number {
+  const [gutter, setGutter] = useState(0);
+  useLayoutEffect(() => {
+    const el = ref.current!;
+    const read = () => setGutter(el.offsetWidth - el.clientWidth);
+    const seen = new ResizeObserver(read);
+    seen.observe(el);
+    // Its rows coming and going change whether it scrolls without changing its own size.
+    const rows = new MutationObserver(read);
+    rows.observe(el, { childList: true, subtree: true });
+    read();
+    return () => (seen.disconnect(), rows.disconnect());
+  }, []);
+  return gutter;
 }
 
 /**
