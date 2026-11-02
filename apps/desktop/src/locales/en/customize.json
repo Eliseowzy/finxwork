@@ -42,7 +42,7 @@
   "empty": {
     "skills": "No skills of your own yet",
     "skillsHint": "Upload one, or have finx write one with you in a conversation.",
-    "connectors": "No other connectors yet",
+    "connectors": "No connectors yet",
     "connectorsHint": "A connector is an MCP server: a local command, or a remote address.",
     "seeCatalog": "See recommended ones",
     "addCustom": "Add connector",
@@ -402,68 +402,9 @@
     "errUrl": "The address must start with http:// or https://",
     "errCommand": "Enter the command that starts it"
   },
-  "system": {
-    "group": "System",
-    "groupHint": "Built into FinxWork",
-    "cards": "System Connectors",
-    "by": "Built into FinxWork",
-    "badge": "System",
-    "connect": "Connect",
-    "connected": "Connected",
-    "notConnected": "Not connected",
-    "off": "Off",
-    "view": "View Details",
-    "cancel": "Cancel",
-    "available_one": "Available · {{count}} tool",
-    "available_other": "Available · {{count}} tools",
-    "availableShort": "Available",
-    "need": {
-      "reconnect": "Extension not connected",
-      "update": "Needs an update",
-      "login": "Needs sign-in",
-      "failed": "Can't connect",
-      "untrusted": "Not trusted"
-    },
-    "note": {
-      "reconnect": {
-        "title": "The extension is not connected",
-        "text": "The FinxWork extension may be turned off in your browser, or the browser isn't open. Until then, sites that need your accounts can't open; other pages still use the built-in browser."
-      },
-      "update": {
-        "title": "The extension needs an update",
-        "text": "The FinxWork extension and this version of FinxWork don't match; update either one to use it."
-      }
-    },
-    "yours": {
-      "name": "Your Browser",
-      "pitch": "Opens pages with the accounts you're signed in to; other pages still use the built-in browser",
-      "line": "{{browser}} · used when your accounts are needed",
-      "lineNoBrowser": "Used when your accounts are needed",
-      "card": "Opens pages, clicks and fills in forms with the accounts you're signed in to, in Chrome, Edge or Brave. The built-in browser stays; sites that need signing in go here.",
-      "lede": "Sites that need your accounts open in your own browser, with your sign-ins; other pages still use the built-in browser. Each site asks you the first time.",
-      "browser": "Browser",
-      "when": "Used when",
-      "whenValue": "Your accounts are needed, or you ask for it",
-      "change": "Change Browser…",
-      "reconnect": "Reconnect",
-      "update": "Update",
-      "sites": "Site Permissions",
-      "sitesText": "Both browsers share one list of site permissions. In your browser each site asks you the first time, even when permissions are bypassed.",
-      "sitesOpen": "Manage in Settings",
-      "sharedTools": "Shared with the built-in browser",
-      "turnedOn": "Turned on your browser; every conversation can use it from its next step",
-      "turnedOff": "Turned off your browser; every conversation uses only the built-in browser from its next step",
-      "connected": "Connected your browser. Sites that need your accounts can use it in every conversation from its next step"
-    },
-    "tools": {
-      "browser_navigate": "Opens a URL, or goes back or forward; can choose which browser",
-      "browser_snapshot": "Reads the text and the elements one can act on",
-      "browser_act": "Clicks, types, selects and uploads files on the page",
-      "browser_screenshot": "Takes a screenshot to check how the page looks",
-      "browser_wait": "Waits for the page to load or for some text to appear",
-      "browser_tabs": "Lists, opens, selects and closes this conversation's tabs, saying which browser each is in",
-      "browser_console": "Reads the page's console messages and errors",
-      "browser_batch": "Runs several steps at once"
-    }
+  "menuNeed": {
+    "untrusted": "Not trusted",
+    "login": "Needs sign-in",
+    "failed": "Can't connect"
   }
 }

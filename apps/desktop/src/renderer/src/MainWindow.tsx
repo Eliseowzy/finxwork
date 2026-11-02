@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useCommands } from "./commands";
 import { SheetHost, ToastView } from "./components";
-import { ConnectHost } from "./systemConnectors";
 import { KeySheet, needsKey } from "./composer/KeySetup";
 import { NewSession } from "./composer/NewSession";
 import { Customize } from "./customize/Customize";
@@ -59,7 +58,6 @@ export function MainWindow() {
           (the main process does), and the click that did it lands on the dim, not on what is under it. */}
       {settingsOpen && <div className="settings-dim" />}
       <SheetHost />
-      <ConnectHost />
       <KeySheet />
     </div>
   );

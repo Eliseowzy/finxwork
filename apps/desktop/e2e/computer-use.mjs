@@ -115,12 +115,21 @@ try {
   await main.run(`(${button("稍后再说，先看看", "Not now, just look around")}).click()`);
   await main.until("the home page", `!!document.querySelector(".cmp-plus")`);
 
-  // Not a connector: the composer's + › Connectors lists the user's browser, not it.
+  // Not a connector: the composer's + menu has its switch, beside the browser's, and grey with
+  // what it needs until it can work; the connectors menu lists neither.
+  const status = await main.run(`window.finx.desktopControlStatus()`);
   await main.run(`document.querySelector('.cmp-plus').click()`);
-  await main.until("the + menu", `!!${menuRow(".vmenu [role=menuitem]", "连接器", "Connectors")}`);
+  if (status.accessibility !== "unsupported") {
+    const quick = menuRow(".vmenu .cn-row.quick", ...NAMES);
+    await main.until("the + menu", `!!${quick}`);
+    const ready = !!(status.accessibility === "granted" && status.program);
+    // Once the app has read what computer use has.
+    await main.until("the switch's state", ready ? `${quick}.getAttribute('aria-checked') === 'true'` : `${quick}.getAttribute('aria-checked') === 'false' && !!${quick}.querySelector('.cn-st')`);
+    await main.shot("1-plus-menu");
+  }
   await main.run(`${menuRow(".vmenu [role=menuitem]", "连接器", "Connectors")}.click()`);
-  await main.until("the connectors menu", `!!${menuRow(".cn-sub .cn-row", "你的浏览器", "Your Browser")}`);
-  check(!(await main.run(`!!${menuRow(".cn-sub .cn-row", ...NAMES)}`)), "computer use is in the connectors menu");
+  await main.until("the connectors menu", `!!document.querySelector('.cn-none-row, .cn-sub .cn-row')`);
+  check(!(await main.run(`!!${menuRow(".cn-row:not(.quick)", ...NAMES, "你的浏览器", "Your Browser")}`)), "a system connector is in the connectors menu");
   await main.run(`document.querySelector('.cmp-plus').click()`);
   // Nor on 自定义 › 连接器 › 我的.
   await main.run(`${menuRow(".side-nav .nav-i", "自定义", "Customize")}.click()`);
@@ -128,9 +137,9 @@ try {
   await main.run(`(${button("连接器", "Connectors")}).click()`);
   await main.until("连接器", `!!${button("我的", "Mine")}`);
   await main.run(`(${button("我的", "Mine")}).click()`);
-  await main.until("我的", `!!${menuRow(".cz-row", "你的浏览器", "Your Browser")}`);
-  await main.shot("1-mine");
-  check(!(await main.run(`!!${menuRow(".cz-row", ...NAMES)}`)), "computer use is among the connectors");
+  await main.until("我的", `!!document.querySelector('.cz-row, .cz-empty')`);
+  await main.shot("2-mine");
+  check(!(await main.run(`!!${menuRow(".cz-row", ...NAMES, "你的浏览器", "Your Browser")}`)), "a system connector is among the connectors");
 
   // Settings › 电脑操控: on with nothing written; grey until FinxWork has Accessibility.
   await main.run(`window.finx.openSettings("desktop")`);
@@ -143,13 +152,13 @@ try {
   check(!(await set.run(shows("npm install", "agent-desktop", "授权准备"))), "the page shows what it needs all the time");
   if (mac && !granted) {
     await set.until("the grey switch", `${toggle}.getAttribute('aria-checked') === 'false' && ${shows("需要先完成授权", "Grant permission first")}`);
-    await set.shot("2-needs-grant");
+    await set.shot("3-needs-grant");
     // The switch opens the permissions: Accessibility required, Screen Recording optional.
     await set.run(`${toggle}.click()`);
     await set.until("the dialog", `!!document.querySelector('.cu-grant')`);
     const text = await set.run(`document.querySelector('.cu-grant').innerText`);
     check(["辅助功能", "Accessibility"].some((w) => text.includes(w)) && ["屏幕录制", "Screen Recording"].some((w) => text.includes(w)), `the dialog lacks a permission: ${text}`);
-    await set.shot("3-grant");
+    await set.shot("4-grant");
     await set.run(`(${button("完成", "Done")}).click()`);
     await set.until("the dialog closed", `!document.querySelector('.cu-grant')`);
     check(!config().includes("[desktop]"), `closing it writes nothing: ${config()}`);
@@ -162,7 +171,7 @@ try {
     fs.appendFileSync(path.join(home, "config.toml"), `\n[desktop]\nexecutable = "/nonexistent/agent-desktop"\n`);
     await set.until("reinstall", shows("请重新安装 FinxWork", "reinstall FinxWork"));
     check(!(await set.run(shows("npm install"))), "an install command is shown");
-    await set.shot("4-missing");
+    await set.shot("5-missing");
     fs.writeFileSync(path.join(home, "config.toml"), config().replace(`\n[desktop]\nexecutable = "/nonexistent/agent-desktop"\n`, ""));
     await set.until("found again", `!${shows("请重新安装 FinxWork", "reinstall FinxWork")}`);
   }

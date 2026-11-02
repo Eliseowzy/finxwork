@@ -42,7 +42,7 @@
   "empty": {
     "skills": "还没有自己的技能",
     "skillsHint": "上传一个，或者让 finx 在对话里帮你写。",
-    "connectors": "还没有添加其他连接器",
+    "connectors": "还没有连接器",
     "connectorsHint": "连接器是一个 MCP 服务器：一条本地命令，或者一个远程地址。",
     "seeCatalog": "看看推荐的",
     "addCustom": "添加连接器",
@@ -391,67 +391,9 @@
     "errUrl": "地址要以 http:// 或 https:// 开头",
     "errCommand": "要填启动它的命令"
   },
-  "system": {
-    "group": "系统",
-    "groupHint": "FinxWork 自带",
-    "cards": "系统连接器",
-    "by": "FinxWork 内置",
-    "badge": "系统",
-    "connect": "连接",
-    "connected": "已连接",
-    "notConnected": "未连接",
-    "off": "已停用",
-    "view": "查看详情",
-    "cancel": "取消",
-    "available_other": "可用 · {{count}} 个工具",
-    "availableShort": "可用",
-    "need": {
-      "reconnect": "扩展没连上",
-      "update": "需要更新",
-      "login": "需要登录",
-      "failed": "连接失败",
-      "untrusted": "未受信任"
-    },
-    "note": {
-      "reconnect": {
-        "title": "扩展没有连上",
-        "text": "浏览器里的 FinxWork 扩展可能被停用了，或者浏览器没有打开。在这之前，需要你账号的网站打不开；其他网页照常用内置浏览器。"
-      },
-      "update": {
-        "title": "扩展需要更新",
-        "text": "浏览器里的 FinxWork 扩展和这个版本的 FinxWork 对不上，更新其中一个后就能用。"
-      }
-    },
-    "yours": {
-      "name": "你的浏览器",
-      "pitch": "用你已经登录的账号打开网页；其他网页仍用内置浏览器",
-      "line": "{{browser}} · 需要你的账号时用它",
-      "lineNoBrowser": "需要你的账号时用它",
-      "card": "用你已经登录的账号打开网页、点击和填写表单，支持 Chrome、Edge 和 Brave。内置浏览器一直都在，需要登录的网站交给它。",
-      "lede": "需要你账号的网站，智能体在你自己的浏览器里打开，用你已经登录的账号；其他网页仍用内置浏览器。每个网站第一次都会先问你。",
-      "browser": "浏览器",
-      "when": "什么时候用",
-      "whenValue": "需要你的账号，或者你点名时",
-      "change": "更换浏览器…",
-      "reconnect": "重新连接",
-      "update": "去更新",
-      "sites": "网站权限",
-      "sitesText": "两个浏览器共用一份网站权限。在你的浏览器里，每个网站第一次都会先问你，绕过权限也一样。",
-      "sitesOpen": "在设置里管理",
-      "sharedTools": "与内置浏览器共用",
-      "turnedOn": "已打开你的浏览器，所有对话从下一步起可以用它",
-      "turnedOff": "已关闭你的浏览器，所有对话从下一步起只用内置浏览器",
-      "connected": "已连接你的浏览器。需要你账号的网站，所有对话从下一步起可以用它"
-    },
-    "tools": {
-      "browser_navigate": "打开一个网址，或者在历史记录里前进、后退；可以选在哪个浏览器里打开",
-      "browser_snapshot": "读取页面上的文字和可以操作的元素",
-      "browser_act": "在页面上点击、输入、选择、上传文件",
-      "browser_screenshot": "给页面截图，用来核对看到的样子",
-      "browser_wait": "等页面加载完，或者等某段文字出现",
-      "browser_tabs": "列出、打开、切换和关闭这个对话的标签页，标出每个在哪个浏览器里",
-      "browser_console": "读取页面的控制台消息和报错",
-      "browser_batch": "一次执行多个步骤"
-    }
+  "menuNeed": {
+    "untrusted": "未受信任",
+    "login": "需要登录",
+    "failed": "连接失败"
   }
 }

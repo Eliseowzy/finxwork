@@ -23,7 +23,7 @@ const LEVELS: AppLevel[] = ["allow", "deny", "read", "act"];
 const appKeyPath = (key: string) => `desktop.apps."${key.replace(/["\\]/g, "\\$&")}"`;
 
 /** The `[desktop]` settings, read again when the config changes. `enabled` is null when not set: on. */
-function useDesktopConfig() {
+export function useDesktopConfig() {
   const st = useStore();
   const [config, setConfig] = useState<{ enabled: boolean | null; executable?: string; apps: [string, AppLevel][] } | null>(null);
   const read = useCallback(async () => {

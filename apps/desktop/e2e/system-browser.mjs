@@ -155,7 +155,9 @@ const shows = (...texts) => `${JSON.stringify(texts)}.some(t => document.body.in
 const badge = (...texts) => `${JSON.stringify(texts)}.includes(document.querySelector('.browser-set .mrow .badge')?.textContent)`;
 /** A row of the open menus by its text in either language. */
 const menuRow = (selector, ...texts) => `[...document.querySelectorAll(${JSON.stringify(selector)})].find(r => ${JSON.stringify(texts)}.some(t => r.textContent.includes(t)))`;
-const yoursRow = menuRow(".cn-sub .cn-row", "你的浏览器", "Your Browser");
+/** The + menu's browser switch, and Settings' first row. */
+const quick = menuRow(".vmenu .cn-row.quick", "浏览器", "Browser");
+const control = `document.querySelector('.browser-set [role=switch]')`;
 
 let failed = false;
 try {
@@ -212,22 +214,19 @@ try {
   check(/\[browser\][^[]*default = "yours"/.test(config()), `the default was not written: ${config()}`);
   await set.shot("5-in-use");
 
-  // The composer's + › Connectors lists it, on; its switch there is the same setting, and
-  // Settings shows the change at once.
+  // The composer's + menu has the same switch as Settings' first row: browser control. Off from
+  // the menu, written, and Settings shows it at once; on again.
   await main.until("onboarding left", `(() => { const skip = [...document.querySelectorAll("button")].find(b => /稍后|later|skip/i.test(b.textContent)); if (skip) { skip.click(); return false; } return !!document.querySelector(".cmp-plus"); })()`);
   await main.run(`document.querySelector('.cmp-plus').click()`);
-  await main.until("the + menu", `!!${menuRow(".vmenu [role=menuitem]", "连接器", "Connectors")}`);
-  await main.run(`${menuRow(".vmenu [role=menuitem]", "连接器", "Connectors")}.click()`);
-  await main.until("the connectors menu", `${yoursRow}?.getAttribute('aria-checked') === 'true'`);
-  await main.shot("6-connectors-menu");
-  await main.run(`${yoursRow}.click()`);
-  await main.until("off in the menu", `${yoursRow}?.getAttribute('aria-checked') === 'false'`);
-  await set.until("off in Settings", badge("已连接", "Connected"));
-  check(/\[browser\][\s\S]*extension = false/.test(config()), `not turned off from the menu: ${config()}`);
-  // Connect in Settings (the extension is still there): on again, and the menu follows.
-  await set.run(`(${button("连接", "Connect")}).click()`);
-  await set.until("in use again", badge("使用中", "In use"));
-  await main.until("on in the menu", `${yoursRow}?.getAttribute('aria-checked') === 'true'`);
+  await main.until("the + menu", `${quick}?.getAttribute('aria-checked') === 'true'`);
+  await main.shot("6-plus-menu");
+  await main.run(`${quick}.click()`);
+  await main.until("off in the menu", `${quick}?.getAttribute('aria-checked') === 'false'`);
+  await set.until("off in Settings", `${control}.getAttribute('aria-checked') === 'false'`);
+  check(/\[browser\][^[]*enabled = false/.test(config()), `not turned off from the menu: ${config()}`);
+  await main.run(`${quick}.click()`);
+  await main.until("on in the menu", `${quick}?.getAttribute('aria-checked') === 'true'`);
+  await set.until("on in Settings", `${control}.getAttribute('aria-checked') === 'true'`);
   await main.run(`document.querySelector('.cmp-plus').click()`);
 
   // Disconnect: back to the built-in browser, the extension still there.
@@ -241,7 +240,6 @@ try {
   await set.until("lost", shows("连接你的浏览器", "Connect Your Browser"), 20000);
 
   // Browser control: on by default; off, written, and the default browser goes with it.
-  const control = `document.querySelector('.browser-set [role=switch]')`;
   check((await set.run(`${control}.getAttribute('aria-checked')`)) === "true", "browser control is off by default");
   await set.run(`${control}.click()`);
   await set.until("browser control off", `${control}.getAttribute('aria-checked') === 'false' && document.querySelector('.default-browser select').disabled`);

@@ -7,15 +7,12 @@ import { ServerTile } from "../customize/parts";
 import { pageCwd, useCustomize, type Customize } from "../customize/useCustomize";
 import { Icon } from "../icons";
 import { useStore, type CustomizeView } from "../store";
-import { connect, systemId, SystemTile, turn, useSystemConnectors, type SystemView } from "../systemConnectors";
 import { SubMenuItem } from "./Composer";
 
 // "+" › 连接器 (connectors-entry-design §7): browse and manage, a line, then the person's
-// connectors, the system ones first, each with its switch. A switch is the connector's one
-// switch, the same as on the 自定义 page; the menu stays open, so several can be changed in a
-// row. A system connector not connected yet offers to connect instead, over the window.
-
-type System = ReturnType<typeof useSystemConnectors>;
+// connectors, each with its switch. A switch is the connector's one switch, the same as on the
+// 自定义 page; the menu stays open, so several can be changed in a row. The browsers and
+// computer use are not connectors: their switches are in the "+" menu itself (QuickSwitches).
 
 /** The folder whose connectors these are: the conversation's, or the one the new conversation goes to. */
 function useFolder(): string | null {
@@ -31,27 +28,26 @@ function useFolder(): string | null {
 
 export function ConnectorsItem({ close }: { close: () => void }) {
   const { t } = useTranslation("session");
-  const system = useSystemConnectors();
   const c = useCustomize(useFolder());
-  const on = system.views.filter((v) => v.connected && v.on).length + c.servers.filter((s) => s.enabled).length;
+  const on = c.servers.filter((s) => s.enabled).length;
   return (
     <SubMenuItem icon="plug" label={t("composer.connectors")} value={String(on)} title={t("composer.connectors")} className="cn-sub">
-      <Connectors close={close} system={system} c={c} />
+      <Connectors close={close} c={c} />
     </SubMenuItem>
   );
 }
 
 /** Space and return toggle a row, as they click a button. */
-const activate = (run: () => void) => (e: KeyboardEvent) => {
+export const activate = (run: () => void) => (e: KeyboardEvent) => {
   if (e.key !== " " && e.key !== "Enter") return;
   e.preventDefault();
   e.stopPropagation();
   run();
 };
 
-const hoverFocus = (e: MouseEvent<HTMLElement>) => document.activeElement !== e.currentTarget && e.currentTarget.focus();
+export const hoverFocus = (e: MouseEvent<HTMLElement>) => document.activeElement !== e.currentTarget && e.currentTarget.focus();
 
-function Connectors({ close, system, c }: { close: () => void; system: System; c: Customize }) {
+function Connectors({ close, c }: { close: () => void; c: Customize }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const go = (view: CustomizeView["view"], detail: CustomizeView["detail"] = null) => {
@@ -72,9 +68,7 @@ function Connectors({ close, system, c }: { close: () => void; system: System; c
       </button>
       <div className="msep" role="separator" />
       <div className="cn-list">
-        {system.views.map((v) => (
-          <SystemRow key={v.key} v={v} system={system} close={close} open={() => go("mine", { kind: "connector", id: systemId(v.key), tab: "overview" })} />
-        ))}
+        {servers.length === 0 && <div className="mi cn-none-row">{t("composer.noConnectors")}</div>}
         {servers.map((s) => (
           <ServerRow key={s.name} s={s} c={c} name={name(s)} open={() => go("mine", { kind: "connector", id: s.name, tab: "overview" })} />
         ))}
@@ -83,44 +77,12 @@ function Connectors({ close, system, c }: { close: () => void; system: System; c
   );
 }
 
-function SystemRow({ v, system, close, open }: { v: SystemView; system: System; close: () => void; open: () => void }) {
-  const { t } = useTranslation("customize");
-  const st = useStore();
-  const toggle = () => {
-    if (!v.connected) {
-      close();
-      return connect(st, v.key);
-    }
-    void turn(st, system, v.key, !v.on, t);
-  };
-  return (
-    <div
-      className={`mi cn-row ${v.connected && !v.on ? "off" : ""}`}
-      role="menuitemcheckbox"
-      aria-checked={v.on}
-      tabIndex={-1}
-      onMouseMove={hoverFocus}
-      onClick={toggle}
-      onKeyDown={activate(toggle)}
-    >
-      <SystemTile k={v.key} />
-      <span className="nm">{t(`system.${v.key}.name`)}</span>
-      {v.need && (
-        <button className="cn-st" tabIndex={-1} onClick={(e) => (e.stopPropagation(), open())}>
-          {t(`system.need.${v.need}`)}
-        </button>
-      )}
-      {v.connected ? <span className={`sw sm ${v.on ? "on" : ""}`} aria-hidden="true" /> : <span className="btn sm">{t("system.connect")}</span>}
-    </div>
-  );
-}
-
 function ServerRow({ s, c, name, open }: { s: McpServerView; c: Customize; name: string; open: () => void }) {
   const { t } = useTranslation("customize");
   const look = statusOf(s, false);
   const untrusted = look.kind === "untrusted";
   // Only what needs the person shows; the rest is the 自定义 page's.
-  const need = untrusted ? { text: t("system.need.untrusted"), cls: "" } : !s.enabled ? null : look.kind === "needs_login" ? { text: t("system.need.login"), cls: "" } : look.kind === "failed" ? { text: t("system.need.failed"), cls: "bad" } : null;
+  const need = untrusted ? { text: t("menuNeed.untrusted"), cls: "" } : !s.enabled ? null : look.kind === "needs_login" ? { text: t("menuNeed.login"), cls: "" } : look.kind === "failed" ? { text: t("menuNeed.failed"), cls: "bad" } : null;
   const toggle = () => {
     if (untrusted) return;
     const on = !s.enabled;

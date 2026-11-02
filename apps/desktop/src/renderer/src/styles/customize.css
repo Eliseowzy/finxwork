@@ -358,22 +358,3 @@ textarea.field.cz-grow{height:auto;min-height:30px;padding:6px 9px;line-height:1
 .cz-toolchips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:var(--sp-1)}
 .cz-toolchips span{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
 .sheet.cz-add .sheet-foot .note{font-size:12px;color:var(--l3)}
-
-/* System connectors (customize/SystemPages.tsx, connectors-entry-design §8): one fixed glyph,
-   muted like the initials of the others. */
-.cz-tile.sys{color:var(--l1)}
-.cz-tile.sys .ic{width:18px;height:18px;stroke-width:1.2}
-.cz-tile.sys.xl .ic{width:26px;height:26px;stroke-width:1.1}
-
-/* Their pages' sections: like 工具, rows without boxes, each control beside what it changes. */
-.cz-dtools.cn-ds{margin-top:var(--sp-4)}
-.cz-note+.cz-dtools.cn-ds,.cz-dhead+.cz-dtools.cn-ds{margin-top:var(--sp-5)}
-.cn-line{display:flex;align-items:center;gap:var(--sp-3);min-height:36px;padding:4px 12px;margin:0 -12px;border-radius:var(--r-md);font-size:13px;line-height:22px;transition:background .12s}
-.cn-line:hover{background:var(--fill)}
-.cn-line .tn{flex:0 1 220px;min-width:96px;display:flex;align-items:center;gap:var(--sp-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cn-line .td{flex:1;min-width:0;color:var(--l2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cn-line .acts{display:flex;align-items:center;gap:var(--sp-1);flex:none}
-
-/* The user's browser with no browser here to connect. */
-.cn-none{display:flex;align-items:center;gap:var(--sp-2)}
-.cn-none .sub{margin:0}

@@ -10,8 +10,6 @@ import { AddConnector } from "./AddConnector";
 import { EditConnector } from "./EditConnector";
 import { catalogDir, ConnectorPage, SkillPage } from "./Details";
 import { DiscoverConnectors, DiscoverSkills, MyConnectors, MySkills, type Actions } from "./Lists";
-import { SystemCards, SystemPage, SystemSection } from "./SystemPages";
-import { systemOf } from "../systemConnectors";
 import { brokenSkills, catalogServer, fromRepo, nextInLine, type SkillItem } from "./model";
 import { PopMenu } from "./parts";
 import { BrokenSkills, UploadSkill } from "./UploadSkill";
@@ -170,19 +168,7 @@ export function Customize() {
   } else if (v.tab === "skills") {
     body = v.view === "mine" ? <MySkills c={c} a={a} project={project} /> : <DiscoverSkills c={c} a={a} />;
   } else {
-    // The system connectors first, in their own group (connectors-entry-design §8).
-    body =
-      v.view === "mine" ? (
-        <>
-          <SystemSection a={a} />
-          <MyConnectors c={c} a={a} project={project} />
-        </>
-      ) : (
-        <>
-          <SystemCards a={a} />
-          <DiscoverConnectors c={c} a={a} />
-        </>
-      );
+    body = v.view === "mine" ? <MyConnectors c={c} a={a} project={project} /> : <DiscoverConnectors c={c} a={a} />;
   }
 
   const detail = v.detail;
@@ -195,9 +181,7 @@ export function Customize() {
       </div>
       <div className="cscroll cz" ref={scroller} onScroll={onScroll}>
         <div className="dbody cz-body">
-          {detail && systemOf(detail.id) ? (
-            <SystemPage key={detail.id} k={systemOf(detail.id)!} onBack={back} />
-          ) : detail && c.loaded ? (
+          {detail && c.loaded ? (
             detail.kind === "skill" ? (
               <SkillPage key={detail.id} c={c} a={a} detail={detail} project={project} onBack={back} onTab={onTab} />
             ) : (

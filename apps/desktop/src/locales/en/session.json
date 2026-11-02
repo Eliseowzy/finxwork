@@ -189,7 +189,16 @@
     "follow_upMode": "Queue",
     "connectors": "Connectors",
     "browseConnectors": "Browse Connectors",
-    "manageConnectors": "Manage Connectors"
+    "manageConnectors": "Manage Connectors",
+    "browserSwitch": "Browser",
+    "computerSwitch": "Computer Use",
+    "computerGrant": "Needs permission",
+    "computerMissing": "Part missing",
+    "browserOn": "Turned on browser control; every conversation can use it from its next step",
+    "browserOff": "Turned off browser control; no conversation uses a browser from its next step",
+    "computerOn": "Turned on computer use; every conversation can use it from its next step",
+    "computerOff": "Turned off computer use; no conversation uses other apps from its next step",
+    "noConnectors": "No connectors yet"
   },
   "inspector": {
     "label": "Session info",

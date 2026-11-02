@@ -218,7 +218,7 @@ function ServerRow({ s, c, a }: { s: McpServerView; c: Customize; a: Actions }) 
 }
 
 /** The round + of a card: a spinner while it is added, then a check. */
-export function AddMark({ added, busy, name, onAdd }: { added: boolean; busy: boolean; name: string; onAdd: () => void }) {
+function AddMark({ added, busy, name, onAdd }: { added: boolean; busy: boolean; name: string; onAdd: () => void }) {
   const { t } = useTranslation("customize");
   if (added)
     return (
@@ -247,14 +247,14 @@ export function AddMark({ added, busy, name, onAdd }: { added: boolean; busy: bo
   );
 }
 
-export function Card({ tile, name, added, addedLabel, description, by, mark, onOpen }: { tile: ReactNode; name: string; added: boolean; addedLabel?: string; description: string; by: string; mark: ReactNode; onOpen: () => void }) {
+function Card({ tile, name, added, description, by, mark, onOpen }: { tile: ReactNode; name: string; added: boolean; description: string; by: string; mark: ReactNode; onOpen: () => void }) {
   const { t } = useTranslation("customize");
   return (
     <div className="cz-card" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen()}>
       {tile}
       <div className="ct">
         <span className="nm">{name}</span>
-        {added && <span className="badge">{addedLabel ?? t("skill.added")}</span>}
+        {added && <span className="badge">{t("skill.added")}</span>}
       </div>
       <div className="ca">{mark}</div>
       <div className="cd">{description}</div>
@@ -315,8 +315,6 @@ export function DiscoverConnectors({ c, a }: { c: Customize; a: Actions }) {
   if (catalogConnectors.length === 0)
     return (
       <section className="cz-sect">
-        {/* Under the system connectors' cards: a heading of its own. */}
-        <div className="fhead">{t("group.catalogConnectors")}</div>
         <div className="cz-empty">
           <Icon name="plug" />
           <b>{t("empty.catalogConnectors")}</b>

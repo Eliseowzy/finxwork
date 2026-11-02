@@ -180,7 +180,16 @@
     "follow_upMode": "排队",
     "connectors": "连接器",
     "browseConnectors": "浏览连接器",
-    "manageConnectors": "管理连接器"
+    "manageConnectors": "管理连接器",
+    "browserSwitch": "浏览器",
+    "computerSwitch": "电脑操控",
+    "computerGrant": "需要授权",
+    "computerMissing": "组件缺失",
+    "browserOn": "已打开浏览器控制，所有对话从下一步起可以使用",
+    "browserOff": "已关闭浏览器控制，所有对话从下一步起不再使用浏览器",
+    "computerOn": "已打开电脑操控，所有对话从下一步起可以使用",
+    "computerOff": "已关闭电脑操控，所有对话从下一步起不再操作其他应用",
+    "noConnectors": "还没有连接器"
   },
   "inspector": {
     "label": "会话信息",

@@ -9,6 +9,7 @@ import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
 import { addAttachments, attachEvent, pickFiles, pickFolder, type Attachment } from "./attachments";
 import { ConnectorsItem } from "./ConnectorsMenu";
+import { QuickSwitches } from "./QuickSwitches";
 import { keyEvent } from "./KeySetup";
 import { PromptEditor, type EditorHandle } from "./PromptEditor";
 import { Tile } from "./Tile";
@@ -160,6 +161,8 @@ function PlusMenu({ attachments, onAttachments }: { attachments: Attachment[]; o
         <>
           <MenuItem icon="paperclip" label={t("composer.addFiles")} kbd="⌘U" onClick={() => (close(), void add("files"))} />
           <MenuItem icon="folder" label={t("composer.addFolder")} onClick={() => (close(), void add("folder"))} />
+          <div className="msep" role="separator" />
+          <QuickSwitches close={close} />
           <div className="msep" role="separator" />
           <ConnectorsItem close={close} />
         </>
