@@ -13,8 +13,8 @@ import { Inspector } from "./Inspector";
 import { useSession } from "./useSession";
 
 // A session: its conversation, the composer and the bar of a running task,
-// with the info card over its right side; or, once it has sub-agents, the
-// background panel as a column of its own on the right, from the window's top.
+// with the info card over its right side, or in its place the background
+// card once it has sub-agents; the browser as a column of its own.
 export function SessionPage({ s }: { s: ListSession }) {
   const { t } = useTranslation("session");
   const st = useStore();
@@ -27,6 +27,8 @@ export function SessionPage({ s }: { s: ListSession }) {
   const browser = st.browser && browserTabs.length > 0 && !background;
   const layout = layoutOf(st);
   const info = layout.card !== "hidden" && !background && !browser;
+  // The background card keeps the conversation clear of it as the info card does, when there is room for one.
+  const dock = (info && layout.card === "docked") || (background && layoutOf({ ...st, inspector: true, peek: null }).card === "docked");
   // The first page the session opens brings the browser panel out.
   const hasTabs = browserTabs.length > 0;
   useEffect(() => {
@@ -40,7 +42,7 @@ export function SessionPage({ s }: { s: ListSession }) {
     st.set({ contextOpen: true });
   }, [asked]);
   return (
-    <div className={`spage ${background || browser ? "bgopen" : ""} ${background && !layout.panelFits ? "bgover" : ""}`}>
+    <div className={`spage ${browser ? "bgopen" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -92,12 +94,12 @@ export function SessionPage({ s }: { s: ListSession }) {
           </button>
         </GlassBar>
         {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
-        <div className={`dwrap ${info && layout.card === "docked" ? "dock" : ""}`}>
+        <div className={`dwrap ${dock ? "dock" : ""}`}>
           <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
           {view && info && <Inspector s={s} view={view} />}
+          {view && background && <Background s={s} view={view} />}
         </div>
       </div>
-      {view && background && <Background s={s} view={view} />}
       {browser && <BrowserPanel session={s.session_id} tabs={browserTabs} />}
     </div>
   );

@@ -91,7 +91,7 @@
   },
   "background": {
     "title": "后台任务",
-    "close": "关闭",
+    "back": "全部后台任务",
     "running_other": "{{count}} 个执行中",
     "completed_other": "{{count}} 个已完成",
     "interrupted_other": "{{count}} 个已中断",
@@ -100,7 +100,6 @@
     "none": "还没有后台任务",
     "stopAll": "全部停止",
     "stop": "停止",
-    "process": "执行过程",
     "brief": "finx 的任务说明",
     "message": "finx 发来的消息",
     "expand": "展开全文",

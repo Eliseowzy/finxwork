@@ -8,10 +8,9 @@ import type { Store } from "./store";
 // conversation instead of beside it (a peek) until it is put away, or the
 // selection changes.
 
-/** Widths (px): the sidebar's column, the room the info card keeps on the conversation's right, the background panel's column. */
+/** Widths (px): the sidebar's column, the room the info card (or the background card in its place) keeps on the conversation's right. */
 export const sidebarWidth = 272;
 export const cardRoom = 270;
-export const panelWidth = 340;
 /** The least a conversation needs: a composer with its controls, and a message column that still reads as one. */
 export const conversationMin = 560;
 /** Below this the conversation's margins narrow (the window itself goes no narrower than 480, main/windows.ts). */
@@ -24,8 +23,6 @@ export type Layout = {
   /** Beside the conversation, over it, or not shown. */
   sidebar: "docked" | "over" | "hidden";
   card: "docked" | "over" | "hidden";
-  /** The background panel fits beside the conversation (else, while open, it lies over it). */
-  panelFits: boolean;
   /** The conversation's own width is small: its margins narrow. */
   narrow: boolean;
 };
@@ -38,7 +35,7 @@ export function layoutOf(st: Pick<Store, "sidebar" | "inspector" | "peek" | "wid
   const content = width - (sidebar === "docked" ? sidebarWidth : 0);
   const cardFits = content >= conversationMin + cardRoom;
   const card = cardFits ? (st.inspector ? "docked" : "hidden") : st.peek === "card" ? "over" : "hidden";
-  return { sidebar, card, panelFits: content >= conversationMin + panelWidth, narrow: content < narrowBelow };
+  return { sidebar, card, narrow: content < narrowBelow };
 }
 
 /** Ends a peek once what it showed fits beside the conversation again (where the person's own choice then holds). */
@@ -56,7 +53,7 @@ export function setSidebar(st: Store, show: boolean) {
   st.set(fits ? { sidebar: show, peek: null } : { peek: show ? "sidebar" : null });
 }
 
-/** Shows or hides the info card, in the background panel's place: kept beside the conversation when there is room, else over it for now. */
+/** Shows or hides the info card, in the background card's place: kept beside the conversation when there is room, else over it for now. */
 export function setCard(st: Store, show: boolean) {
   const fits = layoutOf({ ...st, inspector: true, peek: null }).card === "docked";
   st.set(fits ? { inspector: show, peek: null, background: false } : { peek: show ? "card" : null, background: false });

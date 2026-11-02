@@ -21,6 +21,7 @@ const paths: Record<string, string> = {
   caret: "<path d=\"M4.8 6.4h6.4L8 10z\" fill=\"currentColor\" stroke=\"none\"/>",
   chevD: "<path d=\"M4.5 6.3L8 9.8l3.5-3.5\"/>",
   chevR: "<path d=\"M6.3 4.5L9.8 8l-3.5 3.5\"/>",
+  chevL: "<path d=\"M9.7 4.5L6.2 8l3.5 3.5\"/>",
   updown: "<path d=\"M5.5 6.2L8 3.7l2.5 2.5M5.5 9.8L8 12.3l2.5-2.5\"/>",
   stop: "<rect x=\"4.3\" y=\"4.3\" width=\"7.4\" height=\"7.4\" rx=\"1.6\"/>",
   stopFill: "<rect x=\"3\" y=\"3\" width=\"10\" height=\"10\" rx=\"2.4\" fill=\"currentColor\" stroke=\"none\"/>",

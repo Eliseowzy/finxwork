@@ -95,7 +95,7 @@
   },
   "background": {
     "title": "Background tasks",
-    "close": "Close",
+    "back": "All background tasks",
     "running_one": "{{count}} working",
     "running_other": "{{count}} working",
     "completed_one": "{{count}} done",
@@ -108,7 +108,6 @@
     "none": "No background tasks yet",
     "stopAll": "Stop all",
     "stop": "Stop",
-    "process": "What it did",
     "brief": "finx's brief",
     "message": "Message from finx",
     "expand": "Show all",

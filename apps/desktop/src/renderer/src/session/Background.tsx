@@ -1,4 +1,4 @@
-import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addTotals, agentBrief, agentTaskOf, conversation, runningAgents, taskGists, tokensText, totals,
@@ -12,12 +12,12 @@ import { Markdown } from "./Markdown";
 import { Work } from "./Steps";
 
 /**
- * The background panel: a column of the window on the right, flush with its top, on the
- * content's own ground, with no cards or borders inside. The session's background tasks
- * (sub-agents for now) are rows like the sidebar's sessions: a working one's name runs, a
- * stopped or failed one has a dot. The selected one's work opens under its row, as its own
- * conversation: finx's brief and messages, its steps one per line, its report at the end,
- * following the end while it works.
+ * The background card: in the info card's place, over the conversation's top right under its own
+ * bar, the same glass card and width, so the tasks read as the session's own. The session's
+ * background tasks (sub-agents for now) are rows like the sidebar's sessions: a working one's name
+ * runs, a stopped or failed one has a dot. A row opens the agent's work in the card's place, as its
+ * own conversation: finx's brief and messages, its steps one per line, its report at the end,
+ * following the end while it works; back returns to the list.
  */
 export function Background({ s, view }: { s: ListSession; view: SessionView }) {
   const { t } = useTranslation("session");
@@ -39,32 +39,33 @@ export function Background({ s, view }: { s: ListSession; view: SessionView }) {
   const gists = useMemo(() => taskGists(view.agents.map((a) => agentTaskOf(view, a))), [view.entries, view.agents]);
   const sel = view.agents.find((a) => a.id === st.agent);
   return (
-    <aside className="bgp" aria-label={t("background.title")}>
-      <div className="bgp-top drag">
-        <h3>{t("background.title")}</h3>
-        {running > 0 && (
-          <button className="qb danger" onClick={() => st.op(s.session_id, { type: "interrupt" })}>
-            {t("background.stopAll")}
-          </button>
+    <div className="insp-stack bgc-stack" role="complementary" aria-label={t("background.title")}>
+      <section className="insp bgc">
+        {sel ? (
+          <Process key={sel.id} s={s} a={sel} now={now} />
+        ) : (
+          <>
+            <div className="bgc-h">
+              <h3>{t("background.title")}</h3>
+              {running > 0 && (
+                <button className="qb danger" onClick={() => st.op(s.session_id, { type: "interrupt" })}>
+                  {t("background.stopAll")}
+                </button>
+              )}
+            </div>
+            <div className="bgc-sub">
+              <span>{sub}</span>
+              {tokens > 0 && <span className="n">{t("background.tokens", { tokens: tokensText(tokens) })}</span>}
+            </div>
+            <div className="bgc-list">
+              {view.agents.map((a, i) => (
+                <Row key={a.id} s={s} a={a} gist={gists[i]} now={now} />
+              ))}
+            </div>
+          </>
         )}
-        <button className="tb" aria-label={t("background.close")} title={t("background.close")} onClick={() => st.set({ background: false })}>
-          <Icon name="x" />
-        </button>
-      </div>
-      <div className="bgp-list">
-        <div className="grp-h">
-          <span className="gt">{sub}</span>
-          <span className="sp" />
-          {tokens > 0 && <span className="n">{t("background.tokens", { tokens: tokensText(tokens) })}</span>}
-        </div>
-        {view.agents.map((a, i) => (
-          <Fragment key={a.id}>
-            <Row a={a} gist={gists[i]} selected={sel?.id === a.id} now={now} />
-            {sel?.id === a.id && <Process s={s} a={a} />}
-          </Fragment>
-        ))}
-      </div>
-    </aside>
+      </section>
+    </div>
   );
 }
 
@@ -76,16 +77,24 @@ function agentTokens(a: AgentView): number {
 /**
  * One agent, as the sidebar shows a session: its label, running while it works; how long, or a dot
  * when it stopped or failed; under it the handle finx calls it by (agents from before labels: their
- * name, and a line of their task).
+ * name, and a line of their task). A working one's time gives way on hover to its stop, as a
+ * sidebar row's to its menu.
  */
-function Row({ a, gist, selected, now }: { a: AgentView; gist: string; selected: boolean; now: number }) {
+function Row({ s, a, gist, now }: { s: ListSession; a: AgentView; gist: string; now: number }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const running = a.status === "running";
-  const dot = a.status === "interrupted" ? "w" : a.status === "failed" || a.status === "closed" ? "c" : "";
   const label = a.description || a.name;
+  const open = () => st.set({ agent: a.id });
   return (
-    <button className={`srow ${selected ? "sel" : ""}`} aria-pressed={selected} title={t(`agents.status.${a.status}`)} onClick={() => st.set({ agent: selected ? null : a.id })}>
+    <div
+      className={`srow ${running ? "has-act" : ""}`}
+      role="button"
+      tabIndex={0}
+      title={t(`agents.status.${a.status}`)}
+      onClick={open}
+      onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && e.target === e.currentTarget && (e.preventDefault(), open())}
+    >
       <span className="smain">
         <span className="sl1">
           <span className={`stitle ${running ? "run" : ""}`}>
@@ -97,55 +106,82 @@ function Row({ a, gist, selected, now }: { a: AgentView; gist: string; selected:
               </>
             )}
           </span>
-          <span className={`smeta ${dot}`}>
-            {dot ? (
-              <>
-                <span className={`sdot ${dot}`} />
-                {t(`agents.status.${a.status}`)}
-              </>
-            ) : (
-              agentTime(a, now)
-            )}
-          </span>
+          <Meta a={a} now={now} />
+          {running && <StopButton s={s} a={a} className="rowact stop" />}
         </span>
         <span className="sl2">
           {a.description ? <span className="sl2t k">{a.name}</span> : <span className="sl2t">{gist}</span>}
         </span>
       </span>
+    </div>
+  );
+}
+
+/** Stops one agent (the session and its other agents go on). */
+function StopButton({ s, a, className }: { s: ListSession; a: AgentView; className: string }) {
+  const { t } = useTranslation("session");
+  const st = useStore();
+  return (
+    <button
+      className={className}
+      title={t("background.stop")}
+      aria-label={t("background.stop")}
+      onClick={(e) => {
+        e.stopPropagation();
+        st.op(s.session_id, { type: "agent_interrupt", agent: a.id });
+      }}
+    >
+      <Icon name="stopFill" />
     </button>
   );
 }
 
-/** The selected agent's work, under its row: its own conversation, read-only, following its end while it works. */
-function Process({ s, a }: { s: ListSession; a: AgentView }) {
+/** How an agent stands, at a row's right: how long, or a dot when it stopped or failed. */
+function Meta({ a, now }: { a: AgentView; now: number }) {
+  const { t } = useTranslation("session");
+  const dot = a.status === "interrupted" ? "w" : a.status === "failed" || a.status === "closed" ? "c" : "";
+  return (
+    <span className={`smeta ${dot}`}>
+      {dot ? (
+        <>
+          <span className={`sdot ${dot}`} />
+          {t(`agents.status.${a.status}`)}
+        </>
+      ) : (
+        agentTime(a, now)
+      )}
+    </span>
+  );
+}
+
+/** The selected agent's work, in the card's place: its label and back to the list, then its own conversation, read-only, following its end while it works. */
+function Process({ s, a, now }: { s: ListSession; a: AgentView; now: number }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const steps = useMemo(() => conversation(a.view), [a.view]);
-  const box = useRef<HTMLDivElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
-  // Opened from a row low in the list: bring it into view.
-  useLayoutEffect(() => {
-    box.current?.scrollIntoView({ block: "nearest" });
-  }, []);
   useLayoutEffect(() => {
     const el = log.current;
     if (el && follow.current) el.scrollTop = el.scrollHeight;
   }, [steps]);
   const firstUser = steps.findIndex((x) => x.kind === "user");
+  const label = a.description || a.name;
   return (
-    <div className="bgp-work" ref={box}>
-      <div className="grp-h">
-        <span className="gt">{t("background.process")}</span>
-        <span className="sp" />
-        {a.status === "running" && (
-          <button className="qb danger" onClick={() => st.op(s.session_id, { type: "agent_interrupt", agent: a.id })}>
-            {t("background.stop")}
-          </button>
-        )}
+    <>
+      <div className="bgc-h">
+        <button className="bgc-btn" title={t("background.back")} aria-label={t("background.back")} onClick={() => st.set({ agent: null })}>
+          <Icon name="chevL" />
+        </button>
+        <h3 className="bgc-name" title={label}>{label}</h3>
+        {a.status === "running" && <StopButton s={s} a={a} className="bgc-btn stop" />}
+      </div>
+      <div className="bgc-sub">
+        {a.description && <span className="k">{a.name}</span>}
+        <Meta a={a} now={now} />
       </div>
       <div
-        className="bgp-log"
+        className="bgc-log"
         ref={log}
         onScroll={(e) => {
           const el = e.currentTarget;
@@ -155,9 +191,9 @@ function Process({ s, a }: { s: ListSession; a: AgentView }) {
         {steps.map((step, i) => (
           <ProcessRow key={step.key} step={step} brief={i === firstUser} started={startedBefore(steps, i)} />
         ))}
-        {a.status === "interrupted" && <p className="bgp-note int">{t("background.interruptedNote")}</p>}
+        {a.status === "interrupted" && <p className="bgc-note int">{t("background.interruptedNote")}</p>}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -186,18 +222,18 @@ function ProcessRow({ step, brief, started }: { step: Step; brief: boolean; star
     case "end": {
       const e = step.end;
       if (e.outcome === "interrupted") return null;
-      if (e.outcome === "failed") return <p className="bgp-note bad">{t("background.failedLine", { message: e.error?.message ?? "" })}</p>;
+      if (e.outcome === "failed") return <p className="bgc-note bad">{t("background.failedLine", { message: e.error?.message ?? "" })}</p>;
       const u = totals(e.usage ?? { per_model: {} });
       const parts = [t("background.done"), started !== undefined && e.ts > started ? durationText(e.ts - started) : "", u.tokens > 0 ? `${tokensText(u.tokens)} tokens` : ""].filter(Boolean);
       return (
-        <p className="bgp-done">
+        <p className="bgc-done">
           <Icon name="check" className="sm" />
           <span>{parts.join(" · ")}</span>
         </p>
       );
     }
     case "note":
-      return <p className="bgp-note">{step.note.note === "compaction" ? t("chat.compacted", { before: step.note.tokens_before, after: step.note.tokens_after }) : step.note.note === "context" ? t("chat.context", { percent: step.note.window ? Math.round((step.note.tokens / step.note.window) * 100) : 0, used: tokensText(step.note.tokens), size: tokensText(step.note.window) }) : step.note.message}</p>;
+      return <p className="bgc-note">{step.note.note === "compaction" ? t("chat.compacted", { before: step.note.tokens_before, after: step.note.tokens_after }) : step.note.note === "context" ? t("chat.context", { percent: step.note.window ? Math.round((step.note.tokens / step.note.window) * 100) : 0, used: tokensText(step.note.tokens), size: tokensText(step.note.window) }) : step.note.message}</p>;
     default:
       return null;
   }
@@ -209,8 +245,8 @@ function Said({ caption, text, folds = false }: { caption: string; text: string;
   const [open, setOpen] = useState(false);
   const long = folds && (text.split("\n").length > 3 || text.length > 120);
   return (
-    <div className="bgp-said">
-      <span className="bgp-cap">{caption}</span>
+    <div className="bgc-said">
+      <span className="bgc-cap">{caption}</span>
       <p className={`sel-text ${long && !open ? "clamp" : ""}`}>{text}</p>
       {long && (
         <button className="link" onClick={() => setOpen(!open)}>

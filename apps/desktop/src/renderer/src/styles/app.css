@@ -508,7 +508,7 @@ button.insp-row:active{background:var(--fill2)}
 .working+.bgind{margin-top:-9px}
 .tb{position:relative}
 .tb-badge{position:absolute;top:1px;right:0;min-width:15px;height:15px;padding:0 4px;border-radius:999px;background:var(--accent);color:#fff;font-size:10px;font-weight:600;line-height:15px;text-align:center;font-variant-numeric:tabular-nums;box-shadow:0 0 0 2px var(--win)}
-/* A session page: the conversation's column, and the background panel beside it when open. */
+/* A session page: the conversation's column, and the browser's panel beside it when open. */
 .spage{flex:1;min-height:0;display:flex;position:relative}
 .scol{position:relative;flex:1;min-width:0;min-height:0;display:flex;flex-direction:column}
 /* On a session page the bar floats over the conversation as liquid glass (glass.tsx): the conversation
@@ -525,21 +525,12 @@ button.insp-row:active{background:var(--fill2)}
 @media (prefers-reduced-transparency:reduce){.scol>.ctool{backdrop-filter:none !important;background:var(--win)}}
 /* The system's window buttons sit over the panel's top then, not the conversation's. */
 .spage.bgopen .ctool{padding-right:14px}
-/* The background panel (session/Background.tsx): a column of the window on the right, flush with its
-   top, on the content's own ground; rows like the sidebar's and group lines instead of dividers,
-   with the selected agent's work opened under its row. */
-.bgp{flex:none;width:340px;display:flex;flex-direction:column;min-height:0;background:var(--win);border-left:.5px solid var(--sep)}
-.bgp-top{height:var(--top);flex:none;display:flex;align-items:center;gap:2px;padding:0 calc(10px + var(--caption)) 0 18px}
-.bgp-top h3{flex:1;min-width:0;margin:0;font-size:13px;font-weight:600}
+/* A panel of the window on the right (the browser's, session/Browser.tsx), flush with its top, on the content's own ground. */
+.bgp{flex:none;display:flex;flex-direction:column;min-height:0;background:var(--win);border-left:.5px solid var(--sep)}
 .qb{height:24px;border:0;border-radius:var(--r-sm);background:none;padding:0 8px;font-size:12px;color:var(--l2);display:inline-flex;align-items:center;white-space:nowrap}
 .qb:hover{background:var(--fill2);color:var(--l1)}
 .qb.danger:hover{color:var(--red)}
-.bgp .grp-h{position:static;background:none;padding:12px 10px 6px;margin:0;font-variant-numeric:tabular-nums;cursor:default}
-.bgp .grp-h:hover{color:var(--l2)}
-.bgp .grp-h .sp{flex:1}
-.bgp .grp-h .n{font-weight:400}
-.bgp-list{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px;padding:0 8px 4px}
-/* The embedded browser's panel: wider than the background panel; the tab's own view is laid over .brp-view by the main process. */
+/* The embedded browser's panel; the tab's own view is laid over .brp-view by the main process. */
 .bgp.brp{position:relative;width:clamp(380px,44%,760px)}
 .bgp.brp.sized{width:var(--brp-w)}
 /* Drag to resize; while dragging the page's own view steps aside (it would take the pointer). */
@@ -604,36 +595,52 @@ button.insp-row:active{background:var(--fill2)}
 .brp-url{width:100%;height:30px;padding:0 12px;border:0;border-radius:8px;background:var(--fill2);color:var(--l1);font:inherit;font-size:13px;outline:none}
 .brp-url::placeholder{color:var(--l3)}
 .brp-url:focus{box-shadow:0 0 0 2px var(--sel)}
-.bgp .srow{align-items:center}
-.bgp .sl2{font-size:12px;color:var(--l2)}
-.bgp .sl2t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.bgp .sl2t.k{font-family:var(--mono);font-size:11.5px;color:var(--l3)}
-.bgp .smeta.w{color:var(--orange)}
-.bgp .smeta.c{color:var(--red)}
-/* The selected agent's work, under its row: its own conversation, read-only, following its end while it
-   works; a long one scrolls inside, so the rows after it stay in reach. */
-.bgp-work{flex:none;display:flex;flex-direction:column;padding:0 0 10px}
-.bgp-work .grp-h{padding-top:8px}
-.bgp-log{flex:none;max-height:min(480px,60vh);overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:2px 10px 20px}
-.bgp-said{margin:0 0 6px}
-.bgp-cap{display:block;font-size:11px;color:var(--l3);margin-bottom:3px}
-.bgp-said p{margin:0;font-size:13px;line-height:19px;color:var(--l2);white-space:pre-wrap;overflow-wrap:anywhere}
-.bgp-said p.clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
-.bgp-said .link{font-size:12px;margin-top:3px}
-.bgp-log .tool{font-size:13px}
-.bgp-log .tool .th .cmd{font-size:11.5px}
-.bgp-log .am{font-size:13.5px;line-height:20px;margin:2px 0 0}
-.bgp-log .am .md{font-size:13.5px;line-height:20px}
-.bgp-log .am .md :is(h1,h2,h3,h4,h5,h6){font-size:13.5px;line-height:20px}
-.bgp-log .am .md>*+*{margin-top:6px}
-.bgp-done{margin:4px 0 0;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--l3);font-variant-numeric:tabular-nums}
-.bgp-done .ic{color:var(--green)}
-.bgp-note{margin:4px 0 0;font-size:12px;color:var(--l2)}
-.bgp-note.int{color:var(--orange)}
-.bgp-note.bad{color:var(--red)}
-/* No room for a column beside the conversation (layout.ts): the panel covers its right side. */
-.spage.bgover .bgp{position:absolute;top:0;right:0;bottom:0;z-index:6;box-shadow:-10px 0 30px rgba(0,0,0,.12)}
-.spage.bgover .ctool{padding-right:calc(14px + var(--caption))}
+/* The background card (session/Background.tsx): in the info card's place, of its glass and width, so the
+   tasks read as the session's own. It runs no lower than the column's foot; its list, or the selected
+   agent's work in the list's place, scrolls inside. The heading and its line as the info card's, then
+   rows like the sidebar's sessions. */
+.scol .bgc-stack{bottom:var(--sp-3);pointer-events:none}
+.bgc{pointer-events:auto;flex:0 1 auto;min-height:0;display:flex;flex-direction:column}
+.bgc-h{flex:none;display:flex;align-items:center;gap:2px;min-height:28px}
+.bgc-h h3{flex:1;min-width:0}
+.insp .bgc-name{padding-left:2px;font-size:13px;font-weight:600;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The heading's icon buttons: back to the list on the left, the agent's stop on the right. */
+.bgc-btn{flex:none;width:24px;height:24px;margin:0 3px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:flex;align-items:center;justify-content:center}
+.bgc-btn:hover{background:var(--fill2);color:var(--l1)}
+/* Stop: the composer's square, small; red as it is pointed at. */
+.bgc :is(.bgc-btn,.rowact).stop .ic{width:10px;height:10px}
+.bgc :is(.bgc-btn,.rowact).stop:hover{color:var(--red)}
+.bgc .rowact.stop{margin:-2px -3px -2px 0}
+/* Stop all: words, its text ending where the rows' times do. */
+.bgc-h .qb{margin-right:1px}
+.bgc-sub{flex:none;display:flex;align-items:center;gap:8px;padding:0 9px 6px;font-size:11.5px;color:var(--l3);font-variant-numeric:tabular-nums}
+.bgc-sub>:first-child{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bgc-sub .k{font-family:var(--mono)}
+.bgc-list{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.bgc .srow{align-items:center;padding:7px 9px}
+.bgc .sl2{font-size:12px;color:var(--l2)}
+.bgc .sl2t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bgc .sl2t.k{font-family:var(--mono);font-size:11.5px;color:var(--l3)}
+.bgc .smeta.w{color:var(--orange)}
+.bgc .smeta.c{color:var(--red)}
+/* The selected agent's work: its own conversation, read-only, following its end while it works. */
+.bgc-log{min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:4px 9px 6px}
+.bgc-said{margin:0 0 6px}
+.bgc-cap{display:block;font-size:11px;color:var(--l3);margin-bottom:3px}
+.bgc-said p{margin:0;font-size:13px;line-height:19px;color:var(--l2);white-space:pre-wrap;overflow-wrap:anywhere}
+.bgc-said p.clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.bgc-said .link{font-size:12px;margin-top:3px}
+.bgc-log .tool{font-size:13px}
+.bgc-log .tool .th .cmd{font-size:11.5px}
+.bgc-log .am{font-size:13.5px;line-height:20px;margin:2px 0 0;overflow-wrap:anywhere}
+.bgc-log .am .md{font-size:13.5px;line-height:20px}
+.bgc-log .am .md :is(h1,h2,h3,h4,h5,h6){font-size:13.5px;line-height:20px}
+.bgc-log .am .md>*+*{margin-top:6px}
+.bgc-done{margin:4px 0 0;display:flex;align-items:center;gap:6px;font-size:12px;color:var(--l3);font-variant-numeric:tabular-nums}
+.bgc-done .ic{color:var(--green)}
+.bgc-note{margin:4px 0 0;font-size:12px;color:var(--l2)}
+.bgc-note.int{color:var(--orange)}
+.bgc-note.bad{color:var(--red)}
 .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--l2);height:100%;text-align:center;padding:40px}
 .empty b{color:var(--l1);font-size:15px}
 /* forms */
