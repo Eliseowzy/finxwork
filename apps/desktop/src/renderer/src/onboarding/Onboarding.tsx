@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
 import { Icon, MarkMotion } from "../icons";
+import { ChatGptConnection } from "../settings/ChatGptConnection";
 import { LocalApplicationConnection } from "../settings/LocalApplicationConnection";
 import { KeyEntry, ProviderTiles } from "../settings/ProviderConnections";
 import { useStore } from "../store";
@@ -63,6 +64,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
 /** Step 1: the local application's login, or a provider's key. */
 function Connect() {
   const { t } = useTranslation("session");
+  const { t: settings } = useTranslation("settings");
   const [provider, setProvider] = useState<ProviderSummary | null>(null);
   return (
     <>
@@ -71,6 +73,10 @@ function Connect() {
         <h2>{t("onboarding.connect.title")}</h2>
         <p>{t("onboarding.connect.intro")}</p>
       </header>
+      <section aria-label={settings("models.subscription")}>
+        <div className="connections-section-heading"><h3>{settings("models.subscription")}</h3></div>
+        <div className="fgroup onb-local"><ChatGptConnection /></div>
+      </section>
       <LocalApplicationConnection />
       <section className="connections-api onb-api" aria-labelledby="onb-api-heading">
         <div className="connections-section-heading">

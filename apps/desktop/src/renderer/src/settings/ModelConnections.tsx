@@ -5,11 +5,12 @@ import { Dialog } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { agoText } from "../format";
+import { ChatGptConnection } from "./ChatGptConnection";
 import { LocalRow, localAdapters } from "./LocalApplicationConnection";
 import { ManageModels } from "./ManageModels";
 import { Brand, KeyEntry, ProviderTiles, useTileName } from "./ProviderConnections";
 
-// Settings › Models: where finx's models come from, as two lists in the
+// Settings › Models: where finx's models come from, as grouped lists in the
 // settings window's grouped rows. Each row says only what it is, its state,
 // and the one thing to do with it.
 
@@ -21,6 +22,10 @@ export function ModelConnections() {
   const keyed = st.models.providers.filter((p) => !p.id.startsWith("local-") && p.auth === "api_key" && p.credential !== "missing");
   return (
     <div className="form models">
+      <section>
+        <h3 className="fhead">{t("models.subscription")}</h3>
+        <div className="fgroup"><ChatGptConnection /></div>
+      </section>
       <section>
         <h3 className="fhead">{t("models.local")}</h3>
         <div className="fgroup">

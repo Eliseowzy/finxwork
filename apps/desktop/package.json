@@ -15,7 +15,8 @@
     "release": "node scripts/release.mjs",
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test src/shared/*.test.ts src/main/*.test.ts src/main/kernel/*.test.ts src/main/browser/*.test.ts scripts/*.test.mjs",
-    "e2e": "node e2e/stale-model.mjs"
+    "e2e": "node e2e/stale-model.mjs",
+    "e2e:chatgpt": "node e2e/chatgpt.mjs"
   },
   "dependencies": {
     "@finx/client": "workspace:*",

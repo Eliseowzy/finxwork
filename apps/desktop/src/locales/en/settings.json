@@ -25,6 +25,18 @@
   },
   "browserNote": "This page runs outside the app: its preferences aren't kept.",
   "models": {
+    "subscription": "Use a subscription",
+    "chatgpt": {
+      "forget": "Forget account",
+      "note": "Sign in with your ChatGPT account",
+      "waiting": "Waiting for browser authorization…",
+      "expired": "Authorization expired. Sign in again.",
+      "openBrowser": "Open browser",
+      "signIn": "Continue with ChatGPT",
+      "billing": "Uses the ChatGPT plan usage you authorize. API keys are billed separately.",
+      "usage": "Manage usage",
+      "origin": "ChatGPT subscription"
+    },
     "credential": {
       "missing": "No key",
       "config": "Key in the configuration file",

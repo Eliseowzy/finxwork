@@ -4,6 +4,8 @@
 
 后续扩展方案见 [Qoder 模型连接机制设计](qoder-connection-design.md)，Qoder 首版的多适配器与请求级传输已实现，等待事件和 legacy 仍属后续设计。
 
+ChatGPT 订阅直连的实现、测试和真实账户联调见 [ChatGPT API 订阅连接](chatgpt-api-design.md)。
+
 ## 决策
 
 模型连接能力运行在已有 `finx` 服务进程中。产品协议以独立 Rust crate 隔离，桌面不运行第二个模型网关，不安装 Node 运行时或 LaunchAgent。推理直接从现有模型调用层请求远端。

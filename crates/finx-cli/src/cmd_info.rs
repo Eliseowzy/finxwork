@@ -78,6 +78,41 @@ pub fn models(
     action: Option<crate::ModelsAction>,
 ) -> anyhow::Result<u8> {
     let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::Off)?;
+    if let Some(action @ (crate::ModelsAction::Login { .. } | crate::ModelsAction::Logout { .. } | crate::ModelsAction::Status { .. } | crate::ModelsAction::Forget { .. })) = &action {
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+        let status = runtime.block_on(async {
+            let chatgpt = &rt.connections.chatgpt;
+            match action {
+                crate::ModelsAction::Status { .. } => Ok(chatgpt.status()?),
+                crate::ModelsAction::Logout { .. } => Ok(chatgpt.logout().await?),
+                crate::ModelsAction::Forget { .. } => { chatgpt.forget().await?; Ok(chatgpt.status()?) },
+                _ => {
+                    let started = chatgpt.start().await?;
+                    if let Some(url) = &started.authorize_url {
+                        // Print a URL for browser-less terminals; never launch a shell with it.
+                        writeln!(std::io::stderr(), "Open this URL to connect ChatGPT API:\n{url}")?;
+                    }
+                    loop {
+                        tokio::select! {
+                            _ = tokio::signal::ctrl_c() => {
+                                if let Some(id) = &started.login_id { let _ = chatgpt.cancel(id); }
+                                anyhow::bail!("ChatGPT sign-in cancelled");
+                            }
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => {}
+                        }
+                        let status = chatgpt.status()?;
+                        match status.state {
+                            finx_protocol::api::ChatGptLoginState::Pending => continue,
+                            finx_protocol::api::ChatGptLoginState::Connected => break Ok(status),
+                            _ => anyhow::bail!("{}", status.message.unwrap_or_else(|| "ChatGPT sign-in did not complete".into())),
+                        }
+                    }
+                }
+            }
+        })?;
+        print_json(&serde_json::to_value(status)?)?;
+        return Ok(0);
+    }
     anyhow::ensure!(
         provider.is_none_or(|wanted| rt.llm.provider(wanted).is_some()),
         "unknown provider '{}'",
@@ -92,6 +127,7 @@ pub fn models(
         let (reference, shown) = match &action {
             crate::ModelsAction::Show { model } => (model, true),
             crate::ModelsAction::Hide { model } => (model, false),
+            _ => unreachable!("connection actions handled above"),
         };
         finx_core::models::set_shown(&rt.llm, &defaults.model, reference, shown).map_err(anyhow::Error::msg)?;
         return Ok(0);
@@ -100,6 +136,9 @@ pub fn models(
     if refresh {
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
         runtime.block_on(async {
+            if rt.connections.chatgpt.status().ok().is_some_and(|s| s.connection.is_some())
+                && let Err(e) = rt.connections.chatgpt.refresh().await
+            { problems.push(format!("ChatGPT API: {}", e.message)); }
             if let Err(e) = rt.llm.refresh_catalog(&finx_core::models::catalog_url()).await {
                 problems.push(format!("public model catalog: {}", e.message));
             }
