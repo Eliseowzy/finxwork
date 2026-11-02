@@ -63,7 +63,9 @@
     "invalid_request": "{{provider}} 不接受这次请求",
     "content_filtered": "被 {{provider}} 的内容过滤拦下",
     "protocol": "{{provider}} 的回复无法识别",
-    "unknown": "这一轮没能完成"
+    "unknown": "这一轮没能完成",
+    "working_other": "后台还有 {{count}} 个任务在运行。",
+    "stopWorking": "停止后台任务"
   },
   "agents": {
     "launched_other": "派出了 {{count}} 个子智能体，在后台并行工作",

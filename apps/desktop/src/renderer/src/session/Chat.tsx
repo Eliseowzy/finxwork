@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { addTotals, baseName, conversation, costText, openChain, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
+import { addTotals, baseName, conversation, costText, openChain, runningAgents, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
@@ -77,6 +77,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
 
   // The session's current failure is told once, at the end, with Retry; earlier ones in one quiet line.
   const lastEnd = [...steps].reverse().find((x) => x.kind === "end");
+  const working = runningAgents(view).length;
   return (
     <>
       <div className="cscroll" ref={scroll} onScroll={onScroll}>
@@ -95,7 +96,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
           )}
           <div className="tr" role="log" aria-label={t("chat.log")}>
             {steps.map((step, i) => (
-              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
+              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} working={step === lastEnd ? working : 0} sessionId={s.session_id} />
             ))}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <Working view={view} steps={steps} />
@@ -237,7 +238,8 @@ function isMerged(steps: Step[], i: number): boolean {
   return false;
 }
 
-type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; sessionId: string };
+/** `working`: the background tasks still working, for the last task end. */
+type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string };
 
 /**
  * A row renders again only when what it shows changed: the steps are made
@@ -250,6 +252,7 @@ const Row = memo(
     (a.final === b.final || (!!a.final && !!b.final && sameStep(a.final, b.final))) &&
     a.merged === b.merged &&
     a.current === b.current &&
+    a.working === b.working &&
     a.sessionId === b.sessionId &&
     sameStep(a.step, b.step),
 );
@@ -289,7 +292,7 @@ function sameStep(a: Step, b: Step): boolean {
   }
 }
 
-function RowView({ step, previous, final, merged, current, sessionId }: RowProps) {
+function RowView({ step, previous, final, merged, current, working, sessionId }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
     case "user":
@@ -335,7 +338,7 @@ function RowView({ step, previous, final, merged, current, sessionId }: RowProps
       return <ReportCard step={step} />;
     case "end":
       if (merged) return null;
-      return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} sessionId={sessionId} />;
+      return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;
     case "note":
       return step.note.note === "compaction" ? (
         <div className="tnote">{t("chat.compacted", { before: kilo(step.note.tokens_before), after: kilo(step.note.tokens_after) })}</div>
@@ -421,7 +424,7 @@ function MessageTime({ at }: { at: Date }) {
  * of work that took several tasks or sub-agents is told once, at its end, as
  * a whole.
  */
-function TaskEnd({ end, chain, started, current, sessionId }: { end: TaskEndItem; chain?: TaskChain; started: number | undefined; current: boolean; sessionId: string }) {
+function TaskEnd({ end, chain, started, current, working, sessionId }: { end: TaskEndItem; chain?: TaskChain; started: number | undefined; current: boolean; working: number; sessionId: string }) {
   const { t } = useTranslation("session");
   const parts = useTaskParts(end, chain, started);
   if (end.outcome === "interrupted") return <div className="tnote">{t("chat.interrupted")}</div>;
@@ -434,7 +437,7 @@ function TaskEnd({ end, chain, started, current, sessionId }: { end: TaskEndItem
       </div>
     );
   }
-  return current ? <FailureCard error={end.error ?? undefined} sessionId={sessionId} /> : <PastFailure error={end.error ?? undefined} />;
+  return current ? <FailureCard error={end.error ?? undefined} working={working} sessionId={sessionId} /> : <PastFailure error={end.error ?? undefined} />;
 }
 
 /** A message's words, its skill mentions drawn as tags (the text copied is still `/skill:name`). */

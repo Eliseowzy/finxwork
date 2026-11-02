@@ -64,7 +64,10 @@
     "invalid_request": "{{provider}} rejected the request",
     "content_filtered": "Blocked by {{provider}}'s content filter",
     "protocol": "Unexpected reply from {{provider}}",
-    "unknown": "This task couldn't finish"
+    "unknown": "This task couldn't finish",
+    "working_one": "{{count}} background task is still working.",
+    "working_other": "{{count}} background tasks are still working.",
+    "stopWorking": "Stop background tasks"
   },
   "agents": {
     "launched_one": "Started {{count}} sub-agent, working in the background",

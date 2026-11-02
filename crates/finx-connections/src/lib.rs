@@ -702,14 +702,25 @@ impl ConnectionRequest for RequestLease {
         self.cancellation.clone()
     }
     fn failed(&self, error: &mut LlmError) {
-        if adapter::authentication_failure(&self.entry.record.read().adapter_id, error) {
+        let adapter_id = self.entry.record.read().adapter_id.clone();
+        if adapter::authentication_failure(&adapter_id, error) {
             if let Some(manager) = self.manager.upgrade() {
                 manager.failed(&self.entry, &ConnectionError::login());
             }
             error.message = ConnectionError::login().message;
-        } else {
-            error.message = format!("模型请求未完成（{}），请重试", error.kind);
+            return;
         }
+        adapter::reclassify(&adapter_id, error);
+        // The gateway's own words tell what went wrong; what may identify the account goes.
+        error.message = adapter::scrub(&error.message);
+        tracing::warn!(
+            adapter = %adapter_id,
+            status = ?error.status,
+            kind = %error.kind,
+            code = ?error.provider_code,
+            message = %error.message,
+            "connection model request failed"
+        );
     }
 }
 

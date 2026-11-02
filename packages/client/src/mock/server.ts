@@ -633,7 +633,10 @@ export class MockServer {
     if (!script && wantsAgents(text)) {
       const sc = agentsScenario();
       s.scenario = sc;
-      script = { turns: [...sc.lead, { say: sc.started }] };
+      // Asked with 额度 (quota): the account runs out once they work, and only the main agent stops.
+      script = /额度|quota/i.test(text)
+        ? { turns: sc.lead, fail: { kind: "quota_exceeded", message: "Insufficient balance: please top up your account.", status: 402, retryable: false } }
+        : { turns: [...sc.lead, { say: sc.started }] };
     }
     if (!script && wantsSite(text)) script = siteScript();
     script = this.unkeyed(s) ?? script ?? replyScript(text);

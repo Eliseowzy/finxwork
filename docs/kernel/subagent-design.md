@@ -495,7 +495,7 @@ pub(crate) struct SessionState {
 ```
 
 - `status` 取 completed、failed、interrupted 之一：
-  - failed：先写一行 `Error: ...`，再附上已有的部分回复；
+  - failed：先写一行 `Error (<kind>): ...`，再附上已有的部分回复。kind 是错误的稳定分类（如 `rate_limited`、`quota_exceeded`），主 agent 据此判断重派能不能解决；
   - interrupted：已有的部分回复；如果它的队列里还有没处理的消息，列在后面（§12.1）。
 - **截断**：正文的上限与工具输出相同（`tools.limits.max_bytes`，默认 50 KiB；模型窗口小时随之缩小，总方案 §5.7）。超过时保留开头和结尾，中间换成一行说明，给出完整内容的路径。完整内容存到父会话数据目录的 `tool-output` 下，文件名以 `agent-<名字>-<序号>` 开头，模型可以用 read 读取。做法与工具输出的裁切一致。
 
@@ -1147,7 +1147,7 @@ Finish with a short Markdown report: what you did and the outcome, key findings 
 </agent_report>
 
 <agent_report agent="fix-tests" status="failed">
-Error: the model request failed: rate limited (429)
+Error (rate_limited): the model request failed: rate limited (429)
 ……已有的部分回复……
 </agent_report>
 

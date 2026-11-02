@@ -57,7 +57,7 @@ flowchart LR
 - `ConnectionAuthorizer::begin(provider, model, http)`：验证连接与模型，取得请求租约。
 - `ConnectionRequest::authorize(rejected)`：返回本次请求的一致 `base_url + Credentials`。
 - `ConnectionRequest::cancellation()`：连接级取消信号。
-- `ConnectionRequest::failed(error)`：更新连接状态并清理不适合对外暴露的远端诊断。
+- `ConnectionRequest::failed(error)`：更新连接状态；错误保留网关原话，但去掉可能代表账户的长串（token、session 与请求 ID），截到 500 字，并写入内核日志。千问网关的 429 表示一时的请求或 token 份额用完，用的却是 OpenAI 表示欠费的措辞：原话不提欠费、余额、充值时按限流处理，自动重试（2026-11-02 观察到：同一账户在同一时刻有的请求成功、有的报这个错）。
 
 授权结果不实现 Debug 或 Serialize；动态请求头保存在 Credentials，Debug 不输出其值。账号 token、模型 token、session_id 不进入模型目录、桌面 RPC、历史任务模型元数据或普通日志。
 

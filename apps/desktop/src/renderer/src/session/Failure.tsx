@@ -88,8 +88,11 @@ function ModelItems({ current, models, onPick }: { current?: string; models: Mod
   );
 }
 
-/** The session's current failure, with its way out. */
-export function FailureCard({ error, sessionId }: { error?: ErrorInfo; sessionId: string }) {
+/**
+ * The session's current failure, with its way out. Background tasks the failure did not stop are
+ * told of, with a way to stop them: they go on, with the same model, until they end by themselves.
+ */
+export function FailureCard({ error, working, sessionId }: { error?: ErrorInfo; working: number; sessionId: string }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const kind = error?.kind ?? "unknown";
@@ -141,9 +144,17 @@ export function FailureCard({ error, sessionId }: { error?: ErrorInfo; sessionId
         <Avatar provider={provider.id} name={provider.name} tone={tone} kind={kind} />
         <div className="fc-tx">
           <b>{t(`fail.${kind}`, { provider: provider.name || t("fail.theProvider"), defaultValue: t("fail.unknown") })}</b>
-          <span>{failureAdvice(kind, error?.retryable ?? false)}</span>
+          <span>
+            {failureAdvice(kind, error?.retryable ?? false)}
+            {working > 0 && ` ${t("fail.working", { count: working })}`}
+          </span>
         </div>
         <div className="fc-side">
+          {working > 0 && (
+            <button className="btn sm" onClick={() => st.op(sessionId, { type: "interrupt" })}>
+              {t("fail.stopWorking")}
+            </button>
+          )}
           {main}
           <MenuButton className="fc-more" align="right" title={t("chat.more")} label={<Icon name="more" />}>
             {(close) => (

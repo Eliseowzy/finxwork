@@ -54,6 +54,44 @@ pub(crate) fn supported(adapter: &str, model: &str) -> bool {
     adapter != "qoder" || model == "auto"
 }
 
+/// QwenWork's gateway answers 429 when the account's share of requests or tokens is used up for
+/// the moment, in the words OpenAI uses for an unpaid account. Seen 2026-11-02: an account's
+/// sub-agents failed with it while its other requests, at the same seconds, went through. So a
+/// 429 of its is waited out and retried, unless it speaks of arrears.
+pub(crate) fn reclassify(adapter: &str, error: &mut finx_llm::LlmError) {
+    const ARREARS: &[&str] = &["余额", "欠费", "充值", "arrear", "balance"];
+    if adapter == "qoder" || error.status != Some(429) || error.kind != finx_llm::ErrorKind::QuotaExceeded {
+        return;
+    }
+    let text = format!("{} {}", error.message, error.provider_code.as_deref().unwrap_or_default()).to_lowercase();
+    if !ARREARS.iter().any(|word| text.contains(word)) {
+        error.kind = finx_llm::ErrorKind::RateLimited;
+    }
+}
+
+/// A gateway's error text without what may stand for the account: long runs of letters and
+/// digits (tokens, session and request ids) become `…`.
+pub(crate) fn scrub(text: &str) -> String {
+    const MAX_CHARS: usize = 500;
+    let secret = |run: &str| run.chars().count() >= 20 && run.chars().any(|c| c.is_ascii_digit());
+    let mut out = String::new();
+    let mut run = String::new();
+    for c in text.chars().chain(std::iter::once(' ')) {
+        if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '=' | '+' | '/') {
+            run.push(c);
+            continue;
+        }
+        out.push_str(if secret(&run) { "…" } else { &run });
+        run.clear();
+        out.push(c);
+    }
+    out.pop();
+    match out.char_indices().nth(MAX_CHARS) {
+        Some((end, _)) => format!("{}…", &out[..end]),
+        None => out,
+    }
+}
+
 pub(crate) fn authentication_failure(adapter: &str, error: &finx_llm::LlmError) -> bool {
     error.kind == finx_llm::ErrorKind::Auth
         && (adapter != "qoder"

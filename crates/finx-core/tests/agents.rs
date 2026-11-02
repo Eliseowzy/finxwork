@@ -459,6 +459,24 @@ async fn stopping_interrupts_every_agent_and_they_can_continue() {
 }
 
 #[tokio::test]
+async fn a_working_agents_log_is_on_disk_before_its_task_ends() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "slow", "Take your time.", false));
+    h.script(ROOT, Script::text("It is working."));
+    h.script("slow", Script::text("half way").then_sleep(Duration::from_secs(30)).then_text(" never"));
+    h.prompt("start").await;
+    let events = h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let (_, _, file) = agent_ids(&events).pop().unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !std::fs::read_to_string(&file).is_ok_and(|log| log.contains("Take your time.")) {
+        assert!(Instant::now() < deadline, "the agent's log is not on disk while it works");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    h.kernel.submit(Op::Interrupt).await.unwrap();
+    h.until_idle().await;
+}
+
+#[tokio::test]
 async fn a_sub_agents_work_is_passed_on_to_the_main_session() {
     let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
     h.script(ROOT, spawn("c1", "counter", "Count the files.", false));

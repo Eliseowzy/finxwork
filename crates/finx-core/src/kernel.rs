@@ -403,6 +403,9 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
         thinking: Some(child.thinking),
         permission_mode: Some(child.permission_mode),
     });
+    // The task brief comes next: from it on, the log is on disk while the agent works, not only
+    // once its task ends.
+    session.writer.settle();
     session.emit(EventMsg::SessionStarted {
         session_id: child.header.id.clone(),
         protocol_version: PROTOCOL_VERSION,

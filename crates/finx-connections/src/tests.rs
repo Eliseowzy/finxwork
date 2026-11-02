@@ -456,3 +456,31 @@ fn qwenwork_thinking_follows_the_application() {
     assert_eq!(of("qwen3.7-plus", json!({"is_reasoning": true})), (vec![Off, On], On));
     assert_eq!(of("plain", json!({"is_reasoning": false})), (vec![], Default));
 }
+
+#[test]
+fn qwenwork_429_quota_words_are_waited_out_unless_they_speak_of_arrears() {
+    use finx_llm::{ErrorKind, LlmError};
+    let none: Vec<String> = Vec::new();
+    let kind = |adapter: &str, status: u16, body: &str| {
+        let mut error = LlmError::from_http(status, body, None, &none);
+        crate::adapter::reclassify(adapter, &mut error);
+        error.kind
+    };
+    let openai = r#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","code":"insufficient_quota"}}"#;
+    assert_eq!(kind("qwenwork", 429, openai), ErrorKind::RateLimited);
+    assert_eq!(kind("qwenwork", 429, r#"{"error":{"message":"账户已欠费，请充值"}}"#), ErrorKind::QuotaExceeded);
+    assert_eq!(kind("qwenwork", 402, openai), ErrorKind::QuotaExceeded, "only a 429 is a moment's limit");
+    assert_eq!(kind("qoder", 429, openai), ErrorKind::QuotaExceeded);
+}
+
+#[test]
+fn gateway_words_lose_what_may_identify_the_account() {
+    let scrub = crate::adapter::scrub;
+    assert_eq!(
+        scrub("session 7f3a9c2e-41b8-4d0e-9a77-1c2d3e4f5a6b over limit, request_id=req_0a1b2c3d4e5f6a7b8c9d"),
+        "session … over limit, …"
+    );
+    assert_eq!(scrub("You exceeded your current quota (insufficient_quota)."), "You exceeded your current quota (insufficient_quota).");
+    assert_eq!(scrub("请求过多，请稍后再试"), "请求过多，请稍后再试");
+    assert_eq!(scrub(&"字".repeat(600)).chars().count(), 501);
+}

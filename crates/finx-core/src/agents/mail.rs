@@ -63,11 +63,12 @@ impl Mail {
     }
 }
 
-/// What the report says: the agent's last reply, after the error if it failed.
+/// What the report says: the agent's last reply, after the error if it failed. The error's kind
+/// comes with it: it tells the main agent whether trying again can help.
 pub(crate) fn body(report: &Report) -> String {
     let mut out = String::new();
     if let Some(error) = &report.error {
-        out.push_str(&format!("Error: {}\n\n", error.message));
+        out.push_str(&format!("Error ({}): {}\n\n", error.kind, error.message));
     }
     match &report.reply {
         Some(reply) => out.push_str(reply.trim()),
@@ -179,7 +180,7 @@ mod tests {
         assert_eq!(body(&report(AgentStatus::Completed, None)), "(It finished without a reply.)");
         let mut failed = report(AgentStatus::Failed, Some("half"));
         failed.error = Some(ErrorInfo::new("rate_limited", "rate limited (429)"));
-        assert_eq!(body(&failed), "Error: rate limited (429)\n\nhalf");
+        assert_eq!(body(&failed), "Error (rate_limited): rate limited (429)\n\nhalf");
         let mut stopped = report(AgentStatus::Interrupted, None);
         stopped.unprocessed = vec!["also check b".into()];
         assert_eq!(
@@ -194,6 +195,6 @@ mod tests {
         assert_eq!(summary(&long).unwrap().chars().count(), SUMMARY_CHARS + 1);
         // No reply: the note is for the model, so user interfaces get no summary.
         assert_eq!(summary(&report(AgentStatus::Interrupted, None)), None);
-        assert_eq!(summary(&failed).as_deref(), Some("Error: rate limited (429)\n\nhalf"));
+        assert_eq!(summary(&failed).as_deref(), Some("Error (rate_limited): rate limited (429)\n\nhalf"));
     }
 }
