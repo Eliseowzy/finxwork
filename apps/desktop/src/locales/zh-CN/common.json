@@ -14,6 +14,9 @@
     "search": "搜索",
     "customize": "自定义",
     "sessions": "会话",
+    "projects": "项目",
+    "collapseAll": "全部收起",
+    "expandAll": "全部展开",
     "loading": "正在读取会话…",
     "empty": "还没有会话<br/>点「新会话」开始第一个",
     "showArchived": "显示已归档"
