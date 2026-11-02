@@ -26,15 +26,13 @@
   "browserNote": "This page runs outside the app: its preferences aren't kept.",
   "models": {
     "subscription": "Use a subscription",
+    "subscriptionNote": "Uses each account’s subscription allowance. API keys are billed separately.",
     "chatgpt": {
       "forget": "Forget account",
       "note": "Sign in with your ChatGPT account",
       "waiting": "Waiting for browser authorization…",
       "expired": "Authorization expired. Sign in again.",
       "openBrowser": "Open browser",
-      "signIn": "Continue with ChatGPT",
-      "billing": "Uses the ChatGPT plan usage you authorize. API keys are billed separately.",
-      "usage": "Manage usage",
       "origin": "ChatGPT subscription"
     },
     "credential": {
@@ -51,7 +49,6 @@
     "default": "Default",
     "reasoning": "Thinking",
     "context": "{{size}} context",
-    "local": "Local applications",
     "api": "Use an API key",
     "qwen": "QwenWork",
     "add": "Add API service",
@@ -162,13 +159,8 @@
     "restartBusy": "Tasks are running. Restarting interrupts them; their sessions are saved, and a new message continues them.",
     "restartNow": "Restart"
   },
-  "connections": {
-    "local": "Local applications"
-  },
   "local": {
-    "note": "No API key needed; usage counts against that account.",
     "more": "Also works with {{names}}; they show up here once installed",
-    "supported": "Works with {{names}}; they show up here once installed",
     "listSep": ", "
   },
   "live": {

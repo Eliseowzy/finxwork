@@ -54,7 +54,12 @@ async function page(settings) {
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
     return r.result.value;
   };
-  const p = { cdp, run, close: () => ws.close(), wait: (expr, label) => until(() => run(expr), label) }; pages.push(p); return p;
+  const closeWindow = async () => {
+    const closed = new Promise(resolve => ws.addEventListener("close", resolve, { once: true }));
+    await run("setTimeout(() => window.close(), 100); undefined");
+    await closed;
+  };
+  const p = { cdp, run, closeWindow, close: () => ws.close(), wait: (expr, label) => until(() => run(expr), label) }; pages.push(p); return p;
 }
 try {
   console.log("Launching isolated kernel and Electron");
@@ -67,20 +72,41 @@ try {
   app.stderr.on("data", () => {});
   const main = await page(false);
   await main.wait('!!window.finx', "desktop bridge");
+  await until(() => main.run('!!document.querySelector(".onb .onb-local [data-testid=chatgpt-connection]")'), "onboarding subscriptions", 45000);
+  const onboardingHeadings = await main.run('[...document.querySelectorAll(".onb .connections-section-heading h3")].map(n => n.textContent)');
+  assert.equal(onboardingHeadings.length, 2);
+  assert.ok(labels("models.subscription").includes(onboardingHeadings[0]));
+  assert.ok(labels("models.api").includes(onboardingHeadings[1]));
+  if (process.env.FINXWORK_E2E_SHOTS) {
+    fs.mkdirSync(process.env.FINXWORK_E2E_SHOTS, { recursive: true });
+    const { data } = await main.cdp("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(path.join(process.env.FINXWORK_E2E_SHOTS, "onboarding.png"), Buffer.from(data, "base64"));
+  }
   await main.run('window.finx.openSettings("models")');
   let settings = await page(true);
-  await settings.wait(`!!(${button("models.chatgpt.signIn")}) && !(${button("models.chatgpt.signIn")}).disabled`, "ChatGPT sign-in entry");
+  await settings.wait(`!!(${button("models.connect")}) && !(${button("models.connect")}).disabled`, "ChatGPT sign-in entry");
+  console.log("Subscriptions share one group");
+  assert.deepEqual(await settings.run(`[...(${row}).closest('.fgroup').querySelectorAll('.mrow')].map(n => n.dataset.testid)`), ["chatgpt-connection", "qwenwork-connection", "qoder-connection"]);
+  const headings = await settings.run('[...document.querySelectorAll(".models > section > h3")].map(n => n.textContent)');
+  assert.equal(headings.length, 2);
+  assert.ok(labels("models.subscription").includes(headings[0]));
+  assert.ok(labels("models.api").includes(headings[1]));
+  if (process.env.FINXWORK_E2E_SHOTS) {
+    fs.mkdirSync(process.env.FINXWORK_E2E_SHOTS, { recursive: true });
+    const { data } = await settings.cdp("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(path.join(process.env.FINXWORK_E2E_SHOTS, "subscriptions.png"), Buffer.from(data, "base64"));
+  }
   console.log("Sign-in, pending state, cancellation");
-  await settings.run(`(${button("models.chatgpt.signIn")}).click()`);
+  await settings.run(`(${button("models.connect")}).click()`);
   await settings.wait(`!!(${button("models.cancel")})`, "pending authorization controls");
   await settings.run(`(${button("models.cancel")}).click()`);
-  await settings.wait(`!!(${button("models.chatgpt.signIn")})`, "cancelled sign-in");
+  await settings.wait(`!!(${button("models.connect")})`, "cancelled sign-in");
   assert.equal((await call("chatgpt/status")).state, "cancelled");
   console.log("Login survives closing settings, publishes model catalog, and manages models");
-  await settings.run(`(${button("models.chatgpt.signIn")}).click()`);
+  await settings.run(`(${button("models.connect")}).click()`);
   await settings.wait(`!!(${button("models.cancel")})`, "second pending sign-in");
   const pending = await call("chatgpt/status");
-  await settings.run("window.close()"); settings.close(); await sleep(200);
+  await settings.closeWindow();
   await main.run('window.finx.openSettings("models")'); settings = await page(true);
   await settings.wait(`!!(${button("models.cancel")})`, "restored pending sign-in");
   f.state.mode = "ok"; await f.authorize(pending.authorize_url);
@@ -97,7 +123,7 @@ try {
     fs.writeFileSync(path.join(process.env.FINXWORK_E2E_SHOTS, "chatgpt-connected.png"), Buffer.from(data, "base64"));
   }
   console.log("Select subscription model and run a task in the desktop");
-  await settings.run("window.close()"); settings.close();
+  await settings.closeWindow();
   // First-time users explicitly leave the ready page after connecting their first model.
   await main.wait('!!document.querySelector(".onb-start")', "first model ready");
   await main.run('document.querySelector(".onb-start").click()');
@@ -116,7 +142,7 @@ try {
   await main.run('window.finx.openSettings("models")'); settings = await page(true);
   await settings.wait(`!!(${button("models.disconnect")})`, "disconnect control");
   await settings.run(`(${button("models.disconnect")}).click()`);
-  await settings.wait(`!!(${button("models.chatgpt.signIn")})`, "disconnected row");
+  await settings.wait(`!!(${button("models.connect")})`, "disconnected row");
   assert.equal((await call("chatgpt/status")).connection, null); assert.equal(f.state.revocations, 1);
   await settings.wait(`!!(${button("models.chatgpt.forget")})`, "retained account registration");
   await settings.run(`(${button("models.chatgpt.forget")}).click()`);

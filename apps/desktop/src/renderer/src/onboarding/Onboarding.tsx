@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
 import { Icon, MarkMotion } from "../icons";
-import { ChatGptConnection } from "../settings/ChatGptConnection";
-import { LocalApplicationConnection } from "../settings/LocalApplicationConnection";
+import { SubscriptionConnections } from "../settings/LocalApplicationConnection";
 import { KeyEntry, ProviderTiles } from "../settings/ProviderConnections";
 import { useStore } from "../store";
 import "../styles/connections.css";
@@ -12,7 +11,7 @@ import "../styles/onboarding.css";
 
 // The first-run page (desktop-kernel-integration §8.4): the whole window, shown
 // at launch while no model can run. The brand on the left; on the right the two
-// ways to a model as Settings › Models shows them (the local applications' rows,
+// ways to a model as Settings › Models shows them (subscriptions,
 // the ones on this Mac first, and the providers that take a key), then "ready"
 // once a model can run. Leaving it, by starting or by "later", is the person's choice.
 
@@ -61,7 +60,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
   );
 }
 
-/** Step 1: the local application's login, or a provider's key. */
+/** Step 1: an existing subscription, or a provider's key. */
 function Connect() {
   const { t } = useTranslation("session");
   const { t: settings } = useTranslation("settings");
@@ -73,15 +72,11 @@ function Connect() {
         <h2>{t("onboarding.connect.title")}</h2>
         <p>{t("onboarding.connect.intro")}</p>
       </header>
-      <section aria-label={settings("models.subscription")}>
-        <div className="connections-section-heading"><h3>{settings("models.subscription")}</h3></div>
-        <div className="fgroup onb-local"><ChatGptConnection /></div>
-      </section>
-      <LocalApplicationConnection />
+      <SubscriptionConnections />
       <section className="connections-api onb-api" aria-labelledby="onb-api-heading">
         <div className="connections-section-heading">
           <div>
-            <h3 id="onb-api-heading">{t("onboarding.connect.api")}</h3>
+            <h3 id="onb-api-heading">{settings("models.api")}</h3>
             <p>{t("onboarding.connect.apiNote")}</p>
           </div>
         </div>

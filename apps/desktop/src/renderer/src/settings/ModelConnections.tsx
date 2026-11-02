@@ -24,13 +24,11 @@ export function ModelConnections() {
     <div className="form models">
       <section>
         <h3 className="fhead">{t("models.subscription")}</h3>
-        <div className="fgroup"><ChatGptConnection /></div>
-      </section>
-      <section>
-        <h3 className="fhead">{t("models.local")}</h3>
         <div className="fgroup">
+          <ChatGptConnection />
           {localAdapters.map(adapter => <LocalRow key={adapter} adapter={adapter} />)}
         </div>
+        <p className="set-note">{t("models.subscriptionNote")}</p>
       </section>
       <section>
         <h3 className="fhead">{t("models.api")}</h3>

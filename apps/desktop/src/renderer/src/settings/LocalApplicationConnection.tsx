@@ -9,6 +9,7 @@ import { agoText } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
 import { ManageModels, useModelCounts } from "./ManageModels";
+import { ChatGptConnection } from "./ChatGptConnection";
 
 // Read once per window: the app's icon does not change while FinxWork runs.
 export type LocalAdapter = "qwenwork" | "qoder";
@@ -193,7 +194,7 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
   if (hidden) return null;
   return (
     <>
-      <div className="frow mrow">
+      <div className="frow mrow" data-testid={`${adapter}-connection`}>
         <SourceAppMark className="mlogo mlogo-qwen" adapter={adapter} />
         <div className="ft">
           <div className="fn">{name}</div>
@@ -226,11 +227,11 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
 }
 
 /**
- * The local applications on the first-run page: the rows Settings › Models shows, the
+ * Subscriptions on the first-run page: the rows Settings › Models shows, the
  * ones on this Mac first. The ones not installed fold into one line naming them, so the
  * list grows by no more than that line however many applications FinxWork supports.
  */
-export function LocalApplicationConnection() {
+export function SubscriptionConnections() {
   const { t } = useTranslation("settings");
   const name = useLocalName();
   const [statuses, setStatuses] = useState<Partial<Record<LocalAdapter, string>>>({});
@@ -238,25 +239,25 @@ export function LocalApplicationConnection() {
   const report = useCallback((adapter: LocalAdapter, status: string) => setStatuses(s => (s[adapter] === status ? s : { ...s, [adapter]: status })), []);
   const missing = localAdapters.filter(a => statuses[a] === "missing");
   const shown = localAdapters.filter(a => statuses[a] !== "missing");
-  // One main button on the page: connecting the first application found.
-  const lead = shown.find(a => statuses[a] === "found");
-  const row = (adapter: LocalAdapter) => <LocalRow key={adapter} adapter={adapter} primary={adapter === lead} hidden={missing.includes(adapter) && !unfolded} onStatus={report} />;
+  const row = (adapter: LocalAdapter) => <LocalRow key={adapter} adapter={adapter} hidden={missing.includes(adapter) && !unfolded} onStatus={report} />;
   const names = missing.map(name).join(t("local.listSep"));
   // One list, the fold line keyed among the rows: a row that changes sides moves, it is not made anew.
-  return <section aria-label={t("connections.local")}>
-    <div className="connections-section-heading"><div><h3>{t("connections.local")}</h3><p>{t("local.note")}</p></div></div>
+  return <section aria-label={t("models.subscription")}>
+    <div className="connections-section-heading"><h3>{t("models.subscription")}</h3></div>
     <div className="fgroup onb-local">
+      <ChatGptConnection />
       {[
         ...shown.map(row),
         missing.length > 0 && (
           <button key="fold" className={`frow onb-fold ${unfolded ? "open" : ""}`} aria-expanded={unfolded} onClick={() => setUnfolded(u => !u)}>
             <span className="onb-fold-marks">{missing.map(a => <SourceAppMark key={a} className="mlogo" adapter={a} />)}</span>
-            <span className="ft">{t(shown.length ? "local.more" : "local.supported", { names })}</span>
+            <span className="ft">{t("local.more", { names })}</span>
             <Icon name="chevR" />
           </button>
         ),
         ...missing.map(row),
       ]}
     </div>
+    <p className="connections-footnote">{t("models.subscriptionNote")}</p>
   </section>;
 }
