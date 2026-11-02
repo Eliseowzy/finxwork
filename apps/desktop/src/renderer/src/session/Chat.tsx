@@ -1,18 +1,18 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, conversation, costText, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain } from "@finx/client";
+import { addTotals, baseName, conversation, costText, openChain, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
 import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
-import { Icon } from "../icons";
+import { Icon, MarkMotion } from "../icons";
 import { useNow, useStore } from "../store";
 import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
 import { Dock } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { DraftMarkdown, Markdown } from "./Markdown";
-import { Work } from "./Steps";
+import { RunningCalls, ToolRow, Work } from "./Steps";
 
 /**
  * The conversation, newest at the bottom, ending with what the model is
@@ -48,8 +48,10 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     fromEnd.current = scroll.current.scrollHeight - scroll.current.scrollTop;
   }
 
-  // Follow the conversation: open at its end, and stay there as it grows unless the person scrolled up.
+  // Follow the conversation: open at its end, and stay there as it grows unless the person scrolled up;
+  // scrolled well up, a button takes them back down.
   const atEnd = useRef(true);
+  const [away, setAway] = useState(false);
   useLayoutEffect(() => {
     const el = scroll.current;
     first.current = view.entries[0];
@@ -61,8 +63,16 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
-    atEnd.current = el.scrollTop + el.clientHeight > el.scrollHeight - 80;
+    const below = el.scrollHeight - el.scrollTop - el.clientHeight;
+    atEnd.current = below < 80;
+    setAway(below > 240);
     if (nearTop(el)) earlier();
+  };
+  const toEnd = () => {
+    const el = scroll.current;
+    if (!el) return;
+    atEnd.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
   // The session's current failure is told once, at the end, with Retry; earlier ones in one quiet line.
@@ -88,10 +98,14 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
               <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} sessionId={s.session_id} />
             ))}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
+            <Working view={view} steps={steps} />
             <BackgroundLine view={view} />
           </div>
         </div>
       </div>
+      <button className={`tobottom ${away ? "on" : ""}`} style={{ "--dock": `${dock}px` } as CSSProperties} aria-label={t("chat.toBottom")} title={t("chat.toBottom")} tabIndex={away ? 0 : -1} aria-hidden={!away} onClick={toEnd}>
+        <Icon name="arrowDown" />
+      </button>
       <Dock s={s} view={view} onHeight={setDock} />
     </>
   );
@@ -99,6 +113,82 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
 
 /** Close enough to the top to ask for earlier history: a page or so ahead, so it is there before the person is. */
 const nearTop = (el: HTMLElement) => el.scrollTop < el.clientHeight * 1.5;
+
+/** A call that runs, or waits its turn to: drawn at the end of the conversation, in the working line. */
+const runs = (it: WorkItem) => it.kind === "tool" && (it.tool.state === "running" || it.tool.state === "pending");
+
+/**
+ * While a task runs, the conversation's last line, beside the mark written
+ * over and over, so a slow model or tool still shows it is at work. Its
+ * time runs from the owner's message, across the tasks that carry on the
+ * work when sub-agents report. While calls run: what runs, one line even
+ * for several at once ("Reading 2 files"), which opens to each, and the
+ * time. While the model thinks or writes: a line of its own under what it
+ * writes, with the time and the tokens its finished model calls took. While
+ * it waits on the owner (an approval) or on a retry, which say so
+ * themselves, the calls that run stand alone.
+ */
+function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
+  const { t } = useTranslation("session");
+  const now = useNow(1000).getTime();
+  const live = view.live;
+  const chain = useMemo(() => openChain(view), [view.entries, view.agents]);
+  const used = live ? (chain.usage ? addTotals(chain.usage, live.usage) : live.usage) : undefined;
+  const tokens = useCountUp(used ? totals(used).tokens : 0);
+  if (!live) return null;
+  const time = <span className="wk-time">{durationText(now - (chain.started ?? live.started))}</span>;
+  const tools = steps.flatMap((x) => (x.kind === "work" ? x.items.flatMap((it) => (it.kind === "tool" && runs(it) ? [it.tool] : [])) : []));
+  // Several at once read as one line; it opens to each.
+  const calls =
+    tools.length === 0 ? null
+    : tools.length === 1 ? <ToolRow key={tools[0].call_id} tool={tools[0]} after={time} />
+    : <RunningCalls key="calls" tools={tools} after={time} />;
+  if (live.approvals.length > 0 || live.retry) return calls;
+  if (calls) {
+    return (
+      <div className="working" role="status">
+        <MarkMotion size={18} rewrite />
+        <div className="wk-now">{calls}</div>
+      </div>
+    );
+  }
+  // Writing: its words, or a call's arguments.
+  const last = steps.at(-1);
+  const end = last?.kind === "work" ? last.items.at(-1) : undefined;
+  const writing = (last?.kind === "text" && last.live) || (end?.kind === "tool" && end.tool.state === "streaming");
+  const doing = live.compacting !== undefined ? "compacting" : writing ? "writing" : "thinking";
+  return (
+    <div className="working" role="status">
+      <MarkMotion size={18} rewrite />
+      <div className="wk-line">
+        <span className="shimmer">{t(`chat.working.${doing}`)}</span>
+        <span className="wk-meta">
+          {`· ${durationText(now - (chain.started ?? live.started))}`}
+          {tokens > 0 && ` · ${t("chat.tokens", { tokens: tokensText(tokens) })}`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** A number that runs up to each larger value in 0.8s, quick then easing, instead of jumping; a smaller one (a new task) and reduced motion set it at once. */
+function useCountUp(value: number): number {
+  const [shown, setShown] = useState(value);
+  const from = useRef(value);
+  from.current = shown;
+  useEffect(() => {
+    const start = from.current;
+    if (value <= start || matchMedia("(prefers-reduced-motion: reduce)").matches) return setShown(value);
+    const t0 = performance.now();
+    let raf = requestAnimationFrame(function step(now) {
+      const p = Math.min(1, (now - t0) / 800);
+      setShown(Math.round(start + (value - start) * (1 - (1 - p) ** 3)));
+      if (p < 1) raf = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return shown;
+}
 
 /** When the owner's message before steps[i] was sent (for time lines and how long a task took). */
 function previousUser(steps: Step[], i: number): number | undefined {
@@ -222,7 +312,8 @@ function RowView({ step, previous, final, merged, current, sessionId }: RowProps
         </div>
       );
     case "work":
-      return <Work items={step.items} live={step.live} />;
+      // Calls that run are drawn in the working line at the end.
+      return <Work items={step.items.filter((it) => !runs(it))} live={step.live} />;
     case "agents":
       return <AgentCard launches={step.launches} />;
     case "report":
@@ -298,10 +389,12 @@ function useTaskParts(end: TaskEndItem, chain: TaskChain | undefined, started: n
 }
 
 function MessageTime({ at }: { at: Date }) {
-  const now = useNow(agoInterval(at));
+  // The clock only redraws it; the time is read now. When a message turns a minute old it moves to the
+  // minute clock, whose last tick can be most of a minute behind, and would read as "just now" again.
+  useNow(agoInterval(at));
   return (
     <time dateTime={at.toISOString()} title={at.toLocaleString()}>
-      {messageAgo(at, now)}
+      {messageAgo(at, new Date())}
     </time>
   );
 }

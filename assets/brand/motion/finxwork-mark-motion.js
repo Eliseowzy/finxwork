@@ -180,6 +180,19 @@ function drawSolid(ctx, theme, t, end) {
 // How much of the stroke is written t seconds into the intro (1 and up: all of it).
 const written = (t) => 1.06 * (1 - (1 - Math.min(1, t / INTRO)) ** 3);
 
+// The rewrite loop (something in progress): write the stroke on in 1.3 s, hold 0.9 s while
+// the light runs along it once, fade out in 0.5 s, rest 0.3 s, and write again.
+const REWRITE = 3;
+function rewriteAt(t) {
+  const p = t % REWRITE;
+  return {
+    reveal: Math.min(1, 1.04 * (1 - (1 - Math.min(1, p / 1.3)) ** 3)),
+    alpha: p < 2.2 ? 1 : Math.max(0, 1 - (p - 2.2) / 0.5),
+    // The light's own clock, held at the end of its one run so it does not start again in the fade.
+    sweep: Math.min(0.999, Math.max(0, p - 1.1) / 1.1) * SWEEP,
+  };
+}
+
 /**
  * One frame of the mark into ctx, filling size × size device pixels from the current origin.
  * t: seconds of motion; reveal: how much of the stroke is written (1: all).
@@ -198,9 +211,10 @@ export function drawMarkFrame(ctx, size, t, { theme = "dark", look = "strands", 
  * look: "strands", the data-point mark, for 96 px and up | "solid", for smaller sizes.
  * speed: 1 takes a data point along the whole stroke in 18 s (and the solid look's light in 2.4 s).
  * intro: first write the stroke on in writing order.
+ * rewrite: the solid mark written on, held and faded over and over, for something in progress.
  * With reduced motion it draws one still frame: the mark as it stands.
  */
-export function animateMark(canvas, { theme = "auto", look = "strands", speed = 1, intro = false } = {}) {
+export function animateMark(canvas, { theme = "auto", look = "strands", speed = 1, intro = false, rewrite = false } = {}) {
   const ctx = canvas.getContext("2d"), scheme = matchMedia("(prefers-color-scheme: dark)");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const start = performance.now();
@@ -210,7 +224,12 @@ export function animateMark(canvas, { theme = "auto", look = "strands", speed = 
     if (canvas.width !== px || canvas.height !== px) canvas.width = canvas.height = px;
     const t = still ? 0 : (now - start) / 1000, reveal = still || !intro ? 1 : written(t);
     ctx.clearRect(0, 0, px, px);
-    if (look === "solid" || reveal < 1) drawMarkFrame(ctx, px, t * speed, { theme: th, look, reveal: Math.min(1, reveal) });
+    if (rewrite && !still) {
+      const r = rewriteAt(t * speed);
+      ctx.globalAlpha = r.alpha;
+      if (r.alpha > 0) drawMarkFrame(ctx, px, r.sweep, { theme: th, look: "solid", reveal: r.reveal });
+      ctx.globalAlpha = 1;
+    } else if (rewrite || look === "solid" || reveal < 1) drawMarkFrame(ctx, px, t * speed, { theme: th, look: rewrite ? "solid" : look, reveal: Math.min(1, reveal) });
     else {
       if (key !== px + th) {
         cache = Object.assign(document.createElement("canvas"), { width: px, height: px });

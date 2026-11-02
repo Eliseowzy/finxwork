@@ -75,7 +75,7 @@ export function conversation(v: SessionView): Step[] {
 
   const byCall = new Map(v.agents.map((a) => [a.call_id, a]));
   const byId = new Map(v.agents.map((a) => [a.id, a]));
-  const ends = taskEnds(v);
+  const { ends } = taskEnds(v);
 
   const out: Step[] = [];
   const work = (item: WorkItem) => {
@@ -188,7 +188,7 @@ export function conversation(v: SessionView): Step[] {
  * too. Rounds of agents that neither reported later nor run or wait stopped
  * now (the session closed under them) do not hold it open.
  */
-function taskEnds(v: SessionView): Map<number, { hidden: boolean; chain?: TaskChain }> {
+function taskEnds(v: SessionView): { ends: Map<number, { hidden: boolean; chain?: TaskChain }>; open: { started?: number; usage?: UsageTotals } } {
   const running = new Set(v.agents.filter((a) => a.status === "running" || a.status === "interrupted").map((a) => a.id));
   // Where each agent's rounds ended: its reports, and calls that returned one.
   const reported = new Map<string, number[]>();
@@ -231,7 +231,16 @@ function taskEnds(v: SessionView): Map<number, { hidden: boolean; chain?: TaskCh
     agents = 0;
     tasks = 0;
   });
-  return out;
+  return { ends: out, open: { started, usage } };
+}
+
+/**
+ * The piece of work not ended yet: when the owner's message that began it
+ * was sent, and what its ended tasks used (a task that waits on sub-agents
+ * goes on in another when they report), so a running task is told as a whole.
+ */
+export function openChain(v: SessionView): { started?: number; usage?: UsageTotals } {
+  return taskEnds(v).open;
 }
 
 /** A tool result's structured details (spawn_agent's and send_message's: agent_id, background, reported). */

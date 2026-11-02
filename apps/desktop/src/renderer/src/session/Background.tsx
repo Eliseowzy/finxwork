@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   addTotals, agentBrief, agentTaskOf, conversation, runningAgents, taskGists, tokensText, totals,
@@ -15,7 +15,7 @@ import { Work } from "./Steps";
  * The background panel: a column of the window on the right, flush with its top, on the
  * content's own ground, with no cards or borders inside. The session's background tasks
  * (sub-agents for now) are rows like the sidebar's sessions: a working one's name runs, a
- * stopped or failed one has a dot. The selected one's work is below the list, as its own
+ * stopped or failed one has a dot. The selected one's work opens under its row, as its own
  * conversation: finx's brief and messages, its steps one per line, its report at the end,
  * following the end while it works.
  */
@@ -39,7 +39,7 @@ export function Background({ s, view }: { s: ListSession; view: SessionView }) {
   const gists = useMemo(() => taskGists(view.agents.map((a) => agentTaskOf(view, a))), [view.entries, view.agents]);
   const sel = view.agents.find((a) => a.id === st.agent);
   return (
-    <aside className={`bgp ${sel ? "" : "nosel"}`} aria-label={t("background.title")}>
+    <aside className="bgp" aria-label={t("background.title")}>
       <div className="bgp-top drag">
         <h3>{t("background.title")}</h3>
         {running > 0 && (
@@ -58,10 +58,12 @@ export function Background({ s, view }: { s: ListSession; view: SessionView }) {
           {tokens > 0 && <span className="n">{t("background.tokens", { tokens: tokensText(tokens) })}</span>}
         </div>
         {view.agents.map((a, i) => (
-          <Row key={a.id} a={a} gist={gists[i]} selected={sel?.id === a.id} now={now} />
+          <Fragment key={a.id}>
+            <Row a={a} gist={gists[i]} selected={sel?.id === a.id} now={now} />
+            {sel?.id === a.id && <Process s={s} a={a} />}
+          </Fragment>
         ))}
       </div>
-      {sel && <Process key={sel.id} s={s} a={sel} />}
     </aside>
   );
 }
@@ -109,22 +111,27 @@ function Row({ a, gist, selected, now }: { a: AgentView; gist: string; selected:
   );
 }
 
-/** The selected agent's work: its own conversation, read-only, following its end while it works. */
+/** The selected agent's work, under its row: its own conversation, read-only, following its end while it works. */
 function Process({ s, a }: { s: ListSession; a: AgentView }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const steps = useMemo(() => conversation(a.view), [a.view]);
+  const box = useRef<HTMLDivElement>(null);
   const log = useRef<HTMLDivElement>(null);
   const follow = useRef(true);
+  // Opened from a row low in the list: bring it into view.
+  useLayoutEffect(() => {
+    box.current?.scrollIntoView({ block: "nearest" });
+  }, []);
   useLayoutEffect(() => {
     const el = log.current;
     if (el && follow.current) el.scrollTop = el.scrollHeight;
   }, [steps]);
   const firstUser = steps.findIndex((x) => x.kind === "user");
   return (
-    <div className="bgp-work">
+    <div className="bgp-work" ref={box}>
       <div className="grp-h">
-        <span className="gt">{t("background.process", { name: a.name })}</span>
+        <span className="gt">{t("background.process")}</span>
         <span className="sp" />
         {a.status === "running" && (
           <button className="qb danger" onClick={() => st.op(s.session_id, { type: "agent_interrupt", agent: a.id })}>

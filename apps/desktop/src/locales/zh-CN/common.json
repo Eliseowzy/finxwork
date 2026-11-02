@@ -94,8 +94,10 @@
     "today": "今天",
     "yesterday": "昨天",
     "seconds_other": "{{count}} 秒",
-    "minutesSeconds": "{{m}} 分 {{s}} 秒",
-    "secondsAgo_other": "{{count}} 秒前",
+    "minutes_other": "{{count}} 分",
+    "hours_other": "{{count}} 小时",
+    "days_other": "{{count}} 天",
+    "pair": "{{big}} {{small}}",
     "daysAgo_other": "{{count}} 天前"
   },
   "steps": {
@@ -103,49 +105,57 @@
       "done": "已读取",
       "doing": "正在读取",
       "do": "读取",
-      "count_other": "读取了 {{count}} 个文件"
+      "count_other": "读取了 {{count}} 个文件",
+      "doingCount_other": "正在读取 {{count}} 个文件"
     },
     "edit": {
       "done": "已修改",
       "doing": "正在修改",
       "do": "修改",
-      "count_other": "修改了 {{count}} 个文件"
+      "count_other": "修改了 {{count}} 个文件",
+      "doingCount_other": "正在修改 {{count}} 个文件"
     },
     "delete": {
       "done": "已删除",
       "doing": "正在删除",
       "do": "删除",
-      "count_other": "删除了 {{count}} 个文件"
+      "count_other": "删除了 {{count}} 个文件",
+      "doingCount_other": "正在删除 {{count}} 个文件"
     },
     "move": {
       "done": "已移动",
       "doing": "正在移动",
       "do": "移动",
-      "count_other": "移动了 {{count}} 个文件"
+      "count_other": "移动了 {{count}} 个文件",
+      "doingCount_other": "正在移动 {{count}} 个文件"
     },
     "search": {
       "done": "已搜索",
       "doing": "正在搜索",
       "do": "搜索",
-      "count_other": "搜索了 {{count}} 次"
+      "count_other": "搜索了 {{count}} 次",
+      "doingCount_other": "正在进行 {{count}} 次搜索"
     },
     "execute": {
       "done": "已运行",
       "doing": "正在运行",
       "do": "运行",
-      "count_other": "运行了 {{count}} 条命令"
+      "count_other": "运行了 {{count}} 条命令",
+      "doingCount_other": "正在运行 {{count}} 条命令"
     },
     "fetch": {
       "done": "已访问",
       "doing": "正在访问",
       "do": "访问",
-      "count_other": "访问了 {{count}} 个网页"
+      "count_other": "访问了 {{count}} 个网页",
+      "doingCount_other": "正在访问 {{count}} 个网页"
     },
     "other": {
       "done": "已调用",
       "doing": "正在调用",
       "do": "调用",
-      "count_other": "调用了 {{count}} 个工具"
+      "count_other": "调用了 {{count}} 个工具",
+      "doingCount_other": "正在调用 {{count}} 个工具"
     },
     "denied": {
       "done": "已拒绝",
@@ -156,6 +166,7 @@
     },
     "cancelled": "未执行",
     "awaiting": "待批准",
+    "doingMixed_other": "正在进行 {{count}} 项操作",
     "separator": "，"
   },
   "permission": {

@@ -10,12 +10,17 @@
     "earlier": "显示更早的记录",
     "loadingEarlier": "正在加载更早的记录",
     "log": "对话",
-    "inProgress": "进行中",
+    "working": {
+      "thinking": "思考中",
+      "writing": "生成中",
+      "compacting": "整理上下文"
+    },
     "thinking": "正在思考",
     "thought": "思考",
     "thinkingHidden": "服务商没有公开这段推理",
     "image": "图片（点击放大或缩小）",
     "copy": "拷贝",
+    "toBottom": "回到底部",
     "compacted": "上下文已压缩：{{before}} → {{after}} tokens",
     "interrupted": "你打断了这个任务。再发一条消息就会接着做。",
     "ended": {
@@ -94,7 +99,7 @@
     "none": "还没有后台任务",
     "stopAll": "全部停止",
     "stop": "停止",
-    "process": "{{name}} 的执行过程",
+    "process": "执行过程",
     "brief": "finx 的任务说明",
     "message": "finx 发来的消息",
     "expand": "展开全文",

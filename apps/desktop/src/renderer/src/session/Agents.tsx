@@ -17,10 +17,10 @@ export function agentTime(a: AgentView, now: number): string {
   return a.elapsed_ms !== undefined ? durationText(a.elapsed_ms) : "";
 }
 
-/** The status glyph: a spinner while it works, a check when done, a pause when stopped. */
+/** The status glyph: none while it works (its name shimmers instead), a check when done, a pause when stopped. */
 export function AgentGlyph({ status }: { status: AgentStatus | undefined }) {
   const { t } = useTranslation("session");
-  if (status === undefined || status === "running") return <span className="gl"><span className="mini-spin" role="img" aria-label={t("agents.status.running")} /></span>;
+  if (status === undefined || status === "running") return <span className="gl" />;
   const icon = status === "completed" ? "check" : status === "interrupted" ? "pause" : "x";
   const tone = status === "completed" ? "ok" : status === "interrupted" ? "int" : "bad";
   return (
@@ -55,7 +55,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
         return (
           <button key={l.call_id} className="agc-r" title={t("agents.open")} onClick={() => show(a?.id)}>
             <AgentGlyph status={a?.status} />
-            <span className="agc-n">{a?.name ?? l.name}</span>
+            <span className={`agc-n ${status === "running" ? "shimmer" : ""}`}>{a?.name ?? l.name}</span>
             <span className="agc-g">{gists[i]}</span>
             <span className={`agc-s ${tone}`}>
               <span>{t(`agents.status.${status}`)}</span>
@@ -110,7 +110,7 @@ export function ReportCard({ step }: { step: Extract<Step, { kind: "report" }> }
   );
 }
 
-/** At the conversation's end: how many background tasks still work (or wait after a stop); opens the panel. */
+/** At the conversation's end, under the working line: how many background tasks still work (or wait after a stop); opens the panel. */
 export function BackgroundLine({ view }: { view: SessionView }) {
   const { t } = useTranslation("session");
   const st = useStore();
@@ -120,7 +120,6 @@ export function BackgroundLine({ view }: { view: SessionView }) {
   const on = st.background ? "on" : "";
   return (
     <button className={`bgind ${running === 0 ? "int" : ""} ${on}`} aria-expanded={st.background} onClick={() => st.set({ background: !st.background })}>
-      <span className={`sdot ${running > 0 ? "r" : "w"}`} />
       <span>{running > 0 ? t("agents.running", { count: running }) : t("agents.stopped", { count: stopped })}</span>
       <Icon name="chevR" />
     </button>

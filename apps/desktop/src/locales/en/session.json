@@ -10,12 +10,17 @@
     "earlier": "Show earlier messages",
     "loadingEarlier": "Loading earlier messages",
     "log": "Conversation",
-    "inProgress": "In progress",
+    "working": {
+      "thinking": "Thinking",
+      "writing": "Writing",
+      "compacting": "Compacting the context"
+    },
     "thinking": "Thinking",
     "thought": "Thought",
     "thinkingHidden": "The provider keeps this reasoning private",
     "image": "Image (click to enlarge or shrink)",
     "copy": "Copy",
+    "toBottom": "Jump to the latest",
     "compacted": "Context compacted: {{before}} → {{after}} tokens",
     "interrupted": "You interrupted this task. Send a message to go on.",
     "ended": {
@@ -102,7 +107,7 @@
     "none": "No background tasks yet",
     "stopAll": "Stop all",
     "stop": "Stop",
-    "process": "What {{name}} did",
+    "process": "What it did",
     "brief": "finx's brief",
     "message": "Message from finx",
     "expand": "Show all",

@@ -1,14 +1,14 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
-import { toolVerb, workText } from "../format";
+import { doingText, toolVerb, workText } from "../format";
 import { Icon } from "../icons";
 import { Code } from "./Code";
 
 /**
  * What the model did between its words: one step alone as its own line,
  * several as one grey line ("Read 2 files, ran 3 commands") that opens to
- * show each. Folded until the owner opens it; the one running spins.
+ * show each. Folded until the owner opens it; what is in progress shimmers.
  */
 export function Work({ items, live, flat = false }: { items: WorkItem[]; live: boolean; flat?: boolean }) {
   // A call waiting for approval shows in the approval at the bottom, as the baseline's pending question does.
@@ -21,22 +21,25 @@ export function Work({ items, live, flat = false }: { items: WorkItem[]; live: b
 }
 
 function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
-  const { t } = useTranslation("session");
+  return <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} />)} />;
+}
+
+/** Calls running at once, as one line ("Reading 2 files") with `after` on it, each on its own line when opened. */
+export function RunningCalls({ tools, after }: { tools: ToolView[]; after?: ReactNode }) {
+  return <Fold title={doingText(tools)} live after={after} body={tools.map((x) => <ToolRow key={x.call_id} tool={x} />)} />;
+}
+
+/** A line that opens to show the steps under it; it shimmers while they go. */
+function Fold({ title, live, after, body }: { title: string; live: boolean; after?: ReactNode; body: ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`tgroup ${open ? "open" : ""}`}>
-      <button className="tg-h" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {live && <span className="mini-spin" role="img" aria-label={t("chat.inProgress")} />}
-        <span>{workText(items)}</span>
+      <button className={`tg-h ${live ? "shimmer" : ""}`} aria-expanded={open} aria-busy={live || undefined} onClick={() => setOpen(!open)}>
+        <span>{title}</span>
+        {after}
         <Icon name="caret" className="chev" />
       </button>
-      {open && (
-        <div className="tg-b">
-          {items.map((it) => (
-            <Item key={it.key} it={it} />
-          ))}
-        </div>
-      )}
+      {open && <div className="tg-b">{body}</div>}
     </div>
   );
 }
@@ -55,8 +58,7 @@ function Thinking({ text, redacted, live }: { text: string; redacted: boolean; l
   const body = !redacted && text.trim() !== "";
   return (
     <div className={`tool think ${open && body ? "open" : ""}`}>
-      <button className="th" onClick={() => body && setOpen(!open)} aria-expanded={body ? open : undefined}>
-        {live && <span className="mini-spin" role="img" aria-label={t("chat.inProgress")} />}
+      <button className={`th ${live ? "shimmer" : ""}`} onClick={() => body && setOpen(!open)} aria-expanded={body ? open : undefined} aria-busy={live || undefined}>
         <span className="vb">{live ? t("chat.thinking") : t("chat.thought")}</span>
         <span className="sm2">{gist}</span>
         {body && <Icon name="caret" className="chev" />}
@@ -66,31 +68,36 @@ function Thinking({ text, redacted, live }: { text: string; redacted: boolean; l
   );
 }
 
-/** One tool call: what it did, and its output when opened. A command reads as code. */
-function ToolRow({ tool }: { tool: ToolView }) {
+/**
+ * One tool call: what it did, and its output when opened. A command reads as
+ * code. While the model is still writing a call, what it is on is not known
+ * yet: the verb alone ("Editing…"). `after`: what follows on the line (how long the work has run).
+ */
+export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) {
   const { t } = useTranslation("session");
   const [open, setOpen] = useState(false);
   const [big, setBig] = useState(false);
   const output = toolOutput(tool);
   // Images a tool returned (a browser screenshot, an image read): a thumbnail, larger on a click.
   const images = (tool.result?.content ?? []).flatMap((c) => (c.type === "image" ? [c] : []));
-  const spinning = tool.state === "running" || tool.state === "streaming";
+  const spinning = tool.state === "running" || tool.state === "pending" || tool.state === "streaming";
+  const unknown = tool.state === "streaming" && tool.title === tool.name;
   // A message to a sub-agent reads as one: "Sent to name: the message".
   const toAgent = tool.name === "send_message";
   const object = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : toolObject(tool);
   const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : toolVerb(tool);
   return (
     <div className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}>
-      <button className="th" onClick={() => output && setOpen(!open)} aria-expanded={output ? open : undefined}>
-        {spinning && <span className="mini-spin" role="img" aria-label={t("chat.inProgress")} />}
-        <span className="vb">{verb}</span>
-        {tool.category === "execute" ? (
+      <button className={`th ${spinning ? "shimmer" : ""}`} onClick={() => output && setOpen(!open)} aria-expanded={output ? open : undefined} aria-busy={spinning || undefined}>
+        <span className="vb">{unknown ? `${verb}…` : verb}</span>
+        {unknown ? null : tool.category === "execute" ? (
           <code className="sm2 cmd" title={tool.title}>
             <Code text={object} lang="bash" />
           </code>
         ) : (
           <span className="sm2" title={tool.title}>{object}</span>
         )}
+        {after}
         {output && <Icon name="caret" className="chev" />}
       </button>
       {images.length > 0 && (
