@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
 import { doingText, toolVerb, workText } from "../format";
@@ -65,6 +65,55 @@ function Thinking({ text, redacted, live }: { text: string; redacted: boolean; l
       </button>
       {body && <div className="out sel-text">{text.trim()}</div>}
     </div>
+  );
+}
+
+/**
+ * The thinking in progress, in the working line: `children` (what it does,
+ * how long) on a line that opens it, and under it its last three lines as
+ * they come, older ones fading out at the top. Opened, the whole of it,
+ * following the end unless the owner scrolls up.
+ */
+export function LiveThinking({ text, children }: { text: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [over, setOver] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const atEnd = useRef(true);
+  const body = text.trim();
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    if (open && atEnd.current) el.scrollTop = el.scrollHeight;
+    // Closed, what is pushed out at the top is not in scrollHeight: measure what is inside.
+    setOver((el.firstElementChild as HTMLElement).offsetHeight > el.clientHeight + 1);
+  }, [body, open]);
+  return (
+    <>
+      <button
+        className="wk-line tk-h"
+        onClick={() => {
+          if (!body) return;
+          atEnd.current = true;
+          setOpen(!open);
+        }}
+        aria-expanded={body ? open : undefined}
+      >
+        {children}
+        {body && <Icon name="caret" className="chev" />}
+      </button>
+      {body && (
+        <div
+          ref={box}
+          className={`tk-peek sel-text ${open ? "open" : over ? "over" : ""}`}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8;
+          }}
+        >
+          <div>{body}</div>
+        </div>
+      )}
+    </>
   );
 }
 

@@ -12,7 +12,7 @@ import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
 import { Dock } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { DraftMarkdown, Markdown } from "./Markdown";
-import { RunningCalls, ToolRow, Work } from "./Steps";
+import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 
 /**
  * The conversation, newest at the bottom, ending with what the model is
@@ -116,6 +116,8 @@ const nearTop = (el: HTMLElement) => el.scrollTop < el.clientHeight * 1.5;
 
 /** A call that runs, or waits its turn to: drawn at the end of the conversation, in the working line. */
 const runs = (it: WorkItem) => it.kind === "tool" && (it.tool.state === "running" || it.tool.state === "pending");
+/** The thinking the model is writing now: drawn in the working line too, and back among the steps once it is done. */
+const thinks = (it: WorkItem) => it.kind === "thinking" && it.live;
 
 /**
  * While a task runs, the conversation's last line, beside the mark written
@@ -124,7 +126,8 @@ const runs = (it: WorkItem) => it.kind === "tool" && (it.tool.state === "running
  * work when sub-agents report. While calls run: what runs, one line even
  * for several at once ("Reading 2 files"), which opens to each, and the
  * time. While the model thinks or writes: a line of its own under what it
- * writes, with the time and the tokens its finished model calls took. While
+ * writes, with the time and the tokens its finished model calls took; while
+ * it thinks, the last lines of its thinking under that line. While
  * it waits on the owner (an approval) or on a retry, which say so
  * themselves, the calls that run stand alone.
  */
@@ -157,16 +160,26 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
   const end = last?.kind === "work" ? last.items.at(-1) : undefined;
   const writing = (last?.kind === "text" && last.live) || (end?.kind === "tool" && end.tool.state === "streaming");
   const doing = live.compacting !== undefined ? "compacting" : writing ? "writing" : "thinking";
+  const line = (
+    <>
+      <span className="shimmer">{t(`chat.working.${doing}`)}</span>
+      <span className="wk-meta">
+        {`· ${durationText(now - (chain.started ?? live.started))}`}
+        {tokens > 0 && ` · ${t("chat.tokens", { tokens: tokensText(tokens) })}`}
+      </span>
+    </>
+  );
+  const thought = doing === "thinking" && end?.kind === "thinking" && end.live ? end : undefined;
   return (
     <div className="working" role="status">
       <MarkMotion size={18} rewrite />
-      <div className="wk-line">
-        <span className="shimmer">{t(`chat.working.${doing}`)}</span>
-        <span className="wk-meta">
-          {`· ${durationText(now - (chain.started ?? live.started))}`}
-          {tokens > 0 && ` · ${t("chat.tokens", { tokens: tokensText(tokens) })}`}
-        </span>
-      </div>
+      {thought ? (
+        <div className="wk-now">
+          <LiveThinking text={thought.text}>{line}</LiveThinking>
+        </div>
+      ) : (
+        <div className="wk-line">{line}</div>
+      )}
     </div>
   );
 }
@@ -312,8 +325,8 @@ function RowView({ step, previous, final, merged, current, sessionId }: RowProps
         </div>
       );
     case "work":
-      // Calls that run are drawn in the working line at the end.
-      return <Work items={step.items.filter((it) => !runs(it))} live={step.live} />;
+      // Calls that run, and the thinking in progress, are drawn in the working line at the end.
+      return <Work items={step.items.filter((it) => !runs(it) && !thinks(it))} live={step.live} />;
     case "agents":
       return <AgentCard launches={step.launches} />;
     case "report":

@@ -291,6 +291,11 @@ export function replyScript(prompt: string): TaskScript {
         ],
       },
       {
+        // Long enough to fill the three lines the working line shows of thinking in progress.
+        think:
+          "目录里是一个 Cargo 工作区：Cargo.toml 在根上，crates 下面是各个包，docs 里放设计文档。README 只有一句介绍，没有写怎么构建和运行，也没有列出各个包的分工。" +
+          "这个请求要动哪几个包现在还说不准，直接改代码风险比较大。先把任务记下来，等接上真正的内核、能跑测试之后再动手。\n" +
+          "NOTES.md 里已经有「待办」一节，按它的格式在下面加一条就行，不要改动别的内容。",
         say: "先把这个任务记到项目的 NOTES.md 里，接上内核之后可以从这里继续。",
         tools: [
           {
