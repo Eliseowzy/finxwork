@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // The 自定义 page against the real finx (customize-design §15, CG1: one source of truth).
-// The catalog is empty for now, so 发现 shows its empty state. A skill is added from the
+// The skill catalog is empty for now, so 发现 shows its empty state. A skill is added from the
 // command line and must show up in 我的; in the app a custom connector with a locked secret is
 // added. `finx exec` then uses both, and `finx mcp remove` deletes the connector, which the
 // page must show within seconds while the keychain loses its secret.

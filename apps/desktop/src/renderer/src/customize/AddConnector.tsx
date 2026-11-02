@@ -5,8 +5,9 @@ import { Dialog } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { localIdentity, remoteIdentity } from "../../../shared/identity";
-import { credentialName, joinCommand, splitCommand } from "./model";
-import { LocalFields, RemoteFields, row, type Auth, type Client, type RemoteState, type Row, type Transport } from "./ConnectorFields";
+import type { CatalogConnector, OAuthAuth, TokenAuth } from "../../../shared/catalog";
+import { catalogText, credentialName, joinCommand, splitCommand } from "./model";
+import { LocalFields, LocalSignIn, RemoteFields, row, type Auth, type Client, type Offer, type RemoteState, type Row, type Transport } from "./ConnectorFields";
 import { ServerTile } from "./parts";
 import type { Customize } from "./useCustomize";
 
@@ -15,6 +16,8 @@ import type { Customize } from "./useCustomize";
 // a name and an address first. A remote address is checked (mcp/probe), then its sign-in is
 // set up with what the check found; a command gets its form and is checked when added.
 // Nothing is written before a check passes, unless the person adds it anyway (DD-54).
+// From 发现 (§10.6) the address is the catalog's and the sheet opens on the settings, the
+// sign-in choices being the ways the provider accepts, its recommended one chosen (DD-67).
 
 type Detected =
   | { kind: "remote"; url: string; host: string; insecure: boolean; sse: boolean; json?: boolean; name?: string; headers: Row[] }
@@ -89,28 +92,32 @@ export function suggestName(d: Detected | null): string {
     .slice(0, 32);
 }
 
-export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; onClose: () => void; onAdded: (name: string) => void; onOpen: (name: string) => void }) {
+export function AddConnector({ c, catalog, onClose, onAdded, onOpen }: { c: Customize; catalog?: CatalogConnector; onClose: () => void; onAdded: (name: string) => void; onOpen: (name: string) => void }) {
   const { t } = useTranslation("customize");
   const st = useStore();
-  const [step, setStep] = useState<Step>("entry");
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
+  const ways = catalog?.install.auth ?? [];
+  const tokenWay = ways.find((w): w is TokenAuth => w.kind === "token");
+  const oauthWay = ways.find((w): w is OAuthAuth => w.kind === "oauth");
+  const start = !catalog ? "" : "url" in catalog.install ? catalog.install.url : joinCommand(catalog.install.command, catalog.install.args);
+  const [step, setStep] = useState<Step>(!catalog ? "entry" : "url" in catalog.install ? "remote" : "local");
+  const [name, setName] = useState(catalog?.id ?? "");
+  const [address, setAddress] = useState(start);
   const [errors, setErrors] = useState<{ name?: string; address?: string }>({});
-  const [d, setD] = useState<Detected | null>(null);
+  const [d, setD] = useState<Detected | null>(() => (catalog ? detect(start) : null));
   const [steps, setSteps] = useState<McpProbeStep[]>([]);
   const [stepIds, setStepIds] = useState<McpProbeStepId[]>(REMOTE_STEPS);
   const [probed, setProbed] = useState<McpProbeResult | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [auth, setAuth] = useState<Auth>("none");
+  const [auth, setAuth] = useState<Auth>(ways[0]?.kind ?? "none");
   const [client, setClient] = useState<Client>("auto");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
   const [token, setToken] = useState("");
-  const [header, setHeader] = useState("Authorization");
-  const [prefix, setPrefix] = useState("Bearer ");
+  const [header, setHeader] = useState(tokenWay?.header ?? "Authorization");
+  const [prefix, setPrefix] = useState(tokenWay?.prefix ?? "Bearer ");
   const [headers, setHeaders] = useState<Row[]>([]);
-  const [transport, setTransport] = useState<Transport>("streamable_http");
-  const [command, setCommand] = useState("");
+  const [transport, setTransport] = useState<Transport>(() => (d?.kind === "remote" && d.sse ? "sse" : "streamable_http"));
+  const [command, setCommand] = useState(catalog && "command" in catalog.install ? start : "");
   const [env, setEnv] = useState<Row[]>([]);
   const [cwd, setCwd] = useState("");
   const [busy, setBusy] = useState(false);
@@ -215,10 +222,13 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
     }
   };
 
+  /** The address for a sign-in: a catalog entry may sign in at an address of its own. */
+  const urlFor = (a: Auth) => (a === "oauth" && oauthWay?.url) || (d as { url: string }).url;
+
   /** The remote server as it will be written; secrets as references. */
   const remoteServer = async (): Promise<McpServerConfig> => {
     const det = d as Extract<Detected, { kind: "remote" }>;
-    const server: McpServerConfig = { name, url: det.url };
+    const server: McpServerConfig = { name, url: urlFor(auth) };
     const urlSays = det.sse ? "sse" : "streamable_http";
     if (transport !== urlSays) server.transport = transport;
     const extra: Record<string, string> = {};
@@ -237,6 +247,8 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
     const server: McpServerConfig = { name, command: argv[0], ...(argv.length > 1 ? { args: argv.slice(1) } : {}) };
     const vars: Record<string, string> = {};
     for (const r of env.filter((r) => r.key.trim())) vars[r.key.trim()] = r.locked && r.value ? await stage(credentialName(name, r.key.trim()), r.value) : r.value;
+    // A catalog entry's token, only when that is the way chosen.
+    if (auth === "token" && tokenWay?.env && token.trim()) vars[tokenWay.env] = await stage(credentialName(name, tokenWay.env), token.trim());
     if (Object.keys(vars).length) server.env = vars;
     if (cwd.trim()) server.cwd = cwd.trim();
     return server;
@@ -384,6 +396,8 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
       <div className="cz-summary">
         {probed?.icon ? (
           <ServerTile name={name} icon={probed.icon} />
+        ) : catalog ? (
+          <ServerTile name={catalog.name} mono={catalog.mono} />
         ) : (
           <div className="cz-tile">
             <Icon name={remote ? "globe" : "terminal"} />
@@ -391,12 +405,12 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
         )}
         <div className="t">
           <div className="n">
-            {name}
+            {catalog?.name ?? name}
             <span className="badge">{remote ? (transport === "sse" ? t("addc.remoteSse") : t("addc.remoteShort")) : t("addc.local")}</span>
           </div>
-          {(remote || step !== "local") && <div className="a mono">{remote ? (d as { url: string }).url : command}</div>}
+          {(remote || step !== "local") && <div className="a mono">{remote ? urlFor(auth) : command}</div>}
         </div>
-        {editable && (
+        {editable && !catalog && (
           <button className="link" onClick={edit}>
             {t("addc.change")}
           </button>
@@ -468,12 +482,18 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
   );
 
   const oauthFound = probed?.auth?.oauth ?? null;
+  const offer: Offer | undefined = catalog && {
+    ways: ways.map((w) => w.kind),
+    note: (a: Auth) => catalogText(t, `catalog.ways.${catalog.id}.${a}`, { defaultValue: "" }),
+    tokenURL: tokenWay?.createURL,
+    by: catalog.by,
+  };
   const fields: RemoteState = { auth, setAuth, client, setClient, clientId, setClientId, clientSecret, setClientSecret, token, setToken, header, setHeader, prefix, setPrefix, headers, setHeaders, transport, setTransport };
   const remoteView = (
     <>
       {summary(true)}
       {failure && <div className="cz-errbox cz-gap">{failure}</div>}
-      <RemoteFields s={fields} probed={probed} host={(d as { host?: string } | null)?.host ?? ""} />
+      <RemoteFields s={fields} probed={probed} host={catalog?.by ?? (d as { host?: string } | null)?.host ?? ""} offer={offer} />
       <p className="cz-trust">{t("addc.trust")}</p>
     </>
   );
@@ -482,6 +502,7 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
   const localView = (
     <>
       {summary(true)}
+      {offer && tokenWay?.env && <LocalSignIn auth={auth} setAuth={setAuth} token={token} setToken={setToken} env={tokenWay.env} offer={offer} />}
       <LocalFields command={command} setCommand={setCommand} env={env} setEnv={setEnv} cwd={cwd} setCwd={setCwd} />
       {failure && <div className="cz-errbox cz-gap">{failure}</div>}
       <p className="cz-trust">{t("addc.localTrust")}</p>
@@ -494,7 +515,7 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
         <span className="mini-spin" />
       </div>
       <b>{t("addc.loginTitle", { name })}</b>
-      <p>{t("addc.loginText", { issuer: oauthFound?.authorization_server ?? "" })}</p>
+      <p>{t("addc.loginText", { issuer: oauthFound?.authorization_server ?? catalog?.by ?? "" })}</p>
       {authorizeUrl && (
         <button className="link" data-authorize={authorizeUrl} onClick={() => void navigator.clipboard?.writeText(authorizeUrl)}>
           {t("addc.copyLink")}
@@ -575,7 +596,7 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
   );
 
   const okToAdd =
-    step === "local" ? argv.length > 0 : auth === "token" ? !!token.trim() || headers.some((h) => h.value) : auth === "oauth" && client === "own" ? !!clientId.trim() : true;
+    step === "local" ? argv.length > 0 && !(tokenWay?.env && auth === "token" && !token.trim()) : auth === "token" ? !!token.trim() || headers.some((h) => h.value) : auth === "oauth" && client === "own" ? !!clientId.trim() : true;
   const foot =
     step === "entry" ? (
       <>
@@ -622,8 +643,9 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
       </button>
     ) : (
       <>
-        <button className="btn" onClick={edit}>
-          {t("addc.back")}
+        {/* From 发现 there is no address step to go back to. */}
+        <button className="btn" onClick={catalog ? close : edit}>
+          {catalog ? t("addc.cancel") : t("addc.back")}
         </button>
         <button className="btn primary" disabled={busy || !okToAdd} onClick={() => void add(step)}>
           {busy && <span className="mini-spin cz-spin-solid" />}
@@ -632,7 +654,7 @@ export function AddConnector({ c, onClose, onAdded, onOpen }: { c: Customize; on
       </>
     );
 
-  const title = step === "local" ? t("addc.titleLocal") : t("addc.title");
+  const title = catalog ? t("addc.titleCatalog", { name: catalog.name }) : step === "local" ? t("addc.titleLocal") : t("addc.title");
   return (
     <Dialog label={title} width={520} className="cz-sheet cz-add" onClose={close}>
       <h3>{title}</h3>

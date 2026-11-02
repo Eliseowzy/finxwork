@@ -26,7 +26,10 @@ export type TokenAuth = {
   createURL: string;
 };
 
-export type ConnectorAuth = { kind: "none" } | TokenAuth;
+/** Signing in with an account (OAuth), at `url` when that is not the usual address. */
+export type OAuthAuth = { kind: "oauth"; url?: string };
+
+export type ConnectorAuth = { kind: "none" } | OAuthAuth | TokenAuth;
 
 export type CatalogConnector = {
   /** Also the server's name in the configuration. */
@@ -38,12 +41,40 @@ export type CatalogConnector = {
   docs: string;
   /** When the entry was last checked against the provider. */
   verifiedAt: string;
-  install: { url: string; auth: ConnectorAuth } | { command: string; args: string[]; auth: ConnectorAuth };
+  /**
+   * `auth`: every way the provider accepts, the recommended one first. The person picks one
+   * when adding; only an entry that needs nothing is added with one click.
+   */
+  install: { url: string; auth: ConnectorAuth[] } | { command: string; args: string[]; auth: ConnectorAuth[] };
 };
 
 export const catalogSkills: CatalogSkill[] = [];
 
-export const catalogConnectors: CatalogConnector[] = [];
+export const catalogConnectors: CatalogConnector[] = [
+  // Keyless: search and fetch at a free rate limit. Signing in (at ?login, as Exa's
+  // documentation has it) or a key also turns on the research agent.
+  {
+    id: "exa",
+    name: "Exa",
+    mono: "Ex",
+    by: "Exa",
+    docs: "https://exa.ai/docs/get-started/exa-mcp",
+    verifiedAt: "2026-11-02",
+    install: {
+      url: "https://mcp.exa.ai/mcp",
+      auth: [
+        { kind: "none" },
+        { kind: "oauth", url: "https://mcp.exa.ai/mcp?login" },
+        { kind: "token", header: "x-api-key", prefix: "", placeholder: "Exa API key", createURL: "https://dashboard.exa.ai/api-keys" },
+      ],
+    },
+  },
+];
+
+/** Whether the entry needs nothing from the person, so it can be added with one click. */
+export function oneClick(c: CatalogConnector): boolean {
+  return c.install.auth.every((a) => a.kind === "none");
+}
 
 /** The command line a stdio entry runs, as the page shows it. */
 export function commandLine(c: CatalogConnector): string | null {
