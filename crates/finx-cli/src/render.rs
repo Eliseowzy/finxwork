@@ -260,10 +260,11 @@ impl Renderer {
                 self.end_line();
                 eprintln!("{}", self.style.dim(&usage_line(usage)));
             }
-            EventMsg::AgentStarted { name, .. } => {
+            EventMsg::AgentStarted { name, description, .. } => {
                 self.end_thinking();
                 self.end_line();
-                eprintln!("{}", self.style.dim(&format!("· agent {name} started")));
+                let label = if description.is_empty() { String::new() } else { format!(": {description}") };
+                eprintln!("{}", self.style.dim(&format!("· agent {name} started{label}")));
             }
             EventMsg::AgentStatus { name, status, .. } if *status != AgentStatus::Running => {
                 self.end_thinking();
@@ -314,7 +315,11 @@ pub fn tool_summary(name: &str, args: &Value) -> String {
             let count = args.get("edits").and_then(Value::as_array).map_or(0, Vec::len);
             format!("{} ({count} change(s))", field("path"))
         }
-        "spawn_agent" => truncate(format!("{} {}", field("name"), field("task")).trim_start(), 120),
+        // Its label says what it is for; calls from before it had one show the start of the task.
+        "spawn_agent" => {
+            let about = if field("description").is_empty() { field("task") } else { field("description") };
+            truncate(format!("{} {about}", field("name")).trim_start(), 120)
+        }
         "tool_search" => truncate(format!("{} {}", field("server"), field("query")).trim(), 120),
         "call_tool" => {
             let arguments = args.get("arguments").map(Value::to_string).unwrap_or_default();

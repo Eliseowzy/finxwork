@@ -434,10 +434,20 @@ impl AcpEncoder {
                 }
             }
             // A sub-agent shows as a tool call of its own while it works.
-            EventMsg::AgentStarted { agent_id, name, .. } => {
+            EventMsg::AgentStarted {
+                agent_id,
+                name,
+                description,
+                ..
+            } => {
                 let call_id = format!("agent-{agent_id}");
-                let title = format!("agent {name}");
-                let input = json!({ "name": name });
+                // Its label reads best; agents from before it had one go by their handle.
+                let title = if description.is_empty() {
+                    format!("agent {name}")
+                } else {
+                    description.clone()
+                };
+                let input = json!({ "name": name, "description": description });
                 out.push(out::update(
                     sid,
                     ToolCallOut {

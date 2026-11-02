@@ -650,6 +650,9 @@ pub struct SessionSnapshot {
 pub struct AgentSnapshot {
     pub agent_id: String,
     pub name: String,
+    /// What the user sees for it, as `agent_started` gave it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub description: String,
     /// The `spawn_agent` call that started it.
     pub call_id: String,
     pub session_file: PathBuf,

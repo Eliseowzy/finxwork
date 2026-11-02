@@ -73,7 +73,10 @@ export type SessionStatus = "idle" | "running" | "awaiting_approval" | "failed";
  */
 export interface AgentView {
   id: string;
+  /** Its handle: how the main agent addresses it. */
   name: string;
+  /** What the user sees for it; empty for agents from before it had one. */
+  description: string;
   /** The spawn_agent call that started it. */
   call_id: string;
   status: AgentStatus;
@@ -183,7 +186,7 @@ export function withHistory(v: SessionView, page: TranscriptPage): SessionView {
 /** A sub-agent from a snapshot: its own session shares the main one's settings. */
 function agentFrom(info: SessionInfo, a: AgentSnapshot): AgentView {
   const own: SessionSnapshot = {
-    session: { ...info, session_id: a.agent_id, session_file: a.session_file, title: a.name, archived: false },
+    session: { ...info, session_id: a.agent_id, session_file: a.session_file, title: a.description || a.name, archived: false },
     last_seq: 0,
     transcript: a.transcript,
     active_task: a.active_task,
@@ -192,6 +195,7 @@ function agentFrom(info: SessionInfo, a: AgentSnapshot): AgentView {
   return {
     id: a.agent_id,
     name: a.name,
+    description: a.description ?? "",
     call_id: a.call_id,
     status: a.status,
     since: a.since,
@@ -342,12 +346,12 @@ function step(v: SessionView, e: Event): SessionView {
       return { ...v, entries: [...v.entries, { type: "note", note: "warning", message: e.message, ts: e.ts }] };
     case "agent_started": {
       const own: SessionSnapshot = {
-        session: { ...v.info, session_id: e.agent_id, session_file: e.session_file, title: e.name, archived: false },
+        session: { ...v.info, session_id: e.agent_id, session_file: e.session_file, title: e.description || e.name, archived: false },
         last_seq: 0,
         transcript: { items: [] },
         usage: { per_model: {} },
       };
-      const agent: AgentView = { id: e.agent_id, name: e.name, call_id: e.call_id, status: "running", since: e.ts, view: fromSnapshot(own) };
+      const agent: AgentView = { id: e.agent_id, name: e.name, description: e.description ?? "", call_id: e.call_id, status: "running", since: e.ts, view: fromSnapshot(own) };
       return { ...v, agents: [...v.agents.filter((a) => a.id !== e.agent_id), agent] };
     }
     case "agent_status":

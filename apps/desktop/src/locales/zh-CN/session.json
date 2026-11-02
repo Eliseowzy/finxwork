@@ -13,7 +13,8 @@
     "working": {
       "thinking": "思考中",
       "writing": "生成中",
-      "compacting": "整理上下文"
+      "compacting": "整理上下文",
+      "working": "工作中"
     },
     "thinking": "正在思考",
     "thought": "思考",

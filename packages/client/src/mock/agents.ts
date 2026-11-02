@@ -6,6 +6,8 @@ import type { TaskScript, ToolScript, TurnScript } from "./script.ts";
 
 export interface AgentScript {
   name: string;
+  /** The label the user sees. */
+  description: string;
   task: string;
   /** What it does; its last turn's words are its report. */
   script: TaskScript;
@@ -47,6 +49,7 @@ export function agentsScenario(): AgentsScenario {
   const agents: AgentScript[] = [
     {
       name: "mathutil-tests",
+      description: "为 mathutil 写测试",
       task: brief("mathutil"),
       script: {
         turns: [
@@ -64,6 +67,7 @@ export function agentsScenario(): AgentsScenario {
     },
     {
       name: "textutil-tests",
+      description: "为 textutil 写测试",
       task: brief("textutil"),
       script: {
         turns: [
@@ -79,6 +83,7 @@ export function agentsScenario(): AgentsScenario {
     },
     {
       name: "listutil-tests",
+      description: "为 listutil 写测试",
       task: brief("listutil"),
       script: {
         turns: [
@@ -108,8 +113,8 @@ export function agentsScenario(): AgentsScenario {
         say: "三个模块互不依赖，我派三个子智能体并行处理，每个只写自己的测试文件，不会互相冲突。",
         tools: agents.map((a) => ({
           name: "spawn_agent",
-          args: { name: a.name, task: a.task },
-          output: `Agent "${a.name}" started in the background. To wait for its report, end your turn: the report comes to you as a new message when the agent finishes, and you continue from there.`,
+          args: { description: a.description, task: a.task, name: a.name },
+          output: `Agent "${a.name}" started in the background. To wait for its report, end your turn: that is not your final answer. The report comes to you as a new message when the agent finishes, and you continue your work from there.`,
           ms: 120,
         })),
       },

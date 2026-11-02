@@ -515,7 +515,7 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                     (0..count.parse().unwrap_or(4))
                         .map(|i| {
                             let task = format!("[[mock:agent:{label}-a{i}]] 请检查子模块 {i} 并写一份报告");
-                            ("spawn_agent", json!({"task": task, "name": format!("a{i}"), "wait": true}))
+                            ("spawn_agent", json!({"description": format!("检查子模块 {i}"), "task": task, "name": format!("a{i}"), "wait": true}))
                         })
                         .collect(),
                 )),

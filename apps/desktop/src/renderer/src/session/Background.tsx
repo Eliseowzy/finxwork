@@ -73,22 +73,27 @@ function agentTokens(a: AgentView): number {
   return totals(a.view.live ? addTotals(a.view.usage, a.view.live.usage) : a.view.usage).tokens;
 }
 
-/** One agent, as the sidebar shows a session: its name, running while it works; how long, or a dot when it stopped or failed; a line of its task. */
+/**
+ * One agent, as the sidebar shows a session: its label, running while it works; how long, or a dot
+ * when it stopped or failed; under it the handle finx calls it by (agents from before labels: their
+ * name, and a line of their task).
+ */
 function Row({ a, gist, selected, now }: { a: AgentView; gist: string; selected: boolean; now: number }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const running = a.status === "running";
   const dot = a.status === "interrupted" ? "w" : a.status === "failed" || a.status === "closed" ? "c" : "";
+  const label = a.description || a.name;
   return (
     <button className={`srow ${selected ? "sel" : ""}`} aria-pressed={selected} title={t(`agents.status.${a.status}`)} onClick={() => st.set({ agent: selected ? null : a.id })}>
       <span className="smain">
         <span className="sl1">
           <span className={`stitle ${running ? "run" : ""}`}>
-            {a.name}
+            {label}
             {running && (
               <>
-                <span className="shine" data-t={a.name} aria-hidden="true" />
-                <span className="shine band" data-t={a.name} aria-hidden="true" />
+                <span className="shine" data-t={label} aria-hidden="true" />
+                <span className="shine band" data-t={label} aria-hidden="true" />
               </>
             )}
           </span>
@@ -104,7 +109,7 @@ function Row({ a, gist, selected, now }: { a: AgentView; gist: string; selected:
           </span>
         </span>
         <span className="sl2">
-          <span className="sl2t">{gist}</span>
+          {a.description ? <span className="sl2t k">{a.name}</span> : <span className="sl2t">{gist}</span>}
         </span>
       </span>
     </button>

@@ -304,6 +304,10 @@
           "description": "The `spawn_agent` call that started it.",
           "type": "string"
         },
+        "description": {
+          "description": "What the user sees for it, as `agent_started` gave it.",
+          "type": "string"
+        },
         "elapsed_ms": {
           "description": "How long its last finished round of work took.",
           "format": "uint64",
@@ -2810,7 +2814,12 @@
               "description": "The `spawn_agent` call that started it.",
               "type": "string"
             },
+            "description": {
+              "description": "What the user sees for it: a few words on what it works on.",
+              "type": "string"
+            },
             "name": {
+              "description": "Its handle: how the main agent addresses it.",
               "type": "string"
             },
             "session_file": {

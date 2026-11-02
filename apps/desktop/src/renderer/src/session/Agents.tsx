@@ -45,7 +45,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
   return (
     <div className="agc">
       <div className="agc-h">
-        <Icon name="cube" />
+        <Icon name="bot" />
         <span>{t("agents.launched", { count: launches.length })}</span>
       </div>
       {launches.map((l, i) => {
@@ -55,8 +55,18 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
         return (
           <button key={l.call_id} className="agc-r" title={t("agents.open")} onClick={() => show(a?.id)}>
             <AgentGlyph status={a?.status} />
-            <span className={`agc-n ${status === "running" ? "shimmer" : ""}`}>{a?.name ?? l.name}</span>
-            <span className="agc-g">{gists[i]}</span>
+            {l.description ? (
+              // Its label first; the handle finx calls it by, quietly after.
+              <>
+                <span className={`agc-d ${status === "running" ? "shimmer" : ""}`}>{l.description}</span>
+                <span className="agc-k">{a?.name ?? l.name}</span>
+              </>
+            ) : (
+              <>
+                <span className={`agc-n ${status === "running" ? "shimmer" : ""}`}>{a?.name ?? l.name}</span>
+                <span className="agc-g">{gists[i]}</span>
+              </>
+            )}
             <span className={`agc-s ${tone}`}>
               <span>{t(`agents.status.${status}`)}</span>
               {a && <span className="tm">{agentTime(a, now)}</span>}
@@ -84,9 +94,9 @@ export function ReportCard({ step }: { step: Extract<Step, { kind: "report" }> }
   return (
     <div className="rpc">
       <div className="rpc-h">
-        <Icon name="cube" className="sm" />
+        <Icon name="bot" className="sm" />
         <span>
-          <Trans t={t} i18nKey="agents.report" values={{ name: step.name }} components={{ b: <b className="who" /> }} />
+          <Trans t={t} i18nKey="agents.report" values={{ name: a?.description || step.name }} components={{ b: <b className={a?.description ? "who label" : "who"} /> }} />
         </span>
         <span className={`chip ${tone}`}>{t(`agents.status.${step.status}`)}</span>
         {meta.length > 0 && <span className="meta">{meta.join(" · ")}</span>}

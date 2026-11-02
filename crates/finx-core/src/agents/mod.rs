@@ -57,9 +57,10 @@ use crate::store::SessionStore;
 /// Ends the results of calls that leave an agent working in the background. Models take ending
 /// their turn for handing in the answer, so when they need the report first they wait for it with
 /// `sleep`, which also holds back the user's input: input reaches a running task only between
-/// turns. Saying that ending the turn is the way to wait stops this (subagent-design §15).
-const REPORT_LATER: &str = "To wait for its report, end your turn: the report comes to you as a new message \
-    when the agent finishes, and you continue from there.";
+/// turns. Saying that ending the turn is the way to wait, and is not handing in, stops this
+/// (subagent-design §15).
+const REPORT_LATER: &str = "To wait for its report, end your turn: that is not your final answer. The report \
+    comes to you as a new message when the agent finishes, and you continue your work from there.";
 
 /// What a sub-agent's session is built from: the main session's dependencies.
 pub(crate) struct ChildDeps {
@@ -317,15 +318,18 @@ impl AgentTree {
             driver: None,
             tool_state: kernel.tool_state(),
         });
+        let description = args.description.trim().to_string();
         root.record(EntryKind::AgentSpawned(Box::new(AgentSpawnedEntry {
             agent_id: id.clone(),
             name: name.clone(),
+            description: description.clone(),
             session_file: session_file.clone(),
             call_id: call_id.to_string(),
         })));
         self.emit(EventMsg::AgentStarted {
             agent_id: id.clone(),
             name: name.clone(),
+            description,
             session_file: session_file.clone(),
             call_id: call_id.to_string(),
         });

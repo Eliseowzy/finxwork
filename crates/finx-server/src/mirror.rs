@@ -50,6 +50,7 @@ pub struct SessionMirror {
 struct AgentMirror {
     agent_id: String,
     name: String,
+    description: String,
     call_id: String,
     status: AgentStatus,
     since: Timestamp,
@@ -311,19 +312,21 @@ impl SessionMirror {
             EventMsg::AgentStarted {
                 agent_id,
                 name,
+                description,
                 session_file,
                 call_id,
             } => {
                 let info = SessionInfo {
                     session_id: agent_id.clone(),
                     session_file: session_file.clone(),
-                    title: Some(name.clone()),
+                    title: Some(if description.is_empty() { name } else { description }.clone()),
                     archived: false,
                     ..self.info.clone()
                 };
                 self.agents.push(AgentMirror {
                     agent_id: agent_id.clone(),
                     name: name.clone(),
+                    description: description.clone(),
                     call_id: call_id.clone(),
                     status: AgentStatus::Running,
                     since: event.ts,
@@ -428,6 +431,7 @@ impl AgentMirror {
         AgentSnapshot {
             agent_id: self.agent_id.clone(),
             name: self.name.clone(),
+            description: self.description.clone(),
             call_id: self.call_id.clone(),
             session_file: self.session.info.session_file.clone(),
             status: self.status,
@@ -530,6 +534,7 @@ mod tests {
             EventMsg::AgentStarted {
                 agent_id: "a1".into(),
                 name: "counter".into(),
+                description: "统计文件".into(),
                 session_file: PathBuf::from("/a1"),
                 call_id: "c1".into(),
             },
@@ -563,7 +568,7 @@ mod tests {
         let snap = m.snapshot(None);
         assert!(snap.transcript.items.is_empty(), "its events are not the main session's");
         let agent = &snap.agents[0];
-        assert_eq!((agent.name.as_str(), agent.status), ("counter", AgentStatus::Running));
+        assert_eq!((agent.name.as_str(), agent.description.as_str(), agent.status), ("counter", "统计文件", AgentStatus::Running));
         assert_eq!(agent.transcript.items.len(), 1);
         assert_eq!(agent.active_task.as_ref().map(|t| t.task_id.as_str()), Some("t1"));
 

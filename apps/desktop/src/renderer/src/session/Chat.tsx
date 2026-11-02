@@ -125,9 +125,10 @@ const thinks = (it: WorkItem) => it.kind === "thinking" && it.live;
  * time runs from the owner's message, across the tasks that carry on the
  * work when sub-agents report. While calls run: what runs, one line even
  * for several at once ("Reading 2 files"), which opens to each, and the
- * time. While the model thinks or writes: a line of its own under what it
- * writes, with the time and the tokens its finished model calls took; while
- * it thinks, the last lines of its thinking under that line. While
+ * time. Otherwise a line of its own under what the model writes, with the
+ * time and the tokens its finished model calls took: what it does, thinking
+ * only while its thinking streams in (its last lines under that line),
+ * writing, compacting, or else just working. While
  * it waits on the owner (an approval) or on a retry, which say so
  * themselves, the calls that run stand alone.
  */
@@ -159,7 +160,9 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
   const last = steps.at(-1);
   const end = last?.kind === "work" ? last.items.at(-1) : undefined;
   const writing = (last?.kind === "text" && last.live) || (end?.kind === "tool" && end.tool.state === "streaming");
-  const doing = live.compacting !== undefined ? "compacting" : writing ? "writing" : "thinking";
+  // Thinking only while thinking streams in; anything else that is not said (waiting on the model or on sub-agents) is just work.
+  const thought = end?.kind === "thinking" && end.live ? end : undefined;
+  const doing = live.compacting !== undefined ? "compacting" : writing ? "writing" : thought ? "thinking" : "working";
   const line = (
     <>
       <span className="shimmer">{t(`chat.working.${doing}`)}</span>
@@ -169,11 +172,10 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
       </span>
     </>
   );
-  const thought = doing === "thinking" && end?.kind === "thinking" && end.live ? end : undefined;
   return (
     <div className="working" role="status">
       <MarkMotion size={18} rewrite />
-      {thought ? (
+      {doing === "thinking" && thought ? (
         <div className="wk-now">
           <LiveThinking text={thought.text}>{line}</LiveThinking>
         </div>
@@ -274,7 +276,7 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "agents": {
       const x = (b as typeof a).launches;
-      return a.launches.length === x.length && a.launches.every((l, i) => l.agent === x[i].agent && l.name === x[i].name && l.task === x[i].task);
+      return a.launches.length === x.length && a.launches.every((l, i) => l.agent === x[i].agent && l.name === x[i].name && l.description === x[i].description && l.task === x[i].task);
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;
