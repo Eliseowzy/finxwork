@@ -15,6 +15,7 @@ members = [
     "crates/finx-browser",
     "crates/finx-desktop",
     "crates/finx-bench",
+    "crates/finx-eval",
 ]
 
 [workspace.package]
@@ -36,6 +37,7 @@ finx-mock = { path = "crates/finx-mock" }
 finx-mcp = { path = "crates/finx-mcp" }
 finx-browser = { path = "crates/finx-browser" }
 finx-desktop = { path = "crates/finx-desktop" }
+finx-eval = { path = "crates/finx-eval" }
 
 agent-client-protocol-schema = { version = "1.13", default-features = false }
 anyhow = "1"
