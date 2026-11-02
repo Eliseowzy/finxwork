@@ -138,13 +138,14 @@ impl QwenWork {
                         .and_then(|n| u32::try_from(n).ok()),
                     max_output_tokens: None,
                     reasoning: !thinking.is_empty(),
-                    images: false,
+                    // The catalog does not say; QwenWork takes images (checked with flash).
+                    images: true,
                     thinking,
                     default_thinking,
                 })
             })
             .collect();
-        if models.is_empty() || models.len() > 100 {
+        if models.is_empty() {
             return Err(ConnectionError::unsupported());
         }
         Ok(models)

@@ -309,7 +309,6 @@ impl ProductAdapter for Qoder {
         let value = response_json(response).await?;
         let entries = value["app"]
             .as_array()
-            .filter(|m| m.len() <= 100)
             .ok_or_else(ConnectionError::unsupported)?;
         let mut ids = std::collections::HashSet::new();
         let models: Vec<_> = entries

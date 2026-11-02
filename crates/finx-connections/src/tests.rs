@@ -91,7 +91,7 @@ fn record(enabled: bool) -> Record {
             context_window: Some(1000000),
             max_output_tokens: None,
             reasoning: true,
-            images: false,
+            images: true,
             thinking: Vec::new(),
             default_thinking: Default::default(),
         }],
@@ -146,7 +146,7 @@ async fn existing_connection_restores_without_secrets_in_catalog_and_disconnect_
     let llm = registry();
     let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
     let provider = format!("local-{}", r.connection_id);
-    assert!(llm.resolve(&format!("{provider}/flash")).is_ok());
+    assert!(llm.resolve(&format!("{provider}/flash")).unwrap().model.accepts_images());
     assert!(llm.resolve(&format!("{provider}/invented")).is_err());
     assert_eq!(env.calls.load(Ordering::Relaxed), 0);
     let lease = m.begin(&provider, "flash", client()).await.unwrap();
@@ -162,7 +162,8 @@ async fn existing_connection_restores_without_secrets_in_catalog_and_disconnect_
             .contains("private")
     );
     assert!(!format!("{:?}", auth.credentials).contains("private-session"));
-    assert!(m.begin(&provider, "flash", client()).await.is_err());
+    // Requests run side by side; the disconnect below waits for both.
+    let other = m.begin(&provider, "flash", client()).await.unwrap();
     let manager = m.clone();
     let id = r.connection_id.clone();
     let disconnect = tokio::spawn(async move { manager.disconnect(&id).await });
@@ -186,6 +187,11 @@ async fn existing_connection_restores_without_secrets_in_catalog_and_disconnect_
         ConnectionState::Disabled
     ));
     drop(lease);
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+    }
+    assert!(!disconnect.is_finished());
+    drop(other);
     disconnect.await.unwrap().unwrap();
     env.expires.store(0, Ordering::Relaxed);
     assert!(m.retry(&r.connection_id).await.is_err());

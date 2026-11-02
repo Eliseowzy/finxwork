@@ -7,7 +7,7 @@ mod qwenwork;
 use adapter::ProductAdapter;
 use async_trait::async_trait;
 use finx_llm::connection::{Authorization, ConnectionAuthorizer, ConnectionRequest};
-use finx_llm::{AuthConfig, Compat, ErrorKind, LlmError, ModelRegistry, ProviderConfig};
+use finx_llm::{AuthConfig, Compat, ErrorKind, LlmError, Modality, ModelRegistry, ProviderConfig};
 use finx_protocol::api::{
     ConnectionConnectParams, ConnectionDiscovery, ConnectionModel, ConnectionState, ConnectionView,
     ConnectionsSnapshot,
@@ -27,7 +27,7 @@ use std::{
 };
 use tokio::{
     io::AsyncWriteExt,
-    sync::{Mutex, OwnedSemaphorePermit, Semaphore},
+    sync::{Mutex, watch},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -61,7 +61,6 @@ impl ConnectionError {
             "connection_login_required" | "identity_changed" | "connection_permission_required" => {
                 ErrorKind::Auth
             }
-            "rate_limit_exceeded" => ErrorKind::RateLimited,
             "connection_unavailable" => ErrorKind::Network,
             _ => ErrorKind::InvalidRequest,
         };
@@ -109,7 +108,8 @@ struct Entry {
     record: RwLock<Record>,
     view: RwLock<ConnectionView>,
     adapter: Mutex<Box<dyn ProductAdapter>>,
-    slot: Arc<Semaphore>,
+    /// Requests running on it; disconnecting waits for none.
+    requests: watch::Sender<usize>,
     cancel: RwLock<CancellationToken>,
 }
 type Changed = Arc<dyn Fn() + Send + Sync>;
@@ -231,7 +231,7 @@ impl Manager {
             )),
             record: RwLock::new(r),
             view: RwLock::new(view),
-            slot: Arc::new(Semaphore::new(1)),
+            requests: watch::Sender::new(0),
             cancel: RwLock::new(CancellationToken::new()),
         });
         self.entries
@@ -288,6 +288,9 @@ impl Manager {
                         model.max_output_tokens =
                             m.max_output_tokens.unwrap_or(8192).clamp(1, 128_000);
                         model.reasoning = m.reasoning;
+                        if m.images {
+                            model.input = vec![Modality::Text, Modality::Image];
+                        }
                         // The application's own levels; without a format they could not be sent.
                         if p.compat.thinking_format.is_some() {
                             model.thinking = m.thinking.clone();
@@ -379,8 +382,7 @@ impl Manager {
     }
     /// Asks ready connections whose model catalog is older than `max_age` for it again
     /// (model-catalog-design §14). Quiet: a failure keeps the old catalog and the connection's
-    /// state, and a connection that is busy is left for the next time. Returns whether any
-    /// connection's models changed.
+    /// state. Returns whether any connection's models changed.
     pub async fn refresh_stale_catalogs(&self, max_age: std::time::Duration) -> bool {
         let due: Vec<Arc<Entry>> = self
             .entries
@@ -400,7 +402,6 @@ impl Manager {
             .collect();
         let mut changed = false;
         for e in due {
-            let Ok(_permit) = e.slot.clone().try_acquire_owned() else { continue };
             let Ok(http) = self.http() else { return changed };
             let fetched = e.adapter.lock().await.catalog(&http).await;
             let Ok(models) = fetched else { continue };
@@ -427,11 +428,6 @@ impl Manager {
     }
 
     async fn prepare(&self, e: &Arc<Entry>) -> Result<()> {
-        let _permit = e
-            .slot
-            .clone()
-            .try_acquire_owned()
-            .map_err(|_| ConnectionError::new("conflict", "当前连接仍有任务运行"))?;
         {
             let mut view = e.view.write();
             view.state = ConnectionState::Connecting;
@@ -532,19 +528,14 @@ impl Manager {
         e.view.write().state = ConnectionState::Disabled;
         self.publish();
         self.persist().await?;
-        let _permit = e
-            .slot
-            .clone()
-            .acquire_owned()
-            .await
-            .map_err(|_| ConnectionError::unavailable())?;
+        let _ = e.requests.subscribe().wait_for(|running| *running == 0).await;
         self.snapshot()
     }
     pub async fn remove(&self, id: &str) -> Result<ConnectionsSnapshot> {
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
-        if e.record.read().enabled || e.slot.available_permits() == 0 {
+        if e.record.read().enabled || *e.requests.borrow() > 0 {
             return Err(ConnectionError::new(
                 "conflict",
                 "请先断开连接并等待任务结束",
@@ -577,12 +568,10 @@ fn read_config(home: &Path) -> Result<Vec<Record>> {
         .map_err(|_| ConnectionError::new("invalid_config", "模型连接配置格式无效"))?;
     let mut ids = std::collections::HashSet::new();
     if config.schema != 1
-        || config.connections.len() > 32
         || config.connections.iter().any(|r| {
             uuid::Uuid::parse_str(&r.connection_id).is_err()
                 || !ids.insert(r.connection_id.clone())
                 || !["qwenwork", "qoder"].contains(&r.adapter_id.as_str())
-                || r.models.len() > 100
                 || r.models.iter().any(|m| !valid_id(&m.id))
         })
     {
@@ -614,8 +603,21 @@ struct RequestLease {
     entry: Arc<Entry>,
     manager: Weak<Manager>,
     http: reqwest::Client,
-    _permit: OwnedSemaphorePermit,
+    _running: Running,
     cancellation: CancellationToken,
+}
+/// Counts a request on its connection while it lives.
+struct Running(Arc<Entry>);
+impl Running {
+    fn start(e: &Arc<Entry>) -> Self {
+        e.requests.send_modify(|running| *running += 1);
+        Self(e.clone())
+    }
+}
+impl Drop for Running {
+    fn drop(&mut self) {
+        self.0.requests.send_modify(|running| *running -= 1);
+    }
 }
 #[async_trait]
 impl ConnectionAuthorizer for Manager {
@@ -633,9 +635,8 @@ impl ConnectionAuthorizer for Manager {
             .find(|e| e.record.read().provider_id == provider)
             .cloned()
             .ok_or_else(|| ConnectionError::new("not_found", "连接不存在").llm())?;
-        let permit = e.slot.clone().try_acquire_owned().map_err(|_| {
-            ConnectionError::new("rate_limit_exceeded", "此连接已有请求正在运行").llm()
-        })?;
+        // Counted before the checks, so that a disconnect either refuses it or waits for it.
+        let running = Running::start(&e);
         if !e.record.read().enabled || !matches!(e.view.read().state, ConnectionState::Ready) {
             return Err(ConnectionError::new("connection_disabled", "连接当前不可用").llm());
         }
@@ -649,7 +650,7 @@ impl ConnectionAuthorizer for Manager {
             entry: e,
             manager: self.myself.clone(),
             http,
-            _permit: permit,
+            _running: running,
             cancellation,
         }))
     }
