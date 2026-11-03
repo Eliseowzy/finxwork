@@ -69,8 +69,8 @@ export function SessionPage({ s }: { s: ListSession }) {
           {window.finx && (
             <button
               className={`tb ${browser ? "on" : ""}`}
-              title={t("browser.title")}
-              aria-label={t("browser.title")}
+              title={t("browser.builtIn")}
+              aria-label={t("browser.builtIn")}
               aria-pressed={browser}
               onClick={() => {
                 if (browser) st.set({ browser: false, browserMax: false });
@@ -87,7 +87,7 @@ export function SessionPage({ s }: { s: ListSession }) {
           {/* A toolbar button as the sidebar's toggle is, highlighted while the info shows. */}
           <button
             className={`tb ${info ? "on" : ""}`}
-            title={info ? t("page.hideInfo") : t("page.showInfo")}
+            title={t("page.infoTip")}
             aria-label={t("page.info")}
             aria-pressed={info}
             onClick={() => setCard(st, !info)}

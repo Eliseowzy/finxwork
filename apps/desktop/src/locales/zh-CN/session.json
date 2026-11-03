@@ -1,8 +1,7 @@
 {
   "page": {
-    "showInfo": "显示信息面板 ⌥⌘0",
-    "hideInfo": "隐藏信息面板 ⌥⌘0",
-    "info": "信息面板"
+    "infoTip": "会话详情 ⌥⌘0",
+    "info": "会话详情"
   },
   "chat": {
     "archived": "已归档：取消归档之前只读。",
@@ -198,7 +197,7 @@
     "noSkills": "还没有可用的技能"
   },
   "inspector": {
-    "label": "会话信息",
+    "label": "会话详情",
     "environment": "环境",
     "local": "本机",
     "noProject": "无项目",
@@ -317,6 +316,7 @@
   "browser": {
     "annotate": "添加到对话",
     "title": "浏览器",
+    "builtIn": "内置浏览器",
     "resize": "调整浏览器面板宽度",
     "close": "关闭浏览器",
     "maximize": "放大浏览器",

@@ -1,8 +1,7 @@
 {
   "page": {
-    "showInfo": "Show Info ⌥⌘0",
-    "hideInfo": "Hide Info ⌥⌘0",
-    "info": "Info"
+    "infoTip": "Session Details ⌥⌘0",
+    "info": "Session Details"
   },
   "chat": {
     "archived": "Archived: read only until you unarchive it.",
@@ -208,7 +207,7 @@
     "noSkills": "No skills available"
   },
   "inspector": {
-    "label": "Session info",
+    "label": "Session Details",
     "environment": "Environment",
     "local": "This computer",
     "noProject": "No project",
@@ -327,6 +326,7 @@
   "browser": {
     "annotate": "Add to chat",
     "title": "Browser",
+    "builtIn": "Built-in Browser",
     "resize": "Resize the browser panel",
     "close": "Close browser",
     "maximize": "Expand browser",

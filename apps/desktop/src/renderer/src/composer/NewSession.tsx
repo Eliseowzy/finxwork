@@ -63,8 +63,8 @@ export function NewSession() {
           <div className="ctitle" />
           {window.finx && <button
             className={`tb no-drag ${browser ? "on" : ""}`}
-            title={t("browser.title")}
-            aria-label={t("browser.title")}
+            title={t("browser.builtIn")}
+            aria-label={t("browser.builtIn")}
             aria-pressed={browser}
             onClick={() => {
               if (browser) {
