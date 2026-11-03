@@ -4,6 +4,7 @@ import path from "node:path";
 import { feedVersion, nextCheckDelay, nextUpdate, releaseURLs, squirrelFailure, type Update, type UpdateEvent, type UpdateFailure, type UpdateInfo } from "../shared/update";
 import { releasesURL } from "./build";
 import { showSettings } from "./windows";
+import { endBrowser } from "./browser/pages";
 
 // Updates from GitHub Releases (desktop-release §4). The app reads the newest
 // release's feed itself and decides; only a newer version goes to Squirrel.Mac,
@@ -182,7 +183,10 @@ export function download() {
 
 /** Quits, installs and opens the new version. finx and its tasks go on; the new app replaces the old finx once none runs. */
 export function install() {
-  if (update.state === "ready") autoUpdater.quitAndInstall();
+  if (update.state !== "ready") return;
+  // It closes every window before the app hears it quit: the browser's hidden one must not come back.
+  endBrowser();
+  autoUpdater.quitAndInstall();
 }
 
 /** "Later": the sidebar stops reminding of this version for a day. Quitting still installs it. */

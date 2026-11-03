@@ -132,7 +132,7 @@ try {
   await page.until("the reply", `document.body.innerText.includes('SESSION_REPLY_DONE')`, 60000);
   check((await page.run(`window.finx.browserTabs()`)).length === 0, "a tab exists before the button is clicked");
   check(!(await page.run(`!!document.querySelector('.brp')`)), "the panel shows with no tabs");
-  const button = `[...document.querySelectorAll('.spage .ctool button')].find(b => /^(Browser|浏览器)$/.test(b.getAttribute('aria-label')))`;
+  const button = `[...document.querySelectorAll('.spage .ctool button')].find(b => /^(Built-in Browser|内置浏览器)$/.test(b.getAttribute('aria-label')))`;
   check(await page.run(`!!(${button})`), "the session page has no browser button");
   await page.run(`(${button}).click()`);
   await page.until("blank session tab", `document.querySelectorAll(".brp-tab").length === 1`);
