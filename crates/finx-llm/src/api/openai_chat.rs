@@ -517,27 +517,8 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
     if let Some(temperature) = opts.temperature {
         body.insert("temperature".into(), json!(temperature));
     }
-    if !ctx.tools.is_empty() {
-        let strict = compat.strict_tools.unwrap_or(false);
-        let tools: Vec<Value> = ctx
-            .tools
-            .iter()
-            .map(|t| {
-                let mut function = json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                });
-                if strict {
-                    function["strict"] = json!(true);
-                }
-                json!({ "type": "function", "function": function })
-            })
-            .collect();
-        body.insert("tools".into(), Value::Array(tools));
-        if opts.tool_choice == ToolChoice::None {
-            body.insert("tool_choice".into(), json!("none"));
-        }
+    if !ctx.tools.is_empty() && opts.tool_choice == ToolChoice::None {
+        body.insert("tool_choice".into(), json!("none"));
     }
     if compat.prompt_cache_key.unwrap_or(false)
         && let Some(key) = &opts.cache_key
@@ -548,7 +529,34 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
     for (key, value) in &opts.extra_body {
         body.insert(key.clone(), value.clone());
     }
-    messages.finish(&body)
+    // Serialize schemas directly from the context. Building a second Value tree copied
+    // every parameter schema for every model step, multiplying burst allocations.
+    let tools = SerializeIter::new(ctx.tools.iter().map(|t| ToolDefinition {
+        kind: "function",
+        function: FunctionDefinition {
+            name: &t.name,
+            description: &t.description,
+            parameters: &t.parameters,
+            strict: compat.strict_tools.unwrap_or(false).then_some(true),
+        },
+    }));
+    messages.finish_with(&body, (!ctx.tools.is_empty()).then_some(("tools", &tools)))
+}
+
+#[derive(Serialize)]
+struct ToolDefinition<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: FunctionDefinition<'a>,
+}
+
+#[derive(Serialize)]
+struct FunctionDefinition<'a> {
+    name: &'a str,
+    description: &'a str,
+    parameters: &'a Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    strict: Option<bool>,
 }
 
 /// Thinking parameters for a level the model offers (docs/kernel/model-catalog-design.md §18):
@@ -960,6 +968,32 @@ mod tests {
         let off: Value = serde_json::from_slice(&build_body(&model, &ctx, &off_opts)).unwrap();
         assert_eq!(off["thinking"]["type"], "disabled");
         assert!(off.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn borrowed_tool_schemas_preserve_nested_values_and_explicit_overrides() {
+        let mut model = test_model(API_ID);
+        model.compat.strict_tools = Some(true);
+        let mut ctx = Context { tools: vec![ToolSpec {
+            name: "quoted\"tool".into(), description: "多行\n说明".into(),
+            parameters: json!({"type":"object","properties":{"x":{"anyOf":[{"type":"string"},{"type":"null"}]}},"required":["x"]}),
+        }], ..Default::default() };
+        let mut opts = RequestOptions::default();
+        let body: Value = serde_json::from_slice(&build_body(&model, &ctx, &opts)).unwrap();
+        assert_eq!(body["tools"][0]["function"]["parameters"], ctx.tools[0].parameters);
+        assert_eq!(body["tools"][0]["function"]["description"], ctx.tools[0].description);
+        assert_eq!(body["tools"][0]["function"]["strict"], true);
+        for replacement in [json!([]), Value::Null, json!([{"custom":"definition"}])] {
+            opts.extra_body.insert("tools".into(), replacement.clone());
+            let bytes = build_body(&model, &ctx, &opts);
+            assert_eq!(String::from_utf8_lossy(&bytes).matches("\"tools\":").count(), 1);
+            let body: Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(body["tools"], replacement);
+        }
+        ctx.tools.clear();
+        opts.extra_body.clear();
+        let body: Value = serde_json::from_slice(&build_body(&model, &ctx, &opts)).unwrap();
+        assert!(body.get("tools").is_none());
     }
 
     #[test]

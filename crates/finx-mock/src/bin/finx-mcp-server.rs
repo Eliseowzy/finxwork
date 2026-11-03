@@ -33,6 +33,7 @@ async fn main() -> std::io::Result<()> {
             "--log" => options.log = Some(value().into()),
             "--stderr-lines" => stderr_lines = value().parse().unwrap_or(0),
             "--http" => http = Some(value()),
+            "--simulation" => options.simulation = true,
             "--sse" => options.legacy_sse = true,
             "--token" => options.auth = McpTestAuth::Token(value()),
             "--oauth" => oauth = Some(oauth.unwrap_or_default()),

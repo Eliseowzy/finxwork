@@ -537,14 +537,14 @@ export type Event = {
   reason: CompactionReason;
   type: "compaction_started";
 } | {
+  /** The session's compaction count, from 1. Distinct from the event sequence. */
+  compaction_seq: number;
   context: ContextUsage;
   /** Skills in use whose instructions were kept, most recently used first. */
   kept_skills?: string[];
   reason: CompactionReason;
   /** User messages kept word for word. */
   retained_messages: number;
-  /** The session's compaction count, from 1. */
-  seq: number;
   summary: string;
   tokens_after: number;
   tokens_before: number;

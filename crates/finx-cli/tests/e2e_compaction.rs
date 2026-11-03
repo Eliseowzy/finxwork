@@ -173,7 +173,8 @@ fn a_long_task_compacts_repeatedly_reuses_the_cache_and_resumes() {
     assert!(compactions.len() >= 2, "{} compaction(s)", compactions.len());
     for (i, c) in compactions.iter().enumerate() {
         assert_eq!(c["reason"], "threshold");
-        assert_eq!(c["seq"], i as u64 + 1);
+        assert_eq!(c["compaction_seq"], i as u64 + 1);
+        assert!(c["seq"].as_u64().unwrap() > i as u64 + 1);
         let before = c["tokens_before"].as_u64().unwrap();
         assert!((HARD / 2..HARD).contains(&before), "{before}");
         assert!(c["tokens_after"].as_u64().unwrap() < SOFT / 2);

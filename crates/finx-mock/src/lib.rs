@@ -39,6 +39,7 @@
 
 pub mod mcp;
 pub mod mcp_auth;
+pub mod simulation;
 
 use parking_lot::Mutex;
 use serde_json::Value;
@@ -65,9 +66,13 @@ pub const REJECTED_KEY: &str = "sk-rejected";
 #[derive(Default)]
 pub struct Stats {
     pub requests: AtomicU64,
+    pub request_bytes: AtomicU64,
+    pub peak_request_bytes: AtomicU64,
+    pub planning_ns: AtomicU64,
     pub errors_served: AtomicU64,
     pub chunks: AtomicU64,
     per_scenario: Mutex<HashMap<String, u64>>,
+    simulation_errors: Mutex<Vec<String>>,
     /// Body sizes of `churn` requests in arrival order, and how many asked for a handoff.
     churn_bodies: Mutex<Vec<u32>>,
     pub churn_handoffs: AtomicU64,
@@ -78,6 +83,8 @@ pub struct Stats {
 }
 
 impl Stats {
+    pub fn simulation_errors(&self) -> Vec<String> { self.simulation_errors.lock().clone() }
+
     pub fn scenario_counts(&self) -> HashMap<String, u64> {
         self.per_scenario.lock().clone()
     }
@@ -106,6 +113,7 @@ struct Shared {
 }
 
 pub struct MockServer {
+    accept: tokio::task::JoinHandle<()>,
     addr: SocketAddr,
     shared: Arc<Shared>,
 }
@@ -130,7 +138,7 @@ impl MockServer {
             retried: Mutex::new(HashMap::new()),
         });
         let accept_shared = shared.clone();
-        tokio::spawn(async move {
+        let accept = tokio::spawn(async move {
             loop {
                 let Ok((stream, _)) = listener.accept().await else {
                     continue;
@@ -139,7 +147,7 @@ impl MockServer {
                 tokio::spawn(serve_connection(stream, accept_shared.clone()));
             }
         });
-        Ok(MockServer { addr, shared })
+        Ok(MockServer { addr, shared, accept })
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -181,6 +189,10 @@ cost = {{ input = 1.0, output = 2.0, cache_read = 0.1 }}
             base = self.base_url()
         )
     }
+}
+
+impl Drop for MockServer {
+    fn drop(&mut self) { self.accept.abort(); }
 }
 
 struct Request {
@@ -350,6 +362,7 @@ impl Step {
 enum Plan {
     Step(Step),
     Status(u16, &'static str),
+    Error(u16, String),
 }
 
 /// The text of a message's `content`, whether a string or a list of parts.
@@ -412,6 +425,7 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
     let n = |default: usize| arg.parse().unwrap_or(default);
     let done = |label: &str| Plan::Step(Step::text(format!("{label} done")));
     match name {
+        "sim" => simulation::plan(messages, arg),
         "skill" => skill_step(messages, arg, step),
         "invoked" => invoked_step(prompt, step),
         "context" => Plan::Step(Step::text(skills_in_context(messages))),
@@ -858,6 +872,9 @@ fn churn_step(seed: u64, k: usize) -> Step {
 
 async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> io::Result<()> {
     shared.stats.requests.fetch_add(1, Ordering::Relaxed);
+    shared.stats.request_bytes.fetch_add(body.len() as u64, Ordering::Relaxed);
+    shared.stats.peak_request_bytes.fetch_max(body.len() as u64, Ordering::Relaxed);
+    let planning = std::time::Instant::now();
     let (name, plan) = match churn_plan(body, &shared.stats) {
         Some(plan) => ("churn".to_string(), plan),
         None => {
@@ -865,16 +882,26 @@ async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> i
                 Ok(v) => v,
                 Err(_) => return write_json(stream, 400, &json!({"error": {"message": "invalid JSON"}})).await,
             };
-            let messages = request.get("messages").and_then(Value::as_array).cloned().unwrap_or_default();
-            let (name, arg, prompt, step) = directive(&messages);
-            let plan = plan(shared, &messages, &name, &arg, &prompt, step);
+            let messages = request.get("messages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
+            let (name, arg, prompt, step) = directive(messages);
+            let plan = plan(shared, messages, &name, &arg, &prompt, step);
             (name, plan)
         }
     };
+    shared.stats.planning_ns.fetch_add(planning.elapsed().as_nanos() as u64, Ordering::Relaxed);
     *shared.stats.per_scenario.lock().entry(name.clone()).or_insert(0) += 1;
     let step = match plan {
         Plan::Step(step) => step,
         Plan::Status(status, message) => {
+            shared.stats.errors_served.fetch_add(1, Ordering::Relaxed);
+            let kind = if status >= 500 { "server_error" } else { "invalid_request_error" };
+            return write_json(stream, status, &json!({"error": {"message": message, "type": kind}})).await;
+        }
+        Plan::Error(status, message) => {
+            if name == "sim" {
+                let mut errors = shared.stats.simulation_errors.lock();
+                if errors.len() < 16 { errors.push(message.clone()); }
+            }
             shared.stats.errors_served.fetch_add(1, Ordering::Relaxed);
             let kind = if status >= 500 { "server_error" } else { "invalid_request_error" };
             return write_json(stream, status, &json!({"error": {"message": message, "type": kind}})).await;
@@ -984,7 +1011,7 @@ mod tests {
                 Some(Part::Text(text)) => ("text", json!(text)),
                 _ => panic!("unexpected part"),
             },
-            Plan::Status(..) => panic!("unexpected status"),
+            Plan::Status(..) | Plan::Error(..) => panic!("unexpected status"),
         }
     }
 
@@ -1064,7 +1091,7 @@ mod tests {
     fn agent_task_has_seven_requests_and_one_edit_target() {
         let calls = |step| match agent_step("s1", step) {
             Plan::Step(step) => step.parts.iter().filter(|p| matches!(p, Part::Call { .. })).count(),
-            Plan::Status(..) => panic!(),
+            Plan::Status(..) | Plan::Error(..) => panic!(),
         };
         assert_eq!((0..7).map(calls).collect::<Vec<_>>(), vec![1, 2, 1, 1, 1, 1, 0]);
         let report = report("s1");

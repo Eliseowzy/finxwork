@@ -59,11 +59,24 @@ pub fn sample(pid: i32) -> Option<Sample> {
             &mut task as *mut libc::proc_taskinfo as *mut libc::c_void,
             size,
         );
-        let threads = if got == size { task.pti_threadnum as u32 } else { 0 };
+        let threads = if got == size {
+            task.pti_threadnum as u32
+        } else {
+            0
+        };
         // With no buffer, the size a list of the open descriptors needs: 8 bytes each.
         const PROC_PIDLISTFDS: libc::c_int = 1;
         let listed = libc::proc_pidinfo(pid, PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0);
-        let fds = if listed > 0 { (listed / 8) as u32 } else { 0 };
+        // The size-only query is an upper bound (the descriptor table capacity), not
+        // the number of open files. Read the list to observe descriptors being closed.
+        let fds = if listed > 0 {
+            let mut entries = vec![0u64; (listed as usize).div_ceil(8)];
+            let bytes =
+                libc::proc_pidinfo(pid, PROC_PIDLISTFDS, 0, entries.as_mut_ptr().cast(), listed);
+            bytes.max(0) as u32 / 8
+        } else {
+            0
+        };
         Some(Sample {
             at: 0.0,
             rss: usage.ri_resident_size,
@@ -94,7 +107,9 @@ pub fn sample(pid: i32) -> Option<Sample> {
         rss: field("VmRSS:")? * 1024,
         footprint: field("VmRSS:")? * 1024,
         peak_footprint: field("VmHWM:")? * 1024,
-        cpu_ns: ticks * 10_000_000,
+        // Linux configurations are not all 100 Hz.
+        cpu_ns: ticks.saturating_mul(1_000_000_000)
+            / unsafe { libc::sysconf(libc::_SC_CLK_TCK) }.max(1) as u64,
         instructions: 0,
         threads: field("Threads:")? as u32,
         fds: std::fs::read_dir(format!("/proc/{pid}/fd")).map_or(0, |d| d.count() as u32),
@@ -172,7 +187,11 @@ pub struct Heap {
 }
 
 pub fn heap(pid: i32) -> Option<Heap> {
-    let output = std::process::Command::new("vmmap").arg("--summary").arg(pid.to_string()).output().ok()?;
+    let output = std::process::Command::new("vmmap")
+        .arg("--summary")
+        .arg(pid.to_string())
+        .output()
+        .ok()?;
     let text = String::from_utf8_lossy(&output.stdout);
     // The malloc zone table's total: TOTAL virtual resident dirty swapped count allocated frag %frag regions
     let row = text
