@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""Ratchet comparison of two finx builds: every metric must hold, at least one should improve.
+
+Runs base and candidate interleaved on the same machine and prints medians with a two-sided
+Mann-Whitney U p-value. A change counts as a regression when it is worse by more than 2% and
+p < 0.05. Start-up metrics drift by about 2% between rebuilds: repeat before calling one.
+
+  cargo build --release -p finx-cli -p finx-bench
+  python3 tools/bench/ratchet.py --repo . --base /path/to/finx-before --cand target/release/finx \
+      --out target/ratchet [--linux-host HOST --linux-base LB --linux-cand LC]
+
+The Linux part copies the binaries, bench_startup.py and bench_protocol_startup.py to
+~/finx-ratchet on HOST over ssh; a `startup-launcher` built from startup_launcher.c must be there.
+"""
+import argparse, json, math, pathlib, statistics, subprocess, sys, time
+
+
+def mann_whitney_p(a, b):
+    """Two-sided p-value, normal approximation with tie correction."""
+    if len(a) < 2 or len(b) < 2:
+        return 1.0
+    allv = sorted([(v, 0) for v in a] + [(v, 1) for v in b])
+    ranks = [0.0] * len(allv)
+    i = 0
+    ties = 0.0
+    while i < len(allv):
+        j = i
+        while j + 1 < len(allv) and allv[j + 1][0] == allv[i][0]:
+            j += 1
+        r = (i + j) / 2 + 1
+        for k in range(i, j + 1):
+            ranks[k] = r
+        t = j - i + 1
+        ties += t ** 3 - t
+        i = j + 1
+    n1, n2 = len(a), len(b)
+    r1 = sum(r for r, (_, g) in zip(ranks, allv) if g == 0)
+    u = r1 - n1 * (n1 + 1) / 2
+    mu = n1 * n2 / 2
+    n = n1 + n2
+    sigma = math.sqrt(n1 * n2 / 12 * ((n + 1) - ties / (n * (n - 1))))
+    if sigma == 0:
+        return 1.0
+    z = (abs(u - mu) - 0.5) / sigma
+    return math.erfc(max(z, 0) / math.sqrt(2))
+
+
+ROWS = []
+
+
+def compare(group, name, base, cand, higher_is_better=False, threshold=2.0):
+    base, cand = [x for x in base if x is not None], [x for x in cand if x is not None]
+    if not base or not cand:
+        return
+    mb, mc = statistics.median(base), statistics.median(cand)
+    change = (mc - mb) / mb * 100 if mb else 0.0
+    p = mann_whitney_p(base, cand)
+    worse = change < -threshold if higher_is_better else change > threshold
+    better = change > threshold if higher_is_better else change < -threshold
+    verdict = "REGRESSION" if worse and p < 0.05 else "better" if better and p < 0.05 else "~"
+    ROWS.append(dict(group=group, metric=name, base=mb, cand=mc, change_pct=change, p=p, verdict=verdict,
+                     n=(len(base), len(cand))))
+
+
+def run(cmd, **kw):
+    print("+", " ".join(str(c) for c in cmd), flush=True)
+    return subprocess.run(cmd, check=True, **kw)
+
+
+def startup_mac(args, out):
+    j = out / "mac-cli.json"
+    run([sys.executable, args.repo / "tools/bench/bench_startup.py", "--finx", f"base={args.base}", "--finx",
+         f"cand={args.cand}", "--runs", str(args.startup_runs), "--warmup", "10", "--json", j],
+        stdout=subprocess.DEVNULL)
+    d = json.loads(j.read_text())
+    s = d["samples"]
+    for key in ("first_request", "exit"):
+        compare("mac cli", key, [r[key] for r in s["base"]], [r[key] for r in s["cand"]])
+    j = out / "mac-protocol.json"
+    run([sys.executable, args.repo / "tools/bench/bench_protocol_startup.py", "--finx", f"base={args.base}",
+         "--finx", f"cand={args.cand}", "--runs", str(args.startup_runs), "--warmup", "10", "--json", j],
+        stdout=subprocess.DEVNULL)
+    protocol_rows(json.loads(j.read_text()), "mac")
+
+
+def protocol_rows(d, prefix):
+    s = d["samples"]
+    for proto in ("acp", "socket"):
+        for key in ("initialize", "session_ready", "first_request", "session_new", "prompt_to_request",
+                    "reuse_new_to_request", "reuse_prompt_to_request"):
+            b = [r.get(key) for r in s.get(f"base/{proto}", [])]
+            c = [r.get(key) for r in s.get(f"cand/{proto}", [])]
+            compare(f"{prefix} {proto}", key, b, c)
+
+
+def startup_linux(args, out):
+    host, rdir = args.linux_host, "finx-ratchet"
+    run(["scp", "-q", "-o", "BatchMode=yes", args.linux_base, f"{host}:{rdir}/finx-rb-base"])
+    run(["scp", "-q", "-o", "BatchMode=yes", args.linux_cand, f"{host}:{rdir}/finx-rb-cand"])
+    run(["scp", "-q", "-o", "BatchMode=yes", args.repo / "tools/bench/bench_startup.py",
+         args.repo / "tools/bench/bench_protocol_startup.py", f"{host}:{rdir}/"])
+    remote = (f"cd ~/{rdir} && chmod +x finx-rb-* && "
+              f"python3 bench_startup.py --finx base=./finx-rb-base --finx cand=./finx-rb-cand --launcher ./startup-launcher "
+              f"--runs {args.linux_runs} --warmup 10 --json results/rb-cli.json >/dev/null && "
+              f"python3 bench_protocol_startup.py --finx base=./finx-rb-base --finx cand=./finx-rb-cand --launcher ./startup-launcher "
+              f"--runs {args.linux_runs} --warmup 10 --json results/rb-protocol.json >/dev/null")
+    run(["ssh", "-o", "BatchMode=yes", host, remote])
+    for name in ("rb-cli.json", "rb-protocol.json"):
+        run(["scp", "-q", "-o", "BatchMode=yes", f"{host}:{rdir}/results/{name}", out / f"linux-{name}"])
+    d = json.loads((out / "linux-rb-cli.json").read_text())
+    for key in ("first_request", "exit"):
+        compare("linux cli", key, [r[key] for r in d["samples"]["base"]], [r[key] for r in d["samples"]["cand"]])
+    protocol_rows(json.loads((out / "linux-rb-protocol.json").read_text()), "linux")
+
+
+LOAD_MODES = {
+    # Realistic waits, all sessions on one connection (a desktop window with many chats).
+    "realistic": ["--sessions", "200", "--concurrency", "200", "--repeats", "1", "--ttft-ms", "100",
+                  "--chunk-ms", "1", "--tool-ms", "10"],
+    # No waits, each session on its own connection (many clients), three waves.
+    "saturated": ["--sessions", "200", "--concurrency", "200", "--repeats", "3", "--connection-per-session"],
+}
+
+
+def load(args, out):
+    for mode, extra in LOAD_MODES.items():
+        rows = {"base": [], "cand": []}
+        order = ["base", "cand", "cand", "base"] * math.ceil(args.load_runs / 2)
+        for i, label in enumerate(order[: args.load_runs * 2]):
+            j = out / f"load-{mode}-{i}-{label}.json"
+            binary = args.base if label == "base" else args.cand
+            r = subprocess.run([args.sim, "--finx", binary, "--protocol", "native", "--scenario", "macro", *extra,
+                                "--json", j], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            d = json.loads(j.read_text()) if j.exists() else None
+            if not d:
+                rows[label].append(None)
+                continue
+            m = d["protocols"][0]["metrics"]
+            waves = m["waves"]
+            rows[label].append(dict(failed=0 if d["passed"] else 1,
+                                    task_p50=m["task_ms"]["p50"], task_p95=m["task_ms"]["p95"],
+                                    task_p99=m["task_ms"]["p99"], new_p50=m["session_new_ms"]["p50"],
+                                    new_p95=m["session_new_ms"]["p95"], tps=m["turns_per_second"],
+                                    cpu=m["memory"]["sampled_cpu_ms"], peak=m["memory"]["peak_footprint_mib"],
+                                    close_fp=waves[-1]["after_close"]["footprint_mib"],
+                                    close_fds=waves[-1]["after_close"]["fds"]))
+        for key in ("task_p50", "task_p95", "task_p99", "new_p50", "new_p95", "tps", "cpu", "peak", "close_fp",
+                    "close_fds"):
+            b = [r[key] for r in rows["base"] if r]
+            c = [r[key] for r in rows["cand"] if r]
+            compare(f"load {mode}", key, b, c, higher_is_better=(key == "tps"))
+        fails = (sum(r["failed"] if r else 1 for r in rows["base"]), sum(r["failed"] if r else 1 for r in rows["cand"]))
+        ROWS.append(dict(group=f"load {mode}", metric="failed runs", base=fails[0], cand=fails[1], change_pct=0, p=1,
+                         verdict="REGRESSION" if fails[1] > fails[0] else "~", n=(len(rows["base"]), len(rows["cand"]))))
+
+
+def correctness(args, out):
+    j = out / "suite.json"
+    r = subprocess.run([args.sim, "--finx", args.cand, "--protocol", "all", "--scenario", "suite", "--sessions", "2",
+                        "--context-window", "16000", "--json", j], stdout=subprocess.DEVNULL,
+                       stderr=subprocess.DEVNULL)
+    ok = r.returncode == 0 and json.loads(j.read_text()).get("passed")
+    ROWS.append(dict(group="correctness", metric="suite (4 protocols)", base="-", cand="pass" if ok else "FAIL",
+                     change_pct=0, p=1, verdict="~" if ok else "REGRESSION", n=(0, 1)))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--repo", type=pathlib.Path, required=True)
+    ap.add_argument("--base", type=pathlib.Path, required=True)
+    ap.add_argument("--cand", type=pathlib.Path, required=True)
+    ap.add_argument("--sim", type=pathlib.Path)
+    ap.add_argument("--linux-base", type=pathlib.Path)
+    ap.add_argument("--linux-cand", type=pathlib.Path)
+    ap.add_argument("--linux-host", help="ssh destination for the Linux start-up comparison")
+    ap.add_argument("--out", type=pathlib.Path, required=True)
+    ap.add_argument("--startup-runs", type=int, default=100)
+    ap.add_argument("--linux-runs", type=int, default=200)
+    ap.add_argument("--load-runs", type=int, default=6)
+    ap.add_argument("--only", nargs="*", default=["mac", "linux", "load", "suite"])
+    args = ap.parse_args()
+    args.sim = args.sim or args.repo / "target/release/finx-sim"
+    args.out.mkdir(parents=True, exist_ok=True)
+    started = time.time()
+    if "suite" in args.only:
+        correctness(args, args.out)
+    if "mac" in args.only:
+        startup_mac(args, args.out)
+    if "linux" in args.only and args.linux_host and args.linux_base and args.linux_cand:
+        startup_linux(args, args.out)
+    if "load" in args.only:
+        load(args, args.out)
+    (args.out / "ratchet.json").write_text(json.dumps(ROWS, indent=1))
+    print(f"\n{'group':<16}{'metric':<26}{'base':>10}{'cand':>10}{'change':>9}{'p':>8}  verdict")
+    for r in ROWS:
+        fmt = lambda v: f"{v:10.3f}" if isinstance(v, float) else f"{v!s:>10}"
+        print(f"{r['group']:<16}{r['metric']:<26}{fmt(r['base'])}{fmt(r['cand'])}{r['change_pct']:8.1f}%{r['p']:8.3f}  {r['verdict']}")
+    regressions = [r for r in ROWS if r["verdict"] == "REGRESSION"]
+    print(f"\n{len(regressions)} regression(s), {sum(r['verdict'] == 'better' for r in ROWS)} improvement(s), "
+          f"{time.time() - started:.0f}s")
+
+
+if __name__ == "__main__":
+    main()

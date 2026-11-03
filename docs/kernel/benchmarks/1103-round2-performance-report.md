@@ -122,3 +122,10 @@ target/release/finx-load --scenario churn --sessions 1 --turns 3000 --ttft-ms 0 
 ```
 
 启动的测法与 1103 报告相同，见[该报告 §10](1103-kernel-performance-report.md)。
+
+两个构建之间的全套对照用 `tools/bench/ratchet.py`：交替运行启动、两种负载与正确性套件，输出中位数、p 值和退化项。
+
+```bash
+python3 tools/bench/ratchet.py --repo . --base /path/to/finx-before --cand target/release/finx \
+  --out target/ratchet --load-runs 4
+```
