@@ -295,7 +295,8 @@ export function useCustomize(cwd: string | null) {
       // On: take out the setting that turned it off where finx may write it, else say `true` for
       // the person; off: where it is defined, or for the person.
       const writable = (l: ConfigLayer | null | undefined): l is ConfigLayer => l === "user" || l === "user_project";
-      const layer: ConfigLayer = on ? (writable(s.disabled_by) ? s.disabled_by : "user_project") : s.editable ? s.layer : "user_project";
+      const ownLayer: ConfigLayer = s.editable && writable(s.layer) ? s.layer : cwd ? "user_project" : "user";
+      const layer: ConfigLayer = on && writable(s.disabled_by) ? s.disabled_by : ownLayer;
       const value = on ? (layer === s.disabled_by ? null : true) : false;
       const key = `mcp_servers.${quoteKey(s.name)}.enabled`;
       setSwitching((m) => new Map(m).set(s.name, on));
@@ -315,7 +316,7 @@ export function useCustomize(cwd: string | null) {
         st.show(errorText(e), undefined, true);
       }
     },
-    [write, readServers, check, st],
+    [write, readServers, check, st, cwd],
   );
 
   const removeServer = useCallback(

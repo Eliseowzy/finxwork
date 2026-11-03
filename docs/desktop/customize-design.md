@@ -1385,3 +1385,7 @@ OAuth 发现阶段同样可取消，请求/页面中断不会留下无法恢复�
 成功后保留不含凭据的 `auth-partial.json` 标记，通过 `McpServerView.auth_partial` 在安装完成
 和详情页提示“已连接，但部分请求权限未获批准”；完整授权及退出清理这一提示。
 回归：`FINX_CONNECTOR_E2E=feishu FINX_CONNECTOR_E2E_PARTIAL=1 node apps/desktop/e2e/dingtalk.mjs`。
+
+对话加号菜单在连接器停用时也显示“需要登录”，点击未启用且需要登录的连接器进入详情授权页。
+开关优先修改现有禁用来源或连接器所在的可写层；无项目对话使用用户层，不能写入需要 cwd 的项目层。
+办公连接器端到端测试同时覆盖菜单授权引导，以及无项目对话中的停用和重新启用。

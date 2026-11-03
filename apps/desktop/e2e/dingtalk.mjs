@@ -150,6 +150,15 @@ fs.writeFileSync(path.join(release, "cli"), fixture, { mode: 0o700 });
 fs.writeFileSync(path.join(release, "receipt.json"), JSON.stringify({ version: manifest.version, binary_sha256: createHash("sha256").update(fixture).digest("hex") }));
 let model = null;
 let page;
+async function openComposerConnector() {
+  await page.run(`document.querySelector('.side-nav .nav-i').click()`);
+  await page.until("new conversation composer", `!!document.querySelector('.cmp-plus')`);
+  await page.run(click(".cmp-plus"));
+  await page.until("connectors submenu entry", click('.vmenu [aria-haspopup="menu"]', "连接器") + " || " + click('.vmenu [aria-haspopup="menu"]', "Connectors"));
+  const row = `[...document.querySelectorAll('.cn-sub .cn-row')].find(e => e.querySelector('.nm')?.textContent === ${JSON.stringify(manifest.name)})`;
+  await page.until("connector in composer", `!!(${row})`);
+  return row;
+}
 try {
   model = spawn(mockModel, [], { stdio: ["ignore", "pipe", "inherit"] });
   const toml = await new Promise((resolve) => {
@@ -204,6 +213,12 @@ try {
   await page.run(`[...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)})).click()`);
   check(await page.run(`document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false' && document.querySelector('[role=switch]')?.disabled`), "cancelled authorization left the switch enabled");
   await page.until("login action", anyText(words((x) => x.connector.loginTitle)));
+  step("composer shows sign-in for a disabled unauthorized connector");
+  const unsignedRow = await openComposerConnector();
+  check(await page.run(`(${unsignedRow}).querySelector('.cn-st')?.textContent === ${JSON.stringify(t['zh-CN'].menuNeed.login)} || (${unsignedRow}).querySelector('.cn-st')?.textContent === ${JSON.stringify(t.en.menuNeed.login)}`), "composer hid the sign-in requirement");
+  await page.run(`(${unsignedRow}).click()`);
+  await page.until("composer opens connector sign-in", `!!document.querySelector('.cz-dtitle') && !!document.querySelector('.cz-note button')`);
+  check(fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"), "composer enabled an unauthorized connector");
   // Exercise staged progress in the existing-connector login UI as well as the sheet.
   if (provider === "feishu") fs.unlinkSync(path.join(configDir, "config.json"));
   await page.run(click(".cz-note button", words((x) => x.connector.signIn)[1]) + " || " + click(".cz-note button", words((x) => x.connector.signIn)[0]));
@@ -232,6 +247,27 @@ try {
   await page.until("tools listed", `document.querySelectorAll('.cz-dtools .cz-tool').length === 1`);
   await page.until("authorized connector enabled", `document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true' && !document.querySelector('[role=switch]')?.disabled`);
   if (partialGrant) await page.until("partial permission notice", anyText(words((x) => x.managed.partialPermissions)));
+  step("composer toggles an authorized connector without a project");
+  const enabledRow = await openComposerConnector();
+  await page.run(`(${enabledRow}).click()`);
+  await page.until("composer disabled", `(${enabledRow})?.getAttribute('aria-checked') === 'false'`);
+  await page.until("disabled state saved", `!document.body.innerText.includes('invalid params:')`);
+  // Wait for the persisted result, not only the optimistic switch.
+  for (let i = 0; !fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"); i++) {
+    if (i === 100) fail("composer did not persist disabled state");
+    await sleep(50);
+  }
+  await sleep(300);
+  await page.run(`(${enabledRow}).click()`);
+  for (let i = 0; fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"); i++) {
+    if (i === 100) fail("composer could not re-enable without a project");
+    await sleep(50);
+  }
+  await page.until("composer enabled", `(${enabledRow})?.getAttribute('aria-checked') === 'true'`);
+  await page.run(click('.cn-sub .mi', "管理连接器") + " || " + click('.cn-sub .mi', "Manage connectors"));
+  await page.until("connector list", `!!document.querySelector('.cz-row')`);
+  await page.run(`[...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)})).click()`);
+  await page.until("connector detail restored", `!!document.querySelector('.cz-dtitle')`);
   await page.shot(`${provider}-connected`);
   const configured = fs.readFileSync(path.join(home, "config.toml"), "utf8");
   check(configured.includes(`connector = "${provider}"`), "managed identity did not persist");
