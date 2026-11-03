@@ -239,6 +239,8 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 .vmenu .mi .val{margin-left:auto;padding-left:14px;color:var(--l2);font-size:12px}
 .vmenu .mi>.ic{color:var(--l2)}
 .vmenu .ck{width:14px;display:flex;flex:none;color:var(--accent-t)}
+/* A long list inside a menu (the models): about a dozen rows, then it scrolls. */
+.vmenu .mlist{max-height:min(348px,55vh);overflow-y:auto;margin:0 -4px;padding:0 4px}
 .vmenu .msep{height:.5px;background:var(--sep);margin:5px 9px}
 .vmenu .mh{font-size:11.5px;color:var(--l3);padding:6px 9px 3px}
 .vmenu .mi.danger{color:var(--red)}

@@ -234,6 +234,8 @@ export function MenuButton({ className, title, label, align = "left", below, dis
     const r = m.getBoundingClientRect();
     if (r.right > innerWidth - 8) m.style.left = `${Math.max(8, innerWidth - 8 - r.width)}px`;
     if (r.left < 8) m.style.left = "8px";
+    // A long list opens scrolled to the chosen row.
+    m.querySelector("[aria-checked=true]")?.scrollIntoView({ block: "nearest" });
     (at.key ? (m.querySelector<HTMLElement>("[aria-checked=true]") ?? m.querySelector<HTMLElement>("[role^=menuitem]:not(:disabled)")) : m)?.focus();
   }, [at]);
   useEffect(() => {
@@ -273,7 +275,8 @@ export function MenuButton({ className, title, label, align = "left", below, dis
             aria-label={title}
             tabIndex={-1}
             ref={menu}
-            style={{ [align]: at.x, [below ? "top" : "bottom"]: at.y }}
+            // No taller than the room between the button and the window's far edge, so it scrolls rather than runs off.
+            style={{ [align]: at.x, [below ? "top" : "bottom"]: at.y, maxHeight: innerHeight - at.y - 8 }}
             onKeyDown={(e) => menuKeys(e, menu.current, () => (close(), btn.current?.focus()))}
           >
             {children(close)}
@@ -312,8 +315,10 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
       const m = menu.getBoundingClientRect();
       const r = row.current.getBoundingClientRect();
       const { offsetWidth: w, offsetHeight: h } = sub.current;
-      // It grows the way its menu does: from the row's top down, or (a menu over the composer) from the row's bottom up.
-      const top = menu.classList.contains("down") ? r.top - 5 : r.bottom + 5 - h;
+      // It grows the way its menu does: from the row's top down, or (a menu over the composer) from the row's
+      // bottom up — unless that would rise above its menu (a row at the menu's top), when it grows down too.
+      const up = r.bottom + 5 - h;
+      const top = menu.classList.contains("down") || up < m.top ? r.top - 5 : up;
       setAt({ left: m.right + w + 4 > innerWidth ? m.left - w - 2 : m.right + 2, top: Math.max(8, Math.min(top, innerHeight - 8 - h)) });
     };
     place();
@@ -444,11 +449,11 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
 
 /**
  * The model and how hard it thinks, as one button ("DeepSeek-V4.1-Flash 高").
- * Its menu is the models that can be used (their provider at the right) and
- * the current one even when its key is missing, then, when the model can be
- * told how hard to think, one row for the level — "default" (the provider
- * decides) and the provider's own levels for this model — which opens its own
- * menu. Choosing another model keeps the level when that model offers it, else
+ * Its menu starts, when the model can be told how hard to think, with one row
+ * for the level — "default" (the provider decides) and the provider's own
+ * levels for this model — which opens its own menu; then the models that can
+ * be used (their provider at the right) and the current one even when its key
+ * is missing, in a list of fixed height that scrolls. Choosing another model keeps the level when that model offers it, else
  * takes the level that model starts with, and says so (model-catalog-design
  * §18). Choosing a model whose key is missing asks for the key (§8.4).
  */
@@ -484,18 +489,8 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
     >
       {(close) => (
         <>
-          {menuModels(models, current).map((m) => (
-            <MenuItem
-              key={m.id}
-              checked={m.id === current}
-              label={m.name}
-              value={m.note ? t(`composer.${m.note}`) : providerName(m.provider)}
-              onClick={() => (close(), choose(m.id, m.provider, m.available))}
-            />
-          ))}
           {thinks && (
             <>
-              <div className="msep" role="separator" />
               <SubMenuItem label={t("composer.thinking")} value={thinkingTitle(thinking)} title={t("composer.thinking")}>
                 <MenuItem checked={thinking === "default"} label={thinkingTitle("default")} value={t("composer.thinkingDefault")} onClick={() => (close(), onThinking("default"))} />
                 <div className="msep" role="separator" />
@@ -503,8 +498,20 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
                   <MenuItem key={l} checked={l === thinking} label={thinkingTitle(l)} onClick={() => (close(), onThinking(l))} />
                 ))}
               </SubMenuItem>
+              <div className="msep" role="separator" />
             </>
           )}
+          <div className="mlist">
+            {menuModels(models, current).map((m) => (
+              <MenuItem
+                key={m.id}
+                checked={m.id === current}
+                label={m.name}
+                value={m.note ? t(`composer.${m.note}`) : providerName(m.provider)}
+                onClick={() => (close(), choose(m.id, m.provider, m.available))}
+              />
+            ))}
+          </div>
         </>
       )}
     </MenuButton>
