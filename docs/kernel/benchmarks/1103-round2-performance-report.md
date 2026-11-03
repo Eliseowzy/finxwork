@@ -129,3 +129,5 @@ target/release/finx-load --scenario churn --sessions 1 --turns 3000 --ttft-ms 0 
 python3 tools/bench/ratchet.py --repo . --base /path/to/finx-before --cand target/release/finx \
   --out target/ratchet --load-runs 4
 ```
+
+之后同一天的单次任务内存优化与汇总见 [1103 交接之后的优化总结](1103-optimization-summary.md)。
