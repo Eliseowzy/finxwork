@@ -6,6 +6,7 @@
 
 mod driver;
 mod mail;
+mod restore;
 mod tools;
 
 use finx_llm::ModelRegistry;
@@ -37,6 +38,8 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
 pub(crate) use mail::Mail;
+pub use restore::RestoredAgent;
+pub(crate) use restore::restore;
 pub(crate) use tools::agent_tools;
 
 use crate::config::Config;
@@ -100,6 +103,9 @@ pub(crate) struct AgentTree {
 #[derive(Default)]
 struct TreeState {
     agents: Vec<Agent>,
+    /// Agents of an earlier run of the session, whose sessions are not loaded: their names
+    /// stay taken, and they take no messages.
+    restored: Vec<(String, String)>,
     /// Reports handed over but not yet in the main session's inbox, or in a waiting call.
     in_flight: usize,
     mails: u64,
@@ -167,6 +173,11 @@ impl AgentTree {
         if let Some(root) = self.root.get() {
             root.emitter.emit(msg);
         }
+    }
+
+    /// The agents of an earlier run of the session (by id and name).
+    pub(crate) fn restore(&self, agents: &[RestoredAgent]) {
+        self.state.lock().restored = agents.iter().map(|a| (a.agent_id.clone(), a.name.clone())).collect();
     }
 
     /// Every sub-agent is idle and no report is on its way.
@@ -373,8 +384,11 @@ impl AgentTree {
         let root = self.root()?;
         let (id, name, ops, was_running, waiter) = {
             let mut state = self.state.lock();
-            let names: Vec<String> = state.agents.iter().map(|a| a.name.clone()).collect();
+            let names: Vec<String> = state.restored.iter().map(|(_, name)| name.clone()).chain(state.agents.iter().map(|a| a.name.clone())).collect();
             let to = args.to.trim();
+            if let Some((_, name)) = state.restored.iter().find(|(id, name)| name == to || id == to) {
+                return Err(ToolError::Failed(format!("Agent \"{name}\" is closed. Start a new one with spawn_agent.")));
+            }
             let Some(agent) = state.agents.iter_mut().find(|a| a.name == to || a.id == to) else {
                 return Err(ToolError::Failed(if names.is_empty() {
                     format!("No agent named \"{to}\". Start one with spawn_agent.")
@@ -493,7 +507,7 @@ impl AgentTree {
         if state.closing {
             return Err(ToolError::Failed("the session is closing".into()));
         }
-        let taken = |name: &str| state.agents.iter().any(|a| a.name == name);
+        let taken = |name: &str| state.agents.iter().any(|a| a.name == name) || state.restored.iter().any(|(_, n)| n == name);
         let requested = requested.map(sanitize).filter(|name| !name.is_empty());
         if let Some(name) = &requested
             && !taken(name)

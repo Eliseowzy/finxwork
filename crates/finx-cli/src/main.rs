@@ -36,6 +36,8 @@ struct Cli {
 }
 
 #[derive(Subcommand)]
+// Build arguments only for the selected command; help still expands its own command.
+#[command(defer = true)]
 enum Command {
     /// The document worker `finx serve` starts: PDFium, one request a line on stdin
     #[command(hide = true)]
@@ -185,11 +187,13 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 enum ConnectorCommand {
     Serve { id: String, #[arg(long)] home: PathBuf },
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 enum BrowserCommand {
     /// Download Chrome for Testing into ~/.finx/browser/chromium, for machines without Chrome,
     /// Edge or Chromium (used only when none is installed)
@@ -209,6 +213,7 @@ enum BrowserCommand {
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 enum ExtensionCommand {
     /// Register finx with Chrome, Chromium, Edge and Brave as the extension's host
     Install {
@@ -226,6 +231,7 @@ enum ExtensionCommand {
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 enum McpCommand {
     /// List the servers: name, transport, exposure and where each is configured
     List {
@@ -305,6 +311,7 @@ enum McpCommand {
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 enum SkillsAction {
     /// Copy a skill (a folder with SKILL.md, or a .zip or .skill archive) into ~/.finx/skills
     Add {
@@ -334,6 +341,7 @@ enum SkillsAction {
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 pub(crate) enum ModelsAction {
     /// Sign in with ChatGPT to use subscription models (no API key)
     Login { #[arg(value_parser = ["chatgpt-api"])] connection: String },
@@ -356,6 +364,7 @@ pub(crate) enum ModelsAction {
 }
 
 #[derive(Subcommand)]
+#[command(defer = true)]
 enum ProtocolCommand {
     /// Print the JSON Schema of every message, with the methods and error codes
     Schema,
@@ -521,14 +530,21 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
 }
 
 fn run_async(overrides: &[String], command: Command) -> anyhow::Result<u8> {
-    // One task is I/O-bound: four workers start faster than one per core. The service runs
-    // many sessions at once and uses every core.
-    let workers = match command {
-        Command::Serve { .. } | Command::Acp => std::thread::available_parallelism().map_or(4, |n| n.get().clamp(4, 16)),
-        _ => 4,
+    // A foreground command is driven by the calling thread. Its asynchronous tools and
+    // sub-agents still make progress together; filesystem work uses the blocking pool.
+    // Services retain a worker pool, sized to the CPUs actually available to this process.
+    let mut builder = match command {
+        Command::Exec { .. } | Command::Resume { .. } | Command::Chat { .. } => {
+            tokio::runtime::Builder::new_current_thread()
+        }
+        _ => {
+            let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(16));
+            let mut builder = tokio::runtime::Builder::new_multi_thread();
+            builder.worker_threads(workers);
+            builder
+        }
     };
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(workers)
+    let runtime = builder
         // Blocking threads (file tools, log writes) go away soon after a burst.
         .thread_keep_alive(std::time::Duration::from_secs(3))
         // Many sessions writing logs or files at once share these instead of each adding one.
@@ -598,5 +614,47 @@ fn main() -> ExitCode {
             eprintln!("error: {err:#}");
             ExitCode::from(2)
         }
+    }
+}
+
+#[cfg(test)]
+mod parsing_tests {
+    use super::*;
+    use clap::CommandFactory;
+    use clap::error::ErrorKind;
+
+    #[test]
+    fn help_expands_every_deferred_command() {
+        fn visit(mut command: clap::Command, path: Vec<String>) {
+            command.build();
+            let mut args = path.clone();
+            args.push("--help".into());
+            let error = Cli::try_parse_from(args).err().expect("help exits the parser");
+            assert_eq!(error.kind(), ErrorKind::DisplayHelp, "{path:?}: {error}");
+            assert!(error.to_string().contains("Usage:"), "{path:?}: {error}");
+            for child in command.get_subcommands().filter(|child| child.get_name() != "help") {
+                let mut path = path.clone();
+                path.push(child.get_name().into());
+                visit(child.clone(), path);
+            }
+        }
+        visit(Cli::command(), vec!["finx".into()]);
+    }
+
+    #[test]
+    fn deferred_arguments_keep_global_options_and_conflicts() {
+        let cli = Cli::try_parse_from([
+            "finx", "-c", "thinking=low", "exec", "hello", "-m", "mock/bench",
+            "--mcp-config", "tools.json", "--permission-mode", "manual",
+        ]).unwrap();
+        assert_eq!(cli.overrides, ["thinking=low"]);
+        assert_eq!(cli.mcp_config, [PathBuf::from("tools.json")]);
+        assert!(matches!(cli.command, Command::Exec { run, .. } if run.model.as_deref() == Some("mock/bench")));
+        let error = Cli::try_parse_from(["finx", "exec", "hello", "--no-save", "--continue"])
+            .err().expect("conflicting arguments");
+        assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
+        let cli = Cli::try_parse_from(["finx", "mcp", "get", "example", "-c", "thinking=low"]).unwrap();
+        assert_eq!(cli.overrides, ["thinking=low"]);
+        assert!(matches!(cli.command, Command::Mcp { command: McpCommand::Get { name, .. } } if name == "example"));
     }
 }

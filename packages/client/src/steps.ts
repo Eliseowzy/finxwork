@@ -38,6 +38,8 @@ export interface AgentLaunch {
   description: string;
   task: string;
   agent?: AgentView;
+  /** The call has no result yet: the agent is starting. */
+  starting: boolean;
 }
 
 /** A piece of work that took several tasks or sub-agents, told once where it ends. */
@@ -174,7 +176,7 @@ export function conversation(v: SessionView): Step[] {
         const named = detailsOf(results.get(c.id)).name;
         const name = agent?.name ?? (typeof named === "string" ? named : typeof args.name === "string" ? args.name : "agent");
         const description = agent?.description || (typeof args.description === "string" ? args.description.trim() : "");
-        launch({ call_id: c.id, name, description, task: typeof args.task === "string" ? args.task : "", agent });
+        launch({ call_id: c.id, name, description, task: typeof args.task === "string" ? args.task : "", agent, starting: !results.has(c.id) });
       } else {
         work({ kind: "tool", key: c.id, tool: call(c) });
       }

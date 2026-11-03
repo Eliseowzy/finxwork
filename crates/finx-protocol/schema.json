@@ -2914,6 +2914,12 @@
         },
         {
           "properties": {
+            "compaction_seq": {
+              "description": "The session's compaction count, from 1. Distinct from the event sequence.",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
             "context": {
               "$ref": "#/definitions/ContextUsage"
             },
@@ -2929,12 +2935,6 @@
             },
             "retained_messages": {
               "description": "User messages kept word for word.",
-              "format": "uint32",
-              "minimum": 0.0,
-              "type": "integer"
-            },
-            "seq": {
-              "description": "The session's compaction count, from 1.",
               "format": "uint32",
               "minimum": 0.0,
               "type": "integer"
@@ -2960,10 +2960,10 @@
             }
           },
           "required": [
+            "compaction_seq",
             "context",
             "reason",
             "retained_messages",
-            "seq",
             "summary",
             "tokens_after",
             "tokens_before",

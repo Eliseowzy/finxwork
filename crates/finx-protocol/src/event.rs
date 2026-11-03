@@ -154,7 +154,8 @@ pub enum EventMsg {
     },
     CompactionCompleted {
         reason: CompactionReason,
-        /// The session's compaction count, from 1.
+        /// The session's compaction count, from 1. Distinct from the event sequence.
+        #[serde(rename = "compaction_seq")]
         seq: u32,
         tokens_before: u64,
         tokens_after: u64,
@@ -603,6 +604,30 @@ impl From<&LlmError> for ErrorInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compaction_count_does_not_shadow_the_event_sequence() {
+        let event = Event {
+            seq: 486,
+            ts: 10,
+            msg: EventMsg::CompactionCompleted {
+                reason: CompactionReason::Threshold,
+                seq: 1,
+                tokens_before: 1000,
+                tokens_after: 100,
+                retained_messages: 2,
+                kept_skills: Vec::new(),
+                summary: "verified progress".into(),
+                context: ContextUsage::default(),
+            },
+        };
+        let wire = serde_json::to_string(&event).unwrap();
+        assert_eq!(wire.matches("\"seq\":").count(), 1);
+        let value: Value = serde_json::from_str(&wire).unwrap();
+        assert_eq!(value["seq"], 486);
+        assert_eq!(value["compaction_seq"], 1);
+        assert_eq!(serde_json::from_str::<Event>(&wire).unwrap(), event);
+    }
 
     #[test]
     fn events_flatten_the_message() {

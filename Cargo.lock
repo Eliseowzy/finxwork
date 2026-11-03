@@ -838,11 +838,13 @@ dependencies = [
 name = "finx-bench"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "finx-mock",
  "finx-rpc",
  "libc",
  "parking_lot",
+ "serde",
  "serde_json",
  "tempfile",
  "tokio",
@@ -1088,6 +1090,7 @@ dependencies = [
  "base64 0.22.1",
  "parking_lot",
  "ring",
+ "serde",
  "serde_json",
  "tokio",
 ]

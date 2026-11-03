@@ -128,7 +128,7 @@ fn report_events(events: &[Value]) {
             "compaction_started" => println!("  compaction started ({})", event["reason"].as_str().unwrap_or_default()),
             "compaction_completed" => println!(
                 "  compaction #{} done: {} → {} tokens, kept {} user message(s)",
-                event["seq"], event["tokens_before"], event["tokens_after"], event["retained_messages"]
+                event["compaction_seq"], event["tokens_before"], event["tokens_after"], event["retained_messages"]
             ),
             "compaction_failed" => println!("  compaction failed: {}", event["error"]["message"]),
             "warning" => println!("  warning: {}", event["message"].as_str().unwrap_or_default()),

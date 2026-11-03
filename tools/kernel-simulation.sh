@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Run from any directory. CARGO_TARGET_DIR is respected; outputs remain in that target dir.
+set -euo pipefail
+if ! command -v cargo >/dev/null 2>&1 && [[ -x "$HOME/.cargo/bin/cargo" ]]; then
+  export PATH="$HOME/.cargo/bin:$PATH"
+fi
+cd "$(dirname "$0")/.."
+results="${CARGO_TARGET_DIR:-target}/simulation-results"
+mode="${1:-verify}"
+case "$mode" in
+  verify)
+    cargo test -p finx-mock --lib
+    cargo test -p finx-bench --bin finx-sim
+    cargo test --release -p finx-cli --test simulation --test e2e_compaction
+    cargo build --release -p finx-cli -p finx-bench
+    "${CARGO_TARGET_DIR:-target}/release/finx-sim" \
+      --finx "${CARGO_TARGET_DIR:-target}/release/finx" \
+      --protocol all --scenario suite --sessions 2 --context-window 16000 \
+      --json "$results/verify.json"
+    ;;
+  load)
+    cargo build --release -p finx-cli -p finx-bench
+    "${CARGO_TARGET_DIR:-target}/release/finx-sim" \
+      --finx "${CARGO_TARGET_DIR:-target}/release/finx" \
+      --protocol native --scenario macro --sessions 200 --concurrency 200 --repeats 3 \
+      --json "$results/load.json"
+    ;;
+  startup)
+    cargo build --release -p finx-cli --bin finx
+    clock_args=()
+    if [[ "$(uname -s)" == Linux ]]; then
+      "${CC:-cc}" -O2 -Wall -Wextra -Werror tools/bench/startup_launcher.c \
+        -o "${CARGO_TARGET_DIR:-target}/startup-launcher"
+      clock_args=(--launcher "${CARGO_TARGET_DIR:-target}/startup-launcher")
+    fi
+    python3 tools/bench/bench_startup.py \
+      --finx "candidate=${CARGO_TARGET_DIR:-target}/release/finx" \
+      "${clock_args[@]}" --runs 200 --warmup 10 \
+      --max-first-request-p50-ms "${FINX_STARTUP_BUDGET_MS:-2}" \
+      --json "$results/startup.json"
+    ;;
+  cli-startup|protocol-startup)
+    # Static Linux distribution avoids dynamic-loader relocations on each command.
+    build_args=(--profile dist)
+    binary="${CARGO_TARGET_DIR:-target}/dist/finx"
+    if [[ "$(uname -s)" == Linux ]]; then
+      rust_target="${FINX_STARTUP_TARGET:-$(uname -m)-unknown-linux-musl}"
+      build_args+=(--target "$rust_target")
+      binary="${CARGO_TARGET_DIR:-target}/$rust_target/dist/finx"
+    fi
+    cargo build "${build_args[@]}" -p finx-cli --bin finx
+    if [[ "$mode" == cli-startup ]]; then
+      python3 tools/bench/bench_cli.py --finx "candidate=$binary" \
+        --hyperfine "${HYPERFINE:-hyperfine}" --runs 100 --warmup 10 \
+        --json "$results/cli-startup.json"
+    else
+      clock_args=()
+      if [[ "$(uname -s)" == Linux ]]; then
+        "${CC:-cc}" -O2 -Wall -Wextra -Werror tools/bench/startup_launcher.c \
+          -o "${CARGO_TARGET_DIR:-target}/startup-launcher"
+        clock_args=(--launcher "${CARGO_TARGET_DIR:-target}/startup-launcher")
+      fi
+      python3 tools/bench/bench_protocol_startup.py --finx "candidate=$binary" \
+        "${clock_args[@]}" --runs 200 --warmup 10 --json "$results/protocol-startup.json"
+    fi
+    ;;
+  *) echo "usage: $0 [verify|load|startup|cli-startup|protocol-startup]" >&2; exit 2 ;;
+esac

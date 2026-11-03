@@ -26,6 +26,9 @@ use crate::store::entry::SessionHeader;
 use crate::store::writer::LineSink;
 use crate::store::writer::SessionWriter;
 
+#[path = "summary_cache.rs"]
+mod summary_cache;
+
 pub struct JsonlStore {
     dir: PathBuf,
     unwritten: Unwritten,
@@ -38,7 +41,7 @@ pub struct JsonlStore {
 /// appended since: a service listing long sessions again and again otherwise rereads every
 /// log in full each time. Only long logs are kept: a short one costs little more to read
 /// again than to keep (about 1 KiB each).
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 struct Scanned {
     /// The file as it was when read; another file or a change other than growth means a
     /// full read.
@@ -140,6 +143,30 @@ fn read_header(path: &Path) -> Option<SessionHeader> {
     let mut line = String::new();
     std::io::BufReader::new(File::open(path).ok()?).read_line(&mut line).ok()?;
     serde_json::from_str(&line).ok()
+}
+
+/// A log's header and entries; lines that cannot be read are skipped with a warning.
+fn parse_log(path: &Path, text: &str, warnings: &mut Vec<String>) -> Result<(SessionHeader, Vec<Entry>), StoreError> {
+    let mut lines = text.lines();
+    let header_line = lines.next().ok_or_else(|| StoreError::Corrupt {
+        path: path.to_path_buf(),
+        message: "empty file".into(),
+    })?;
+    let header: SessionHeader = serde_json::from_str(header_line).map_err(|e| StoreError::Corrupt {
+        path: path.to_path_buf(),
+        message: format!("bad header: {e}"),
+    })?;
+    let mut entries = Vec::new();
+    for (number, line) in lines.enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Entry>(line) {
+            Ok(entry) => entries.push(entry),
+            Err(err) => warnings.push(format!("skipped unreadable line {}: {err}", number + 2)),
+        }
+    }
+    Ok((header, entries))
 }
 
 /// `20261028T090000-<id>.jsonl` → `<id>`
@@ -303,25 +330,7 @@ impl SessionStore for JsonlStore {
             warnings.push("dropped an incomplete last line from the session log".to_string());
         }
 
-        let mut lines = text.lines();
-        let header_line = lines.next().ok_or_else(|| StoreError::Corrupt {
-            path: path.clone(),
-            message: "empty file".into(),
-        })?;
-        let header: SessionHeader = serde_json::from_str(header_line).map_err(|e| StoreError::Corrupt {
-            path: path.clone(),
-            message: format!("bad header: {e}"),
-        })?;
-        let mut entries = Vec::new();
-        for (number, line) in lines.enumerate() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<Entry>(line) {
-                Ok(entry) => entries.push(entry),
-                Err(err) => warnings.push(format!("skipped unreadable line {}: {err}", number + 2)),
-            }
-        }
+        let (header, entries) = parse_log(&path, &text, &mut warnings)?;
         let writer = SessionWriter::spawn(FileSink::Open(file)).map_err(io_err(&path))?;
         Ok(LoadedSession {
             header,
@@ -330,6 +339,14 @@ impl SessionStore for JsonlStore {
             writer,
             warnings,
         })
+    }
+
+    fn read(&self, reference: &SessionRef) -> Result<(SessionHeader, Vec<Entry>), StoreError> {
+        let path = self.find(reference)?;
+        let mut text = std::fs::read_to_string(&path).map_err(io_err(&path))?;
+        // A line its writer has not finished yet.
+        text.truncate(text.rfind('\n').map_or(0, |i| i + 1));
+        parse_log(&path, &text, &mut Vec::new())
     }
 
     fn list(&self, limit: usize, within: Option<&Path>) -> Result<Vec<SessionSummary>, StoreError> {
@@ -394,6 +411,12 @@ impl JsonlStore {
         let meta = std::fs::metadata(path).ok()?;
         let (len, modified, inode) = (meta.len(), meta.modified().ok(), inode(&meta));
         let cached = self.scanned.lock().get(path).cloned();
+        let cached = cached.or_else(|| {
+            if len < self.keep_from || !path.starts_with(&self.dir) { return None; }
+            let cached = summary_cache::load(path, &meta)?;
+            self.scanned.lock().insert(path.to_path_buf(), cached.clone());
+            Some(cached)
+        });
         let mut state = match cached.filter(|_| len >= self.keep_from) {
             Some(c) if c.inode == inode && c.len == len && c.modified == modified => return Some((c.agent, c.summary)),
             Some(c) if c.inode == inode && c.len < len => Some(c),
@@ -451,7 +474,7 @@ impl JsonlStore {
                     agent: header.agent.is_some(),
                     summary,
                 };
-                return Some(self.keep(path, scanned, tail));
+                return Some(self.keep(path, scanned, tail, &meta));
             }
         };
         for line in done.lines() {
@@ -460,18 +483,23 @@ impl JsonlStore {
         c.offset += complete as u64;
         c.len = len;
         c.modified = modified;
-        Some(self.keep(path, c, tail))
+        Some(self.keep(path, c, tail, &meta))
     }
 
     /// Caches what was read; a half-written last line counts for this answer only, and is
     /// read again next time.
-    fn keep(&self, path: &Path, mut scanned: Scanned, tail: &str) -> (bool, SessionSummary) {
+    fn keep(&self, path: &Path, mut scanned: Scanned, tail: &str, meta: &std::fs::Metadata) -> (bool, SessionSummary) {
         if !tail.is_empty() {
             scanned.len = scanned.offset;
         }
         let agent = scanned.agent;
         let mut summary = scanned.summary.clone();
         if scanned.offset >= self.keep_from {
+            // A process restarting can reuse an unchanged large log's summary. Partial
+            // records and concurrent writes are never persisted as a complete projection.
+            if tail.is_empty() && path.starts_with(&self.dir) {
+                summary_cache::save(path, &scanned, meta);
+            }
             self.scanned.lock().insert(path.to_path_buf(), scanned);
         } else {
             self.scanned.lock().remove(path);
@@ -703,6 +731,96 @@ mod tests {
         let store = JsonlStore::new(&sessions);
         assert_eq!(store.list(10, None).unwrap()[0].title.as_deref(), Some("Short"));
         assert!(store.scanned.lock().is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn large_summary_survives_process_restart_and_invalidates_on_every_file_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("20261103T000000-cached.jsonl");
+        let header = serde_json::to_string(&SessionHeader::new("cached".into(), dir.path().into())).unwrap();
+        let title = |value: &str| format!("{{\"id\":\"t\",\"parent\":null,\"ts\":0,\"type\":\"title\",\"title\":\"{value}\"}}\n");
+        let text = |value: &str| format!("{header}\n{}\n{}", " ".repeat(128 * 1024), title(value));
+        let summary = || JsonlStore::new(dir.path()).summary(&SessionRef::Path(log.clone())).unwrap();
+        let cached = || summary_cache::load(&log, &std::fs::metadata(&log).unwrap());
+        std::fs::write(&log, text("first!")).unwrap();
+        assert_eq!(summary().title.as_deref(), Some("first!"));
+        assert!(cached().is_some());
+        assert_eq!(summary().title.as_deref(), Some("first!"));
+
+        OpenOptions::new().append(true).open(&log).unwrap().write_all(title("second").as_bytes()).unwrap();
+        assert!(cached().is_none());
+        assert_eq!(summary().title.as_deref(), Some("second"));
+        let old = std::fs::read_to_string(&log).unwrap();
+        std::fs::write(&log, old.replace("second", "edited")).unwrap();
+        assert!(cached().is_none(), "same-size edits invalidate the disk projection");
+        assert_eq!(summary().title.as_deref(), Some("edited"));
+
+        let replacement = dir.path().join("replacement");
+        std::fs::write(&replacement, text("newone")).unwrap();
+        std::fs::rename(replacement, &log).unwrap();
+        assert!(cached().is_none());
+        assert_eq!(summary().title.as_deref(), Some("newone"));
+        std::fs::write(&log, format!("{header}\n{}", title("short!"))).unwrap();
+        assert!(cached().is_none());
+        assert_eq!(summary().title.as_deref(), Some("short!"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn summary_projection_is_optional_bounded_private_and_never_hides_a_partial_tail() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("20261103T000000-cached.jsonl");
+        let header = serde_json::to_string(&SessionHeader::new("cached".into(), dir.path().into())).unwrap();
+        let body = format!("{header}\n{}\n", " ".repeat(128 * 1024));
+        let summary = || JsonlStore::new(dir.path()).summary(&SessionRef::Path(log.clone()));
+        let cache = log.with_extension("").join("summary-cache.json");
+        std::fs::write(&log, &body).unwrap();
+        summary().unwrap();
+        assert!(cache.is_file());
+        let mut future: serde_json::Value = serde_json::from_slice(&std::fs::read(&cache).unwrap()).unwrap();
+        future["version"] = serde_json::json!(999);
+        std::fs::write(&cache, serde_json::to_vec(&future).unwrap()).unwrap();
+        assert!(summary_cache::load(&log, &std::fs::metadata(&log).unwrap()).is_none());
+        summary().unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&cache).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        for invalid in ["broken".to_string(), " ".repeat(65537)] {
+            std::fs::write(&cache, invalid).unwrap();
+            assert!(summary_cache::load(&log, &std::fs::metadata(&log).unwrap()).is_none());
+            assert!(summary().unwrap().title.is_none());
+        }
+        let tail = "{\"id\":\"t\",\"parent\":null,\"ts\":0,\"type\":\"title\",\"title\":\"tail\"}";
+        std::fs::write(&log, format!("{body}{tail}")).unwrap();
+        assert_eq!(summary().unwrap().title.as_deref(), Some("tail"));
+        assert!(summary_cache::load(&log, &std::fs::metadata(&log).unwrap()).is_none());
+        OpenOptions::new().append(true).open(&log).unwrap().write_all(b"\n").unwrap();
+        assert_eq!(summary().unwrap().title.as_deref(), Some("tail"));
+        assert!(summary_cache::load(&log, &std::fs::metadata(&log).unwrap()).is_some());
+        OpenOptions::new().append(true).open(&log).unwrap().write_all(&[0xff]).unwrap();
+        assert!(summary().is_err(), "invalid UTF-8 must still make the log unreadable");
+        std::fs::remove_dir_all(log.with_extension("")).unwrap();
+        std::fs::write(log.with_extension(""), "occupied").unwrap();
+        std::fs::write(&log, &body).unwrap();
+        assert!(summary().is_ok(), "cache write failures must not fail listing");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn oversized_first_messages_are_listed_without_an_unbounded_disk_projection() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join("20261103T000000-large.jsonl");
+        let header = serde_json::to_string(&SessionHeader::new("large".into(), dir.path().into())).unwrap();
+        let text = "x".repeat(128 * 1024);
+        let entry = Entry { id: "q".into(), parent: None, ts: 0,
+            kind: EntryKind::message(finx_llm::UserMessage::text(&text).into()) };
+        std::fs::write(&log, format!("{header}\n{}\n", serde_json::to_string(&entry).unwrap())).unwrap();
+        let summary = JsonlStore::new(dir.path()).summary(&SessionRef::Path(log.clone())).unwrap();
+        assert_eq!(summary.first_message.as_deref(), Some(text.as_str()));
+        assert!(!log.with_extension("").join("summary-cache.json").exists());
     }
 
 }

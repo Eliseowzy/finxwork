@@ -280,7 +280,7 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "agents": {
       const x = (b as typeof a).launches;
-      return a.launches.length === x.length && a.launches.every((l, i) => l.agent === x[i].agent && l.name === x[i].name && l.description === x[i].description && l.task === x[i].task);
+      return a.launches.length === x.length && a.launches.every((l, i) => l.agent === x[i].agent && l.starting === x[i].starting && l.name === x[i].name && l.description === x[i].description && l.task === x[i].task);
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;

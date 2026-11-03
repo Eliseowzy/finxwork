@@ -50,6 +50,8 @@ fn build_http(options: &RegistryOptions) -> Result<reqwest::Client, LlmError> {
         // Idle connections hold read and write buffers; a quiet service drops them sooner
         // than the 90-second default.
         .pool_idle_timeout(Duration::from_secs(30))
+        // Bound retained sockets after a burst. This does not limit active requests.
+        .pool_max_idle_per_host(32)
         .user_agent(user_agent)
         .redirect(reqwest::redirect::Policy::none())
         .build()

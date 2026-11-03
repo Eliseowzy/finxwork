@@ -206,7 +206,7 @@ struct Hub {
 /// Starts the hub of a freshly started or resumed kernel. `first` attaches before any event
 /// is consumed, so its snapshot has sequence number 0 and it sees every event.
 pub(crate) fn spawn(
-    kernel: Kernel,
+    mut kernel: Kernel,
     transcript: Vec<TranscriptItem>,
     idle_after: Option<Duration>,
     first: Option<AttachRequest>,
@@ -217,7 +217,8 @@ pub(crate) fn spawn(
     let info = kernel.info();
     let (tx, control) = mpsc::channel(CONTROL_CAPACITY);
     let (done_tx, done_rx) = watch::channel(false);
-    let mirror = SessionMirror::new(info, transcript);
+    let mut mirror = SessionMirror::new(info, transcript);
+    mirror.restore_agents(kernel.take_restored_agents());
     let shared = Arc::new(HubShared {
         session: SessionShared::new(&mirror.info().session_id),
         busy: AtomicBool::new(false),

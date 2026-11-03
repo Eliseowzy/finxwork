@@ -10,23 +10,9 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-/// `(path in .system, content)`
-const FILES: &[(&str, &str)] = &[
-    ("skill-creator/LICENSE.txt", include_str!("system/skill-creator/LICENSE.txt")),
-    ("skill-creator/SKILL.md", include_str!("system/skill-creator/SKILL.md")),
-    ("skill-creator/UPSTREAM.md", include_str!("system/skill-creator/UPSTREAM.md")),
-    ("skill-creator/agents/analyzer.md", include_str!("system/skill-creator/agents/analyzer.md")),
-    ("skill-creator/agents/comparator.md", include_str!("system/skill-creator/agents/comparator.md")),
-    ("skill-creator/agents/grader.md", include_str!("system/skill-creator/agents/grader.md")),
-    ("skill-creator/assets/eval_review.html", include_str!("system/skill-creator/assets/eval_review.html")),
-    ("skill-creator/eval-viewer/generate_review.py", include_str!("system/skill-creator/eval-viewer/generate_review.py")),
-    ("skill-creator/eval-viewer/viewer.html", include_str!("system/skill-creator/eval-viewer/viewer.html")),
-    ("skill-creator/references/schemas.md", include_str!("system/skill-creator/references/schemas.md")),
-    ("skill-creator/scripts/__init__.py", include_str!("system/skill-creator/scripts/__init__.py")),
-    ("skill-creator/scripts/aggregate_benchmark.py", include_str!("system/skill-creator/scripts/aggregate_benchmark.py")),
-    ("skill-creator/scripts/package_skill.py", include_str!("system/skill-creator/scripts/package_skill.py")),
-    ("skill-creator/scripts/quick_validate.py", include_str!("system/skill-creator/scripts/quick_validate.py")),
-];
+mod bundle;
+use bundle::FILES;
+
 const MARKER: &str = ".marker";
 
 /// The directory below the user's skills that holds them.
@@ -34,15 +20,8 @@ pub fn dir(finx_home: &Path) -> PathBuf {
     finx_home.join("skills").join(".system")
 }
 
-fn fingerprint() -> String {
-    let mut context = ring::digest::Context::new(&ring::digest::SHA256);
-    for (path, content) in FILES {
-        context.update(path.as_bytes());
-        context.update(&[0]);
-        context.update(content.as_bytes());
-        context.update(&[0]);
-    }
-    context.finish().as_ref()[..8].iter().map(|b| format!("{b:02x}")).collect()
+fn fingerprint() -> &'static str {
+    env!("FINX_SYSTEM_SKILLS_FINGERPRINT")
 }
 
 /// Writes the built-in skills under `finx_home` once per process (and only when they changed).
@@ -84,6 +63,19 @@ fn write(finx_home: &Path) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiled_fingerprint_matches_the_embedded_bundle() {
+        let mut digest = ring::digest::Context::new(&ring::digest::SHA256);
+        for (path, content) in FILES {
+            digest.update(path.as_bytes());
+            digest.update(&[0]);
+            digest.update(content.as_bytes());
+            digest.update(&[0]);
+        }
+        let expected: String = digest.finish().as_ref()[..8].iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(fingerprint(), expected);
+    }
 
     #[test]
     fn writes_the_bundle_and_skips_unchanged_files() {

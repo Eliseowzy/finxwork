@@ -75,7 +75,7 @@ pub struct LoadedSession {
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SessionSummary {
     pub id: String,
     pub location: PathBuf,
@@ -98,6 +98,9 @@ pub trait SessionStore: Send + Sync + 'static {
     /// Reads only the header, without taking the writer lock.
     fn header(&self, reference: &SessionRef) -> Result<(SessionHeader, PathBuf), StoreError>;
     fn open(&self, reference: &SessionRef) -> Result<LoadedSession, StoreError>;
+    /// Reads the whole log without taking the writer lock, to look at a session that is not
+    /// opened here or that another holder may be writing.
+    fn read(&self, reference: &SessionRef) -> Result<(SessionHeader, Vec<Entry>), StoreError>;
     /// Most recent first; with `within`, only sessions started in that directory or below.
     /// Sub-agents' sessions are left out; sessions started by this store whose log is not
     /// written yet are included.

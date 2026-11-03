@@ -1,0 +1,64 @@
+name: Kernel startup
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'rust-toolchain.toml'
+      - 'tools/bench/**'
+      - 'tools/kernel-simulation.sh'
+      - '.github/workflows/kernel-startup.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kernel-startup-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install benchmark and static linker
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y hyperfine musl-tools
+          rustup target add x86_64-unknown-linux-musl
+      - name: Verify persisted summaries and compiled assets
+        run: cargo test -p finx-core -p finx-llm --lib
+      # The gate and the measurements depend on this build alone: a failed test does not hide
+      # them, and a failed build skips them instead of running them without a binary.
+      - name: Build the static binary and startup launcher
+        id: build
+        if: ${{ !cancelled() }}
+        run: |
+          cargo build --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
+          cc -O2 -Wall -Wextra -Werror tools/bench/startup_launcher.c -o target/startup-launcher
+      - name: Gate local commands at 2 ms mean
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: bash tools/kernel-simulation.sh cli-startup
+      - name: Measure real task startup separately
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          python3 tools/bench/bench_startup.py \
+            --finx candidate=target/x86_64-unknown-linux-musl/dist/finx \
+            --launcher target/startup-launcher --runs 100 --warmup 10 \
+            --json target/simulation-results/first-model-request.json
+      - name: Measure ACP and socket startup through first model request
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: |
+          python3 tools/bench/bench_protocol_startup.py \
+            --finx candidate=target/x86_64-unknown-linux-musl/dist/finx \
+            --launcher target/startup-launcher --runs 100 --warmup 10 \
+            --json target/simulation-results/protocol-startup.json
+      - name: Upload measurements including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-startup
+          path: target/simulation-results/*.json

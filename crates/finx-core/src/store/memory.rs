@@ -114,6 +114,12 @@ impl SessionStore for MemoryStore {
         })
     }
 
+    fn read(&self, reference: &SessionRef) -> Result<(SessionHeader, Vec<Entry>), StoreError> {
+        let (header, _) = self.header(reference)?;
+        let entries = self.entries(&header.id);
+        Ok((header, entries))
+    }
+
     fn list(&self, limit: usize, within: Option<&Path>) -> Result<Vec<SessionSummary>, StoreError> {
         Ok(self
             .logs

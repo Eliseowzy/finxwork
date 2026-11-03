@@ -60,6 +60,7 @@ use crate::session::SessionState;
 use crate::skills;
 use crate::skills::SkillRef;
 use crate::skills::SkillState;
+use crate::store::Entry;
 use crate::store::EntryKind;
 use crate::store::SessionHeader;
 use crate::store::SessionRef;
@@ -156,6 +157,8 @@ pub struct Kernel {
     session: Weak<Session>,
     /// Messages from inside the process: reports, permissions for a sub-agent.
     pub(crate) internal: mpsc::UnboundedSender<Box<Internal>>,
+    /// Sub-agents of an earlier run of a resumed session, until taken.
+    restored_agents: Vec<agents::RestoredAgent>,
 }
 
 struct Launch {
@@ -290,6 +293,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         log_closed,
         session: Arc::downgrade(&session),
         internal: internal_tx,
+        restored_agents: Vec::new(),
     };
     (kernel, session)
 }
@@ -629,7 +633,8 @@ impl Kernel {
         let mut model_ref = None;
         let mut thinking = None;
         let mut permission_mode = None;
-        let mut usage = UsageTotals::default();
+        let usage = usage_of(history.branch());
+        let restored_agents = agents::restore(&history.branch(), deps.store.as_ref());
         let mut max_task = 0u32;
         let mut open_task: Option<String> = None;
         let mut title = None;
@@ -656,12 +661,6 @@ impl Kernel {
                     thinking = t.or(thinking);
                     permission_mode = a.or(permission_mode);
                 }
-                EntryKind::Message {
-                    message: Message::Assistant(assistant),
-                    ..
-                } => usage.add(&format!("{}/{}", assistant.provider, assistant.model), &assistant.usage),
-                // Summary requests are paid for too.
-                EntryKind::Compaction(checkpoint) => usage.add(&checkpoint.model, &checkpoint.usage),
                 EntryKind::Task { task_id, status, .. } => {
                     if let Some(n) = task_id.strip_prefix('t').and_then(|n| n.parse::<u32>().ok()) {
                         max_task = max_task.max(n);
@@ -729,7 +728,7 @@ impl Kernel {
         state.archived = archived;
         let model_ref = state.model.reference();
         let overridden = opts.model.is_some() || opts.thinking.is_some() || opts.permission_mode.is_some();
-        let (kernel, session) = launch(Launch {
+        let (mut kernel, session) = launch(Launch {
             id: loaded.header.id.clone(),
             root_id: loaded.header.id.clone(),
             location: loaded.location.clone(),
@@ -748,7 +747,9 @@ impl Kernel {
         });
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
+            tree.restore(&restored_agents);
         }
+        kernel.restored_agents = restored_agents;
         // A new entry only when the tools or the MCP part differ from what the log has.
         let current = (session.tools().names(), mcp_section);
         if last_prompt.as_ref() != Some(&current) {
@@ -865,55 +866,13 @@ impl Kernel {
             return Vec::new();
         };
         let state = session.state.lock();
-        state
-            .history
-            .branch()
-            .into_iter()
-            .filter_map(|entry| match &entry.kind {
-                EntryKind::Message {
-                    message: Message::ToolResult(result),
-                    ..
-                } => Some(TranscriptItem::ToolResult {
-                    call_id: result.call_id.clone(),
-                    result: result.clone(),
-                }),
-                EntryKind::Message { message, skills, skill } => Some(TranscriptItem::Message {
-                    message_id: entry.id.clone(),
-                    message: context::written(message, skill.as_deref()),
-                    skills: context::skill_uses(skills, skill.as_deref()),
-                    mail: None,
-                }),
-                EntryKind::Mail { mail, message } => Some(TranscriptItem::Message {
-                    message_id: entry.id.clone(),
-                    message: message.clone(),
-                    skills: Vec::new(),
-                    mail: Some(mail.clone()),
-                }),
-                EntryKind::Task {
-                    task_id,
-                    status,
-                    error,
-                    reason,
-                    usage,
-                } => {
-                    let outcome = match status {
-                        TaskStatus::Started => return None,
-                        TaskStatus::Completed => TaskOutcome::Completed,
-                        TaskStatus::Failed => TaskOutcome::Failed,
-                        TaskStatus::Interrupted => TaskOutcome::Interrupted,
-                    };
-                    Some(TranscriptItem::TaskEnd {
-                        task_id: task_id.clone(),
-                        outcome,
-                        reason: *reason,
-                        error: error.clone(),
-                        usage: usage.as_deref().cloned(),
-                        ts: entry.ts,
-                    })
-                }
-                _ => None,
-            })
-            .collect()
+        transcript_of(state.history.branch())
+    }
+
+    /// The sub-agents this session started before it was loaded, as their logs left them; read
+    /// once, by whoever shows the session. Empty for a started session and after the first call.
+    pub fn take_restored_agents(&mut self) -> Vec<agents::RestoredAgent> {
+        std::mem::take(&mut self.restored_agents)
     }
 
     /// A sender for use from other tasks (signal handlers, stdin readers).
@@ -1040,6 +999,74 @@ async fn submission_loop(
         let _ = std::fs::remove_dir_all(dir);
     }
     session.emit(EventMsg::SessionClosed);
+}
+
+/// What the requests on a branch of entries cost.
+pub(crate) fn usage_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> UsageTotals {
+    let mut usage = UsageTotals::default();
+    for entry in branch {
+        match &entry.kind {
+            EntryKind::Message {
+                message: Message::Assistant(assistant),
+                ..
+            } => usage.add(&format!("{}/{}", assistant.provider, assistant.model), &assistant.usage),
+            // Summary requests are paid for too.
+            EntryKind::Compaction(checkpoint) => usage.add(&checkpoint.model, &checkpoint.usage),
+            _ => {}
+        }
+    }
+    usage
+}
+
+/// What clients show of a branch of entries: messages, tool results and task ends.
+pub(crate) fn transcript_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> Vec<TranscriptItem> {
+    branch
+        .into_iter()
+        .filter_map(|entry| match &entry.kind {
+            EntryKind::Message {
+                message: Message::ToolResult(result),
+                ..
+            } => Some(TranscriptItem::ToolResult {
+                call_id: result.call_id.clone(),
+                result: result.clone(),
+            }),
+            EntryKind::Message { message, skills, skill } => Some(TranscriptItem::Message {
+                message_id: entry.id.clone(),
+                message: context::written(message, skill.as_deref()),
+                skills: context::skill_uses(skills, skill.as_deref()),
+                mail: None,
+            }),
+            EntryKind::Mail { mail, message } => Some(TranscriptItem::Message {
+                message_id: entry.id.clone(),
+                message: message.clone(),
+                skills: Vec::new(),
+                mail: Some(mail.clone()),
+            }),
+            EntryKind::Task {
+                task_id,
+                status,
+                error,
+                reason,
+                usage,
+            } => {
+                let outcome = match status {
+                    TaskStatus::Started => return None,
+                    TaskStatus::Completed => TaskOutcome::Completed,
+                    TaskStatus::Failed => TaskOutcome::Failed,
+                    TaskStatus::Interrupted => TaskOutcome::Interrupted,
+                };
+                Some(TranscriptItem::TaskEnd {
+                    task_id: task_id.clone(),
+                    outcome,
+                    reason: *reason,
+                    error: error.clone(),
+                    usage: usage.as_deref().cloned(),
+                    ts: entry.ts,
+                })
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]

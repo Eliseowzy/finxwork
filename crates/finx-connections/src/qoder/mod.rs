@@ -1,6 +1,9 @@
 //! Qoder global desktop 0.4.11. Independent JobTokens; source login is read-only.
+mod capabilities;
 mod cosy;
 mod sse;
+mod transport;
+use transport::Http;
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -18,6 +21,29 @@ const CLIENT_ID: &str = "732aef47-9cf2-46a2-95fe-4cebb5d0d1fa";
 const OPENAPI: &str = "https://openapi.qoder.sh";
 const CATALOG: &str = "https://api3.qoder.sh/algo/api/v2/model/list?Encode=1";
 const MODEL_BASE: &str = "https://api2-v2.qoder.sh/model/v1";
+
+// Models whose App HTTP route is verified with text and a complete tool roundtrip.
+// Unknown catalog entries stay visible but cannot bypass this check via ad-hoc IDs.
+pub(crate) fn supports_model(model: &str) -> bool {
+    matches!(
+        model,
+        "auto"
+            | "ultimate"
+            | "fast"
+            | "efficient"
+            | "smodel"
+            | "cmodel"
+            | "qmodel_38max"
+            | "qfmodel"
+            | "gmodel"
+            | "gfmodel"
+            | "kmodel_latest"
+            | "kmodel"
+            | "dmodel"
+            | "dfmodel"
+            | "mmodel"
+    )
+}
 #[derive(Clone, Serialize, Deserialize)]
 struct Job {
     token: String,
@@ -288,6 +314,33 @@ impl ProductAdapter for Qoder {
         })
     }
     async fn catalog(&mut self, http: &reqwest::Client) -> Result<Vec<ConnectionModel>> {
+        let value = self.catalog_value(http).await?;
+        let entries = value["app"]
+            .as_array()
+            .ok_or_else(ConnectionError::unsupported)?;
+        let mut ids = std::collections::HashSet::new();
+        let models: Vec<_> = entries
+            .iter()
+            .filter(|m| m["enable"] == true)
+            .filter_map(|m| {
+                let id = m["key"].as_str()?;
+                if !crate::valid_id(id) || !ids.insert(id.to_owned()) {
+                    return None;
+                }
+                capabilities::model(m)
+            })
+            .collect();
+        if !models.iter().any(|m| m.id == "auto") {
+            return Err(ConnectionError::new(
+                "unsupported",
+                "Qoder 目录未提供已适配的 Auto 模型",
+            ));
+        }
+        Ok(models)
+    }
+}
+impl Qoder {
+    async fn catalog_value(&mut self, http: &reqwest::Client) -> Result<Value> {
         let job = self.resolve(http, false).await?;
         let login = self.source().await?;
         let headers = cosy::headers(
@@ -306,42 +359,10 @@ impl ProductAdapter for Qoder {
             .send()
             .await
             .map_err(|_| ConnectionError::unavailable())?;
-        let value = response_json(response).await?;
-        let entries = value["app"]
-            .as_array()
-            .ok_or_else(ConnectionError::unsupported)?;
-        let mut ids = std::collections::HashSet::new();
-        let models: Vec<_> = entries
-            .iter()
-            .filter(|m| m["enable"] == true)
-            .filter_map(|m| {
-                let id = m["key"].as_str()?;
-                if !crate::valid_id(id) || !ids.insert(id.to_owned()) {
-                    return None;
-                }
-                Some(ConnectionModel {
-                    id: id.into(),
-                    name: m["display_name"].as_str().unwrap_or(id).into(),
-                    context_window: m["max_input_tokens"]
-                        .as_u64()
-                        .and_then(|v| u32::try_from(v).ok()),
-                    max_output_tokens: None,
-                    reasoning: m["is_reasoning"].as_bool().unwrap_or(false),
-                    images: false,
-                    thinking: Vec::new(),
-                    default_thinking: Default::default(),
-                })
-            })
-            .collect();
-        if !models.iter().any(|m| m.id == "auto") {
-            return Err(ConnectionError::new(
-                "unsupported",
-                "Qoder 目录未提供已适配的 Auto 模型",
-            ));
-        }
-        Ok(models)
+        response_json(response).await
     }
 }
+
 async fn json_request(
     http: &reqwest::Client,
     url: &str,
@@ -381,18 +402,4 @@ async fn response_json(mut response: reqwest::Response) -> Result<Value> {
         bytes.extend_from_slice(&chunk);
     }
     serde_json::from_slice(&bytes).map_err(|_| ConnectionError::unsupported())
-}
-
-struct Http;
-impl finx_llm::WireApi for Http {
-    fn id(&self) -> &'static str {
-        "openai-chat"
-    }
-    fn stream(&self, mut req: finx_llm::WireRequest) -> finx_llm::LlmStream {
-        // Public extra_body cannot replace identities, routing, messages or tool definitions.
-        req.options
-            .extra_body
-            .retain(|k, _| ["reasoning_effort", "enable_thinking"].contains(&k.as_str()));
-        finx_llm::api::openai_chat::OpenAiChatApi::stream_with_events(req, sse::decode)
-    }
 }

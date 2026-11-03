@@ -75,6 +75,9 @@ pub struct McpTestOptions {
     pub auth: McpTestAuth,
     /// Over HTTP: the 2024-11-05 HTTP+SSE transport at `/sse` (`POST /sse` answers 405).
     pub legacy_sse: bool,
+    /// Offer only the evidence-driven scenario tools.
+    pub simulation: bool,
+    pub simulation_delay_ms: u64,
 }
 
 impl Default for McpTestOptions {
@@ -89,6 +92,8 @@ impl Default for McpTestOptions {
             own_process: false,
             auth: McpTestAuth::None,
             legacy_sse: false,
+            simulation: false,
+            simulation_delay_ms: 0,
         }
     }
 }
@@ -107,6 +112,7 @@ type Out = mpsc::UnboundedSender<Value>;
 
 struct State {
     options: McpTestOptions,
+    simulation: crate::simulation::ToolService,
     extra: Mutex<Vec<Value>>,
     /// In-flight calls by request id, woken by `notifications/cancelled`.
     running: Mutex<HashMap<i64, Arc<Notify>>>,
@@ -125,6 +131,7 @@ impl State {
     fn new(options: McpTestOptions) -> Arc<State> {
         Arc::new(State {
             options,
+            simulation: crate::simulation::ToolService::default(),
             extra: Mutex::new(Vec::new()),
             running: Mutex::new(HashMap::new()),
             asked: Mutex::new(HashMap::new()),
@@ -145,6 +152,7 @@ impl State {
     }
 
     fn tools(&self) -> Vec<Value> {
+        if self.options.simulation { return crate::simulation::tool_definitions(); }
         let text = |description: &str| json!({ "type": "string", "description": description });
         let mut tools = vec![
             json!({"name": "echo", "title": "Echo", "description": "Repeat the given text back.",
@@ -246,6 +254,12 @@ impl State {
         let arg = |key: &str| args.get(key).and_then(Value::as_str).unwrap_or_default().to_string();
         self.calls.fetch_add(1, Ordering::Relaxed);
         self.log(&format!("call {name} {args}"));
+        if self.options.simulation {
+            if self.options.simulation_delay_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(self.options.simulation_delay_ms)).await;
+            }
+            return Ok(self.simulation.call(&name, &args));
+        }
         let text = |text: String| json!({ "content": [{ "type": "text", "text": text }] });
         let known = self.tools().iter().any(|t| t.get("name").and_then(Value::as_str) == Some(name.as_str()));
         if !known {
@@ -437,8 +451,13 @@ where
 
 /// An MCP server on HTTP, serving in the background.
 pub struct McpHttpServer {
+    accept: tokio::task::JoinHandle<()>,
     addr: SocketAddr,
     state: Arc<State>,
+}
+
+impl Drop for McpHttpServer {
+    fn drop(&mut self) { self.accept.abort(); }
 }
 
 impl McpHttpServer {
@@ -447,6 +466,8 @@ impl McpHttpServer {
         let path = if self.state.options.legacy_sse { "sse" } else { "mcp" };
         format!("http://{}/{path}", self.addr)
     }
+
+    pub fn simulation(&self) -> &crate::simulation::ToolService { &self.state.simulation }
 
     pub fn calls(&self) -> u64 {
         self.state.calls.load(Ordering::Relaxed)
@@ -477,14 +498,14 @@ pub async fn serve_http(addr: &str, options: McpTestOptions) -> io::Result<McpHt
     *state.base.lock() = format!("http://{addr}");
     let sessions = Arc::new(AtomicU64::new(0));
     let accept_state = state.clone();
-    tokio::spawn(async move {
+    let accept = tokio::spawn(async move {
         loop {
             let Ok((stream, _)) = listener.accept().await else { continue };
             let _ = stream.set_nodelay(true);
             tokio::spawn(serve_http_connection(stream, accept_state.clone(), sessions.clone()));
         }
     });
-    Ok(McpHttpServer { addr, state })
+    Ok(McpHttpServer { addr, state, accept })
 }
 
 pub(crate) struct HttpRequest {

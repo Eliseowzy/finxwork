@@ -40,6 +40,7 @@ pub mod trash;
 mod task;
 mod tool_exec;
 
+pub use agents::RestoredAgent;
 pub use config::Config;
 pub use config::ConfigError;
 pub use config::DEFAULT_MODEL;

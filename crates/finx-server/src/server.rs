@@ -128,6 +128,8 @@ pub(crate) struct Inner {
     next_conn: AtomicU64,
     shutdown: CancellationToken,
     closing: AtomicBool,
+    /// Detect create/run/close bursts shorter than the memory-upkeep polling interval.
+    closed_sessions: AtomicU64,
     /// Connections following the session list.
     feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
@@ -178,6 +180,7 @@ impl Server {
             next_conn: AtomicU64::new(1),
             shutdown: CancellationToken::new(),
             closing: AtomicBool::new(false),
+            closed_sessions: AtomicU64::new(0),
             customize: Default::default(),
             files: Default::default(),
             // A person may watch: show a window where there is a display.
@@ -339,6 +342,7 @@ impl Server {
         let on_exit = Box::new(move |last: SessionSummary| {
             if let Some(inner) = server.upgrade() {
                 inner.sessions.lock().remove(&exit_id);
+                inner.closed_sessions.fetch_add(1, Ordering::Relaxed);
                 inner.feed.publish(vec![last], Vec::new());
             }
         });
@@ -878,7 +882,7 @@ fn spawn_memory_upkeep(inner: &Arc<Inner>) {
     runtime.spawn(async move {
         let mut tick = tokio::time::interval(UPKEEP_EVERY);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let (mut was_busy, mut had) = (false, 0);
+        let (mut was_busy, mut had, mut closed) = (false, 0, 0);
         loop {
             tick.tick().await;
             let Some(inner) = weak.upgrade() else {
@@ -886,7 +890,9 @@ fn spawn_memory_upkeep(inner: &Arc<Inner>) {
             };
             let server = Server(inner);
             let (busy, sessions) = (server.busy(), server.loaded_sessions());
-            let quieter = (was_busy && !busy) || sessions < had;
+            let now_closed = server.0.closed_sessions.load(Ordering::Relaxed);
+            let quieter = (was_busy && !busy) || sessions < had || (!busy && now_closed != closed);
+            if quieter { closed = now_closed; }
             (was_busy, had) = (busy, sessions);
             drop(server);
             if quieter {

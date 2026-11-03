@@ -444,11 +444,12 @@ mod tests {
         matches!(gate, Gate::Deny(_))
     }
 
-    /// A workspace `proj` inside a temporary directory, so that `..` stays inside it too.
+    /// A workspace `a/proj` inside a temporary directory, so that `..` and `../..` stay inside
+    /// it too: the temporary directory itself may sit right under a top-level one, as in `/tmp`.
     fn workspace() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
-        let workspace = dir.path().join("proj");
-        std::fs::create_dir(&workspace).unwrap();
+        let workspace = dir.path().join("a").join("proj");
+        std::fs::create_dir_all(&workspace).unwrap();
         (dir, workspace)
     }
 

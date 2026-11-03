@@ -52,6 +52,54 @@ async fn exec_text_prints_the_streamed_reply() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("Hello from mock."));
 }
 
+#[tokio::test]
+async fn foreground_runtime_drives_parallel_agents_and_their_tools() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    std::fs::create_dir(env.work().join("src")).unwrap();
+    std::fs::write(env.work().join("src/lib.rs"), "pub fn value() -> u32 { 42 }\n").unwrap();
+    std::fs::write(env.work().join("README.md"), "A small library.\n").unwrap();
+    let (code, events) = tokio::time::timeout(
+        std::time::Duration::from_secs(20),
+        json_lines(&env, &["exec", "--json", "[[mock:fanout:3:foreground]] inspect modules"]),
+    ).await.expect("foreground agents must not deadlock");
+    assert_eq!(code, 0);
+    let tools = of_type(&events, "tool_completed");
+    let started = of_type(&events, "tool_started");
+    let agents: Vec<_> = started.iter().filter(|e| e["name"] == "spawn_agent").collect();
+    assert_eq!(agents.len(), 3);
+    assert!(agents.iter().all(|a| tools.iter().any(|t| t["call_id"] == a["call_id"])));
+    assert!(tools.iter().all(|e| e["result"]["is_error"] != true));
+    assert_eq!(of_type(&events, "task_completed")[0]["reason"], "done");
+    for i in 0..3 {
+        let report = std::fs::read_to_string(env.work().join(format!("notes/foreground-a{i}.md"))).unwrap();
+        assert!(report.contains("状态：DONE"), "agent {i} did not finish its edit");
+    }
+}
+
+#[tokio::test]
+async fn foreground_runtime_accepts_interrupt_while_streaming() {
+    let env = TestEnv::new("manual", "").await;
+    let mut child = env.finx(&["exec", "--json", "--ops-stdin", "[[mock:slow:200]] reply slowly"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).kill_on_drop(true).spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut interrupted = false;
+    let mut sent = false;
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while let Some(line) = lines.next_line().await.unwrap() {
+            let event: Value = serde_json::from_str(&line).unwrap();
+            if event["type"] == "message_delta" && !sent {
+                stdin.write_all(b"{\"type\":\"interrupt\"}\n").await.unwrap();
+                stdin.flush().await.unwrap();
+                sent = true;
+            }
+            interrupted |= event["type"] == "task_interrupted";
+        }
+    }).await.expect("stdin interruption must progress on the foreground runtime");
+    assert!(sent && interrupted);
+    assert_eq!(common::exit_code(&mut child).await, 130);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exec_json_emits_enriched_tool_events() {
     let env = TestEnv::new("bypass-permissions", "").await;

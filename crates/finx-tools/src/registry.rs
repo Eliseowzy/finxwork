@@ -52,7 +52,12 @@ impl ToolRegistry {
     }
 
     pub fn specs(&self) -> Vec<ToolSpec> {
-        self.tools.iter().map(|t| t.spec().clone()).collect()
+        self.iter_specs().cloned().collect()
+    }
+
+    /// Borrow definitions for comparison and accounting without copying their JSON schemas.
+    pub fn iter_specs(&self) -> impl ExactSizeIterator<Item = &ToolSpec> {
+        self.tools.iter().map(|t| t.spec())
     }
 
     pub fn is_empty(&self) -> bool {
