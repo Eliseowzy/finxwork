@@ -109,6 +109,7 @@ export type StatusLook =
 
 export function statusOf(s: McpServerView, checking: boolean): StatusLook {
   if (s.status.state === "untrusted") return { kind: "untrusted" };
+  if (s.connector && s.auth_state !== "logged_in") return { kind: "needs_login" };
   if (!s.enabled) return { kind: "off", forYou: fromRepo(s) && s.disabled_by === "user_project" };
   if (checking) return { kind: "checking" };
   switch (s.status.state) {

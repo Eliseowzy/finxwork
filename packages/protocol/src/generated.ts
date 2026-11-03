@@ -339,6 +339,16 @@ export type ConnectionsSnapshot = {
   revision: number;
 };
 
+/** Install a curated connector. No arbitrary download URLs or commands are accepted. */
+export type ConnectorInstallParams = {
+  id: string;
+};
+
+export type ConnectorInstallResult = {
+  server: McpServerConfig;
+  version: string;
+};
+
 export type ContextPart = {
   kind: ContextPartKind;
   tokens: number;
@@ -759,7 +769,7 @@ export type McpOAuthClient = {
 };
 
 /** The OAuth client identity a sign-in would use (mcp-design D-182). */
-export type McpOAuthClientKind = "metadata_document" | "registration" | "own";
+export type McpOAuthClientKind = "managed" | "metadata_document" | "registration" | "own";
 
 export type McpProbeAuth = {
   oauth?: McpProbeOAuth | null;
@@ -847,6 +857,8 @@ export type McpServerConfig = {
   bearer_token_env_var?: string | null;
   /** Local server: the program to start. Exactly one of `command` and `url` is set. */
   command?: string | null;
+  /** A curated CLI connector managed by finx. Its command is the internal MCP adapter. */
+  connector?: string | null;
   /** Working directory; relative to the project root. Default: the session's directory. */
   cwd?: string | null;
   /** One line for the server catalog the model sees. */
@@ -916,6 +928,8 @@ export type McpServerStatusView = {
 export type McpServerView = {
   auth: McpAuthKind;
   auth_state?: McpAuthState | null;
+  /** Curated CLI connector, when installed through connectors/install. */
+  connector?: string | null;
   /** The credentials its configuration refers to. */
   credentials?: string[];
   description?: string | null;
@@ -1673,12 +1687,14 @@ export interface Methods {
   "connections/models": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/remove": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/retry": [ConnectionIdParams, ConnectionsSnapshot];
+  "connectors/install": [ConnectorInstallParams, ConnectorInstallResult];
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
   "initialize": [InitializeParams, InitializeResult];
   "mcp/check": [McpServerParams, McpCheckResult];
   "mcp/list": [McpListParams, McpListResult];
   "mcp/login": [McpLoginParams, McpLoginResult];
+  "mcp/login_cancel": [McpLogoutParams, Empty];
   "mcp/logout": [McpLogoutParams, Empty];
   "mcp/probe": [McpProbeParams, McpProbeResult];
   "mcp/probe_cancel": [McpProbeCancelParams, Empty];

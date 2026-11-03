@@ -475,6 +475,8 @@ impl NativeProtocol {
             }
             method::MCP_PROBE_CANCEL => self.call(id, params, conn, |server, p: McpProbeCancelParams| async move { server.mcp_probe_cancel(p).await }),
             method::MCP_LOGIN => self.call(id, params, conn, |server, p: McpLoginParams| async move { server.mcp_login(p).await }),
+            method::MCP_LOGIN_CANCEL => self.call(id, params, conn, |server, p: McpLogoutParams| async move { server.mcp_login_cancel(p).await }),
+            method::CONNECTORS_INSTALL => self.call(id, params, conn, |server, p: ConnectorInstallParams| async move { server.connector_install(p).await }),
             method::BROWSER_HOST => {
                 use finx_protocol::api::BrowserHostKind;
                 // No params at all is an older desktop app.

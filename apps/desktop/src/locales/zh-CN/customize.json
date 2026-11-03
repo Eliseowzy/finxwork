@@ -40,7 +40,7 @@
     "skills": "还没有自己的技能",
     "skillsHint": "上传一个，或者让 finx 在对话里帮你写。",
     "connectors": "还没有连接器",
-    "connectorsHint": "连接器是一个 MCP 服务器：一条本地命令，或者一个远程地址。",
+    "connectorsHint": "连接办公应用和外部工具，在对话中使用已授权的能力。",
     "seeCatalog": "看看推荐的",
     "addCustom": "添加连接器",
     "catalogSkills": "精选技能还没有上架",
@@ -233,7 +233,8 @@
   "catalog": {
     "by": "finx 精选",
     "connectors": {
-      "exa": "Exa 的网页搜索、网页读取和研究智能体工具，通过 MCP 提供给 AI 智能体。"
+      "exa": "Exa 的网页搜索、网页读取和研究智能体工具，通过 MCP 提供给 AI 智能体。",
+      "dingtalk": "通过钉钉官方连接器处理文档、日程、待办等办公事务。"
     },
     "ways": {
       "exa": {
@@ -392,5 +393,29 @@
     "untrusted": "未受信任",
     "login": "需要登录",
     "failed": "连接失败"
+  },
+  "managed": {
+    "officialComponent": "官方组件",
+    "reinstall": "重新安装组件",
+    "title": "连接{{name}}",
+    "close": "关闭",
+    "installHint": "自动安装官方组件，无需配置命令或服务器地址。",
+    "permissions": "连接后，可以在对话中使用{{name}}提供的办公能力。实际可用功能取决于你的账号授权和企业设置。",
+    "authorizeHint": "在{{name}}官方页面登录并确认授权。可以随时在连接器页面退出登录或停用。",
+    "cancel": "取消",
+    "cancelled": "已取消登录",
+    "later": "稍后",
+    "done": "完成",
+    "install": "安装并连接",
+    "openBrowser": "重新打开授权页面",
+    "nameConflict": "已存在同名自定义连接器，请先重命名或移除。",
+    "checkFailed": "连接检查未通过，请重试。",
+    "steps": {
+      "intro": "安装组件 → 登录账号 → 检查连接",
+      "installing": "正在下载并校验组件…",
+      "authorizing": "等待你在浏览器中完成授权…",
+      "ready": "已连接，新对话中可以使用",
+      "failed": "连接尚未完成，可重试或稍后继续"
+    }
   }
 }

@@ -69,7 +69,7 @@ pub fn view(workspace: &Workspace, home: &FinxHome, server: &McpServerConfig, li
         ConfigLayer::ProjectJson => Some(dir.join(".mcp.json")),
         ConfigLayer::Flag => None,
     };
-    let enabled = server.is_enabled();
+    let enabled = server.is_enabled() && crate::connectors::authorized(home.root(), server);
     let credentials = config_edit::server_credentials(server);
     let (auth, mut auth_state) = if credentials.is_empty() {
         (McpAuthKind::None, None)
@@ -79,6 +79,13 @@ pub fn view(workspace: &Workspace, home: &FinxHome, server: &McpServerConfig, li
     };
     let mut status = status(home, workspace, server, live);
     let mut auth = auth;
+    let managed = crate::connectors::for_server(home.root(), server);
+    if let Some(m) = &managed {
+        auth = McpAuthKind::Oauth;
+        let signed_in = crate::connectors::signed_in(home.root(), m);
+        auth_state = Some(if signed_in { McpAuthState::LoggedIn } else { McpAuthState::NeedsLogin });
+        if !signed_in && status.state != McpStatusState::Untrusted { status.state = McpStatusState::NeedsLogin; }
+    }
     if server.uses_oauth() {
         // Signs in with OAuth: signed in when tokens for this address are saved (mcp-design §13.8).
         auth = McpAuthKind::Oauth;
@@ -94,6 +101,7 @@ pub fn view(workspace: &Workspace, home: &FinxHome, server: &McpServerConfig, li
         auth_state = Some(McpAuthState::NeedsLogin);
     }
     McpServerView {
+        connector: managed.map(|m| m.id),
         name: server.name.clone(),
         layer,
         file,
@@ -213,6 +221,7 @@ fn untrusted(workspace: &Workspace, home: &FinxHome) -> Vec<McpServerView> {
             let mut server: McpServerConfig = value.try_into().ok()?;
             server.name = name;
             Some(McpServerView {
+                connector: None,
                 name: server.name.clone(),
                 layer: ConfigLayer::Project,
                 file: Some(path.clone()),

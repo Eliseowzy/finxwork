@@ -40,7 +40,7 @@
     "skills": "No skills of your own yet",
     "skillsHint": "Upload one, or have finx write one with you in a conversation.",
     "connectors": "No connectors yet",
-    "connectorsHint": "A connector is an MCP server: a local command, or a remote address.",
+    "connectorsHint": "Connect work apps and tools to use their authorized features in conversations.",
     "seeCatalog": "See recommended ones",
     "addCustom": "Add connector",
     "catalogSkills": "No featured skills yet",
@@ -239,7 +239,8 @@
   "catalog": {
     "by": "finx featured",
     "connectors": {
-      "exa": "Exa web search, page fetching and research-agent tools for AI agents over MCP."
+      "exa": "Exa web search, page fetching and research-agent tools for AI agents over MCP.",
+      "dingtalk": "Work with DingTalk documents, calendars, tasks and more using its official CLI."
     },
     "ways": {
       "exa": {
@@ -402,5 +403,29 @@
     "untrusted": "Not trusted",
     "login": "Needs sign-in",
     "failed": "Can't connect"
+  },
+  "managed": {
+    "officialComponent": "Official component",
+    "reinstall": "Reinstall component",
+    "title": "Connect {{name}}",
+    "close": "Close",
+    "installHint": "Official components install automatically. No command or server address to configure.",
+    "permissions": "Use {{name}} in conversations. Available features depend on your account permissions and organization settings.",
+    "authorizeHint": "Sign in and authorize on {{name}}’s official page. You can sign out or disable the connector at any time.",
+    "cancel": "Cancel",
+    "cancelled": "Sign-in cancelled",
+    "later": "Later",
+    "done": "Done",
+    "install": "Install and connect",
+    "openBrowser": "Reopen authorization page",
+    "nameConflict": "A custom connector already uses this name. Rename or remove it first.",
+    "checkFailed": "Connection check failed. Please retry.",
+    "steps": {
+      "intro": "Install → Sign in → Check connection",
+      "installing": "Downloading and verifying components…",
+      "authorizing": "Waiting for authorization in your browser…",
+      "ready": "Connected. Available in new conversations.",
+      "failed": "Connection incomplete. Retry or continue later."
+    }
   }
 }

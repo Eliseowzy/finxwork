@@ -99,6 +99,8 @@ pub mod method {
     /// Server notification to the connection that called `mcp/probe`.
     pub const MCP_PROBE_PROGRESS: &str = "mcp/probe_progress";
     pub const MCP_LOGIN: &str = "mcp/login";
+    pub const MCP_LOGIN_CANCEL: &str = "mcp/login_cancel";
+    pub const CONNECTORS_INSTALL: &str = "connectors/install";
     pub const MCP_LOGOUT: &str = "mcp/logout";
     /// This connection shows embedded browsers (browser-design §8.3.1), or lends the user's
     /// Chrome through the finx extension (§8.4).

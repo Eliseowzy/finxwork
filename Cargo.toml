@@ -50,6 +50,8 @@ clap = { version = "4", features = ["derive"] }
 dirs = "6"
 eventsource-stream = "0.2"
 futures = "0.3"
+flate2 = "1"
+tar = "0.4"
 libc = "0.2"
 md-5 = "0.10"
 memchr = "2"

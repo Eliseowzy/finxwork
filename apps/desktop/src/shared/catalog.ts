@@ -32,6 +32,8 @@ export type OAuthAuth = { kind: "oauth"; url?: string };
 export type ConnectorAuth = { kind: "none" } | OAuthAuth | TokenAuth;
 
 export type CatalogConnector = {
+  /** A curated CLI manifest owned by finx; installation never takes a renderer-supplied command. */
+  managed?: string;
   /** Also the server's name in the configuration. */
   id: string;
   name: string;
@@ -53,6 +55,12 @@ export type CatalogConnector = {
 export const catalogSkills: CatalogSkill[] = [];
 
 export const catalogConnectors: CatalogConnector[] = [
+  {
+    id: "dingtalk", name: "钉钉", mono: "钉", logo: "dingtalk.png", by: "钉钉", managed: "dingtalk",
+    docs: "https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli",
+    verifiedAt: "2026-11-02",
+    install: { command: "dws", args: [], auth: [{ kind: "oauth" }] },
+  },
   // Keyless: search and fetch at a free rate limit. Signing in (at ?login, as Exa's
   // documentation has it) or a key also turns on the research agent.
   {

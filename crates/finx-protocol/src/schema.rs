@@ -159,6 +159,8 @@ pub fn document() -> Value {
         (method::MCP_PROBE, Some(name::<customize::McpProbeParams>(g)), name::<customize::McpProbeResult>(g)),
         (method::MCP_PROBE_CANCEL, Some(name::<customize::McpProbeCancelParams>(g)), name::<api::Empty>(g)),
         (method::MCP_LOGIN, Some(name::<customize::McpLoginParams>(g)), name::<customize::McpLoginResult>(g)),
+        (method::MCP_LOGIN_CANCEL, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
+        (method::CONNECTORS_INSTALL, Some(name::<customize::ConnectorInstallParams>(g)), name::<customize::ConnectorInstallResult>(g)),
         (method::MCP_LOGOUT, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),

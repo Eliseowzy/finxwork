@@ -1307,3 +1307,43 @@ env = { DATABASE_URL = "${credential:mcp.postgres-dev.DATABASE_URL}" }
 [mcp_servers.staging-db]          # 定义在仓库里，只对自己关闭
 enabled = false
 ```
+
+## 托管 CLI 连接器（首个实现：钉钉）
+
+发现页现在支持 `CatalogConnector.managed`。钉钉条目指向 finx 内置的
+`crates/finx-core/src/connectors/dingtalk.json`，用户只需安装并在官方页面授权。
+它的执行链路是：发现页 → finx 服务 → 官方 DWS CLI → 钉钉服务；finx 将 CLI
+包装成 stdio MCP 的 `run(args: string[])` 工具，复用原有工具发现、调用和会话机制。
+
+清单版本 1 描述程序版本、各平台 HTTPS 发布包及 SHA-256、压缩包内程序名、
+配置/凭据目录环境变量，以及 `cli_browser` 的登录、状态、退出命令和授权 URL
+允许的 origin/path。参数以数组直接传给子进程。账号管理和凭据覆盖参数不向模型开放。
+清单随内核发布，安装接口仅接受已登记的 ID，不接受页面传来的下载地址或命令。
+新增相同授权类型的提供方，可添加清单并登记到 `manifest()` 和发现页目录；不同授权
+机制仍需实现对应适配器，当前没有宣称任意 CLI 或任意 OAuth 均可零代码接入。
+
+`connectors/install` 下载并校验组件，保留上游 LICENSE/NOTICE，返回用户层 MCP 配置；
+页面随后用 `config/write` 保存。`mcp/login` 返回官方授权 URL 和 login_id，完成后发
+`mcp/changed`；`mcp/login_cancel` 结束等待。页面在发起登录前订阅事件，避免快速回调
+丢失。`mcp/check` 同时检查 CLI 登录状态和 MCP 握手。安装、授权、失败重试分开表示，
+关闭弹窗可取消授权；已安装但未登录可从详情页继续。退出和移除前结束进行中的授权，
+再由官方 CLI 清理令牌。详情页支持重新安装组件。新会话加载新增连接器。
+
+组件保存在 `$FINX_HOME/connectors/<id>/releases/<version>/`，配置和凭据文件分别在
+相邻的 `config/`、`credentials/`。钉钉仍使用 DWS 自己的凭据加密机制（macOS 保留系统
+Keychain），不关闭 Keychain、不复制千问的客户端身份、不把令牌写入 config.toml。
+初版清单固定 DWS 1.0.66，支持 macOS/Linux 的 arm64 和 x64；Windows 尚未接入。
+运行调用有时间和输出限制，并响应 MCP 取消通知以终止正在执行的 CLI。
+
+验证：`cargo test -p finx-core --lib connectors::tests`；
+`cargo test -p finx-cli --test e2e_customize`；构建桌面与 finx 后运行
+`node apps/desktop/e2e/dingtalk.mjs`，用隔离的提供方模拟程序覆盖发现、安装、取消、重登、
+工具调用和退出。官方安装包下载、未登录检测、获取官方授权链接及取消另作联网冒烟验证。
+真实企业数据读取需要用户亲自完成授权，不能由模拟测试代替。
+
+授权与启用联动：新安装的托管连接器写入 `enabled = false`；只有 CLI 授权成功且
+MCP 连接检查通过，服务端才将其启用。取消或失败保持停用，退出账号同步停用。
+未授权时 UI 开关禁用但保留登录入口；配置写入拒绝强行启用；会话运行时过滤旧配置中
+未授权的连接器，适配器启动和工具调用再读取 CLI 的真实登录状态。
+钉钉图标使用用户提供的「钉钉App icon.png」（2026-11-02），随包保存为
+`assets/connectors/dingtalk.png`。

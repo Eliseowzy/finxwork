@@ -17,6 +17,7 @@ use super::discovery::AuthServerMeta;
 pub fn choose_kind(own: bool, meta: &AuthServerMeta, metadata_url: Option<&str>, prefer: Option<McpOAuthClientKind>) -> Option<McpOAuthClientKind> {
     let possible = |kind: McpOAuthClientKind| match kind {
         McpOAuthClientKind::Own => own,
+        McpOAuthClientKind::Managed => false,
         McpOAuthClientKind::MetadataDocument => meta.client_id_metadata_document_supported && metadata_url.is_some(),
         McpOAuthClientKind::Registration => meta.registration_endpoint.is_some(),
     };

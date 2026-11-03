@@ -12,6 +12,7 @@ pub mod commands;
 mod compaction;
 pub mod config;
 pub mod config_edit;
+pub mod connectors;
 pub mod context;
 pub mod context_report;
 mod deferred;

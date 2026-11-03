@@ -123,6 +123,33 @@ fn trash() -> Result<Trash, RpcError> {
 }
 
 impl Server {
+    pub async fn connector_install(&self, p: ConnectorInstallParams) -> Result<ConnectorInstallResult, RpcError> {
+        finx_core::connectors::manifest(&p.id).map_err(RpcError::invalid_params)?;
+        let key = format!("connector-install:{}", p.id);
+        let lock = self.customize().checks.lock().entry(key).or_default().clone();
+        let _lock = lock.lock().await;
+        let manifest = finx_core::connectors::install(self.0.home.root(), &p.id).await.map_err(RpcError::internal)?;
+        let executable = std::env::current_exe().map_err(|e| RpcError::internal(e.to_string()))?;
+        Ok(ConnectorInstallResult { server: finx_core::connectors::server_config(self.0.home.root(), &manifest, &executable), version: manifest.version })
+    }
+
+    async fn set_managed_enabled(&self, name: &str, enabled: bool) -> Result<(), RpcError> {
+        let version = config_edit::file_version(&self.0.home.config_file());
+        let ws = self.workspace(None)?;
+        let configured = ws.mcp_servers.iter().find(|s| s.name == name).and_then(|s| finx_core::connectors::for_server(self.0.home.root(), s));
+        if configured.is_none() { return Err(RpcError::invalid_params("连接器配置已改变，请重新连接")); }
+        self.config_write(ConfigWriteParams {
+            layer: ConfigLayer::User, cwd: None, expected_version: Some(version),
+            edits: vec![ConfigEdit { key_path: format!("mcp_servers.{name}.enabled"), value: json!(enabled), merge: ConfigMerge::Replace }],
+        }).await?;
+        Ok(())
+    }
+
+    pub async fn mcp_login_cancel(&self, p: McpLogoutParams) -> Result<Empty, RpcError> {
+        if let Some(cancel) = self.customize().logins.lock().get(&p.name) { cancel.cancel(); }
+        Ok(Empty {})
+    }
+
     fn customize(&self) -> &State {
         &self.0.customize
     }
@@ -595,6 +622,39 @@ impl Server {
             Some(config) => config,
             None => views::for_check(&ws, &params.name).ok_or_else(|| RpcError::invalid_params(format!("no MCP server named {}", params.name)))?,
         };
+        if config.connector.is_some() {
+            if config.name != params.name { return Err(RpcError::invalid_params("连接器名称不匹配")); }
+            let m = finx_core::connectors::for_server(self.0.home.root(), &config).ok_or_else(|| RpcError::invalid_params("托管连接器配置已改变，请重新安装"))?;
+            // Only one provider login per connector; a late completion cannot remove a newer flow.
+            let placeholder = tokio_util::sync::CancellationToken::new();
+            {
+                let mut logins = self.customize().logins.lock();
+                if logins.contains_key(&params.name) { return Err(RpcError::invalid_params("登录正在进行，请先取消或等待完成")); }
+                logins.insert(params.name.clone(), placeholder.clone());
+            }
+            let pending = finx_core::connectors::login(self.0.home.root().to_path_buf(), m, placeholder.clone()).await;
+            let pending = match pending { Ok(p) => p, Err(e) => { self.customize().logins.lock().remove(&params.name); return Err(RpcError::internal(e)); } };
+            let login_id = uuid::Uuid::new_v4().to_string();
+            let result = McpLoginResult { authorize_url: pending.url.clone(), login_id: login_id.clone(), client: McpOAuthClientKind::Managed };
+            let server = self.clone();
+            let name = params.name;
+            tokio::spawn(async move {
+                let outcome = async {
+                    pending.wait().await?;
+                    let checked = server.mcp_check(McpServerParams { name: name.clone(), cwd: params.cwd }).await.map_err(|e| e.message)?;
+                    if checked.server.status.state != McpStatusState::Ok || checked.server.auth_state != Some(McpAuthState::LoggedIn) {
+                        return Err("授权后的连接检查未通过，连接器保持停用".into());
+                    }
+                    if placeholder.is_cancelled() { return Err("已取消登录".into()); }
+                    server.set_managed_enabled(&name, true).await.map_err(|e| e.message)
+                }.await;
+                server.customize().logins.lock().remove(&name);
+                let mut changed = json!({ "name": name, "login_id": login_id });
+                if let Err(error) = outcome { changed["login_error"] = json!(error); }
+                server.notify(Topic::Mcp, method::MCP_CHANGED, changed);
+            });
+            return Ok(result);
+        }
         let url = config.url.clone().ok_or_else(|| RpcError::invalid_params(format!("{} is not a remote server", params.name)))?;
         let own = {
             let config = config.clone();
@@ -634,8 +694,23 @@ impl Server {
 
     /// `mcp/logout`: revokes and deletes a server's tokens, and ends a sign-in in progress.
     pub async fn mcp_logout(&self, params: McpLogoutParams) -> Result<Empty, RpcError> {
-        if let Some(cancel) = self.customize().logins.lock().remove(&params.name) {
+        if let Some(cancel) = self.customize().logins.lock().get(&params.name) {
             cancel.cancel();
+        }
+        // Wait for the provider process to exit before removing its tokens, so an in-flight
+        // callback cannot recreate credentials after logout.
+        tokio::time::timeout(std::time::Duration::from_secs(35), async {
+            while self.customize().logins.lock().contains_key(&params.name) {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        }).await.map_err(|_| RpcError::internal("登录仍在结束，请稍后重试退出"))?;
+        let ws = self.workspace(None)?;
+        if let Some(config) = ws.mcp_servers.iter().find(|s| s.name == params.name && s.connector.is_some()) {
+            let m = finx_core::connectors::for_server(self.0.home.root(), config).ok_or_else(|| RpcError::invalid_params("托管连接器配置无效"))?;
+            self.set_managed_enabled(&params.name, false).await?;
+            finx_core::connectors::logout(self.0.home.root(), &m).await.map_err(RpcError::internal)?;
+            self.mcp_changed(Some(&params.name));
+            return Ok(Empty {});
         }
         let http = self.0.llm.http_client().map_err(|e| RpcError::internal(e.to_string()))?;
         finx_mcp::oauth::logout(&params.name, &http).await.map_err(store_error)?;
@@ -652,6 +727,9 @@ impl Server {
         let key = format!("{}\u{0}{}", dir.display(), params.name);
         let lock = self.customize().checks.lock().entry(key).or_default().clone();
         let _one_at_a_time = lock.lock().await;
+        if let Some(m) = finx_core::connectors::for_server(self.0.home.root(), &config) {
+            finx_core::connectors::status(self.0.home.root(), &m).await.map_err(RpcError::internal)?;
+        }
         let http = config.url.is_some().then(|| self.0.llm.http_client().ok()).flatten();
         let (identity, url) = (finx_mcp::identity::identity(&config), config.url.clone());
         let checks = finx_core::mcp::check_servers(

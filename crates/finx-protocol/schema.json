@@ -65,6 +65,12 @@
       "$ref": "#/definitions/ConnectionsSnapshot"
     },
     {
+      "$ref": "#/definitions/ConnectorInstallParams"
+    },
+    {
+      "$ref": "#/definitions/ConnectorInstallResult"
+    },
+    {
       "$ref": "#/definitions/ContextReport"
     },
     {
@@ -1532,6 +1538,34 @@
       "required": [
         "connections",
         "revision"
+      ],
+      "type": "object"
+    },
+    "ConnectorInstallParams": {
+      "additionalProperties": false,
+      "description": "Install a curated connector. No arbitrary download URLs or commands are accepted.",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "ConnectorInstallResult": {
+      "properties": {
+        "server": {
+          "$ref": "#/definitions/McpServerConfig"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "server",
+        "version"
       ],
       "type": "object"
     },
@@ -3520,6 +3554,13 @@
       "description": "The OAuth client identity a sign-in would use (mcp-design D-182).",
       "oneOf": [
         {
+          "description": "The managed CLI owns the provider's authorization flow.",
+          "enum": [
+            "managed"
+          ],
+          "type": "string"
+        },
+        {
           "description": "finx's client metadata document.",
           "enum": [
             "metadata_document"
@@ -3877,6 +3918,13 @@
             "null"
           ]
         },
+        "connector": {
+          "description": "A curated CLI connector managed by finx. Its command is the internal MCP adapter.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "cwd": {
           "description": "Working directory; relative to the project root. Default: the session's directory.",
           "type": [
@@ -4173,6 +4221,13 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "connector": {
+          "description": "Curated CLI connector, when installed through connectors/install.",
+          "type": [
+            "string",
+            "null"
           ]
         },
         "credentials": {
@@ -7195,6 +7250,10 @@
       "params": "ConnectionIdParams",
       "result": "ConnectionsSnapshot"
     },
+    "connectors/install": {
+      "params": "ConnectorInstallParams",
+      "result": "ConnectorInstallResult"
+    },
     "credentials/delete": {
       "params": "CredentialsDeleteParams",
       "result": "Empty"
@@ -7218,6 +7277,10 @@
     "mcp/login": {
       "params": "McpLoginParams",
       "result": "McpLoginResult"
+    },
+    "mcp/login_cancel": {
+      "params": "McpLogoutParams",
+      "result": "Empty"
     },
     "mcp/logout": {
       "params": "McpLogoutParams",

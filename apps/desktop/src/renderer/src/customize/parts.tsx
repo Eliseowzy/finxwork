@@ -69,7 +69,7 @@ function useLogo(src?: string | null): Seen | null | undefined {
   return seen?.src === src ? seen.look : undefined;
 }
 
-const catalogLogos = import.meta.glob<string>("../assets/connectors/*.svg", { eager: true, query: "?url", import: "default" });
+const catalogLogos = import.meta.glob<string>("../assets/connectors/*.{svg,png}", { eager: true, query: "?url", import: "default" });
 
 /** A catalog entry's logo, which ships with the app: until the server's own is found, and before it is added. */
 export function catalogLogo(cat?: CatalogConnector | null): string | undefined {
@@ -124,10 +124,11 @@ export function Section({ title, count, hint, note, children }: { title: string;
   );
 }
 
-export function Switch({ on, label, onChange }: { on: boolean; label: string; onChange: (on: boolean) => void }) {
+export function Switch({ on, label, onChange, disabled = false }: { on: boolean; label: string; disabled?: boolean; onChange: (on: boolean) => void }) {
   return (
     <button
       className={`sw ${on ? "on" : ""}`}
+      disabled={disabled}
       role="switch"
       aria-checked={on}
       aria-label={label}

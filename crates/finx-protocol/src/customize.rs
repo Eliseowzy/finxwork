@@ -378,6 +378,9 @@ pub struct McpServerStatusView {
 /// One server as the page shows it; secrets never appear, only the names they are saved under.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct McpServerView {
+    /// Curated CLI connector, when installed through connectors/install.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connector: Option<String>,
     pub name: String,
     /// The layer that defines the server (its command or URL).
     pub layer: ConfigLayer,
@@ -552,12 +555,27 @@ pub enum McpSuggestedAuth {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum McpOAuthClientKind {
+    /// The managed CLI owns the provider's authorization flow.
+    Managed,
     /// finx's client metadata document.
     MetadataDocument,
     /// Dynamic client registration.
     Registration,
     /// The user's own client.
     Own,
+}
+
+/// Install a curated connector. No arbitrary download URLs or commands are accepted.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ConnectorInstallParams {
+    pub id: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ConnectorInstallResult {
+    pub server: crate::McpServerConfig,
+    pub version: String,
 }
 
 /// What the authorization server of a remote server supports.

@@ -41,7 +41,7 @@ export function skillMenu(item: SkillItem, a: Actions, c: Customize, t: TFunctio
 export function serverMenu(s: McpServerView, a: Actions, c: Customize, t: TFunction<"customize">, withView: boolean): MenuItem[] {
   return [
     ...(withView ? [{ id: "view", label: t("connector.view"), icon: "info", run: () => a.open({ kind: "connector", id: s.name, tab: "overview" }) }] : []),
-    ...(s.editable && withView ? [{ id: "edit", label: t("connector.edit"), icon: "edit", run: () => a.edit(s) }] : []),
+    ...(s.editable && !s.connector && withView ? [{ id: "edit", label: t("connector.edit"), icon: "edit", run: () => a.edit(s) }] : []),
     ...(s.status.state !== "untrusted" ? [{ id: "check", label: t("connector.recheck"), icon: "retry", run: () => void c.check(s.name) }] : []),
     ...(s.file ? [{ id: "reveal", label: t("connector.revealFile"), icon: "folder", run: () => window.finx?.revealPath(s.file!) }] : []),
     ...(s.editable ? [null, { id: "remove", label: t("connector.remove"), icon: "trash", danger: true, run: () => c.removeServer(s) }] : []),
@@ -210,7 +210,7 @@ function ServerRow({ s, c, a }: { s: McpServerView; c: Customize; a: Actions }) 
       </div>
       <div className="ra">
         <Status look={statusOf(s, c.checking.has(s.name))} onCheck={() => void c.check(s.name)} onLogin={c.signingIn.has(s.name) ? undefined : () => void c.login(s.name)} />
-        {s.status.state !== "untrusted" && <Switch on={s.enabled} label={label} onChange={(on) => a.toggleServer(s, on)} />}
+        {s.status.state !== "untrusted" && <Switch disabled={!!s.connector && s.auth_state !== "logged_in"} on={s.enabled} label={label} onChange={(on) => a.toggleServer(s, on)} />}
         <MoreButton label={t("more")} items={() => serverMenu(s, a, c, t, true)} />
       </div>
     </div>

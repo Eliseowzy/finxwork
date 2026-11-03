@@ -328,15 +328,16 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
   const keyNames = (s.credentials ?? []).map((cr) => cr.replace(new RegExp(`^mcp\\.${s.name}\\.?`), "").replace(/^header\./, "")).filter(Boolean);
   const access =
     s.auth === "oauth"
-      ? { k: t("connector.account"), v: accountHost(s.summary), sub: s.auth_state === "logged_in" ? t("connector.signedIn") : t("connector.signedOut") }
+      ? { k: t("connector.account"), v: s.connector ? (catalogConnectors.find((x) => x.managed === s.connector)?.name ?? s.connector) : accountHost(s.summary), sub: s.auth_state === "logged_in" ? t("connector.signedIn") : t("connector.signedOut") }
       : s.auth === "credential"
         ? { k: remote ? t("connector.token") : t("connector.secret"), v: keyNames.join(", "), sub: s.auth_state === "missing" ? t("connector.keyMissing") : t("connector.keySaved") }
         : null;
 
   const menu = (): MenuItem[] => [
-    ...(s.editable ? [{ id: "edit", label: t("connector.edit"), icon: "edit", run: () => a.edit(s) }, null] : []),
+    ...(s.editable && !s.connector ? [{ id: "edit", label: t("connector.edit"), icon: "edit", run: () => a.edit(s) }, null] : []),
     ...(!untrusted ? [{ id: "check", label: t("connector.recheck"), icon: "retry", run: () => void c.check(s.name) }] : []),
-    { id: "copy", label: remote ? t("connector.copyAddress") : t("connector.copyCommand"), icon: "copy", run: copy },
+    ...(s.connector && cat ? [{ id: "reinstall", label: t("managed.reinstall"), icon: "retry", run: () => a.addConnector(cat) }] : []),
+    ...(!s.connector ? [{ id: "copy", label: remote ? t("connector.copyAddress") : t("connector.copyCommand"), icon: "copy", run: copy }] : []),
     ...(s.auth === "oauth" && s.auth_state === "logged_in" ? [{ id: "logout", label: t("connector.signOut"), icon: "logout", run: () => void c.logout(s.name) }] : []),
     ...(s.editable ? [null, { id: "remove", label: t("connector.removeConnector"), icon: "trash", danger: true, run: () => c.removeServer(s) }] : []),
   ];
@@ -349,19 +350,20 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
         <Trans t={t} i18nKey="connector.untrustedNote" components={{ code: <code /> }} />
       </Note>
     );
-  else if (s.enabled && look.kind === "needs_login")
+  else if ((s.enabled || s.connector) && look.kind === "needs_login")
     note = (
       <Note
         kind="warn"
         title={t("connector.loginTitle")}
         action={
-          signing ? (
+          signing !== undefined ? (
             <span className="cz-note-wait">
               <span className="mini-spin cz-spin" />
               {t("connector.signingIn")}
               <button className="link" data-authorize={signing} onClick={() => void navigator.clipboard?.writeText(signing)}>
                 {t("addc.copyLink")}
               </button>
+              <button className="link" onClick={() => void st.rpc?.request("mcp/login_cancel", { name: s.name }).catch((e) => st.show(String(e), undefined, true))}>{t("managed.cancel")}</button>
             </span>
           ) : (
             <button className="btn primary" onClick={() => void c.login(s.name)}>
@@ -370,7 +372,7 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
           )
         }
       >
-        {t("connector.loginText", { account: accountHost(s.summary) })}
+        {s.connector ? t("managed.authorizeHint", { name }) : t("connector.loginText", { account: accountHost(s.summary) })}
       </Note>
     );
   else if (s.enabled && look.kind === "failed")
@@ -419,7 +421,7 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
             {!untrusted && (
               <label className="cz-swl">
                 {repo ? t("connector.enabledForYou") : t("connector.enabled")}
-                <Switch on={s.enabled} label={s.enabled ? t("connector.turnOff") : t("connector.turnOn")} onChange={(on) => a.toggleServer(s, on)} />
+                <Switch disabled={!!s.connector && s.auth_state !== "logged_in"} on={s.enabled} label={s.enabled ? t("connector.turnOff") : t("connector.turnOn")} onChange={(on) => a.toggleServer(s, on)} />
               </label>
             )}
             <MoreButton label={t("more")} items={menu} />
@@ -442,6 +444,12 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
               </div>
             </div>
           )}
+          {s.connector ? (
+            <div className="cz-fact grow">
+              <div className="k">{t("connector.provider")}</div>
+              <div className="v">{cat?.by ?? name}<span className="sub">{t("managed.officialComponent")}</span></div>
+            </div>
+          ) : (
           <div className="cz-fact grow">
             <div className="k">{remote ? t("connector.address") : t("connector.command")}</div>
             <div className="v">
@@ -453,6 +461,7 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
               </button>
             </div>
           </div>
+          )}
         </div>
       </div>
       {note}
@@ -533,11 +542,13 @@ function CatalogConnectorPage({ c, a, cat, project, onBack }: { c: Customize; a:
             <h4>{t("connector.description")}</h4>
             <p>{catalogText(t, `catalog.connectors.${cat.id}`)}</p>
           </div>
-          {command ? (
+          {cat.managed ? (
+            <div className="cz-dsec"><h4>{t("managed.officialComponent")}</h4><p>{t("managed.installHint")}</p></div>
+          ) : command ? (
             <div className="cz-dsec">
               <h4>{t("connector.runsHere")}</h4>
               <pre className="cz-code cz-line">{command}</pre>
-              <p className="hint">{t("connector.runsHereHint")}</p>
+              <p className="hint">{t(cat.managed ? "managed.installHint" : "connector.runsHereHint")}</p>
             </div>
           ) : (
             <div className="cz-dsec">

@@ -150,6 +150,7 @@ pub async fn start_login(req: LoginRequest) -> Result<PendingLogin, String> {
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
     let choice = match kind {
+        McpOAuthClientKind::Managed => return Err("managed CLI authorization is handled by the connector runtime".into()),
         McpOAuthClientKind::Own => {
             let own = req.own.clone().unwrap_or_default();
             ClientChoice { kind, client_id: own.client_id, client_secret: own.client_secret, redirect_uri: None }
