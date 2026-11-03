@@ -155,6 +155,8 @@ export type BrowserHostResult = {
 
 /** Parameters of `browser/site_icon`. */
 export type BrowserSiteIconParams = {
+  /** Only an icon already kept, however old: the site is not asked, now or later. For icons shown beside what a model wrote, which must not reach the sites it names. */
+  cached?: boolean;
   /** The site as its permission is kept: an origin such as `https://github.com`. */
   origin: string;
 };
@@ -357,6 +359,16 @@ export type ConnectionsDiscoveryResult = {
 export type ConnectionsSnapshot = {
   connections: ConnectionView[];
   revision: number;
+};
+
+/** Install a curated connector. No arbitrary download URLs or commands are accepted. */
+export type ConnectorInstallParams = {
+  id: string;
+};
+
+export type ConnectorInstallResult = {
+  server: McpServerConfig;
+  version: string;
 };
 
 export type ContextPart = {
@@ -761,6 +773,104 @@ export type ExtensionStatus = {
   problem?: ExtensionProblem | null;
 };
 
+/** One entry of a folder. */
+export type FileEntry = {
+  /** A folder (or a link to one). */
+  dir: boolean;
+  /** A symbolic link. */
+  link?: boolean;
+  name: string;
+  /** In bytes; 0 for a folder. */
+  size: number;
+};
+
+/** An image's bytes. */
+export type FileImage = {
+  /** Base64. */
+  data: string;
+  mime_type: string;
+};
+
+/** What a file is, as far as showing it goes. */
+export type FileKind = "text" | "image" | "binary" | "too_large";
+
+/** How a write went. */
+export type FileWriteStatus = "saved" | "conflict" | "refused";
+
+/** Server notification `files/changed`: watched files and folders that changed, gathered for a moment. */
+export type FilesChangedParams = {
+  /** As they were watched, made absolute. */
+  paths: string[];
+  session_id: string;
+};
+
+/** Parameters of `files/list`. */
+export type FilesListParams = {
+  /** A folder: absolute, or relative to the session's folder; empty for the folder itself. */
+  path?: string;
+  session_id: string;
+};
+
+/** The result of `files/list`. */
+export type FilesListResult = {
+  /** Folders first, then files, each by name (numbers by value, case aside). `.git` and `.DS_Store` are left out. */
+  entries: FileEntry[];
+  /** The folder, absolute. */
+  path: string;
+  /** The folder had more entries than are given. */
+  truncated: boolean;
+};
+
+/** Parameters of `files/read`. */
+export type FilesReadParams = {
+  /** Absolute, or relative to the session's folder. */
+  path: string;
+  session_id: string;
+};
+
+/** The result of `files/read`. */
+export type FilesReadResult = {
+  /** How the text was decoded: `utf-8`, `utf-8-bom`, `utf-16le`, `utf-16be` or `gb18030`. */
+  encoding?: string | null;
+  /** SHA-256 of the file's bytes, in hex: the base `files/write` compares with. Not set for a file too large to read. */
+  hash?: string | null;
+  image?: FileImage | null;
+  kind: FileKind;
+  /** The file, absolute. */
+  path: string;
+  size: number;
+  /** The text, decoded, without a byte-order mark; line ends as they are. */
+  text?: string | null;
+  /** The text can be saved back with `files/write`: UTF-8, and not finx's own data. */
+  writable: boolean;
+};
+
+/** Parameters of `files/watch`. */
+export type FilesWatchParams = {
+  /** Files and folders to hear about (a folder: when its entries change). Replaces what this connection watched for the session; empty stops. */
+  paths: string[];
+  session_id: string;
+};
+
+/** Parameters of `files/write`. */
+export type FilesWriteParams = {
+  /** The hash of the version the text was edited from (`files/read`, or the last save): when the file on disk is no longer that version, nothing is written. Not set: written whatever is there (the person chose to). */
+  base_hash?: string | null;
+  /** Absolute, or relative to the session's folder. */
+  path: string;
+  session_id: string;
+  text: string;
+};
+
+/** The result of `files/write`. */
+export type FilesWriteResult = {
+  /** Saved: the new file's hash, the next base. Conflict: the hash of what is on disk now; not set when the file is gone. */
+  hash?: string | null;
+  /** Why it was refused. */
+  message?: string | null;
+  status: FileWriteStatus;
+};
+
 export type GrantAuthority = "navigate" | "act";
 
 export type InitializeParams = {
@@ -819,6 +929,8 @@ export type McpAuthState = "logged_in" | "needs_login" | "saved" | "missing";
 
 /** `mcp/changed`: a server's status, cached result or configuration changed; or a sign-in started with `mcp/login` ended (`login_id`, with `login_error` when it failed). */
 export type McpChangedParams = {
+  /** A subsequent browser step. When present, this is progress, not completion. */
+  authorize_url?: string | null;
   login_error?: string | null;
   login_id?: string | null;
   name?: string | null;
@@ -870,7 +982,7 @@ export type McpOAuthClient = {
 };
 
 /** The OAuth client identity a sign-in would use (mcp-design D-182). */
-export type McpOAuthClientKind = "metadata_document" | "registration" | "own";
+export type McpOAuthClientKind = "managed" | "metadata_document" | "registration" | "own";
 
 export type McpProbeAuth = {
   oauth?: McpProbeOAuth | null;
@@ -958,6 +1070,8 @@ export type McpServerConfig = {
   bearer_token_env_var?: string | null;
   /** Local server: the program to start. Exactly one of `command` and `url` is set. */
   command?: string | null;
+  /** A curated CLI connector managed by finx. Its command is the internal MCP adapter. */
+  connector?: string | null;
   /** Working directory; relative to the project root. Default: the session's directory. */
   cwd?: string | null;
   /** One line for the server catalog the model sees. */
@@ -1026,7 +1140,11 @@ export type McpServerStatusView = {
 /** One server as the page shows it; secrets never appear, only the names they are saved under. */
 export type McpServerView = {
   auth: McpAuthKind;
+  /** Authenticated, but the provider did not grant every requested permission. */
+  auth_partial?: boolean | null;
   auth_state?: McpAuthState | null;
+  /** Curated CLI connector, when installed through connectors/install. */
+  connector?: string | null;
   /** The credentials its configuration refers to. */
   credentials?: string[];
   description?: string | null;
@@ -1810,6 +1928,7 @@ export interface Methods {
   "connections/models": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/remove": [ConnectionIdParams, ConnectionsSnapshot];
   "connections/retry": [ConnectionIdParams, ConnectionsSnapshot];
+  "connectors/install": [ConnectorInstallParams, ConnectorInstallResult];
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
   "doc/close": [DocIdParams, Empty];
@@ -1817,10 +1936,15 @@ export interface Methods {
   "doc/open": [DocOpenParams, DocOpenResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
   "doc/view": [DocViewParams, Empty];
+  "files/list": [FilesListParams, FilesListResult];
+  "files/read": [FilesReadParams, FilesReadResult];
+  "files/watch": [FilesWatchParams, Empty];
+  "files/write": [FilesWriteParams, FilesWriteResult];
   "initialize": [InitializeParams, InitializeResult];
   "mcp/check": [McpServerParams, McpCheckResult];
   "mcp/list": [McpListParams, McpListResult];
   "mcp/login": [McpLoginParams, McpLoginResult];
+  "mcp/login_cancel": [McpLogoutParams, Empty];
   "mcp/logout": [McpLogoutParams, Empty];
   "mcp/probe": [McpProbeParams, McpProbeResult];
   "mcp/probe_cancel": [McpProbeCancelParams, Empty];
@@ -1858,6 +1982,7 @@ export interface ServerNotifications {
   "browser/cdp": BrowserCdpParams;
   "browser/changed": BrowserStatus;
   "config/changed": ConfigChangedParams;
+  "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
   "models/changed": Empty;

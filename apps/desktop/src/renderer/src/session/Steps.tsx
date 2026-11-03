@@ -3,7 +3,11 @@ import { useTranslation } from "react-i18next";
 import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
 import { doingText, toolVerb, workText } from "../format";
 import { Icon } from "../icons";
+import { useStore } from "../store";
+import { Lightbox } from "../composer/Tile";
 import { Code } from "./Code";
+import { stepMenu } from "./contentMenus";
+import { useScope } from "./scope";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -124,10 +128,12 @@ export function LiveThinking({ text, children }: { text: string; children: React
  */
 export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) {
   const { t } = useTranslation("session");
+  const st = useStore();
+  const scope = useScope();
   const [open, setOpen] = useState(false);
-  const [big, setBig] = useState(false);
+  const [large, setLarge] = useState<string | null>(null);
   const output = toolOutput(tool);
-  // Images a tool returned (a browser screenshot, an image read): a thumbnail, larger on a click.
+  // Images a tool returned (a browser screenshot, an image read): a thumbnail, over the window on a click.
   const images = (tool.result?.content ?? []).flatMap((c) => (c.type === "image" ? [c] : []));
   const spinning = tool.state === "running" || tool.state === "pending" || tool.state === "streaming";
   const unknown = tool.state === "streaming" && tool.title === tool.name;
@@ -136,7 +142,15 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const object = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : toolObject(tool);
   const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : toolVerb(tool);
   return (
-    <div className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}>
+    <div
+      className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}
+      // A file's menu for reading and editing, a command's for a command (content-actions-design §7.1); the left click still opens it.
+      onContextMenu={(e) => {
+        if (tool.state === "streaming" || !stepMenu(st, tool, scope)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
       <button className={`th ${spinning ? "shimmer" : ""}`} onClick={() => output && setOpen(!open)} aria-expanded={output ? open : undefined} aria-busy={spinning || undefined}>
         <span className="vb">{unknown ? `${verb}…` : verb}</span>
         {unknown ? null : tool.category === "execute" ? (
@@ -150,14 +164,18 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
         {output && <Icon name="caret" className="chev" />}
       </button>
       {images.length > 0 && (
-        <div className={`tool-shots ${big ? "big" : ""}`}>
-          {images.map((img, i) => (
-            <button key={i} className="tool-shot" aria-label={t("chat.image")} aria-expanded={big} onClick={() => setBig(!big)}>
-              <img src={`data:${img.mime_type};base64,${img.data}`} alt="" />
-            </button>
-          ))}
+        <div className="tool-shots">
+          {images.map((img, i) => {
+            const src = `data:${img.mime_type};base64,${img.data}`;
+            return (
+              <button key={i} className="tool-shot" aria-label={t("composer.view", { name: t("chat.image") })} onClick={() => setLarge(src)}>
+                <img src={src} alt="" />
+              </button>
+            );
+          })}
         </div>
       )}
+      {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
       {output && <div className="out sel-text">{output}</div>}
     </div>
   );

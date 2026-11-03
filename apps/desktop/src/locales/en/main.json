@@ -36,8 +36,8 @@
       "title": "View",
       "nextAttention": "Next Session That Needs You",
       "nextActive": "Next Running Session",
-      "showInspector": "Show Info",
-      "hideInspector": "Hide Info",
+      "showInspector": "Show Session Details",
+      "hideInspector": "Hide Session Details",
       "showSidebar": "Show Sidebar",
       "hideSidebar": "Hide Sidebar",
       "fullScreen": "Enter Full Screen"

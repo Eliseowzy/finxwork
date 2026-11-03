@@ -59,9 +59,14 @@ impl Watcher {
 
 /// Gathers paths for [`SETTLE`] after the first one.
 pub async fn gather(rx: &mut mpsc::UnboundedReceiver<PathBuf>) -> Option<Vec<PathBuf>> {
+    gather_for(rx, SETTLE).await
+}
+
+/// Gathers paths for `settle` after the first one.
+pub async fn gather_for(rx: &mut mpsc::UnboundedReceiver<PathBuf>, settle: Duration) -> Option<Vec<PathBuf>> {
     let first = rx.recv().await?;
     let mut paths = vec![first];
-    tokio::time::sleep(SETTLE).await;
+    tokio::time::sleep(settle).await;
     while let Ok(path) = rx.try_recv() {
         paths.push(path);
     }

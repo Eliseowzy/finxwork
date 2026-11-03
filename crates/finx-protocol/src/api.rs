@@ -88,6 +88,13 @@ pub mod method {
     pub const CONFIG_CHANGED: &str = "config/changed";
     pub const CREDENTIALS_SET: &str = "credentials/set";
     pub const CREDENTIALS_DELETE: &str = "credentials/delete";
+    // The file panel (docs/desktop/file-panel-design.md §9).
+    pub const FILES_LIST: &str = "files/list";
+    pub const FILES_READ: &str = "files/read";
+    pub const FILES_WRITE: &str = "files/write";
+    pub const FILES_WATCH: &str = "files/watch";
+    /// Server notification to a connection that called `files/watch`.
+    pub const FILES_CHANGED: &str = "files/changed";
     pub const SKILLS_FILES: &str = "skills/files";
     pub const SKILLS_READ: &str = "skills/read";
     pub const SKILLS_INSTALL: &str = "skills/install";
@@ -105,6 +112,8 @@ pub mod method {
     /// Server notification to the connection that called `mcp/probe`.
     pub const MCP_PROBE_PROGRESS: &str = "mcp/probe_progress";
     pub const MCP_LOGIN: &str = "mcp/login";
+    pub const MCP_LOGIN_CANCEL: &str = "mcp/login_cancel";
+    pub const CONNECTORS_INSTALL: &str = "connectors/install";
     pub const MCP_LOGOUT: &str = "mcp/logout";
     /// This connection shows embedded browsers (browser-design §8.3.1), or lends the user's
     /// Chrome through the finx extension (§8.4).
@@ -303,6 +312,10 @@ pub struct BrowserStatus {
 pub struct BrowserSiteIconParams {
     /// The site as its permission is kept: an origin such as `https://github.com`.
     pub origin: String,
+    /// Only an icon already kept, however old: the site is not asked, now or later. For icons
+    /// shown beside what a model wrote, which must not reach the sites it names.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cached: bool,
 }
 
 /// The result of `browser/site_icon`.

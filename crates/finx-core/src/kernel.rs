@@ -507,7 +507,9 @@ fn build_prompt(
         skills: &scan.catalog.text,
         project_root,
         git_branch: project_root.and_then(instructions::git_branch),
-        date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        date: prompt::date_text(chrono::Local::now().date_naive()),
+        // The desktop app being connected, as for the browser's and computer use's defaults.
+        in_app: deps.browser_pool.as_ref().is_some_and(|p| p.has_host()),
     })
     .map_err(|e| KernelError::Other(format!("cannot build the system prompt: {e}")))?;
     Ok(BuiltPrompt {
@@ -808,6 +810,12 @@ impl Kernel {
 
     pub fn session_file(&self) -> &Path {
         &self.session_file
+    }
+
+    /// The session's files as the desktop's file panel reaches them (file-panel-design §9):
+    /// its environment and the locks its tools write under. None after the session closed.
+    pub fn file_scope(&self) -> Option<crate::files::FileScope> {
+        self.session.upgrade().map(|session| crate::files::FileScope { env: session.env.clone(), locks: session.locks.clone() })
     }
 
     /// Current settings. After the session closed, only the id and the file are meaningful.

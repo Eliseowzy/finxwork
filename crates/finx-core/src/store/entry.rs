@@ -138,6 +138,16 @@ pub enum EntryKind {
     Archived {
         archived: bool,
     },
+    /// The date changed since the context last gave it: the model is told the new one
+    /// (technical-design §7.2).
+    Date {
+        /// `YYYY-MM-DD`
+        date: String,
+    },
+    /// A kind written by a later version. It keeps its place in the branch, so the entries
+    /// after it still link up; nothing else reads it.
+    #[serde(other, skip_serializing)]
+    Unknown,
 }
 
 /// The data of an [`EntryKind::Compaction`].
@@ -298,10 +308,21 @@ mod tests {
             r#"{"id":"2787b9a4","parent":"2787b9a3","ts":1793224073146,"type":"message","message":{"role":"user","content":[{"type":"text","text":"<skill>"}],"ts":3},"skill":{"name":"review","path":"/p/.finx/skills/review/SKILL.md","input":"/review a.rs"}}"#,
             r#"{"id":"2787b9a5","parent":"2787b9a4","ts":1793224073147,"type":"compaction","seq":3,"reason":"threshold","summary":"s","retained":[],"skills":[{"name":"review","path":"/p/.finx/skills/review/SKILL.md","content":"<skill>"}],"model":"m/x","usage":{"input":1,"output":2,"cache_read":0,"cache_write":0,"cost":{"currency":"USD","input":0.0,"output":0.0,"cache_read":0.0,"cache_write":0.0,"total":0.0}},"tokens_before":9,"tokens_after":3}"#,
             r#"{"id":"2787b9a2","parent":"2787b9a1","ts":1793224073144,"type":"settings","model":"m/x","thinking":"high","permission_mode":"manual"}"#,
+            r#"{"id":"2787b9a6","parent":"2787b9a5","ts":1793224073148,"type":"date","date":"2026-11-03"}"#,
         ];
         for line in lines {
             let entry: Entry = serde_json::from_str(line).unwrap_or_else(|e| panic!("{e}: {line}"));
             assert_eq!(serde_json::to_string(&entry).unwrap(), line);
         }
+    }
+
+    #[test]
+    fn kinds_of_later_versions_keep_their_place_and_are_never_written() {
+        let line = r#"{"id":"b","parent":"a","ts":7,"type":"from_a_later_version","data":{"n":1}}"#;
+        let entry: Entry = serde_json::from_str(line).unwrap();
+        assert_eq!((entry.id.as_str(), entry.parent.as_deref(), entry.kind.clone()), ("b", Some("a"), EntryKind::Unknown));
+        assert!(serde_json::to_string(&entry).is_err(), "its data is gone: writing it would lose it");
+        // A known kind with broken data is still unreadable.
+        assert!(serde_json::from_str::<Entry>(r#"{"id":"c","parent":"b","ts":8,"type":"date"}"#).is_err());
     }
 }

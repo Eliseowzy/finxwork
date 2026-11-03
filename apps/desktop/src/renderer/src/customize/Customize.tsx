@@ -8,6 +8,7 @@ import { Icon } from "../icons";
 import { errorText, useStore, type CustomizeView } from "../store";
 import { AddConnector } from "./AddConnector";
 import { EditConnector } from "./EditConnector";
+import { ManagedConnector } from "./ManagedConnector";
 import { catalogDir, ConnectorPage, SkillPage } from "./Details";
 import { DiscoverConnectors, DiscoverSkills, MyConnectors, MySkills, type Actions } from "./Lists";
 import { brokenSkills, catalogServer, fromRepo, nextInLine, type SkillItem } from "./model";
@@ -20,7 +21,7 @@ import "../styles/customize.css";
 // and the catalog's (发现), each card opening a page of its own. finx manages them; this page
 // shows what it says and asks it for changes.
 
-type Sheet = { kind: "upload" } | { kind: "add"; catalog?: CatalogConnector } | { kind: "connector"; edit: McpServerView } | { kind: "broken" };
+type Sheet = { kind: "upload" } | { kind: "managed"; catalog: CatalogConnector } | { kind: "add"; catalog?: CatalogConnector } | { kind: "connector"; edit: McpServerView } | { kind: "broken" };
 
 export function Customize() {
   const st = useStore();
@@ -110,6 +111,7 @@ export function Customize() {
     // Added with one click only when it needs nothing; otherwise the add sheet, where the
     // person picks how to sign in among the ways the provider accepts (§10.6).
     addConnector: (cat: CatalogConnector) => {
+      if (cat.managed) return setSheet({ kind: "managed", catalog: cat });
       if (!oneClick(cat)) return setSheet({ kind: "add", catalog: cat });
       adding(`server:${cat.id}`, true);
       c.saveServer("user", cat.id, catalogServer(cat), [])
@@ -225,6 +227,10 @@ export function Customize() {
       </div>
       {addAt && <PopMenu anchor={addAt} items={addMenu} label={t("add.button")} onClose={() => setAddAt(null)} />}
       {sheet?.kind === "upload" && <UploadSkill c={c} onClose={() => setSheet(null)} onAdded={() => setView({ tab: "skills", view: "mine", detail: null })} />}
+      {sheet?.kind === "managed" && <ManagedConnector c={c} catalog={sheet.catalog} onClose={() => setSheet(null)} onDone={() => {
+        setView({ tab: "connectors", view: "mine", detail: { kind: "connector", id: sheet.catalog.id, tab: "overview" } });
+        setSheet(null);
+      }} />}
       {sheet?.kind === "add" && (
         <AddConnector
           c={c}

@@ -1,14 +1,16 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, shell, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type WebContents } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage, shell, systemPreferences, type IpcMainEvent, type IpcMainInvokeEvent, type MenuItemConstructorOptions, type WebContents } from "electron";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
+import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
-import { claimHomeBrowser, currentTabs, openBrowser, setPanel, showTab, tabCommand } from "./browser/pages";
+import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
 import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
+import { editors, opensFolders } from "./editors";
+import { openExternal, openFile, openFolder, openTerminal, pathInfo, reveal } from "./files";
 import { gitBranch } from "./git";
 import { connectKernel, kernelBinary, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { clipboardContent } from "./clipboard";
@@ -139,6 +141,51 @@ function revealable(p: unknown): p is string {
   return typeof p === "string" && path.isAbsolute(p.replace(/^~(?=$|\/)/, os.homedir()));
 }
 
+/** An http or https address, the only ones a page's link may open. */
+function web(url: unknown): url is string {
+  if (typeof url !== "string" || url.length > 8192) return false;
+  try {
+    return ["http:", "https:"].includes(new URL(url).protocol);
+  } catch {
+    return false;
+  }
+}
+
+/** Editors' icons, drawn once each: Quick Look draws the app's own, at twice a menu's size. */
+const editorIcons = new Map<string, Promise<string | null>>();
+function editorIcon(app: string): Promise<string | null> {
+  let icon = editorIcons.get(app);
+  if (!icon) {
+    icon = nativeImage.createThumbnailFromPath(app, { width: 32, height: 32 }).then((i) => (i.isEmpty() ? null : i.toDataURL()), () => null);
+    editorIcons.set(app, icon);
+  }
+  return icon;
+}
+
+/** A menu item's icon: a PNG data URL, at the size a menu draws it. */
+function menuIcon(icon: unknown) {
+  if (typeof icon !== "string" || !icon.startsWith("data:image/png;base64,") || icon.length > 256 * 1024) return undefined;
+  const image = nativeImage.createFromDataURL(icon);
+  return image.isEmpty() ? undefined : image.resize({ width: 16, height: 16 });
+}
+
+/**
+ * End-to-end tests (FINXWORK_E2E_MENU=<folder>): a native menu cannot be driven from the
+ * page's DevTools, so its items are written to `shown.jsonl` there instead, and the id in
+ * `pick`, when there is one, is taken as the person's choice (and `pick` removed).
+ */
+const menuTests = process.env.FINXWORK_E2E_MENU;
+function testMenu(items: MenuItem[]): string | null {
+  const dir = menuTests!;
+  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
+  fs.appendFileSync(path.join(dir, "shown.jsonl"), JSON.stringify(plain(items)) + "\n");
+  const pick = path.join(dir, "pick");
+  if (!fs.existsSync(pick)) return null;
+  const id = fs.readFileSync(pick, "utf8").trim();
+  fs.rmSync(pick);
+  return id || null;
+}
+
 /** A folder the page may open, in the file manager or a terminal: an existing one, by its absolute path. */
 function folder(p: unknown): p is string {
   return typeof p === "string" && path.isAbsolute(p) && fs.statSync(p, { throwIfNoEntry: false })?.isDirectory() === true;
@@ -225,6 +272,12 @@ export function registerIPC() {
     if (session !== undefined && (typeof session !== "string" || !session)) throw new Error("Invalid browser session");
     openBrowser(session as string | undefined);
   });
+  // A link in a reply, in its conversation's browser (content-actions-design §5.2).
+  ipcMain.handle("browser-open-url", (e, session: unknown, url: unknown) => {
+    if (!trusted(e)) return;
+    if (typeof session !== "string" || !session || session === "finxwork:home-browser" || !web(url)) throw new Error("Invalid page to open");
+    openURL(session, url);
+  });
   ipcMain.handle("browser-claim-home", (e, session: unknown) => {
     if (!trusted(e) || typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid browser session");
     return claimHomeBrowser(session);
@@ -272,22 +325,35 @@ export function registerIPC() {
     app.relaunch();
     app.quit();
   });
-  ipcMain.on("open-external", (e, url: string) => {
-    if (!trusted(e) || typeof url !== "string") return;
-    // https, or plain http on this machine (a sign-in served by a local server).
-    const loopback = /^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?\//.test(url);
-    if (!(url.startsWith("https://") || loopback)) return;
+  ipcMain.on("open-external", (e, url: unknown) => {
+    // http and https only: a link in a reply may be a server on this machine or the network (content-actions-design §5.4).
+    if (!trusted(e) || !web(url)) return;
     // Tests play the browser themselves.
     if (process.env.FINXWORK_NO_BROWSER) return;
-    shell.openExternal(url);
+    openExternal(url);
   });
   ipcMain.on("reveal-path", (e, p: unknown) => {
-    if (trusted(e) && revealable(p)) shell.showItemInFolder(p.replace(/^~(?=$|\/)/, os.homedir()));
+    if (trusted(e) && revealable(p)) reveal(p.replace(/^~(?=$|\/)/, os.homedir()));
   });
   ipcMain.on("open-folder", (e, p: unknown) => {
-    if (trusted(e) && folder(p)) void shell.openPath(p);
+    if (trusted(e) && folder(p)) openFolder(p);
   });
-  ipcMain.on("open-terminal", (e, p: unknown) => trusted(e) && folder(p) && platform.openTerminal(p));
+  ipcMain.on("open-terminal", (e, p: unknown) => trusted(e) && folder(p) && openTerminal(p));
+  // A reply's files (content-actions-design §4): looked up under the session's folder, opened the person's way.
+  ipcMain.handle("path-info", (e, base: unknown, paths: unknown) => {
+    if (!trusted(e) || typeof base !== "string" || !path.isAbsolute(base) || !Array.isArray(paths)) return [];
+    return pathInfo(base, paths.filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= 4096).slice(0, 200));
+  });
+  ipcMain.handle("open-file", (e, p: unknown, options: unknown) => {
+    if (!trusted(e) || !revealable(p)) return { ok: false, reason: "failed" };
+    const o = typeof options === "object" && options !== null ? (options as { line?: unknown; app?: unknown }) : {};
+    const line = typeof o.line === "number" && Number.isInteger(o.line) && o.line > 0 ? o.line : undefined;
+    return openFile(p.replace(/^~(?=$|\/)/, os.homedir()), { line, app: typeof o.app === "string" ? o.app : undefined });
+  });
+  ipcMain.handle("editors", async (e) => {
+    if (!trusted(e)) return [];
+    return Promise.all((await editors(os.homedir())).map(async (ed): Promise<EditorInfo> => ({ id: ed.id, name: ed.name, icon: await editorIcon(ed.path), folders: opensFolders(ed) })));
+  });
   ipcMain.handle("git-branch", (e, p: unknown) => (trusted(e) && typeof p === "string" && path.isAbsolute(p) ? gitBranch(p) : null));
   ipcMain.on("show-about", (e) => trusted(e) && app.showAboutPanel());
   ipcMain.on("menu-state", (e, s: MenuState) => {
@@ -353,21 +419,18 @@ export function registerIPC() {
   });
   ipcMain.handle("popup-menu", (e, items: MenuItem[]) => {
     if (!trusted(e) || !Array.isArray(items)) return null;
+    if (menuTests) return testMenu(items);
     return new Promise<string | null>((resolve) => {
       let chosen: string | null = null;
-      const menu = Menu.buildFromTemplate(
-        items.map((it) =>
-          "separator" in it
-            ? { type: "separator" as const }
-            : {
-                label: String(it.label),
-                enabled: it.enabled !== false,
-                type: it.checked === undefined ? ("normal" as const) : ("checkbox" as const),
-                checked: it.checked,
-                click: () => (chosen = it.id),
-              },
-        ),
-      );
+      const build = (list: MenuItem[]): MenuItemConstructorOptions[] =>
+        list.map((it) => {
+          if ("separator" in it) return { type: "separator" as const };
+          const icon = menuIcon(it.icon);
+          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }) };
+          if (Array.isArray(it.submenu)) return { ...common, submenu: build(it.submenu) };
+          return { ...common, type: it.checked === undefined ? ("normal" as const) : ("checkbox" as const), checked: it.checked, click: () => (chosen = it.id) };
+        });
+      const menu = Menu.buildFromTemplate(build(items));
       menu.popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined, callback: () => setTimeout(() => resolve(chosen)) });
     });
   });

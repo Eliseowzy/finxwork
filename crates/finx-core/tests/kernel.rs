@@ -177,7 +177,7 @@ async fn writes_a_file_then_answers() {
 
     let requests = h.api.requests();
     assert_eq!(requests.len(), 2);
-    assert!(requests[0].system.contains("You are finx"));
+    assert!(requests[0].system.contains("You are FinxWork"));
     // The four built-in tools, then the sub-agent tools (on by default).
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message"]);
@@ -1177,4 +1177,118 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
     // The conversation carries on with the configured model.
     let result = kernel.run(prompt("still there?")).await.unwrap();
     assert_eq!(result.end, TaskEnd::Completed { last_message: Some("still here".into()) });
+}
+
+/// The session's log under `dir`, found by the session id in its file name.
+fn find_log(dir: &Path, short: &str) -> Option<PathBuf> {
+    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_log(&path, short) {
+                return Some(found);
+            }
+        } else if path.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.contains(short)) {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// Rewrites the date in the session's system prompt, as if the session had started on `day`.
+fn backdate(home: &FinxHome, session_id: &str, day: chrono::NaiveDate) {
+    let log = find_log(&home.sessions_dir(), finx_core::short_id(session_id)).expect("the session's log");
+    let text = std::fs::read_to_string(&log).unwrap();
+    let written = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|entry| entry["type"] == "system_prompt")
+        .and_then(|entry| finx_core::prompt::prompt_date(entry["text"].as_str()?))
+        .expect("a dated system prompt");
+    let (from, to) = (finx_core::prompt::date_text(written), finx_core::prompt::date_text(day));
+    std::fs::write(&log, text.replace(&from, &to)).unwrap();
+}
+
+async fn resumed(home: &FinxHome, work: &Path, session_id: &str, api: &Arc<ScriptedApi>) -> Kernel {
+    let options = ResumeOptions {
+        session: SessionRef::Id(finx_core::short_id(session_id).to_string()),
+        model: None,
+        thinking: None,
+        permission_mode: None,
+        home: home.clone(),
+        config: Arc::new(Config::default()),
+        project_root: None,
+        trusted: false,
+        interactive_approvals: false,
+    };
+    Kernel::resume(options, deps(api, work, home)).await.unwrap()
+}
+
+fn date_update(day: chrono::NaiveDate) -> String {
+    format!("<environment_update>\ndate: {}\n</environment_update>", finx_core::prompt::date_text(day))
+}
+
+#[tokio::test]
+async fn a_session_continued_on_a_later_day_is_told_the_date_once() {
+    let mut h = harness(PermissionMode::BypassPermissions, false, vec![Script::text("first")]).await;
+    h.kernel.run(prompt("hello")).await.unwrap();
+    // Started today: the system prompt has the date, with its weekday, and nothing is added.
+    let first = &h.api.requests()[0];
+    let started = finx_core::prompt::prompt_date(&first.system).expect("a date in the environment");
+    assert!(first.system.contains(&format!("\ndate: {}\n", finx_core::prompt::date_text(started))));
+    assert_eq!(user_texts(first), ["hello"]);
+    let session_id = h.kernel.session_id().to_string();
+    h.kernel.shutdown().await;
+
+    // As if it had started on New Year's Day: continued today, the model is told the date
+    // before the new message, and only once.
+    backdate(&h.home, &session_id, chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+    let api = ScriptedApi::new();
+    api.push(Script::text("second"));
+    api.push(Script::text("third"));
+    let mut kernel = resumed(&h.home, &h.work, &session_id, &api).await;
+    kernel.run(prompt("next")).await.unwrap();
+    kernel.run(prompt("again")).await.unwrap();
+    let today = date_update(chrono::Local::now().date_naive());
+    let requests = api.requests();
+    assert!(requests[0].system.contains("\ndate: 2026-01-01 (Thursday)\n"), "the system prompt stays as it was");
+    assert_eq!(user_texts(&requests[0]), ["hello", today.as_str(), "next"]);
+    assert_eq!(user_texts(&requests[1]), ["hello", today.as_str(), "next", "again"]);
+    // Only the model sees it.
+    assert!(!format!("{:?}", kernel.transcript()).contains("environment_update"));
+    kernel.shutdown().await;
+
+    // The log keeps it: resumed again, it is not repeated.
+    let api = ScriptedApi::new();
+    api.push(Script::text("fourth"));
+    let mut kernel = resumed(&h.home, &h.work, &session_id, &api).await;
+    kernel.run(prompt("once more")).await.unwrap();
+    assert_eq!(user_texts(&api.requests()[0]), ["hello", today.as_str(), "next", "again", "once more"]);
+}
+
+#[tokio::test]
+async fn a_sub_agent_of_an_older_session_is_told_the_date_first() {
+    let mut h = harness(PermissionMode::BypassPermissions, false, vec![Script::text("first")]).await;
+    h.kernel.run(prompt("hello")).await.unwrap();
+    let session_id = h.kernel.session_id().to_string();
+    h.kernel.shutdown().await;
+    backdate(&h.home, &session_id, chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+
+    // The sub-agent shares the parent's system prompt, from New Year's Day.
+    let api = ScriptedApi::new();
+    api.push(Script::tool_call(
+        "call_1",
+        "spawn_agent",
+        json!({"description": "look around", "task": "look around", "name": "scout", "wait": true}),
+    ));
+    api.push(Script::text("nothing here"));
+    api.push(Script::text("done"));
+    let mut kernel = resumed(&h.home, &h.work, &session_id, &api).await;
+    let result = kernel.run(prompt("send a scout")).await.unwrap();
+    assert_eq!(result.end, TaskEnd::Completed { last_message: Some("done".into()) });
+    let child = &api.requests()[1];
+    assert!(child.system.contains("\ndate: 2026-01-01 (Thursday)\n"));
+    let texts = user_texts(child);
+    assert_eq!(texts.len(), 2, "{texts:?}");
+    assert_eq!(texts[0], date_update(chrono::Local::now().date_naive()));
+    assert!(texts[1].starts_with("You are a sub-agent named \"scout\""), "then its task");
 }

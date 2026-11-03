@@ -401,3 +401,10 @@ textarea.field.cz-grow{height:auto;min-height:30px;padding:6px 9px;line-height:1
 .cz-toolchips{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:var(--sp-1)}
 .cz-toolchips span{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:var(--r-xs);background:var(--fill2);color:var(--l2)}
 .sheet.cz-add .sheet-foot .note{font-size:12px;color:var(--l3)}
+
+.cz-managed { padding: 8px 24px 24px; }
+.cz-managed .cz-summary { margin-bottom: 20px; }
+.cz-managed .cz-summary p { margin: 4px 0 0; font-size: 12px; color: var(--l2); }
+.cz-managed > p { line-height: 1.7; }
+.cz-managed-status { display: flex; align-items: center; gap: 10px; margin-top: 24px; }
+.cz-managed-error { color: var(--red); overflow-wrap: anywhere; }

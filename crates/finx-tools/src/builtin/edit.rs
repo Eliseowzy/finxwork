@@ -74,7 +74,7 @@ impl TypedTool for EditTool {
 
     fn guidelines(&self) -> &[&'static str] {
         &[
-            "edit: each old_text must match the file exactly, including whitespace, and be unique; include surrounding lines when needed.",
+            "edit: each old_text must match the file exactly, including whitespace, and be unique; include just enough surrounding text to make it so.",
             "Put several changes to one file in a single edit call.",
         ]
     }

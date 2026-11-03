@@ -17,6 +17,9 @@ use std::path::PathBuf;
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct McpServerConfig {
+    /// A curated CLI connector managed by finx. Its command is the internal MCP adapter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connector: Option<String>,
     /// The key of `[mcp_servers.<name>]`; 1-32 letters, digits, `_` or `-`.
     #[serde(default)]
     pub name: String,

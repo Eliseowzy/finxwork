@@ -465,6 +465,29 @@ pub async fn mcp_login(name: &str) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let ws = here(&home)?;
     let config = finx_core::mcp::views::for_check(&ws, name).with_context(|| format!("no MCP server named {name} here"))?;
+    if config.connector.is_some() {
+        let m = finx_core::connectors::for_server(home.root(), &config).context("managed connector configuration changed; reinstall it from Connectors")?;
+        let mut pending = finx_core::connectors::login(home.root().to_path_buf(), m, Default::default()).await.map_err(anyhow::Error::msg)?;
+        println!("{}", pending.url);
+        open_browser(&pending.url);
+        let mut updates = pending.take_updates();
+        let wait = pending.wait();
+        tokio::pin!(wait);
+        let mut updating = true;
+        loop {
+            tokio::select! {
+                result = &mut wait => { result.map_err(anyhow::Error::msg)?; break; },
+                _ = tokio::signal::ctrl_c() => bail!("login cancelled"),
+                url = updates.recv(), if updating => match url {
+                    Some(url) => { println!("{url}"); open_browser(&url); },
+                    None => updating = false,
+                },
+            }
+        }
+        mcp_switch(name, true, false)?;
+        println!("signed in to {name}");
+        return Ok(0);
+    }
     sign_in(&home, &ws, name, &config).await?;
     if !config.uses_oauth() {
         match defined_in(&home, &ws, name) {
@@ -482,6 +505,13 @@ pub async fn mcp_login(name: &str) -> anyhow::Result<u8> {
 pub async fn mcp_logout(name: &str) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let ws = here(&home)?;
+    if let Some(config) = finx_core::mcp::views::for_check(&ws, name).filter(|s| s.connector.is_some()) {
+        let m = finx_core::connectors::for_server(home.root(), &config).context("invalid managed connector configuration")?;
+        mcp_switch(name, false, false)?;
+        finx_core::connectors::logout(home.root(), &m).await.map_err(anyhow::Error::msg)?;
+        println!("signed out of {name}");
+        return Ok(0);
+    }
     let http = finx_core::runtime::model_registry(&home, &ws.config)?.http_client()?;
     finx_mcp::oauth::logout(name, &http).await.map_err(|e| anyhow::anyhow!(e))?;
     println!("signed out of {name}");
@@ -494,7 +524,7 @@ fn defined_in(home: &FinxHome, ws: &Workspace, name: &str) -> Option<ConfigLayer
     listed.servers.into_iter().find(|s| s.name == name).map(|s| s.layer)
 }
 
-pub fn mcp_remove(name: &str, project: bool) -> anyhow::Result<u8> {
+pub async fn mcp_remove(name: &str, project: bool) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let ws = here(&home)?;
     let layer = match defined_in(&home, &ws, name) {
@@ -509,6 +539,10 @@ pub fn mcp_remove(name: &str, project: bool) -> anyhow::Result<u8> {
         Some(layer) if layer.writable() => layer,
         _ => bail!("no server named {name} in a configuration file here"),
     };
+    if let Some(config) = finx_core::mcp::views::for_check(&ws, name).filter(|s| s.connector.is_some()) {
+        let m = finx_core::connectors::for_server(home.root(), &config).context("invalid managed connector configuration")?;
+        finx_core::connectors::logout(home.root(), &m).await.map_err(anyhow::Error::msg)?;
+    }
     let key = finx_core::config::join_key("mcp_servers", name);
     let written = write(&home, &ws, layer, &[edit(key.clone(), Value::Null)])?;
     println!("removed {name} from {}", shorten(&home, &written.file));

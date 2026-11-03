@@ -98,7 +98,7 @@ impl McpManager {
         cwd: PathBuf,
         project_root: Option<PathBuf>,
     ) -> Option<Arc<McpManager>> {
-        let mut configs: Vec<McpServerConfig> = configs.into_iter().filter(McpServerConfig::is_enabled).collect();
+        let mut configs: Vec<McpServerConfig> = configs.into_iter().filter(|s| s.is_enabled() && (s.connector.is_none() || settings.finx_home.as_deref().is_some_and(|home| crate::connectors::authorized(home, s)))).collect();
         if configs.is_empty() || !settings.enabled {
             return None;
         }

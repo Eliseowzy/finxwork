@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { RpcError } from "@finx/client";
-import type { ConfigEdit, ConfigLayer, ConfigReadResult, McpCheckResult, McpListResult, McpServerView, SkillsListResult } from "@finx/protocol";
+import type { ConfigEdit, ConfigLayer, ConfigReadResult, McpChangedParams, McpCheckResult, McpListResult, McpServerView, SkillsListResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
 import { errorText, useStore, type Store } from "../store";
 import { skillItems, type SkillItem } from "./model";
@@ -31,6 +31,11 @@ export function useCustomize(cwd: string | null) {
   const [checking, setChecking] = useState<Set<string>>(new Set());
   /** Servers waiting for their sign-in in the browser: name → the address to open again. */
   const [signingIn, setSigningIn] = useState<Map<string, string>>(new Map());
+  const loginStops = useRef(new Map<string, () => void>());
+  useEffect(() => () => {
+    for (const stop of loginStops.current.values()) stop();
+    loginStops.current.clear();
+  }, [rpc]);
   /** Catalog entries being added. */
   const [adding, setAdding] = useState<Set<string>>(new Set());
   const params = useMemo(() => (cwd ? { cwd } : {}), [cwd]);
@@ -160,18 +165,44 @@ export function useCustomize(cwd: string | null) {
    */
   const login = useCallback(
     async (name: string) => {
-      if (!rpc) return;
+      if (!rpc || loginStops.current.has(name)) return;
+      const events = new Map<string, McpChangedParams>();
+      let loginId: string | null = null;
+      let finish!: (p: McpChangedParams) => void;
+      const ended = new Promise<McpChangedParams>((resolve) => { finish = resolve; });
+      const showURL = (url: string) => {
+        setSigningIn((m) => new Map(m).set(name, url));
+        window.finx?.openExternal(url);
+      };
+      const accept = (p: McpChangedParams) => {
+        if (p.authorize_url) showURL(p.authorize_url);
+        else finish(p);
+      };
+      const off = rpc.on("mcp/changed", (p) => {
+        if (p.name !== name || !p.login_id) return;
+        events.set(p.login_id, p);
+        if (p.login_id === loginId) accept(p);
+      });
+      let abandoned = false;
+      loginStops.current.set(name, () => {
+        abandoned = true;
+        off();
+        finish({ name });
+        void rpc.request("mcp/login_cancel", { name }).catch(() => {});
+      });
+      setSigningIn((m) => new Map(m).set(name, ""));
       try {
         const r = await rpc.request("mcp/login", { name, ...params });
-        setSigningIn((m) => new Map(m).set(name, r.authorize_url));
-        window.finx?.openExternal(r.authorize_url);
-        const error = await new Promise<string | null>((resolve) => {
-          const off = rpc.on("mcp/changed", (p) => {
-            if (p.login_id !== r.login_id) return;
-            off();
-            resolve(p.login_error ?? null);
-          });
-        });
+        if (abandoned) {
+          await rpc.request("mcp/login_cancel", { name });
+          return;
+        }
+        loginId = r.login_id;
+        const early = events.get(loginId);
+        if (early) accept(early);
+        else showURL(r.authorize_url);
+        const error = (await ended).login_error;
+        if (abandoned) return;
         if (error) st.show(t("toast.loginFailed", { name, error }), undefined, true);
         else {
           st.show(t("toast.signedIn", { name }));
@@ -180,6 +211,8 @@ export function useCustomize(cwd: string | null) {
       } catch (e) {
         st.show(errorText(e), undefined, true);
       } finally {
+        off();
+        loginStops.current.delete(name);
         setSigningIn((m) => {
           const next = new Map(m);
           next.delete(name);
@@ -262,7 +295,8 @@ export function useCustomize(cwd: string | null) {
       // On: take out the setting that turned it off where finx may write it, else say `true` for
       // the person; off: where it is defined, or for the person.
       const writable = (l: ConfigLayer | null | undefined): l is ConfigLayer => l === "user" || l === "user_project";
-      const layer: ConfigLayer = on ? (writable(s.disabled_by) ? s.disabled_by : "user_project") : s.editable ? s.layer : "user_project";
+      const ownLayer: ConfigLayer = s.editable && writable(s.layer) ? s.layer : cwd ? "user_project" : "user";
+      const layer: ConfigLayer = on && writable(s.disabled_by) ? s.disabled_by : ownLayer;
       const value = on ? (layer === s.disabled_by ? null : true) : false;
       const key = `mcp_servers.${quoteKey(s.name)}.enabled`;
       setSwitching((m) => new Map(m).set(s.name, on));
@@ -282,17 +316,19 @@ export function useCustomize(cwd: string | null) {
         st.show(errorText(e), undefined, true);
       }
     },
-    [write, readServers, check, st],
+    [write, readServers, check, st, cwd],
   );
 
   const removeServer = useCallback(
     (s: McpServerView) => {
-      const credentials = (s.credentials ?? []).length > 0;
-      removeLater(`server:${s.name}`, t(credentials ? "toast.serverRemovedWithSecret" : "toast.serverRemoved", { name: s.name }), () =>
-        write(s.layer, [{ key_path: `mcp_servers.${quoteKey(s.name)}`, value: null, merge: "replace" }]),
+      const credentials = !!s.connector || (s.credentials ?? []).length > 0;
+      removeLater(`server:${s.name}`, t(credentials ? "toast.serverRemovedWithSecret" : "toast.serverRemoved", { name: s.name }), async () => {
+        if (s.connector) await rpc?.request("mcp/logout", { name: s.name });
+        return write(s.layer, [{ key_path: `mcp_servers.${quoteKey(s.name)}`, value: null, merge: "replace" }]);
+      },
       );
     },
-    [write, removeLater],
+    [rpc, write, removeLater],
   );
 
   /**

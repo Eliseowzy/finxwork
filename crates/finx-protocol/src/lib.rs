@@ -6,6 +6,7 @@
 pub mod api;
 pub mod customize;
 pub mod doc;
+pub mod files;
 mod event;
 pub mod mcp;
 mod op;

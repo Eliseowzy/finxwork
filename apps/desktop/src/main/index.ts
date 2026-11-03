@@ -1,4 +1,4 @@
-import { app, dialog, nativeTheme, net, protocol } from "electron";
+import { app, BrowserWindow, dialog, nativeTheme, net, protocol } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { testHome } from "./build";
@@ -14,6 +14,7 @@ import { applyAppearance } from "./preferences";
 import { startUpdater } from "./updater";
 import { devURL, showMain } from "./windows";
 import { forgetSitesOnStart } from "./browser/menu";
+import { isParking } from "./browser/pages";
 import { refreshSystemBrowser } from "./browser/system";
 
 const rendererDir = path.join(import.meta.dirname, "../renderer");
@@ -92,3 +93,10 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => {
   if (platform.quitWithLastWindow) app.quit();
 });
+// The browser's hidden window (browser/pages.ts) is none of the person's, yet it keeps
+// window-all-closed from coming: with only it left, their last window has closed.
+app.on("browser-window-created", (_e, win) =>
+  win.once("closed", () => {
+    if (platform.quitWithLastWindow && BrowserWindow.getAllWindows().every((w) => w === win || w.isDestroyed() || isParking(w))) app.quit();
+  }),
+);

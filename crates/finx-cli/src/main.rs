@@ -40,6 +40,12 @@ enum Command {
     /// The document worker `finx serve` starts: PDFium, one request a line on stdin
     #[command(hide = true)]
     DocWorker,
+    /// Run a managed connector's internal tool adapter
+    #[command(hide = true)]
+    Connector {
+        #[command(subcommand)]
+        command: ConnectorCommand,
+    },
     /// Chat with a model directly, without tools (checks the model setup)
     Chat {
         /// Message to send; without it an interactive chat starts ("-" reads stdin)
@@ -176,6 +182,11 @@ enum Command {
         #[command(subcommand)]
         command: ProtocolCommand,
     },
+}
+
+#[derive(Subcommand)]
+enum ConnectorCommand {
+    Serve { id: String, #[arg(long)] home: PathBuf },
 }
 
 #[derive(Subcommand)]
@@ -424,6 +435,11 @@ impl RunArgs {
 
 async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
     match command {
+        Command::Connector { command: ConnectorCommand::Serve { id, home } } => {
+            if !home.is_absolute() { anyhow::bail!("connector home must be absolute"); }
+            finx_core::connectors::serve(&home, &id, tokio::io::stdin(), tokio::io::stdout()).await.map_err(anyhow::Error::msg)?;
+            Ok(0)
+        }
         Command::Chat {
             prompt,
             model,
@@ -484,6 +500,9 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         Command::Mcp {
             command: McpCommand::Login { name },
         } => cmd_customize::mcp_login(&name).await,
+        Command::Mcp {
+            command: McpCommand::Remove { name, project },
+        } => cmd_customize::mcp_remove(&name, project).await,
         Command::Mcp {
             command: McpCommand::Logout { name },
         } => cmd_customize::mcp_logout(&name).await,
@@ -558,9 +577,6 @@ fn main() -> ExitCode {
         Command::Mcp {
             command: McpCommand::Get { name, json },
         } => cmd_mcp::get(&overrides, &name, json),
-        Command::Mcp {
-            command: McpCommand::Remove { name, project },
-        } => cmd_customize::mcp_remove(&name, project),
         Command::Mcp {
             command: McpCommand::Enable { name, here },
         } => cmd_customize::mcp_switch(&name, true, here),

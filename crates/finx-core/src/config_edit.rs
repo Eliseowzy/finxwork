@@ -189,7 +189,7 @@ pub fn write(target: &Target<'_>, edits: &[ConfigEdit], expected_version: Option
     let table = config::check_file(&new_text, path).map_err(|e| WriteError::Invalid(vec![FieldError::new(first_key, e.to_string())]))?;
     let loaded = config::load_layers_with(&target.files, target.trusted, target.overrides, Some((target.layer, table)))
         .map_err(|e| WriteError::Invalid(vec![FieldError::new(first_key, e.to_string())]))?;
-    let problems = server_problems(&loaded, edits);
+    let problems = server_problems(&loaded, edits, target.files.user.parent().unwrap_or(Path::new(".")));
     if !problems.is_empty() {
         return Err(WriteError::Invalid(problems));
     }
@@ -210,7 +210,7 @@ pub fn write(target: &Target<'_>, edits: &[ConfigEdit], expected_version: Option
 }
 
 /// Edited servers that would not start: a missing command or URL, a bad name.
-fn server_problems(loaded: &LoadedConfig, edits: &[ConfigEdit]) -> Vec<FieldError> {
+fn server_problems(loaded: &LoadedConfig, edits: &[ConfigEdit], home: &Path) -> Vec<FieldError> {
     let mut problems = Vec::new();
     let mut seen = BTreeSet::new();
     for edit in edits {
@@ -225,6 +225,9 @@ fn server_problems(loaded: &LoadedConfig, edits: &[ConfigEdit]) -> Vec<FieldErro
         let Some(server) = loaded.config.mcp_servers.iter().find(|s| &s.name == name) else { continue };
         if !server.is_enabled() {
             continue;
+        }
+        if !crate::connectors::authorized(home, server) {
+            problems.push(FieldError::new(&config::join_key("mcp_servers", name), "连接器尚未完成授权，不能启用"));
         }
         if let Err(problem) = server.validate() {
             problems.push(FieldError::new(&config::join_key("mcp_servers", name), problem));

@@ -39,5 +39,6 @@ mod browser_status;
 mod connections;
 mod customize;
 mod docs;
+mod files;
 mod models;
 mod peer;
