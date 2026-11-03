@@ -1,0 +1,731 @@
+{
+ "schema_version": 1,
+ "date": "2026-11-03",
+ "base": "692cb94 (main after PR #5)",
+ "candidate_load": "7582190 (idle-connection cap removed, session-log group commit)",
+ "candidate_startup": "6ffa683 (also: default log level without parsing FINX_LOG)",
+ "method": "Interleaved runs on the same machine; medians; two-sided Mann-Whitney U p-value. macOS: Apple M2 Max 12 cores, macOS 27.2, release builds, Python spawn clock for startup (100 runs). Linux: AMD EPYC-Milan 1 vCPU, Debian 13.7, static musl dist builds, native pre-fork clock (200 runs). Load: finx-sim native, macro scenario, 200 sessions, 4 runs per side; 'realistic' = 100 ms TTFT, 1 ms chunks, 10 ms tools, one shared connection, 1 wave; 'saturated' = no waits, a connection per session, 3 waves.",
+ "load_and_correctness": [
+  {
+   "group": "correctness",
+   "metric": "suite (4 protocols)",
+   "base": "-",
+   "cand": "pass",
+   "change_pct": 0,
+   "p": 1,
+   "verdict": "~",
+   "n": [
+    0,
+    1
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "task_p50",
+   "base": 1723.158021,
+   "cand": 1488.9735835000001,
+   "change_pct": -13.590421461410465,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "task_p95",
+   "base": 1884.782208,
+   "cand": 1501.2662704999998,
+   "change_pct": -20.348024077909816,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "task_p99",
+   "base": 1894.0856875,
+   "cand": 1508.7149165,
+   "change_pct": -20.34600512232633,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "new_p50",
+   "base": 38.489396,
+   "cand": 38.723666,
+   "change_pct": 0.6086611491643106,
+   "p": 1.0,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "new_p95",
+   "base": 46.1560415,
+   "cand": 44.667813,
+   "change_pct": -3.2243417148327116,
+   "p": 0.19393085228241072,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "tps",
+   "base": 102.21253898558832,
+   "cand": 128.84166401105176,
+   "change_pct": 26.052698905383874,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "cpu",
+   "base": 2386.4337079999996,
+   "cand": 2042.844041,
+   "change_pct": -14.39762042616939,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "peak",
+   "base": 155.5241470336914,
+   "cand": 170.0006980895996,
+   "change_pct": 9.308233693621947,
+   "p": 0.060601969712006105,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "close_fp",
+   "base": 63.93812942504883,
+   "cand": 72.14124298095703,
+   "change_pct": 12.829767823477326,
+   "p": 0.030382821976577507,
+   "verdict": "REGRESSION",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "close_fds",
+   "base": 77.0,
+   "cand": 749.5,
+   "change_pct": 873.3766233766235,
+   "p": 0.02107057013437867,
+   "verdict": "REGRESSION",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load realistic",
+   "metric": "failed runs",
+   "base": 0,
+   "cand": 0,
+   "change_pct": 0,
+   "p": 1,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "task_p50",
+   "base": 385.166375,
+   "cand": 235.1688125,
+   "change_pct": -38.9435766556725,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "task_p95",
+   "base": 541.3431665,
+   "cand": 285.51856250000003,
+   "change_pct": -47.25738123822793,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "task_p99",
+   "base": 589.341771,
+   "cand": 298.7642085,
+   "change_pct": -49.30544156185393,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "new_p50",
+   "base": 14.851291999999999,
+   "cand": 15.631604,
+   "change_pct": 5.254169132220957,
+   "p": 0.19393085228241072,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "new_p95",
+   "base": 30.5187295,
+   "cand": 32.829708,
+   "change_pct": 7.5723286580458655,
+   "p": 0.11235119769046395,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "tps",
+   "base": 353.57584829774316,
+   "cand": 669.189806551431,
+   "change_pct": 89.2634380354826,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "cpu",
+   "base": 5079.8696455,
+   "cand": 4406.7982915,
+   "change_pct": -13.249776096050802,
+   "p": 0.030382821976577507,
+   "verdict": "better",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "peak",
+   "base": 154.6178855895996,
+   "cand": 156.8913116455078,
+   "change_pct": 1.4703512774340546,
+   "p": 0.6650055421020291,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "close_fp",
+   "base": 42.02406692504883,
+   "cand": 48.06312942504883,
+   "change_pct": 14.370485633317804,
+   "p": 0.030382821976577507,
+   "verdict": "REGRESSION",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "close_fds",
+   "base": 77.0,
+   "cand": 419.5,
+   "change_pct": 444.80519480519484,
+   "p": 0.02107057013437867,
+   "verdict": "REGRESSION",
+   "n": [
+    4,
+    4
+   ]
+  },
+  {
+   "group": "load saturated",
+   "metric": "failed runs",
+   "base": 3,
+   "cand": 0,
+   "change_pct": 0,
+   "p": 1,
+   "verdict": "~",
+   "n": [
+    4,
+    4
+   ]
+  }
+ ],
+ "startup_after_log_fix": [
+  {
+   "group": "mac cli",
+   "metric": "first_request",
+   "base": 6.2070625,
+   "cand": 6.3151875,
+   "change_pct": 1.7419673154571949,
+   "p": 0.02060685979906947,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac cli",
+   "metric": "exit",
+   "base": 11.7691245,
+   "cand": 11.985125,
+   "change_pct": 1.8353149378273619,
+   "p": 0.018139513302380925,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "initialize",
+   "base": 6.8327290000000005,
+   "cand": 6.825146,
+   "change_pct": -0.11098054671860012,
+   "p": 0.8824808571077496,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "session_ready",
+   "base": 7.6635,
+   "cand": 7.6168125,
+   "change_pct": -0.6092190252495595,
+   "p": 0.8259450780875071,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "first_request",
+   "base": 8.239208000000001,
+   "cand": 8.214042,
+   "change_pct": -0.30544197937474377,
+   "p": 0.6138680472096159,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "session_new",
+   "base": 0.8049999999999999,
+   "cand": 0.8007705,
+   "change_pct": -0.5254037267080605,
+   "p": 0.6173047998339003,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "prompt_to_request",
+   "base": 0.569333,
+   "cand": 0.5645,
+   "change_pct": -0.8488880848290853,
+   "p": 0.14633556363346614,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "reuse_new_to_request",
+   "base": 0.810625,
+   "cand": 0.7917085,
+   "change_pct": -2.3335697764070935,
+   "p": 0.1443107260061833,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac acp",
+   "metric": "reuse_prompt_to_request",
+   "base": 0.3816045,
+   "cand": 0.36908399999999997,
+   "change_pct": -3.281014767907623,
+   "p": 0.2579332711161154,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "initialize",
+   "base": 7.1175415,
+   "cand": 7.1445834999999995,
+   "change_pct": 0.3799345602691574,
+   "p": 0.5535012236977634,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "session_ready",
+   "base": 7.7762080000000005,
+   "cand": 7.8165835,
+   "change_pct": 0.5192183645293397,
+   "p": 0.4568692661128683,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "first_request",
+   "base": 8.344729000000001,
+   "cand": 8.413292,
+   "change_pct": 0.8216324340790367,
+   "p": 0.5551380784050652,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "session_new",
+   "base": 0.661917,
+   "cand": 0.6748335,
+   "change_pct": 1.9513775896373713,
+   "p": 0.18018055680322878,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "prompt_to_request",
+   "base": 0.569979,
+   "cand": 0.5641039999999999,
+   "change_pct": -1.030739729007573,
+   "p": 0.35378803878293913,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "reuse_new_to_request",
+   "base": 0.7009375,
+   "cand": 0.722271,
+   "change_pct": 3.043566651805618,
+   "p": 0.09322831137432325,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "mac socket",
+   "metric": "reuse_prompt_to_request",
+   "base": 0.3592085,
+   "cand": 0.370771,
+   "change_pct": 3.2188826266639103,
+   "p": 0.09040376729731366,
+   "verdict": "~",
+   "n": [
+    100,
+    100
+   ]
+  },
+  {
+   "group": "linux cli",
+   "metric": "first_request",
+   "base": 3.254091,
+   "cand": 3.1893235,
+   "change_pct": -1.9903407741209411,
+   "p": 0.15353400750380053,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux cli",
+   "metric": "exit",
+   "base": 8.0048525,
+   "cand": 7.779243,
+   "change_pct": -2.8184092086643697,
+   "p": 0.23483269392256628,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "initialize",
+   "base": 2.2192455,
+   "cand": 2.2773665000000003,
+   "change_pct": 2.6189531532225847,
+   "p": 0.01776973954938046,
+   "verdict": "REGRESSION",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "session_ready",
+   "base": 3.436829,
+   "cand": 3.4837629999999997,
+   "change_pct": 1.365619296159332,
+   "p": 0.2115140909395881,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "first_request",
+   "base": 4.2288325,
+   "cand": 4.2851145,
+   "change_pct": 1.3309110729734388,
+   "p": 0.13717128621051167,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "session_new",
+   "base": 1.179581,
+   "cand": 1.1899355,
+   "change_pct": 0.8778116975434535,
+   "p": 0.6761164245608959,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "prompt_to_request",
+   "base": 0.7719895,
+   "cand": 0.7801355000000001,
+   "change_pct": 1.0551956989052438,
+   "p": 0.7969308905574355,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "reuse_new_to_request",
+   "base": 1.1961675,
+   "cand": 1.190371,
+   "change_pct": -0.48458932381961406,
+   "p": 0.9748145782107239,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux acp",
+   "metric": "reuse_prompt_to_request",
+   "base": 0.5449625,
+   "cand": 0.556269,
+   "change_pct": 2.074729912608665,
+   "p": 0.33440531205889473,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "initialize",
+   "base": 2.990484,
+   "cand": 2.9942815,
+   "change_pct": 0.1269861333483182,
+   "p": 0.7822793368687648,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "session_ready",
+   "base": 3.878059,
+   "cand": 3.8450015,
+   "change_pct": -0.8524238543044333,
+   "p": 0.28289928925608104,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "first_request",
+   "base": 4.837526,
+   "cand": 4.793748,
+   "change_pct": -0.9049667123236244,
+   "p": 0.25231083839096013,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "session_new",
+   "base": 0.8630385,
+   "cand": 0.838166,
+   "change_pct": -2.8819687650087538,
+   "p": 0.028899779579615155,
+   "verdict": "better",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "prompt_to_request",
+   "base": 0.942049,
+   "cand": 0.9320595,
+   "change_pct": -1.0604013167043311,
+   "p": 0.6631997013129063,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "reuse_new_to_request",
+   "base": 1.129651,
+   "cand": 1.1222720000000002,
+   "change_pct": -0.6532105933602327,
+   "p": 0.6544354027426778,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  },
+  {
+   "group": "linux socket",
+   "metric": "reuse_prompt_to_request",
+   "base": 0.6383355,
+   "cand": 0.6507780000000001,
+   "change_pct": 1.9492100940649761,
+   "p": 0.6107381547539211,
+   "verdict": "~",
+   "n": [
+    200,
+    200
+   ]
+  }
+ ],
+ "notes": [
+  "after-close footprint and fds rise because idle HTTP connections are kept until the 30 s idle timeout (D-96, accepted)",
+  "startup metrics move within +-2% between rebuilds; a startup change counts only when it reproduces"
+ ]
+}
