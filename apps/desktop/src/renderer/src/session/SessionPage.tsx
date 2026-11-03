@@ -25,6 +25,8 @@ export function SessionPage({ s }: { s: ListSession }) {
   const background = st.background && agents > 0;
   // One panel on the right at a time: the background panel when asked for, else the browser.
   const browser = st.browser && browserTabs.length > 0 && !background;
+  // Taking the window, the panel leaves the conversation mounted but out of sight, where it was.
+  const max = browser && st.browserMax;
   const layout = layoutOf(st);
   const info = layout.card !== "hidden" && !background && !browser;
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
@@ -42,7 +44,7 @@ export function SessionPage({ s }: { s: ListSession }) {
     st.set({ contextOpen: true });
   }, [asked]);
   return (
-    <div className={`spage ${browser ? "bgopen" : ""}`}>
+    <div className={`spage ${browser ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -71,7 +73,7 @@ export function SessionPage({ s }: { s: ListSession }) {
               aria-label={t("browser.title")}
               aria-pressed={browser}
               onClick={() => {
-                if (browser) st.set({ browser: false });
+                if (browser) st.set({ browser: false, browserMax: false });
                 else if (hasTabs) st.set({ browser: true, background: false });
                 else void st.run(async () => {
                   await window.finx?.openBrowser(s.session_id);
@@ -100,7 +102,15 @@ export function SessionPage({ s }: { s: ListSession }) {
           {view && background && <Background s={s} view={view} />}
         </div>
       </div>
-      {browser && <BrowserPanel session={s.session_id} tabs={browserTabs} />}
+      {browser && (
+        <BrowserPanel
+          session={s.session_id}
+          tabs={browserTabs}
+          max={max}
+          onMax={(m) => st.set({ browserMax: m })}
+          onClose={() => st.set({ browser: false, browserMax: false })}
+        />
+      )}
     </div>
   );
 }

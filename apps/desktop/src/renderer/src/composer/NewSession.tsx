@@ -28,6 +28,7 @@ export function NewSession() {
   const tabs = useBrowserTabs().filter((tab) => tab.session === homeBrowserSession);
   const [browserOpen, setBrowserOpen] = useState(false);
   const browser = browserOpen && tabs.length > 0;
+  const max = browser && st.browserMax;
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   useBrowserComments(homeBrowserSession, (more) => setAttachments((list) => addAttachments(list, more)));
@@ -55,7 +56,7 @@ export function NewSession() {
     if (dir) set({ cwd: dir, noProject: false });
   };
   return (
-    <div className={`spage ${browser ? "bgopen" : ""}`}>
+    <div className={`spage ${browser ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
       <div className="scol">
         <div className="ctool drag">
           <SidebarToggle />
@@ -66,8 +67,10 @@ export function NewSession() {
             aria-label={t("browser.title")}
             aria-pressed={browser}
             onClick={() => {
-              if (browser) setBrowserOpen(false);
-              else void st.run(async () => {
+              if (browser) {
+                setBrowserOpen(false);
+                st.set({ browserMax: false });
+              } else void st.run(async () => {
                 await window.finx?.openBrowser();
                 setBrowserOpen(true);
               });
@@ -128,7 +131,18 @@ export function NewSession() {
           />
         </div>
       </div>
-      {browser && <BrowserPanel session={homeBrowserSession} tabs={tabs} />}
+      {browser && (
+        <BrowserPanel
+          session={homeBrowserSession}
+          tabs={tabs}
+          max={max}
+          onMax={(m) => st.set({ browserMax: m })}
+          onClose={() => {
+            setBrowserOpen(false);
+            st.set({ browserMax: false });
+          }}
+        />
+      )}
     </div>
   );
 }

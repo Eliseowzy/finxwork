@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BrowserStill, BrowserTab, BrowserTabCommand } from "../../../shared/bridge";
+import { SidebarToggle } from "../components";
 import { Icon } from "../icons";
 import { useCovered } from "../overlays";
 import { SiteIcon, siteOrigin } from "../siteIcon";
@@ -57,7 +58,12 @@ function savedWidth(): number | null {
   return Number.isFinite(n) && n >= minWidth ? n : null;
 }
 
-export function BrowserPanel({ session, tabs }: { session: string; tabs: BrowserTab[] }) {
+/**
+ * `max`: the panel takes the window but the sidebar, the conversation set aside; its strip
+ * then starts with the sidebar's toggle when the sidebar is hidden, as the conversation's bar
+ * does.
+ */
+export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: string; tabs: BrowserTab[]; max: boolean; onMax: (max: boolean) => void; onClose: () => void }) {
   const { t } = useTranslation("session");
   const room = useRef<HTMLDivElement>(null);
   const panel = useRef<HTMLElement>(null);
@@ -155,11 +161,12 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
   return (
     <aside
       ref={panel}
-      className={`bgp brp ${width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
-      style={width !== null ? ({ "--brp-w": `${width}px` } as React.CSSProperties) : undefined}
+      className={`bgp brp ${max ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
+      style={width !== null && !max ? ({ "--brp-w": `${width}px` } as React.CSSProperties) : undefined}
       aria-label={t("browser.title")}
     >
       <div className="brp-strip drag">
+        {max && <SidebarToggle />}
         <div className="brp-tabs" role="tablist">
           {tabs.map((x) => {
             const on = x.targetId === current?.targetId;
@@ -194,6 +201,12 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
           <Icon name="plus" />
         </button>
         <BrowserMenu targetId={current?.targetId ?? null} />
+        <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
+          <Icon name={max ? "shrink" : "expand"} />
+        </button>
+        <button className="tb" aria-label={t("browser.close")} title={t("browser.close")} onClick={onClose}>
+          <Icon name="x" />
+        </button>
       </div>
       <div className="brp-bar">
         <button className="tb" aria-label={t("browser.back")} title={t("browser.back")} disabled={!current?.canGoBack} onClick={() => command(current, { command: "back" })}>
@@ -286,7 +299,7 @@ export function BrowserPanel({ session, tabs }: { session: string; tabs: Browser
         {covered && still && !currentBlank && <img className="brp-still" src={still.image} style={{ width: still.width }} alt="" />}
       </div>
       {/* Last: the window's drag areas are laid in page order, and the edge must win over the tab strip's. */}
-      <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />
+      {!max && <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />}
     </aside>
   );
 }

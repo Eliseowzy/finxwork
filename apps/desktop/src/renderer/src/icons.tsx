@@ -69,6 +69,9 @@ const paths: Record<string, string> = {
   upload: "<path d=\"M8 10.6V2.8M4.8 6L8 2.8 11.2 6\"/><path d=\"M2.6 10.2v1.8c0 .7.5 1.2 1.2 1.2h8.4c.7 0 1.2-.5 1.2-1.2v-1.8\"/>",
   chat: "<path d=\"M2.6 4.2c0-.8.6-1.4 1.4-1.4h8c.8 0 1.4.6 1.4 1.4v5.4c0 .8-.6 1.4-1.4 1.4H7l-2.9 2.3V11H4c-.8 0-1.4-.6-1.4-1.4z\"/>",
   trash: "<path d=\"M2.8 4.3h10.4M6.3 4.3V3c0-.4.3-.7.7-.7h2c.4 0 .7.3.7.7v1.3M4 4.3l.6 8.5c0 .6.5 1 1.1 1h4.6c.6 0 1.1-.4 1.1-1l.6-8.5\"/>",
+  // Two corners pushed out, and pulled in: a panel taking the window, and giving it back.
+  expand: "<path d=\"M9.6 2.8h3.6v3.6M13.2 2.8L9.2 6.8M6.4 13.2H2.8V9.6M2.8 13.2l4-4\"/>",
+  shrink: "<path d=\"M13.2 6.8H9.2V2.8M9.2 6.8l4-4M2.8 9.2h4v4M6.8 9.2l-4 4\"/>",
   arrowLeft: "<path d=\"M13 8H3.2M7.2 4L3.2 8l4 4\"/>",
   arrowRight: "<path d=\"M3 8h9.8M8.8 4l4 4-4 4\"/>",
   unlock: "<rect x=\"3.2\" y=\"7\" width=\"9.6\" height=\"6.8\" rx=\"1.6\"/><path d=\"M5.3 7V5.2a2.7 2.7 0 0 1 5.3-.8\"/>",
