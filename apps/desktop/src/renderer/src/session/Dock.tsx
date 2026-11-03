@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ListSession, SessionView } from "@finx/client";
+import { docViewingBlock, type ListSession, type SessionView } from "@finx/client";
 import type { QueuedInput, UserMessage } from "@finx/protocol";
 import type { Attachment } from "../composer/attachments";
 import { addAttachments, fromInput, toInput } from "../composer/attachments";
-import { useBrowserComments } from "../composer/browserComments";
+import { currentTab, docsOf } from "../docs/state";
+import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
 import { useStore } from "../store";
@@ -36,7 +37,8 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     setDraft(d);
     drafts.set(id, d);
   };
-  useBrowserComments(id, (more) => {
+  // Parts of pages from the browser panel, quotes from the document column.
+  useComposerInbox(id, (more) => {
     const d = drafts.get(id) ?? { text: "", attachments: [] };
     change({ ...d, attachments: addAttachments(d.attachments, more) });
   });
@@ -92,6 +94,10 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     const sent = draft;
     change({ text: "", attachments: [] });
     const input = toInput(sent.text, sent.attachments);
+    // What the document column shows goes along, so "this page" means something (§7.4).
+    const docs = docsOf(id);
+    const tab = docs.shown ? currentTab(docs) : undefined;
+    if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
     const ok = await st.op(id, { type: "prompt", input, mode: live ? (followUp ? "follow_up" : "steer") : undefined });
     if (!ok) change(sent);
   };

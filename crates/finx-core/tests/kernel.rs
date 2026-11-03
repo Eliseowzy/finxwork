@@ -64,6 +64,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         hooks: vec![],
         mcp_servers: Vec::new(),
         browser_pool: None,
+        docs: None,
     }
 }
 

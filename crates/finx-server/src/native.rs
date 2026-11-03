@@ -582,6 +582,38 @@ impl NativeProtocol {
                 server.unsubscribe_sessions(conn);
                 conn.send(finx_rpc::response(id, &json!({})));
             }
+            method::DOC_OPEN => match finx_rpc::params::<finx_protocol::doc::DocOpenParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_open(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_CLOSE => match finx_rpc::params::<finx_protocol::doc::DocIdParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_close(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_VIEW => match finx_rpc::params::<finx_protocol::doc::DocViewParams>(params) {
+                Ok(p) => conn.send(reply(id, server.doc_view(p))),
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_LOCATE => match finx_rpc::params::<finx_protocol::doc::DocLocateParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_locate(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_RESOLVE => match finx_rpc::params::<finx_protocol::doc::DocResolveParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_resolve(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::SESSION_RENAME | method::SESSION_ARCHIVE | method::SESSION_UNARCHIVE => {
                 let parsed = match method_name {
                     method::SESSION_RENAME => finx_rpc::params::<SessionRenameParams>(params)

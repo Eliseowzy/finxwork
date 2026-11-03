@@ -40,6 +40,8 @@ export type MenuState = {
  * as the protocol's image content takes them); any other file by its path.
  */
 export type PickedFile = { path: string; name: string } & ({ kind: "file" } | { kind: "image"; mime_type: string; data: string });
+/** What a paste attaches: files as picked, or a folder. */
+export type PastedItem = PickedFile | { kind: "folder"; path: string; name: string };
 
 /** Light or dark: the system's, or one chosen for the app. */
 export type Appearance = "system" | "light" | "dark";
@@ -77,6 +79,8 @@ export type BrowserTab = {
   title: string;
   shown: boolean;
   loading: boolean;
+  /** The page's document is parsed, so it can be annotated while images and the like still load. */
+  domReady?: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
   annotating?: boolean;
@@ -227,6 +231,10 @@ export type Bridge = {
   catalogDir: string;
   /** Files to attach, from the system's dialog; images read (up to 10 MB each), others by path. */
   pickFiles(): Promise<PickedFile[]>;
+  /** The files and folders on the clipboard, else its picture (a screenshot); none when it holds neither. */
+  pasteFiles(): Promise<PastedItem[]>;
+  /** Dropped files and folders, by their paths (pathForFile), as attachments. */
+  attachPaths(paths: string[]): Promise<PastedItem[]>;
   /** Shows a file or folder in Finder (Explorer, the file manager). */
   revealPath(path: string): void;
   /** Opens a folder itself in Finder (Explorer, the file manager). */

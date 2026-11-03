@@ -93,6 +93,7 @@ async fn harness(mode: PermissionMode) -> Harness {
         hooks: vec![],
         mcp_servers: Vec::new(),
         browser_pool: None,
+        docs: None,
     };
     let options = StartOptions {
         model: "test/scripted".into(),

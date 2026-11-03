@@ -96,6 +96,7 @@ impl Harness {
             hooks: vec![],
             mcp_servers: Vec::new(),
             browser_pool: None,
+            docs: None,
         };
         let options = StartOptions {
             model: "test/scripted".into(),
@@ -702,6 +703,7 @@ async fn sub_agents_can_be_turned_off() {
             hooks: vec![],
             mcp_servers: Vec::new(),
             browser_pool: None,
+            docs: None,
         },
     )
     .await

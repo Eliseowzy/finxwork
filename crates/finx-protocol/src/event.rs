@@ -91,6 +91,11 @@ pub enum EventMsg {
         delay_ms: u64,
         error: ErrorInfo,
     },
+    /// The agent opened a document (`doc_open`): clients show it beside the conversation
+    /// (document-editor-design §6).
+    DocOpened {
+        info: crate::doc::DocInfo,
+    },
     ToolStarted {
         call_id: String,
         name: String,

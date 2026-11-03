@@ -5,6 +5,7 @@
 
 pub mod api;
 pub mod customize;
+pub mod doc;
 mod event;
 pub mod mcp;
 mod op;

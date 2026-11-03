@@ -16,6 +16,7 @@ pub mod context;
 pub mod context_report;
 mod deferred;
 mod desktop;
+mod docs;
 mod emitter;
 pub mod history;
 pub mod hooks;

@@ -83,6 +83,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpSe
         hooks: vec![],
         mcp_servers: servers,
         browser_pool: None,
+        docs: None,
     }
 }
 

@@ -37,6 +37,9 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// The document worker `finx serve` starts: PDFium, one request a line on stdin
+    #[command(hide = true)]
+    DocWorker,
     /// Chat with a model directly, without tools (checks the model setup)
     Chat {
         /// Message to send; without it an interactive chat starts ("-" reads stdin)
@@ -491,7 +494,8 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         | Command::Skills { .. }
         | Command::Trust { .. }
         | Command::Mcp { .. }
-        | Command::Protocol { .. } => {
+        | Command::Protocol { .. }
+        | Command::DocWorker => {
             unreachable!("local commands run without the async runtime")
         }
     }
@@ -566,6 +570,10 @@ fn main() -> ExitCode {
         Command::Protocol {
             command: ProtocolCommand::Schema,
         } => cmd_serve::schema(),
+        Command::DocWorker => {
+            finx_docs::engine::serve(std::io::stdin().lock(), std::io::stdout().lock())?;
+            Ok(0)
+        }
         command => run_async(&overrides, command),
     });
     match result {

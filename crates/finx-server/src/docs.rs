@@ -1,0 +1,88 @@
+//! The `doc/*` methods (document-editor-design §6): documents belong to their files and are
+//! shared by every session; a session only says what its column shows.
+
+use finx_docs::DocError;
+use finx_protocol::api::Empty;
+use finx_protocol::api::error_code;
+use finx_protocol::doc::DocIdParams;
+use finx_protocol::doc::DocLocateParams;
+use finx_protocol::doc::DocLocateResult;
+use finx_protocol::doc::DocOpenParams;
+use finx_protocol::doc::DocOpenResult;
+use finx_protocol::doc::DocResolveParams;
+use finx_protocol::doc::DocResolveResult;
+use finx_protocol::doc::DocViewParams;
+use finx_protocol::doc::ResolvedPart;
+use finx_rpc::RpcError;
+use std::path::PathBuf;
+
+use crate::server::Server;
+
+fn rpc_error(e: DocError) -> RpcError {
+    match e {
+        DocError::Password => RpcError::with_kind(error_code::DOC_PASSWORD, "doc_password", e.to_string()),
+        DocError::NotFound(_) | DocError::NotPdf(_) | DocError::TooLarge(_) | DocError::Unreadable(..) => {
+            RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string())
+        }
+        DocError::NotOpen(_) | DocError::NoPage { .. } => RpcError::invalid_params(e),
+        DocError::Io(_) | DocError::Worker(_) => RpcError::internal(e.to_string()),
+    }
+}
+
+impl Server {
+    pub(crate) async fn doc_open(&self, p: DocOpenParams) -> Result<DocOpenResult, RpcError> {
+        let path = match (&p.path, &p.doc_id) {
+            (Some(path), _) => PathBuf::from(path),
+            (None, Some(id)) => self.0.docs.path_of(id).map_err(rpc_error)?,
+            (None, None) => return Err(RpcError::invalid_params("give path or doc_id")),
+        };
+        if !path.is_absolute() {
+            return Err(RpcError::invalid_params("path must be absolute"));
+        }
+        let (doc, token) = self.0.docs.open(&path, p.password, &p.session_id).await.map_err(rpc_error)?;
+        Ok(DocOpenResult { info: doc.info(), token, password: doc.password().map(str::to_string) })
+    }
+
+    pub(crate) async fn doc_close(&self, p: DocIdParams) -> Result<Empty, RpcError> {
+        self.0.docs.close(&p.doc_id, &p.session_id).await.map_err(rpc_error)?;
+        Ok(Empty {})
+    }
+
+    pub(crate) fn doc_view(&self, p: DocViewParams) -> Result<Empty, RpcError> {
+        self.0.docs.set_view(&p.doc_id, &p.session_id, p.page, p.selection).map_err(rpc_error)?;
+        Ok(Empty {})
+    }
+
+    pub(crate) async fn doc_resolve(&self, p: DocResolveParams) -> Result<DocResolveResult, RpcError> {
+        if p.quads.is_empty() && p.rect.is_none() {
+            return Err(RpcError::invalid_params("give quads or rect"));
+        }
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let (anchor, mut text, boxes) = self.0.docs.resolve(&doc, p.page, &p.quads, p.rect).await.map_err(rpc_error)?;
+        let mut more = Vec::new();
+        let mut last = p.page;
+        for part in &p.more {
+            if part.page <= last || part.quads.is_empty() {
+                return Err(RpcError::invalid_params("more: pages after `page`, in order, each with quads"));
+            }
+            last = part.page;
+            let (anchor, part_text, boxes) = self.0.docs.resolve(&doc, part.page, &part.quads, None).await.map_err(rpc_error)?;
+            if !part_text.is_empty() {
+                text = finx_docs::layout::join_texts(&[text, part_text]);
+            }
+            more.push(ResolvedPart { anchor, boxes });
+        }
+        Ok(DocResolveResult { anchor, text, boxes, more })
+    }
+
+    pub(crate) async fn doc_locate(&self, p: DocLocateParams) -> Result<DocLocateResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let anchor = self.0.docs.locate(&doc, &p.target).await.map_err(rpc_error)?;
+        Ok(DocLocateResult { anchor })
+    }
+
+    /// A closed session's columns show nothing any more.
+    pub(crate) async fn docs_forget(&self, session: &str) {
+        self.0.docs.forget_session(session).await;
+    }
+}

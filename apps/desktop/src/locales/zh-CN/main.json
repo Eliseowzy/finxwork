@@ -1,5 +1,6 @@
 {
   "settingsWindow": "设置",
+  "pastedImage": "粘贴的图片 {{n}}",
   "menu": {
     "settings": "设置…",
     "app": {

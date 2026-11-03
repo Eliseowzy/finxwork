@@ -1,10 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { SidebarToggle } from "../components";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
-import { layoutOf, setCard } from "../layout";
+import { DocPanel } from "../docs/DocPanel";
+import { DocContext, docsOf, openDoc, showDocs, useDocEvents, useSessionDocs, type DocOpener } from "../docs/state";
+import { layoutOf, setCard, setSidebar } from "../layout";
 import { useStore } from "../store";
 import { Background } from "./Background";
 import { BrowserPanel, useBrowserTabs } from "./Browser";
@@ -23,10 +25,44 @@ export function SessionPage({ s }: { s: ListSession }) {
   const running = view ? runningAgents(view).length : 0;
   const browserTabs = useBrowserTabs().filter((t) => t.session === s.session_id);
   const background = st.background && agents > 0;
-  // One panel on the right at a time: the background panel when asked for, else the browser.
-  const browser = st.browser && browserTabs.length > 0 && !background;
+  const docs = useSessionDocs(s.session_id);
+  useDocEvents(st.rpc, s.session_id);
+  // One panel on the right at a time: the background panel when asked for, else the document, else the browser.
+  const doc = docs.shown && (docs.tabs.length > 0 || docs.locked !== null) && !background;
+  const browser = st.browser && browserTabs.length > 0 && !background && !doc;
+  // A document opening puts the sidebar away: the column is the work beside the conversation (§7.1).
+  useEffect(() => {
+    if (doc) setSidebar(st, false);
+  }, [doc, docs.current]);
+  const rpc = st.rpc;
+  const opener = useMemo<DocOpener | null>(() => {
+    if (!rpc) return null;
+    const id = s.session_id;
+    return {
+      session: id,
+      open: (what, anchor, target) =>
+        void st.run(async () => {
+          const tab = await openDoc(rpc, id, what, anchor);
+          st.set({ background: false });
+          if (tab && target) {
+            const r = await rpc.request("doc/locate", { session_id: id, doc_id: tab.info.doc_id, target });
+            await openDoc(rpc, id, { doc_id: tab.info.doc_id }, r.anchor);
+          }
+        }),
+      locate: async (docId, target) => {
+        try {
+          // A hover must not bring the column out: finx opens the document, the column stays as it is.
+          const path = docsOf(id).tabs.find((t) => t.info.doc_id === docId)?.info.path ?? (await rpc.request("doc/open", { session_id: id, doc_id: docId })).info.path;
+          const r = await rpc.request("doc/locate", { session_id: id, doc_id: docId, target });
+          return { anchor: r.anchor, path };
+        } catch {
+          return null;
+        }
+      },
+    };
+  }, [rpc, s.session_id]);
   const layout = layoutOf(st);
-  const info = layout.card !== "hidden" && !background && !browser;
+  const info = layout.card !== "hidden" && !background && !browser && !doc;
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
   const dock = (info && layout.card === "docked") || (background && layoutOf({ ...st, inspector: true, peek: null }).card === "docked");
   // The first page the session opens brings the browser panel out.
@@ -42,7 +78,8 @@ export function SessionPage({ s }: { s: ListSession }) {
     st.set({ contextOpen: true });
   }, [asked]);
   return (
-    <div className={`spage ${browser ? "bgopen" : ""}`}>
+    <DocContext.Provider value={opener}>
+    <div className={`spage ${browser || doc ? "bgopen" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -63,6 +100,21 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
+          {/* The document column's button, once the session has opened one. */}
+          {docs.tabs.length > 0 && !doc && (
+            <button
+              className={`tb ${doc ? "on" : ""}`}
+              title={t("doc.title")}
+              aria-label={t("doc.title")}
+              aria-pressed={doc}
+              onClick={() => {
+                showDocs(s.session_id, true);
+                st.set({ background: false });
+              }}
+            >
+              <Icon name="doc" />
+            </button>
+          )}
           {/* The browser panel's button; a session with no pages yet gets a blank tab to start from. */}
           {window.finx && (
             <button
@@ -72,7 +124,7 @@ export function SessionPage({ s }: { s: ListSession }) {
               aria-pressed={browser}
               onClick={() => {
                 if (browser) st.set({ browser: false });
-                else if (hasTabs) st.set({ browser: true, background: false });
+                else if (hasTabs) (showDocs(s.session_id, false), st.set({ browser: true, background: false }));
                 else void st.run(async () => {
                   await window.finx?.openBrowser(s.session_id);
                   st.set({ browser: true, background: false });
@@ -101,6 +153,8 @@ export function SessionPage({ s }: { s: ListSession }) {
         </div>
       </div>
       {browser && <BrowserPanel session={s.session_id} tabs={browserTabs} />}
+      {doc && <DocPanel session={s.session_id} />}
     </div>
+    </DocContext.Provider>
   );
 }

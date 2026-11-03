@@ -1,5 +1,8 @@
-import { memo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { memo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+import { baseName } from "@finx/client";
+import { parseCitation, useDocOpener } from "../docs/state";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import { splitBlocks, withoutOpenTable } from "@finx/client";
@@ -13,7 +16,7 @@ import { Code } from "./Code";
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="md sel-text">
-      <ReactMarkdown remarkPlugins={plugins} components={components}>
+      <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={urlTransform}>
         {text}
       </ReactMarkdown>
     </div>
@@ -41,7 +44,7 @@ export function DraftMarkdown({ text }: { text: string }) {
 
 const Block = memo(function Block({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={plugins} components={components}>
+    <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={urlTransform}>
       {text}
     </ReactMarkdown>
   );
@@ -49,9 +52,49 @@ const Block = memo(function Block({ text }: { text: string }) {
 
 const web = /^https?:\/\//i;
 
+/** Citations of documents keep their finxdoc: link; everything else as react-markdown has it. */
+const urlTransform = (url: string) => (url.startsWith("finxdoc:") ? url : defaultUrlTransform(url));
+
+/**
+ * A citation of a document (document-editor-design §7.4): a small raised mark; hovering shows
+ * the file, the page and the text cited, a click opens the document there. Grey once what it
+ * points at is gone.
+ */
+function Cite({ docId, target, children }: { docId: string; target: string; children: ReactNode }) {
+  const { t } = useTranslation("session");
+  const docs = useDocOpener();
+  const [found, setFound] = useState<{ title: string } | "gone" | null>(null);
+  const look = () => {
+    if (!docs || found) return;
+    void docs.locate(docId, target).then((r) => {
+      if (!r) return setFound("gone");
+      const text = r.anchor.kind === "text" ? r.anchor.text : "";
+      const where = t("doc.where", { name: baseName(r.path), page: r.anchor.page });
+      setFound({ title: text ? `${where}\n${text.length > 120 ? text.slice(0, 120) + "…" : text}` : where });
+    });
+  };
+  const gone = found === "gone";
+  return (
+    <button
+      type="button"
+      className={`cite ${gone ? "gone" : ""}`}
+      title={gone ? t("doc.citeGone") : (found?.title ?? undefined)}
+      onMouseEnter={look}
+      onFocus={look}
+      onClick={() => !gone && docs?.open({ doc_id: docId }, undefined, target)}
+      disabled={!docs}
+    >
+      {children}
+    </button>
+  );
+}
+
 const components: Components = {
-  a: ({ href, children }) =>
-    href && web.test(href) ? <a href={href} target="_blank" rel="noreferrer">{children}</a> : <span>{children}</span>,
+  a: ({ href, children }) => {
+    const cite = href ? parseCitation(href) : null;
+    if (cite) return <Cite docId={cite.doc_id} target={cite.target}>{children}</Cite>;
+    return href && web.test(href) ? <a href={href} target="_blank" rel="noreferrer">{children}</a> : <span>{children}</span>;
+  },
   img: ({ alt }) => <span>{alt}</span>,
   // A fenced block that names its language is coloured; inline code and other blocks stay plain.
   code: ({ className, children }) => {

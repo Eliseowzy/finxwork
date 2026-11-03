@@ -2,7 +2,7 @@ import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, MenuItem, MenuState, PickedFile, Preferences } from "../shared/bridge";
+import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
@@ -11,6 +11,7 @@ import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { gitBranch } from "./git";
 import { connectKernel, kernelBinary, kernelStatus, restartKernel, retryKernel } from "./kernel";
+import { clipboardContent } from "./clipboard";
 import { platform } from "./platform";
 import { preferences, setPreferences } from "./preferences";
 import { check, download, install, setAutoDownload, snooze, updateInfo } from "./updater";
@@ -75,6 +76,9 @@ const imageTypes: Record<string, string> = { ".png": "image/png", ".jpg": "image
 const maxImageBytes = 5 * 1024 * 1024;
 const maxImageSide = 2048;
 
+/** Pictures pasted with no file of their own, counted for their names. */
+let pasted = 0;
+
 /** The local application FinxWork can connect (finx-connections' QwenWork adapter looks for it here too). */
 const sourceApps: Record<string, string> = { qwenwork: "/Applications/QwenWorkCN.app", qoder: "/Applications/Qoder.app" };
 function sourceApplication(adapter: unknown): string {
@@ -92,8 +96,42 @@ async function readImage(p: string, mime: string, bytes: number): Promise<{ mime
   if (img.isEmpty()) return bytes <= maxImageBytes ? { mime_type: mime, data: (await fs.promises.readFile(p)).toString("base64") } : null;
   const { width, height } = img.getSize();
   if (bytes <= maxImageBytes && Math.max(width, height) <= maxImageSide) return { mime_type: mime, data: (await fs.promises.readFile(p)).toString("base64") };
+  return fitImage(img);
+}
+
+/** A picture with no file (a screenshot, a copied image): as PNG when small enough, else scaled as readImage does. */
+function imageOf(img: Electron.NativeImage): { mime_type: string; data: string } {
+  const { width, height } = img.getSize();
+  if (Math.max(width, height) <= maxImageSide) {
+    const png = img.toPNG();
+    if (png.length <= maxImageBytes) return { mime_type: "image/png", data: png.toString("base64") };
+  }
+  return fitImage(img);
+}
+
+function fitImage(img: Electron.NativeImage): { mime_type: string; data: string } {
+  const { width, height } = img.getSize();
   const fit = Math.max(width, height) > maxImageSide ? img.resize(width >= height ? { width: maxImageSide, quality: "best" } : { height: maxImageSide, quality: "best" }) : img;
   return { mime_type: "image/jpeg", data: fit.toJPEG(88).toString("base64") };
+}
+
+/** Files and folders as attachments, those that are there: an image is read (to go as image content), any other file goes by its path. */
+async function attachPaths(paths: string[]): Promise<PastedItem[]> {
+  const kinds = await Promise.all(paths.map((p) => fs.promises.stat(p).then((s) => (s.isDirectory() ? "folder" : s.isFile() ? "file" : null), () => null)));
+  const folders = paths.flatMap((p, i): PastedItem[] => (kinds[i] === "folder" ? [{ kind: "folder", path: p, name: path.basename(p) }] : []));
+  return [...(await attachFiles(paths.filter((_, i) => kinds[i] === "file"))), ...folders];
+}
+
+/** Files as attachments: an image is read (to go as image content), any other file goes by its path. */
+function attachFiles(paths: string[]): Promise<PickedFile[]> {
+  return Promise.all(
+    paths.map(async (p): Promise<PickedFile> => {
+      const name = path.basename(p);
+      const mime = imageTypes[path.extname(p).toLowerCase()];
+      const image = mime ? await readImage(p, mime, (await fs.promises.stat(p)).size).catch(() => null) : null;
+      return image ? { kind: "image", path: p, name, ...image } : { kind: "file", path: p, name };
+    }),
+  );
 }
 
 /** A path the page may reveal: the person's own files, never the app's. */
@@ -294,14 +332,24 @@ export function registerIPC() {
     const options = { properties: ["openFile", "multiSelections"] as ("openFile" | "multiSelections")[] };
     const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
     if (r.canceled) return [];
-    return Promise.all(
-      r.filePaths.map(async (p): Promise<PickedFile> => {
-        const name = path.basename(p);
-        const mime = imageTypes[path.extname(p).toLowerCase()];
-        const image = mime ? await readImage(p, mime, (await fs.promises.stat(p)).size).catch(() => null) : null;
-        return image ? { kind: "image", path: p, name, ...image } : { kind: "file", path: p, name };
-      }),
-    );
+    return attachFiles(r.filePaths);
+  });
+  // What is pasted into the composer: the files and folders copied (in Finder, Explorer), else
+  // a picture with no file (a screenshot). Read only when the person pastes.
+  ipcMain.handle("paste-files", async (e): Promise<PastedItem[]> => {
+    if (!trusted(e)) return [];
+    const { paths, image } = await clipboardContent();
+    if (paths.length) return attachPaths(paths);
+    const img = image ? nativeImage.createFromBuffer(image) : null;
+    if (!img || img.isEmpty()) return [];
+    pasted += 1;
+    const name = i18n.t("main:pastedImage", { n: pasted });
+    return [{ kind: "image", path: `pasted:${Date.now()}:${pasted}`, name, ...imageOf(img) }];
+  });
+  // Files and folders dropped on the composer, by the paths the window got for them.
+  ipcMain.handle("attach-paths", (e, paths: unknown): Promise<PastedItem[]> | [] => {
+    if (!trusted(e) || !Array.isArray(paths) || !paths.every((p) => typeof p === "string" && path.isAbsolute(p))) return [];
+    return attachPaths(paths);
   });
   ipcMain.handle("popup-menu", (e, items: MenuItem[]) => {
     if (!trusted(e) || !Array.isArray(items)) return null;

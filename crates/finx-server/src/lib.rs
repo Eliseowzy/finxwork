@@ -38,5 +38,6 @@ mod browser_host;
 mod browser_status;
 mod connections;
 mod customize;
+mod docs;
 mod models;
 mod peer;

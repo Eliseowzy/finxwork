@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, callTarget, fromSnapshot, type SessionView } from "./session.ts";
-import { approvalPreview, attachedBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
+import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
 const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
@@ -92,10 +92,10 @@ test("an approval previews the command, the change, or what is written", () => {
 
 test("a message's attached files go to the model as a block of paths and come back as files, not words", () => {
   const content = [{ type: "text", text: "look at these" }, { type: "image", mime_type: "image/png", data: "AAAA" }, attachedBlock(["/w/a.rs", "/w/docs/"])] as const;
-  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [] });
-  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [] });
+  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [], quotes: [] });
+  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [], quotes: [] });
   const web = { url: "https://example.com/", title: "Example", tag: "h1", text: "Hello", selector: "#h", comment: "shorter" };
-  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web] });
+  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web], quotes: [] });
   const v = play([{ type: "message_completed", message_id: "u1", message: { role: "user", content: [...content], ts: 1 } }]);
   const [u] = conversation(v);
   assert.ok(u.kind === "user");
@@ -130,4 +130,11 @@ test("a call through call_tool is told as the tool it runs", () => {
   assert.deepEqual(callTarget("read", { path: "a" }), { name: "read", args: { path: "a" } });
   assert.deepEqual(callTarget("call_tool", {}), { name: "call_tool", args: {} });
   assert.equal(describe("call_tool", { name: "read", arguments: { path: "/p/a.md" } }, "/p").title, "read a.md");
+});
+
+test("quoted parts of documents come back as quotes, and what the column shows is not shown", () => {
+  const quote = { path: "/w/合同.pdf", doc_id: "0123456789abcdef", page: 3, text: "违约金为合同总额的 20%", block: "p3.b12" };
+  const content = [{ type: "text" as const, text: "这条合理吗" }, docQuoteBlock([quote]), docViewingBlock("/w/合同.pdf", "0123456789abcdef", 3, 12)];
+  assert.deepEqual(userText(content), { text: "这条合理吗", files: [], comments: [], quotes: [quote] });
+  assert.match((content[2] as { text: string }).text, /page 3 of 12/);
 });
