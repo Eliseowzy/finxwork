@@ -1249,6 +1249,18 @@ pub struct ConnectionModel {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionState { Connecting, Ready, Disabled, NeedsLogin, PermissionRequired, Unsupported, Unavailable }
+/// Safe, structured connection diagnostics. Never contains credentials or raw response bodies.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ConnectionDiagnostic {
+    pub stage: String,
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+    pub action: String,
+    pub checked_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub field: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionView {
     pub connection_id: String,
@@ -1259,6 +1271,7 @@ pub struct ConnectionView {
     pub display_name: String,
     pub state: ConnectionState,
     #[serde(skip_serializing_if = "Option::is_none")] pub reason_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub diagnostic: Option<ConnectionDiagnostic>,
     pub models: Vec<ConnectionModel>,
     /// When `models` was last taken from the application (RFC 3339).
     #[serde(default, skip_serializing_if = "Option::is_none")] pub models_fetched_at: Option<String>,
@@ -1267,6 +1280,7 @@ pub struct ConnectionView {
 pub struct ConnectionsSnapshot { pub revision: u64, pub connections: Vec<ConnectionView> }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionDiscovery {
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub diagnostic: Option<ConnectionDiagnostic>,
     pub adapter_id: String,
     pub installed: bool,
     pub version: Option<String>,

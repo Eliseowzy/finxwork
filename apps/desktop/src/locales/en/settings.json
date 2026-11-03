@@ -111,6 +111,36 @@
       "price": "{{price}} per million tokens",
       "inMenu": "Show {{name}} in the model menu",
       "none": "No matching models"
+    },
+    "diagnostic": {
+      "details": "Diagnostic details",
+      "stage": "Failed step",
+      "code": "Error code",
+      "field": "Invalid field",
+      "version": "Source app version",
+      "checkedAt": "Checked at",
+      "stages": {
+        "connection": "Connection check",
+        "discovery": "Find application",
+        "app_metadata": "Read app metadata",
+        "login_file": "Read login file",
+        "keychain": "Keychain access",
+        "decrypt": "Decrypt credentials",
+        "source_login": "Read account identity",
+        "catalog": "Fetch model catalog",
+        "authorization": "Authorize models",
+        "refresh": "Renew model authorization",
+        "credential_store": "Connection credential storage",
+        "inference": "Model request"
+      },
+      "actions": {
+        "open_source": "Open the source app, confirm you are signed in, then retry.",
+        "authorize": "Connect or reconnect and allow Keychain access in the system prompt.",
+        "reconnect_account": "Disconnect and remove the old connection, then connect the current account.",
+        "check_account": "Check account or organization permissions in the source app.",
+        "retry": "Retry later. Existing connections and model catalogs are retained.",
+        "check_details": "Check the failed step and error code to troubleshoot or contact support."
+      }
     }
   },
   "about": {

@@ -91,12 +91,8 @@ pub(crate) fn scrub(text: &str) -> String {
     }
 }
 
-pub(crate) fn authentication_failure(adapter: &str, error: &finx_llm::LlmError) -> bool {
+pub(crate) fn authentication_failure(_adapter: &str, error: &finx_llm::LlmError) -> bool {
     error.kind == finx_llm::ErrorKind::Auth
-        && (adapter != "qoder"
-            || error.status == Some(401)
-            || matches!(
-                error.provider_code.as_deref(),
-                Some("connection_login_required" | "identity_changed")
-            ))
+        && (error.status == Some(401)
+            || matches!(error.provider_code.as_deref(), Some("connection_login_required" | "identity_changed")))
 }

@@ -1014,3 +1014,57 @@ async fn kimi_temperature_constraint_is_explicit_and_preserves_verified_values()
         }
     }
 }
+
+#[tokio::test]
+async fn authorization_errors_keep_stage_status_and_recovery_action() {
+    for (status, code, retryable) in [
+        (400, "request_rejected", false), (401, "connection_login_required", false),
+        (403, "permission_denied", false), (429, "rate_limited", true),
+        (503, "service_unavailable", true),
+    ] {
+        let (s, _, mut q, http) = setup().await;
+        Mock::given(path("/api/v1/me/jobToken"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("secret-do-not-expose"))
+            .mount(&s).await;
+        let e = q.authorize(&http, false).await.err().unwrap();
+        assert_eq!(e.code, code);
+        assert_eq!(e.stage, "authorization");
+        assert_eq!(e.http_status, Some(status));
+        assert_eq!(e.retryable, retryable);
+        assert!(!serde_json::to_string(&e.diagnostic()).unwrap().contains("secret-do-not-expose"));
+    }
+}
+
+#[tokio::test]
+async fn catalog_failure_is_distinct_from_authorization_and_auto_is_not_required() {
+    let (s, _, mut q, http) = setup().await;
+    issue(&s).await;
+    q.authorize(&http, false).await.unwrap();
+    for (body, expected) in [
+        ("<html>error</html>", "response_not_json"),
+        (r#"{"app":{}}"#, "response_invalid"),
+        (r#"{"app":[]}"#, "catalog_empty"),
+    ] {
+        s.reset().await;
+        Mock::given(path("/algo/api/v2/model/list"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body)).mount(&s).await;
+        let e = q.catalog(&http).await.unwrap_err();
+        assert_eq!(e.code, expected);
+        assert_eq!(e.stage, "catalog");
+    }
+    s.reset().await;
+    Mock::given(path("/algo/api/v2/model/list"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"app":[{"key":"fast","enable":true}]})))
+        .mount(&s).await;
+    assert_eq!(q.catalog(&http).await.unwrap()[0].id, "fast");
+}
+
+#[test]
+fn job_and_source_diagnostics_identify_fields() {
+    let e = parse_job(&json!({"expires_in":90_000,"refresh_token_expires_in":180_000,"token":"abc"}), 0).err().unwrap();
+    assert_eq!(e.stage, "authorization");
+    assert_eq!(e.field.as_deref(), Some("refresh_token"));
+    let e = source_login(&json!({"schemaVersion":999})).err().unwrap();
+    assert_eq!(e.code, "unsupported_login_schema");
+    assert_eq!(e.field.as_deref(), Some("schemaVersion"));
+}

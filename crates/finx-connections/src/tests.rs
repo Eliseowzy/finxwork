@@ -11,6 +11,8 @@ use wiremock::{
 
 struct Fake {
     calls: AtomicUsize,
+    discovery_failure: RwLock<Option<ConnectionError>>,
+    login_failure: RwLock<Option<ConnectionError>>,
     now: AtomicI64,
     identity: RwLock<String>,
     expires: AtomicI64,
@@ -20,6 +22,8 @@ impl Fake {
     fn new() -> Arc<Self> {
         Arc::new(Self {
             calls: AtomicUsize::new(0),
+            discovery_failure: RwLock::new(None),
+            login_failure: RwLock::new(None),
             now: AtomicI64::new(1_000_000),
             identity: RwLock::new("account-a".into()),
             expires: AtomicI64::new(9_000_000),
@@ -34,7 +38,9 @@ impl Environment for Fake {
     }
     async fn discover(&self) -> Result<ConnectionDiscovery> {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.discovery_failure.read().clone() { return Err(error); }
         Ok(ConnectionDiscovery {
+            diagnostic: None,
             adapter_id: "qwenwork".into(),
             installed: true,
             version: Some("1.4.0".into()),
@@ -44,6 +50,7 @@ impl Environment for Fake {
     }
     async fn login(&self) -> Result<Login> {
         self.calls.fetch_add(1, Ordering::Relaxed);
+        if let Some(error) = self.login_failure.read().clone() { return Err(error); }
         Ok(Login {
             subject: None,
             token: "account-secret".into(),
@@ -389,7 +396,7 @@ fn chrome_v10_login_decrypts_and_preserves_existing_identity_hash() {
         login.identity,
         platform::digest(br#"["user-1","","standard"]"#)
     );
-    assert!(platform::decrypt_login(&sealed, b"incorrect").is_err());
+    assert_eq!(platform::decrypt_login(&sealed, b"incorrect").err().unwrap().code, "credential_decrypt_failed");
 }
 
 #[tokio::test]
@@ -483,4 +490,141 @@ fn gateway_words_lose_what_may_identify_the_account() {
     assert_eq!(scrub("You exceeded your current quota (insufficient_quota)."), "You exceeded your current quota (insufficient_quota).");
     assert_eq!(scrub("请求过多，请稍后再试"), "请求过多，请稍后再试");
     assert_eq!(scrub(&"字".repeat(600)).chars().count(), 501);
+}
+
+#[tokio::test]
+async fn qwen_catalog_reports_actual_http_and_schema_failures_without_secrets() {
+    let server = MockServer::start().await;
+    let env = Fake::new();
+    let mut q = QwenWork::new("test".into(), "account-a".into(), env);
+    q.gateway = server.uri();
+    for (status, code, retryable) in [
+        (400, "request_rejected", false), (401, "connection_login_required", false),
+        (403, "permission_denied", false), (429, "rate_limited", true),
+        (503, "service_unavailable", true), (302, "redirect_rejected", false),
+    ] {
+        server.reset().await;
+        Mock::given(path("/api/desktop/chat-modes"))
+            .respond_with(ResponseTemplate::new(status).set_body_string("secret-token-do-not-expose"))
+            .mount(&server).await;
+        let e = q.catalog(&client()).await.unwrap_err();
+        assert_eq!(e.code, code);
+        assert_eq!(e.stage, "catalog");
+        assert_eq!(e.http_status, Some(status));
+        assert_eq!(e.retryable, retryable);
+        assert!(!serde_json::to_string(&e.diagnostic()).unwrap().contains("secret-token"));
+    }
+    for (body, code, field) in [
+        ("<html>proxy or service error</html>", "response_not_json", None),
+        (r#"{"catalog":{}}"#, "response_invalid", Some("catalog")),
+        (r#"{"catalog":[]}"#, "catalog_empty", None),
+        (r#"{"catalog":[{"enable":true,"key":"future","format":"new-protocol"}]}"#, "unsupported_model_protocol", None),
+    ] {
+        server.reset().await;
+        Mock::given(path("/api/desktop/chat-modes"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(body)).mount(&server).await;
+        let e = q.catalog(&client()).await.unwrap_err();
+        assert_eq!(e.code, code);
+        assert_eq!(e.stage, "catalog");
+        assert_eq!(e.field.as_deref(), field);
+    }
+}
+
+#[tokio::test]
+async fn qwen_authorization_identifies_invalid_field_and_preserves_forbidden() {
+    let server = MockServer::start().await;
+    let mut q = QwenWork::new("test".into(), "account-a".into(), Fake::new());
+    q.gateway = server.uri();
+    Mock::given(path("/api/desktop-sessions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"expires_at_ms":9_000_000})))
+        .mount(&server).await;
+    let e = q.authorize(&client(), false).await.err().unwrap();
+    assert_eq!(e.stage, "authorization");
+    assert_eq!(e.field.as_deref(), Some("access_token"));
+    server.reset().await;
+    Mock::given(path("/api/desktop-sessions"))
+        .respond_with(ResponseTemplate::new(403)).mount(&server).await;
+    let e = q.authorize(&client(), false).await.err().unwrap();
+    assert_eq!(e.code, "permission_denied");
+    assert_eq!(e.action, "check_account");
+}
+
+#[tokio::test]
+async fn structured_diagnostics_survive_snapshots_and_clear_on_recovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = Fake::new();
+    let llm = registry();
+    let r = record(true);
+    save_config(dir.path(), &r);
+    save_session(&env, &r.connection_id).await;
+    let m = Manager::with_environment(dir.path().into(), &llm, env);
+    let entry = m.entry(&r.connection_id).unwrap();
+    let e = ConnectionError::new("network_timeout", "timeout").at("authorization");
+    m.failed(&entry, &e);
+    let snapshot = m.snapshot().unwrap();
+    assert!(matches!(snapshot.connections[0].state, ConnectionState::Ready));
+    let d = snapshot.connections[0].diagnostic.as_ref().unwrap();
+    assert_eq!(d.code, "network_timeout");
+    assert_eq!(d.stage, "authorization");
+    assert!(d.retryable);
+    let lease = m.begin(&format!("local-{}", r.connection_id), "flash", client()).await.unwrap();
+    lease.authorize(false).await.unwrap();
+    assert!(m.snapshot().unwrap().connections[0].diagnostic.is_none());
+    // Authorization success cannot clear an unrelated catalog failure.
+    m.failed(&entry, &e.clone().at("catalog"));
+    lease.authorize(false).await.unwrap();
+    assert_eq!(m.snapshot().unwrap().connections[0].diagnostic.as_ref().unwrap().stage, "catalog");
+    drop(lease);
+    m.disconnect(&r.connection_id).await.unwrap();
+    m.failed(&entry, &e);
+    assert!(matches!(m.snapshot().unwrap().connections[0].state, ConnectionState::Disabled));
+}
+
+#[test]
+fn forbidden_is_not_login_expiry_for_either_adapter() {
+    for adapter in ["qwenwork", "qoder"] {
+        let mut e = finx_llm::LlmError::new(finx_llm::ErrorKind::Auth, "forbidden");
+        e.status = Some(403);
+        assert!(!adapter::authentication_failure(adapter, &e));
+        e.status = Some(401);
+        assert!(adapter::authentication_failure(adapter, &e));
+    }
+}
+
+#[tokio::test]
+async fn discovery_and_retry_preflight_preserve_diagnostics() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = Fake::new();
+    let llm = registry();
+    let r = record(true);
+    save_config(dir.path(), &r);
+    let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
+    *env.discovery_failure.write() = Some(ConnectionError::new("source_unreadable", "cannot read app").at("discovery"));
+    let discoveries = m.discover().await.unwrap();
+    assert_eq!(discoveries[0].diagnostic.as_ref().unwrap().code, "source_unreadable");
+    assert_eq!(discoveries[0].login, "unavailable");
+    *env.login_failure.write() = Some(ConnectionError::new("permission_cancelled", "cancelled").at("keychain"));
+    assert_eq!(m.retry(&r.connection_id).await.unwrap_err().code, "permission_cancelled");
+    let snapshot = m.snapshot().unwrap();
+    assert!(matches!(snapshot.connections[0].state, ConnectionState::PermissionRequired));
+    assert_eq!(snapshot.connections[0].diagnostic.as_ref().unwrap().stage, "keychain");
+}
+
+#[tokio::test]
+async fn earlier_request_failure_does_not_overwrite_a_new_validation() {
+    let dir = tempfile::tempdir().unwrap();
+    let llm = registry();
+    let r = record(true);
+    save_config(dir.path(), &r);
+    let m = Manager::with_environment(dir.path().into(), &llm, Fake::new());
+    let entry = m.entry(&r.connection_id).unwrap();
+    let lease = m.begin(&format!("local-{}", r.connection_id), "flash", client()).await.unwrap();
+    // A completed explicit check advances this generation while the old inference is in flight.
+    entry.generation.fetch_add(1, Ordering::AcqRel);
+    let mut failure = finx_llm::LlmError::new(finx_llm::ErrorKind::Auth, "old request rejected");
+    failure.status = Some(401);
+    lease.failed(&mut failure);
+    let snapshot = m.snapshot().unwrap();
+    assert!(matches!(snapshot.connections[0].state, ConnectionState::Ready));
+    assert!(snapshot.connections[0].diagnostic.is_none());
 }

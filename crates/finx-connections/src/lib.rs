@@ -9,7 +9,7 @@ mod qwenwork;
 use adapter::ProductAdapter;
 use async_trait::async_trait;
 use finx_llm::connection::{Authorization, ConnectionAuthorizer, ConnectionRequest};
-use finx_llm::{AuthConfig, Compat, ErrorKind, LlmError, Modality, ModelRegistry, ProviderConfig};
+use finx_llm::{AuthConfig, Compat, LlmError, Modality, ModelRegistry, ProviderConfig};
 use finx_protocol::api::{
     ConnectionConnectParams, ConnectionDiscovery, ConnectionModel, ConnectionState, ConnectionView,
     ConnectionsSnapshot,
@@ -34,49 +34,8 @@ use tokio::{
 use tokio_util::sync::CancellationToken;
 
 pub type Result<T> = std::result::Result<T, ConnectionError>;
-#[derive(Clone, Debug)]
-pub struct ConnectionError {
-    pub code: String,
-    pub message: String,
-}
-impl ConnectionError {
-    pub fn new(code: &str, message: &str) -> Self {
-        Self {
-            code: code.into(),
-            message: message.into(),
-        }
-    }
-    pub fn unavailable() -> Self {
-        Self::new("connection_unavailable", "模型连接暂时不可用，请重试")
-    }
-    pub fn unsupported() -> Self {
-        Self::new("unsupported", "来源应用或服务响应格式尚未通过兼容性验证")
-    }
-    pub fn login() -> Self {
-        Self::new(
-            "connection_login_required",
-            "请打开来源应用恢复登录，然后重新连接",
-        )
-    }
-    fn llm(&self) -> LlmError {
-        let kind = match self.code.as_str() {
-            "connection_login_required" | "identity_changed" | "connection_permission_required" => {
-                ErrorKind::Auth
-            }
-            "connection_unavailable" => ErrorKind::Network,
-            _ => ErrorKind::InvalidRequest,
-        };
-        let mut e = LlmError::new(kind, &self.message);
-        e.provider_code = Some(self.code.clone());
-        e
-    }
-}
-impl std::fmt::Display for ConnectionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.message)
-    }
-}
-impl std::error::Error for ConnectionError {}
+mod diagnostic;
+pub use diagnostic::ConnectionError;
 pub(crate) fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 100
@@ -112,6 +71,8 @@ struct Entry {
     adapter: Mutex<Box<dyn ProductAdapter>>,
     /// Requests running on it; disconnecting waits for none.
     requests: watch::Sender<usize>,
+    /// Explicit revalidation invalidates diagnostics from older in-flight requests.
+    generation: AtomicU64,
     cancel: RwLock<CancellationToken>,
 }
 type Changed = Arc<dyn Fn() + Send + Sync>;
@@ -201,7 +162,12 @@ impl Manager {
     pub async fn discover(&self) -> Result<Vec<ConnectionDiscovery>> {
         let mut discoveries = Vec::new();
         for (id, env) in &self.environments {
-            discoveries.push(env.discover().await.unwrap_or(ConnectionDiscovery {
+            discoveries.push(diagnostic::operation("discover", id, "", true, async {
+                let discovery = env.discover().await?;
+                tracing::info!(installed = discovery.installed, version = ?discovery.version, "connection_source_detected");
+                Ok(discovery)
+            }).await.unwrap_or_else(|error| ConnectionDiscovery {
+                diagnostic: Some(error.diagnostic()),
                 adapter_id: id.clone(),
                 installed: false,
                 version: None,
@@ -225,6 +191,7 @@ impl Manager {
                 ConnectionState::Ready
             },
             reason_code: None,
+            diagnostic: None,
             models: r.models.clone(),
             models_fetched_at: r.models_fetched_at.clone(),
         };
@@ -238,6 +205,7 @@ impl Manager {
             record: RwLock::new(r),
             view: RwLock::new(view),
             requests: watch::Sender::new(0),
+            generation: AtomicU64::new(0),
             cancel: RwLock::new(CancellationToken::new()),
         });
         self.entries
@@ -317,6 +285,9 @@ impl Manager {
         }
     }
     fn failed(&self, e: &Entry, error: &ConnectionError) {
+        self.failed_for(e, error, None);
+    }
+    fn failed_for(&self, e: &Entry, error: &ConnectionError, generation: Option<u64>) {
         // A draining request must not overwrite the user's explicit disconnect.
         let record = e.record.read();
         if !record.enabled && matches!(e.view.read().state, ConnectionState::Disabled) {
@@ -327,16 +298,24 @@ impl Manager {
         }
         {
             let mut view = e.view.write();
+            if generation.is_some_and(|g| g != e.generation.load(Ordering::Acquire)) {
+                tracing::info!(adapter = %record.adapter_id, connection_id = %record.connection_id,
+                    generation, current_generation = e.generation.load(Ordering::Acquire), "connection_stale_failure_ignored");
+                return;
+            }
             view.state = match error.code.as_str() {
                 "connection_login_required" | "identity_changed" => ConnectionState::NeedsLogin,
-                "connection_permission_required" => ConnectionState::PermissionRequired,
+                "connection_permission_required" | "permission_cancelled" => ConnectionState::PermissionRequired,
                 c if c.starts_with("unsupported") => ConnectionState::Unsupported,
-                "connection_unavailable" if record.enabled && !view.models.is_empty() => {
+                _ if error.retryable && record.enabled && !view.models.is_empty() => {
                     ConnectionState::Ready
                 }
                 _ => ConnectionState::Unavailable,
             };
+            tracing::warn!(adapter = %record.adapter_id, connection_id = %record.connection_id,
+                state = ?view.state, stage = %error.stage, code = %error.code, "connection_state_changed");
             view.reason_code = Some(error.code.clone());
+            view.diagnostic = Some(error.diagnostic());
         }
         drop(record);
         if error.code == "identity_changed" {
@@ -355,17 +334,17 @@ impl Manager {
             schema: 1,
             connections,
         })
-        .map_err(|_| ConnectionError::unavailable())?;
+        .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
         let dir = self.home.join("connections");
         tokio::fs::create_dir_all(&dir)
             .await
-            .map_err(|_| ConnectionError::unavailable())?;
+            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             tokio::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
                 .await
-                .map_err(|_| ConnectionError::unavailable())?;
+                .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
         }
         let temporary = dir.join("config.rust.tmp");
         let mut options = tokio::fs::OpenOptions::new();
@@ -375,16 +354,16 @@ impl Manager {
         let mut file = options
             .open(&temporary)
             .await
-            .map_err(|_| ConnectionError::unavailable())?;
+            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
         file.write_all(&data)
             .await
-            .map_err(|_| ConnectionError::unavailable())?;
+            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
         file.sync_all()
             .await
-            .map_err(|_| ConnectionError::unavailable())?;
+            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
         tokio::fs::rename(&temporary, dir.join("config.json"))
             .await
-            .map_err(|_| ConnectionError::unavailable())
+            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))
     }
     /// Asks ready connections whose model catalog is older than `max_age` for it again
     /// (model-catalog-design §14). Quiet: a failure keeps the old catalog and the connection's
@@ -409,7 +388,9 @@ impl Manager {
         let mut changed = false;
         for e in due {
             let Ok(http) = self.http() else { return changed };
-            let fetched = e.adapter.lock().await.catalog(&http).await;
+            let (adapter_id, connection_id) = { let r = e.record.read(); (r.adapter_id.clone(), r.connection_id.clone()) };
+            let fetched = diagnostic::operation("refresh_catalog", &adapter_id, &connection_id, false,
+                async { e.adapter.lock().await.catalog(&http).await }).await;
             let Ok(models) = fetched else { continue };
             let same = serde_json::to_value(&e.record.read().models).ok() == serde_json::to_value(&models).ok();
             {
@@ -436,15 +417,18 @@ impl Manager {
     async fn prepare(&self, e: &Arc<Entry>) -> Result<()> {
         {
             let mut view = e.view.write();
+            e.generation.fetch_add(1, Ordering::AcqRel);
             view.state = ConnectionState::Connecting;
             view.reason_code = None;
+            view.diagnostic = None;
         }
         self.publish();
         let result = async {
             let http = self.http()?;
             let mut adapter = e.adapter.lock().await;
-            let models = adapter.catalog(&http).await?;
-            let _ = adapter.authorize(&http, false).await?;
+            let models = diagnostic::stage("catalog", adapter.catalog(&http)).await?;
+            tracing::info!(model_count = models.len(), "connection_catalog_ready");
+            let _ = diagnostic::stage("authorization", adapter.authorize(&http, false)).await?;
             {
                 let mut record = e.record.write();
                 record.enabled = true;
@@ -457,8 +441,9 @@ impl Manager {
                 view.models_fetched_at = e.record.read().models_fetched_at.clone();
             }
             *e.cancel.write() = CancellationToken::new();
-            self.persist().await?;
+            diagnostic::stage("connection_storage", self.persist()).await?;
             e.view.write().state = ConnectionState::Ready;
+            tracing::info!("connection_ready");
             self.publish();
             Ok(())
         }
@@ -469,6 +454,10 @@ impl Manager {
         result
     }
     pub async fn connect(&self, p: ConnectionConnectParams) -> Result<ConnectionsSnapshot> {
+        let adapter = p.adapter_id.clone();
+        diagnostic::operation("connect", &adapter, "", true, self.connect_inner(p)).await
+    }
+    async fn connect_inner(&self, p: ConnectionConnectParams) -> Result<ConnectionsSnapshot> {
         let _guard = self.mutations.lock().await;
         self.check()?;
         if !self.environments.contains_key(&p.adapter_id)
@@ -491,12 +480,13 @@ impl Manager {
             return self.snapshot();
         }
         let environment = &self.environments[&p.adapter_id];
-        let discovery = environment.discover().await?;
+        let discovery = diagnostic::stage("discovery", environment.discover()).await?;
+        tracing::info!(installed = discovery.installed, version = ?discovery.version, "connection_source_detected");
         if !discovery.installed {
-            return Err(ConnectionError::new("unsupported", "未检测到来源应用"));
+            return Err(ConnectionError::new("source_not_found", "未检测到来源应用").at("discovery"));
         }
-        let _ = environment.headers().await?;
-        let login = environment.interactive_login().await?;
+        let _ = diagnostic::stage("app_metadata", environment.headers()).await?;
+        let login = diagnostic::stage("source_login", environment.interactive_login()).await?;
         if self.entries.read().values().any(|e| {
             let r = e.record.read();
             r.adapter_id == p.adapter_id && r.identity_key == login.identity
@@ -513,17 +503,29 @@ impl Manager {
             models: vec![],
             models_fetched_at: None,
         });
-        self.persist().await?;
+        tracing::info!(connection_id = %e.record.read().connection_id, "connection_record_created");
+        diagnostic::stage("connection_storage", self.persist()).await?;
         self.prepare(&e).await?;
         self.snapshot()
     }
     pub async fn retry(&self, id: &str) -> Result<ConnectionsSnapshot> {
+        let adapter = self.entries.read().get(id).map(|e| e.record.read().adapter_id.clone()).unwrap_or_default();
+        diagnostic::operation("retry", &adapter, id, true, self.retry_inner(id)).await
+    }
+    async fn retry_inner(&self, id: &str) -> Result<ConnectionsSnapshot> {
         if id == chatgpt::ID { self.chatgpt.refresh().await?; return self.snapshot(); }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
         let adapter_id = e.record.read().adapter_id.clone();
-        self.environments[&adapter_id].interactive_login().await?;
+        {
+            let _view = e.view.write();
+            e.generation.fetch_add(1, Ordering::AcqRel);
+        }
+        if let Err(error) = diagnostic::stage("source_login", self.environments[&adapter_id].interactive_login()).await {
+            self.failed(&e, &error);
+            return Err(error);
+        }
         self.prepare(&e).await?;
         self.snapshot()
     }
@@ -610,6 +612,7 @@ fn provider_id(adapter_id: &str, identity: &str) -> String {
 }
 struct RequestLease {
     entry: Arc<Entry>,
+    generation: u64,
     manager: Weak<Manager>,
     http: reqwest::Client,
     _running: Running,
@@ -657,6 +660,7 @@ impl ConnectionAuthorizer for Manager {
         }
         let cancellation = e.cancel.read().clone();
         Ok(Box::new(RequestLease {
+            generation: e.generation.load(Ordering::Acquire),
             entry: e,
             manager: self.myself.clone(),
             http,
@@ -668,31 +672,32 @@ impl ConnectionAuthorizer for Manager {
 #[async_trait]
 impl ConnectionRequest for RequestLease {
     async fn authorize(&self, rejected: bool) -> std::result::Result<Authorization, LlmError> {
-        let result = self
-            .entry
-            .adapter
-            .lock()
-            .await
-            .authorize(&self.http, rejected)
-            .await;
+        let (adapter_id, connection_id) = { let r = self.entry.record.read(); (r.adapter_id.clone(), r.connection_id.clone()) };
+        let result = diagnostic::operation("authorize", &adapter_id, &connection_id, false, async {
+            if rejected { tracing::info!("connection_reauthorize_after_rejection"); }
+            self.entry.adapter.lock().await.authorize(&self.http, rejected).await
+        }).await;
         if let Err(ref error) = result {
             if let Some(manager) = self.manager.upgrade() {
-                manager.failed(&self.entry, error);
+                manager.failed_for(&self.entry, error, Some(self.generation));
             }
         }
         if result.is_ok() {
             let recovered = {
                 let mut view = self.entry.view.write();
-                if matches!(view.state, ConnectionState::Ready)
-                    && view.reason_code.as_deref() == Some("connection_unavailable")
+                if self.generation == self.entry.generation.load(Ordering::Acquire)
+                    && matches!(view.state, ConnectionState::Ready)
+                    && view.diagnostic.as_ref().is_some_and(|d| d.retryable && matches!(d.stage.as_str(), "authorization" | "refresh" | "connection"))
                 {
                     view.reason_code = None;
+                    view.diagnostic = None;
                     true
                 } else {
                     false
                 }
             };
             if recovered && let Some(manager) = self.manager.upgrade() {
+                tracing::info!(adapter = %adapter_id, connection_id = %connection_id, "connection_recovered");
                 manager.publish();
             }
         }
@@ -705,7 +710,11 @@ impl ConnectionRequest for RequestLease {
         let adapter_id = self.entry.record.read().adapter_id.clone();
         if adapter::authentication_failure(&adapter_id, error) {
             if let Some(manager) = self.manager.upgrade() {
-                manager.failed(&self.entry, &ConnectionError::login());
+                let mut failure = ConnectionError::login().at("inference");
+                failure.http_status = error.status;
+                tracing::warn!(adapter = %adapter_id, connection_id = %self.entry.record.read().connection_id,
+                    stage = "inference", http_status = ?failure.http_status, code = %failure.code, "connection_failed");
+                manager.failed_for(&self.entry, &failure, Some(self.generation));
             }
             error.message = ConnectionError::login().message;
             return;
@@ -715,6 +724,8 @@ impl ConnectionRequest for RequestLease {
         error.message = adapter::scrub(&error.message);
         tracing::warn!(
             adapter = %adapter_id,
+            connection_id = %self.entry.record.read().connection_id,
+            stage = "inference",
             status = ?error.status,
             kind = %error.kind,
             code = ?error.provider_code,

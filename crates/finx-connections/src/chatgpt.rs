@@ -228,6 +228,7 @@ impl ChatGpt {
                 ConnectionState::Ready
             },
             reason_code: p.needs_login.then(|| "connection_login_required".into()),
+            diagnostic: None,
             models: p.models.clone(),
             models_fetched_at: p.fetched_at.clone(),
         })

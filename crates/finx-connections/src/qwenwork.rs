@@ -108,18 +108,20 @@ impl QwenWork {
             &login.token,
             &headers,
             None,
+            "catalog",
         )
         .await
-        .map_err(|e| {
-            if e.code == "auth_rejected" {
-                ConnectionError::login()
-            } else {
-                e
-            }
-        })?;
+        .map_err(ConnectionError::source_rejected)?;
         let entries = r["catalog"]
             .as_array()
-            .ok_or_else(ConnectionError::unsupported)?;
+            .ok_or_else(|| ConnectionError::format("catalog", "catalog"))?;
+        for (index, entry) in entries.iter().enumerate() {
+            if entry["enable"] == true && entry["format"] == "openai/chat-completions"
+                && !entry["key"].as_str().is_some_and(crate::valid_id)
+            {
+                return Err(ConnectionError::format("catalog", &format!("catalog[{index}].key")));
+            }
+        }
         let models: Vec<_> = entries
             .iter()
             .filter(|m| m["enable"] == true && m["format"] == "openai/chat-completions")
@@ -146,7 +148,11 @@ impl QwenWork {
             })
             .collect();
         if models.is_empty() {
-            return Err(ConnectionError::unsupported());
+            return Err(if entries.iter().all(|m| m["enable"] != true) {
+                ConnectionError::new("catalog_empty", "账户当前没有启用的模型").at("catalog")
+            } else {
+                ConnectionError::new("unsupported_model_protocol", "模型目录中没有可解析且支持的模型协议").at("catalog")
+            });
         }
         Ok(models)
     }
@@ -193,7 +199,7 @@ impl QwenWork {
             identity: self.identity.clone(),
             session: session.clone(),
         })
-        .map_err(|_| ConnectionError::unavailable())?;
+        .map_err(|_| ConnectionError::new("saved_session_invalid", "无法编码连接授权数据").at("credential_store"))?;
         self.environment.set(&self.id, &value).await?;
         self.session = Some(session.clone());
         Ok(session)
@@ -219,6 +225,7 @@ impl QwenWork {
                     &s.token,
                     headers,
                     Some(json!({"ttl_ms":s.ttl})),
+                    "refresh",
                 )
                 .await
                 {
@@ -236,14 +243,18 @@ impl QwenWork {
                                 })
                                 .await;
                         }
+                        let field = if r["access_token"].as_str().is_none_or(|s| s.is_empty()) { "access_token" } else { "expires_at" };
+                        return Err(ConnectionError::format("refresh", field));
+                    }
+                    Err(e) if e.retryable => {
+                        tracing::info!(stage = "refresh", backoff_ms = 30_000, "connection_using_valid_cached_authorization");
                         self.retry_at = now + 30_000;
                         return Ok(s);
                     }
-                    Err(e) if e.code != "auth_rejected" => {
-                        self.retry_at = now + 30_000;
-                        return Ok(s);
+                    Err(e) if e.code == "auth_rejected" => {
+                        tracing::info!("connection_refresh_rejected_reissue_from_source");
                     }
-                    Err(_) => {}
+                    Err(e) => return Err(e),
                 }
             }
         }
@@ -257,31 +268,32 @@ impl QwenWork {
             &login.token,
             headers,
             Some(json!({"session_id":id})),
+            "authorization",
         )
         .await
-        .map_err(|e| {
-            if e.code == "auth_rejected" {
-                ConnectionError::login()
-            } else {
-                e
-            }
-        })?;
+        .map_err(ConnectionError::source_rejected)?;
         let token = r["access_token"]
             .as_str()
             .filter(|s| !s.is_empty())
-            .ok_or_else(ConnectionError::unsupported)?;
+            .ok_or_else(|| ConnectionError::format("authorization", "access_token"))?;
         let expires = r["expires_at_ms"]
             .as_i64()
             .filter(|e| *e > now + 30_000)
-            .ok_or_else(ConnectionError::unsupported)?;
-        let ttl = r["ttl_ms"].as_i64().unwrap_or(expires - now);
-        if r["session_id"] != id || ttl <= 0 {
-            return Err(ConnectionError::unsupported());
+            .ok_or_else(|| ConnectionError::format("authorization", "expires_at_ms"))?;
+        let ttl = match r.get("ttl_ms") {
+            None => expires - now,
+            Some(v) => v.as_i64().ok_or_else(|| ConnectionError::format("authorization", "ttl_ms"))?,
+        };
+        if r["session_id"] != id {
+            return Err(ConnectionError::format("authorization", "session_id"));
+        }
+        if ttl <= 0 {
+            return Err(ConnectionError::format("authorization", "ttl_ms"));
         }
         let base = checked_base(
             r["base_url"]
                 .as_str()
-                .ok_or_else(ConnectionError::unsupported)?,
+                .ok_or_else(|| ConnectionError::format("authorization", "base_url"))?,
         )?;
         self.save(Session {
             token: token.into(),
@@ -294,7 +306,7 @@ impl QwenWork {
     }
 }
 pub(crate) fn checked_base(input: &str) -> Result<String> {
-    let u = reqwest::Url::parse(input).map_err(|_| ConnectionError::unsupported())?;
+    let u = reqwest::Url::parse(input).map_err(|_| ConnectionError::format("authorization", "base_url"))?;
     if u.scheme() != "https"
         || !u.username().is_empty()
         || u.password().is_some()
@@ -311,8 +323,8 @@ pub(crate) fn checked_base(input: &str) -> Result<String> {
     {
         return Err(ConnectionError::new(
             "unsupported_origin",
-            "模型服务地址尚未验证",
-        ));
+            "模型服务地址不在允许范围内",
+        ).at("authorization").field("base_url"));
     }
     Ok(format!("{}/v1", u.origin().ascii_serialization()))
 }
@@ -322,6 +334,7 @@ async fn json_request(
     token: &str,
     headers: &BTreeMap<String, String>,
     body: Option<Value>,
+    stage: &'static str,
 ) -> Result<Value> {
     let mut request = if let Some(body) = body {
         http.post(url).json(&body)
@@ -332,27 +345,5 @@ async fn json_request(
     for (name, value) in headers {
         request = request.header(name, value);
     }
-    let mut response = request
-        .send()
-        .await
-        .map_err(|_| ConnectionError::unavailable())?;
-    if !response.status().is_success() {
-        return Err(if matches!(response.status().as_u16(), 401 | 403) {
-            ConnectionError::new("auth_rejected", "千问授权被拒绝")
-        } else {
-            ConnectionError::unavailable()
-        });
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| ConnectionError::unavailable())?
-    {
-        if bytes.len() + chunk.len() > 2 * 1024 * 1024 {
-            return Err(ConnectionError::unsupported());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    serde_json::from_slice(&bytes).map_err(|_| ConnectionError::unsupported())
+    crate::diagnostic::request_json(request, stage).await
 }

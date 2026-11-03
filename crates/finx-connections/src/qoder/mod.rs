@@ -1,4 +1,4 @@
-//! Qoder global desktop 0.4.11. Independent JobTokens; source login is read-only.
+//! Qoder global desktop protocol. Independent JobTokens; source login is read-only.
 mod capabilities;
 mod cosy;
 mod sse;
@@ -66,6 +66,7 @@ pub(crate) struct Qoder {
     loaded: bool,
     dirty: bool,
     retry_at: i64,
+    last_failure: Option<ConnectionError>,
     refresh_uncertain: bool,
     #[cfg(test)]
     openapi: String,
@@ -73,18 +74,17 @@ pub(crate) struct Qoder {
     catalog_url: String,
 }
 pub(crate) fn source_login(v: &Value) -> Result<Login> {
-    if v["schemaVersion"] != 1
-        || v.get("openApiBase")
-            .and_then(Value::as_str)
-            .is_some_and(|s| !s.is_empty())
-    {
-        return Err(ConnectionError::unsupported());
+    if v["schemaVersion"] != 1 {
+        return Err(ConnectionError::new("unsupported_login_schema", "Qoder 登录文件格式暂不支持").at("source_login").field("schemaVersion"));
+    }
+    if v["openApiBase"].as_str().is_some_and(|s| !s.is_empty()) {
+        return Err(ConnectionError::new("unsupported_origin", "当前适配器暂不支持自定义 Qoder 认证地址").at("source_login").field("openApiBase"));
     }
     if let Some(context) = v["authenticationContext"].as_str() {
-        let context: Value =
-            serde_json::from_str(context).map_err(|_| ConnectionError::unsupported())?;
+        let context: Value = serde_json::from_str(context)
+            .map_err(|_| ConnectionError::format("source_login", "authenticationContext"))?;
         if context[1] != OPENAPI || context[2] != CLIENT_ID {
-            return Err(ConnectionError::unsupported());
+            return Err(ConnectionError::new("unsupported_auth_context", "Qoder 认证服务或客户端标识不受当前适配器支持").at("source_login").field("authenticationContext"));
         }
     }
     let uid = v["user"]["id"]
@@ -92,13 +92,13 @@ pub(crate) fn source_login(v: &Value) -> Result<Login> {
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
         .or_else(|| v["user"]["id"].as_u64().map(|n| n.to_string()))
-        .ok_or_else(ConnectionError::unsupported)?;
+        .ok_or_else(|| ConnectionError::format("source_login", "user.id"))?;
     let token = v["token"]
         .as_str()
         .filter(|s| !s.is_empty())
-        .ok_or_else(ConnectionError::login)?
+        .ok_or_else(|| ConnectionError::format("source_login", "token"))?
         .to_owned();
-    let expires = date(&v["expiresAt"]).ok_or_else(ConnectionError::login)?;
+    let expires = date(&v["expiresAt"]).ok_or_else(|| ConnectionError::format("source_login", "expiresAt"))?;
     Ok(Login {
         identity: digest(json!(["qoder-global", uid]).to_string().as_bytes()),
         token,
@@ -117,16 +117,16 @@ fn parse_job(v: &Value, now: i64) -> Result<Job> {
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 32_768)
             .map(str::to_owned)
-            .ok_or_else(ConnectionError::unsupported)
+            .ok_or_else(|| ConnectionError::format("authorization", key))
     };
     let expires = date(&v["expires_at"])
         .or_else(|| now.checked_add(v["expires_in"].as_i64()?))
         .filter(|e| *e > now + 30_000)
-        .ok_or_else(ConnectionError::unsupported)?;
+        .ok_or_else(|| ConnectionError::format("authorization", "expires_at / expires_in"))?;
     let refresh_expires = date(&v["refresh_token_expires_at"])
         .or_else(|| now.checked_add(v["refresh_token_expires_in"].as_i64()?))
         .filter(|e| *e > now)
-        .ok_or_else(ConnectionError::unsupported)?;
+        .ok_or_else(|| ConnectionError::format("authorization", "refresh_token_expires_at / refresh_token_expires_in"))?;
     Ok(Job {
         token: string("token")?,
         refresh_token: string("refresh_token")?,
@@ -149,6 +149,7 @@ impl Qoder {
             loaded: false,
             dirty: false,
             retry_at: 0,
+            last_failure: None,
             refresh_uncertain: false,
             #[cfg(test)]
             openapi: OPENAPI.into(),
@@ -191,7 +192,7 @@ impl Qoder {
     }
     async fn save(&mut self) -> Result<()> {
         let value = zeroize::Zeroizing::new(
-            serde_json::to_string(&self.saved).map_err(|_| ConnectionError::unavailable())?,
+            serde_json::to_string(&self.saved).map_err(|_| ConnectionError::new("saved_session_invalid", "无法编码 Qoder 授权数据").at("credential_store"))?,
         );
         self.environment.set(&self.id, &value).await?;
         self.dirty = false;
@@ -203,11 +204,11 @@ impl Qoder {
         if !self.loaded {
             if let Some(value) = self.environment.get(&self.id).await? {
                 let saved: Saved =
-                    serde_json::from_str(&value).map_err(|_| ConnectionError::unsupported())?;
+                    serde_json::from_str(&value).map_err(|_| ConnectionError::new("saved_session_invalid", "已保存的 Qoder 授权数据格式无效，请移除连接后重新连接").at("credential_store"))?;
                 if saved.identity != self.identity
                     || uuid::Uuid::parse_str(&saved.machine_id).is_err()
                 {
-                    return Err(ConnectionError::unsupported());
+                    return Err(ConnectionError::new("saved_session_invalid", "已保存的 Qoder 授权身份或设备标识无效，请移除连接后重新连接").at("credential_store"));
                 }
                 self.saved = saved;
             }
@@ -226,7 +227,7 @@ impl Qoder {
                 if !rejected && job.expires > now + 60_000 {
                     return Ok(job);
                 }
-                return Err(ConnectionError::unavailable());
+                return Err(self.last_failure.clone().unwrap_or_else(|| ConnectionError::unavailable().at("authorization")));
             }
             if !self.refresh_uncertain && job.refresh_expires > now + 30_000 {
                 let result = json_request(
@@ -234,13 +235,14 @@ impl Qoder {
                     &format!("{}/api/v1/jobToken/refresh", self.openapi()),
                     None,
                     &json!({"refresh_token":job.refresh_token}),
+                    "refresh",
                 )
                 .await;
                 match result {
                     Ok(v) => {
                         // If parsing or persistence fails, the previous refresh may be spent.
                         self.refresh_uncertain = true;
-                        let next = parse_job(&v, now)?;
+                        let next = parse_job(&v, now).map_err(|e| e.at("refresh"))?;
                         self.saved.job = Some(next.clone());
                         self.dirty = true;
                         self.save().await?;
@@ -249,10 +251,14 @@ impl Qoder {
                         return Ok(next);
                     }
                     Err(e) if e.code == "auth_rejected" => {
+                        tracing::info!("connection_refresh_rejected_reissue_from_source");
                         self.refresh_uncertain = true;
                     }
-                    Err(e) if e.code == "permission_denied" => return Err(e),
+                    Err(e) if !e.retryable => return Err(e),
                     Err(_) => {
+                        tracing::info!("connection_refresh_uncertain_reissue_from_source");
+                        // The refresh may have rotated despite a network/server failure.
+                        // Recover through the independent source grant, never replay it.
                         self.refresh_uncertain = true;
                     }
                 }
@@ -263,6 +269,7 @@ impl Qoder {
                 if let Some(job) = self.saved.job.clone() {
                     if job.expires > now + 60_000 {
                         self.retry_at = now + 30_000;
+                        tracing::info!(stage = "authorization", reason = "source_expired", backoff_ms = 30_000, "connection_using_valid_cached_authorization");
                         return Ok(job);
                     }
                 }
@@ -274,24 +281,23 @@ impl Qoder {
             &format!("{}/api/v1/me/jobToken", self.openapi()),
             Some(&login.token),
             &json!({"clientId":CLIENT_ID}),
+            "authorization",
         )
         .await;
         let value = match issued {
             Ok(v) => v,
             Err(e) => {
                 self.retry_at = now + 30_000;
-                if e.code == "connection_unavailable" && !rejected {
+                self.last_failure = Some(e.clone().source_rejected());
+                if e.retryable && !rejected {
                     if let Some(job) = self.saved.job.clone() {
                         if job.expires > now + 60_000 {
+                            tracing::info!(stage = "authorization", reason = "transient_issue_failure", backoff_ms = 30_000, "connection_using_valid_cached_authorization");
                             return Ok(job);
                         }
                     }
                 }
-                return Err(if e.code == "auth_rejected" {
-                    ConnectionError::login()
-                } else {
-                    e
-                });
+                return Err(e.source_rejected());
             }
         };
         let job = parse_job(&value, now)?;
@@ -300,6 +306,7 @@ impl Qoder {
         self.save().await?;
         self.refresh_uncertain = false;
         self.retry_at = 0;
+        self.last_failure = None;
         Ok(job)
     }
 }
@@ -317,7 +324,12 @@ impl ProductAdapter for Qoder {
         let value = self.catalog_value(http).await?;
         let entries = value["app"]
             .as_array()
-            .ok_or_else(ConnectionError::unsupported)?;
+            .ok_or_else(|| ConnectionError::format("catalog", "app"))?;
+        for (index, entry) in entries.iter().enumerate() {
+            if entry["enable"] == true && !entry["key"].as_str().is_some_and(crate::valid_id) {
+                return Err(ConnectionError::format("catalog", &format!("app[{index}].key")));
+            }
+        }
         let mut ids = std::collections::HashSet::new();
         let models: Vec<_> = entries
             .iter()
@@ -330,11 +342,12 @@ impl ProductAdapter for Qoder {
                 capabilities::model(m)
             })
             .collect();
-        if !models.iter().any(|m| m.id == "auto") {
-            return Err(ConnectionError::new(
-                "unsupported",
-                "Qoder 目录未提供已适配的 Auto 模型",
-            ));
+        if !models.iter().any(|m| supports_model(&m.id)) {
+            return Err(if entries.iter().all(|m| m["enable"] != true) {
+                ConnectionError::new("catalog_empty", "Qoder 账户当前没有启用的模型").at("catalog")
+            } else {
+                ConnectionError::new("unsupported_model_protocol", "Qoder 目录中没有当前适配器支持的模型").at("catalog")
+            });
         }
         Ok(models)
     }
@@ -348,18 +361,15 @@ impl Qoder {
             login
                 .subject
                 .as_deref()
-                .ok_or_else(ConnectionError::unsupported)?,
+                .ok_or_else(|| ConnectionError::format("source_login", "user.id"))?,
             &job.token,
             &self.saved.machine_id,
-        )?;
-        let response = http
+        ).map_err(|_| ConnectionError::new("catalog_request_invalid", "无法构造 Qoder 模型目录授权请求").at("catalog"))?;
+        let request = http
             .get(self.catalog_url())
             .headers(headers)
-            .timeout(Duration::from_secs(30))
-            .send()
-            .await
-            .map_err(|_| ConnectionError::unavailable())?;
-        response_json(response).await
+            .timeout(Duration::from_secs(30));
+        crate::diagnostic::request_json(request, "catalog").await
     }
 }
 
@@ -368,38 +378,11 @@ async fn json_request(
     url: &str,
     token: Option<&str>,
     body: &Value,
+    stage: &'static str,
 ) -> Result<Value> {
     let mut request = http.post(url).json(body).timeout(Duration::from_secs(30));
     if let Some(token) = token {
         request = request.bearer_auth(token);
     }
-    response_json(
-        request
-            .send()
-            .await
-            .map_err(|_| ConnectionError::unavailable())?,
-    )
-    .await
-}
-async fn response_json(mut response: reqwest::Response) -> Result<Value> {
-    let status = response.status().as_u16();
-    if status != 200 {
-        return Err(match status {
-            400 | 401 => ConnectionError::new("auth_rejected", "Qoder 授权失效"),
-            403 => ConnectionError::new("permission_denied", "Qoder 拒绝此操作，请检查账户权限"),
-            _ => ConnectionError::unavailable(),
-        });
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| ConnectionError::unavailable())?
-    {
-        if bytes.len() + chunk.len() > 2 * 1024 * 1024 {
-            return Err(ConnectionError::unsupported());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    serde_json::from_slice(&bytes).map_err(|_| ConnectionError::unsupported())
+    crate::diagnostic::request_json(request, stage).await
 }

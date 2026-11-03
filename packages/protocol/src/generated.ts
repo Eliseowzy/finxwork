@@ -311,8 +311,21 @@ export type ConnectionConnectParams = {
   idempotency_key: string;
 };
 
+/** Safe, structured connection diagnostics. Never contains credentials or raw response bodies. */
+export type ConnectionDiagnostic = {
+  action: string;
+  checked_at: string;
+  code: string;
+  field?: string | null;
+  http_status?: number | null;
+  message: string;
+  retryable: boolean;
+  stage: string;
+};
+
 export type ConnectionDiscovery = {
   adapter_id: string;
+  diagnostic?: ConnectionDiagnostic | null;
   discovery_id: string;
   installed: boolean;
   login: string;
@@ -342,6 +355,7 @@ export type ConnectionState = "connecting" | "ready" | "disabled" | "needs_login
 export type ConnectionView = {
   adapter_id: string;
   connection_id: string;
+  diagnostic?: ConnectionDiagnostic | null;
   display_name: string;
   models: ConnectionModel[];
   /** When `models` was last taken from the application (RFC 3339). */

@@ -22,9 +22,29 @@ impl Server {
     }
 }
 pub(crate) fn rpc_error(e: finx_connections::ConnectionError) -> RpcError {
+    let diagnostic = e.diagnostic();
     RpcError {
         code: -32000,
         message: e.message,
-        data: Some(serde_json::json!({"kind":e.code})),
+        data: Some(serde_json::json!({"kind":e.code,"diagnostic":diagnostic})),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn rpc_preserves_safe_structured_connection_diagnostics() {
+        let mut failure =
+            finx_connections::ConnectionError::new("permission_denied", "Access denied")
+                .at("authorization")
+                .field("grant");
+        failure.http_status = Some(403);
+        let rpc = super::rpc_error(failure);
+        let data = rpc.data.unwrap();
+        assert_eq!(data["kind"], "permission_denied");
+        assert_eq!(data["diagnostic"]["stage"], "authorization");
+        assert_eq!(data["diagnostic"]["http_status"], 403);
+        assert_eq!(data["diagnostic"]["action"], "check_account");
+        assert_eq!(data["diagnostic"]["retryable"], false);
     }
 }
