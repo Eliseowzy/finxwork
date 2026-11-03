@@ -18,7 +18,7 @@
     "thinking": "Thinking",
     "thought": "Thought",
     "thinkingHidden": "The provider keeps this reasoning private",
-    "image": "Image (click to enlarge or shrink)",
+    "image": "Image",
     "copy": "Copy",
     "toBottom": "Jump to the latest",
     "compacted": "Context compacted: {{before}} → {{after}} tokens",

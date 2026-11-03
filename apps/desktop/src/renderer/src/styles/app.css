@@ -387,8 +387,6 @@ button.insp-row:active{background:var(--fill2)}
 .tool-shots{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
 .tool-shot{padding:0;border:.5px solid var(--sep);border-radius:var(--r-sm);background:none;overflow:hidden;cursor:zoom-in;line-height:0}
 .tool-shot img{display:block;max-width:240px;max-height:150px;object-fit:contain}
-.tool-shots.big .tool-shot{cursor:zoom-out}
-.tool-shots.big .tool-shot img{max-width:100%;max-height:none}
 .tool .th .vb{flex:none}
 .tool .th .sm2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* A command reads as code: the mono face a size down, a little quieter until hovered. */

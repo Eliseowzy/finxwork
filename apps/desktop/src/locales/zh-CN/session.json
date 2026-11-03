@@ -18,7 +18,7 @@
     "thinking": "正在思考",
     "thought": "思考",
     "thinkingHidden": "服务商没有公开这段推理",
-    "image": "图片（点击放大或缩小）",
+    "image": "图片",
     "copy": "拷贝",
     "toBottom": "回到底部",
     "compacted": "上下文已压缩：{{before}} → {{after}} tokens",

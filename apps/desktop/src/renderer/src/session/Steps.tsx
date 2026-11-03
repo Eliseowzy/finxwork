@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
 import { doingText, toolVerb, workText } from "../format";
 import { Icon } from "../icons";
+import { Lightbox } from "../composer/Tile";
 import { Code } from "./Code";
 
 /**
@@ -125,9 +126,9 @@ export function LiveThinking({ text, children }: { text: string; children: React
 export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) {
   const { t } = useTranslation("session");
   const [open, setOpen] = useState(false);
-  const [big, setBig] = useState(false);
+  const [large, setLarge] = useState<string | null>(null);
   const output = toolOutput(tool);
-  // Images a tool returned (a browser screenshot, an image read): a thumbnail, larger on a click.
+  // Images a tool returned (a browser screenshot, an image read): a thumbnail, over the window on a click.
   const images = (tool.result?.content ?? []).flatMap((c) => (c.type === "image" ? [c] : []));
   const spinning = tool.state === "running" || tool.state === "pending" || tool.state === "streaming";
   const unknown = tool.state === "streaming" && tool.title === tool.name;
@@ -150,14 +151,18 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
         {output && <Icon name="caret" className="chev" />}
       </button>
       {images.length > 0 && (
-        <div className={`tool-shots ${big ? "big" : ""}`}>
-          {images.map((img, i) => (
-            <button key={i} className="tool-shot" aria-label={t("chat.image")} aria-expanded={big} onClick={() => setBig(!big)}>
-              <img src={`data:${img.mime_type};base64,${img.data}`} alt="" />
-            </button>
-          ))}
+        <div className="tool-shots">
+          {images.map((img, i) => {
+            const src = `data:${img.mime_type};base64,${img.data}`;
+            return (
+              <button key={i} className="tool-shot" aria-label={t("composer.view", { name: t("chat.image") })} onClick={() => setLarge(src)}>
+                <img src={src} alt="" />
+              </button>
+            );
+          })}
         </div>
       )}
+      {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
       {output && <div className="out sel-text">{output}</div>}
     </div>
   );
