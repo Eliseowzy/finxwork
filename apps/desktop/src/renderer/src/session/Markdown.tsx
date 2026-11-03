@@ -87,6 +87,7 @@ function Cite({ docId, target, children }: { docId: string; target: string; chil
     if (!docs || found) return;
     void docs.locate(docId, target).then((r) => {
       if (!r) return setFound("gone");
+      if ("locked" in r) return setFound({ title: t("doc.citeLocked", { name: baseName(r.path) }) });
       const text = r.anchor.kind === "text" ? r.anchor.text : "";
       const where = t("doc.where", { name: baseName(r.path), page: r.anchor.page });
       setFound({ title: text ? `${where}\n${text.length > 120 ? text.slice(0, 120) + "…" : text}` : where });

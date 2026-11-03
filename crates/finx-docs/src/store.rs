@@ -232,6 +232,9 @@ impl DocStore {
             WorkerError::Failed(m) => DocError::Unreadable(canonical.display().to_string(), m),
             e => DocError::Worker(e),
         })?;
+        // A password that opened it means it is encrypted, whatever PDFium makes of its security
+        // handler (it may not tell an AES-256 one's revision): pdf.js needs it to show the pages.
+        let encrypted = opened.encrypted || password.is_some();
         let mut capabilities = vec![Capability::View];
         if opened.has_text {
             capabilities.extend([Capability::Text, Capability::Search]);
@@ -252,14 +255,14 @@ impl DocStore {
             dirty: false,
             save_in_place: !read_only,
             scanned: !opened.has_text && opened.pages > 0,
-            encrypted: opened.encrypted,
+            encrypted,
         };
         Ok(Doc {
             id: id.to_string(),
             path: canonical.to_path_buf(),
             dir,
             handle,
-            password: if opened.encrypted { password } else { None },
+            password: if encrypted { password } else { None },
             info: Mutex::new(info),
             pages: Mutex::default(),
             views: Mutex::default(),

@@ -39,7 +39,15 @@ impl Server {
         if !path.is_absolute() {
             return Err(RpcError::invalid_params("path must be absolute"));
         }
-        let (doc, token) = self.0.docs.open(&path, p.password, &p.session_id).await.map_err(rpc_error)?;
+        let (doc, token) = self.0.docs.open(&path, p.password, &p.session_id).await.map_err(|e| {
+            // Which file wants its password: one asked for by its id is shown by its path, to ask there.
+            let password = matches!(e, DocError::Password);
+            let mut e = rpc_error(e);
+            if password && let Some(serde_json::Value::Object(data)) = e.data.as_mut() {
+                data.insert("path".into(), path.display().to_string().into());
+            }
+            e
+        })?;
         Ok(DocOpenResult { info: doc.info(), token, password: doc.password().map(str::to_string) })
     }
 

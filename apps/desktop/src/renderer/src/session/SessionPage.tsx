@@ -4,12 +4,11 @@ import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { SidebarToggle } from "../components";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
-import { DocPanel } from "../docs/DocPanel";
-import { DocContext, docsOf, openDoc, showDocs, useDocEvents, useSessionDocs, type DocOpener } from "../docs/state";
-import { layoutOf, setCard, setSidebar } from "../layout";
+import { DocContext, docsOf, lockedPath, type DocOpener } from "../docs/state";
+import { layoutOf, setCard } from "../layout";
 import { useStore } from "../store";
 import { FilePanel } from "../files/FilePanel";
-import { filesChanged, setFilesConnection } from "../files/state";
+import { filesChanged, isPasswordError, lockedOut, setFilesConnection, showDoc, useDocEvents } from "../files/state";
 import { Background } from "./Background";
 import { BrowserPanel, useBrowserTabs } from "./Browser";
 import { Chat } from "./Chat";
@@ -29,48 +28,51 @@ export function SessionPage({ s }: { s: ListSession }) {
   const running = view ? runningAgents(view).length : 0;
   const browserTabs = useBrowserTabs().filter((t) => t.session === s.session_id);
   const background = st.background && agents > 0;
-  const docs = useSessionDocs(s.session_id);
-  useDocEvents(st.rpc, s.session_id);
-  // One panel on the right at a time: the background panel when asked for, else the document, else the
-  // file panel when opened (file-panel-design §3.1), else the browser.
-  const doc = docs.shown && (docs.tabs.length > 0 || docs.locked !== null) && !background;
-  const files = st.files && !background && !!view && !doc;
-  const browser = st.browser && browserTabs.length > 0 && !background && !files && !doc;
+  const cwd = view?.info.cwd;
+  useDocEvents(st.rpc, s.session_id, cwd);
+  // One panel on the right at a time: the background panel when asked for, else the file panel when
+  // opened (file-panel-design §3.1), its PDFs too (document-editor-design §7.1), else the browser.
+  const files = st.files && !background && !!view;
+  const browser = st.browser && browserTabs.length > 0 && !background && !files;
   // Taking the window, the panel leaves the conversation mounted but out of sight, where it was.
   const max = (browser && st.browserMax) || (files && st.filesMax);
-  // A document opening puts the sidebar away: the column is the work beside the conversation (§7.1).
-  useEffect(() => {
-    if (doc) setSidebar(st, false);
-  }, [doc, docs.current]);
   const rpc = st.rpc;
   const opener = useMemo<DocOpener | null>(() => {
-    if (!rpc) return null;
+    if (!rpc || !cwd) return null;
     const id = s.session_id;
     return {
       session: id,
       open: (what, anchor, target) =>
         void st.run(async () => {
-          const tab = await openDoc(rpc, id, what, anchor);
-          st.set({ background: false });
-          if (tab && target) {
-            const r = await rpc.request("doc/locate", { session_id: id, doc_id: tab.info.doc_id, target });
-            await openDoc(rpc, id, { doc_id: tab.info.doc_id }, r.anchor);
+          const shown = await showDoc(st, id, cwd, what, anchor);
+          // A citation's block or page, once its document is open in the session (not while it asks for its password).
+          if (shown && target && "doc_id" in what) {
+            try {
+              const r = await rpc.request("doc/locate", { session_id: id, doc_id: what.doc_id, target });
+              await showDoc(st, id, cwd, what, r.anchor);
+            } catch (e) {
+              // Its file changed and wants its password again: the tab asks for it, not a toast.
+              if (!(await lockedOut(id, what.doc_id, e))) throw e;
+            }
           }
         }),
       locate: async (docId, target) => {
+        const known = docsOf(id).tabs.find((t) => t.info.doc_id === docId)?.info.path;
         try {
           // A hover must not bring the column out: finx opens the document, the column stays as it is.
-          const path = docsOf(id).tabs.find((t) => t.info.doc_id === docId)?.info.path ?? (await rpc.request("doc/open", { session_id: id, doc_id: docId })).info.path;
+          const path = known ?? (await rpc.request("doc/open", { session_id: id, doc_id: docId })).info.path;
           const r = await rpc.request("doc/locate", { session_id: id, doc_id: docId, target });
           return { anchor: r.anchor, path };
-        } catch {
-          return null;
+        } catch (e) {
+          // Encrypted, its password not given yet (or changed): still there, a click asks for it.
+          const path = lockedPath(e) ?? (isPasswordError(e) ? known : null);
+          return path ? { locked: true, path } : null;
         }
       },
     };
-  }, [rpc, s.session_id]);
+  }, [rpc, s.session_id, cwd]);
   const layout = layoutOf(st);
-  const info = layout.card !== "hidden" && !background && !browser && !files && !doc;
+  const info = layout.card !== "hidden" && !background && !browser && !files;
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
   const dock = (info && layout.card === "docked") || (background && layoutOf({ ...st, inspector: true, peek: null }).card === "docked");
   // The first page the session opens brings the browser panel out.
@@ -85,7 +87,6 @@ export function SessionPage({ s }: { s: ListSession }) {
     return st.rpc?.on("files/changed", (p) => filesChanged(p.session_id, p.paths));
   }, [st.rpc]);
   // What the conversation's content belongs to (content-actions-design §3.4): its paths are under the session's folder.
-  const cwd = view?.info.cwd;
   const scope = useMemo(() => (cwd ? { session: s.session_id, cwd } : null), [s.session_id, cwd]);
   // A task that ended may have made or removed the files the replies point at.
   const ended = view?.entries.filter((e) => e.type === "task_end").length ?? 0;
@@ -99,7 +100,7 @@ export function SessionPage({ s }: { s: ListSession }) {
   }, [asked]);
   return (
     <DocContext.Provider value={opener}>
-    <div className={`spage ${browser || files || doc ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
+    <div className={`spage ${browser || files ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -130,21 +131,6 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
-          {/* The document column's button, once the session has opened one. */}
-          {docs.tabs.length > 0 && !doc && (
-            <button
-              className={`tb ${doc ? "on" : ""}`}
-              title={t("doc.title")}
-              aria-label={t("doc.title")}
-              aria-pressed={doc}
-              onClick={() => {
-                showDocs(s.session_id, true);
-                st.set({ background: false });
-              }}
-            >
-              <Icon name="doc" />
-            </button>
-          )}
           {/* The browser panel's button; a session with no pages yet gets a blank tab to start from. While the
               panel is open it sits at the panel's right end instead, where it puts the panel away. */}
           {window.finx && !browser && (
@@ -154,10 +140,9 @@ export function SessionPage({ s }: { s: ListSession }) {
               aria-label={t("browser.builtIn")}
               aria-pressed={false}
               onClick={() => {
-                if (hasTabs) (showDocs(s.session_id, false), st.set({ browser: true, background: false, files: false, filesMax: false }));
+                if (hasTabs) st.set({ browser: true, background: false, files: false, filesMax: false });
                 else void st.run(async () => {
                   await window.finx?.openBrowser(s.session_id);
-                  showDocs(s.session_id, false);
                   st.set({ browser: true, background: false, files: false, filesMax: false });
                 });
               }}
@@ -174,7 +159,6 @@ export function SessionPage({ s }: { s: ListSession }) {
               aria-label={t("files.title")}
               aria-pressed={false}
               onClick={() => {
-                showDocs(s.session_id, false);
                 st.set({ files: true, browser: false, browserMax: false, background: false });
               }}
             >
@@ -210,7 +194,6 @@ export function SessionPage({ s }: { s: ListSession }) {
           onClose={() => st.set({ browser: false, browserMax: false })}
         />
       )}
-      {doc && <DocPanel session={s.session_id} />}
     </div>
     </DocContext.Provider>
   );

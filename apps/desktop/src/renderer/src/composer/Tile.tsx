@@ -2,14 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { baseName, type DocQuote, type WebComment } from "@finx/client";
-import { opensAsDoc, useDocOpener } from "../docs/state";
+import { useDocOpener } from "../docs/state";
 import { Icon } from "../icons";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { quoteName, webName } from "./attachments";
 
 // What a message carries, as square tiles, the same in the composer and in
 // the conversation: an image shows itself and opens large over the window;
-// a file or folder shows its name and type and opens in the file manager.
+// a file shows its name and type and opens in the panel or its own app; a folder opens in the file manager.
 
 /** A file's type as a tile shows it: its extension, upper case ("HTML"); a folder's, "folder". */
 export function kindOf(path: string, folder: boolean, folderWord: string): string {
@@ -49,24 +49,36 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
   const tile = useRef<HTMLDivElement>(null);
   const label = name ?? (web ? webName(web) : quote ? quoteName(quote) : t("chat.image"));
   const docs = useDocOpener();
-  // A PDF opens beside the conversation; ⌥ shows it in the file manager as before.
+  // A file opens beside the conversation (a PDF as a document, Markdown previewed), one the panel cannot
+  // show in its own app, a folder in the file manager; ⌥ shows it in the file manager.
   const open = (e: React.MouseEvent) => {
     if (src) return setLarge(true);
     if (web || quote) return setDetails((d) => !d);
     if (!path) return;
-    if (docs && kind === "file" && opensAsDoc(path) && !e.altKey) return docs.open({ path });
-    window.finx?.revealPath(path);
+    if (e.altKey) return window.finx?.revealPath(path);
+    if (kind === "folder") return window.finx?.openFolder(path);
+    if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
+    docs.open({ path });
   };
   const pages = !quote ? "" : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
   const type = web ? hostOf(web.url) : quote ? pages : kindOf(name ?? "", kind === "folder", t("composer.folder"));
   const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
   const quoteKind = !quote ? "" : quote.comment ? t("doc.comment") : quote.region ? t("doc.region") : t("doc.quote");
+  const plain = !src && !web && !quote;
   return (
-    <div ref={tile} className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""} ${quote ? "quote" : ""}`} title={details ? undefined : title}>
+    <div ref={tile} className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""} ${quote ? "quote" : ""} ${plain ? "file" : ""}`} title={details ? undefined : title}>
       <button className="tile-open" onClick={open} aria-expanded={web || quote ? details : undefined} aria-label={src ? t("composer.view", { name: label }) : web || quote ? `${type}: ${label}` : t("composer.reveal", { name: label })}>
         {src ? (
           <img src={src} alt="" />
+        ) : plain ? (
+          <>
+            <FileBadge path={name ?? path ?? ""} folder={kind === "folder"} />
+            <span className="tile-text">
+              <span className="tile-name">{label}</span>
+              {type && <span className="tile-kind">{type}</span>}
+            </span>
+          </>
         ) : (
           <>
             {quote && (
@@ -253,5 +265,40 @@ export function Lightbox({ src, onClose }: { src: string; onClose: () => void })
       <img src={src} alt="" />
     </div>,
     document.body,
+  );
+}
+
+/** Files the panel shows only as "binary": Office documents, media, archives — these open in their own app. */
+const opensInApp = (path: string) =>
+  /\.(docx?|xlsx?|xlsm|pptx?|key|numbers|pages|rtf|odt|ods|odp|epub|mp3|m4a|wav|aac|flac|mp4|mov|m4v|avi|mkv|webm|zip|rar|7z|tar|gz|dmg|pkg|app)$/i.test(path);
+
+/** A file type's family, for its badge's colour. */
+const families: [string, RegExp][] = [
+  ["pdf", /^pdf$/],
+  ["word", /^(docx?|rtf|odt|pages)$/],
+  ["sheet", /^(xlsx?|xlsm|csv|tsv|ods|numbers)$/],
+  ["slide", /^(pptx?|odp|key)$/],
+  ["image", /^(png|jpe?g|gif|webp|svg|heic|bmp|ico|tiff?)$/],
+  ["media", /^(mp3|m4a|wav|aac|flac|mp4|mov|m4v|avi|mkv|webm)$/],
+  ["archive", /^(zip|rar|7z|tar|gz|dmg|pkg)$/],
+  ["text", /^(md|markdown|txt|log|epub)$/],
+  ["code", /^(js|jsx|ts|tsx|py|rs|go|java|kt|swift|c|cc|cpp|h|hpp|cs|rb|php|sh|zsh|json|ya?ml|toml|xml|html?|css|scss|sql|lua)$/],
+];
+
+/** A small page in the file type's colour with its extension on it; a folder for a folder. */
+function FileBadge({ path, folder }: { path: string; folder: boolean }) {
+  if (folder)
+    return (
+      <span className="tile-badge f-folder" aria-hidden>
+        <svg viewBox="0 0 32 32"><path d="M3 9.5A2.5 2.5 0 0 1 5.5 7h6.4l2.6 2.6h12A2.5 2.5 0 0 1 29 12.1V24a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 3 24z" /></svg>
+      </span>
+    );
+  const ext = (/\.([A-Za-z0-9]{1,6})$/.exec(path)?.[1] ?? "").toLowerCase();
+  const family = families.find(([, re]) => re.test(ext))?.[0] ?? "other";
+  return (
+    <span className={`tile-badge f-${family}`} aria-hidden>
+      <svg viewBox="0 0 32 32"><path className="pg" d="M5 3h15l7 7v19H5z" /><path className="ear" d="M20 3v7h7z" /></svg>
+      <b>{ext.slice(0, 4) || "FILE"}</b>
+    </span>
   );
 }

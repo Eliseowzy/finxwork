@@ -440,10 +440,14 @@
     "pages": "Pages",
     "openFailed": "Cannot open the document: {{error}}",
     "whereRange": "{{name}} · pp. {{from}}–{{to}}",
-    "locked": "“{{name}}” is protected by a password: enter it to open the document.",
+    "locked": "“{{name}}” is encrypted. Enter its password to open it.",
     "password": "Password",
     "wrongPassword": "Wrong password. Try again.",
-    "unlock": "Open"
+    "unlock": "Open",
+    "lockedTitle": "Password Required",
+    "showPassword": "Show Password",
+    "hidePassword": "Hide Password",
+    "citeLocked": "“{{name}}” is password-protected: open it to enter the password"
   },
   "content": {
     "open": "Open",

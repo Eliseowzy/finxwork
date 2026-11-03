@@ -6,101 +6,13 @@ import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { maxComment } from "../../../shared/annotations";
 import { loadPdf, pdfjs, viewerLib } from "./pdf";
-import { closeDoc, closeDocs, closeLocked, currentTab, openDoc, quoteToComposer, setPage, switchDoc, useSessionDocs, type DocTab, type Jump, type Locked } from "./state";
+import { lockedOut, unlockPdf, type SessionFiles, type Tab } from "../files/state";
+import { quoteToComposer, setDocPassword, setPage, type DocTab, type Jump } from "./state";
 
-// The document column (document-editor-design §7): the shell — which document, the page,
-// zoom, search, outline and pages — around the PDF canvas, pdf.js's viewer. What people select
+// A PDF in the file panel (document-editor-design §7): the bar of its own tools — the page,
+// zoom, search, outline and pages — over the PDF canvas, pdf.js's viewer. What people select
 // is read by finx (doc/resolve), never taken from pdf.js's text (DE-11): the quote that goes to
 // the conversation is the text the agent would read there.
-
-const widthKey = "finxwork.docPanelWidth";
-const minWidth = 360;
-const conversationRoom = 360;
-
-function savedWidth(): number | null {
-  const n = Number(localStorage.getItem(widthKey));
-  return Number.isFinite(n) && n >= minWidth ? n : null;
-}
-
-export function DocPanel({ session }: { session: string }) {
-  const { t } = useTranslation("session");
-  const st = useStore();
-  const docs = useSessionDocs(session);
-  const tab = currentTab(docs);
-  const panel = useRef<HTMLElement>(null);
-  const [width, setWidth] = useState<number | null>(savedWidth);
-  const [resizing, setResizing] = useState(false);
-
-  const maxWidth = () => {
-    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
-    const left = panel.current?.parentElement?.getBoundingClientRect().left ?? 0;
-    return Math.max(minWidth, right - left - conversationRoom);
-  };
-  const keep = (w: number) => {
-    const next = Math.round(Math.min(maxWidth(), Math.max(minWidth, w)));
-    setWidth(next);
-    localStorage.setItem(widthKey, String(next));
-  };
-  const resizeByKey = (e: React.KeyboardEvent) => {
-    const now = panel.current?.getBoundingClientRect().width ?? minWidth;
-    if (e.key === "ArrowLeft") keep(now + 24);
-    else if (e.key === "ArrowRight") keep(now - 24);
-    else return;
-    e.preventDefault();
-  };
-  const startResize = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
-    const max = maxWidth();
-    setResizing(true);
-    const move = (ev: PointerEvent) => setWidth(Math.round(Math.min(max, Math.max(minWidth, right - ev.clientX))));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      setResizing(false);
-      setWidth((w) => {
-        if (w !== null) localStorage.setItem(widthKey, String(w));
-        return w;
-      });
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
-
-  if ((!tab && !docs.locked) || !st.rpc) return null;
-  return (
-    <aside
-      ref={panel}
-      className={`bgp dcp ${width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
-      style={width !== null ? ({ "--dcp-w": `${width}px` } as React.CSSProperties) : undefined}
-      aria-label={t("doc.title")}
-    >
-      <div className="dcp-tabs-bar drag">
-        <div className="dcp-tabs no-drag" role="tablist" aria-label={t("doc.title")}>
-          {docs.tabs.map((item) => (
-            <div key={item.info.doc_id} className="dcp-tab-item" data-selected={!docs.locked && item.info.doc_id === docs.current}>
-              <button className="dcp-tab" role="tab" aria-selected={!docs.locked && item.info.doc_id === docs.current} title={item.info.path} onClick={() => switchDoc(session, item.info.doc_id)}>
-                {baseName(item.info.path)}
-              </button>
-              <button className="dcp-tab-close" title={t("doc.closeTab", { name: baseName(item.info.path) })} aria-label={t("doc.closeTab", { name: baseName(item.info.path) })} onClick={() => void closeDoc(st.rpc!, session, item.info.doc_id)}><Icon name="x" /></button>
-            </div>
-          ))}
-          {docs.locked && <div className="dcp-tab-item" data-selected="true"><button className="dcp-tab" role="tab" aria-selected="true" title={docs.locked.name}>{docs.locked.name}</button><button className="dcp-tab-close" title={t("doc.closeTab", { name: docs.locked.name })} aria-label={t("doc.closeTab", { name: docs.locked.name })} onClick={() => closeLocked(session)}><Icon name="x" /></button></div>}
-        </div>
-        <button className="tb no-drag" title={t("doc.closeAll")} aria-label={t("doc.closeAll")} onClick={() => void closeDocs(st.rpc!, session)}>
-          <Icon name="x" />
-        </button>
-      </div>
-      {docs.tabs.map((item) => (
-        <div key={item.token} className="dcp-viewer" hidden={!!docs.locked || item.info.doc_id !== tab?.info.doc_id}>
-          <PdfView rpc={st.rpc!} session={session} tab={item} jump={docs.jump?.doc_id === item.info.doc_id ? docs.jump : null} />
-        </div>
-      ))}
-      {docs.locked && <Unlock key={JSON.stringify(docs.locked.what)} rpc={st.rpc} session={session} locked={docs.locked} />}
-      <div className="brp-grip dcp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("doc.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />
-    </aside>
-  );
-}
 
 type PdfViewer = InstanceType<Awaited<ReturnType<typeof viewerLib>>["PDFViewer"]>;
 type EventBus = InstanceType<Awaited<ReturnType<typeof viewerLib>>["EventBus"]>;
@@ -114,7 +26,7 @@ const cardWidth = 296;
 /** Lit-up rectangles on pages for a moment: a citation's source, or what was just quoted. */
 type Flash = { parts: { page: number; rects: Rect[] }[]; seq: number };
 
-function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string; tab: DocTab; jump: Jump | null }) {
+export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string; tab: DocTab; jump: Jump | null }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const docId = tab.info.doc_id;
@@ -124,6 +36,9 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
   const bus = useRef<EventBus | null>(null);
   const [pdf, setPdf] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // pdf.js asking for a password finx did not pass on (it may not keep one): asked for here, and given to pdf.js only.
+  const [password, setPassword] = useState(tab.password);
+  const [asking, setAsking] = useState<{ wrong: boolean } | null>(null);
   const [page, setPageNo] = useState(tab.page);
   const [pageDraft, setPageDraft] = useState<string | null>(null);
   const [scale, setScale] = useState(1);
@@ -164,7 +79,7 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
           removePageBorders: true,
         });
         linkService.setViewer(v);
-        doc = await loadPdf(tab.token, tab.password);
+        doc = await loadPdf(tab.token, password);
         if (!live) return void doc.destroy();
         eventBus.on("pagesinit", () => {
           v.currentScaleValue = "page-width";
@@ -181,7 +96,8 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
         bus.current = eventBus;
         setPdf(doc);
       } catch (e) {
-        if (live) setError(e instanceof Error ? e.message : String(e));
+        if (live && e instanceof Error && e.name === "PasswordException") setAsking({ wrong: password !== undefined });
+        else if (live) setError(e instanceof Error ? e.message : String(e));
         done();
       }
     })();
@@ -192,7 +108,7 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
       bus.current = null;
       void doc?.destroy();
     };
-  }, [tab.token]);
+  }, [tab.token, password]);
 
   // The page goes back to finx (the session's view, for "this page") and stays for next time.
   useEffect(() => {
@@ -377,7 +293,7 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
       window.getSelection()?.removeAllRanges();
       scroller.current?.focus({ preventScroll: true });
     } catch (e) {
-      st.show(errorText(e), undefined, true);
+      if (!(await lockedOut(session, docId, e))) st.show(errorText(e), undefined, true);
     } finally {
       setAdding(false);
     }
@@ -477,7 +393,7 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
   return (
     <div className="dcp-in" onKeyDown={onKeyDown}>
       {/* Where you are on the left, how big in the middle, the tools on the right. */}
-      <div className="dcp-bar drag">
+      <div className="dcp-bar">
         <div className="dcp-bar-start">
           <button className={`tb no-drag ${side ? "on" : ""}`} title={t("doc.sidebar")} aria-label={t("doc.sidebar")} aria-pressed={side !== null} onClick={() => setSide(side ? null : info.outline?.length ? "outline" : "pages")}>
             <Icon name="list" />
@@ -553,6 +469,19 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
             </div>
           )}
           {error && <div className="dcp-error">{error}</div>}
+          {asking && (
+            <div className="dcp-wait">
+              <PasswordForm
+                name={baseName(tab.info.path)}
+                wrong={asking.wrong}
+                onSubmit={async (p) => {
+                  setAsking(null);
+                  setPassword(p);
+                  setDocPassword(session, docId, p);
+                }}
+              />
+            </div>
+          )}
           {region && !band && !pending && <div className="dcp-hint">{t("doc.regionHint")}</div>}
           {band && (
             <div
@@ -621,39 +550,69 @@ function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string;
   );
 }
 
-/** An encrypted document's password, asked for in the column; it goes to finx and is kept nowhere else. */
-function Unlock({ rpc, session, locked }: { rpc: RpcClient; session: string; locked: Locked }) {
+/** An encrypted document's password, asked for in its tab; it goes to finx and is kept nowhere else. */
+export function Unlock({ s, tab }: { s: SessionFiles; tab: Tab }) {
+  return (
+    <div className="dcp-in">
+      <PasswordForm name={tab.name} wrong={!!tab.pdf?.locked?.wrong} onSubmit={(password) => unlockPdf(s, tab, password)} />
+    </div>
+  );
+}
+
+function PasswordForm({ name, wrong, onSubmit }: { name: string; wrong: boolean; onSubmit: (password: string) => Promise<void> }) {
   const { t } = useTranslation("session");
-  const st = useStore();
   const [password, setPassword] = useState("");
+  const [shown, setShown] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Each refusal shakes the field again.
+  const [tries, setTries] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  useEffect(() => input.current?.focus(), [locked.wrong]);
+  useEffect(() => {
+    input.current?.focus();
+    if (wrong) setTries((n) => n + 1);
+  }, [wrong]);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!password || busy) return;
     setBusy(true);
-    try {
-      await openDoc(rpc, session, locked.what, locked.anchor, password);
-    } catch (err) {
-      st.show(errorText(err), undefined, true);
-    } finally {
-      setBusy(false);
-      setPassword("");
-    }
+    await onSubmit(password);
+    setBusy(false);
+    setPassword("");
+    input.current?.focus();
   };
   return (
-    <div className="dcp-in">
-      <form className="dcp-unlock" onSubmit={submit}>
+    <form className="dcp-unlock" onSubmit={submit}>
+      <span className="dcp-unlock-badge">
         <Icon name="lock" />
-        <p>{t("doc.locked", { name: locked.name })}</p>
-        <input ref={input} type="password" autoComplete="off" value={password} placeholder={t("doc.password")} aria-label={t("doc.password")} onChange={(e) => setPassword(e.target.value)} />
-        {locked.wrong && <span className="dcp-unlock-bad">{t("doc.wrongPassword")}</span>}
-        <button className="btn primary" disabled={!password || busy}>
-          {t("doc.unlock")}
-        </button>
-      </form>
-    </div>
+      </span>
+      <b>{t("doc.lockedTitle")}</b>
+      <p title={name}>{t("doc.locked", { name })}</p>
+      <div key={tries} className={`dcp-unlock-field ${wrong ? "bad" : ""}`}>
+        <input
+          ref={input}
+          type={shown ? "text" : "password"}
+          autoComplete="off"
+          spellCheck={false}
+          value={password}
+          placeholder={t("doc.password")}
+          aria-label={t("doc.password")}
+          aria-invalid={wrong}
+          disabled={busy}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        {password && (
+          <button type="button" className="dcp-unlock-eye" title={t(shown ? "doc.hidePassword" : "doc.showPassword")} aria-label={t(shown ? "doc.hidePassword" : "doc.showPassword")} onClick={() => (setShown(!shown), input.current?.focus())}>
+            <Icon name={shown ? "eyeOff" : "eye"} />
+          </button>
+        )}
+        {(password || busy) && (
+          <button className="dcp-unlock-go" title={t("doc.unlock")} aria-label={t("doc.unlock")} disabled={busy}>
+            {busy ? <span className="mini-spin" /> : <Icon name="arrowRight" />}
+          </button>
+        )}
+      </div>
+      <span className="dcp-unlock-bad" role="alert">{wrong ? t("doc.wrongPassword") : ""}</span>
+    </form>
   );
 }
 
