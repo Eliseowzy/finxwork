@@ -89,6 +89,10 @@ struct Args {
     settle_ms: u64,
     #[arg(long)]
     keep: bool,
+    /// Native protocol only: every session gets its own connection, as separate clients
+    /// would. Latency then excludes queueing behind other sessions' events on one connection.
+    #[arg(long)]
+    connection_per_session: bool,
 }
 
 fn ms(at: Instant) -> f64 {
@@ -350,6 +354,27 @@ async fn rpc(client: &Client, method: &str, params: Value, wait: Duration) -> Re
         .context("RPC deadline")??)
 }
 
+async fn connect_native(args: &Args, env: &Env) -> Result<Arc<Connection>> {
+    // A full listen queue refuses at once; clients back off and retry (protocol-design §8.2).
+    let deadline = Instant::now() + Duration::from_secs(args.timeout_secs);
+    let mut backoff = Duration::from_millis(1);
+    let stream = loop {
+        match UnixStream::connect(&env.socket).await {
+            Ok(stream) => break stream,
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused && Instant::now() < deadline => {
+                tokio::time::sleep(backoff).await;
+                backoff = (backoff * 2).min(Duration::from_millis(50));
+            }
+            Err(e) => return Err(e.into()),
+        }
+    };
+    let (r, w) = stream.into_split();
+    let (client, rx) = Client::connect(r, w);
+    let init = json!({"protocol_version":2,"client_info":{"name":"finx-sim"}});
+    rpc(&client, "initialize", init, Duration::from_secs(args.timeout_secs)).await?;
+    Ok(Arc::new(Connection::new(client, rx)))
+}
+
 async fn service(args: &Args, env: &Env, memory: &Memory) -> Result<(Child, Arc<Connection>, f64)> {
     let at = Instant::now();
     let mut c = env.command(args, &env.work);
@@ -590,6 +615,18 @@ async fn run_session(
         error: None,
         audit: Value::Null,
     };
+    let own = if args.connection_per_session {
+        match connect_native(args, env).await {
+            Ok(own) => Some(own),
+            Err(error) => {
+                report.error = Some(format!("connect: {error:#}"));
+                return report;
+            }
+        }
+    } else {
+        None
+    };
+    let conn = own.as_deref().or(conn);
     let mut id: Option<String> = None;
     let task = async {
         let cwd = env.workspace(run)?;
@@ -972,6 +1009,10 @@ async fn main() -> Result<()> {
     if args.scenario != "suite" {
         scenario(&args.scenario).map_err(anyhow::Error::msg)?;
     }
+    ensure!(
+        !args.connection_per_session || args.protocol == Protocol::Native,
+        "--connection-per-session needs --protocol native"
+    );
     let protocols = if args.protocol == Protocol::All {
         vec![
             Protocol::Native,
@@ -983,7 +1024,7 @@ async fn main() -> Result<()> {
         vec![args.protocol]
     };
     let mut report = json!({"schema_version":1,"workload":{"asset_sha256":asset_digest(),"scenario":args.scenario,"sessions":args.sessions,"concurrency":args.concurrency,
-        "repeats":args.repeats,"turns":args.turns,"settle_ms":args.settle_ms,"ttft_ms":args.ttft_ms,"chunk_ms":args.chunk_ms,"tool_ms":args.tool_ms,"corrupt_evidence":args.corrupt_evidence,"context_window":args.context_window,"protocols":protocols,
+        "repeats":args.repeats,"turns":args.turns,"settle_ms":args.settle_ms,"ttft_ms":args.ttft_ms,"chunk_ms":args.chunk_ms,"tool_ms":args.tool_ms,"corrupt_evidence":args.corrupt_evidence,"context_window":args.context_window,"connection_per_session":args.connection_per_session,"protocols":protocols,
         "os":std::env::consts::OS,"arch":std::env::consts::ARCH},"binary":args.finx,
         "binary_sha256":finx_mock::simulation::sha256(&std::fs::read(&args.finx)?),
         "harness_sha256":finx_mock::simulation::sha256(&std::fs::read(std::env::current_exe()?)?),
