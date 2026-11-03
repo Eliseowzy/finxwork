@@ -166,6 +166,7 @@ target/release/finx-sim --finx target/release/finx \
 3. 新会话日志在 `Settle` 前只保留内存条目，直接在异步任务处理，避免无 I/O 的 blocking-pool 往返；实际写盘和 sync 仍在 blocking pool，日志命令批次的向量容量复用。
 4. 服务器记录已关闭会话计数，让小于 2 秒的 create/run/close 波次也触发下次静置内存回收，避免仅轮询 busy 状态漏掉整个突发。
 5. 共享 HTTP 客户端每个 host 最多保留 32 个空闲连接，限制突发结束后连接和缓冲区的滞留；活动请求并发不受此值限制，空闲过期时间仍为 30 秒。
+   2026-11-03 已撤销：200 并发时超出上限的连接一放回池里就被关掉，下一次请求只能重新建连，这正是 [1103 报告](benchmarks/1103-kernel-performance-report.md)中任务 p95 回退的主因（technical-design §1.4、D-96）。
 
 这些修改均由相同场景和独立二进制对照检验。测量结果见同目录 `benchmarks/` 中的本轮报告；原始详细报告在工作区 `target/simulation-results/`。
 
