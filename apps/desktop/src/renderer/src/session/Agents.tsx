@@ -36,7 +36,8 @@ export function useShowAgent(): (id: string | undefined) => void {
   return (id) => st.set({ background: true, agent: id ?? st.agent });
 }
 
-/** What spawn_agent started: one row per agent, live; a click shows its work in the background panel. */
+/** What spawn_agent started: one row per agent, live; a click shows its work in the background panel. An
+ * agent the session does not know (its call has a result, but no agent came with it) has no status. */
 export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
   const { t } = useTranslation("session");
   const now = useNow(1000).getTime();
@@ -50,8 +51,8 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
       </div>
       {launches.map((l, i) => {
         const a = l.agent;
-        const status = a?.status ?? "running";
-        const tone = status === "completed" ? "ok" : status === "interrupted" ? "int" : status === "running" ? "" : "bad";
+        const status = a?.status ?? (l.starting ? "running" : undefined);
+        const tone = status === "completed" ? "ok" : status === "interrupted" ? "int" : status === "running" || status === undefined ? "" : "bad";
         return (
           <button key={l.call_id} className="agc-r" title={t("agents.open")} onClick={() => show(a?.id)}>
             <AgentGlyph status={a?.status} />
@@ -68,7 +69,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
               </>
             )}
             <span className={`agc-s ${tone}`}>
-              <span>{t(`agents.status.${status}`)}</span>
+              {status && <span>{t(`agents.status.${status}`)}</span>}
               {a && <span className="tm">{agentTime(a, now)}</span>}
             </span>
             <Icon name="chevR" className="go" />

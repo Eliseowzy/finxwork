@@ -116,6 +116,23 @@ test("an agent goes by its label: the call's while it starts, agent_started's af
   assert.deepEqual(launches(), [["为 math 写测试", "ag1"], ["", undefined]]);
 });
 
+test("an agent is starting until its call has a result; after that, only the session says how it is", () => {
+  let v = play([{ type: "task_started", task_id: "t1" }, user("u1", "go"), assistant("a1", [spawnCall("c1", "math")])]);
+  const launch = () => {
+    const card = conversation(v).find((x) => x.kind === "agents");
+    assert.ok(card?.kind === "agents");
+    return card.launches[0];
+  };
+  assert.equal(launch().starting, true);
+  v = play(spawned("c1", "ag1", "math"), v);
+  assert.equal(launch().starting, false);
+  assert.equal(launch().agent?.status, "running");
+  // A session that no longer knows the agent leaves its status unknown rather than running.
+  v = { ...v, agents: [] };
+  assert.equal(launch().starting, false);
+  assert.equal(launch().agent, undefined);
+});
+
 test("the work ends where the last report is answered: one end line for all of it", () => {
   let v = play([
     { type: "task_started", task_id: "t1" },
