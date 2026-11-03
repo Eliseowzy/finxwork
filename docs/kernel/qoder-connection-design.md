@@ -233,14 +233,24 @@ flowchart TD
 
 目录缓存建议 24 小时失效、按需刷新；手动刷新立即执行。目录网络失败保留上一次快照并标记 stale，但最终是否可调用仍取决于有效授权和已验证路由。服务端明确移除模型后停止新调用，历史引用保留。每次请求固定目录快照，流中不更换配置。
 
-| 模型与路径 | 首期处理 |
+| 模型与路径 | 2026-11-03 验证后的处理 |
 |---|---|
-| Auto，新版 HTTP | 完成 finx 文本与工具验收后默认启用 |
-| mmodel，新版 HTTP | 流兼容测试通过后提供实验性文字调用；工具往返单独验收 |
-| qfmodel、dfmodel，legacy | 在目录中可见，默认标为待验证；真实生成与清理验收通过后开放 |
-| 其他目录模型 | 只登记，不把 enable=true 当作已适配，不自动批量试调用 |
+| Auto、Ultimate、Fast、Efficient，新版 HTTP | 文本与工具往返验收后开放 |
+| Sonus、Cantus，新版 HTTP | 文本与工具往返验收后开放；Cantus 使用编程场景验收，部分普通聊天会被上游 intention_rejected 拒绝 |
+| Qwen3.8-Max/Flash、GLM-5.3/Flash，新版 HTTP | 文本与工具往返验收后开放 |
+| Kimi-K3.1-Pro、Kimi-K2.8-Preview，新版 HTTP | 文本与工具往返验收后开放 |
+| DeepSeek-V4-Pro、DeepSeek-Flash、MiniMax-M3.1-Flash，新版 HTTP | 文本与工具往返验收后开放；qfmodel/dfmodel 不再依赖原先假设的 legacy 路径 |
+| 未来新增目录模型 | 只登记，不把 enable=true 当作已适配，不自动批量试调用 |
 
-模型记录至少区分 `declared_capabilities`、`verified_capabilities`、`readiness`、`enabled` 和 `route_revision`。readiness 为 supported、experimental、unverified、unsupported；工具和图片使用三态能力，不以 false 冒充“已确认不支持”。公开 UI 可简化成“可用、实验性、待验证、暂不支持”。
+当前 UI 的“待验证”来自目录与已发布模型的差集，不是 Qoder 的账户审核状态，也没有后台自动验证任务。原实现的 `adapter::supported` 仅允许 auto；现由 `qoder::supports_model` 维护已验证的 App HTTP 模型名单，管理器仍同时检查模型是否在账户当前目录中。未知 ID 和已移除模型不能用手写引用绕过检查。列表发布和请求准入使用同一个判断，前端无需硬编码模型名称。
+
+逐模型实测可通过 `FINX_QODER_TEST_HOME` 指定现有连接目录、`FINX_QODER_TEST_MODEL` 指定 upstream key，运行 ignored `live_qoder_connection`。测试覆盖文本、工具名/ID/中文 JSON 参数，以及返回工具结果后的继续生成。Cantus 的 intention_rejected 归为不可自动重试的 InvalidRequest，给出任务类型提示；不因该错误停用整个连接，也不暗中换模型。
+
+能力证据已独立记录在 [2026-11-03 逐模型验证报告](qoder-capabilities-2026-11-03.md)：保留目录声明、逐次实测与未知项，且区分请求成功和控制效果。运行时 `ConnectionModel` 仍是现有通用能力投影，不新增 Qoder 专用协议字段或改变核心模型入口；报告中的验证状态尚未加入设置界面。后续若展示逐能力状态，应使用通用可选 DTO，而不是在前端硬编码 Qoder 模型名。
+
+`qoder/capabilities.rs` 独立解析 `context_config` 的默认档、`max_output_tokens`、`is_vl`、`thinking_config.enabled.efforts`、默认 effort 和 disabled 声明。当前账户 15 个模型的默认上下文档均为 200,000；不自动选更大档。输出上限在目录中均缺失，采用已安装 App 的 `KT` 默认 32,000，明确属于客户端兜底，不是模型最大输出实测值。Kimi 的 legacy `is_reasoning=false` 不覆盖其明确的思考档位声明。
+
+`qoder/transport.rs` 将已声明档位转换为 `reasoning_effort` 与 `enable_thinking`，并传 `context_length`。默认档不添加思考参数；不提供目录未声明的档位。两个 DeepSeek 的关闭思考声明与实测矛盾：Off 请求仍返回思考，因此从有效选项中移除 Off，旧快照或显式 Off 调用返回 `qoder_thinking_off_unverified`，不悄悄用默认思考执行。两个 Kimi 的温度目前只放行实测成功的默认值或 1.0，其他值返回 `qoder_temperature_unverified`；0.25/0.5 在不同输出预算下均返回上游错误。图片按目录投影到现有 Image 能力；音频、视频未验证，现有 UserContent 也没有这些输入通道。
 
 选择模型后的路由固定，不因资源排队悄悄换模型，也不在一次请求中盲目切换 HTTP/legacy。用户显式允许的模型 fallback 属于以后独立功能，不能用它掩盖当前模型失败。目录价格倍数不是美元单价；未知价格显示未知，不由默认零值展示“免费”。
 
@@ -251,6 +261,18 @@ flowchart TD
 ### 新版 HTTP
 
 使用已验证的 `https://api2-v2.qoder.sh/model/v1/chat/completions`，Bearer 为自有 JobToken。system、messages、tools 由 finx 生成；适配器不追加 Magpie 的 Qoder Agent 提示词，不执行工具，也不将未知字段随意透传。
+
+2026-11-03 本机 Qoder App 0.4.11 实测补充：该入口不是仅传标准 OpenAI 字段即可使用。安装包 `qoder-worker-runtime.obf.mjs` 的 HTTP 请求构造函数 `Dkn` 还发送 `metadata.context`、`metadata.business`，HTTP 传输附带 `X-Request-ID`、`X-Session-ID`。同一自有 JobToken、Auto、短文本请求对照：无 metadata、仅 context 都收到 HTTP 200 + `event: error` / `provider_error: All backends failed`；加入 `{product:"app",type:"agent",id:<UUID>}` business 后正常输出且带 stop/DONE。
+
+`finx-connections/src/qoder/transport.rs` 独立负责这个包装：context 包含 request_id、request_set_id、session_id、task_id、client_type="10"；business 使用 app/agent；上限字段为 max_tokens。只修改请求级模型快照，不改变共享目录或 `finx-llm` 的 OpenAI 默认行为。当前通用接口尚未提供轮次作用域，因此远端 UUID 每次请求独立生成；尚未实现跨工具步骤复用远端任务的机制，不能将此实现视为 §调用作用域的完整落地。
+
+错误解析同样位于 Qoder 模块：保留 `event: error`，识别顶层 code/message 和嵌套 error，转换成通用 LlmError；provider_error 分类为 Server，保留脱敏后的 code/message，不转储请求标识或 param。不能忽略上游错误再以 missing_terminal_marker 覆盖真实原因，也不能把无终止证据的 EOF 当成成功。
+
+同日中文对话实测还捕获到 JSON 在字段名之后换行的情况，例如 `"model"\n:"auto"`。续行不能直接当 SSE 注释丢弃。解析先按标准规则忽略注释；仅在解析失败时，尝试把同一事件中保留的冒号行恢复后解析完整 JSON。恢复仍受 1 MiB 上限约束，不跨空行定义的事件边界，且真正的 SSE 心跳注释仍按标准处理。该形态已加入固定回归测试。
+
+逐模型图片与思考验证还复现了 `data:` 本身被拆成 `d` / `ata:`、`da` / `ta:`、`dat` / `a:` 或 `data` / `:` 的流。Qoder 解码器只在同一事件内恢复这个确定的字段名；空行边界、EOF 截断、未知字段仍报错，不把任意损坏流当作成功。
+
+本次实现验证：连接层 31 项离线测试通过；指定 `FINX_QODER_TEST_HOME` 为现有连接目录运行 ignored `live_qoder_connection`，通过真实文本、中文工具参数、工具结果往返；新构建的 `finx chat` 对中文“你是谁”正常回复并以 0 退出。此验证覆盖现有连接恢复与推理，不等同于全模型、legacy 或全新授权验收；旧 `.finx-qoder-e2e` 目录的目录刷新曾返回 403，尚未定位。已安装桌面应用未替换。
 
 `max_tokens` 预算须考虑模型可能计入 reasoning；`reasoning_effort=none` 不作为成功关闭思考的证明。工具调用依据实际 tool_calls 判断，不能只看 finish_reason。首次提供工具能力前验证工具名、参数 JSON、调用 ID 和结果对应关系。
 
