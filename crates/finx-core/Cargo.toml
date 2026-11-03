@@ -40,6 +40,9 @@ uuid.workspace = true
 yaml-rust2.workspace = true
 zip.workspace = true
 
+[target.'cfg(target_vendor = "apple")'.dependencies]
+libc.workspace = true
+
 [dev-dependencies]
 finx-mock.workspace = true
 png.workspace = true
