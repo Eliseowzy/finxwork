@@ -12,6 +12,7 @@
 //   Contents/MacOS/finx                  the kernel, started by the app as finx's service (desktop-kernel-integration §4)
 //   Contents/MacOS/agent-desktop         desktop control's program, which finx's desktop tools find beside finx,
 //   Contents/MacOS/agent-desktop-macos-helper   and its helper (scripts/agent-desktop.mjs: a pinned release, checked)
+//   Contents/Frameworks/libpdfium.dylib  PDFium, which finx's document worker loads (scripts/pdfium.mjs: a pinned release, checked)
 //   Contents/Resources/app.asar          main, preload and the page
 //   Contents/Resources/kernel.json       the kernel's version and protocol version
 //   Contents/Resources/catalog/skills    the 自定义 page's catalog skills (resources/catalog/skills, checked against src/shared/catalog.ts)
@@ -45,6 +46,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { agentDesktopBinaries, agentDesktopRelease } from "./agent-desktop.mjs";
+import { pdfiumLibrary, pdfiumLibraryFor, pdfiumRelease } from "./pdfium.mjs";
 import { catalogProblems, catalogSkillsDir } from "./catalog-hash.mjs";
 import { ensureRustTarget, rustTriples } from "./rust-target.mjs";
 import { catalogSkills } from "../src/shared/catalog.ts";
@@ -194,6 +196,14 @@ const desktopTools = Object.entries(agentDesktopBinaries(arch, path.join(desktop
   return to;
 });
 
+step(`embedding PDFium ${pdfiumRelease.tag}`);
+// In Contents/Frameworks, where finx looks after its own folder (crates/finx-docs) and where signing expects libraries.
+const pdfium = path.join(contents, "Frameworks", pdfiumLibrary);
+const pdfiumSource = pdfiumLibraryFor(arch, path.join(desktop, "node_modules/.cache/pdfium"), root);
+if (!execFileSync("lipo", ["-archs", pdfiumSource], { encoding: "utf8" }).trim().split(/\s+/).includes(machO)) throw new Error(`${pdfiumSource} is not ${machO}`);
+fs.copyFileSync(pdfiumSource, pdfium);
+fs.chmodSync(pdfium, 0o755);
+
 step("flipping Electron fuses");
 await flipFuses(path.join(contents, "MacOS/FinxWork"), {
   version: FuseVersion.V1,
@@ -226,13 +236,23 @@ await sign({
   }),
 });
 sh("codesign", ["--verify", "--strict", "--deep", app]);
-for (const f of [embedded, ...desktopTools]) sh("codesign", ["--verify", "--strict", f]);
+for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify", "--strict", f]);
 // The signed copy still runs and reports the version the app expects (where it can run).
 if (arch === nativeArch) {
   const signedVersion = execFileSync(embedded, ["--version"], { encoding: "utf8" }).trim().split(/\s+/).pop();
   if (signedVersion !== kernelVersion) throw new Error(`the embedded finx reports ${signedVersion}, expected ${kernelVersion}`);
   const desktopVersion = JSON.parse(execFileSync(desktopTools[0], ["version"], { encoding: "utf8" }).trim().split("\n").pop()).data?.version;
   if (desktopVersion !== agentDesktopRelease.version) throw new Error(`the embedded agent-desktop reports ${desktopVersion}, expected ${agentDesktopRelease.version}`);
+  // The signed kernel opens a PDF with the PDFium in the bundle: no FINX_PDFIUM, a HOME without ~/.finx/pdfium,
+  // and a dist build never looks in tools/pdfium; library validation runs as on the user's Mac.
+  const docHome = fs.mkdtempSync(path.join(tmp, "doc-home-"));
+  const pdf = path.join(docHome, "check.pdf");
+  fs.writeFileSync(pdf, minimalPdf());
+  const { FINX_PDFIUM: _, ...env } = process.env;
+  const reply = JSON.parse(execFileSync(embedded, ["doc-worker"], {
+    input: JSON.stringify({ op: "open", handle: 1, path: pdf }) + "\n", env: { ...env, HOME: docHome }, cwd: docHome, encoding: "utf8",
+  }).trim().split("\n")[0]);
+  if (reply.ok?.pages !== 1) throw new Error(`the embedded finx cannot open a PDF: ${JSON.stringify(reply)}`);
 }
 
 if (notaryAuth) {
@@ -299,6 +319,20 @@ function notarize(file, submission = file) {
   }
   sh("xcrun", ["stapler", "staple", file]);
   console.log(`notarized ${path.basename(file)} (submission ${result.id})`);
+}
+
+/** A one-page PDF, for checking the bundle's PDFium. */
+function minimalPdf() {
+  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>"];
+  let out = "%PDF-1.4\n";
+  const offsets = objects.map((o, i) => {
+    const at = out.length;
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return at;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  return out + `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
 }
 
 /** dmgbuild (build/dmg/requirements.txt, pinned with hashes) in a virtual environment of its own, kept between builds. */
