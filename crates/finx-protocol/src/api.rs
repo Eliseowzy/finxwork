@@ -293,6 +293,10 @@ pub struct BrowserStatus {
 pub struct BrowserSiteIconParams {
     /// The site as its permission is kept: an origin such as `https://github.com`.
     pub origin: String,
+    /// Only an icon already kept, however old: the site is not asked, now or later. For icons
+    /// shown beside what a model wrote, which must not reach the sites it names.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cached: bool,
 }
 
 /// The result of `browser/site_icon`.

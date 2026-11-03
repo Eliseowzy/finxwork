@@ -3,7 +3,10 @@ import { useTranslation } from "react-i18next";
 import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
 import { doingText, toolVerb, workText } from "../format";
 import { Icon } from "../icons";
+import { useStore } from "../store";
 import { Code } from "./Code";
+import { stepMenu } from "./contentMenus";
+import { useScope } from "./scope";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -124,6 +127,8 @@ export function LiveThinking({ text, children }: { text: string; children: React
  */
 export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) {
   const { t } = useTranslation("session");
+  const st = useStore();
+  const scope = useScope();
   const [open, setOpen] = useState(false);
   const [big, setBig] = useState(false);
   const output = toolOutput(tool);
@@ -136,7 +141,15 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const object = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : toolObject(tool);
   const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : toolVerb(tool);
   return (
-    <div className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}>
+    <div
+      className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}
+      // A file's menu for reading and editing, a command's for a command (content-actions-design §7.1); the left click still opens it.
+      onContextMenu={(e) => {
+        if (tool.state === "streaming" || !stepMenu(st, tool, scope)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+    >
       <button className={`th ${spinning ? "shimmer" : ""}`} onClick={() => output && setOpen(!open)} aria-expanded={output ? open : undefined} aria-busy={spinning || undefined}>
         <span className="vb">{unknown ? `${verb}…` : verb}</span>
         {unknown ? null : tool.category === "execute" ? (

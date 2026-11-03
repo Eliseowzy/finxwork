@@ -378,6 +378,33 @@ button.insp-row:active{background:var(--fill2)}
 .hl span{color:light-dark(var(--shiki-light),var(--shiki-dark))}
 .md a{color:var(--accent-t);text-decoration:none}
 .md a:hover{text-decoration:underline}
+/* What a reply points at (content-actions-design). A web page: its site's icon (or a globe, a laptop for this machine) before its words, kept on one line with their start. */
+.wl-g{white-space:nowrap}
+.wl-i{display:inline-flex;vertical-align:-2px;margin-right:3px;color:var(--l2)}
+.wl-i .site-ic{display:inline-flex}
+.wl-i .ic,.wl-i img{width:14px;height:14px}
+.md a.wl code{color:inherit}
+/* A file or folder: a quiet tag in the link's colour, the lines in grey; greyed when nothing is there. Inline and
+   unbroken, so punctuation after it never starts a line on its own. */
+.md .fref{display:inline;white-space:nowrap;padding:1px 5px;border-radius:var(--r-xs);background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--accent-t);font-size:14px;cursor:pointer}
+.md .fref:hover{background:var(--fill2)}
+.md .fref:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.md .fref .ic{display:inline-block;width:13px;height:13px;margin-right:4px;vertical-align:-2px;color:var(--l2)}
+.md .fref.mono .fref-n{font-family:var(--mono);font-size:13px}
+.md .fref-l{font-family:var(--mono);font-size:12px;color:var(--l2)}
+.md .fref.gone{color:var(--l3);cursor:default}
+.md .fref.gone .ic{color:var(--l3)}
+/* A code block: a bar with its language and buttons over the code, in one box. */
+.md .cblock{background:var(--code);border-radius:var(--r-md);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
+.md .cblock pre{margin:0;background:none;box-shadow:none;border-radius:0;padding:8px 12px 10px}
+.cb-h{display:flex;align-items:center;gap:8px;height:30px;padding:0 5px 0 12px;border-bottom:.5px solid var(--sep);font-size:12px;color:var(--l2)}
+.cb-lang{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:11.5px}
+.cb-lang .ic,.cb-warn .ic{width:13px;height:13px}
+.cb-warn{display:inline-flex;align-items:center;gap:4px;color:var(--orange)}
+.cb-acts{margin-left:auto;display:flex;gap:2px}
+.cb-b{height:22px;padding:0 7px;border:0;border-radius:var(--r-sm);background:none;display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:12px;color:var(--l2);cursor:pointer}
+.cb-b:hover{background:var(--fill2);color:var(--l1)}
+.cb-b .ic{width:13px;height:13px}
 /* Steps: a grey line in the body's size, no icon; a small caret after it opens it. */
 .tool{border-radius:var(--r-md);font-size:14px}
 .tool .th{display:flex;align-items:center;gap:6px;padding:2px 0;border-radius:var(--r-sm);border:0;background:none;max-width:100%;text-align:left;color:var(--l2)}

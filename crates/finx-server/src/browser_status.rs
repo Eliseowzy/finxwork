@@ -39,7 +39,7 @@ impl Server {
     /// at once, and once it is a week old it is looked for again in the background. A site with
     /// none is kept too, so it is not asked each time; when no site answers (offline), nothing
     /// is kept and the next showing asks again. Only https sites on the internet have one to
-    /// look for (`localhost` and IP addresses are left out).
+    /// look for (`localhost` and IP addresses are left out). `cached` gives only what is kept.
     pub(crate) async fn site_icon(&self, params: BrowserSiteIconParams) -> BrowserSiteIconResult {
         let origin = params.origin.trim_end_matches('/');
         // A local page (http, a file) has no site to ask.
@@ -47,7 +47,7 @@ impl Server {
             return BrowserSiteIconResult::default();
         }
         let dir = self.0.home.site_icons_dir();
-        let stored = finx_mcp::icon::site(&dir, origin).await;
+        let stored = if params.cached { finx_mcp::icon::load(&dir, origin) } else { finx_mcp::icon::site(&dir, origin).await };
         BrowserSiteIconResult { icon: stored.and_then(|s| s.data_uri()) }
     }
 }

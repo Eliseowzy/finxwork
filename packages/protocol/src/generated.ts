@@ -138,6 +138,8 @@ export type BrowserHostResult = {
 
 /** Parameters of `browser/site_icon`. */
 export type BrowserSiteIconParams = {
+  /** Only an icon already kept, however old: the site is not asked, now or later. For icons shown beside what a model wrote, which must not reach the sites it names. */
+  cached?: boolean;
   /** The site as its permission is kept: an origin such as `https://github.com`. */
   origin: string;
 };

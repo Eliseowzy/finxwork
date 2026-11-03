@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.0 |
-| 日期 | 2026-11-02 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2） |
+| 版本 | v1.1 |
+| 日期 | 2026-11-03 |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -906,7 +906,7 @@ action_timeout_secs = 10
   - 有缓存就立刻返回；超过一周的也先返回旧的，同时在后台重找，下次显示用新的，界面从不因为过期而等待。
   - 一个站点都没连上（断网）时什么也不记，下次显示再找；只有网站回答了（哪怕是 404）才记下"没有"。
   - 只有第一次显示时要等探测，实测常见网站 0.1–2.4 秒，之后读缓存约 2 毫秒。
-- **协议**：`browser/site_icon`，参数 `{ origin }`，结果 `{ icon? }`（`data:` URI）。
+- **协议**：`browser/site_icon`，参数 `{ origin, cached? }`，结果 `{ icon? }`（`data:` URI）。`cached` 为 true 时只给已经存着的图标（过期的也给），不去网站找，也不在后台重找：会话内容区里模型写的链接用它，渲染回复不访问链接里的网站（content-actions-design §9.2）。
 
 ## 11. 测试
 

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { SidebarToggle } from "../components";
@@ -9,7 +9,9 @@ import { useStore } from "../store";
 import { Background } from "./Background";
 import { BrowserPanel, useBrowserTabs } from "./Browser";
 import { Chat } from "./Chat";
+import { selectionMenu } from "./contentMenus";
 import { Inspector } from "./Inspector";
+import { ContentScope, recheckFiles } from "./scope";
 import { useSession } from "./useSession";
 
 // A session: its conversation, the composer and the bar of a running task,
@@ -36,6 +38,12 @@ export function SessionPage({ s }: { s: ListSession }) {
   useEffect(() => {
     if (hasTabs) st.set({ browser: true, background: false });
   }, [hasTabs, s.session_id]);
+  // What the conversation's content belongs to (content-actions-design §3.4): its paths are under the session's folder.
+  const cwd = view?.info.cwd;
+  const scope = useMemo(() => (cwd ? { session: s.session_id, cwd } : null), [s.session_id, cwd]);
+  // A task that ended may have made or removed the files the replies point at.
+  const ended = view?.entries.filter((e) => e.type === "task_end").length ?? 0;
+  useEffect(() => recheckFiles(), [ended]);
   // `/context` answered: the card shows, its context section open.
   const asked = view?.asked?.at;
   useEffect(() => {
@@ -96,11 +104,14 @@ export function SessionPage({ s }: { s: ListSession }) {
           </button>
         </GlassBar>
         {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
-        <div className={`dwrap ${dock ? "dock" : ""}`}>
-          <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
-          {view && info && <Inspector s={s} view={view} />}
-          {view && background && <Background s={s} view={view} />}
-        </div>
+        <ContentScope value={scope}>
+          {/* Right-click on selected text: Copy (anything with a menu of its own shows that instead). */}
+          <div className={`dwrap ${dock ? "dock" : ""}`} onContextMenu={() => selectionMenu(st)}>
+            <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
+            {view && info && <Inspector s={s} view={view} />}
+            {view && background && <Background s={s} view={view} />}
+          </div>
+        </ContentScope>
       </div>
       {browser && (
         <BrowserPanel

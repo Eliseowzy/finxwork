@@ -491,6 +491,8 @@ fn build_prompt(
         project_root,
         git_branch: project_root.and_then(instructions::git_branch),
         date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        // The desktop app being connected, as for the browser's and computer use's defaults.
+        in_app: deps.browser_pool.as_ref().is_some_and(|p| p.has_host()),
     })
     .map_err(|e| KernelError::Other(format!("cannot build the system prompt: {e}")))?;
     Ok(BuiltPrompt {

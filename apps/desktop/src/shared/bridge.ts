@@ -11,7 +11,17 @@ import type { SearchEngine } from "./search";
 
 export type PlatformId = "mac" | "win" | "linux";
 
-export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean } | { separator: true };
+/** A native menu's item: `icon` a PNG data URL drawn before the label, `submenu` items it opens to (its own id unused). */
+export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; submenu?: MenuItem[] } | { separator: true };
+
+/** A path a reply wrote, looked up under its session's folder: absolute, relative when it is under the folder, and what it is (null: nothing there). */
+export type PathInfo = { path: string; rel: string | null; kind: "file" | "folder" | null };
+
+/** How a file a reply pointed at was opened, or why it was not. "revealed": shown in the file manager, as opening it would run it. */
+export type OpenFileResult = { ok: true; how: "editor" | "app" | "folder" | "revealed" } | { ok: false; reason: "missing" | "failed" };
+
+/** An editor installed here, for the "Open with" menu: its bundle id, name and icon, and whether it opens folders. */
+export type EditorInfo = { id: string; name: string; icon: string | null; folders: boolean };
 
 /** Commands from the app menu, handled by the main window's page. */
 export type Command =
@@ -56,6 +66,8 @@ export type Preferences = {
   searchEngine: string;
   /** The search engines the person added, beside the built-in ones. */
   searchEngines: SearchEngine[];
+  /** The editor a reply's text files open in on a click (a bundle id); unset, their default app. */
+  openWith?: string;
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
@@ -229,6 +241,14 @@ export type Bridge = {
   pickFiles(): Promise<PickedFile[]>;
   /** Shows a file or folder in Finder (Explorer, the file manager). */
   revealPath(path: string): void;
+  /** Paths a reply wrote, looked up under `base` (its session's folder): what each is, never what is in it. */
+  pathInfo(base: string, paths: string[]): Promise<PathInfo[]>;
+  /** Opens a file or folder a reply pointed at: in `app` ("system" or an editor's id), else the default way; at `line` where an editor takes one. */
+  openFile(path: string, options?: { line?: number; app?: string }): Promise<OpenFileResult>;
+  /** The editors installed here. */
+  editors(): Promise<EditorInfo[]>;
+  /** A web page in a conversation's embedded browser: the tab already at the address, else a new one. */
+  openURL(session: string, url: string): Promise<void>;
   /** Opens a folder itself in Finder (Explorer, the file manager). */
   openFolder(path: string): void;
   /** A new terminal window, its shell in this folder. */

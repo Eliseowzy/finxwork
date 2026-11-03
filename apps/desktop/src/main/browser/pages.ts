@@ -323,6 +323,17 @@ export function openBrowser(finxSession = homeBrowserSession) {
   else createHomeTab("about:blank", finxSession);
 }
 
+/**
+ * A page the person opened from a conversation, as a link in a reply (content-actions-design
+ * §5.2): the conversation's tab already at that address, else a new tab of its own.
+ */
+export function openURL(finxSession: string, url: string) {
+  const same = (a: string, b: string) => a.replace(/\/$/, "") === b.replace(/\/$/, "");
+  const existing = currentTabs().find((t) => t.session === finxSession && same(t.url, url));
+  if (existing) showTab(existing.targetId);
+  else createHomeTab(url, finxSession);
+}
+
 function createHomeTab(url: string, owner = homeBrowserSession) {
   const targetId = randomUUID();
   electronPages.create({ targetId, url, finxSession: owner }, {
