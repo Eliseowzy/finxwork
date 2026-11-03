@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { BrowserWindow, ipcMain, session, WebContentsView, type WebContents } from "electron";
+import { app, BrowserWindow, ipcMain, session, WebContentsView, type WebContents } from "electron";
 import { homeBrowserSession } from "../../shared/bridge";
 import type { BrowserPanel, BrowserTab, BrowserTabCommand } from "../../shared/bridge";
 import type { Download, Page, PageEvents, PageHost } from "./shim";
@@ -15,7 +15,8 @@ import { webComment, type BrowserComment } from "../../shared/annotations";
 // its debugger attached, on a partition of its own, apart from the app's pages and from the
 // managed browser's profile. A window's page reports where its browser panel is and which
 // session it shows; the tab that session shows goes there. Tabs nobody shows wait in a
-// hidden window, so they keep painting for snapshots and screenshots.
+// hidden window, so they keep painting for snapshots and screenshots. Once the app quits
+// nothing waits there any more: tabs close with the windows that show them.
 
 export const partition = "persist:finx-browser";
 
@@ -30,6 +31,8 @@ const shown = new Map<string, string>();
 /** Each window's browser panel, as its page reports it. */
 const panels = new Map<BrowserWindow, BrowserPanel>();
 let parking: BrowserWindow | null = null;
+/** The app is quitting: no hidden window is made again, or the app could never finish. */
+let quitting = false;
 let seq = 0;
 let downloadDir: string | null = null;
 let reportDownload: ((d: Download) => void) | null = null;
@@ -92,6 +95,20 @@ function browserSession() {
   });
   return s;
 }
+
+/**
+ * The app goes: the tabs no panel shows close, and so does each shown one when its window
+ * does. A quit marks it (`before-quit`); an update's install calls it first, as it closes
+ * every window before it quits.
+ */
+export function endBrowser() {
+  quitting = true;
+  layout();
+}
+app.on("before-quit", endBrowser);
+
+/** The hidden window tabs wait in: a window of the app's, never the person's. */
+export const isParking = (win: BrowserWindow) => win === parking;
 
 function parkingWindow(): BrowserWindow {
   if (parking && !parking.isDestroyed()) return parking;
@@ -211,16 +228,22 @@ function close(targetId: string) {
     if (next) shown.set(tab.finxSession, next.targetId);
     else shown.delete(tab.finxSession);
   }
+  discard(tab);
+  layout();
+}
+
+/** Takes a tab out of every window and closes its page. */
+function discard(tab: Tab) {
+  tabs.delete(tab.targetId);
   for (const win of BrowserWindow.getAllWindows()) if (!win.isDestroyed()) win.contentView.removeChildView(tab.view);
   const wc = tab.view.webContents;
   if (!wc.isDestroyed()) {
     if (wc.debugger.isAttached()) wc.debugger.detach();
     wc.close();
   }
-  layout();
 }
 
-/** Puts each tab where it belongs: in a panel that shows its session, or in the hidden window. */
+/** Puts each tab where it belongs: in a panel that shows its session, or in the hidden window (closed, once the app quits). */
 function layout() {
   const placed = new Map<string, { win: BrowserWindow; bounds: Electron.Rectangle }>();
   for (const [win, panel] of panels) {
@@ -232,6 +255,10 @@ function layout() {
   }
   for (const tab of tabs.values()) {
     const place = placed.get(tab.targetId);
+    if (!place && quitting) {
+      discard(tab);
+      continue;
+    }
     const win = place?.win ?? parkingWindow();
     for (const other of BrowserWindow.getAllWindows()) if (other !== win && !other.isDestroyed()) other.contentView.removeChildView(tab.view);
     if (!win.contentView.children.includes(tab.view)) win.contentView.addChildView(tab.view);
@@ -321,6 +348,17 @@ export function openBrowser(finxSession = homeBrowserSession) {
   const existing = currentTabs().find((t) => t.session === finxSession && t.shown);
   if (existing) showTab(existing.targetId);
   else createHomeTab("about:blank", finxSession);
+}
+
+/**
+ * A page the person opened from a conversation, as a link in a reply (content-actions-design
+ * §5.2): the conversation's tab already at that address, else a new tab of its own.
+ */
+export function openURL(finxSession: string, url: string) {
+  const same = (a: string, b: string) => a.replace(/\/$/, "") === b.replace(/\/$/, "");
+  const existing = currentTabs().find((t) => t.session === finxSession && same(t.url, url));
+  if (existing) showTab(existing.targetId);
+  else createHomeTab(url, finxSession);
 }
 
 function createHomeTab(url: string, owner = homeBrowserSession) {

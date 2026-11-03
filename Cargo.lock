@@ -907,6 +907,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "dirs",
+ "encoding_rs",
  "finx-browser",
  "finx-desktop",
  "finx-llm",

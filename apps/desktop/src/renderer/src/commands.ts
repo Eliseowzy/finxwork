@@ -65,6 +65,8 @@ export function run(st: Store, c: Command) {
     case "openProject":
       return openProject(st);
     case "search":
+      // In the file panel's editor, ⌘F is the editor's own Find (file-panel-design §5).
+      if (document.activeElement?.closest(".cm-editor")) return void window.dispatchEvent(new Event("finx:find"));
       return st.set({ searching: true });
     case "nextAttention":
       return next(st, needsAttention);

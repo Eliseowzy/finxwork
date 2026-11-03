@@ -16,6 +16,7 @@ use crate::api::error_code;
 use crate::api::method;
 use crate::customize;
 use crate::event::Event;
+use crate::files;
 use crate::op::Op;
 
 /// Registers `T` and returns its definition name.
@@ -165,6 +166,10 @@ pub fn document() -> Value {
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
         (method::BROWSER_SITE_ICON, Some(name::<api::BrowserSiteIconParams>(g)), name::<api::BrowserSiteIconResult>(g)),
+        (method::FILES_LIST, Some(name::<files::FilesListParams>(g)), name::<files::FilesListResult>(g)),
+        (method::FILES_READ, Some(name::<files::FilesReadParams>(g)), name::<files::FilesReadResult>(g)),
+        (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
+        (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),
@@ -177,6 +182,7 @@ pub fn document() -> Value {
         (method::SKILLS_CHANGED, name::<customize::SkillsChangedParams>(g)),
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
+        (method::FILES_CHANGED, name::<files::FilesChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
         (

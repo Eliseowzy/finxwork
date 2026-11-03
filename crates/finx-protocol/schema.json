@@ -86,6 +86,30 @@
       "$ref": "#/definitions/Event"
     },
     {
+      "$ref": "#/definitions/FilesChangedParams"
+    },
+    {
+      "$ref": "#/definitions/FilesListParams"
+    },
+    {
+      "$ref": "#/definitions/FilesListResult"
+    },
+    {
+      "$ref": "#/definitions/FilesReadParams"
+    },
+    {
+      "$ref": "#/definitions/FilesReadResult"
+    },
+    {
+      "$ref": "#/definitions/FilesWatchParams"
+    },
+    {
+      "$ref": "#/definitions/FilesWriteParams"
+    },
+    {
+      "$ref": "#/definitions/FilesWriteResult"
+    },
+    {
       "$ref": "#/definitions/InitializeParams"
     },
     {
@@ -779,6 +803,10 @@
     "BrowserSiteIconParams": {
       "description": "Parameters of `browser/site_icon`.",
       "properties": {
+        "cached": {
+          "description": "Only an icon already kept, however old: the site is not asked, now or later. For icons shown beside what a model wrote, which must not reach the sites it names.",
+          "type": "boolean"
+        },
         "origin": {
           "description": "The site as its permission is kept: an origin such as `https://github.com`.",
           "type": "string"
@@ -3097,6 +3125,321 @@
           "description": "Set when the extension is connected but cannot be used until one side is updated."
         }
       },
+      "type": "object"
+    },
+    "FileEntry": {
+      "description": "One entry of a folder.",
+      "properties": {
+        "dir": {
+          "description": "A folder (or a link to one).",
+          "type": "boolean"
+        },
+        "link": {
+          "description": "A symbolic link.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "description": "In bytes; 0 for a folder.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dir",
+        "name",
+        "size"
+      ],
+      "type": "object"
+    },
+    "FileImage": {
+      "description": "An image's bytes.",
+      "properties": {
+        "data": {
+          "description": "Base64.",
+          "type": "string"
+        },
+        "mime_type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "mime_type"
+      ],
+      "type": "object"
+    },
+    "FileKind": {
+      "description": "What a file is, as far as showing it goes.",
+      "oneOf": [
+        {
+          "enum": [
+            "text"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "PNG, JPEG, GIF or WebP, by its signature.",
+          "enum": [
+            "image"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Neither text nor a known image.",
+          "enum": [
+            "binary"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Text over 5 MB or an image over 10 MB: only its size is given.",
+          "enum": [
+            "too_large"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "FileWriteStatus": {
+      "description": "How a write went.",
+      "oneOf": [
+        {
+          "enum": [
+            "saved"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The file is no longer the base the text was edited from (or no longer there).",
+          "enum": [
+            "conflict"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Not written: finx's own data, or a file that is not UTF-8 text.",
+          "enum": [
+            "refused"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "FilesChangedParams": {
+      "description": "Server notification `files/changed`: watched files and folders that changed, gathered for a moment.",
+      "properties": {
+        "paths": {
+          "description": "As they were watched, made absolute.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "paths",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "FilesListParams": {
+      "description": "Parameters of `files/list`.",
+      "properties": {
+        "path": {
+          "default": "",
+          "description": "A folder: absolute, or relative to the session's folder; empty for the folder itself.",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "FilesListResult": {
+      "description": "The result of `files/list`.",
+      "properties": {
+        "entries": {
+          "description": "Folders first, then files, each by name (numbers by value, case aside). `.git` and `.DS_Store` are left out.",
+          "items": {
+            "$ref": "#/definitions/FileEntry"
+          },
+          "type": "array"
+        },
+        "path": {
+          "description": "The folder, absolute.",
+          "type": "string"
+        },
+        "truncated": {
+          "description": "The folder had more entries than are given.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entries",
+        "path",
+        "truncated"
+      ],
+      "type": "object"
+    },
+    "FilesReadParams": {
+      "description": "Parameters of `files/read`.",
+      "properties": {
+        "path": {
+          "description": "Absolute, or relative to the session's folder.",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "FilesReadResult": {
+      "description": "The result of `files/read`.",
+      "properties": {
+        "encoding": {
+          "description": "How the text was decoded: `utf-8`, `utf-8-bom`, `utf-16le`, `utf-16be` or `gb18030`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hash": {
+          "description": "SHA-256 of the file's bytes, in hex: the base `files/write` compares with. Not set for a file too large to read.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "image": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/FileImage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "#/definitions/FileKind"
+        },
+        "path": {
+          "description": "The file, absolute.",
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The text, decoded, without a byte-order mark; line ends as they are.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "writable": {
+          "description": "The text can be saved back with `files/write`: UTF-8, and not finx's own data.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "size",
+        "writable"
+      ],
+      "type": "object"
+    },
+    "FilesWatchParams": {
+      "description": "Parameters of `files/watch`.",
+      "properties": {
+        "paths": {
+          "description": "Files and folders to hear about (a folder: when its entries change). Replaces what this connection watched for the session; empty stops.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "paths",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "FilesWriteParams": {
+      "description": "Parameters of `files/write`.",
+      "properties": {
+        "base_hash": {
+          "description": "The hash of the version the text was edited from (`files/read`, or the last save): when the file on disk is no longer that version, nothing is written. Not set: written whatever is there (the person chose to).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Absolute, or relative to the session's folder.",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "session_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "FilesWriteResult": {
+      "description": "The result of `files/write`.",
+      "properties": {
+        "hash": {
+          "description": "Saved: the new file's hash, the next base. Conflict: the hash of what is on disk now; not set when the file is gone.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "description": "Why it was refused.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/definitions/FileWriteStatus"
+        }
+      },
+      "required": [
+        "status"
+      ],
       "type": "object"
     },
     "GrantAuthority": {
@@ -7276,6 +7619,22 @@
       "params": "CredentialsSetParams",
       "result": "Empty"
     },
+    "files/list": {
+      "params": "FilesListParams",
+      "result": "FilesListResult"
+    },
+    "files/read": {
+      "params": "FilesReadParams",
+      "result": "FilesReadResult"
+    },
+    "files/watch": {
+      "params": "FilesWatchParams",
+      "result": "Empty"
+    },
+    "files/write": {
+      "params": "FilesWriteParams",
+      "result": "FilesWriteResult"
+    },
     "initialize": {
       "params": "InitializeParams",
       "result": "InitializeResult"
@@ -7419,6 +7778,7 @@
     "browser/cdp": "BrowserCdpParams",
     "browser/changed": "BrowserStatus",
     "config/changed": "ConfigChangedParams",
+    "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",
     "models/changed": "Empty",

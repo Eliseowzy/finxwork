@@ -51,6 +51,10 @@ type UI = {
   browser: boolean;
   /** The browser's panel takes all of the window but the sidebar, the conversation set aside. */
   browserMax: boolean;
+  /** The file panel is shown, in the same place (file-panel-design §3.1). */
+  files: boolean;
+  /** The file panel takes all of the window but the sidebar. */
+  filesMax: boolean;
   sidebar: boolean;
   /** What shows over the conversation for now, there being no room for it beside it (layout.ts). */
   peek: Peek;
@@ -156,6 +160,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       agent: null,
       browser: true,
       browserMax: false,
+      files: false,
+      filesMax: false,
       sidebar: s.sidebar ?? true,
       peek: null,
       view: s.view ?? listView(),

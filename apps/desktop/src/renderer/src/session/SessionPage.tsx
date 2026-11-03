@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { SidebarToggle } from "../components";
@@ -6,10 +6,14 @@ import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { layoutOf, setCard } from "../layout";
 import { useStore } from "../store";
+import { FilePanel } from "../files/FilePanel";
+import { filesChanged, setFilesConnection } from "../files/state";
 import { Background } from "./Background";
 import { BrowserPanel, useBrowserTabs } from "./Browser";
 import { Chat } from "./Chat";
+import { selectionMenu } from "./contentMenus";
 import { Inspector } from "./Inspector";
+import { ContentScope, recheckFiles } from "./scope";
 import { useSession } from "./useSession";
 
 // A session: its conversation, the composer and the bar of a running task,
@@ -23,19 +27,33 @@ export function SessionPage({ s }: { s: ListSession }) {
   const running = view ? runningAgents(view).length : 0;
   const browserTabs = useBrowserTabs().filter((t) => t.session === s.session_id);
   const background = st.background && agents > 0;
-  // One panel on the right at a time: the background panel when asked for, else the browser.
-  const browser = st.browser && browserTabs.length > 0 && !background;
+  // One panel on the right at a time: the background panel when asked for, else the file panel
+  // when opened (file-panel-design §3.1), else the browser.
+  const files = st.files && !background && !!view;
+  const browser = st.browser && browserTabs.length > 0 && !background && !files;
   // Taking the window, the panel leaves the conversation mounted but out of sight, where it was.
-  const max = browser && st.browserMax;
+  const max = (browser && st.browserMax) || (files && st.filesMax);
   const layout = layoutOf(st);
-  const info = layout.card !== "hidden" && !background && !browser;
+  const info = layout.card !== "hidden" && !background && !browser && !files;
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
   const dock = (info && layout.card === "docked") || (background && layoutOf({ ...st, inspector: true, peek: null }).card === "docked");
   // The first page the session opens brings the browser panel out.
   const hasTabs = browserTabs.length > 0;
   useEffect(() => {
-    if (hasTabs) st.set({ browser: true, background: false });
+    // Not over the file panel, which the person opened.
+    if (hasTabs && !st.files) st.set({ browser: true, background: false });
   }, [hasTabs, s.session_id]);
+  // What finx says changed on disk reaches the file panel's files, whichever session they are in.
+  useEffect(() => {
+    setFilesConnection(st.rpc);
+    return st.rpc?.on("files/changed", (p) => filesChanged(p.session_id, p.paths));
+  }, [st.rpc]);
+  // What the conversation's content belongs to (content-actions-design §3.4): its paths are under the session's folder.
+  const cwd = view?.info.cwd;
+  const scope = useMemo(() => (cwd ? { session: s.session_id, cwd } : null), [s.session_id, cwd]);
+  // A task that ended may have made or removed the files the replies point at.
+  const ended = view?.entries.filter((e) => e.type === "task_end").length ?? 0;
+  useEffect(() => recheckFiles(), [ended]);
   // `/context` answered: the card shows, its context section open.
   const asked = view?.asked?.at;
   useEffect(() => {
@@ -44,7 +62,7 @@ export function SessionPage({ s }: { s: ListSession }) {
     st.set({ contextOpen: true });
   }, [asked]);
   return (
-    <div className={`spage ${browser ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
+    <div className={`spage ${browser || files ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -52,6 +70,16 @@ export function SessionPage({ s }: { s: ListSession }) {
           <div className="ctitle">
             <h2 title={displayTitle(s)}>{displayTitle(s)}</h2>
           </div>
+          {/* A toolbar button as the sidebar's toggle is, highlighted while the info shows. */}
+          <button
+            className={`tb ${info ? "on" : ""}`}
+            title={t("page.infoTip")}
+            aria-label={t("page.info")}
+            aria-pressed={info}
+            onClick={() => setCard(st, !info)}
+          >
+            <Icon name="infoCard" />
+          </button>
           {/* The background panel's button, with how many tasks run; only for a session that has some. */}
           {agents > 0 && (
             <button
@@ -65,43 +93,58 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
-          {/* The browser panel's button; a session with no pages yet gets a blank tab to start from. */}
-          {window.finx && (
+          {/* The browser panel's button; a session with no pages yet gets a blank tab to start from. While the
+              panel is open it sits at the panel's right end instead, where it puts the panel away. */}
+          {window.finx && !browser && (
             <button
-              className={`tb ${browser ? "on" : ""}`}
+              className="tb"
               title={t("browser.builtIn")}
               aria-label={t("browser.builtIn")}
-              aria-pressed={browser}
+              aria-pressed={false}
               onClick={() => {
-                if (browser) st.set({ browser: false, browserMax: false });
-                else if (hasTabs) st.set({ browser: true, background: false });
+                if (hasTabs) st.set({ browser: true, background: false, files: false, filesMax: false });
                 else void st.run(async () => {
                   await window.finx?.openBrowser(s.session_id);
-                  st.set({ browser: true, background: false });
+                  st.set({ browser: true, background: false, files: false, filesMax: false });
                 });
               }}
             >
               <Icon name="globe" />
             </button>
           )}
-          {/* A toolbar button as the sidebar's toggle is, highlighted while the info shows. */}
-          <button
-            className={`tb ${info ? "on" : ""}`}
-            title={t("page.infoTip")}
-            aria-label={t("page.info")}
-            aria-pressed={info}
-            onClick={() => setCard(st, !info)}
-          >
-            <Icon name="infoCard" />
-          </button>
+          {/* The file panel's button: the session's folder and the files opened from it. While the panel is
+              open it sits at the panel's right end instead, where it puts the panel away (file-panel-design §3.2). */}
+          {!files && (
+            <button
+              className="tb"
+              title={t("files.title")}
+              aria-label={t("files.title")}
+              aria-pressed={false}
+              onClick={() => st.set({ files: true, browser: false, browserMax: false, background: false })}
+            >
+              <Icon name="folder" />
+            </button>
+          )}
         </GlassBar>
         {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
-        <div className={`dwrap ${dock ? "dock" : ""}`}>
-          <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
-          {view && info && <Inspector s={s} view={view} />}
-          {view && background && <Background s={s} view={view} />}
-        </div>
+        <ContentScope value={scope}>
+          {/* Right-click on selected text: Copy (anything with a menu of its own shows that instead). */}
+          <div className={`dwrap ${dock ? "dock" : ""}`} onContextMenu={() => selectionMenu(st)}>
+            <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
+            {view && info && <Inspector s={s} view={view} />}
+            {view && background && <Background s={s} view={view} />}
+          </div>
+        </ContentScope>
       </div>
+      {files && view && (
+        <FilePanel
+          session={s.session_id}
+          cwd={view.info.cwd}
+          max={st.filesMax}
+          onMax={(m) => st.set({ filesMax: m })}
+          onClose={() => st.set({ files: false, filesMax: false })}
+        />
+      )}
       {browser && (
         <BrowserPanel
           session={s.session_id}

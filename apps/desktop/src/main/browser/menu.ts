@@ -18,7 +18,7 @@ type Viewport = BrowserViewport;
 const viewportOf = new Map<string, Viewport>();
 
 /** The browser that opens https links on this machine, by name, when the system says. */
-function defaultBrowser(): string | null {
+export function defaultBrowser(): string | null {
   try {
     const name = app.getApplicationNameForProtocol("https://").replace(/\.app$/, "").trim();
     return name || null;

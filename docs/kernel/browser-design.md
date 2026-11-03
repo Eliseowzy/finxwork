@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.0 |
-| 日期 | 2026-11-02 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2） |
+| 版本 | v1.3 |
+| 日期 | 2026-11-03 |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明）。v1.3：桌面端退出时不再重建停靠窗口，面板显示过网页后也能一次退出（§8.3.4） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -665,7 +665,12 @@ pub trait Backend: Send + Sync {
 
 - `Target.createTarget` 额外带 `finxSession`（会话 id；子智能体带主会话的 id），只在内嵌后端上加。主进程据此把标签页放进显示这个会话的窗口。
 - **浏览器面板**：会话页右侧的一栏，与后台任务面板共用位置。会话第一次打开网页时自动展开；顶栏是本会话的标签页和当前网址，可以收起。渲染进程报告面板占的矩形，主进程把当前标签页的视图摆在那里。
-- 不在显示的会话的标签页照常运行，只是不摆进窗口。
+  - 面板打开时，会话页（和新会话页）顶栏的浏览器按钮移到面板标签条最右端，保持高亮，取代原来的 ×，左边是放大或还原；点它收起面板，标签页保留，按钮回到顶栏（2026-11-03，用户的要求，与文件面板一致，file-panel-design §3.1）。
+- 不在显示的会话的标签页照常运行，只是不摆进窗口：它们停在主进程的一个隐藏窗口（停靠窗口，1280×800）里，照样绘制，快照和截图都能取。macOS 上只关主窗口、应用不退出时，面板里的标签页也挪进停靠窗口，智能体可以接着用。
+- **退出**：应用一开始退出就不再建停靠窗口，没有面板显示的标签页直接关掉，显示中的标签页随它所在的窗口关闭。否则 Electron 先关掉停靠窗口，主窗口随后关闭时又把标签页挪进一个新建的停靠窗口，应用就退不完（`main/browser/pages.ts` 的 `endBrowser`）。
+  - ⌘Q、Dock 退出、SIGTERM 在 `before-quit` 里开始；
+  - 安装更新时 `quitAndInstall` 先关所有窗口、再等 `window-all-closed`，`before-quit` 在窗口关完之后才发，所以调用它之前先开始；
+  - Windows 和 Linux 上关掉最后一个窗口就退出。隐藏的停靠窗口也算窗口，在它关掉之前不会有 `window-all-closed`，所以某个窗口关闭后，如果剩下的只有停靠窗口，就直接退出。
 - **用户接手**：用户在面板里直接点、输入即可。智能体下一次调用若页面已变化，§7.4 的再核对会报"页面已变化"。
 - **登录状态**：内嵌浏览器的 cookie 在 `persist:finx-browser` 里，与托管浏览器的用户目录、与应用自己的页面都分开。
 
@@ -906,7 +911,7 @@ action_timeout_secs = 10
   - 有缓存就立刻返回；超过一周的也先返回旧的，同时在后台重找，下次显示用新的，界面从不因为过期而等待。
   - 一个站点都没连上（断网）时什么也不记，下次显示再找；只有网站回答了（哪怕是 404）才记下"没有"。
   - 只有第一次显示时要等探测，实测常见网站 0.1–2.4 秒，之后读缓存约 2 毫秒。
-- **协议**：`browser/site_icon`，参数 `{ origin }`，结果 `{ icon? }`（`data:` URI）。
+- **协议**：`browser/site_icon`，参数 `{ origin, cached? }`，结果 `{ icon? }`（`data:` URI）。`cached` 为 true 时只给已经存着的图标（过期的也给），不去网站找，也不在后台重找：会话内容区里模型写的链接用它，渲染回复不访问链接里的网站（content-actions-design §9.2）。
 
 ## 11. 测试
 
@@ -958,6 +963,7 @@ action_timeout_secs = 10
 | `finx exec` | 没有配置 `browser.sites` 时访问外部站点得到说明配置方法的结果；配置以后能完成任务 |
 | 用户自己的 Chrome（三期） | 真实 Chrome 用 `Extensions.loadUnpacked` 装入扩展，ID 与 key 一致；扩展经 `install` 写的清单拉起真实的 `finx browser native-host`，宿主通过可执行文件核对连上 `finx serve`；会话打开页面、点击、看到结果，结果里说明这是用户的 Chrome；用户自己的标签页不出现在结果里；会话关闭后只关掉智能体的标签页（`crates/finx-cli/tests/e2e_browser_extension.rs`） |
 | 冒充扩展宿主 | 不是 finx 程序的连接声明 `kind: "extension"` 被拒，池里没有扩展 |
+| 面板显示过网页后退出 | 内置浏览器面板打开本地网页后发 SIGTERM，5 秒内正常退出，不用 SIGKILL 兜底；先关主窗口时（macOS），应用和标签页都还在，再发 SIGTERM 同样正常退出（`apps/desktop/e2e/browser-quit.mjs`，`FINXWORK_E2E_APP` 可换成打包版） |
 | 设置里连接浏览器 | 私有 HOME 下启动桌面端，"设置 › 浏览器"显示未连接；点连接后写好清单、复制扩展；真实 Chrome 从那个文件夹装入扩展后，引导显示已连接并写入配置；状态行显示"Google Chrome 156 · 使用中"；停止使用后配置改回 `auto`；Chrome 退出后显示未连接（`apps/desktop/e2e/system-browser.mjs`） |
 
 CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收时显示窗口。

@@ -3,17 +3,19 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import { splitBlocks, withoutOpenTable } from "@finx/client";
-import { Code } from "./Code";
+import { CodeBlock, InlineCode, Link } from "./content";
+import { DraftContext } from "./scope";
 
 /**
  * The model's reply as GitHub Markdown, rendered as React elements (raw HTML
- * stays text). Links open in the browser, http and https only; images show
- * their alt text, so a reply never loads anything.
+ * stays text). Web pages, files and code blocks become what they point at
+ * (content-actions-design): only http and https links are real links; images
+ * show their alt text, so a reply never loads anything.
  */
 export function Markdown({ text }: { text: string }) {
   return (
     <div className="md sel-text">
-      <ReactMarkdown remarkPlugins={plugins} components={components}>
+      <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={asWritten}>
         {text}
       </ReactMarkdown>
     </div>
@@ -34,14 +36,19 @@ export function DraftMarkdown({ text }: { text: string }) {
       {blocks.map((b, i) => (
         <Block key={i} text={b} />
       ))}
-      {last.trim() !== "" && <Block key={blocks.length} text={remend(last, { linkMode: "text-only", katex: false })} />}
+      {/* Still being written: nothing in it acts yet. */}
+      {last.trim() !== "" && (
+        <DraftContext.Provider value={true}>
+          <Block key={blocks.length} text={remend(last, { linkMode: "text-only", katex: false })} />
+        </DraftContext.Provider>
+      )}
     </div>
   );
 }
 
 const Block = memo(function Block({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={plugins} components={components}>
+    <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={asWritten}>
       {text}
     </ReactMarkdown>
   );
@@ -49,14 +56,29 @@ const Block = memo(function Block({ text }: { text: string }) {
 
 const web = /^https?:\/\//i;
 
+/** Targets as the model wrote them: a link to a path or `README.md:12` would otherwise be dropped; only http and https ever become real links. */
+const asWritten = (url: string) => url;
+
+type HNode = { type: string; tagName?: string; value?: string; properties?: Record<string, unknown>; children?: HNode[] };
+const textOf = (n: HNode): string => (n.type === "text" ? (n.value ?? "") : (n.children ?? []).map(textOf).join(""));
+
+/** A `pre`'s code: its language (from `language-*`) and text. */
+function codeOf(pre: HNode | undefined): { lang: string; text: string } | null {
+  const code = pre?.children?.find((c) => c.type === "element" && c.tagName === "code");
+  if (!code) return null;
+  const names = code.properties?.className;
+  const lang = (Array.isArray(names) ? names : [names]).map((c) => /^language-(\S+)/.exec(String(c ?? ""))?.[1]).find(Boolean) ?? "";
+  return { lang, text: textOf(code).replace(/\n$/, "") };
+}
+
 const components: Components = {
-  a: ({ href, children }) =>
-    href && web.test(href) ? <a href={href} target="_blank" rel="noreferrer">{children}</a> : <span>{children}</span>,
+  a: ({ href, children }) => <Link href={href}>{children}</Link>,
   img: ({ alt }) => <span>{alt}</span>,
-  // A fenced block that names its language is coloured; inline code and other blocks stay plain.
-  code: ({ className, children }) => {
-    const lang = /^language-(\S+)/.exec(className ?? "")?.[1];
-    return <code className={className}>{lang && typeof children === "string" ? <Code text={children.replace(/\n$/, "")} lang={lang} /> : children}</code>;
+  // Inline code only: a block's is drawn by its `pre`, coloured when it names its language.
+  code: ({ children }) => <InlineCode>{children}</InlineCode>,
+  pre: ({ node, children }) => {
+    const code = codeOf(node as HNode | undefined);
+    return code ? <CodeBlock lang={code.lang} text={code.text} /> : <pre>{children}</pre>;
   },
   table: ({ children }) => (
     <div className="md-table">

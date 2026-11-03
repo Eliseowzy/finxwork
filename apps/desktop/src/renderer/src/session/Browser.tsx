@@ -204,8 +204,9 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
         <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
           <Icon name={max ? "shrink" : "expand"} />
         </button>
-        <button className="tb" aria-label={t("browser.close")} title={t("browser.close")} onClick={onClose}>
-          <Icon name="x" />
+        {/* The page bar's Browser button, moved here while the panel is open: it puts the panel away, its tabs kept. */}
+        <button className="tb on" aria-label={t("browser.hide")} title={t("browser.hide")} aria-pressed onClick={onClose}>
+          <Icon name="globe" />
         </button>
       </div>
       <div className="brp-bar">

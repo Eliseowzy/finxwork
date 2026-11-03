@@ -8,6 +8,8 @@ import { useStore } from "./store";
 // initial).
 
 const asked = new Map<string, Promise<string | null>>();
+/** Asked for only what finx keeps (a reply's links, content-actions-design §5.1): the site itself is never asked. */
+const kept = new Map<string, Promise<string | null>>();
 
 /** The origin of an https URL, whose site may have an icon; null for anything else. */
 export function siteOrigin(url: string): string | null {
@@ -19,8 +21,11 @@ export function siteOrigin(url: string): string | null {
   }
 }
 
-/** The site's icon as a data URL once finx gives it; null until then, or when it has none. With `el`, asked only once that is on screen. */
-export function useSiteIcon(origin: string | null, el?: RefObject<Element | null>): string | null {
+/**
+ * The site's icon as a data URL once finx gives it; null until then, or when it has none. With
+ * `el`, asked only once that is on screen. `cached`: only an icon finx already keeps.
+ */
+export function useSiteIcon(origin: string | null, el?: RefObject<Element | null>, cached = false): string | null {
   const st = useStore();
   const [icon, setIcon] = useState<string | null>(null);
   const [seen, setSeen] = useState(!el);
@@ -35,27 +40,28 @@ export function useSiteIcon(origin: string | null, el?: RefObject<Element | null
     setIcon(null);
     const rpc = st.rpc;
     if (!rpc || !seen || !origin) return;
-    let ask = asked.get(origin);
+    const kind = cached ? kept : asked;
+    let ask = asked.get(origin) ?? kind.get(origin);
     if (!ask) {
-      ask = rpc.request("browser/site_icon", { origin }).then(
+      ask = rpc.request("browser/site_icon", cached ? { origin, cached: true } : { origin }).then(
         (r) => r.icon ?? null,
-        () => (asked.delete(origin), null),
+        () => (kind.delete(origin), null),
       );
-      asked.set(origin, ask);
+      kind.set(origin, ask);
     }
     let live = true;
     void ask.then((src) => live && setIcon(src));
     return () => {
       live = false;
     };
-  }, [st.rpc, seen, origin]);
+  }, [st.rpc, seen, origin, cached]);
   return icon;
 }
 
-/** A site's icon, or `fallback` until it comes or when there is none; asked once it is on screen. */
-export function SiteIcon({ origin, fallback, className = "" }: { origin: string | null; fallback: ReactNode; className?: string }) {
+/** A site's icon, or `fallback` until it comes or when there is none; asked once it is on screen (`cached`: only one finx keeps). */
+export function SiteIcon({ origin, fallback, className = "", cached = false }: { origin: string | null; fallback: ReactNode; className?: string; cached?: boolean }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const icon = useSiteIcon(origin, ref);
+  const icon = useSiteIcon(origin, ref, cached);
   const [broken, setBroken] = useState(false);
   return (
     <span className={`site-ic ${className}`} ref={ref}>

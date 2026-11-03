@@ -128,8 +128,11 @@ try {
   await page.run(`document.querySelector('.brp-addr').requestSubmit()`);
   await page.until("real page loaded", `document.querySelector('.brp-tab-t')?.textContent === 'Browser button test'`, 60000);
   await page.shot("home-browser");
-  await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);
-  await page.until("panel hidden", `!document.querySelector('.brp')`);
+  // While the panel is open, the Browser button is at its right end and puts it away.
+  const stripEnd = `[...document.querySelectorAll(".brp .brp-strip > button")].at(-1)`;
+  if (await page.run(`!!document.querySelector(${JSON.stringify(button)})`)) throw new Error("the bar's Browser button stayed while the panel is open");
+  await page.run(`(${stripEnd}).click()`);
+  await page.until("panel hidden", `!document.querySelector('.brp') && !!document.querySelector(${JSON.stringify(button)})`);
   await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);
   await page.until("tab restored", `document.querySelectorAll('.brp-tab').length === 1 && document.querySelector('.brp-tab-t')?.textContent === 'Browser button test'`, 60000);
   await page.run(`document.querySelector('.brp-tab-x').click()`);

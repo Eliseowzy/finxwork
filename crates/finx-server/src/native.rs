@@ -7,6 +7,10 @@ use finx_protocol::PROTOCOL_VERSION;
 use finx_protocol::api::AuthDeleteParams;
 use finx_protocol::api::AuthSetParams;
 use finx_protocol::api::BrowserSiteIconParams;
+use finx_protocol::files::FilesListParams;
+use finx_protocol::files::FilesReadParams;
+use finx_protocol::files::FilesWatchParams;
+use finx_protocol::files::FilesWriteParams;
 use finx_protocol::api::InitializeParams;
 use finx_protocol::api::InitializeResult;
 use finx_protocol::api::ModelsListResult;
@@ -460,6 +464,13 @@ impl NativeProtocol {
             method::SKILLS_REMOVE => self.call(id, params, conn, |server, p: SkillsRemoveParams| async move { server.skills_remove(p).await }),
             method::SKILLS_SET_ENABLED => {
                 self.call(id, params, conn, |server, p: SkillsSetEnabledParams| async move { server.skills_set_enabled(p).await })
+            }
+            method::FILES_LIST => self.call(id, params, conn, |server, p: FilesListParams| async move { server.files_list(p).await }),
+            method::FILES_READ => self.call(id, params, conn, |server, p: FilesReadParams| async move { server.files_read(p).await }),
+            method::FILES_WRITE => self.call(id, params, conn, |server, p: FilesWriteParams| async move { server.files_write(p).await }),
+            method::FILES_WATCH => {
+                let conn2 = conn.clone();
+                self.call(id, params, conn, move |server, p: FilesWatchParams| async move { server.files_watch(p, &conn2).await })
             }
             method::SKILLS_FILES => self.call(id, params, conn, |server, p: SkillsFilesParams| async move { server.skills_files(p).await }),
             method::SKILLS_READ => self.call(id, params, conn, |server, p: SkillsReadParams| async move { server.skills_read(p).await }),

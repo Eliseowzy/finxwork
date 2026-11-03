@@ -1,7 +1,8 @@
-import { app, BrowserWindow, screen, shell, type Rectangle } from "electron";
+import { app, BrowserWindow, screen, type Rectangle } from "electron";
 import os from "node:os";
 import path from "node:path";
 import { i18n, language } from "../shared/i18n";
+import { openExternal } from "./files";
 import { kernelKind } from "./kernel";
 import { platform } from "./platform";
 
@@ -26,12 +27,12 @@ function page(hash = ""): string {
 
 function secure(win: BrowserWindow) {
   const wc = win.webContents;
-  // Nothing but our own pages, ever; links open in the browser, https only.
+  // Nothing but our own pages, ever; links open in the browser, http and https only.
   wc.on("will-navigate", (e, url) => {
     if (!ours(url)) e.preventDefault();
   });
   wc.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith("https://")) shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) openExternal(url);
     return { action: "deny" };
   });
 }

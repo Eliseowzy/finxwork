@@ -91,6 +91,10 @@ pub(crate) enum HubCmd {
     Context {
         reply: oneshot::Sender<Option<finx_protocol::ContextReport>>,
     },
+    /// The session's files for the file panel (file-panel-design §9); `None` while it has no kernel.
+    FileScope {
+        reply: oneshot::Sender<Option<finx_core::files::FileScope>>,
+    },
     Close {
         reply: Option<oneshot::Sender<()>>,
     },
@@ -450,6 +454,9 @@ impl Hub {
             }
             HubCmd::Context { reply } => {
                 let _ = reply.send(self.kernel.as_ref().and_then(|kernel| kernel.context()));
+            }
+            HubCmd::FileScope { reply } => {
+                let _ = reply.send(self.kernel.as_ref().and_then(|kernel| kernel.file_scope()));
             }
             HubCmd::Close { reply } => {
                 self.close_reason = DetachReason::Closed;

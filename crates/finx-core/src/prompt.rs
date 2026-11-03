@@ -9,6 +9,9 @@ use crate::config::Config;
 use crate::instructions::InstructionFile;
 
 pub const BASE_PROMPT: &str = include_str!("prompts/base.md");
+/// How to write files and commands for the desktop app, which turns them into controls
+/// (content-actions-design §9.1).
+pub const APP_PROMPT: &str = include_str!("prompts/app.md");
 
 pub struct PromptInputs<'a> {
     pub config: &'a Config,
@@ -21,6 +24,8 @@ pub struct PromptInputs<'a> {
     pub git_branch: Option<String>,
     /// As [`date_text`] gives it.
     pub date: String,
+    /// The session starts while the desktop app is connected, where its replies are read.
+    pub in_app: bool,
 }
 
 /// A date as the model is given it, with its weekday: `2026-11-03 (Tuesday)`. Models often
@@ -43,6 +48,12 @@ pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
         None => BASE_PROMPT.to_string(),
     };
     let mut prompt = base.trim_end().to_string();
+    // Fixed text right after the base, so it stays in the cached prefix; a custom base gets it
+    // too, as it says how the app shows replies, not who the agent is.
+    if inputs.in_app {
+        prompt.push_str("\n\n");
+        prompt.push_str(APP_PROMPT.trim_end());
+    }
 
     let guidelines = inputs.tools.guidelines();
     if !guidelines.is_empty() {
@@ -131,9 +142,11 @@ mod tests {
             project_root: None,
             git_branch: None,
             date: "2026-10-28".into(),
+            in_app: false,
         })
         .unwrap();
         assert!(prompt.starts_with("You are FinxWork"));
+        assert!(!prompt.contains("In the FinxWork app"));
         let order = [
             "<tool_guidelines>",
             "<project_instructions path=\"/work/demo/AGENTS.md\">",
@@ -147,6 +160,31 @@ mod tests {
         assert!(prompt.contains("cwd: /work/demo"));
         assert!(prompt.contains("date: 2026-10-28"));
         assert!(prompt.contains("- Use read to view files"));
+    }
+
+    #[test]
+    fn the_app_section_follows_the_base_only_in_the_app() {
+        let env = LocalEnvironment::new(PathBuf::from("/work/demo"));
+        let tools = builtin_registry(BashTool::default());
+        let config = Config::default();
+        let prompt = build_system_prompt(&PromptInputs {
+            config: &config,
+            tools: &tools,
+            env: &env,
+            instructions: &[],
+            skills: "",
+            project_root: None,
+            git_branch: None,
+            date: "2026-11-03".into(),
+            in_app: true,
+        })
+        .unwrap();
+        let app = prompt.find("In the FinxWork app").expect("the app section");
+        assert!(prompt[..app].trim_end() == BASE_PROMPT.trim_end(), "right after the base");
+        assert!(app < prompt.find("<tool_guidelines>").unwrap());
+        let text = APP_PROMPT.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(text.contains("[prompt.rs](src/prompt.rs:11)"));
+        assert!(text.contains("```bash block, with no $ prompt"));
     }
 
     #[test]

@@ -35,6 +35,16 @@ async fn a_kept_icon_is_given_and_a_page_without_a_site_has_none() {
     assert!(local.get("icon").is_none(), "{local}");
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "something was written for a local page");
 
+    // Only what is kept (content-actions-design §9.2): the kept icon, and for a site never
+    // looked up, nothing, at once, with nothing written for it.
+    let cached = client.request("browser/site_icon", json!({"origin": "https://example.test", "cached": true})).await.unwrap();
+    assert_eq!(cached["icon"], json!(icon.data_uri()));
+    let started = std::time::Instant::now();
+    let unknown = client.request("browser/site_icon", json!({"origin": "https://never-seen.test", "cached": true})).await.unwrap();
+    assert!(unknown.get("icon").is_none(), "{unknown}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(1), "the site was asked: {:?}", started.elapsed());
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "a site only shown from the cache was looked up");
+
     drop(client);
     let _ = child.kill().await;
 }
