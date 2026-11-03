@@ -234,3 +234,43 @@ async fn one_service_is_added_once_and_keeps_its_logo() {
     let (code, out) = run(&env, &work, &["mcp", "add", "docs-2", "--url", &again, "--force"]).await;
     assert_eq!(code, 0, "{out}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn oauth_login_resumes_cancels_and_replaces_only_a_changed_resource() {
+    let env = TestEnv::new("manual", "").await;
+    let first = oauth_server(true).await;
+    let second = oauth_server(true).await;
+    let (mut child, client, mut rx) = env.spawn_rpc(&["serve", "--stdio"]);
+    common::native_init(&client).await;
+    client.request("mcp/list", json!({})).await.unwrap();
+    let params = |url: String| json!({"name":"resume", "server":{"name":"resume", "url":url, "auth":"oauth"}});
+    let (a, b) = tokio::join!(client.request("mcp/login", params(first.url())), client.request("mcp/login", params(first.url())));
+    let a = a.unwrap();
+    assert_eq!(a, b.unwrap(), "concurrent clicks resume one authorization URL and login ID");
+    assert_eq!(first.oauth_counts().0, 1);
+    let resumed = client.request("mcp/login", params(first.url())).await.unwrap();
+    assert_eq!(a, resumed, "a new page/request can reattach without replacing the listener");
+    client.request("mcp/login_cancel", json!({"name":"resume"})).await.unwrap();
+    let cancelled = until(&mut rx, "mcp/changed", &mut Vec::new()).await;
+    assert_eq!(cancelled["login_id"], a["login_id"]);
+    assert!(cancelled["login_error"].is_string());
+    let retry = client.request("mcp/login", params(first.url())).await.unwrap();
+    assert_ne!(retry["login_id"], a["login_id"]);
+    // A reused discovery name with a different server cannot reuse the old authorization.
+    let replacement = client.request("mcp/login", params(second.url())).await.unwrap();
+    assert_ne!(replacement["login_id"], retry["login_id"]);
+    let old_ended = until(&mut rx, "mcp/changed", &mut Vec::new()).await;
+    assert_eq!(old_ended["login_id"], retry["login_id"]);
+    assert_eq!(client.request("mcp/login", params(second.url())).await.unwrap(), replacement, "the old completion must not erase the new login");
+    let (status, _) = finx_mock::mcp_auth::browse(replacement["authorize_url"].as_str().unwrap()).await.unwrap();
+    assert!(status.contains("200"));
+    let completed = until(&mut rx, "mcp/changed", &mut Vec::new()).await;
+    assert_eq!(completed["login_id"], replacement["login_id"]);
+    assert!(completed.get("login_error").is_none());
+    assert_eq!(first.oauth_counts().1, 0);
+    assert_eq!(second.oauth_counts().1, 1);
+    client.request("mcp/logout", json!({"name":"resume"})).await.unwrap();
+    assert!(!credentials(&env).contains("mcp-oauth.resume"));
+    drop(client);
+    common::exit_code(&mut child).await;
+}

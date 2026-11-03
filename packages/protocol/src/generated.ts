@@ -718,6 +718,8 @@ export type McpAuthState = "logged_in" | "needs_login" | "saved" | "missing";
 
 /** `mcp/changed`: a server's status, cached result or configuration changed; or a sign-in started with `mcp/login` ended (`login_id`, with `login_error` when it failed). */
 export type McpChangedParams = {
+  /** A subsequent browser step. When present, this is progress, not completion. */
+  authorize_url?: string | null;
   login_error?: string | null;
   login_id?: string | null;
   name?: string | null;

@@ -285,8 +285,23 @@ try {
     await page.run(`${trackerRow}.click()`);
     await page.until("tracker's page offers to sign in", `!!document.querySelector(".cz-note .btn.primary")`);
     await page.run(`document.querySelector(".cz-note .btn.primary").click()`);
-    await page.until("waiting for the browser", `!!document.querySelector("[data-authorize]")`);
-    const again = await fetch(await page.run(`document.querySelector("[data-authorize]").dataset.authorize`), { redirect: "follow" });
+    await page.until("waiting for the browser", `!!document.querySelector("[data-authorize]")?.dataset.authorize`);
+    const beforeReload = await page.run(`document.querySelector("[data-authorize]").dataset.authorize`);
+    await page.cdp("Page.reload");
+    await page.until("sidebar after reload", `!![...document.querySelectorAll('.nav-i')].find(e => e.textContent.includes('自定义'))`);
+    await page.run(`[...document.querySelectorAll('.nav-i')].find(e => e.textContent.includes('自定义')).click()`);
+    await page.until("customize after reload", `!!document.querySelector('.cz-back, .cz-tab')`);
+    await page.run(`document.querySelector('.cz-back')?.click()`);
+    await page.run(`[...document.querySelectorAll('.cz-tab')].find(e => e.textContent.includes('连接器'))?.click()`);
+    await page.run(`[...document.querySelectorAll('.cz-seg button')][0]?.click()`);
+    await page.until("tracker after reload", `!!${trackerRow}`);
+    await page.run(`${trackerRow}.click()`);
+    await page.until("resume login action", `!!document.querySelector('.cz-note .btn.primary')`);
+    await page.run(`document.querySelector('.cz-note .btn.primary').click()`);
+    await page.until("resumed authorization", `!!document.querySelector('[data-authorize]')?.dataset.authorize`);
+    const resumedURL = await page.run(`document.querySelector('[data-authorize]').dataset.authorize`);
+    check(resumedURL === beforeReload, "page reload replaced the existing OAuth authorization");
+    const again = await fetch(resumedURL, { redirect: "follow" });
     check(again.ok, `the second sign-in: ${again.status}`);
     await page.until("signed in again and connected", `!!document.querySelector(".cz-fact .cz-st.ok")`, 30000);
     // Its edit sheet checks the address again and shows the sign-in as the add sheet did.
@@ -338,8 +353,9 @@ try {
   await page.theme(true);
   await page.shot("5-mine-skills-dark");
   await page.run(`[...document.querySelectorAll(".cz-row")].find((r) => r.querySelector(".nm")?.textContent === "code-review").click()`);
-  await page.until("its page", `!!document.querySelector(".cz-hero")`);
-  await page.run(`[...document.querySelectorAll(".cz-dtab")][1].click()`);
+  await page.until("its page", `document.querySelector(".cz-dtitle h1")?.textContent === "code-review"`);
+  await page.until("its file viewer", `!!document.querySelector(".cz-vbar .cz-segsm")`);
+  await page.run(`[...document.querySelectorAll(".cz-vbar .cz-segsm button")][1].click()`);
   await page.until("its SKILL.md", `document.querySelector(".cz-code")?.textContent.includes("Reviewing changes")`);
   await page.shot("6-skill-page-dark");
   page.close();

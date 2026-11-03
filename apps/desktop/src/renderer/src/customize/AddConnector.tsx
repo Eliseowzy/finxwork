@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { McpProbeResult, McpProbeStep, McpProbeStepId, McpServerConfig } from "@finx/protocol";
+import type { McpChangedParams, McpProbeResult, McpProbeStep, McpProbeStepId, McpServerConfig } from "@finx/protocol";
 import { Dialog } from "../components";
 import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
@@ -128,6 +128,11 @@ export function AddConnector({ c, catalog, onClose, onAdded, onOpen }: { c: Cust
   const staged = useRef<string[]>([]);
   const probeId = useRef<string | null>(null);
   const loginWait = useRef<(() => void) | null>(null);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; loginWait.current?.(); };
+  }, []);
   const rpc = st.rpc;
 
   useEffect(() => {
@@ -154,6 +159,7 @@ export function AddConnector({ c, catalog, onClose, onAdded, onOpen }: { c: Cust
     staged.current = [];
   };
   const close = () => {
+    alive.current = false;
     if (probeId.current) void rpc?.request("mcp/probe_cancel", { probe_id: probeId.current }).catch(() => {});
     loginWait.current?.();
     if (step !== "done") void discard();
@@ -256,6 +262,7 @@ export function AddConnector({ c, catalog, onClose, onAdded, onOpen }: { c: Cust
 
   /** Writes the server, checks it once, and shows the result. */
   const finish = async (server: McpServerConfig) => {
+    if (!alive.current) return;
     const { name: _name, ...settings } = server;
     void _name;
     const { check } = await c.saveServer("user", name, settings as Record<string, unknown>, []);
@@ -288,29 +295,46 @@ export function AddConnector({ c, catalog, onClose, onAdded, onOpen }: { c: Cust
       }
       const server = await remoteServer();
       if (auth === "oauth") {
-        const login = await rpc.request("mcp/login", { name, cwd: c.cwd ?? undefined, server });
-        setAuthorizeUrl(login.authorize_url);
-        window.finx?.openExternal(login.authorize_url);
-        setStep("login");
-        const outcome = await new Promise<string | null>((resolve) => {
-          const off = rpc.on("mcp/changed", (p) => {
-            if (p.login_id !== login.login_id) return;
-            off();
-            loginWait.current = null;
-            resolve(p.login_error ?? null);
-          });
-          loginWait.current = () => {
-            off();
-            void rpc.request("mcp/logout", { name }).catch(() => {});
-            resolve("cancelled");
-          };
+        if (!alive.current) return;
+        // Register before starting: a resumed or very fast authorization may finish
+        // before the RPC response arrives. Closing must also cancel startup/discovery.
+        const events = new Map<string, McpChangedParams>();
+        let loginId: string | null = null;
+        let resolve!: (p: McpChangedParams) => void;
+        const ended = new Promise<McpChangedParams>((done) => { resolve = done; });
+        const off = rpc.on("mcp/changed", (p) => {
+          if (p.name !== name || !p.login_id || p.authorize_url) return;
+          events.set(p.login_id, p);
+          if (p.login_id === loginId) resolve(p);
         });
-        if (outcome === "cancelled") return;
-        if (outcome) {
-          setFailure(outcome);
-          setStep("remote");
-          return;
-        }
+        let cancelled = false;
+        loginWait.current = () => {
+          cancelled = true;
+          off();
+          void rpc.request("mcp/logout", { name }).catch(() => {});
+          resolve({ name });
+        };
+        try {
+          const login = await rpc.request("mcp/login", { name, cwd: c.cwd ?? undefined, server });
+          loginId = login.login_id;
+          if (cancelled || !alive.current) {
+            await rpc.request("mcp/logout", { name });
+            return;
+          }
+          const early = events.get(loginId);
+          if (!early) {
+            setAuthorizeUrl(login.authorize_url);
+            window.finx?.openExternal(login.authorize_url);
+            setStep("login");
+          }
+          const outcome = early ?? await ended;
+          if (cancelled || !alive.current) return;
+          if (outcome.login_error) {
+            setFailure(outcome.login_error);
+            setStep("remote");
+            return;
+          }
+        } finally { off(); loginWait.current = null; }
         await finish(server);
         return;
       }

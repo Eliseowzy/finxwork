@@ -22,6 +22,7 @@ fn artifact(bytes: &[u8]) -> Artifact {
         url: "https://example.invalid/release".into(),
         sha256: digest(bytes),
         entry: "dws".into(),
+        notices: default_notices(),
     }
 }
 #[test]
@@ -82,13 +83,13 @@ fn manifests_bind_accounts_and_reject_management_overrides() {
     );
     assert!(
         auth_url(
-            &m,
+            &m.auth.authorize_origin, &m.auth.authorize_path, None,
             "https://login.dingtalk.com.evil.test/oauth2/auth?code=secret"
         )
         .is_none()
     );
-    assert!(auth_url(&m, "https://user@login.dingtalk.com/oauth2/auth").is_none());
-    assert!(auth_url(&m, "https://login.dingtalk.com/oauth2/auth?state=abc\n").is_some());
+    assert!(auth_url(&m.auth.authorize_origin, &m.auth.authorize_path, None, "https://user@login.dingtalk.com/oauth2/auth").is_none());
+    assert!(auth_url(&m.auth.authorize_origin, &m.auth.authorize_path, None, "https://login.dingtalk.com/oauth2/auth?state=abc\n").is_some());
 }
 
 #[cfg(unix)]
@@ -370,4 +371,91 @@ async fn authorization_controls_config_writes_and_runtime_startup() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn provider_manifests_and_nested_license_archives_are_valid() {
+    for id in ["dingtalk", "feishu", "wecom"] {
+        let m = manifest(id).unwrap();
+        assert_eq!(m.artifacts.len(), 4);
+        for a in m.artifacts.values() {
+            assert_eq!(a.sha256.len(), 64);
+            assert!(a.url.starts_with("https://"));
+            let mut entries = vec![(a.entry.as_str(), b"program".as_slice(), tar::EntryType::Regular)];
+            for n in &a.notices { entries.push((n, b"license", tar::EntryType::Regular)); }
+            let bytes = archive(&entries);
+            let mut a = a.clone(); a.sha256 = digest(&bytes);
+            let bundle = unpack(&bytes, &a).unwrap();
+            assert!(bundle.notices.contains_key("LICENSE"));
+            assert!(bundle.notices.keys().all(|n| !n.contains('/')));
+        }
+        assert!(validate_args(&m, &["auth".into(), "show".into()]).is_err());
+    }
+    let m = manifest("feishu").unwrap();
+    let text = r#"{"verification_uri":"https://accounts.feishu.cn/oauth/v1/device/verify","verification_uri_complete":"https://accounts.feishu.cn/oauth/v1/device/verify?user_code=test&flow_id=xyz"}"#;
+    let url = auth_url(&m.auth.authorize_origin, &m.auth.authorize_path, m.auth.url_field.as_deref(), text).unwrap();
+    assert!(url.contains("user_code=test&flow_id=xyz"));
+    assert!(auth_url(&m.auth.authorize_origin, &m.auth.authorize_path, m.auth.url_field.as_deref(), &text.replace("accounts.feishu.cn", "accounts.feishu.cn.evil.test")).is_none());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn feishu_setup_is_not_user_consent_and_retry_skips_finished_setup() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = manifest("feishu").unwrap();
+    let script = br##"#!/bin/sh
+D="$LARKSUITE_CLI_CONFIG_DIR"
+case "$1 $2" in
+ "config init")
+   echo 'https://open.feishu.cn/page/cli?user_code=setup'
+   while ! test -f "$D/setup-finish"; do sleep 0.01; done
+   echo '{}' > "$D/config.json" ;;
+ "auth login")
+   echo '{"verification_uri":"https://accounts.feishu.cn/oauth/v1/device/verify","verification_uri_complete":"https://accounts.feishu.cn/oauth/v1/device/verify?user_code=consent"}'
+   while ! test -f "$D/finish"; do sleep 0.01; done
+   touch "$D/account" ;;
+ "auth status")
+   if test -f "$D/account"; then echo '{"identity":"user"}'; else echo '{"identity":"bot"}'; fi ;;
+ "auth logout") rm -f "$D/account" ;;
+esac
+"##;
+    publish(dir.path(), &m, &Bundle { binary: script.to_vec(), notices: BTreeMap::new() }).unwrap();
+    let token = CancellationToken::new();
+    let mut pending = login(dir.path().into(), m.clone(), token.clone()).await.unwrap();
+    assert!(pending.url.contains("/page/cli"));
+    let mut updates = pending.take_updates();
+    std::fs::write(root(dir.path(), &m).join("config/setup-finish"), "").unwrap();
+    let next = tokio::time::timeout(Duration::from_secs(5), updates.recv()).await.unwrap().unwrap();
+    assert!(next.contains("user_code=consent"));
+    assert!(!status(dir.path(), &m).await.unwrap());
+    assert!(!signed_in(dir.path(), &m));
+    token.cancel();
+    assert!(pending.wait().await.is_err());
+    let pending = login(dir.path().into(), m.clone(), CancellationToken::new()).await.unwrap();
+    assert!(pending.url.contains("user_code=consent"));
+    std::fs::write(root(dir.path(), &m).join("config/finish"), "").unwrap();
+    pending.wait().await.unwrap();
+    assert!(signed_in(dir.path(), &m));
+    logout(dir.path(), &m).await.unwrap();
+    assert!(!status(dir.path(), &m).await.unwrap());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn wecom_logout_removes_only_our_binding_and_prevents_legacy_restore() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = manifest("wecom").unwrap();
+    let script = br##"#!/bin/sh
+if test -f "$WECOM_CLI_CONFIG_DIR/credentials.enc"; then echo authorized; else echo unauthorized; fi
+"##;
+    publish(dir.path(), &m, &Bundle { binary: script.to_vec(), notices: BTreeMap::new() }).unwrap();
+    assert!(!status(dir.path(), &m).await.unwrap());
+    let config = root(dir.path(), &m).join("config");
+    for file in ["credentials.enc", "bot.enc", "token.enc", "keep"] { std::fs::write(config.join(file), "fixture").unwrap(); }
+    assert!(status(dir.path(), &m).await.unwrap());
+    logout(dir.path(), &m).await.unwrap();
+    assert!(!status(dir.path(), &m).await.unwrap());
+    assert!(config.join("keep").is_file());
+    for file in ["credentials.enc", "bot.enc", "token.enc"] { assert!(!config.join(file).exists()); }
+    logout(dir.path(), &m).await.unwrap();
 }

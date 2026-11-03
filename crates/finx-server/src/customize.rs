@@ -48,8 +48,28 @@ pub(crate) struct State {
     checks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// Running probes, by the caller's `probe_id`.
     probes: Mutex<HashMap<String, tokio_util::sync::CancellationToken>>,
-    /// Sign-ins waiting for the browser, by server name: a new one ends the old.
+    /// Active authorization cancellation tokens, by server name.
     logins: Mutex<HashMap<String, tokio_util::sync::CancellationToken>>,
+    /// The latest browser step survives a renderer reload, including initial URL creation.
+    login_results: Mutex<HashMap<String, LoginAttempt>>,
+}
+
+type LoginResponse = tokio::sync::watch::Receiver<Option<Result<McpLoginResult, String>>>;
+
+#[derive(Clone)]
+struct LoginAttempt {
+    config: finx_protocol::McpServerConfig,
+    client: Option<McpOAuthClientKind>,
+    response: LoginResponse,
+}
+
+async fn login_result(mut pending: LoginResponse) -> Result<McpLoginResult, RpcError> {
+    loop {
+        if let Some(result) = pending.borrow_and_update().clone() {
+            return result.map_err(|e| RpcError::with_kind(error_code::MCP_LOGIN_FAILED, "mcp_login_failed", e));
+        }
+        pending.changed().await.map_err(|_| RpcError::internal("登录流程已结束，请重试"))?;
+    }
 }
 
 /// How long a sign-in waits for the browser to come back.
@@ -147,7 +167,16 @@ impl Server {
 
     pub async fn mcp_login_cancel(&self, p: McpLogoutParams) -> Result<Empty, RpcError> {
         if let Some(cancel) = self.customize().logins.lock().get(&p.name) { cancel.cancel(); }
+        self.wait_for_login_end(&p.name).await?;
         Ok(Empty {})
+    }
+
+    async fn wait_for_login_end(&self, name: &str) -> Result<(), RpcError> {
+        tokio::time::timeout(std::time::Duration::from_secs(35), async {
+            while self.customize().logins.lock().contains_key(name) {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
+        }).await.map_err(|_| RpcError::internal("登录仍在结束，请稍后重试"))
     }
 
     fn customize(&self) -> &State {
@@ -622,74 +651,109 @@ impl Server {
             Some(config) => config,
             None => views::for_check(&ws, &params.name).ok_or_else(|| RpcError::invalid_params(format!("no MCP server named {}", params.name)))?,
         };
-        if config.connector.is_some() {
-            if config.name != params.name { return Err(RpcError::invalid_params("连接器名称不匹配")); }
-            let m = finx_core::connectors::for_server(self.0.home.root(), &config).ok_or_else(|| RpcError::invalid_params("托管连接器配置已改变，请重新安装"))?;
-            // Only one provider login per connector; a late completion cannot remove a newer flow.
-            let placeholder = tokio_util::sync::CancellationToken::new();
-            {
-                let mut logins = self.customize().logins.lock();
-                if logins.contains_key(&params.name) { return Err(RpcError::invalid_params("登录正在进行，请先取消或等待完成")); }
-                logins.insert(params.name.clone(), placeholder.clone());
+        if config.name != params.name { return Err(RpcError::invalid_params("连接器名称不匹配")); }
+        let managed = if config.connector.is_some() {
+            Some(finx_core::connectors::for_server(self.0.home.root(), &config).ok_or_else(|| RpcError::invalid_params("托管连接器配置已改变，请重新安装"))?)
+        } else {
+            if config.url.is_none() { return Err(RpcError::invalid_params(format!("{} is not a remote server", params.name))); }
+            None
+        };
+        // Both curated CLIs and ordinary MCP OAuth flows belong to the service. A lost
+        // request or renderer reload can resume the same flow, including discovery.
+        let key = format!("connector-login:{}", params.name);
+        let lock = self.customize().checks.lock().entry(key).or_default().clone();
+        let startup = lock.lock().await;
+        let cancelled = self.customize().logins.lock().get(&params.name).is_some_and(|t| t.is_cancelled());
+        if cancelled { self.wait_for_login_end(&params.name).await?; }
+        let existing = self.customize().login_results.lock().get(&params.name).cloned();
+        if let Some(existing) = existing {
+            if existing.config == config && existing.client == params.client {
+                drop(startup);
+                return login_result(existing.response).await;
             }
-            let pending = finx_core::connectors::login(self.0.home.root().to_path_buf(), m, placeholder.clone()).await;
-            let pending = match pending { Ok(p) => p, Err(e) => { self.customize().logins.lock().remove(&params.name); return Err(RpcError::internal(e)); } };
+            // An edited URL/client must never resume another resource's authorization.
+            if let Some(token) = self.customize().logins.lock().get(&params.name) { token.cancel(); }
+            self.wait_for_login_end(&params.name).await?;
+        }
+        let token = tokio_util::sync::CancellationToken::new();
+        let (progress, response) = tokio::sync::watch::channel(None);
+        self.customize().logins.lock().insert(params.name.clone(), token.clone());
+        self.customize().login_results.lock().insert(params.name.clone(), LoginAttempt { config: config.clone(), client: params.client, response: response.clone() });
+        let server = self.clone();
+        let name = params.name.clone();
+        tokio::spawn(async move {
             let login_id = uuid::Uuid::new_v4().to_string();
-            let result = McpLoginResult { authorize_url: pending.url.clone(), login_id: login_id.clone(), client: McpOAuthClientKind::Managed };
-            let server = self.clone();
-            let name = params.name;
-            tokio::spawn(async move {
-                let outcome = async {
-                    pending.wait().await?;
+            let outcome = async {
+                if let Some(m) = managed {
+                    let mut pending = finx_core::connectors::login(server.0.home.root().to_path_buf(), m, token.clone()).await?;
+                    let mut result = McpLoginResult { authorize_url: pending.url.clone(), login_id: login_id.clone(), client: McpOAuthClientKind::Managed };
+                    progress.send_replace(Some(Ok(result.clone())));
+                    let mut updates = pending.take_updates();
+                    let wait = pending.wait();
+                    tokio::pin!(wait);
+                    let mut updating = true;
+                    loop {
+                        tokio::select! {
+                            done = &mut wait => { done?; break; },
+                            url = updates.recv(), if updating => match url {
+                                Some(url) => {
+                                    result.authorize_url = url.clone();
+                                    progress.send_replace(Some(Ok(result.clone())));
+                                    server.notify(Topic::Mcp, method::MCP_CHANGED, json!({
+                                        "name": name, "login_id": login_id, "authorize_url": url,
+                                    }));
+                                },
+                                None => updating = false,
+                            },
+                        }
+                    }
                     let checked = server.mcp_check(McpServerParams { name: name.clone(), cwd: params.cwd }).await.map_err(|e| e.message)?;
                     if checked.server.status.state != McpStatusState::Ok || checked.server.auth_state != Some(McpAuthState::LoggedIn) {
                         return Err("授权后的连接检查未通过，连接器保持停用".into());
                     }
-                    if placeholder.is_cancelled() { return Err("已取消登录".into()); }
+                    if token.is_cancelled() { return Err("已取消登录".into()); }
                     server.set_managed_enabled(&name, true).await.map_err(|e| e.message)
-                }.await;
-                server.customize().logins.lock().remove(&name);
-                let mut changed = json!({ "name": name, "login_id": login_id });
-                if let Err(error) = outcome { changed["login_error"] = json!(error); }
-                server.notify(Topic::Mcp, method::MCP_CHANGED, changed);
-            });
-            return Ok(result);
-        }
-        let url = config.url.clone().ok_or_else(|| RpcError::invalid_params(format!("{} is not a remote server", params.name)))?;
-        let own = {
-            let config = config.clone();
-            tokio::task::spawn_blocking(move || own_client(&config)).await.map_err(blocking_error)?.map_err(RpcError::invalid_params)?
-        };
-        let http = self.0.llm.http_client().map_err(|e| RpcError::internal(e.to_string()))?;
-        let request = finx_mcp::oauth::LoginRequest {
-            server: params.name.clone(),
-            url,
-            own,
-            metadata_url: ws.config.mcp.client_metadata_url.clone(),
-            paths: Some(finx_mcp::oauth::OAuthPaths { finx_home: self.0.home.root().to_path_buf() }),
-            http,
-            prefer: params.client,
-        };
-        let pending = finx_mcp::oauth::start_login(request)
-            .await
-            .map_err(|e| RpcError::with_kind(error_code::MCP_LOGIN_FAILED, "mcp_login_failed", e))?;
-        let login_id = uuid::Uuid::new_v4().to_string();
-        let result = McpLoginResult { authorize_url: pending.authorize_url.clone(), login_id: login_id.clone(), client: pending.client };
-        if let Some(old) = self.customize().logins.lock().insert(params.name.clone(), pending.canceller()) {
-            old.cancel();
-        }
-        let server = self.clone();
-        let name = params.name.clone();
-        tokio::spawn(async move {
-            let outcome = pending.wait(LOGIN_WAIT).await;
-            server.customize().logins.lock().remove(&name);
-            let mut changed = json!({ "name": name, "login_id": login_id });
-            if let Err(err) = outcome {
-                changed["login_error"] = json!(err);
+                } else {
+                    let url = config.url.clone().ok_or("连接器地址缺失")?;
+                    let own = tokio::task::spawn_blocking(move || own_client(&config)).await.map_err(|e| e.to_string())??;
+                    let request = finx_mcp::oauth::LoginRequest {
+                        server: name.clone(), url,
+                        own, metadata_url: ws.config.mcp.client_metadata_url.clone(),
+                        paths: Some(finx_mcp::oauth::OAuthPaths { finx_home: server.0.home.root().to_path_buf() }),
+                        http: server.0.llm.http_client().map_err(|e| e.to_string())?, prefer: params.client,
+                    };
+                    let pending = tokio::select! {
+                        _ = token.cancelled() => return Err("已取消登录".into()),
+                        result = tokio::time::timeout(std::time::Duration::from_secs(60), finx_mcp::oauth::start_login(request)) => result.map_err(|_| "获取授权链接超时，请重试")??,
+                    };
+                    progress.send_replace(Some(Ok(McpLoginResult { authorize_url: pending.authorize_url.clone(), login_id: login_id.clone(), client: pending.client })));
+                    let cancel_provider = pending.canceller();
+                    let wait = pending.wait(LOGIN_WAIT);
+                    tokio::pin!(wait);
+                    tokio::select! {
+                        result = &mut wait => result,
+                        _ = token.cancelled() => {
+                            cancel_provider.cancel();
+                            let _ = wait.await; // wait for the callback listener/token exchange to finish
+                            Err("已取消登录".into())
+                        },
+                    }
+                }
+            }.await;
+            if progress.borrow().is_none() {
+                progress.send_replace(Some(Err(outcome.clone().err().unwrap_or_else(|| "登录流程已结束".into()))));
             }
+            {
+                let mut results = server.customize().login_results.lock();
+                server.customize().logins.lock().remove(&name);
+                results.remove(&name);
+            }
+            let mut changed = json!({ "name": name, "login_id": login_id });
+            if let Err(error) = outcome { changed["login_error"] = json!(error); }
             server.notify(Topic::Mcp, method::MCP_CHANGED, changed);
         });
-        Ok(result)
+        drop(startup);
+        login_result(response).await
     }
 
     /// `mcp/logout`: revokes and deletes a server's tokens, and ends a sign-in in progress.
@@ -699,11 +763,7 @@ impl Server {
         }
         // Wait for the provider process to exit before removing its tokens, so an in-flight
         // callback cannot recreate credentials after logout.
-        tokio::time::timeout(std::time::Duration::from_secs(35), async {
-            while self.customize().logins.lock().contains_key(&params.name) {
-                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-            }
-        }).await.map_err(|_| RpcError::internal("登录仍在结束，请稍后重试退出"))?;
+        self.wait_for_login_end(&params.name).await?;
         let ws = self.workspace(None)?;
         if let Some(config) = ws.mcp_servers.iter().find(|s| s.name == params.name && s.connector.is_some()) {
             let m = finx_core::connectors::for_server(self.0.home.root(), config).ok_or_else(|| RpcError::invalid_params("托管连接器配置无效"))?;

@@ -57,10 +57,15 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
       let loginId: string | null = null;
       let finish!: (p: McpChangedParams) => void;
       const ended = new Promise<McpChangedParams>((resolve) => { finish = resolve; });
+      const showURL = (url: string) => { setUrl(url); window.finx?.openExternal(url); };
+      const accept = (p: McpChangedParams) => {
+        if (p.authorize_url) showURL(p.authorize_url);
+        else finish(p);
+      };
       const off = rpc.on("mcp/changed", (p) => {
         if (p.name !== catalog.id || !p.login_id) return;
         events.set(p.login_id, p);
-        if (p.login_id === loginId) finish(p);
+        if (p.login_id === loginId) accept(p);
       });
       stop.current = () => { off(); finish({ name: catalog.id, login_error: t("managed.cancelled") }); };
       try {
@@ -70,10 +75,10 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
           await rpc.request("mcp/login_cancel", { name: catalog.id });
           return;
         }
-        setUrl(login.authorize_url);
-        window.finx?.openExternal(login.authorize_url);
         const early = events.get(loginId);
-        const result = early ?? await ended;
+        if (early) accept(early);
+        else showURL(login.authorize_url);
+        const result = await ended;
         if (!alive.current) return;
         if (result.login_error) throw new Error(result.login_error);
         const checked = await c.check(catalog.id);
@@ -91,13 +96,13 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
       <div className="cz-managed">
         <div className="cz-summary"><ServerTile name={catalog.name} mono={catalog.mono} icon={catalogLogo(catalog)} /><div><strong>{catalog.name}</strong><p>{t("managed.installHint")}</p></div></div>
         <p>{t("managed.permissions", { name: catalog.name })}</p>
-        <p className="hint">{t("managed.authorizeHint", { name: catalog.name })}</p>
-        <div role="status" aria-live="polite" className="cz-managed-status">
+        <p className="hint">{t(`managed.hints.${catalog.id}`, { defaultValue: t("managed.authorizeHint", { name: catalog.name }) })}</p>
+        {step !== "intro" && <div role="status" aria-live="polite" className="cz-managed-status">
           {busy && <span className="mini-spin" />}{t(`managed.steps.${step}`)}
-        </div>
+        </div>}
         {failure && <p className="cz-managed-error" role="alert">{failure}</p>}
         {step === "authorizing" && url && <div className="acts">
-          <button className="link" onClick={() => window.finx?.openExternal(url)}>{t("managed.openBrowser")}</button>
+          <button className="link" data-authorize={url} onClick={() => window.finx?.openExternal(url)}>{t("managed.openBrowser")}</button>
           <button className="link" onClick={() => void navigator.clipboard?.writeText(url)}>{t("addc.copyLink")}</button>
         </div>}
       </div>

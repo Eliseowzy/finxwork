@@ -170,10 +170,18 @@ export function useCustomize(cwd: string | null) {
       let loginId: string | null = null;
       let finish!: (p: McpChangedParams) => void;
       const ended = new Promise<McpChangedParams>((resolve) => { finish = resolve; });
+      const showURL = (url: string) => {
+        setSigningIn((m) => new Map(m).set(name, url));
+        window.finx?.openExternal(url);
+      };
+      const accept = (p: McpChangedParams) => {
+        if (p.authorize_url) showURL(p.authorize_url);
+        else finish(p);
+      };
       const off = rpc.on("mcp/changed", (p) => {
         if (p.name !== name || !p.login_id) return;
         events.set(p.login_id, p);
-        if (p.login_id === loginId) finish(p);
+        if (p.login_id === loginId) accept(p);
       });
       let abandoned = false;
       loginStops.current.set(name, () => {
@@ -190,9 +198,10 @@ export function useCustomize(cwd: string | null) {
           return;
         }
         loginId = r.login_id;
-        setSigningIn((m) => new Map(m).set(name, r.authorize_url));
-        window.finx?.openExternal(r.authorize_url);
-        const error = (events.get(loginId) ?? await ended).login_error;
+        const early = events.get(loginId);
+        if (early) accept(early);
+        else showURL(r.authorize_url);
+        const error = (await ended).login_error;
         if (abandoned) return;
         if (error) st.show(t("toast.loginFailed", { name, error }), undefined, true);
         else {

@@ -240,7 +240,9 @@
     "by": "finx featured",
     "connectors": {
       "exa": "Exa web search, page fetching and research-agent tools for AI agents over MCP.",
-      "dingtalk": "Work with DingTalk documents, calendars, tasks and more using its official CLI."
+      "dingtalk": "Work with DingTalk documents, calendars, tasks and more using its official CLI.",
+      "feishu": "Work with Feishu documents, messages, calendars and tasks through the official CLI.",
+      "wecom": "Scan to bind a WeCom bot and use the capabilities enabled by your organization."
     },
     "ways": {
       "exa": {
@@ -421,11 +423,14 @@
     "nameConflict": "A custom connector already uses this name. Rename or remove it first.",
     "checkFailed": "Connection check failed. Please retry.",
     "steps": {
-      "intro": "Install → Sign in → Check connection",
       "installing": "Downloading and verifying components…",
       "authorizing": "Waiting for authorization in your browser…",
       "ready": "Connected. Available in new conversations.",
       "failed": "Connection incomplete. Retry or continue later."
+    },
+    "hints": {
+      "feishu": "First create a dedicated app on Feishu, then complete user consent in the next browser page. The connector enables only after both steps and a connection check. Your organization may require admin approval.",
+      "wecom": "Scan the official WeCom page to bind a bot. Your organization controls available capabilities. Signing out clears local credentials; manage the server-side binding in WeCom."
     }
   }
 }

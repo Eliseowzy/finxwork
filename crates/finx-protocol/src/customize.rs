@@ -474,6 +474,9 @@ pub struct McpChangedParams {
     pub login_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub login_error: Option<String>,
+    /// A subsequent browser step. When present, this is progress, not completion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorize_url: Option<String>,
 }
 
 /// `mcp/probe`: checks a server before it is added, writing nothing (mcp-design §13.6).

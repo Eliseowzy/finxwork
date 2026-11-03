@@ -16,7 +16,7 @@ use std::{
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     process::{Child, Command},
-    sync::oneshot,
+    sync::{mpsc, oneshot},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -48,8 +48,29 @@ struct Auth {
     kind: String,
     login: Vec<String>,
     status: Vec<String>,
+    #[serde(default)]
     logout: Vec<String>,
+    #[serde(default)]
+    logout_files: Vec<String>,
+    #[serde(default)]
     status_field: String,
+    #[serde(default = "default_status_value")]
+    status_value: Value,
+    #[serde(default)]
+    status_text: bool,
+    #[serde(default)]
+    setup: Option<Setup>,
+    #[serde(default)]
+    url_field: Option<String>,
+    authorize_origin: String,
+    authorize_path: String,
+}
+fn default_status_value() -> Value { Value::Bool(true) }
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Setup {
+    command: Vec<String>,
+    config_file: String,
     authorize_origin: String,
     authorize_path: String,
 }
@@ -59,7 +80,10 @@ struct Artifact {
     url: String,
     sha256: String,
     entry: String,
+    #[serde(default = "default_notices")]
+    notices: Vec<String>,
 }
+fn default_notices() -> Vec<String> { vec!["LICENSE".into(), "NOTICE".into()] }
 #[derive(Serialize, Deserialize)]
 struct Receipt {
     version: String,
@@ -69,6 +93,8 @@ struct Receipt {
 pub fn manifest(id: &str) -> Result<Manifest, String> {
     let raw = match id {
         "dingtalk" => include_str!("dingtalk.json"),
+        "feishu" => include_str!("feishu.json"),
+        "wecom" => include_str!("wecom.json"),
         _ => return Err("未知的托管连接器".into()),
     };
     let m: Manifest = serde_json::from_str(raw).map_err(|e| e.to_string())?;
@@ -137,8 +163,8 @@ fn unpack(bytes: &[u8], artifact: &Artifact) -> Result<Bundle, String> {
         let mut entry = entry.map_err(|e| e.to_string())?;
         let p = entry.path().map_err(|e| e.to_string())?;
         let p = p.strip_prefix(".").unwrap_or(&p);
-        if p == Path::new("LICENSE") || p == Path::new("NOTICE") {
-            let name = p.to_string_lossy().into_owned();
+        if artifact.notices.iter().any(|name| p == Path::new(name)) {
+            let name = p.file_name().ok_or("许可证文件名无效")?.to_string_lossy().into_owned();
             if !entry.header().entry_type().is_file()
                 || entry.size() > 1 << 20
                 || notices.contains_key(&name)
@@ -163,7 +189,7 @@ fn unpack(bytes: &[u8], artifact: &Artifact) -> Result<Bundle, String> {
     let binary = found
         .filter(|b| !b.is_empty())
         .ok_or("压缩包缺少连接器程序")?;
-    if !notices.contains_key("LICENSE") || !notices.contains_key("NOTICE") {
+    if notices.len() != artifact.notices.len() {
         return Err("压缩包缺少许可证文件".into());
     }
     Ok(Bundle { binary, notices })
@@ -379,14 +405,18 @@ pub async fn status(home: &Path, m: &Manifest) -> Result<bool, String> {
         Duration::from_secs(20),
     )
     .await?;
-    let value: Value =
-        serde_json::from_str(result.1.trim()).map_err(|_| "无法读取连接器登录状态")?;
-    let auth = result.0 && value.get(&m.auth.status_field).and_then(Value::as_bool) == Some(true);
+    let auth = result.0 && if m.auth.status_text {
+        Some(result.1.trim()) == m.auth.status_value.as_str()
+    } else {
+        let value: Value = serde_json::from_str(result.1.trim()).map_err(|_| "无法读取连接器登录状态")?;
+        value.get(&m.auth.status_field) == Some(&m.auth.status_value)
+    };
     remember(home, m, auth);
     Ok(auth)
 }
 pub async fn logout(home: &Path, m: &Manifest) -> Result<(), String> {
-    if installed(home, m) {
+    remember(home, m, false);
+    if installed(home, m) && !m.auth.logout.is_empty() {
         let (ok, _, _) = collect(
             command(home, m, &m.auth.logout)?
                 .spawn()
@@ -398,116 +428,126 @@ pub async fn logout(home: &Path, m: &Manifest) -> Result<(), String> {
             return Err("退出登录失败，请重试".into());
         }
     }
-    remember(home, m, false);
+    // Some providers have no logout command. Remove only their manifest-listed files
+    // in our isolated config directory; do not touch another application's credentials.
+    for name in &m.auth.logout_files {
+        if Path::new(name).file_name().and_then(|n| n.to_str()) != Some(name.as_str()) {
+            return Err("无效的凭据文件名".into());
+        }
+        match std::fs::remove_file(root(home, m).join("config").join(name)) {
+            Ok(()) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(e.to_string()),
+        }
+    }
     Ok(())
 }
 
 pub struct PendingLogin {
     pub url: String,
+    updates: Option<mpsc::UnboundedReceiver<String>>,
     done: oneshot::Receiver<Result<(), String>>,
     _guard: tokio_util::sync::DropGuard,
 }
 impl PendingLogin {
+    /// Later browser steps, if the provider requires application setup before user consent.
+    pub fn take_updates(&mut self) -> mpsc::UnboundedReceiver<String> {
+        self.updates.take().expect("login updates already taken")
+    }
     pub async fn wait(self) -> Result<(), String> {
         let Self { done, _guard, .. } = self;
         let result = done.await.map_err(|_| "登录流程已结束".to_string())?;
-        // Completing a login is not a cancellation; callers still check the cancellation
-        // token while validating the connection and enabling it.
         _guard.disarm();
         result
     }
 }
-fn auth_url(m: &Manifest, text: &str) -> Option<String> {
-    for word in text.split(|c: char| c.is_whitespace() || ['"', '\'', '<', '>'].contains(&c)) {
-        let Ok(url) = url::Url::parse(word) else {
-            continue;
-        };
-        if url.origin().ascii_serialization() == m.auth.authorize_origin
-            && url.path() == m.auth.authorize_path
-            && url.username().is_empty()
-            && url.password().is_none()
-        {
-            return Some(url.to_string());
-        }
-    }
-    None
+fn allowed_url(origin: &str, path: &str, word: &str) -> Option<String> {
+    let url = url::Url::parse(word).ok()?;
+    (url.origin().ascii_serialization() == origin && url.path() == path
+        && url.username().is_empty() && url.password().is_none()).then(|| url.to_string())
 }
-pub async fn login(
-    home: PathBuf,
-    m: Manifest,
-    cancel: CancellationToken,
-) -> Result<PendingLogin, String> {
-    let mut child = command(&home, &m, &m.auth.login)?
-        .spawn()
-        .map_err(|e| e.to_string())?;
+fn auth_url(origin: &str, path: &str, field: Option<&str>, text: &str) -> Option<String> {
+    // A device-flow response can contain both a bare URL and a complete one with the
+    // user code. Parse the configured field, never accidentally open the bare URL.
+    if let Some(field) = field {
+        return text.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .find_map(|v| v.get(field).and_then(Value::as_str).and_then(|s| allowed_url(origin, path, s)));
+    }
+    text.split(|c: char| c.is_whitespace() || ['"', '\'', '<', '>'].contains(&c))
+        .find_map(|word| allowed_url(origin, path, word))
+}
+async fn login_step(
+    mut child: Child, origin: &str, path: &str, field: Option<&str>,
+    tx: mpsc::UnboundedSender<String>, cancel: &CancellationToken,
+) -> Result<(), String> {
     let stdout = child.stdout.take().ok_or("无法读取登录输出")?;
     let stderr = child.stderr.take().ok_or("无法读取登录输出")?;
-    let (url_tx, url_rx) = oneshot::channel();
-    let tx = Arc::new(parking_lot::Mutex::new(Some(url_tx)));
-    async fn scan(
-        mut pipe: impl tokio::io::AsyncRead + Unpin,
-        m: &Manifest,
-        tx: Arc<parking_lot::Mutex<Option<oneshot::Sender<String>>>>,
-    ) -> Result<(), String> {
-        let mut buffer = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            let n = pipe.read(&mut chunk).await.map_err(|e| e.to_string())?;
-            if n == 0 {
-                break;
-            }
-            buffer.extend_from_slice(&chunk[..n]);
-            if buffer.len() > 65536 {
-                return Err("登录输出异常".into());
-            }
-            let text = String::from_utf8_lossy(&buffer);
-            // Only inspect complete tokens: a URL can span pipe chunks.
-            if let Some(end) = text.rfind(char::is_whitespace) {
-                if let Some(url) = auth_url(m, &text[..end]) {
-                    if let Some(tx) = tx.lock().take() {
-                        let _ = tx.send(url);
+    let sent = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let scan = |mut pipe: Box<dyn tokio::io::AsyncRead + Unpin + Send>| {
+        let sent = sent.clone();
+        let tx = tx.clone();
+        async move {
+            let mut buffer = Vec::new();
+            let mut chunk = [0u8; 4096];
+            loop {
+                let n = pipe.read(&mut chunk).await.map_err(|e| e.to_string())?;
+                if n == 0 { break; }
+                buffer.extend_from_slice(&chunk[..n]);
+                if buffer.len() > 65536 { return Err("登录输出异常".to_string()); }
+                let text = String::from_utf8_lossy(&buffer);
+                if let Some(end) = text.rfind(char::is_whitespace) {
+                    if let Some(url) = auth_url(origin, path, field, &text[..end]) {
+                        if !sent.swap(true, std::sync::atomic::Ordering::SeqCst) { let _ = tx.send(url); }
                     }
                 }
             }
+            Ok(())
         }
+    };
+    let work = async {
+        let (_, _, exit) = tokio::try_join!(scan(Box::new(stdout)), scan(Box::new(stderr)),
+            async { child.wait().await.map_err(|e| e.to_string()) })?;
+        if !exit.success() { return Err("授权未完成，请重试并检查账号和企业设置".into()); }
         Ok(())
-    }
+    };
+    let result = tokio::select! {
+        _ = cancel.cancelled() => Err("已取消登录".into()),
+        r = tokio::time::timeout(Duration::from_secs(600), work) => r.unwrap_or_else(|_| Err("登录超时，请重试".into())),
+    };
+    let _ = child.kill().await;
+    result
+}
+pub async fn login(home: PathBuf, m: Manifest, cancel: CancellationToken) -> Result<PendingLogin, String> {
+    verify(&home, &m)?;
+    let (tx, mut updates) = mpsc::unbounded_channel();
     let guard = cancel.clone().drop_guard();
     let token = cancel.clone();
     let (done_tx, done) = oneshot::channel();
     tokio::spawn(async move {
         let work = async {
-            let (_, _, exit) = tokio::try_join!(
-                scan(stdout, &m, tx.clone()),
-                scan(stderr, &m, tx.clone()),
-                async { child.wait().await.map_err(|e| e.to_string()) }
-            )?;
-            if !exit.success() {
-                return Err(format!("{}登录未完成，请重试并检查账号和企业设置", m.name));
+            if let Some(setup) = &m.auth.setup {
+                if !root(&home, &m).join("config").join(&setup.config_file).is_file() {
+                    let child = command(&home, &m, &setup.command)?.spawn().map_err(|e| e.to_string())?;
+                    login_step(child, &setup.authorize_origin, &setup.authorize_path, None, tx.clone(), &token).await?;
+                }
             }
-            if !status(&home, &m).await? {
-                return Err("授权结束，但未检测到有效登录".into());
-            }
+            if token.is_cancelled() { return Err("已取消登录".into()); }
+            let child = command(&home, &m, &m.auth.login)?.spawn().map_err(|e| e.to_string())?;
+            login_step(child, &m.auth.authorize_origin, &m.auth.authorize_path, m.auth.url_field.as_deref(), tx.clone(), &token).await?;
+            if token.is_cancelled() { return Err("已取消登录".into()); }
+            if !status(&home, &m).await? { return Err("授权结束，但未检测到有效登录".into()); }
             Ok(())
         };
-        let result = tokio::select! {
-            _ = token.cancelled() => Err("已取消登录".into()),
-            r = tokio::time::timeout(Duration::from_secs(300), work) => r.unwrap_or_else(|_| Err("登录超时，请重试".into())),
-        };
-        let _ = child.kill().await;
-        tx.lock().take();
+        let result = work.await;
+        drop(tx);
         let _ = done_tx.send(result);
     });
     let url = tokio::select! {
         _ = cancel.cancelled() => Err("已取消登录".to_string()),
-        result = tokio::time::timeout(Duration::from_secs(30), url_rx) => result.ok().and_then(Result::ok).ok_or_else(|| "无法获取授权链接，请重试".to_string()),
+        result = tokio::time::timeout(Duration::from_secs(30), updates.recv()) => result.ok().flatten().ok_or_else(|| "无法获取授权链接，请重试".to_string()),
     };
     match url {
-        Ok(url) => Ok(PendingLogin {
-            url,
-            done,
-            _guard: guard,
-        }),
+        Ok(url) => Ok(PendingLogin { url, updates: Some(updates), done, _guard: guard }),
         Err(error) => {
             cancel.cancel();
             let _ = done.await;
