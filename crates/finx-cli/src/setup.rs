@@ -183,26 +183,66 @@ impl Runtime {
 
 /// Logs go to `~/.finx/logs/finx.YYYY-MM-DD.log`, never to the terminal. Filter with `FINX_LOG`.
 pub fn init_logging(home: &FinxHome) -> Option<WorkerGuard> {
-    std::fs::create_dir_all(home.logs_dir()).ok()?;
-    let appender = tracing_appender::rolling::Builder::new()
-        .rotation(tracing_appender::rolling::Rotation::DAILY)
-        .filename_prefix("finx")
-        .filename_suffix("log")
-        .max_log_files(7)
-        .build(home.logs_dir())
-        .ok()?;
     // The default buffer preallocates 128k lines (about 4 MB) at start-up; finx logs far less.
     let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
         .buffered_lines_limit(4096)
-        .finish(appender);
-    let filter = EnvFilter::try_from_env("FINX_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_writer(writer)
-        .with_ansi(false)
-        .with_env_filter(filter)
-        .try_init()
-        .ok()?;
+        .finish(LogFile::Pending(home.logs_dir()));
+    let fmt = tracing_subscriber::fmt().with_writer(writer).with_ansi(false);
+    // Parsing filter directives costs more than the rest of this; the default needs none.
+    let installed = match std::env::var_os("FINX_LOG") {
+        Some(_) => fmt
+            .with_env_filter(EnvFilter::try_from_env("FINX_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
+            .try_init(),
+        None => fmt.with_max_level(tracing::Level::INFO).try_init(),
+    };
+    installed.ok()?;
     Some(guard)
+}
+
+/// The daily log file. The writer thread opens it, and removes old ones, when the first line
+/// arrives: that file work stays off the path to the first model request.
+enum LogFile {
+    Pending(PathBuf),
+    Open(tracing_appender::rolling::RollingFileAppender),
+    /// The folder or the file cannot be created: lines are dropped, as without a log.
+    Unavailable,
+}
+
+impl LogFile {
+    fn open(&mut self) -> Option<&mut tracing_appender::rolling::RollingFileAppender> {
+        if let LogFile::Pending(dir) = self {
+            let appender = std::fs::create_dir_all(&*dir).ok().and_then(|()| {
+                tracing_appender::rolling::Builder::new()
+                    .rotation(tracing_appender::rolling::Rotation::DAILY)
+                    .filename_prefix("finx")
+                    .filename_suffix("log")
+                    .max_log_files(7)
+                    .build(&*dir)
+                    .ok()
+            });
+            *self = appender.map_or(LogFile::Unavailable, LogFile::Open);
+        }
+        match self {
+            LogFile::Open(appender) => Some(appender),
+            _ => None,
+        }
+    }
+}
+
+impl std::io::Write for LogFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self.open() {
+            Some(appender) => appender.write(buf),
+            None => Ok(buf.len()),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            LogFile::Open(appender) => appender.flush(),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// The prompt argument; "-" reads it from stdin.
@@ -215,4 +255,39 @@ pub fn read_prompt(arg: &str) -> anyhow::Result<String> {
     let text = text.trim().to_string();
     anyhow::ensure!(!text.is_empty(), "the prompt is empty");
     Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn the_log_file_appears_with_its_first_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let logs = dir.path().join("logs");
+        let mut file = LogFile::Pending(logs.clone());
+        assert!(!logs.exists(), "nothing is created before a line arrives");
+        file.write_all(b"first line\n").unwrap();
+        file.write_all(b"second line\n").unwrap();
+        file.flush().unwrap();
+        let names: Vec<String> = std::fs::read_dir(&logs)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        assert!(names[0].starts_with("finx.") && names[0].ends_with(".log"), "{names:?}");
+        assert_eq!(std::fs::read_to_string(logs.join(&names[0])).unwrap(), "first line\nsecond line\n");
+    }
+
+    #[test]
+    fn lines_are_dropped_when_the_log_folder_cannot_be_made() {
+        let dir = tempfile::tempdir().unwrap();
+        let blocked = dir.path().join("a-file");
+        std::fs::write(&blocked, "").unwrap();
+        let mut file = LogFile::Pending(blocked.join("logs"));
+        file.write_all(b"dropped\n").unwrap();
+        file.flush().unwrap();
+        assert!(matches!(file, LogFile::Unavailable));
+    }
 }
