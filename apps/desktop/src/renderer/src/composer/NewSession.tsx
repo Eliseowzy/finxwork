@@ -64,8 +64,8 @@ export function NewSession() {
           {/* While the browser is open, its button sits at the panel's right end instead. */}
           {window.finx && !browser && <button
             className="tb no-drag"
-            title={t("browser.title")}
-            aria-label={t("browser.title")}
+            title={t("browser.builtIn")}
+            aria-label={t("browser.builtIn")}
             aria-pressed={false}
             onClick={() => void st.run(async () => {
               await window.finx?.openBrowser();

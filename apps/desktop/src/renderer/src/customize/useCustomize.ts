@@ -170,10 +170,18 @@ export function useCustomize(cwd: string | null) {
       let loginId: string | null = null;
       let finish!: (p: McpChangedParams) => void;
       const ended = new Promise<McpChangedParams>((resolve) => { finish = resolve; });
+      const showURL = (url: string) => {
+        setSigningIn((m) => new Map(m).set(name, url));
+        window.finx?.openExternal(url);
+      };
+      const accept = (p: McpChangedParams) => {
+        if (p.authorize_url) showURL(p.authorize_url);
+        else finish(p);
+      };
       const off = rpc.on("mcp/changed", (p) => {
         if (p.name !== name || !p.login_id) return;
         events.set(p.login_id, p);
-        if (p.login_id === loginId) finish(p);
+        if (p.login_id === loginId) accept(p);
       });
       let abandoned = false;
       loginStops.current.set(name, () => {
@@ -190,9 +198,10 @@ export function useCustomize(cwd: string | null) {
           return;
         }
         loginId = r.login_id;
-        setSigningIn((m) => new Map(m).set(name, r.authorize_url));
-        window.finx?.openExternal(r.authorize_url);
-        const error = (events.get(loginId) ?? await ended).login_error;
+        const early = events.get(loginId);
+        if (early) accept(early);
+        else showURL(r.authorize_url);
+        const error = (await ended).login_error;
         if (abandoned) return;
         if (error) st.show(t("toast.loginFailed", { name, error }), undefined, true);
         else {
@@ -286,7 +295,8 @@ export function useCustomize(cwd: string | null) {
       // On: take out the setting that turned it off where finx may write it, else say `true` for
       // the person; off: where it is defined, or for the person.
       const writable = (l: ConfigLayer | null | undefined): l is ConfigLayer => l === "user" || l === "user_project";
-      const layer: ConfigLayer = on ? (writable(s.disabled_by) ? s.disabled_by : "user_project") : s.editable ? s.layer : "user_project";
+      const ownLayer: ConfigLayer = s.editable && writable(s.layer) ? s.layer : cwd ? "user_project" : "user";
+      const layer: ConfigLayer = on && writable(s.disabled_by) ? s.disabled_by : ownLayer;
       const value = on ? (layer === s.disabled_by ? null : true) : false;
       const key = `mcp_servers.${quoteKey(s.name)}.enabled`;
       setSwitching((m) => new Map(m).set(s.name, on));
@@ -306,7 +316,7 @@ export function useCustomize(cwd: string | null) {
         st.show(errorText(e), undefined, true);
       }
     },
-    [write, readServers, check, st],
+    [write, readServers, check, st, cwd],
   );
 
   const removeServer = useCallback(

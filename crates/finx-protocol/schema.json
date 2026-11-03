@@ -3708,6 +3708,13 @@
     "McpChangedParams": {
       "description": "`mcp/changed`: a server's status, cached result or configuration changed; or a sign-in started with `mcp/login` ended (`login_id`, with `login_error` when it failed).",
       "properties": {
+        "authorize_url": {
+          "description": "A subsequent browser step. When present, this is progress, not completion.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "login_error": {
           "type": [
             "string",
@@ -4555,6 +4562,13 @@
       "properties": {
         "auth": {
           "$ref": "#/definitions/McpAuthKind"
+        },
+        "auth_partial": {
+          "description": "Authenticated, but the provider did not grant every requested permission.",
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "auth_state": {
           "anyOf": [

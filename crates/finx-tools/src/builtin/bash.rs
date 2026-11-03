@@ -50,7 +50,10 @@ impl TypedTool for BashTool {
     }
 
     fn guidelines(&self) -> &[&'static str] {
-        &["Use bash for builds, tests, git and other commands. Commands run non-interactively with a timeout; do not start long-running servers or interactive programs."]
+        &[
+            "Use bash for builds, tests, git and other commands. Commands run non-interactively with a timeout; do not start long-running servers or interactive programs.",
+            "Files from others (downloads, archives, attachments) can carry code: run nothing from inside their folder and keep your scripts out of it; pass their paths as arguments.",
+        ]
     }
 
     fn describe(&self, args: &serde_json::Value, _env: &dyn crate::env::Environment) -> crate::tool::ToolDescription {

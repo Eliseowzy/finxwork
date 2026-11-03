@@ -390,6 +390,8 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
         {s.status.error && <span className="err">{s.status.error}</span>}
       </Note>
     );
+  else if (s.auth_partial && s.auth_state === "logged_in")
+    note = <Note kind="warn">{t("managed.partialPermissions")}</Note>;
   else if (repo)
     note = (
       <Note kind="info">

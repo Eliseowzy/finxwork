@@ -1,7 +1,7 @@
 {
   "page": {
-    "infoTip": "会话信息 ⌥⌘0",
-    "info": "会话信息"
+    "infoTip": "会话详情 ⌥⌘0",
+    "info": "会话详情"
   },
   "chat": {
     "archived": "已归档：取消归档之前只读。",
@@ -18,7 +18,7 @@
     "thinking": "正在思考",
     "thought": "思考",
     "thinkingHidden": "服务商没有公开这段推理",
-    "image": "图片（点击放大或缩小）",
+    "image": "图片",
     "copy": "拷贝",
     "toBottom": "回到底部",
     "compacted": "上下文已压缩：{{before}} → {{after}} tokens",
@@ -197,7 +197,7 @@
     "noSkills": "还没有可用的技能"
   },
   "inspector": {
-    "label": "会话信息",
+    "label": "会话详情",
     "environment": "环境",
     "local": "本机",
     "noProject": "无项目",
@@ -316,6 +316,7 @@
   "browser": {
     "annotate": "添加到对话",
     "title": "浏览器",
+    "builtIn": "内置浏览器",
     "resize": "调整浏览器面板宽度",
     "hide": "收起浏览器",
     "maximize": "放大浏览器",

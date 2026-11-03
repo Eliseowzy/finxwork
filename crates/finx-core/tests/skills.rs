@@ -173,7 +173,7 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
     let requests = api.requests();
     let system = requests[0].system.clone();
     let catalog_at = system.find("<available_skills>").expect("a catalog");
-    assert!(catalog_at < system.find("<environment>").unwrap(), "the catalog comes before the environment");
+    assert!(catalog_at < system.find("\n<environment>\n").unwrap(), "the catalog comes before the environment");
     let lint = system.find("<skill name=\"lint\"").unwrap();
     let pdf_line = format!(
         "<skill name=\"pdf-tools\" path=\"{}\">Extract text and tables from PDF files.</skill>",

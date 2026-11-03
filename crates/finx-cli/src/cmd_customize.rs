@@ -467,12 +467,22 @@ pub async fn mcp_login(name: &str) -> anyhow::Result<u8> {
     let config = finx_core::mcp::views::for_check(&ws, name).with_context(|| format!("no MCP server named {name} here"))?;
     if config.connector.is_some() {
         let m = finx_core::connectors::for_server(home.root(), &config).context("managed connector configuration changed; reinstall it from Connectors")?;
-        let pending = finx_core::connectors::login(home.root().to_path_buf(), m, Default::default()).await.map_err(anyhow::Error::msg)?;
+        let mut pending = finx_core::connectors::login(home.root().to_path_buf(), m, Default::default()).await.map_err(anyhow::Error::msg)?;
         println!("{}", pending.url);
         open_browser(&pending.url);
-        tokio::select! {
-            result = pending.wait() => result.map_err(anyhow::Error::msg)?,
-            _ = tokio::signal::ctrl_c() => bail!("login cancelled"),
+        let mut updates = pending.take_updates();
+        let wait = pending.wait();
+        tokio::pin!(wait);
+        let mut updating = true;
+        loop {
+            tokio::select! {
+                result = &mut wait => { result.map_err(anyhow::Error::msg)?; break; },
+                _ = tokio::signal::ctrl_c() => bail!("login cancelled"),
+                url = updates.recv(), if updating => match url {
+                    Some(url) => { println!("{url}"); open_browser(&url); },
+                    None => updating = false,
+                },
+            }
         }
         mcp_switch(name, true, false)?;
         println!("signed in to {name}");

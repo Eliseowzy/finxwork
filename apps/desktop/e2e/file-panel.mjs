@@ -342,7 +342,7 @@ try {
   await page.until("the editor's search", `!!document.querySelector(".fpn .cm-search")`);
 
   step("the Files button sits at the panel's right end while it is open, and puts it away");
-  const browserButton = `[...document.querySelectorAll('.spage .ctool button')].find((b) => ${either((s) => s.browser.title)}.includes(b.getAttribute('aria-label')))`;
+  const browserButton = `[...document.querySelectorAll('.spage .ctool button')].find((b) => ${either((s) => s.browser.builtIn)}.includes(b.getAttribute('aria-label')))`;
   const filesButton = `[...document.querySelectorAll('.spage .ctool button')].find((b) => ${either((s) => s.files.title)}.includes(b.getAttribute('aria-label')))`;
   const stripEnd = `[...document.querySelectorAll(".fpn .brp-strip > button")].at(-1)`;
   check(!(await page.run(`!!(${filesButton})`)), "the bar's Files button stayed while the panel is open");
@@ -355,7 +355,7 @@ try {
 
   step("the bar reads Session info, Browser, Files from left to right, each with a tip that shows soon");
   const labels = await page.run(`[...document.querySelectorAll('.spage .ctool button.tb')].map((b) => b.getAttribute('aria-label')).slice(-3)`);
-  check(either((s) => s.page.info).includes(labels[0]) && either((s) => s.browser.title).includes(labels[1]) && either((s) => s.files.title).includes(labels[2]), `the bar's buttons are ${labels.join(", ")}`);
+  check(either((s) => s.page.info).includes(labels[0]) && either((s) => s.browser.builtIn).includes(labels[1]) && either((s) => s.files.title).includes(labels[2]), `the bar's buttons are ${labels.join(", ")}`);
   const point = async (expr) => {
     const { x, y } = await page.run(`(() => { const r = (${expr}).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
@@ -368,7 +368,7 @@ try {
   check(await page.run(`!(${infoButton}).hasAttribute("title")`), "the system's own tip can still show over ours");
   since = Date.now();
   await point(browserButton);
-  await page.until("the browser button's tip", `${either((s) => s.browser.title)}.includes(document.querySelector(".tip")?.textContent)`, 1000);
+  await page.until("the browser button's tip", `${either((s) => s.browser.builtIn)}.includes(document.querySelector(".tip")?.textContent)`, 1000);
   check(Date.now() - since < 250, `moving along the bar, the next tip took ${Date.now() - since} ms`);
   await page.shot("0-tip");
   await point(`document.querySelector(".dmain")`);

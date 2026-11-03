@@ -395,7 +395,9 @@ impl Compactions {
 }
 
 async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) -> TaskOutcome {
-    // Reports that arrived before this task come before the input that started it.
+    // A new date first, then reports that arrived before this task, then the input that
+    // started it.
+    session.note_date();
     session.deliver_mail();
     if let Some(message) = input {
         session.record_user(message);
@@ -423,6 +425,8 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         if let Err(outcome) = check_context(session, task, &mut compactions).await {
             return outcome;
         }
+        // Past midnight, or a compaction left only the system prompt's date.
+        session.note_date();
         // The turn starts: `steer_now` ends it alone. Steering input that came while the MCP
         // servers or a compaction were awaited makes this request too.
         task.next_turn();

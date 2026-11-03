@@ -1308,36 +1308,38 @@ env = { DATABASE_URL = "${credential:mcp.postgres-dev.DATABASE_URL}" }
 enabled = false
 ```
 
-## 托管 CLI 连接器（首个实现：钉钉）
+## 托管 CLI 连接器（钉钉、飞书、企业微信）
 
-发现页现在支持 `CatalogConnector.managed`。钉钉条目指向 finx 内置的
-`crates/finx-core/src/connectors/dingtalk.json`，用户只需安装并在官方页面授权。
-它的执行链路是：发现页 → finx 服务 → 官方 DWS CLI → 钉钉服务；finx 将 CLI
+发现页通过 `CatalogConnector.managed` 指向 finx 内置的
+`crates/finx-core/src/connectors/<id>.json`，用户只需安装并在官方页面授权。
+执行链路是：发现页 → finx 服务 → 提供方官方 CLI → 提供方服务；finx 将 CLI
 包装成 stdio MCP 的 `run(args: string[])` 工具，复用原有工具发现、调用和会话机制。
 
 清单版本 1 描述程序版本、各平台 HTTPS 发布包及 SHA-256、压缩包内程序名、
-配置/凭据目录环境变量，以及 `cli_browser` 的登录、状态、退出命令和授权 URL
-允许的 origin/path。参数以数组直接传给子进程。账号管理和凭据覆盖参数不向模型开放。
+配置/凭据目录环境变量、许可证文件列表，以及 `cli_browser` 的登录、状态、退出命令和授权 URL
+允许的 origin/path。状态支持 JSON 字段和值匹配、纯文本精确匹配；可配置首次设置步骤
+（仅指定配置文件不存在时执行）、授权 URL 的 JSON 字段，以及本地退出所需删除的凭据文件。参数以数组直接传给子进程。账号管理和凭据覆盖参数不向模型开放。
 清单随内核发布，安装接口仅接受已登记的 ID，不接受页面传来的下载地址或命令。
 新增相同授权类型的提供方，可添加清单并登记到 `manifest()` 和发现页目录；不同授权
 机制仍需实现对应适配器，当前没有宣称任意 CLI 或任意 OAuth 均可零代码接入。
 
-`connectors/install` 下载并校验组件，保留上游 LICENSE/NOTICE，返回用户层 MCP 配置；
+`connectors/install` 下载并校验组件，保留清单指定的上游 LICENSE/NOTICE，返回用户层 MCP 配置；
 页面随后用 `config/write` 保存。`mcp/login` 返回官方授权 URL 和 login_id，完成后发
-`mcp/changed`；`mcp/login_cancel` 结束等待。页面在发起登录前订阅事件，避免快速回调
+`mcp/changed`；后续浏览器步骤使用带 `authorize_url` 的同一事件，页面自动打开新的授权链接，
+该事件不表示登录完成。`mcp/login_cancel` 结束当前步骤。页面在发起登录前订阅事件，避免快速回调
 丢失。`mcp/check` 同时检查 CLI 登录状态和 MCP 握手。安装、授权、失败重试分开表示，
 关闭弹窗可取消授权；已安装但未登录可从详情页继续。退出和移除前结束进行中的授权，
-再由官方 CLI 清理令牌。详情页支持重新安装组件。新会话加载新增连接器。
+再由官方 CLI 或清单限定的本机文件清理方式删除凭据。详情页支持重新安装组件。新会话加载新增连接器。
 
 组件保存在 `$FINX_HOME/connectors/<id>/releases/<version>/`，配置和凭据文件分别在
 相邻的 `config/`、`credentials/`。钉钉仍使用 DWS 自己的凭据加密机制（macOS 保留系统
 Keychain），不关闭 Keychain、不复制千问的客户端身份、不把令牌写入 config.toml。
-初版清单固定 DWS 1.0.66，支持 macOS/Linux 的 arm64 和 x64；Windows 尚未接入。
+各清单均支持 macOS/Linux 的 arm64 和 x64；Windows 尚未接入。
 运行调用有时间和输出限制，并响应 MCP 取消通知以终止正在执行的 CLI。
 
 验证：`cargo test -p finx-core --lib connectors::tests`；
 `cargo test -p finx-cli --test e2e_customize`；构建桌面与 finx 后运行
-`node apps/desktop/e2e/dingtalk.mjs`，用隔离的提供方模拟程序覆盖发现、安装、取消、重登、
+`FINX_CONNECTOR_E2E=<dingtalk|feishu|wecom> node apps/desktop/e2e/dingtalk.mjs`，分别用隔离的提供方模拟程序覆盖发现、安装、取消、重登、
 工具调用和退出。官方安装包下载、未登录检测、获取官方授权链接及取消另作联网冒烟验证。
 真实企业数据读取需要用户亲自完成授权，不能由模拟测试代替。
 
@@ -1347,3 +1349,43 @@ MCP 连接检查通过，服务端才将其启用。取消或失败保持停用�
 未授权的连接器，适配器启动和工具调用再读取 CLI 的真实登录状态。
 钉钉图标使用用户提供的「钉钉App icon.png」（2026-11-02），随包保存为
 `assets/connectors/dingtalk.png`。
+
+2026-11-03 扩展记录：
+
+| 连接器 | 官方组件 / 许可证 | 授权与退出 |
+| --- | --- | --- |
+| 钉钉 | DWS 1.0.66 / Apache-2.0 | 官方浏览器授权；`auth logout` |
+| 飞书 | lark-cli 1.0.98 / MIT | 首次 `config init --new` 创建专属应用，随后 `auth login --recommend --json` 完成用户设备授权；`identity=user` 才算完成，应用机器人身份不算；`auth logout --json` 清理用户授权并保留应用配置供重连 |
+| 企业微信 | @wecom/cli 1.3.4 / MIT | `auth init --noninteractive --no-browser` 打开官方二维码页面绑定机器人；`auth show --status` 必须精确返回 `authorized`。上游没有 logout，退出删除本连接器 config 内 credentials.enc、bot.enc、token.enc，不能宣称撤销服务端绑定 |
+
+飞书的首次应用设置与用户授权各有精确的 URL origin/path 白名单；JSON 输出优先读取
+`verification_uri_complete`，保留 user_code，不能误开缺少授权码的裸地址。任一步取消或失败
+均不会启用连接器；已完成应用设置后重试跳过设置。CLI 的 `finx mcp login` 同样支持后续授权页面。
+凭据留在提供方的隔离目录及系统 Keychain，不读取千问或其他应用的登录信息。
+飞书、企业微信图标取自各自官网 favicon，随包保存；来源：
+https://lf-package-cn.feishucdn.com/obj/feishu-static/lark/open/website/favicon.png
+和 https://wwcdn.weixin.qq.com/node/wwnl/wwnl/style/images/independent/favicon/favicon_48h$c976bd14.png 。
+
+授权恢复：托管登录任务由服务端持有，`mcp/login` 请求中断或页面刷新不丢失任务。
+重复调用返回相同 login_id 和最新步骤的授权 URL，不启动第二个提供方进程；首次 URL
+尚未生成时也可重新接回。`mcp/login_cancel` 等待任务退出和登记清理后返回，随后可立即重试。
+回归用 `node apps/desktop/e2e/connector-login.mjs` 验证请求中断、并发重连、第二步链接、
+取消后重试和启用门槛；飞书桌面 E2E 还覆盖等待用户授权时刷新页面再登录。
+
+普通 MCP OAuth 与托管 CLI 连接器共用上述服务端登录恢复机制。相同名称、服务器配置和
+客户端选择复用同一次授权；更换地址或客户端配置会先取消并等待旧任务结束，再启动新任务。
+OAuth 发现阶段同样可取消，请求/页面中断不会留下无法恢复的任务。发现页和自定义添加弹窗
+在请求前订阅完成事件，关闭弹窗也会取消尚在启动的授权；API Key 与免认证连接不涉及浏览器登录任务。
+`cargo test -p finx-cli --test e2e_mcp_auth` 覆盖普通 OAuth 并发复用、取消重试、切换服务与旧任务清理；
+`node apps/desktop/e2e/customize.mjs` 覆盖添加及授权过程中刷新页面后继续连接。
+
+飞书部分权限授权：lark-cli 1.0.98 的 `authorization_complete` 在部分 scope 未授予时
+仍返回退出码 3。清单的 `partial_success` 只接受指定退出码、完成事件及 `missing_scope`
+警告，之后仍检查有效的用户身份和 MCP 握手。不能凭非零退出码或历史登录状态推断本次成功。
+成功后保留不含凭据的 `auth-partial.json` 标记，通过 `McpServerView.auth_partial` 在安装完成
+和详情页提示“已连接，但部分请求权限未获批准”；完整授权及退出清理这一提示。
+回归：`FINX_CONNECTOR_E2E=feishu FINX_CONNECTOR_E2E_PARTIAL=1 node apps/desktop/e2e/dingtalk.mjs`。
+
+对话加号菜单在连接器停用时也显示“需要登录”，点击未启用且需要登录的连接器进入详情授权页。
+开关优先修改现有禁用来源或连接器所在的可写层；无项目对话使用用户层，不能写入需要 cwd 的项目层。
+办公连接器端到端测试同时覆盖菜单授权引导，以及无项目对话中的停用和重新启用。

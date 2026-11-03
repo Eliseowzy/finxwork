@@ -12,6 +12,7 @@ use finx_protocol::SkillUse;
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use crate::history::History;
 use crate::store::Entry;
 use crate::store::EntryKind;
 use crate::store::ExpandedSkill;
@@ -24,7 +25,8 @@ pub const HANDOFF_REQUEST: &str = include_str!("prompts/handoff.md");
 
 const SUMMARY_INTRO: &str = "Earlier parts of this conversation were replaced by the handoff summary below, \
     written by the assistant that did the work.";
-const SUMMARY_KEPT: &str = "The user's recent messages are kept above in their own words.";
+const SUMMARY_KEPT: &str = "The user's recent messages are kept above in their own words: the latest one \
+    steers the work, and the goal in the summary stands unless that message clearly cancels or replaces it.";
 const SUMMARY_GO_ON: &str = "Tool results from that work are no longer in context: read files again when you \
     need their current content. Continue from where the work stopped and do not redo finished steps.";
 const SKILLS_KEPT: &str = "These skills were in use before the conversation was compacted.";
@@ -39,6 +41,34 @@ pub fn last_compaction(branch: &[&Entry]) -> Option<usize> {
 /// Where the current context window starts: right after the last compaction.
 pub fn window_start(branch: &[&Entry]) -> usize {
     last_compaction(branch).map_or(0, |i| i + 1)
+}
+
+/// The user message that gives the model a new date, as the system prompt's `<environment>`
+/// gives the first.
+pub fn date_message(date: &str, ts: Timestamp) -> UserMessage {
+    let text = match chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") {
+        Ok(day) => crate::prompt::date_text(day),
+        Err(_) => date.to_string(),
+    };
+    UserMessage {
+        content: vec![UserContent::Text {
+            text: format!("<environment_update>\ndate: {text}\n</environment_update>"),
+        }],
+        ts,
+    }
+}
+
+/// The date the current context last gave the model: the newest date entry since the last
+/// compaction, else the one in the system prompt.
+pub fn date_in_context(history: &History, base_prompt: &str) -> Option<chrono::NaiveDate> {
+    for entry in history.branch_back() {
+        match &entry.kind {
+            EntryKind::Date { date } => return chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").ok(),
+            EntryKind::Compaction(_) => break,
+            _ => {}
+        }
+    }
+    crate::prompt::prompt_date(base_prompt)
 }
 
 /// The user message that carries a handoff summary in the new context.
@@ -92,19 +122,21 @@ pub fn branch_messages(branch: &[&Entry]) -> Vec<Message> {
         None => 0,
     };
     for entry in &branch[start..] {
-        if let Some(message) = entry_message(&entry.kind) {
+        if let Some(message) = entry_message(&entry.kind, entry.ts) {
             out.push(message.into_owned());
         }
     }
     out
 }
 
-/// The message an entry adds to the context. A delivered report is a user message; a user
-/// message that mentions skills carries their instructions first (docs/kernel/skill-design.md §6.3.4).
-pub fn entry_message(kind: &EntryKind) -> Option<Cow<'_, Message>> {
+/// The message an entry adds to the context; `ts` is the entry's. A delivered report and a
+/// new date are user messages; a user message that mentions skills carries their
+/// instructions first (docs/kernel/skill-design.md §6.3.4).
+pub fn entry_message(kind: &EntryKind, ts: Timestamp) -> Option<Cow<'_, Message>> {
     match kind {
         EntryKind::Message { message, skills, .. } if !skills.is_empty() => Some(Cow::Owned(with_skills(message, skills))),
         EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } => Some(Cow::Borrowed(message)),
+        EntryKind::Date { date } => Some(Cow::Owned(Message::from(date_message(date, ts)))),
         _ => None,
     }
 }
@@ -446,6 +478,26 @@ mod tests {
     }
 
     #[test]
+    fn the_date_given_is_the_newest_since_the_last_compaction() {
+        let prompt = "You are FinxWork.\n\n<environment>\ndate: 2026-10-30 (Friday)\n</environment>\n";
+        let started = chrono::NaiveDate::from_ymd_opt(2026, 10, 30);
+        let november = |day| chrono::NaiveDate::from_ymd_opt(2026, 11, day);
+        let mut history = History::default();
+        history.append("1".into(), EntryKind::message(Message::from(UserMessage::text("hi"))), 1);
+        assert_eq!(date_in_context(&history, prompt), started);
+        history.append("2".into(), EntryKind::Date { date: "2026-11-02".into() }, 2);
+        assert_eq!(date_in_context(&history, prompt), november(2));
+        // The compaction replaces that update: the system prompt's date is what is left.
+        history.append("3".into(), compaction(Vec::new(), Vec::new()), 3);
+        assert_eq!(date_in_context(&history, prompt), started);
+        history.append("4".into(), EntryKind::Date { date: "2026-11-03".into() }, 4);
+        assert_eq!(date_in_context(&history, prompt), november(3));
+        let texts = user_texts(&history.branch());
+        assert_eq!(texts.len(), 2, "the summary, then the date");
+        assert_eq!(texts[1], "<environment_update>\ndate: 2026-11-03 (Tuesday)\n</environment_update>");
+    }
+
+    #[test]
     fn a_compaction_replaces_everything_before_it() {
         let entries = [
             user_entry("1", "old request"),
@@ -491,8 +543,8 @@ mod tests {
             skills: vec![skill.clone()],
             skill: None,
         };
-        assert_eq!(parts(&entry_message(&mentioned).unwrap()), ["<skill name=\"a\">\nA.\n</skill>", "use /skill:a now"]);
-        assert!(matches!(entry_message(&EntryKind::message(words)), Some(Cow::Borrowed(_))), "nothing copied");
+        assert_eq!(parts(&entry_message(&mentioned, 0).unwrap()), ["<skill name=\"a\">\nA.\n</skill>", "use /skill:a now"]);
+        assert!(matches!(entry_message(&EntryKind::message(words), 0), Some(Cow::Borrowed(_))), "nothing copied");
         let uses = skill_uses(std::slice::from_ref(&skill), None);
         assert_eq!(
             uses,
@@ -507,7 +559,7 @@ mod tests {
         let line = r#"{"id":"e1","parent":null,"ts":1,"type":"message","message":{"role":"user","content":[{"type":"text","text":"<skill name=\"d\">D.</skill>\n\nnow"}],"ts":1},"skill":{"name":"d","path":"/s/d/SKILL.md","input":"/d now"}}"#;
         let entry: Entry = serde_json::from_str(line).unwrap();
         let EntryKind::Message { message, skills, skill } = &entry.kind else { panic!("a message") };
-        assert_eq!(parts(&entry_message(&entry.kind).unwrap()), ["<skill name=\"d\">D.</skill>\n\nnow"]);
+        assert_eq!(parts(&entry_message(&entry.kind, entry.ts).unwrap()), ["<skill name=\"d\">D.</skill>\n\nnow"]);
         assert_eq!(parts(&written(message, skill.as_deref())), ["/d now"]);
         assert_eq!(skill_uses(skills, skill.as_deref())[0].name, "d");
     }

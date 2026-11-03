@@ -16,10 +16,12 @@ input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 :focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .fadein{animation:fadein .35s cubic-bezier(.2,0,0,1)}
-/* Scrollbars as macOS overlays draw them: no track, a slim faint rounded thumb that firms up under the pointer. */
+/* Scrollbars as macOS overlays draw them: no track, a slim faint rounded thumb that shows while its scroller
+   moves (.scrolling, main.tsx) and firms up under the pointer. */
 ::-webkit-scrollbar{width:10px;height:10px;background:transparent}
 ::-webkit-scrollbar-track,::-webkit-scrollbar-corner{background:transparent}
-::-webkit-scrollbar-thumb{background-color:var(--l4);border-radius:999px;border:3px solid transparent;background-clip:padding-box;min-height:32px}
+::-webkit-scrollbar-thumb{background-color:transparent;border-radius:999px;border:3px solid transparent;background-clip:padding-box;min-height:32px}
+.scrolling::-webkit-scrollbar-thumb{background-color:var(--l4)}
 ::-webkit-scrollbar-thumb:hover{background-color:var(--l3)}
 ::-webkit-scrollbar-thumb:active{background-color:var(--l2)}
 /* window chrome: the title bar areas drag the window; controls in them don't */
@@ -416,8 +418,6 @@ button.insp-row:active{background:var(--fill2)}
 .tool-shots{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 2px}
 .tool-shot{padding:0;border:.5px solid var(--sep);border-radius:var(--r-sm);background:none;overflow:hidden;cursor:zoom-in;line-height:0}
 .tool-shot img{display:block;max-width:240px;max-height:150px;object-fit:contain}
-.tool-shots.big .tool-shot{cursor:zoom-out}
-.tool-shots.big .tool-shot img{max-width:100%;max-height:none}
 .tool .th .vb{flex:none}
 .tool .th .sm2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* A command reads as code: the mono face a size down, a little quieter until hovered. */

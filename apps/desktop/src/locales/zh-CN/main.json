@@ -35,8 +35,8 @@
       "title": "显示",
       "nextAttention": "下一个需要处理的会话",
       "nextActive": "下一个进行中的会话",
-      "showInspector": "显示信息面板",
-      "hideInspector": "隐藏信息面板",
+      "showInspector": "显示会话详情",
+      "hideInspector": "隐藏会话详情",
       "showSidebar": "显示边栏",
       "hideSidebar": "隐藏边栏",
       "fullScreen": "进入全屏幕"

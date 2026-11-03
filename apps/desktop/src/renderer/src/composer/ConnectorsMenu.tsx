@@ -105,10 +105,12 @@ function ServerRow({ s, c, name, open }: { s: McpServerView; c: Customize; name:
   const { t } = useTranslation("customize");
   const look = statusOf(s, false);
   const untrusted = look.kind === "untrusted";
+  const needsLogin = look.kind === "needs_login" || s.auth_state === "needs_login";
   // Only what needs the person shows; the rest is the 自定义 page's.
-  const need = untrusted ? { text: t("menuNeed.untrusted"), cls: "" } : !s.enabled ? null : look.kind === "needs_login" ? { text: t("menuNeed.login"), cls: "" } : look.kind === "failed" ? { text: t("menuNeed.failed"), cls: "bad" } : null;
+  const need = untrusted ? { text: t("menuNeed.untrusted"), cls: "" } : needsLogin ? { text: t("menuNeed.login"), cls: "" } : !s.enabled ? null : look.kind === "failed" ? { text: t("menuNeed.failed"), cls: "bad" } : null;
   const toggle = () => {
     if (untrusted) return;
+    if (!s.enabled && needsLogin) return open();
     const on = !s.enabled;
     const done = fromRepo(s) ? t(on ? "toast.serverOnForYou" : "toast.serverOffForYou", { name: s.name }) : t(on ? "toast.serverOn" : "toast.serverOff", { name: s.name });
     void c.switchServer(s, on, done);

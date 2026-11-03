@@ -98,8 +98,8 @@ export function SessionPage({ s }: { s: ListSession }) {
           {window.finx && !browser && (
             <button
               className="tb"
-              title={t("browser.title")}
-              aria-label={t("browser.title")}
+              title={t("browser.builtIn")}
+              aria-label={t("browser.builtIn")}
               aria-pressed={false}
               onClick={() => {
                 if (hasTabs) st.set({ browser: true, background: false, files: false, filesMax: false });

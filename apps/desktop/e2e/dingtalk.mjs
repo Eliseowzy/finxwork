@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Managed DingTalk connector: discovery → install → cancel → retry → login → MCP call → logout.
-// Uses real Electron/finx with an isolated CLI fixture; never authorizes a real DingTalk account.
+// Managed office connectors: discovery → install → cancel → retry → login → MCP call → logout.
+// Uses real Electron/finx with an isolated CLI fixture; never authorizes a real account.
 // Build first: cargo build -p finx-cli -p finx-mock && pnpm --filter @finx/desktop build
-// Run: node apps/desktop/e2e/dingtalk.mjs
+// Run once per provider: FINX_CONNECTOR_E2E=dingtalk|feishu|wecom node apps/desktop/e2e/dingtalk.mjs
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -115,19 +115,34 @@ const t = Object.fromEntries(["en", "zh-CN"].map((l) => [l, JSON.parse(fs.readFi
 const words = (pick) => ["en", "zh-CN"].map((l) => pick(t[l]));
 const anyText = (list) => `(${JSON.stringify(list)}).find((w) => document.body.innerText.includes(w))`;
 
-const manifest = JSON.parse(fs.readFileSync(path.join(root, "crates/finx-core/src/connectors/dingtalk.json"), "utf8"));
-const release = path.join(home, "connectors/dingtalk/releases", manifest.version);
-const configDir = path.join(home, "connectors/dingtalk/config");
+const provider = process.env.FINX_CONNECTOR_E2E || "dingtalk";
+check(["dingtalk", "feishu", "wecom"].includes(provider), "unknown fixture provider");
+const manifest = JSON.parse(fs.readFileSync(path.join(root, `crates/finx-core/src/connectors/${provider}.json`), "utf8"));
+const release = path.join(home, `connectors/${provider}/releases`, manifest.version);
+const configDir = path.join(home, `connectors/${provider}/config`);
+const accountFile = provider === "wecom" ? "credentials.enc" : "account";
+const partialGrant = provider === "feishu" && process.env.FINX_CONNECTOR_E2E_PARTIAL === "1";
 fs.mkdirSync(release, { recursive: true });
+const statusTrue = provider === "wecom" ? "authorized" : JSON.stringify({ [manifest.auth.status_field]: manifest.auth.status_value ?? true });
+const statusFalse = provider === "wecom" ? "unauthorized" : JSON.stringify({ [manifest.auth.status_field]: provider === "feishu" ? "bot" : false });
+const loginURL = `${manifest.auth.authorize_origin}${manifest.auth.authorize_path}?state=e2e-fixture`;
+const loginOutput = provider === "feishu" ? JSON.stringify({ verification_uri: `${manifest.auth.authorize_origin}${manifest.auth.authorize_path}`, verification_uri_complete: loginURL }) : loginURL;
 const fixture = `#!/bin/sh
+D="$${manifest.config_env}"
 case "$1 $2" in
- "auth status") if test -f "$DWS_CONFIG_DIR/account"; then echo '{"authenticated":true}'; else echo '{"authenticated":false}'; fi ;;
- "auth login")
-   echo $$ > "$DWS_CONFIG_DIR/pid"
-   echo 'https://login.dingtalk.com/oauth2/auth?state=e2e-fixture'
-   while ! test -f "$DWS_CONFIG_DIR/finish"; do sleep 0.05; done
-   touch "$DWS_CONFIG_DIR/account" ;;
- "auth logout") rm -f "$DWS_CONFIG_DIR/account" ;;
+ "config init")
+   echo $$ > "$D/pid"
+   echo 'https://open.feishu.cn/page/cli?user_code=setup'
+   while ! test -f "$D/setup-finish"; do sleep 0.05; done
+   echo '{}' > "$D/config.json" ;;
+ "${manifest.auth.status.slice(0, 2).join(" ")}") if test -f "$D/${accountFile}"; then echo '${statusTrue}'; else echo '${statusFalse}'; fi ;;
+ "${manifest.auth.login.slice(0, 2).join(" ")}")
+   echo $$ > "$D/pid"
+   echo '${loginOutput}'
+   while ! test -f "$D/finish"; do sleep 0.05; done
+   touch "$D/${accountFile}"
+   ${partialGrant ? `echo '{"event":"authorization_complete","user_open_id":"fixture","missing":["example:scope"],"warning":{"type":"missing_scope"}}'; exit 3` : ""} ;;
+ "auth logout") rm -f "$D/${accountFile}" ;;
  *) printf '%s\\n' "$@" ;;
 esac
 `;
@@ -135,6 +150,15 @@ fs.writeFileSync(path.join(release, "cli"), fixture, { mode: 0o700 });
 fs.writeFileSync(path.join(release, "receipt.json"), JSON.stringify({ version: manifest.version, binary_sha256: createHash("sha256").update(fixture).digest("hex") }));
 let model = null;
 let page;
+async function openComposerConnector() {
+  await page.run(`document.querySelector('.side-nav .nav-i').click()`);
+  await page.until("new conversation composer", `!!document.querySelector('.cmp-plus')`);
+  await page.run(click(".cmp-plus"));
+  await page.until("connectors submenu entry", click('.vmenu [aria-haspopup="menu"]', "连接器") + " || " + click('.vmenu [aria-haspopup="menu"]', "Connectors"));
+  const row = `[...document.querySelectorAll('.cn-sub .cn-row')].find(e => e.querySelector('.nm')?.textContent === ${JSON.stringify(manifest.name)})`;
+  await page.until("connector in composer", `!!(${row})`);
+  return row;
+}
 try {
   model = spawn(mockModel, [], { stdio: ["ignore", "pipe", "inherit"] });
   const toml = await new Promise((resolve) => {
@@ -144,26 +168,32 @@ try {
   fs.writeFileSync(path.join(home, "models.toml"), toml.replace(/^# .*\n/m, ""));
   fs.writeFileSync(path.join(home, "config.toml"), 'model = "mock/mock-1"\npermission_mode = "manual"\n');
   page = await launch();
-  step("discover DingTalk and open managed install sheet");
+  step(`discover ${manifest.name} and open managed install sheet`);
   await page.until("sidebar", click(".nav-i", words((x) => x.title)[1]) + " || " + click(".nav-i", words((x) => x.title)[0]));
   await page.run(click(".cz-tab", words((x) => x.tab.connectors)[1]) + " || " + click(".cz-tab", words((x) => x.tab.connectors)[0]));
-  await page.until("DingTalk catalog", `!![...document.querySelectorAll('.cz-card')].find(e => e.textContent.includes('钉钉'))`);
-  await page.run(`[...document.querySelectorAll('.cz-card')].find(e => e.textContent.includes('钉钉')).click()`);
+  await page.until("provider catalog", `!![...document.querySelectorAll('.cz-card')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)}))`);
+  await page.run(`[...document.querySelectorAll('.cz-card')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)})).click()`);
   await page.until("catalog detail", `!!document.querySelector('.cz-hero')`);
   await page.run(click(".cz-hero button", words((x) => x.connector.add)[1]) + " || " + click(".cz-hero button", words((x) => x.connector.add)[0]));
   await page.until("install sheet", `!!document.querySelector('dialog[open] .cz-managed')`);
   await page.until("official logo in install sheet", `!!document.querySelector('dialog[open] .cz-tile img')?.naturalWidth`);
-  await page.shot("dingtalk-install");
+  await page.shot(`${provider}-install`);
   const primary = `document.querySelector('dialog[open] .sheet-foot .primary')`;
   await page.run(`${primary}.click()`);
   await page.until("authorizing", anyText(words((x) => x.managed.steps.authorizing)));
   await page.until("authorization URL available", anyText(words((x) => x.managed.openBrowser)));
   check(fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"), "connector enabled before authorization");
   let rejected = false;
-  try { cli(["mcp", "enable", "dingtalk"]); } catch { rejected = true; }
+  try { cli(["mcp", "enable", provider]); } catch { rejected = true; }
   check(rejected, "CLI bypassed authorization gate");
+  if (provider === "feishu") {
+    await page.until("application setup URL", `document.querySelector('dialog[open] [data-authorize]')?.dataset.authorize?.includes('/page/cli')`);
+    fs.writeFileSync(path.join(configDir, "setup-finish"), "");
+    await page.until("user consent URL after setup", `document.querySelector('dialog[open] [data-authorize]')?.dataset.authorize?.includes('/device/verify')`);
+    check(fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"), "application creation incorrectly enabled Feishu");
+  }
   const firstPid = Number(fs.readFileSync(path.join(configDir, "pid"), "utf8"));
-  await page.shot("dingtalk-authorizing");
+  await page.shot(`${provider}-authorizing`);
   step("cancel authorization and ensure the provider process exits");
   await page.run(`document.querySelector('dialog[open] .sheet-foot .btn').click()`);
   await page.until("sheet closed", `!document.querySelector('dialog[open]')`);
@@ -174,24 +204,73 @@ try {
     await sleep(50);
     if (i === 99) fail("cancelled CLI is still alive");
   }
-  check(!fs.existsSync(path.join(configDir, "account")), "cancelled flow created an account");
+  check(!fs.existsSync(path.join(configDir, accountFile)), "cancelled flow created an account");
   step("installed connector shows sign-in; retry and complete fixture authorization");
   // Closing may leave the already installed entry selected in discovery. Open its detail.
   await page.run(click(".cz-back"));
   await page.run(`[...document.querySelectorAll('.cz-seg button')][0].click()`);
-  await page.until("installed DingTalk", `!![...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes('钉钉'))`);
-  await page.run(`[...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes('钉钉')).click()`);
+  await page.until("installed connector", `!![...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)}))`);
+  await page.run(`[...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)})).click()`);
   check(await page.run(`document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false' && document.querySelector('[role=switch]')?.disabled`), "cancelled authorization left the switch enabled");
   await page.until("login action", anyText(words((x) => x.connector.loginTitle)));
+  step("composer shows sign-in for a disabled unauthorized connector");
+  const unsignedRow = await openComposerConnector();
+  check(await page.run(`(${unsignedRow}).querySelector('.cn-st')?.textContent === ${JSON.stringify(t['zh-CN'].menuNeed.login)} || (${unsignedRow}).querySelector('.cn-st')?.textContent === ${JSON.stringify(t.en.menuNeed.login)}`), "composer hid the sign-in requirement");
+  await page.run(`(${unsignedRow}).click()`);
+  await page.until("composer opens connector sign-in", `!!document.querySelector('.cz-dtitle') && !!document.querySelector('.cz-note button')`);
+  check(fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"), "composer enabled an unauthorized connector");
+  // Exercise staged progress in the existing-connector login UI as well as the sheet.
+  if (provider === "feishu") fs.unlinkSync(path.join(configDir, "config.json"));
   await page.run(click(".cz-note button", words((x) => x.connector.signIn)[1]) + " || " + click(".cz-note button", words((x) => x.connector.signIn)[0]));
   await page.until("retry is waiting", `!!document.querySelector('[data-authorize]')?.dataset.authorize`);
+  if (provider === "feishu") {
+    await page.until("details advances to user consent", `document.querySelector('[data-authorize]')?.dataset.authorize?.includes('/device/verify')`);
+    check(fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"), "progress notification prematurely enabled the connector");
+  }
+  if (provider === "feishu") {
+    step("reload while awaiting consent, then resume the same provider process");
+    const waitingPid = fs.readFileSync(path.join(configDir, "pid"), "utf8");
+    await page.cdp("Page.reload");
+    await page.until("sidebar after reload", click(".nav-i", words((x) => x.title)[1]) + " || " + click(".nav-i", words((x) => x.title)[0]));
+    await page.run(click(".cz-tab", words((x) => x.tab.connectors)[1]) + " || " + click(".cz-tab", words((x) => x.tab.connectors)[0]));
+    await page.run(click(".cz-back"));
+    await page.run(`[...document.querySelectorAll('.cz-seg button')][0]?.click()`);
+    await page.until("installed connector after reload", `!![...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)}))`);
+    await page.run(`[...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)})).click()`);
+    await page.until("resume action", anyText(words((x) => x.connector.loginTitle)));
+    await page.run(click(".cz-note button", words((x) => x.connector.signIn)[1]) + " || " + click(".cz-note button", words((x) => x.connector.signIn)[0]));
+    await page.until("resumed consent URL", `document.querySelector('[data-authorize]')?.dataset.authorize?.includes('/device/verify')`);
+    check(fs.readFileSync(path.join(configDir, "pid"), "utf8") === waitingPid, "reload started a duplicate provider process");
+  }
   fs.writeFileSync(path.join(configDir, "finish"), "");
   await page.until("account connected", anyText(words((x) => x.connector.signedIn)), 30000);
   await page.until("tools listed", `document.querySelectorAll('.cz-dtools .cz-tool').length === 1`);
   await page.until("authorized connector enabled", `document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true' && !document.querySelector('[role=switch]')?.disabled`);
-  await page.shot("dingtalk-connected");
+  if (partialGrant) await page.until("partial permission notice", anyText(words((x) => x.managed.partialPermissions)));
+  step("composer toggles an authorized connector without a project");
+  const enabledRow = await openComposerConnector();
+  await page.run(`(${enabledRow}).click()`);
+  await page.until("composer disabled", `(${enabledRow})?.getAttribute('aria-checked') === 'false'`);
+  await page.until("disabled state saved", `!document.body.innerText.includes('invalid params:')`);
+  // Wait for the persisted result, not only the optimistic switch.
+  for (let i = 0; !fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"); i++) {
+    if (i === 100) fail("composer did not persist disabled state");
+    await sleep(50);
+  }
+  await sleep(300);
+  await page.run(`(${enabledRow}).click()`);
+  for (let i = 0; fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("enabled = false"); i++) {
+    if (i === 100) fail("composer could not re-enable without a project");
+    await sleep(50);
+  }
+  await page.until("composer enabled", `(${enabledRow})?.getAttribute('aria-checked') === 'true'`);
+  await page.run(click('.cn-sub .mi', "管理连接器") + " || " + click('.cn-sub .mi', "Manage connectors"));
+  await page.until("connector list", `!!document.querySelector('.cz-row')`);
+  await page.run(`[...document.querySelectorAll('.cz-row')].find(e => e.textContent.includes(${JSON.stringify(manifest.name)})).click()`);
+  await page.until("connector detail restored", `!!document.querySelector('.cz-dtitle')`);
+  await page.shot(`${provider}-connected`);
   const configured = fs.readFileSync(path.join(home, "config.toml"), "utf8");
-  check(configured.includes('connector = "dingtalk"'), "managed identity did not persist");
+  check(configured.includes(`connector = "${provider}"`), "managed identity did not persist");
   check(!/access_token|refresh_token|client_secret/.test(configured), "credentials leaked into config");
   step("real stdio adapter executes a tool without a shell");
   const calls = [
@@ -199,7 +278,7 @@ try {
     { jsonrpc: "2.0", method: "notifications/initialized" },
     { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "run", arguments: { args: ["doc", "search", "$(echo literal)"] } } },
   ].map(x => JSON.stringify(x) + "\n").join("");
-  const result = execFileSync(finx, ["connector", "serve", "dingtalk", "--home", home], { env, input: calls, encoding: "utf8", timeout: 30000 });
+  const result = execFileSync(finx, ["connector", "serve", provider, "--home", home], { env, input: calls, encoding: "utf8", timeout: 30000 });
   const tool = result.trim().split("\n").map(x => JSON.parse(x)).find(x => x.id === 2);
   check(tool.result.content[0].text.includes("$(echo literal)"), "CLI arguments were not preserved literally");
   check(!tool.result.isError, "tool returned an error");
@@ -208,7 +287,7 @@ try {
   await page.until("menu", `!!document.querySelector('.cz-menu')`);
   await page.run(click(".cz-menu .mi", words((x) => x.connector.signOut)[1]) + " || " + click(".cz-menu .mi", words((x) => x.connector.signOut)[0]));
   await page.until("signed out", anyText(words((x) => x.connector.signedOut)));
-  check(!fs.existsSync(path.join(configDir, "account")), "logout retained credentials");
+  check(!fs.existsSync(path.join(configDir, accountFile)), "logout retained credentials");
   check(await page.run(`document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false' && document.querySelector('[role=switch]')?.disabled`), "logout did not disable the connector");
   step("reinstall resumes through the sheet, including an immediate authorization callback");
   await page.run(click(".cz-dacts .cz-more"));
@@ -217,24 +296,25 @@ try {
   await page.until("reinstall sheet", `!!document.querySelector('dialog[open] .cz-managed')`);
   await page.run(`${primary}.click()`);
   await page.until("sheet ready", anyText(words((x) => x.managed.steps.ready)));
-  await page.shot("dingtalk-ready");
+  if (partialGrant) await page.until("partial permission notice in sheet", anyText(words((x) => x.managed.partialPermissions)));
+  await page.shot(`${provider}-ready`);
   await page.run(`${primary}.click()`);
   await page.until("sheet closed", `!document.querySelector('dialog[open]')`);
   step("CLI login/logout share the account, and removing from the page clears it");
-  cli(["mcp", "logout", "dingtalk"]);
-  check(!fs.existsSync(path.join(configDir, "account")), "CLI logout retained credentials");
-  cli(["mcp", "login", "dingtalk"]);
-  check(fs.existsSync(path.join(configDir, "account")), "CLI login did not use the managed account");
+  cli(["mcp", "logout", provider]);
+  check(!fs.existsSync(path.join(configDir, accountFile)), "CLI logout retained credentials");
+  cli(["mcp", "login", provider]);
+  check(fs.existsSync(path.join(configDir, accountFile)), "CLI login did not use the managed account");
   await page.run(click(".cz-dacts .cz-more"));
   await page.until("menu", `!!document.querySelector('.cz-menu')`);
   await page.run(click(".cz-menu .mi", words((x) => x.connector.removeConnector)[1]) + " || " + click(".cz-menu .mi", words((x) => x.connector.removeConnector)[0]));
   for (let i = 0; i < 100; i++) {
-    if (!fs.readFileSync(path.join(home, "config.toml"), "utf8").includes("[mcp_servers.dingtalk]")) break;
+    if (!fs.readFileSync(path.join(home, "config.toml"), "utf8").includes(`[mcp_servers.${provider}]`)) break;
     await sleep(100);
     if (i === 99) fail("removal never committed");
   }
-  check(!fs.existsSync(path.join(configDir, "account")), "removing the connector retained credentials");
-  console.log("PASS: DingTalk discovery, install, cancellation, retry, authorization, MCP invocation logout, immediate callback, CLI parity and removal");
+  check(!fs.existsSync(path.join(configDir, accountFile)), "removing the connector retained credentials");
+  console.log(`${provider}: PASS: discovery, install, cancellation, retry, authorization, MCP invocation logout, immediate callback, CLI parity and removal`);
 } catch (e) {
   if (page) console.error("PAGE:", await page.run("document.body.innerText").catch(() => "unavailable"));
   console.error(e);

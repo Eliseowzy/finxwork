@@ -818,6 +818,8 @@ export type McpAuthState = "logged_in" | "needs_login" | "saved" | "missing";
 
 /** `mcp/changed`: a server's status, cached result or configuration changed; or a sign-in started with `mcp/login` ended (`login_id`, with `login_error` when it failed). */
 export type McpChangedParams = {
+  /** A subsequent browser step. When present, this is progress, not completion. */
+  authorize_url?: string | null;
   login_error?: string | null;
   login_id?: string | null;
   name?: string | null;
@@ -1027,6 +1029,8 @@ export type McpServerStatusView = {
 /** One server as the page shows it; secrets never appear, only the names they are saved under. */
 export type McpServerView = {
   auth: McpAuthKind;
+  /** Authenticated, but the provider did not grant every requested permission. */
+  auth_partial?: boolean | null;
   auth_state?: McpAuthState | null;
   /** Curated CLI connector, when installed through connectors/install. */
   connector?: string | null;
