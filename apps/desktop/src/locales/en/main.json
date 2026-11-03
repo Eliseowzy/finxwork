@@ -1,5 +1,6 @@
 {
   "settingsWindow": "Settings",
+  "pastedImage": "Pasted image {{n}}",
   "menu": {
     "settings": "Settings…",
     "app": {

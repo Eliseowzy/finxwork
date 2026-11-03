@@ -87,29 +87,50 @@ impl System {
     }
     async fn read_login(&self, interactive: bool) -> Result<Login> {
         supported()?;
-        if !tokio::fs::try_exists(self.app_path())
-            .await
-            .unwrap_or(false)
-        {
-            return Err(ConnectionError::new("unsupported", "来源应用不可用"));
+        if !tokio::fs::try_exists(self.app_path()).await.map_err(|_| {
+            ConnectionError::new("source_unreadable", "无法检查来源应用的安装信息").at("discovery")
+        })? {
+            return Err(ConnectionError::new("source_not_found", "来源应用不可用").at("discovery"));
         }
+        tracing::debug!(stage = "login_file", "connection_local_stage_started");
         let file = self.auth_path()?;
         if tokio::fs::metadata(&file)
             .await
-            .map_err(|_| ConnectionError::login())?
+            .map_err(login_file_error)?
             .len()
             > 1024 * 1024
         {
-            return Err(ConnectionError::unsupported());
+            return Err(ConnectionError::new(
+                "login_file_too_large",
+                "来源应用登录文件超过大小限制",
+            )
+            .at("login_file"));
         }
-        let sealed = tokio::fs::read(file)
-            .await
-            .map_err(|_| ConnectionError::login())?;
+        let sealed = tokio::fs::read(file).await.map_err(login_file_error)?;
+        tracing::debug!(stage = "login_file", "connection_local_stage_completed");
+        let keychain_started = std::time::Instant::now();
+        if interactive {
+            tracing::info!(stage = "keychain", "connection_stage_started");
+        }
         let service = self.service();
-        let password = tokio::task::spawn_blocking(move || source_password(service, interactive))
-            .await
-            .map_err(|_| ConnectionError::unavailable())??;
+        let span = tracing::Span::current();
+        let password = tokio::task::spawn_blocking(move || {
+            span.in_scope(|| source_password(service, interactive))
+        })
+        .await
+        .map_err(|_| {
+            ConnectionError::new("keychain_unavailable", "钥匙串读取任务失败").at("keychain")
+        })??;
+        if interactive {
+            tracing::info!(
+                stage = "keychain",
+                elapsed_ms = keychain_started.elapsed().as_millis() as u64,
+                "connection_stage_completed"
+            );
+        }
+        tracing::debug!(stage = "decrypt", "connection_local_stage_started");
         let value = decrypt_value(&sealed, &password)?;
+        tracing::debug!(stage = "decrypt", "connection_local_stage_completed");
         if self.product == "qoder" {
             crate::qoder::source_login(&value)
         } else {
@@ -117,6 +138,49 @@ impl System {
         }
     }
 }
+fn qwen_headers(p: &Value) -> Result<BTreeMap<String, String>> {
+    let read = |key: &str| {
+        p[key]
+            .as_str()
+            .filter(|v| !v.is_empty())
+            .filter(|v| reqwest::header::HeaderValue::from_str(v).is_ok())
+            .ok_or_else(|| ConnectionError::format("app_metadata", key))
+    };
+    let version = read("CFBundleShortVersionString")?;
+    let build = read("CFBundleVersion")?;
+    Ok(BTreeMap::from([
+        ("X-QwenWork-Version".into(), version.into()),
+        (
+            "X-QwenWork-Release-Version".into(),
+            format!("{version}-{build}"),
+        ),
+        ("X-QwenWork-Build".into(), build.into()),
+        ("X-QwenWork-Platform".into(), "darwin".into()),
+        (
+            "X-QwenWork-Arch".into(),
+            if cfg!(target_arch = "aarch64") {
+                "arm64"
+            } else {
+                "x64"
+            }
+            .into(),
+        ),
+        ("X-QwenWork-Channel".into(), "stable".into()),
+    ]))
+}
+fn login_file_error(e: std::io::Error) -> ConnectionError {
+    tracing::warn!(stage = "login_file", io_kind = ?e.kind(), os_error = ?e.raw_os_error(), "connection_local_io_failed");
+    match e.kind() {
+        std::io::ErrorKind::NotFound => ConnectionError::login().at("login_file"),
+        std::io::ErrorKind::PermissionDenied => {
+            ConnectionError::new("login_file_denied", "没有读取来源应用登录文件的权限")
+                .at("login_file")
+        }
+        _ => ConnectionError::new("login_file_unreadable", "无法读取来源应用登录文件")
+            .at("login_file"),
+    }
+}
+
 fn auth_path() -> Result<PathBuf> {
     Ok(dirs::home_dir()
         .ok_or_else(|| ConnectionError::new("unsupported", "无法定位用户目录"))?
@@ -126,10 +190,7 @@ fn supported() -> Result<()> {
     if cfg!(target_os = "macos") {
         Ok(())
     } else {
-        Err(ConnectionError::new(
-            "unsupported",
-            "本机应用连接目前只支持 macOS",
-        ))
+        Err(ConnectionError::new("unsupported", "本机应用连接目前只支持 macOS").at("discovery"))
     }
 }
 async fn command(
@@ -137,6 +198,11 @@ async fn command(
     args: &[&str],
     input: Option<&str>,
 ) -> Result<std::process::Output> {
+    let stage = if program == "/usr/bin/plutil" {
+        "app_metadata"
+    } else {
+        "credential_store"
+    };
     let mut child = Command::new(program)
         .args(args)
         .kill_on_drop(true)
@@ -149,7 +215,8 @@ async fn command(
         .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(|_| {
-            ConnectionError::new("connection_permission_required", "无法读取本机应用或钥匙串")
+            ConnectionError::new("local_command_failed", "无法启动本地应用信息或凭据读取工具")
+                .at(stage)
         })?;
     if let Some(value) = input {
         let mut stdin = child
@@ -165,19 +232,21 @@ async fn command(
         .await
         .map_err(|_| {
             ConnectionError::new(
-                "connection_permission_required",
-                "钥匙串操作超时，请检查系统授权提示",
+                "local_command_timeout",
+                "本地工具执行超时，请检查系统提示后重试",
             )
+            .at(stage)
         })?
-        .map_err(|_| ConnectionError::unavailable())
+        .map_err(|_| ConnectionError::new("local_command_failed", "本地工具执行失败").at(stage))
 }
 #[async_trait]
 impl Environment for System {
     async fn discover(&self) -> Result<ConnectionDiscovery> {
         let installed = cfg!(target_os = "macos")
-            && tokio::fs::try_exists(self.app_path())
-                .await
-                .unwrap_or(false);
+            && tokio::fs::try_exists(self.app_path()).await.map_err(|_| {
+                ConnectionError::new("source_unreadable", "无法检查来源应用的安装信息")
+                    .at("discovery")
+            })?;
         let version = if installed {
             let out = command(
                 "/usr/bin/plutil",
@@ -199,6 +268,7 @@ impl Environment for System {
             None
         };
         Ok(ConnectionDiscovery {
+            diagnostic: None,
             adapter_id: self.product.into(),
             installed,
             version,
@@ -206,7 +276,7 @@ impl Environment for System {
             login: if installed
                 && tokio::fs::try_exists(self.auth_path()?)
                     .await
-                    .unwrap_or(false)
+                    .map_err(login_file_error)?
             {
                 "unknown"
             } else {
@@ -224,13 +294,7 @@ impl Environment for System {
     async fn headers(&self) -> Result<BTreeMap<String, String>> {
         supported()?;
         if self.product == "qoder" {
-            let discovery = self.discover().await?;
-            if !discovery.installed || discovery.version.as_deref() != Some("0.4.11") {
-                return Err(ConnectionError::new(
-                    "unsupported",
-                    "该 Qoder 版本尚未通过兼容性验证",
-                ));
-            }
+            // Qoder has no desktop version headers; validate its protocol on use.
             return Ok(BTreeMap::new());
         }
         let out = command(
@@ -238,43 +302,19 @@ impl Environment for System {
             &["-convert", "json", "-o", "-", self.app_path()],
             None,
         )
-        .await?;
+        .await
+        .map_err(|e| e.at("app_metadata"))?;
         if !out.status.success() {
-            return Err(ConnectionError::unsupported());
+            return Err(
+                ConnectionError::new("app_metadata_unreadable", "无法读取来源应用信息")
+                    .at("app_metadata"),
+            );
         }
-        let p: Value =
-            serde_json::from_slice(&out.stdout).map_err(|_| ConnectionError::unsupported())?;
-        let version = p["CFBundleShortVersionString"]
-            .as_str()
-            .ok_or_else(ConnectionError::unsupported)?;
-        if version != "1.4.0" {
-            return Err(ConnectionError::new(
-                "unsupported",
-                "该千问版本尚未通过兼容性验证",
-            ));
-        }
-        let build = p["CFBundleVersion"]
-            .as_str()
-            .ok_or_else(ConnectionError::unsupported)?;
-        Ok(BTreeMap::from([
-            ("X-QwenWork-Version".into(), version.into()),
-            (
-                "X-QwenWork-Release-Version".into(),
-                format!("{version}-{build}"),
-            ),
-            ("X-QwenWork-Build".into(), build.into()),
-            ("X-QwenWork-Platform".into(), "darwin".into()),
-            (
-                "X-QwenWork-Arch".into(),
-                if cfg!(target_arch = "aarch64") {
-                    "arm64"
-                } else {
-                    "x64"
-                }
-                .into(),
-            ),
-            ("X-QwenWork-Channel".into(), "stable".into()),
-        ]))
+        let p: Value = serde_json::from_slice(&out.stdout).map_err(|_| {
+            ConnectionError::new("app_metadata_invalid", "来源应用信息不是有效的 JSON 数据")
+                .at("app_metadata")
+        })?;
+        qwen_headers(&p)
     }
     async fn get(&self, id: &str) -> Result<Option<String>> {
         supported()?;
@@ -299,7 +339,8 @@ impl Environment for System {
             _ => Err(ConnectionError::new(
                 "connection_permission_required",
                 "无法读取连接服务钥匙串",
-            )),
+            )
+            .at("credential_store")),
         }
     }
     async fn set(&self, id: &str, value: &str) -> Result<()> {
@@ -324,7 +365,8 @@ impl Environment for System {
             return Err(ConnectionError::new(
                 "connection_permission_required",
                 "无法保存连接服务钥匙串",
-            ));
+            )
+            .at("credential_store"));
         }
         Ok(())
     }
@@ -339,10 +381,10 @@ impl Environment for System {
         if matches!(out.status.code(), Some(0 | 44)) {
             Ok(())
         } else {
-            Err(ConnectionError::new(
-                "connection_permission_required",
-                "无法删除连接服务钥匙串",
-            ))
+            Err(
+                ConnectionError::new("connection_permission_required", "无法删除连接服务钥匙串")
+                    .at("credential_store"),
+            )
         }
     }
 }
@@ -353,7 +395,11 @@ pub(crate) fn decrypt_login(sealed: &[u8], password: &[u8]) -> Result<Login> {
 }
 fn decrypt_value(sealed: &[u8], password: &[u8]) -> Result<Value> {
     if !sealed.starts_with(b"v10") {
-        return Err(ConnectionError::unsupported());
+        return Err(ConnectionError::new(
+            "unsupported_encryption",
+            "来源应用凭据的加密格式暂不支持",
+        )
+        .at("decrypt"));
     }
     let mut key = Zeroizing::new([0u8; 16]);
     ring::pbkdf2::derive(
@@ -365,32 +411,67 @@ fn decrypt_value(sealed: &[u8], password: &[u8]) -> Result<Value> {
     );
     let plain = Zeroizing::new(
         cbc::Decryptor::<aes::Aes128>::new_from_slices(key.as_ref(), &[32; 16])
-            .map_err(|_| ConnectionError::unsupported())?
+            .map_err(|_| {
+                ConnectionError::new("credential_decrypt_failed", "无法初始化凭据解密")
+                    .at("decrypt")
+            })?
             .decrypt_padded_vec_mut::<Pkcs7>(&sealed[3..])
-            .map_err(|_| ConnectionError::unsupported())?,
+            .map_err(|_| {
+                ConnectionError::new(
+                    "credential_decrypt_failed",
+                    "登录凭据解密失败，凭据可能损坏或与钥匙串不匹配",
+                )
+                .at("decrypt")
+            })?,
     );
-    serde_json::from_slice(&plain).map_err(|_| ConnectionError::unsupported())
+    serde_json::from_slice(&plain).map_err(|_| {
+        ConnectionError::new(
+            "credential_not_json",
+            "解密后的登录信息不是有效的 JSON 数据",
+        )
+        .at("source_login")
+    })
 }
 fn parse_qwen_login(value: &Value) -> Result<Login> {
-    if value["schemaVersion"] != 2
-        || value["authRealm"] == "premiumIam"
-        || value["endpoints"]["apiOrigin"]
-            .as_str()
-            .is_some_and(|s| !s.is_empty())
-        || value["openApiBase"].as_str().is_some_and(|s| !s.is_empty())
-    {
-        return Err(ConnectionError::unsupported());
+    if value["schemaVersion"] != 2 {
+        return Err(ConnectionError::new(
+            "unsupported_login_schema",
+            "来源应用登录文件格式暂不支持",
+        )
+        .at("source_login")
+        .field("schemaVersion"));
+    }
+    if value["authRealm"] == "premiumIam" {
+        return Err(ConnectionError::new(
+            "unsupported_auth_realm",
+            "当前适配器暂不支持此账户认证方式",
+        )
+        .at("source_login")
+        .field("authRealm"));
+    }
+    for (field, v) in [
+        ("endpoints.apiOrigin", &value["endpoints"]["apiOrigin"]),
+        ("openApiBase", &value["openApiBase"]),
+    ] {
+        if v.as_str().is_some_and(|s| !s.is_empty()) {
+            return Err(ConnectionError::new(
+                "unsupported_origin",
+                "当前适配器暂不支持自定义认证服务地址",
+            )
+            .at("source_login")
+            .field(field));
+        }
     }
     let token = value["token"]
         .as_str()
         .filter(|s| !s.is_empty())
-        .ok_or_else(ConnectionError::login)?
+        .ok_or_else(|| ConnectionError::format("source_login", "token"))?
         .to_string();
     let user = &value["user"];
     let stable = ["id", "userId", "uid", "sub", "email"]
         .iter()
         .find_map(|k| user.get(*k).filter(|v| !v.is_null()))
-        .ok_or_else(ConnectionError::unsupported)?;
+        .ok_or_else(|| ConnectionError::format("source_login", "user.id"))?;
     let tenant = user
         .get("tenantId")
         .or_else(|| user.get("orgId"))
@@ -410,9 +491,9 @@ fn parse_qwen_login(value: &Value) -> Result<Login> {
     let expires = chrono::DateTime::parse_from_rfc3339(
         value["expiresAt"]
             .as_str()
-            .ok_or_else(ConnectionError::login)?,
+            .ok_or_else(|| ConnectionError::format("source_login", "expiresAt"))?,
     )
-    .map_err(|_| ConnectionError::login())?
+    .map_err(|_| ConnectionError::format("source_login", "expiresAt"))?
     .timestamp_millis();
     Ok(Login {
         subject: None,
@@ -451,20 +532,95 @@ fn source_password(service: &str, interactive: bool) -> Result<Zeroizing<Vec<u8>
         let query = CFDictionary::from_CFType_pairs(&pairs);
         let mut result = std::ptr::null();
         let status = SecItemCopyMatching(query.as_concrete_TypeRef(), &mut result);
-        if status != 0 || result.is_null() {
-            return Err(ConnectionError::new(
-                "connection_permission_required",
-                "需要允许读取来源应用钥匙串，请在模型设置中重新连接",
-            ));
+        if status != 0 {
+            tracing::warn!(
+                stage = "keychain",
+                os_status = status,
+                interactive,
+                "connection_keychain_failed"
+            );
+            return Err(keychain_error(status));
+        }
+        if result.is_null() {
+            return Err(
+                ConnectionError::new("keychain_invalid", "钥匙串未返回凭据数据").at("keychain"),
+            );
         }
         let result = CFType::wrap_under_create_rule(result);
-        let data = result
-            .downcast::<CFData>()
-            .ok_or_else(ConnectionError::unsupported)?;
+        let data = result.downcast::<CFData>().ok_or_else(|| {
+            ConnectionError::new("keychain_invalid", "钥匙串凭据数据格式无效").at("keychain")
+        })?;
         Ok(Zeroizing::new(data.bytes().to_vec()))
     }
 }
 #[cfg(not(target_os = "macos"))]
 fn source_password(_: &str, _: bool) -> Result<Zeroizing<Vec<u8>>> {
     Err(ConnectionError::unsupported())
+}
+
+// Stable Security.framework OSStatus codes; never expose keychain contents.
+#[cfg(any(target_os = "macos", test))]
+fn keychain_error(status: i32) -> ConnectionError {
+    let (code, message) = match status {
+        -128 => ("permission_cancelled", "已取消钥匙串授权，可点击重新授权"),
+        -25300 => (
+            "connection_login_required",
+            "未找到来源应用钥匙串凭据，请打开来源应用恢复登录",
+        ),
+        -25293 | -25308 => (
+            "connection_permission_required",
+            "需要允许读取来源应用钥匙串，请在模型设置中重新授权",
+        ),
+        _ => ("keychain_unavailable", "无法读取来源应用钥匙串"),
+    };
+    ConnectionError::new(code, message).at("keychain")
+}
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn desktop_versions_are_metadata_not_admission_rules() {
+        for version in ["1.3.2", "1.4.0", "9.0.0", "2.0.0-beta.1"] {
+            let h = qwen_headers(
+                &serde_json::json!({"CFBundleShortVersionString":version,"CFBundleVersion":"987"}),
+            )
+            .unwrap();
+            assert_eq!(h["X-QwenWork-Version"], version);
+            assert_eq!(h["X-QwenWork-Release-Version"], format!("{version}-987"));
+        }
+        let e = qwen_headers(&serde_json::json!({"CFBundleVersion":"987"})).unwrap_err();
+        assert_eq!(e.stage, "app_metadata");
+        assert_eq!(e.field.as_deref(), Some("CFBundleShortVersionString"));
+    }
+    #[tokio::test]
+    async fn qoder_headers_do_not_gate_on_installed_version() {
+        if cfg!(target_os = "macos") {
+            let system = System {
+                namespace: "unused".into(),
+                product: "qoder",
+            };
+            assert!(system.headers().await.unwrap().is_empty());
+        }
+    }
+    #[test]
+    fn file_and_keychain_failures_are_distinct() {
+        assert_eq!(
+            login_file_error(std::io::ErrorKind::NotFound.into()).code,
+            "connection_login_required"
+        );
+        assert_eq!(
+            login_file_error(std::io::ErrorKind::PermissionDenied.into()).code,
+            "login_file_denied"
+        );
+        assert_eq!(keychain_error(-128).code, "permission_cancelled");
+        assert_eq!(keychain_error(-25300).code, "connection_login_required");
+        assert_eq!(
+            keychain_error(-25308).code,
+            "connection_permission_required"
+        );
+        assert_eq!(
+            decrypt_value(b"v11fake", b"unused").unwrap_err().code,
+            "unsupported_encryption"
+        );
+    }
 }

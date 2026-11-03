@@ -17,6 +17,7 @@ pub mod context;
 pub mod context_report;
 mod deferred;
 mod desktop;
+mod docs;
 mod emitter;
 pub mod files;
 pub mod history;
@@ -39,6 +40,7 @@ pub mod trash;
 mod task;
 mod tool_exec;
 
+pub use agents::RestoredAgent;
 pub use config::Config;
 pub use config::ConfigError;
 pub use config::DEFAULT_MODEL;

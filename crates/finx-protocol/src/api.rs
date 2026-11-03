@@ -61,6 +61,12 @@ pub mod method {
     pub const SESSIONS_SUBSCRIBE: &str = "sessions/subscribe";
     pub const SESSIONS_UNSUBSCRIBE: &str = "sessions/unsubscribe";
     pub const SESSION_RENAME: &str = "session/rename";
+    /// Documents beside a conversation (document-editor-design §6).
+    pub const DOC_OPEN: &str = "doc/open";
+    pub const DOC_CLOSE: &str = "doc/close";
+    pub const DOC_VIEW: &str = "doc/view";
+    pub const DOC_RESOLVE: &str = "doc/resolve";
+    pub const DOC_LOCATE: &str = "doc/locate";
     pub const SESSION_ARCHIVE: &str = "session/archive";
     pub const SESSION_UNARCHIVE: &str = "session/unarchive";
     /// A loaded session's skills and `/` commands, or the skills a directory would give a session.
@@ -161,6 +167,10 @@ pub mod error_code {
     pub const CREDENTIAL_STORE_UNAVAILABLE: i64 = -32030;
     /// `mcp/login`: the server publishes no usable sign-in, or the sign-in could not start.
     pub const MCP_LOGIN_FAILED: i64 = -32031;
+    /// `doc/open`: the file is missing, not a PDF, too large or damaged beyond repair.
+    pub const DOC_UNAVAILABLE: i64 = -32032;
+    /// `doc/open`: the document is encrypted and the password is missing or wrong.
+    pub const DOC_PASSWORD: i64 = -32033;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -193,6 +203,8 @@ pub mod error_code {
         (NOT_REMOVABLE, "not_removable"),
         (CREDENTIAL_STORE_UNAVAILABLE, "credential_store_unavailable"),
         (MCP_LOGIN_FAILED, "mcp_login_failed"),
+        (DOC_UNAVAILABLE, "doc_unavailable"),
+        (DOC_PASSWORD, "doc_password"),
     ];
 }
 
@@ -1237,6 +1249,18 @@ pub struct ConnectionModel {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionState { Connecting, Ready, Disabled, NeedsLogin, PermissionRequired, Unsupported, Unavailable }
+/// Safe, structured connection diagnostics. Never contains credentials or raw response bodies.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ConnectionDiagnostic {
+    pub stage: String,
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+    pub action: String,
+    pub checked_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub field: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionView {
     pub connection_id: String,
@@ -1247,6 +1271,7 @@ pub struct ConnectionView {
     pub display_name: String,
     pub state: ConnectionState,
     #[serde(skip_serializing_if = "Option::is_none")] pub reason_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub diagnostic: Option<ConnectionDiagnostic>,
     pub models: Vec<ConnectionModel>,
     /// When `models` was last taken from the application (RFC 3339).
     #[serde(default, skip_serializing_if = "Option::is_none")] pub models_fetched_at: Option<String>,
@@ -1255,6 +1280,7 @@ pub struct ConnectionView {
 pub struct ConnectionsSnapshot { pub revision: u64, pub connections: Vec<ConnectionView> }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionDiscovery {
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub diagnostic: Option<ConnectionDiagnostic>,
     pub adapter_id: String,
     pub installed: bool,
     pub version: Option<String>,

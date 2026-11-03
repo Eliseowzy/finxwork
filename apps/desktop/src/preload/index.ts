@@ -68,6 +68,8 @@ const bridge: Bridge = {
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   catalogDir: arg("catalog"),
   pickFiles: () => ipcRenderer.invoke("pick-files"),
+  pasteFiles: () => ipcRenderer.invoke("paste-files"),
+  attachPaths: (paths: string[]) => ipcRenderer.invoke("attach-paths", paths),
   revealPath: (path: string) => ipcRenderer.send("reveal-path", path),
   pathInfo: (base: string, paths: string[]) => ipcRenderer.invoke("path-info", base, paths),
   openFile: (path: string, options?: { line?: number; app?: string }) => ipcRenderer.invoke("open-file", path, options),

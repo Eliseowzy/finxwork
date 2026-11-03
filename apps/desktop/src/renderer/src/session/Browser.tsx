@@ -226,7 +226,7 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
           </button>
         )}
         <button className={`brp-annotate ${current?.annotating ? "on" : ""}`} aria-pressed={!!current?.annotating}
-          disabled={!current || current.loading || !/^https?:/.test(current.url)}
+          disabled={!current?.domReady || !/^https?:/.test(current.url)}
           title={t("browser.annotate")} aria-label={t("browser.annotate")} onClick={() => command(current, { command: "annotate" })}>
           <Icon name="edit" />
         </button>

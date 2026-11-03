@@ -80,6 +80,30 @@
       "$ref": "#/definitions/CredentialsSetParams"
     },
     {
+      "$ref": "#/definitions/DocIdParams"
+    },
+    {
+      "$ref": "#/definitions/DocLocateParams"
+    },
+    {
+      "$ref": "#/definitions/DocLocateResult"
+    },
+    {
+      "$ref": "#/definitions/DocOpenParams"
+    },
+    {
+      "$ref": "#/definitions/DocOpenResult"
+    },
+    {
+      "$ref": "#/definitions/DocResolveParams"
+    },
+    {
+      "$ref": "#/definitions/DocResolveResult"
+    },
+    {
+      "$ref": "#/definitions/DocViewParams"
+    },
+    {
       "$ref": "#/definitions/Empty"
     },
     {
@@ -438,6 +462,95 @@
             "closed"
           ],
           "type": "string"
+        }
+      ]
+    },
+    "Anchor": {
+      "description": "A position or a range in a document, as people and agents both refer to content (§4.2).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "page"
+              ],
+              "type": "string"
+            },
+            "page": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "page"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A region drawn on a page.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "region"
+              ],
+              "type": "string"
+            },
+            "page": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "rect": {
+              "$ref": "#/definitions/Rect"
+            }
+          },
+          "required": [
+            "kind",
+            "page",
+            "rect"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Selected text: `quads` has one rectangle a line, `text` is what the kernel read there.",
+          "properties": {
+            "block": {
+              "description": "The block the text starts in (`p3.b12`), when known.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            },
+            "page": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "quads": {
+              "items": {
+                "$ref": "#/definitions/Rect"
+              },
+              "type": "array"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "page",
+            "quads",
+            "text"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -865,6 +978,16 @@
         "id"
       ],
       "type": "object"
+    },
+    "Capability": {
+      "description": "What a document supports (§4.5); toolbars and tool descriptions follow it.",
+      "enum": [
+        "view",
+        "text",
+        "search",
+        "outline"
+      ],
+      "type": "string"
     },
     "CatalogInfo": {
       "description": "The skill catalog in the system prompt.",
@@ -1382,10 +1505,66 @@
       ],
       "type": "object"
     },
+    "ConnectionDiagnostic": {
+      "description": "Safe, structured connection diagnostics. Never contains credentials or raw response bodies.",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "http_status": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "checked_at",
+        "code",
+        "message",
+        "retryable",
+        "stage"
+      ],
+      "type": "object"
+    },
     "ConnectionDiscovery": {
       "properties": {
         "adapter_id": {
           "type": "string"
+        },
+        "diagnostic": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConnectionDiagnostic"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "discovery_id": {
           "type": "string"
@@ -1494,6 +1673,16 @@
         },
         "connection_id": {
           "type": "string"
+        },
+        "diagnostic": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConnectionDiagnostic"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "display_name": {
           "type": "string"
@@ -1974,6 +2163,298 @@
         }
       ]
     },
+    "DocFormat": {
+      "enum": [
+        "pdf"
+      ],
+      "type": "string"
+    },
+    "DocIdParams": {
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocInfo": {
+      "description": "A document's state, which belongs to the file and is the same in every session (§4.1).",
+      "properties": {
+        "capabilities": {
+          "items": {
+            "$ref": "#/definitions/Capability"
+          },
+          "type": "array"
+        },
+        "dirty": {
+          "description": "The working copy differs from the file.",
+          "type": "boolean"
+        },
+        "doc_id": {
+          "description": "From the file's canonical path: the same file has the same id in every session.",
+          "type": "string"
+        },
+        "encrypted": {
+          "type": "boolean"
+        },
+        "format": {
+          "$ref": "#/definitions/DocFormat"
+        },
+        "layout": {
+          "$ref": "#/definitions/DocLayout"
+        },
+        "outline": {
+          "items": {
+            "$ref": "#/definitions/OutlineItem"
+          },
+          "type": "array"
+        },
+        "pages": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "save_in_place": {
+          "description": "Whether saving can write the file back; false for read-only or repaired files.",
+          "type": "boolean"
+        },
+        "scanned": {
+          "description": "No text could be read: probably a scan.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "capabilities",
+        "dirty",
+        "doc_id",
+        "format",
+        "layout",
+        "path",
+        "revision",
+        "save_in_place"
+      ],
+      "type": "object"
+    },
+    "DocLayout": {
+      "enum": [
+        "paged",
+        "flow"
+      ],
+      "type": "string"
+    },
+    "DocLocateParams": {
+      "description": "A citation's target in an open document: `p12.b3` (a block) or `p12` (a page).",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id",
+        "target"
+      ],
+      "type": "object"
+    },
+    "DocLocateResult": {
+      "properties": {
+        "anchor": {
+          "$ref": "#/definitions/Anchor",
+          "description": "A block's text and lines, or the page."
+        }
+      },
+      "required": [
+        "anchor"
+      ],
+      "type": "object"
+    },
+    "DocOpenParams": {
+      "properties": {
+        "doc_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "password": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "The file. Or, instead, `doc_id`: a document opened before, as a citation names it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocOpenResult": {
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/DocInfo"
+        },
+        "password": {
+          "description": "An encrypted document's password, for the page to decrypt what it reads (§9.4.3). Only in memory: never written down, never logged.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "token": {
+          "description": "Reads the working copy: `finxdoc://<token>/current.pdf` (§7.3).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "info",
+        "token"
+      ],
+      "type": "object"
+    },
+    "DocResolveParams": {
+      "description": "A selection or a region on a page, to be read by the kernel (§9.4.1).",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "more": {
+          "description": "A selection that goes on past `page`: its rectangles on each page after it, in order.",
+          "items": {
+            "$ref": "#/definitions/PageQuads"
+          },
+          "type": "array"
+        },
+        "page": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "quads": {
+          "description": "The selection's rectangles; text whose middle falls in one of them is selected.",
+          "items": {
+            "$ref": "#/definitions/Rect"
+          },
+          "type": "array"
+        },
+        "rect": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Rect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A region drawn on the page."
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "page",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocResolveResult": {
+      "properties": {
+        "anchor": {
+          "$ref": "#/definitions/Anchor"
+        },
+        "boxes": {
+          "description": "The boxes of the characters the kernel took: the interface draws the selection with them.",
+          "items": {
+            "$ref": "#/definitions/Rect"
+          },
+          "type": "array"
+        },
+        "more": {
+          "description": "The pages after the first, for a selection that goes on (`more`); `text` is all of it.",
+          "items": {
+            "$ref": "#/definitions/ResolvedPart"
+          },
+          "type": "array"
+        },
+        "text": {
+          "description": "The text the kernel read there: a selection's, or what lies in a region.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "anchor",
+        "boxes",
+        "text"
+      ],
+      "type": "object"
+    },
+    "DocViewParams": {
+      "description": "What a session's document column shows: the page, and what is selected.",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "page": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/Anchor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "page",
+        "session_id"
+      ],
+      "type": "object"
+    },
     "Empty": {
       "description": "The result of methods that return nothing: `{}`.",
       "type": "object"
@@ -2264,6 +2745,25 @@
             "attempt",
             "delay_ms",
             "error",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The agent opened a document (`doc_open`): clients show it beside the conversation (document-editor-design §6).",
+          "properties": {
+            "info": {
+              "$ref": "#/definitions/DocInfo"
+            },
+            "type": {
+              "enum": [
+                "doc_opened"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "info",
             "type"
           ],
           "type": "object"
@@ -5434,6 +5934,52 @@
         }
       ]
     },
+    "OutlineItem": {
+      "properties": {
+        "children": {
+          "items": {
+            "$ref": "#/definitions/OutlineItem"
+          },
+          "type": "array"
+        },
+        "page": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "PageQuads": {
+      "description": "A selection's rectangles on one page.",
+      "properties": {
+        "page": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "quads": {
+          "items": {
+            "$ref": "#/definitions/Rect"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "page",
+        "quads"
+      ],
+      "type": "object"
+    },
     "PartialBlock": {
       "oneOf": [
         {
@@ -5773,6 +6319,34 @@
       ],
       "type": "object"
     },
+    "Rect": {
+      "description": "A rectangle on a page: `x0 < x1`, `y0 < y1`.",
+      "properties": {
+        "x0": {
+          "format": "float",
+          "type": "number"
+        },
+        "x1": {
+          "format": "float",
+          "type": "number"
+        },
+        "y0": {
+          "format": "float",
+          "type": "number"
+        },
+        "y1": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x0",
+        "x1",
+        "y0",
+        "y1"
+      ],
+      "type": "object"
+    },
     "RequestId": {
       "anyOf": [
         {
@@ -5784,6 +6358,25 @@
         }
       ],
       "description": "A JSON-RPC request id."
+    },
+    "ResolvedPart": {
+      "description": "What the kernel read on one page of a selection.",
+      "properties": {
+        "anchor": {
+          "$ref": "#/definitions/Anchor"
+        },
+        "boxes": {
+          "items": {
+            "$ref": "#/definitions/Rect"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "anchor",
+        "boxes"
+      ],
+      "type": "object"
     },
     "ResourceReadParams": {
       "properties": {
@@ -7533,6 +8126,8 @@
     "-32029": "not_removable",
     "-32030": "credential_store_unavailable",
     "-32031": "mcp_login_failed",
+    "-32032": "doc_unavailable",
+    "-32033": "doc_password",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -7617,6 +8212,26 @@
     },
     "credentials/set": {
       "params": "CredentialsSetParams",
+      "result": "Empty"
+    },
+    "doc/close": {
+      "params": "DocIdParams",
+      "result": "Empty"
+    },
+    "doc/locate": {
+      "params": "DocLocateParams",
+      "result": "DocLocateResult"
+    },
+    "doc/open": {
+      "params": "DocOpenParams",
+      "result": "DocOpenResult"
+    },
+    "doc/resolve": {
+      "params": "DocResolveParams",
+      "result": "DocResolveResult"
+    },
+    "doc/view": {
+      "params": "DocViewParams",
       "result": "Empty"
     },
     "files/list": {

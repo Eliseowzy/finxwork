@@ -47,11 +47,13 @@ const BUILTIN_DEFAULT: &str = "; new pages open in the built-in browser unless y
 const YOURS_DEFAULT: &str = "; new pages open in the user's own browser, with their sign-ins, unless you name the built-in one";
 const CUA: &str = "cua";
 const CUA_SUMMARY: &str = "Computer use: see and operate the other apps on this computer";
+const DOC: &str = "doc";
+const DOC_SUMMARY: &str = "Documents (PDF): open one beside the conversation for the user, read, search and look at its pages";
 
 impl Deferred {
     /// The groups `settings` turn on; `pool` says whether the process has browsers, `app`
-    /// whether the desktop app is connected.
-    pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool) -> Self {
+    /// whether the desktop app is connected, `docs` whether it keeps documents.
+    pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool, docs: bool) -> Self {
         let mut groups = Vec::new();
         let builtin = settings.browser.builtin_on(app);
         let yours = settings.browser.yours_on(app);
@@ -79,6 +81,13 @@ impl Deferred {
                 name: CUA,
                 summary: CUA_SUMMARY.into(),
                 tools: crate::desktop::desktop_tools(),
+            });
+        }
+        if docs {
+            groups.push(Group {
+                name: DOC,
+                summary: DOC_SUMMARY.into(),
+                tools: crate::docs::doc_tools(),
             });
         }
         Self { groups }

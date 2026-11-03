@@ -271,7 +271,8 @@ async fn skills_list_reports_a_session_and_a_directory() {
     schema.check("ContextReport", &context);
     let tokens = |v: &Value| v.as_u64().unwrap();
     let parts: Vec<(&str, u64)> = context["parts"].as_array().unwrap().iter().map(|p| (p["kind"].as_str().unwrap(), tokens(&p["tokens"]))).collect();
-    assert_eq!(parts.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(), ["messages", "system_prompt", "tools", "skills"]);
+    // "mcp": the catalog of deferred tools, where the document tools always have their line.
+    assert_eq!(parts.iter().map(|(kind, _)| *kind).collect::<Vec<_>>(), ["messages", "system_prompt", "tools", "skills", "mcp"]);
     assert!(parts.iter().skip(1).all(|(_, n)| *n > 0), "{parts:?}");
     let used = tokens(&context["usage"]["tokens"]);
     assert_eq!(parts.iter().map(|(_, n)| n).sum::<u64>(), used);

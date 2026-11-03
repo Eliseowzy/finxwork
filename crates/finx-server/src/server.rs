@@ -72,6 +72,8 @@ pub struct ServerOptions {
     pub overrides: Vec<String>,
     /// MCP servers for every session (`--mcp-config`), over the configured ones.
     pub mcp_servers: Vec<McpServerConfig>,
+    /// How documents' PDFium worker runs: `finx doc-worker`, or a thread in tests.
+    pub doc_worker: finx_docs::Launcher,
 }
 
 /// Protocol-neutral arguments for a new session.
@@ -138,6 +140,8 @@ pub(crate) struct Inner {
     pub(crate) files: crate::files::Watches,
     /// The browsers of every session here, one per profile (browser-design §6.1).
     pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
+    /// The documents every session here shares (document-editor-design §5.2).
+    pub(crate) docs: Arc<finx_docs::DocStore>,
 }
 
 impl Server {
@@ -155,6 +159,7 @@ impl Server {
         let connections = finx_connections::Manager::new(options.home.root().to_path_buf(), &llm);
         // A person may watch: show a window where there is a display.
         let browser_pool = Arc::new(finx_core::BrowserPool::new(options.home.browser_dir(), true));
+        let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
@@ -180,6 +185,7 @@ impl Server {
             files: Default::default(),
             // A person may watch: show a window where there is a display.
             browser_pool,
+            docs,
         }));
         let weak = Arc::downgrade(&server.0);
         connections.on_change(Arc::new(move || {
@@ -389,6 +395,7 @@ impl Server {
             .kernel_deps(self.0.llm.clone(), store, &args.extra_roots)
             .map_err(errors::from_runtime)?;
         deps.browser_pool = Some(self.0.browser_pool.clone());
+        deps.docs = Some(self.0.docs.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &args.mcp_servers);
         let options = StartOptions {
             model: args.model.unwrap_or_else(|| workspace.config.model.clone()),
@@ -452,6 +459,7 @@ impl Server {
             .kernel_deps(self.0.llm.clone(), store, &[])
             .map_err(errors::from_runtime)?;
         deps.browser_pool = Some(self.0.browser_pool.clone());
+        deps.docs = Some(self.0.docs.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &overrides.mcp_servers);
         let base = match self.0.store.summary(&SessionRef::Path(location.clone())) {
             Ok(found) => SummaryBase {
@@ -707,6 +715,7 @@ impl Server {
         let (tx, rx) = oneshot::channel();
         hub.send(HubCmd::Close { reply: Some(tx) }).await?;
         let _ = rx.await;
+        self.docs_forget(id).await;
         Ok(())
     }
 
@@ -949,6 +958,7 @@ mod tests {
             cwd: dir.path().to_path_buf(),
             overrides: Vec::new(),
             mcp_servers: Vec::new(),
+            doc_worker: finx_docs::Launcher::Thread,
         })
         .unwrap();
         let id = "0193f0c2-7c1e-7d3a-9b1f-4c2d8e6a5b10".to_string();

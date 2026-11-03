@@ -4,6 +4,7 @@ import { addTotals, baseName, conversation, costText, openChain, runningAgents, 
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
+import { pairImages } from "../composer/attachments";
 import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon, MarkMotion } from "../icons";
@@ -261,7 +262,7 @@ function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
   switch (a.kind) {
     case "user":
-      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.skills.join() === (b as typeof a).skills.join();
+      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.skills.join() === (b as typeof a).skills.join();
     case "text":
       return a.text === (b as typeof a).text && a.live === (b as typeof a).live;
     case "work": {
@@ -279,7 +280,7 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "agents": {
       const x = (b as typeof a).launches;
-      return a.launches.length === x.length && a.launches.every((l, i) => l.agent === x[i].agent && l.name === x[i].name && l.description === x[i].description && l.task === x[i].task);
+      return a.launches.length === x.length && a.launches.every((l, i) => l.agent === x[i].agent && l.starting === x[i].starting && l.name === x[i].name && l.description === x[i].description && l.task === x[i].task);
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;
@@ -295,21 +296,26 @@ function sameStep(a: Step, b: Step): boolean {
 function RowView({ step, previous, final, merged, current, working, sessionId }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
-    case "user":
+    case "user": {
+      const { pictures, rest } = pairImages([...step.comments, ...step.quotes], step.images);
+      const picture = (i: number) => pictures[i] && `data:${pictures[i].mime_type};base64,${pictures[i].data}`;
       return (
         <>
           <TimeLine at={step.ts} previous={previous} />
           <div className="um">
-            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0) && (
+            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0) && (
               <div className="um-att">
-                {step.images.map((im, i) => (
+                {rest.map((im, i) => (
                   <Tile key={i} kind="image" src={`data:${im.mime_type};base64,${im.data}`} />
                 ))}
                 {step.files.map((f) => (
                   <Tile key={f} kind={/[\\/]$/.test(f) ? "folder" : "file"} path={f} name={baseName(f)} />
                 ))}
                 {step.comments.map((c, i) => (
-                  <Tile key={`web${i}`} kind="web" name={c.comment || c.text || `<${c.tag}>`} web={c} />
+                  <Tile key={`web${i}`} kind="web" web={c} shot={picture(i)} />
+                ))}
+                {step.quotes.map((q, i) => (
+                  <Tile key={`doc${i}`} kind="doc" quote={q} shot={picture(step.comments.length + i)} />
                 ))}
               </div>
             )}
@@ -322,6 +328,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
           </div>
         </>
       );
+    }
     case "text":
       return (
         <div className={`am ${final ? "act" : ""}`}>

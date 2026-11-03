@@ -4,10 +4,11 @@ import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { SidebarToggle } from "../components";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
+import { DocContext, docsOf, lockedPath, type DocOpener } from "../docs/state";
 import { layoutOf, setCard } from "../layout";
 import { useStore } from "../store";
 import { FilePanel } from "../files/FilePanel";
-import { filesChanged, setFilesConnection } from "../files/state";
+import { filesChanged, isPasswordError, lockedOut, setFilesConnection, showDoc, useDocEvents } from "../files/state";
 import { Background } from "./Background";
 import { BrowserPanel, useBrowserTabs } from "./Browser";
 import { Chat } from "./Chat";
@@ -27,12 +28,49 @@ export function SessionPage({ s }: { s: ListSession }) {
   const running = view ? runningAgents(view).length : 0;
   const browserTabs = useBrowserTabs().filter((t) => t.session === s.session_id);
   const background = st.background && agents > 0;
-  // One panel on the right at a time: the background panel when asked for, else the file panel
-  // when opened (file-panel-design §3.1), else the browser.
+  const cwd = view?.info.cwd;
+  useDocEvents(st.rpc, s.session_id, cwd);
+  // One panel on the right at a time: the background panel when asked for, else the file panel when
+  // opened (file-panel-design §3.1), its PDFs too (document-editor-design §7.1), else the browser.
   const files = st.files && !background && !!view;
   const browser = st.browser && browserTabs.length > 0 && !background && !files;
   // Taking the window, the panel leaves the conversation mounted but out of sight, where it was.
   const max = (browser && st.browserMax) || (files && st.filesMax);
+  const rpc = st.rpc;
+  const opener = useMemo<DocOpener | null>(() => {
+    if (!rpc || !cwd) return null;
+    const id = s.session_id;
+    return {
+      session: id,
+      open: (what, anchor, target) =>
+        void st.run(async () => {
+          const shown = await showDoc(st, id, cwd, what, anchor);
+          // A citation's block or page, once its document is open in the session (not while it asks for its password).
+          if (shown && target && "doc_id" in what) {
+            try {
+              const r = await rpc.request("doc/locate", { session_id: id, doc_id: what.doc_id, target });
+              await showDoc(st, id, cwd, what, r.anchor);
+            } catch (e) {
+              // Its file changed and wants its password again: the tab asks for it, not a toast.
+              if (!(await lockedOut(id, what.doc_id, e))) throw e;
+            }
+          }
+        }),
+      locate: async (docId, target) => {
+        const known = docsOf(id).tabs.find((t) => t.info.doc_id === docId)?.info.path;
+        try {
+          // A hover must not bring the column out: finx opens the document, the column stays as it is.
+          const path = known ?? (await rpc.request("doc/open", { session_id: id, doc_id: docId })).info.path;
+          const r = await rpc.request("doc/locate", { session_id: id, doc_id: docId, target });
+          return { anchor: r.anchor, path };
+        } catch (e) {
+          // Encrypted, its password not given yet (or changed): still there, a click asks for it.
+          const path = lockedPath(e) ?? (isPasswordError(e) ? known : null);
+          return path ? { locked: true, path } : null;
+        }
+      },
+    };
+  }, [rpc, s.session_id, cwd]);
   const layout = layoutOf(st);
   const info = layout.card !== "hidden" && !background && !browser && !files;
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
@@ -49,7 +87,6 @@ export function SessionPage({ s }: { s: ListSession }) {
     return st.rpc?.on("files/changed", (p) => filesChanged(p.session_id, p.paths));
   }, [st.rpc]);
   // What the conversation's content belongs to (content-actions-design §3.4): its paths are under the session's folder.
-  const cwd = view?.info.cwd;
   const scope = useMemo(() => (cwd ? { session: s.session_id, cwd } : null), [s.session_id, cwd]);
   // A task that ended may have made or removed the files the replies point at.
   const ended = view?.entries.filter((e) => e.type === "task_end").length ?? 0;
@@ -62,6 +99,7 @@ export function SessionPage({ s }: { s: ListSession }) {
     st.set({ contextOpen: true });
   }, [asked]);
   return (
+    <DocContext.Provider value={opener}>
     <div className={`spage ${browser || files ? "bgopen" : ""} ${max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
@@ -120,7 +158,9 @@ export function SessionPage({ s }: { s: ListSession }) {
               title={t("files.title")}
               aria-label={t("files.title")}
               aria-pressed={false}
-              onClick={() => st.set({ files: true, browser: false, browserMax: false, background: false })}
+              onClick={() => {
+                st.set({ files: true, browser: false, browserMax: false, background: false });
+              }}
             >
               <Icon name="folder" />
             </button>
@@ -155,5 +195,6 @@ export function SessionPage({ s }: { s: ListSession }) {
         />
       )}
     </div>
+    </DocContext.Provider>
   );
 }

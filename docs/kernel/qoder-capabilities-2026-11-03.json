@@ -1,0 +1,3877 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-11-03T04:16:03.824537+00:00",
+  "qoder_app_version": "0.4.11",
+  "route": "App model-server HTTP via Finx Manager and registry",
+  "models": [
+    {
+      "id": "auto",
+      "name": "Auto",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Auto",
+        "enable": true,
+        "is_reasoning": false,
+        "is_vl": true,
+        "key": "auto",
+        "max_input_tokens": 200000
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [],
+        "default_thinking": "default",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "ultimate",
+      "name": "Ultimate",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Ultimate",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "ultimate",
+        "max_input_tokens": 1000000,
+        "thinking_config": {
+          "enabled": {
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {},
+              "medium": {},
+              "xhigh": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "fast",
+      "name": "Fast",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Fast",
+        "enable": true,
+        "is_reasoning": false,
+        "is_vl": true,
+        "key": "fast",
+        "max_input_tokens": 200000
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [],
+        "default_thinking": "default",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "efficient",
+      "name": "Efficient",
+      "declared": {
+        "context_config": {
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          }
+        },
+        "display_name": "Efficient",
+        "enable": true,
+        "is_reasoning": false,
+        "is_vl": true,
+        "key": "efficient",
+        "max_input_tokens": 200000
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [],
+        "default_thinking": "default",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "smodel",
+      "name": "Sonus",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Sonus",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "smodel",
+        "max_input_tokens": 180000,
+        "thinking_config": {
+          "enabled": {
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {},
+              "medium": {},
+              "xhigh": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "cmodel",
+      "name": "Cantus",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Cantus",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "cmodel",
+        "max_input_tokens": 180000,
+        "thinking_config": {
+          "enabled": {
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {},
+              "medium": {},
+              "xhigh": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "medium",
+          "low",
+          "high",
+          "xhigh",
+          "max"
+        ],
+        "visible_reasoning_observed": false,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "qmodel_38max",
+      "name": "Qwen3.8-Max",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Qwen3.8-Max",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "qmodel_38max",
+        "max_input_tokens": 180000,
+        "thinking_config": {
+          "disabled": {},
+          "enabled": {
+            "efforts": {
+              "low": {},
+              "medium": {
+                "is_default": true
+              },
+              "xhigh": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "off",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "default_thinking": "medium",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "off",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "passed_visible_output_check",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "qfmodel",
+      "name": "Qwen3.8-Flash",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Qwen3.8-Flash",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "qfmodel",
+        "max_input_tokens": 180000,
+        "thinking_config": {
+          "disabled": {},
+          "enabled": {
+            "efforts": {
+              "low": {},
+              "medium": {
+                "is_default": true
+              },
+              "xhigh": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "off",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "default_thinking": "medium",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "off",
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "passed_visible_output_check",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "gmodel",
+      "name": "GLM-5.3",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "GLM-5.3",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "gmodel",
+        "max_input_tokens": 180000,
+        "thinking_config": {
+          "enabled": {
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "high",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "low",
+          "high",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "gfmodel",
+      "name": "GLM-5.3-Flash",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "GLM-5.3-Flash",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "gfmodel",
+        "max_input_tokens": 1000000,
+        "thinking_config": {
+          "enabled": {
+            "efforts": {
+              "high": {},
+              "max": {
+                "is_default": true
+              }
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "high",
+          "max"
+        ],
+        "default_thinking": "max",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "high",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "kmodel_latest",
+      "name": "Kimi-K3.1-Pro",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Kimi-K3.1-Pro",
+        "enable": true,
+        "is_reasoning": false,
+        "is_vl": true,
+        "key": "kmodel_latest",
+        "max_input_tokens": 180000,
+        "thinking_config": {
+          "enabled": {
+            "description": "Enable thinking",
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "high",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "unknown",
+        "temperature": {
+          "verified_values": [
+            null,
+            1.0
+          ],
+          "other_values": "unknown",
+          "rejected_values": [
+            0.25,
+            0.5
+          ]
+        },
+        "thinking_requests_passed": [
+          "low",
+          "high",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "kmodel",
+      "name": "Kimi-K2.8-Preview",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "Kimi-K2.8-Preview",
+        "enable": true,
+        "is_reasoning": false,
+        "is_vl": true,
+        "key": "kmodel",
+        "thinking_config": {
+          "enabled": {
+            "description": "Enable thinking",
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "high",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "unknown",
+        "temperature": {
+          "verified_values": [
+            null,
+            1.0
+          ],
+          "other_values": "unknown",
+          "rejected_values": [
+            0.25,
+            0.5
+          ]
+        },
+        "thinking_requests_passed": [
+          "low",
+          "high",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "dmodel",
+      "name": "DeepSeek-V4-Pro",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "DeepSeek-V4-Pro",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "dmodel",
+        "max_input_tokens": 1000000,
+        "thinking_config": {
+          "disabled": {
+            "description": "Disable thinking"
+          },
+          "enabled": {
+            "description": "Enable thinking",
+            "efforts": {
+              "high": {
+                "description": "High thinking intensity"
+              },
+              "max": {
+                "description": "Maximum thinking intensity",
+                "is_default": true
+              }
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "high",
+          "max"
+        ],
+        "default_thinking": "max",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "high",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "contradicted",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "dfmodel",
+      "name": "DeepSeek-Flash",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "DeepSeek-Flash",
+        "enable": true,
+        "is_reasoning": true,
+        "is_vl": true,
+        "key": "dfmodel",
+        "max_input_tokens": 1000000,
+        "thinking_config": {
+          "disabled": {},
+          "enabled": {
+            "efforts": {
+              "high": {
+                "is_default": true
+              },
+              "low": {},
+              "max": {}
+            },
+            "is_default": true
+          }
+        }
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [
+          "low",
+          "high",
+          "max"
+        ],
+        "default_thinking": "high",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [
+          "low",
+          "high",
+          "max"
+        ],
+        "visible_reasoning_observed": true,
+        "thinking_off": "contradicted",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    },
+    {
+      "id": "mmodel",
+      "name": "MiniMax-M3.1-Flash",
+      "declared": {
+        "context_config": {
+          "1M": {
+            "token_count": 1000000
+          },
+          "200K": {
+            "is_default": true,
+            "token_count": 200000
+          },
+          "400K": {
+            "token_count": 400000
+          }
+        },
+        "display_name": "MiniMax-M3.1-Flash",
+        "enable": true,
+        "is_reasoning": false,
+        "is_vl": true,
+        "key": "mmodel",
+        "max_input_tokens": 180000
+      },
+      "effective": {
+        "context_window": 200000,
+        "context_source": "catalog_default_tier",
+        "max_output_tokens": 32000,
+        "output_limit_source": "qoder_app_KT_fallback",
+        "thinking": [],
+        "default_thinking": "default",
+        "images": true
+      },
+      "verification": {
+        "image": "passed",
+        "parameters_32000_temperature_025": "passed",
+        "temperature": {
+          "verified_values": [
+            null,
+            0.25
+          ],
+          "other_values": "unknown",
+          "rejected_values": []
+        },
+        "thinking_requests_passed": [],
+        "visible_reasoning_observed": true,
+        "thinking_off": "not_declared",
+        "effort_intensity_semantics": "unknown",
+        "context_capacity_boundary": "unknown",
+        "maximum_output_boundary": "unknown",
+        "audio": "unknown",
+        "video": "unknown",
+        "server_prompt_injection": "unknown"
+      }
+    }
+  ],
+  "runs": [
+    {
+      "phase": "before_field_prefix_fix",
+      "observed_at": "2026-11-03T04:03:48.654935+00:00",
+      "observations": [
+        {
+          "model": "auto",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 27773,
+          "reasoning_chars": 755,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 230,
+            "output": 230,
+            "reasoning": 200
+          }
+        },
+        {
+          "model": "auto",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 33758,
+          "reasoning_chars": 318,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 117,
+            "reasoning": 90
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3039,
+          "reasoning_chars": 77,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 55,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 9444,
+          "reasoning_chars": 155,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 171,
+            "output": 83,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3051,
+          "reasoning_chars": 70,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 63,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3048,
+          "reasoning_chars": 77,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 57,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2930,
+          "reasoning_chars": 70,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 58,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2929,
+          "reasoning_chars": 74,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 58,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "fast",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1590,
+          "reasoning_chars": 742,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 143,
+            "output": 182,
+            "reasoning": 165
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2929,
+          "reasoning_chars": 77,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 55,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "fast",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1141,
+          "reasoning_chars": 387,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 38,
+            "output": 143,
+            "reasoning": 119
+          }
+        },
+        {
+          "model": "efficient",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 2453,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "efficient",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3703,
+          "reasoning_chars": 336,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 144,
+            "output": 104,
+            "reasoning": 87
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4922,
+          "reasoning_chars": 411,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 124,
+            "output": 79,
+            "reasoning": 58
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4183,
+          "reasoning_chars": 413,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 82,
+            "reasoning": 50
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4587,
+          "reasoning_chars": 413,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 75,
+            "reasoning": 43
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4975,
+          "reasoning_chars": 443,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 79,
+            "reasoning": 47
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2933,
+          "reasoning_chars": 357,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 79,
+            "reasoning": 47
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3482,
+          "reasoning_chars": 402,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 82,
+            "reasoning": 50
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4644,
+          "reasoning_chars": 447,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 88,
+            "reasoning": 56
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4805,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 171,
+            "output": 23,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4055,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 91,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 8842,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 92,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 6329,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 91,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3860,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 66,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4144,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 83,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 9291,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 83,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4148,
+          "reasoning_chars": 328,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 145,
+            "reasoning": 109
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "off",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1312,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 47,
+            "output": 33
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 6018,
+          "reasoning_chars": 817,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 211,
+            "output": 260,
+            "reasoning": 241
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2775,
+          "reasoning_chars": 187,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 84,
+            "output": 121,
+            "reasoning": 85
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2746,
+          "reasoning_chars": 191,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 58,
+            "output": 120,
+            "reasoning": 84
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2974,
+          "reasoning_chars": 213,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 118,
+            "reasoning": 82
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4034,
+          "reasoning_chars": 895,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 249,
+            "output": 224,
+            "reasoning": 205
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "off",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1085,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 60,
+            "output": 48
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2887,
+          "reasoning_chars": 444,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 190,
+            "reasoning": 153
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1725,
+          "reasoning_chars": 183,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 84,
+            "output": 114,
+            "reasoning": 78
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2127,
+          "reasoning_chars": 273,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 58,
+            "output": 138,
+            "reasoning": 102
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2194,
+          "reasoning_chars": 427,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 180,
+            "reasoning": 143
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2506,
+          "reasoning_chars": 40,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 55,
+            "reasoning": 26
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1816,
+          "reasoning_chars": 34,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 65,
+            "reasoning": 24
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2246,
+          "reasoning_chars": 40,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 78,
+            "reasoning": 26
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 9342,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 795,
+            "output": 17
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3772,
+          "reasoning_chars": 660,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 252,
+            "reasoning": 224
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4730,
+          "reasoning_chars": 386,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 144,
+            "output": 127,
+            "reasoning": 110
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4545,
+          "reasoning_chars": 444,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 206,
+            "reasoning": 139
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2781,
+          "reasoning_chars": 40,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 56,
+            "reasoning": 26
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2197,
+          "reasoning_chars": 236,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 108,
+            "reasoning": 78
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 2759,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3109,
+          "reasoning_chars": 177,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 100,
+            "reasoning": 59
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 4600,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 2507,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4816,
+          "reasoning_chars": 373,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 116,
+            "output": 142,
+            "reasoning": 101
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3385,
+          "reasoning_chars": 395,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 218,
+            "cache_write": 0,
+            "input": 12,
+            "output": 114,
+            "reasoning": 89
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2301,
+          "reasoning_chars": 59,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 74,
+            "reasoning": 27
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 1025,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2894,
+          "reasoning_chars": 85,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 75,
+            "reasoning": 28
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2797,
+          "reasoning_chars": 602,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 881,
+            "output": 152,
+            "reasoning": 136
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3286,
+          "reasoning_chars": 300,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 116,
+            "output": 123,
+            "reasoning": 82
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "off",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3387,
+          "reasoning_chars": 663,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 207,
+            "reasoning": 179
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5274,
+          "reasoning_chars": 1109,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 314,
+            "reasoning": 287
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3187,
+          "reasoning_chars": 661,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 202,
+            "reasoning": 175
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2367,
+          "reasoning_chars": 1416,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 456,
+            "output": 403,
+            "reasoning": 387
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4751,
+          "reasoning_chars": 857,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 258,
+            "reasoning": 231
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1344,
+          "reasoning_chars": 371,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 127,
+            "reasoning": 100
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "off",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1267,
+          "reasoning_chars": 337,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 116,
+            "reasoning": 89
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1167,
+          "reasoning_chars": 315,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 117,
+            "reasoning": 90
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1099,
+          "reasoning_chars": 327,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 115,
+            "reasoning": 88
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1129,
+          "reasoning_chars": 354,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 128,
+            "reasoning": 101
+          }
+        },
+        {
+          "model": "mmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2084,
+          "reasoning_chars": 280,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 197,
+            "cache_write": 0,
+            "input": 36,
+            "output": 101,
+            "reasoning": 72
+          }
+        },
+        {
+          "model": "mmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2343,
+          "reasoning_chars": 388,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 334,
+            "output": 107,
+            "reasoning": 89
+          }
+        }
+      ]
+    },
+    {
+      "phase": "reproduction_before_fix",
+      "observed_at": "2026-11-03T04:05:38.828451+00:00",
+      "observations": [
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 3284,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 3342,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 3287,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4554,
+          "reasoning_chars": 176,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 88,
+            "reasoning": 47
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 4339,
+          "error_kind": "Protocol",
+          "provider_code": "unexpected_sse_line"
+        }
+      ]
+    },
+    {
+      "phase": "after_sse_fix_before_temperature_guard",
+      "observed_at": "2026-11-03T04:16:03.824537+00:00",
+      "observations": [
+        {
+          "model": "auto",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1868,
+          "reasoning_chars": 400,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 256,
+            "cache_write": 0,
+            "input": 200,
+            "output": 109,
+            "reasoning": 93
+          }
+        },
+        {
+          "model": "auto",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2287,
+          "reasoning_chars": 349,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 124,
+            "reasoning": 97
+          }
+        },
+        {
+          "model": "auto",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1480,
+          "reasoning_chars": 348,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 122,
+            "reasoning": 95
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5563,
+          "reasoning_chars": 113,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 57,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5743,
+          "reasoning_chars": 134,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 171,
+            "output": 192,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3014,
+          "reasoning_chars": 79,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 58,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4901,
+          "reasoning_chars": 77,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 57,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3211,
+          "reasoning_chars": 72,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 56,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3602,
+          "reasoning_chars": 74,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 57,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3580,
+          "reasoning_chars": 74,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 56,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "fast",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1381,
+          "reasoning_chars": 306,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 108,
+            "reasoning": 81
+          }
+        },
+        {
+          "model": "fast",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1182,
+          "reasoning_chars": 396,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 456,
+            "output": 111,
+            "reasoning": 95
+          }
+        },
+        {
+          "model": "ultimate",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2785,
+          "reasoning_chars": 72,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 55,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "fast",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 932,
+          "reasoning_chars": 294,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 109,
+            "reasoning": 82
+          }
+        },
+        {
+          "model": "efficient",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2912,
+          "reasoning_chars": 661,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 198,
+            "output": 194,
+            "reasoning": 175
+          }
+        },
+        {
+          "model": "efficient",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 7176,
+          "reasoning_chars": 1477,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 45,
+            "output": 570,
+            "reasoning": 534
+          }
+        },
+        {
+          "model": "efficient",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 13414,
+          "reasoning_chars": 3180,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 45,
+            "output": 1152,
+            "reasoning": 1116
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4255,
+          "reasoning_chars": 375,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 87,
+            "reasoning": 55
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4136,
+          "reasoning_chars": 460,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 124,
+            "output": 61,
+            "reasoning": 40
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3307,
+          "reasoning_chars": 404,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 80,
+            "reasoning": 48
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3165,
+          "reasoning_chars": 381,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 70,
+            "reasoning": 38
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3901,
+          "reasoning_chars": 355,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 78,
+            "reasoning": 46
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3902,
+          "reasoning_chars": 424,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 82,
+            "reasoning": 50
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3288,
+          "reasoning_chars": 354,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 77,
+            "reasoning": 45
+          }
+        },
+        {
+          "model": "smodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5393,
+          "reasoning_chars": 359,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 37,
+            "output": 92,
+            "reasoning": 60
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 18655,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 87,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 7103,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 71,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 23113,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 171,
+            "output": 23,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5383,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 41,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 7459,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 71,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5305,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 91,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5623,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 92,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "cmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4029,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 52,
+            "output": 93,
+            "reasoning": 0
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4709,
+          "reasoning_chars": 409,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 180,
+            "reasoning": 144
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4015,
+          "reasoning_chars": 364,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 173,
+            "reasoning": 137
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5804,
+          "reasoning_chars": 870,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 211,
+            "output": 264,
+            "reasoning": 245
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "off",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1127,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 47,
+            "output": 33
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2820,
+          "reasoning_chars": 190,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 84,
+            "output": 119,
+            "reasoning": 83
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3016,
+          "reasoning_chars": 259,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 58,
+            "output": 139,
+            "reasoning": 103
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2003,
+          "reasoning_chars": 386,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 171,
+            "reasoning": 134
+          }
+        },
+        {
+          "model": "qmodel_38max",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4491,
+          "reasoning_chars": 381,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 170,
+            "reasoning": 134
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2838,
+          "reasoning_chars": 521,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 214,
+            "reasoning": 178
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "off",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 853,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 60,
+            "output": 43
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5442,
+          "reasoning_chars": 1362,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 249,
+            "output": 398,
+            "reasoning": 379
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1870,
+          "reasoning_chars": 216,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 84,
+            "output": 131,
+            "reasoning": 92
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "medium",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2117,
+          "reasoning_chars": 260,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 58,
+            "output": 131,
+            "reasoning": 97
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1597,
+          "reasoning_chars": 40,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 78,
+            "reasoning": 25
+          }
+        },
+        {
+          "model": "qfmodel",
+          "probe": "thinking",
+          "requested_thinking": "xhigh",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2550,
+          "reasoning_chars": 390,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 96,
+            "output": 179,
+            "reasoning": 142
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2632,
+          "reasoning_chars": 46,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 81,
+            "reasoning": 30
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3784,
+          "reasoning_chars": 21,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 66,
+            "reasoning": 15
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 8185,
+          "reasoning_chars": 0,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 647,
+            "output": 17,
+            "reasoning": 1
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1312,
+          "reasoning_chars": 40,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 58,
+            "reasoning": 25
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2065,
+          "reasoning_chars": 224,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 105,
+            "reasoning": 75
+          }
+        },
+        {
+          "model": "gmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2986,
+          "reasoning_chars": 381,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 153,
+            "reasoning": 125
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2025,
+          "reasoning_chars": 216,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 104,
+            "reasoning": 74
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1641,
+          "reasoning_chars": 48,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 76,
+            "reasoning": 29
+          }
+        },
+        {
+          "model": "gfmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5992,
+          "reasoning_chars": 845,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 144,
+            "output": 245,
+            "reasoning": 228
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 287,
+          "error_kind": "Server",
+          "provider_code": "provider_error"
+        },
+        {
+          "model": "gfmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2825,
+          "reasoning_chars": 245,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 43,
+            "output": 108,
+            "reasoning": 78
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5997,
+          "reasoning_chars": 287,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 229,
+            "output": 100,
+            "reasoning": 70
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5939,
+          "reasoning_chars": 492,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 116,
+            "output": 182,
+            "reasoning": 141
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4614,
+          "reasoning_chars": 217,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 107,
+            "reasoning": 66
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 5094,
+          "reasoning_chars": 288,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 118,
+            "reasoning": 77
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "unknown",
+          "reason": "request_failed",
+          "elapsed_ms": 283,
+          "error_kind": "Server",
+          "provider_code": "provider_error"
+        },
+        {
+          "model": "kmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3193,
+          "reasoning_chars": 395,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 230,
+            "output": 133,
+            "reasoning": 108
+          }
+        },
+        {
+          "model": "kmodel_latest",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 7555,
+          "reasoning_chars": 742,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 116,
+            "output": 255,
+            "reasoning": 214
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 3101,
+          "reasoning_chars": 67,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 71,
+            "reasoning": 30
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1757,
+          "reasoning_chars": 33,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 59,
+            "reasoning": 18
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1806,
+          "reasoning_chars": 25,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 117,
+            "output": 54,
+            "reasoning": 13
+          }
+        },
+        {
+          "model": "kmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2118,
+          "reasoning_chars": 79,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 116,
+            "output": 74,
+            "reasoning": 33
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2813,
+          "reasoning_chars": 452,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 161,
+            "reasoning": 134
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2028,
+          "reasoning_chars": 312,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 730,
+            "output": 84,
+            "reasoning": 68
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 2988,
+          "reasoning_chars": 594,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 182,
+            "reasoning": 155
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 6590,
+          "reasoning_chars": 1623,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 445,
+            "reasoning": 418
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1024,
+          "reasoning_chars": 364,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 130,
+            "reasoning": 101
+          }
+        },
+        {
+          "model": "dmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 4847,
+          "reasoning_chars": 1135,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 127,
+            "output": 324,
+            "reasoning": 297
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1674,
+          "reasoning_chars": 847,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 256,
+            "cache_write": 0,
+            "input": 200,
+            "output": 217,
+            "reasoning": 201
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1220,
+          "reasoning_chars": 376,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 131,
+            "reasoning": 104
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "low",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1625,
+          "reasoning_chars": 563,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 174,
+            "reasoning": 147
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "high",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1675,
+          "reasoning_chars": 541,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 164,
+            "reasoning": 137
+          }
+        },
+        {
+          "model": "dfmodel",
+          "probe": "thinking",
+          "requested_thinking": "max",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1129,
+          "reasoning_chars": 303,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 0,
+            "cache_write": 0,
+            "input": 61,
+            "output": 111,
+            "reasoning": 84
+          }
+        },
+        {
+          "model": "mmodel",
+          "probe": "image",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1297,
+          "reasoning_chars": 326,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 128,
+            "cache_write": 0,
+            "input": 206,
+            "output": 99,
+            "reasoning": 81
+          }
+        },
+        {
+          "model": "mmodel",
+          "probe": "parameters",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1685,
+          "reasoning_chars": 298,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 232,
+            "cache_write": 0,
+            "input": 1,
+            "output": 101,
+            "reasoning": 72
+          }
+        },
+        {
+          "model": "mmodel",
+          "probe": "thinking",
+          "requested_thinking": "default",
+          "request_status": "passed",
+          "reason": "expected_answer",
+          "elapsed_ms": 1599,
+          "reasoning_chars": 252,
+          "stop_reason": "stop",
+          "usage": {
+            "cache_read": 232,
+            "cache_write": 0,
+            "input": 1,
+            "output": 100,
+            "reasoning": 71
+          }
+        }
+      ]
+    }
+  ],
+  "deepseek_off_raw_route_comparisons": [
+    {
+      "model": "dmodel",
+      "mode": "sdk",
+      "reasoning_chars": 708,
+      "text_chars": 66,
+      "events": 208,
+      "done": true
+    },
+    {
+      "model": "dmodel",
+      "mode": "native",
+      "reasoning_chars": 1126,
+      "text_chars": 60,
+      "events": 330,
+      "done": true
+    },
+    {
+      "model": "dmodel",
+      "mode": "both",
+      "reasoning_chars": 1123,
+      "text_chars": 66,
+      "events": 317,
+      "done": true
+    },
+    {
+      "model": "dmodel",
+      "mode": "zero_budget",
+      "reasoning_chars": 654,
+      "text_chars": 54,
+      "events": 205,
+      "done": true
+    },
+    {
+      "model": "dfmodel",
+      "mode": "sdk",
+      "reasoning_chars": 322,
+      "text_chars": 66,
+      "events": 115,
+      "done": true
+    },
+    {
+      "model": "dfmodel",
+      "mode": "native",
+      "reasoning_chars": 318,
+      "text_chars": 66,
+      "events": 108,
+      "done": true
+    },
+    {
+      "model": "dfmodel",
+      "mode": "both",
+      "reasoning_chars": 313,
+      "text_chars": 68,
+      "events": 119,
+      "done": true
+    },
+    {
+      "model": "dfmodel",
+      "mode": "zero_budget",
+      "reasoning_chars": 342,
+      "text_chars": 65,
+      "events": 123,
+      "done": true
+    }
+  ],
+  "kimi_parameter_raw_route_comparisons": [
+    {
+      "model": "kmodel_latest",
+      "mode": "4096_default",
+      "reasoning_chars": 442,
+      "text_chars": 60,
+      "events": 142,
+      "done": true
+    },
+    {
+      "model": "kmodel_latest",
+      "mode": "32000_default",
+      "reasoning_chars": 502,
+      "text_chars": 66,
+      "events": 167,
+      "done": true
+    },
+    {
+      "model": "kmodel_latest",
+      "mode": "4096_t025",
+      "reasoning_chars": 0,
+      "text_chars": 0,
+      "events": 1,
+      "provider_error": true
+    },
+    {
+      "model": "kmodel_latest",
+      "mode": "32000_t1",
+      "reasoning_chars": 506,
+      "text_chars": 68,
+      "events": 169,
+      "done": true
+    },
+    {
+      "model": "kmodel_latest",
+      "mode": "4096_t05",
+      "reasoning_chars": 0,
+      "text_chars": 0,
+      "events": 1,
+      "provider_error": true
+    },
+    {
+      "model": "kmodel",
+      "mode": "4096_default",
+      "reasoning_chars": 375,
+      "text_chars": 60,
+      "events": 121,
+      "done": true
+    },
+    {
+      "model": "kmodel",
+      "mode": "32000_default",
+      "reasoning_chars": 42,
+      "text_chars": 65,
+      "events": 54,
+      "done": true
+    },
+    {
+      "model": "kmodel",
+      "mode": "4096_t025",
+      "reasoning_chars": 0,
+      "text_chars": 0,
+      "events": 1,
+      "provider_error": true
+    },
+    {
+      "model": "kmodel",
+      "mode": "32000_t1",
+      "reasoning_chars": 333,
+      "text_chars": 60,
+      "events": 131,
+      "done": true
+    },
+    {
+      "model": "kmodel",
+      "mode": "4096_t05",
+      "reasoning_chars": 0,
+      "text_chars": 0,
+      "events": 1,
+      "provider_error": true
+    }
+  ],
+  "limits": [
+    "Request acceptance does not verify thinking intensity, temperature distribution, context capacity or maximum output length.",
+    "Image probe tests two synthetic PNGs; it does not verify every image format, OCR, documents, audio or video.",
+    "No Qoder prompt or tools are added by the adapter. Server-side routing and prompt transformation are unknown.",
+    "No account identifiers, tokens, headers, private reasoning text or user content are retained."
+  ]
+}

@@ -85,18 +85,7 @@ impl Harness {
         let lanes = Arc::new(Lanes::default());
         let routed = lanes.clone();
         api.respond_with(move |context| routed.0.lock().get_mut(&lane_of(context))?.pop_front());
-        let mut registry = ModelRegistry::new(Catalog::default(), RegistryOptions::default());
-        registry.register_api(api.clone());
-        registry.insert_provider(ScriptedApi::provider());
-        let deps = KernelDeps {
-            llm: Arc::new(registry),
-            tools: Arc::new(builtin_registry(BashTool::default())),
-            env: Arc::new(LocalEnvironment::new(work.clone())),
-            store: Arc::new(JsonlStore::new(home.sessions_dir())),
-            hooks: vec![],
-            mcp_servers: Vec::new(),
-            browser_pool: None,
-        };
+        let deps = deps(&api, &work, &home);
         let options = StartOptions {
             model: "test/scripted".into(),
             thinking: ThinkingLevel::Off,
@@ -160,6 +149,22 @@ impl Harness {
 
     fn store(&self) -> JsonlStore {
         JsonlStore::new(self.home.sessions_dir())
+    }
+}
+
+fn deps(api: &Arc<ScriptedApi>, work: &std::path::Path, home: &FinxHome) -> KernelDeps {
+    let mut registry = ModelRegistry::new(Catalog::default(), RegistryOptions::default());
+    registry.register_api(api.clone());
+    registry.insert_provider(ScriptedApi::provider());
+    KernelDeps {
+        llm: Arc::new(registry),
+        tools: Arc::new(builtin_registry(BashTool::default())),
+        env: Arc::new(LocalEnvironment::new(work.to_path_buf())),
+        store: Arc::new(JsonlStore::new(home.sessions_dir())),
+        hooks: vec![],
+        mcp_servers: Vec::new(),
+        browser_pool: None,
+        docs: None,
     }
 }
 
@@ -669,6 +674,63 @@ async fn shutdown_closes_the_sub_agents_sessions() {
 }
 
 #[tokio::test]
+async fn a_resumed_session_knows_its_earlier_agents_as_their_logs_left_them() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "counter", "Count the files.", false));
+    h.script(ROOT, spawn("c2", "slow", "Take your time.", false));
+    h.script(ROOT, Script::text("Two agents work."));
+    h.script(ROOT, Script::text("The counter is done."));
+    h.script("counter", Script::text("3 files"));
+    h.script("slow", Script::default().then_sleep(Duration::from_secs(30)).then_text("never"));
+    h.prompt("go").await;
+    h.until(|m| matches!(m, EventMsg::MessageCompleted { mail: Some(_), .. })).await;
+    h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let session = h.kernel.session_id().to_string();
+    let Harness { kernel, api, lanes, work, home, _dir } = h;
+    kernel.shutdown().await;
+
+    let options = finx_core::ResumeOptions {
+        session: SessionRef::Id(session),
+        model: None,
+        thinking: None,
+        permission_mode: None,
+        home: home.clone(),
+        config: Arc::new(Config::default()),
+        project_root: None,
+        trusted: false,
+        interactive_approvals: false,
+    };
+    let kernel = Kernel::resume(options, deps(&api, &work, &home)).await.unwrap();
+    let mut h = Harness { kernel, api, lanes, work, home, _dir };
+    let restored = h.kernel.take_restored_agents();
+    let seen: Vec<(&str, &str, AgentStatus)> = restored.iter().map(|a| (a.name.as_str(), a.description.as_str(), a.status)).collect();
+    assert_eq!(
+        seen,
+        [("counter", "counter work", AgentStatus::Completed), ("slow", "slow work", AgentStatus::Interrupted)]
+    );
+    assert_eq!(restored[0].call_id, "c1");
+    // Its own session, as clients show it: the task it got, its reply, where it ended.
+    let replied = restored[0].transcript.iter().any(|item| match item {
+        finx_protocol::api::TranscriptItem::Message { message: Message::Assistant(m), .. } => m.text() == "3 files",
+        _ => false,
+    });
+    assert!(replied, "{:?}", restored[0].transcript);
+    assert!(h.kernel.take_restored_agents().is_empty(), "taken once");
+
+    // Their sessions are not loaded: they take no messages, and their names stay taken.
+    h.script(ROOT, Script::tool_call("c3", "send_message", json!({ "to": "counter", "message": "Count again." })));
+    h.script(ROOT, spawn("c4", "counter", "Count again.", true));
+    h.script(ROOT, Script::text("Counted again."));
+    h.script("counter-2", Script::text("4 files"));
+    h.prompt("count again").await;
+    h.until_idle().await;
+    let root = h.requests(ROOT);
+    let results = tool_results(root.last().unwrap());
+    assert_eq!(results[results.len() - 2], "Agent \"counter\" is closed. Start a new one with spawn_agent.");
+    assert!(results[results.len() - 1].starts_with("Agent \"counter-2\" completed after"), "{results:?}");
+}
+
+#[tokio::test]
 async fn sub_agents_can_be_turned_off() {
     let dir = tempfile::tempdir().unwrap();
     let home = FinxHome::new(dir.path().join("home"));
@@ -702,6 +764,7 @@ async fn sub_agents_can_be_turned_off() {
             hooks: vec![],
             mcp_servers: Vec::new(),
             browser_pool: None,
+            docs: None,
         },
     )
     .await

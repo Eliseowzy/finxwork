@@ -111,6 +111,36 @@
       "price": "每百万 token {{price}}",
       "inMenu": "在模型菜单里显示 {{name}}",
       "none": "没有匹配的模型"
+    },
+    "diagnostic": {
+      "details": "查看诊断详情",
+      "stage": "失败阶段",
+      "code": "错误码",
+      "field": "异常字段",
+      "version": "来源应用版本",
+      "checkedAt": "检查时间",
+      "stages": {
+        "connection": "连接检查",
+        "discovery": "发现应用",
+        "app_metadata": "读取应用信息",
+        "login_file": "读取登录文件",
+        "keychain": "钥匙串授权",
+        "decrypt": "解密凭据",
+        "source_login": "解析登录信息",
+        "catalog": "获取模型目录",
+        "authorization": "获取模型授权",
+        "refresh": "续期模型授权",
+        "credential_store": "保存或读取连接凭据",
+        "inference": "模型调用"
+      },
+      "actions": {
+        "open_source": "请打开来源应用，确认已登录后重试。",
+        "authorize": "请点击连接或重新连接，在系统提示中允许钥匙串访问。",
+        "reconnect_account": "账户已变化，请断开并移除旧连接，再连接当前账户。",
+        "check_account": "请检查来源应用中的账户或组织权限。",
+        "retry": "可稍后重试；已有连接和模型目录会保留。",
+        "check_details": "请查看失败阶段和错误码，排查配置或联系支持。"
+      }
     }
   },
   "about": {

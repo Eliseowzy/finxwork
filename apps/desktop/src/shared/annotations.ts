@@ -4,7 +4,16 @@ import type { WebComment } from "@finx/client";
 export type AnnotationAnchor = { selector: string; text: string; tag: string; x: number; y: number };
 export type AnnotationState = { url: string; enabled: boolean; language: string };
 /** A part of a page on its way to a conversation's composer. */
-export type BrowserComment = { session: string; comment: WebComment };
+/** image: what it looks like (PNG, base64). */
+export type BrowserComment = { session: string; comment: WebComment; image?: string };
+/** The element's box in the page's viewport, in CSS pixels: what its picture is taken of. */
+export type AnnotationBox = { x: number; y: number; width: number; height: number };
+
+export function validBox(value: unknown): value is AnnotationBox {
+  if (!value || typeof value !== "object") return false;
+  const b = value as AnnotationBox;
+  return [b.x, b.y, b.width, b.height].every(Number.isFinite) && b.width > 0 && b.height > 0;
+}
 
 export const maxComment = 4000;
 

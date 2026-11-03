@@ -2,6 +2,15 @@ name: Kernel startup
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'rust-toolchain.toml'
+      - 'tools/bench/**'
+      - 'tools/kernel-simulation.sh'
+      - '.github/workflows/kernel-startup.yml'
   pull_request:
     paths:
       - 'crates/**'
@@ -31,18 +40,26 @@ jobs:
           rustup target add x86_64-unknown-linux-musl
       - name: Verify persisted summaries and compiled assets
         run: cargo test -p finx-core -p finx-llm --lib
+      # The gate and the measurements depend on this build alone: a failed test does not hide
+      # them, and a failed build skips them instead of running them without a binary.
+      - name: Build the static binary and startup launcher
+        id: build
+        if: ${{ !cancelled() }}
+        run: |
+          cargo build --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
+          cc -O2 -Wall -Wextra -Werror tools/bench/startup_launcher.c -o target/startup-launcher
       - name: Gate local commands at 2 ms mean
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: bash tools/kernel-simulation.sh cli-startup
       - name: Measure real task startup separately
-        if: always()
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
-          cc -O2 -Wall -Wextra -Werror tools/bench/startup_launcher.c -o target/startup-launcher
           python3 tools/bench/bench_startup.py \
             --finx candidate=target/x86_64-unknown-linux-musl/dist/finx \
             --launcher target/startup-launcher --runs 100 --warmup 10 \
             --json target/simulation-results/first-model-request.json
       - name: Measure ACP and socket startup through first model request
-        if: always()
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
           python3 tools/bench/bench_protocol_startup.py \
             --finx candidate=target/x86_64-unknown-linux-musl/dist/finx \

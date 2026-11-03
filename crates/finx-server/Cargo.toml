@@ -12,6 +12,7 @@ finx-connections.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 finx-browser.workspace = true
+finx-docs.workspace = true
 finx-core.workspace = true
 finx-llm.workspace = true
 finx-mcp.workspace = true

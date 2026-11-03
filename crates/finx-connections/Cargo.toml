@@ -38,6 +38,7 @@ security-framework-sys = "2"
 core-foundation = "0.10"
 
 [dev-dependencies]
+tracing-subscriber.workspace = true
 tempfile.workspace = true
 wiremock.workspace = true
 

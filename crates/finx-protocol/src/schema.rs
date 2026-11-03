@@ -36,6 +36,31 @@ pub fn document() -> Value {
             name::<api::InitializeResult>(g),
         ),
         (
+            method::DOC_OPEN,
+            Some(name::<crate::doc::DocOpenParams>(g)),
+            name::<crate::doc::DocOpenResult>(g),
+        ),
+        (
+            method::DOC_CLOSE,
+            Some(name::<crate::doc::DocIdParams>(g)),
+            name::<api::Empty>(g),
+        ),
+        (
+            method::DOC_VIEW,
+            Some(name::<crate::doc::DocViewParams>(g)),
+            name::<api::Empty>(g),
+        ),
+        (
+            method::DOC_LOCATE,
+            Some(name::<crate::doc::DocLocateParams>(g)),
+            name::<crate::doc::DocLocateResult>(g),
+        ),
+        (
+            method::DOC_RESOLVE,
+            Some(name::<crate::doc::DocResolveParams>(g)),
+            name::<crate::doc::DocResolveResult>(g),
+        ),
+        (
             method::SESSION_NEW,
             Some(name::<api::SessionNewParams>(g)),
             name::<api::SessionNewResult>(g),

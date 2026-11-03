@@ -60,6 +60,7 @@ use crate::session::SessionState;
 use crate::skills;
 use crate::skills::SkillRef;
 use crate::skills::SkillState;
+use crate::store::Entry;
 use crate::store::EntryKind;
 use crate::store::SessionHeader;
 use crate::store::SessionRef;
@@ -87,6 +88,9 @@ pub struct KernelDeps {
     /// The process's browsers, shared by its sessions (browser-design §6.1). `None` leaves
     /// the browser tools out, whatever `[browser] enabled` says.
     pub browser_pool: Option<Arc<finx_browser::BrowserPool>>,
+    /// The service's documents, shared by its sessions (document-editor-design §5.2). `None`
+    /// leaves the document tools out.
+    pub docs: Option<Arc<finx_docs::DocStore>>,
 }
 
 pub struct StartOptions {
@@ -153,6 +157,8 @@ pub struct Kernel {
     session: Weak<Session>,
     /// Messages from inside the process: reports, permissions for a sub-agent.
     pub(crate) internal: mpsc::UnboundedSender<Box<Internal>>,
+    /// Sub-agents of an earlier run of a resumed session, until taken.
+    restored_agents: Vec<agents::RestoredAgent>,
 }
 
 struct Launch {
@@ -188,7 +194,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let pool = launch.deps.browser_pool.clone();
     let embedded = pool.as_ref().is_some_and(|p| p.has_host());
     let deferred: crate::deferred::DeferredCell =
-        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded))));
+        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some()))));
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &deferred, &shown);
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
@@ -211,6 +217,19 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     if settings.desktop.on(embedded) {
         tool_state.insert(Arc::new(DesktopHandle::new(settings.desktop.clone(), launch.root_id.clone())));
     }
+    let emitter = Arc::new(Emitter::new(event_tx));
+    if let Some(store) = &launch.deps.docs {
+        let weak = Arc::downgrade(&emitter);
+        tool_state.insert(Arc::new(crate::docs::DocsHandle {
+            store: store.clone(),
+            view_session: launch.root_id.clone(),
+            opened: Box::new(move |info| {
+                if let Some(emitter) = weak.upgrade() {
+                    emitter.emit(EventMsg::DocOpened { info });
+                }
+            }),
+        }));
+    }
     let session = Arc::new(Session {
         id: launch.id.clone(),
         llm: launch.deps.llm,
@@ -229,7 +248,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         deferred,
         env: launch.deps.env,
         hooks,
-        emitter: Arc::new(Emitter::new(event_tx)),
+        emitter,
         writer: launch.writer,
         tool_gate: tokio::sync::RwLock::new(()),
         tool_slots: tokio::sync::Semaphore::new(launch.config.max_parallel_tools),
@@ -274,6 +293,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         log_closed,
         session: Arc::downgrade(&session),
         internal: internal_tx,
+        restored_agents: Vec::new(),
     };
     (kernel, session)
 }
@@ -301,6 +321,7 @@ fn agent_tree(
         trusted,
         mcp,
         browser_pool: deps.browser_pool.clone(),
+        docs: deps.docs.clone(),
     });
     deps.tools = with_agent_tools(&deps.tools);
     Some(tree)
@@ -456,7 +477,7 @@ struct BuiltPrompt {
 /// The deferred built-in tools a session starts with, for the catalog in its first prompt.
 fn starting_deferred(deps: &KernelDeps, system: &SystemCell) -> crate::deferred::Deferred {
     let embedded = deps.browser_pool.as_ref().is_some_and(|p| p.has_host());
-    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded)
+    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded, deps.docs.is_some())
 }
 
 /// The tools a session starts with, before MCP: what its prompt describes. The browsers' and
@@ -612,7 +633,8 @@ impl Kernel {
         let mut model_ref = None;
         let mut thinking = None;
         let mut permission_mode = None;
-        let mut usage = UsageTotals::default();
+        let usage = usage_of(history.branch());
+        let restored_agents = agents::restore(&history.branch(), deps.store.as_ref());
         let mut max_task = 0u32;
         let mut open_task: Option<String> = None;
         let mut title = None;
@@ -639,12 +661,6 @@ impl Kernel {
                     thinking = t.or(thinking);
                     permission_mode = a.or(permission_mode);
                 }
-                EntryKind::Message {
-                    message: Message::Assistant(assistant),
-                    ..
-                } => usage.add(&format!("{}/{}", assistant.provider, assistant.model), &assistant.usage),
-                // Summary requests are paid for too.
-                EntryKind::Compaction(checkpoint) => usage.add(&checkpoint.model, &checkpoint.usage),
                 EntryKind::Task { task_id, status, .. } => {
                     if let Some(n) = task_id.strip_prefix('t').and_then(|n| n.parse::<u32>().ok()) {
                         max_task = max_task.max(n);
@@ -712,7 +728,7 @@ impl Kernel {
         state.archived = archived;
         let model_ref = state.model.reference();
         let overridden = opts.model.is_some() || opts.thinking.is_some() || opts.permission_mode.is_some();
-        let (kernel, session) = launch(Launch {
+        let (mut kernel, session) = launch(Launch {
             id: loaded.header.id.clone(),
             root_id: loaded.header.id.clone(),
             location: loaded.location.clone(),
@@ -731,7 +747,9 @@ impl Kernel {
         });
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
+            tree.restore(&restored_agents);
         }
+        kernel.restored_agents = restored_agents;
         // A new entry only when the tools or the MCP part differ from what the log has.
         let current = (session.tools().names(), mcp_section);
         if last_prompt.as_ref() != Some(&current) {
@@ -848,55 +866,13 @@ impl Kernel {
             return Vec::new();
         };
         let state = session.state.lock();
-        state
-            .history
-            .branch()
-            .into_iter()
-            .filter_map(|entry| match &entry.kind {
-                EntryKind::Message {
-                    message: Message::ToolResult(result),
-                    ..
-                } => Some(TranscriptItem::ToolResult {
-                    call_id: result.call_id.clone(),
-                    result: result.clone(),
-                }),
-                EntryKind::Message { message, skills, skill } => Some(TranscriptItem::Message {
-                    message_id: entry.id.clone(),
-                    message: context::written(message, skill.as_deref()),
-                    skills: context::skill_uses(skills, skill.as_deref()),
-                    mail: None,
-                }),
-                EntryKind::Mail { mail, message } => Some(TranscriptItem::Message {
-                    message_id: entry.id.clone(),
-                    message: message.clone(),
-                    skills: Vec::new(),
-                    mail: Some(mail.clone()),
-                }),
-                EntryKind::Task {
-                    task_id,
-                    status,
-                    error,
-                    reason,
-                    usage,
-                } => {
-                    let outcome = match status {
-                        TaskStatus::Started => return None,
-                        TaskStatus::Completed => TaskOutcome::Completed,
-                        TaskStatus::Failed => TaskOutcome::Failed,
-                        TaskStatus::Interrupted => TaskOutcome::Interrupted,
-                    };
-                    Some(TranscriptItem::TaskEnd {
-                        task_id: task_id.clone(),
-                        outcome,
-                        reason: *reason,
-                        error: error.clone(),
-                        usage: usage.as_deref().cloned(),
-                        ts: entry.ts,
-                    })
-                }
-                _ => None,
-            })
-            .collect()
+        transcript_of(state.history.branch())
+    }
+
+    /// The sub-agents this session started before it was loaded, as their logs left them; read
+    /// once, by whoever shows the session. Empty for a started session and after the first call.
+    pub fn take_restored_agents(&mut self) -> Vec<agents::RestoredAgent> {
+        std::mem::take(&mut self.restored_agents)
     }
 
     /// A sender for use from other tasks (signal handlers, stdin readers).
@@ -1025,6 +1001,74 @@ async fn submission_loop(
     session.emit(EventMsg::SessionClosed);
 }
 
+/// What the requests on a branch of entries cost.
+pub(crate) fn usage_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> UsageTotals {
+    let mut usage = UsageTotals::default();
+    for entry in branch {
+        match &entry.kind {
+            EntryKind::Message {
+                message: Message::Assistant(assistant),
+                ..
+            } => usage.add(&format!("{}/{}", assistant.provider, assistant.model), &assistant.usage),
+            // Summary requests are paid for too.
+            EntryKind::Compaction(checkpoint) => usage.add(&checkpoint.model, &checkpoint.usage),
+            _ => {}
+        }
+    }
+    usage
+}
+
+/// What clients show of a branch of entries: messages, tool results and task ends.
+pub(crate) fn transcript_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> Vec<TranscriptItem> {
+    branch
+        .into_iter()
+        .filter_map(|entry| match &entry.kind {
+            EntryKind::Message {
+                message: Message::ToolResult(result),
+                ..
+            } => Some(TranscriptItem::ToolResult {
+                call_id: result.call_id.clone(),
+                result: result.clone(),
+            }),
+            EntryKind::Message { message, skills, skill } => Some(TranscriptItem::Message {
+                message_id: entry.id.clone(),
+                message: context::written(message, skill.as_deref()),
+                skills: context::skill_uses(skills, skill.as_deref()),
+                mail: None,
+            }),
+            EntryKind::Mail { mail, message } => Some(TranscriptItem::Message {
+                message_id: entry.id.clone(),
+                message: message.clone(),
+                skills: Vec::new(),
+                mail: Some(mail.clone()),
+            }),
+            EntryKind::Task {
+                task_id,
+                status,
+                error,
+                reason,
+                usage,
+            } => {
+                let outcome = match status {
+                    TaskStatus::Started => return None,
+                    TaskStatus::Completed => TaskOutcome::Completed,
+                    TaskStatus::Failed => TaskOutcome::Failed,
+                    TaskStatus::Interrupted => TaskOutcome::Interrupted,
+                };
+                Some(TranscriptItem::TaskEnd {
+                    task_id: task_id.clone(),
+                    outcome,
+                    reason: *reason,
+                    error: error.clone(),
+                    usage: usage.as_deref().cloned(),
+                    ts: entry.ts,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1048,7 +1092,7 @@ mod tests {
     #[test]
     fn computer_use_is_on_with_the_desktop_app_unless_turned_off() {
         let mut settings = SystemSettings::of(&Config::default());
-        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app).find("cua_snapshot").is_some();
+        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app, false).find("cua_snapshot").is_some();
         assert!(has(&settings, true), "the desktop app connected");
         assert!(!has(&settings, false), "the command line");
         settings.desktop.enabled = Some(false);

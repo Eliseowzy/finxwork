@@ -145,6 +145,30 @@ fn read_header(path: &Path) -> Option<SessionHeader> {
     serde_json::from_str(&line).ok()
 }
 
+/// A log's header and entries; lines that cannot be read are skipped with a warning.
+fn parse_log(path: &Path, text: &str, warnings: &mut Vec<String>) -> Result<(SessionHeader, Vec<Entry>), StoreError> {
+    let mut lines = text.lines();
+    let header_line = lines.next().ok_or_else(|| StoreError::Corrupt {
+        path: path.to_path_buf(),
+        message: "empty file".into(),
+    })?;
+    let header: SessionHeader = serde_json::from_str(header_line).map_err(|e| StoreError::Corrupt {
+        path: path.to_path_buf(),
+        message: format!("bad header: {e}"),
+    })?;
+    let mut entries = Vec::new();
+    for (number, line) in lines.enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        match serde_json::from_str::<Entry>(line) {
+            Ok(entry) => entries.push(entry),
+            Err(err) => warnings.push(format!("skipped unreadable line {}: {err}", number + 2)),
+        }
+    }
+    Ok((header, entries))
+}
+
 /// `20261028T090000-<id>.jsonl` → `<id>`
 fn session_id_of(path: &Path) -> Option<&str> {
     let stem = path.file_stem()?.to_str()?;
@@ -306,25 +330,7 @@ impl SessionStore for JsonlStore {
             warnings.push("dropped an incomplete last line from the session log".to_string());
         }
 
-        let mut lines = text.lines();
-        let header_line = lines.next().ok_or_else(|| StoreError::Corrupt {
-            path: path.clone(),
-            message: "empty file".into(),
-        })?;
-        let header: SessionHeader = serde_json::from_str(header_line).map_err(|e| StoreError::Corrupt {
-            path: path.clone(),
-            message: format!("bad header: {e}"),
-        })?;
-        let mut entries = Vec::new();
-        for (number, line) in lines.enumerate() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            match serde_json::from_str::<Entry>(line) {
-                Ok(entry) => entries.push(entry),
-                Err(err) => warnings.push(format!("skipped unreadable line {}: {err}", number + 2)),
-            }
-        }
+        let (header, entries) = parse_log(&path, &text, &mut warnings)?;
         let writer = SessionWriter::spawn(FileSink::Open(file)).map_err(io_err(&path))?;
         Ok(LoadedSession {
             header,
@@ -333,6 +339,14 @@ impl SessionStore for JsonlStore {
             writer,
             warnings,
         })
+    }
+
+    fn read(&self, reference: &SessionRef) -> Result<(SessionHeader, Vec<Entry>), StoreError> {
+        let path = self.find(reference)?;
+        let mut text = std::fs::read_to_string(&path).map_err(io_err(&path))?;
+        // A line its writer has not finished yet.
+        text.truncate(text.rfind('\n').map_or(0, |i| i + 1));
+        parse_log(&path, &text, &mut Vec::new())
     }
 
     fn list(&self, limit: usize, within: Option<&Path>) -> Result<Vec<SessionSummary>, StoreError> {

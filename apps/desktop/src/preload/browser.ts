@@ -1,5 +1,7 @@
 import { ipcRenderer } from "electron";
 import { maxComment, type AnnotationAnchor, type AnnotationState } from "../shared/annotations";
+import en from "../locales/en/session.json" with { type: "json" };
+import zh from "../locales/zh-CN/session.json" with { type: "json" };
 
 // Runs in the tab's isolated world, without exposing Electron to visited pages.
 // "Add to chat": the person points at a part of the page, says something about it,
@@ -27,10 +29,11 @@ if (process.isMainFrame) {
   let added: (Spot & { body: string })[] = [];
   /** Unsaved text, by element, kept while the page lives. */
   const drafts = new Map<string, Draft>();
+  // The card's words are the app's (session.annotate), the same as the document column's card.
   const copy = {
-    "zh-CN": { title: "添加到对话", placeholder: "补充说明（可选）", add: "添加", cancel: "关闭", failed: "未能添加，请重试", adding: "添加中…", shortcut: "↩ 添加 · ⇧↩ 换行", readError: "无法使用添加到对话，请重试", draft: "未添加的草稿", sent: "已添加", noMatch: "页面内容已变化",
+    "zh-CN": { ...zh.annotate, failed: "未能添加，请重试", readError: "无法使用添加到对话，请重试", draft: "未添加的草稿", sent: "已添加", noMatch: "页面内容已变化",
       kinds: { a: "链接", button: "按钮", img: "图片", input: "输入框", textarea: "输入框", select: "选择框", heading: "标题", p: "段落", li: "列表项", table: "表格", video: "视频", other: "内容" } },
-    en: { title: "Add to chat", placeholder: "Add a note (optional)", add: "Add", cancel: "Close", failed: "Could not add. Please retry.", adding: "Adding…", shortcut: "↩ to add · ⇧↩ new line", readError: "Add to chat is unavailable. Please retry.", draft: "Draft not added", sent: "Added", noMatch: "The page has changed",
+    en: { ...en.annotate, failed: "Could not add. Please retry.", readError: "Add to chat is unavailable. Please retry.", draft: "Draft not added", sent: "Added", noMatch: "The page has changed",
       kinds: { a: "Link", button: "Button", img: "Image", input: "Field", textarea: "Field", select: "Menu", heading: "Heading", p: "Paragraph", li: "List item", table: "Table", video: "Video", other: "Content" } },
   };
   const t = () => state.language === "zh-CN" ? copy["zh-CN"] : copy.en;
@@ -208,7 +211,12 @@ if (process.isMainFrame) {
     card?.querySelectorAll("button").forEach((b) => b.disabled = true);
     input.disabled = true; if (status) { status.textContent = t().adding; status.className = "status"; }
     try {
-      await ipcRenderer.invoke("browser-annotation", { action: "chat", url: state.url, anchor: spot.anchor, body });
+      // The picture taken of it shows the page, not this UI over it.
+      const r = spot.element?.isConnected ? spot.element.getBoundingClientRect() : null;
+      const box = r && { x: r.left, y: r.top, width: r.width, height: r.height };
+      if (box) { host!.style.setProperty("visibility", "hidden", "important"); await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))); }
+      try { await ipcRenderer.invoke("browser-annotation", { action: "chat", url: state.url, anchor: spot.anchor, body, box }); }
+      finally { host!.style.removeProperty("visibility"); }
       pending = false; dropCard(); drafts.delete(draftKey(spot.anchor));
       // The numbered marker and the card in the composer say it was added.
       added.push({ ...spot, body: body.trim() });

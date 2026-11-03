@@ -9,7 +9,7 @@ import { chromeOverride, clientHintHeaders, hintsGo } from "./identity";
 import { preferences } from "../preferences";
 import { allEngines } from "../../shared/search";
 import { language } from "../../shared/i18n";
-import { webComment, type BrowserComment } from "../../shared/annotations";
+import { validBox, webComment, type AnnotationBox, type BrowserComment } from "../../shared/annotations";
 
 // The embedded browser's pages (browser-design §8.3.4): each tab is a WebContentsView with
 // its debugger attached, on a partition of its own, apart from the app's pages and from the
@@ -23,7 +23,7 @@ export const partition = "persist:finx-browser";
 /** The size of a tab no panel shows. */
 const parkedSize = { width: 1280, height: 800 };
 
-type Tab = { targetId: string; finxSession?: string; view: WebContentsView; events: PageEvents; seq: number; annotating?: boolean; managed?: boolean };
+type Tab = { targetId: string; finxSession?: string; view: WebContentsView; events: PageEvents; seq: number; annotating?: boolean; domReady?: boolean; managed?: boolean };
 
 const tabs = new Map<string, Tab>();
 /** The tab each finx session shows: the one it opened or selected last. */
@@ -46,7 +46,7 @@ function syncAnnotations(tab: Tab) {
 // Only the embedded tab's isolated preload can use this channel. No app bridge is
 // exposed to the website, and subframes and requests from a page since left are rejected.
 // "chat" hands a part of the page to the composer of the conversation the tab belongs to.
-ipcMain.handle("browser-annotation", (event, request: unknown) => {
+ipcMain.handle("browser-annotation", async (event, request: unknown) => {
   const tab = [...tabs.values()].find((t) => t.view.webContents === event.sender);
   if (!tab || event.senderFrame !== event.sender.mainFrame || !request || typeof request !== "object") throw new Error("Invalid annotation source");
   const r = request as Record<string, unknown>;
@@ -57,6 +57,8 @@ ipcMain.handle("browser-annotation", (event, request: unknown) => {
     if (!tab.annotating) throw new Error("Annotation mode is closed");
     if (!tab.finxSession) throw new Error("This tab belongs to no conversation");
     const message: BrowserComment = { session: tab.finxSession, comment: webComment(url, event.sender.getTitle(), r) };
+    const image = validBox(r.box) ? await picture(tab.view, r.box) : undefined;
+    if (image) message.image = image;
     // The window whose panel shows the tab: its composer is the one in front of the person.
     const win = BrowserWindow.getAllWindows().find((w) => w !== parking && !w.isDestroyed() && w.contentView.children.includes(tab.view));
     if (!win) throw new Error("No window to add the comment to");
@@ -64,6 +66,25 @@ ipcMain.handle("browser-annotation", (event, request: unknown) => {
   } else if (r.action !== "read") throw new Error("Invalid annotation request");
   return annotationState(tab);
 });
+
+/** What the person pointed at as it looks (PNG, base64), with a little of the page around it; none if it is out of sight. */
+async function picture(view: WebContentsView, box: AnnotationBox): Promise<string | undefined> {
+  try {
+    const { width, height } = view.getBounds();
+    const pad = 8;
+    const x = Math.max(0, Math.floor(box.x - pad));
+    const y = Math.max(0, Math.floor(box.y - pad));
+    const right = Math.min(width, Math.ceil(box.x + box.width + pad));
+    const bottom = Math.min(height, Math.ceil(box.y + box.height + pad));
+    if (right - x < 4 || bottom - y < 4) return undefined;
+    let image = await view.webContents.capturePage({ x, y, width: right - x, height: bottom - y });
+    if (image.isEmpty()) return undefined;
+    if (image.getSize().width > 1200) image = image.resize({ width: 1200, quality: "good" });
+    return image.toPNG().toString("base64");
+  } catch {
+    return undefined;
+  }
+}
 
 function browserSession() {
   const s = session.fromPartition(partition);
@@ -155,11 +176,13 @@ export const electronPages: PageHost = {
     wc.on("did-navigate", changed);
     wc.on("did-navigate-in-page", changed);
     wc.on("did-start-loading", broadcast);
-    wc.on("did-stop-loading", broadcast);
-    wc.on("dom-ready", () => syncAnnotations(tab));
+    // Annotating needs only the document, not every image and ad still loading:
+    // the page's DOM is ready from dom-ready, and a stopped load keeps the page it shows.
+    wc.on("did-stop-loading", () => { tab.domReady = true; broadcast(); });
+    wc.on("dom-ready", () => { tab.domReady = true; syncAnnotations(tab); broadcast(); });
     wc.on("did-navigate-in-page", (_e, _url, mainFrame) => { if (mainFrame) syncAnnotations(tab); });
     wc.on("did-start-navigation", (_e, _url, inPlace, mainFrame) => {
-      if (mainFrame && !inPlace) { tab.annotating = false; broadcast(); }
+      if (mainFrame && !inPlace) { tab.annotating = false; tab.domReady = false; broadcast(); }
     });
     wc.on("render-process-gone", () => tab.events.gone("the tab crashed"));
     // New windows become tabs the kernel takes over, never windows of their own.
@@ -311,7 +334,7 @@ export function tabCommand(targetId: string, c: BrowserTabCommand) {
   const wc = tab.view.webContents;
   switch (c.command) {
     case "annotate":
-      if (!/^https?:/.test(wc.getURL()) || wc.isLoading()) return;
+      if (!/^https?:/.test(wc.getURL()) || !tab.domReady) return;
       tab.annotating = !tab.annotating;
       syncAnnotations(tab);
       broadcast();
@@ -393,6 +416,7 @@ export function currentTabs(): BrowserTab[] {
       title: t.view.webContents.getTitle(),
       shown: !!t.finxSession && shown.get(t.finxSession) === t.targetId,
       loading: t.view.webContents.isLoading(),
+      domReady: !!t.domReady,
       canGoBack: t.view.webContents.navigationHistory.canGoBack(),
       canGoForward: t.view.webContents.navigationHistory.canGoForward(),
       annotating: !!t.annotating,

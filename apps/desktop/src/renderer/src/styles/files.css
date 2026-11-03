@@ -41,15 +41,16 @@
 .fpn-tab.dirty:not(:hover) .brp-tab-x .ic{display:none}
 .fpn-tab.dirty:not(:hover) .brp-tab-x::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--l2)}
 
-.fpn-bar{flex:none;display:flex;align-items:center;gap:6px;height:36px;padding:0 6px 0 13px;border-top:.5px solid var(--sep);border-bottom:.5px solid var(--sep);font-size:12px;color:var(--l2);min-width:0}
-.fpn-bar .tb.on{color:var(--l1)}
-.fpn-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr}
-.fpn-path b{font-weight:500;color:var(--l1)}
-.fpn-state{flex:none;white-space:nowrap}
+/* The file's tools at the strip's end, then Expand and the Files button past a line. Narrow, how the
+   edits stand gives way to the tabs (a read-only file's tab shows a lock, an unsaved one its dot). */
+.fpn{container-type:inline-size}
+.fpn .brp-strip{border-bottom:.5px solid var(--sep)}
+.fpn-tools{flex:none;display:flex;align-items:center;gap:2px}
+.fpn-tools .tb.on{color:var(--l1)}
+.fpn-state{flex:none;margin-right:4px;white-space:nowrap;font-size:12px;color:var(--l3)}
 .fpn-state.dirty{color:var(--l1)}
-.fpn-seg{flex:none;display:flex;padding:2px;border-radius:var(--r-sm);background:var(--fill)}
-.fpn-seg button{height:22px;padding:0 9px;border:0;border-radius:var(--r-xs);background:none;font:inherit;font-size:12px;color:var(--l1);cursor:pointer}
-.fpn-seg button.on{background:var(--seg-on);box-shadow:var(--btn-sh)}
+@container (max-width:560px){.fpn-state{display:none}}
+.fpn-strip-sep{flex:none;width:.5px;height:16px;margin:0 4px;background:var(--sep)}
 
 .fpn-body{flex:1;min-height:0;display:flex}
 .fpn-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--win)}

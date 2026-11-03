@@ -41,17 +41,16 @@ pub(crate) fn create(
         _ => Box::new(QwenWork::new(id, identity, env)),
     }
 }
-/// How the application's gateway is told how hard to think: QwenWork's takes OpenAI's
-/// `reasoning_effort`; Qoder's is not known.
+/// Both gateways expose effort levels. Qoder maps its controls in its own transport.
 pub(crate) fn thinking_format(adapter: &str) -> Option<finx_llm::model::ThinkingFormat> {
     match adapter {
-        "qoder" => None,
+        "qoder" => Some(finx_llm::model::ThinkingFormat::Openai),
         _ => Some(finx_llm::model::ThinkingFormat::Openai),
     }
 }
 
 pub(crate) fn supported(adapter: &str, model: &str) -> bool {
-    adapter != "qoder" || model == "auto"
+    adapter != "qoder" || crate::qoder::supports_model(model)
 }
 
 /// QwenWork's gateway answers 429 when the account's share of requests or tokens is used up for
@@ -92,12 +91,8 @@ pub(crate) fn scrub(text: &str) -> String {
     }
 }
 
-pub(crate) fn authentication_failure(adapter: &str, error: &finx_llm::LlmError) -> bool {
+pub(crate) fn authentication_failure(_adapter: &str, error: &finx_llm::LlmError) -> bool {
     error.kind == finx_llm::ErrorKind::Auth
-        && (adapter != "qoder"
-            || error.status == Some(401)
-            || matches!(
-                error.provider_code.as_deref(),
-                Some("connection_login_required" | "identity_changed")
-            ))
+        && (error.status == Some(401)
+            || matches!(error.provider_code.as_deref(), Some("connection_login_required" | "identity_changed")))
 }

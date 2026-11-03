@@ -1,6 +1,7 @@
 //! The session as the events describe it, kept by the session hub to answer attaches with a
 //! snapshot that lines up exactly with the following events.
 
+use finx_core::RestoredAgent;
 use finx_llm::Timestamp;
 use finx_llm::UsageTotals;
 use finx_protocol::AgentStatus;
@@ -316,13 +317,7 @@ impl SessionMirror {
                 session_file,
                 call_id,
             } => {
-                let info = SessionInfo {
-                    session_id: agent_id.clone(),
-                    session_file: session_file.clone(),
-                    title: Some(if description.is_empty() { name } else { description }.clone()),
-                    archived: false,
-                    ..self.info.clone()
-                };
+                let info = self.agent_info(agent_id, name, description, session_file);
                 self.agents.push(AgentMirror {
                     agent_id: agent_id.clone(),
                     name: name.clone(),
@@ -364,6 +359,41 @@ impl SessionMirror {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// The sub-agents of an earlier run of the session, as their logs left them: they come
+    /// before any the session starts now.
+    pub fn restore_agents(&mut self, agents: Vec<RestoredAgent>) {
+        let restored = agents.into_iter().map(|a| {
+            let info = self.agent_info(&a.agent_id, &a.name, &a.description, &a.session_file);
+            let mut session = SessionMirror::new(info, a.transcript);
+            session.usage = a.usage;
+            AgentMirror {
+                agent_id: a.agent_id,
+                name: a.name,
+                description: a.description,
+                call_id: a.call_id,
+                status: a.status,
+                since: a.since,
+                summary: None,
+                usage: None,
+                error: a.error,
+                elapsed_ms: None,
+                session,
+            }
+        });
+        self.agents.splice(0..0, restored.collect::<Vec<_>>());
+    }
+
+    /// A sub-agent's own session shares this one's settings.
+    fn agent_info(&self, agent_id: &str, name: &str, description: &str, session_file: &std::path::Path) -> SessionInfo {
+        SessionInfo {
+            session_id: agent_id.to_string(),
+            session_file: session_file.to_path_buf(),
+            title: Some(if description.is_empty() { name } else { description }.to_string()),
+            archived: false,
+            ..self.info.clone()
         }
     }
 
@@ -608,6 +638,44 @@ mod tests {
         assert_eq!(agent.status, AgentStatus::Completed);
         assert_eq!((agent.summary.as_deref(), agent.elapsed_ms), (Some("3 files"), Some(1200)));
         assert!(matches!(&snap.transcript.items[0], TranscriptItem::Message { mail: Some(mail), .. } if mail.from.name == "counter"));
+    }
+
+    #[test]
+    fn agents_of_an_earlier_run_come_first_as_their_logs_left_them() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        m.restore_agents(vec![RestoredAgent {
+            agent_id: "a0".into(),
+            name: "macro".into(),
+            description: "利率与估值".into(),
+            call_id: "c0".into(),
+            session_file: PathBuf::from("/a0"),
+            status: AgentStatus::Completed,
+            since: 7,
+            error: None,
+            transcript: vec![TranscriptItem::Message {
+                message_id: "u1".into(),
+                message: UserMessage::text("look into rates").into(),
+                skills: Vec::new(),
+                mail: None,
+            }],
+            usage: UsageTotals::default(),
+        }]);
+        m.apply(&ev(
+            1,
+            EventMsg::AgentStarted {
+                agent_id: "a1".into(),
+                name: "macro-2".into(),
+                description: String::new(),
+                session_file: PathBuf::from("/a1"),
+                call_id: "c1".into(),
+            },
+        ));
+        assert!(m.agents_running());
+        let snap = m.snapshot(None);
+        let seen: Vec<(&str, AgentStatus)> = snap.agents.iter().map(|a| (a.agent_id.as_str(), a.status)).collect();
+        assert_eq!(seen, [("a0", AgentStatus::Completed), ("a1", AgentStatus::Running)]);
+        let earlier = &snap.agents[0];
+        assert_eq!((earlier.call_id.as_str(), earlier.since, earlier.transcript.items.len()), ("c0", 7, 1));
     }
 
     #[test]
