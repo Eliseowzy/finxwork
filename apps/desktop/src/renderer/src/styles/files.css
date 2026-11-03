@@ -1,0 +1,93 @@
+/* The file panel (docs/desktop/file-panel-design.md §3). Its column, strip and tabs are the
+   browser panel's (.bgp.brp, .brp-strip, .brp-tab in app.css); below them its own bar, the
+   tree beside the editor or the preview, and a note when there is a choice to make. */
+
+/* GitHub's colours, as the conversation's code blocks have them (Shiki's GitHub themes), for the editor (files/Editor.tsx). */
+:root {
+  --syn-keyword: #cf222e;
+  --syn-string: #0a3069;
+  --syn-comment: #6e7781;
+  --syn-constant: #0550ae;
+  --syn-function: #8250df;
+  --syn-type: #953800;
+  --syn-property: #0550ae;
+  --syn-invalid: #82071e;
+  /* The lines a link pointed at, and search matches. */
+  --target: rgba(255, 196, 0, .22);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --syn-keyword: #ff7b72;
+    --syn-string: #a5d6ff;
+    --syn-comment: #8b949e;
+    --syn-constant: #79c0ff;
+    --syn-function: #d2a8ff;
+    --syn-type: #ffa657;
+    --syn-property: #79c0ff;
+    --syn-invalid: #ffa198;
+    --target: rgba(255, 196, 0, .16);
+  }
+}
+
+/* Wider than the browser's at first: the tree and the code share it. A width the person dragged to wins. */
+.bgp.brp.fpn:not(.sized):not(.max){width:clamp(420px,56%,960px)}
+/* Tabs as wide as their names (to a point); the strip scrolls when they do not fit. The tabs take the
+   strip's room, so Expand and the Files button keep to the window's right end. */
+.fpn .brp-tabs{flex:1}
+.fpn-tab{flex:0 0 auto;max-width:200px}
+
+/* A tab with edits not saved: a dot where its × is, the × on hover. */
+.fpn-tab.dirty:not(:hover) .brp-tab-x{opacity:1}
+.fpn-tab.dirty:not(:hover) .brp-tab-x .ic{display:none}
+.fpn-tab.dirty:not(:hover) .brp-tab-x::after{content:"";width:7px;height:7px;border-radius:50%;background:var(--l2)}
+
+.fpn-bar{flex:none;display:flex;align-items:center;gap:6px;height:36px;padding:0 6px 0 13px;border-top:.5px solid var(--sep);border-bottom:.5px solid var(--sep);font-size:12px;color:var(--l2);min-width:0}
+.fpn-bar .tb.on{color:var(--l1)}
+.fpn-path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr}
+.fpn-path b{font-weight:500;color:var(--l1)}
+.fpn-state{flex:none;white-space:nowrap}
+.fpn-state.dirty{color:var(--l1)}
+.fpn-seg{flex:none;display:flex;padding:2px;border-radius:var(--r-sm);background:var(--fill)}
+.fpn-seg button{height:22px;padding:0 9px;border:0;border-radius:var(--r-xs);background:none;font:inherit;font-size:12px;color:var(--l1);cursor:pointer}
+.fpn-seg button.on{background:var(--seg-on);box-shadow:var(--btn-sh)}
+
+.fpn-body{flex:1;min-height:0;display:flex}
+.fpn-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--win)}
+.fpn-editor{flex:1;min-height:0}
+.fpn-editor .cm-editor{height:100%}
+.fpn-empty{flex:1;display:grid;place-items:center;font-size:13px;color:var(--l3)}
+
+/* The tree, on the right of the file: rows laid where the virtual list puts them. */
+.fpt{width:200px;flex:none;position:relative;overflow:auto;padding:4px 0;border-left:.5px solid var(--sep);outline:none}
+.fpt-note{padding:8px 12px;font-size:12px;color:var(--l3)}
+.fpt-row{position:absolute;top:0;left:4px;right:4px;height:26px;display:flex;align-items:center;gap:5px;padding-right:8px;border-radius:var(--r-sm);font-size:13px;color:var(--l1);white-space:nowrap;cursor:default;user-select:none}
+.fpt-row:hover{background:var(--fill)}
+.fpt-row.on{background:var(--sel);color:var(--sel-fg)}
+.fpt:focus-visible .fpt-row.focus{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.fpt-row .ic{flex:none;width:14px;height:14px;color:var(--l2)}
+.fpt-row.on .ic{color:inherit}
+.fpt-row .chev{width:10px;height:10px;transform:rotate(-90deg);transition:transform .12s var(--ease-out)}
+.fpt-row .chev.open{transform:none}
+.fpt-sp{flex:none;width:10px}
+.fpt-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+
+/* Markdown as a reply shows it, in a page of its own. */
+.fpn-md{flex:1;min-height:0;overflow:auto;padding:var(--sp-3) var(--sp-4);font-size:14.5px;line-height:1.7;color:var(--msg)}
+.fpn-img{flex:1;min-height:0;display:grid;place-items:center;overflow:auto;padding:var(--sp-3);background:var(--fill)}
+.fpn-img img{max-width:100%;max-height:100%;object-fit:contain}
+
+/* Why a file is not shown. */
+.fpn-card{margin:auto;max-width:320px;padding:var(--sp-3);display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;font-size:13px;color:var(--l2)}
+.fpn-card>.ic{width:28px;height:28px;color:var(--l3)}
+.fpn-card b{font-weight:500;color:var(--l1);overflow-wrap:anywhere}
+.fpn-card p{margin:0}
+.fpn-card-b{display:flex;gap:8px;margin-top:5px}
+
+/* A choice to make, under the file. */
+.fpn-note{flex:none;display:flex;align-items:center;gap:8px;padding:8px 10px 8px 13px;border-top:.5px solid var(--sep);font-size:12.5px;color:var(--l1);background:var(--win2)}
+.fpn-note>span{flex:1;min-width:0}
+.fpn-note>.ic{flex:none;width:15px;height:15px;color:var(--l2)}
+.fpn-note.warn{background:var(--orange-bg)}
+.fpn-note.warn>.ic{color:var(--orange)}
+.fpn-note.bad{background:var(--red-bg)}
+.fpn-note.bad>.ic{color:var(--red)}

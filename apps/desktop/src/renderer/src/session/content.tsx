@@ -1,6 +1,7 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { fileOfCode, fileOfLink, hiddenChars, loopback, shellLanguage, shortURL, webOf, webOfCode, type FileRef as Ref } from "@finx/client";
+import { inSession, showFile, showFolder } from "../files/state";
 import { Icon } from "../icons";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
@@ -31,8 +32,14 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const folder = info ? info.kind === "folder" : /[\\/]$/.test(target.path);
   const where = info ? (info.rel ?? info.path) : target.path;
   const lines = target.line === undefined ? "" : target.endLine ? t("content.lines", { line: target.line, end: target.endLine }) : t("content.line", { line: target.line });
-  const open = () => info && void openRef(st, info, target.line);
-  const menu = () => info && void fileMenu(st, info, target.line);
+  // In the session's file panel (file-panel-design DD-91); a folder outside the session's, in the file manager.
+  const open = () => {
+    if (!info) return;
+    if (info.kind === null) return void openRef(st, info, target.line);
+    if (info.kind === "folder") return inSession(scope.cwd, info.path) ? showFolder(st, scope.session, scope.cwd, info.path) : window.finx?.openFolder(info.path);
+    showFile(st, scope.session, scope.cwd, info.path, { line: target.line, endLine: target.endLine });
+  };
+  const menu = () => info && void fileMenu(st, info, target.line, open);
   return (
     <span
       className={`fref ${code !== undefined ? "mono" : ""} ${missing ? "gone" : ""}`}

@@ -1,8 +1,7 @@
 {
   "page": {
-    "showInfo": "显示信息面板 ⌥⌘0",
-    "hideInfo": "隐藏信息面板 ⌥⌘0",
-    "info": "信息面板"
+    "infoTip": "会话信息 ⌥⌘0",
+    "info": "会话信息"
   },
   "chat": {
     "archived": "已归档：取消归档之前只读。",
@@ -318,7 +317,7 @@
     "annotate": "添加到对话",
     "title": "浏览器",
     "resize": "调整浏览器面板宽度",
-    "close": "关闭浏览器",
+    "hide": "收起浏览器",
     "maximize": "放大浏览器",
     "restore": "还原浏览器",
     "newTab": "新标签页",
@@ -404,5 +403,39 @@
     "notFound": "找不到这个文件",
     "hidden": "含隐藏字符",
     "hiddenTip": "这段代码里有看不见的字符，粘贴前请检查"
+  },
+  "files": {
+    "title": "文件",
+    "hide": "收起文件面板",
+    "tree": "项目文件",
+    "toggleTree": "显示或隐藏目录树",
+    "showInTree": "在文件面板中显示",
+    "empty": "从左边选一个文件打开",
+    "loading": "正在读取…",
+    "saved": "已保存",
+    "unsaved": "未保存",
+    "saving": "保存中…",
+    "readOnly": "只读",
+    "readOnlyEncoding": "只读 · {{encoding}} 编码",
+    "preview": "预览",
+    "source": "源码",
+    "conflict": "这个文件在别处被改过了",
+    "takeDisk": "载入磁盘版本",
+    "keepMine": "仍然保存",
+    "deleted": "这个文件已被删除",
+    "saveAgain": "重新保存",
+    "closeIt": "关闭",
+    "failed": "没能保存：{{message}}",
+    "retry": "重试",
+    "refusedData": "这是 finx 的运行数据，不能在这里修改",
+    "refusedEncoding": "这个文件不是 UTF-8 文本，存回去会改掉它的编码",
+    "binary": "这个文件不是文本，不在这里显示",
+    "tooLarge": "这个文件有 {{size}}，太大了，不在这里显示",
+    "openDefault": "用默认应用打开",
+    "closeTab": "关闭 {{name}}",
+    "unsavedClose": "{{name}} 还有没保存的修改，先在下面选一下",
+    "offline": "还没连上 finx",
+    "more": "更多",
+    "resize": "调整文件面板宽度"
   }
 }

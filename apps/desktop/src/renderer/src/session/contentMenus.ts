@@ -2,6 +2,7 @@ import { baseName, toolOutput, type ToolView } from "@finx/client";
 import type { EditorInfo, MenuItem, PathInfo } from "../../../shared/bridge";
 import { i18n } from "../../../shared/i18n";
 import type { Store } from "../store";
+import { showFile } from "../files/state";
 import { recheckFiles, type Scope } from "./scope";
 
 // What a reply's files, links, code blocks and steps do, from a click or their native menus
@@ -56,16 +57,21 @@ export async function openRef(st: Store, info: PathInfo, line?: number, app?: st
   } else if (r.how === "revealed") st.show(t(mac() ? "content.revealed" : "content.revealedOther", { name }));
 }
 
-/** A file's or folder's menu (§4.5). */
-export async function fileMenu(st: Store, info: PathInfo, line: number | undefined) {
+/**
+ * A file's or folder's menu (§4.5). `open` opens it in the session's file panel (file-panel-design
+ * DD-91): the first item when given (not in the panel itself). "Open With" is this once: the
+ * default app or an editor, at the line where the editor takes one.
+ */
+export async function fileMenu(st: Store, info: PathInfo, line: number | undefined, open?: () => void) {
   const copies: MenuItem[] = [{ id: "copyPath", label: t("content.copyPath") }, ...(info.rel ? [{ id: "copyRel", label: t("content.copyRelative") }] : [])];
   let items: MenuItem[];
   if (info.kind === null) items = copies;
   else {
-    const [editors, prefs] = await Promise.all([editorList(), window.finx?.getPreferences()]);
+    const editors = await editorList();
     if (info.kind === "folder") {
       const able = editors.filter((e) => e.folders);
       items = [
+        ...(open ? [{ id: "open", label: t("files.showInTree") }] : []),
         { id: "openFolder", label: t(mac() ? "content.openFinder" : "content.openFolder") },
         { id: "terminal", label: t("content.openTerminal") },
         ...(able.length ? [{ id: "with", label: t("content.openWith"), submenu: able.map((e) => ({ id: `app:${e.id}`, label: e.name, ...(e.icon && { icon: e.icon }) })) }] : []),
@@ -73,16 +79,15 @@ export async function fileMenu(st: Store, info: PathInfo, line: number | undefin
         ...copies,
       ];
     } else {
-      const chosen = editors.some((e) => e.id === prefs?.openWith) ? prefs?.openWith : "system";
       items = [
-        { id: "open", label: t("content.open") },
+        ...(open ? [{ id: "open", label: t("content.open") }] : []),
         {
           id: "with",
           label: t("content.openWith"),
           submenu: [
-            { id: "app:system", label: t("content.systemApp"), checked: chosen === "system" },
+            { id: "app:system", label: t("content.systemApp") },
             ...(editors.length ? [{ separator: true } as const] : []),
-            ...editors.map((e) => ({ id: `app:${e.id}`, label: e.name, checked: chosen === e.id, ...(e.icon && { icon: e.icon }) })),
+            ...editors.map((e) => ({ id: `app:${e.id}`, label: e.name, ...(e.icon && { icon: e.icon }) })),
           ],
         },
         { id: "reveal", label: t(mac() ? "content.revealFinder" : "content.reveal") },
@@ -94,7 +99,7 @@ export async function fileMenu(st: Store, info: PathInfo, line: number | undefin
   const id = await popup(st, items);
   switch (id) {
     case "open":
-      return openRef(st, info, line);
+      return open?.();
     case "openFolder":
       return window.finx?.openFolder(info.path);
     case "terminal":
@@ -106,11 +111,7 @@ export async function fileMenu(st: Store, info: PathInfo, line: number | undefin
     case "copyRel":
       return copy(st, info.rel ?? info.path, t("content.copiedPath"));
   }
-  if (!id?.startsWith("app:")) return;
-  const app = id.slice(4);
-  // Picked for a file, it becomes the way files open on a click; for a folder, it is this once.
-  if (info.kind === "file") await window.finx?.setPreferences({ openWith: app === "system" ? "" : app });
-  return openRef(st, info, line, app);
+  if (id?.startsWith("app:")) return openRef(st, info, line, id.slice(4));
 }
 
 /** A web page: in the session's browser panel, else (⌘, or outside a session) the default browser (§5.2). */
@@ -120,7 +121,7 @@ export function openLink(st: Store, url: string, scope: Scope, external: boolean
   if (external || !scope) return finx.openExternal(url);
   void st.run(async () => {
     await finx.openURL(scope.session, url);
-    st.set({ browser: true, background: false });
+    st.set({ browser: true, background: false, files: false, filesMax: false });
   });
 }
 
@@ -165,9 +166,10 @@ export function stepMenu(st: Store, tool: ToolView, scope: Scope): boolean {
   const path = tool.args.path;
   if ((tool.category === "read" || tool.category === "edit") && typeof path === "string" && path) {
     const offset = Number(tool.args.offset);
+    const line = tool.category === "read" && offset >= 1 ? offset : undefined;
     void window.finx
       ?.pathInfo(scope.cwd, [path])
-      .then(([info]) => info && fileMenu(st, info, tool.category === "read" && offset >= 1 ? offset : undefined));
+      .then(([info]) => info && fileMenu(st, info, line, () => showFile(st, scope.session, scope.cwd, info.path, { line })));
     return true;
   }
   if (tool.category !== "execute") return false;

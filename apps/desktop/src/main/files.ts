@@ -6,7 +6,6 @@ import type { OpenFileResult, PathInfo } from "../shared/bridge";
 import { editors, launchOf, opensFolders } from "./editors";
 import { bundle, launches, relativeIn, resolveFrom } from "./paths";
 import { platform } from "./platform";
-import { preferences } from "./preferences";
 
 // What a reply's files and links lead to outside the app (content-actions-design §4, §10):
 // a path looked up for the page, a file opened as the person's default way says, the file
@@ -61,28 +60,15 @@ export function pathInfo(base: string, paths: string[]): Promise<PathInfo[]> {
   );
 }
 
-/** Text, as far as its first 8 KB tell: no zero byte. */
-async function textFile(file: string): Promise<boolean> {
-  const h = await fs.promises.open(file, "r").catch(() => null);
-  if (!h) return false;
-  try {
-    const buf = Buffer.alloc(8192);
-    const { bytesRead } = await h.read(buf, 0, buf.length, 0);
-    return !buf.subarray(0, bytesRead).includes(0);
-  } finally {
-    await h.close();
-  }
-}
-
 function launch(program: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => execFile(program, args, { timeout: 15_000 }, (err) => resolve(!err)));
 }
 
 /**
- * Opens what a reply points at (§4.2). A folder in the file manager (a bundle only shown
- * there); a file in the editor chosen for it (`app`), else in the person's default editor when
- * it is text, else in its default app, unless that would run it: then it is only shown in the
- * file manager. `app` is "system" for the default app, or an editor's bundle id.
+ * Opens what a reply points at outside the app (§4.2; in the app it is the file panel's). A
+ * folder in the file manager (a bundle only shown there); a file in the editor chosen for it
+ * (`app`, an editor's bundle id), else in its default app, unless that would run it: then it is
+ * only shown in the file manager.
  */
 export async function openFile(file: string, options: { line?: number; app?: string } = {}): Promise<OpenFileResult> {
   const st = await fs.promises.stat(file).catch(() => null);
@@ -103,8 +89,6 @@ export async function openFile(file: string, options: { line?: number; app?: str
     return (await openPath(file)) ? { ok: true, how: "folder" } : { ok: false, reason: "failed" };
   }
   if (chosen) return editor(chosen);
-  const preferred = options.app === "system" ? undefined : found.find((e) => e.id === preferences().openWith);
-  if (preferred && (await textFile(file))) return editor(preferred);
   if (launches(file, st.mode)) return reveal(file), { ok: true, how: "revealed" };
   return (await openPath(file)) ? { ok: true, how: "app" } : { ok: false, reason: "failed" };
 }

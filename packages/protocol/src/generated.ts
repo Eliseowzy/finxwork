@@ -662,6 +662,104 @@ export type ExtensionStatus = {
   problem?: ExtensionProblem | null;
 };
 
+/** One entry of a folder. */
+export type FileEntry = {
+  /** A folder (or a link to one). */
+  dir: boolean;
+  /** A symbolic link. */
+  link?: boolean;
+  name: string;
+  /** In bytes; 0 for a folder. */
+  size: number;
+};
+
+/** An image's bytes. */
+export type FileImage = {
+  /** Base64. */
+  data: string;
+  mime_type: string;
+};
+
+/** What a file is, as far as showing it goes. */
+export type FileKind = "text" | "image" | "binary" | "too_large";
+
+/** How a write went. */
+export type FileWriteStatus = "saved" | "conflict" | "refused";
+
+/** Server notification `files/changed`: watched files and folders that changed, gathered for a moment. */
+export type FilesChangedParams = {
+  /** As they were watched, made absolute. */
+  paths: string[];
+  session_id: string;
+};
+
+/** Parameters of `files/list`. */
+export type FilesListParams = {
+  /** A folder: absolute, or relative to the session's folder; empty for the folder itself. */
+  path?: string;
+  session_id: string;
+};
+
+/** The result of `files/list`. */
+export type FilesListResult = {
+  /** Folders first, then files, each by name (numbers by value, case aside). `.git` and `.DS_Store` are left out. */
+  entries: FileEntry[];
+  /** The folder, absolute. */
+  path: string;
+  /** The folder had more entries than are given. */
+  truncated: boolean;
+};
+
+/** Parameters of `files/read`. */
+export type FilesReadParams = {
+  /** Absolute, or relative to the session's folder. */
+  path: string;
+  session_id: string;
+};
+
+/** The result of `files/read`. */
+export type FilesReadResult = {
+  /** How the text was decoded: `utf-8`, `utf-8-bom`, `utf-16le`, `utf-16be` or `gb18030`. */
+  encoding?: string | null;
+  /** SHA-256 of the file's bytes, in hex: the base `files/write` compares with. Not set for a file too large to read. */
+  hash?: string | null;
+  image?: FileImage | null;
+  kind: FileKind;
+  /** The file, absolute. */
+  path: string;
+  size: number;
+  /** The text, decoded, without a byte-order mark; line ends as they are. */
+  text?: string | null;
+  /** The text can be saved back with `files/write`: UTF-8, and not finx's own data. */
+  writable: boolean;
+};
+
+/** Parameters of `files/watch`. */
+export type FilesWatchParams = {
+  /** Files and folders to hear about (a folder: when its entries change). Replaces what this connection watched for the session; empty stops. */
+  paths: string[];
+  session_id: string;
+};
+
+/** Parameters of `files/write`. */
+export type FilesWriteParams = {
+  /** The hash of the version the text was edited from (`files/read`, or the last save): when the file on disk is no longer that version, nothing is written. Not set: written whatever is there (the person chose to). */
+  base_hash?: string | null;
+  /** Absolute, or relative to the session's folder. */
+  path: string;
+  session_id: string;
+  text: string;
+};
+
+/** The result of `files/write`. */
+export type FilesWriteResult = {
+  /** Saved: the new file's hash, the next base. Conflict: the hash of what is on disk now; not set when the file is gone. */
+  hash?: string | null;
+  /** Why it was refused. */
+  message?: string | null;
+  status: FileWriteStatus;
+};
+
 export type GrantAuthority = "navigate" | "act";
 
 export type InitializeParams = {
@@ -1692,6 +1790,10 @@ export interface Methods {
   "connectors/install": [ConnectorInstallParams, ConnectorInstallResult];
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
+  "files/list": [FilesListParams, FilesListResult];
+  "files/read": [FilesReadParams, FilesReadResult];
+  "files/watch": [FilesWatchParams, Empty];
+  "files/write": [FilesWriteParams, FilesWriteResult];
   "initialize": [InitializeParams, InitializeResult];
   "mcp/check": [McpServerParams, McpCheckResult];
   "mcp/list": [McpListParams, McpListResult];
@@ -1734,6 +1836,7 @@ export interface ServerNotifications {
   "browser/cdp": BrowserCdpParams;
   "browser/changed": BrowserStatus;
   "config/changed": ConfigChangedParams;
+  "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
   "models/changed": Empty;

@@ -66,8 +66,6 @@ export type Preferences = {
   searchEngine: string;
   /** The search engines the person added, beside the built-in ones. */
   searchEngines: SearchEngine[];
-  /** The editor a reply's text files open in on a click (a bundle id); unset, their default app. */
-  openWith?: string;
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
@@ -243,7 +241,7 @@ export type Bridge = {
   revealPath(path: string): void;
   /** Paths a reply wrote, looked up under `base` (its session's folder): what each is, never what is in it. */
   pathInfo(base: string, paths: string[]): Promise<PathInfo[]>;
-  /** Opens a file or folder a reply pointed at: in `app` ("system" or an editor's id), else the default way; at `line` where an editor takes one. */
+  /** Opens a file or folder a reply pointed at outside the app: in `app` (an editor's id), else its default app; at `line` where an editor takes one. */
   openFile(path: string, options?: { line?: number; app?: string }): Promise<OpenFileResult>;
   /** The editors installed here. */
   editors(): Promise<EditorInfo[]>;

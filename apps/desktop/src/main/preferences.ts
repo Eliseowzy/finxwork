@@ -27,7 +27,6 @@ export function preferences(): Preferences {
       searchEngine: engineIn(p.searchEngine, savedEngines(p.searchEngines)),
       ...(p.moveDeclined === true && { moveDeclined: true }),
       ...(p.browserCookies === "untilQuit" && { browserCookies: "untilQuit" as const }),
-      ...(typeof p.openWith === "string" && p.openWith && { openWith: p.openWith }),
     };
   } catch {
     cached = { ...defaults };
@@ -43,10 +42,6 @@ export function setPreferences(p: Partial<Preferences>): Preferences {
   // The person's engines are checked as a saved file is: nothing invalid is kept.
   if ("searchEngines" in p) next.searchEngines = savedEngines(p.searchEngines);
   if ("searchEngine" in p || "searchEngines" in p) next.searchEngine = engineIn(p.searchEngine ?? next.searchEngine, next.searchEngines);
-  if ("openWith" in p) {
-    if (typeof p.openWith === "string" && /^[A-Za-z0-9][A-Za-z0-9.\-_]*$/.test(p.openWith)) next.openWith = p.openWith;
-    else delete next.openWith;
-  }
   if ("browserCookies" in p) {
     if (p.browserCookies === "untilQuit") next.browserCookies = "untilQuit";
     else delete next.browserCookies;

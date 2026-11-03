@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.1 |
+| 版本 | v1.2 |
 | 日期 | 2026-11-03 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2） |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -665,6 +665,7 @@ pub trait Backend: Send + Sync {
 
 - `Target.createTarget` 额外带 `finxSession`（会话 id；子智能体带主会话的 id），只在内嵌后端上加。主进程据此把标签页放进显示这个会话的窗口。
 - **浏览器面板**：会话页右侧的一栏，与后台任务面板共用位置。会话第一次打开网页时自动展开；顶栏是本会话的标签页和当前网址，可以收起。渲染进程报告面板占的矩形，主进程把当前标签页的视图摆在那里。
+  - 面板打开时，会话页（和新会话页）顶栏的浏览器按钮移到面板标签条最右端，保持高亮，取代原来的 ×，左边是放大或还原；点它收起面板，标签页保留，按钮回到顶栏（2026-11-03，用户的要求，与文件面板一致，file-panel-design §3.1）。
 - 不在显示的会话的标签页照常运行，只是不摆进窗口。
 - **用户接手**：用户在面板里直接点、输入即可。智能体下一次调用若页面已变化，§7.4 的再核对会报"页面已变化"。
 - **登录状态**：内嵌浏览器的 cookie 在 `persist:finx-browser` 里，与托管浏览器的用户目录、与应用自己的页面都分开。

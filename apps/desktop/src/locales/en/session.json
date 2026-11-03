@@ -1,8 +1,7 @@
 {
   "page": {
-    "showInfo": "Show Info ⌥⌘0",
-    "hideInfo": "Hide Info ⌥⌘0",
-    "info": "Info"
+    "infoTip": "Session info ⌥⌘0",
+    "info": "Session info"
   },
   "chat": {
     "archived": "Archived: read only until you unarchive it.",
@@ -328,7 +327,7 @@
     "annotate": "Add to chat",
     "title": "Browser",
     "resize": "Resize the browser panel",
-    "close": "Close browser",
+    "hide": "Hide browser",
     "maximize": "Expand browser",
     "restore": "Restore browser",
     "newTab": "New tab",
@@ -417,5 +416,39 @@
     "notFound": "File not found",
     "hidden": "Hidden characters",
     "hiddenTip": "This code has characters you can't see. Check it before you paste it."
+  },
+  "files": {
+    "title": "Files",
+    "hide": "Hide files",
+    "tree": "Project files",
+    "toggleTree": "Show or Hide the Folder Tree",
+    "showInTree": "Show in Files",
+    "empty": "Pick a file on the left to open it",
+    "loading": "Reading…",
+    "saved": "Saved",
+    "unsaved": "Not saved",
+    "saving": "Saving…",
+    "readOnly": "Read-only",
+    "readOnlyEncoding": "Read-only · {{encoding}}",
+    "preview": "Preview",
+    "source": "Source",
+    "conflict": "This file was changed somewhere else",
+    "takeDisk": "Load from Disk",
+    "keepMine": "Save Anyway",
+    "deleted": "This file was deleted",
+    "saveAgain": "Save Again",
+    "closeIt": "Close",
+    "failed": "Couldn't save: {{message}}",
+    "retry": "Try Again",
+    "refusedData": "This is finx's own data, which can't be changed here",
+    "refusedEncoding": "This file isn't UTF-8 text; saving it here would change its encoding",
+    "binary": "This file isn't text, so it isn't shown here",
+    "tooLarge": "This file is {{size}}, too large to show here",
+    "openDefault": "Open in Default App",
+    "closeTab": "Close {{name}}",
+    "unsavedClose": "{{name}} has changes that aren't saved. Choose what to do below first.",
+    "offline": "Not connected to finx",
+    "more": "More",
+    "resize": "Resize the File Panel"
   }
 }

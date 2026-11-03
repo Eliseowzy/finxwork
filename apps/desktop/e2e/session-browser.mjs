@@ -139,8 +139,13 @@ try {
   const tabs = await page.run(`window.finx.browserTabs()`);
   check(tabs.length === 1 && tabs[0].session && tabs[0].session !== "finxwork:home-browser" && tabs[0].shown, `the tab is not the session's: ${JSON.stringify(tabs)}`);
   await page.shot("session-browser");
-  await page.run(`(${button}).click()`);
-  await page.until("panel hidden", `!document.querySelector('.brp')`);
+  // While the panel is open, the Browser button is at its right end, Expand just left of it, not in the page's bar.
+  const stripEnd = `[...document.querySelectorAll(".brp:not(.fpn) .brp-strip > button")].at(-1)`;
+  check(!(await page.run(`!!(${button})`)), "the bar's Browser button stayed while the panel is open");
+  check(await page.run(`/^(Hide browser|收起浏览器)$/.test((${stripEnd}).getAttribute("aria-label")) && (${stripEnd}).getAttribute("aria-pressed") === "true"`), "the panel's last button is not Browser");
+  check(await page.run(`/^(Expand browser|放大浏览器)$/.test([...document.querySelectorAll(".brp:not(.fpn) .brp-strip > button")].at(-2).getAttribute("aria-label"))`), "Expand is not just left of Browser");
+  await page.run(`(${stripEnd}).click()`);
+  await page.until("panel hidden, the bar's button back", `!document.querySelector('.brp') && !!(${button})`);
   await page.run(`(${button}).click()`);
   await page.until("panel back with the same tab", `document.querySelectorAll('.brp-tab').length === 1`);
   check((await page.run(`window.finx.browserTabs()`)).length === 1, "reopening made another tab");

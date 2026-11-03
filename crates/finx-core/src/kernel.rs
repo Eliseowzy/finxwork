@@ -795,6 +795,12 @@ impl Kernel {
         &self.session_file
     }
 
+    /// The session's files as the desktop's file panel reaches them (file-panel-design §9):
+    /// its environment and the locks its tools write under. None after the session closed.
+    pub fn file_scope(&self) -> Option<crate::files::FileScope> {
+        self.session.upgrade().map(|session| crate::files::FileScope { env: session.env.clone(), locks: session.locks.clone() })
+    }
+
     /// Current settings. After the session closed, only the id and the file are meaningful.
     pub fn info(&self) -> SessionInfo {
         let mut info = SessionInfo {

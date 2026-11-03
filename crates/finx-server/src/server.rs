@@ -132,6 +132,8 @@ pub(crate) struct Inner {
     pub(crate) defaults: SessionDefaults,
     /// The 自定义 page's subscriptions and file watching (crate::customize).
     pub(crate) customize: crate::customize::State,
+    /// What the file panel watches (crate::files).
+    pub(crate) files: crate::files::Watches,
     /// The browsers of every session here, one per profile (browser-design §6.1).
     pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
 }
@@ -172,6 +174,7 @@ impl Server {
             shutdown: CancellationToken::new(),
             closing: AtomicBool::new(false),
             customize: Default::default(),
+            files: Default::default(),
             // A person may watch: show a window where there is a display.
             browser_pool,
         }));
@@ -225,6 +228,7 @@ impl Server {
     pub fn connection_closed(&self, conn: &ConnHandle) {
         self.forget_model_watcher(conn.id);
         self.forget_customize(conn.id);
+        self.forget_files(conn.id);
         self.0.browser_watchers.lock().remove(&conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
@@ -553,7 +557,7 @@ impl Server {
         .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
     }
 
-    fn loaded(&self, id: &str) -> Result<HubHandle, RpcError> {
+    pub(crate) fn loaded(&self, id: &str) -> Result<HubHandle, RpcError> {
         if let Some(hub) = self.hub(id) {
             return Ok(hub);
         }

@@ -61,20 +61,16 @@ export function NewSession() {
         <div className="ctool drag">
           <SidebarToggle />
           <div className="ctitle" />
-          {window.finx && <button
-            className={`tb no-drag ${browser ? "on" : ""}`}
+          {/* While the browser is open, its button sits at the panel's right end instead. */}
+          {window.finx && !browser && <button
+            className="tb no-drag"
             title={t("browser.title")}
             aria-label={t("browser.title")}
-            aria-pressed={browser}
-            onClick={() => {
-              if (browser) {
-                setBrowserOpen(false);
-                st.set({ browserMax: false });
-              } else void st.run(async () => {
-                await window.finx?.openBrowser();
-                setBrowserOpen(true);
-              });
-            }}
+            aria-pressed={false}
+            onClick={() => void st.run(async () => {
+              await window.finx?.openBrowser();
+              setBrowserOpen(true);
+            })}
           >
             <Icon name="globe" />
           </button>}

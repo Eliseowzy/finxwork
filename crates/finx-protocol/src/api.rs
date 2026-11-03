@@ -82,6 +82,13 @@ pub mod method {
     pub const CONFIG_CHANGED: &str = "config/changed";
     pub const CREDENTIALS_SET: &str = "credentials/set";
     pub const CREDENTIALS_DELETE: &str = "credentials/delete";
+    // The file panel (docs/desktop/file-panel-design.md §9).
+    pub const FILES_LIST: &str = "files/list";
+    pub const FILES_READ: &str = "files/read";
+    pub const FILES_WRITE: &str = "files/write";
+    pub const FILES_WATCH: &str = "files/watch";
+    /// Server notification to a connection that called `files/watch`.
+    pub const FILES_CHANGED: &str = "files/changed";
     pub const SKILLS_FILES: &str = "skills/files";
     pub const SKILLS_READ: &str = "skills/read";
     pub const SKILLS_INSTALL: &str = "skills/install";

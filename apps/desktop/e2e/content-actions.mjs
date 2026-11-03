@@ -329,34 +329,50 @@ try {
     await page.cdp("Emulation.setEmulatedMedia", { features: [] });
   }
 
-  step("a click opens a file the default way; what would run is only shown");
+  step("a click opens a file in the file panel; a folder in its tree (file-panel-design DD-91)");
+  const activeTab = `(document.querySelector(".fpn-tab.on .brp-tab-t")?.textContent ?? null)`;
   let before = openedNow().length;
   await page.run(`${chip("应用入口")}.click()`);
-  check(same(await nextOpened("the entry file", before), { kind: "open", path: path.join(proj, "src/app.ts") }), `opened: ${JSON.stringify(openedNow().at(-1))}`);
-  before = openedNow().length;
+  await page.until("app.ts in the file panel", `${activeTab} === "app.ts"`);
+  // What would run only shows as text there.
   await page.run(`${chip("run.command")}.click()`);
-  check(same(await nextOpened("run.command", before), { kind: "reveal", path: path.join(proj, "run.command") }), `run.command: ${JSON.stringify(openedNow().at(-1))}`);
-  await page.until("the word that it was only shown", toastSays((s) => s.content.revealed));
-  before = openedNow().length;
-  await page.run(`${chip("scripts/build.sh")}.click()`);
-  check(same(await nextOpened("build.sh", before), { kind: "reveal", path: path.join(proj, "scripts/build.sh") }), `build.sh: ${JSON.stringify(openedNow().at(-1))}`);
-  before = openedNow().length;
+  await page.until("run.command in the file panel", `${activeTab} === "run.command" && (document.querySelector(".fpn .cm-content")?.innerText ?? "").includes("echo ran")`);
   await page.run(`${chip("apps/web/")}.click()`);
-  check(same(await nextOpened("the folder", before), { kind: "open", path: path.join(proj, "apps/web") }), `the folder: ${JSON.stringify(openedNow().at(-1))}`);
-  before = openedNow().length;
+  await page.until("apps/web open in the tree", `[...document.querySelectorAll(".fpt-row")].some((r) => r.querySelector(".fpt-name").textContent === "web" && r.getAttribute("aria-expanded") === "true")`);
+  check(openedNow().length === before, `a click opened something outside the app: ${JSON.stringify(openedNow().slice(before))}`);
   await page.run(`${chip("不存在")}.click()`);
   await page.until("the word that it is missing", toastSays((s) => s.content.missing));
   check(openedNow().length === before, "a missing file was opened");
+
+  step("Open With › Default App: what would run is only shown in Finder");
+  let shown = shownNow().length;
+  pick("app:system");
+  await page.run(rightClick(chip("run.command")));
+  await nextMenu("run.command", shown);
+  check(same(await nextOpened("run.command", before), { kind: "reveal", path: path.join(proj, "run.command") }), `run.command: ${JSON.stringify(openedNow().at(-1))}`);
+  await page.until("the word that it was only shown", toastSays((s) => s.content.revealed));
+  before = openedNow().length;
+  shown = shownNow().length;
+  pick("app:system");
+  await page.run(rightClick(chip("scripts/build.sh")));
+  await nextMenu("build.sh", shown);
+  check(same(await nextOpened("build.sh", before), { kind: "reveal", path: path.join(proj, "scripts/build.sh") }), `build.sh: ${JSON.stringify(openedNow().at(-1))}`);
+  before = openedNow().length;
+  shown = shownNow().length;
+  pick("app:system");
+  await page.run(rightClick(chip("应用入口")));
+  await nextMenu("app.ts", shown);
+  check(same(await nextOpened("the entry file", before), { kind: "open", path: path.join(proj, "src/app.ts") }), `opened: ${JSON.stringify(openedNow().at(-1))}`);
   check(!fs.existsSync("/tmp/should-not-run") || fs.statSync("/tmp/should-not-run").mtimeMs < Date.now() - 60_000, "run.command ran");
 
-  step("a file's menu, Copy Relative Path, and choosing an editor");
-  let shown = shownNow().length;
+  step("a file's menu, Copy Relative Path, and an editor this once");
+  shown = shownNow().length;
   pick("copyRel");
   await page.run(rightClick(chip("应用入口")));
   const fileItems = await nextMenu("the file", shown);
   check(same(ids(fileItems), ["open", "with", "reveal", "-", "copyPath", "copyRel"]), `the file's menu: ${JSON.stringify(ids(fileItems))}`);
   const withItems = fileItems.find((it) => it.id === "with").submenu;
-  check(withItems[0].id === "app:system" && withItems[0].checked === true, `Open With: ${JSON.stringify(withItems)}`);
+  check(withItems[0].id === "app:system" && withItems.every((it) => it === "-" || it.checked === undefined), `Open With: ${JSON.stringify(withItems)}`);
   await page.until("the relative path copied", `(window.__copied ?? []).at(-1) === "src/app.ts"`);
   const editor = withItems.find((it) => it !== "-" && it.id !== "app:system");
   if (editor) {
@@ -367,28 +383,18 @@ try {
     await nextMenu("the file again", shown);
     const inEditor = await nextOpened(`the file in ${editor.label}`, before);
     check(inEditor.kind === "editor" && inEditor.editor === editor.id.slice(4) && inEditor.path === path.join(proj, "src/app.ts") && inEditor.line === 3, `in the editor: ${JSON.stringify(inEditor)}`);
-    // The editor is now the way text files open on a click; the image still opens in its app.
+    // This once: a click still opens it in the app.
     before = openedNow().length;
     await page.run(`${chip("src/app.ts")}.click()`);
-    const clicked = await nextOpened("a click in the editor", before);
-    check(clicked.kind === "editor" && clicked.line === 5, `a click after choosing: ${JSON.stringify(clicked)}`);
-    before = openedNow().length;
-    await page.run(`${chip("assets/logo.png")}.click()`);
-    check(same(await nextOpened("the image", before), { kind: "open", path: path.join(proj, "assets/logo.png") }), `the image: ${JSON.stringify(openedNow().at(-1))}`);
-    // Default App again.
-    shown = shownNow().length;
-    before = openedNow().length;
-    pick("app:system");
-    await page.run(rightClick(chip("应用入口")));
-    const again = await nextMenu("the file with an editor chosen", shown);
-    check(again.find((it) => it.id === "with").submenu.find((it) => it.id === editor.id)?.checked === true, "the chosen editor is not checked");
-    check((await nextOpened("the default app again", before)).kind === "open", "Default App did not open it in its app");
+    await page.until("app.ts in the panel again", `${activeTab} === "app.ts"`);
+    await sleep(300);
+    check(openedNow().length === before, "a click after choosing an editor opened it outside the app");
     console.log(`  (editor: ${editor.label})`);
   } else console.log("  (no editor installed here: the editor part is skipped)");
   shown = shownNow().length;
   await page.run(rightClick(chip("apps/web/")));
   const folderItems = ids(await nextMenu("the folder", shown));
-  check(same(folderItems.filter((id) => id !== "with"), ["openFolder", "terminal", "-", "copyPath", "copyRel"]), `the folder's menu: ${JSON.stringify(folderItems)}`);
+  check(same(folderItems.filter((id) => id !== "with"), ["open", "openFolder", "terminal", "-", "copyPath", "copyRel"]), `the folder's menu: ${JSON.stringify(folderItems)}`);
   shown = shownNow().length;
   await page.run(rightClick(chip("不存在")));
   check(same(ids(await nextMenu("the missing file", shown)), ["copyPath", "copyRel"]), "the missing file's menu");
@@ -397,7 +403,7 @@ try {
   const session = await page.run(`JSON.parse(localStorage.getItem("main-view")).selection.id`);
   await page.run(`${link(devURL.replace("http://", "").replace(/\/$/, ""))}.click()`);
   await page.until("the page in the session's browser", `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(devURL)}).length === 1)`);
-  await page.until("the browser panel", `!!document.querySelector(".brp")`);
+  await page.until("the browser panel", `!!document.querySelector(".brp:not(.fpn)")`);
   await page.run(`${link(devURL.replace("http://", "").replace(/\/$/, ""))}.click()`);
   await sleep(600);
   check((await page.run(`window.finx.browserTabs()`)).filter((x) => x.url === devURL).length === 1, "a second click opened another tab");
@@ -442,7 +448,8 @@ try {
   before = openedNow().length;
   await page.run(rightClick(`[...document.querySelectorAll(".tool")].find((t) => t.querySelector(".sm2")?.textContent.includes("src/app.ts"))`));
   check(same(ids(await nextMenu("the read step", shown)), ["open", "with", "reveal", "-", "copyPath", "copyRel"]), "the read step's menu");
-  check(same(await nextOpened("the read step's file", before), { kind: "open", path: path.join(proj, "src/app.ts") }), `the read step opened: ${JSON.stringify(openedNow().at(-1))}`);
+  await page.until("the read step's file in the panel", `${activeTab} === "app.ts" && !!document.querySelector(".fpn")`);
+  check(openedNow().length === before, "the read step's file opened outside the app");
   shown = shownNow().length;
   pick("output");
   await page.run(rightClick(`[...document.querySelectorAll(".tool")].find((t) => t.querySelector("code.cmd")?.textContent.includes("echo hello"))`));
