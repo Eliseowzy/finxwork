@@ -121,6 +121,7 @@ const manifest = JSON.parse(fs.readFileSync(path.join(root, `crates/finx-core/sr
 const release = path.join(home, `connectors/${provider}/releases`, manifest.version);
 const configDir = path.join(home, `connectors/${provider}/config`);
 const accountFile = provider === "wecom" ? "credentials.enc" : "account";
+const partialGrant = provider === "feishu" && process.env.FINX_CONNECTOR_E2E_PARTIAL === "1";
 fs.mkdirSync(release, { recursive: true });
 const statusTrue = provider === "wecom" ? "authorized" : JSON.stringify({ [manifest.auth.status_field]: manifest.auth.status_value ?? true });
 const statusFalse = provider === "wecom" ? "unauthorized" : JSON.stringify({ [manifest.auth.status_field]: provider === "feishu" ? "bot" : false });
@@ -139,7 +140,8 @@ case "$1 $2" in
    echo $$ > "$D/pid"
    echo '${loginOutput}'
    while ! test -f "$D/finish"; do sleep 0.05; done
-   touch "$D/${accountFile}" ;;
+   touch "$D/${accountFile}"
+   ${partialGrant ? `echo '{"event":"authorization_complete","user_open_id":"fixture","missing":["example:scope"],"warning":{"type":"missing_scope"}}'; exit 3` : ""} ;;
  "auth logout") rm -f "$D/${accountFile}" ;;
  *) printf '%s\\n' "$@" ;;
 esac
@@ -229,6 +231,7 @@ try {
   await page.until("account connected", anyText(words((x) => x.connector.signedIn)), 30000);
   await page.until("tools listed", `document.querySelectorAll('.cz-dtools .cz-tool').length === 1`);
   await page.until("authorized connector enabled", `document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'true' && !document.querySelector('[role=switch]')?.disabled`);
+  if (partialGrant) await page.until("partial permission notice", anyText(words((x) => x.managed.partialPermissions)));
   await page.shot(`${provider}-connected`);
   const configured = fs.readFileSync(path.join(home, "config.toml"), "utf8");
   check(configured.includes(`connector = "${provider}"`), "managed identity did not persist");
@@ -257,6 +260,7 @@ try {
   await page.until("reinstall sheet", `!!document.querySelector('dialog[open] .cz-managed')`);
   await page.run(`${primary}.click()`);
   await page.until("sheet ready", anyText(words((x) => x.managed.steps.ready)));
+  if (partialGrant) await page.until("partial permission notice in sheet", anyText(words((x) => x.managed.partialPermissions)));
   await page.shot(`${provider}-ready`);
   await page.run(`${primary}.click()`);
   await page.until("sheet closed", `!document.querySelector('dialog[open]')`);

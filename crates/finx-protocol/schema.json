@@ -4220,6 +4220,13 @@
         "auth": {
           "$ref": "#/definitions/McpAuthKind"
         },
+        "auth_partial": {
+          "description": "Authenticated, but the provider did not grant every requested permission.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
         "auth_state": {
           "anyOf": [
             {

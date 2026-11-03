@@ -16,6 +16,7 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
   const { t } = useTranslation("customize");
   const rpc = useStore().rpc;
   const [step, setStep] = useState<Step>("intro");
+  const [partial, setPartial] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const alive = useRef(true);
@@ -42,6 +43,7 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
     if (!rpc || active.current) return;
     active.current = true;
     setFailure(null);
+    setPartial(false);
     setUrl(null);
     setStep("installing");
     try {
@@ -83,7 +85,7 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
         if (result.login_error) throw new Error(result.login_error);
         const checked = await c.check(catalog.id);
         if (checked?.server.status.state !== "ok") throw new Error(checked?.server.status.error || t("managed.checkFailed"));
-        if (alive.current) setStep("ready");
+        if (alive.current) { setPartial(checked.server.auth_partial === true); setStep("ready"); }
       } finally { off(); stop.current = null; }
     } catch (e) {
       if (alive.current) { setFailure(errorText(e)); setStep("failed"); }
@@ -100,6 +102,7 @@ export function ManagedConnector({ c, catalog, onClose, onDone }: {
         {step !== "intro" && <div role="status" aria-live="polite" className="cz-managed-status">
           {busy && <span className="mini-spin" />}{t(`managed.steps.${step}`)}
         </div>}
+        {step === "ready" && partial && <p className="hint" role="status">{t("managed.partialPermissions")}</p>}
         {failure && <p className="cz-managed-error" role="alert">{failure}</p>}
         {step === "authorizing" && url && <div className="acts">
           <button className="link" data-authorize={url} onClick={() => window.finx?.openExternal(url)}>{t("managed.openBrowser")}</button>

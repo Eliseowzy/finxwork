@@ -1378,3 +1378,10 @@ OAuth 发现阶段同样可取消，请求/页面中断不会留下无法恢复�
 在请求前订阅完成事件，关闭弹窗也会取消尚在启动的授权；API Key 与免认证连接不涉及浏览器登录任务。
 `cargo test -p finx-cli --test e2e_mcp_auth` 覆盖普通 OAuth 并发复用、取消重试、切换服务与旧任务清理；
 `node apps/desktop/e2e/customize.mjs` 覆盖添加及授权过程中刷新页面后继续连接。
+
+飞书部分权限授权：lark-cli 1.0.98 的 `authorization_complete` 在部分 scope 未授予时
+仍返回退出码 3。清单的 `partial_success` 只接受指定退出码、完成事件及 `missing_scope`
+警告，之后仍检查有效的用户身份和 MCP 握手。不能凭非零退出码或历史登录状态推断本次成功。
+成功后保留不含凭据的 `auth-partial.json` 标记，通过 `McpServerView.auth_partial` 在安装完成
+和详情页提示“已连接，但部分请求权限未获批准”；完整授权及退出清理这一提示。
+回归：`FINX_CONNECTOR_E2E=feishu FINX_CONNECTOR_E2E_PARTIAL=1 node apps/desktop/e2e/dingtalk.mjs`。

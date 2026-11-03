@@ -62,9 +62,19 @@ struct Auth {
     setup: Option<Setup>,
     #[serde(default)]
     url_field: Option<String>,
+    #[serde(default)]
+    partial_success: Option<PartialSuccess>,
     authorize_origin: String,
     authorize_path: String,
 }
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PartialSuccess {
+    exit_code: i32,
+    event: String,
+    warning_type: String,
+}
+
 fn default_status_value() -> Value { Value::Bool(true) }
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -414,8 +424,12 @@ pub async fn status(home: &Path, m: &Manifest) -> Result<bool, String> {
     remember(home, m, auth);
     Ok(auth)
 }
+pub fn partial_permissions(home: &Path, m: &Manifest) -> bool {
+    signed_in(home, m) && std::fs::read(root(home, m).join("auth-partial.json")).is_ok_and(|b| b == b"true")
+}
 pub async fn logout(home: &Path, m: &Manifest) -> Result<(), String> {
     remember(home, m, false);
+    let _ = std::fs::remove_file(root(home, m).join("auth-partial.json"));
     if installed(home, m) && !m.auth.logout.is_empty() {
         let (ok, _, _) = collect(
             command(home, m, &m.auth.logout)?
@@ -476,10 +490,22 @@ fn auth_url(origin: &str, path: &str, field: Option<&str>, text: &str) -> Option
     text.split(|c: char| c.is_whitespace() || ['"', '\'', '<', '>'].contains(&c))
         .find_map(|word| allowed_url(origin, path, word))
 }
+/// A nonzero exit is accepted only when this pinned provider explicitly reports a
+/// completed authorization with a scope warning. Status is independently checked next.
+fn partial_success(rule: &PartialSuccess, code: Option<i32>, output: &[u8]) -> bool {
+    if code != Some(rule.exit_code) { return false; }
+    let text = String::from_utf8_lossy(output);
+    let event = text.lines().rev().filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|v| v.get("event").is_some());
+    event.is_some_and(|v| v["event"] == rule.event && v["warning"]["type"] == rule.warning_type
+        && v["user_open_id"].as_str().is_some_and(|s| !s.is_empty())
+        && v["missing"].as_array().is_some_and(|a| !a.is_empty()))
+}
 async fn login_step(
     mut child: Child, origin: &str, path: &str, field: Option<&str>,
     tx: mpsc::UnboundedSender<String>, cancel: &CancellationToken,
-) -> Result<(), String> {
+    partial: Option<&PartialSuccess>,
+) -> Result<bool, String> {
     let stdout = child.stdout.take().ok_or("无法读取登录输出")?;
     let stderr = child.stderr.take().ok_or("无法读取登录输出")?;
     let sent = Arc::new(std::sync::atomic::AtomicBool::new(false));
@@ -501,14 +527,15 @@ async fn login_step(
                     }
                 }
             }
-            Ok(())
+            Ok(buffer)
         }
     };
     let work = async {
-        let (_, _, exit) = tokio::try_join!(scan(Box::new(stdout)), scan(Box::new(stderr)),
+        let (out, _, exit) = tokio::try_join!(scan(Box::new(stdout)), scan(Box::new(stderr)),
             async { child.wait().await.map_err(|e| e.to_string()) })?;
-        if !exit.success() { return Err("授权未完成，请重试并检查账号和企业设置".into()); }
-        Ok(())
+        if exit.success() { return Ok(false); }
+        if partial.is_some_and(|rule| partial_success(rule, exit.code(), &out)) { return Ok(true); }
+        Err("授权未完成，请重试并检查账号和企业设置".into())
     };
     let result = tokio::select! {
         _ = cancel.cancelled() => Err("已取消登录".into()),
@@ -528,14 +555,16 @@ pub async fn login(home: PathBuf, m: Manifest, cancel: CancellationToken) -> Res
             if let Some(setup) = &m.auth.setup {
                 if !root(&home, &m).join("config").join(&setup.config_file).is_file() {
                     let child = command(&home, &m, &setup.command)?.spawn().map_err(|e| e.to_string())?;
-                    login_step(child, &setup.authorize_origin, &setup.authorize_path, None, tx.clone(), &token).await?;
+                    login_step(child, &setup.authorize_origin, &setup.authorize_path, None, tx.clone(), &token, None).await?;
                 }
             }
             if token.is_cancelled() { return Err("已取消登录".into()); }
             let child = command(&home, &m, &m.auth.login)?.spawn().map_err(|e| e.to_string())?;
-            login_step(child, &m.auth.authorize_origin, &m.auth.authorize_path, m.auth.url_field.as_deref(), tx.clone(), &token).await?;
+            let partial = login_step(child, &m.auth.authorize_origin, &m.auth.authorize_path, m.auth.url_field.as_deref(), tx.clone(), &token, m.auth.partial_success.as_ref()).await?;
             if token.is_cancelled() { return Err("已取消登录".into()); }
             if !status(&home, &m).await? { return Err("授权结束，但未检测到有效登录".into()); }
+            if token.is_cancelled() { return Err("已取消登录".into()); }
+            std::fs::write(root(&home, &m).join("auth-partial.json"), if partial { "true" } else { "false" }).map_err(|e| e.to_string())?;
             Ok(())
         };
         let result = work.await;

@@ -45,7 +45,12 @@
     "status_value": "user",
     "authorize_origin": "https://accounts.feishu.cn",
     "authorize_path": "/oauth/v1/device/verify",
-    "url_field": "verification_uri_complete"
+    "url_field": "verification_uri_complete",
+    "partial_success": {
+      "exit_code": 3,
+      "event": "authorization_complete",
+      "warning_type": "missing_scope"
+    }
   },
   "blocked_commands": [
     "auth",

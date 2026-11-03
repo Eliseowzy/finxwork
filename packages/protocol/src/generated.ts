@@ -929,6 +929,8 @@ export type McpServerStatusView = {
 /** One server as the page shows it; secrets never appear, only the names they are saved under. */
 export type McpServerView = {
   auth: McpAuthKind;
+  /** Authenticated, but the provider did not grant every requested permission. */
+  auth_partial?: boolean | null;
   auth_state?: McpAuthState | null;
   /** Curated CLI connector, when installed through connectors/install. */
   connector?: string | null;

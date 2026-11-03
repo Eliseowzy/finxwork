@@ -431,6 +431,7 @@
     "hints": {
       "feishu": "First create a dedicated app on Feishu, then complete user consent in the next browser page. The connector enables only after both steps and a connection check. Your organization may require admin approval.",
       "wecom": "Scan the official WeCom page to bind a bot. Your organization controls available capabilities. Signing out clears local credentials; manage the server-side binding in WeCom."
-    }
+    },
+    "partialPermissions": "Connected with partial permissions. Authorized features are available; other features require additional consent or approval from your organization."
   }
 }

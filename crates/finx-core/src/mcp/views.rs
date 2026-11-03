@@ -101,6 +101,7 @@ pub fn view(workspace: &Workspace, home: &FinxHome, server: &McpServerConfig, li
         auth_state = Some(McpAuthState::NeedsLogin);
     }
     McpServerView {
+        auth_partial: managed.as_ref().filter(|m| crate::connectors::partial_permissions(home.root(), m)).map(|_| true),
         connector: managed.map(|m| m.id),
         name: server.name.clone(),
         layer,
@@ -233,6 +234,7 @@ fn untrusted(workspace: &Workspace, home: &FinxHome) -> Vec<McpServerView> {
                 description: server.description.clone(),
                 auth: McpAuthKind::None,
                 auth_state: None,
+                auth_partial: None,
                 credentials: Vec::new(),
                 status: McpServerStatusView {
                     state: McpStatusState::Untrusted,

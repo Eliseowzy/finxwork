@@ -459,3 +459,54 @@ if test -f "$WECOM_CLI_CONFIG_DIR/credentials.enc"; then echo authorized; else e
     for file in ["credentials.enc", "bot.enc", "token.enc"] { assert!(!config.join(file).exists()); }
     logout(dir.path(), &m).await.unwrap();
 }
+
+#[test]
+fn partial_grants_require_the_explicit_completion_event_and_expected_exit_code() {
+    let m = manifest("feishu").unwrap();
+    let rule = m.auth.partial_success.as_ref().unwrap();
+    let complete = br#"{"event":"authorization_complete","user_open_id":"fixture","missing":["example:scope"],"warning":{"type":"missing_scope"}}"#;
+    assert!(partial_success(rule, Some(3), complete));
+    assert!(!partial_success(rule, Some(1), complete));
+    assert!(!partial_success(rule, Some(3), br#"{"event":"authorization_failed","error":"denied"}"#));
+    assert!(!partial_success(rule, Some(3), br#"{"event":"authorization_complete","missing":["example:scope"],"warning":{"type":"missing_scope"}}"#));
+    let mut failed_after = complete.to_vec();
+    failed_after.extend_from_slice(b"\n{\"event\":\"authorization_failed\"}\n");
+    assert!(!partial_success(rule, Some(3), &failed_after));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn partial_grant_still_requires_valid_user_credentials_and_clears_on_full_login() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = manifest("feishu").unwrap();
+    let script = br##"#!/bin/sh
+D="$LARKSUITE_CLI_CONFIG_DIR"
+case "$1 $2" in
+ "auth login")
+   echo '{"verification_uri_complete":"https://accounts.feishu.cn/oauth/v1/device/verify?user_code=fixture"}'
+   while ! test -f "$D/finish"; do sleep 0.01; done
+   if test -f "$D/full"; then exit 0; fi
+   echo '{"event":"authorization_complete","user_open_id":"fixture","missing":["example:scope"],"warning":{"type":"missing_scope"}}'
+   exit 3 ;;
+ "auth status") if test -f "$D/account"; then echo '{"identity":"user"}'; else echo '{"identity":"bot"}'; fi ;;
+ "auth logout") rm -f "$D/account" ;;
+esac
+"##;
+    publish(dir.path(), &m, &Bundle { binary: script.to_vec(), notices: BTreeMap::new() }).unwrap();
+    let _ = command(dir.path(), &m, &[]).unwrap();
+    let config = root(dir.path(), &m).join("config");
+    std::fs::write(config.join("config.json"), "{}").unwrap();
+    std::fs::write(config.join("finish"), "").unwrap();
+    let start = || login(dir.path().into(), m.clone(), CancellationToken::new());
+    assert!(start().await.unwrap().wait().await.unwrap_err().contains("未检测到有效登录"));
+    assert!(!signed_in(dir.path(), &m));
+    std::fs::write(config.join("account"), "").unwrap();
+    start().await.unwrap().wait().await.unwrap();
+    assert!(signed_in(dir.path(), &m));
+    assert!(partial_permissions(dir.path(), &m));
+    std::fs::write(config.join("full"), "").unwrap();
+    start().await.unwrap().wait().await.unwrap();
+    assert!(!partial_permissions(dir.path(), &m));
+    logout(dir.path(), &m).await.unwrap();
+    assert!(!partial_permissions(dir.path(), &m));
+}
