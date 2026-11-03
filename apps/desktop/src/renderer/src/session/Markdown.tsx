@@ -1,5 +1,8 @@
-import { memo } from "react";
+import { memo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
+import { baseName } from "@finx/client";
+import { parseCitation, useDocOpener } from "../docs/state";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import { splitBlocks, withoutOpenTable } from "@finx/client";
@@ -71,8 +74,47 @@ function codeOf(pre: HNode | undefined): { lang: string; text: string } | null {
   return { lang, text: textOf(code).replace(/\n$/, "") };
 }
 
+/**
+ * A citation of a document (document-editor-design §7.4): a small raised mark; hovering shows
+ * the file, the page and the text cited, a click opens the document there. Grey once what it
+ * points at is gone.
+ */
+function Cite({ docId, target, children }: { docId: string; target: string; children: ReactNode }) {
+  const { t } = useTranslation("session");
+  const docs = useDocOpener();
+  const [found, setFound] = useState<{ title: string } | "gone" | null>(null);
+  const look = () => {
+    if (!docs || found) return;
+    void docs.locate(docId, target).then((r) => {
+      if (!r) return setFound("gone");
+      if ("locked" in r) return setFound({ title: t("doc.citeLocked", { name: baseName(r.path) }) });
+      const text = r.anchor.kind === "text" ? r.anchor.text : "";
+      const where = t("doc.where", { name: baseName(r.path), page: r.anchor.page });
+      setFound({ title: text ? `${where}\n${text.length > 120 ? text.slice(0, 120) + "…" : text}` : where });
+    });
+  };
+  const gone = found === "gone";
+  return (
+    <button
+      type="button"
+      className={`cite ${gone ? "gone" : ""}`}
+      title={gone ? t("doc.citeGone") : (found?.title ?? undefined)}
+      onMouseEnter={look}
+      onFocus={look}
+      onClick={() => !gone && docs?.open({ doc_id: docId }, undefined, target)}
+      disabled={!docs}
+    >
+      {children}
+    </button>
+  );
+}
+
 const components: Components = {
-  a: ({ href, children }) => <Link href={href}>{children}</Link>,
+  a: ({ href, children }) => {
+    const cite = href ? parseCitation(href) : null;
+    if (cite) return <Cite docId={cite.doc_id} target={cite.target}>{children}</Cite>;
+    return <Link href={href}>{children}</Link>;
+  },
   img: ({ alt }) => <span>{alt}</span>,
   // Inline code only: a block's is drawn by its `pre`, coloured when it names its language.
   code: ({ children }) => <InlineCode>{children}</InlineCode>,

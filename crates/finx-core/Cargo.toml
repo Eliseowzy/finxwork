@@ -17,6 +17,7 @@ flate2.workspace = true
 tar.workspace = true
 finx-browser.workspace = true
 finx-desktop.workspace = true
+finx-docs.workspace = true
 finx-llm.workspace = true
 finx-mcp.workspace = true
 finx-protocol.workspace = true

@@ -88,6 +88,9 @@ pub struct KernelDeps {
     /// The process's browsers, shared by its sessions (browser-design §6.1). `None` leaves
     /// the browser tools out, whatever `[browser] enabled` says.
     pub browser_pool: Option<Arc<finx_browser::BrowserPool>>,
+    /// The service's documents, shared by its sessions (document-editor-design §5.2). `None`
+    /// leaves the document tools out.
+    pub docs: Option<Arc<finx_docs::DocStore>>,
 }
 
 pub struct StartOptions {
@@ -191,7 +194,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let pool = launch.deps.browser_pool.clone();
     let embedded = pool.as_ref().is_some_and(|p| p.has_host());
     let deferred: crate::deferred::DeferredCell =
-        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded))));
+        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some()))));
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &deferred, &shown);
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
@@ -214,6 +217,19 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     if settings.desktop.on(embedded) {
         tool_state.insert(Arc::new(DesktopHandle::new(settings.desktop.clone(), launch.root_id.clone())));
     }
+    let emitter = Arc::new(Emitter::new(event_tx));
+    if let Some(store) = &launch.deps.docs {
+        let weak = Arc::downgrade(&emitter);
+        tool_state.insert(Arc::new(crate::docs::DocsHandle {
+            store: store.clone(),
+            view_session: launch.root_id.clone(),
+            opened: Box::new(move |info| {
+                if let Some(emitter) = weak.upgrade() {
+                    emitter.emit(EventMsg::DocOpened { info });
+                }
+            }),
+        }));
+    }
     let session = Arc::new(Session {
         id: launch.id.clone(),
         llm: launch.deps.llm,
@@ -232,7 +248,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         deferred,
         env: launch.deps.env,
         hooks,
-        emitter: Arc::new(Emitter::new(event_tx)),
+        emitter,
         writer: launch.writer,
         tool_gate: tokio::sync::RwLock::new(()),
         tool_slots: tokio::sync::Semaphore::new(launch.config.max_parallel_tools),
@@ -305,6 +321,7 @@ fn agent_tree(
         trusted,
         mcp,
         browser_pool: deps.browser_pool.clone(),
+        docs: deps.docs.clone(),
     });
     deps.tools = with_agent_tools(&deps.tools);
     Some(tree)
@@ -460,7 +477,7 @@ struct BuiltPrompt {
 /// The deferred built-in tools a session starts with, for the catalog in its first prompt.
 fn starting_deferred(deps: &KernelDeps, system: &SystemCell) -> crate::deferred::Deferred {
     let embedded = deps.browser_pool.as_ref().is_some_and(|p| p.has_host());
-    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded)
+    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded, deps.docs.is_some())
 }
 
 /// The tools a session starts with, before MCP: what its prompt describes. The browsers' and
@@ -1075,7 +1092,7 @@ mod tests {
     #[test]
     fn computer_use_is_on_with_the_desktop_app_unless_turned_off() {
         let mut settings = SystemSettings::of(&Config::default());
-        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app).find("cua_snapshot").is_some();
+        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app, false).find("cua_snapshot").is_some();
         assert!(has(&settings, true), "the desktop app connected");
         assert!(!has(&settings, false), "the command line");
         settings.desktop.enabled = Some(false);

@@ -35,6 +35,7 @@ fn start(overrides: &[String]) -> anyhow::Result<(Server, Option<tracing_appende
         cwd: std::env::current_dir()?,
         overrides,
         mcp_servers: mcp.servers.clone(),
+        doc_worker: finx_docs::Launcher::this_program(),
     })?;
     spawn_signal_handler(server.clone());
     Ok((server, guard))

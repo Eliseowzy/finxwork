@@ -17,6 +17,7 @@ clap.workspace = true
 futures.workspace = true
 finx-acp.workspace = true
 finx-browser.workspace = true
+finx-docs.workspace = true
 finx-core.workspace = true
 finx-llm.workspace = true
 finx-connections.workspace = true

@@ -3,6 +3,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { testHome } from "./build";
 import { offerToMove } from "./install";
+import { docScheme, serveDocs } from "./docs";
 import { registerIPC } from "./ipc";
 import { retireModelGateway } from "./retire-model-gateway";
 import { startKernel } from "./kernel";
@@ -17,7 +18,9 @@ import { isParking } from "./browser/pages";
 import { refreshSystemBrowser } from "./browser/system";
 
 const rendererDir = path.join(import.meta.dirname, "../renderer");
-const csp = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
+// finxdoc: the documents beside a conversation (main/docs.ts); pdf.js decodes some images with
+// WebAssembly and draws pages through blob: URLs.
+const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' finxdoc:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'";
 
 // The name people see is FinxWork; the profile stays in the folder it always had (Application Support/finxwork).
 app.setName("FinxWork");
@@ -33,6 +36,7 @@ chooseLanguage();
 protocol.registerSchemesAsPrivileged([
   // codeCache: V8 keeps the renderer's compiled script between launches.
   { scheme: "app", privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true, codeCache: true } },
+  docScheme,
 ]);
 
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -68,6 +72,7 @@ app.whenReady().then(async () => {
   devIcon();
   if (await offerToMove()) return;
   serve();
+  serveDocs();
   registerIPC();
   try {
     await retireModelGateway();

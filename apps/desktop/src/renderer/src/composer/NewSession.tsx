@@ -8,7 +8,7 @@ import { BrowserPanel, useBrowserTabs } from "../session/Browser";
 import { Icon, MarkMotion } from "../icons";
 import { useStore } from "../store";
 import { addAttachments, type Attachment } from "./attachments";
-import { useBrowserComments } from "./browserComments";
+import { useComposerInbox } from "./inbox";
 import { Composer } from "./Composer";
 import { onboardingEvent } from "../onboarding/Onboarding";
 import { needsKey } from "./KeySetup";
@@ -31,7 +31,7 @@ export function NewSession() {
   const max = browser && st.browserMax;
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  useBrowserComments(homeBrowserSession, (more) => setAttachments((list) => addAttachments(list, more)));
+  useComposerInbox(homeBrowserSession, (more) => setAttachments((list) => addAttachments(list, more)));
   const [greeting] = useState(() => greetings[Math.floor(Math.random() * greetings.length)]);
   // 自定义 › 在对话中使用 (or 创建) starts the message with the skill.
   useEffect(() => {

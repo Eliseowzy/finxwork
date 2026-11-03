@@ -7,7 +7,7 @@ import { permissionDesc, permissionTitle, menuModels, modelTitle, thinkingFor, t
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
-import { addAttachments, attachEvent, pickFiles, pickFolder, type Attachment } from "./attachments";
+import { addAttachments, attachEvent, droppedAttachments, pastedAttachments, pickFiles, pickFolder, type Attachment } from "./attachments";
 import { ConnectorsItem } from "./ConnectorsMenu";
 import { QuickSwitches } from "./QuickSwitches";
 import { SkillsItem } from "./SkillsMenu";
@@ -74,6 +74,15 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
 }) {
   const { t } = useTranslation("session");
   const area = useRef<EditorHandle>(null);
+  // What is attached now, for a paste or a drop whose files come a moment later.
+  const latest = useRef({ attachments, onAttachments });
+  latest.current = { attachments, onAttachments };
+  const attach = (more: Attachment[]) => {
+    if (!more.length) return;
+    latest.current.onAttachments(addAttachments(latest.current.attachments, more));
+    area.current?.focus();
+  };
+  const dropping = useFileDrop((data) => void droppedAttachments(data).then(attach));
   const col = useRef<HTMLDivElement>(null);
   const ready = canSend && (value.trim() !== "" || attachments.length > 0);
   // Not away from a field being typed in, such as a title being renamed (a double-click on a row opens its page too).
@@ -96,9 +105,30 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   const stop = form.mode === "session" && form.running && value.trim() === "" && attachments.length === 0 ? form.onStop : null;
   return (
     <div className={`cmp-zone ${form.mode}`}>
+      {dropping && <div className="drop-veil" aria-hidden="true" />}
       <div className="cmp-col" ref={col}>
         {form.mode === "session" && form.above}
-        <div className="cmp" onMouseDown={(e) => e.target instanceof HTMLElement && e.target.matches(".cmp,.cmp-row,.cmp-att") && (e.preventDefault(), area.current?.focus())}>
+        <div
+          className={`cmp ${dropping ? "dropping" : ""}`}
+          onMouseDown={(e) => e.target instanceof HTMLElement && e.target.matches(".cmp,.cmp-row,.cmp-att") && (e.preventDefault(), area.current?.focus())}
+          onPasteCapture={(e) => {
+            // Files and pictures attach; text pastes as text.
+            const got = pastedAttachments(e.clipboardData);
+            if (!got) return;
+            e.preventDefault();
+            e.stopPropagation();
+            void got.then(attach);
+          }}
+        >
+          {dropping && (
+            <div className="cmp-drop" aria-hidden="true">
+              <span className="cmp-drop-ic">
+                <Icon name="paperclip" />
+              </span>
+              <b>{t("composer.dropTitle")}</b>
+              <span className="cmp-drop-hint">{t("composer.dropHint")}</span>
+            </div>
+          )}
           {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} />}
           <div className="cmp-row">
             <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} commands={commands} onSkill={(name) => area.current?.insertSkill(name)} />
@@ -135,7 +165,7 @@ function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number)
   return (
     <div className="cmp-att">
       {items.map((a, i) => (
-        <Tile key={a.path} kind={a.kind} path={a.kind === "web" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} onRemove={() => onRemove(i)} />
+        <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
       ))}
     </div>
   );
@@ -516,4 +546,51 @@ function EnvironmentPicker() {
       )}
     </MenuButton>
   );
+}
+
+/**
+ * Files dragged over the window: true while they are, so the composer shows it takes them; dropped
+ * anywhere in the window, they go to `drop` (the window would otherwise open the file in itself).
+ */
+function useFileDrop(drop: (data: DataTransfer) => void): boolean {
+  const [over, setOver] = useState(false);
+  const latest = useRef(drop);
+  latest.current = drop;
+  useEffect(() => {
+    let depth = 0;
+    const files = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files");
+    const enter = (e: DragEvent) => {
+      if (!files(e)) return;
+      depth += 1;
+      setOver(true);
+    };
+    const move = (e: DragEvent) => {
+      if (!files(e)) return;
+      e.preventDefault();
+      e.dataTransfer!.dropEffect = "copy";
+    };
+    const leave = (e: DragEvent) => {
+      if (!files(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setOver(false);
+    };
+    const put = (e: DragEvent) => {
+      if (!files(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setOver(false);
+      latest.current(e.dataTransfer!);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", move);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", put);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", move);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", put);
+    };
+  }, []);
+  return over;
 }

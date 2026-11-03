@@ -90,7 +90,8 @@ impl crate::session::Session {
             (Some(_), false) => drop(self.tool_state.remove::<crate::desktop::DesktopHandle>()),
             (None, false) => {}
         }
-        *self.deferred.lock() = Arc::new(crate::deferred::Deferred::of(&settings, self.browser_pool.is_some(), embedded));
+        let docs = self.tool_state.get::<crate::docs::DocsHandle>().is_some();
+        *self.deferred.lock() = Arc::new(crate::deferred::Deferred::of(&settings, self.browser_pool.is_some(), embedded, docs));
         *self.base_tools.lock() = crate::mcp::base_tools(&self.core_tools, self.mcp.as_ref(), &self.deferred, &self.mcp_shown);
         if self.refresh_tools(true) {
             self.record_system_prompt();

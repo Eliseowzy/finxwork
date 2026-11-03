@@ -174,6 +174,7 @@ mod tests {
             cwd: dir.path().to_path_buf(),
             overrides: Vec::new(),
             mcp_servers: Vec::new(),
+            doc_worker: finx_docs::Launcher::Thread,
         })
         .unwrap();
         let (client, ours) = tokio::io::duplex(8 << 20);
@@ -332,6 +333,7 @@ mod tests {
             cwd: dir.path().to_path_buf(),
             overrides: Vec::new(),
             mcp_servers: Vec::new(),
+            doc_worker: finx_docs::Launcher::Thread,
         })
         .unwrap();
         let (client, ours) = tokio::io::duplex(1 << 20);

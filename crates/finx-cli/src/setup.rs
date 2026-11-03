@@ -177,6 +177,7 @@ impl Runtime {
         if self.config.browser.configured_on() {
             deps.browser_pool = Some(Arc::new(finx_core::BrowserPool::new(self.home.browser_dir(), false)));
         }
+        deps.docs = Some(Arc::new(finx_docs::DocStore::new(self.home.root().join("docs"), finx_docs::Launcher::this_program())));
         Ok(deps)
     }
 }

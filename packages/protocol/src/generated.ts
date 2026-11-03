@@ -44,6 +44,23 @@ export type AgentSnapshot = {
 
 export type AgentStatus = "running" | "completed" | "failed" | "interrupted" | "closed";
 
+/** A position or a range in a document, as people and agents both refer to content (§4.2). */
+export type Anchor = {
+  kind: "page";
+  page: number;
+} | {
+  kind: "region";
+  page: number;
+  rect: Rect;
+} | {
+  /** The block the text starts in (`p3.b12`), when known. */
+  block?: string | null;
+  kind: "text";
+  page: number;
+  quads: Rect[];
+  text: string;
+};
+
 export type ApprovalDecision = {
   type: "approve";
 } | {
@@ -162,6 +179,9 @@ export type BrowserStatus = {
 export type CancelRequestParams = {
   id: RequestId;
 };
+
+/** What a document supports (§4.5); toolbars and tool descriptions follow it. */
+export type Capability = "view" | "text" | "search" | "outline";
 
 /** The skill catalog in the system prompt. */
 export type CatalogInfo = {
@@ -431,6 +451,94 @@ export type Delta = {
 
 export type DetachReason = "overflow" | "closed" | "unloaded";
 
+export type DocFormat = "pdf";
+
+export type DocIdParams = {
+  doc_id: string;
+  session_id: string;
+};
+
+/** A document's state, which belongs to the file and is the same in every session (§4.1). */
+export type DocInfo = {
+  capabilities: Capability[];
+  /** The working copy differs from the file. */
+  dirty: boolean;
+  /** From the file's canonical path: the same file has the same id in every session. */
+  doc_id: string;
+  encrypted?: boolean;
+  format: DocFormat;
+  layout: DocLayout;
+  outline?: OutlineItem[];
+  pages?: number | null;
+  path: string;
+  revision: number;
+  /** Whether saving can write the file back; false for read-only or repaired files. */
+  save_in_place: boolean;
+  /** No text could be read: probably a scan. */
+  scanned?: boolean;
+};
+
+export type DocLayout = "paged" | "flow";
+
+/** A citation's target in an open document: `p12.b3` (a block) or `p12` (a page). */
+export type DocLocateParams = {
+  doc_id: string;
+  session_id: string;
+  target: string;
+};
+
+export type DocLocateResult = {
+  /** A block's text and lines, or the page. */
+  anchor: Anchor;
+};
+
+export type DocOpenParams = {
+  doc_id?: string | null;
+  password?: string | null;
+  /** The file. Or, instead, `doc_id`: a document opened before, as a citation names it. */
+  path?: string | null;
+  session_id: string;
+};
+
+export type DocOpenResult = {
+  info: DocInfo;
+  /** An encrypted document's password, for the page to decrypt what it reads (§9.4.3). Only in memory: never written down, never logged. */
+  password?: string | null;
+  /** Reads the working copy: `finxdoc://<token>/current.pdf` (§7.3). */
+  token: string;
+};
+
+/** A selection or a region on a page, to be read by the kernel (§9.4.1). */
+export type DocResolveParams = {
+  doc_id: string;
+  /** A selection that goes on past `page`: its rectangles on each page after it, in order. */
+  more?: PageQuads[];
+  page: number;
+  /** The selection's rectangles; text whose middle falls in one of them is selected. */
+  quads?: Rect[];
+  /** A region drawn on the page. */
+  rect?: Rect | null;
+  session_id: string;
+};
+
+export type DocResolveResult = {
+  anchor: Anchor;
+  /** The boxes of the characters the kernel took: the interface draws the selection with them. */
+  boxes: Rect[];
+  /** The pages after the first, for a selection that goes on (`more`); `text` is all of it. */
+  more?: ResolvedPart[];
+  /** The text the kernel read there: a selection's, or what lies in a region. */
+  text: string;
+};
+
+/** What a session's document column shows: the page, and what is selected. */
+export type DocViewParams = {
+  doc_id: string;
+  page: number;
+  selection?: Anchor | null;
+  session_id: string;
+};
+
 /** The result of methods that return nothing: `{}`. */
 export type Empty = { [key: string]: unknown };
 
@@ -493,6 +601,9 @@ export type Event = {
   delay_ms: number;
   error: ErrorInfo;
   type: "stream_retry";
+} | {
+  info: DocInfo;
+  type: "doc_opened";
 } | {
   args: unknown;
   call_id: string;
@@ -1217,6 +1328,18 @@ export type Op = {
   type: "shutdown";
 };
 
+export type OutlineItem = {
+  children?: OutlineItem[];
+  page?: number | null;
+  title: string;
+};
+
+/** A selection's rectangles on one page. */
+export type PageQuads = {
+  page: number;
+  quads: Rect[];
+};
+
 export type PartialBlock = {
   index: number;
   text: string;
@@ -1298,8 +1421,22 @@ export type QueuedInput = {
   mode: PromptMode;
 };
 
+/** A rectangle on a page: `x0 < x1`, `y0 < y1`. */
+export type Rect = {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+};
+
 /** A JSON-RPC request id. */
 export type RequestId = number | string;
+
+/** What the kernel read on one page of a selection. */
+export type ResolvedPart = {
+  anchor: Anchor;
+  boxes: Rect[];
+};
 
 export type ResourceReadParams = {
   limit?: number | null;
@@ -1794,6 +1931,11 @@ export interface Methods {
   "connectors/install": [ConnectorInstallParams, ConnectorInstallResult];
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
+  "doc/close": [DocIdParams, Empty];
+  "doc/locate": [DocLocateParams, DocLocateResult];
+  "doc/open": [DocOpenParams, DocOpenResult];
+  "doc/resolve": [DocResolveParams, DocResolveResult];
+  "doc/view": [DocViewParams, Empty];
   "files/list": [FilesListParams, FilesListResult];
   "files/read": [FilesReadParams, FilesReadResult];
   "files/watch": [FilesWatchParams, Empty];
@@ -1881,6 +2023,8 @@ export const RPC_ERROR_KINDS = {
   "-32029": "not_removable",
   "-32030": "credential_store_unavailable",
   "-32031": "mcp_login_failed",
+  "-32032": "doc_unavailable",
+  "-32033": "doc_password",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

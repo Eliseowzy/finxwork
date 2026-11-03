@@ -102,7 +102,9 @@ async function quit() {
 
 
 let failed = false;
-const site = http.createServer((_req, res) => res.end(`<title>Annotation test</title><style>body{font:20px system-ui;padding:40px;background:#f5f7fb;color:#242938}h1{margin:0 0 30px}p{height:900px}</style><h1 id="heading">A page worth discussing</h1><a id="link" href="#changed">This link must not navigate in annotation mode</a><p>Scroll to test anchored comments.</p><script>window.keys=0;document.addEventListener('keydown',()=>keys++)</script>`));
+// The image never finishes, so the page is still loading the whole time: annotating
+// waits for the document only, not for everything on it.
+const site = http.createServer((req, res) => req.url === "/slow.png" ? res.writeHead(200, { "content-type": "image/png" }).flushHeaders() : res.end(`<title>Annotation test</title><img src="/slow.png" width="1" height="1"><style>body{font:20px system-ui;padding:40px;background:#f5f7fb;color:#242938}h1{margin:0 0 30px}p{height:900px}</style><h1 id="heading">A page worth discussing</h1><a id="link" href="#changed">This link must not navigate in annotation mode</a><p>Scroll to test anchored comments.</p><script>window.keys=0;document.addEventListener('keydown',()=>keys++)</script>`));
 await new Promise((resolve) => site.listen(0, "127.0.0.1", resolve));
 try {
   const page = await launch();
@@ -117,6 +119,7 @@ try {
   const url = `http://127.0.0.1:${site.address().port}/`;
   await page.run(`(async () => { const tabs = await window.finx.browserTabs(); window.finx.browserTabCommand(tabs[0].targetId, { command: 'go', url: ${JSON.stringify(url)} }); })()`);
   await page.until("site loaded", `document.querySelector('.brp-tab-t')?.textContent === 'Annotation test' && !document.querySelector('.brp-annotate').disabled`).catch(async e => { console.error(await page.run(`(async () => JSON.stringify({tabs:await window.finx.browserTabs(),html:document.querySelector('.brp')?.outerHTML}))()`)); throw e; });
+  check((await page.run(`(async () => (await window.finx.browserTabs()).every(t => t.loading))()`)) === true, "the page should still be loading while it can be annotated");
   const targets = await fetch(`http://127.0.0.1:${page.port}/json/list`).then(r => r.json());
   const target = targets.find(t => t.url === url);
   check(target, "browser target missing");
@@ -176,6 +179,14 @@ try {
   for(let i=0;i<50;i++){ pinY = (await invoke(pin, 'function(){return this.getBoundingClientRect().y}')).result.value; if(pinY>position.y+60) break; await sleep(100); }
   check(pinY > position.y + 60, 'marker did not follow moving content');
   await page.shot('add-to-chat');
+  // The tile, clicked, shows the element's picture and what it is.
+  await page.run(`document.querySelector('.cmp .tile.web .tile-open').click()`);
+  await page.until('the details over the tile', `!!document.querySelector('.wdt')`);
+  check(await page.run(`!!document.querySelector('.wdt-shot img') && document.querySelector('.wdt-shot img').naturalWidth > 0`), 'the details have no picture of the element');
+  check(await page.run(`document.querySelector('.wdt').innerText.includes('A page worth discussing') || document.querySelector('.wdt').innerText.includes('<h1')`), 'the details do not say what the element is');
+  await page.shot('add-to-chat-details');
+  await page.run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await page.until('the details closed', `!document.querySelector('.wdt')`);
   const link = await run(`(() => {const r=document.querySelector('#link').getBoundingClientRect();return {x:r.x+20,y:r.y+10};})()`);
   await click(link.x,link.y); await find(n=>n.nodeName==='TEXTAREA');
   check(await run('location.hash') === '', 'pick mode followed website link');
@@ -197,7 +208,7 @@ try {
 } catch (error) {
   failed = true; console.error(error);
 } finally {
-  await quit(); site.close();
+  await quit(); site.closeAllConnections(); site.close();
   try { execFileSync("pkill", ["-f", `${home}/run/finx.sock`]); } catch {}
   if (!failed) fs.rmSync(work, { recursive: true, force: true });
   else console.error(`left for inspection: ${work}`);

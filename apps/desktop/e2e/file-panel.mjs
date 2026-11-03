@@ -294,7 +294,7 @@ try {
   await page.run(`${chip("说明")}.click()`);
   await page.until("notes.md rendered", `${activeTab} === "notes.md" && document.querySelector(".fpn-md h1")?.textContent === "标题"`);
   await page.shot("3-markdown");
-  await page.run(`document.querySelectorAll(".fpn-seg button")[1].click()`);
+  await page.run(`document.querySelector('.fpn-tools .tb[aria-pressed]').click()`);
   await page.until("its source in the editor", `(${editorText}).includes("# 标题")`);
 
   step("\\r\\n line ends stay as they were");

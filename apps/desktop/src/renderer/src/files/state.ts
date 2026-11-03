@@ -1,7 +1,8 @@
-import { useSyncExternalStore } from "react";
-import { FileDoc, baseName, type RpcClient } from "@finx/client";
-import type { FilesListResult, FilesReadResult } from "@finx/protocol";
+import { useEffect, useSyncExternalStore } from "react";
+import { FileDoc, RpcError, baseName, type RpcClient } from "@finx/client";
+import type { Anchor, FilesListResult, FilesReadResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
+import { closeDoc, docTab, lockedPath, openDoc, opensAsDoc, setDocPassword, type DocTab } from "../docs/state";
 import { errorText, type Store } from "../store";
 
 // The file panel's files (file-panel-design §10), by session: the open tabs with their
@@ -30,7 +31,12 @@ export type Tab = {
   /** The editor's own state (CodeMirror's), kept across tab switches; only the editor reads it. */
   editor: unknown;
   scroll: number;
+  /** A PDF's, shown by pdf.js instead of read as text: its document in finx (docs/state) once open. */
+  pdf: PdfState | null;
 };
+
+/** `locked`: it waits for its password, `wrong` once one was refused; `opening`: doc/open on its way. */
+export type PdfState = { docId: string | null; locked: { wrong: boolean; anchor?: Anchor } | null; opening: Promise<void> | null };
 
 /** A folder of the tree: its entries once read. */
 export type Dir = { list: FilesListResult | null; error: string | null };
@@ -109,9 +115,10 @@ export const relativeTo = (dir: string, path: string) => (under(dir, path) ? pat
 export function openFile(s: SessionFiles, path: string, at?: { line?: number; endLine?: number }) {
   let tab = s.tabs.find((x) => x.path === path);
   if (!tab) {
-    tab = { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, preview: /\.(md|markdown|svg)$/i.test(path), target: null, editor: null, scroll: 0 };
+    tab = newTab(s, path);
     s.tabs.push(tab);
-    void load(s, tab);
+    if (tab.pdf) openPdf(s, tab);
+    else void load(s, tab);
   }
   s.active = path;
   if (at?.line) tab.target = { line: at.line, endLine: at.endLine, seq: ++seq };
@@ -119,9 +126,62 @@ export function openFile(s: SessionFiles, path: string, at?: { line?: number; en
   changed(s);
 }
 
+function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path)): Tab {
+  const pdf = asDoc ? { docId: null, locked: null, opening: null } : null;
+  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, preview: /\.(md|markdown|svg)$/i.test(path), target: null, editor: null, scroll: 0, pdf };
+}
+
+/** Opens a PDF tab's document in finx, with its password when one was given; an anchor is gone to once it opens. */
+function openPdf(s: SessionFiles, tab: Tab, anchor?: Anchor, password?: string): Promise<void> {
+  const pdf = tab.pdf!;
+  const opening = (async () => {
+    if (!rpc) return void (tab.error = t("files.offline"));
+    try {
+      const doc = await openDoc(rpc, s.session, { path: tab.path }, anchor, password);
+      // finx may not hand back the password it opened with; pdf.js needs it all the same.
+      if (doc && password && !doc.password) setDocPassword(s.session, doc.info.doc_id, password);
+      pdf.docId = doc?.info.doc_id ?? null;
+      pdf.locked = doc ? null : { wrong: password !== undefined, anchor };
+      tab.error = null;
+    } catch (e) {
+      tab.error = errorText(e);
+    }
+  })().finally(() => {
+    if (pdf.opening === opening) pdf.opening = null;
+    changed(s);
+  });
+  pdf.opening = opening;
+  changed(s);
+  return opening;
+}
+
+/**
+ * A PDF's file changed under its tab (written again, its password changed): what showed is let go
+ * and the file opened afresh, asking for its password again if it has one.
+ */
+function reopenPdf(s: SessionFiles, tab: Tab, anchor?: Anchor): Promise<void> {
+  const docId = tab.pdf!.docId;
+  tab.pdf = { docId: null, locked: null, opening: null };
+  if (docId) void closeDoc(rpc, s.session, docId);
+  return openPdf(s, tab, anchor);
+}
+
+/** An encrypted PDF's password, from the tab that asks for it. */
+export function unlockPdf(s: SessionFiles, tab: Tab, password: string): Promise<void> {
+  return openPdf(s, tab, tab.pdf?.locked?.anchor, password);
+}
+
+/** The document a session's panel shows in front, if it is a PDF: what "this page" means to the agent (§7.4). */
+export function viewingDoc(session: string): DocTab | undefined {
+  const s = sessions.get(session);
+  const tab = s?.tabs.find((x) => x.path === s.active);
+  return docTab(session, tab?.pdf?.docId);
+}
+
 /** Reads a tab's file (again): a document's disk version moves on, or the edits wait for a choice. */
 async function load(s: SessionFiles, tab: Tab) {
-  if (!rpc) return;
+  // A PDF is finx's document, kept up to date there.
+  if (!rpc || tab.pdf) return;
   try {
     const read = await rpc.request("files/read", { session_id: s.session, path: tab.path });
     tab.read = read;
@@ -161,6 +221,7 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
     st.show(t("files.unsavedClose", { name: tab.name }), undefined, true);
     return;
   }
+  if (tab.pdf?.docId) void closeDoc(rpc, s.session, tab.pdf.docId);
   const i = s.tabs.indexOf(tab);
   s.tabs.splice(i, 1);
   if (s.active === path) s.active = (s.tabs[i] ?? s.tabs[i - 1])?.path ?? null;
@@ -258,7 +319,8 @@ export function filesChanged(session: string, paths: string[]) {
   if (!s) return;
   for (const path of paths) {
     const tab = s.tabs.find((x) => x.path === path);
-    if (tab) void load(s, tab);
+    if (tab?.pdf) void reopenPdf(s, tab);
+    else if (tab) void load(s, tab);
     if (s.dirs.has(path)) void listDir(s, path, true);
   }
 }
@@ -292,3 +354,74 @@ export function showFolder(st: Store, session: string, cwd: string, dir: string)
 
 /** Whether a folder is the session's or in it (shown in the panel's tree, not the file manager). */
 export const inSession = (cwd: string, path: string) => path === cwd || under(cwd, path);
+
+/**
+ * A document from the conversation (a file tile, a citation), in the session's panel at
+ * `anchor`. One named by its id is found by its path first. Whether it shows (not waiting for its password).
+ */
+export async function showDoc(st: Store, session: string, cwd: string, what: { path: string } | { doc_id: string }, anchor?: Anchor): Promise<boolean> {
+  if (!rpc) return false;
+  const s = filesOf(session, cwd);
+  const path = "path" in what ? what.path : (docTab(session, what.doc_id)?.info.path ?? (await pathOfDoc(rpc, session, what.doc_id)));
+  openFile(s, path);
+  st.set({ files: true, browser: false, background: false });
+  const tab = s.tabs.find((x) => x.path === path);
+  if (!tab?.pdf) return false;
+  await tab.pdf.opening;
+  if (!anchor) return !!tab.pdf.docId;
+  if (tab.pdf.locked) tab.pdf.locked.anchor = anchor;
+  else if (tab.pdf.docId) {
+    try {
+      await openDoc(rpc, session, { doc_id: tab.pdf.docId }, anchor);
+    } catch (e) {
+      if (isPasswordError(e)) await reopenPdf(s, tab, anchor);
+      else throw e;
+    }
+  }
+  return !!tab.pdf.docId;
+}
+
+/** The file of a document not open in this session; one that wants its password is still found, to ask in its tab. */
+async function pathOfDoc(rpc: RpcClient, session: string, docId: string): Promise<string> {
+  try {
+    return (await rpc.request("doc/open", { session_id: session, doc_id: docId })).info.path;
+  } catch (e) {
+    const path = lockedPath(e);
+    if (path) return path;
+    throw e;
+  }
+}
+
+/** finx could not open a document without its password: one whose file changed since, say. */
+export const isPasswordError = (e: unknown) => e instanceof RpcError && e.kind === "doc_password";
+
+/**
+ * Something about an open PDF failed for want of its password (its file changed and finx read it
+ * again): its tab asks for the password instead. Whether one did.
+ */
+export async function lockedOut(session: string, docId: string, e: unknown): Promise<boolean> {
+  if (!isPasswordError(e)) return false;
+  const s = sessions.get(session);
+  const tab = s?.tabs.find((x) => x.pdf?.docId === docId);
+  if (!s || !tab) return false;
+  s.active = tab.path;
+  await reopenPdf(s, tab);
+  return true;
+}
+
+/** finx says the agent opened a document: it gets a tab in the session's panel, which stays as it is. */
+export function useDocEvents(rpc: RpcClient | null, session: string, cwd: string | undefined) {
+  useEffect(() => {
+    if (!rpc || !cwd) return;
+    return rpc.on("session/event", (p) => {
+      if (p.session_id !== session || p.event.type !== "doc_opened") return;
+      const s = filesOf(session, cwd);
+      const path = p.event.info.path;
+      if (s.tabs.some((x) => x.path === path)) return;
+      const tab = newTab(s, path, true);
+      s.tabs.push(tab);
+      s.active ??= path;
+      openPdf(s, tab);
+    });
+  }, [rpc, session, cwd]);
+}
