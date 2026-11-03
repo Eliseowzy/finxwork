@@ -95,6 +95,11 @@ impl History {
         self.branch.iter().map(|&i| &self.entries[i]).collect()
     }
 
+    /// The entries of [`Self::branch`] from the leaf back to the root.
+    pub fn branch_back(&self) -> impl Iterator<Item = &Entry> {
+        self.branch.iter().rev().map(|&i| &self.entries[i])
+    }
+
     /// Where the entries of [`Self::branch`] are, in file order, and the walk that found them:
     /// while it stays the same, the branch only grows at the end.
     pub fn branch_positions(&self) -> (&[usize], u64) {
@@ -157,6 +162,21 @@ mod tests {
         let d = rewound.append("d".into(), EntryKind::Branch, 4);
         assert_eq!(d.parent.as_deref(), Some("c"));
         assert_eq!(history.branch().len(), 2);
+        let back: Vec<&str> = rewound.branch_back().map(|e| e.id.as_str()).collect();
+        assert_eq!(back, vec!["d", "c", "a"]);
+    }
+
+    #[test]
+    fn a_kind_from_a_later_version_does_not_cut_the_branch() {
+        let lines = [
+            r#"{"id":"a","parent":null,"ts":1,"type":"branch"}"#,
+            r#"{"id":"b","parent":"a","ts":2,"type":"from_a_later_version","x":1}"#,
+            r#"{"id":"c","parent":"b","ts":3,"type":"branch"}"#,
+        ];
+        let entries = lines.iter().map(|line| serde_json::from_str::<Entry>(line).unwrap()).collect();
+        let history = History::from_entries(entries);
+        let ids: Vec<&str> = history.branch().iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b", "c"]);
     }
 
     /// The branch as it was worked out before it was kept: by following parents from the leaf.

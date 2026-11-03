@@ -320,6 +320,21 @@ impl Session {
         });
     }
 
+    /// Gives the model today's date when the context last gave another one, or none: the
+    /// system prompt keeps the date the session started on (technical-design §7.2).
+    pub(crate) fn note_date(&self) {
+        let today = chrono::Local::now().date_naive();
+        let given = {
+            let state = self.state.lock();
+            crate::context::date_in_context(&state.history, &state.base_prompt)
+        };
+        if given != Some(today) {
+            self.record(EntryKind::Date {
+                date: today.format("%Y-%m-%d").to_string(),
+            });
+        }
+    }
+
     /// Writes the waiting reports into the history, oldest first.
     pub(crate) fn deliver_mail(&self) {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();

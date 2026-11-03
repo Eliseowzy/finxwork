@@ -490,7 +490,7 @@ fn build_prompt(
         skills: &scan.catalog.text,
         project_root,
         git_branch: project_root.and_then(instructions::git_branch),
-        date: chrono::Local::now().format("%Y-%m-%d").to_string(),
+        date: prompt::date_text(chrono::Local::now().date_naive()),
     })
     .map_err(|e| KernelError::Other(format!("cannot build the system prompt: {e}")))?;
     Ok(BuiltPrompt {

@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v2.0 |
-| 日期 | 2026-11-02 |
+| 版本 | v2.1 |
+| 日期 | 2026-11-03 |
 | 状态 | 已定稿；一期已实现并通过验收（§15）；二期、三期未开始 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §2 核心概念、§6 内核运行时、§8 对外协议、§9 会话持久化；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
 
@@ -114,6 +114,7 @@
 | v1.7 | 2026-10-29 | 两个智能体工具不再随会话构造：`ToolCtx` 增加对 finx-tools 不透明的 `session_state`，工具调用时从中取发起调用的会话的智能体树；基础工具加这两个工具的注册表，按基础工具只建一份，工具相同的主会话共用。会话的内部通道改为传装箱的消息。合并一期后每个空闲主会话多出的约 15 KiB 内存回到合并前的水平，见总方案 §1.4（§2、§6.1、§14.2） |
 | v1.9 | 2026-10-29 | 没有回复的汇报：MailInfo 带 `no_reply`，`agent_status` 不带 summary，客户端显示自己的文字（§15 二期，protocol-design v0.12） |
 | v2.0 | 2026-11-02 | 两个工具的文本重写，更短：后台运行写成等待的方式，"结束本轮不是最终答复"；`wait` 只在本条回复的下一步需要汇报时用，写进描述和参数说明；删去"同一条回复里多个 `wait=true` 同时运行"（附录 A.1）。转入后台的工具结果也加上"这不是最终答复"（附录 A.4）。`spawn_agent` 新增必填参数 `description`：给用户看的标签，与给子的 `task` 分开；记入 `agent_spawned`，`agent_started` 和快照的 `agents` 带上它，桌面端、命令行和 ACP 用它显示子智能体（§6.2、§9.2、§11.1）。起因与对比实验见 §15 |
+| v2.1 | 2026-11-03 | 子的任务说明加上文件边界和验证结果（附录 A.2，D-238），Q-52 定下 |
 
 ## 1. 目标与原则
 
@@ -443,7 +444,7 @@ impl AgentTree {
   - 只读的工作可以随意重叠；
   - 不能让两个智能体，或者某个子和主智能体自己，同时改同一个文件；
   - 每个子分到自己要改的文件，必须改同一个文件的任务依次进行。
-- **给子**：暂不加（Q-52）。分工由主智能体负责，子写入被拒时 write 的提示会说明文件可能被别人改过。
+- **给子**：任务写明了能改哪些文件时，只改这些，别的需要改的写进汇报（D-238）。子写入被拒时，write 的提示仍会说明文件可能被别人改过。
 - **read、write、edit、bash 的工具描述不改**：这些描述在所有会话里都一样，主智能体也在用。
 
 **内核兜底**（不依赖模型是否照提示做）
@@ -1061,6 +1062,7 @@ crates/finx-core/src/agents/
 | D-52 | 子智能体默认开启，`agents.enabled = false` 可以关闭 | G14 | §13 |
 | D-53 | 子智能体只干活：只有基础工具，不能创建子智能体，也不能在运行中给父发消息；树只有一层，父子之间只有任务说明和汇报两个通道。子需要父决定的事，写进汇报并结束，父再用 `send_message` 让它继续 | 控制流保持"主智能体分派、子智能体汇报"的单向结构；没有数量上限时不会层层展开；不需要"谁能唤醒谁、谁能中断谁"之类的额外规则 | §1.2 §4.4 §6.1 |
 | D-54 | 并行与共享文件分两层：提示（`spawn_agent` 的描述）让主智能体分工时避免同时修改同一个文件；内核兜底保证不会悄悄覆盖，包括 write 写入前检查、edit 精确匹配、整棵树共用的按路径写锁 | 并行是委派的价值；冲突要尽量避免，避免不了时也不能丢掉别人的修改 | §6.5 |
+| D-238 | 子的任务说明加一句文件边界：任务写明了能改哪些文件时只改这些，别的需要改的写进汇报；汇报写明验证了什么 | 主智能体的分工只写在父这边，子没有对应的说法；按条件写，不卡住没列文件的任务 | 附录 A.2 |
 
 ### 18.2 待定问题
 
@@ -1078,7 +1080,7 @@ crates/finx-core/src/agents/
 | Q-49 | 是否卸载长时间空闲的子会话 | 暂不，空闲的子只占少量内存（§16 测量）；三期与恢复一起做 | §4.5 §9.4 |
 | Q-50 | 是否允许子智能体再创建子智能体 | 已定：不允许（D-53） | §4.4 |
 | Q-51 | manual 模式下子智能体改不了文件，是否提供"创建前预先授权" | 暂不。用户可以把会话切到 accept-edits，或在主智能体上批准常用命令；预先授权等于给子智能体加回一次审批，与 D-43 冲突 | §10.4 |
-| Q-52 | 是否在子的任务说明里提醒并发修改（只改任务涉及的文件、文件被改过就重读、不撤销别人的修改、冲突时停下汇报） | 暂不（2026-10-29 定）。分工交给主智能体，内核兜底保证不会悄悄覆盖；真实任务里出现冲突再加 | §6.5 |
+| Q-52 | 是否在子的任务说明里提醒并发修改（只改任务涉及的文件、文件被改过就重读、不撤销别人的修改、冲突时停下汇报） | 已定（2026-11-03，D-238）：只写文件边界一句，写明了文件时只改这些、别的写进汇报；重读、不撤销等仍交给 write 的提示和内核兜底 | §6.5 |
 
 ## 附录 A：给模型的文本草案
 
@@ -1123,9 +1125,9 @@ Send a message to one of your sub-agents. It keeps the context of its earlier wo
 ```
 You are a sub-agent named "{name}", started by another agent (your parent) for the task below. Messages here come from your parent, not from a human, and your final reply is delivered to it.
 
-Work on your own until the task is done. You cannot ask anyone anything: if something is unclear, make a reasonable choice and mention it in your report.
+Work on your own until the task is done. You cannot ask anyone anything: if something is unclear, make a reasonable choice and mention it in your report. Other agents may be working in the same workspace: when the task names the files you may change, change only those, and list any other change you find necessary in your report.
 
-Finish with a short Markdown report: what you did and the outcome, key findings with path:line locations, the files you changed, and anything left open. Keep it plain: no long code listings or raw tool output.
+Finish with a short Markdown report: what you did and the outcome, key findings with path:line locations, the files you changed, what you verified and how, and anything left open. Keep it plain: no long code listings or raw tool output.
 
 <task>
 {task}
@@ -1135,9 +1137,8 @@ Finish with a short Markdown report: what you did and the outcome, key findings 
 每一句都有对应的理由，没有理由的不写：
 - **第一段**：子与父用同一份系统提示词，那份提示词是写给在用户终端里工作的智能体的，所以要说明消息来自谁、回复交给谁。
 - **不能问任何人**：基础提示词要求遇到不明确的请求先问，子没有人可问。审批同理，被拒绝时拒绝文本会说明怎么处理（A.4），这里不重复。
-- **汇报格式**：对应目标 G10。
-
-并发修改的提醒暂不写进任务说明（Q-52）。
+- **文件边界**（D-238）：主智能体按 `spawn_agent` 的描述给每个子分好要改的文件，子这边也要知道只改分到的那些，发现别的文件也要改就写进汇报，交给主智能体安排。只在任务写明了文件时才限制，"调查一下 X"这类没列文件的任务不受影响。
+- **汇报格式**：对应目标 G10。写明验证了什么、怎么验证的，主智能体才能判断结果靠不靠得住。
 
 ### A.3 汇报
 

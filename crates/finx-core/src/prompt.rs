@@ -19,8 +19,22 @@ pub struct PromptInputs<'a> {
     pub skills: &'a str,
     pub project_root: Option<&'a Path>,
     pub git_branch: Option<String>,
-    /// `YYYY-MM-DD`
+    /// As [`date_text`] gives it.
     pub date: String,
+}
+
+/// A date as the model is given it, with its weekday: `2026-11-03 (Tuesday)`. Models often
+/// get the weekday of a date wrong, and work is planned by weekdays.
+pub fn date_text(date: chrono::NaiveDate) -> String {
+    date.format("%Y-%m-%d (%A)").to_string()
+}
+
+/// The date in a system prompt's `<environment>` section.
+pub fn prompt_date(prompt: &str) -> Option<chrono::NaiveDate> {
+    const FIELD: &str = "\ndate: ";
+    let environment = &prompt[prompt.rfind("<environment>")?..];
+    let start = environment.find(FIELD)? + FIELD.len();
+    chrono::NaiveDate::parse_from_str(environment.get(start..start + 10)?, "%Y-%m-%d").ok()
 }
 
 pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
@@ -119,19 +133,31 @@ mod tests {
             date: "2026-10-28".into(),
         })
         .unwrap();
-        assert!(prompt.starts_with("You are finx"));
+        assert!(prompt.starts_with("You are FinxWork"));
         let order = [
             "<tool_guidelines>",
             "<project_instructions path=\"/work/demo/AGENTS.md\">",
             "<extra_instructions>",
             "<available_skills>",
-            "<environment>",
+            // The section, not the base prompt's mention of its tag.
+            "\n<environment>\n",
         ];
         let positions: Vec<usize> = order.iter().map(|tag| prompt.find(tag).unwrap()).collect();
         assert!(positions.windows(2).all(|w| w[0] < w[1]));
         assert!(prompt.contains("cwd: /work/demo"));
         assert!(prompt.contains("date: 2026-10-28"));
         assert!(prompt.contains("- Use read to view files"));
+    }
+
+    #[test]
+    fn the_environment_date_has_its_weekday_and_reads_back() {
+        let day = chrono::NaiveDate::from_ymd_opt(2026, 11, 3).unwrap();
+        assert_eq!(date_text(day), "2026-11-03 (Tuesday)");
+        let prompt = format!("You are FinxWork.\n\n<environment>\ncwd: /w\ndate: {}\ngit: no\n</environment>\n", date_text(day));
+        assert_eq!(prompt_date(&prompt), Some(day));
+        // Logs written before the weekday was added.
+        assert_eq!(prompt_date("<environment>\ndate: 2026-10-28\n</environment>"), chrono::NaiveDate::from_ymd_opt(2026, 10, 28));
+        assert_eq!(prompt_date("You are FinxWork. date: 2026-10-28"), None);
     }
 
     #[test]

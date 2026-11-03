@@ -2,6 +2,7 @@
 //! the current model, plus an estimate of everything recorded after it. The same calculation
 //! runs inside a task and after a resume, since the session log keeps every response's usage.
 
+use finx_llm::AssistantMessage;
 use finx_llm::ErrorKind;
 use finx_llm::Message;
 use finx_llm::Model;
@@ -103,44 +104,47 @@ pub(crate) fn scale(tokens: u64, ratio: f64) -> u64 {
 /// Measures the current context of `branch`.
 #[cfg(test)]
 pub(crate) fn measure(branch: &[&Entry], m: &Measure) -> Budget {
-    measure_with(branch, m, |window, _| largest_turn(window))
+    measure_with(branch, m, |window, _, model| scan_turns(window, model))
 }
 
-/// [`measure`], with `largest` giving [`largest_turn`] of the window (the branch from its
-/// start index on).
-pub(crate) fn measure_with(branch: &[&Entry], m: &Measure, largest: impl FnOnce(&[&Entry], usize) -> u64) -> Budget {
+/// [`measure`], with `turns` giving [`scan_turns`] of the window (the branch from its start
+/// index on) for the model.
+pub(crate) fn measure_with(branch: &[&Entry], m: &Measure, turns: impl FnOnce(&[&Entry], usize, &Model) -> Turns) -> Budget {
     let start = context::window_start(branch);
     let mut tail = 0u64;
     let mut baseline = None;
     let mut full = None;
     let mut previous_model = None;
     for entry in branch[start..].iter().rev() {
-        let Some(message) = context::entry_message(&entry.kind) else {
+        let Some(message) = context::entry_message(&entry.kind, entry.ts) else {
             continue;
         };
         if let Message::Assistant(a) = &*message {
             full.get_or_insert(
                 a.stop_reason == StopReason::Error && a.error.as_ref().is_some_and(|e| e.kind == ErrorKind::ContextOverflow),
             );
-            if a.stop_reason == StopReason::Error {
-                continue; // not part of the context
-            }
-            let reported = matches!(a.stop_reason, StopReason::Stop | StopReason::ToolUse | StopReason::Length)
-                && !a.usage.is_empty();
-            if reported {
-                if a.provider == m.model.provider && a.api == m.model.api && a.model == m.model.id {
+            match reported_by(a, m.model) {
+                Reported::NotInContext => continue,
+                Reported::No => {}
+                Reported::ThisModel => {
                     baseline = Some(a.usage.context_tokens());
-                } else {
-                    previous_model = Some(format!("{}/{}", a.provider, a.model));
+                    break;
                 }
-                break;
+                Reported::OtherModel => {
+                    previous_model = Some(format!("{}/{}", a.provider, a.model));
+                    break;
+                }
             }
         }
         tail += context::estimate_message(&message);
     }
+    // What is added turn by turn may count differently from the whole request, which the
+    // system prompt and the tool definitions dominate: this window's turns tell how.
+    let turns = turns(&branch[start..], start, m.model);
+    let ratio = turns.ratio.filter(|_| baseline.is_some()).unwrap_or(m.ratio);
     let (tokens, estimated) = match baseline {
         Some(reported) => {
-            let estimated = scale(tail, m.ratio);
+            let estimated = scale(tail, ratio);
             (reported + estimated, estimated)
         }
         None => {
@@ -151,7 +155,7 @@ pub(crate) fn measure_with(branch: &[&Entry], m: &Measure, largest: impl FnOnce(
         }
     };
     let handoff = context::estimate_text(context::HANDOFF_REQUEST) + context::MESSAGE_OVERHEAD;
-    let next_turn = scale(largest(&branch[start..], start) + handoff, m.ratio);
+    let next_turn = scale(turns.largest + handoff, ratio);
     let full = full.unwrap_or(false);
     let tokens = if full { tokens.max(m.limits.hard) } else { tokens };
     Budget {
@@ -168,18 +172,61 @@ pub(crate) fn measure_with(branch: &[&Entry], m: &Measure, largest: impl FnOnce(
     }
 }
 
-/// The most that one turn added in `window`: a reply with the tool results and messages that
-/// follow it. Turns differ (a long command output, then a short read), so the largest one is
-/// the safer guess for the next.
-#[cfg(test)]
-fn largest_turn(window: &[&Entry]) -> u64 {
-    let mut scan = TurnScan::default();
-    window.iter().for_each(|entry| scan.add(entry));
-    scan.largest.max(scan.current)
+/// What a reply in the window says about the usage of its request.
+enum Reported {
+    /// A failed response: not part of the context.
+    NotInContext,
+    /// In the context, with no usage to go by (an interrupted reply, say).
+    No,
+    ThisModel,
+    OtherModel,
 }
 
-/// [`largest_turn`] as a fold that continues as the window grows. Measuring estimated the
-/// whole window since the last compaction, at least twice per turn; now only new entries.
+fn reported_by(a: &AssistantMessage, model: &Model) -> Reported {
+    if a.stop_reason == StopReason::Error {
+        return Reported::NotInContext;
+    }
+    if !has_usage(a) {
+        return Reported::No;
+    }
+    if a.provider == model.provider && a.api == model.api && a.model == model.id {
+        Reported::ThisModel
+    } else {
+        Reported::OtherModel
+    }
+}
+
+/// A finished response with the usage of its request.
+fn has_usage(a: &AssistantMessage) -> bool {
+    matches!(a.stop_reason, StopReason::Stop | StopReason::ToolUse | StopReason::Length) && !a.usage.is_empty()
+}
+
+/// What the turns of a window show.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Turns {
+    /// The most that one turn added: a reply with the tool results and messages that follow
+    /// it. Turns differ (a long command output, then a short read), so the largest one is the
+    /// safer guess for the next.
+    pub(crate) largest: u64,
+    /// How the provider counted what the turns added, over its estimate: the growth from the
+    /// request of the first response of the model to the request of its last, over the
+    /// estimate of everything from that first response up to the last. Weighted by size, so a
+    /// short turn between long ones does not hide how the long ones count. `None` when there
+    /// is too little to tell, or the ratio is out of range: then more than the messages
+    /// changed (the system prompt, say).
+    pub(crate) ratio: Option<f64>,
+}
+
+/// [`Turns`] of `window` for `model`.
+#[cfg(test)]
+fn scan_turns(window: &[&Entry], model: &Model) -> Turns {
+    let mut scan = TurnScan::default();
+    window.iter().for_each(|entry| scan.add(entry));
+    scan.turns(model)
+}
+
+/// [`scan_turns`] as a fold that continues as the window grows. Measuring estimated the whole
+/// window since the last compaction, at least twice per turn; now only new entries.
 #[derive(Default)]
 pub(crate) struct TurnScan {
     /// The walk of the history, and the position of the window's first entry, it is for.
@@ -188,27 +235,93 @@ pub(crate) struct TurnScan {
     scanned: usize,
     largest: u64,
     current: u64,
+    counted: Option<Counted>,
+}
+
+/// The responses of one model in a row, from the first one with usage.
+struct Counted {
+    provider: String,
+    api: String,
+    model: String,
+    /// The prompt tokens of the first response's request and of the last one's.
+    first: u64,
+    last: u64,
+    /// Estimate of everything from the first response up to the last.
+    estimated: u64,
+    /// Estimate of what came since the last response, that reply included.
+    pending: u64,
 }
 
 impl TurnScan {
     fn add(&mut self, entry: &Entry) {
-        let Some(message) = context::entry_message(&entry.kind) else {
+        let Some(message) = context::entry_message(&entry.kind, entry.ts) else {
             return;
         };
-        match &*message {
-            Message::Assistant(a) if a.stop_reason == StopReason::Error => {}
-            Message::Assistant(_) => {
+        let estimate = match &*message {
+            Message::Assistant(a) if a.stop_reason == StopReason::Error => return,
+            Message::Assistant(a) => {
+                let estimate = context::estimate_message(&message);
                 self.largest = self.largest.max(self.current);
-                self.current = context::estimate_message(&message);
+                self.current = estimate;
+                if has_usage(a) {
+                    self.count(a, estimate);
+                    return;
+                }
+                estimate
             }
-            other => self.current += context::estimate_message(other),
+            other => {
+                let estimate = context::estimate_message(other);
+                self.current += estimate;
+                estimate
+            }
+        };
+        if let Some(counted) = &mut self.counted {
+            counted.pending += estimate;
         }
     }
 
-    /// [`largest_turn`] of `window`, whose entries are at `positions` of the history found by
+    /// A response with usage: it extends the run of its model, or starts a new run.
+    fn count(&mut self, a: &AssistantMessage, estimate: u64) {
+        let prompt = a.usage.prompt_tokens();
+        match &mut self.counted {
+            Some(c) if c.provider == a.provider && c.api == a.api && c.model == a.model => {
+                c.estimated += c.pending;
+                c.last = prompt;
+                c.pending = estimate;
+            }
+            _ => {
+                self.counted = Some(Counted {
+                    provider: a.provider.clone(),
+                    api: a.api.clone(),
+                    model: a.model.clone(),
+                    first: prompt,
+                    last: prompt,
+                    estimated: 0,
+                    pending: estimate,
+                });
+            }
+        }
+    }
+
+    fn turns(&self, model: &Model) -> Turns {
+        let ratio = self.counted.as_ref().and_then(|c| {
+            let same = c.provider == model.provider && c.api == model.api && c.model == model.id;
+            if !same || c.estimated < MIN_CALIBRATION_TOKENS {
+                return None;
+            }
+            let ratio = c.last.checked_sub(c.first)? as f64 / c.estimated as f64;
+            (RATIO_RANGE.0..=RATIO_RANGE.1).contains(&ratio).then_some(ratio)
+        });
+        Turns {
+            largest: self.largest.max(self.current),
+            ratio,
+        }
+    }
+
+    /// [`scan_turns`] of `window`, whose entries are at `positions` of the history found by
     /// walk `generation`: the fold goes on from where it stopped while the window is the same
     /// one, grown.
-    fn largest(&mut self, window: &[&Entry], positions: &[usize], generation: u64) -> u64 {
+    fn scan(&mut self, window: &[&Entry], positions: &[usize], generation: u64, model: &Model) -> Turns {
         let same = self.generation == generation && self.first == positions.first().copied() && self.scanned <= window.len();
         if !same {
             *self = TurnScan {
@@ -221,7 +334,7 @@ impl TurnScan {
             self.add(entry);
         }
         self.scanned = window.len();
-        self.largest.max(self.current)
+        self.turns(model)
     }
 }
 
@@ -318,7 +431,7 @@ impl Session {
                 fixed,
                 ratio: state.estimate_ratio,
             },
-            |window, start| scan.largest(window, &positions[start..], generation),
+            |window, start, model| scan.scan(window, &positions[start..], generation, model),
         )
     }
 
@@ -401,6 +514,26 @@ mod tests {
             skills: Vec::new(),
             skill: None,
         })
+    }
+
+    fn tool(text: &str) -> Entry {
+        entry(EntryKind::Message {
+            message: Message::from(finx_llm::ToolResultMessage {
+                call_id: "c".into(),
+                tool_name: "bash".into(),
+                content: vec![finx_llm::UserContent::Text { text: text.into() }],
+                is_error: false,
+                details: None,
+                ts: 0,
+                duration_ms: None,
+            }),
+            skills: Vec::new(),
+            skill: None,
+        })
+    }
+
+    fn handoff() -> u64 {
+        context::estimate_text(context::HANDOFF_REQUEST) + context::MESSAGE_OVERHEAD
     }
 
     fn measure_with(entries: &[Entry], model: &Model, ratio: f64) -> Budget {
@@ -488,33 +621,71 @@ mod tests {
     #[test]
     fn the_next_turn_is_guessed_from_the_largest_turn() {
         let m = model("m");
-        let tool = |text: &str| {
-            entry(EntryKind::Message {
-                message: Message::from(finx_llm::ToolResultMessage {
-                    call_id: "c".into(),
-                    tool_name: "bash".into(),
-                    content: vec![finx_llm::UserContent::Text { text: text.into() }],
-                    is_error: false,
-                    details: None,
-                    ts: 0,
-                    duration_ms: None,
-                }),
-                skills: Vec::new(),
-                skill: None,
-            })
-        };
         let entries = [
             user("hi"),
             reply("m", StopReason::ToolUse, 1_000, 10),
             tool(&"x".repeat(4_000)),
-            reply("m", StopReason::ToolUse, 2_100, 10),
+            // The provider counted that turn as estimated: 1,009 more.
+            reply("m", StopReason::ToolUse, 2_009, 10),
             tool("short"),
         ];
         let budget = measure_with(&entries, &m, 1.0);
-        let handoff = context::estimate_text(context::HANDOFF_REQUEST) + context::MESSAGE_OVERHEAD;
         // The big result's turn: the reply (4 + 1) and the result (4 + 1,000).
-        assert_eq!(budget.next_turn, 5 + 1_004 + handoff);
+        assert_eq!(budget.next_turn, 5 + 1_004 + handoff());
         assert!(budget.usage.estimated < 20, "only the short result is estimated");
+    }
+
+    #[test]
+    fn additions_are_scaled_as_this_window_counted_them() {
+        let m = model("m");
+        let entries = [
+            user("hi"),
+            reply("m", StopReason::ToolUse, 1_000, 10),
+            tool(&"x".repeat(4_000)),
+            // The turn estimated at 1,009 was counted as 1,211.
+            reply("m", StopReason::ToolUse, 2_211, 10),
+            tool(&"y".repeat(400)),
+        ];
+        let ratio = 1_211.0 / 1_009.0;
+        // The whole-request ratio given is not the one used.
+        let budget = measure_with(&entries, &m, 0.8);
+        assert_eq!(budget.usage.estimated, scale(104, ratio));
+        assert_eq!(budget.usage.tokens, 2_221 + scale(104, ratio));
+        assert_eq!(budget.next_turn, scale(1_009 + handoff(), ratio));
+
+        // A short turn after a long one: the window as a whole still says how the long ones count.
+        let entries = [
+            user("hi"),
+            reply("m", StopReason::ToolUse, 1_000, 10),
+            tool(&"x".repeat(4_000)),
+            reply("m", StopReason::ToolUse, 2_211, 10),
+            tool("short"),
+            // The short turn, estimated at 11, counted as 13.
+            reply("m", StopReason::ToolUse, 2_224, 10),
+            tool(&"y".repeat(400)),
+        ];
+        let ratio = 1_224.0 / 1_020.0;
+        assert_eq!(measure_with(&entries, &m, 0.8).usage.estimated, scale(104, ratio));
+    }
+
+    #[test]
+    fn the_whole_request_ratio_stands_in_when_the_window_says_nothing() {
+        let m = model("m");
+        let after = |earlier: Entry, prompt: u64, between: Entry| {
+            [user("hi"), earlier, between, reply("m", StopReason::ToolUse, prompt, 10), tool(&"y".repeat(400))]
+        };
+        let cases = [
+            // The request grew by far more than its messages: the system prompt changed, say.
+            ("out of range", after(reply("m", StopReason::ToolUse, 1_000, 10), 4_000, tool(&"x".repeat(4_000)))),
+            ("too small to tell", after(reply("m", StopReason::ToolUse, 1_000, 10), 1_050, tool("short"))),
+            // Its growth was counted by another model's tokenizer.
+            ("another model", after(reply("other", StopReason::ToolUse, 1_000, 10), 2_211, tool(&"x".repeat(4_000)))),
+        ];
+        for (case, entries) in cases {
+            assert_eq!(measure_with(&entries, &m, 1.5).usage.estimated, scale(104, 1.5), "{case}");
+        }
+        let first = [user("hi"), reply("m", StopReason::ToolUse, 1_000, 10), tool(&"y".repeat(400))];
+        assert_eq!(measure_with(&first, &m, 1.5).usage.estimated, scale(104, 1.5), "the window's first response");
     }
 
     #[test]
@@ -552,14 +723,19 @@ mod tests {
 
     #[test]
     fn the_turn_scan_matches_a_scan_of_the_whole_window() {
-        let reply = |text: &str| EntryKind::Message {
+        let m = model("m");
+        let reply = |text: &str, input: u64| EntryKind::Message {
             message: Message::from(AssistantMessage {
                 content: vec![AssistantContent::Text { text: text.into() }],
-                provider: "p".into(),
-                api: "a".into(),
+                provider: "test".into(),
+                api: "scripted".into(),
                 model: "m".into(),
                 response_id: None,
-                usage: Usage::default(),
+                usage: Usage {
+                    input,
+                    output: 10,
+                    ..Default::default()
+                },
                 stop_reason: StopReason::ToolUse,
                 error: None,
                 ts: 0,
@@ -577,7 +753,7 @@ mod tests {
         let mut scan = TurnScan::default();
         for i in 0..60 {
             let kind = match i % 5 {
-                0 => reply(&"reply ".repeat(i)),
+                0 => reply(&"reply ".repeat(i), 1_000 + 40 * i as u64),
                 4 if i % 20 == 4 => EntryKind::Compaction(Box::new(crate::store::CompactionEntry {
                     seq: 1,
                     reason: finx_protocol::CompactionReason::Threshold,
@@ -596,8 +772,8 @@ mod tests {
             let branch = history.branch();
             let (positions, generation) = history.branch_positions();
             let start = context::window_start(&branch);
-            let kept = scan.largest(&branch[start..], &positions[start..], generation);
-            assert_eq!(kept, largest_turn(&branch[start..]), "after entry {i}");
+            let kept = scan.scan(&branch[start..], &positions[start..], generation, &m);
+            assert_eq!(kept, scan_turns(&branch[start..], &m), "after entry {i}");
         }
     }
 
