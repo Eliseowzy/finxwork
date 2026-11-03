@@ -48,16 +48,36 @@ impl JsonBody {
         write_json(&mut self.out, message);
     }
 
-    pub(crate) fn finish(mut self, params: &Map<String, Value>) -> Vec<u8> {
+    pub(crate) fn finish(self, params: &Map<String, Value>) -> Vec<u8> {
+        self.finish_with(params, None::<(&str, &Value)>)
+    }
+
+    /// Add a borrowed top-level value without constructing another JSON tree. Explicit
+    /// params (including provider extra_body overrides) take precedence over this value.
+    pub(crate) fn finish_with<T: Serialize + ?Sized>(
+        mut self,
+        params: &Map<String, Value>,
+        extra: Option<(&str, &T)>,
+    ) -> Vec<u8> {
         self.out.push(b']');
         for (key, value) in params.iter().filter(|(key, _)| key.as_str() != "messages") {
-            self.out.push(b',');
-            write_json(&mut self.out, key);
-            self.out.push(b':');
-            write_json(&mut self.out, value);
+            self.field(key, value);
+        }
+        if let Some((key, value)) = extra
+            && !params.contains_key(key)
+            && key != "messages"
+        {
+            self.field(key, value);
         }
         self.out.push(b'}');
         self.out
+    }
+
+    fn field(&mut self, key: &str, value: &(impl Serialize + ?Sized)) {
+        self.out.push(b',');
+        write_json(&mut self.out, key);
+        self.out.push(b':');
+        write_json(&mut self.out, value);
     }
 }
 

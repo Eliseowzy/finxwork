@@ -75,7 +75,7 @@ pub struct LoadedSession {
     pub warnings: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SessionSummary {
     pub id: String,
     pub location: PathBuf,

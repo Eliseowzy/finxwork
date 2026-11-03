@@ -506,6 +506,11 @@ fn open_skills(dirs: &[PathBuf], scope: SkillScope) -> Vec<Option<Found>> {
             .map(|dir| open_skill(&dir.join(SKILL_FILE), scope))
             .collect::<Vec<_>>()
     };
+    // Small levels cannot use two readers anyway. On Linux, available_parallelism reads
+    // cgroup quotas up to the root; do not repeat those probes for every small directory.
+    if dirs.len() < 2 * DIRS_PER_READER {
+        return probe(dirs);
+    }
     let threads = std::thread::available_parallelism()
         .map_or(1, usize::from)
         .min(PARALLEL_READERS)

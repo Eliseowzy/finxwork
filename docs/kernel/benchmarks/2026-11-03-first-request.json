@@ -1,0 +1,1906 @@
+{
+  "schema_version": 1,
+  "clock": "CLOCK_MONOTONIC / perf_counter_ns",
+  "units": "ms",
+  "definition": "native parent immediately before fork -> first byte of first model request at loopback mock; every sample is a new process with normal logging and session persistence",
+  "launcher": {
+    "path": "<benchmark-dir>/startup-launcher-linux",
+    "sha256": "b61e4f679704363bd1a967a5cbb834a2c20ba3d16c5a57354b030ef58d548376"
+  },
+  "cache": "warm filesystem after warmup; no resident finx process; first_invocation is not a claim of OS-cold cache",
+  "platform": {
+    "system": "Linux",
+    "release": "6.12.113+deb13-amd64",
+    "machine": "x86_64",
+    "python": "3.13.5",
+    "cpus": 1
+  },
+  "workload": {
+    "runs": 200,
+    "warmup": 10,
+    "skills": [
+      0
+    ],
+    "config": ""
+  },
+  "binaries": [
+    {
+      "label": "before",
+      "path": "<benchmark-dir>/finx-linux-startup-before",
+      "sha256": "63590794702dfe4c84317fd0416fea77eb837fc97eea802df03b440d26621694"
+    },
+    {
+      "label": "current",
+      "path": "<benchmark-dir>/finx-final",
+      "sha256": "f311b39ddbee727fe9836b937c344925582933fd267d3854b37fc5b558638158"
+    }
+  ],
+  "harness_sha256": "616f17e8c5e569f24397cd3fddb6ec94ac429c9e2d096dc3f68a9f5a5760e5a6",
+  "spawn_floor": {
+    "n": 200,
+    "min": 0.689953,
+    "p50": 0.7936765,
+    "p95": 1.040751,
+    "p99": 1.168254,
+    "max": 1.276561
+  },
+  "spawn_floor_samples": [
+    0.791798,
+    0.794383,
+    0.755658,
+    0.791196,
+    1.099333,
+    0.72486,
+    0.765287,
+    1.168254,
+    0.794512,
+    0.781317,
+    0.775527,
+    0.718989,
+    0.750229,
+    0.859166,
+    0.895746,
+    0.851,
+    1.075907,
+    0.770737,
+    0.843046,
+    0.748526,
+    0.782359,
+    0.74076,
+    0.79826,
+    0.946582,
+    0.820111,
+    0.82447,
+    0.836442,
+    0.810052,
+    0.71937,
+    0.757982,
+    0.754376,
+    0.842404,
+    0.75054,
+    0.743866,
+    0.723999,
+    0.817437,
+    0.741273,
+    0.81439,
+    0.828076,
+    0.76144,
+    0.900224,
+    0.790245,
+    0.740991,
+    0.855559,
+    0.82989,
+    0.689953,
+    0.780306,
+    0.850028,
+    0.720281,
+    0.768313,
+    0.803049,
+    0.916976,
+    0.96641,
+    0.887349,
+    0.966401,
+    0.747313,
+    0.950831,
+    0.787529,
+    0.78222,
+    0.812807,
+    0.788702,
+    0.778463,
+    0.982621,
+    0.784313,
+    0.778804,
+    0.8354,
+    0.865328,
+    0.884313,
+    0.759086,
+    0.927055,
+    0.868554,
+    0.771909,
+    1.114613,
+    0.829019,
+    0.830953,
+    0.830882,
+    0.906466,
+    0.904512,
+    0.915754,
+    0.826084,
+    0.826955,
+    0.822365,
+    0.763234,
+    0.777199,
+    0.863774,
+    0.766429,
+    0.808059,
+    0.766228,
+    0.793571,
+    0.785114,
+    1.065508,
+    0.800845,
+    0.796997,
+    0.985927,
+    0.771499,
+    0.875988,
+    0.812467,
+    0.787208,
+    0.821495,
+    0.773062,
+    0.763804,
+    0.79844,
+    0.7828,
+    0.79807,
+    0.807487,
+    0.749017,
+    0.760246,
+    0.775087,
+    0.800353,
+    0.729348,
+    0.811486,
+    0.755127,
+    0.806706,
+    0.793782,
+    0.787789,
+    0.78779,
+    0.816414,
+    0.785476,
+    0.78244,
+    0.744898,
+    0.798751,
+    0.743245,
+    0.773002,
+    0.769024,
+    0.762973,
+    0.89336,
+    0.716314,
+    0.777521,
+    0.835481,
+    0.790965,
+    0.87203,
+    0.762312,
+    0.755218,
+    0.888091,
+    0.872732,
+    0.87197,
+    0.770667,
+    0.74612,
+    0.81992,
+    0.7718,
+    0.967022,
+    0.845179,
+    0.765157,
+    0.788993,
+    0.914851,
+    0.705172,
+    0.981218,
+    0.716073,
+    0.694432,
+    0.698731,
+    0.756109,
+    0.78233,
+    0.706385,
+    0.711714,
+    0.838056,
+    0.765297,
+    0.785204,
+    0.78208,
+    0.720563,
+    0.729689,
+    0.718638,
+    0.728578,
+    0.953345,
+    0.734488,
+    1.276561,
+    1.220404,
+    0.926034,
+    0.794712,
+    0.782009,
+    0.870678,
+    1.045561,
+    0.845049,
+    0.781187,
+    0.915313,
+    1.040751,
+    0.865217,
+    0.888451,
+    0.790915,
+    1.058646,
+    0.778824,
+    1.034539,
+    1.152865,
+    0.767572,
+    0.826052,
+    0.750209,
+    0.83006,
+    0.775477,
+    0.785356,
+    0.959456,
+    0.799242,
+    0.963245,
+    0.721242,
+    0.844248,
+    0.761821,
+    0.763845,
+    0.716244,
+    0.728617,
+    0.858524,
+    0.864917,
+    0.936122
+  ],
+  "first_invocation": {
+    "before": {
+      "exit": 17.495681,
+      "first_request": 11.852667
+    },
+    "current": {
+      "exit": 8.812489,
+      "first_request": 4.244751
+    }
+  },
+  "summaries": {
+    "before": {
+      "first_request": {
+        "n": 200,
+        "min": 5.051588,
+        "p50": 7.8411995,
+        "p95": 9.906943,
+        "p99": 11.715297,
+        "max": 14.184928
+      },
+      "exit": {
+        "n": 200,
+        "min": 11.041102,
+        "p50": 15.002303999999999,
+        "p95": 21.363506,
+        "p99": 29.509426,
+        "max": 35.303758
+      }
+    },
+    "current": {
+      "first_request": {
+        "n": 200,
+        "min": 2.754415,
+        "p50": 3.0895175,
+        "p95": 4.01261,
+        "p99": 4.493155,
+        "max": 5.257931
+      },
+      "exit": {
+        "n": 200,
+        "min": 6.251392,
+        "p50": 7.6535925,
+        "p95": 13.278553,
+        "p99": 18.090684,
+        "max": 28.709954
+      }
+    }
+  },
+  "samples": {
+    "before": [
+      {
+        "exit": 12.557189,
+        "first_request": 8.279794
+      },
+      {
+        "exit": 14.806992,
+        "first_request": 9.703797
+      },
+      {
+        "exit": 14.250413,
+        "first_request": 9.556496
+      },
+      {
+        "exit": 21.098702,
+        "first_request": 9.151635
+      },
+      {
+        "exit": 14.483006,
+        "first_request": 9.346566
+      },
+      {
+        "exit": 14.770963,
+        "first_request": 6.935555
+      },
+      {
+        "exit": 11.590158,
+        "first_request": 7.134445
+      },
+      {
+        "exit": 14.409375,
+        "first_request": 6.727789
+      },
+      {
+        "exit": 11.341956,
+        "first_request": 6.807612
+      },
+      {
+        "exit": 14.648521,
+        "first_request": 7.192615
+      },
+      {
+        "exit": 12.165173,
+        "first_request": 7.732342
+      },
+      {
+        "exit": 15.467981,
+        "first_request": 9.286822
+      },
+      {
+        "exit": 15.328846,
+        "first_request": 8.198149
+      },
+      {
+        "exit": 14.456546,
+        "first_request": 6.7278
+      },
+      {
+        "exit": 14.860474,
+        "first_request": 9.894609
+      },
+      {
+        "exit": 16.521417,
+        "first_request": 10.150075
+      },
+      {
+        "exit": 13.210232,
+        "first_request": 7.393658
+      },
+      {
+        "exit": 14.873079,
+        "first_request": 9.638391
+      },
+      {
+        "exit": 14.302852,
+        "first_request": 9.580962
+      },
+      {
+        "exit": 14.717443,
+        "first_request": 7.942833
+      },
+      {
+        "exit": 11.555502,
+        "first_request": 5.131401
+      },
+      {
+        "exit": 15.073671,
+        "first_request": 9.63233
+      },
+      {
+        "exit": 14.104225,
+        "first_request": 9.837201
+      },
+      {
+        "exit": 11.868499,
+        "first_request": 6.823021
+      },
+      {
+        "exit": 15.862963,
+        "first_request": 10.157762
+      },
+      {
+        "exit": 26.551314,
+        "first_request": 9.739444
+      },
+      {
+        "exit": 16.272302,
+        "first_request": 9.655103
+      },
+      {
+        "exit": 12.989492,
+        "first_request": 6.185958
+      },
+      {
+        "exit": 14.562818,
+        "first_request": 8.013618
+      },
+      {
+        "exit": 13.7651,
+        "first_request": 6.541956
+      },
+      {
+        "exit": 11.900619,
+        "first_request": 7.852171
+      },
+      {
+        "exit": 15.604902,
+        "first_request": 8.863706
+      },
+      {
+        "exit": 12.465855,
+        "first_request": 7.811203
+      },
+      {
+        "exit": 16.201538,
+        "first_request": 7.970977
+      },
+      {
+        "exit": 15.090562,
+        "first_request": 6.894056
+      },
+      {
+        "exit": 15.191205,
+        "first_request": 7.304018
+      },
+      {
+        "exit": 11.520545,
+        "first_request": 7.078146
+      },
+      {
+        "exit": 23.609493,
+        "first_request": 7.430828
+      },
+      {
+        "exit": 15.744508,
+        "first_request": 6.051823
+      },
+      {
+        "exit": 16.351393,
+        "first_request": 8.068382
+      },
+      {
+        "exit": 13.92324,
+        "first_request": 5.686978
+      },
+      {
+        "exit": 16.677103,
+        "first_request": 7.817475
+      },
+      {
+        "exit": 24.746376,
+        "first_request": 14.184928
+      },
+      {
+        "exit": 13.919623,
+        "first_request": 7.480523
+      },
+      {
+        "exit": 11.602751,
+        "first_request": 6.06627
+      },
+      {
+        "exit": 12.46855,
+        "first_request": 6.784338
+      },
+      {
+        "exit": 14.572946,
+        "first_request": 9.631568
+      },
+      {
+        "exit": 16.467023,
+        "first_request": 9.548109
+      },
+      {
+        "exit": 12.098997,
+        "first_request": 7.427773
+      },
+      {
+        "exit": 16.373115,
+        "first_request": 7.963964
+      },
+      {
+        "exit": 14.872668,
+        "first_request": 6.22358
+      },
+      {
+        "exit": 18.627307,
+        "first_request": 8.474676
+      },
+      {
+        "exit": 12.345826,
+        "first_request": 7.50555
+      },
+      {
+        "exit": 17.050154,
+        "first_request": 7.497225
+      },
+      {
+        "exit": 13.615575,
+        "first_request": 8.871491
+      },
+      {
+        "exit": 15.337573,
+        "first_request": 8.817989
+      },
+      {
+        "exit": 13.834061,
+        "first_request": 9.070531
+      },
+      {
+        "exit": 16.511899,
+        "first_request": 9.368578
+      },
+      {
+        "exit": 19.386372,
+        "first_request": 7.175021
+      },
+      {
+        "exit": 12.561718,
+        "first_request": 6.775431
+      },
+      {
+        "exit": 15.453133,
+        "first_request": 9.958951
+      },
+      {
+        "exit": 15.427704,
+        "first_request": 7.090781
+      },
+      {
+        "exit": 15.49345,
+        "first_request": 6.595168
+      },
+      {
+        "exit": 15.525821,
+        "first_request": 9.44345
+      },
+      {
+        "exit": 13.383963,
+        "first_request": 8.658485
+      },
+      {
+        "exit": 16.448278,
+        "first_request": 7.981487
+      },
+      {
+        "exit": 12.02758,
+        "first_request": 6.240551
+      },
+      {
+        "exit": 16.683055,
+        "first_request": 6.636736
+      },
+      {
+        "exit": 15.276957,
+        "first_request": 6.163936
+      },
+      {
+        "exit": 17.957592,
+        "first_request": 6.947779
+      },
+      {
+        "exit": 11.61298,
+        "first_request": 7.184158
+      },
+      {
+        "exit": 15.861159,
+        "first_request": 6.44447
+      },
+      {
+        "exit": 14.60624,
+        "first_request": 9.159539
+      },
+      {
+        "exit": 16.875822,
+        "first_request": 9.872517
+      },
+      {
+        "exit": 12.369703,
+        "first_request": 7.618546
+      },
+      {
+        "exit": 17.492445,
+        "first_request": 7.257989
+      },
+      {
+        "exit": 15.032712,
+        "first_request": 9.570712
+      },
+      {
+        "exit": 16.978918,
+        "first_request": 7.549875
+      },
+      {
+        "exit": 15.720973,
+        "first_request": 9.838553
+      },
+      {
+        "exit": 18.988715,
+        "first_request": 8.705555
+      },
+      {
+        "exit": 29.688847,
+        "first_request": 8.168533
+      },
+      {
+        "exit": 16.604154,
+        "first_request": 6.010505
+      },
+      {
+        "exit": 17.54752,
+        "first_request": 6.931718
+      },
+      {
+        "exit": 16.413261,
+        "first_request": 8.257903
+      },
+      {
+        "exit": 15.429267,
+        "first_request": 6.338899
+      },
+      {
+        "exit": 15.530279,
+        "first_request": 9.426658
+      },
+      {
+        "exit": 14.144761,
+        "first_request": 8.075335
+      },
+      {
+        "exit": 28.681911,
+        "first_request": 9.430997
+      },
+      {
+        "exit": 12.27393,
+        "first_request": 7.685613
+      },
+      {
+        "exit": 16.662736,
+        "first_request": 6.609435
+      },
+      {
+        "exit": 14.854173,
+        "first_request": 8.904725
+      },
+      {
+        "exit": 16.294975,
+        "first_request": 8.893133
+      },
+      {
+        "exit": 13.055729,
+        "first_request": 7.660596
+      },
+      {
+        "exit": 15.714411,
+        "first_request": 8.566441
+      },
+      {
+        "exit": 14.057886,
+        "first_request": 8.014801
+      },
+      {
+        "exit": 15.591656,
+        "first_request": 9.906943
+      },
+      {
+        "exit": 13.573113,
+        "first_request": 9.157976
+      },
+      {
+        "exit": 15.498488,
+        "first_request": 7.684981
+      },
+      {
+        "exit": 15.091955,
+        "first_request": 6.145943
+      },
+      {
+        "exit": 17.491583,
+        "first_request": 9.506069
+      },
+      {
+        "exit": 13.340851,
+        "first_request": 6.308912
+      },
+      {
+        "exit": 17.435798,
+        "first_request": 8.743829
+      },
+      {
+        "exit": 13.810967,
+        "first_request": 6.341134
+      },
+      {
+        "exit": 17.264812,
+        "first_request": 8.215553
+      },
+      {
+        "exit": 13.990288,
+        "first_request": 5.916575
+      },
+      {
+        "exit": 15.392558,
+        "first_request": 8.123978
+      },
+      {
+        "exit": 12.304748,
+        "first_request": 7.551197
+      },
+      {
+        "exit": 14.785231,
+        "first_request": 7.27474
+      },
+      {
+        "exit": 12.985744,
+        "first_request": 6.967015
+      },
+      {
+        "exit": 15.469503,
+        "first_request": 7.14288
+      },
+      {
+        "exit": 14.798386,
+        "first_request": 6.356072
+      },
+      {
+        "exit": 15.386415,
+        "first_request": 7.001299
+      },
+      {
+        "exit": 11.05017,
+        "first_request": 6.415685
+      },
+      {
+        "exit": 16.809286,
+        "first_request": 8.317827
+      },
+      {
+        "exit": 13.460039,
+        "first_request": 6.137427
+      },
+      {
+        "exit": 14.93645,
+        "first_request": 8.044998
+      },
+      {
+        "exit": 13.001374,
+        "first_request": 7.860235
+      },
+      {
+        "exit": 15.573362,
+        "first_request": 8.014339
+      },
+      {
+        "exit": 12.32126,
+        "first_request": 7.04268
+      },
+      {
+        "exit": 14.288586,
+        "first_request": 6.436676
+      },
+      {
+        "exit": 12.036769,
+        "first_request": 6.657436
+      },
+      {
+        "exit": 15.43049,
+        "first_request": 8.41879
+      },
+      {
+        "exit": 14.142498,
+        "first_request": 8.121434
+      },
+      {
+        "exit": 16.259859,
+        "first_request": 9.772638
+      },
+      {
+        "exit": 12.587416,
+        "first_request": 7.957261
+      },
+      {
+        "exit": 13.684045,
+        "first_request": 6.475139
+      },
+      {
+        "exit": 14.456185,
+        "first_request": 7.683991
+      },
+      {
+        "exit": 14.891494,
+        "first_request": 6.303482
+      },
+      {
+        "exit": 11.604374,
+        "first_request": 6.782623
+      },
+      {
+        "exit": 14.477625,
+        "first_request": 7.436839
+      },
+      {
+        "exit": 12.438602,
+        "first_request": 7.575915
+      },
+      {
+        "exit": 14.761195,
+        "first_request": 7.960186
+      },
+      {
+        "exit": 11.742348,
+        "first_request": 5.192517
+      },
+      {
+        "exit": 25.00557,
+        "first_request": 8.026913
+      },
+      {
+        "exit": 29.509426,
+        "first_request": 9.781754
+      },
+      {
+        "exit": 17.586405,
+        "first_request": 10.084051
+      },
+      {
+        "exit": 15.076957,
+        "first_request": 5.489863
+      },
+      {
+        "exit": 13.31897,
+        "first_request": 7.165794
+      },
+      {
+        "exit": 15.083229,
+        "first_request": 8.464537
+      },
+      {
+        "exit": 19.210157,
+        "first_request": 9.104245
+      },
+      {
+        "exit": 16.634923,
+        "first_request": 11.839773
+      },
+      {
+        "exit": 15.131901,
+        "first_request": 7.608546
+      },
+      {
+        "exit": 18.454978,
+        "first_request": 5.280865
+      },
+      {
+        "exit": 19.091019,
+        "first_request": 9.919686
+      },
+      {
+        "exit": 14.477977,
+        "first_request": 9.540225
+      },
+      {
+        "exit": 15.451198,
+        "first_request": 7.490921
+      },
+      {
+        "exit": 15.979063,
+        "first_request": 5.051588
+      },
+      {
+        "exit": 14.815579,
+        "first_request": 7.477778
+      },
+      {
+        "exit": 12.756248,
+        "first_request": 7.666287
+      },
+      {
+        "exit": 15.024196,
+        "first_request": 8.005121
+      },
+      {
+        "exit": 12.218142,
+        "first_request": 7.024253
+      },
+      {
+        "exit": 14.917803,
+        "first_request": 9.169629
+      },
+      {
+        "exit": 14.757508,
+        "first_request": 6.122488
+      },
+      {
+        "exit": 17.346038,
+        "first_request": 7.568861
+      },
+      {
+        "exit": 14.598044,
+        "first_request": 9.29611
+      },
+      {
+        "exit": 15.679594,
+        "first_request": 7.654163
+      },
+      {
+        "exit": 11.142606,
+        "first_request": 6.878066
+      },
+      {
+        "exit": 15.856339,
+        "first_request": 8.434849
+      },
+      {
+        "exit": 12.449795,
+        "first_request": 7.470355
+      },
+      {
+        "exit": 16.19209,
+        "first_request": 8.860981
+      },
+      {
+        "exit": 15.213868,
+        "first_request": 7.255384
+      },
+      {
+        "exit": 13.197278,
+        "first_request": 6.83284
+      },
+      {
+        "exit": 13.439479,
+        "first_request": 7.916293
+      },
+      {
+        "exit": 16.403302,
+        "first_request": 8.715995
+      },
+      {
+        "exit": 21.363506,
+        "first_request": 8.596046
+      },
+      {
+        "exit": 18.504953,
+        "first_request": 9.419534
+      },
+      {
+        "exit": 11.939473,
+        "first_request": 7.435488
+      },
+      {
+        "exit": 14.076021,
+        "first_request": 7.847652
+      },
+      {
+        "exit": 13.800627,
+        "first_request": 9.060562
+      },
+      {
+        "exit": 16.752277,
+        "first_request": 6.593945
+      },
+      {
+        "exit": 13.333037,
+        "first_request": 8.599474
+      },
+      {
+        "exit": 26.880832,
+        "first_request": 8.988465
+      },
+      {
+        "exit": 14.964903,
+        "first_request": 8.888343
+      },
+      {
+        "exit": 12.481505,
+        "first_request": 7.256997
+      },
+      {
+        "exit": 19.593426,
+        "first_request": 9.311019
+      },
+      {
+        "exit": 15.385785,
+        "first_request": 6.910058
+      },
+      {
+        "exit": 15.19915,
+        "first_request": 6.334622
+      },
+      {
+        "exit": 16.787004,
+        "first_request": 11.256974
+      },
+      {
+        "exit": 14.980412,
+        "first_request": 7.803027
+      },
+      {
+        "exit": 19.031967,
+        "first_request": 9.265883
+      },
+      {
+        "exit": 22.299689,
+        "first_request": 8.989427
+      },
+      {
+        "exit": 15.670757,
+        "first_request": 7.943996
+      },
+      {
+        "exit": 14.671654,
+        "first_request": 7.045314
+      },
+      {
+        "exit": 16.037646,
+        "first_request": 8.953618
+      },
+      {
+        "exit": 11.041102,
+        "first_request": 6.586862
+      },
+      {
+        "exit": 14.467356,
+        "first_request": 6.805607
+      },
+      {
+        "exit": 12.695793,
+        "first_request": 7.834747
+      },
+      {
+        "exit": 15.66717,
+        "first_request": 8.086927
+      },
+      {
+        "exit": 14.353519,
+        "first_request": 7.282846
+      },
+      {
+        "exit": 15.337734,
+        "first_request": 8.202258
+      },
+      {
+        "exit": 12.013263,
+        "first_request": 7.068208
+      },
+      {
+        "exit": 17.149293,
+        "first_request": 11.715297
+      },
+      {
+        "exit": 13.426625,
+        "first_request": 8.649048
+      },
+      {
+        "exit": 14.864853,
+        "first_request": 7.246577
+      },
+      {
+        "exit": 11.950624,
+        "first_request": 7.911844
+      },
+      {
+        "exit": 35.303758,
+        "first_request": 8.139377
+      },
+      {
+        "exit": 15.980987,
+        "first_request": 7.045084
+      },
+      {
+        "exit": 15.603198,
+        "first_request": 9.806101
+      },
+      {
+        "exit": 12.920471,
+        "first_request": 5.82473
+      },
+      {
+        "exit": 17.93055,
+        "first_request": 10.139646
+      }
+    ],
+    "current": [
+      {
+        "exit": 6.862286,
+        "first_request": 3.116965
+      },
+      {
+        "exit": 6.548448,
+        "first_request": 2.931211
+      },
+      {
+        "exit": 7.039563,
+        "first_request": 3.044617
+      },
+      {
+        "exit": 6.367604,
+        "first_request": 2.780143
+      },
+      {
+        "exit": 7.353151,
+        "first_request": 3.008368
+      },
+      {
+        "exit": 7.141688,
+        "first_request": 2.833376
+      },
+      {
+        "exit": 8.697551,
+        "first_request": 3.646293
+      },
+      {
+        "exit": 6.598813,
+        "first_request": 3.007556
+      },
+      {
+        "exit": 6.892342,
+        "first_request": 2.994581
+      },
+      {
+        "exit": 8.119169,
+        "first_request": 2.966487
+      },
+      {
+        "exit": 7.183298,
+        "first_request": 3.034668
+      },
+      {
+        "exit": 6.251392,
+        "first_request": 2.885884
+      },
+      {
+        "exit": 7.523716,
+        "first_request": 3.141171
+      },
+      {
+        "exit": 8.702288,
+        "first_request": 3.053924
+      },
+      {
+        "exit": 9.246966,
+        "first_request": 3.201877
+      },
+      {
+        "exit": 6.793675,
+        "first_request": 3.050749
+      },
+      {
+        "exit": 7.619668,
+        "first_request": 3.115983
+      },
+      {
+        "exit": 7.854596,
+        "first_request": 2.894231
+      },
+      {
+        "exit": 7.071704,
+        "first_request": 3.006324
+      },
+      {
+        "exit": 6.569008,
+        "first_request": 2.927615
+      },
+      {
+        "exit": 6.558888,
+        "first_request": 3.083531
+      },
+      {
+        "exit": 7.605711,
+        "first_request": 3.893102
+      },
+      {
+        "exit": 7.991736,
+        "first_request": 3.208559
+      },
+      {
+        "exit": 6.867365,
+        "first_request": 3.034428
+      },
+      {
+        "exit": 7.919368,
+        "first_request": 3.25633
+      },
+      {
+        "exit": 10.723258,
+        "first_request": 2.916723
+      },
+      {
+        "exit": 7.554795,
+        "first_request": 3.02555
+      },
+      {
+        "exit": 6.494345,
+        "first_request": 2.799851
+      },
+      {
+        "exit": 6.685088,
+        "first_request": 3.092368
+      },
+      {
+        "exit": 6.698385,
+        "first_request": 2.754415
+      },
+      {
+        "exit": 6.823211,
+        "first_request": 3.02543
+      },
+      {
+        "exit": 6.940434,
+        "first_request": 2.938825
+      },
+      {
+        "exit": 7.24828,
+        "first_request": 3.020781
+      },
+      {
+        "exit": 6.741365,
+        "first_request": 2.900844
+      },
+      {
+        "exit": 7.563451,
+        "first_request": 3.079002
+      },
+      {
+        "exit": 8.076698,
+        "first_request": 2.990604
+      },
+      {
+        "exit": 9.424575,
+        "first_request": 3.042223
+      },
+      {
+        "exit": 8.746554,
+        "first_request": 3.670168
+      },
+      {
+        "exit": 8.405905,
+        "first_request": 3.124068
+      },
+      {
+        "exit": 8.016142,
+        "first_request": 2.922254
+      },
+      {
+        "exit": 7.784292,
+        "first_request": 3.181638
+      },
+      {
+        "exit": 10.054133,
+        "first_request": 3.07295
+      },
+      {
+        "exit": 7.610661,
+        "first_request": 3.06695
+      },
+      {
+        "exit": 14.779221,
+        "first_request": 3.107006
+      },
+      {
+        "exit": 7.383168,
+        "first_request": 2.85703
+      },
+      {
+        "exit": 7.115689,
+        "first_request": 2.774012
+      },
+      {
+        "exit": 6.89048,
+        "first_request": 3.006154
+      },
+      {
+        "exit": 9.534564,
+        "first_request": 3.134518
+      },
+      {
+        "exit": 7.777448,
+        "first_request": 3.002517
+      },
+      {
+        "exit": 14.42697,
+        "first_request": 2.96199
+      },
+      {
+        "exit": 7.66291,
+        "first_request": 3.104751
+      },
+      {
+        "exit": 9.409566,
+        "first_request": 3.596458
+      },
+      {
+        "exit": 6.988285,
+        "first_request": 3.020792
+      },
+      {
+        "exit": 9.760574,
+        "first_request": 4.493155
+      },
+      {
+        "exit": 7.182636,
+        "first_request": 2.952001
+      },
+      {
+        "exit": 7.98239,
+        "first_request": 3.716277
+      },
+      {
+        "exit": 9.641928,
+        "first_request": 3.916287
+      },
+      {
+        "exit": 7.000659,
+        "first_request": 2.806654
+      },
+      {
+        "exit": 6.790058,
+        "first_request": 3.165497
+      },
+      {
+        "exit": 8.602199,
+        "first_request": 2.924368
+      },
+      {
+        "exit": 7.627092,
+        "first_request": 2.962129
+      },
+      {
+        "exit": 9.118511,
+        "first_request": 3.242753
+      },
+      {
+        "exit": 9.750706,
+        "first_request": 3.574847
+      },
+      {
+        "exit": 7.729207,
+        "first_request": 2.903959
+      },
+      {
+        "exit": 7.585423,
+        "first_request": 3.075035
+      },
+      {
+        "exit": 9.598686,
+        "first_request": 3.436112
+      },
+      {
+        "exit": 11.536026,
+        "first_request": 2.95103
+      },
+      {
+        "exit": 14.100226,
+        "first_request": 3.249897
+      },
+      {
+        "exit": 28.709954,
+        "first_request": 5.236491
+      },
+      {
+        "exit": 16.325434,
+        "first_request": 4.01261
+      },
+      {
+        "exit": 7.929067,
+        "first_request": 3.606577
+      },
+      {
+        "exit": 7.568721,
+        "first_request": 3.191227
+      },
+      {
+        "exit": 7.990324,
+        "first_request": 3.242875
+      },
+      {
+        "exit": 7.479892,
+        "first_request": 2.907937
+      },
+      {
+        "exit": 10.124627,
+        "first_request": 3.149116
+      },
+      {
+        "exit": 7.28472,
+        "first_request": 2.935167
+      },
+      {
+        "exit": 8.582782,
+        "first_request": 3.108278
+      },
+      {
+        "exit": 8.388902,
+        "first_request": 3.073993
+      },
+      {
+        "exit": 7.852641,
+        "first_request": 3.2199
+      },
+      {
+        "exit": 7.151186,
+        "first_request": 2.974935
+      },
+      {
+        "exit": 7.400861,
+        "first_request": 3.187629
+      },
+      {
+        "exit": 7.50022,
+        "first_request": 3.076849
+      },
+      {
+        "exit": 8.593172,
+        "first_request": 3.123699
+      },
+      {
+        "exit": 8.340791,
+        "first_request": 3.306366
+      },
+      {
+        "exit": 7.713988,
+        "first_request": 3.228106
+      },
+      {
+        "exit": 8.597089,
+        "first_request": 3.025019
+      },
+      {
+        "exit": 7.635338,
+        "first_request": 3.019379
+      },
+      {
+        "exit": 7.669733,
+        "first_request": 3.561169
+      },
+      {
+        "exit": 7.420308,
+        "first_request": 3.165036
+      },
+      {
+        "exit": 7.140526,
+        "first_request": 3.021663
+      },
+      {
+        "exit": 8.381969,
+        "first_request": 3.253865
+      },
+      {
+        "exit": 6.842598,
+        "first_request": 3.154005
+      },
+      {
+        "exit": 8.451381,
+        "first_request": 3.337735
+      },
+      {
+        "exit": 7.80995,
+        "first_request": 3.150399
+      },
+      {
+        "exit": 7.491454,
+        "first_request": 3.110453
+      },
+      {
+        "exit": 10.967903,
+        "first_request": 3.140319
+      },
+      {
+        "exit": 6.758839,
+        "first_request": 3.155788
+      },
+      {
+        "exit": 7.836371,
+        "first_request": 3.260899
+      },
+      {
+        "exit": 7.416812,
+        "first_request": 3.222015
+      },
+      {
+        "exit": 16.531277,
+        "first_request": 3.78665
+      },
+      {
+        "exit": 8.014981,
+        "first_request": 3.168764
+      },
+      {
+        "exit": 10.684264,
+        "first_request": 2.911073
+      },
+      {
+        "exit": 7.638844,
+        "first_request": 3.424811
+      },
+      {
+        "exit": 6.68066,
+        "first_request": 3.033947
+      },
+      {
+        "exit": 7.133712,
+        "first_request": 3.106624
+      },
+      {
+        "exit": 7.067487,
+        "first_request": 2.87292
+      },
+      {
+        "exit": 7.744456,
+        "first_request": 3.049106
+      },
+      {
+        "exit": 7.015518,
+        "first_request": 3.287629
+      },
+      {
+        "exit": 7.202954,
+        "first_request": 3.280006
+      },
+      {
+        "exit": 6.507561,
+        "first_request": 2.960207
+      },
+      {
+        "exit": 7.543153,
+        "first_request": 3.034869
+      },
+      {
+        "exit": 7.385171,
+        "first_request": 3.011965
+      },
+      {
+        "exit": 7.003515,
+        "first_request": 3.304522
+      },
+      {
+        "exit": 6.781974,
+        "first_request": 2.974384
+      },
+      {
+        "exit": 6.85922,
+        "first_request": 3.156951
+      },
+      {
+        "exit": 11.677545,
+        "first_request": 3.217446
+      },
+      {
+        "exit": 13.278553,
+        "first_request": 3.05667
+      },
+      {
+        "exit": 8.419572,
+        "first_request": 3.107427
+      },
+      {
+        "exit": 10.949578,
+        "first_request": 4.174377
+      },
+      {
+        "exit": 8.362983,
+        "first_request": 2.88317
+      },
+      {
+        "exit": 7.209877,
+        "first_request": 3.001224
+      },
+      {
+        "exit": 9.868149,
+        "first_request": 3.00981
+      },
+      {
+        "exit": 7.517865,
+        "first_request": 3.059045
+      },
+      {
+        "exit": 7.644275,
+        "first_request": 3.273623
+      },
+      {
+        "exit": 7.194868,
+        "first_request": 2.955256
+      },
+      {
+        "exit": 8.398451,
+        "first_request": 2.859223
+      },
+      {
+        "exit": 6.480178,
+        "first_request": 2.990183
+      },
+      {
+        "exit": 6.781541,
+        "first_request": 2.807676
+      },
+      {
+        "exit": 7.440056,
+        "first_request": 2.89905
+      },
+      {
+        "exit": 6.814835,
+        "first_request": 2.864033
+      },
+      {
+        "exit": 6.793054,
+        "first_request": 2.933325
+      },
+      {
+        "exit": 7.046085,
+        "first_request": 3.009038
+      },
+      {
+        "exit": 15.727375,
+        "first_request": 4.420927
+      },
+      {
+        "exit": 10.596968,
+        "first_request": 3.197209
+      },
+      {
+        "exit": 8.360128,
+        "first_request": 3.488943
+      },
+      {
+        "exit": 12.267357,
+        "first_request": 3.83419
+      },
+      {
+        "exit": 7.972681,
+        "first_request": 3.801098
+      },
+      {
+        "exit": 7.11147,
+        "first_request": 2.808448
+      },
+      {
+        "exit": 7.687387,
+        "first_request": 2.995233
+      },
+      {
+        "exit": 7.47395,
+        "first_request": 2.996084
+      },
+      {
+        "exit": 6.792694,
+        "first_request": 3.045049
+      },
+      {
+        "exit": 7.178178,
+        "first_request": 3.14029
+      },
+      {
+        "exit": 6.948461,
+        "first_request": 2.951811
+      },
+      {
+        "exit": 6.802442,
+        "first_request": 3.033346
+      },
+      {
+        "exit": 18.090684,
+        "first_request": 2.828074
+      },
+      {
+        "exit": 7.349183,
+        "first_request": 2.873602
+      },
+      {
+        "exit": 7.254151,
+        "first_request": 2.923776
+      },
+      {
+        "exit": 6.808634,
+        "first_request": 2.783509
+      },
+      {
+        "exit": 7.881827,
+        "first_request": 2.909971
+      },
+      {
+        "exit": 9.853953,
+        "first_request": 2.83623
+      },
+      {
+        "exit": 6.877275,
+        "first_request": 2.897577
+      },
+      {
+        "exit": 7.122752,
+        "first_request": 2.830149
+      },
+      {
+        "exit": 7.995974,
+        "first_request": 2.980275
+      },
+      {
+        "exit": 9.244992,
+        "first_request": 2.921102
+      },
+      {
+        "exit": 12.414277,
+        "first_request": 3.436093
+      },
+      {
+        "exit": 8.920686,
+        "first_request": 3.158044
+      },
+      {
+        "exit": 6.794065,
+        "first_request": 2.87855
+      },
+      {
+        "exit": 7.349193,
+        "first_request": 3.172781
+      },
+      {
+        "exit": 6.801851,
+        "first_request": 2.892959
+      },
+      {
+        "exit": 6.743119,
+        "first_request": 2.892487
+      },
+      {
+        "exit": 7.464853,
+        "first_request": 3.717448
+      },
+      {
+        "exit": 8.624702,
+        "first_request": 2.999792
+      },
+      {
+        "exit": 7.551558,
+        "first_request": 2.999651
+      },
+      {
+        "exit": 8.805366,
+        "first_request": 2.940729
+      },
+      {
+        "exit": 14.544302,
+        "first_request": 3.126582
+      },
+      {
+        "exit": 8.089372,
+        "first_request": 3.151611
+      },
+      {
+        "exit": 9.028961,
+        "first_request": 3.343345
+      },
+      {
+        "exit": 9.465211,
+        "first_request": 3.745191
+      },
+      {
+        "exit": 9.591943,
+        "first_request": 3.578663
+      },
+      {
+        "exit": 7.039292,
+        "first_request": 3.186477
+      },
+      {
+        "exit": 7.146849,
+        "first_request": 3.17202
+      },
+      {
+        "exit": 7.404859,
+        "first_request": 3.251171
+      },
+      {
+        "exit": 9.245925,
+        "first_request": 3.395745
+      },
+      {
+        "exit": 10.584994,
+        "first_request": 3.381038
+      },
+      {
+        "exit": 8.115843,
+        "first_request": 3.422918
+      },
+      {
+        "exit": 8.941514,
+        "first_request": 3.120691
+      },
+      {
+        "exit": 8.078431,
+        "first_request": 3.191677
+      },
+      {
+        "exit": 10.55147,
+        "first_request": 3.331243
+      },
+      {
+        "exit": 8.068382,
+        "first_request": 3.883495
+      },
+      {
+        "exit": 8.080475,
+        "first_request": 2.898289
+      },
+      {
+        "exit": 12.250254,
+        "first_request": 4.467336
+      },
+      {
+        "exit": 9.519064,
+        "first_request": 3.731334
+      },
+      {
+        "exit": 7.335557,
+        "first_request": 3.086667
+      },
+      {
+        "exit": 6.821608,
+        "first_request": 2.781356
+      },
+      {
+        "exit": 7.573761,
+        "first_request": 3.118708
+      },
+      {
+        "exit": 10.079912,
+        "first_request": 3.07795
+      },
+      {
+        "exit": 8.790437,
+        "first_request": 4.015145
+      },
+      {
+        "exit": 7.07967,
+        "first_request": 3.062972
+      },
+      {
+        "exit": 9.68452,
+        "first_request": 4.067655
+      },
+      {
+        "exit": 7.3528,
+        "first_request": 3.164185
+      },
+      {
+        "exit": 8.157211,
+        "first_request": 3.17266
+      },
+      {
+        "exit": 8.678414,
+        "first_request": 3.607609
+      },
+      {
+        "exit": 7.908388,
+        "first_request": 3.590947
+      },
+      {
+        "exit": 7.139804,
+        "first_request": 3.290805
+      },
+      {
+        "exit": 7.459242,
+        "first_request": 3.281277
+      },
+      {
+        "exit": 18.686228,
+        "first_request": 4.370751
+      },
+      {
+        "exit": 7.376474,
+        "first_request": 3.159465
+      },
+      {
+        "exit": 11.377131,
+        "first_request": 3.595615
+      },
+      {
+        "exit": 9.767307,
+        "first_request": 5.257931
+      },
+      {
+        "exit": 10.327424,
+        "first_request": 4.057716
+      }
+    ]
+  },
+  "passed": true,
+  "gate_failures": [],
+  "publication_note": "Machine aliases and personal/temporary absolute paths redacted; numeric samples and measured binary hashes retained. Harness/source hashes identify measurement-time versions."
+}

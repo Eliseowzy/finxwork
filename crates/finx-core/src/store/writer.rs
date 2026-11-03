@@ -234,20 +234,32 @@ async fn run(sink: impl LineSink, mut rx: mpsc::UnboundedReceiver<WriterCmd>) {
     let mut state = WriterState::new(sink);
     let mut batch = Vec::new();
     while rx.recv_many(&mut batch, 256).await > 0 {
-        let cmds = std::mem::take(&mut batch);
-        state = match tokio::task::spawn_blocking(move || {
-            for cmd in cmds {
+        // Starting a session only holds entries until Settle. Those commands do no
+        // serialization or I/O, so they need neither a blocking worker nor a handoff.
+        if state.held.is_some() {
+            let mut settled = state.settled;
+            let held = batch.iter().take_while(|cmd| match cmd {
+                WriterCmd::Append(_) => !settled,
+                WriterCmd::Settle => { settled = true; true }
+                WriterCmd::Sync(_) => false,
+            }).count();
+            for cmd in batch.drain(..held) { state.apply(cmd); }
+            if batch.is_empty() { continue; }
+        }
+        let mut cmds = std::mem::take(&mut batch);
+        let result = tokio::task::spawn_blocking(move || {
+            for cmd in cmds.drain(..) {
                 state.apply(cmd);
             }
             state.end_batch();
-            state
-        })
-        .await
-        {
-            Ok(state) => state,
+            // Reuse the channel-drain allocation across batches.
+            (state, cmds)
+        }).await;
+        match result {
+            Ok((next, capacity)) => { state = next; batch = capacity; }
             // The runtime is shutting down; the sink is closed with the task.
             Err(_) => return,
-        };
+        }
     }
     let _ = tokio::task::spawn_blocking(move || state.close()).await;
 }

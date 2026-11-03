@@ -44,5 +44,8 @@ finx-mock.workspace = true
 png.workspace = true
 tempfile.workspace = true
 
+[build-dependencies]
+ring.workspace = true
+
 [lints]
 workspace = true

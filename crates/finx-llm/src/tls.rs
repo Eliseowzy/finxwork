@@ -20,17 +20,15 @@ pub fn client_config() -> Result<rustls::ClientConfig, rustls::Error> {
     let provider = Arc::new(rustls::crypto::ring::default_provider());
     let verifier = Arc::new(LazyVerifier {
         provider: provider.clone(),
-        platform: OnceLock::new(),
+        platform: Arc::new(OnceLock::new()),
+        #[cfg(not(target_vendor = "apple"))]
+        warmup: std::sync::Once::new(),
     });
-    // This runs when the first request starts. Outside Apple platforms, load the trust store
-    // while DNS and the TCP handshake are in flight instead of inside the TLS handshake.
-    if cfg!(not(target_vendor = "apple")) {
-        let verifier = verifier.clone();
-        std::thread::spawn(move || {
-            let _ = verifier.platform();
-        });
-    }
-    let mut config = rustls::ClientConfig::builder_with_provider(provider)
+    config_with(verifier)
+}
+
+fn config_with(verifier: Arc<LazyVerifier>) -> Result<rustls::ClientConfig, rustls::Error> {
+    let mut config = rustls::ClientConfig::builder_with_provider(verifier.provider.clone())
         .with_safe_default_protocol_versions()?
         .dangerous()
         .with_custom_certificate_verifier(verifier)
@@ -45,7 +43,9 @@ pub fn client_config() -> Result<rustls::ClientConfig, rustls::Error> {
 #[derive(Debug)]
 struct LazyVerifier {
     provider: Arc<CryptoProvider>,
-    platform: OnceLock<Result<rustls_platform_verifier::Verifier, rustls::Error>>,
+    platform: Arc<OnceLock<Result<rustls_platform_verifier::Verifier, rustls::Error>>>,
+    #[cfg(not(target_vendor = "apple"))]
+    warmup: std::sync::Once,
 }
 
 impl LazyVerifier {
@@ -89,6 +89,72 @@ impl ServerCertVerifier for LazyVerifier {
     }
 
     fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        // Rustls asks for these while constructing ClientHello. Start loading system roots
+        // only once a TLS handshake actually begins: plain HTTP must not spawn a thread or
+        // parse the certificate store. HTTPS still overlaps that work with the handshake.
+        #[cfg(not(target_vendor = "apple"))]
+        self.warmup.call_once(|| {
+            let (platform, provider) = (self.platform.clone(), self.provider.clone());
+            std::thread::spawn(move || {
+                let _ = platform.get_or_init(|| rustls_platform_verifier::Verifier::new(provider));
+            });
+        });
         self.provider.signature_verification_algorithms.supported_schemes()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn verifier() -> Arc<LazyVerifier> {
+        Arc::new(LazyVerifier {
+            provider: Arc::new(rustls::crypto::ring::default_provider()),
+            platform: Arc::new(OnceLock::new()),
+            #[cfg(not(target_vendor = "apple"))]
+            warmup: std::sync::Once::new(),
+        })
+    }
+
+    #[tokio::test]
+    async fn plain_http_never_initializes_the_trust_store() {
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let verifier = verifier();
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .use_preconfigured_tls(config_with(verifier.clone()).unwrap())
+            .build()
+            .unwrap();
+        assert!(client.get(server.uri()).send().await.unwrap().status().is_success());
+        assert!(verifier.platform.get().is_none());
+        #[cfg(not(target_vendor = "apple"))]
+        assert!(!verifier.warmup.is_completed());
+    }
+
+    #[test]
+    fn certificate_verification_is_still_required_without_warmup() {
+        let verifier = verifier();
+        assert!(verifier.verify_server_cert(
+            &CertificateDer::from(vec![0, 1, 2]),
+            &[],
+            &ServerName::try_from("localhost").unwrap(),
+            &[],
+            UnixTime::now(),
+        ).is_err());
+        assert!(verifier.platform.get().is_some());
+    }
+
+    #[test]
+    fn handshake_starts_warmup_and_preserves_signature_schemes() {
+        let verifier = verifier();
+        let expected = verifier.provider.signature_verification_algorithms.supported_schemes();
+        assert_eq!(verifier.supported_verify_schemes(), expected);
+        assert_eq!(verifier.supported_verify_schemes(), expected);
+        #[cfg(not(target_vendor = "apple"))]
+        assert!(verifier.warmup.is_completed());
     }
 }

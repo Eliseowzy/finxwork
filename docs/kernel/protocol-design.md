@@ -253,6 +253,7 @@ pub struct SessionMirror {
 1. 客户端先应用快照，再按顺序应用之后的事件。
 2. 更早的记录用 `session/history` 分页读取。中枢从镜像中提供，与快照保持一致。
 3. **seq 的作用域是会话的一次加载**。会话被卸载后再恢复，seq 重新从 1 开始，session_started 标志新的一次加载。客户端重新接入时一律以新快照为准。
+   `compaction_completed` 的压缩计数使用 `compaction_seq`；顶层 `seq` 始终是事件流水号，不能被压缩计数覆盖。
 
 ### 3.5 连接
 

@@ -11,6 +11,8 @@ name = "finx-load"
 path = "src/main.rs"
 
 [dependencies]
+anyhow.workspace = true
+serde.workspace = true
 clap.workspace = true
 finx-mock.workspace = true
 finx-rpc.workspace = true
@@ -22,3 +24,7 @@ tokio = { workspace = true, features = ["net"] }
 
 [lints]
 workspace = true
+
+[[bin]]
+name = "finx-sim"
+path = "src/simulation.rs"

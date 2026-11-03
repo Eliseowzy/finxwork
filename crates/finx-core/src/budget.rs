@@ -395,7 +395,7 @@ impl Session {
             let state = self.state.lock();
             (state.system_prompt.clone(), state.base_prompt.clone(), state.mcp_section.clone())
         };
-        let fixed = Fixed::of(&system, &base, mcp.as_deref(), &self.tools().specs());
+        let fixed = Fixed::of(&system, &base, mcp.as_deref(), self.tools().iter_specs());
         *self.fixed_tokens.lock() = Some(fixed);
         fixed
     }

@@ -78,7 +78,8 @@ impl Workspace {
             source,
         })?;
         // A session without a project has its own folder, whatever lies around it.
-        let project_root = if home.is_chat_dir(&cwd) {
+        let is_chat = home.is_chat_dir(&cwd);
+        let project_root = if is_chat {
             None
         } else {
             instructions::find_project_root(&cwd, &[".git".to_string()])
@@ -86,7 +87,7 @@ impl Workspace {
         let project_dir = project_root.clone().unwrap_or_else(|| cwd.clone());
         let trusted = instructions::is_trusted(home, &project_dir);
         let project_config = project_dir.join(".finx").join("config.toml");
-        let user_project_file = (!home.is_chat_dir(&cwd)).then(|| home.user_project_config(&project_dir));
+        let user_project_file = (!is_chat).then(|| home.user_project_config(&project_dir));
         let files = config::LayerFiles {
             user: &home.config_file(),
             project: Some(&project_config),

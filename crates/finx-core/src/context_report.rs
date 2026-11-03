@@ -41,7 +41,7 @@ pub(crate) struct Fixed {
 
 impl Fixed {
     /// `system_prompt` is what is sent: `base_prompt`, then `mcp_section`.
-    pub(crate) fn of(system_prompt: &str, base_prompt: &str, mcp_section: Option<&str>, tools: &[ToolSpec]) -> Fixed {
+    pub(crate) fn of<'a>(system_prompt: &str, base_prompt: &str, mcp_section: Option<&str>, tools: impl IntoIterator<Item = &'a ToolSpec>) -> Fixed {
         let catalog = context::estimate_text(skills::catalog_in(base_prompt));
         let mcp_prompt = mcp_section.map_or(0, context::estimate_text);
         let mut fixed = Fixed {

@@ -768,7 +768,7 @@ impl crate::session::Session {
             (Some(late), Some(mcp)) => Some(format!("{late}\n\n{mcp}")),
             (late, mcp) => late.or(mcp),
         };
-        let tools_changed = self.tools().specs() != tools.specs();
+        let tools_changed = !self.tools().iter_specs().eq(tools.iter_specs());
         let prompt_changed = {
             let mut state = self.state.lock();
             let changed = state.mcp_section != section;

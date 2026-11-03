@@ -20,6 +20,11 @@ use crate::types::Currency;
 
 pub const BUILTIN_CATALOG: &str = include_str!("../catalog/builtin.toml");
 
+fn builtin_file() -> Result<CatalogFile, CatalogError> {
+    serde_json::from_str(include_str!(concat!(env!("OUT_DIR"), "/builtin-catalog.json")))
+        .map_err(|error| CatalogError::Parse { origin: "builtin catalog".into(), message: error.to_string() })
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum CatalogError {
     #[error("failed to read {path}: {source}")]
@@ -38,14 +43,14 @@ pub enum CatalogError {
     },
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CatalogFile {
     #[serde(default)]
     pub providers: BTreeMap<String, ProviderToml>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum StringOrList {
     One(String),
@@ -61,7 +66,7 @@ impl StringOrList {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderToml {
     pub name: Option<String>,
@@ -264,12 +269,12 @@ pub struct Catalog {
 
 impl Catalog {
     pub fn builtin() -> Result<Self, CatalogError> {
-        resolve(parse(BUILTIN_CATALOG, "builtin catalog")?, "builtin catalog")
+        resolve(builtin_file()?, "builtin catalog")
     }
 
     /// Built-in catalog merged with `user_file` when it exists.
     pub fn load(user_file: Option<&Path>) -> Result<Self, CatalogError> {
-        let mut file = parse(BUILTIN_CATALOG, "builtin catalog")?;
+        let mut file = builtin_file()?;
         let mut origin = "builtin catalog".to_string();
         if let Some(path) = user_file
             && path.exists()
@@ -446,6 +451,7 @@ mod tests {
 
     #[test]
     fn builtin_catalog_parses() {
+        assert_eq!(builtin_file().unwrap(), parse(BUILTIN_CATALOG, "builtin catalog").unwrap());
         let catalog = Catalog::builtin().expect("builtin catalog");
         let deepseek = &catalog.providers["deepseek"];
         assert_eq!(deepseek.api, "openai-chat");
