@@ -35,6 +35,9 @@ fn config_with(verifier: Arc<LazyVerifier>) -> Result<rustls::ClientConfig, rust
         .with_no_client_auth();
     // A preconfigured TLS config gets no ALPN from reqwest; offer HTTP/2 like the default does.
     config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
+    // The default cache reserves room for 256 server names up front (14 KiB). finx resumes
+    // sessions with a model provider and a few MCP or catalog hosts.
+    config.resumption = rustls::client::Resumption::in_memory_sessions(32);
     Ok(config)
 }
 

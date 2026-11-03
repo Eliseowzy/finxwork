@@ -528,18 +528,26 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
 fn run_async(overrides: &[String], command: Command) -> anyhow::Result<u8> {
     // A foreground command is driven by the calling thread. Its asynchronous tools and
     // sub-agents still make progress together; filesystem work uses the blocking pool.
-    // Services retain a worker pool, sized to the CPUs actually available to this process.
+    // The service runs many clients' sessions on a worker per available CPU. Other commands,
+    // `finx acp` among them, serve one client: four workers are plenty, and each idle worker
+    // costs its stack and queues.
     let mut builder = match command {
         Command::Exec { .. } | Command::Resume { .. } | Command::Chat { .. } => {
             tokio::runtime::Builder::new_current_thread()
         }
         _ => {
-            let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(16));
+            let limit = if matches!(command, Command::Serve { .. }) { 16 } else { 4 };
+            let workers = std::thread::available_parallelism().map_or(4, |n| n.get().min(limit));
             let mut builder = tokio::runtime::Builder::new_multi_thread();
             builder.worker_threads(workers);
             builder
         }
     };
+    if !matches!(command, Command::Serve { .. }) {
+        // The I/O driver reserves this many events up front (48 bytes each on macOS). One
+        // client's sockets and pipes never have a thousand ready at once.
+        builder.max_io_events_per_tick(256);
+    }
     let runtime = builder
         // Blocking threads (file tools, log writes) go away soon after a burst.
         .thread_keep_alive(std::time::Duration::from_secs(3))
