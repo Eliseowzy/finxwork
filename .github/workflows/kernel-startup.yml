@@ -2,6 +2,15 @@ name: Kernel startup
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.*'
+      - 'rust-toolchain.toml'
+      - 'tools/bench/**'
+      - 'tools/kernel-simulation.sh'
+      - '.github/workflows/kernel-startup.yml'
   pull_request:
     paths:
       - 'crates/**'
