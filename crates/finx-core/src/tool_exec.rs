@@ -257,8 +257,9 @@ async fn judge(
     }
     let turn = task.turn();
     let asking = tokio::select! {
-        asking = session.approval_line.clone().lock_owned() => asking,
+        biased;
         _ = turn.cancelled() => return None,
+        asking = session.approval_line.clone().lock_owned() => asking,
     };
     session.follow_main();
     let verdict = gate(session, call, tool, authorities).await;

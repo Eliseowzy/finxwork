@@ -53,6 +53,7 @@ function place() {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxq-"));
   const home = path.join(work, "finx");
   fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(path.join(work, "home"), { recursive: true });
   fs.writeFileSync(
     path.join(home, "models.toml"),
     `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
@@ -89,7 +90,7 @@ let app = null;
 async function launch(home, profile) {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(home, "../home"), FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

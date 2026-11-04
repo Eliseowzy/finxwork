@@ -90,6 +90,7 @@ const profile = path.join(work, "profile");
 const menus = path.join(work, "menus");
 fs.mkdirSync(menus);
 fs.mkdirSync(home, { recursive: true });
+fs.mkdirSync(path.join(work, "home"), { recursive: true });
 fs.writeFileSync(
   path.join(home, "models.toml"),
   `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\ncompat = { thinking_format = "openai" }\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n\n[[providers.mock.models]]\nid = "mock-2"\nname = "Mock Two"\nreasoning = true\nthinking = ["off", "high"]\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
@@ -124,7 +125,7 @@ let app = null;
 async function launch(home, profile) {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(packaged ?? electron, packaged ? [`--remote-debugging-port=${port}`] : [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus },
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -301,6 +302,7 @@ try {
   step("settings: a choice of avatar applies at once");
   await press(page, ".bhead");
   await page.until("its settings", `!!document.querySelector(".bpn-av")`);
+  await page.until("the panel slid in", `document.querySelector(".bpn").getAnimations().length === 0`);
   const hover = await page.run(`(() => { const r = document.querySelector(".bpn-av").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...hover });
   await page.until("the avatar says it can be changed", `Number(getComputedStyle(document.querySelector(".bpn-av-edit")).opacity) === 1`);

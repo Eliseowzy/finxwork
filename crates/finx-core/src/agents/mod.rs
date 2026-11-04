@@ -1,8 +1,8 @@
 //! Sub-agents: sessions that the main agent starts with `spawn_agent` and talks to with
 //! `send_message`. Each is an ordinary session with its own log, whose questions go to the main
-//! session's user, and it cannot start agents of its own. When one has nothing left to do, its report goes back to
-//! the main session: as the result of a call that waits for it, or as mail that joins the main
-//! session's history at its next turn boundary and wakes it when it is idle.
+//! session's user, and it cannot start agents of its own. When one has nothing left to do, its
+//! report goes back to the main session: as the result of a call that waits for it, or as mail
+//! that joins the main session's history at its next turn boundary and wakes it when it is idle.
 
 mod driver;
 mod mail;

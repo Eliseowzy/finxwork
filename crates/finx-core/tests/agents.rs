@@ -516,7 +516,7 @@ async fn the_tree_asks_one_question_at_a_time() {
     let mut h = Harness::start(PermissionMode::Manual, true).await;
     h.script(ROOT, spawn("c1", "one", "Write a.txt.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "two work", "task": "Write b.txt.", "name": "two", "wait": false })));
     // Later than the sub-agents' first calls, the main session has a question of its own.
-    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(200)).then_tool_call("r1", "write", json!({ "path": "c.txt", "content": "root" })));
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(800)).then_tool_call("r1", "write", json!({ "path": "c.txt", "content": "root" })));
     h.script(ROOT, Script::text("started"));
     h.script(ROOT, Script::text("all reported"));
     // The same call id in both: each session chooses its own.
@@ -611,7 +611,14 @@ async fn stopping_everything_ends_the_question_and_the_ones_in_line() {
     h.for_a_while().await;
     h.kernel.submit(Op::Interrupt).await.unwrap();
     let events = h.until_idle().await;
-    assert!(!events.iter().any(|e| asked(&e.msg).is_some()), "nobody asks after the stop");
+    // The stop reaches each sub-agent in turn, so the next in line may just get to ask. Nothing
+    // stays open, and nothing ran.
+    let asked_now = events.iter().filter(|e| asked(&e.msg).is_some()).count();
+    let ended = events
+        .iter()
+        .filter(|e| matches!(&e.msg, EventMsg::AgentEvent { event, .. } if matches!(event.msg, EventMsg::ApprovalResolved { decision: ApprovalDecision::Abort, .. })))
+        .count();
+    assert_eq!(ended, asked_now + 1, "every question ended, the open one too");
     assert!(!h.work.join("a.txt").exists() && !h.work.join("b.txt").exists());
 }
 

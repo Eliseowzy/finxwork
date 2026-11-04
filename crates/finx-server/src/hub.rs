@@ -350,15 +350,6 @@ impl Hub {
         if let Listing::Bot { id, bots } = &self.listing {
             bots.on_event(id, &event, &self.mirror);
         }
-        match &event.msg {
-            EventMsg::McpServerStatus { server, state, tools, error, .. } => {
-                self.shared.mcp.lock().insert(
-                    server.clone(),
-                    finx_protocol::McpServerInfo { server: server.clone(), state: *state, tools: *tools, error: error.clone() },
-                );
-            }
-            _ => {}
-        }
         // The session's approvals, and a sub-agent's as its `agent_event` carries them.
         let (agent, asked) = match &event.msg {
             EventMsg::AgentEvent { agent_id, event } => (Some(agent_id.as_str()), &event.msg),
@@ -386,6 +377,12 @@ impl Hub {
             _ => {}
         }
         match &event.msg {
+            EventMsg::McpServerStatus { server, state, tools, error, .. } => {
+                self.shared.mcp.lock().insert(
+                    server.clone(),
+                    finx_protocol::McpServerInfo { server: server.clone(), state: *state, tools: *tools, error: error.clone() },
+                );
+            }
             EventMsg::TaskStarted { .. } => {
                 if !self.shared.busy.swap(true, Ordering::Relaxed) {
                     self.busy_since = Some(event.ts);
