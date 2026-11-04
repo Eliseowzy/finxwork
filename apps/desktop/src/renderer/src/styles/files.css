@@ -67,7 +67,7 @@
 .fpt:focus-visible .fpt-row.focus{box-shadow:inset 0 0 0 1.5px var(--accent)}
 .fpt-row .ic{flex:none;width:14px;height:14px;color:var(--l2)}
 .fpt-row.on .ic{color:inherit}
-.fpt-row .chev{width:10px;height:10px;transform:rotate(-90deg);transition:transform .12s var(--ease-out)}
+.fpt-row .chev{width:10px;height:10px;stroke-width:3;transform:rotate(-90deg);transition:transform .12s var(--ease-out)}
 .fpt-row .chev.open{transform:none}
 .fpt-sp{flex:none;width:10px}
 .fpt-name{min-width:0;overflow:hidden;text-overflow:ellipsis}

@@ -70,7 +70,7 @@ export function Sidebar() {
           onClick={() => st.set({ collapsed: allShut ? st.collapsed.filter((c) => !ids.includes(c)) : [...new Set([...st.collapsed, ...ids])] })}
         >
           <span>{byProject ? t("sidebar.projects") : t("sidebar.sessions")}</span>
-          <Icon name="caret" className="sm" />
+          <Icon name="chevD" className="sm" />
         </button>
         <ListViewMenu />
       </div>
@@ -90,7 +90,7 @@ export function Sidebar() {
                   {sec.grouping === "project" && <Icon name="folder" className="gi" />}
                   <span className="gt">{title(sec)}</span>
                   {sectionCounted(sec) && <span className="n">{sec.sessions.length}</span>}
-                  <Icon name="caret" className="sm" />
+                  <Icon name="chevD" className="sm" />
                 </button>
                 {/* A project's heading starts a new session in that project; that of the sessions without one, another without one. */}
                 {sec.grouping === "project" && (

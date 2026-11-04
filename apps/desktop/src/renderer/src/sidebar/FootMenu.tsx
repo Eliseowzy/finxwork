@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { useStore } from "../store";
 
-type FootItem = { id: "settings" | "models" | "about"; icon: string; shortcut?: string } | null;
+type FootItem = { id: "settings" | "models" | "about"; icon: IconName; shortcut?: string } | null;
 
 /**
  * The sidebar's foot: who uses this computer (and a dot when finx doesn't answer).

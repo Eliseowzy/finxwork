@@ -28,7 +28,7 @@ input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 .drag{-webkit-app-region:drag}
 .drag button,.drag input,.drag select,.drag a,.drag .no-drag{-webkit-app-region:no-drag}
 button{font:inherit;color:inherit}
-.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.875;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
 .ic.sm{width:13px;height:13px}
 .ic.fill{fill:currentColor;stroke:none}
 /* controls */
@@ -57,7 +57,7 @@ input:disabled,textarea:disabled{cursor:default}
 .cb{display:flex;align-items:center;gap:8px;border:0;background:none;padding:0;text-align:left}
 .cb .box{width:14px;height:14px;border-radius:var(--r-xs);background:var(--field);box-shadow:inset 0 0 0 1px var(--field-bd);display:flex;align-items:center;justify-content:center;flex:none}
 .cb.on .box{background:var(--accent);box-shadow:none;color:#fff}
-.cb .box .ic{width:11px;height:11px;stroke-width:2.2}
+.cb .box .ic{width:11px;height:11px;stroke-width:3.3}
 .cb:not(.on) .box .ic{display:none}
 /* A segmented control: a quiet track as tall as its buttons; the one chosen is a raised block
    filling it, with a hairline edge. */
@@ -107,7 +107,7 @@ input:disabled,textarea:disabled{cursor:default}
 /* The sidebar toggle sits a step after the traffic lights (which end at x 74); the list's view options end the row. */
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
 .tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
-.tb .ic{stroke-width:1.45}
+.tb .ic{stroke-width:2.175}
 .tb:hover{background:var(--fill2);color:var(--l1)}
 .tb.on{background:var(--fill2);color:var(--l1)}
 /* A toolbar button's tip (tips.tsx): placed by script, shown once placed. */
@@ -211,7 +211,7 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 .sl2i{display:inline-flex;align-items:center;gap:3px;min-width:0;flex:0 1 auto}
 .sl2i+.sl2i{flex-shrink:1000}
 .sl2i>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sl2i .ic{width:11px;height:11px;stroke-width:1.35}
+.sl2i .ic{width:11px;height:11px;stroke-width:2.025}
 .stime{flex:none;font-size:11px;font-variant-numeric:tabular-nums}
 .loadrow{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;color:var(--l2);font-size:12px}
 .endrow{text-align:center;color:var(--l3);font-size:11.5px;padding:14px 0 6px}
@@ -495,7 +495,7 @@ button.insp-row:active{background:var(--fill2)}
 .fc-av .brand-initial{width:36px;height:36px;border-radius:var(--r-md);font-size:15px}
 .fc-badge{position:absolute;right:-4px;bottom:-4px;width:17px;height:17px;border-radius:50%;background:var(--win);display:grid;place-items:center}
 .fc-badge i{width:13px;height:13px;border-radius:50%;background:var(--tc);color:var(--win);display:grid;place-items:center}
-.fc-badge .ic{width:9px;height:9px;stroke-width:2.2}
+.fc-badge .ic{width:9px;height:9px;stroke-width:3.3}
 .fc-tx{flex:1;min-width:0}
 .fc-tx b{display:block;font-size:13.5px;font-weight:600;line-height:19px}
 .fc-tx span{display:block;font-size:12px;line-height:17px;color:var(--l2);margin-top:1px}
@@ -665,7 +665,7 @@ button.insp-row:active{background:var(--fill2)}
 .bgc-btn{flex:none;width:24px;height:24px;margin:0 3px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:flex;align-items:center;justify-content:center}
 .bgc-btn:hover{background:var(--fill2);color:var(--l1)}
 /* Stop: the composer's square, small; red as it is pointed at. */
-.bgc :is(.bgc-btn,.rowact).stop .ic{width:10px;height:10px}
+.bgc :is(.bgc-btn,.rowact).stop .ic{width:8px;height:8px}
 .bgc :is(.bgc-btn,.rowact).stop:hover{color:var(--red)}
 .bgc .rowact.stop{margin:-2px -3px -2px 0}
 /* Stop all: words, its text ending where the rows' times do. */
@@ -780,7 +780,7 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-zoom{display:flex;align-items:center;gap:2px}
 .dcp-zoom button{height:28px;min-width:28px;display:grid;place-items:center;padding:0;border:0;border-radius:var(--r-sm);background:none;color:var(--tb-fg)}
 .dcp-zoom button:hover{background:var(--fill2);color:var(--l1)}
-.dcp-zoom .ic{width:14px;height:14px;stroke-width:1.45}
+.dcp-zoom .ic{width:14px;height:14px;stroke-width:2.175}
 .dcp-zoom .dcp-scale{min-width:48px;padding:0 6px;font-size:12.5px;color:var(--l2);font-variant-numeric:tabular-nums}
 .dcp-find{flex:none;display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:.5px solid var(--sep);color:var(--l3)}
 .dcp-find input{flex:1;min-width:0;height:26px;font:inherit;font-size:13px;color:var(--l1);background:var(--field);border:0;border-radius:var(--r-xs);padding:0 8px;outline:none}
@@ -851,5 +851,5 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-unlock-eye .ic{width:15px;height:15px}
 .dcp-unlock-go{margin-left:2px;background:var(--accent);color:#fff;animation:dcp-card .12s ease-out}
 .dcp-unlock-go:hover:not(:disabled){filter:brightness(1.1)}
-.dcp-unlock-go .ic{width:14px;height:14px;stroke-width:2}
+.dcp-unlock-go .ic{width:14px;height:14px;stroke-width:3}
 .dcp-unlock-bad{min-height:18px;margin-top:4px;color:#e5484d;font-size:12px}
