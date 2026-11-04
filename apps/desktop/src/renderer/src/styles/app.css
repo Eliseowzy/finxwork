@@ -30,7 +30,6 @@ input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 button{font:inherit;color:inherit}
 .ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.875;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
 .ic.sm{width:13px;height:13px}
-.ic.wide{width:20px;height:20px;stroke-width:1.725}
 .ic.fill{fill:currentColor;stroke:none}
 /* controls */
 .btn{height:26px;padding:0 13px;border-radius:var(--r-sm);border:0;background:var(--btn);box-shadow:var(--btn-sh);font-size:13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;color:var(--l1);flex:none}
@@ -109,6 +108,8 @@ input:disabled,textarea:disabled{cursor:default}
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
 .tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
 .tb .ic{stroke-width:2.175}
+/* A panel icon's straight lines centre on whole pixels at 16 px, so only a 1 px stroke (1.5 in the 24 grid) lands on a 2x screen's pixels. */
+.tb .ic.panel{stroke-width:1.5}
 .tb:hover{background:var(--fill2);color:var(--l1)}
 .tb.on{background:var(--fill2);color:var(--l1)}
 /* A toolbar button's tip (tips.tsx): placed by script, shown once placed. */

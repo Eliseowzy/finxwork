@@ -54,7 +54,7 @@ export function SidebarToggle() {
     <>
       <span style={{ width: "calc(var(--lights) - 30px)", flex: "none" }} />
       <button className="tb" onClick={() => setSidebar(st, true)} aria-label={t("window.showSidebar")} title={t("window.showSidebar")}>
-        <Icon name="sidebar" className="wide" />
+        <Icon name="sidebar" className="panel" />
       </button>
     </>
   );

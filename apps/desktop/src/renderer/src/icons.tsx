@@ -1,4 +1,4 @@
-// The app's line icons, all from Lucide, under the names the app calls them by.
+// The app's line icons, from Lucide (two panels reshaped below), under the names the app calls them by.
 // Size and stroke width come from `.ic` in styles/app.css; the widths there are in
 // Lucide's 24-unit grid.
 import markOnDark from "../../../../../assets/brand/app/finxwork-mark-on-dark-256.png";
@@ -49,8 +49,6 @@ import {
   Minimize2,
   Minus,
   MessagesSquare,
-  PanelLeft,
-  PanelRight,
   Paperclip,
   Pause,
   Pencil,
@@ -70,9 +68,20 @@ import {
   User,
   X,
   Zap,
+  createLucideIcon,
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useRef } from "react";
+
+// Lucide's panel-left and panel-right flattened to sit beside the traffic lights: 14 × 12 at 16 px with
+// `.tb .ic.panel`'s 1 px stroke, every straight line on a 2x screen's pixels.
+const panel = (name: string, divider: number) =>
+  createLucideIcon(name, [
+    ["rect", { x: 2.25, y: 3.75, width: 19.5, height: 16.5, rx: 2, key: "frame" }],
+    ["path", { d: `M${divider} 3.75v16.5`, key: "divider" }],
+  ]);
+const PanelLeft = panel("panel-left-flat", 8.25);
+const PanelRight = panel("panel-right-flat", 15.75);
 
 const icons = {
   eye: Eye,
