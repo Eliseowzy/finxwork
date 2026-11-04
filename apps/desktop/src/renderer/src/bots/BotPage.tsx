@@ -1,25 +1,29 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, botChat, botWorking, busyBubble, conversation, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
+import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
+import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
 import { Tile } from "../composer/Tile";
 import { durationText, timeLine } from "../format";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
+import { DocContext } from "../docs/state";
+import { viewingDoc } from "../files/state";
 import { AgentCard, ReportCard } from "../session/Agents";
 import { Approval } from "../session/Approval";
 import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
+import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
 import { ContentScope } from "../session/scope";
 import { Work } from "../session/Steps";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
-import { thingsText } from "./actions";
+import { pageActions, thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotMenu } from "./BotList";
 import { useBotSession } from "./useBotSession";
@@ -39,23 +43,26 @@ export function BotPage({ bot }: { bot: BotSummary }) {
   const [view, session, loadEarlier] = useBotSession(bot.id, bot.session_id ?? undefined);
   useMarkRead(bot);
   useBotPermission(bot.id, view, session);
-  const scope = useMemo(() => (session && view ? { session, cwd: view.info.cwd, panel: false } : null), [session, view?.info.cwd]);
+  const scope = useMemo(() => (session && view ? { session, cwd: view.info.cwd } : null), [session, view?.info.cwd]);
+  const panels = useSidePanels(session ?? "", view);
   const busy = botWorking(bot);
   const [menu, setMenu] = useState<{ x: number; y: number; key: boolean } | null>(null);
   const latest = useRef(st);
   latest.current = st;
   return (
-    <div className="spage bot">
+    <DocContext.Provider value={panels.opener}>
+    <div className={`spage bot ${panels.browser || panels.files ? "bgopen" : ""} ${panels.max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
           <div className="ctitle">
-            <button className="bhead" title={t("head.edit")} onClick={() => st.set({ botSheet: { kind: "edit", id: bot.id } })}>
+            <div className="bhead">
               <BotAvatar bot={bot} size={22} busy={busy} />
               <h2>{bot.name}</h2>
-            </button>
+            </div>
             <HeadStatus bot={bot} />
           </div>
+          {session && <SidePanelButtons panels={panels} />}
           <button
             className="tb"
             title={t("head.more")}
@@ -69,7 +76,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
           >
             <Icon name="more" />
           </button>
-          {menu && <BotMenu b={bot} viewing at={menu} store={latest} onClose={() => setMenu(null)} />}
+          {menu && <BotMenu b={bot} items={pageActions(bot)} at={menu} store={latest} onClose={() => setMenu(null)} />}
         </GlassBar>
         <ContentScope value={scope}>
           <div className="dwrap" onContextMenu={() => selectionMenu(st)}>
@@ -79,7 +86,9 @@ export function BotPage({ bot }: { bot: BotSummary }) {
           </div>
         </ContentScope>
       </div>
+      {session && <SidePanelViews panels={panels} view={view} />}
     </div>
+    </DocContext.Provider>
   );
 }
 
@@ -466,12 +475,20 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       attachments: back.reduce<Attachment[]>((list, b) => addAttachments(list, b.attachments), d.attachments),
     });
   }, [view.returned]);
+  // Parts of pages from the browser panel, quotes from the document column.
+  useComposerInbox(session, (more) => {
+    const d = drafts.get(bot.id) ?? { text: "", attachments: [] };
+    change({ ...d, attachments: addAttachments(d.attachments, more) });
+  });
   const commands = useCommands({ session_id: session });
   const closeTip = () => st.botTipSeen || st.set({ botTipSeen: true });
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
     const input = toInput(sent.text, sent.attachments);
+    // The PDF the file panel shows goes along, so "this page" means something (document-editor-design §7.4).
+    const tab = st.files ? viewingDoc(session) : undefined;
+    if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
     // While it answers, a message waits for the step under way and is answered next (bot-design §3.1).
     const ok = await st.op(session, { type: "prompt", input, mode: view.live ? "steer" : undefined });
     if (!ok) change(sent);

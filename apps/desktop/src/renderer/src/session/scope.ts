@@ -1,11 +1,8 @@
 import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
 import type { PathInfo } from "../../../shared/bridge";
 
-/**
- * The session a reply belongs to: its folder resolves the paths it writes, its browser opens its links. None outside a
- * session. `panel` false: there is no file panel (a bot's page), so files open in their app (bot-mode-design §6.6).
- */
-export type Scope = { session: string; cwd: string; panel?: boolean } | null;
+/** The session a reply belongs to: its folder resolves the paths it writes, its browser opens its links. None outside a session. */
+export type Scope = { session: string; cwd: string } | null;
 const ScopeContext = createContext<Scope>(null);
 export const ContentScope = ScopeContext.Provider;
 export const useScope = () => useContext(ScopeContext);

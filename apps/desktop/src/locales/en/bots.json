@@ -23,7 +23,6 @@
     "file": "[File] {{name}}"
   },
   "head": {
-    "edit": "Change name and avatar",
     "waiting": "Waiting for you",
     "more": "More"
   },
@@ -103,18 +102,9 @@
     "edit": "Change name and avatar",
     "pin": "Pin",
     "unpin": "Unpin",
-    "read": "Mark as read",
-    "unread": "Mark as unread",
-    "clear": "Clear chat history",
     "delete": "Delete Bot",
-    "default": "Default Bot"
-  },
-  "clear": {
-    "title": "Clear your chat with “{{name}}”?",
-    "message": "It will no longer remember what you talked about.",
-    "working": "The {{things}} it is working on will stop.",
-    "button": "Clear",
-    "done": "Chat history cleared"
+    "default": "Default Bot",
+    "rename": "Rename"
   },
   "delete": {
     "title": "Delete “{{name}}”?",

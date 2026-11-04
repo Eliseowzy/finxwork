@@ -352,11 +352,13 @@ try {
   await page.until("read once opened", `${rows}.find((r) => r.name === "研究员")?.unread === ""`);
 
   step("16. a new name: the bot goes by it from its next reply");
-  await page.run(`document.querySelector(".bhead").click()`);
-  await page.until("the form", `!!document.querySelector("dialog.bsheet[open] input.field")`);
-  await page.run(`(() => { const i = document.querySelector("dialog.bsheet input.field"); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(i, ""); i.dispatchEvent(new Event("input", { bubbles: true })); i.focus(); })()`);
+  await page.run(`[...document.querySelectorAll(".brow")].find((x) => x.querySelector(".bname").textContent === "研究员").querySelector(".rowact").click()`);
+  await page.until("the row's menu", `!!document.querySelector(".vmenu")`);
+  await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "重命名").click()`);
+  await page.until("the name as a field", `document.activeElement?.matches(".brow .srename")`);
   await page.cdp("Input.insertText", { text: "小研" });
-  await page.run(`document.querySelector("dialog.bsheet form").requestSubmit()`);
+  await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
+  await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
   await page.until("renamed in the list and the title", `${rows}.some((r) => r.name === "小研") && document.querySelector(".bhead h2").textContent === "小研"`);
   const n2 = (await page.run(bubbles)).length;
   await say(page, "你现在叫什么名字？只回答名字。");
@@ -376,18 +378,11 @@ try {
   );
   await page.shot("11b-picture");
 
-  step("pin, clear, delete");
+  step("pin, delete");
   await page.run(`(() => { const r = [...document.querySelectorAll(".brow")].find((x) => x.querySelector(".bname").textContent === "小研"); r.querySelector(".rowact").click(); })()`);
   await page.until("the menu", `!!document.querySelector(".vmenu")`);
   await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "置顶").click()`);
   await page.until("pinned first", `${rows}[0].name === "小研" && ${rows}[0].pinned`);
-  await page.run(`document.querySelector(".ctool .tb[aria-haspopup=menu]").click()`);
-  await page.until("the page's menu", `!!document.querySelector(".vmenu")`);
-  await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "清空聊天记录").click()`);
-  await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
-  await page.shot("12-clear");
-  await page.run(`document.querySelector("dialog.sheet[open] .btn.danger").click()`);
-  await page.until("an empty conversation", `!!document.querySelector(".bempty") && ${rows}.find((r) => r.name === "小研")?.line === "还没说过话"`, 30000);
   await page.run(`document.querySelector(".ctool .tb[aria-haspopup=menu]").click()`);
   await page.until("the page's menu", `!!document.querySelector(".vmenu")`);
   await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent.startsWith("删除 Bot")).click()`);

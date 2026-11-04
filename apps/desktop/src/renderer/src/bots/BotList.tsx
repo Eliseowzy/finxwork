@@ -1,12 +1,14 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { botLine, botWorking } from "@finx/client";
 import type { BotSummary } from "@finx/protocol";
+import { RenameField } from "../components";
 import { shortTime } from "../format";
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useNow, useStore, type Store } from "../store";
-import { botActions, botContextMenu, runBotAction, thingsText } from "./actions";
+import { botContextMenu, rowActions, runBotAction, thingsText, type BotAction } from "./actions";
 import { BotAvatar } from "./Avatar";
 
 /**
@@ -24,7 +26,7 @@ export function BotList() {
   return (
     <div className="side-list bots fadein" role="list" aria-label={t("list.label")}>
       {st.bots.map((b) => (
-        <BotRow key={b.id} b={b} sel={b.id === selected} store={latest} />
+        <BotRow key={b.id} b={b} sel={b.id === selected} renaming={st.renaming === b.id} store={latest} />
       ))}
       {!st.botsLoaded && (
         <div className="loadrow">
@@ -36,7 +38,7 @@ export function BotList() {
   );
 }
 
-const BotRow = memo(function BotRow({ b, sel, store }: { b: BotSummary; sel: boolean; store: RefObject<Store> }) {
+const BotRow = memo(function BotRow({ b, sel, renaming, store }: { b: BotSummary; sel: boolean; renaming: boolean; store: RefObject<Store> }) {
   const { t } = useTranslation("bots");
   const now = useNow(30_000);
   const [menu, setMenu] = useState<{ x: number; y: number; key: boolean } | null>(null);
@@ -47,36 +49,53 @@ const BotRow = memo(function BotRow({ b, sel, store }: { b: BotSummary; sel: boo
       role="listitem"
       aria-current={sel || undefined}
       tabIndex={0}
-      onClick={() => store.current.selectBot(b.id)}
-      onKeyDown={(e) => e.key === "Enter" && store.current.selectBot(b.id)}
+      onClick={() => !renaming && store.current.selectBot(b.id)}
+      onKeyDown={(e) => !renaming && e.key === "Enter" && store.current.selectBot(b.id)}
+      onDoubleClick={(e) => !renaming && !(e.target as Element).closest(".rowact, .vmenu") && store.current.set({ renaming: b.id })}
       onContextMenu={(e) => {
         e.preventDefault();
-        void botContextMenu(store.current, b, sel);
+        void botContextMenu(store.current, b);
       }}
     >
       <BotAvatar bot={b} size={36} busy={busy} />
       <div className="bmain">
         <div className="bl1">
-          <span className="bname" title={b.name}>{b.name}</span>
-          {b.pinned && <Icon name="pin" className="bpin" />}
-          <span className="btime">{b.last ? shortTime(new Date(b.last.ts), now) : ""}</span>
-          <button
-            className="rowact"
-            title={t("menu.more")}
-            aria-label={t("menu.more")}
-            aria-haspopup="menu"
-            aria-expanded={!!menu}
-            onClick={(e) => {
-              e.stopPropagation();
-              // Shown on hover only: without a size (pressed from the keyboard), the row places the menu.
-              const own = e.currentTarget.getBoundingClientRect();
-              const r = own.width ? own : (e.currentTarget.closest(".bl1") ?? e.currentTarget).getBoundingClientRect();
-              setMenu(menu ? null : { x: r.right, y: r.bottom + 4, key: e.detail === 0 });
-            }}
-          >
-            <Icon name="more" className="sm" />
-          </button>
-          {menu && <BotMenu b={b} viewing={sel} at={menu} store={store} onClose={() => setMenu(null)} />}
+          {renaming ? (
+            <RenameField
+              initial={b.name}
+              className="srename"
+              maxLength={20}
+              end={(name) => {
+                const st = store.current;
+                st.set({ renaming: null });
+                const v = name?.trim();
+                if (v && v !== b.name) st.run(() => st.call("bots/update", { bot_id: b.id, name: v }));
+              }}
+            />
+          ) : (
+            <>
+              <span className="bname" title={b.name}>{b.name}</span>
+              {b.pinned && <Icon name="pin" className="bpin" />}
+              <span className="btime">{b.last ? shortTime(new Date(b.last.ts), now) : ""}</span>
+              <button
+                className="rowact"
+                title={t("menu.more")}
+                aria-label={t("menu.more")}
+                aria-haspopup="menu"
+                aria-expanded={!!menu}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  // Shown on hover only: without a size (pressed from the keyboard), the row places the menu.
+                  const own = e.currentTarget.getBoundingClientRect();
+                  const r = own.width ? own : (e.currentTarget.closest(".bl1") ?? e.currentTarget).getBoundingClientRect();
+                  setMenu(menu ? null : { x: r.right, y: r.bottom + 4, key: e.detail === 0 });
+                }}
+              >
+                <Icon name="more" className="sm" />
+              </button>
+            </>
+          )}
+          {menu && <BotMenu b={b} items={rowActions(b)} at={menu} store={store} onClose={() => setMenu(null)} />}
         </div>
         <div className="bl2">
           <RowLine b={b} />
@@ -111,8 +130,11 @@ function RowLine({ b }: { b: BotSummary }) {
   }
 }
 
-/** A bot's ⋯ menu (§6.16), under its button; clicks stay in the menu. Used by the page's ⋯ too. */
-export function BotMenu({ b, viewing, at, store, onClose }: { b: BotSummary; viewing: boolean; at: { x: number; y: number; key: boolean }; store: RefObject<Store>; onClose: () => void }) {
+/**
+ * A bot's ⋯ menu (§6.16), under its button; clicks stay in the menu. On the document's body: in a
+ * bar of liquid glass, its backdrop filter would make `position: fixed` relative to the bar.
+ */
+export function BotMenu({ b, items, at, store, onClose }: { b: BotSummary; items: BotAction[]; at: { x: number; y: number; key: boolean }; store: RefObject<Store>; onClose: () => void }) {
   const { t } = useTranslation("bots");
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: -9999, top: at.y });
@@ -131,7 +153,7 @@ export function BotMenu({ b, viewing, at, store, onClose }: { b: BotSummary; vie
       window.removeEventListener("blur", onClose);
     };
   }, [onClose]);
-  return (
+  return createPortal(
     <div
       className="vmenu"
       role="menu"
@@ -143,7 +165,7 @@ export function BotMenu({ b, viewing, at, store, onClose }: { b: BotSummary; vie
       onKeyDown={(e) => menuKeys(e, ref.current, onClose)}
       onContextMenu={(e) => e.stopPropagation()}
     >
-      {botActions(b, viewing).map((a, i) =>
+      {items.map((a, i) =>
         a ? (
           <button
             key={a.id}
@@ -161,6 +183,7 @@ export function BotMenu({ b, viewing, at, store, onClose }: { b: BotSummary; vie
           <div key={`sep${i}`} className="msep" role="separator" />
         ),
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }

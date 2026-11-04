@@ -55,8 +55,7 @@
 .vmenu .mi .mi-note{margin-left:auto;padding-left:16px;font-size:11.5px;color:var(--l3)}
 
 /* The page's top: avatar and name (a click changes them), then what the bot is doing now. */
-.bhead{display:flex;align-items:center;gap:8px;min-width:0;height:28px;padding:0 7px 0 3px;margin-left:-3px;border:0;border-radius:var(--r-sm);background:none;color:inherit;font:inherit}
-.bhead:hover{background:var(--fill2)}
+.bhead{display:flex;align-items:center;gap:8px;min-width:0}
 .bhead h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .spage.bot .ctitle{display:flex;align-items:center;gap:8px;min-width:0}
 .spage.bot .ctitle .sub{flex:none;font-size:12px;color:var(--l2)}

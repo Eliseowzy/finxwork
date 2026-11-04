@@ -23,7 +23,6 @@
     "file": "[文件] {{name}}"
   },
   "head": {
-    "edit": "改名字、换头像",
     "waiting": "等你确认",
     "more": "更多"
   },
@@ -102,18 +101,9 @@
     "edit": "改名字、换头像",
     "pin": "置顶",
     "unpin": "取消置顶",
-    "read": "标为已读",
-    "unread": "标为未读",
-    "clear": "清空聊天记录",
     "delete": "删除 Bot",
-    "default": "默认 Bot"
-  },
-  "clear": {
-    "title": "清空和「{{name}}」的聊天记录？",
-    "message": "清空以后它不再记得之前聊过的内容。",
-    "working": "手上的{{things}}会停下。",
-    "button": "清空",
-    "done": "聊天记录已清空"
+    "default": "默认 Bot",
+    "rename": "重命名"
   },
   "delete": {
     "title": "删除「{{name}}」？",

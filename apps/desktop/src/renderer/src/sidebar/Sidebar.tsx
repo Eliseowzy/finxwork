@@ -236,7 +236,7 @@ const SessionRow = memo(function SessionRow({ s, sel, project, branch, meta, gro
           {/* While a task is on, the title shimmers (waiting for an approval adds a dot); a failed session has a dot only, an idle or archived one neither. */}
           {renaming ? (
             <RenameField
-              s={s}
+              initial={title}
               className="srename"
               end={(title) => {
                 const st = store.current;
