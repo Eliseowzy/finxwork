@@ -266,7 +266,8 @@ export class MockServer {
       next = { ...next, unread: (next.unread ?? 0) + 1 };
     }
     const v = s.view;
-    next = { ...next, typing: v.live !== null, helpers: runningAgents(v).length, waiting: v.live?.approvals[0]?.summary };
+    const failed = e.type === "task_failed" || (e.type !== "task_started" && !!next.failed);
+    next = { ...next, typing: v.live !== null, helpers: runningAgents(v).length, waiting: v.live?.approvals[0]?.summary, failed };
     bot.summary = next;
     if (JSON.stringify(next) !== JSON.stringify(was)) this.botsChanged([next]);
   }
@@ -826,7 +827,7 @@ export class MockServer {
         const bot = this.bot(q.bot_id);
         const name = q.name == null ? bot.summary.name : this.botName(q.name);
         const avatar = q.avatar == null ? bot.summary.avatar : this.avatarOf(bot, q.avatar, !!bot.summary.default);
-        bot.summary = { ...bot.summary, name, avatar, pinned: q.pinned ?? bot.summary.pinned };
+        bot.summary = { ...bot.summary, name, avatar, pinned: q.pinned ?? bot.summary.pinned, muted: q.muted ?? bot.summary.muted };
         this.botsChanged([bot.summary]);
         return { bot: bot.summary } satisfies R<"bots/update">;
       }
