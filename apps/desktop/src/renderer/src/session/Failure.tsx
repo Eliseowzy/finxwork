@@ -6,7 +6,7 @@ import { keyEvent } from "../composer/KeySetup";
 import { MenuButton, MenuItem, SubMenuItem } from "../composer/Composer";
 import { ModelList } from "../composer/ModelList";
 import { failureAdvice, failureTitle, modelTitle } from "../format";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { Brand } from "../settings/ProviderConnections";
 import { useNow, useStore } from "../store";
 
@@ -28,7 +28,7 @@ const tones: Record<string, Tone> = {
   timeout: "wait",
 };
 const toneOf = (kind: string): Tone => tones[kind] ?? "fail";
-const badges: Record<Tone, string> = { setup: "info", wait: "clock", fail: "x" };
+const badges: Record<Tone, IconName> = { setup: "info", wait: "clock", fail: "x" };
 
 /** Sessions that compacted from a failure's card and go on once the compaction ends: asked, then running. */
 const resuming = new Map<string, "asked" | "running">();

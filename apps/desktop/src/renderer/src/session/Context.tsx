@@ -29,7 +29,7 @@ export function ContextCard({ id, view }: { id: string; view: SessionView }) {
     <section className="insp">
       <button className="insp-h" aria-expanded={open} onClick={() => st.set({ contextOpen: !open })}>
         <h3>{t("inspector.context")}</h3>
-        <Icon name="caret" className={open ? "" : "shut"} />
+        <Icon name="chevD" className={open ? "" : "shut"} />
         {!open && (
           <span className="insp-glance">
             {Math.round(used)}%

@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { homePath } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
 import { permissionDesc, permissionTitle, modelTitle, thinkingFor, thinkingTitle } from "../format";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
 import { addAttachments, attachEvent, droppedAttachments, pastedAttachments, pickFiles, pickFolder, type Attachment } from "./attachments";
@@ -139,7 +139,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} placeholder={placeholder} label={t("composer.label")} commands={commands} />
             {stop ? (
               <button className="send stop" onClick={stop} title={t("composer.stop")} aria-label={t("composer.stop")}>
-                <Icon name="stopFill" />
+                <Icon name="stop" className="fill" />
               </button>
             ) : (
               <button className="send" disabled={!ready} onClick={() => send(false)} title={t("composer.send")} aria-label={t("composer.send")}>
@@ -312,7 +312,7 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
   value: string;
   title: string;
   /** In place of the check column, as a menu item's icon. */
-  icon?: string;
+  icon?: IconName;
   /** The submenu's own class, beside `vmenu`. */
   className?: string;
   children: ReactNode;
@@ -393,7 +393,7 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
 
 /** A menu item: an icon or a check, its words (and a line under them), a value or a shortcut at its right. */
 export function MenuItem({ icon, checked, label, desc, value, kbd, disabled, onClick }: {
-  icon?: string;
+  icon?: IconName;
   checked?: boolean;
   label: string;
   desc?: string;

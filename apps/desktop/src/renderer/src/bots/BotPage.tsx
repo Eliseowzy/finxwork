@@ -373,7 +373,7 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
                 <span className="wb-t">{helpers.length > 1 ? t("line.helpers", { things: thingsText(helpers.length) }) : helpers[0].label}</span>
-                <Icon name="caret" className="chev" />
+                <Icon name="chevD" className="chev" />
               </button>
             ) : (
               <div className="wb-h" title={t("line.typing")}>

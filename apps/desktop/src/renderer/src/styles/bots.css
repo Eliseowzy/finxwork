@@ -6,7 +6,7 @@
 .side-top .mode{margin-left:auto;border-radius:var(--r-md)}
 .side-top .mode button{position:relative;width:36px;height:28px;padding:0;justify-content:center;border-radius:var(--r-md);color:var(--l2)}
 .side-top .mode button.on{color:var(--l1)}
-.side-top .mode .ic{width:18px;height:18px;stroke-width:1.2}
+.side-top .mode .ic{width:18px;height:18px;stroke-width:1.8}
 .mdot{position:absolute;top:4px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .mdot.warn{background:var(--orange)}
 .side-list.fadein{animation:fadein .28s var(--ease-out)}
