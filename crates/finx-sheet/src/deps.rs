@@ -28,6 +28,13 @@ pub struct Area {
     pub last: CellRef,
 }
 
+impl Area {
+    /// Whether the area holds a cell of its sheet.
+    pub fn contains(&self, at: CellRef) -> bool {
+        at.row >= self.first.row && at.row <= self.last.row && at.col >= self.first.col && at.col <= self.last.col
+    }
+}
+
 const DYNAMIC: &[&str] = &["OFFSET", "INDIRECT"];
 
 #[derive(Default)]
@@ -103,6 +110,10 @@ fn areas_into(formula: &str, sheet: usize, book: &Book, depth: u32, out: &mut Ve
                 a.zip(z)
                     .map(|(a, z)| (CellRef::new(a, 1), CellRef::new(z, MAX_COL)))
             }
+            (Tok::Bracket(_), _) => {
+                dynamic = true;
+                None
+            }
             (Tok::Func(f), _) => {
                 let f = f.to_uppercase();
                 dynamic |= DYNAMIC.contains(&f.trim_start_matches("_XLFN."));
@@ -143,7 +154,8 @@ impl Graph {
         let mut g = Graph::default();
         for (s, sheet) in book.sheets.iter().enumerate() {
             for (at, f) in &sheet.formulas {
-                let (areas, dynamic) = areas(f, s, book);
+                let expanded = crate::tables::expand(f, s, *at, book);
+                let (areas, dynamic) = areas(&expanded, s, book);
                 if dynamic {
                     g.dynamic.insert((s, *at));
                 }
@@ -177,7 +189,11 @@ impl Graph {
         let mut out: Vec<Node> = self
             .areas
             .iter()
-            .filter(|(_, areas)| areas.iter().any(|a| a.sheet == n.0 && n.1.row >= a.first.row && n.1.row <= a.last.row && n.1.col >= a.first.col && n.1.col <= a.last.col))
+            .filter(|(_, areas)| {
+                areas.iter().any(|a| {
+                    a.sheet == n.0 && a.contains(n.1)
+                })
+            })
             .map(|(f, _)| *f)
             .collect();
         out.sort();

@@ -92,6 +92,9 @@
       "$ref": "#/definitions/DocCellsResult"
     },
     {
+      "$ref": "#/definitions/DocChangedParams"
+    },
+    {
       "$ref": "#/definitions/DocIdParams"
     },
     {
@@ -108,6 +111,9 @@
     },
     {
       "$ref": "#/definitions/DocOpenResult"
+    },
+    {
+      "$ref": "#/definitions/DocRecalcParams"
     },
     {
       "$ref": "#/definitions/DocResolveParams"
@@ -2558,13 +2564,43 @@
       ],
       "type": "object"
     },
-    "DocFormat": {
-      "enum": [
-        "pdf",
-        "xlsx",
-        "xlsm"
+    "DocChangedParams": {
+      "description": "`doc/changed`: what the document is now.",
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/DocInfo"
+        }
+      },
+      "required": [
+        "info"
       ],
-      "type": "string"
+      "type": "object"
+    },
+    "DocFormat": {
+      "oneOf": [
+        {
+          "enum": [
+            "pdf",
+            "xlsx",
+            "xlsm"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "CSV and TSV: values only (spreadsheet-design §10.1).",
+          "enum": [
+            "csv"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Excel 97–2003, read only (§10.2).",
+          "enum": [
+            "xls"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "DocIdParams": {
       "properties": {
@@ -2757,6 +2793,26 @@
       "required": [
         "info",
         "token"
+      ],
+      "type": "object"
+    },
+    "DocRecalcParams": {
+      "properties": {
+        "circular_only": {
+          "default": false,
+          "description": "Restart circular references at zero; otherwise recalculate everything.",
+          "type": "boolean"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id"
       ],
       "type": "object"
     },
@@ -8948,6 +9004,10 @@
       "params": "DocOpenParams",
       "result": "DocOpenResult"
     },
+    "doc/recalc": {
+      "params": "DocRecalcParams",
+      "result": "DocApplyResult"
+    },
     "doc/redo": {
       "params": "DocIdParams",
       "result": "DocApplyResult"
@@ -9127,6 +9187,7 @@
     "browser/cdp": "BrowserCdpParams",
     "browser/changed": "BrowserStatus",
     "config/changed": "ConfigChangedParams",
+    "doc/changed": "DocChangedParams",
     "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",

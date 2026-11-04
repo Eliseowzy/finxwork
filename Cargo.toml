@@ -147,3 +147,8 @@ codegen-units = 4
 inherits = "release"
 lto = "fat"
 codegen-units = 1
+
+[patch.crates-io]
+# IronCalc 0.9.1 with our patches (AGGREGATE, TEXTJOIN, a fixed INFO("release")), one commit each on
+# https://github.com/Eliseowzy/IronCalc/tree/finx/0.9.1. Drop this once an upstream release has them.
+ironcalc_base = { git = "https://github.com/Eliseowzy/IronCalc", rev = "58e6c4869046cada533543f1dd7efdbfd3f0476a" }

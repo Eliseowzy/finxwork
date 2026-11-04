@@ -24,13 +24,20 @@ pub enum Request {
     /// A page, or the part of it in `clip`, as PNG, at `dpi`; never more than `max_side` pixels
     /// on its longer side.
     Render { handle: u64, page: u32, clip: Option<Rect>, dpi: u32, max_side: u32 },
-    /// A workbook (spreadsheet-design §5.7).
-    SheetOpen { handle: u64, path: PathBuf },
+    /// A workbook (spreadsheet-design §5.7); `name`: the file's own name without its extension,
+    /// a CSV's one sheet (the working copy is named `current`).
+    SheetOpen {
+        handle: u64,
+        path: PathBuf,
+        #[serde(default)]
+        name: Option<String>,
+    },
     /// A range's cells, as the grid shows them.
     SheetCells { handle: u64, sheet: String, range: String },
     /// Edits: written to the working copy (or only tried, `preview`), with their impact.
     SheetApply { handle: u64, ops: Vec<finx_protocol::doc::SheetOp>, preview: bool },
     /// What the agent reads first about a workbook.
+    SheetRecalc { handle: u64, circular_only: bool },
     SheetSummary { handle: u64 },
     SheetFind { handle: u64, query: String, limit: usize },
     SheetTrace { handle: u64, sheet: String, cell: String, direction: crate::sheet::Direction, depth: u32 },
@@ -45,6 +52,7 @@ impl Request {
             | Request::Render { handle, .. }
             | Request::SheetCells { handle, .. }
             | Request::SheetApply { handle, .. }
+            | Request::SheetRecalc { handle, .. }
             | Request::SheetSummary { handle }
             | Request::SheetFind { handle, .. }
             | Request::SheetTrace { handle, .. } => Some(*handle),
@@ -315,9 +323,10 @@ pub fn serve(input: impl std::io::BufRead, mut output: impl std::io::Write) -> s
 fn handle(pdf: &mut Option<Result<Engine, String>>, sheets: &mut crate::sheet::Sheets, request: Request) -> Result<serde_json::Value, String> {
     let json = |v: Result<serde_json::Value, serde_json::Error>| v.map_err(|e| e.to_string());
     match request {
-        Request::SheetOpen { handle, path } => json(serde_json::to_value(sheets.open(handle, &path)?)),
+        Request::SheetOpen { handle, path, name } => json(serde_json::to_value(sheets.open(handle, &path, name.as_deref())?)),
         Request::SheetCells { handle, sheet, range } => json(serde_json::to_value(sheets.cells(handle, &sheet, &range)?)),
         Request::SheetApply { handle, ops, preview } => json(serde_json::to_value(sheets.apply(handle, &ops, preview)?)),
+        Request::SheetRecalc { handle, circular_only } => json(serde_json::to_value(sheets.recalc(handle, circular_only)?)),
         Request::SheetSummary { handle } => json(serde_json::to_value(sheets.summary(handle)?)),
         Request::SheetFind { handle, query, limit } => json(serde_json::to_value(sheets.find(handle, &query, limit)?)),
         Request::SheetTrace { handle, sheet, cell, direction, depth } => json(serde_json::to_value(sheets.trace(handle, &sheet, &cell, direction, depth)?)),

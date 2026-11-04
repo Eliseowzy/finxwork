@@ -559,7 +559,12 @@ export type DocCellsResult = {
   rows?: RowHeight[];
 };
 
-export type DocFormat = "pdf" | "xlsx" | "xlsm";
+/** `doc/changed`: what the document is now. */
+export type DocChangedParams = {
+  info: DocInfo;
+};
+
+export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls";
 
 export type DocIdParams = {
   doc_id: string;
@@ -616,6 +621,13 @@ export type DocOpenResult = {
   password?: string | null;
   /** Reads the working copy: `finxdoc://<token>/current.pdf` (§7.3). */
   token: string;
+};
+
+export type DocRecalcParams = {
+  /** Restart circular references at zero; otherwise recalculate everything. */
+  circular_only?: boolean;
+  doc_id: string;
+  session_id: string;
 };
 
 /** A selection or a region on a page, to be read by the kernel (§9.4.1). */
@@ -2125,6 +2137,7 @@ export interface Methods {
   "doc/close": [DocIdParams, Empty];
   "doc/locate": [DocLocateParams, DocLocateResult];
   "doc/open": [DocOpenParams, DocOpenResult];
+  "doc/recalc": [DocRecalcParams, DocApplyResult];
   "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
   "doc/save": [DocSaveParams, DocInfo];
@@ -2176,6 +2189,7 @@ export interface ServerNotifications {
   "browser/cdp": BrowserCdpParams;
   "browser/changed": BrowserStatus;
   "config/changed": ConfigChangedParams;
+  "doc/changed": DocChangedParams;
   "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;

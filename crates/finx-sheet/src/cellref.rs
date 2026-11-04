@@ -97,6 +97,11 @@ impl Rect {
             && c.col <= self.last.col
     }
 
+    /// Whether the two share a cell.
+    pub fn intersects(&self, o: &Rect) -> bool {
+        self.first.row <= o.last.row && self.last.row >= o.first.row && self.first.col <= o.last.col && self.last.col >= o.first.col
+    }
+
     pub fn union(&self, c: CellRef) -> Self {
         Self {
             first: CellRef::new(self.first.row.min(c.row), self.first.col.min(c.col)),

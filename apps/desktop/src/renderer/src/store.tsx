@@ -5,6 +5,7 @@ import type { Methods, ModelsListResult, Op, PermissionMode, ThinkingLevel } fro
 import type { KernelStatusView } from "../../shared/bridge";
 import { i18n } from "../../shared/i18n";
 import { toInput, type Attachment } from "./composer/attachments";
+import { docChanged } from "./docs/state";
 import { connect } from "./kernel";
 import type { Peek } from "./layout";
 
@@ -225,6 +226,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
     let stop = false;
     const offModels = rpc.on("models/changed", () => { void rpc.request("models/list", {}).then(m => { if (!stop) setModels(m); }).catch(() => {}); });
     const off = rpc.on("sessions/changed", (c) => setSessions((list) => mergeSessions(list, c.sessions, c.deleted ?? [])));
+    // A workbook edited, undone or saved anywhere: the grids showing it read it again.
+    const offDocs = rpc.on("doc/changed", (p) => docChanged(p.info));
     Promise.all([rpc.request("sessions/subscribe", {}), rpc.request("models/list", {})])
       .then(([list, m]) => {
         if (stop) return;
@@ -238,6 +241,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       stop = true;
       off();
       offModels();
+      offDocs();
     };
   }, [rpc]);
   const kernelState: KernelState = status?.state === "failed" ? "down" : kernel;

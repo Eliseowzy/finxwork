@@ -1,8 +1,10 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
-import { RpcError, type DocQuote, type RpcClient } from "@finx/client";
+import type { DocQuote, RpcClient } from "@finx/client";
 import type { Anchor, DocInfo } from "@finx/protocol";
 import { docAttachment } from "../composer/attachments";
 import { toComposer } from "../composer/inbox";
+import { isRpcKind } from "../rpcError";
+import { RANGE, splitRef } from "./cellref";
 
 // The documents each session opened (document-editor-design §7.1), shown in its file panel:
 // which ones, and on which page. That is the session's view; the document itself
@@ -58,7 +60,7 @@ export async function openDoc(rpc: RpcClient, session: string, what: { path: str
     try {
       r = await rpc.request("doc/open", { session_id: session, ...what, password });
     } catch (e) {
-      if (e instanceof RpcError && e.kind === "doc_password") return null;
+      if (isRpcKind(e, "doc_password")) return null;
       throw e;
     }
     const d = docsOf(session);
@@ -88,6 +90,11 @@ export function setDocInfo(session: string, info: DocInfo) {
   const d = docsOf(session);
   if (!d.tabs.some((t) => t.info.doc_id === info.doc_id)) return;
   set(session, { ...d, tabs: d.tabs.map((t) => (t.info.doc_id === info.doc_id ? { ...t, info } : t)) });
+}
+
+/** `doc/changed`: a document changed, in this session or another; every session showing it takes the new info. */
+export function docChanged(info: DocInfo) {
+  for (const session of all.keys()) setDocInfo(session, info);
 }
 
 /** The page the document is at, kept for when it comes back. */
@@ -135,14 +142,9 @@ export function useDocOpener(): DocOpener | null {
 
 /** The file finx would not open without its password, when it says which (a document asked for by its id). */
 export function lockedPath(e: unknown): string | null {
-  if (!(e instanceof RpcError) || e.kind !== "doc_password") return null;
+  if (!isRpcKind(e, "doc_password")) return null;
   const path = (e.data as { path?: unknown } | null)?.path;
   return typeof path === "string" ? path : null;
-}
-
-/** Paths that open as documents (pdf.js, or the workbook grid), not as text. */
-export function opensAsDoc(path: string): boolean {
-  return /\.(pdf|xlsx|xlsm)$/i.test(path);
 }
 
 /** A citation link's target: `finxdoc:<doc_id>#p12.b3`. */
@@ -151,13 +153,11 @@ export function parseCitation(href: string): { doc_id: string; target: string } 
   if (!m) return null;
   let target = m[2] ?? "p1";
   try { target = decodeURIComponent(target); } catch { /* keep the target as written */ }
-  return /^(?:p\d+(?:\.b\d+)?|.+![A-Za-z]{1,3}\d+(?::[A-Za-z]{1,3}\d+)?)$/.test(target) ? { doc_id: m[1], target } : null;
+  return /^p\d+(?:\.b\d+)?$/.test(target) || cellTarget(target) ? { doc_id: m[1], target } : null;
 }
 
+/** A citation's cells, `Sheet!A1:C3`, as a workbook anchor. */
 export function cellTarget(target: string): CellAnchor | null {
-  const bang = target.lastIndexOf("!");
-  if (bang < 1) return null;
-  const sheet = target.slice(0, bang).replace(/^'(.*)'$/, "$1").replace(/''/g, "'");
-  const range = target.slice(bang + 1);
-  return /^[A-Za-z]{1,3}\d+(?::[A-Za-z]{1,3}\d+)?$/.test(range) ? { kind: "cells", sheet, range: range.toUpperCase() } : null;
+  const ref = splitRef(target);
+  return ref && RANGE.test(ref.cell) ? { kind: "cells", sheet: ref.sheet, range: ref.cell.toUpperCase() } : null;
 }

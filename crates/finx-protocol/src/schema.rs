@@ -81,6 +81,11 @@ pub fn document() -> Value {
             name::<crate::doc::DocApplyResult>(g),
         ),
         (
+            method::DOC_RECALC,
+            Some(name::<crate::doc::DocRecalcParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
             method::DOC_SAVE,
             Some(name::<crate::doc::DocSaveParams>(g)),
             name::<crate::doc::DocInfo>(g),
@@ -233,6 +238,7 @@ pub fn document() -> Value {
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::FILES_CHANGED, name::<files::FilesChangedParams>(g)),
+        (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
         (

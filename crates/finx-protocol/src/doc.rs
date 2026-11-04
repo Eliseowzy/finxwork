@@ -76,6 +76,10 @@ pub enum DocFormat {
     Pdf,
     Xlsx,
     Xlsm,
+    /// CSV and TSV: values only (spreadsheet-design §10.1).
+    Csv,
+    /// Excel 97–2003, read only (§10.2).
+    Xls,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -453,6 +457,15 @@ pub struct DocApplyResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocRecalcParams {
+    pub session_id: String,
+    pub doc_id: String,
+    /// Restart circular references at zero; otherwise recalculate everything.
+    #[serde(default)]
+    pub circular_only: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DocSaveParams {
     pub session_id: String,
     pub doc_id: String,
@@ -462,6 +475,12 @@ pub struct DocSaveParams {
     /// Write over the file even though it changed on disk since it was opened.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub force: bool,
+}
+
+/// `doc/changed`: what the document is now.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocChangedParams {
+    pub info: DocInfo,
 }
 
 /// Where a session's document column is: which document, which page. Sent with each message

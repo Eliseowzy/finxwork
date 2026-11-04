@@ -20,6 +20,8 @@ const paths: Record<string, string> = {
   more: "<circle cx=\"3.6\" cy=\"8\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"8\" cy=\"8\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"12.4\" cy=\"8\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/>",
   x: "<path d=\"M4.3 4.3l7.4 7.4M11.7 4.3l-7.4 7.4\"/>",
   check: "<path d=\"M3.4 8.4l3 3 6.2-6.8\"/>",
+  recalc: '<rect x="3" y="1.8" width="10" height="12.4" rx="1.5"/><path d="M5.3 4.7h5.4M5.3 7.7h.1m2.5 0H8m2.6 0h.1M5.3 10.5h.1m2.5 0H8m2.6 0h.1"/>',
+  cycles: '<path d="M12.7 5.6A5.2 5.2 0 0 0 3.4 4L1.8 6M1.8 2.5V6h3.5M3.3 10.4a5.2 5.2 0 0 0 9.3 1.6l1.6-2M14.2 13.5V10h-3.5"/>',
   save: "<path d=\"M3.2 3.6c0-.5.4-.9.9-.9h6.6l2.6 2.6v6.6c0 .5-.4.9-.9.9H4.1c-.5 0-.9-.4-.9-.9V3.6zM5.4 2.7v2.8h4.4V2.7M5 13.1V9.4c0-.3.2-.5.5-.5h5c.3 0 .5.2.5.5v3.7\"/>",
   minus: "<path d=\"M4.5 8h7\"/>",
   caret: "<path d=\"M4.8 6.4h6.4L8 10z\" fill=\"currentColor\" stroke=\"none\"/>",

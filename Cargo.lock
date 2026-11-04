@@ -1017,6 +1017,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "encoding_rs",
  "finx-acp",
  "finx-browser",
  "finx-connections",
@@ -1295,6 +1296,7 @@ name = "finx-sheet"
 version = "0.1.0"
 dependencies = [
  "calamine",
+ "encoding_rs",
  "ironcalc_base",
  "quick-xml",
  "serde",
@@ -1887,8 +1889,7 @@ checksum = "791930b43c0d5973160d90a8f3894509f2b273430f5c5c73b668636d0287c5c0"
 [[package]]
 name = "ironcalc_base"
 version = "0.9.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecf55ea346dcda5e0f0034d8300dc2d40ffbcb64e7c4db23bfa1d8a0cf11c738"
+source = "git+https://github.com/Eliseowzy/IronCalc?rev=58e6c4869046cada533543f1dd7efdbfd3f0476a#58e6c4869046cada533543f1dd7efdbfd3f0476a"
 dependencies = [
  "bitcode",
  "chrono",

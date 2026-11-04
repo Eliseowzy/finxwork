@@ -4,6 +4,7 @@ import type { BrowserStill, BrowserTab, BrowserTabCommand } from "../../../share
 import { SidebarToggle } from "../components";
 import { Icon } from "../icons";
 import { useCovered } from "../overlays";
+import { usePanelWidth } from "../panelWidth";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { allEngines, type SearchEngine } from "../../../shared/search";
 import { EngineIcon } from "../settings/BuiltInBrowser";
@@ -47,16 +48,8 @@ function hostOf(url: string): string {
   }
 }
 
-/** The panel's width the person dragged it to, kept for later. */
-const widthKey = "finxwork.browserPanelWidth";
-const minWidth = 360;
 /** What the conversation keeps beside the panel at least: a strip, as the person may want the page most of the window. */
-const conversationRoom = 160;
-
-function savedWidth(): number | null {
-  const n = Number(localStorage.getItem(widthKey));
-  return Number.isFinite(n) && n >= minWidth ? n : null;
-}
+const conversationRoom = () => 160;
 
 /**
  * `max`: the panel takes the window but the sidebar, the conversation set aside; its strip
@@ -66,9 +59,8 @@ function savedWidth(): number | null {
 export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: string; tabs: BrowserTab[]; max: boolean; onMax: (max: boolean) => void; onClose: () => void }) {
   const { t } = useTranslation("session");
   const room = useRef<HTMLDivElement>(null);
-  const panel = useRef<HTMLElement>(null);
+  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.browserPanelWidth", conversationRoom);
   const current = tabs.find((x) => x.shown) ?? tabs[tabs.length - 1];
-  const [width, setWidth] = useState<number | null>(savedWidth);
   /** What the person is typing in the address field; null shows the tab's address. */
   const [draft, setDraft] = useState<string | null>(null);
   const address = useRef<HTMLInputElement>(null);
@@ -85,53 +77,11 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
     setDraft(null);
     if (currentBlank) address.current?.focus();
   }, [currentId]);
-  const [resizing, setResizing] = useState(false);
   // A dialog, the search palette or the settings' dim is over the window: the tab steps aside,
   // a picture of it in its place.
   const covered = useCovered();
   const [still, setStill] = useState<BrowserStill | null>(null);
   useEffect(() => window.finx?.onBrowserStill((s) => s.session === session && setStill(s)), [session]);
-
-  /** The widest the panel may be: the conversation keeps its room. */
-  const maxWidth = () => {
-    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
-    const left = panel.current?.parentElement?.getBoundingClientRect().left ?? 0;
-    return Math.max(minWidth, right - left - conversationRoom);
-  };
-  const keep = (w: number) => {
-    const next = Math.round(Math.min(maxWidth(), Math.max(minWidth, w)));
-    setWidth(next);
-    localStorage.setItem(widthKey, String(next));
-  };
-  // The arrow keys on the edge: left widens, right narrows.
-  const resizeByKey = (e: React.KeyboardEvent) => {
-    const now = panel.current?.getBoundingClientRect().width ?? minWidth;
-    if (e.key === "ArrowLeft") keep(now + 24);
-    else if (e.key === "ArrowRight") keep(now - 24);
-    else return;
-    e.preventDefault();
-  };
-
-  // Dragging the left edge. The tab's view stays and follows the width: the drag's events keep
-  // coming to the page that got the press, even over the view.
-  const startResize = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
-    const max = maxWidth();
-    setResizing(true);
-    const move = (ev: PointerEvent) => setWidth(Math.round(Math.min(max, Math.max(minWidth, right - ev.clientX))));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      setResizing(false);
-      setWidth((w) => {
-        if (w !== null) localStorage.setItem(widthKey, String(w));
-        return w;
-      });
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
 
   // Where the tab's view goes, in window coordinates; reported again as it moves or resizes.
   useLayoutEffect(() => {
@@ -162,7 +112,7 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
     <aside
       ref={panel}
       className={`bgp brp ${max ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
-      style={width !== null && !max ? ({ "--brp-w": `${width}px` } as React.CSSProperties) : undefined}
+      style={style(max)}
       aria-label={t("browser.title")}
     >
       <div className="brp-strip drag">
@@ -300,7 +250,7 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
         {covered && still && !currentBlank && <img className="brp-still" src={still.image} style={{ width: still.width }} alt="" />}
       </div>
       {/* Last: the window's drag areas are laid in page order, and the edge must win over the tab strip's. */}
-      {!max && <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} aria-valuenow={width ?? undefined} tabIndex={0} onPointerDown={startResize} onKeyDown={resizeByKey} />}
+      {!max && <div className="brp-grip no-drag" role="separator" aria-orientation="vertical" aria-label={t("browser.resize")} tabIndex={0} {...grip} />}
     </aside>
   );
 }

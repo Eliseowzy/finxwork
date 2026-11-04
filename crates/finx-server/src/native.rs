@@ -597,6 +597,12 @@ impl NativeProtocol {
             }
             method::DOC_OPEN => match finx_rpc::params::<finx_protocol::doc::DocOpenParams>(params) {
                 Ok(p) => {
+                    {
+                        let mut conns = server.0.doc_conns.lock();
+                        if !conns.iter().any(|c| c.id == conn.id) {
+                            conns.push(conn.clone());
+                        }
+                    }
                     let reply_id = id.clone();
                     self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_open(p).await)) });
                 }
@@ -645,6 +651,13 @@ impl NativeProtocol {
                 Ok(p) => {
                     let reply_id = id.clone();
                     self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_redo(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_RECALC => match finx_rpc::params::<finx_protocol::doc::DocRecalcParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_recalc(p).await)) });
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },

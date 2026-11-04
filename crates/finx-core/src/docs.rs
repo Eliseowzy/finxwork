@@ -761,7 +761,9 @@ impl TypedTool for DocSave {
     type Args = SaveArgs;
     const NAME: &'static str = "doc_save";
     const DESCRIPTION: &'static str = "Write a workbook's edits to its file (or, with `path`, to another file). Only \
-        the edited cells and their results change in the file; everything else stays byte for byte.";
+        the edited cells and their results change in the file; everything else stays byte for byte. The file gets \
+        exactly the working copy doc_read shows (formulas as formulas, with their results), so there is no need to \
+        check the saved file another way.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -785,16 +787,44 @@ impl TypedTool for DocSave {
         let docs = handle(&ctx)?;
         let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
         let to = args.path.as_deref().map(|p| ctx.env.resolve(p));
-        let info = docs.store.save(&doc, to.as_deref(), args.force).await.map_err(failed)?;
+        let (info, written) = docs.store.save(&doc, to.as_deref(), args.force).await.map_err(failed)?;
         let target = to.map(|p| p.display().to_string()).unwrap_or_else(|| info.path.clone());
         (docs.opened)(info.clone());
-        Ok(ToolOutput::text(format!("Saved {target}.")).with_details(json!({ "doc_id": info.doc_id, "path": target })))
+        let details = json!({ "doc_id": info.doc_id, "path": target, "formulas": written.formulas, "values": written.values, "cleared": written.cleared });
+        Ok(ToolOutput::text(saved_text(&target, &written)).with_details(details))
     }
+}
+
+/// "Saved X: 1 formula with its result, 2 values." — what went into the file, as doc_read shows it.
+fn saved_text(target: &str, w: &finx_docs::store::Written) -> String {
+    let n = |k: usize, one: &str, many: &str| format!("{k} {}", if k == 1 { one } else { many });
+    let mut parts = Vec::new();
+    if w.formulas > 0 {
+        parts.push(n(w.formulas, "formula with its result", "formulas with their results"));
+    }
+    if w.values > 0 {
+        parts.push(n(w.values, "value", "values"));
+    }
+    if w.cleared > 0 {
+        parts.push(n(w.cleared, "range cleared", "ranges cleared"));
+    }
+    if parts.is_empty() {
+        return format!("Saved {target}: no cell differs from what the file held.");
+    }
+    format!("Saved {target}: {}, as doc_read shows them.", parts.join(", "))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_says_what_went_in() {
+        use finx_docs::store::Written;
+        let w = Written { formulas: 1, values: 2, cleared: 0 };
+        assert_eq!(saved_text("/a.xlsx", &w), "Saved /a.xlsx: 1 formula with its result, 2 values, as doc_read shows them.");
+        assert_eq!(saved_text("/a.xlsx", &Written::default()), "Saved /a.xlsx: no cell differs from what the file held.");
+    }
 
     #[test]
     fn pages_parse() {

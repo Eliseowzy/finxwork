@@ -33,7 +33,7 @@ fn on_disk(path: &Path, sheet: &str, at: &str) -> Value {
 async fn a_workbook_is_read_edited_and_saved_over_the_protocol() {
     let env = TestEnv::new("manual", "").await;
     let schema = SchemaCheck::new(&["DocOpenResult", "DocCellsResult", "DocApplyResult", "DocInfo"]);
-    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    let (_child, client, mut incoming) = env.spawn_rpc(&["serve", "--stdio"]);
     client.request("initialize", json!({"protocol_version": 2, "client_info": {"name": "e2e"}})).await.unwrap();
     let cwd = env.workspace("a");
     let session = client.request("session/new", json!({"cwd": cwd})).await.unwrap()["session_id"].as_str().unwrap().to_string();
@@ -62,6 +62,15 @@ async fn a_workbook_is_read_edited_and_saved_over_the_protocol() {
     assert_eq!(cell(&valuation, "D15")["text"], "6,121.33");
     assert_eq!(cell(&valuation, "D15")["formula"], "=SUM(D3:D12)+D14");
 
+    // Recalculation is a comparison: no working-copy write, revision, dirty flag or history.
+    for circular_only in [false, true] {
+        let result = client.request("doc/recalc", json!({"session_id": session, "doc_id": doc, "circular_only": circular_only})).await.unwrap();
+        schema.check("DocApplyResult", &result);
+        assert_eq!(result["revision"], 0);
+        assert_eq!(result["dirty"], false);
+        assert_eq!(std::fs::read(&file).unwrap(), fixture());
+    }
+
     // Trying 9% changes nothing yet, and says what would move.
     let wacc = json!([{"op": "set_value", "sheet": "假设", "cell": "B6", "value": 0.09}]);
     let tried = client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": wacc, "preview": true})).await.unwrap();
@@ -82,6 +91,17 @@ async fn a_workbook_is_read_edited_and_saved_over_the_protocol() {
     let kept = client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": wacc, "base_revision": 0})).await.unwrap();
     assert_eq!(kept["revision"], 1);
     assert_eq!(kept["dirty"], true);
+    // Every connection that opened the document hears of it, whichever session edited.
+    loop {
+        if let finx_rpc::Incoming::Notification { method, params, .. } = common::recv(&mut incoming).await
+            && method == "doc/changed"
+        {
+            assert_eq!(params["info"]["doc_id"], doc.as_str());
+            assert_eq!(params["info"]["revision"], 1);
+            assert_eq!(params["info"]["dirty"], true);
+            break;
+        }
+    }
     assert_eq!(kept["impact"], tried["impact"]);
     let new_ev = ev["after_text"].clone();
     let valuation = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "估值", "range": "D15"})).await.unwrap();
@@ -163,4 +183,73 @@ async fn an_agent_reads_tries_edits_and_saves_a_workbook() {
     assert!(traced.contains("假设!B6 is read by:") && traced.contains("估值!C3"), "{traced}");
     assert!(saved.starts_with("Saved"), "{saved}");
     assert_eq!(on_disk(&file, "假设", "B6"), Value::Number(0.09));
+}
+
+/// A CSV saved by Excel on a Chinese system (GBK, CRLF) and a legacy .xls (spreadsheet-design §10).
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_csv_is_edited_in_its_own_encoding_and_an_xls_stays_read_only() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    client.request("initialize", json!({"protocol_version": 2, "client_info": {"name": "e2e"}})).await.unwrap();
+    let cwd = env.workspace("csv");
+    let session = client.request("session/new", json!({"cwd": cwd})).await.unwrap()["session_id"].as_str().unwrap().to_string();
+
+    let file = cwd.join("行情.csv");
+    let (gbk, _, _) = encoding_rs::GB18030.encode("代码,名称,收盘\r\n000001,平安银行,12.50\r\n600519,\"贵州茅台, 白酒\",1688\r\n");
+    std::fs::write(&file, &gbk).unwrap();
+    let opened = client.request("doc/open", json!({"session_id": session, "path": file})).await.unwrap();
+    assert_eq!(opened["info"]["format"], "csv");
+    assert!(!opened["info"]["capabilities"].as_array().unwrap().contains(&json!("edit_formulas")));
+    let doc = opened["info"]["doc_id"].as_str().unwrap().to_string();
+    let sheet = opened["info"]["sheets"][0]["name"].as_str().unwrap().to_string();
+    let cells = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": sheet, "range": "A1:C3"})).await.unwrap();
+    assert_eq!(cell(&cells, "A2")["text"], "000001");
+    assert_eq!(cell(&cells, "B3")["text"], "贵州茅台, 白酒");
+    assert_eq!(cell(&cells, "C2")["text"], "12.50");
+
+    let formula = json!([{"op": "set_formula", "sheet": sheet, "cell": "D2", "formula": "=C2*2"}]);
+    let refused = client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": formula})).await.unwrap_err();
+    assert_eq!(refused.code, -32034);
+    assert!(client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": [{"op": "set_value", "sheet": "missing", "cell": "A1", "value": "wrong"}]})).await.is_err());
+    for (method, params) in [
+        ("doc/recalc", json!({"session_id": session, "doc_id": doc})),
+        ("doc/save", json!({"session_id": session, "doc_id": doc, "path": cwd.join("wrong.xlsx")})),
+    ] {
+        assert_eq!(client.request(method, params).await.unwrap_err().code, -32034);
+    }
+    assert!(!cwd.join("wrong.xlsx").exists());
+    let edit = json!([{"op": "set_value", "sheet": sheet, "cell": "C2", "value": 12.8}, {"op": "set_value", "sheet": sheet, "cell": "A4", "value": "000858"}]);
+    client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": edit})).await.unwrap();
+    client.request("doc/save", json!({"session_id": session, "doc_id": doc})).await.unwrap();
+    let saved_bytes = std::fs::read(&file).unwrap();
+    let (text, _, _) = encoding_rs::GB18030.decode(&saved_bytes);
+    assert_eq!(text, "代码,名称,收盘\r\n000001,平安银行,12.8\r\n600519,\"贵州茅台, 白酒\",1688\r\n000858\r\n");
+
+    let xls = cwd.join("旧模型.xls");
+    std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("../finx-sheet/tests/fixtures/legacy.xls"), &xls).unwrap();
+    let opened = client.request("doc/open", json!({"session_id": session, "path": xls})).await.unwrap();
+    assert_eq!(opened["info"]["format"], "xls");
+    assert_eq!(opened["info"]["save_in_place"], false);
+    let doc = opened["info"]["doc_id"].as_str().unwrap().to_string();
+    let sheet = opened["info"]["sheets"][0]["name"].as_str().unwrap().to_string();
+    let cells = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": sheet, "range": "A1:Z50"})).await.unwrap();
+    assert!(!cells["cells"].as_array().unwrap().is_empty());
+    let edit = json!([{"op": "set_value", "sheet": sheet, "cell": "A1", "value": 1}]);
+    let refused = client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": edit})).await.unwrap_err();
+    assert_eq!(refused.code, -32034);
+    assert!(refused.message.contains(".xlsx"), "{}", refused.message);
+    let before = std::fs::read(&xls).unwrap();
+    assert_eq!(client.request("doc/save", json!({"session_id": session, "doc_id": doc})).await.unwrap_err().code, -32034);
+    assert_eq!(std::fs::read(&xls).unwrap(), before);
+
+    let tsv = cwd.join("table.tsv");
+    std::fs::write(&tsv, "名称\t金额\r\n项目\t100\r\n").unwrap();
+    let opened = client.request("doc/open", json!({"session_id": session, "path": tsv})).await.unwrap();
+    let id = opened["info"]["doc_id"].as_str().unwrap();
+    let name = opened["info"]["sheets"][0]["name"].as_str().unwrap();
+    let cells = client.request("doc/cells", json!({"session_id": session, "doc_id": id, "sheet": name, "range": "A1:B2"})).await.unwrap();
+    assert_eq!(cell(&cells, "B2")["text"], "100");
+    client.request("doc/apply", json!({"session_id": session, "doc_id": id, "ops": [{"op": "set_value", "sheet": name, "cell": "B2", "value": 120}]})).await.unwrap();
+    client.request("doc/save", json!({"session_id": session, "doc_id": id})).await.unwrap();
+    assert_eq!(std::fs::read_to_string(&tsv).unwrap(), "名称\t金额\r\n项目\t120\r\n");
 }

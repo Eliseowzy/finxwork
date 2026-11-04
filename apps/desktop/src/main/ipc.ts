@@ -386,7 +386,7 @@ export function registerIPC() {
     const ext = path.extname(defaultPath).toLowerCase();
     const options = {
       defaultPath,
-      filters: [{ name: "Excel workbook", extensions: ext === ".xlsm" ? ["xlsm"] : ["xlsx"] }],
+      filters: [{ name: ext === ".csv" || ext === ".tsv" ? "Delimited text" : "Spreadsheet", extensions: [ext.slice(1) || "xlsx"] }],
     };
     const r = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
     return r.canceled ? null : (r.filePath ?? null);

@@ -27,7 +27,7 @@ use crate::server::Server;
 fn rpc_error(e: DocError) -> RpcError {
     match e {
         DocError::Password => RpcError::with_kind(error_code::DOC_PASSWORD, "doc_password", e.to_string()),
-        DocError::NotFound(_) | DocError::NotPdf(_) | DocError::TooLarge(_) | DocError::Unreadable(..) => {
+        DocError::NotFound(_) | DocError::Unsupported(_) | DocError::TooLarge(_) | DocError::Unreadable(..) => {
             RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string())
         }
         DocError::NotOpen(_) | DocError::NoPage { .. } | DocError::NotEditable(_) => RpcError::invalid_params(e),
@@ -123,6 +123,12 @@ impl Server {
         Ok(DocApplyResult { revision, impact, dirty })
     }
 
+    pub(crate) async fn doc_recalc(&self, p: finx_protocol::doc::DocRecalcParams) -> Result<DocApplyResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let (revision, impact, dirty) = self.0.docs.recalc(&doc, p.circular_only).await.map_err(rpc_error)?;
+        Ok(DocApplyResult { revision, impact, dirty })
+    }
+
     pub(crate) async fn doc_save(&self, p: DocSaveParams) -> Result<DocInfo, RpcError> {
         let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
         let to = match &p.path {
@@ -130,7 +136,7 @@ impl Server {
             Some(path) => Some(PathBuf::from(path)),
             None => None,
         };
-        self.0.docs.save(&doc, to.as_deref(), p.force).await.map_err(rpc_error)
+        self.0.docs.save(&doc, to.as_deref(), p.force).await.map(|(info, _)| info).map_err(rpc_error)
     }
 
     /// A closed session's columns show nothing any more.

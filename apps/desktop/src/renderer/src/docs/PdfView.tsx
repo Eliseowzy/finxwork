@@ -6,7 +6,7 @@ import { Icon } from "../icons";
 import { errorText, useStore } from "../store";
 import { maxComment } from "../../../shared/annotations";
 import { loadPdf, pdfjs, viewerLib } from "./pdf";
-import { lockedOut, unlockPdf, type SessionFiles, type Tab } from "../files/state";
+import { lockedOut, unlockDoc, type SessionFiles, type Tab } from "../files/state";
 import { quoteToComposer, setDocPassword, setPage, type DocTab, type Jump } from "./state";
 
 // A PDF in the file panel (document-editor-design §7): the bar of its own tools — the page,
@@ -554,7 +554,7 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
 export function Unlock({ s, tab }: { s: SessionFiles; tab: Tab }) {
   return (
     <div className="dcp-in">
-      <PasswordForm name={tab.name} wrong={!!tab.pdf?.locked?.wrong} onSubmit={(password) => unlockPdf(s, tab, password)} />
+      <PasswordForm name={tab.name} wrong={!!tab.opened?.locked?.wrong} onSubmit={(password) => unlockDoc(s, tab, password)} />
     </div>
   );
 }

@@ -54,8 +54,12 @@ put("src/app.ts", appLines.join("\n") + "\n");
 put("docs/notes.md", "# 标题\n\n正文，见 [入口](../src/app.ts)。\n");
 put("crlf.txt", "first\r\nsecond\r\n");
 // "报告,1" in GBK.
-put("data/gbk.csv", Buffer.from([0xb1, 0xa8, 0xb8, 0xe6, 0x2c, 0x31, 0x0a]));
+put("data/gbk.txt", Buffer.from([0xb1, 0xa8, 0xb8, 0xe6, 0x2c, 0x31, 0x0a]));
+put("data/values.csv", "名称,金额\r\n收入,100\r\n");
+fs.copyFileSync(path.join(root, "crates/finx-sheet/tests/fixtures/legacy.xls"), path.join(proj, "legacy.xls"));
 put("bin/blob.bin", Buffer.from([0, 1, 2, 3, 0, 5]));
+// Not a zip: the workbook will not open, and the error names its long path.
+put("bin/a_workbook_with_a_rather_long_name_that_will_not_open.xlsx", "not a workbook");
 put("assets/logo.png", Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000" + "1f15c4890000000d49444154789c636000020000050001e9fadcd80000000049454e44ae426082", "hex"));
 fs.copyFileSync(path.join(root, "crates/finx-sheet/tests/fixtures/gen/dcf_model.xlsx"), path.join(proj, "model.xlsx"));
 const disk = (rel) => fs.readFileSync(path.join(proj, rel), "utf8");
@@ -64,7 +68,7 @@ const disk = (rel) => fs.readFileSync(path.join(proj, rel), "utf8");
 const reply = [
   "改好了：[入口](src/app.ts:3)，说明在 [说明](docs/notes.md)。",
   "",
-  "其他：`crlf.txt`、[图](assets/logo.png)、[数据](data/gbk.csv)、[二进制](bin/blob.bin)、[模型](model.xlsx)、`src/`。",
+  "其他：`crlf.txt`、[图](assets/logo.png)、[数据](data/gbk.txt)、[二进制](bin/blob.bin)、[模型](model.xlsx)、[CSV](data/values.csv)、[旧表](legacy.xls)、[坏表](bin/a_workbook_with_a_rather_long_name_that_will_not_open.xlsx)、`src/`。",
 ].join("\n");
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n` +
@@ -212,6 +216,7 @@ const status = `(document.querySelector(".fpn-state")?.textContent ?? "")`;
 const note = `(document.querySelector(".fpn-note")?.className ?? "")`;
 
 let failed = false;
+let activePage = null;
 try {
   if (!process.env.FINXWORK_E2E_NO_BUILD && !packaged) {
     step("building finx and the app");
@@ -219,6 +224,8 @@ try {
     sh("pnpm", ["--dir", desktop, "build"]);
   }
   const page = await launch();
+  activePage = page;
+  await page.cdp("Page.bringToFront");
   // A common window: the panel has room for the tree beside the code (narrower, the tree starts closed).
   await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 0, mobile: false });
   const key = async (k, code, vk, modifiers = 0) => {
@@ -261,21 +268,64 @@ try {
 
   step("an Excel workbook shows as a grid, edits a cell, saves, and quotes the selection");
   await page.run(`${chip("模型")}.click()`);
-  await page.until("the workbook grid", `${activeTab} === "model.xlsx" && !!document.querySelector(".sht-canvas") && [...document.querySelectorAll(".sht-tab")].some((x) => x.textContent.includes("假设"))`);
-  await page.run(`document.querySelector(".sht-name").select()`);
+  await page.until("the workbook grid", `${activeTab} === "model.xlsx" && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas") && [...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tab")].some((x) => x.textContent.includes("假设"))`);
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-name").select()`);
   await page.cdp("Input.insertText", { text: "B6" });
   await key("Enter", "Enter", 13);
-  await page.until("WACC selected", `document.querySelector('.sht-c[data-cell="B6"]')?.textContent === "8.5%"`).catch(async (e) => {
-    fail(`${e.message}: address ${await page.run(`document.querySelector(".sht-name")?.value`)}, B6 ${JSON.stringify(await page.run(`document.querySelector('.sht-c[data-cell="B6"]')?.textContent ?? null`))}, cells ${JSON.stringify(await page.run(`[...document.querySelectorAll(".sht-c[data-cell]")].slice(0,8).map((x) => [x.dataset.cell,x.textContent])`))}, note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}`);
+  await page.until("WACC selected", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="B6"]')?.textContent === "8.5%"`).catch(async (e) => {
+    fail(`${e.message}: address ${await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-name")?.value`)}, B6 ${JSON.stringify(await page.run(`document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="B6"]')?.textContent ?? null`))}, cells ${JSON.stringify(await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-c[data-cell]")].slice(0,8).map((x) => [x.dataset.cell,x.textContent])`))}, note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}`);
   });
-  await page.run(`(() => { const x = document.querySelector(".sht-formula"); x.focus(); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(x, "9%"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
-  await page.until("WACC changed", `document.querySelector('.sht-c[data-cell="B6"]')?.textContent === "9.0%" && !!document.querySelector(".fpn-tab.on.dirty")`, 10000);
-  await page.run(`document.querySelector(".sht-selection-tools button").click()`);
+  await page.run(`(() => { const x = document.querySelector(".dcp-viewer:not([hidden]) .sht-formula"); x.focus(); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(x, "9%"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+  await page.until("WACC changed", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="B6"]')?.textContent === "9.0%" && !!document.querySelector(".fpn-tab.on.dirty")`, 10000);
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools button").click()`);
   await page.until("the cell quote in the composer", `!!document.querySelector(".tile.quote")`);
-  await page.run(`[...document.querySelectorAll(".sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label"))).click()`);
+  // ⌘S saves the workbook in view even with the focus in the composer.
+  await page.run(`document.querySelector(".cmp-in").focus()`);
+  await key("s", "KeyS", 83, META);
   await page.until("the workbook saved", `!document.querySelector(".fpn-tab.on.dirty")`, 10000).catch(async (e) => {
-    fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}, save disabled ${await page.run(`[...document.querySelectorAll(".sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label")))?.disabled`)}`);
+    fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}, save disabled ${await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label")))?.disabled`)}`);
   });
+  step("recalculation compares values; selection tools keep their size while zooming");
+  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar button")].find((b) => ${either((s) => s.sheet.recalcAll)}.includes(b.getAttribute("aria-label"))).click()`);
+  await page.until("the recalculation report", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-impact")`);
+  await page.until("selection tools after recalculation", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools")`);
+  const toolsWidth = await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools").getBoundingClientRect().width`);
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-zoom button:last-child").click()`);
+  await page.until("zoomed in", `document.querySelector(".dcp-viewer:not([hidden]) .sht-zoom-n").textContent !== "100%"`);
+  await page.until("selection tools after zoom", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools")`);
+  check(await page.run(`Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools").getBoundingClientRect().width - ${toolsWidth}) < 1`), "selection tools grew with zoom");
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-zoom-n").click()`);
+  step("dragged column widths survive closing and reopening the workbook");
+  const oldWidth = await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-h.col").getBoundingClientRect().width`);
+  await page.run(`(() => { const g = document.querySelector(".dcp-viewer:not([hidden]) .sht-grip.col"), r = g.getBoundingClientRect(); g.dispatchEvent(new MouseEvent("mousedown", { bubbles:true, clientX:r.x, clientY:r.y+5 })); window.dispatchEvent(new MouseEvent("mousemove", { clientX:r.x+40, clientY:r.y+5 })); window.dispatchEvent(new MouseEvent("mouseup")); })()`);
+  await page.until("the resized column", `Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.col").getBoundingClientRect().width - ${oldWidth + 40}) < 1`);
+  const oldHeight = await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-h.row").getBoundingClientRect().height`);
+  await page.run(`(() => { const g = document.querySelector(".dcp-viewer:not([hidden]) .sht-grip.row"), r = g.getBoundingClientRect(); g.dispatchEvent(new MouseEvent("mousedown", { bubbles:true, clientX:r.x+5, clientY:r.y })); window.dispatchEvent(new MouseEvent("mousemove", { clientX:r.x+5, clientY:r.y+12 })); window.dispatchEvent(new MouseEvent("mouseup")); })()`);
+  await page.until("the resized row", `Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.row").getBoundingClientRect().height - ${oldHeight + 12}) < 1`);
+  await page.run(`document.querySelector(".fpn-tab.on .brp-tab-x").click()`);
+  await page.run(`${chip("模型")}.click()`);
+  await page.until("the saved column width", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-h.col") && Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.col").getBoundingClientRect().width - ${oldWidth + 40}) < 1`);
+  check(await page.run(`Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.row").getBoundingClientRect().height - ${oldHeight + 12}) < 1`), "row height was not restored");
+  step("an edit from another session refreshes the grid; switching sheets clears its notice");
+  await page.until("the baseline cells after reopening", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="B6"]')?.textContent === "9.0%"`);
+  const other = (await finxCall("session/new", { cwd: proj })).result.session_id;
+  const remoteDoc = (await finxCall("doc/open", { session_id: other, path: path.join(proj, "model.xlsx") })).result.info.doc_id;
+  const remoteEdit = await finxCall("doc/apply", { session_id: other, doc_id: remoteDoc, ops: [{ op: "set_value", sheet: "假设", cell: "B6", value: 0.095 }] });
+  check(!remoteEdit.error, `remote edit: ${JSON.stringify(remoteEdit.error)}`);
+  await page.until("the remote change", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="B6"]')?.textContent === "9.5%" && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-agent")`);
+  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tab")].find((x) => x.textContent === "利润表").click()`);
+  await page.until("no stale notice on the other sheet", `!document.querySelector(".dcp-viewer:not([hidden]) .sht-agent")`);
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas").focus()`);
+  await key("s", "KeyS", 83, META);
+  await page.until("remote change saved", `!document.querySelector(".fpn-tab.on.dirty")`);
+  step("a range draws one border and leaves its active cell untinted");
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-name").select()`);
+  await page.cdp("Input.insertText", { text: "A2" });
+  await key("Enter", "Enter", 13);
+  for (const [k, vk] of [["ArrowRight", 39], ["ArrowDown", 40], ["ArrowDown", 40]]) await key(k, k, vk, 8);
+  await page.until("the range", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-sel.multi")`);
+  check(await page.run(`!document.querySelector(".dcp-viewer:not([hidden]) .sht-active")`), "a range drew a second box around its active cell");
+  check(await page.run(`getComputedStyle(document.querySelector(".dcp-viewer:not([hidden]) .sht-sel.multi"), "::before").clipPath.startsWith("polygon(evenodd")`), "the range tint covers its active cell");
   await page.shot("1-workbook");
   await page.run(`[...document.querySelectorAll(".fpn-tab")].find((x) => x.textContent.includes("app.ts")).click()`);
   await page.until("app.ts back in front", `${activeTab} === "app.ts"`);
@@ -338,16 +388,50 @@ try {
   await page.run(`document.querySelector(".fpn-img").dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 1, clientY: 1 }))`);
   await page.until("back to fitted", `Math.abs(${imgWidth} - ${fitted}) < 0.01`);
   await page.run(`${chip("数据")}.click()`);
-  await page.until("GBK read-only", `${activeTab} === "gbk.csv" && (${editorText}).includes("报告,1") && ${either((s) => s.files.readOnlyEncoding.replace("{{encoding}}", "GBK"))}.includes(${status})`);
+  await page.until("GBK read-only", `${activeTab} === "gbk.txt" && (${editorText}).includes("报告,1") && ${either((s) => s.files.readOnlyEncoding.replace("{{encoding}}", "GBK"))}.includes(${status})`);
   await typeAtEnd("x");
   await sleep(300);
   check(!(await page.run(`(${editorText}).includes("x")`)), "a read-only file took typing");
+  step("CSV opens in the grid, rejects formulas and saves values; XLS stays read-only");
+  await page.run(`${chip("CSV")}.click()`);
+  await page.until("CSV grid", `${activeTab} === "values.csv" && document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A1"]')?.textContent === "名称"`);
+  const enterFormula = async (text) => page.run(`(() => { const x = document.querySelector(".dcp-viewer:not([hidden]) .sht-formula"); x.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(x, ${JSON.stringify(text)}); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+  await enterFormula("=1+1");
+  await page.until("CSV formula refusal", `${either((s) => s.sheet.csvNoFormula)}.some((s) => document.querySelector(".fpn-note")?.textContent.includes(s))`);
+  check(disk("data/values.csv").startsWith("名称,金额"), "CSV formula changed the file");
+  await enterFormula("项目");
+  await page.until("CSV value edited", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A1"]')?.textContent === "项目"`);
+  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label"))).click()`);
+  await until("CSV saved", () => disk("data/values.csv") === "项目,金额\r\n收入,100\r\n", 5000);
+  // Typed one after another, each Enter before the last edit is back: none is dropped.
+  await page.run(`(() => { const x = document.querySelector(".dcp-viewer:not([hidden]) .sht-name"); x.select(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(x, "C1"); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+  for (const [k, code, vk] of [["7", "Digit7", 55], ["8", "Digit8", 56], ["9", "Digit9", 57]]) {
+    await key(k, code, vk);
+    await key("Enter", "Enter", 13);
+  }
+  const cellText = (c) => `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="${c}"]')?.textContent`;
+  await page.until("every quick entry kept", `${cellText("C1")} === "7" && ${cellText("C2")} === "8" && ${cellText("C3")} === "9"`, 10000).catch(async (e) => {
+    fail(`${e.message}: C1-C3 ${JSON.stringify(await page.run(`[${cellText("C1")}, ${cellText("C2")}, ${cellText("C3")}]`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}`);
+  });
+  check(await page.run(`!document.querySelector(".dcp-viewer:not([hidden]) .sht-agent")`), "the grid took its own quick edits for the agent's");
+  const tabIcon = (name) => `[...document.querySelectorAll(".fpn-tab")].find((x) => x.querySelector(".brp-tab-t")?.textContent === ${JSON.stringify(name)})?.querySelector(".brp-tab-ic svg rect")`;
+  check(await page.run(`!!${tabIcon("values.csv")} && !!${tabIcon("model.xlsx")}`), "a workbook tab does not show the grid icon");
+  await page.run(`${chip("旧表")}.click()`);
+  await page.until("XLS read only", `${activeTab} === "legacy.xls" && document.querySelector(".dcp-viewer:not([hidden]) .sht-formula")?.readOnly && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas")`);
+  check(await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar button")].filter((b) => [${either((s) => s.sheet.undo)} , ${either((s) => s.sheet.redo)}].flat().includes(b.getAttribute("aria-label"))).every((b) => b.disabled)`), "XLS undo/redo enabled");
+  check(await page.run(`!!${tabIcon("legacy.xls")}`), "the .xls tab does not show the grid icon");
+  await page.shot("4-csv-xls");
   await page.run(`${chip("二进制")}.click()`);
   await page.until("the card", `!!document.querySelector(".fpn-card") && ${activeTab} === "blob.bin"`);
   const before = lines(opened).length;
   await page.run(`document.querySelector(".fpn-card .btn").click()`);
   await until("opened in its app", () => lines(opened).length > before, 4000);
   check(JSON.stringify(lines(opened).at(-1)) === JSON.stringify({ kind: "open", path: path.join(proj, "bin/blob.bin") }), `opened: ${JSON.stringify(lines(opened).at(-1))}`);
+
+  await page.run(`${chip("坏表")}.click()`);
+  await page.until("the broken workbook's card", `${activeTab}?.startsWith("a_workbook") && !!document.querySelector(".fpn-main > .fpn-card")`);
+  check(await page.run(`(() => { const c = document.querySelector(".fpn-main > .fpn-card").getBoundingClientRect(), m = document.querySelector(".fpn-main").getBoundingClientRect(); return c.left >= m.left && c.right <= m.right; })()`), "the card spills out of the file's column");
+  await page.shot("5-broken");
 
   step("the tree: a folder closes and opens, a file opens from it; a tab closes");
   const docsRow = `[...document.querySelectorAll(".fpt-row")].find((r) => r.querySelector(".fpt-name").textContent === "docs")`;
@@ -436,6 +520,10 @@ try {
 } catch (e) {
   failed = true;
   console.error(`\n✘ ${e.message}`);
+  if (activePage) {
+    await activePage.shot("failure").catch(() => {});
+    console.error(await activePage.run(`({ active: document.querySelector(".fpn-tab.on")?.textContent, panel: document.querySelector(".fpn")?.innerText.slice(-1200), toast: document.querySelector(".toast")?.textContent })`).catch(() => null));
+  }
 } finally {
   await quit();
   await finxCall("server/shutdown", {}).catch(() => {});

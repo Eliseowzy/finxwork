@@ -273,14 +273,14 @@ function SheetApproval({ impact, ops }: { impact: Impact | "loading" | null; ops
     const b = row.after?.type === "number" ? row.after.value : null;
     return typeof a === "number" && typeof b === "number" && a !== 0 ? ` (${((b - a) / Math.abs(a) * 100).toFixed(1)}%)` : "";
   };
-  const table = (title: string, rows: CellChange[]) => (
+  const table = (title: string, rows: CellChange[], showPercent = false) => (
     <div className="appr-sheet-table">
       <b>{title}</b>
       {rows.slice(0, 5).map((row, i) => (
         <div key={`${row.sheet}!${row.cell}:${i}`}>
           <code>{row.sheet}!{row.cell}</code>
           <span>{row.label ?? ""}</span>
-          <span>{row.before_text ? `${row.before_text} → ` : ""}{row.after_text}{pct(row)}</span>
+          <span>{row.before_text ? `${row.before_text} → ` : ""}{row.after_text}{showPercent ? pct(row) : ""}</span>
         </div>
       ))}
       {rows.length > 5 && <small>{t("approval.more", { count: rows.length - 5 })}</small>}
@@ -289,7 +289,7 @@ function SheetApproval({ impact, ops }: { impact: Impact | "loading" | null; ops
   return (
     <div className="appr-sheet">
       {table(t("sheet.changes"), changes)}
-      {sheetImpactState(impact, outputs.length) && table(t("sheet.outputs"), outputs)}
+      {sheetImpactState(impact, outputs.length) && table(t("sheet.outputs"), outputs, true)}
       {impact === "loading" && <div className="appr-sheet-loading"><span className="mini-spin" />{t("approval.calculatingImpact")}</div>}
       {impact && impact !== "loading" && (
         <div className="appr-sheet-meta">

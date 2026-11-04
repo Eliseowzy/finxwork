@@ -1,77 +1,35 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, RpcError, type RpcClient } from "@finx/client";
+import { baseName, type RpcClient } from "@finx/client";
 import type { CellData, Impact, SheetInfo, SheetOp } from "@finx/protocol";
 import { Icon } from "../icons";
+import { isRpcKind } from "../rpcError";
 import { errorText, useStore } from "../store";
 import { openRef } from "../session/contentMenus";
+import { addr, areaOf, colName, MAX_COLS, MAX_ROWS, onSheet, parseAddr, parseRange, rangeText, type Area, type Pos } from "./cellref";
+import { useEditQueue } from "./sheet/editQueue";
+import { useGeometry } from "./sheet/geometry";
+import { ImpactBar } from "./sheet/ImpactBar";
+import { editTextOf, inputOp, readable, readSizes, sizeKey, sizesOf, toMarkdown, toTsv, writeSizes, type Sizes } from "./sheet/model";
 import { quoteToComposer, setDocInfo, setSheetViewing, type DocTab, type Jump } from "./state";
+
+export { inputOp } from "./sheet/model";
 
 // A workbook in the file panel (spreadsheet-design §8): a bar with the address and the formula,
 // the grid, and the sheets underneath. Cells are read from finx by blocks of rows as they come
 // into sight (doc/cells); edits go back as SheetOps (doc/apply) and come back with their impact,
 // which the grid lights up. The agent's edits arrive as a new revision of the document.
 
-type Pos = { r: number; c: number };
 type Sel = { anchor: Pos; focus: Pos };
-type Merge = { r1: number; c1: number; r2: number; c2: number };
 
 const BLOCK = 100;
-const MAX_COLS = 16384;
-const MAX_ROWS = 1048576;
 const HEAD_W = 44;
 const HEAD_H = 22;
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 3;
+const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
 
-const colName = (c: number) => {
-  let s = "";
-  for (let n = c; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + ((n - 1) % 26)) + s;
-  return s;
-};
-const addr = (p: Pos) => `${colName(p.c)}${p.r}`;
-function parseAddr(a: string): Pos | null {
-  const m = /^\$?([A-Za-z]{1,3})\$?(\d+)$/.exec(a.trim());
-  if (!m) return null;
-  let c = 0;
-  for (const ch of m[1].toUpperCase()) c = c * 26 + ch.charCodeAt(0) - 64;
-  const r = Number(m[2]);
-  return r >= 1 && r <= 1048576 && c <= 16384 ? { r, c } : null;
-}
-function parseRange(a: string): Merge | null {
-  const [x, y] = a.split(":");
-  const p = parseAddr(x);
-  const q = y ? parseAddr(y) : p;
-  return p && q ? { r1: Math.min(p.r, q.r), c1: Math.min(p.c, q.c), r2: Math.max(p.r, q.r), c2: Math.max(p.c, q.c) } : null;
-}
-const rectOf = (s: Sel): Merge => ({ r1: Math.min(s.anchor.r, s.focus.r), c1: Math.min(s.anchor.c, s.focus.c), r2: Math.max(s.anchor.r, s.focus.r), c2: Math.max(s.anchor.c, s.focus.c) });
-
-/** A colour from the file, lightened when it would be lost on a dark background (Excel's blue input font, black text). */
-function readable(hex: string | null | undefined): string | undefined {
-  if (!hex) return undefined;
-  const n = parseInt(hex, 16);
-  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  if (!dark || lum > 0.45) return `#${hex}`;
-  const up = (x: number) => Math.round(x + (255 - x) * 0.55);
-  return `rgb(${up(r)},${up(g)},${up(b)})`;
-}
-
-/** What a person typed, as Excel reads it: a formula, a number (with thousands or %), TRUE/FALSE, text. */
-export function inputOp(sheet: string, cell: string, raw: string): SheetOp {
-  const v = raw.trim();
-  if (v === "") return { op: "clear", sheet, range: cell };
-  if (v.startsWith("=") && v.length > 1) return { op: "set_formula", sheet, cell, formula: v };
-  if (raw.startsWith("'")) return { op: "set_value", sheet, cell, value: raw.slice(1) };
-  const num = /^[+-]?(\d{1,3}(,\d{3})+|\d+)?(\.\d+)?(e[+-]?\d+)?(%)?$/i.exec(v);
-  if (num && /\d/.test(v)) {
-    const n = Number(v.replace(/,/g, "").replace("%", ""));
-    if (Number.isFinite(n)) return { op: "set_value", sheet, cell, value: num[5] ? n / 100 : n };
-  }
-  if (/^(true|false)$/i.test(v)) return { op: "set_value", sheet, cell, value: v.toUpperCase() === "TRUE" };
-  return { op: "set_value", sheet, cell, value: raw };
-}
-
-type Cache = { key: string; cells: Map<string, CellData>; blocks: Set<number>; merges: Merge[]; heights: Map<number, number> };
+type Cache = { key: string; cells: Map<string, CellData>; blocks: Set<number>; merges: Area[]; heights: Map<number, number> };
 
 type Activity = { revision: number; title: string; impact?: Impact };
 
@@ -88,7 +46,6 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   const [lit, setLit] = useState<{ edited: Set<string>; affected: Set<string> } | null>(null);
   const [impact, setImpact] = useState<{ impact: Impact; byAgent: boolean } | null>(null);
   const [note, setNote] = useState<{ text: string; kind: "refused" | "conflict" } | null>(null);
-  const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [extent, setExtent] = useState({ rows: 100, cols: 26 });
   const [agentNotice, setAgentNotice] = useState<{ count: number; first?: string } | null>(null);
@@ -101,7 +58,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   /** The zoom buttons: about the view's top left. */
   const setZoomTo = (z: number) => {
     const el = scroller.current;
-    const next = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+    const next = clampZoom(Math.round(z * 100) / 100);
     if (!el) return;
     const x = el.scrollLeft / zoomRef.current;
     const y = el.scrollTop / zoomRef.current;
@@ -111,57 +68,43 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       el.scrollLeft = x * next;
       el.scrollTop = y * next;
       // The browser keeps the scroll within the new size: read back where it is.
-      setView({ top: el.scrollTop / next, left: el.scrollLeft / next, w: el.clientWidth / next, h: el.clientHeight / next });
+      measureView();
     });
   };
   const grid = useRef<HTMLDivElement>(null);
+  const root = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, left: 0, w: 800, h: 600 });
+  /** What is in sight, in the grid's own pixels (zoom undone). */
+  const measureView = () => {
+    const el = scroller.current;
+    const z = zoomRef.current;
+    if (el) setView({ top: el.scrollTop / z, left: el.scrollLeft / z, w: el.clientWidth / z, h: el.clientHeight / z });
+  };
+  /** The sheet grows as far as the selection goes, with room beyond. */
+  const reach = (r: number, c: number) => setExtent((x) => ({ rows: Math.max(x.rows, r + 20), cols: Math.max(x.cols, c + 5) }));
+  const logActivity = (item: Activity) => setActivity((items) => [item, ...items].slice(0, 20));
   const cache = useRef<Cache>({ key: "", cells: new Map(), blocks: new Set(), merges: [], heights: new Map() });
-  const own = useRef<number | null>(null);
+  const { busy, enqueue, idle, made, revision, takeOwn } = useEditQueue(session, info);
 
   // ── the sheet's shape ──
   const used = parseRange(sheet?.used ?? "A1") ?? { r1: 1, c1: 1, r2: 1, c2: 1 };
   const nCols = Math.min(MAX_COLS, Math.max(used.c2 + 5, extent.cols, 26));
   const nRows = Math.min(MAX_ROWS, Math.max(used.r2 + 50, extent.rows, 100));
   // Widths and heights dragged here, by sheet: how the grid shows them, not written to the file.
-  const [sized, setSized] = useState<{ cols: Map<string, number>; rows: Map<string, number> }>(() => ({ cols: new Map(), rows: new Map() }));
-  const widths = useMemo(() => {
-    const w = new Array(nCols + 1).fill(sheet?.default_width ?? 64);
-    for (const c of sheet?.columns ?? []) for (let i = c.first; i <= Math.min(c.last, nCols); i++) w[i] = c.hidden ? 0 : c.width;
-    for (const [k, v] of sized.cols) {
-      const [sh, c] = k.split("\u0000");
-      if (sh === sheetName && Number(c) <= nCols) w[Number(c)] = v;
+  const [sized, setSized] = useState<Sizes>(() => readSizes(docId));
+  const sizedDoc = useRef(docId);
+  useEffect(() => {
+    if (sizedDoc.current !== docId) {
+      sizedDoc.current = docId;
+      setSized(readSizes(docId));
+      return;
     }
-    return w as number[];
-  }, [sheet, nCols, sized, sheetName]);
-  const colLeft = useMemo(() => {
-    const x = [0, 0];
-    for (let c = 1; c <= nCols; c++) x[c + 1] = x[c] + widths[c];
-    return x;
-  }, [widths, nCols]);
+    writeSizes(docId, sized);
+  }, [docId, sized]);
+  const colSizes = useMemo(() => sizesOf(sized.cols, sheetName), [sized.cols, sheetName]);
+  const rowSizes = useMemo(() => sizesOf(sized.rows, sheetName), [sized.rows, sheetName]);
   const c0 = cache.current;
-  const defH = sheet?.default_height ?? 20;
-  const rowMetrics = useMemo(() => {
-    const merged = new Map(c0.heights);
-    for (const [k, v] of sized.rows) {
-      const [sh, r] = k.split("\u0000");
-      if (sh === sheetName) merged.set(Number(r), v);
-    }
-    const rows = [...merged.entries()].filter(([r]) => r <= nRows).sort((a, b) => a[0] - b[0]);
-    const extra = [0];
-    for (const [, height] of rows) extra.push(extra[extra.length - 1] + height - defH);
-    return { rows, extra };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nRows, defH, c0.heights.size, c0.key, sized, sheetName]);
-  const rowY = useCallback((row: number) => {
-    let lo = 0, hi = rowMetrics.rows.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (rowMetrics.rows[mid][0] < row) lo = mid + 1;
-      else hi = mid;
-    }
-    return Math.max(0, row - 1) * defH + rowMetrics.extra[lo];
-  }, [rowMetrics, defH]);
+  const { widths, colLeft, rowY, rowAt, colAt } = useGeometry({ sheet, nCols, nRows, colSizes, rowSizes, heights: c0.heights, heightsStamp: `${c0.key}:${c0.heights.size}` });
   const frozen = { rows: Number(sheet?.frozen?.[0] ?? 0), cols: Number(sheet?.frozen?.[1] ?? 0) };
   const frozenH = rowY(frozen.rows + 1);
   const frozenW = colLeft[frozen.cols + 1];
@@ -198,11 +141,11 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     (diff: boolean) => {
       const old = cache.current;
       const key = `${docId}:${sheetName}:${info.revision}`;
-      cache.current = { key, cells: new Map(), blocks: new Set(), merges: [], heights: new Map(old.heights) };
+      cache.current = { key, cells: new Map(), blocks: new Set(), merges: [], heights: old.key.startsWith(`${docId}:${sheetName}:`) ? new Map(old.heights) : new Map() };
       const first = Math.floor(Math.max(0, rowAt(view.top) - 1) / BLOCK);
       const last = Math.floor(rowAt(view.top + view.h) / BLOCK);
       void Promise.all(Array.from({ length: last - first + 1 }, (_, i) => load(first + i))).then(() => {
-        if (!diff) return;
+        if (!diff || cache.current.key !== key) return;
         const changed = new Set<string>();
         for (const [k, v] of cache.current.cells) if (old.cells.has(k) && old.cells.get(k)!.text !== v.text) changed.add(k);
         for (const k of old.cells.keys()) if (!cache.current.cells.has(k) && old.cells.get(k)!.text) changed.add(k);
@@ -210,7 +153,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
           setLit({ edited: new Set(), affected: changed });
           const first = changed.values().next().value as string | undefined;
           setAgentNotice({ count: changed.size, first });
-          setActivity((items) => [{ revision: info.revision, title: t("sheet.agentChanged", { count: changed.size }) }, ...items].slice(0, 20));
+          logActivity({ revision: info.revision, title: t("sheet.agentChanged", { count: changed.size }) });
         }
       });
     },
@@ -218,30 +161,20 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     [docId, sheetName, info.revision, load, view.top, view.h, t],
   );
 
-  function rowAt(y: number) {
-    let lo = 1;
-    let hi = nRows;
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1;
-      if (rowY(mid) <= y) lo = mid;
-      else hi = mid - 1;
-    }
-    return lo;
-  }
-  function colAt(x: number) {
-    let c = 1;
-    while (c < nCols && colLeft[c + 1] <= x) c++;
-    return c;
-  }
-
   // A new sheet, or a new revision (an edit here, or the agent's): read again.
   useEffect(() => {
-    const byAgent = own.current !== info.revision && cache.current.key.startsWith(`${docId}:${sheetName}:`);
+    const mine = takeOwn(info.revision);
+    const byAgent = !mine && cache.current.key.startsWith(`${docId}:${sheetName}:`);
     reread(byAgent);
     if (byAgent) setImpact(null);
-    else if (own.current === info.revision) own.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, sheetName, info.revision]);
+
+  useEffect(() => {
+    setAgentNotice(null);
+    setImpact(null);
+    setEditing(null);
+  }, [docId, sheetName]);
 
   // Blocks in sight.
   useEffect(() => {
@@ -254,16 +187,15 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    const measure = () => setView({ top: el.scrollTop / zoomRef.current, left: el.scrollLeft / zoomRef.current, w: el.clientWidth / zoomRef.current, h: el.clientHeight / zoomRef.current });
-    measure();
-    const ro = new ResizeObserver(measure);
+    measureView();
+    const ro = new ResizeObserver(measureView);
     ro.observe(el);
     // Pinch on a trackpad (and ⌘ with the wheel): the grid zooms about the pointer, as in Excel.
     const wheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const old = zoomRef.current;
-      const next = Math.min(3, Math.max(0.5, old * Math.exp(-e.deltaY * 0.006)));
+      const next = clampZoom(old * Math.exp(-e.deltaY * 0.006));
       if (next === old) return;
       const rect = el.getBoundingClientRect();
       const px = e.clientX - rect.left;
@@ -275,7 +207,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       requestAnimationFrame(() => {
         el.scrollLeft = x * next - px;
         el.scrollTop = y * next - py;
-        measure();
+        measureView();
       });
     };
     el.addEventListener("wheel", wheel, { passive: false });
@@ -288,12 +220,10 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   // ── editing ──
   const active = sel.focus;
   const activeCell = cache.current.cells.get(addr(active));
-  const selected = rectOf(sel);
-  const selectedRange = selected.r1 === selected.r2 && selected.c1 === selected.c2
-    ? addr({ r: selected.r1, c: selected.c1 })
-    : `${addr({ r: selected.r1, c: selected.c1 })}:${addr({ r: selected.r2, c: selected.c2 })}`;
+  const selected = areaOf(sel.anchor, sel.focus);
+  const selectedRange = rangeText(selected);
   const editable = !sheet?.protected && !!info.capabilities.includes("edit_values");
-  const editText = activeCell?.formula ?? (activeCell?.value?.type === "number" || activeCell?.value?.type === "bool" || activeCell?.value?.type === "text" ? String(activeCell.value.value) : activeCell?.text ?? "");
+  const editText = editTextOf(activeCell);
   const shown = (p: Pos) => cache.current.cells.get(addr(p));
 
   useEffect(() => {
@@ -307,71 +237,82 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     const range = parseRange(jump.anchor.range);
     if (!range) return;
     setSheetName(jump.anchor.sheet);
-    setExtent((x) => ({ rows: Math.max(x.rows, range.r2 + 20), cols: Math.max(x.cols, range.c2 + 5) }));
+    reach(range.r2, range.c2);
     setSel({ anchor: { r: range.r1, c: range.c1 }, focus: { r: range.r2, c: range.c2 } });
     setLit({ edited: new Set(), affected: new Set([addr({ r: range.r1, c: range.c1 })]) });
   }, [jump?.seq, docId]);
 
-  const apply = useCallback(
-    async (ops: SheetOp[]) => {
-      if (!sheet || !editable || busy) return;
-      setBusy(true);
+  const apply = async (ops: SheetOp[]) => {
+    if (!sheet || !editable) return;
+    if (!info.capabilities.includes("edit_formulas") && ops.some((op) => op.op === "set_formula")) {
+      setNote({ text: t("sheet.csvNoFormula"), kind: "refused" });
+      return;
+    }
+    return enqueue(async () => {
       try {
-        const r = await rpc.request("doc/apply", { session_id: session, doc_id: docId, ops, base_revision: info.revision });
-        own.current = r.revision;
-        setDocInfo(session, { ...info, revision: r.revision, dirty: r.dirty });
+        const r = await rpc.request("doc/apply", { session_id: session, doc_id: docId, ops, base_revision: revision() });
+        made(r);
         setNote(null);
-        const name = (x: string) => x.slice(x.lastIndexOf("!") + 1);
-        const mine = (x: string) => x.startsWith(`${sheet.name}!`);
-        setLit({ edited: new Set(r.impact.edited.filter((e) => e.sheet === sheet.name).map((e) => e.cell)), affected: new Set((r.impact.affected ?? []).filter(mine).map(name)) });
+        setLit({ edited: new Set(r.impact.edited.filter((e) => e.sheet === sheet.name).map((e) => e.cell)), affected: new Set(onSheet(r.impact.affected ?? [], sheet.name)) });
         setImpact(r.impact.affected_count || r.impact.key_outputs?.length || r.impact.needs_excel?.length ? { impact: r.impact, byAgent: false } : null);
-        setActivity((items) => [{ revision: r.revision, title: t("sheet.youChanged", { count: r.impact.edited.length }), impact: r.impact }, ...items].slice(0, 20));
+        logActivity({ revision: r.revision, title: t("sheet.youChanged", { count: r.impact.edited.length }), impact: r.impact });
         setAgentNotice(null);
       } catch (e) {
-        if (e instanceof RpcError && e.kind === "doc_refused") setNote({ text: e.message, kind: "refused" });
+        if (isRpcKind(e, "doc_refused")) setNote({ text: e.message, kind: "refused" });
         else st.show(errorText(e), undefined, true);
-      } finally {
-        setBusy(false);
       }
-    },
-    [rpc, session, docId, info, sheet, st, editable, busy, t],
-  );
+    });
+  };
 
   // One commit per edit: Enter commits, then the editor's blur would again.
   const committing = useRef(false);
-  const commit = (text: string) => {
-    if (committing.current) return;
+  const commit = (text: string): Promise<void> => {
+    if (committing.current) return Promise.resolve();
     committing.current = true;
     queueMicrotask(() => (committing.current = false));
     setEditing(null);
     const cell = addr(active);
     const before = editText;
-    if (text !== before && sheet) void apply([inputOp(sheet.name, cell, text)]);
+    const done = text !== before && sheet ? apply([inputOp(sheet.name, cell, text)]) : Promise.resolve();
     grid.current?.focus();
+    return done;
   };
 
-  const history = async (which: "doc/undo" | "doc/redo") => {
-    try {
-      const r = await rpc.request(which, { session_id: session, doc_id: docId });
-      own.current = r.revision;
-      setDocInfo(session, { ...info, revision: r.revision, dirty: r.dirty });
-      setImpact(null);
-      setLit(null);
-      setActivity((items) => [{ revision: r.revision, title: t(which === "doc/undo" ? "sheet.undone" : "sheet.redone"), impact: r.impact }, ...items].slice(0, 20));
-    } catch (e) {
-      st.show(errorText(e), undefined, true);
-    }
-  };
+  const history = (which: "doc/undo" | "doc/redo") =>
+    enqueue(async () => {
+      try {
+        const r = await rpc.request(which, { session_id: session, doc_id: docId });
+        made(r);
+        setImpact(null);
+        setLit(null);
+        logActivity({ revision: r.revision, title: t(which === "doc/undo" ? "sheet.undone" : "sheet.redone"), impact: r.impact });
+      } catch (e) {
+        st.show(errorText(e), undefined, true);
+      }
+    });
 
-  const save = async (force = false) => {
+  const recalc = (circularOnly: boolean) =>
+    enqueue(async () => {
+      try {
+        const result = await rpc.request("doc/recalc", { session_id: session, doc_id: docId, circular_only: circularOnly });
+        setImpact({ impact: result.impact, byAgent: false });
+        setLit({ edited: new Set(), affected: new Set(onSheet([...(result.impact.affected ?? []), ...(result.impact.needs_excel ?? [])], sheetName)) });
+        st.show(t(result.impact.affected_count || result.impact.needs_excel?.length ? "sheet.recalcCompared" : "sheet.recalcMatches"));
+      } catch (error) { st.show(errorText(error), undefined, true); }
+    });
+
+  /** Saves in place (over a change on disk with `force`), or to `path` (save as). */
+  const save = async (force = false, path?: string) => {
+    // What is typed and on its way is saved with the rest.
+    await idle();
     try {
-      const next = await rpc.request("doc/save", { session_id: session, doc_id: docId, force });
+      const next = await rpc.request("doc/save", { session_id: session, doc_id: docId, force, ...(path ? { path } : {}) });
       setDocInfo(session, next);
-      setNote(null);
-      st.show(t("sheet.saved"));
+      if (!path) setNote(null);
+      st.show(path ? t("sheet.savedAs", { name: baseName(path) }) : t("sheet.saved"));
       return true;
     } catch (e) {
-      if (e instanceof RpcError && e.kind === "doc_conflict") setNote({ text: t("sheet.conflict"), kind: "conflict" });
+      if (!path && isRpcKind(e, "doc_conflict")) setNote({ text: t("sheet.conflict"), kind: "conflict" });
       else st.show(errorText(e), undefined, true);
       return false;
     }
@@ -379,15 +320,29 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
 
   const saveAs = async () => {
     const path = window.finx ? await window.finx.pickSaveFile(info.path) : window.prompt(t("sheet.saveAsPrompt"), info.path);
-    if (!path) return;
-    try {
-      const next = await rpc.request("doc/save", { session_id: session, doc_id: docId, path, force: false });
-      setDocInfo(session, next);
-      st.show(t("sheet.savedAs", { name: baseName(path) }));
-    } catch (error) {
-      st.show(errorText(error), undefined, true);
-    }
+    if (path) await save(false, path);
   };
+
+  // ⌘S / ⌘⇧S save the workbook in view wherever the focus is in the window, even mid-edit:
+  // the cell being typed is committed first, so what is saved is what is shown.
+  const saveKey = useRef<(e: KeyboardEvent) => void>(() => {});
+  saveKey.current = (e) => {
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || (e.metaKey && e.ctrlKey) || e.key.toLowerCase() !== "s") return;
+    if (!activeView || !root.current?.checkVisibility()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.repeat) return;
+    void (async () => {
+      if (editing) await commit(editing.text);
+      if (e.shiftKey) await saveAs();
+      else if (info.dirty || editing) await save();
+    })();
+  };
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => saveKey.current(e);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, []);
 
   const openExcel = async () => {
     if (info.dirty && !(await save())) return;
@@ -399,17 +354,16 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     return rpc.request("doc/cells", { session_id: session, doc_id: docId, sheet: sheet.name, range: selectedRange });
   };
 
+  /** The selection's shown text, by address, as read from finx (cells out of sight included). */
+  const selectionText = async () => {
+    const result = await cellsInSelection();
+    const values = new Map(result.cells.map((cell) => [cell.cell, cell.text]));
+    return (cell: string) => values.get(cell);
+  };
+
   const copySelection = async () => {
     try {
-      const result = await cellsInSelection();
-      const values = new Map(result.cells.map((cell) => [cell.cell, cell.text]));
-      const rows: string[] = [];
-      for (let r = selected.r1; r <= selected.r2; r++) {
-        const line: string[] = [];
-        for (let c = selected.c1; c <= selected.c2; c++) line.push(values.get(addr({ r, c })) ?? "");
-        rows.push(line.join("\t"));
-      }
-      await navigator.clipboard.writeText(rows.join("\n"));
+      await navigator.clipboard.writeText(toTsv(selected, await selectionText()));
       st.show(t("sheet.copied"));
     } catch (error) { st.show(errorText(error), undefined, true); }
   };
@@ -420,18 +374,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     let text = t("sheet.selectionSummary", { range: `${sheet.name}!${selectedRange}`, count });
     if (count <= 200) {
       try {
-        const result = await cellsInSelection();
-        const values = new Map(result.cells.map((cell) => [cell.cell, cell.text]));
-        const cols = Array.from({ length: selected.c2 - selected.c1 + 1 }, (_, i) => selected.c1 + i);
-        const lines = [
-          `| | ${cols.map(colName).join(" | ")} |`,
-          `|---|${cols.map(() => "---").join("|")}|`,
-          ...Array.from({ length: selected.r2 - selected.r1 + 1 }, (_, i) => {
-            const r = selected.r1 + i;
-            return `| ${r} | ${cols.map((c) => (values.get(addr({ r, c })) ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")).join(" | ")} |`;
-          }),
-        ];
-        text = `${sheet.name}!${selectedRange}\n\n${lines.join("\n")}`;
+        text = `${sheet.name}!${selectedRange}\n\n${toMarkdown(selected, await selectionText())}`;
       } catch (error) {
         st.show(errorText(error), undefined, true);
         return;
@@ -463,7 +406,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   };
   const go = (p: Pos, extend: boolean) => {
     const q = { r: Math.min(MAX_ROWS, Math.max(1, p.r)), c: Math.min(MAX_COLS, Math.max(1, p.c)) };
-    setExtent((x) => ({ rows: Math.max(x.rows, q.r + 20), cols: Math.max(x.cols, q.c + 5) }));
+    reach(q.r, q.c);
     setSel((s) => (extend ? { anchor: s.anchor, focus: q } : { anchor: q, focus: q }));
     requestAnimationFrame(() => reveal(q));
   };
@@ -471,7 +414,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     const p = parseAddr(cell);
     if (!p) return;
     setSheetName(targetSheet);
-    setExtent((x) => ({ rows: Math.max(x.rows, p.r + 20), cols: Math.max(x.cols, p.c + 5) }));
+    reach(p.r, p.c);
     setSel({ anchor: p, focus: p });
     setImpact(null);
     setAgentNotice(null);
@@ -509,12 +452,9 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     } else if (e.key === "F2") {
       editable && setEditing({ text: editText, inBar: false });
     } else if ((e.key === "Backspace" || e.key === "Delete") && sheet && editable) {
-      const g = rectOf(sel);
-      void apply([{ op: "clear", sheet: sheet.name, range: `${addr({ r: g.r1, c: g.c1 })}:${addr({ r: g.r2, c: g.c2 })}` }]);
+      void apply([{ op: "clear", sheet: sheet.name, range: selectedRange }]);
     } else if (mod && e.key.toLowerCase() === "z") {
       void history(e.shiftKey ? "doc/redo" : "doc/undo");
-    } else if (mod && e.key.toLowerCase() === "s") {
-      void (e.shiftKey ? saveAs() : save());
     } else if (mod && e.key.toLowerCase() === "c") {
       void copySelection();
     } else if (mod && e.key.toLowerCase() === "l") {
@@ -551,6 +491,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     };
   };
 
+  // Once per drawing, not per cell.
+  const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   const cells: React.ReactNode[] = [];
   for (const r of rowsShown) {
     if (rowY(r + 1) === rowY(r)) continue;
@@ -576,7 +518,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       }
       const style: CSSProperties = {
         ...place(a.r, a.c, w, h),
-        color: readable(d?.look?.color),
+        color: readable(d?.look?.color, dark),
         background: d?.look?.fill ? `#${d.look?.fill}` : undefined,
         fontWeight: d?.look?.bold ? 600 : undefined,
         fontStyle: d?.look?.italic ? "italic" : undefined,
@@ -611,7 +553,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       const size = Math.max(kind === "cols" ? 8 : 6, Math.round(start + ((kind === "cols" ? ev.clientX : ev.clientY) - from) / z));
       setSized((x) => {
         const next = { cols: new Map(x.cols), rows: new Map(x.rows) };
-        next[kind].set(`${sheetName}\u0000${n}`, size);
+        next[kind].set(sizeKey(sheetName, n), size);
         return next;
       });
     };
@@ -647,11 +589,21 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     }}>{r}</div>);
   }
 
+  const multi = g.r1 !== g.r2 || g.c1 !== g.c2;
   const selBox = (() => {
     const m = mergeAt(active.r, active.c);
     const box = m && g.r1 === g.r2 && g.c1 === g.c2 ? m : g;
-    const p = place(box.r1, box.c1, colLeft[box.c2 + 1] - colLeft[box.c1], rowY(box.r2 + 1) - rowY(box.r1));
-    return { ...p, zIndex: 5 };
+    const w = colLeft[box.c2 + 1] - colLeft[box.c1];
+    const h = rowY(box.r2 + 1) - rowY(box.r1);
+    const p = place(box.r1, box.c1, w, h);
+    if (!multi) return { ...p, zIndex: 5 };
+    // Multi-cell range: leave the active cell untinted (like Excel) instead of drawing a second box over it.
+    const x1 = colLeft[active.c] - colLeft[box.c1];
+    const y1 = rowY(active.r) - rowY(box.r1);
+    const x2 = x1 + widths[active.c];
+    const y2 = y1 + rowY(active.r + 1) - rowY(active.r);
+    const hole = `polygon(evenodd, 0 0, ${w}px 0, ${w}px ${h}px, 0 ${h}px, 0 0, ${x1}px ${y1}px, ${x2}px ${y1}px, ${x2}px ${y2}px, ${x1}px ${y2}px, ${x1}px ${y1}px)`;
+    return { ...p, zIndex: 5, "--sht-hole": hole } as CSSProperties;
   })();
   const activeBox = place(active.r, active.c, widths[active.c], rowY(active.r + 1) - rowY(active.r));
 
@@ -673,7 +625,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
 
   if (!sheet) return <div className="fpn-empty">{t("sheet.empty")}</div>;
   return (
-    <div className="sht" onKeyDown={onKey}>
+    <div ref={root} className="sht" onKeyDown={onKey}>
       <div className="dcp-bar sht-bar">
         <input
           className="sht-name"
@@ -708,9 +660,13 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         <div className="dcp-bar-end">
           {busy && <span className="mini-spin" />}
           <span className={`fpn-state ${dirty ? "dirty" : ""}`}>{dirty ? t("sheet.unsaved") : ""}</span>
-          <button className="tb" title={t("sheet.undo")} aria-label={t("sheet.undo")} onClick={() => void history("doc/undo")}><Icon name="undo" /></button>
-          <button className="tb sht-redo" title={t("sheet.redo")} aria-label={t("sheet.redo")} onClick={() => void history("doc/redo")}><Icon name="undo" /></button>
+          <button className="tb" title={t("sheet.undo")} aria-label={t("sheet.undo")} disabled={!editable || busy} onClick={() => void history("doc/undo")}><Icon name="undo" /></button>
+          <button className="tb sht-redo" title={t("sheet.redo")} aria-label={t("sheet.redo")} disabled={!editable || busy} onClick={() => void history("doc/redo")}><Icon name="undo" /></button>
           <button className={`tb ${showHistory ? "on" : ""}`} title={t("sheet.history")} aria-label={t("sheet.history")} onClick={() => setShowHistory((v) => !v)}><Icon name="clock" /></button>
+          {info.capabilities.includes("calc") && <>
+            <button className="tb" title={t("sheet.recalcAll")} aria-label={t("sheet.recalcAll")} disabled={busy} onClick={() => void recalc(false)}><Icon name="recalc" /></button>
+            <button className="tb" title={t("sheet.recalcCycles")} aria-label={t("sheet.recalcCycles")} disabled={busy} onClick={() => void recalc(true)}><Icon name="cycles" /></button>
+          </>}
           <button className="tb" title={t("sheet.save")} aria-label={t("sheet.save")} disabled={!dirty} onClick={() => void save()}><Icon name="save" /></button>
           <button className="tb" title={t("sheet.openExcel")} aria-label={t("sheet.openExcel")} onClick={() => void openExcel()}><Icon name="ext" /></button>
         </div>
@@ -735,11 +691,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         <div
           ref={scroller}
           className="sht-scroll"
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            const z = zoomRef.current;
-            setView({ top: el.scrollTop / z, left: el.scrollLeft / z, w: el.clientWidth / z, h: el.clientHeight / z });
-          }}
+          onScroll={measureView}
         >
           <div
             ref={grid}
@@ -772,8 +724,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
             }} />
             {heads}
             {cells}
-            <div className="sht-sel" style={selBox} />
-            <div className="sht-active" style={{ ...activeBox, zIndex: 5 }} />
+            <div className={`sht-sel ${multi ? "multi" : ""}`} style={selBox} />
+            {!multi && <div className="sht-active" style={{ ...activeBox, zIndex: 5 }} />}
             {editing && !editing.inBar && (
               <input
                 autoFocus
@@ -796,7 +748,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               />
             )}
             {!editing && (
-              <div className="sht-selection-tools" style={{ left: view.left + view.w / 2, top: view.top + view.h - 44 }}>
+              <div className="sht-selection-tools" onMouseDown={(e) => e.stopPropagation()} style={{ left: view.left + view.w / 2, top: view.top + view.h - 44 / zoom, transform: `translateX(-50%) scale(${1 / zoom})`, transformOrigin: "top center" }}>
                 <span>{sheet.name}!{selectedRange}</span>
                 <button onClick={(e) => { e.stopPropagation(); void quoteSelection(); }}><Icon name="chat" />{t("sheet.askFinx")}</button>
                 <button onClick={(e) => { e.stopPropagation(); void copySelection(); }}><Icon name="copy" />{t("sheet.copy")}</button>
@@ -834,53 +786,6 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
           <button className="tb" aria-label={t("sheet.zoomIn")} onClick={() => setZoomTo(zoom * 1.1)}><Icon name="plus" /></button>
         </div>
       </div>
-    </div>
-  );
-}
-
-/** What the last edit moved: its key outputs, how many cells, what Excel recalculates. */
-function ImpactBar({ impact, onClose, onJump }: { impact: Impact; onClose: () => void; onJump: (sheet: string, cell: string) => void }) {
-  const { t } = useTranslation("session");
-  const [open, setOpen] = useState(false);
-  const pct = (a?: unknown, b?: unknown) => {
-    const x = (a as { value?: unknown } | undefined)?.value;
-    const y = (b as { value?: unknown } | undefined)?.value;
-    return typeof x === "number" && typeof y === "number" && x !== 0 ? ` (${((y - x) / Math.abs(x)) * 100 >= 0 ? "+" : ""}${(((y - x) / Math.abs(x)) * 100).toFixed(1)}%)` : "";
-  };
-  return (
-    <div className={`sht-impact ${open ? "open" : ""}`} role="status">
-      <div className="sht-impact-summary">
-        <button className="sht-impact-toggle" onClick={() => setOpen((v) => !v)} aria-expanded={open}><Icon name={open ? "chevD" : "chevR"} /><b>{t("sheet.impact")}</b></button>
-        <span>{t("sheet.edited", { count: impact.edited.length })}</span>
-        <span>{t("sheet.affected", { count: impact.affected_count })}</span>
-        {(impact.needs_excel?.length ?? 0) > 0 && <span>{t("sheet.needsExcel", { count: impact.needs_excel!.length })}</span>}
-        {impact.iterations != null && <span>{t("sheet.iterated", { count: impact.iterations })}</span>}
-        {!impact.converged && <span className="bad">{t("sheet.notConverged")}</span>}
-        <button className="tb" aria-label={t("sheet.dismiss")} onClick={onClose}><Icon name="x" /></button>
-      </div>
-      {open && (
-        <div className="sht-impact-body">
-          <ImpactTable title={t("sheet.changes")} rows={impact.edited} onJump={onJump} pct={pct} />
-          {(impact.key_outputs?.length ?? 0) > 0 && <ImpactTable title={t("sheet.outputs")} rows={impact.key_outputs!} onJump={onJump} pct={pct} />}
-          {impact.calc_unavailable && <p>{t("sheet.calcUnavailable", { reason: impact.calc_unavailable })}</p>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ImpactTable({ title, rows, onJump, pct }: { title: string; rows: Impact["edited"]; onJump: (sheet: string, cell: string) => void; pct: (a?: unknown, b?: unknown) => string }) {
-  return (
-    <div className="sht-impact-table">
-      <b>{title}</b>
-      {rows.slice(0, 5).map((row) => (
-        <button key={`${row.sheet}!${row.cell}`} onClick={() => onJump(row.sheet, row.cell)}>
-          <code>{row.sheet}!{row.cell}</code>
-          <span>{row.label ?? ""}</span>
-          <span>{row.before_text || "—"} → {row.after_text || "—"}{pct(row.before, row.after)}</span>
-        </button>
-      ))}
-      {rows.length > 5 && <small>+{rows.length - 5}</small>}
     </div>
   );
 }

@@ -20,12 +20,15 @@ use finx_protocol::doc::RowHeight;
 use finx_protocol::doc::Impact;
 use finx_protocol::doc::SheetInfo;
 use finx_protocol::doc::SheetOp;
+use crate::kind::DocKind;
 use finx_sheet::CellEdit;
 use finx_sheet::NewValue;
 use finx_sheet::Options;
 use finx_sheet::book::Book;
 use finx_sheet::book::Value;
 use finx_sheet::calc::Engine;
+use finx_sheet::csv::Csv;
+use finx_sheet::xls::XlsBook;
 use finx_sheet::cellref::CellRef;
 use finx_sheet::cellref::Rect;
 use finx_sheet::deps::Node;
@@ -103,9 +106,77 @@ struct SheetDoc {
     engine: Result<Engine, String>,
 }
 
+/// A flat cell: where, its value, its shown text, its formula (an `.xls` keeps them as saved).
+type FlatCell = (CellRef, Value, String, Option<String>);
+
+/// A CSV or a legacy `.xls`: values only, no styles, no calculation (spreadsheet-design §10).
+enum Flat {
+    Csv { path: PathBuf, csv: Csv, name: String },
+    Xls(XlsBook),
+}
+
+/// An open workbook, by the kind it is.
+enum Open {
+    Xlsx(Box<SheetDoc>),
+    Flat(Flat),
+}
+
 #[derive(Default)]
 pub struct Sheets {
-    docs: HashMap<u64, SheetDoc>,
+    docs: HashMap<u64, Open>,
+}
+
+const CSV_WIDTH: f32 = 96.0;
+
+fn flat_sheet(name: &str, rows: u32, cols: u32) -> SheetInfo {
+    SheetInfo {
+        name: name.to_string(),
+        chart: false,
+        used: (rows > 0 && cols > 0).then(|| format!("A1:{}", CellRef::new(rows, cols))),
+        frozen: None,
+        hidden: false,
+        protected: false,
+        columns: Vec::new(),
+        default_width: CSV_WIDTH,
+        default_height: 20.0,
+    }
+}
+
+impl Flat {
+    /// A sheet's cells within `rect` (all of them without), in row order: value, shown text,
+    /// formula. Only the rows asked for are looked at: scrolling a long CSV stays cheap.
+    fn cells(&self, name: &str, rect: Option<Rect>) -> Option<Vec<FlatCell>> {
+        let (first, last) = rect.map_or((1, u32::MAX), |r| (r.first.row, r.last.row));
+        let inside = |at: CellRef| rect.is_none_or(|r| r.contains(at));
+        match self {
+            Flat::Csv { csv, name: n, .. } if n == name => Some(
+                csv.records
+                    .iter()
+                    .enumerate()
+                    .skip(first as usize - 1)
+                    .take((last - first) as usize + 1)
+                    .flat_map(|(r, rec)| rec.fields.iter().enumerate().map(move |(c, f)| (CellRef::new(r as u32 + 1, c as u32 + 1), f)))
+                    .filter(|(at, f)| !f.text.is_empty() && inside(*at))
+                    .map(|(at, f)| (at, csv.value(at), f.text.clone(), None))
+                    .collect(),
+            ),
+            Flat::Xls(book) => book.sheets.iter().find(|s| s.name == name).map(|s| {
+                s.cells
+                    .range(CellRef::new(first, 0)..=CellRef::new(last, u32::MAX))
+                    .filter(|(at, _)| inside(**at))
+                    .map(|(at, c)| (*at, c.value.clone(), c.text.clone(), c.formula.clone()))
+                    .collect()
+            }),
+            _ => None,
+        }
+    }
+
+    fn names(&self) -> Vec<String> {
+        match self {
+            Flat::Csv { name, .. } => vec![name.clone()],
+            Flat::Xls(book) => book.sheets.iter().map(|s| s.name.clone()).collect(),
+        }
+    }
 }
 
 fn engine_for(bytes: &[u8]) -> Result<Engine, String> {
@@ -131,8 +202,30 @@ fn protocol_value(v: &Value) -> Option<CellValue> {
 }
 
 impl Sheets {
-    pub fn open(&mut self, handle: u64, path: &Path) -> Result<SheetOpened, String> {
+    /// Opens a working copy, its kind by its extension; `name`: a CSV's sheet, else its file's stem.
+    pub fn open(&mut self, handle: u64, path: &Path, name: Option<&str>) -> Result<SheetOpened, String> {
         let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+        let kind = path.extension().and_then(|e| e.to_str()).and_then(DocKind::from_ext);
+        if let Some(kind @ (DocKind::Csv | DocKind::Tsv)) = kind {
+            let csv = Csv::parse(&bytes, kind == DocKind::Tsv).map_err(|e| e.to_string())?;
+            let name = name.map(str::to_string).or_else(|| path.file_stem().map(|s| s.to_string_lossy().into_owned())).unwrap_or_else(|| "CSV".into());
+            let sheets = vec![flat_sheet(&name, csv.rows(), csv.cols())];
+            self.docs.insert(handle, Open::Flat(Flat::Csv { path: path.to_path_buf(), csv, name }));
+            return Ok(SheetOpened { sheets, calc_unavailable: Some("a CSV holds values only".into()) });
+        }
+        if kind == Some(DocKind::Xls) {
+            let book = XlsBook::open(&bytes).map_err(|e| e.to_string())?;
+            let sheets = book
+                .sheets
+                .iter()
+                .map(|s| {
+                    let last = s.cells.keys().fold(CellRef::new(0, 0), |m, c| CellRef::new(m.row.max(c.row), m.col.max(c.col)));
+                    flat_sheet(&s.name, last.row, last.col)
+                })
+                .collect();
+            self.docs.insert(handle, Open::Flat(Flat::Xls(book)));
+            return Ok(SheetOpened { sheets, calc_unavailable: Some("a legacy .xls is read only".into()) });
+        }
         let book = Book::open(&bytes).map_err(|e| match e {
             finx_sheet::Error::Unsupported(m) => m,
             e => format!("cannot open the workbook: {e}"),
@@ -144,11 +237,7 @@ impl Sheets {
             .filter(|(s, _)| s.kind != SheetKind::Other)
             .map(|(s, entry)| {
                 let ix = s.index.as_ref();
-                let used = ix.and_then(|ix| {
-                    let mut cells = ix.cells().filter(|c| c.v.is_some() || c.formula.is_some() || c.inline.is_some()).map(|c| c.at);
-                    let first = cells.next()?;
-                    Some(cells.fold(Rect::single(first), |r, c| r.union(c)).to_string())
-                });
+                let used = ix.and_then(used_range).map(|r| r.to_string());
                 SheetInfo {
                     name: s.name.clone(),
                     chart: s.kind == SheetKind::Chartsheet,
@@ -166,7 +255,7 @@ impl Sheets {
             .collect();
         let engine = engine_for(&bytes);
         let calc_unavailable = engine.as_ref().err().cloned();
-        self.docs.insert(handle, SheetDoc { path: path.to_path_buf(), bytes, book, engine });
+        self.docs.insert(handle, Open::Xlsx(Box::new(SheetDoc { path: path.to_path_buf(), bytes, book, engine })));
         Ok(SheetOpened { sheets, calc_unavailable })
     }
 
@@ -174,11 +263,100 @@ impl Sheets {
         self.docs.remove(&handle).is_some()
     }
 
+    fn flat_cells(flat: &Flat, sheet: &str, range: &str) -> Result<Cells, String> {
+        let rect = Rect::parse(range).ok_or_else(|| format!("not a range: {range}"))?;
+        let all = flat.cells(sheet, Some(rect)).ok_or_else(|| format!("no sheet named {sheet}"))?;
+        let cells = all
+            .into_iter()
+            .map(|(at, value, text, formula)| CellData { cell: at.to_string(), value: protocol_value(&value), text, formula: formula.map(|f| formula_text(&f)), look: CellLook::default() })
+            .collect();
+        Ok(Cells { cells, merges: Vec::new(), rows: Vec::new() })
+    }
+
+    /// A CSV edit: written at once, every other row as it was; `.xls` is refused.
+    fn flat_apply(flat: &mut Flat, ops: &[SheetOp], preview: bool) -> Result<Applied, String> {
+        let Flat::Csv { path, csv, name } = flat else {
+            return Err(format!("{REFUSED}a legacy .xls is read only here: open it in your spreadsheet app and save it as .xlsx to edit it"));
+        };
+        let mut edits: Vec<(CellRef, NewValue)> = Vec::new();
+        for op in ops {
+            let target = match op { SheetOp::SetValue { sheet, .. } | SheetOp::SetFormula { sheet, .. } | SheetOp::Clear { sheet, .. } => sheet };
+            if target != name { return Err(format!("no sheet named {target}")); }
+            match op {
+                SheetOp::SetValue { cell, value, .. } => {
+                    let at = CellRef::parse(cell).ok_or_else(|| format!("not a cell: {cell}"))?;
+                    edits.push((at, new_value(value)));
+                }
+                SheetOp::SetFormula { .. } => return Err(format!("{REFUSED}a CSV keeps values only, not formulas: type the value, or save the file as .xlsx")),
+                SheetOp::Clear { range, .. } => {
+                    let r = Rect::parse(range).ok_or_else(|| format!("not a range: {range}"))?;
+                    let rows = csv.records.iter().enumerate().skip(r.first.row as usize - 1).take((r.last.row - r.first.row) as usize + 1);
+                    for (i, rec) in rows {
+                        for (j, f) in rec.fields.iter().enumerate() {
+                            let at = CellRef::new(i as u32 + 1, j as u32 + 1);
+                            if r.contains(at) && !f.text.is_empty() {
+                                edits.push((at, NewValue::Empty));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if edits.is_empty() || edits.len() as u64 > MAX_CELLS {
+            return Err(format!("{REFUSED}edit between 1 and {MAX_CELLS} cells at a time"));
+        }
+        let shown = |v: &Value| match v {
+            Value::Number(n) => finx_sheet::styles::general(*n),
+            Value::Text(t) => t.clone(),
+            Value::Bool(b) => (if *b { "TRUE" } else { "FALSE" }).into(),
+            _ => String::new(),
+        };
+        let undo = edits
+            .iter()
+            .map(|(at, _)| match csv.text_at(*at).unwrap_or("") {
+                "" => SheetOp::Clear { sheet: name.clone(), range: at.to_string() },
+                t => SheetOp::SetValue { sheet: name.clone(), cell: at.to_string(), value: CellInput::Text(t.to_string()) },
+            })
+            .collect();
+        let edited = edits
+            .iter()
+            .map(|(at, v)| {
+                let after = match v {
+                    NewValue::Number { value } => Value::Number(*value),
+                    NewValue::Text { value } => Value::Text(value.clone()),
+                    NewValue::Bool { value } => Value::Bool(*value),
+                    _ => Value::Empty,
+                };
+                let before = csv.value(*at);
+                CellChange { sheet: name.clone(), cell: at.to_string(), before_text: shown(&before), after_text: shown(&after), before: protocol_value(&before), after: protocol_value(&after), label: None }
+            })
+            .collect();
+        if !preview {
+            let bytes = csv.write(&edits).map_err(refusal)?;
+            crate::atomic::write(path, &bytes).map_err(|e| e.to_string())?;
+            *csv = Csv::parse(&bytes, csv.delimiter == '\t').map_err(|e| e.to_string())?;
+        }
+        Ok(Applied { impact: Impact { edited, converged: true, ..Default::default() }, undo })
+    }
+
     fn doc(&mut self, handle: u64) -> Result<&mut SheetDoc, String> {
-        self.docs.get_mut(&handle).ok_or_else(|| "the document is not open".to_string())
+        match self.docs.get_mut(&handle) {
+            Some(Open::Xlsx(doc)) => Ok(doc),
+            _ => Err("the document is not open".to_string()),
+        }
+    }
+
+    fn flat(&mut self, handle: u64) -> Option<&mut Flat> {
+        match self.docs.get_mut(&handle) {
+            Some(Open::Flat(flat)) => Some(flat),
+            _ => None,
+        }
     }
 
     pub fn cells(&mut self, handle: u64, sheet: &str, range: &str) -> Result<Cells, String> {
+        if let Some(flat) = self.flat(handle) {
+            return Self::flat_cells(flat, sheet, range);
+        }
         let doc = self.doc(handle)?;
         let book = &doc.book;
         let s = book.sheet_index(sheet).ok_or_else(|| format!("no sheet named {sheet}"))?;
@@ -190,7 +368,7 @@ impl Sheets {
         let Some(ix) = &book.sheets[s].index else { return Ok(Cells { cells: vec![], merges: vec![], rows: vec![] }) };
         let mut cells = Vec::new();
         for row in ix.rows.iter().filter(|r| r.r >= rect.first.row && r.r <= rect.last.row) {
-            for c in row.cells.iter().filter(|c| c.at.col >= rect.first.col && c.at.col <= rect.last.col) {
+            for c in row.cells.iter().filter(|c| rect.contains(c.at)) {
                 let value = book.value(s, c.at);
                 let style = book.style(s, c.at);
                 let (text, format_color) = book.display(&value, &style);
@@ -201,7 +379,7 @@ impl Sheets {
                     fill: style.fill.clone(),
                     align: style.align.clone(),
                 };
-                let formula = book.formula(s, c.at).map(|f| format!("={}", display(f)));
+                let formula = book.formula(s, c.at).map(|f| formula_text(&display(f)));
                 if value == Value::Empty && formula.is_none() && look == CellLook::default() {
                     continue;
                 }
@@ -211,7 +389,7 @@ impl Sheets {
         let merges = ix
             .merges
             .iter()
-            .filter(|m| m.first.row <= rect.last.row && m.last.row >= rect.first.row && m.first.col <= rect.last.col && m.last.col >= rect.first.col)
+            .filter(|m| m.intersects(&rect))
             .map(ToString::to_string)
             .collect();
         let rows = ix
@@ -223,7 +401,21 @@ impl Sheets {
         Ok(Cells { cells, merges, rows })
     }
 
+    pub fn recalc(&mut self, handle: u64, circular_only: bool) -> Result<Impact, String> {
+        if self.flat(handle).is_some() { return Err(format!("{REFUSED}this format has no calculation engine")); }
+        let doc = self.doc(handle)?;
+        let engine = doc.engine.as_mut().map_err(|e| format!("{REFUSED}{e}"))?;
+        // The engine retains original input/cache metadata; compare against what the grid
+        // currently displays, including caches written by intervening edits.
+        engine.book = Book::open(&doc.bytes).map_err(|e| e.to_string())?;
+        let impact = engine.check_recalculation(circular_only).map_err(refusal)?;
+        Ok(protocol_impact(&doc.book, &doc.book, &[], Vec::new(), Some(&impact), &doc.engine))
+    }
+
     pub fn apply(&mut self, handle: u64, ops: &[SheetOp], preview: bool) -> Result<Applied, String> {
+        if let Some(flat) = self.flat(handle) {
+            return Self::flat_apply(flat, ops, preview);
+        }
         let doc = self.doc(handle)?;
         let edits = edits_of(&doc.book, ops)?;
         let undo = undo_of(&doc.book, &edits);
@@ -254,9 +446,8 @@ impl Sheets {
                     return Err(refusal(e));
                 }
             };
-            // Beside, then renamed: the working copy is never half written.
-            let partial = doc.path.with_extension("partial");
-            std::fs::write(&partial, &out.bytes).and_then(|()| std::fs::rename(&partial, &doc.path)).map_err(|e| e.to_string())?;
+            // The working copy is never half written.
+            crate::atomic::write(&doc.path, &out.bytes).map_err(|e| e.to_string())?;
             let book = Book::open(&out.bytes).map_err(|e| e.to_string())?;
             let edited_before: Vec<Value> = edits.iter().map(|(n, _)| before(doc, *n)).collect();
             let old_book = std::mem::replace(&mut doc.book, book);
@@ -275,7 +466,7 @@ impl Sheets {
             sheet: book.sheets[n.0].name.clone(),
             cell: n.1.to_string(),
             text: book.display(&book.value(n.0, n.1), &style).0,
-            formula: book.formula(n.0, n.1).map(|f| format!("={}", display(f))),
+            formula: book.formula(n.0, n.1).map(|f| formula_text(&display(f))),
             label: book.label(n.0, n.1),
             depth,
         }
@@ -283,6 +474,21 @@ impl Sheets {
 
     /// Cells whose shown text, or formula, contains `query` (case folded), in sheet order.
     pub fn find(&mut self, handle: u64, query: &str, limit: usize) -> Result<Vec<Found>, String> {
+        if let Some(flat) = self.flat(handle) {
+            let q = query.to_lowercase();
+            let mut out = Vec::new();
+            for name in flat.names() {
+                for (at, _, text, formula) in flat.cells(&name, None).unwrap_or_default() {
+                    if text.to_lowercase().contains(&q) || formula.as_deref().is_some_and(|f| f.to_lowercase().contains(&q)) {
+                        out.push(Found { sheet: name.clone(), cell: at.to_string(), text, formula: formula.map(|f| formula_text(&f)), label: None, depth: 0 });
+                        if out.len() >= limit {
+                            return Ok(out);
+                        }
+                    }
+                }
+            }
+            return Ok(out);
+        }
         let book = &self.doc(handle)?.book;
         let q = query.to_lowercase();
         let mut out = Vec::new();
@@ -305,6 +511,9 @@ impl Sheets {
 
     /// The cells a cell reads (up) or the formulas that read it (down), `depth` steps out.
     pub fn trace(&mut self, handle: u64, sheet: &str, cell: &str, direction: Direction, depth: u32) -> Result<Vec<Found>, String> {
+        if self.flat(handle).is_some() {
+            return Err("tracing formulas needs an .xlsx: this file has values only, or is a legacy .xls".into());
+        }
         let doc = self.doc(handle)?;
         let engine = doc.engine.as_ref().map_err(Clone::clone)?;
         let book = &doc.book;
@@ -328,7 +537,7 @@ impl Sheets {
                         .flat_map(|a| {
                             let ix = book.sheets.get(a.sheet).and_then(|s| s.index.as_ref());
                             ix.into_iter().flat_map(move |ix| {
-                                ix.cells().filter(move |c| c.at.row >= a.first.row && c.at.row <= a.last.row && c.at.col >= a.first.col && c.at.col <= a.last.col).map(move |c| (a.sheet, c.at))
+                                ix.cells().filter(move |c| a.contains(c.at)).map(move |c| (a.sheet, c.at))
                             })
                         })
                         .collect(),
@@ -351,6 +560,21 @@ impl Sheets {
     /// What the agent reads first (spreadsheet-design §9.1): each sheet's extent and inputs, the
     /// model's outputs, values held as saved (add-ins, links), and the cycles.
     pub fn summary(&mut self, handle: u64) -> Result<String, String> {
+        if let Some(flat) = self.flat(handle) {
+            return Ok(match flat {
+                Flat::Csv { csv, name, .. } => format!(
+                    "A CSV ({}, separated by {}): sheet \"{name}\", {} rows × {} columns. Every field is text as written (leading zeros and long numbers kept); no formulas. Edits are written back in the same encoding.\n",
+                    csv.encoding_name(),
+                    match csv.delimiter { '\t' => "tabs".to_string(), d => format!("'{d}'") },
+                    csv.rows(),
+                    csv.cols()
+                ),
+                Flat::Xls(book) => {
+                    let sheets: Vec<String> = book.sheets.iter().map(|s| format!("{} ({} cells, {} formulas)", s.name, s.cells.len(), s.cells.values().filter(|c| c.formula.is_some()).count())).collect();
+                    format!("A legacy .xls, read only here (to edit it, the user saves it as .xlsx): {}.\n", sheets.join("; "))
+                }
+            });
+        }
         let doc = self.doc(handle)?;
         let book = &doc.book;
         let mut out = String::new();
@@ -370,7 +594,7 @@ impl Sheets {
             for areas in e.graph.areas.values() {
                 for a in areas {
                     let Some(ix) = book.sheets.get(a.sheet).and_then(|s| s.index.as_ref()) else { continue };
-                    for c in ix.cells().filter(|c| c.formula.is_none() && c.at.row >= a.first.row && c.at.row <= a.last.row && c.at.col >= a.first.col && c.at.col <= a.last.col) {
+                    for c in ix.cells().filter(|c| c.formula.is_none() && a.contains(c.at)) {
                         if matches!(book.value(a.sheet, c.at), Value::Number(_)) {
                             inputs.entry(a.sheet).or_default().insert(c.at);
                         }
@@ -388,8 +612,7 @@ impl Sheets {
                 SheetKind::Worksheet => {}
             }
             let Some(ix) = &sheet.index else { continue };
-            let mut cells = ix.cells().filter(|c| c.v.is_some() || c.formula.is_some() || c.inline.is_some()).map(|c| c.at);
-            let used = cells.next().map(|f| cells.fold(Rect::single(f), |r, c| r.union(c)).to_string()).unwrap_or_else(|| "empty".into());
+            let used = used_range(ix).map_or_else(|| "empty".into(), |r| r.to_string());
             out.push_str(&format!("\n## {} {used}: {} formulas", sheet.name, sheet.formulas.len()));
             if ix.protected {
                 out.push_str(", protected");
@@ -426,6 +649,28 @@ impl Sheets {
     }
 }
 
+/// How a formula is shown and sent: with its `=`.
+fn formula_text(f: &str) -> String {
+    format!("={f}")
+}
+
+/// The cells holding something, as one rectangle; None when the sheet is empty.
+fn used_range(ix: &finx_sheet::scan::SheetIndex) -> Option<Rect> {
+    let mut cells = ix.cells().filter(|c| c.v.is_some() || c.formula.is_some() || c.inline.is_some()).map(|c| c.at);
+    let first = cells.next()?;
+    Some(cells.fold(Rect::single(first), |r, c| r.union(c)))
+}
+
+/// A value typed or sent, as written to a cell, in a workbook or a CSV alike. Control
+/// characters other than tab and line feed are dropped (§5.3.2).
+fn new_value(value: &CellInput) -> NewValue {
+    match value {
+        CellInput::Number(n) => NewValue::Number { value: *n },
+        CellInput::Bool(b) => NewValue::Bool { value: *b },
+        CellInput::Text(t) => NewValue::Text { value: t.chars().filter(|c| !c.is_control() || *c == '\t' || *c == '\n').collect() },
+    }
+}
+
 /// The ops as cell edits, checked against the workbook.
 fn edits_of(book: &Book, ops: &[SheetOp]) -> Result<Vec<(Node, NewValue)>, String> {
     let sheet = |name: &str| -> Result<usize, String> {
@@ -440,13 +685,7 @@ fn edits_of(book: &Book, ops: &[SheetOp]) -> Result<Vec<(Node, NewValue)>, Strin
     for op in ops {
         match op {
             SheetOp::SetValue { sheet: s, cell: c, value } => {
-                let v = match value {
-                    CellInput::Number(n) => NewValue::Number { value: *n },
-                    CellInput::Bool(b) => NewValue::Bool { value: *b },
-                    // Control characters other than tab and line feed are dropped (§5.3.2).
-                    CellInput::Text(t) => NewValue::Text { value: t.chars().filter(|c| !c.is_control() || *c == '\t' || *c == '\n').collect() },
-                };
-                out.push(((sheet(s)?, cell(c)?), v));
+                out.push(((sheet(s)?, cell(c)?), new_value(value)));
             }
             SheetOp::SetFormula { sheet: s, cell: c, formula } => out.push(((sheet(s)?, cell(c)?), NewValue::Formula { text: formula.clone(), cached: None })),
             SheetOp::Clear { sheet: s, range } => {
@@ -477,7 +716,7 @@ fn undo_of(book: &Book, edits: &[(Node, NewValue)]) -> Vec<SheetOp> {
         }
         let (sheet, cell) = (book.sheets[*s].name.clone(), at.to_string());
         out.push(match (book.formula(*s, *at), book.value(*s, *at)) {
-            (Some(f), _) => SheetOp::SetFormula { sheet, cell, formula: format!("={}", display(f)) },
+            (Some(f), _) => SheetOp::SetFormula { sheet, cell, formula: formula_text(&display(f)) },
             (None, Value::Number(n)) => SheetOp::SetValue { sheet, cell, value: CellInput::Number(n) },
             (None, Value::Bool(b)) => SheetOp::SetValue { sheet, cell, value: CellInput::Bool(b) },
             (None, Value::Text(t)) => SheetOp::SetValue { sheet, cell, value: CellInput::Text(t) },

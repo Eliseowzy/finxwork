@@ -72,7 +72,11 @@ pub mod method {
     pub const DOC_APPLY: &str = "doc/apply";
     pub const DOC_UNDO: &str = "doc/undo";
     pub const DOC_REDO: &str = "doc/redo";
+    pub const DOC_RECALC: &str = "doc/recalc";
     pub const DOC_SAVE: &str = "doc/save";
+    /// Notification: a document changed (an edit, undo, redo or save, from any session); to
+    /// every connection that opened a document (spreadsheet-design §7).
+    pub const DOC_CHANGED: &str = "doc/changed";
     pub const SESSION_ARCHIVE: &str = "session/archive";
     pub const SESSION_UNARCHIVE: &str = "session/unarchive";
     /// A loaded session's skills and `/` commands, or the skills a directory would give a session.

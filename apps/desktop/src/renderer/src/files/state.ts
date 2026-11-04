@@ -1,9 +1,11 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { FileDoc, RpcError, baseName, type RpcClient } from "@finx/client";
+import { FileDoc, baseName, type RpcClient } from "@finx/client";
 import type { FilesListResult, FilesReadResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
-import { closeDoc, docTab, lockedPath, openDoc, opensAsDoc, setDocInfo, setDocPassword, type DocAnchor, type DocTab } from "../docs/state";
+import { closeDoc, docTab, lockedPath, openDoc, setDocInfo, setDocPassword, type DocAnchor, type DocTab } from "../docs/state";
+import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
+import { opensAsDoc, previewable } from "./kind";
 
 // The file panel's files (file-panel-design §10), by session: the open tabs with their
 // documents, and the folders of the tree. Kept outside the components, so a panel that is
@@ -31,12 +33,12 @@ export type Tab = {
   /** The editor's own state (CodeMirror's), kept across tab switches; only the editor reads it. */
   editor: unknown;
   scroll: number;
-  /** A PDF's, shown by pdf.js instead of read as text: its document in finx (docs/state) once open. */
-  pdf: PdfState | null;
+  /** A PDF's or a workbook's, shown by pdf.js or the grid instead of read as text: its document in finx (docs/state) once open. */
+  opened: OpenedDoc | null;
 };
 
 /** `locked`: it waits for its password, `wrong` once one was refused; `opening`: doc/open on its way. */
-export type PdfState = { docId: string | null; locked: { wrong: boolean; anchor?: DocAnchor } | null; opening: Promise<void> | null };
+export type OpenedDoc = { docId: string | null; locked: { wrong: boolean; anchor?: DocAnchor } | null; opening: Promise<void> | null };
 
 /** A folder of the tree: its entries once read. */
 export type Dir = { list: FilesListResult | null; error: string | null };
@@ -117,7 +119,7 @@ export function openFile(s: SessionFiles, path: string, at?: { line?: number; en
   if (!tab) {
     tab = newTab(s, path);
     s.tabs.push(tab);
-    if (tab.pdf) openPdf(s, tab);
+    if (tab.opened) openAsDoc(s, tab);
     else void load(s, tab);
   }
   s.active = path;
@@ -127,30 +129,30 @@ export function openFile(s: SessionFiles, path: string, at?: { line?: number; en
 }
 
 function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path)): Tab {
-  const pdf = asDoc ? { docId: null, locked: null, opening: null } : null;
-  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, preview: /\.(md|markdown|svg)$/i.test(path), target: null, editor: null, scroll: 0, pdf };
+  const opened = asDoc ? { docId: null, locked: null, opening: null } : null;
+  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, preview: previewable(path), target: null, editor: null, scroll: 0, opened };
 }
 
-/** Opens a PDF tab's document in finx, with its password when one was given; an anchor is gone to once it opens. */
-function openPdf(s: SessionFiles, tab: Tab, anchor?: DocAnchor, password?: string): Promise<void> {
-  const pdf = tab.pdf!;
+/** Opens a document tab's file in finx, with its password when one was given; an anchor is gone to once it opens. */
+function openAsDoc(s: SessionFiles, tab: Tab, anchor?: DocAnchor, password?: string): Promise<void> {
+  const doc = tab.opened!;
   const opening = (async () => {
     if (!rpc) return void (tab.error = t("files.offline"));
     try {
-      const doc = await openDoc(rpc, s.session, { path: tab.path }, anchor, password);
-      // finx may not hand back the password it opened with; pdf.js needs it all the same.
-      if (doc && password && !doc.password) setDocPassword(s.session, doc.info.doc_id, password);
-      pdf.docId = doc?.info.doc_id ?? null;
-      pdf.locked = doc ? null : { wrong: password !== undefined, anchor };
+      const opened = await openDoc(rpc, s.session, { path: tab.path }, anchor, password);
+      // finx may not hand back the password it opened with; doc.js needs it all the same.
+      if (opened && password && !opened.password) setDocPassword(s.session, opened.info.doc_id, password);
+      doc.docId = opened?.info.doc_id ?? null;
+      doc.locked = opened ? null : { wrong: password !== undefined, anchor };
       tab.error = null;
     } catch (e) {
       tab.error = errorText(e);
     }
   })().finally(() => {
-    if (pdf.opening === opening) pdf.opening = null;
+    if (doc.opening === opening) doc.opening = null;
     changed(s);
   });
-  pdf.opening = opening;
+  doc.opening = opening;
   changed(s);
   return opening;
 }
@@ -159,42 +161,42 @@ function openPdf(s: SessionFiles, tab: Tab, anchor?: DocAnchor, password?: strin
  * A PDF's file changed under its tab (written again, its password changed): what showed is let go
  * and the file opened afresh, asking for its password again if it has one.
  */
-function reopenPdf(s: SessionFiles, tab: Tab, anchor?: DocAnchor): Promise<void> {
-  const pdf = tab.pdf!;
-  if (pdf.opening) return pdf.opening;
-  const docId = pdf.docId;
-  pdf.docId = null;
-  pdf.locked = null;
+function reopenDoc(s: SessionFiles, tab: Tab, anchor?: DocAnchor): Promise<void> {
+  const doc = tab.opened!;
+  if (doc.opening) return doc.opening;
+  const docId = doc.docId;
+  doc.docId = null;
+  doc.locked = null;
   const reopening = (async () => {
     if (docId) await closeDoc(rpc, s.session, docId);
-    return openPdf(s, tab, anchor);
+    return openAsDoc(s, tab, anchor);
   })();
-  pdf.opening = reopening;
+  doc.opening = reopening;
   return reopening;
 }
 
 /** An encrypted PDF's password, from the tab that asks for it. */
-export function unlockPdf(s: SessionFiles, tab: Tab, password: string): Promise<void> {
-  return openPdf(s, tab, tab.pdf?.locked?.anchor, password);
+export function unlockDoc(s: SessionFiles, tab: Tab, password: string): Promise<void> {
+  return openAsDoc(s, tab, tab.opened?.locked?.anchor, password);
 }
 
-/** The document a session's panel shows in front, if it is a PDF: what "this page" means to the agent (§7.4). */
+/** The document a session's panel shows in front, if it is one: what "this page" means to the agent (§7.4). */
 export function viewingDoc(session: string): DocTab | undefined {
   const s = sessions.get(session);
   const tab = s?.tabs.find((x) => x.path === s.active);
-  return docTab(session, tab?.pdf?.docId);
+  return docTab(session, tab?.opened?.docId);
 }
 
 /** Reads a tab's file (again): a document's disk version moves on, or the edits wait for a choice. */
 async function load(s: SessionFiles, tab: Tab) {
-  // A PDF is finx's document, kept up to date there.
-  if (!rpc || tab.pdf) return;
+  // A document is finx's, kept up to date there.
+  if (!rpc || tab.opened) return;
   try {
     const read = await rpc.request("files/read", { session_id: s.session, path: tab.path });
     tab.read = read;
     tab.error = null;
-    if (read.kind === "text" && read.text !== undefined && read.text !== null && read.hash) {
-      const version = { text: read.text, hash: read.hash };
+    const version = textVersion(read);
+    if (version) {
       if (tab.doc) tab.doc.diskChanged(version);
       else tab.doc = new FileDoc(version, { write: (text, base) => write(s, tab, text, base), changed: () => changed(s) });
     }
@@ -203,6 +205,11 @@ async function load(s: SessionFiles, tab: Tab) {
     tab.doc?.diskChanged(null);
   }
   changed(s);
+}
+
+/** A text file's contents as read, with the hash a write is checked against. */
+function textVersion(read: FilesReadResult): { text: string; hash: string } | null {
+  return read.kind === "text" && typeof read.text === "string" && read.hash ? { text: read.text, hash: read.hash } : null;
 }
 
 async function write(s: SessionFiles, tab: Tab, text: string, base: string | null) {
@@ -228,7 +235,7 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
     st.show(t("files.unsavedClose", { name: tab.name }), undefined, true);
     return;
   }
-  if (tab.pdf?.docId) void closeDoc(rpc, s.session, tab.pdf.docId);
+  if (tab.opened?.docId) void closeDoc(rpc, s.session, tab.opened.docId);
   const i = s.tabs.indexOf(tab);
   s.tabs.splice(i, 1);
   if (s.active === path) s.active = (s.tabs[i] ?? s.tabs[i - 1])?.path ?? null;
@@ -247,7 +254,8 @@ export async function takeDisk(s: SessionFiles, tab: Tab) {
   try {
     const read = await rpc.request("files/read", { session_id: s.session, path: tab.path });
     tab.read = read;
-    if (read.kind === "text" && read.text !== undefined && read.text !== null && read.hash) tab.doc.takeDisk({ text: read.text, hash: read.hash });
+    const version = textVersion(read);
+    if (version) tab.doc.takeDisk(version);
   } catch (e) {
     tab.error = errorText(e);
   }
@@ -326,7 +334,7 @@ export function filesChanged(session: string, paths: string[]) {
   if (!s) return;
   for (const path of paths) {
     const tab = s.tabs.find((x) => x.path === path);
-    if (tab?.pdf) void reopenPdf(s, tab);
+    if (tab?.opened) void reopenDoc(s, tab);
     else if (tab) void load(s, tab);
     if (s.dirs.has(path)) void listDir(s, path, true);
   }
@@ -342,10 +350,13 @@ export function recheckActive() {
 
 // ── from the conversation ──
 
+/** The file panel in front, in place of the browser's. */
+const showPanel = (st: Store) => st.set({ files: true, browser: false, background: false });
+
 /** A file a reply or a step points at, opened in the session's panel at its lines (DD-91). */
 export function showFile(st: Store, session: string, cwd: string, path: string, at?: { line?: number; endLine?: number }) {
   openFile(filesOf(session, cwd), path, at);
-  st.set({ files: true, browser: false, background: false });
+  showPanel(st);
 }
 
 /** A folder in the session's folder: the panel, its tree open down to it. */
@@ -356,7 +367,7 @@ export function showFolder(st: Store, session: string, cwd: string, dir: string)
   s.expanded.add(dir);
   void listDir(s, dir);
   changed(s);
-  st.set({ files: true, browser: false, background: false });
+  showPanel(st);
 }
 
 /** Whether a folder is the session's or in it (shown in the panel's tree, not the file manager). */
@@ -371,21 +382,21 @@ export async function showDoc(st: Store, session: string, cwd: string, what: { p
   const s = filesOf(session, cwd);
   const path = "path" in what ? what.path : (docTab(session, what.doc_id)?.info.path ?? (await pathOfDoc(rpc, session, what.doc_id)));
   openFile(s, path);
-  st.set({ files: true, browser: false, background: false });
+  showPanel(st);
   const tab = s.tabs.find((x) => x.path === path);
-  if (!tab?.pdf) return false;
-  await tab.pdf.opening;
-  if (!anchor) return !!tab.pdf.docId;
-  if (tab.pdf.locked) tab.pdf.locked.anchor = anchor;
-  else if (tab.pdf.docId) {
+  if (!tab?.opened) return false;
+  await tab.opened.opening;
+  if (!anchor) return !!tab.opened.docId;
+  if (tab.opened.locked) tab.opened.locked.anchor = anchor;
+  else if (tab.opened.docId) {
     try {
-      await openDoc(rpc, session, { doc_id: tab.pdf.docId }, anchor);
+      await openDoc(rpc, session, { doc_id: tab.opened.docId }, anchor);
     } catch (e) {
-      if (isPasswordError(e)) await reopenPdf(s, tab, anchor);
+      if (isPasswordError(e)) await reopenDoc(s, tab, anchor);
       else throw e;
     }
   }
-  return !!tab.pdf.docId;
+  return !!tab.opened.docId;
 }
 
 /** The file of a document not open in this session; one that wants its password is still found, to ask in its tab. */
@@ -400,7 +411,7 @@ async function pathOfDoc(rpc: RpcClient, session: string, docId: string): Promis
 }
 
 /** finx could not open a document without its password: one whose file changed since, say. */
-export const isPasswordError = (e: unknown) => e instanceof RpcError && e.kind === "doc_password";
+export const isPasswordError = (e: unknown) => isRpcKind(e, "doc_password");
 
 /**
  * Something about an open PDF failed for want of its password (its file changed and finx read it
@@ -409,10 +420,10 @@ export const isPasswordError = (e: unknown) => e instanceof RpcError && e.kind =
 export async function lockedOut(session: string, docId: string, e: unknown): Promise<boolean> {
   if (!isPasswordError(e)) return false;
   const s = sessions.get(session);
-  const tab = s?.tabs.find((x) => x.pdf?.docId === docId);
+  const tab = s?.tabs.find((x) => x.opened?.docId === docId);
   if (!s || !tab) return false;
   s.active = tab.path;
-  await reopenPdf(s, tab);
+  await reopenDoc(s, tab);
   return true;
 }
 
@@ -433,7 +444,7 @@ export function useDocEvents(rpc: RpcClient | null, session: string, cwd: string
       const tab = newTab(s, path, true);
       s.tabs.push(tab);
       s.active ??= path;
-      openPdf(s, tab);
+      openAsDoc(s, tab);
     });
   }, [rpc, session, cwd]);
 }

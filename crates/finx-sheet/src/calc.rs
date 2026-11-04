@@ -161,12 +161,24 @@ impl Engine {
             let (Some(ix), Some(i)) = (&sh.index, sheet[s]) else {
                 continue;
             };
+            for row in &ix.rows {
+                if row.hidden {
+                    model
+                        .set_row_hidden(i, row.r as i32, true)
+                        .map_err(unavailable)?;
+                }
+            }
             for c in ix.cells() {
                 let (r, col) = (c.at.row as i32, c.at.col as i32);
                 match sh.formulas.get(&c.at) {
                     Some(f) if !has_external_link(f) => {
                         model
-                            .update_cell_with_formula(i, r, col, format!("={}", display(f)))
+                            .update_cell_with_formula(
+                                i,
+                                r,
+                                col,
+                                format!("={}", display(&crate::tables::expand(f, s, c.at, &book))),
+                            )
                             .map_err(unavailable)?;
                     }
                     other => {
@@ -294,7 +306,7 @@ impl Engine {
                         i,
                         at.row as i32,
                         at.col as i32,
-                        format!("={}", display(f)),
+                        format!("={}", display(&crate::tables::expand(f, s, at, &self.book))),
                     )
                     .map_err(unavailable)?;
             }
@@ -326,7 +338,10 @@ impl Engine {
                     .insert(s, self.model.workbook.worksheets.len() as u32 - 1);
             }
             let f = &self.book.sheets[s].formulas[&at];
-            let q = qualify(&display(f), &self.book.sheets[s].name);
+            let q = qualify(
+                &display(&crate::tables::expand(f, s, at, &self.book)),
+                &self.book.sheets[s].name,
+            );
             self.model
                 .update_cell_with_formula(
                     self.probe[&s],
@@ -406,6 +421,54 @@ impl Engine {
         Ok(())
     }
 
+    /// Explicit recalculation compares with the working copy. This reports discrepancies;
+    /// it never promotes untrusted results or writes cached values to the file.
+    pub fn check_recalculation(&mut self, circular_only: bool) -> Result<Impact, Error> {
+        if circular_only {
+            self.recalc_cycles_from_zero()?;
+        } else {
+            self.recalc();
+        }
+        let mut impact = Impact {
+            iterations: self.iterations,
+            converged: self.converged,
+            ..Default::default()
+        };
+        let circular = self
+            .graph
+            .cycles(None)
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let selected = self.graph.downstream(&circular);
+        for n in self.formula_cells() {
+            if circular_only && !circular.contains(&n) && !selected.contains(&n) {
+                continue;
+            }
+            let before = self.book.value(n.0, n.1);
+            let after = self.value(n);
+            if before.close_to(&after, SAME) {
+                continue;
+            }
+            if !self.trusted(n) || !self.converged || self.constants.contains(&n) {
+                impact.needs_excel.push(n);
+            } else {
+                impact.changed.push(Change {
+                    node: n,
+                    before,
+                    after,
+                });
+            }
+        }
+        impact.key_outputs = impact
+            .changed
+            .iter()
+            .map(|c| c.node)
+            .filter(|n| self.graph.read_by.get(n).is_none_or(|r| r.is_empty()))
+            .collect();
+        Ok(impact)
+    }
+
     fn snapshot(&self) -> BTreeMap<Node, Value> {
         self.formula_cells().map(|n| (n, self.value(n))).collect()
     }
@@ -428,7 +491,15 @@ impl Engine {
             NewValue::Formula { text, .. } => {
                 let stored = normalize_for_write(text)?;
                 self.model
-                    .update_cell_with_formula(i, r, c, format!("={}", display(&stored)))
+                    .update_cell_with_formula(
+                        i,
+                        r,
+                        c,
+                        format!(
+                            "={}",
+                            display(&crate::tables::expand(&stored, n.0, n.1, &self.book))
+                        ),
+                    )
                     .map_err(unavailable)?;
                 self.book.sheets[n.0].formulas.insert(n.1, stored);
             }

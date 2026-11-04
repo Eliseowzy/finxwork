@@ -64,6 +64,7 @@ pub struct Sheet {
 }
 
 pub struct Book {
+    pub tables: Vec<crate::tables::Table>,
     pub info: WorkbookInfo,
     pub strings: Vec<String>,
     pub styles: Styles,
@@ -99,7 +100,9 @@ impl Book {
                 formulas,
             });
         }
+        let tables = crate::tables::load(&pkg, &info)?;
         Ok(Self {
+            tables,
             info,
             strings,
             styles,

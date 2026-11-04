@@ -7,13 +7,16 @@
 pub mod book;
 pub mod calc;
 pub mod cellref;
+pub mod csv;
 pub mod deps;
 pub mod formula;
 pub mod package;
 pub mod patch;
 pub mod scan;
 pub mod styles;
+pub mod tables;
 pub mod verify;
+pub mod xls;
 pub mod xmltext;
 
 pub use patch::Cached;
