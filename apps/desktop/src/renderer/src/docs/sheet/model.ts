@@ -92,3 +92,35 @@ export function writeSizes(docId: string, sizes: Sizes) {
     /* Layout remains usable when storage is unavailable. */
   }
 }
+
+/** What Excel's status bar shows for a selection: non-empty cells, and over its numbers their sum and average. */
+export type SelectionStats = { count: number; numbers: number; sum: number; average: number | null; error: boolean };
+
+/**
+ * The selection's figures, as Excel's status bar has them: `count` is every non-empty cell,
+ * `sum` and `average` only the numbers (text, TRUE/FALSE and numbers stored as text are not).
+ * Null for a single cell or nothing in it. With an error value among them the sum is not told
+ * (`error`), as a total that quietly leaves a #REF! out would mislead.
+ */
+export function selectionStats(cells: readonly CellData[], area: Area): SelectionStats | null {
+  if (area.r1 === area.r2 && area.c1 === area.c2) return null;
+  let count = 0, numbers = 0, sum = 0, error = false;
+  for (const c of cells) {
+    if (!c.text && !c.value) continue;
+    count++;
+    if (c.value?.type === "number") {
+      numbers++;
+      sum += c.value.value;
+    } else if (c.value?.type === "error") error = true;
+  }
+  if (count === 0) return null;
+  return { count, numbers, sum, average: numbers ? sum / numbers : null, error };
+}
+
+/**
+ * A status-bar figure, short enough to read at a glance: two decimals from 100 up, four below
+ * (a ratio or a rate keeps its digits); a click copies the full value.
+ */
+export function statText(n: number, locale?: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: Math.abs(n) >= 100 ? 2 : 4 }).format(n);
+}

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { editTextOf, inputOp, readable, sizeKey, sizesOf, toMarkdown, toTsv } from "./model.ts";
+import { editTextOf, inputOp, readable, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv } from "./model.ts";
 
 test("what is typed reads as Excel reads it", () => {
   const v = (raw: string) => inputOp("S", "A1", raw);
@@ -40,4 +40,26 @@ test("a selection copies as TSV and quotes as a Markdown table", () => {
 test("dragged sizes are kept by sheet", () => {
   const m = new Map([[sizeKey("S", 3), 80], [sizeKey("T", 3), 40], [sizeKey("S", 7), 20]]);
   assert.deepEqual([...sizesOf(m, "S")], [[3, 80], [7, 20]]);
+});
+
+test("the status bar counts what Excel counts", () => {
+  const n = (cell: string, value: number) => ({ cell, text: String(value), value: { type: "number", value } }) as never;
+  const area = { r1: 1, c1: 1, r2: 5, c2: 1 };
+  const cells = [n("A1", 22.5), n("A2", 72), { cell: "A3", text: "label", value: { type: "text", value: "label" } } as never, { cell: "A4", text: "TRUE", value: { type: "bool", value: true } } as never];
+  assert.deepEqual(selectionStats(cells, area), { count: 4, numbers: 2, sum: 94.5, average: 47.25, error: false });
+  // Text only: a count, no sum.
+  assert.deepEqual(selectionStats([cells[2]], area), { count: 1, numbers: 0, sum: 0, average: null, error: false });
+  // An error value: the sum is not told.
+  assert.equal(selectionStats([...cells, { cell: "A5", text: "#REF!", value: { type: "error", value: "#REF!" } } as never], area)!.error, true);
+  // One cell, or nothing in the selection: no figures.
+  assert.equal(selectionStats([n("A1", 1)], { r1: 1, c1: 1, r2: 1, c2: 1 }), null);
+  assert.equal(selectionStats([], area), null);
+});
+
+test("status figures read without float noise", () => {
+  assert.equal(statText(0.1 + 0.2, "en"), "0.3");
+  assert.equal(statText(1234567.891, "en"), "1,234,567.89");
+  assert.equal(statText(1122.6666666667, "en"), "1,122.67");
+  assert.equal(statText(22.222222222, "en"), "22.2222");
+  assert.equal(statText(0.085, "en"), "0.085");
 });

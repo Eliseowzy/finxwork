@@ -99,7 +99,11 @@
 
 /* Workbooks (spreadsheet-design §8) */
 .sht{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;--sht-bg:var(--win);outline:none}
-.sht-bar{display:flex;gap:6px}
+.sht-tools{height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px;min-width:0;border-bottom:.5px solid var(--sep)}
+.sht-group{display:flex;align-items:center;gap:2px}
+.sht-tools-end{margin-left:auto;display:flex;align-items:center;gap:2px;min-width:0}
+.sht-tools .tb{height:28px;min-width:28px;padding:0}
+.sht-bar{height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 8px;min-width:0;border-bottom:.5px solid var(--sep)}
 .sht-name{width:72px;height:24px;font:inherit;font-size:12.5px;padding:0 6px;border:0;border-radius:var(--r-xs);background:var(--field);color:var(--l1);outline:none}
 .sht-fx{font-style:italic;color:var(--l3);font-size:12px}
 .sht-formula{flex:1;min-width:0;height:24px;font:inherit;font-size:12.5px;font-variant-numeric:tabular-nums;padding:0 8px;border:0;border-radius:var(--r-xs);background:var(--field);color:var(--l1);outline:none}
@@ -121,7 +125,9 @@
 .sht-sel.multi::before{content:"";position:absolute;inset:-2px;background:color-mix(in srgb,var(--accent) 10%,transparent);clip-path:var(--sht-hole)}
 .sht-active{position:absolute;pointer-events:none;border:2px solid var(--accent);box-sizing:border-box}
 .sht-edit{position:absolute;box-sizing:border-box;font:inherit;padding:0 4px;border:2px solid var(--accent);background:var(--sht-bg);color:var(--l1);outline:none}
-.sht-tabs{flex:none;display:flex;gap:2px;overflow-x:auto;padding:4px 8px;border-top:.5px solid var(--sep)}
+.sht-tabs{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:.5px solid var(--sep);min-width:0}
+.sht-tablist{flex:1;min-width:0;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
+.sht-tablist::-webkit-scrollbar{display:none}
 .sht-tab{flex:none;display:flex;align-items:center;gap:4px;height:24px;padding:0 10px;font:inherit;font-size:12.5px;border:0;border-radius:var(--r-xs);background:none;color:var(--l2);cursor:default}
 .sht-tab:hover{background:var(--fill)}
 .sht-tab.on{background:var(--fill2);color:var(--l1);font-weight:600}
@@ -152,7 +158,12 @@
 .sht-grip.col{width:7px;cursor:col-resize}
 .sht-grip.row{height:7px;cursor:row-resize}
 .sht-grip:hover{background:color-mix(in srgb,var(--accent) 45%,transparent)}
-.sht-zoom{margin-left:auto;flex:none;display:flex;align-items:center;gap:2px;color:var(--l3)}
+.sht-stats{flex:none;display:flex;align-items:center;gap:2px;padding-right:6px}
+.sht-stat{height:24px;padding:0 6px;font:inherit;font-size:12px;font-variant-numeric:tabular-nums;border:0;border-radius:var(--r-xs);background:none;color:var(--l3);white-space:nowrap;cursor:default}
+.sht-stat b{font-weight:500;color:var(--l1)}
+.sht-stat:hover{background:var(--fill)}
+@container (max-width:640px){.sht-stat.avg{display:none}}
+.sht-zoom{flex:none;display:flex;align-items:center;gap:2px;color:var(--l3)}
 .sht-zoom .tb{height:24px;min-width:24px;padding:0}
 .sht-zoom .ic{width:12px;height:12px}
 .sht-zoom-n{min-width:44px;height:24px;font:inherit;font-size:12px;font-variant-numeric:tabular-nums;border:0;border-radius:var(--r-xs);background:none;color:var(--l2)}

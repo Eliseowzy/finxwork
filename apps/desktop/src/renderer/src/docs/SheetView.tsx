@@ -10,7 +10,7 @@ import { addr, areaOf, colName, MAX_COLS, MAX_ROWS, onSheet, parseAddr, parseRan
 import { useEditQueue } from "./sheet/editQueue";
 import { useGeometry } from "./sheet/geometry";
 import { ImpactBar } from "./sheet/ImpactBar";
-import { editTextOf, inputOp, readable, readSizes, sizeKey, sizesOf, toMarkdown, toTsv, writeSizes, type Sizes } from "./sheet/model";
+import { editTextOf, inputOp, readable, readSizes, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, writeSizes, type SelectionStats, type Sizes } from "./sheet/model";
 import { quoteToComposer, setDocInfo, setSheetViewing, type DocTab, type Jump } from "./state";
 
 export { inputOp } from "./sheet/model";
@@ -34,7 +34,7 @@ type Cache = { key: string; cells: Map<string, CellData>; blocks: Set<number>; m
 type Activity = { revision: number; title: string; impact?: Impact };
 
 export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc: RpcClient; session: string; tab: DocTab; jump?: Jump | null; activeView?: boolean }) {
-  const { t } = useTranslation("session");
+  const { t, i18n } = useTranslation("session");
   const st = useStore();
   const info = tab.info;
   const docId = info.doc_id;
@@ -170,6 +170,17 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, sheetName, info.revision]);
 
+  // The file changed on disk and finx was asked for it again (files/state refreshDoc): read it
+  // again, as it may hold Excel's changes; a sheet that is gone gives way to the first one.
+  const token = useRef(tab.token);
+  useEffect(() => {
+    if (token.current === tab.token) return;
+    token.current = tab.token;
+    if (!sheet && sheets.length) setSheetName(sheets.find((x) => !x.chart)?.name ?? sheets[0].name);
+    else reread(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab.token]);
+
   useEffect(() => {
     setAgentNotice(null);
     setImpact(null);
@@ -225,6 +236,24 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   const editable = !sheet?.protected && !!info.capabilities.includes("edit_values");
   const editText = editTextOf(activeCell);
   const shown = (p: Pos) => cache.current.cells.get(addr(p));
+
+  // The status bar's figures for the selection, as in Excel; read from finx, so cells out of sight count too.
+  const [stats, setStats] = useState<SelectionStats | null>(null);
+  useEffect(() => {
+    const inUse = { r1: Math.max(selected.r1, used.r1), c1: Math.max(selected.c1, used.c1), r2: Math.min(selected.r2, used.r2), c2: Math.min(selected.c2, used.c2) };
+    const size = (inUse.r2 - inUse.r1 + 1) * (inUse.c2 - inUse.c1 + 1);
+    if (!sheet || sheet.chart || inUse.r1 > inUse.r2 || inUse.c1 > inUse.c2 || size > STATS_MAX_CELLS) return setStats(null);
+    let gone = false;
+    const timer = setTimeout(() => {
+      rpc.request("doc/cells", { session_id: session, doc_id: docId, sheet: sheet.name, range: rangeText(inUse) })
+        .then((r) => !gone && setStats(selectionStats(r.cells, selected)))
+        .catch(() => !gone && setStats(null));
+    }, 80);
+    return () => {
+      gone = true;
+      clearTimeout(timer);
+    };
+  }, [docId, sheetName, selectedRange, sheet?.used, info.revision]);
 
   useEffect(() => {
     if (!activeView || !sheet || sheet.chart) return;
@@ -616,7 +645,20 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   if (!sheet) return <div className="fpn-empty">{t("sheet.empty")}</div>;
   return (
     <div ref={root} className="sht" onKeyDown={onKey}>
-      <div className="dcp-bar sht-bar">
+      <div className="sht-tools" role="toolbar" aria-label={t("sheet.tools")}>
+        <div className="sht-group">
+          <button className="tb" title={t("sheet.save")} aria-label={t("sheet.save")} disabled={!dirty} onClick={() => void save()}><Icon name="save" /></button>
+          <button className="tb" title={t("sheet.undo")} aria-label={t("sheet.undo")} disabled={!editable || busy} onClick={() => void history("doc/undo")}><Icon name="undo" /></button>
+          <button className="tb sht-redo" title={t("sheet.redo")} aria-label={t("sheet.redo")} disabled={!editable || busy} onClick={() => void history("doc/redo")}><Icon name="undo" /></button>
+        </div>
+        <div className="sht-tools-end">
+          {busy && <span className="mini-spin" />}
+          <span className={`fpn-state ${dirty ? "dirty" : ""}`}>{dirty ? t("sheet.unsaved") : ""}</span>
+          <button className={`tb ${showHistory ? "on" : ""}`} title={t("sheet.history")} aria-label={t("sheet.history")} onClick={() => setShowHistory((v) => !v)}><Icon name="clock" /></button>
+          <button className="tb" title={t("sheet.openExcel")} aria-label={t("sheet.openExcel")} onClick={() => void openExcel()}><Icon name="ext" /></button>
+        </div>
+      </div>
+      <div className="sht-bar">
         <input
           className="sht-name"
           aria-label={t("sheet.address")}
@@ -647,15 +689,6 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
             }
           }}
         />
-        <div className="dcp-bar-end">
-          {busy && <span className="mini-spin" />}
-          <span className={`fpn-state ${dirty ? "dirty" : ""}`}>{dirty ? t("sheet.unsaved") : ""}</span>
-          <button className="tb" title={t("sheet.undo")} aria-label={t("sheet.undo")} disabled={!editable || busy} onClick={() => void history("doc/undo")}><Icon name="undo" /></button>
-          <button className="tb sht-redo" title={t("sheet.redo")} aria-label={t("sheet.redo")} disabled={!editable || busy} onClick={() => void history("doc/redo")}><Icon name="undo" /></button>
-          <button className={`tb ${showHistory ? "on" : ""}`} title={t("sheet.history")} aria-label={t("sheet.history")} onClick={() => setShowHistory((v) => !v)}><Icon name="clock" /></button>
-          <button className="tb" title={t("sheet.save")} aria-label={t("sheet.save")} disabled={!dirty} onClick={() => void save()}><Icon name="save" /></button>
-          <button className="tb" title={t("sheet.openExcel")} aria-label={t("sheet.openExcel")} onClick={() => void openExcel()}><Icon name="ext" /></button>
-        </div>
       </div>
       {showHistory && (
         <div className="sht-history" role="dialog" aria-label={t("sheet.history")}>
@@ -755,7 +788,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
           <button className="btn sm" onClick={() => setNote(null)}>{t("sheet.dismiss")}</button>
         </div>
       )}
-      <div className="sht-tabs" role="tablist">
+      <div className="sht-tabs">
+        <div className="sht-tablist" role="tablist">
         {sheets.map((s) => (
           <button key={s.name} role="tab" aria-selected={s.name === sheetName} className={`sht-tab ${s.name === sheetName ? "on" : ""}`} onClick={() => {
             setSheetName(s.name);
@@ -766,6 +800,14 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
             {s.name}
           </button>
         ))}
+        </div>
+        {stats && (
+          <div className="sht-stats" role="status" aria-label={t("sheet.stats")}>
+            {stats.numbers > 0 && !stats.error && <Stat className="avg" label={t("sheet.average")} value={statText(stats.average!, i18n.language)} copy={String(stats.average)} />}
+            <Stat label={t("sheet.count")} value={String(stats.count)} copy={String(stats.count)} />
+            {stats.numbers > 0 && !stats.error && <Stat label={t("sheet.sum")} value={statText(stats.sum, i18n.language)} copy={String(stats.sum)} />}
+          </div>
+        )}
         <div className="sht-zoom">
           <button className="tb" aria-label={t("sheet.zoomOut")} onClick={() => setZoomTo(zoom / 1.1)}><Icon name="minus" /></button>
           <button className="sht-zoom-n" title={t("sheet.zoomReset")} onClick={() => setZoomTo(1)}>{Math.round(zoom * 100)}%</button>
@@ -773,5 +815,19 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         </div>
       </div>
     </div>
+  );
+}
+
+/** Above this many cells in use the status bar leaves the selection's figures out, as reading them all would lag. */
+const STATS_MAX_CELLS = 500_000;
+
+/** A status-bar figure; a click copies its full value, as in Excel. */
+function Stat({ label, value, copy, className = "" }: { label: string; value: string; copy: string; className?: string }) {
+  const { t } = useTranslation("session");
+  const st = useStore();
+  return (
+    <button className={`sht-stat ${className}`} title={t("sheet.copyStat")} onClick={() => void navigator.clipboard.writeText(copy).then(() => st.show(t("sheet.copied")))}>
+      {label}: <b>{value}</b>
+    </button>
   );
 }

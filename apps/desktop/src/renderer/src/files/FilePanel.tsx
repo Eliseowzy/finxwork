@@ -115,7 +115,7 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
             s.tabs.map((x) => {
               const doc = docOf(x);
               return doc && (
-                <div key={doc.token} className="dcp-viewer" hidden={x !== tab}>
+                <div key={doc.info.doc_id} className="dcp-viewer" hidden={x !== tab}>
                   {doc.info.layout === "grid" ? (
                     <SheetView rpc={st.rpc!} session={session} tab={doc} activeView={x === tab} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
                   ) : (

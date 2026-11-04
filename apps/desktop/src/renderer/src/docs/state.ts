@@ -72,6 +72,19 @@ export async function openDoc(rpc: RpcClient, session: string, what: { path: str
   return tab;
 }
 
+/**
+ * A workbook's file changed on disk: asked for again without letting go of it, so its view,
+ * sheet, selection and undo stay. finx keeps the same document when the change is its own save,
+ * or when there are unsaved edits; otherwise it loads the new contents, and the view reads them.
+ */
+export async function refreshDoc(rpc: RpcClient, session: string, docId: string) {
+  const had = docTab(session, docId);
+  if (!had) return;
+  const r = await rpc.request("doc/open", { session_id: session, path: had.info.path });
+  const d = docsOf(session);
+  set(session, { ...d, tabs: d.tabs.map((t) => (t.info.doc_id === docId ? { ...t, info: r.info, token: r.token } : t)) });
+}
+
 /** A document's tab closed: finx lets go of it for this session. */
 export async function closeDoc(rpc: RpcClient | null, session: string, docId: string) {
   const d = docsOf(session);

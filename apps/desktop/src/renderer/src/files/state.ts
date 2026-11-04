@@ -2,7 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import { FileDoc, baseName, type RpcClient } from "@finx/client";
 import type { FilesListResult, FilesReadResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
-import { closeDoc, docTab, lockedPath, openDoc, setDocInfo, setDocPassword, type DocAnchor, type DocTab } from "../docs/state";
+import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, type DocAnchor, type DocTab } from "../docs/state";
 import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
 import { opensAsDoc, previewable } from "./kind";
@@ -334,7 +334,9 @@ export function filesChanged(session: string, paths: string[]) {
   if (!s) return;
   for (const path of paths) {
     const tab = s.tabs.find((x) => x.path === path);
-    if (tab?.opened) void reopenDoc(s, tab);
+    const docId = tab?.opened?.docId;
+    if (rpc && docId && docTab(s.session, docId)?.info.layout === "grid") void refreshDoc(rpc, s.session, docId).catch(() => reopenDoc(s, tab!));
+    else if (tab?.opened) void reopenDoc(s, tab);
     else if (tab) void load(s, tab);
     if (s.dirs.has(path)) void listDir(s, path, true);
   }

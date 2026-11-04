@@ -253,11 +253,13 @@ try {
   await page.until("the reply", `document.querySelectorAll(".am .fref").length >= 5`, 30000);
   await page.until("the task ended", `!document.querySelector(".working")`, 20000);
 
-  step("a file tag opens the file in the panel, at its line, with the tree open to it");
+  step("a file tag opens the file in the panel, at its line, the tree closed; opened, it shows where the file is");
   await page.run(`${chip("入口")}.click()`);
   await page.until("the panel with app.ts", `${activeTab} === "app.ts" && (${editorText}).includes("line12")`);
   const target = await page.until("the marked line", `document.querySelector(".fpn .cm-line.cm-target")?.textContent ?? null`);
   check(target === appLines[2], `the marked line is ${JSON.stringify(target)}`);
+  check(!(await page.run(`!!document.querySelector(".fpt")`)), "the tree opened with a file from the conversation");
+  await page.run(`[...document.querySelectorAll(".fpn button")].find((b) => ${either((s) => s.files.toggleTree)}.includes(b.getAttribute("aria-label"))).click()`);
   await page.until("the tree, src open with app.ts marked", `document.querySelector(".fpt-row.on .fpt-name")?.textContent === "app.ts"`);
   const tree = await page.run(`[...document.querySelectorAll(".fpt-row .fpt-name")].map((n) => n.textContent)`);
   check(JSON.stringify(tree.slice(0, 4)) === JSON.stringify(["assets", "bin", "data", "docs"]) && tree.includes("crlf.txt") && tree.includes("app.ts"), `the tree: ${JSON.stringify(tree)}`);
@@ -283,7 +285,7 @@ try {
   await page.run(`document.querySelector(".cmp-in").focus()`);
   await key("s", "KeyS", 83, META);
   await page.until("the workbook saved", `!document.querySelector(".fpn-tab.on.dirty")`, 10000).catch(async (e) => {
-    fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}, save disabled ${await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label")))?.disabled`)}`);
+    fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}, save disabled ${await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tools .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label")))?.disabled`)}`);
   });
   step("selection tools keep their size while zooming");
   await page.until("selection tools", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools")`);
@@ -316,6 +318,9 @@ try {
   await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas").focus()`);
   await key("s", "KeyS", 83, META);
   await page.until("remote change saved", `!document.querySelector(".fpn-tab.on.dirty")`);
+  // Saving writes the file, which finx then reports changed: the grid stays on its sheet.
+  await new Promise((r) => setTimeout(r, 600));
+  check(await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-tab.on")?.textContent`) === "利润表", "saving sent the grid back to its first sheet");
   step("a range draws one border and leaves its active cell untinted");
   await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-name").select()`);
   await page.cdp("Input.insertText", { text: "A2" });
@@ -324,6 +329,11 @@ try {
   await page.until("the range", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-sel.multi")`);
   check(await page.run(`!document.querySelector(".dcp-viewer:not([hidden]) .sht-active")`), "a range drew a second box around its active cell");
   check(await page.run(`getComputedStyle(document.querySelector(".dcp-viewer:not([hidden]) .sht-sel.multi"), "::before").clipPath.startsWith("polygon(evenodd")`), "the range tint covers its active cell");
+  // The status bar sums the range as Excel's does: six cells, the numbers among them summed.
+  const stats = await page.until("the selection figures", `document.querySelector(".dcp-viewer:not([hidden]) .sht-stats")?.textContent ?? null`).catch(async (e) => {
+    fail(`${e.message}: bottom ${JSON.stringify(await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-tabs")?.textContent ?? null`))}`);
+  });
+  check(/6/.test(stats) && /3,368/.test(stats), `the selection figures: ${JSON.stringify(stats)}`);
   await page.shot("1-workbook");
   await page.run(`[...document.querySelectorAll(".fpn-tab")].find((x) => x.textContent.includes("app.ts")).click()`);
   await page.until("app.ts back in front", `${activeTab} === "app.ts"`);
@@ -399,7 +409,7 @@ try {
   check(disk("data/values.csv").startsWith("名称,金额"), "CSV formula changed the file");
   await enterFormula("项目");
   await page.until("CSV value edited", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A1"]')?.textContent === "项目"`);
-  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label"))).click()`);
+  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tools .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label"))).click()`);
   await until("CSV saved", () => disk("data/values.csv") === "项目,金额\r\n收入,100\r\n", 5000);
   // Typed one after another, each Enter before the last edit is back: none is dropped.
   await page.run(`(() => { const x = document.querySelector(".dcp-viewer:not([hidden]) .sht-name"); x.select(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(x, "C1"); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
@@ -416,7 +426,7 @@ try {
   check(await page.run(`!!${tabIcon("values.csv")} && !!${tabIcon("model.xlsx")}`), "a workbook tab does not show the grid icon");
   await page.run(`${chip("旧表")}.click()`);
   await page.until("XLS read only", `${activeTab} === "legacy.xls" && document.querySelector(".dcp-viewer:not([hidden]) .sht-formula")?.readOnly && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas")`);
-  check(await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar button")].filter((b) => [${either((s) => s.sheet.undo)} , ${either((s) => s.sheet.redo)}].flat().includes(b.getAttribute("aria-label"))).every((b) => b.disabled)`), "XLS undo/redo enabled");
+  check(await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tools button")].filter((b) => [${either((s) => s.sheet.undo)} , ${either((s) => s.sheet.redo)}].flat().includes(b.getAttribute("aria-label"))).every((b) => b.disabled)`), "XLS undo/redo enabled");
   check(await page.run(`!!${tabIcon("legacy.xls")}`), "the .xls tab does not show the grid icon");
   await page.shot("4-csv-xls");
   await page.run(`${chip("二进制")}.click()`);
