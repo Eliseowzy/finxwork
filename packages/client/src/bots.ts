@@ -80,3 +80,10 @@ export function initialOf(name: string): string {
 export function attention(list: BotSummary[]): { unread: boolean; waiting: boolean } {
   return { unread: list.some((b) => (b.unread ?? 0) > 0), waiting: list.some((b) => !!b.waiting) };
 }
+
+/** Bots matching a search (⌘K in Bot mode): by name or by what was last said, in the list's order. */
+export function searchBots(list: BotSummary[], query: string): BotSummary[] {
+  const q = query.trim().toLowerCase();
+  if (q === "") return sortBots(list);
+  return sortBots(list).filter((b) => b.name.toLowerCase().includes(q) || (b.last ? lastText(b.last).text.toLowerCase().includes(q) : false));
+}

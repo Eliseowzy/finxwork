@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, BotSummary, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, fromSnapshot, type SessionView } from "./session.ts";
-import { attention, botLine, initialOf, lastText, mergeBots, plain, sortBots } from "./bots.ts";
+import { attention, botLine, initialOf, lastText, mergeBots, plain, searchBots, sortBots } from "./bots.ts";
 import { botChat, busyBubble, processSteps } from "./botChat.ts";
 
 const bot = (id: string, o: Partial<BotSummary> = {}): BotSummary => ({ id, name: id, avatar: { kind: "mono", hue: "slate" }, created_at: "2026-11-01T00:00:00Z", ...o });
@@ -165,4 +165,12 @@ test("helpers at work make the bot busy, each with what it was asked to do", () 
   // The launch is part of the first message's process.
   const bubble = botChat(v).find((i) => i.kind === "bot");
   assert.ok(bubble?.kind === "bot" && bubble.process.some((s) => s.kind === "agents"));
+});
+
+test("a search finds bots by name or by what was last said", () => {
+  const list = [bot("研究员", { last: { from: "bot", text: "**对比好了**", ts: at(3) } }), bot("运维", { pinned: true }), bot("Writer", { last: { from: "user", text: "润色一下", ts: at(1) } })];
+  assert.deepEqual(searchBots(list, "").map((b) => b.id), ["运维", "研究员", "Writer"]);
+  assert.deepEqual(searchBots(list, "对比").map((b) => b.id), ["研究员"]);
+  assert.deepEqual(searchBots(list, "writ").map((b) => b.id), ["Writer"]);
+  assert.deepEqual(searchBots(list, "nothing"), []);
 });

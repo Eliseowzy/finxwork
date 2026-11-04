@@ -123,5 +123,11 @@
     "button": "删除",
     "done": "已删除「{{name}}」"
   },
-  "pinned": "已置顶"
+  "pinned": "已置顶",
+  "search": {
+    "placeholder": "搜索 Bot",
+    "found": "{{n}} 个 Bot",
+    "none": "没有找到 Bot",
+    "noneHint": "按名字或最近说的话找"
+  }
 }

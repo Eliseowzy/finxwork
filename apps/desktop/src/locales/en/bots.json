@@ -123,5 +123,11 @@
     "button": "Delete",
     "done": "Deleted “{{name}}”"
   },
-  "pinned": "Pinned"
+  "pinned": "Pinned",
+  "search": {
+    "placeholder": "Search bots",
+    "found": "{{n}} bots",
+    "none": "No bots found",
+    "noneHint": "Search by name or by what was last said"
+  }
 }
