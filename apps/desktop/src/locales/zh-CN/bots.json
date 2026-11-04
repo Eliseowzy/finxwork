@@ -23,8 +23,7 @@
     "file": "[文件] {{name}}"
   },
   "head": {
-    "waiting": "等你确认",
-    "more": "更多"
+    "settings": "Bot 设置"
   },
   "things": {
     "1": "一件事",
@@ -62,7 +61,6 @@
   },
   "sheet": {
     "newTitle": "新建 Bot",
-    "editTitle": "改名字、换头像",
     "sub": "起个名字，挑个头像。要它做什么，直接在对话里说。",
     "name": "名字",
     "placeholder": "比如：研究员",
@@ -70,7 +68,6 @@
     "upload": "上传图片…",
     "cancel": "取消",
     "create": "创建",
-    "save": "保存",
     "mono": "名字的第一个字",
     "mark": "FinxWork 标志",
     "tooLarge": "图片太大了：最大 10 MB",
@@ -98,7 +95,6 @@
   },
   "menu": {
     "more": "更多操作",
-    "edit": "改名字、换头像",
     "pin": "置顶",
     "unpin": "取消置顶",
     "delete": "删除 Bot",
@@ -117,5 +113,12 @@
     "found": "{{n}} 个 Bot",
     "none": "没有找到 Bot",
     "noneHint": "按名字或最近说的话找"
+  },
+  "panel": {
+    "avatar": "更换头像",
+    "nameHint": "双击修改名字",
+    "model": "模型设定",
+    "modelNote": "只影响这个 Bot。",
+    "close": "关闭"
   }
 }

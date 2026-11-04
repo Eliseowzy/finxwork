@@ -360,7 +360,7 @@ try {
   await page.cdp("Input.insertText", { text: "小研" });
   await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
   await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13 });
-  await page.until("renamed in the list and the title", `${rows}.some((r) => r.name === "小研") && document.querySelector(".bhead h2").textContent === "小研"`);
+  await page.until("renamed in the list and the title", `${rows}.some((r) => r.name === "小研") && document.querySelector(".bhead-n").textContent === "小研"`);
   const n2 = (await page.run(bubbles)).length;
   await say(page, "你现在叫什么名字？只回答名字。");
   const named = (await replies(page, n2 + 1, 120000)).at(-1);
@@ -384,9 +384,9 @@ try {
   await page.until("the menu", `!!document.querySelector(".vmenu")`);
   await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "置顶").click()`);
   await page.until("pinned first", `${rows}[0].name === "小研" && ${rows}[0].pinned`);
-  await page.run(`document.querySelector(".ctool .tb[aria-haspopup=menu]").click()`);
-  await page.until("the page's menu", `!!document.querySelector(".vmenu")`);
-  await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent.startsWith("删除 Bot")).click()`);
+  await page.run(`document.querySelector(".bhead").click()`);
+  await page.until("its settings", `!!document.querySelector(".bpn-del")`);
+  await page.run(`document.querySelector(".bpn-del").click()`);
   await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
   await page.run(`document.querySelector("dialog.sheet[open] .btn.danger").click()`);
   await page.until("gone from the list", `!${rows}.some((r) => r.name === "小研")`, 30000);

@@ -23,19 +23,20 @@ import { ContentScope } from "../session/scope";
 import { Work } from "../session/Steps";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
-import { pageActions, thingsText } from "./actions";
+import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
-import { BotMenu } from "./BotList";
+import { BotPanel } from "./BotPanel";
 import { useBotSession } from "./useBotSession";
 
 /** Bot mode's pause before a time line (bot-mode-design §6.6). */
 const PAUSE = 10 * 60_000;
 
 /**
- * A bot's page (bot-mode-design §6.5–§6.17): its name and what it is doing
- * at the top, the conversation in bubbles on both sides, and the composer.
- * The bot says only what it sends; what it did on the way is a message's
- * process, opened on hover.
+ * A bot's page (bot-mode-design §6.5–§6.17): its avatar and name in the
+ * middle of the top, as in a chat app, which open its settings; the
+ * conversation in bubbles on both sides, and the composer. The bot says only
+ * what it sends; what it did on the way is a message's process, opened on
+ * hover. What it is doing shows in its list row and the conversation.
  */
 export function BotPage({ bot }: { bot: BotSummary }) {
   const st = useStore();
@@ -46,37 +47,30 @@ export function BotPage({ bot }: { bot: BotSummary }) {
   const scope = useMemo(() => (session && view ? { session, cwd: view.info.cwd } : null), [session, view?.info.cwd]);
   const panels = useSidePanels(session ?? "", view);
   const busy = botWorking(bot);
-  const [menu, setMenu] = useState<{ x: number; y: number; key: boolean } | null>(null);
-  const latest = useRef(st);
-  latest.current = st;
+  // One panel at a time: the file panel or the browser coming out puts the settings away.
+  const taken = panels.files || panels.browser;
+  useEffect(() => {
+    if (taken && st.botPanel) st.set({ botPanel: false });
+  }, [taken]);
+  const settings = st.botPanel && !taken;
   return (
     <DocContext.Provider value={panels.opener}>
-    <div className={`spage bot ${panels.browser || panels.files ? "bgopen" : ""} ${panels.max ? "brmax" : ""}`}>
+    <div className={`spage bot ${panels.browser || panels.files || settings ? "bgopen" : ""} ${panels.max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
-          <div className="ctitle">
-            <div className="bhead">
-              <BotAvatar bot={bot} size={22} busy={busy} />
-              <h2>{bot.name}</h2>
-            </div>
-            <HeadStatus bot={bot} />
-          </div>
-          {session && <SidePanelButtons panels={panels} />}
           <button
-            className="tb"
-            title={t("head.more")}
-            aria-label={t("head.more")}
-            aria-haspopup="menu"
-            aria-expanded={!!menu}
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              setMenu(menu ? null : { x: r.right, y: r.bottom + 4, key: e.detail === 0 });
-            }}
+            className="bhead"
+            title={t("head.settings")}
+            aria-expanded={settings}
+            onClick={() => st.set({ botPanel: !settings, files: false, filesMax: false, browser: false, browserMax: false })}
           >
-            <Icon name="more" />
+            <BotAvatar bot={bot} size={22} busy={busy} />
+            <span className="bhead-n">{bot.name}</span>
+            <Icon name="chevR" className="bhead-go" />
           </button>
-          {menu && <BotMenu b={bot} items={pageActions(bot)} at={menu} store={latest} onClose={() => setMenu(null)} />}
+          <span className="bhead-gap" />
+          {session && <SidePanelButtons panels={panels} />}
         </GlassBar>
         <ContentScope value={scope}>
           <div className="dwrap" onContextMenu={() => selectionMenu(st)}>
@@ -87,6 +81,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
         </ContentScope>
       </div>
       {session && <SidePanelViews panels={panels} view={view} />}
+      {settings && <BotPanel bot={bot} view={view} session={session} onClose={() => st.set({ botPanel: false })} />}
     </div>
     </DocContext.Provider>
   );
@@ -116,15 +111,6 @@ function FullAccessTip({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   );
-}
-
-/** What the bot is doing, after its name: waiting for the owner, working on things, or answering. */
-function HeadStatus({ bot }: { bot: BotSummary }) {
-  const { t } = useTranslation("bots");
-  if (bot.waiting) return <span className="sub warn">{t("head.waiting")}</span>;
-  if ((bot.helpers ?? 0) > 0) return <span className="sub"><span className="shimmer">{t("line.helpers", { things: thingsText(bot.helpers ?? 0) })}</span></span>;
-  if (bot.typing) return <span className="sub"><span className="shimmer">{t("line.typing")}</span></span>;
-  return null;
 }
 
 /**

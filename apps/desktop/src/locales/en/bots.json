@@ -23,8 +23,7 @@
     "file": "[File] {{name}}"
   },
   "head": {
-    "waiting": "Waiting for you",
-    "more": "More"
+    "settings": "Bot settings"
   },
   "things": {
     "1": "1 thing",
@@ -63,7 +62,6 @@
   },
   "sheet": {
     "newTitle": "New Bot",
-    "editTitle": "Change name and avatar",
     "sub": "Give it a name and pick an avatar. Tell it what to do in the conversation.",
     "name": "Name",
     "placeholder": "For example: Researcher",
@@ -71,7 +69,6 @@
     "upload": "Upload image…",
     "cancel": "Cancel",
     "create": "Create",
-    "save": "Save",
     "mono": "First letter of the name",
     "mark": "FinxWork mark",
     "tooLarge": "The image is too large: 10 MB at most",
@@ -99,7 +96,6 @@
   },
   "menu": {
     "more": "More actions",
-    "edit": "Change name and avatar",
     "pin": "Pin",
     "unpin": "Unpin",
     "delete": "Delete Bot",
@@ -118,5 +114,12 @@
     "found": "{{n}} bots",
     "none": "No bots found",
     "noneHint": "Search by name or by what was last said"
+  },
+  "panel": {
+    "avatar": "Change avatar",
+    "nameHint": "Double-click to rename",
+    "model": "Model settings",
+    "modelNote": "Applies to this bot only.",
+    "close": "Close"
   }
 }

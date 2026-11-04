@@ -46,7 +46,7 @@ const eyes: Record<AvatarShape, [number, number, number]> = {
   gem: [15, 21, 18.2],
 };
 
-export type AvatarSize = 22 | 28 | 36 | 64;
+export type AvatarSize = 22 | 28 | 36 | 64 | 72;
 
 /** A bot's uploaded pictures, by bot and version: fetched once (`bots/avatar`). */
 const pictures = new Map<string, Promise<string>>();

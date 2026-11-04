@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// A bot's page and its list (bot-mode-design §6.5, §6.6, §6.16): the ⋯ at the top right opens under a
+// A bot's page and its list (bot-mode-design §6.5, §6.5.1, §6.6, §6.16): its name in the middle opens its settings under a
 // real click, with the name and avatar; a row's menu is pin, rename in place and delete; a file in
 // a message opens in the file panel, a PDF in the document column; a link opens in the built-in
 // browser, and the bot drives it too. A model server on the Mac stands in for the provider.
@@ -37,13 +37,15 @@ const sse = (delta, finish) =>
 const call = (name, args) => ({ role: "assistant", tool_calls: [{ index: 0, id: `call_${Date.now()}`, type: "function", function: { name, arguments: JSON.stringify(args) } }] });
 const send = (text) => call("send_to_user", { text, end_turn: true });
 let toolResult = "";
+let lastRequest = null;
 const provider = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
   req.on("end", () => {
     if (req.url === "/page") return res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end("<title>测试页面</title><h1>hello</h1>");
     if (!req.url?.endsWith("/chat/completions")) return res.writeHead(404).end();
-    const { messages, tools } = JSON.parse(body);
+    lastRequest = JSON.parse(body);
+    const { messages, tools } = lastRequest;
     const last = messages.at(-1);
     res.writeHead(200, { "content-type": "text/event-stream" });
     if (last.role === "tool") {
@@ -87,7 +89,7 @@ const profile = path.join(work, "profile");
 fs.mkdirSync(home, { recursive: true });
 fs.writeFileSync(
   path.join(home, "models.toml"),
-  `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
+  `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\ncompat = { thinking_format = "openai" }\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n\n[[providers.mock.models]]\nid = "mock-2"\nname = "Mock Two"\nreasoning = true\nthinking = ["off", "high"]\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
 );
 fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\n[models]\nnetwork = false\n`);
 
@@ -200,6 +202,17 @@ async function press(page, selector) {
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
 }
 
+/** A real click on what `expr` finds; two of them with `clicks: 2`. */
+async function pressOn(page, expr, clicks = 1) {
+  const at = await page.run(`(() => { const r = (${expr}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+  for (let n = 1; n <= clicks; n++) {
+    await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: n });
+    await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: n });
+  }
+}
+const menuItem = (text) => `[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent.includes(${JSON.stringify(text)}))`;
+
 const key = async (page, k) => {
   await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: k, windowsVirtualKeyCode: k === "Enter" ? 13 : 27, text: k === "Enter" ? "\r" : undefined });
   await page.cdp("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: k, windowsVirtualKeyCode: k === "Enter" ? 13 : 27 });
@@ -215,21 +228,33 @@ try {
   const page = await launch(home, profile);
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
-  await page.until("FinxBot's page", `document.querySelector(".bhead h2")?.textContent === "FinxBot" && !!document.querySelector(".cmp-zone.bot")`, 30000);
+  await page.until("FinxBot's page", `document.querySelector(".bhead-n")?.textContent === "FinxBot" && !!document.querySelector(".cmp-zone.bot")`, 30000);
   await page.run(`document.querySelector(".btip .btn")?.click()`);
 
-  step("the ⋯ at the top right opens under a real click, on screen, with the name and avatar");
-  await press(page, ".ctool .tb[aria-haspopup=menu]");
-  await page.until("the page's menu", `!!document.querySelector(".vmenu")`);
-  const box = await page.run(`(() => { const r = document.querySelector(".vmenu").getBoundingClientRect(); const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2); return { in: r.x >= 0 && r.y >= 0 && r.right <= innerWidth && r.bottom <= innerHeight, top: !!hit?.closest(".vmenu"), top_right: r.right > innerWidth - 80 && r.y < 120 }; })()`);
-  check(box.in && box.top && box.top_right, `the menu is on screen under its button: ${JSON.stringify(box)}`);
-  const pageMenu = await page.run(items);
-  check(pageMenu.some((t) => t === "改名字、换头像") && pageMenu.some((t) => t.startsWith("删除 Bot")) && pageMenu.length === 2, `the page's menu: ${pageMenu}`);
-  await page.shot("m1-page-menu");
-  await press(page, ".vmenu .mi");
-  await page.until("the form for name and avatar", `!!document.querySelector("dialog.bsheet[open] input.field")`);
-  await key(page, "Escape");
-  await page.until("the form closed", `!document.querySelector("dialog.bsheet[open]")`);
+  step("its avatar and name in the middle of the top; a hover shows the arrow, a click its settings");
+  const head = await page.run(`(() => { const b = document.querySelector(".bhead").getBoundingClientRect(), t = document.querySelector(".scol > .ctool").getBoundingClientRect(); return { off: Math.abs(b.x + b.width / 2 - (t.x + t.width / 2)), more: !!document.querySelector(".ctool .tb[aria-haspopup=menu]") }; })()`);
+  check(head.off < 1, `centred in the bar: ${head.off} off`);
+  check(!head.more, "no ⋯ left at the top right");
+  const arrow = `Number(getComputedStyle(document.querySelector(".bhead-go")).opacity)`;
+  check((await page.run(arrow)) === 0, "no arrow until hovered");
+  const middle = await page.run(`(() => { const r = document.querySelector(".bhead").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  // A pointer that does not move is not rechecked against a page still settling: keep it moving.
+  for (let i = 0, shown = 0; !shown; i++) {
+    check(i < 40, "the arrow on hover");
+    await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: middle.x + i % 2, y: middle.y });
+    await sleep(150);
+    shown = (await page.run(arrow)) === 1;
+  }
+  await page.shot("m1-hover");
+  await press(page, ".bhead");
+  await page.until("its settings", `!!document.querySelector(".bpn .bpn-name")`);
+  await page.until("it has slid in", `document.querySelector(".bpn").getAnimations().length === 0`);
+  const box = await page.run(`(() => { const r = document.querySelector(".bpn").getBoundingClientRect(); return { right: r.right, width: r.width, inner: innerWidth, name: document.querySelector(".bpn-name").textContent }; })()`);
+  check(box.right <= box.inner && box.width === 340 && box.name === "FinxBot", `the panel: ${JSON.stringify(box)}`);
+  check(await page.run(`document.querySelector(".bpn-del").disabled`), "the default bot cannot be deleted");
+  await page.shot("m1-settings");
+  await press(page, ".bhead");
+  await page.until("closed by its name again", `!document.querySelector(".bpn")`);
 
   step("a row's menu: pin, rename, delete; nothing to clear");
   await page.run(`document.querySelector(".brow .rowact").click()`);
@@ -249,7 +274,78 @@ try {
   await page.cdp("Input.insertText", { text: "小助手" });
   await page.shot("m3-renaming");
   await key(page, "Enter");
-  await page.until("renamed in the list and the header", `document.querySelector(".brow .bname")?.textContent === "小助手" && document.querySelector(".bhead h2")?.textContent === "小助手"`);
+  await page.until("renamed in the list and the header", `document.querySelector(".brow .bname")?.textContent === "小助手" && document.querySelector(".bhead-n")?.textContent === "小助手"`);
+
+  step("settings: a choice of avatar applies at once");
+  await press(page, ".bhead");
+  await page.until("its settings", `!!document.querySelector(".bpn-av")`);
+  const hover = await page.run(`(() => { const r = document.querySelector(".bpn-av").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...hover });
+  await page.until("the avatar says it can be changed", `Number(getComputedStyle(document.querySelector(".bpn-av-edit")).opacity) === 1`);
+  await press(page, ".bpn-av");
+  await page.until("the choices", `!!document.querySelector(".bpn-pick .bs-shape")`);
+  await page.shot("m3-avatar");
+  await pressOn(page, `document.querySelector('.bpn-pick .bs-shape[title="小猫"]')`);
+  await page.until("the new avatar in the list, the top and the panel", `document.querySelectorAll(".brow .bav:not(.mark), .bhead .bav:not(.mark), .bpn-av .bav:not(.mark)").length === 3`);
+  check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.shape === "cat", "finx keeps the character");
+  await pressOn(page, `document.querySelector('.bpn-pick .bs-hue[title="梅紫"]')`);
+  await page.until("the colour", `document.querySelector('.bpn-pick .bs-hue[title="梅紫"]').classList.contains("on")`);
+  check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.hue === "plum", "finx keeps the colour");
+  check(await page.run(`!!document.querySelector(".bpn-pick")`), "the choices stay open for the next one");
+  await press(page, ".bpn-av");
+  await page.until("closed by the avatar again", `!document.querySelector(".bpn-pick")`);
+
+  step("settings: a double click on the name edits it, Esc keeps it, ↩ changes it");
+  await pressOn(page, `document.querySelector(".bpn-name")`, 2);
+  await page.until("the name as a field", `document.activeElement?.matches(".bpn-rename")`);
+  await page.cdp("Input.insertText", { text: "不要" });
+  await key(page, "Escape");
+  await page.until("the name back", `document.querySelector(".bpn-name")?.textContent === "小助手"`);
+  await pressOn(page, `document.querySelector(".bpn-name")`, 2);
+  await page.until("the name as a field again", `document.activeElement?.matches(".bpn-rename")`);
+  await page.cdp("Input.insertText", { text: "小帮手" });
+  await key(page, "Enter");
+  await page.until("renamed everywhere", `document.querySelector(".bpn-name")?.textContent === "小帮手" && document.querySelector(".bhead-n")?.textContent === "小帮手" && document.querySelector(".brow .bname")?.textContent === "小帮手"`);
+
+  step("settings: the model and how hard it thinks reach the provider, and stay");
+  const modelButton = `[...document.querySelectorAll(".bpn .frow")].find((r) => r.textContent.startsWith("模型"))?.querySelector(".mb")`;
+  const thinkRow = `[...document.querySelectorAll(".bpn .frow")].find((r) => r.textContent.startsWith("思考强度"))`;
+  check((await page.run(`${modelButton}.textContent`)).includes("Mock One"), "the bot's model shows");
+  check(!(await page.run(`!!${thinkRow}`)), "a model with no levels has no thinking row");
+  await pressOn(page, modelButton);
+  await page.until("the models", `!!${menuItem("Mock Two")}`);
+  await pressOn(page, menuItem("Mock Two"));
+  await page.until("Mock Two, and its levels", `${modelButton}.textContent.includes("Mock Two") && !!${thinkRow}`);
+  await pressOn(page, `${thinkRow}.querySelector(".mb")`);
+  await page.until("the levels", `!!${menuItem("高")}`);
+  await page.shot("m3-thinking");
+  await pressOn(page, menuItem("高"));
+  await page.until("high", `${thinkRow}.querySelector(".lbl").textContent === "高"`);
+  await page.shot("m3-model");
+  await say(page, "你好");
+  await page.until("the answer", `${bubbles} > 0`, 30000);
+  check(lastRequest?.model === "mock-2", `the request's model: ${lastRequest?.model}`);
+  check(lastRequest?.reasoning_effort === "high", `the request's level: ${lastRequest?.reasoning_effort}`);
+  await finxCall(home, "server/shutdown");
+  await page.run(`location.reload()`);
+  await page.until("back after finx restarted", `!!document.querySelector(".cmp-zone.bot") && document.querySelector(".bhead-n")?.textContent === "小帮手"`, 60000);
+  await press(page, ".bhead");
+  await page.until("its settings again", `!!${thinkRow}`, 30000);
+  check((await page.run(`${modelButton}.textContent`)).includes("Mock Two") && (await page.run(`${thinkRow}.querySelector(".lbl").textContent`)) === "高", "the model and level stay after finx restarts");
+
+  step("settings: another bot keeps its own model; deleting one closes the panel");
+  const other = (await finxCall(home, "bots/create", { name: "别的", avatar: { kind: "mono", hue: "teal" } })).result.bot;
+  await page.until("its row", `[...document.querySelectorAll(".brow")].some((r) => r.textContent.includes("别的"))`);
+  await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("别的"))`);
+  await page.until("the panel shows that bot", `document.querySelector(".bpn-name")?.textContent === "别的" && !!${modelButton}`, 30000);
+  check((await page.run(`${modelButton}.textContent`)).includes("Mock One"), "a new bot starts on the default model");
+  await press(page, ".bpn-del");
+  await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
+  await press(page, "dialog.sheet[open] .btn.danger");
+  await page.until("gone, the panel with it", `!document.querySelector(".bpn") && ![...document.querySelectorAll(".brow")].some((r) => r.textContent.includes("别的"))`, 30000);
+  check(!(await finxCall(home, "bots/subscribe")).result.bots.some((b) => b.id === other.id), "finx deleted it");
+  await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("小帮手"))`);
+  await page.until("the bot again", `document.querySelector(".bhead-n")?.textContent === "小帮手"`, 30000);
 
   step("a file in a message opens in the panel");
   const { result } = await finxCall(home, "bots/subscribe");
@@ -257,12 +353,17 @@ try {
   fs.writeFileSync(path.join(folder, "note.md"), "# 笔记\n");
   fs.writeFileSync(path.join(folder, "report.pdf"), pdf(), "latin1");
   await say(page, "东西在哪");
-  await page.until("the message", `${bubbles} > 0`, 30000);
+  const before = await page.run(bubbles);
+  await page.until("the message", `${bubbles} > ${before}`, 30000);
   const tag = (name) => `[...document.querySelectorAll(".tr.bots .fref")].find((e) => e.textContent.includes(${JSON.stringify(name)}))`;
   await page.until("the file tag", `!!${tag("note.md")}`, 15000);
   await page.run(`${tag("note.md")}.click()`);
   await page.until("the file panel with note.md", `!!document.querySelector(".spage.bot.bgopen") && document.body.innerText.includes("笔记")`, 15000);
   await page.shot("m4-file-panel");
+  await press(page, ".bhead");
+  await page.until("settings take the place of the file panel", `!!document.querySelector(".bpn") && !document.querySelector(".fpn")`);
+  await page.run(`${tag("note.md")}.click()`);
+  await page.until("the file panel takes it back, settings gone for good", `!!document.querySelector(".fpn") && !document.querySelector(".bpn")`, 15000);
 
   if (packaged) {
     step("a PDF opens in the file panel (PDFium: the packaged app)");
@@ -279,14 +380,14 @@ try {
   await page.shot("m6-browser");
 
   step("the bot drives the browser too");
-  const before = await page.run(`document.querySelectorAll(".brp-tabs [role=tab]").length`);
+  const tabsBefore = await page.run(`document.querySelectorAll(".brp-tabs [role=tab]").length`);
   const said = await page.run(bubbles);
   await say(page, "打开那个页面");
   await page.until("its answer", `${bubbles} > ${said}`, 60000);
   const answer = await page.run(`[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].at(-1).innerText`);
   check(answer.includes("开好了"), `the bot's answer: ${answer}`);
   check(toolResult.includes("/page"), `the browser tool's result: ${toolResult.slice(0, 300)}`);
-  console.log(`  · tabs: ${before} → ${await page.run(`document.querySelectorAll(".brp-tabs [role=tab]").length`)}`);
+  console.log(`  · tabs: ${tabsBefore} → ${await page.run(`document.querySelectorAll(".brp-tabs [role=tab]").length`)}`);
   page.close();
   console.log("\n✔ a bot's page and list work end to end");
 } catch (e) {

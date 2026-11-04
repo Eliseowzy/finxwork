@@ -203,9 +203,9 @@ try {
 
   step("the conversation that was already there gets it too");
   await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "老对话").click()`);
-  await page.until("老对话, Full Access", `document.querySelector(".bhead h2")?.textContent === "老对话" && ${mode} === "完全访问"`, 30000);
+  await page.until("老对话, Full Access", `document.querySelector(".bhead-n")?.textContent === "老对话" && ${mode} === "完全访问"`, 30000);
   await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "FinxBot").click()`);
-  await page.until("FinxBot", `document.querySelector(".bhead h2")?.textContent === "FinxBot"`);
+  await page.until("FinxBot", `document.querySelector(".bhead-n")?.textContent === "FinxBot"`);
 
   step("知道了 closed the note for good");
   await page.cdp("Page.reload");
@@ -218,7 +218,7 @@ try {
   await page.until("the form", `!!document.querySelector("dialog.bsheet[open] input.field")`);
   await page.cdp("Input.insertText", { text: "研究员" });
   await page.run(`document.querySelector("dialog.bsheet form").requestSubmit()`);
-  await page.until("研究员, Full Access", `document.querySelector(".bhead h2")?.textContent === "研究员" && ${mode} === "完全访问"`, 30000);
+  await page.until("研究员, Full Access", `document.querySelector(".bhead-n")?.textContent === "研究员" && ${mode} === "完全访问"`, 30000);
   check((await page.run(tip)) === "", "no note for the new bot");
   await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
   await page.until("the menu", `[...document.querySelectorAll(".mi")].some((e) => e.textContent.includes("询问权限"))`);
@@ -234,7 +234,7 @@ try {
   await page.run(`document.querySelector(".appr .btn.primary").click()`);
   await page.until("the answer", `${bubbles} > 0`, 30000);
   await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "FinxBot").click()`);
-  await page.until("the other bot keeps Full Access", `document.querySelector(".bhead h2")?.textContent === "FinxBot" && ${mode} === "完全访问"`, 30000);
+  await page.until("the other bot keeps Full Access", `document.querySelector(".bhead-n")?.textContent === "FinxBot" && ${mode} === "完全访问"`, 30000);
   page.close();
   await quit();
   await finxCall(one.home, "server/shutdown").catch(() => {});

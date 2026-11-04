@@ -19,7 +19,7 @@ export type Selection = { kind: "new" } | { kind: "session"; id: string } | { ki
 export type Mode = "sessions" | "bots";
 
 /** The form that makes a bot or changes its name and avatar (bot-mode-design §6.3). */
-export type BotSheet = { kind: "new" } | { kind: "edit"; id: string };
+export type BotSheet = { kind: "new" };
 
 /**
  * Where the 自定义 page is (customize-design §10.1): skills or connectors, the person's own or
@@ -51,6 +51,8 @@ type UI = {
   lastSession: Selection;
   lastBot: string | null;
   botSheet: BotSheet | null;
+  /** A bot's settings beside its conversation (bot-mode-design §6.5.1). */
+  botPanel: boolean;
   /** For each bot, the conversation that was last given bots' default permission mode: what is picked in it afterwards stays. */
   botDefaulted: Record<string, string>;
   /** The owner closed the note about Full Access over the permission picker (bot-mode-design §6.13). */
@@ -181,6 +183,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       lastSession: s.lastSession ?? { kind: "new" },
       lastBot: s.lastBot ?? null,
       botSheet: null,
+      botPanel: false,
       botDefaulted: s.botDefaulted ?? {},
       botTipSeen: s.botTipSeen ?? false,
       inspector: s.inspector ?? true,

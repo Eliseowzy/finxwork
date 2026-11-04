@@ -471,26 +471,11 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
  * takes the level that model starts with, and says so (model-catalog-design
  * §18). Choosing a model whose key is missing asks for the key (§8.4).
  */
-function ModelPicker({ settings: { model, thinking, models, onModel, onThinking } }: { settings: Settings }) {
+function ModelPicker({ settings }: { settings: Settings }) {
   const { t } = useTranslation("session");
-  const st = useStore();
-  const current = model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
-  const entry = models.models.find((m) => m.id === current);
-  const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
+  const { thinking, models, onThinking } = settings;
+  const { current, levels, title, choose } = useModelSwitch(settings);
   const thinks = levels.length > 0;
-  // A name another provider's model in the menu has too says whose it is.
-  const twin = entry && models.models.some((m) => m.shown && m.id !== entry.id && m.name === entry.name);
-  const title = current ? modelTitle(current, models) + (twin ? ` · ${models.providers.find((p) => p.id === entry.provider)?.name ?? entry.provider}` : "") : t("composer.model");
-  const choose = (id: string, provider: string, available: boolean) => {
-    const next = models.models.find((m) => m.id === id);
-    // A session's switch follows the kernel's rule, which thinkingFor mirrors.
-    const after = onModel(id) ?? thinkingFor(next, thinking);
-    // A level chosen on purpose that the new model lacks: say what it became.
-    if (id !== current && next && thinking !== "default" && after !== thinking) {
-      st.show(t("composer.thinkingChanged", { model: next.name, from: thinkingTitle(thinking), to: thinkingTitle(after) }));
-    }
-    if (!available) window.dispatchEvent(new CustomEvent(keyEvent, { detail: provider }));
-  };
   return (
     <MenuButton
       className="mb"
@@ -508,11 +493,7 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
           {thinks && (
             <>
               <SubMenuItem label={t("composer.thinking")} value={thinkingTitle(thinking)} title={t("composer.thinking")}>
-                <MenuItem checked={thinking === "default"} label={thinkingTitle("default")} value={t("composer.thinkingDefault")} onClick={() => (close(), onThinking("default"))} />
-                <div className="msep" role="separator" />
-                {levels.map((l) => (
-                  <MenuItem key={l} checked={l === thinking} label={thinkingTitle(l)} onClick={() => (close(), onThinking(l))} />
-                ))}
+                <ThinkingItems thinking={thinking} levels={levels} onThinking={onThinking} close={close} />
               </SubMenuItem>
               <div className="msep" role="separator" />
             </>
@@ -522,6 +503,43 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
       )}
     </MenuButton>
   );
+}
+
+/** "default" (the provider decides) and the provider's own levels for this model. */
+export function ThinkingItems({ thinking, levels, onThinking, close }: { thinking: ThinkingLevel; levels: ThinkingLevel[]; onThinking: (l: ThinkingLevel) => void; close: () => void }) {
+  const { t } = useTranslation("session");
+  return (
+    <>
+      <MenuItem checked={thinking === "default"} label={thinkingTitle("default")} value={t("composer.thinkingDefault")} onClick={() => (close(), onThinking("default"))} />
+      <div className="msep" role="separator" />
+      {levels.map((l) => (
+        <MenuItem key={l} checked={l === thinking} label={thinkingTitle(l)} onClick={() => (close(), onThinking(l))} />
+      ))}
+    </>
+  );
+}
+
+/** The model shown, the levels it offers, and switching to another: wherever a model is chosen. */
+export function useModelSwitch({ model, thinking, models, onModel }: Pick<Settings, "model" | "thinking" | "models" | "onModel">) {
+  const { t } = useTranslation("session");
+  const st = useStore();
+  const current = model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
+  const entry = models.models.find((m) => m.id === current);
+  const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
+  // A name another provider's model in the menu has too says whose it is.
+  const twin = entry && models.models.some((m) => m.shown && m.id !== entry.id && m.name === entry.name);
+  const title = current ? modelTitle(current, models) + (twin ? ` · ${models.providers.find((p) => p.id === entry.provider)?.name ?? entry.provider}` : "") : t("composer.model");
+  const choose = (id: string, provider: string, available: boolean) => {
+    const next = models.models.find((m) => m.id === id);
+    // A session's switch follows the kernel's rule, which thinkingFor mirrors.
+    const after = onModel(id) ?? thinkingFor(next, thinking);
+    // A level chosen on purpose that the new model lacks: say what it became.
+    if (id !== current && next && thinking !== "default" && after !== thinking) {
+      st.show(t("composer.thinkingChanged", { model: next.name, from: thinkingTitle(thinking), to: thinkingTitle(after) }));
+    }
+    if (!available) window.dispatchEvent(new CustomEvent(keyEvent, { detail: provider }));
+  };
+  return { current, levels, title, choose };
 }
 
 /** Where a new session works: the last projects, a folder picked from the system's dialog, or no project. */

@@ -75,7 +75,7 @@ export function MainWindow() {
           (the main process does), and the click that did it lands on the dim, not on what is under it. */}
       {settingsOpen && <div className="settings-dim" />}
       <SheetHost />
-      {st.botSheet && <BotSheet key={JSON.stringify(st.botSheet)} sheet={st.botSheet} />}
+      {st.botSheet && <BotSheet />}
       <KeySheet />
     </div>
   );
