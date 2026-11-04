@@ -192,17 +192,21 @@ pub fn init_logging(home: &FinxHome) -> Option<WorkerGuard> {
         .max_log_files(7)
         .build(home.logs_dir())
         .ok()?;
-    // The default buffer preallocates 128k lines (about 4 MB) at start-up; finx logs far less.
+    // Every buffered line is a slot reserved at start-up (4096 took 144 KiB, a quarter of an
+    // idle process's heap). In a week of real use the busiest second logged 38 lines, and the
+    // writer thread drains the queue as lines arrive.
     let (writer, guard) = tracing_appender::non_blocking::NonBlockingBuilder::default()
-        .buffered_lines_limit(4096)
+        .buffered_lines_limit(256)
         .finish(appender);
-    let filter = EnvFilter::try_from_env("FINX_LOG").unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_writer(writer)
-        .with_ansi(false)
-        .with_env_filter(filter)
-        .try_init()
-        .ok()?;
+    let fmt = tracing_subscriber::fmt().with_writer(writer).with_ansi(false);
+    // Parsing filter directives costs more than the rest of this; the default needs none.
+    let installed = match std::env::var_os("FINX_LOG") {
+        Some(_) => fmt
+            .with_env_filter(EnvFilter::try_from_env("FINX_LOG").unwrap_or_else(|_| EnvFilter::new("info")))
+            .try_init(),
+        None => fmt.with_max_level(tracing::Level::INFO).try_init(),
+    };
+    installed.ok()?;
     Some(guard)
 }
 

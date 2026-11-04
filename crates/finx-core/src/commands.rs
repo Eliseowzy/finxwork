@@ -256,7 +256,7 @@ pub(crate) fn skill_block(skill: &SkillRef, body: &str, limits: &OutputLimits) -
     out.push_str("\">\nRelative paths in this skill are relative to ");
     out.push_str(&dir);
     out.push_str(".\n\n");
-    let (kept, cut) = head(body.trim(), limits.max_lines, limits.max_bytes);
+    let (kept, cut) = head(body.trim(), limits.max_lines, finx_tools::bytes_for_tokens(limits.max_tokens));
     out.push_str(kept);
     if cut {
         out.push_str(&format!("\n[Truncated. Read {} for the rest.]", skill.path.display()));

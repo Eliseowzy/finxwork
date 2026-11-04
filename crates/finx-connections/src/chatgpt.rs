@@ -228,6 +228,7 @@ impl ChatGpt {
                 ConnectionState::Ready
             },
             reason_code: p.needs_login.then(|| "connection_login_required".into()),
+            diagnostic: None,
             models: p.models.clone(),
             models_fetched_at: p.fetched_at.clone(),
         })
@@ -242,6 +243,7 @@ impl ChatGpt {
             if p.enabled && !p.needs_login {
                 if let Some(id) = Self::provider(&p) {
                     let mut provider = ProviderConfig {
+                        plan: None,
                         id,
                         name: "ChatGPT API".into(),
                         api: "openai-responses".into(),

@@ -19,3 +19,8 @@ their owners and are used only to name their services.
 | zhipu.svg | glm | zhipu-color |
 
 Monochrome marks fill with `currentColor`, so they follow the theme.
+
+Token Plan marks (same LobeHub version and license): `alibabacloud.svg` from
+`alibabacloud-color`, `tencentcloud.svg` from `tencentcloud-color`, `volcengine.svg`
+from `volcengine-color`, and `zai.svg` from `zai`. Zhipu Coding Plan reuses
+`zhipu.svg`; both Ark products reuse `volcengine.svg`.

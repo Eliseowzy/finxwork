@@ -1,3 +1,4 @@
+import { TokenPlanConnections } from "./TokenPlanConnections";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
@@ -19,7 +20,7 @@ export function ModelConnections() {
   const st = useStore();
   const [adding, setAdding] = useState(false);
   // Providers with a key from somewhere; local connections are listed above, keyless ones (Ollama) need nothing.
-  const keyed = st.models.providers.filter((p) => !p.id.startsWith("local-") && p.auth === "api_key" && p.credential !== "missing");
+  const keyed = st.models.providers.filter((p) => !p.plan && !p.id.startsWith("local-") && p.auth === "api_key" && p.credential !== "missing");
   return (
     <div className="form models">
       <section>
@@ -28,6 +29,7 @@ export function ModelConnections() {
           <ChatGptConnection />
           {localAdapters.map(adapter => <LocalRow key={adapter} adapter={adapter} />)}
         </div>
+        <TokenPlanConnections />
         <p className="set-note">{t("models.subscriptionNote")}</p>
       </section>
       <section>

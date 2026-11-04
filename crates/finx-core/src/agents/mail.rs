@@ -127,7 +127,7 @@ fn cut(root: &Session, name: &str, seq: u64, body: String) -> String {
     let mut content = vec![UserContent::Text { text: body }];
     cap_result(
         &mut content,
-        limits.max_bytes,
+        limits.max_tokens,
         Some(&root.output_dir),
         &format!("agent-{name}-{seq}"),
         limits.max_saved_bytes,

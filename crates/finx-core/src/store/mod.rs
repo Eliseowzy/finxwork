@@ -1,6 +1,7 @@
 //! Session persistence: an append-only log per session, where entries form a tree through
 //! their `parent` field.
 
+mod durable;
 pub mod entry;
 pub mod jsonl;
 pub mod memory;

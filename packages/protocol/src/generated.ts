@@ -370,8 +370,21 @@ export type ConnectionConnectParams = {
   idempotency_key: string;
 };
 
+/** Safe, structured connection diagnostics. Never contains credentials or raw response bodies. */
+export type ConnectionDiagnostic = {
+  action: string;
+  checked_at: string;
+  code: string;
+  field?: string | null;
+  http_status?: number | null;
+  message: string;
+  retryable: boolean;
+  stage: string;
+};
+
 export type ConnectionDiscovery = {
   adapter_id: string;
+  diagnostic?: ConnectionDiagnostic | null;
   discovery_id: string;
   installed: boolean;
   login: string;
@@ -401,6 +414,7 @@ export type ConnectionState = "connecting" | "ready" | "disabled" | "needs_login
 export type ConnectionView = {
   adapter_id: string;
   connection_id: string;
+  diagnostic?: ConnectionDiagnostic | null;
   display_name: string;
   models: ConnectionModel[];
   /** When `models` was last taken from the application (RFC 3339). */
@@ -1534,6 +1548,8 @@ export type ProviderSummary = {
   /** Where its models came from; absent while it has no credentials. */
   listing?: ProviderListing | null;
   name: string;
+  /** Subscription product metadata; API-key authentication alone does not imply a plan. */
+  plan?: TokenPlanSummary | null;
 };
 
 /** Input waiting for the running task. */
@@ -1985,6 +2001,14 @@ export type TaskTrigger = "user" | "mail";
 
 /** How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others are the providers' own levels, and a model offers only those it supports (docs/kernel/model-catalog-design.md §18). */
 export type ThinkingLevel = "default" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "on";
+
+/** Connection details for a subscription product, never its secret or entitlement status. */
+export type TokenPlanSummary = {
+  api: string;
+  base_url: string;
+  dynamic_models: boolean;
+  key_url: string;
+};
 
 /** What a tool call does, for display. The values are a subset of the ACP tool kinds. */
 export type ToolCategory = "read" | "edit" | "delete" | "move" | "search" | "execute" | "fetch" | "other";

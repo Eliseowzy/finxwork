@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模型菜单</title>
+<!--
+  原型：输入框右下角的模型菜单，服务商多了以后怎么排。
+  菜单的样子照 app.css 的 .vmenu / .mi / .mh / .msep 抄，输入框照 composer.css 抄。
+  「现在」照 Composer.tsx 的 ModelPicker 画：平铺，每行右边写服务商名。
+  A：按服务商分组平铺，组名做小标题（滚动时吸顶），右边不再写服务商；顶上有「最近使用」，
+     模型多时有搜索框，打开时直接能打字筛选；组名可以点一下收起。
+  B：顶上「最近使用」，下面每个服务商一行，悬停展开它的模型。
+-->
+<style>
+/* Tokens: copied from apps/desktop/src/renderer/src/styles/tokens.css. */
+:root{
+  --accent:#1f6bff;--accent-fg:#1a5ce6;--ok:#17924f;--warn:#d0700a;--danger:#d7333f;
+  --sp-1:8px;--sp-2:13px;--sp-3:21px;--sp-4:34px;--sp-5:55px;
+  --r-xs:4px;--r-sm:6px;--r-md:8px;--r-lg:10px;--r-xl:12px;
+  --ease-out:cubic-bezier(.2,0,0,1);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Text","Inter","PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,"JetBrains Mono",Consolas,monospace;
+  --fs:13px;--top:44px;
+  --win:#ffffff;--win2:#f4f4f7;
+  --l1:rgba(0,0,0,.86);--l2:rgba(0,0,0,.54);--l3:rgba(0,0,0,.32);--l4:rgba(0,0,0,.14);
+  --sep:rgba(0,0,0,.075);--fill:rgba(0,0,0,.045);--fill2:rgba(0,0,0,.075);--fill3:rgba(0,0,0,.12);
+  --accent-t:var(--accent-fg);
+  --btn:#ffffff;--btn-sh:0 0 0 .5px rgba(0,0,0,.14),0 1px 1.5px rgba(0,0,0,.08);
+  --menu-solid:#f8f8fa;--menu-bd:rgba(0,0,0,.10);
+  --bub:var(--l1);--bub-fg:var(--win);--msg:var(--l1);
+  --pill:#ffffff;--pill-bd:rgba(0,0,0,.12);
+  color-scheme:light;
+}
+:root[data-theme="dark"]{
+  --accent-fg:#7ab0ff;--ok:#3fcf86;--warn:#ffab3d;--danger:#ff6670;
+  --win:#1e1e21;--win2:#29292d;
+  --l1:rgba(255,255,255,.88);--l2:rgba(255,255,255,.55);--l3:rgba(255,255,255,.32);--l4:rgba(255,255,255,.14);
+  --sep:rgba(255,255,255,.09);--fill:rgba(255,255,255,.05);--fill2:rgba(255,255,255,.085);--fill3:rgba(255,255,255,.14);
+  --btn:rgba(255,255,255,.12);--btn-sh:0 0 0 .5px rgba(255,255,255,.08);
+  --menu-solid:#2c2c30;--menu-bd:rgba(255,255,255,.12);
+  --bub:rgba(255,255,255,.09);--bub-fg:var(--l1);--msg:rgba(255,255,255,.95);
+  --pill:#28282c;--pill-bd:rgba(255,255,255,.09);
+  color-scheme:dark;
+}
+
+/* Base and controls, as app.css. */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
+button,input{font:inherit;color:inherit}
+button{cursor:default}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.seg{display:inline-flex;background:var(--fill2);border-radius:var(--r-sm);padding:2px;gap:1px;flex:none}
+.seg button{border:0;background:transparent;height:22px;padding:0 10px;border-radius:var(--r-xs);font-size:12px;color:var(--l1)}
+.seg button.on{background:var(--btn);box-shadow:0 1px 2px rgba(0,0,0,.14)}
+
+/* The prototype's own bar. Not part of the app. */
+.page{display:flex;flex-direction:column;height:100%}
+.pbar{height:var(--top);flex:none;display:flex;align-items:center;gap:var(--sp-2);padding:0 var(--sp-4);border-bottom:.5px solid var(--sep)}
+.pbar h1{margin:0;font-size:14px;font-weight:500;flex:none}
+.pbar .sp{flex:1}
+.pnote{flex:none;padding:var(--sp-1) var(--sp-4);border-bottom:.5px solid var(--sep);font-size:12.5px;line-height:18px;color:var(--l2)}
+.pnote p{margin:0}
+.pnote b{color:var(--l1);font-weight:500}
+
+/* The conversation and the composer, as app.css / composer.css. */
+.content{position:relative;flex:1;min-height:0;display:flex;flex-direction:column}
+.cscroll{flex:1;overflow-y:auto;min-height:0}
+.dbody{max-width:798px;margin:0 auto;padding:var(--sp-3) var(--sp-4) 160px;display:flex;flex-direction:column;gap:var(--sp-2)}
+.um{align-self:flex-end;max-width:78%;background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px}
+.am{font-size:15px;line-height:21px;color:var(--msg)}
+.am p{margin:0 0 var(--sp-1)}
+.cmp-zone{position:absolute;left:0;right:0;bottom:0;padding:28px calc(var(--sp-4) - 12px) 12px;background:linear-gradient(to bottom,transparent,var(--win) 28px)}
+.cmp-col{max-width:754px;margin:0 auto}
+.cmp{background:var(--pill);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--pill-bd),0 10px 30px rgba(0,0,0,.12),0 2px 6px rgba(0,0,0,.06);padding:12px 10px 8px 16px}
+.cmp .ph{font-size:15px;line-height:21px;color:var(--l3);min-height:42px}
+.cmp .row{display:flex;align-items:center;gap:4px}
+.cmp .row .sp{flex:1}
+.ib{width:26px;height:26px;border:0;border-radius:var(--r-sm);background:none;display:inline-flex;align-items:center;justify-content:center;color:var(--l2)}
+.send{width:28px;height:28px;border:0;border-radius:var(--r-sm);background:var(--fill3);display:inline-flex;align-items:center;justify-content:center;color:var(--l3);margin-left:4px}
+.mb{height:26px;border:0;border-radius:var(--r-sm);background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
+.mb:hover,.mb[aria-expanded="true"]{background:var(--fill);color:var(--l1)}
+.mb .ic{width:14px;height:14px}
+.mb .lbl{overflow:hidden;text-overflow:ellipsis;max-width:200px}
+.mb .strong{color:var(--l1)}
+.mb .sub{color:var(--l3)}
+
+/* Menus, as app.css .vmenu. */
+.vmenu{position:fixed;z-index:30;min-width:176px;max-height:calc(100vh - 24px);overflow-y:auto;background:var(--menu-solid);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.24),0 2px 6px rgba(0,0,0,.08);padding:4px;outline:none}
+.vmenu .mi{display:flex;align-items:center;gap:8px;width:100%;min-height:28px;padding:0 8px 0 9px;border:0;border-radius:var(--r-sm);background:none;text-align:left;outline:none;white-space:nowrap}
+.vmenu .mi:focus,.vmenu .mi.open,.vmenu .mi.kb{background:var(--fill2)}
+.vmenu .mi .val{margin-left:auto;padding-left:14px;color:var(--l2);font-size:12px}
+.vmenu .mi>.ic{color:var(--l2)}
+.vmenu .ck{width:14px;display:flex;flex:none;color:var(--accent-t)}
+.vmenu .mlist{max-height:min(348px,55vh);overflow-y:auto;margin:0 -4px;padding:0 4px}
+.vmenu .msep{height:.5px;background:var(--sep);margin:5px 9px}
+.vmenu .mh{font-size:11.5px;color:var(--l3);padding:6px 9px 3px}
+
+/* 新增：分组列表（A）。组名吸顶，可点一下收起；搜索框；重名时才标服务商。 */
+.vmenu.mm{width:268px}
+.mm .mlist{max-height:min(388px,58vh)}
+.mm .grp{position:relative}
+.mm .gh{position:sticky;top:0;z-index:1;display:flex;align-items:center;gap:4px;width:100%;height:26px;padding:4px 9px 0 9px;border:0;background:var(--menu-solid);font-size:11.5px;color:var(--l3);text-align:left;outline:none}
+.mm .gh .n{font-variant-numeric:tabular-nums;color:var(--l4)}
+.mm .gh .chev{margin-left:auto;width:12px;height:12px;opacity:0;transition:transform .16s var(--ease-out),opacity .12s}
+.mm .gh:hover{color:var(--l2)}
+.mm .gh:hover .chev,.mm .grp.shut .gh .chev{opacity:1}
+.mm .grp.shut .gh .chev{transform:rotate(-90deg)}
+.mm .grp.shut .rows{display:none}
+.mm .grp+.grp{margin-top:2px}
+.mm .mi .dup{margin-left:auto;padding-left:14px;color:var(--l3);font-size:12px}
+.mm .find{display:flex;align-items:center;gap:6px;height:28px;margin:0 0 4px;padding:0 9px;border-radius:var(--r-sm);background:var(--fill)}
+.mm .find .ic{width:14px;height:14px;color:var(--l3)}
+.mm .find input{flex:1;min-width:0;height:100%;border:0;background:none;outline:none;font-size:13px;padding:0}
+.mm .find input::placeholder{color:var(--l3)}
+.mm .find kbd{font:inherit;font-size:11px;color:var(--l3)}
+.mm .empty{padding:13px 9px;color:var(--l3);font-size:12.5px}
+.mm mark{background:none;color:var(--accent-t)}
+
+/* 新增：服务商子菜单（B）。 */
+.vmenu.pm{width:236px}
+.pm .mi .cnt{margin-left:auto;padding-left:14px;color:var(--l3);font-size:12px;font-variant-numeric:tabular-nums}
+.pm .mi .chev{width:12px;height:12px;color:var(--l3);margin-left:4px}
+.pm .mi .cur{margin-left:auto;padding-left:14px;color:var(--l2);font-size:12px;overflow:hidden;text-overflow:ellipsis;max-width:110px}
+.pm .mi .cur+.chev{margin-left:4px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="pbar">
+    <h1>模型菜单</h1>
+    <div class="seg" id="variant">
+      <button data-v="now">现在</button>
+      <button data-v="a" class="on">A 分组列表</button>
+      <button data-v="b">B 服务商子菜单</button>
+    </div>
+    <div class="sp"></div>
+    <div class="seg" id="theme">
+      <button data-t="light">浅色</button>
+      <button data-t="dark" class="on">深色</button>
+    </div>
+  </div>
+  <div class="pnote"><p id="note"></p></div>
+  <div class="content">
+    <div class="cscroll">
+      <div class="dbody">
+        <div class="um">把港股科技指数的成分股按市值排一下，截至 11 月 3 日。</div>
+        <div class="am">
+          <p>好的，下面是恒生科技指数成分股按总市值的排序，数据截至 11 月 3 日；对无法可靠量化的宏观贡献我单独列出，不放进排序。</p>
+          <p>点输入框右下角的模型按钮，看看菜单。</p>
+        </div>
+      </div>
+    </div>
+    <div class="cmp-zone">
+      <div class="cmp-col">
+        <div class="cmp">
+          <div class="ph">回复 finx…</div>
+          <div class="row">
+            <button class="ib" title="添加"><svg class="ic" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></svg></button>
+            <div class="sp"></div>
+            <button class="mb" id="mb" aria-expanded="false"><span class="lbl strong" id="mbName"></span><span class="sub" id="mbThink"></span></button>
+            <button class="send" title="发送"><svg class="ic" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const PROVIDERS = [
+  { id: "deepseek", name: "DeepSeek", models: ["DeepSeek-V4.1-Flash", "DeepSeek-V4-Pro"] },
+  { id: "openai", name: "ChatGPT API", models: ["GPT-6.1-Sol", "GPT-6-Astra", "GPT-6.1 Terra", "GPT-6-Sol", "GPT-6-Luna", "GPT-5.6-Sol", "GPT-5.6-Terra", "GPT-5.6-Luna"] },
+  { id: "qoder", name: "Qoder", models: ["Auto", "Ultimate", "Fast", "Performance"] },
+  { id: "moonshot", name: "Moonshot", models: ["Kimi-K3", "Kimi-K3-Thinking"] },
+  { id: "zhipu", name: "智谱", models: ["GLM-5.1", "GLM-5.1-Air"] },
+  { id: "openrouter", name: "OpenRouter", models: ["DeepSeek-V4-Pro", "Kimi-K3", "Qwen4-Max", "Qwen4-Coder"] },
+];
+const MODELS = PROVIDERS.flatMap((p) => p.models.map((name) => ({ id: `${p.id}/${name}`, name, provider: p.id })));
+const byId = new Map(MODELS.map((m) => [m.id, m]));
+const pname = (id) => PROVIDERS.find((p) => p.id === id).name;
+// A name two providers both serve: only then does a row say whose it is.
+const dupNames = new Set(MODELS.map((m) => m.name).filter((n, i, a) => a.indexOf(n) !== i));
+const LEVELS = ["default", "low", "medium", "high"];
+const LEVEL_TITLE = { default: "默认", low: "低", medium: "中", high: "高" };
+const NOTES = {
+  now: "<b>现在</b>：平铺所有模型，每行右边写服务商名。服务商一多，右边一列重复的名字最抢眼，真正要找的模型名反而被淹没。",
+  a: "<b>A 分组列表（推荐）</b>：按服务商分组，组名是一行小标题，滚动时吸在顶上，所以永远知道自己在哪个服务商里；每行只剩模型名，依旧一次点击就选中。顶上是<b>最近使用</b>，常用的不用找；模型多时出现搜索框，菜单一打开直接打字就能筛（也能搜服务商名）；点组名可以收起不常用的服务商。服务商名只在两处淡淡出现：最近使用的几行（离开了分组，「Auto」单看不知道是谁的），和两个服务商都有的同名模型。键盘：↑↓ 选、↩ 确认、Esc 关。",
+  b: "<b>B 服务商子菜单</b>：顶上是最近使用，下面每个服务商一行，悬停展开它的模型。菜单很短，但最近用过以外的模型都要两步才点到，作对比用。",
+};
+
+let variant = "a";
+let current = "openai/GPT-6.1-Sol";
+let thinking = "medium";
+let recent = ["openai/GPT-6.1-Sol", "deepseek/DeepSeek-V4.1-Flash", "qoder/Auto"];
+const shut = new Set();
+let menu = null, sub = null;
+
+const $ = (s, el = document) => el.querySelector(s);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const CHECK = '<svg class="ic" viewBox="0 0 16 16" style="width:14px;height:14px"><path d="M3.5 8.5l3 3 6-7"/></svg>';
+const CHEV = '<svg class="ic chev" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></svg>';
+const CHEV_R = '<svg class="ic chev" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></svg>';
+const SEARCH = '<svg class="ic" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>';
+
+function label() {
+  const m = byId.get(current);
+  $("#mbName").textContent = m.name + (dupNames.has(m.name) ? ` · ${pname(m.provider)}` : "");
+  $("#mbThink").textContent = LEVEL_TITLE[thinking];
+}
+
+function row(m, { val = "", q = "" } = {}) {
+  let name = esc(m.name);
+  if (q) {
+    const i = m.name.toLowerCase().indexOf(q);
+    if (i >= 0) name = esc(m.name.slice(0, i)) + "<mark>" + esc(m.name.slice(i, i + q.length)) + "</mark>" + esc(m.name.slice(i + q.length));
+  }
+  return `<button class="mi" role="menuitemradio" aria-checked="${m.id === current}" data-id="${m.id}" tabindex="-1">
+    <span class="ck">${m.id === current ? CHECK : ""}</span><span>${name}</span>${val}</button>`;
+}
+
+function thinkRow() {
+  return `<button class="mi" data-sub="think" role="menuitem" tabindex="-1"><span class="ck"></span><span>思考强度</span><span class="val">${LEVEL_TITLE[thinking]}</span>${CHEV_R.replace('class="ic chev"', 'class="ic" style="width:12px;height:12px;color:var(--l3)"')}</button>
+    <div class="msep"></div>`;
+}
+
+/* ---------- 现在 ---------- */
+function renderNow() {
+  return thinkRow() + `<div class="mlist">${MODELS.map((m) => row(m, { val: `<span class="val">${esc(pname(m.provider))}</span>` })).join("")}</div>`;
+}
+
+/* ---------- A ---------- */
+function renderA(q = "") {
+  q = q.trim().toLowerCase();
+  const dup = (m) => (dupNames.has(m.name) ? `<span class="dup">${esc(pname(m.provider))}</span>` : "");
+  let html = "";
+  if (!q) {
+    // Out of their groups, recent rows say whose they are ("Auto" alone says nothing), quietly.
+    html += `<div class="grp" data-g="recent"><div class="gh" style="cursor:default">最近使用</div><div class="rows">${recent.map((id) => row(byId.get(id), { val: `<span class="dup">${esc(pname(byId.get(id).provider))}</span>` })).join("")}</div></div>`;
+  }
+  let any = false;
+  for (const p of PROVIDERS) {
+    const hitP = q && p.name.toLowerCase().includes(q);
+    const ms = MODELS.filter((m) => m.provider === p.id && (!q || hitP || m.name.toLowerCase().includes(q)));
+    if (!ms.length) continue;
+    any = true;
+    // The current model's group never starts closed, and a search opens every group.
+    const closed = !q && shut.has(p.id) && byId.get(current).provider !== p.id;
+    html += `<div class="grp${closed ? " shut" : ""}" data-g="${p.id}">
+      <button class="gh" data-toggle="${p.id}" tabindex="-1"><span>${esc(p.name)}</span><span class="n">${p.models.length}</span>${CHEV}</button>
+      <div class="rows">${ms.map((m) => row(m, { q: hitP ? "" : q })).join("")}</div></div>`;
+  }
+  if (!any) html = `<div class="empty">没有匹配的模型</div>`;
+  return html;
+}
+
+function shellA() {
+  return thinkRow() + `<label class="find">${SEARCH}<input id="find" placeholder="搜索模型或服务商" autocomplete="off" spellcheck="false"></label><div class="mlist" id="mlist">${renderA()}</div>`;
+}
+
+/* ---------- B ---------- */
+function renderB() {
+  const cur = byId.get(current);
+  return thinkRow() + `<div class="mh">最近使用</div>${recent.map((id) => row(byId.get(id))).join("")}<div class="msep"></div>` +
+    PROVIDERS.map((p) => `<button class="mi" data-sub="${p.id}" role="menuitem" tabindex="-1"><span class="ck"></span><span>${esc(p.name)}</span>${
+      cur.provider === p.id ? `<span class="cur">${esc(cur.name)}</span>` : `<span class="cnt">${p.models.length}</span>`}${CHEV_R}</button>`).join("");
+}
+
+/* ---------- menu plumbing ---------- */
+function place(el, anchor, { right = true } = {}) {
+  const r = anchor.getBoundingClientRect();
+  el.style.left = "0px"; el.style.top = "0px";
+  const { offsetWidth: w, offsetHeight: h } = el;
+  el.style.left = Math.max(8, right ? r.right - w : r.left) + "px";
+  // Held by its bottom edge, so a search that shortens the list keeps it on the button.
+  el.style.top = "auto";
+  el.style.bottom = innerHeight - r.top + 6 + "px";
+}
+
+function openMenu() {
+  closeMenu();
+  menu = document.createElement("div");
+  menu.className = "vmenu" + (variant === "a" ? " mm" : variant === "b" ? " pm" : "");
+  if (variant === "now") menu.style.width = "300px";
+  menu.setAttribute("role", "menu");
+  menu.tabIndex = -1;
+  menu.innerHTML = variant === "a" ? shellA() : variant === "b" ? renderB() : renderNow();
+  document.body.appendChild(menu);
+  place(menu, $("#mb"));
+  $("#mb").setAttribute("aria-expanded", "true");
+  const list = menu.querySelector(".mlist");
+  if (list && variant !== "a") scrollToCurrent(list);
+  if (variant === "a") {
+    // Opened on the current provider's group, so the current model is in view without the recent rows hiding it.
+    const g = list.querySelector(`.grp[data-g="${byId.get(current).provider}"]`);
+    list.scrollTop = 0;
+    const cur = g?.querySelector('[aria-checked="true"]');
+    if (cur && cur.offsetTop + cur.offsetHeight > list.clientHeight) list.scrollTop = g.offsetTop;
+    const input = $("#find", menu);
+    input.focus();
+    input.addEventListener("input", () => { list.innerHTML = renderA(input.value); list.scrollTop = 0; setKb(null); });
+  } else menu.focus();
+  menu.addEventListener("click", onMenuClick);
+  menu.addEventListener("mouseover", onMenuHover);
+  menu.addEventListener("keydown", onKey);
+}
+
+function scrollToCurrent(list) {
+  const cur = list.querySelector('[aria-checked="true"]');
+  if (cur) list.scrollTop = cur.offsetTop - list.clientHeight / 2 + cur.offsetHeight / 2;
+}
+
+function closeMenu() {
+  closeSub();
+  menu?.remove(); menu = null;
+  $("#mb").setAttribute("aria-expanded", "false");
+}
+
+function closeSub() {
+  sub?.el.remove(); sub = null;
+  menu?.querySelectorAll(".mi.open").forEach((e) => e.classList.remove("open"));
+}
+
+function openSub(rowEl) {
+  const key = rowEl.dataset.sub;
+  if (sub?.key === key) return;
+  closeSub();
+  const el = document.createElement("div");
+  el.className = "vmenu" + (key === "think" ? "" : " pm");
+  el.setAttribute("role", "menu");
+  if (key === "think") {
+    el.innerHTML = LEVELS.map((l, i) => `<button class="mi" data-level="${l}" tabindex="-1"><span class="ck">${l === thinking ? CHECK : ""}</span><span>${LEVEL_TITLE[l]}</span>${l === "default" ? '<span class="val">由服务商决定</span>' : ""}</button>${i === 0 ? '<div class="msep"></div>' : ""}`).join("");
+  } else {
+    const p = PROVIDERS.find((x) => x.id === key);
+    el.style.minWidth = "200px";
+    el.innerHTML = MODELS.filter((m) => m.provider === p.id).map((m) => row(m)).join("");
+  }
+  document.body.appendChild(el);
+  // Beside its row, on the side with room (the menu sits at the window's right, so usually the left).
+  const m = menu.getBoundingClientRect(), r = rowEl.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight;
+  el.style.left = (m.right + w + 4 > innerWidth ? m.left - w - 2 : m.right + 2) + "px";
+  el.style.top = Math.max(8, Math.min(r.bottom + 5 - h, innerHeight - 8 - h)) + "px";
+  rowEl.classList.add("open");
+  el.addEventListener("click", onMenuClick);
+  el.addEventListener("mouseleave", () => {});
+  sub = { key, el };
+}
+
+function choose(id) {
+  current = id;
+  recent = [id, ...recent.filter((x) => x !== id)].slice(0, 3);
+  label();
+  closeMenu();
+}
+
+function onMenuClick(e) {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.dataset.toggle) {
+    const id = t.dataset.toggle;
+    shut.has(id) ? shut.delete(id) : shut.add(id);
+    t.closest(".grp").classList.toggle("shut", shut.has(id));
+    return;
+  }
+  if (t.dataset.sub) return openSub(t);
+  if (t.dataset.level) { thinking = t.dataset.level; label(); return closeMenu(); }
+  if (t.dataset.id) choose(t.dataset.id);
+}
+
+function onMenuHover(e) {
+  const t = e.target.closest(".mi");
+  if (!t) return;
+  if (t.dataset.sub) openSub(t);
+  else if (!sub || !sub.el.contains(t)) closeSub();
+  setKb(null);
+}
+
+// Keyboard on the A menu: the search field keeps focus; ↑↓ walk the visible model rows.
+let kb = null;
+function setKb(el) {
+  menu?.querySelectorAll(".mi.kb").forEach((e) => e.classList.remove("kb"));
+  kb = el;
+  if (el) { el.classList.add("kb"); el.scrollIntoView({ block: "nearest" }); }
+}
+function onKey(e) {
+  if (e.key === "Escape") { e.preventDefault(); return closeMenu(), $("#mb").focus(); }
+  if (variant !== "a") return;
+  const rows = [...menu.querySelectorAll(".mlist .grp:not(.shut) .mi[data-id]")];
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const i = rows.indexOf(kb);
+    const next = e.key === "ArrowDown" ? rows[i < 0 ? 0 : Math.min(rows.length - 1, i + 1)] : rows[Math.max(0, i - 1)];
+    setKb(next);
+    if (next && next.getBoundingClientRect().top < menu.querySelector(".mlist").getBoundingClientRect().top + 26) menu.querySelector(".mlist").scrollTop -= 26;
+  } else if (e.key === "Enter") {
+    e.preventDefault();
+    const pick = kb ?? rows[0];
+    if (pick) choose(pick.dataset.id);
+  }
+}
+
+$("#mb").addEventListener("click", (e) => { e.stopPropagation(); menu ? closeMenu() : openMenu(); });
+document.addEventListener("mousedown", (e) => {
+  if (menu && !menu.contains(e.target) && !sub?.el.contains(e.target) && !$("#mb").contains(e.target)) closeMenu();
+});
+$("#variant").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  variant = b.dataset.v;
+  document.querySelectorAll("#variant button").forEach((x) => x.classList.toggle("on", x === b));
+  $("#note").innerHTML = NOTES[variant];
+  openMenu();
+});
+$("#theme").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.documentElement.dataset.theme = b.dataset.t;
+  document.querySelectorAll("#theme button").forEach((x) => x.classList.toggle("on", x === b));
+});
+addEventListener("resize", () => menu && place(menu, $("#mb")));
+
+label();
+$("#note").innerHTML = NOTES[variant];
+openMenu();
+</script>
+</body>
+</html>

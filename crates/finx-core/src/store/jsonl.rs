@@ -272,7 +272,7 @@ impl LineSink for FileSink {
 
     /// Also creates the file of a session that wrote nothing, so that every session has one.
     fn sync(&mut self) -> io::Result<()> {
-        self.file()?.sync_data()
+        super::durable::sync(self.file()?)
     }
 
     fn is_new(&self) -> bool {
@@ -547,7 +547,7 @@ impl JsonlStore {
             out.push('\n');
         }
         file.write_all(out.as_bytes()).map_err(io_err(&path))?;
-        file.sync_data().map_err(io_err(&path))
+        super::durable::sync(&file).map_err(io_err(&path))
     }
 }
 

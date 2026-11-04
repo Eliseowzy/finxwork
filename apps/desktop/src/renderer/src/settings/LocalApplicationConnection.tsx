@@ -1,10 +1,13 @@
+import { TokenPlanConnections } from "./TokenPlanConnections";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   ConnectionView,
+  ConnectionDiagnostic,
   ConnectionDiscovery,
   ConnectionsSnapshot,
 } from "@finx/protocol";
+import { connectionDiagnostic, rpcConnectionDiagnostic } from "../../../shared/connection-diagnostic";
 import { agoText } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
@@ -55,6 +58,7 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
   const [connection, setConnection] = useState<ConnectionView | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [operationDiagnostic, setOperationDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [loadError, setLoadError] = useState("");
   const mounted = useRef(true);
   const idempotencyKey = useRef(crypto.randomUUID());
@@ -72,7 +76,12 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
     const update = (s: ConnectionsSnapshot) => {
       if (!stopped && s.revision >= revision) {
         revision = s.revision;
-        setConnection(s.connections.find(c => c.adapter_id === adapter) ?? null);
+        const next = s.connections.find(c => c.adapter_id === adapter) ?? null;
+        setConnection(next);
+        if (next?.state === "ready" && !next.diagnostic) {
+          setOperationDiagnostic(null);
+          setError("");
+        }
         setLoadError("");
       }
     };
@@ -105,6 +114,7 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
   ) => {
     setBusy(true);
     setError("");
+    setOperationDiagnostic(null);
     try {
       if (action === "scan") {
         const discovered = await call("connections/discover", {});
@@ -129,7 +139,10 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
         await st.refreshModels();
       }
     } catch (e) {
-      if (mounted.current) setError(e instanceof Error ? e.message : String(e));
+      if (mounted.current) {
+        setError(e instanceof Error ? e.message : String(e));
+        setOperationDiagnostic(rpcConnectionDiagnostic(e));
+      }
       try {
         const snapshot = await call("connections/list", {});
         if (mounted.current) setConnection(snapshot.connections.find(c => c.adapter_id === adapter) ?? null);
@@ -142,11 +155,12 @@ export function useLocalConnection(adapter: LocalAdapter = "qwenwork") {
   const ready = connection?.state === "ready";
   const status =
     connection?.state ??
-    (!discovery ? "checking" : discovery.installed ? "found" : "missing");
+    (!discovery ? "checking" : discovery.diagnostic ? "unavailable" : discovery.installed ? "found" : "missing");
   const published = new Set(st.models.models.filter(m => m.provider === connection?.provider_id).map(m => m.id));
   const active = connection?.models.filter(m => published.has(`${connection.provider_id}/${m.id}`)) ?? [];
   const pending = connection?.models.filter(m => !published.has(`${connection.provider_id}/${m.id}`)) ?? [];
-  return { discovery, connection, active, pending, open, busy, error: error || loadError, act, status, ready, rpc: !!st.rpc } as const;
+  const diagnostic = connectionDiagnostic(connection, operationDiagnostic) ?? discovery?.diagnostic ?? null;
+  return { discovery, connection, diagnostic, active, pending, open, busy, error: error || loadError, act, status, ready, rpc: !!st.rpc } as const;
 }
 
 /** A local application's name, as FinxWork shows it. */
@@ -165,7 +179,7 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
   const { t } = useTranslation("settings");
   const local = useLocalConnection(adapter);
   const name = useLocalName()(adapter);
-  const { discovery, connection, busy, status } = local;
+  const { discovery, connection, diagnostic, busy, status } = local;
   useEffect(() => onStatus?.(adapter, status), [onStatus, adapter, status]);
   const state = connection?.state;
   const act = (a: Parameters<typeof local.act>[0]) => () => void local.act(a);
@@ -181,12 +195,13 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
     .join(" · ");
   // The state in a few words, and the actions (the first is the way forward).
   const [line, actions, tone]: [string, [string, () => void][], "" | "ok" | "warn"] = (() => {
-    if (state === "ready") return [ready, [[t("models.manage.open"), () => setManaging(true)], [t("models.disconnect"), act("disconnect")]], "ok"];
+    if (state === "ready") return [ready, [[t("models.manage.open"), () => setManaging(true)], [t("models.disconnect"), act("disconnect")]], diagnostic ? "warn" : "ok"];
     if (state === "connecting") return [t("models.state.connecting"), [], ""];
     if (state === "needs_login") return [t("models.state.needsLogin", { name }), [[t("models.open", { name }), open], [t("models.reconnect"), act("retry")]], "warn"];
     if (state === "disabled") return [t("models.state.disabled"), [[t("models.reconnect"), act("retry")], [t("models.remove"), act("remove")]], ""];
     if (state) return [t("models.state.trouble"), [[t("models.reconnect"), act("retry")]], "warn"];
     if (!discovery) return [t(local.error ? "models.state.unknown" : "models.state.checking"), local.error ? [[t("models.recheck"), act("scan")]] : [], ""];
+    if (discovery.diagnostic) return [t("models.state.trouble"), [[t("models.recheck"), act("scan")]], "warn"];
     if (!discovery.installed) return [t("models.state.missing"), [[t("models.recheck"), act("scan")]], ""];
     if (discovery.login === "missing") return [t("models.state.signedOut"), [[t("models.open", { name }), open], [t("models.recheck"), act("scan")]], "warn"];
     return [t("models.state.found", { version: discovery.version ?? "" }).trim(), [[t("models.connect"), act("connect")]], ""];
@@ -207,7 +222,25 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
         ))}
       </div>
       {state === "ready" && local.pending.length > 0 && <details className="frow" style={{ display: "block" }}><summary>{t("models.otherModels", { count: local.pending.length })}</summary>{local.pending.map(model => <div key={model.id} className="fdesc">{model.name} · {t("models.unverified")}</div>)}</details>}
-      {local.error && discovery && <p className="mrow-err">{local.error}</p>}
+      {diagnostic && (
+        <div className="mrow-err" role="status">
+          <div>{diagnostic.message}</div>
+          <div>{t(`models.diagnostic.actions.${diagnostic.action}`, { defaultValue: t("models.diagnostic.actions.check_details") })}</div>
+          <details>
+            <summary>{t("models.diagnostic.details")}</summary>
+            <div>{t("models.diagnostic.stage")}: {t(`models.diagnostic.stages.${diagnostic.stage}`, { defaultValue: diagnostic.stage })}</div>
+            <div>{t("models.diagnostic.code")}: {diagnostic.code}</div>
+            {diagnostic.http_status != null && <div>HTTP: {diagnostic.http_status}</div>}
+            {diagnostic.field && <div>{t("models.diagnostic.field")}: {diagnostic.field}</div>}
+            {discovery?.version && <div>{t("models.diagnostic.version")}: {discovery.version}</div>}
+            <div>{t("models.diagnostic.checkedAt")}: {diagnostic.checked_at}</div>
+          </details>
+          {state === "ready" && <button className="btn" disabled={busy || !local.rpc} onClick={act("retry")}>{t("models.reconnect")}</button>}
+          {diagnostic.action === "open_source" && state !== "needs_login" && <button className="btn" disabled={busy} onClick={open}>{t("models.open", { name })}</button>}
+          {diagnostic.action === "reconnect_account" && state !== "disabled" && <button className="btn" disabled={busy || !local.rpc} onClick={act("disconnect")}>{t("models.disconnect")}</button>}
+        </div>
+      )}
+      {local.error && !diagnostic && <p className="mrow-err" role="status">{local.error}</p>}
       {managing && connection && (
         <ManageModels
           source={{
@@ -216,7 +249,7 @@ export function LocalRow({ adapter, primary, hidden, onStatus }: { adapter: Loca
             mark: <SourceAppMark className="mlogo mlogo-qwen" adapter={adapter} />,
             origin: t("models.manage.source.app", { name }),
             fetchedAt: connection.models_fetched_at,
-            failure: local.error || undefined,
+            failure: diagnostic?.message || local.error || undefined,
             refresh: () => local.act("models"),
           }}
           onClose={() => setManaging(false)}
@@ -258,6 +291,7 @@ export function SubscriptionConnections() {
         ...missing.map(row),
       ]}
     </div>
+    <TokenPlanConnections />
     <p className="connections-footnote">{t("models.subscriptionNote")}</p>
   </section>;
 }

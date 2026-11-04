@@ -900,6 +900,9 @@ pub struct SessionDefaults {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ProviderSummary {
+    /// Subscription product metadata; API-key authentication alone does not imply a plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<TokenPlanSummary>,
     pub id: String,
     pub name: String,
     pub auth: AuthKind,
@@ -913,6 +916,15 @@ pub struct ProviderSummary {
     /// Where its models came from; absent while it has no credentials.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listing: Option<ProviderListing>,
+}
+
+/// Connection details for a subscription product, never its secret or entitlement status.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TokenPlanSummary {
+    pub key_url: String,
+    pub base_url: String,
+    pub api: String,
+    pub dynamic_models: bool,
 }
 
 /// A provider's model list as the kernel last saw it.
@@ -1265,6 +1277,18 @@ pub struct ConnectionModel {
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConnectionState { Connecting, Ready, Disabled, NeedsLogin, PermissionRequired, Unsupported, Unavailable }
+/// Safe, structured connection diagnostics. Never contains credentials or raw response bodies.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ConnectionDiagnostic {
+    pub stage: String,
+    pub code: String,
+    pub message: String,
+    pub retryable: bool,
+    pub action: String,
+    pub checked_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub field: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionView {
     pub connection_id: String,
@@ -1275,6 +1299,7 @@ pub struct ConnectionView {
     pub display_name: String,
     pub state: ConnectionState,
     #[serde(skip_serializing_if = "Option::is_none")] pub reason_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub diagnostic: Option<ConnectionDiagnostic>,
     pub models: Vec<ConnectionModel>,
     /// When `models` was last taken from the application (RFC 3339).
     #[serde(default, skip_serializing_if = "Option::is_none")] pub models_fetched_at: Option<String>,
@@ -1283,6 +1308,7 @@ pub struct ConnectionView {
 pub struct ConnectionsSnapshot { pub revision: u64, pub connections: Vec<ConnectionView> }
 #[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
 pub struct ConnectionDiscovery {
+    #[serde(default, skip_serializing_if = "Option::is_none")] pub diagnostic: Option<ConnectionDiagnostic>,
     pub adapter_id: String,
     pub installed: bool,
     pub version: Option<String>,

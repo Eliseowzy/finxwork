@@ -50,9 +50,9 @@ pub(crate) fn limits(model: &Model, thinking: ThinkingLevel, settings: &Compacti
     Limits { soft, hard, window }
 }
 
-/// Byte limits for tool results under these window limits (4 bytes per token).
+/// Token limits for tool results under these window limits.
 pub(crate) fn tool_limits(base: &OutputLimits, limits: &Limits) -> OutputLimits {
-    base.capped((limits.hard * 4 * TOOL_RESULT_SHARE / 100) as usize)
+    base.capped((limits.hard * TOOL_RESULT_SHARE / 100) as usize)
 }
 
 /// Token budget for the user messages kept word for word by a compaction.
@@ -559,7 +559,7 @@ mod tests {
         };
         assert_eq!(limits(&model("m"), ThinkingLevel::Off, &capped).soft, 5_000);
         assert_eq!(retained_budget(&settings(), &l), 1_350);
-        assert_eq!(tool_limits(&OutputLimits::default(), &l).max_bytes, 3_600);
+        assert_eq!(tool_limits(&OutputLimits::default(), &l).max_tokens, 900);
     }
 
     #[test]

@@ -708,7 +708,7 @@ export class MockServer {
         return { providers: demoModels(this.stored, this.selection, this.listedAt).providers } satisfies R<"models/refresh">;
       case "models/show": {
         const q = p as P<"models/show">;
-        if (!demoModels(new Set(["anthropic", "kimi"])).models.some((m) => m.id === q.model)) throw new Failure(-32602, "invalid_params", `unknown model '${q.model}'`);
+        if (!demoModels(new Set([...this.stored, "anthropic", "kimi"])).models.some((m) => m.id === q.model)) throw new Failure(-32602, "invalid_params", `unknown model '${q.model}'`);
         this.selection.set(q.model, q.shown);
         this.notifyModels();
         return {} satisfies R<"models/show">;
@@ -759,6 +759,8 @@ export class MockServer {
       case "mcp/logout":
         return this.customize.mcpLogout((p as P<"mcp/logout">).name) satisfies R<"mcp/logout">;
       // Local applications: one on this Mac and signed in, one not installed; none connected.
+      case "chatgpt/status":
+        return { state: "idle" } satisfies R<"chatgpt/status">;
       case "connections/list":
         return { connections: [], revision: 0 } satisfies R<"connections/list">;
       case "connections/discover":
@@ -780,7 +782,7 @@ export class MockServer {
         this.notifyModels();
         if (method === "auth/delete") return {};
         const count = demoModels(this.stored).models.filter((m) => m.provider === q.provider).length;
-        return { verified: true, models: count } satisfies R<"auth/set">;
+        return provider.plan && !provider.plan.dynamic_models ? { verified: false } : { verified: true, models: count } satisfies R<"auth/set">;
       }
       case "session/new": {
         const q = p as P<"session/new">;
@@ -912,7 +914,7 @@ export class MockServer {
       case "set_model": {
         // As finx does (model-catalog-design §18): a level asked for is kept when the model offers it;
         // on a switch the session's level is kept when the new model offers it; else "default".
-        const offered = demoModels(new Set(["anthropic", "kimi"])).models.find((m) => m.id === op.model)?.thinking_levels ?? [];
+        const offered = demoModels(new Set([...this.stored, "anthropic", "kimi"])).models.find((m) => m.id === op.model)?.thinking_levels ?? [];
         const wanted = op.thinking ?? s.view.info.thinking;
         const thinking = wanted !== "default" && offered.includes(wanted) ? wanted : "default";
         return this.emit(s, { type: "settings_changed", model: op.model, thinking, permission_mode: s.view.info.permission_mode, context_window: contextWindow(op.model) });

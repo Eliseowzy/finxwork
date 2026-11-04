@@ -1784,10 +1784,66 @@
       ],
       "type": "object"
     },
+    "ConnectionDiagnostic": {
+      "description": "Safe, structured connection diagnostics. Never contains credentials or raw response bodies.",
+      "properties": {
+        "action": {
+          "type": "string"
+        },
+        "checked_at": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "field": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "http_status": {
+          "format": "uint16",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "stage": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "checked_at",
+        "code",
+        "message",
+        "retryable",
+        "stage"
+      ],
+      "type": "object"
+    },
     "ConnectionDiscovery": {
       "properties": {
         "adapter_id": {
           "type": "string"
+        },
+        "diagnostic": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConnectionDiagnostic"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "discovery_id": {
           "type": "string"
@@ -1896,6 +1952,16 @@
         },
         "connection_id": {
           "type": "string"
+        },
+        "diagnostic": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ConnectionDiagnostic"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "display_name": {
           "type": "string"
@@ -6726,6 +6792,17 @@
         },
         "name": {
           "type": "string"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenPlanSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Subscription product metadata; API-key authentication alone does not imply a plan."
         }
       },
       "required": [
@@ -8322,6 +8399,30 @@
           "type": "string"
         }
       ]
+    },
+    "TokenPlanSummary": {
+      "description": "Connection details for a subscription product, never its secret or entitlement status.",
+      "properties": {
+        "api": {
+          "type": "string"
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "dynamic_models": {
+          "type": "boolean"
+        },
+        "key_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "api",
+        "base_url",
+        "dynamic_models",
+        "key_url"
+      ],
+      "type": "object"
     },
     "ToolCategory": {
       "description": "What a tool call does, for display. The values are a subset of the ACP tool kinds.",

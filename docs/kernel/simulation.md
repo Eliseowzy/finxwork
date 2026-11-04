@@ -102,6 +102,11 @@ target/release/finx-sim --protocol native --scenario macro \
   --sessions 200 --concurrency 200 --repeats 3 \
   --json target/simulation-results/load.json
 
+# 每个会话一条连接，相当于多个客户端；默认所有会话共用一条连接，相当于一个窗口里的多个会话
+target/release/finx-sim --protocol native --scenario macro \
+  --sessions 200 --concurrency 200 --repeats 3 --connection-per-session \
+  --json target/simulation-results/load-per-session.json
+
 # 模拟模型与工具服务的等待时间
 target/release/finx-sim --scenario company --sessions 100 --concurrency 100 \
   --ttft-ms 100 --chunk-ms 1 --tool-ms 10 \
@@ -126,7 +131,7 @@ Mock MCP 配置使用 `required = true`：场景必须等工具就绪才开始�
 |---|---|
 | 正确性 | 用户任务完成、最终结构化结论精确匹配、工具事件数量、预期工具失败数量、工具服务独立审计；native/CLI 事件 seq 严格递增 |
 | `startup_ms` | 服务进程 spawn → JSON-RPC initialize 成功；CLI 用 `cli_process_ready_ms` 分布测 spawn → session_started |
-| `session_new_ms` | RPC 发起 session/new → 返回会话 ID；p50/p95/p99/max |
+| `session_new_ms` | RPC 发起 session/new → 返回会话 ID；p50/p95/p99/max。共用一条连接时，回复排在其他会话的流式事件之后，满载时主要反映这段排队；`--connection-per-session` 下才是服务端处理本身 |
 | `first_delta_ms` | 提交 prompt → 首个文本或模拟计划增量；包含设定的模型延迟 |
 | `task_ms` | 提交 prompt → 正常任务结束；CLI 含启动、恢复与退出 |
 | `turns_per_second` | 完成的用户任务数 / 各波次实际运行总秒数；排除 `--settle-ms` 静置时间 |
@@ -166,6 +171,7 @@ target/release/finx-sim --finx target/release/finx \
 3. 新会话日志在 `Settle` 前只保留内存条目，直接在异步任务处理，避免无 I/O 的 blocking-pool 往返；实际写盘和 sync 仍在 blocking pool，日志命令批次的向量容量复用。
 4. 服务器记录已关闭会话计数，让小于 2 秒的 create/run/close 波次也触发下次静置内存回收，避免仅轮询 busy 状态漏掉整个突发。
 5. 共享 HTTP 客户端每个 host 最多保留 32 个空闲连接，限制突发结束后连接和缓冲区的滞留；活动请求并发不受此值限制，空闲过期时间仍为 30 秒。
+   2026-11-03 已撤销：200 并发时超出上限的连接一放回池里就被关掉，下一次请求只能重新建连，这正是 [1103 报告](benchmarks/1103-kernel-performance-report.md)中任务 p95 回退的主因（technical-design §1.4、D-96）。
 
 这些修改均由相同场景和独立二进制对照检验。测量结果见同目录 `benchmarks/` 中的本轮报告；原始详细报告在工作区 `target/simulation-results/`。
 

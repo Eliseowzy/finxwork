@@ -11,6 +11,7 @@ use crate::tool::ToolCtx;
 use crate::tool::ToolError;
 use crate::tool::ToolKind;
 use crate::tool::ToolOutput;
+use crate::truncate::bytes_for_tokens;
 use crate::truncate::output_file_name;
 use crate::typed::TypedTool;
 
@@ -90,8 +91,8 @@ impl TypedTool for BashTool {
             env,
             timeout,
             capture: CaptureConfig {
-                head_bytes: ctx.limits.head_bytes,
-                tail_bytes: ctx.limits.tail_bytes,
+                head_bytes: bytes_for_tokens(ctx.limits.head_tokens),
+                tail_bytes: bytes_for_tokens(ctx.limits.tail_tokens),
                 spill_path: Some(ctx.output_dir.join(output_file_name(&ctx.call_id))),
                 max_saved_bytes: ctx.limits.max_saved_bytes,
             },

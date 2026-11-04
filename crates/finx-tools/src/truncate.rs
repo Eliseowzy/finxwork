@@ -1,7 +1,9 @@
 //! Output limits shared by the tools and the kernel's safety net.
 //!
-//! A result is cut once, before it enters the history, and never changes afterwards. Whatever
-//! is cut stays readable: the full output is saved to a file and the result says where.
+//! Budgets are in tokens, estimated at [`BYTES_PER_TOKEN`] bytes each so that no tokenizer
+//! runs; text is cut at the bytes a budget stands for. A result is cut once, before it enters
+//! the history, and never changes afterwards. Whatever is cut stays readable: the full output
+//! is saved to a file and the result says where.
 
 use finx_llm::UserContent;
 use std::io;
@@ -9,15 +11,32 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
+/// Bytes per token in every budget here.
+pub const BYTES_PER_TOKEN: usize = 4;
+
+/// The smallest budget of one result, however small the window.
+const MIN_TOKENS: usize = 256;
+
+/// The bytes that `tokens` tokens stand for.
+pub const fn bytes_for_tokens(tokens: usize) -> usize {
+    tokens.saturating_mul(BYTES_PER_TOKEN)
+}
+
+/// The tokens that `bytes` bytes count as, rounded up.
+pub const fn tokens_for_bytes(bytes: u64) -> u64 {
+    bytes.div_ceil(BYTES_PER_TOKEN as u64)
+}
+
 #[derive(Clone, Debug)]
 pub struct OutputLimits {
     pub max_lines: usize,
-    pub max_bytes: usize,
+    /// Tokens of one tool's result.
+    pub max_tokens: usize,
     pub max_line_chars: usize,
-    /// Command output kept from the beginning.
-    pub head_bytes: usize,
-    /// Command output kept from the end.
-    pub tail_bytes: usize,
+    /// Tokens of command output kept from the beginning.
+    pub head_tokens: usize,
+    /// Tokens of command output kept from the end.
+    pub tail_tokens: usize,
     /// Size cap of one saved full-output file.
     pub max_saved_bytes: u64,
 }
@@ -26,29 +45,45 @@ impl Default for OutputLimits {
     fn default() -> Self {
         Self {
             max_lines: 2000,
-            max_bytes: 50 * 1024,
+            max_tokens: 10_000,
             max_line_chars: 2000,
-            head_bytes: 10 * 1024,
-            tail_bytes: 40 * 1024,
+            head_tokens: 2_000,
+            tail_tokens: 8_000,
             max_saved_bytes: 64 * 1024 * 1024,
         }
     }
 }
 
 impl OutputLimits {
-    /// The limits with the byte sizes scaled down to `max_bytes`, keeping the head/tail split.
-    pub fn capped(&self, max_bytes: usize) -> OutputLimits {
-        let max_bytes = max_bytes.max(1024);
-        if max_bytes >= self.max_bytes {
+    /// The limits with the budgets scaled down to `max_tokens`, keeping the head/tail split.
+    pub fn capped(&self, max_tokens: usize) -> OutputLimits {
+        let max_tokens = max_tokens.max(MIN_TOKENS);
+        if max_tokens >= self.max_tokens {
             return self.clone();
         }
-        let scale = |n: usize| (n as u128 * max_bytes as u128 / self.max_bytes as u128) as usize;
+        let scale = |n: usize| (n as u128 * max_tokens as u128 / self.max_tokens as u128) as usize;
         OutputLimits {
-            max_bytes,
-            head_bytes: scale(self.head_bytes),
-            tail_bytes: scale(self.tail_bytes),
+            max_tokens,
+            head_tokens: scale(self.head_tokens),
+            tail_tokens: scale(self.tail_tokens),
             ..self.clone()
         }
+    }
+
+    /// The limits with a budget of `max_tokens`. A smaller budget also shrinks the command
+    /// output's head and tail to fit.
+    pub fn with_max_tokens(&self, max_tokens: usize) -> OutputLimits {
+        let max_tokens = max_tokens.max(MIN_TOKENS);
+        OutputLimits {
+            max_tokens,
+            ..self.capped(max_tokens)
+        }
+    }
+
+    /// The kernel's safety net: a fifth over the tool budget, room for the notes and headers
+    /// that tools add, so that what a tool has cut is not cut again.
+    pub fn safety_net_tokens(&self) -> usize {
+        self.max_tokens.saturating_add(self.max_tokens / 5)
     }
 }
 
@@ -105,7 +140,7 @@ pub struct SavedOutput {
 
 /// The note that stands in for the omitted part, written for the model.
 pub fn omission_note(omission: &Omission, saved: Option<&SavedOutput>) -> String {
-    let size = format_size(omission.bytes);
+    let size = format!("{} tokens", tokens_for_bytes(omission.bytes));
     let (start, end) = omission.byte_range;
     let mut note = match omission.lines {
         Some((first, last)) => format!(
@@ -280,12 +315,12 @@ pub fn create_private(path: &Path) -> io::Result<std::fs::File> {
     options.open(path)
 }
 
-/// Kernel safety net applied to every tool result: text over `max_bytes` keeps its beginning
+/// Kernel safety net applied to every tool result: text over `max_tokens` keeps its beginning
 /// and end, and the whole text is saved to `dir` first so that the model can read the rest.
 /// Returns the saved file, if any.
 pub fn cap_result(
     content: &mut Vec<UserContent>,
-    max_bytes: usize,
+    max_tokens: usize,
     dir: Option<&Path>,
     call_id: &str,
     max_saved_bytes: u64,
@@ -297,9 +332,10 @@ pub fn cap_result(
             UserContent::Image { .. } => 0,
         })
         .sum();
-    if text_bytes <= max_bytes {
+    if tokens_for_bytes(text_bytes as u64) <= max_tokens as u64 {
         return None;
     }
+    let max_bytes = bytes_for_tokens(max_tokens);
     let mut full = String::with_capacity(text_bytes);
     for block in content.iter() {
         if let UserContent::Text { text } = block {
@@ -381,7 +417,7 @@ mod tests {
         assert_eq!(omission.byte_range, (101, 9_900));
         assert_eq!(&text[100..9_900].len(), &(omission.bytes as usize));
         let note = omission_note(&omission, None);
-        assert_eq!(note, "[Bytes 101-9900 omitted (9.6 KB), inside a long line.]");
+        assert_eq!(note, "[Bytes 101-9900 omitted (2450 tokens), inside a long line.]");
         let saved = SavedOutput {
             path: PathBuf::from("/s/out.txt"),
             capped: false,
@@ -415,7 +451,7 @@ mod tests {
         };
         assert_eq!(
             omission_note(&omission, Some(&saved)),
-            "[Lines 201-1434 of 1520 omitted (56.7 KB). Full output: /s/tool-output/call_1.txt (read it with offset=201)]"
+            "[Lines 201-1434 of 1520 omitted (14515 tokens). Full output: /s/tool-output/call_1.txt (read it with offset=201)]"
         );
     }
 
@@ -435,7 +471,7 @@ mod tests {
     fn the_safety_net_saves_then_cuts() {
         let dir = tempfile::tempdir().unwrap();
         let mut content = vec![UserContent::Text { text: numbered(5000) }];
-        let saved = cap_result(&mut content, 4096, Some(dir.path()), "call_9", u64::MAX).unwrap();
+        let saved = cap_result(&mut content, 1024, Some(dir.path()), "call_9", u64::MAX).unwrap();
         assert_eq!(std::fs::read_to_string(&saved.path).unwrap(), numbered(5000));
         let UserContent::Text { text } = &content[0] else { panic!() };
         assert!(text.len() < 4096 + 300, "{}", text.len());
@@ -456,16 +492,32 @@ mod tests {
         assert!(text.lines().any(|l| l == full.lines().nth(offset as usize - 2).unwrap()));
 
         let mut small = vec![UserContent::Text { text: "ok".into() }];
-        assert!(cap_result(&mut small, 4096, Some(dir.path()), "call_10", u64::MAX).is_none());
+        assert!(cap_result(&mut small, 1024, Some(dir.path()), "call_10", u64::MAX).is_none());
+    }
+
+    #[test]
+    fn the_safety_net_counts_tokens_by_bytes() {
+        assert_eq!(bytes_for_tokens(10_000), 40_000);
+        assert_eq!((tokens_for_bytes(40_000), tokens_for_bytes(40_001)), (10_000, 10_001));
+        let dir = tempfile::tempdir().unwrap();
+        // A result of 4,000 bytes (a block counts with its separator) is 1,000 tokens and fits.
+        let mut fits = vec![UserContent::Text { text: "x".repeat(3_999) }];
+        assert!(cap_result(&mut fits, 1_000, Some(dir.path()), "call_1", u64::MAX).is_none());
+        let mut over = vec![UserContent::Text { text: "x\n".repeat(2_001) }];
+        assert!(cap_result(&mut over, 1_000, Some(dir.path()), "call_2", u64::MAX).is_some());
+        assert_eq!(OutputLimits::default().safety_net_tokens(), 12_000);
     }
 
     #[test]
     fn limits_scale_with_the_cap() {
-        let limits = OutputLimits::default().capped(10 * 1024);
-        assert_eq!(limits.max_bytes, 10 * 1024);
-        assert_eq!(limits.head_bytes + limits.tail_bytes, 10 * 1024);
-        assert_eq!(limits.tail_bytes, 8 * 1024);
+        let limits = OutputLimits::default().capped(2_500);
+        assert_eq!(limits.max_tokens, 2_500);
+        assert_eq!(limits.head_tokens + limits.tail_tokens, 2_500);
+        assert_eq!(limits.tail_tokens, 2_000);
         let same = OutputLimits::default().capped(1 << 30);
-        assert_eq!(same.max_bytes, 50 * 1024);
+        assert_eq!(same.max_tokens, 10_000);
+        let larger = OutputLimits::default().with_max_tokens(20_000);
+        assert_eq!((larger.max_tokens, larger.head_tokens, larger.tail_tokens), (20_000, 2_000, 8_000));
+        assert_eq!(OutputLimits::default().with_max_tokens(1).max_tokens, MIN_TOKENS);
     }
 }
