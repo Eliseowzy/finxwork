@@ -179,9 +179,6 @@ try {
   const page = await launch();
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
-  // First time in Bot mode: asks about Full Access.
-  await page.until("the question", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
-  await page.run(`document.querySelector("dialog.sheet[open] .btn:not(.danger)").click()`);
   await page.until("FinxBot's page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`, 30000);
 
   step("12. the request fails: a failure card, nothing busy");

@@ -1,12 +1,11 @@
 #!/usr/bin/env node
-// What bots may do (bot-mode-design §6.13): the first time in Bot mode asks whether their
-// conversations use Full Access, once. Declined, a bot asks before it acts; agreed, it does not,
-// a conversation that was already there included, and so for a new bot. What is picked under a
-// bot's composer stays. A model server on the Mac stands in for the provider: it runs one
-// `touch`, then says so.
+// What bots may do (bot-mode-design §6.13): Full Access by default, a conversation already there
+// included, with a note over the permission picker until it is closed, the picker is used or the
+// owner writes. No dialog. What is picked under a bot's composer stays. A model server on the Mac stands in for the
+// provider: it runs one `touch`, then says so.
 //
-// Runs the development build against the repository's target/debug/finx, each answer in a FINX_HOME
-// and profile of its own. Takes under a minute once built.
+// Runs the development build against the repository's target/debug/finx, in a FINX_HOME and
+// profile of its own. Takes under a minute once built.
 //
 //   node apps/desktop/e2e/bot-permission.mjs
 //   FINXWORK_E2E_SHOTS=<folder> …   also screenshots each step
@@ -154,7 +153,8 @@ async function quit() {
 }
 
 const asking = `!!document.querySelector(".cmp-zone.bot .appr")`;
-const question = `document.querySelector("dialog.sheet[open] h3")?.textContent ?? ""`;
+const tip = `document.querySelector(".cmp-zone.bot .btip")?.textContent ?? ""`;
+const dialog = `!!document.querySelector("dialog.sheet[open]")`;
 const mode = `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent`;
 const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].length`;
 const made = (home, name) => fs.readdirSync(path.join(home, "bots")).some((id) => fs.existsSync(path.join(home, "bots", id, "files", name)));
@@ -180,73 +180,87 @@ try {
     sh("pnpm", ["--dir", desktop, "build"]);
   }
 
-  step("not agreed: Ask Permissions, and it is not asked again");
-  const no = place();
-  places.push(no);
-  let page = await launch(no.home, no.profile);
-  await intoBots(page);
-  await page.until("the question", `(${question}).includes("完全访问")`, 30000);
-  const body = await page.run(`document.querySelector("dialog.sheet[open] .sub").textContent`);
-  check(body.includes("所有的对话将开启完全访问") && body.includes("不再询问") && body.includes("工作区以外"), `the question says what it means: ${body}`);
-  await page.shot("p1-question");
-  await page.run(`document.querySelector("dialog.sheet[open] .btn:not(.danger)").click()`);
-  await page.until("Ask Permissions", `${mode} === "询问权限"`, 30000);
-  await say(page, "建 a.txt");
-  await page.until("the approval", asking, 30000);
-  check(!made(no.home, "a.txt"), "nothing ran before it was allowed");
-  await page.run(`document.querySelector(".appr .btn.primary").click()`);
-  await page.until("the file", `${bubbles} > 0`, 30000);
-  check(made(no.home, "a.txt"), "a.txt once allowed");
-  await page.cdp("Page.reload");
-  await sleep(1500);
-  await page.until("the page again", `${mode} === "询问权限"`, 30000);
-  check((await page.run(question)) === "", "the question comes once");
-  page.close();
-  await quit();
-  await finxCall(no.home, "server/shutdown").catch(() => {});
-
-  step("agreed: Full Access, a conversation already there included, and a new bot");
-  const yes = place();
-  places.push(yes);
-  page = await launch(yes.home, yes.profile);
+  step("by default: Full Access, a conversation already there included, a note and no dialog");
+  const one = place();
+  places.push(one);
+  let page = await launch(one.home, one.profile);
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   // The default bot already has a conversation, in the config's manual mode.
-  const { result } = await finxCall(yes.home, "bots/subscribe");
-  await finxCall(yes.home, "bots/open", { bot_id: result.bots[0].id });
+  const { result } = await finxCall(one.home, "bots/subscribe");
+  await finxCall(one.home, "bots/open", { bot_id: result.bots[0].id });
   await intoBots(page);
-  await page.until("the question", `(${question}).includes("完全访问")`, 30000);
-  await page.run(`document.querySelector("dialog.sheet[open] .btn.danger").click()`);
   await page.until("Full Access", `${mode} === "完全访问"`, 30000);
-  await page.shot("p2-full-access");
+  check(!(await page.run(dialog)), "no dialog");
+  const said = await page.until("the note", tip, 10000);
+  check(said.includes("完全访问") && said.includes("调整"), `the note says what it means: ${said}`);
+  await page.shot("p1-note");
+  await page.run(`document.querySelector(".btip .btn").click()`);
+  await page.until("the note gone", `(${tip}) === ""`);
   await say(page, "建 b.txt");
   await page.until("the answer", `${bubbles} > 0`, 30000);
-  check(made(yes.home, "b.txt"), "b.txt without asking");
+  check(made(one.home, "b.txt"), "b.txt without asking");
   check(!(await page.run(asking)), "no approval");
 
-  step("a new bot starts with it; what is picked under its composer stays");
+  step("知道了 closed the note for good");
+  await page.cdp("Page.reload");
+  await sleep(1500);
+  await page.until("the page again", `${mode} === "完全访问"`, 30000);
+  check((await page.run(tip)) === "", "the note stays closed");
+
+  step("a new bot starts with Full Access; what is picked under its composer stays");
   await page.run(`[...document.querySelectorAll(".side-nav .nav-i")][0].click()`);
   await page.until("the form", `!!document.querySelector("dialog.bsheet[open] input.field")`);
   await page.cdp("Input.insertText", { text: "研究员" });
   await page.run(`document.querySelector("dialog.bsheet form").requestSubmit()`);
   await page.until("研究员, Full Access", `document.querySelector(".bhead h2")?.textContent === "研究员" && ${mode} === "完全访问"`, 30000);
+  check((await page.run(tip)) === "", "no note for the new bot");
   await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
-  await page.until("the menu", `[...document.querySelectorAll('[role=menuitem], [role=menuitemradio], .mi')].some((e) => e.textContent.includes("询问权限"))`);
+  await page.until("the menu", `[...document.querySelectorAll(".mi")].some((e) => e.textContent.includes("询问权限"))`);
   await page.shot("p3-picker");
-  await page.run(`[...document.querySelectorAll('[role=menuitem], [role=menuitemradio], .mi')].find((e) => e.textContent.includes("询问权限")).click()`);
+  await page.run(`[...document.querySelectorAll(".mi")].find((e) => e.textContent.includes("询问权限")).click()`);
   await page.until("Ask Permissions", `${mode} === "询问权限"`);
   await page.cdp("Page.reload");
   await sleep(1500);
   await page.until("the picked mode stays", `${mode} === "询问权限"`, 30000);
   await say(page, "建 c.txt");
   await page.until("the approval", asking, 30000);
-  check(!made(yes.home, "c.txt"), "this bot asks now");
+  check(!made(one.home, "c.txt"), "this bot asks now");
   await page.run(`document.querySelector(".appr .btn.primary").click()`);
   await page.until("the answer", `${bubbles} > 0`, 30000);
   await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "FinxBot").click()`);
   await page.until("the other bot keeps Full Access", `document.querySelector(".bhead h2")?.textContent === "FinxBot" && ${mode} === "完全访问"`, 30000);
   page.close();
   await quit();
-  await finxCall(yes.home, "server/shutdown").catch(() => {});
+  await finxCall(one.home, "server/shutdown").catch(() => {});
+
+  step("using the picker closes the note too");
+  const two = place();
+  places.push(two);
+  page = await launch(two.home, two.profile);
+  await intoBots(page);
+  await page.until("the note", tip, 30000);
+  await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
+  await page.until("the note gone", `(${tip}) === ""`);
+  await page.cdp("Page.reload");
+  await sleep(1500);
+  await page.until("the page again", `${mode} === "完全访问"`, 30000);
+  check((await page.run(tip)) === "", "the note stays closed");
+  page.close();
+  await quit();
+  await finxCall(two.home, "server/shutdown").catch(() => {});
+
+  step("writing closes the note too: it sits over the text");
+  const three = place();
+  places.push(three);
+  page = await launch(three.home, three.profile);
+  await intoBots(page);
+  await page.until("the note", tip, 30000);
+  await page.run(`document.querySelector(".cmp-in").focus()`);
+  await page.cdp("Input.insertText", { text: "你" });
+  await page.until("the note gone", `(${tip}) === ""`);
+  page.close();
+  await quit();
+  await finxCall(three.home, "server/shutdown").catch(() => {});
   console.log("\n✔ a bot's permission mode works end to end");
 } catch (e) {
   failed = true;

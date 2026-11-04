@@ -51,7 +51,7 @@ export type Form =
     }
   | { mode: "new"; place: Place }
   /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and of the settings only the permission mode under it. */
-  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void; permission: PermissionMode; onPermission: (m: PermissionMode) => void };
+  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void; permission: PermissionMode; onPermission: (m: PermissionMode) => void; permissionTip?: ReactNode; onPermissionPress?: () => void };
 
 /**
  * Where the owner writes to finx: one line while empty — "+", the text,
@@ -150,7 +150,10 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
         </div>
         {form.mode === "bot" && (
           <div className="cmp-meta">
-            <PermissionPicker value={form.permission} onChange={form.onPermission} />
+            <span className="bperm" onClickCapture={form.onPermissionPress}>
+              {form.permissionTip}
+              <PermissionPicker value={form.permission} onChange={form.onPermission} />
+            </span>
           </div>
         )}
         {settings && (

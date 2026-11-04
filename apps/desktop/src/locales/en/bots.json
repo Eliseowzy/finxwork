@@ -59,11 +59,8 @@
     "queued": "Delivered once it finishes this reply"
   },
   "fullAccess": {
-    "title": "Turn on Full Access for bots?",
-    "lead": "All bot conversations will use Full Access.",
-    "decline": "If you decline, bots use Ask Permissions: they ask before changing files or running commands. You can change it under each bot's composer later.",
-    "agree": "Agree",
-    "refuse": "Decline"
+    "tip": "Bots use Full Access by default: system actions no longer ask for your approval. You can change this here at any time.",
+    "ok": "Got it"
   },
   "sheet": {
     "newTitle": "New Bot",

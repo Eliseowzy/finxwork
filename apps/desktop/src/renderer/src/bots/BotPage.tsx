@@ -84,35 +84,29 @@ export function BotPage({ bot }: { bot: BotSummary }) {
 }
 
 /**
- * What bots may do (bot-mode-design §6.13). The first time in Bot mode asks whether their
- * conversations use Full Access; declining means Ask Permissions. A conversation new to that
- * answer gets it once, so what is picked in it afterwards stays.
+ * What bots may do (bot-mode-design §6.13): Full Access by default. A conversation gets that
+ * default once, so what is picked in it afterwards stays.
  */
 function useBotPermission(bot: string, view: SessionView | null, session: string | null) {
   const st = useStore();
-  const { t } = useTranslation("bots");
-  const { t: ts } = useTranslation("session");
-  const asked = useRef(false);
   useEffect(() => {
-    if (st.botPermission !== null || st.sheet || asked.current) return;
-    asked.current = true;
-    st.set({
-      sheet: {
-        kind: "confirm",
-        title: t("fullAccess.title"),
-        message: `${t("fullAccess.lead")}${ts("bypass.body")}${t("fullAccess.decline")}`,
-        button: t("fullAccess.agree"),
-        cancel: t("fullAccess.refuse"),
-        run: async () => st.set({ botPermission: "bypass-permissions" }),
-        onCancel: () => st.set({ botPermission: "manual" }),
-      },
-    });
-  }, [st.botPermission, st.sheet]);
-  useEffect(() => {
-    if (!st.botPermission || !view || !session || st.botDefaulted[bot] === session) return;
+    if (!view || !session || st.botDefaulted[bot] === session) return;
     st.set({ botDefaulted: { ...st.botDefaulted, [bot]: session } });
-    if (view.info.permission_mode !== st.botPermission) void st.op(session, { type: "set_permission_mode", mode: st.botPermission });
-  }, [st.botPermission, bot, session, view === null]);
+    if (view.info.permission_mode !== "bypass-permissions") void st.op(session, { type: "set_permission_mode", mode: "bypass-permissions" });
+  }, [bot, session, view === null]);
+}
+
+/** The note over the permission picker: bots' default, and where to change it; until closed, the picker is used or the owner writes. */
+function FullAccessTip({ onClose }: { onClose: () => void }) {
+  const { t } = useTranslation("bots");
+  return (
+    <div className="btip" role="status">
+      {t("fullAccess.tip")}
+      <div className="btip-f">
+        <button className="btn sm" onClick={onClose}>{t("fullAccess.ok")}</button>
+      </div>
+    </div>
+  );
 }
 
 /** What the bot is doing, after its name: waiting for the owner, working on things, or answering. */
@@ -473,6 +467,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
     });
   }, [view.returned]);
   const commands = useCommands({ session_id: session });
+  const closeTip = () => st.botTipSeen || st.set({ botTipSeen: true });
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
@@ -490,9 +485,15 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
         onHeight,
         permission: view.info.permission_mode,
         onPermission: (mode) => st.op(session, { type: "set_permission_mode", mode }),
+        permissionTip: !st.botTipSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessTip onClose={closeTip} />,
+        onPermissionPress: closeTip,
       }}
       value={draft.text}
-      onChange={(text) => change({ ...draft, text })}
+      onChange={(text) => {
+        // The note sits over the text: writing closes it.
+        if (text) closeTip();
+        change({ ...draft, text });
+      }}
       attachments={draft.attachments}
       onAttachments={(attachments) => change({ ...draft, attachments })}
       onSend={() => void send()}

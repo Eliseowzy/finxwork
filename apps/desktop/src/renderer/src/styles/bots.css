@@ -133,3 +133,9 @@ button.wb-h{cursor:pointer}
 .bs-hues{display:flex;gap:10px;padding:2px}
 .bs-hue{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:var(--h)}
 .bs-hue.on{box-shadow:0 0 0 2px var(--win),0 0 0 3.5px var(--l1)}
+
+/* The note over a bot's permission picker: floats with the composer, its arrow at the picker. */
+.bperm{position:relative;display:inline-flex}
+.btip{position:absolute;left:0;bottom:calc(100% + 8px);z-index:6;width:300px;padding:10px 12px;background:var(--menu-solid);border-radius:var(--r-lg);box-shadow:0 0 0 .5px var(--menu-bd),0 12px 32px rgba(0,0,0,.28);font-size:12.5px;line-height:18px;color:var(--l1);pointer-events:auto;animation:fadein .28s var(--ease-out)}
+.btip::after{content:"";position:absolute;left:18px;bottom:-4px;width:9px;height:9px;background:var(--menu-solid);box-shadow:.5px .5px 0 var(--menu-bd);transform:rotate(45deg)}
+.btip-f{display:flex;justify-content:flex-end;margin-top:8px}

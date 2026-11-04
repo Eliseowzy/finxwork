@@ -199,12 +199,14 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
   await page.until("FinxBot in the list", `${rows}.some((r) => r.name === "FinxBot")`, 30000);
-  // Declined: the rest of this walk has approvals to answer (e2e/bot-permission.mjs has both answers).
-  await page.until("the question about Full Access", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
-  await page.run(`document.querySelector("dialog.sheet[open] .btn:not(.danger)").click()`);
   await page.until("its empty page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
   check(await page.run(`document.querySelector(".bav.mark") !== null`), "FinxBot has the mark");
-  await page.until("the permission mode under the composer", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "询问权限"`);
+  // Full Access by default (e2e/bot-permission.mjs); this walk has approvals to answer.
+  await page.until("the permission mode under the composer", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "完全访问"`, 30000);
+  await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
+  await page.until("the menu", `[...document.querySelectorAll(".mi")].some((e) => e.textContent.includes("询问权限"))`);
+  await page.run(`[...document.querySelectorAll(".mi")].find((e) => e.textContent.includes("询问权限")).click()`);
+  await page.until("Ask Permissions", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "询问权限"`);
   check((await page.run(`document.querySelectorAll(".cmp-zone.bot .cmp-meta .mb").length`)) === 1, "of a session's settings, a bot's composer has the permission mode only");
   await page.shot("01-bot-mode");
 
