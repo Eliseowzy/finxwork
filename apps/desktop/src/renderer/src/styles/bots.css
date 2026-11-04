@@ -46,16 +46,11 @@
 .bname{flex:0 1 auto;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bpin{width:12px;height:12px;color:var(--l3);flex:none}
 .btime{margin-left:auto;flex:none;padding-left:6px;font-size:11px;color:var(--l3);font-variant-numeric:tabular-nums}
-.brow .rowact{margin-left:auto;display:none}
-.brow:hover .btime,.brow.menu-open .btime{display:none}
-.brow:hover .rowact,.brow.menu-open .rowact{display:flex}
-.brow.menu-open .rowact{background:var(--fill2);color:var(--l1)}
 .bl2{display:flex;align-items:center;gap:8px;height:16px;font-size:12px;color:var(--l2)}
 .bprev{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bprev .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
 .btag{color:var(--orange)}
 .bbadge{flex:none;min-width:16px;height:16px;padding:0 5px;border-radius:var(--r-sm);background:var(--accent);color:#fff;font-size:10.5px;font-weight:600;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
-.vmenu .mi .mi-note{margin-left:auto;padding-left:16px;font-size:11.5px;color:var(--l3)}
 
 /* The page's top: avatar and name (a click changes them), then what the bot is doing now. */
 /* The top of a bot's page: its avatar and name in the middle, as in a chat app, whatever sits at the bar's ends. They
@@ -85,27 +80,23 @@
 .bpn .frow>.fv{flex-wrap:nowrap}
 .bpn .mb{margin-right:-7px}
 .bpn .mb .lbl{max-width:170px}
-.bpn-del{width:100%;border:0;background:none;font:inherit;text-align:left;justify-content:space-between;border-radius:inherit;color:var(--red)}
-.bpn-del:hover:not(:disabled){background:var(--fill)}
-.bpn-del:disabled{color:var(--l3)}
-.bpn-note{font-size:12px;color:var(--l3)}
+.bpn-del{width:100%;border:0;background:none;font:inherit;text-align:left;border-radius:inherit;color:var(--red)}
+.bpn-del:hover{background:var(--fill)}
 .bpn-pick{align-self:stretch;display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:12px 14px}
 .bpn-pick .bs-shapes{margin:0}
 
 /* The conversation: bubbles on both sides, as in a chat app; a message shows whole once sent. The owner's bubble is
-   a session page's; the bot's sits on the left, a shade off the window, its avatar beside the first of a run. Two
-   bubbles in a row from the same side sit close (6); a change of side puts them apart (21). On hover, the time and
-   buttons go beside the bubble, taking no room under it. */
+   a session page's; the bot's sits on the left, a shade off the window, with no avatar, so a run of them reads as one.
+   Two bubbles in a row from the same side sit close (6); a change of side puts them apart (21). On hover, the time
+   and buttons go beside the bubble, taking no room under it, so a run stays close. */
 .tr.bots .um{margin-bottom:var(--sp-1)}
 .tr.bots .um:has(+ .um){margin-bottom:0}
 .tr.bots .um+.um{margin-top:-7px}
 .tr.bots .um .msg-act{top:auto;bottom:0;right:100%;padding:0 6px 0 0}
 .tr.bots .um.queued .bub{opacity:.72}
-.bm{display:flex;gap:10px;align-items:flex-start;border-radius:var(--r-md)}
+.bm{border-radius:var(--r-md)}
 .tr.bots .bm+.bm{margin-top:-7px}
-.bm>.bav{margin-top:5px}
-.bm-sp{width:28px;flex:none}
-.bm-b{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.bm-b{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
 .bline{position:relative;display:flex;align-items:flex-end;gap:6px;max-width:100%}
 .bbub{min-width:0;max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--msg);font-size:15px;line-height:21px;overflow-wrap:anywhere}
 .bbub .md>*+*{margin-top:8px}

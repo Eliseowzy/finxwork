@@ -95,11 +95,9 @@
     }
   },
   "menu": {
-    "more": "More actions",
     "pin": "Pin",
     "unpin": "Unpin",
     "delete": "Delete Bot",
-    "default": "Default Bot",
     "rename": "Rename"
   },
   "delete": {

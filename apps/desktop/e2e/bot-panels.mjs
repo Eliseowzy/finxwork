@@ -86,6 +86,9 @@ function pdf() {
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxq-"));
 const home = path.join(work, "finx");
 const profile = path.join(work, "profile");
+// A row's menu is native: finx's test seam records it and answers from a file.
+const menus = path.join(work, "menus");
+fs.mkdirSync(menus);
 fs.mkdirSync(home, { recursive: true });
 fs.writeFileSync(
   path.join(home, "models.toml"),
@@ -121,7 +124,7 @@ let app = null;
 async function launch(home, profile) {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(packaged ?? electron, packaged ? [`--remote-debugging-port=${port}`] : [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file" },
+    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -211,6 +214,18 @@ async function pressOn(page, expr, clicks = 1) {
     await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: n });
   }
 }
+/** A real right click on a row: what its menu showed, the answer `pick` given. */
+async function rowMenu(page, name, pick) {
+  fs.writeFileSync(path.join(menus, "pick"), pick ?? "");
+  const at = await page.run(`(() => { const r = [...document.querySelectorAll(".brow")].find((x) => x.textContent.includes(${JSON.stringify(name)})).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  const shown = path.join(menus, "shown.jsonl");
+  const before = fs.existsSync(shown) ? fs.readFileSync(shown, "utf8").length : 0;
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+  await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "right", clickCount: 1 });
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "right", clickCount: 1 });
+  for (let i = 0; i < 40 && !(fs.existsSync(shown) && fs.readFileSync(shown, "utf8").length > before); i++) await sleep(100);
+  return JSON.parse(fs.readFileSync(shown, "utf8").trim().split("\n").at(-1));
+}
 const menuItem = (text) => `[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent.includes(${JSON.stringify(text)}))`;
 
 const key = async (page, k) => {
@@ -251,20 +266,27 @@ try {
   await page.until("it has slid in", `document.querySelector(".bpn").getAnimations().length === 0`);
   const box = await page.run(`(() => { const r = document.querySelector(".bpn").getBoundingClientRect(); return { right: r.right, width: r.width, inner: innerWidth, name: document.querySelector(".bpn-name").textContent }; })()`);
   check(box.right <= box.inner && box.width === 340 && box.name === "FinxBot", `the panel: ${JSON.stringify(box)}`);
-  check(await page.run(`document.querySelector(".bpn-del").disabled`), "the default bot cannot be deleted");
+  check(!(await page.run(`!!document.querySelector(".bpn-del")`)), "the default bot has no delete in its settings");
   await page.shot("m1-settings");
   await press(page, ".bhead");
   await page.until("closed by its name again", `!document.querySelector(".bpn")`);
 
-  step("a row's menu: pin, rename, delete; nothing to clear");
-  await page.run(`document.querySelector(".brow .rowact").click()`);
-  await page.until("the row's menu", `!!document.querySelector(".vmenu")`);
-  const rowMenu = await page.run(items);
-  check(rowMenu.length === 3 && rowMenu[0] === "置顶" && rowMenu[1] === "重命名" && rowMenu[2].startsWith("删除 Bot"), `the row's menu: ${rowMenu}`);
-  await page.shot("m2-row-menu");
+  step("a row has no ⋯, its right click pin and rename; delete only for a bot that can go");
+  const at = await page.run(`(() => { const r = document.querySelector(".brow").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...at });
+  await sleep(200);
+  check(!(await page.run(`!!document.querySelector(".brow button")`)), "no button in a row, hovered");
+  check((await page.run(`getComputedStyle(document.querySelector(".brow .btime")).display`)) !== "none", "the time stays on hover");
+  const labels = (list) => list.filter((it) => it !== "-").map((it) => it.id);
+  const defaultMenu = labels(await rowMenu(page, "FinxBot"));
+  check(defaultMenu.join() === "pin,rename", `the default bot's menu: ${defaultMenu}`);
+  await rowMenu(page, "FinxBot", "pin");
+  await page.until("pinned", `!!document.querySelector(".brow .bpin")`);
+  await rowMenu(page, "FinxBot", "pin");
+  await page.until("unpinned", `!document.querySelector(".brow .bpin")`);
 
   step("rename in place: Esc keeps the name, ↩ changes it, the header follows");
-  await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "重命名").click()`);
+  await rowMenu(page, "FinxBot", "rename");
   await page.until("the name as a field", `document.activeElement?.matches(".brow .srename")`);
   await page.cdp("Input.insertText", { text: "不要" });
   await key(page, "Escape");
@@ -339,6 +361,8 @@ try {
   await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("别的"))`);
   await page.until("the panel shows that bot", `document.querySelector(".bpn-name")?.textContent === "别的" && !!${modelButton}`, 30000);
   check((await page.run(`${modelButton}.textContent`)).includes("Mock One"), "a new bot starts on the default model");
+  const otherMenu = labels(await rowMenu(page, "别的"));
+  check(otherMenu.join() === "pin,rename,delete", `another bot's menu: ${otherMenu}`);
   await press(page, ".bpn-del");
   await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
   await press(page, "dialog.sheet[open] .btn.danger");
@@ -355,6 +379,14 @@ try {
   await say(page, "东西在哪");
   const before = await page.run(bubbles);
   await page.until("the message", `${bubbles} > ${before}`, 30000);
+  step("bubbles have no avatar; the time and buttons show beside the bubble on hover");
+  check(!(await page.run(`!!document.querySelector(".tr.bots .bm .bav")`)), "no avatar beside a bubble");
+  const bubble = await page.run(`(() => { const b = [...document.querySelectorAll(".tr.bots .bm .bbub")].at(-1).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2, bottom: b.bottom, right: b.right }; })()`);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: bubble.x, y: bubble.y });
+  await page.until("the buttons", `Number(getComputedStyle([...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1)).opacity) === 1`);
+  const bar = await page.run(`(() => { const r = [...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1).getBoundingClientRect(); return { bottom: r.bottom, left: r.left, text: [...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1).textContent }; })()`);
+  check(bar.left >= bubble.right - 1 && bar.bottom <= bubble.bottom + 1, `beside the bubble: ${JSON.stringify({ bar, bubble })}`);
+  await page.shot("m4-bubble-actions");
   const tag = (name) => `[...document.querySelectorAll(".tr.bots .fref")].find((e) => e.textContent.includes(${JSON.stringify(name)}))`;
   await page.until("the file tag", `!!${tag("note.md")}`, 15000);
   await page.run(`${tag("note.md")}.click()`);

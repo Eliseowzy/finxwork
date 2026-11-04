@@ -94,11 +94,9 @@
     }
   },
   "menu": {
-    "more": "更多操作",
     "pin": "置顶",
     "unpin": "取消置顶",
     "delete": "删除 Bot",
-    "default": "默认 Bot",
     "rename": "重命名"
   },
   "delete": {

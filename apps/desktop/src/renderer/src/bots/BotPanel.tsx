@@ -8,19 +8,18 @@ import { ModelList } from "../composer/ModelList";
 import { thinkingTitle } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
-import { deleting, runBotAction } from "./actions";
+import { runBotAction } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { AvatarChoices, NAME_MAX, pickPicture } from "./BotSheet";
 
 /**
  * A bot's settings (bot-mode-design §6.5.1), opened from its name at the top of its page: its
  * avatar and name, changed where they are; the model it answers with and how hard it thinks;
- * deleting it. Beside the conversation, in the place the file panel and the browser take.
+ * deleting it, unless it is the default bot. Beside the conversation, in the place the file panel and the browser take.
  */
 export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; view: SessionView | null; session: string | null; onClose: () => void }) {
   const { t } = useTranslation("bots");
   const st = useStore();
-  const del = deleting(bot)!;
   return (
     <aside className="bgp bpn" aria-label={t("head.settings")}>
       <div className="bpn-top drag">
@@ -32,12 +31,13 @@ export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; vie
         <BotHero key={bot.id} bot={bot} />
         <div className="form">
           {view && session && <ModelSection view={view} session={session} />}
-          <section className="fgroup">
-            <button className="frow bpn-del" disabled={del.enabled === false} onClick={() => runBotAction(st, bot, del.id)}>
-              <span>{del.label}</span>
-              {del.note && <span className="bpn-note">{del.note}</span>}
-            </button>
-          </section>
+          {!bot.default && (
+            <section className="fgroup">
+              <button className="frow bpn-del" onClick={() => runBotAction(st, bot, "delete")}>
+                {t("menu.delete")}
+              </button>
+            </section>
+          )}
         </div>
       </div>
     </aside>

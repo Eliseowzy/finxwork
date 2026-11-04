@@ -206,7 +206,6 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                 const prev = items[i - 1];
                 const fresh = !seen.current!.has(item.key);
                 const line = <TimeSince at={item.ts} previous={prev?.ts} />;
-                const lead = !prev || prev.kind === "user" || !!timeLine(new Date(item.ts), new Date(prev.ts), new Date(), PAUSE);
                 switch (item.kind) {
                   case "user":
                     return <UserBubble key={item.key} item={item} fresh={fresh} line={line} />;
@@ -214,9 +213,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                     return (
                       <BotBubble
                         key={item.key}
-                        bot={bot}
                         item={item}
-                        lead={lead}
                         fresh={fresh}
                         line={line}
                         open={open.has(item.key)}
@@ -227,7 +224,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
                 }
               })}
-              {busy && <BusyBubble bot={bot} busy={busy} lead={!items.length || items.at(-1)!.kind === "user"} retry={view.live?.retry} />}
+              {busy && <BusyBubble busy={busy} retry={view.live?.retry} />}
             </div>
           )}
         </div>
@@ -285,8 +282,8 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function BotBubble({ bot, item, lead, fresh, line, open, onProcess }: {
-  bot: BotSummary; item: Extract<BotItem, { kind: "bot" }>; lead: boolean; fresh: boolean; line: React.ReactNode; open: boolean; onProcess: () => void;
+function BotBubble({ item, fresh, line, open, onProcess }: {
+  item: Extract<BotItem, { kind: "bot" }>; fresh: boolean; line: React.ReactNode; open: boolean; onProcess: () => void;
 }) {
   const { t } = useTranslation("bots");
   // Thinking and private text only: no steps to count.
@@ -297,7 +294,6 @@ function BotBubble({ bot, item, lead, fresh, line, open, onProcess }: {
     <>
       {line}
       <div className={`bm ${fresh ? "add-anim" : ""}`}>
-        {lead ? <BotAvatar bot={bot} size={28} /> : <span className="bm-sp" />}
         <div className="bm-b">
           <div className="bline">
             <div className="bbub">
@@ -353,7 +349,7 @@ function Process({ steps, summary }: { steps: Step[]; summary: string }) {
  * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with helpers at work,
  * what they do, opening to one helper's steps or a line for each.
  */
-function BusyBubble({ bot, busy, lead, retry }: { bot: BotSummary; busy: { typing: boolean; helpers: Helper[] }; lead: boolean; retry?: { at: number } }) {
+function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[] }; retry?: { at: number } }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
@@ -370,7 +366,6 @@ function BusyBubble({ bot, busy, lead, retry }: { bot: BotSummary; busy: { typin
   const shown = open && helpers.length > 0;
   return (
     <div className="bm working">
-      {lead ? <BotAvatar bot={bot} size={28} busy /> : <span className="bm-sp" />}
       <div className="bm-b">
         <div className="bline">
           <div className={`bbub wbub ${shown ? "open" : ""}`}>

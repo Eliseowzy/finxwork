@@ -33,6 +33,15 @@ if (!process.env.DEEPSEEK_API_KEY) fail("set DEEPSEEK_API_KEY: this runs a real 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxb-"));
 const home = path.join(work, "finx");
 const profile = path.join(work, "profile");
+// A row's menu is native: finx's test seam records it and answers from a file.
+const menus = path.join(work, "menus");
+fs.mkdirSync(menus);
+const rowMenu = async (page, name, pick) => {
+  fs.writeFileSync(path.join(menus, "pick"), pick ?? "");
+  await page.run(`[...document.querySelectorAll(".brow")].find((x) => x.querySelector(".bname").textContent === ${JSON.stringify(name)}).dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))`);
+  await sleep(300);
+  return JSON.parse(fs.readFileSync(path.join(menus, "shown.jsonl"), "utf8").trim().split("\n").at(-1));
+};
 const socket = path.join(home, "run/finx.sock");
 fs.mkdirSync(home, { recursive: true });
 fs.writeFileSync(path.join(home, "config.toml"), `model = "deepseek/deepseek-flash"\npermission_mode = "manual"\n[models]\nnetwork = false\n`);
@@ -65,7 +74,7 @@ let app = null;
 async function launch() {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -230,6 +239,12 @@ try {
   check(poems.length >= 4, "four poems, each its own message");
   if (!order.every((v, i) => v >= 0 && (i === 0 || v >= order[i - 1]))) note("(the model answered out of order)");
   await page.shot("04-poems");
+  // The time and buttons of a bubble with another right under it.
+  const middle = await page.run(`(() => { const b = [...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].at(-2).getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; })()`);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...middle });
+  // Past the fade, which a window in the background runs slowly.
+  await page.until("only its own bar", `(() => { const bars = [...document.querySelectorAll(".tr.bots .bm:not(.working) .msg-act")].map((b) => Number(getComputedStyle(b).opacity)); return bars.at(-2) === 1 && bars.filter((o) => o > 0).length === 1; })()`, 15000);
+  await page.shot("04b-poems-hover");
 
   step("15. reopened, the conversation keeps its order");
   const shownOrder = await page.run(`[...document.querySelectorAll(".tr.bots > .um, .tr.bots > .bm:not(.working)")].map((e) => e.innerText.trim().slice(0, 12))`);
@@ -353,9 +368,7 @@ try {
   await page.until("read once opened", `${rows}.find((r) => r.name === "研究员")?.unread === ""`);
 
   step("16. a new name: the bot goes by it from its next reply");
-  await page.run(`[...document.querySelectorAll(".brow")].find((x) => x.querySelector(".bname").textContent === "研究员").querySelector(".rowact").click()`);
-  await page.until("the row's menu", `!!document.querySelector(".vmenu")`);
-  await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "重命名").click()`);
+  await rowMenu(page, "研究员", "rename");
   await page.until("the name as a field", `document.activeElement?.matches(".brow .srename")`);
   await page.cdp("Input.insertText", { text: "小研" });
   await page.cdp("Input.dispatchKeyEvent", { type: "keyDown", key: "Enter", code: "Enter", windowsVirtualKeyCode: 13, text: "\r" });
@@ -380,9 +393,7 @@ try {
   await page.shot("11b-picture");
 
   step("pin, delete");
-  await page.run(`(() => { const r = [...document.querySelectorAll(".brow")].find((x) => x.querySelector(".bname").textContent === "小研"); r.querySelector(".rowact").click(); })()`);
-  await page.until("the menu", `!!document.querySelector(".vmenu")`);
-  await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent === "置顶").click()`);
+  await rowMenu(page, "小研", "pin");
   await page.until("pinned first", `${rows}[0].name === "小研" && ${rows}[0].pinned`);
   await page.run(`document.querySelector(".bhead").click()`);
   await page.until("its settings", `!!document.querySelector(".bpn-del")`);
@@ -390,11 +401,8 @@ try {
   await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
   await page.run(`document.querySelector("dialog.sheet[open] .btn.danger").click()`);
   await page.until("gone from the list", `!${rows}.some((r) => r.name === "小研")`, 30000);
-  await page.run(`[...document.querySelectorAll(".brow")].find((x) => x.querySelector(".bname").textContent === "FinxBot").querySelector(".rowact").click()`);
-  await page.until("FinxBot's menu", `!!document.querySelector(".vmenu")`);
-  const deleteDefault = await page.run(`[...document.querySelectorAll(".vmenu .mi")].find((b) => b.textContent.startsWith("删除 Bot"))?.disabled`);
-  check(deleteDefault === true, "the default bot cannot be deleted");
-  await page.run(`document.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }))`);
+  const finxBotMenu = await rowMenu(page, "FinxBot");
+  check(!finxBotMenu.some((it) => it.id === "delete"), "the default bot has no delete");
 
   step("13. the app quits while the bot works: the answer is there when it comes back");
   await page.run(select("FinxBot"));

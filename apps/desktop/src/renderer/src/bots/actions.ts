@@ -13,15 +13,11 @@ export function thingsText(n: number): string {
   return n >= 1 && n <= 10 ? t(`things.${n}`) : t("things.many", { count: n });
 }
 
-export type BotAction = { id: "pin" | "rename" | "delete"; label: string; enabled?: boolean; danger?: boolean; note?: string } | null;
-
-export function deleting(b: BotSummary): BotAction {
-  return { id: "delete", label: t("menu.delete"), enabled: !b.default, danger: true, note: b.default ? t("menu.default") : undefined };
-}
+export type BotAction = { id: "pin" | "rename" | "delete"; label: string } | null;
 
 /** A row's items, a null where a separator goes. */
 export function rowActions(b: BotSummary): BotAction[] {
-  return [{ id: "pin", label: b.pinned ? t("menu.unpin") : t("menu.pin") }, { id: "rename", label: t("menu.rename") }, null, deleting(b)];
+  return [{ id: "pin", label: b.pinned ? t("menu.unpin") : t("menu.pin") }, { id: "rename", label: t("menu.rename") }, ...(b.default ? [] : [null, { id: "delete" as const, label: t("menu.delete") }])];
 }
 
 export function runBotAction(st: Store, b: BotSummary, id: NonNullable<BotAction>["id"]) {
@@ -50,7 +46,7 @@ export function runBotAction(st: Store, b: BotSummary, id: NonNullable<BotAction
 
 /** The bot's native right-click menu. */
 export async function botContextMenu(st: Store, b: BotSummary) {
-  const items = rowActions(b).map((a) => (a ? { id: a.id, label: a.note ? `${a.label} · ${a.note}` : a.label, enabled: a.enabled !== false } : { separator: true as const }));
+  const items = rowActions(b).map((a) => (a ? { id: a.id, label: a.label } : { separator: true as const }));
   const id = await window.finx?.popupMenu(items);
   if (id) runBotAction(st, b, id as NonNullable<BotAction>["id"]);
 }
