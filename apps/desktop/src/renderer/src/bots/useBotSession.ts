@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { applyEvents, fromSnapshot, withHistory, type SessionView } from "@finx/client";
+import { applyEvents, fromSnapshot, RpcError, withHistory, type SessionView } from "@finx/client";
 import type { Event } from "@finx/protocol";
 import { errorText, useStore } from "../store";
 
@@ -76,6 +76,10 @@ export function useBotSession(bot: string, session: string | undefined): [Sessio
         .finally(() => (paging = null));
       return paging;
     };
+    // Deleting a bot ends its session, which can reach here before the list hears: then it is simply gone.
+    const failed = (e: unknown) => {
+      if (!stop && !(e instanceof RpcError && e.kind === "bot_not_found")) show(errorText(e), undefined, true);
+    };
     const offEvent = rpc.on("session/event", (p) => {
       // Before the snapshot names the session, events are of no session known yet.
       if (p.session_id !== id) return;
@@ -83,9 +87,9 @@ export function useBotSession(bot: string, session: string | undefined): [Sessio
       if (!frame) frame = requestAnimationFrame(flush);
     });
     const offDetached = rpc.on("session/detached", (p) => {
-      if (p.session_id === id && !stop) attach().catch((e) => show(errorText(e), undefined, true));
+      if (p.session_id === id && !stop) attach().catch(failed);
     });
-    attach().catch((e) => !stop && show(errorText(e), undefined, true));
+    attach().catch(failed);
     return () => {
       stop = true;
       earlier.current = async () => {};

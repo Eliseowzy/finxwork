@@ -367,6 +367,12 @@ try {
   await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
   await press(page, "dialog.sheet[open] .btn.danger");
   await page.until("gone, the panel with it", `!document.querySelector(".bpn") && ![...document.querySelectorAll(".brow")].some((r) => r.textContent.includes("别的"))`, 30000);
+  // Its session ending can reach the page first: no error over a delete that worked.
+  for (let i = 0; i < 15; i++) {
+    const said = await page.run(`document.body.innerText`);
+    check(!said.includes("not found"), "no error after deleting a bot");
+    await sleep(100);
+  }
   check(!(await finxCall(home, "bots/subscribe")).result.bots.some((b) => b.id === other.id), "finx deleted it");
   await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("小帮手"))`);
   await page.until("the bot again", `document.querySelector(".bhead-n")?.textContent === "小帮手"`, 30000);
