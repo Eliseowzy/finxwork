@@ -14,6 +14,7 @@ use crate::PROTOCOL_VERSION;
 use crate::api;
 use crate::api::error_code;
 use crate::api::method;
+use crate::bot;
 use crate::customize;
 use crate::event::Event;
 use crate::files;
@@ -191,23 +192,43 @@ pub fn document() -> Value {
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
         (method::BROWSER_SITE_ICON, Some(name::<api::BrowserSiteIconParams>(g)), name::<api::BrowserSiteIconResult>(g)),
+        (method::BROWSER_REVEAL, Some(name::<api::BrowserRevealParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_CLOSE_TABS, Some(name::<api::BrowserCloseTabsParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_ALLOW, Some(name::<api::BrowserSessionParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_CANCEL_WAIT, Some(name::<api::BrowserSessionParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_USE_EXTENSION, Some(name::<api::BrowserUseExtensionParams>(g)), name::<api::Empty>(g)),
+        (method::BROWSER_ASSIGN_TAB, Some(name::<api::BrowserAssignTabParams>(g)), name::<api::Empty>(g)),
         (method::FILES_LIST, Some(name::<files::FilesListParams>(g)), name::<files::FilesListResult>(g)),
         (method::FILES_READ, Some(name::<files::FilesReadParams>(g)), name::<files::FilesReadResult>(g)),
         (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_SUBSCRIBE, None, name::<bot::BotsResult>(g)),
+        (method::BOTS_UNSUBSCRIBE, None, name::<api::Empty>(g)),
+        (method::BOTS_CREATE, Some(name::<bot::BotCreateParams>(g)), name::<bot::BotResult>(g)),
+        (method::BOTS_UPDATE, Some(name::<bot::BotUpdateParams>(g)), name::<bot::BotResult>(g)),
+        (method::BOTS_AVATAR, Some(name::<bot::BotIdParams>(g)), name::<bot::BotAvatarResult>(g)),
+        (method::BOTS_OPEN, Some(name::<bot::BotOpenParams>(g)), name::<api::SessionNewResult>(g)),
+        (method::BOTS_READ, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_UNREAD, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_CLEAR, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_DELETE, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
+        (method::BROWSER_EXTENSION, name::<api::ExtensionMessage>(g)),
     ];
     let server_notifications = [
         (method::MODELS_CHANGED, name::<api::Empty>(g)),
         (method::BROWSER_CHANGED, name::<api::BrowserStatus>(g)),
+        (method::BROWSER_REQUEST, name::<api::BrowserRequest>(g)),
+        (method::BROWSER_CONTROL, name::<api::BrowserControl>(g)),
         (method::CONFIG_CHANGED, name::<customize::ConfigChangedParams>(g)),
         (method::SKILLS_CHANGED, name::<customize::SkillsChangedParams>(g)),
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::FILES_CHANGED, name::<files::FilesChangedParams>(g)),
+        (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
         (

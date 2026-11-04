@@ -176,6 +176,27 @@ fn item(acc: &mut MessageAccumulator, index: usize, v: &Value) {
         _ => {}
     }
 }
+/// What `item` passes over in a response's output, by type, none of its content: a new kind of
+/// item or part must not vanish in silence.
+fn unreadable(output: &[Value]) -> Vec<String> {
+    let mut found = Vec::new();
+    for v in output {
+        let kind = v["type"].as_str().unwrap_or("?");
+        match kind {
+            "message" => {
+                for p in v["content"].as_array().into_iter().flatten() {
+                    let part = p["type"].as_str().unwrap_or("?");
+                    if part != "output_text" && part != "refusal" {
+                        found.push(format!("message/{part}"));
+                    }
+                }
+            }
+            "reasoning" | "function_call" => {}
+            _ => found.push(kind.to_string()),
+        }
+    }
+    found
+}
 impl WireApi for OpenAiResponsesApi {
     fn id(&self) -> &'static str {
         "openai-responses"
@@ -218,13 +239,17 @@ impl WireApi for OpenAiResponsesApi {
                     "response.completed" => {
                         let r = &v["response"];
                         if r["status"].as_str().is_some_and(|s| s != "completed") { yield StreamEvent::Failed(acc.fail(protocol("Response did not complete"))); return; }
-                        if let Some(output) = r["output"].as_array().filter(|output| !output.is_empty()) {
+                        let mut passed_over = Vec::new();
+                        // An empty list says nothing about what was streamed.
+                        if let Some(output) = r["output"].as_array().filter(|o| !o.is_empty()) {
                             // Terminal items are authoritative (also capture non-streamed arguments
                             // and encrypted reasoning). Display deltas remain incremental. An answer
                             // that lists none has said it all in what was streamed.
                             acc = MessageAccumulator::for_model(&req.model);
                             for (i,v) in output.iter().enumerate() { item(&mut acc,i,v); }
+                            passed_over = unreadable(output);
                         }
+                        if !passed_over.is_empty() { tracing::warn!(model=%req.model.id, items=?passed_over, "passed over Responses output"); }
                         acc.response_id = r["id"].as_str().map(String::from);
                         let u = &r["usage"];
                         acc.usage.cache_read = u["input_tokens_details"]["cached_tokens"].as_u64().unwrap_or_default();
@@ -232,6 +257,11 @@ impl WireApi for OpenAiResponsesApi {
                         acc.usage.output = u["output_tokens"].as_u64().unwrap_or_default();
                         acc.usage.reasoning = u["output_tokens_details"]["reasoning_tokens"].as_u64();
                         let message = acc.finish(StopReason::Stop);
+                        // The model wrote something and none of it is here: that is no answer.
+                        if message.content.is_empty() && acc.usage.output > 0 {
+                            let what = if passed_over.is_empty() { "an empty output".to_string() } else { passed_over.join(", ") };
+                            yield StreamEvent::Failed(acc.fail(protocol(&format!("The model's reply has nothing finx can read: {what}")))); return;
+                        }
                         if message.tool_calls().iter().any(|t| t.id.is_empty() || t.name.is_empty() || t.arguments_error.is_some()) {
                             yield StreamEvent::Failed(acc.fail(protocol("Invalid Responses tool call"))); return;
                         }

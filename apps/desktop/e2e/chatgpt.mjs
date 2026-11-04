@@ -67,7 +67,7 @@ try {
   await until(() => fs.existsSync(socket), "kernel socket");
   f.state.mode = "pending";
   app = spawn(path.join(desktop, "node_modules/.bin/electron"), [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...f.env, FINXWORK_USER_DATA: path.join(f.work, "profile"), FINXWORK_FINX: finx }, stdio: ["ignore", "ignore", "pipe"],
+    env: { ...f.env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: path.join(f.work, "profile"), FINXWORK_FINX: finx }, stdio: ["ignore", "ignore", "pipe"],
   });
   app.stderr.on("data", () => {});
   const main = await page(false);

@@ -33,6 +33,9 @@
 //! | `mcp:SERVER:PROJECT` | `tool_search` for the vault tool, `call_tool` on `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
+//! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
+//! | `relay[:LABEL]` | a bot's `spawn_agent` (described LABEL) with "在查了。" sent and `end_turn`; when the report wakes it, `查到了：<the report>` sent with `end_turn` |
+//! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
 //!
 //! [`MockOptions`] adds a gateway's latency: a pause before the first chunk of every reply
 //! and between chunks.
@@ -436,6 +439,38 @@ fn directive(messages: &[Value]) -> (String, String, String, usize) {
     ("text".to_string(), String::new(), String::new(), step)
 }
 
+/// What `send` replies to the user messages after the last assistant message: each one's
+/// argument, else its prompt.
+fn unanswered_sends(messages: &[Value]) -> Vec<String> {
+    let from = messages
+        .iter()
+        .rposition(|m| m.get("role").and_then(Value::as_str) == Some("assistant"))
+        .map_or(0, |i| i + 1);
+    let texts: Vec<String> = messages[from..]
+        .iter()
+        .filter(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+        .filter_map(|m| {
+            let text = content_text(m);
+            let start = text.find("[[mock:send")?;
+            let len = text[start..].find("]]")?;
+            let arg = text[start + 7..start + len].strip_prefix("send").unwrap_or("").trim_start_matches(':');
+            let prompt = format!("{}{}", &text[..start], &text[start + len + 2..]).trim().to_string();
+            Some(if arg.is_empty() { prompt } else { arg.to_string() })
+        })
+        .collect();
+    if texts.is_empty() { vec!["send done".to_string()] } else { texts }
+}
+
+/// The text of the latest user message: a report, after a bot's helper finished.
+fn last_user_text(messages: &[Value]) -> String {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+        .map(content_text)
+        .unwrap_or_default()
+}
+
 /// The text of the latest tool result.
 fn last_tool_result(messages: &[Value]) -> String {
     messages
@@ -550,6 +585,59 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             }
         }
         "fail" => Plan::Status(400, "mock rejects this request"),
+        "send" => match step {
+            0 => {
+                // Every message since the bot last replied gets its own, as a bot answers a
+                // burst; the last ends the turn.
+                let texts = unanswered_sends(messages);
+                let last = texts.len() - 1;
+                Plan::Step(Step::calls(
+                    texts
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, text)| ("send_to_user", json!({ "text": text, "end_turn": i == last })))
+                        .collect(),
+                ))
+            }
+            _ => done("send"),
+        },
+        "relay" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                (
+                    "spawn_agent",
+                    json!({ "description": if arg.is_empty() { "查资料" } else { arg }, "task": "Look it up and report." }),
+                ),
+                ("send_to_user", json!({ "text": "在查了。", "end_turn": true })),
+            ])),
+            _ => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({ "text": format!("查到了：{}", last_user_text(messages)), "end_turn": true }),
+            )])),
+        },
+        // A bot that answers in plain text, which the user never sees, and sends once reminded
+        // (bot-design §3.11).
+        "quiet" => {
+            let answer = if arg.is_empty() { prompt } else { arg };
+            match step {
+                0 => Plan::Step(Step::text(answer.to_string())),
+                _ if last_user_text(messages).contains("<reply_reminder>") => {
+                    Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": answer, "end_turn": true }))]))
+                }
+                _ => done("quiet"),
+            }
+        }
+        // A bot that never sends, reminded or not (bot-design §3.11).
+        "mute" => Plan::Step(Step::text("写了字，没有发。".to_string())),
+        "confirm" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "要执行命令，确认一下。" })),
+                ("bash", json!({ "command": if arg.is_empty() { "touch confirmed.txt" } else { arg } })),
+            ])),
+            _ => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({ "text": format!("做完了：{}", last_tool_result(messages)), "end_turn": true }),
+            )])),
+        },
         "agent" => agent_step(arg, step),
         "fanout" => {
             let (count, label) = arg.split_once(':').unwrap_or((arg, "fan"));
@@ -597,6 +685,41 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("browsers done: {}", last_tool_result(messages)))),
             }
         }
+        // The user's own browser: a page opened there, its tabs, what a tab shows, and handing
+        // the page to the user (browser-design §8.4.7).
+        "yours" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim(), "browser": "yours"}))])),
+            _ => Plan::Step(Step::text(format!("yours opened: {}", last_tool_result(messages)))),
+        },
+        "yours_tabs" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_tabs", json!({}))])),
+            _ => Plan::Step(Step::text(format!("yours tabs: {}", last_tool_result(messages)))),
+        },
+        "yours_read" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_snapshot", json!({"tab": arg.trim()}))])),
+            _ => Plan::Step(Step::text(format!("yours read: {}", last_tool_result(messages)))),
+        },
+        // A sub-agent opens a page there, and reports.
+        "yours_agent" => match step {
+            0 => {
+                let task = format!("[[mock:yours:{}]] open it", arg.trim());
+                Plan::Step(Step::calls(vec![("spawn_agent", json!({"description": "打开页面", "task": task, "name": "opener", "wait": true}))]))
+            }
+            _ => Plan::Step(Step::text(format!("agent done: {}", last_tool_result(messages)))),
+        },
+        // Reads the first tab there, then keeps it in use for this many milliseconds.
+        "yours_hold" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_snapshot", json!({"tab": "y1"}))])),
+            _ => Plan::Step(Step {
+                parts: vec![Part::Text("held".into())],
+                finish: "stop",
+                delay: Duration::from_millis(arg.trim().parse().unwrap_or(1000)),
+            }),
+        },
+        "handoff" => match step {
+            0 => Plan::Step(Step::calls(vec![("call_tool", json!({"name": "browser_wait", "arguments": {"user": arg.trim()}}))])),
+            _ => Plan::Step(Step::text(format!("handoff done: {}", last_tool_result(messages)))),
+        },
         // A page opened without naming a browser: where the user's default sends it.
         "default_browser" => match step {
             0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim()}))])),

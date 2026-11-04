@@ -908,6 +908,7 @@ impl TypedTool for DesktopAct {
             content,
             details: Some(details),
             is_error: false,
+            ends_task: false,
         })
     }
 }
@@ -1207,6 +1208,7 @@ impl TypedTool for DesktopScreenshot {
             ],
             details: Some(json!({ "app": args.app, "shot": id })),
             is_error: false,
+            ends_task: false,
         })
     }
 }

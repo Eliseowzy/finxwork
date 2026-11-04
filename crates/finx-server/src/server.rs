@@ -110,9 +110,11 @@ pub struct Server(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) connections: Arc<finx_connections::Manager>,
     pub(crate) model_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    /// Connections that called `browser/status`, and the extension's last word (crate::browser_status).
+    /// Connections that called `browser/status`, the extensions connected, and why the last
+    /// host was refused (crate::browser_status).
     pub(crate) browser_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    pub(crate) extension: Mutex<Option<finx_protocol::api::ExtensionStatus>>,
+    pub(crate) extensions: Mutex<Vec<crate::browser_status::ExtensionEntry>>,
+    pub(crate) host_refused: Mutex<Option<String>>,
     /// Model lists and the catalog (crate::models).
     pub(crate) model_upkeep: crate::models::Upkeep,
     pub(crate) home: FinxHome,
@@ -131,7 +133,7 @@ pub(crate) struct Inner {
     /// Detect create/run/close bursts shorter than the memory-upkeep polling interval.
     closed_sessions: AtomicU64,
     /// Connections following the session list.
-    feed: Arc<ListFeed>,
+    pub(crate) feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
     pub(crate) defaults: SessionDefaults,
     /// The 自定义 page's subscriptions and file watching (crate::customize).
@@ -142,6 +144,8 @@ pub(crate) struct Inner {
     pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
     /// The documents every session here shares (document-editor-design §5.2).
     pub(crate) docs: Arc<finx_docs::DocStore>,
+    /// Every bot and who follows their list (crate::bots).
+    pub(crate) bots: Arc<crate::bots::Registry>,
 }
 
 impl Server {
@@ -164,9 +168,11 @@ impl Server {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
             browser_watchers: Mutex::new(HashMap::new()),
-            extension: Mutex::new(None),
+            extensions: Mutex::new(Vec::new()),
+            host_refused: Mutex::new(None),
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
+            bots: Arc::new(crate::bots::Registry::new(options.home.clone())),
             defaults,
             store: Arc::new(JsonlStore::new(options.home.sessions_dir())),
             home: options.home,
@@ -191,6 +197,7 @@ impl Server {
         connections.on_change(Arc::new(move || {
             if let Some(inner) = weak.upgrade() { Server(inner).models_changed(); }
         }));
+        server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
         Ok(server)
     }
@@ -238,7 +245,7 @@ impl Server {
         self.forget_model_watcher(conn.id);
         self.forget_customize(conn.id);
         self.forget_files(conn.id);
-        self.0.browser_watchers.lock().remove(&conn.id);
+        self.forget_browser_watcher(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -255,7 +262,7 @@ impl Server {
         self.0.sessions.lock().values().cloned().collect()
     }
 
-    fn hub(&self, id: &str) -> Option<HubHandle> {
+    pub(crate) fn hub(&self, id: &str) -> Option<HubHandle> {
         self.0.sessions.lock().get(id).cloned()
     }
 
@@ -289,7 +296,7 @@ impl Server {
     /// Makes room for one more session. A full server unloads the session that has gone
     /// unused the longest (no client attached, no task running): its log is on disk, and
     /// resuming loads it again. Fails only when every loaded session is in use.
-    async fn make_room(&self) -> Result<(), RpcError> {
+    pub(crate) async fn make_room(&self) -> Result<(), RpcError> {
         if self.0.closing.load(Ordering::Relaxed) {
             return Err(RpcError::internal("the server is shutting down"));
         }
@@ -329,23 +336,36 @@ impl Server {
         (secs > 0).then(|| Duration::from_secs(secs))
     }
 
-    fn register(
+    /// Starts the hub of a loaded session; `bot` names the bot whose conversation it is.
+    pub(crate) fn register(
         &self,
         kernel: Kernel,
         transcript: Vec<TranscriptItem>,
         attach: AttachRequest,
         base: SummaryBase,
+        bot: Option<String>,
     ) -> String {
         let id = kernel.session_id().to_string();
         let server = Arc::downgrade(&self.0);
         let exit_id = id.clone();
+        let exit_bot = bot.clone();
         let on_exit = Box::new(move |last: SessionSummary| {
             if let Some(inner) = server.upgrade() {
                 inner.sessions.lock().remove(&exit_id);
                 inner.closed_sessions.fetch_add(1, Ordering::Relaxed);
-                inner.feed.publish(vec![last], Vec::new());
+                match &exit_bot {
+                    Some(bot) => inner.bots.on_unloaded(bot),
+                    None => inner.feed.publish(vec![last], Vec::new()),
+                }
             }
         });
+        let listing = match bot {
+            Some(id) => hub::Listing::Bot {
+                id,
+                bots: self.0.bots.clone(),
+            },
+            None => hub::Listing::Sessions(self.0.feed.clone()),
+        };
         // Hold the table lock while the hub starts, so `on_exit` cannot run first.
         let mut sessions = self.0.sessions.lock();
         let handle = hub::spawn(
@@ -353,7 +373,7 @@ impl Server {
             transcript,
             self.idle_after(),
             Some(attach),
-            self.0.feed.clone(),
+            listing,
             base,
             on_exit,
         );
@@ -362,7 +382,7 @@ impl Server {
     }
 
     /// The workspace's MCP servers, then the service's (`--mcp-config`), then the client's.
-    fn session_mcp_servers(&self, workspace: &Workspace, client: &[McpServerConfig]) -> Vec<McpServerConfig> {
+    pub(crate) fn session_mcp_servers(&self, workspace: &Workspace, client: &[McpServerConfig]) -> Vec<McpServerConfig> {
         let extra: Vec<McpServerConfig> = self.0.mcp_servers.iter().chain(client).cloned().collect();
         let (servers, warnings) = workspace.mcp_servers_with(&extra);
         for warning in warnings {
@@ -386,7 +406,7 @@ impl Server {
                 .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?,
         };
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
-        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
+        let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
         }
@@ -409,6 +429,7 @@ impl Server {
             trusted: workspace.trusted,
             config: Arc::new(workspace.config),
             interactive_approvals: true,
+            bot: None,
         };
         let kernel = Kernel::start(options, deps)
             .await
@@ -420,7 +441,7 @@ impl Server {
             updated_at: now,
             no_project,
         };
-        Ok(self.register(kernel, Vec::new(), attach, base))
+        Ok(self.register(kernel, Vec::new(), attach, base, None))
     }
 
     /// Loads a session from disk, or attaches when it is already loaded here.
@@ -453,7 +474,7 @@ impl Server {
         }
         let workspace = Workspace::open(&self.0.home, &header.cwd, &self.0.overrides)
             .map_err(errors::from_runtime)?;
-        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
+        let no_project = self.0.home.has_no_project(&workspace.cwd);
         let store: Arc<dyn SessionStore> = self.0.store.clone();
         let mut deps = workspace
             .kernel_deps(self.0.llm.clone(), store, &[])
@@ -485,12 +506,14 @@ impl Server {
             trusted: workspace.trusted,
             config: Arc::new(workspace.config),
             interactive_approvals: true,
+            // A bot's conversation learns a name given while it was not loaded.
+            bot_name: header.bot.as_ref().and_then(|bot| self.0.bots.name(&bot.id)),
         };
         let kernel = Kernel::resume(options, deps)
             .await
             .map_err(|e| errors::from_kernel(e, id))?;
         let transcript = kernel.transcript();
-        self.register(kernel, transcript, attach, base);
+        self.register(kernel, transcript, attach, base, header.bot.map(|bot| bot.id));
         Ok(())
     }
 
@@ -761,6 +784,14 @@ impl Server {
 
     /// Moves the log of an unloaded session to `~/.finx/trash/sessions/`. Blocking I/O.
     pub fn delete_session(&self, id: &str) -> Result<(), RpcError> {
+        self.trash_log(id)?;
+        self.0.feed.publish(Vec::new(), vec![id.to_string()]);
+        Ok(())
+    }
+
+    /// [`Self::delete_session`] without telling the session list: a bot's conversation is not
+    /// in it. Blocking I/O.
+    pub(crate) fn trash_log(&self, id: &str) -> Result<(), RpcError> {
         if self.is_loaded(id) {
             return Err(errors::session_busy(format!(
                 "session {id} is loaded; close it first"
@@ -790,8 +821,12 @@ impl Server {
             std::fs::rename(&data_dir, trash.join(dir_name))
                 .map_err(|e| RpcError::internal(format!("cannot move the session files: {e}")))?;
         }
-        self.0.feed.publish(Vec::new(), vec![id.to_string()]);
+        self.forget_browser_session(id);
         Ok(())
+    }
+
+    pub(crate) fn store(&self) -> &Arc<JsonlStore> {
+        &self.0.store
     }
 
     /// Reads part of a saved tool output (`finx://tool-output/<session>/<call>`). Blocking I/O.
@@ -923,7 +958,7 @@ fn last_active(s: &finx_core::store::SessionSummary) -> String {
 fn disk_summary(home: &FinxHome, s: &finx_core::store::SessionSummary) -> SessionSummary {
     SessionSummary {
         session_id: s.id.clone(),
-        no_project: home.is_chat_dir(&s.cwd),
+        no_project: home.has_no_project(&s.cwd),
         cwd: s.cwd.clone(),
         created_at: s.created_at.clone(),
         updated_at: last_active(s),

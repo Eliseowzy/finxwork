@@ -139,6 +139,7 @@ async fn harness(model: &str, config: Config, scripts: Vec<Script>) -> Harness {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps(&api, &work, &home)).await.unwrap();
     Harness {
@@ -161,6 +162,7 @@ async fn resume(home: &FinxHome, work: &Path, session_id: &str, api: &Arc<Script
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     Kernel::resume(options, deps(api, work, home)).await.unwrap()
 }
@@ -672,6 +674,7 @@ async fn without_a_session_log_saved_output_is_temporary() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     let mut kernel = Kernel::start(options, deps).await.unwrap();
     let result = kernel.run(prompt("print")).await.unwrap();

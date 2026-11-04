@@ -11,13 +11,55 @@
       "$ref": "#/definitions/AuthSetResult"
     },
     {
+      "$ref": "#/definitions/BotAvatarResult"
+    },
+    {
+      "$ref": "#/definitions/BotCreateParams"
+    },
+    {
+      "$ref": "#/definitions/BotIdParams"
+    },
+    {
+      "$ref": "#/definitions/BotOpenParams"
+    },
+    {
+      "$ref": "#/definitions/BotResult"
+    },
+    {
+      "$ref": "#/definitions/BotUpdateParams"
+    },
+    {
+      "$ref": "#/definitions/BotsChangedParams"
+    },
+    {
+      "$ref": "#/definitions/BotsResult"
+    },
+    {
+      "$ref": "#/definitions/BrowserAssignTabParams"
+    },
+    {
       "$ref": "#/definitions/BrowserCdpParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserCloseTabsParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserControl"
     },
     {
       "$ref": "#/definitions/BrowserHostParams"
     },
     {
       "$ref": "#/definitions/BrowserHostResult"
+    },
+    {
+      "$ref": "#/definitions/BrowserRequest"
+    },
+    {
+      "$ref": "#/definitions/BrowserRevealParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserSessionParams"
     },
     {
       "$ref": "#/definitions/BrowserSiteIconParams"
@@ -27,6 +69,9 @@
     },
     {
       "$ref": "#/definitions/BrowserStatus"
+    },
+    {
+      "$ref": "#/definitions/BrowserUseExtensionParams"
     },
     {
       "$ref": "#/definitions/CancelRequestParams"
@@ -108,6 +153,9 @@
     },
     {
       "$ref": "#/definitions/Event"
+    },
+    {
+      "$ref": "#/definitions/ExtensionMessage"
     },
     {
       "$ref": "#/definitions/FilesChangedParams"
@@ -792,6 +840,411 @@
       },
       "type": "object"
     },
+    "Avatar": {
+      "description": "A bot's avatar.",
+      "oneOf": [
+        {
+          "description": "The FinxWork mark: the default bot's alone.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "mark"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A character on a colour.",
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "char"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/AvatarShape"
+            }
+          },
+          "required": [
+            "hue",
+            "kind",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The first character of the bot's name on a colour.",
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "mono"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "hue",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An image uploaded for the bot, which `bots/avatar` gives; `rev` changes with each one.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "image"
+              ],
+              "type": "string"
+            },
+            "rev": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "rev"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AvatarHue": {
+      "description": "The colours behind an avatar's character or initial: muted, the same in both themes.",
+      "enum": [
+        "slate",
+        "sage",
+        "clay",
+        "ochre",
+        "plum",
+        "teal",
+        "rose",
+        "stone"
+      ],
+      "type": "string"
+    },
+    "AvatarInput": {
+      "description": "An avatar given to `bots/create` and `bots/update`.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "mark"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "char"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/AvatarShape"
+            }
+          },
+          "required": [
+            "hue",
+            "kind",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "mono"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "hue",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A square PNG, base64, which the client cropped and scaled (256 px).",
+          "properties": {
+            "kind": {
+              "enum": [
+                "image"
+              ],
+              "type": "string"
+            },
+            "png": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "png"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AvatarShape": {
+      "description": "The characters an avatar can show, drawn by the client.",
+      "enum": [
+        "round",
+        "box",
+        "ghost",
+        "cloud",
+        "dome",
+        "cat",
+        "egg",
+        "gem"
+      ],
+      "type": "string"
+    },
+    "BotAvatarResult": {
+      "properties": {
+        "data": {
+          "description": "`data:image/png;base64,…`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "BotCreateParams": {
+      "properties": {
+        "avatar": {
+          "$ref": "#/definitions/AvatarInput"
+        },
+        "name": {
+          "description": "1 to 20 characters once trimmed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "avatar",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BotIdParams": {
+      "description": "Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`.",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bot_id"
+      ],
+      "type": "object"
+    },
+    "BotOpenParams": {
+      "description": "Parameters of `bots/open`, which answers as `session/new` does.",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "events": {
+          "$ref": "#/definitions/EventFilter",
+          "default": {}
+        },
+        "history_limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bot_id"
+      ],
+      "type": "object"
+    },
+    "BotResult": {
+      "description": "Result of `bots/create` and `bots/update`.",
+      "properties": {
+        "bot": {
+          "$ref": "#/definitions/BotSummary"
+        }
+      },
+      "required": [
+        "bot"
+      ],
+      "type": "object"
+    },
+    "BotSummary": {
+      "properties": {
+        "avatar": {
+          "$ref": "#/definitions/Avatar"
+        },
+        "created_at": {
+          "description": "RFC 3339.",
+          "type": "string"
+        },
+        "default": {
+          "description": "The bot every user has: it cannot be deleted.",
+          "type": "boolean"
+        },
+        "helpers": {
+          "description": "Background helpers (sub-agents) at work.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LastMessage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Its conversation, once there is one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "typing": {
+          "description": "It is answering: its conversation runs a task.",
+          "type": "boolean"
+        },
+        "unread": {
+          "description": "Messages and approval requests since the user last looked (`bots/read`).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "waiting": {
+          "description": "The oldest approval it waits for: what the call does.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "avatar",
+        "created_at",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BotUpdateParams": {
+      "properties": {
+        "avatar": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AvatarInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bot_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pinned": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bot_id"
+      ],
+      "type": "object"
+    },
+    "BotsChangedParams": {
+      "description": "Server notification to `bots/subscribe`rs: the bots that changed, and those deleted.",
+      "properties": {
+        "bots": {
+          "items": {
+            "$ref": "#/definitions/BotSummary"
+          },
+          "type": "array"
+        },
+        "deleted": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "bots"
+      ],
+      "type": "object"
+    },
+    "BotsResult": {
+      "description": "Result of `bots/subscribe`.",
+      "properties": {
+        "bots": {
+          "items": {
+            "$ref": "#/definitions/BotSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "bots"
+      ],
+      "type": "object"
+    },
     "BridgeRange": {
       "description": "A range of bridge versions, both ends included.",
       "properties": {
@@ -809,6 +1262,22 @@
       "required": [
         "max",
         "min"
+      ],
+      "type": "object"
+    },
+    "BrowserAssignTabParams": {
+      "description": "Parameters of `browser/assign_tab`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "target_id"
       ],
       "type": "object"
     },
@@ -833,6 +1302,164 @@
       ],
       "type": "object"
     },
+    "BrowserCloseTabsParams": {
+      "description": "Parameters of `browser/close_tabs`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "target_id": {
+          "description": "Only this tab.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "BrowserControl": {
+      "description": "What the service tells the extension through its host (`browser/control`).",
+      "oneOf": [
+        {
+          "description": "Bring a tab and its window to the front.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "reveal"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "close_tabs"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "target_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tab the user offered goes to this session.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "assign_tab"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id",
+            "target_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The sessions with tabs here, for the names of their tab groups and the extension's own page.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "sessions"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "additionalProperties": {
+                "$ref": "#/definitions/ExtensionSession"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A session was deleted: its tabs are the user's now.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "forget"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Whether the agent uses this browser and profile.",
+          "properties": {
+            "in_use": {
+              "type": "boolean"
+            },
+            "kind": {
+              "enum": [
+                "in_use"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "in_use",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "BrowserHostKind": {
       "description": "Which browser a `browser/host` connection provides.",
       "oneOf": [
@@ -855,6 +1482,13 @@
     "BrowserHostParams": {
       "description": "Parameters of `browser/host`. Older hosts send none: the embedded browser.",
       "properties": {
+        "account": {
+          "description": "The account signed in to that browser profile, when it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "bridge": {
           "anyOf": [
             {
@@ -875,6 +1509,13 @@
         },
         "extension_version": {
           "description": "The FinxWork extension's version, for an extension host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instance": {
+          "description": "Tells this extension's browser and profile apart from others: kept by the extension.",
           "type": [
             "string",
             "null"
@@ -911,6 +1552,86 @@
           "description": "Set when the extension cannot be used. The connection stays, so clients can say what to update, but carries no browser."
         }
       },
+      "type": "object"
+    },
+    "BrowserRequest": {
+      "description": "What the extension asks of the app (`browser/request`).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "open_session"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "tab_offered"
+              ],
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "title",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BrowserRevealParams": {
+      "description": "Parameters of `browser/reveal`.",
+      "properties": {
+        "session_id": {
+          "description": "The session whose tab to show: the one last used, unless `target_id` says which.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "BrowserSessionParams": {
+      "description": "Parameters of `browser/allow` and `browser/cancel_wait`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
       "type": "object"
     },
     "BrowserSiteIconParams": {
@@ -959,11 +1680,61 @@
               "type": "null"
             }
           ],
-          "description": "Set while the FinxWork extension is connected; with `problem` when it cannot be used."
+          "description": "The extension the agent uses, while one is connected; with `problem` when it cannot be used. When several are connected, the others are in `extensions`."
+        },
+        "extensions": {
+          "description": "Every extension connected, oldest first, when there is more than one.",
+          "items": {
+            "$ref": "#/definitions/ExtensionStatus"
+          },
+          "type": "array"
+        },
+        "refused": {
+          "description": "Why the last extension host was refused, until one connects.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revoked": {
+          "description": "Sessions the user took their browser back from.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tabs": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/definitions/YoursTab"
+            },
+            "type": "array"
+          },
+          "description": "Each session's tabs in the user's own browser.",
+          "type": "object"
+        },
+        "waiting": {
+          "description": "Sessions waiting for the user's own browser to connect.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "embedded"
+      ],
+      "type": "object"
+    },
+    "BrowserUseExtensionParams": {
+      "description": "Parameters of `browser/use_extension`.",
+      "properties": {
+        "instance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "instance"
       ],
       "type": "object"
     },
@@ -3578,6 +4349,157 @@
       },
       "type": "object"
     },
+    "ExtensionMessage": {
+      "description": "What the extension says through its host (`browser/extension`).",
+      "oneOf": [
+        {
+          "description": "Every session's tabs, whenever they change.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "tabs"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/definitions/YoursTab"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user took control back, closing Chrome's debugging bar, from these sessions.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "revoked"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user asked to go back to a conversation.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "open_session"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user did what the session waits for in the page.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "done"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user stopped a session's task from the extension.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "stop"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user offered a tab of their own to a conversation.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "offer_tab"
+              ],
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "title",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user chose this browser and profile for the agent.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "use_this"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ExtensionProblem": {
       "description": "Why a connected extension cannot be used: it and finx share no bridge version.",
       "oneOf": [
@@ -3597,9 +4519,39 @@
         }
       ]
     },
+    "ExtensionSession": {
+      "description": "What a session looks like to the extension.",
+      "properties": {
+        "handoff": {
+          "description": "What it waits for the user to do in the page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/SessionState"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "title"
+      ],
+      "type": "object"
+    },
     "ExtensionStatus": {
       "description": "The user's own browser, lent through the FinxWork extension (browser-design §8.4).",
       "properties": {
+        "account": {
+          "description": "The account signed in to that browser profile, when it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "browser": {
           "description": "\"Google Chrome 141.0.7390.54\", when the extension said.",
           "type": [
@@ -3608,6 +4560,17 @@
           ]
         },
         "extension_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "in_use": {
+          "description": "The agent uses this one; the others wait.",
+          "type": "boolean"
+        },
+        "instance": {
+          "description": "Tells this browser and profile apart from others.",
           "type": [
             "string",
             "null"
@@ -4007,6 +4970,34 @@
         "capabilities",
         "protocol_version",
         "server_info"
+      ],
+      "type": "object"
+    },
+    "LastMessage": {
+      "description": "The last message of a bot's conversation, for its row in the list.",
+      "properties": {
+        "from": {
+          "$ref": "#/definitions/Speaker"
+        },
+        "images": {
+          "description": "The images it carried.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The start of its text as written (at most 1000 characters): the client takes the line to show from it, as it does for the conversation.",
+          "type": "string"
+        },
+        "ts": {
+          "description": "RFC 3339.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "text",
+        "ts"
       ],
       "type": "object"
     },
@@ -6469,6 +7460,11 @@
           "description": "`auth/set`, `auth/delete`, and `providers` in `models/list`.",
           "type": "boolean"
         },
+        "bots": {
+          "default": false,
+          "description": "Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).",
+          "type": "boolean"
+        },
         "customize": {
           "default": false,
           "description": "The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6).",
@@ -7662,6 +8658,13 @@
       ],
       "type": "object"
     },
+    "Speaker": {
+      "enum": [
+        "user",
+        "bot"
+      ],
+      "type": "string"
+    },
     "StopReason": {
       "enum": [
         "stop",
@@ -8129,13 +9132,38 @@
           "type": "string"
         }
       ]
+    },
+    "YoursTab": {
+      "description": "A session's tab in the user's own browser, as the extension reports it: the extension keeps which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7).",
+      "properties": {
+        "attached": {
+          "description": "The agent is attached to it now, so a task is using it; Chrome shows its debugging bar.",
+          "type": "boolean"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "title",
+        "url"
+      ],
+      "type": "object"
     }
   },
   "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
   "title": "finx native protocol",
   "x-client-notifications": {
     "$/cancel_request": "CancelRequestParams",
-    "browser/cdp": "BrowserCdpParams"
+    "browser/cdp": "BrowserCdpParams",
+    "browser/extension": "ExtensionMessage"
   },
   "x-error-codes": {
     "-32002": "session_not_found",
@@ -8163,6 +9191,9 @@
     "-32031": "mcp_login_failed",
     "-32032": "doc_unavailable",
     "-32033": "doc_password",
+    "-32040": "bot_not_found",
+    "-32041": "bot_default",
+    "-32042": "bot_invalid",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -8179,9 +9210,67 @@
       "params": "AuthSetParams",
       "result": "AuthSetResult"
     },
+    "bots/avatar": {
+      "params": "BotIdParams",
+      "result": "BotAvatarResult"
+    },
+    "bots/clear": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/create": {
+      "params": "BotCreateParams",
+      "result": "BotResult"
+    },
+    "bots/delete": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/open": {
+      "params": "BotOpenParams",
+      "result": "SessionNewResult"
+    },
+    "bots/read": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/subscribe": {
+      "result": "BotsResult"
+    },
+    "bots/unread": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/unsubscribe": {
+      "result": "Empty"
+    },
+    "bots/update": {
+      "params": "BotUpdateParams",
+      "result": "BotResult"
+    },
+    "browser/allow": {
+      "params": "BrowserSessionParams",
+      "result": "Empty"
+    },
+    "browser/assign_tab": {
+      "params": "BrowserAssignTabParams",
+      "result": "Empty"
+    },
+    "browser/cancel_wait": {
+      "params": "BrowserSessionParams",
+      "result": "Empty"
+    },
+    "browser/close_tabs": {
+      "params": "BrowserCloseTabsParams",
+      "result": "Empty"
+    },
     "browser/host": {
       "params": "BrowserHostParams",
       "result": "BrowserHostResult"
+    },
+    "browser/reveal": {
+      "params": "BrowserRevealParams",
+      "result": "Empty"
     },
     "browser/site_icon": {
       "params": "BrowserSiteIconParams",
@@ -8189,6 +9278,10 @@
     },
     "browser/status": {
       "result": "BrowserStatus"
+    },
+    "browser/use_extension": {
+      "params": "BrowserUseExtensionParams",
+      "result": "Empty"
     },
     "chatgpt/cancel": {
       "params": "ChatGptCancelParams",
@@ -8425,8 +9518,11 @@
   },
   "x-protocol-version": 2,
   "x-server-notifications": {
+    "bots/changed": "BotsChangedParams",
     "browser/cdp": "BrowserCdpParams",
     "browser/changed": "BrowserStatus",
+    "browser/control": "BrowserControl",
+    "browser/request": "BrowserRequest",
     "config/changed": "ConfigChangedParams",
     "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",

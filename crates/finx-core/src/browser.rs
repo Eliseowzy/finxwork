@@ -64,6 +64,14 @@ const RESTARTED: &str = "The browser had stopped, so it was started again: earli
 const BUILTIN_OFF: &str = "The built-in browser is turned off in FinxWork's settings.";
 const YOURS_OFF: &str = "The user's own browser is turned off. If the task needs their accounts, ask the user to \
     turn it on in FinxWork; the built-in browser does not have their sign-ins.";
+const YOURS_REVOKED: &str = "The user took back control of their own browser (they closed its debugging bar), so it \
+    cannot be used for now: go on without it, or ask them. They can allow it again in FinxWork.";
+const YOURS_DECLINED: &str = "The user chose not to use their own browser this time: go on without it, or ask them.";
+/// In the first result of a session that found its tabs again (§8.4.7).
+const YOURS_KEPT: &str = "The tabs in the user's own browser are still open, but refs from before are gone: take a \
+    new snapshot before acting.";
+const CONNECTION_LOST: &str = "The connection to the browser dropped during this call, so it may or may not have taken \
+    effect. Check the page before repeating it.";
 
 /// Most steps a `browser_batch` runs.
 const MAX_STEPS: usize = 20;
@@ -187,6 +195,8 @@ pub(crate) struct BrowserHandle {
     starting: tokio::sync::Mutex<()>,
     /// The main session's id: the desktop app shows the tabs in its window.
     label: String,
+    /// How the session numbered the tabs it let go in the user's own browser.
+    yours_numbers: Mutex<Option<finx_browser::router::TabNumbers>>,
     /// Set by the kernel once the session exists.
     judge: std::sync::OnceLock<Judge>,
 }
@@ -249,6 +259,7 @@ impl BrowserHandle {
             grants: Arc::new(Mutex::new(grants)),
             starting: tokio::sync::Mutex::new(()),
             label,
+            yours_numbers: Mutex::new(None),
             judge: std::sync::OnceLock::new(),
         }
     }
@@ -296,11 +307,25 @@ impl BrowserHandle {
 /// The user's own browser's session, kept beside the built-in one's in the session state.
 pub(crate) struct YoursSession(Arc<BrowserSession>);
 
-/// Ends a browser's session in a session's state: its tabs close.
+/// Ends a browser's session in a session's state: its tabs close, or in the user's own browser
+/// the agent lets them go. It finds them again on its next call there (§8.4.7).
 pub(crate) fn forget(state: &finx_tools::SessionState, which: Which) {
     match which {
         Which::Builtin => drop(state.remove::<BrowserSession>()),
-        Which::Yours => drop(state.remove::<YoursSession>()),
+        Which::Yours => {
+            if let (Some(handle), Some(session)) = (state.get::<BrowserHandle>(), state.get::<YoursSession>()) {
+                *handle.yours_numbers.lock() = Some(session.0.numbers());
+            }
+            drop(state.remove::<YoursSession>());
+        }
+    }
+}
+
+/// A task ended and none follows: the agent lets go of the user's browser, whose debugging bar
+/// shows only while a task uses it (§8.4.7).
+pub(crate) fn task_ended(state: &finx_tools::SessionState) {
+    if state.get::<YoursSession>().is_some_and(|s| s.0.keeps_tabs()) {
+        forget(state, Which::Yours);
     }
 }
 
@@ -358,7 +383,10 @@ impl NavigationGuard for KernelGuard {
 }
 
 fn failed(err: BrowserError) -> ToolError {
-    ToolError::Failed(err.to_string())
+    match err {
+        BrowserError::Cdp(finx_browser::CdpError::Closed) => ToolError::Failed(CONNECTION_LOST.into()),
+        err => ToolError::Failed(err.to_string()),
+    }
 }
 
 fn handle(ctx: &ToolCtx) -> Result<Arc<BrowserHandle>, ToolError> {
@@ -391,6 +419,9 @@ fn pick(ctx: &ToolCtx, asked: Option<Which>, id: Option<&str>) -> Result<Which, 
         )));
     }
     let which = asked.or(named).unwrap_or(state.current);
+    if which == Which::Yours && state.on(which) && handle.pool.is_revoked(&handle.label) {
+        return Err(ToolError::Failed(YOURS_REVOKED.into()));
+    }
     if state.on(which) {
         Ok(which)
     } else {
@@ -420,9 +451,23 @@ fn existing(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolErro
     }
 }
 
+/// A browser's session, as it is; in the user's own browser, the session finds the tabs it let go
+/// when its last task ended, or when the connection dropped, waiting for the connection first.
+async fn ensure(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolError> {
+    if which == Which::Yours {
+        let handle = handle(ctx)?;
+        let session = session_of(ctx, which);
+        let alive = session.as_ref().is_some_and(|s| !s.is_dead());
+        if !alive && (session.is_some() || handle.pool.tabs_of(&handle.label) > 0 || !handle.pool.has_extension()) {
+            return Ok(start(ctx, which).await?.0);
+        }
+    }
+    existing(ctx, which)
+}
+
 /// A browser's session for a call that runs: its tab becomes the current one.
-fn in_use(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolError> {
-    let session = existing(ctx, which)?;
+async fn in_use(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolError> {
+    let session = ensure(ctx, which).await?;
     handle(ctx)?.touch(which);
     Ok(session)
 }
@@ -431,6 +476,11 @@ fn in_use(ctx: &ToolCtx, which: Which) -> Result<Arc<BrowserSession>, ToolError>
 /// on when it was restarted.
 async fn start(ctx: &ToolCtx, which: Which) -> Result<(Arc<BrowserSession>, Option<&'static str>), ToolError> {
     let handle = handle(ctx)?;
+    if which == Which::Yours && !session_of(ctx, which).is_some_and(|s| !s.is_dead())
+        && handle.pool.wait_for_extension(&handle.label).await == finx_browser::pool::ExtensionWait::Declined
+    {
+        return Err(ToolError::Failed(YOURS_DECLINED.into()));
+    }
     let _starting = handle.starting.lock().await;
     let mut note = None;
     if let Some(session) = session_of(ctx, which) {
@@ -438,7 +488,10 @@ async fn start(ctx: &ToolCtx, which: Which) -> Result<(Arc<BrowserSession>, Opti
             return Ok((session, None));
         }
         forget(&ctx.session_state, which);
-        note = Some(RESTARTED);
+        // In the user's own browser the tabs are still there, and the session finds them.
+        if which == Which::Builtin {
+            note = Some(RESTARTED);
+        }
     }
     let settings = handle.state.lock().settings.clone();
     let config = match which {
@@ -449,6 +502,8 @@ async fn start(ctx: &ToolCtx, which: Which) -> Result<(Arc<BrowserSession>, Opti
         },
     };
     let browser = handle.pool.acquire(&config).await.map_err(failed)?;
+    let kept = which == Which::Yours && handle.pool.tabs_of(&handle.label) > 0;
+    let numbers = if which == Which::Yours { handle.yours_numbers.lock().take() } else { None };
     let guard = Arc::new(KernelGuard {
         policy: handle.policy.clone(),
         roots: handle.roots.clone(),
@@ -463,6 +518,8 @@ async fn start(ctx: &ToolCtx, which: Which) -> Result<(Arc<BrowserSession>, Opti
             action_timeout: settings.action_timeout,
             label: Some(handle.label.clone()),
             prefix: which.prefix(),
+            numbers: numbers.unwrap_or_default(),
+            note: kept.then(|| YOURS_KEPT.to_string()),
         },
     ));
     session.adopt_pending().await.map_err(failed)?;
@@ -521,7 +578,7 @@ async fn observe(ctx: &ToolCtx, tab: Option<&str>, id: Option<&str>) -> Result<V
     if which == Which::Builtin && session_of(ctx, which).is_none() && handle(ctx)?.pool.has_host() {
         start(ctx, which).await?;
     }
-    let page = existing(ctx, which)?.page(tab).map_err(failed)?;
+    let page = ensure(ctx, which).await?.page(tab).map_err(failed)?;
     Ok(vec![Authority::Observe {
         origin: page.origin,
     }])
@@ -606,7 +663,7 @@ impl TypedTool for BrowserNavigate {
              changing account settings or permissions, or submitting forms with personal information. Typing \
              passwords, ID or card numbers into a page counts as sending them to the site: ask first. A general \
              request such as \"fill in this form\" does not cover these steps.",
-            "Leave CAPTCHAs and sign-in pages to the user.",
+            "Leave CAPTCHAs and sign-in pages to the user: browser_wait with user hands them the page.",
             "Work from browser_snapshot and refs; use screenshots to check how a page looks, and coordinates only \
              when the snapshot has no element for what you need.",
         ]
@@ -620,7 +677,7 @@ impl TypedTool for BrowserNavigate {
                 own: which.own(),
             }]),
             (None, Some("reload")) => {
-                let session = existing(ctx, which)?;
+                let session = ensure(ctx, which).await?;
                 let tab = session.resolve_tab(args.tab.as_deref()).map_err(failed)?;
                 let url = tab.state.lock().url.clone();
                 Ok(vec![Authority::Navigate { url, own: which.own() }])
@@ -725,7 +782,7 @@ impl TypedTool for BrowserSnapshot {
     }
 
     async fn run(&self, args: SnapshotArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let session = in_use(&ctx, pick(&ctx, None, args.id())?)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.id())?).await?;
         let mode = match args.mode.as_deref() {
             None | Some("tree") => SnapshotMode::Tree,
             Some("text") => SnapshotMode::Text,
@@ -844,7 +901,7 @@ impl TypedTool for BrowserAct {
     async fn authorities(&self, args: &ActArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
         let action = args.action(ctx.env.as_ref())?;
         let which = pick(ctx, None, args.tab.as_deref().or(args.reference.as_deref()))?;
-        let session = existing(ctx, which)?;
+        let session = ensure(ctx, which).await?;
         let (page, label) = match (&args.reference, args.point()?) {
             (Some(_), Some(_)) => return Err(ToolError::InvalidArgs("give either ref or x and y, not both".into())),
             (Some(reference), None) => {
@@ -888,7 +945,7 @@ impl TypedTool for BrowserAct {
     async fn run(&self, args: ActArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         let action = args.action(ctx.env.as_ref())?;
         let (page, which) = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
-        let session = in_use(&ctx, which)?;
+        let session = in_use(&ctx, which).await?;
         let changed = || {
             let now = session
                 .resolve_tab(Some(&page.tab))
@@ -965,7 +1022,7 @@ impl TypedTool for BrowserScreenshot {
 
     async fn run(&self, args: ScreenshotArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         no_images(&ctx)?;
-        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref().or(args.reference.as_deref()))?)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref().or(args.reference.as_deref()))?).await?;
         let element = match &args.reference {
             Some(reference) => Some(session.element(reference).await.map_err(failed)?),
             None => None,
@@ -993,6 +1050,7 @@ impl TypedTool for BrowserScreenshot {
             ],
             details: Some(details),
             is_error: false,
+            ends_task: false,
         })
     }
 }
@@ -1026,6 +1084,10 @@ pub(crate) struct WaitArgs {
     /// Without a condition: wait this long. With one: give up after this long. At most 60; default 10.
     #[serde(default)]
     seconds: Option<f64>,
+    /// What only the user can do in the page, such as "sign in to example.com": they are asked,
+    /// and the call returns when they are done, with the page as it is then.
+    #[serde(default)]
+    user: Option<String>,
     /// Tab id; the current tab by default.
     #[serde(default)]
     tab: Option<String>,
@@ -1039,14 +1101,21 @@ impl TypedTool for BrowserWait {
     const NAME: &'static str = "browser_wait";
     const DESCRIPTION: &'static str = "Wait for text to appear or disappear, the URL to change, or the network to go \
         quiet; or wait a fixed number of seconds. Actions already wait for the page to settle, so use this only for \
-        what happens later.";
+        what happens later. With user, it hands the page to the user for what only they can do.";
 
     async fn authorities(&self, args: &WaitArgs, ctx: &ToolCtx) -> Result<Vec<Authority>, ToolError> {
-        observe(ctx, args.tab.as_deref(), args.tab.as_deref()).await
+        let Some(what) = &args.user else {
+            return observe(ctx, args.tab.as_deref(), args.tab.as_deref()).await;
+        };
+        let which = pick(ctx, None, args.tab.as_deref())?;
+        // A page to hand over.
+        ensure(ctx, which).await?.page(args.tab.as_deref()).map_err(failed)?;
+        Ok(vec![Authority::UserStep { what: what.clone(), own: which.own() }])
     }
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
         let title = match (str_arg(args, "text"), str_arg(args, "text_gone"), str_arg(args, "url")) {
+            _ if str_arg(args, "user").is_some() => format!("wait for you to {}", str_arg(args, "user").unwrap_or_default()),
             (Some(text), _, _) => format!("wait for \"{text}\""),
             (_, Some(text), _) => format!("wait for \"{text}\" to go"),
             (_, _, Some(url)) => format!("wait for the URL to contain {url}"),
@@ -1060,7 +1129,23 @@ impl TypedTool for BrowserWait {
     }
 
     async fn run(&self, args: WaitArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref())?)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref())?).await?;
+        if args.user.is_some() {
+            // The user said they are done: the page as it is now, once it has settled.
+            let settling = session.wait(args.tab.as_deref(), &WaitFor::NetworkIdle, Duration::from_secs(5));
+            tokio::select! {
+                settled = settling => { settled.map_err(failed)?; }
+                _ = ctx.cancel.cancelled() => return Err(ToolError::Cancelled),
+            }
+            let report = session
+                .snapshot(&SnapshotRequest {
+                    tab: args.tab,
+                    ..SnapshotRequest::default()
+                })
+                .await
+                .map_err(failed)?;
+            return Ok(output(report, Some("The user says they are done.")));
+        }
         let conditions = [args.text.is_some(), args.text_gone.is_some(), args.url.is_some(), args.network_idle];
         if conditions.iter().filter(|c| **c).count() > 1 {
             return Err(ToolError::InvalidArgs("wait for one condition at a time".into()));
@@ -1134,7 +1219,7 @@ impl TypedTool for BrowserConsole {
                 "level must be error, warning, info or debug, got \"{level}\""
             )));
         }
-        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref())?)?;
+        let session = in_use(&ctx, pick(&ctx, None, args.tab.as_deref())?).await?;
         let report = session
             .console(args.tab.as_deref(), args.level.as_deref(), args.from_start)
             .map_err(failed)?;
@@ -1243,13 +1328,13 @@ impl TypedTool for BrowserTabs {
             }
             "select" => {
                 let id = tab_id()?;
-                let session = in_use(&ctx, pick(&ctx, None, Some(&id))?)?;
+                let session = in_use(&ctx, pick(&ctx, None, Some(&id))?).await?;
                 let tab = session.select_tab(&id).map_err(failed)?;
                 Ok(ToolOutput::text(format!("Selected tab {}.\n{}", tab.id, session.header(&tab))))
             }
             "close" => {
                 let id = tab_id()?;
-                let session = existing(&ctx, pick(&ctx, None, Some(&id))?)?;
+                let session = ensure(&ctx, pick(&ctx, None, Some(&id))?).await?;
                 session.close_tab(&id).await.map_err(failed)?;
                 Ok(ToolOutput::text(format!("Closed tab {id}.\n{}", list(&ctx).await?)))
             }
@@ -1283,6 +1368,8 @@ async fn list(ctx: &ToolCtx) -> Result<String, ToolError> {
             Some(session) => Some(session),
             // An embedded host may have pages the user handed over before any tool ran.
             None if which == Which::Builtin && handle.pool.has_host() => Some(start(ctx, which).await?.0),
+            // In the user's own browser, the tabs it let go or the user offered.
+            None if which == Which::Yours && handle.pool.tabs_of(&handle.label) > 0 => Some(start(ctx, which).await?.0),
             None => None,
         };
         let tabs = session.as_ref().map(|s| s.tabs()).unwrap_or_default();
@@ -1339,7 +1426,7 @@ impl TypedTool for BrowserEval {
             return Err(ToolError::InvalidArgs("expression must not be empty".into()));
         }
         let which = pick(ctx, None, args.tab.as_deref())?;
-        let page = existing(ctx, which)?.page(args.tab.as_deref()).map_err(failed)?;
+        let page = ensure(ctx, which).await?.page(args.tab.as_deref()).map_err(failed)?;
         Ok(vec![Authority::Script {
             target: page_target(&page),
             origin: page.origin,
@@ -1360,7 +1447,7 @@ impl TypedTool for BrowserEval {
 
     async fn run(&self, args: EvalArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         let (page, which) = approved(&ctx).ok_or_else(|| ToolError::Failed("the call has no approved page".into()))?;
-        let session = in_use(&ctx, which)?;
+        let session = in_use(&ctx, which).await?;
         let report = session.eval(&page, &args.expression).await.map_err(failed)?;
         Ok(output(report, None))
     }
@@ -1544,6 +1631,7 @@ impl TypedTool for BrowserBatch {
             content,
             details,
             is_error: stopped.is_some(),
+            ends_task: false,
         })
     }
 }

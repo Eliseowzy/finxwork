@@ -14,6 +14,7 @@ import { Dock } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { DraftMarkdown, Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
+import { useBrowserStatus } from "./Yours";
 
 /**
  * The conversation, newest at the bottom, ending with what the model is
@@ -141,6 +142,7 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
   const chain = useMemo(() => openChain(view), [view.entries, view.agents]);
   const used = live ? (chain.usage ? addTotals(chain.usage, live.usage) : live.usage) : undefined;
   const tokens = useCountUp(used ? totals(used).tokens : 0);
+  const waitsForBrowser = useBrowserStatus()?.waiting?.includes(view.info.session_id) ?? false;
   if (!live) return null;
   const time = <span className="wk-time">{durationText(now - (chain.started ?? live.started))}</span>;
   const tools = steps.flatMap((x) => (x.kind === "work" ? x.items.flatMap((it) => (it.kind === "tool" && runs(it) ? [it.tool] : [])) : []));
@@ -150,7 +152,7 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
     : tools.length === 1 ? <ToolRow key={tools[0].call_id} tool={tools[0]} after={time} />
     : <RunningCalls key="calls" tools={tools} after={time} />;
   if (live.approvals.length > 0 || live.retry) return calls;
-  if (calls) {
+  if (calls && !waitsForBrowser) {
     return (
       <div className="working" role="status">
         <MarkMotion size={18} rewrite />
@@ -167,7 +169,7 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
   const doing = live.compacting !== undefined ? "compacting" : writing ? "writing" : thought ? "thinking" : "working";
   const line = (
     <>
-      <span className="shimmer">{t(`chat.working.${doing}`)}</span>
+      <span className="shimmer">{waitsForBrowser ? t("yours.waitingLine") : t(`chat.working.${doing}`)}</span>
       <span className="wk-meta">
         {`· ${durationText(now - (chain.started ?? live.started))}`}
         {tokens > 0 && ` · ${t("chat.tokens", { tokens: tokensText(tokens) })}`}
@@ -413,7 +415,7 @@ function useTaskParts(end: TaskEndItem, chain: TaskChain | undefined, started: n
   ].filter(Boolean);
 }
 
-function MessageTime({ at }: { at: Date }) {
+export function MessageTime({ at }: { at: Date }) {
   // The clock only redraws it; the time is read now. When a message turns a minute old it moves to the
   // minute clock, whose last tick can be most of a minute behind, and would read as "just now" again.
   useNow(agoInterval(at));

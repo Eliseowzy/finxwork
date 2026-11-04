@@ -264,9 +264,14 @@ impl AgentTree {
         let root = self.root()?;
         let (system_prompt, base_prompt, mcp_section, skills, model, thinking, permission_mode, session_rules, site_grants, parent_task) = {
             let state = root.state.lock();
+            // A bot's helpers start from a session's prompt, not the bot's (bot-design §2.3).
+            let (system_prompt, base_prompt) = match &state.helper_prompt {
+                Some(helper) => (crate::mcp::compose(helper, state.mcp_section.as_deref()).into(), helper.clone()),
+                None => (state.system_prompt.clone(), state.base_prompt.clone()),
+            };
             (
-                state.system_prompt.clone(),
-                state.base_prompt.clone(),
+                system_prompt,
+                base_prompt,
                 state.mcp_section.clone(),
                 state.skills.clone(),
                 state.model.clone(),

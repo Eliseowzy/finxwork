@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.38 |
+| 版本 | v1.41 |
 | 日期 | 2026-11-04 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -84,7 +84,10 @@
 | v1.35 | 2026-11-03 | 单次任务的固定内存（§1.4）：日志通道预留 256 行（原 4096 行，144 KiB）；`finx acp` 最多 4 个工作线程（D-91）；除 `finx serve` 外，I/O 驱动预留 256 个事件；TLS 会话缓存 32 个主机。macOS 上一次真实任务的 ACP 峰值占用 4.82 → 4.43 MiB，Linux 任务后的匿名内存 1.43 → 1.29 MiB。Q-20 补上系统框架的内存代价（约 1.2 MiB） |
 | v1.36 | 2026-11-03 | 工具结果的裁切改按 token 计（§5.5、§5.7、§7.5.5、§10.2，D-239）：按 4 字节 1 个 token 换算，不调用分词器；工具自身的预算默认 10,000 token（read 每页，bash 头 2,000 + 尾 8,000，子智能体汇报，Skill 正文），内核兜底为预算的 1.2 倍，即 12,000 token；单个结果仍不超过可用窗口的 10%。原来的上限是 50 KB（约 12,800 token），兜底多 4 KB。省略说明和 read 的分页提示改报 token 数；配置 `[tools.limits] max_bytes` 改为 `max_tokens`，旧写法按 4 字节 1 个 token 换算并给出 warning |
 | v1.37 | 2026-11-04 | 模型接入重构（model-catalog-design.md v1.3，D-330–D-340）：API、Token Plan、账号连接共用一次合并，模型的参数按渠道的声明、公共目录里这个渠道的行、模型厂商的行依次取。档位由目录写明的控制方式和渠道能发的参数决定：有档位发 `reasoning_effort`，只有预算才发预算，开关只发给有开关的模型（§4.13）。输出上限未知时不再猜 8,192：OpenAI 兼容请求不带上限，Anthropic 接口按必填给 8,192，预留 32,000（§4.8）。Anthropic 接口对新模型改用 adaptive 和 `output_config.effort` |
-| v1.38 | 2026-11-04 | 调试构建的配置（§15.1，D-342）：`dev` 只给工作区自己的 crate 行号表，依赖不带调试信息。三种 `-p` 组合各构建一次后 target 由 12.96 小到 9.36 GiB，冷编译快约一成，改一个函数后的重编译不变，工作区代码的 `RUST_BACKTRACE` 仍有 file:line。体积的另一半是增量缓存和测试可执行文件，不随调试信息变化；新增 `tools/clean_target.py`，持有 cargo 的构建锁后清理增量缓存和散放的目标文件 |
+| v1.38 | 2026-11-04 | Bot（bot-design.md）：会话头部加 `bot`，日志加 `bot_name`、`unanswered` 两种条目（§9.2）；配置加 `bot_prompt_file`（§10.2）。Bot 会话的基础提示词换成 bot.md，其余各段不变 |
+| v1.39 | 2026-11-04 | 基础提示词的开头改为能力清单（附录 D）：每项写明交付物和质量要求（全面的文档或演示文稿、有洞察的图表或表格、基于可靠来源的多章节文章和深度报告），并用"包括但不限于"放开范围；定时任务等内核还没有的能力不写（D-233）。删去发消息、提交、付款、转账、交易前先确认的那段 |
+| v1.40 | 2026-11-04 | 基础提示词补六点（附录 D）：解释、审查、诊断类请求只调查和回答，要求动手才动手；被质疑时复查并拿证据回答，不为附和而改结论；分清查到的和推断的，不虚构执行结果；比较口径一致，分清报告期与发布日、实际与预测；优先用连接的工具或官方接口取数，外部事实就近附链接；默认在回复里作答，临时脚本放临时目录。后三点中的数字规矩在共用片段里，Bot 同样生效 |
+| v1.41 | 2026-11-04 | 调试构建的配置（§15.1，D-342）：`dev` 只给工作区自己的 crate 行号表，依赖不带调试信息。三种 `-p` 组合各构建一次后 target 由 12.96 小到 9.36 GiB，冷编译快约一成，改一个函数后的重编译不变，工作区代码的 `RUST_BACKTRACE` 仍有 file:line。体积的另一半是增量缓存和测试可执行文件，不随调试信息变化；新增 `tools/clean_target.py`，持有 cargo 的构建锁后清理增量缓存和散放的目标文件 |
 
 ## 1. 目标与范围
 
@@ -2265,6 +2268,7 @@ pub struct SessionHeader {
     pub finx_version: String,
     pub forked_from: Option<ForkRef>,   // M2：派生来源
     pub agent: Option<AgentOrigin>,     // 子智能体的会话才有：根、父、名字、深度、创建它的调用
+    pub bot: Option<BotRef>,            // Bot 的会话才有：Bot 的 id 和建会话时的名字（bot-design §2.1）
 }
 
 pub struct Entry {
@@ -2300,6 +2304,8 @@ pub enum EntryKind {
     Branch,                        // M2：回退标记，parent 指向回退点
     Title { title: String },       // M2
     Date { date: String },         // YYYY-MM-DD：告诉模型日期变了（§7.2）
+    BotName { name: String },      // Bot 会话：告诉模型它的新名字（bot-design §2.4）
+    Unanswered,                    // Bot 会话：任务要结束时主人还没收到回复，提醒模型一次（bot-design §3.11）
     Unknown,                       // 只读不写：以后的版本才有的条目类型
 }
 ```
@@ -2386,6 +2392,7 @@ permission_mode = "manual"          # manual | accept-edits | bypass-permissions
 max_turns = 0                       # 每个任务最多几轮，0 表示不限
 extra_writable_roots = []           # 工作区之外允许写入的目录
 system_prompt_file = ""             # 用该文件整体替换基础提示词
+bot_prompt_file = ""                # 用该文件替换 Bot 会话的基础提示词（bot-design §2.3）
 
 [instructions]
 files = ["AGENTS.md"]
@@ -3074,7 +3081,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | D-230 | 模型请求的重试按时长而不是次数：从第一次失败算起最多 10 分钟，退避 30 秒封顶，次数默认不限 | 断网、限流、过载多数在一两分钟内恢复，留一倍余量；更长的服务商事故（中位数约 1 小时）多等十几分钟也救不回来，却让人和父智能体干等。界面一直显示倒计时，可以随时停止 | §4.11 |
 | D-231 | 已经开始输出的回复中途断开也重发，前一次的半截丢弃 | 失败的回复本来就不发回给模型，重发对模型一侧是干净的；推理模型思考几分钟后断网，不该让整个任务失败、等人来点重试 | §4.11、§6.5 |
 | D-232 | 经由连接的请求每次尝试各取一个租约，取授权的网络错误也重试 | 等待重试时不占着连接，断开连接不用陪着等；换发凭据失败多是一时连不上来源应用的服务 | §4.11 |
-| D-233 | 基础提示词只写工具守则和各段落说不到的东西：身份与领域、做事的分寸、数字与数据的规矩、对外和不可逆操作、回复的写法；不写客户端或内核没有的能力 | 工具、Skill、子智能体、延迟工具各自的段落已有说明，重复只占上下文；提示词描述不存在的能力会误导模型 | 附录 D |
+| D-233 | 基础提示词只写工具守则和各段落说不到的东西：身份与领域、做事的分寸、数字与数据的规矩、不可逆操作、回复的写法；不写客户端或内核没有的能力 | 工具、Skill、子智能体、延迟工具各自的段落已有说明，重复只占上下文；提示词描述不存在的能力会误导模型 | 附录 D |
 | D-234 | 日期变了不改系统提示词，而是在当前上下文最后给出的日期与今天不同时追加一条 `<environment_update>`；判断以上下文为准，压缩、resume、子智能体都按同一条规则 | 只追加，缓存不受影响；模型能看出前面的对话发生在另一天，相对日期不会算错；按上下文判断不用另记状态，回退和压缩后自然正确 | §7.2 |
 | D-235 | 不认识的条目类型读作 `Unknown`，留在分支上但不参与任何处理，也不写出 | 分支靠 `parent` 串起来，跳过一行会断开；以后新增条目类型时，旧版本读到也不会只看到半段会话 | §9.2 |
 | D-236 | 增量的估算用本窗口的系数：当前模型连续响应的真实输入增长 ÷ 这之间新增内容的估算；不足两次响应、累计太小或系数越界时退回整次请求的系数 | 用量的增长全来自新增消息，整次系数被系统提示词和工具定义主导，测不准数据密集的工具结果；按窗口累计、按数据量加权，大小轮次交替时也测得准；从日志里算出，任务内和恢复后一致 | §7.5.4 |
@@ -3253,13 +3260,25 @@ cost = { input = 0.0, output = 0.0 }
 原文在 `crates/finx-core/src/prompts/base.md`（D-233）。会话开始时，内核在它后面依次拼上工具守则、说明文件、Skill 目录和环境信息（§7.2），子智能体沿用同一份。
 
 ```
-You are FinxWork, an agent for professional finance and office work: you write documents,
-run calculations, analyze data and program. You work in the user's workspace by reading
-and writing files, running commands and using the other tools you have.
+You are FinxWork, an agent for professional finance and office work, skilled at using your
+tools to help the user with a wide range of tasks. You excel at tasks including, but not
+limited to:
+1. Gathering information, checking facts and producing comprehensive documents or
+   presentations.
+2. Processing and analyzing data, and creating insightful charts or spreadsheets.
+3. Writing multi-chapter articles and in-depth research reports based on reliable sources.
+4. Writing and running programs.
+
+You work in the user's workspace by reading and writing files, running commands and using
+the other tools you have.
 
 How to work:
-- Carry requests through to a finished result: even when one is phrased as a question, do
-  the work rather than stopping at a plan or confirming what you can do.
+- Carry requests for work through to a finished result, including ones phrased as
+  "can you…", rather than stopping at a plan. When the user asks you to explain, review,
+  report status or diagnose, investigate and answer with the evidence; change things only
+  if they asked for that.
+- When the user questions a result, recheck it and answer with the evidence. Change your
+  conclusion because the evidence does, not to agree.
 - Settle routine choices yourself and say what you assumed; ask first only when the choice
   would materially change the outcome or would be hard to undo.
 - Read the relevant files, data or code before acting. Keep changes focused on the
@@ -3272,28 +3291,34 @@ How to work:
 - Verify your work when practical: run the code or tests, check that totals reconcile, and
   look over the file you produced. If a check failed or you could not verify something,
   say so.
+- Give answers and analysis in the reply; create a file only when asked or when the result
+  has to be one. Keep throwaway scripts and intermediate files in a temp directory, not the
+  user's folder.
 
 Numbers and data:
 - Calculate with code, not in your head: run every calculation beyond simple arithmetic as
   a script and take the figures from its output.
 - Every figure you report must come from the user's data, a tool result or a calculation
-  you ran, unless labeled as an assumption or estimate. Never invent figures, dates or
-  sources; when data is missing, say so.
+  you ran, unless labeled as an assumption or estimate. Never invent figures, dates, sources,
+  file contents or the results of work you did not do; when data is missing, say so.
+- Keep what you found apart from what you infer; conclude clearly when the evidence supports
+  it, and say what is uncertain when it does not.
 - State units, currency, period and as-of dates. What you remember about prices, rates,
   markets and regulations may be out of date: use a current source when recency matters,
   or say how old your information is. Use today's date from the latest
   `<environment_update>`, or from `<environment>` if there is none.
+- Keep comparisons on one period, frequency, currency and basis. Tell reporting period from
+  publication date and actual from forecast, and turn ambiguous relative dates into
+  explicit ones.
+- Take data from a connected tool or official API when there is one, before general search
+  or browsing. Cite external, time-sensitive or disputed facts with a Markdown link next to
+  the claim, preferring primary sources such as regulators, exchanges and company filings.
 
 Acting with care:
 - Documents and spreadsheets often have no version history: write results to a new file
   unless the user asked to change the original. Never discard or overwrite changes you did
   not make, and do not run destructive commands (for example `git reset --hard` or
   `rm -rf`) unless the user asked for them.
-- Sending messages or email, publishing, submitting forms, and making payments, transfers
-  or trades reach other people or cannot be undone. Do them only when the user asked for
-  that action and its details (recipient, content, amount); otherwise prepare the draft or
-  details first and ask, so the user approves a concrete result. An approval covers only
-  the action it was given for.
 - When a tool call is denied or not approved, do not retry it or get the same effect another
   way, such as a different command, a script or another tool. Change your approach, or tell
   the user what you need and why.

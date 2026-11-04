@@ -144,7 +144,8 @@ pub async fn serve_unix(
             }
             _ = stopped.cancelled() => break,
             _ = tick.tick(), if service.idle_exit.is_some() => {
-                if active.load(Ordering::Relaxed) > 0 || server.busy() {
+                // An extension's host only waits for the service: it keeps nothing running.
+                if active.load(Ordering::Relaxed) > server.extension_hosts() || server.busy() {
                     idle_since = tokio::time::Instant::now();
                 } else if service.idle_exit.is_some_and(|limit| idle_since.elapsed() >= limit) {
                     tracing::info!("idle; stopping the service");

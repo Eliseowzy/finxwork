@@ -117,10 +117,120 @@ export type AuthSetResult = {
   verified: boolean;
 };
 
+/** A bot's avatar. */
+export type Avatar = {
+  kind: "mark";
+} | {
+  hue: AvatarHue;
+  kind: "char";
+  shape: AvatarShape;
+} | {
+  hue: AvatarHue;
+  kind: "mono";
+} | {
+  kind: "image";
+  rev: number;
+};
+
+/** The colours behind an avatar's character or initial: muted, the same in both themes. */
+export type AvatarHue = "slate" | "sage" | "clay" | "ochre" | "plum" | "teal" | "rose" | "stone";
+
+/** An avatar given to `bots/create` and `bots/update`. */
+export type AvatarInput = {
+  kind: "mark";
+} | {
+  hue: AvatarHue;
+  kind: "char";
+  shape: AvatarShape;
+} | {
+  hue: AvatarHue;
+  kind: "mono";
+} | {
+  kind: "image";
+  png: string;
+};
+
+/** The characters an avatar can show, drawn by the client. */
+export type AvatarShape = "round" | "box" | "ghost" | "cloud" | "dome" | "cat" | "egg" | "gem";
+
+export type BotAvatarResult = {
+  /** `data:image/png;base64,…` */
+  data: string;
+};
+
+export type BotCreateParams = {
+  avatar: AvatarInput;
+  /** 1 to 20 characters once trimmed. */
+  name: string;
+};
+
+/** Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. */
+export type BotIdParams = {
+  bot_id: string;
+};
+
+/** Parameters of `bots/open`, which answers as `session/new` does. */
+export type BotOpenParams = {
+  bot_id: string;
+  events?: EventFilter;
+  history_limit?: number | null;
+};
+
+/** Result of `bots/create` and `bots/update`. */
+export type BotResult = {
+  bot: BotSummary;
+};
+
+export type BotSummary = {
+  avatar: Avatar;
+  /** RFC 3339. */
+  created_at: string;
+  /** The bot every user has: it cannot be deleted. */
+  default?: boolean;
+  /** Background helpers (sub-agents) at work. */
+  helpers?: number;
+  id: string;
+  last?: LastMessage | null;
+  name: string;
+  pinned?: boolean;
+  /** Its conversation, once there is one. */
+  session_id?: string | null;
+  /** It is answering: its conversation runs a task. */
+  typing?: boolean;
+  /** Messages and approval requests since the user last looked (`bots/read`). */
+  unread?: number;
+  /** The oldest approval it waits for: what the call does. */
+  waiting?: string | null;
+};
+
+export type BotUpdateParams = {
+  avatar?: AvatarInput | null;
+  bot_id: string;
+  name?: string | null;
+  pinned?: boolean | null;
+};
+
+/** Server notification to `bots/subscribe`rs: the bots that changed, and those deleted. */
+export type BotsChangedParams = {
+  bots: BotSummary[];
+  deleted?: string[];
+};
+
+/** Result of `bots/subscribe`. */
+export type BotsResult = {
+  bots: BotSummary[];
+};
+
 /** A range of bridge versions, both ends included. */
 export type BridgeRange = {
   max: number;
   min: number;
+};
+
+/** Parameters of `browser/assign_tab`. */
+export type BrowserAssignTabParams = {
+  session_id: string;
+  target_id: string;
 };
 
 /** Parameters of the `browser/cdp` notification, in both directions. */
@@ -131,17 +241,52 @@ export type BrowserCdpParams = {
   stream: number;
 };
 
+/** Parameters of `browser/close_tabs`. */
+export type BrowserCloseTabsParams = {
+  session_id: string;
+  /** Only this tab. */
+  target_id?: string | null;
+};
+
+/** What the service tells the extension through its host (`browser/control`). */
+export type BrowserControl = {
+  kind: "reveal";
+  session_id?: string | null;
+  target_id?: string | null;
+} | {
+  kind: "close_tabs";
+  session_id: string;
+  target_id?: string | null;
+} | {
+  kind: "assign_tab";
+  session_id: string;
+  target_id: string;
+} | {
+  kind: "sessions";
+  sessions: { [key: string]: ExtensionSession };
+} | {
+  kind: "forget";
+  session_id: string;
+} | {
+  in_use: boolean;
+  kind: "in_use";
+};
+
 /** Which browser a `browser/host` connection provides. */
 export type BrowserHostKind = "embedded" | "extension";
 
 /** Parameters of `browser/host`. Older hosts send none: the embedded browser. */
 export type BrowserHostParams = {
+  /** The account signed in to that browser profile, when it has one. */
+  account?: string | null;
   /** The bridge versions the extension speaks (browser-design D-219). An extension host that sends none has an extension from before them: version 1. */
   bridge?: BridgeRange | null;
   /** The browser the host is in, as it names itself: "Google Chrome 141.0.7390.54". */
   browser?: string | null;
   /** The FinxWork extension's version, for an extension host. */
   extension_version?: string | null;
+  /** Tells this extension's browser and profile apart from others: kept by the extension. */
+  instance?: string | null;
   kind?: BrowserHostKind;
 };
 
@@ -151,6 +296,29 @@ export type BrowserHostResult = {
   bridge?: number | null;
   /** Set when the extension cannot be used. The connection stays, so clients can say what to update, but carries no browser. */
   problem?: ExtensionProblem | null;
+};
+
+/** What the extension asks of the app (`browser/request`). */
+export type BrowserRequest = {
+  kind: "open_session";
+  session_id: string;
+} | {
+  kind: "tab_offered";
+  target_id: string;
+  title: string;
+  url: string;
+};
+
+/** Parameters of `browser/reveal`. */
+export type BrowserRevealParams = {
+  /** The session whose tab to show: the one last used, unless `target_id` says which. */
+  session_id?: string | null;
+  target_id?: string | null;
+};
+
+/** Parameters of `browser/allow` and `browser/cancel_wait`. */
+export type BrowserSessionParams = {
+  session_id: string;
 };
 
 /** Parameters of `browser/site_icon`. */
@@ -171,8 +339,23 @@ export type BrowserSiteIconResult = {
 export type BrowserStatus = {
   /** Whether a desktop app shows embedded browsers. */
   embedded: boolean;
-  /** Set while the FinxWork extension is connected; with `problem` when it cannot be used. */
+  /** The extension the agent uses, while one is connected; with `problem` when it cannot be used. When several are connected, the others are in `extensions`. */
   extension?: ExtensionStatus | null;
+  /** Every extension connected, oldest first, when there is more than one. */
+  extensions?: ExtensionStatus[];
+  /** Why the last extension host was refused, until one connects. */
+  refused?: string | null;
+  /** Sessions the user took their browser back from. */
+  revoked?: string[];
+  /** Each session's tabs in the user's own browser. */
+  tabs?: { [key: string]: YoursTab[] };
+  /** Sessions waiting for the user's own browser to connect. */
+  waiting?: string[];
+};
+
+/** Parameters of `browser/use_extension`. */
+export type BrowserUseExtensionParams = {
+  instance: string;
 };
 
 /** Parameters of the `$/cancel_request` notification. */
@@ -775,14 +958,53 @@ export type EventFilter = {
   exclude?: EventClass[];
 };
 
+/** What the extension says through its host (`browser/extension`). */
+export type ExtensionMessage = {
+  kind: "tabs";
+  sessions: { [key: string]: YoursTab[] };
+} | {
+  kind: "revoked";
+  sessions: string[];
+} | {
+  kind: "open_session";
+  session_id: string;
+} | {
+  kind: "done";
+  session_id: string;
+} | {
+  kind: "stop";
+  session_id: string;
+} | {
+  kind: "offer_tab";
+  target_id: string;
+  title: string;
+  url: string;
+} | {
+  kind: "use_this";
+};
+
 /** Why a connected extension cannot be used: it and finx share no bridge version. */
 export type ExtensionProblem = "update_extension" | "update_finx";
 
+/** What a session looks like to the extension. */
+export type ExtensionSession = {
+  /** What it waits for the user to do in the page. */
+  handoff?: string | null;
+  state: SessionState;
+  title: string;
+};
+
 /** The user's own browser, lent through the FinxWork extension (browser-design §8.4). */
 export type ExtensionStatus = {
+  /** The account signed in to that browser profile, when it has one. */
+  account?: string | null;
   /** "Google Chrome 141.0.7390.54", when the extension said. */
   browser?: string | null;
   extension_version?: string | null;
+  /** The agent uses this one; the others wait. */
+  in_use?: boolean;
+  /** Tells this browser and profile apart from others. */
+  instance?: string | null;
   /** Set when the extension is connected but cannot be used until one side is updated. */
   problem?: ExtensionProblem | null;
 };
@@ -897,6 +1119,17 @@ export type InitializeResult = {
   capabilities: ServerCapabilities;
   protocol_version: number;
   server_info: PeerInfo;
+};
+
+/** The last message of a bot's conversation, for its row in the list. */
+export type LastMessage = {
+  from: Speaker;
+  /** The images it carried. */
+  images?: number;
+  /** The start of its text as written (at most 1000 characters): the client takes the line to show from it, as it does for the conversation. */
+  text: string;
+  /** RFC 3339. */
+  ts: string;
 };
 
 export type ListingError = {
@@ -1477,6 +1710,8 @@ export type ServerCapabilities = {
   agents: boolean;
   /** `auth/set`, `auth/delete`, and `providers` in `models/list`. */
   auth: boolean;
+  /** Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4). */
+  bots: boolean;
   /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */
   customize: boolean;
   /** `browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3). */
@@ -1827,6 +2062,8 @@ export type SnapshotResult = {
   snapshot: SessionSnapshot;
 };
 
+export type Speaker = "user" | "bot";
+
 export type StopReason = "stop" | "length" | "tool_use" | "error" | "aborted";
 
 export type TaskOutcome = "completed" | "failed" | "interrupted";
@@ -1932,13 +2169,38 @@ export type UserMessage = {
 /** Warnings a client may recognise. A client meeting a code it does not know shows `message`. */
 export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 
+/** A session's tab in the user's own browser, as the extension reports it: the extension keeps which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7). */
+export type YoursTab = {
+  /** The agent is attached to it now, so a task is using it; Chrome shows its debugging bar. */
+  attached?: boolean;
+  target_id: string;
+  title: string;
+  url: string;
+};
+
 /** Requests: [params, result]. */
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "bots/avatar": [BotIdParams, BotAvatarResult];
+  "bots/clear": [BotIdParams, Empty];
+  "bots/create": [BotCreateParams, BotResult];
+  "bots/delete": [BotIdParams, Empty];
+  "bots/open": [BotOpenParams, SessionNewResult];
+  "bots/read": [BotIdParams, Empty];
+  "bots/subscribe": [Record<string, never>, BotsResult];
+  "bots/unread": [BotIdParams, Empty];
+  "bots/unsubscribe": [Record<string, never>, Empty];
+  "bots/update": [BotUpdateParams, BotResult];
+  "browser/allow": [BrowserSessionParams, Empty];
+  "browser/assign_tab": [BrowserAssignTabParams, Empty];
+  "browser/cancel_wait": [BrowserSessionParams, Empty];
+  "browser/close_tabs": [BrowserCloseTabsParams, Empty];
   "browser/host": [BrowserHostParams, BrowserHostResult];
+  "browser/reveal": [BrowserRevealParams, Empty];
   "browser/site_icon": [BrowserSiteIconParams, BrowserSiteIconResult];
   "browser/status": [Record<string, never>, BrowserStatus];
+  "browser/use_extension": [BrowserUseExtensionParams, Empty];
   "chatgpt/cancel": [ChatGptCancelParams, ChatGptStatus];
   "chatgpt/login": [Record<string, never>, ChatGptStatus];
   "chatgpt/logout": [Record<string, never>, ChatGptStatus];
@@ -2003,8 +2265,11 @@ export interface Methods {
 
 /** Notifications: their params. */
 export interface ServerNotifications {
+  "bots/changed": BotsChangedParams;
   "browser/cdp": BrowserCdpParams;
   "browser/changed": BrowserStatus;
+  "browser/control": BrowserControl;
+  "browser/request": BrowserRequest;
   "config/changed": ConfigChangedParams;
   "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
@@ -2020,6 +2285,7 @@ export interface ServerNotifications {
 export interface ClientNotifications {
   "$/cancel_request": CancelRequestParams;
   "browser/cdp": BrowserCdpParams;
+  "browser/extension": ExtensionMessage;
 }
 
 /** JSON-RPC error codes and the `kind` their data carries. */
@@ -2049,6 +2315,9 @@ export const RPC_ERROR_KINDS = {
   "-32031": "mcp_login_failed",
   "-32032": "doc_unavailable",
   "-32033": "doc_password",
+  "-32040": "bot_not_found",
+  "-32041": "bot_default",
+  "-32042": "bot_invalid",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

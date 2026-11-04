@@ -126,7 +126,7 @@ const pdfBar = `!!document.querySelector('.fpn .dcp-viewer:not([hidden]) .dcp-ba
 let failed = false;
 try {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
     cwd: project,
   });

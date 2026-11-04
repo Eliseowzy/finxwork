@@ -33,6 +33,8 @@ const check = (ok, message) => ok || fail(message);
 // Short: the kernel's socket lives under it, and a socket path has at most 103 bytes.
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxc-"));
 const home = path.join(work, "finx");
+// A private HOME: the app registers the extension's host in the browsers under it.
+fs.mkdirSync(path.join(work, "home"), { recursive: true });
 const profile = path.join(work, "profile");
 const socket = path.join(home, "run/finx.sock");
 
@@ -96,7 +98,7 @@ let app = null;
 async function launch() {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file", BAILIAN_TOKEN_PLAN_API_KEY: "sk-e2e" },
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file", BAILIAN_TOKEN_PLAN_API_KEY: "sk-e2e" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

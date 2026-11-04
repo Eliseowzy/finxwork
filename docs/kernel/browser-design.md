@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.3 |
-| 日期 | 2026-11-03 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明）。v1.3：桌面端退出时不再重建停靠窗口，面板显示过网页后也能一次退出（§8.3.4） |
+| 版本 | v1.4 |
+| 日期 | 2026-11-04 |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明）。v1.3：桌面端退出时不再重建停靠窗口，面板显示过网页后也能一次退出（§8.3.4）。v1.4：用户自己的浏览器按对话显示，任务结束后放开标签页、之后再接管，连接断了能自己恢复，需要用户时等用户（§8.4.7，D-330 至 D-341） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -707,18 +707,20 @@ finx browser native-host（Chrome 拉起的同一个 finx 程序）
 finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 ```
 
-- **扩展**在 `apps/chrome-extension`：MV3，权限 `debugger`、`nativeMessaging`、`tabs`、`tabGroups`、`alarms`。不需要构建，"加载已解压的扩展程序"直接装入。`manifest.json` 里的 `key` 把扩展 ID 固定为 `fgaadfmkicjchgjlomjemofnllanlcoo`，Native Messaging 清单按这个 ID 放行。
+- **扩展**在 `apps/chrome-extension`：MV3，权限 `debugger`、`nativeMessaging`、`tabs`、`tabGroups`、`alarms`、`storage`、`identity`、`identity.email`（后两个只用来区分同一台电脑上的多个配置文件，§8.4.7）。不需要构建，"加载已解压的扩展程序"直接装入。`manifest.json` 里的 `key` 把扩展 ID 固定为 `fgaadfmkicjchgjlomjemofnllanlcoo`，Native Messaging 清单按这个 ID 放行。
 - **宿主**就是 `finx browser native-host`（隐藏的子命令），不另做二进制。Chrome 的清单不能带参数，也不传环境变量，所以 `finx browser extension install` 写一个启动脚本 `~/.finx/browser/native-host`，内容是 `FINX_HOME=<home> exec <finx> browser native-host "$@"`，清单指向它。
-- **服务端**与内嵌浏览器共用 §8.3.1 的做法：把这条连接接到内存字节流上，finx-browser 在上面照常建 `Conn`。池里另有一个扩展的位置（与桌面端的宿主互不替换），`BrowserKind::Extension` 标明来源。
+- **服务端**与内嵌浏览器共用 §8.3.1 的做法：把这条连接接到内存字节流上，finx-browser 在上面照常建 `Conn`。池里另有一份扩展的列表（与桌面端的宿主互不替换，§8.4.7），`BrowserKind::Extension` 标明来源。
 - **帧**：
   - 扩展 → 宿主：`{stream, data}`，一条 CDP 响应或事件；
   - 宿主 → 扩展：`{stream, data}`。超过 Chrome 1 MB 上限的拆成 `{stream, part, more}`，扩展拼回去；
-  - 宿主 → 扩展：服务来去时发 `{status: "connected" | "waiting", reason}`，扩展据此放开旧浏览器，并在工具栏图标上显示状态。
+  - 宿主 → 扩展：服务来去时发 `{status: "connected" | "waiting", reason}`，扩展据此放开旧浏览器；
+  - 两个方向都有 `{control: {kind, ...}}`，扩展和应用互相发起操作走这里（§8.4.7）。
   - `stream` 的含义与 §8.3.1 相同：新的编号就是新的浏览器。
 - **生命周期**：
   - 扩展启动时就 `connectNative`，宿主随之启动；
   - 找不到服务时，宿主每 2 秒重试，不退出。端口一直开着，service worker 也就不会被回收；
-  - 扩展另设每分钟一次的 alarm，宿主没了就重连；
+  - 服务拒绝这个宿主时（§8.4.3），宿主以退出码 3 退出，由扩展用新程序重新拉起；
+  - 宿主没了，扩展按 1 秒到 30 秒退避重连，另有每 30 秒一次的 alarm 兜底；
   - Chrome 关掉端口（扩展停用、Chrome 退出）时，宿主退出。
 - **只连 socket 服务**：`finx` 交互界面和 `finx exec` 在自己的进程里运行内核，不开 socket，用不了这个后端。这时报"扩展没有连上"。
 
@@ -728,11 +730,12 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 
 | 方法 | 扩展的做法 |
 |---|---|
-| `Target.createTarget` | 在 FinxWork 自己的窗口里开标签页：第一次需要时新建窗口，不抢焦点。按 `finxSession` 放进名为 FinxWork 的标签组 |
+| `Target.createTarget` | 在 FinxWork 自己的窗口里开标签页：第一次需要时新建窗口，不抢焦点。按 `finxSession` 放进以这个对话命名的标签组（§8.4.7）|
 | `Target.attachToTarget` | `chrome.debugger.attach` 这个标签页，分配会话 id |
 | `Target.closeTarget` / `activateTarget` / `getTargetInfo` | 关闭标签页 / 在它的窗口里切到它 / 返回 URL 和标题 |
 | `Browser.setDownloadBehavior` | 不处理：下载按用户 Chrome 自己的设置保存，内核不知道 |
-| `Target.getTargets` | 返回空：这一期不提供把用户已有的标签页交给智能体 |
+| `Target.getTargets` | 带 `finxSession` 时列出记在这个会话名下的标签页，让内核接管（§8.4.7）；不带时返回空，用户自己的标签页不列出 |
+| `Target.detachFromTarget` | 带 `finxRelease` 时放开调试器，标签页留着，仍记在会话名下（bridge ≥ 2）；不带时只断开这个 target 的会话 |
 | `Browser.close` | 放开所有标签页（detach），不关 |
 | 带会话 id 的其他方法 | 白名单内的转给标签页；子 target（跨源 iframe）带着自己的会话 id 转发 |
 
@@ -743,10 +746,10 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   - 不会占用用户正在看的标签页；
   - 智能体的标签页在自己的窗口里是活动标签页，不会像后台标签页那样被节流，截图和渲染照常。
 - **用户收回控制**：
-  - 用户关掉 Chrome 顶部"正在调试此浏览器"的提示条，调试器断开（`canceled_by_user`）。标签页留着，但不再归智能体；
-  - 内核按"标签页已关闭"处理，结果里写明是用户收回的。
-  - 这里不按原草案"下一条命令重新附加"：重新附加会丢掉内核已经开启的域和自动附加，后续结果不可靠；而且用户关提示条，就是想收回控制。
-- **内核断开**（服务退出，或者换了新的 stream）：放开所有标签页，不关，用户可能还在看。
+  - 用户关掉 Chrome 顶部"正在调试此浏览器"的提示条，调试器断开（`canceled_by_user`）。标签页留着，这个对话暂时不能再用用户的浏览器，直到用户重新允许（§8.4.7，D-335）；
+  - 结果里写明是用户收回的，不再按"标签页已关闭"处理；
+  - 这里不按原草案"下一条命令重新附加"：用户关提示条，就是想收回控制。
+- **内核断开**（服务退出，或者换了新的 stream）：放开所有标签页，不关，归属还记着，下次接管（§8.4.7）。
 
 #### 8.4.3 选用与安全（D-215、D-216）
 
@@ -754,15 +757,16 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   - `browser.extension = true` 打开它，与内置浏览器并存。旧写法 `backend = "extension"` 读作 `extension = true`、`backend = "auto"`。项目配置不能打开它（D-178）；
   - 两个浏览器都开着时，`browser_navigate` 和 `browser_tabs` 多一个参数 `browser`（`builtin` 或 `yours`）。新页面默认在内置浏览器里开，只在任务需要用户的账号或用户点名时用 `yours`；之后的读取、操作、截图跟着标签页走；
   - 用户浏览器里的标签页和 ref 以 `y` 开头（`y2`、`ye14`），两个浏览器的编号不会撞上；`browser_tabs` 分别列出两个浏览器里的标签页；
-  - 没有连上时报错，说明需要用户在 FinxWork 里重新连接，不换到内置浏览器。
+  - 没有连上时先等（§8.4.7），不换到内置浏览器：两边的登录状态不同，换了结果可能是错的。
 - **bypass 也询问**：
   - 调用落在用户的浏览器里时，`bypass-permissions` 不再跳过公网站点的 `Navigate` 和 `Act` 询问，也不再跳过工作区内文件的 `Upload` 询问。落在哪里按每次调用判断：新页面看 `browser` 参数，其余看标签页属于哪个浏览器（原来按配置判断的 `SitePolicy.real_logins` 已去掉）；
   - 会话授权、永久允许（`browser.sites`，包括 `"*"` 所有网站，D-221）和回环地址照常放行，§7 的其他闸不变；
   - 询问的原因里写明"这是用户自己的浏览器，登录状态是真实的"（bypass 下再加"所以 bypass 也询问"）；`approval_requested` 带 `own_browser: true`，桌面端据此把标题写成"在你的浏览器里打开 X？"（connectors-entry-design DD-74）。
-- **告诉模型**：每个会话的第一次结果里写明"这是用户自己的 Chrome，标签页在 FinxWork 标签组里，登录状态是真的"。
+- **告诉模型**：每个会话的第一次结果里写明"这是用户自己的浏览器，用户看得到智能体开的标签页，登录状态是真的"。
 - **宿主身份**（D-198 的落地）：
   - socket 本来就只接受同一个用户的进程（0700/0600、`peer_cred` 的 uid）；
-  - 服务另从 `peer_cred` 取对端 pid，用 macOS 的 `proc_pidpath` 或 Linux 的 `/proc/<pid>/exe` 找到它的程序，要求与服务自己的可执行文件是同一个文件。宿主就是 finx 本身，所以这条检查成立。不满足时，`browser/host {kind: "extension"}` 返回错误；
+  - 服务另从 `peer_cred` 取对端 pid，用 macOS 的 `proc_pidpath` 或 Linux 的 `/proc/<pid>/exe` 找到它的程序，要求与服务自己的可执行文件是同一个文件。宿主就是 finx 本身，所以这条检查成立。不满足时，`browser/host {kind: "extension"}` 返回错误，错误数据的 `kind` 是 `HOST_REFUSED`，宿主据此退出（§8.4.7）；
+  - 这条检查防的是连错程序，不是安全边界：同一用户的进程可以直接启动真的宿主再通过它说话；
   - Native Messaging 清单的 `allowed_origins` 只写 finx 扩展的 ID，别的扩展拉不起宿主。`--extension-id` 可以追加 ID，例如商店版的；
   - 不做代码签名校验（理由同 D-198）。
 - **协议**：`browser/host` 新增可选参数 `{kind: "embedded" | "extension"}`，缺省为 `embedded`，旧的桌面端不用改。
@@ -778,7 +782,7 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   | 未连接 | 连接后能用自己的登录状态 | 连接 |
   | 使用中 | 显示"Google Chrome 156"和它的图标 | 停止使用 |
   | 已连接 | 扩展连着，但没有打开（`extension = false`），智能体只用内置浏览器 | 开始使用 |
-  | 未连接（之前在用） | 浏览器没开，或者扩展被停用、没装 | 打开 Chrome、重新连接 |
+  | 未连接（之前在用） | 写明原因：浏览器没开、宿主被拒绝、清单属于另一个 FinxWork，或者扩展被停用、没装 | 当下唯一该做的一步（打开 Chrome、打开扩展程序页面、接管），外加重新连接 |
   | 没有浏览器 | 本机没有 Chrome、Edge、Brave | 下载 Chrome |
 
 - **连接引导**（对话框，三步）：
@@ -787,9 +791,11 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   3. **连接**：等内核报告扩展连上，然后自动写入 `[browser] extension = true`。用户点"连接"就是同意，不再另外确认。
 - **状态从哪来**：
   - 扩展连上后先发 `{hello: {browser, extension_version}}`，宿主把它放进 `browser/host` 的参数；
-  - 客户端调用 `browser/status` 取得 `{extension?: {browser, extension_version}, embedded}`，之后在扩展来去时收到 `browser/changed`；
+  - 客户端调用 `browser/status` 取得 `{extension?, extensions, embedded, tabs, refused?, revoked, waiting}`（§8.4.7），之后在其中任何一项变化时收到 `browser/changed`；
   - 本机装了哪些浏览器、是否已经注册、是否正在运行，由桌面端主进程查（`main/browser/system.ts`）。
-- **应用启动时**：如果之前设置过，重新复制扩展、重写清单，让它们跟上应用的位置和版本。
+- **应用启动时、宿主被拒绝时、任务等浏览器时**：清单属于这个 `FINX_HOME` 或者已经失效时，重新复制扩展、重写清单，让它们跟上应用的位置和版本。属于另一个 `FINX_HOME` 的不动（§8.4.7）。
+- **诊断**：页面底部可以展开并拷贝整条链路的状态：应用版本、服务程序、启动脚本和它指向的程序、扩展文件夹和构建号、每个浏览器是否运行及清单归属、扩展的版本、上次拒绝的原因。
+- **多个浏览器**：同时连着两个以上时，这里列出每个浏览器和它的账号，由用户选一个（§8.4.7）。
 - **打包**：扩展放在 `Contents/Resources/chrome-extension`。
 - **命令行**留给开发者：`finx browser extension install | status | uninstall`。
 - 设置改动对已经打开的对话也生效，在它们各自的下一次模型请求之前（connectors-entry-design D-224）。
@@ -798,8 +804,8 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
 
 #### 8.4.5 以后再做
 
-- 把用户已有的标签页交给某个会话（扩展弹窗里选会话，对应 `Target.getTargets`）；
 - 下载放进会话目录；
+- 跨 macOS 桌面空间把窗口带到前面：现在靠 `chrome.windows.update` 加 `open -a`，真实桌面空间的行为还没有实测；
 - Windows：命名管道，清单写在注册表里。
 
 #### 8.4.6 上架商店与版本协商（D-219）
@@ -816,12 +822,122 @@ finx 服务（$FINX_HOME/run/finx.sock，桌面端启动的那个）
   - 没有共同版本时，结果是 `{problem: "update_extension" | "update_finx"}`。服务不把这个扩展放进池子，但记进 `ExtensionStatus.problem`，让 `browser/status` 照样报出来；宿主给扩展发 `{status: "outdated", update, reason}`，然后保持连接、不转发命令，直到某一边更新（任一边更新都会让宿主重启，重新协商）；
   - 内嵌浏览器随应用一起发布，不协商。
 - **更新**：
-  - 宿主的端口一直开着，service worker 不会空闲，Chrome 也就不会自己装上已经下载好的更新。所以扩展收到 `onUpdateAvailable` 后，等到智能体在这里没有标签页时调用 `chrome.runtime.reload()`（立即检查一次，之后每分钟的 alarm 再查）；
+  - 宿主的端口一直开着，service worker 不会空闲，Chrome 也就不会自己装上已经下载好的更新。所以扩展收到 `onUpdateAvailable` 后，等到智能体没有在用这里的标签页时调用 `chrome.runtime.reload()`（立即检查一次，之后每 30 秒的 alarm 再查）；
+  - 从文件夹装入的扩展没有 `onUpdateAvailable`，见 §8.4.7；
   - 收到 `update: "extension"` 时，扩展调用 `chrome.runtime.requestUpdateCheck()`，不用等商店的例行检查。
 - **桌面端**：`problem` 显示为"需要更新"。扩展太旧：说明它会自动更新，并给出"打开扩展程序页面"；应用太旧：给出"检查更新"。引导的等待步骤也显示这条提示，而且不会把这样的扩展当作已连接、自动启用。
 - **发版顺序**：调高 `BRIDGE_MIN` 会让旧扩展停用。所以先发能说新版本的扩展，等商店推送开，再发要求新版本的 FinxWork。
 - **商店 ID**：商店不接受 manifest 里的 `key`。第一次上传如果带上对应的 `key.pem`，就有机会沿用现有的 ID；否则商店会分配新 ID，填进 `cmd_browser.rs` 的 `STORE_EXTENSION_ID`，`finx browser extension install` 会同时放行两个 ID。
 - **打包与提交材料**：`pnpm --filter @finx/chrome-extension store-zip` 生成 `dist/finxwork-extension-<version>.zip`（去掉 `key`、测试和类型声明）。条目文案、权限说明、隐私政策草稿和步骤见 `apps/chrome-extension/store/listing.md`。可见性先选"不公开"。上架后在 `BrowserSettings.tsx` 填上 `STORE_URL`，引导第 2 步就换成"添加到 Chrome"。
+
+#### 8.4.7 标签页的归属与连接的恢复（D-330 至 D-341）
+
+用户自己的浏览器和内置浏览器不同：它在内核之外长期存在，连接随时可能断（应用更新、服务重启、Chrome 退出），标签页里还可能有用户填到一半的东西。所以这一节定的是：谁记得标签页属于谁，连接断了谁负责恢复，什么时候才打扰用户。界面部分见 [desktop/your-browser-design.md](../desktop/your-browser-design.md)。
+
+**一个机制：放开，再接管（D-330）**
+
+- **扩展记归属**：扩展的 `agentTabs` 是"哪个标签页属于哪个会话"的唯一来源，存在 `chrome.storage.session`，所以 service worker 被回收后还在；`chrome.runtime.reload()` 会清掉它，重载前先转存到 `chrome.storage.local.finxCarried`，新的 worker 取回后删除。
+- **内核随时放开**：下面几种情况，内核放开标签页，不关：
+  - 任务结束（`task_ended`），Chrome 的调试提示条随之消失；
+  - 会话卸载或关闭；
+  - 连接断开。
+- **下次调用接管**：`ensure()` 发现会话没有用户浏览器的 `BrowserSession` 时新建一个，新建时 `Target.getTargets {finxSession}` 列出记在这个会话名下的标签页，逐个接管（`adopt_pending`，与内嵌浏览器相同）。
+- **编号不变**：内核另存一份 `TabNumbers`（标签页 id、ref 编号、当前标签页），接管后 `y1` 还是 `y1`。旧 ref 作废，所以第一次结果写明"标签页还开着，但之前的 ref 没了，先取快照"。
+- **关不关由用户决定**：放开的标签页留在用户窗口里。清理走环境卡那一行的"全部关闭"（`browser/close_tabs`）。删除会话时（`browser/control {kind: "forget"}`），标签页移出分组，从此是用户自己的。
+- **子智能体**：它的标签页记在主对话名下（`label` 是根会话的 id），所以用户在同一行、同一个分组里看到它们。子智能体结束时放开，不关（这是 D-206 在用户浏览器上的例外），主对话下次调用接管。
+- **旧扩展**：bridge 1 的扩展没有 `finxRelease`，内核走老路（`EmbeddedHost::keeps_tabs()` 为假时直接关闭或放开）。`BRIDGE` 升到 2，`BRIDGE_MIN` 仍是 1。
+
+**连接断了谁来恢复（D-331、D-332、D-333）**
+
+Native Messaging 只能由浏览器发起，应用没法让 Chrome 重连；但宿主还活着时，可以让它退出。各环节的处理：
+
+| 情况 | 处理 | 用户看到 |
+|---|---|---|
+| 应用被替换，宿主还跑着旧程序 | 服务返回 `HOST_REFUSED`，宿主退出（码 3），扩展 1 秒后重连，拉起新程序 | 实测约 2 秒恢复，无需操作 |
+| 宿主崩溃 | 扩展同样退避重连 | 实测约 1.3 秒恢复 |
+| 服务重启 | 宿主每 2 秒重试 | 无需操作 |
+| 启动脚本指向的程序与服务不同 | 服务把原因记进 `browser/status.refused`；应用见到就重写启动脚本，下一次重试成功 | 无需操作 |
+| 清单被改坏或指向的文件没了 | 应用启动时、任务等浏览器时修复 | 无需操作 |
+| 浏览器没开 | 任务要用时应用在后台启动它（`open -g -a`），等待期间每 20 秒再试一次；只启动设置过的浏览器 | 对话里显示"等你的浏览器连上" |
+| 扩展被停用或删除 | 只有用户能处理：等 10 秒还没连上，对话里出卡片，按钮直达扩展程序页面；用户也可以选"这次不用" | 卡片 |
+| 扩展或应用太旧，没有共同的 bridge 版本 | 只有用户能处理：同样的卡片，说明更新哪一边 | 卡片 |
+| 宿主一直被拒绝（这个机制之前的旧代码，不会自己退出） | 只有用户能处理：卡片和设置页说明要在扩展程序页面刷新一次 | 卡片；只会发生一次 |
+
+- **宿主为什么要退出**：标准输入的读取不能取消，而被拒绝就说明这个进程跑的不是当前程序，留着也没用，所以直接 `exit(3)`。
+- **日志去重**：相同原因的拒绝只写一次。
+- **用了一半断线（D-333）**：已经发出的调用不重试，结果可能已经生效（点击可能已经发生）。`CdpError::Closed` 译成"连接在这次调用中断开，可能已经生效，也可能没有，先看页面再决定是否重做"。自动等待只用于还没开始的调用。
+
+**任务等浏览器（D-332）**
+
+`pool.wait_for_extension(label)` 在 `start()` 里调用：
+
+- 有客户端在跟 `browser/status`（能告诉用户）：一直等，直到连上或用户选"这次不用"（`browser/cancel_wait`，结果是 `YOURS_DECLINED`）；
+- 没有客户端：从未连上过的，立刻返回"扩展没有连上"；连上过的，等 `RECONNECT_WAIT`（35 秒，比扩展最长的 30 秒退避长一点），一般能等回来；
+- 等待中的会话出现在 `browser/status.waiting`。用户仍然可以停止任务。
+- 不换到内置浏览器。
+
+**标签组（D-334）**
+
+分组名是对话标题（前 30 个字符），颜色表示状态：运行中蓝色，等用户橙色（标题前加"等你 · "），其余灰色。服务在对话状态变化时发 `{kind: "sessions"}`。
+
+**交给用户（D-336）**
+
+登录和验证码由用户处理，任务停下来等，而不是模型说一句就结束回合：
+
+- `browser_wait {user: "..."}` 声明 `Authority::UserStep`，每种模式都询问，bypass 也不例外：这次询问本身就是等用户。没有可记住的授权。
+- 沿用审批的流程：批准是"我处理好了"，拒绝是"跳过这一步"。经 `call_tool` 调用时（浏览器工具按需加载）同样识别。
+- 用户点完后等页面最多 5 秒安定，把快照放进结果。
+- 扩展弹窗里也有"我处理好了"，走控制通道（`done`），服务用 `HubCmd::FromExtension` 提交，不要求那条连接附着在会话上。
+
+**用户收回控制（D-335）**
+
+- 扩展上报 `{kind: "revoked", sessions}`，服务记进 `pool.revoke`；
+- `pick()` 对这个会话返回 `YOURS_REVOKED`，新开标签页也一样：不然用户刚关掉提示条，模型下一步就能再开一个；
+- 用户在环境卡上点"允许"（`browser/allow`）后恢复。Router 现在保留断开的原因，结果里能说清楚。
+
+**多个浏览器或配置文件（D-337）**
+
+- 池里保留所有连接（`Vec<ExtensionLink>`），每个带 `instance`（扩展在 `storage.local` 里生成的 uuid）和 `account`（`chrome.identity.getProfileUserInfo`）；
+- 先连上的在用，后连上的待命，不再静默顶替；
+- 用户的选择（`browser/use_extension`，或者待命浏览器弹窗里的"改用这个浏览器"）写进 `~/.finx/browser/extension-in-use`；
+- 选中的那个不在时，不换到另一个：那可能是另一个账号。任务等它回来，卡片上给出"改用它"。
+
+**扩展和应用互相发起操作（D-338）**
+
+| 方向 | 消息 | 用途 |
+|---|---|---|
+| 扩展 → 服务（`browser/extension`） | `tabs` | 每个会话的标签页（网址、标题、是否附加），有变化就报 |
+| | `revoked` | 用户关掉了调试提示条 |
+| | `open_session` / `offer_tab` | 回到对话 / 把当前标签页交给 FinxWork，转成 `browser/request` 发给跟状态的客户端 |
+| | `done` / `stop` | 我处理好了 / 停止任务 |
+| | `use_this` | 改用这个浏览器 |
+| | `open_app` | 由宿主自己处理：启动应用，不经过服务 |
+| 服务 → 扩展（`browser/control`） | `reveal` | 把标签页带到前面 |
+| | `close_tabs` | 关闭这个对话的标签页 |
+| | `assign_tab` | 把用户交出的标签页给这个对话 |
+| | `sessions` / `in_use` | 对话的标题和状态 / 这个浏览器是否在用 |
+| | `forget` | 会话删除了，标签页归用户 |
+
+交出标签页的权限：只有用户在弹窗里点过的那个标签页才能被分配（`offered` 集合），应用不能借 `assign_tab` 拿到任意标签页。下一条消息会告诉模型"用户交给你一个标签页"。
+
+协议上新增 `browser/reveal`、`browser/close_tabs`、`browser/allow`、`browser/cancel_wait`、`browser/use_extension`、`browser/assign_tab`，通知 `browser/request`。`browser/status` 新增 `extensions`、`tabs`、`refused`、`revoked`、`waiting`。都是可选字段，旧客户端忽略即可。
+
+**扩展的更新（D-339）**
+
+商店版有 `onUpdateAvailable`（§8.4.6），从文件夹装入的没有，应用更新时只是换了文件，Chrome 还跑着旧代码：
+
+- 应用整体替换文件夹：先写到 `.new`，再改名，避免 Chrome 读到一半的文件；文件夹里写 `build.json`，内容是这些文件的哈希；
+- 扩展每次 alarm 读 `manifest.json` 和 `build.json`，版本或构建号变了就在智能体没有在用标签页时重载；
+- Chrome 回收 worker 后可能用新代码、旧清单启动，这时 `chrome.storage` 不存在。代码要能在这种状态下连上并重载，所以这些调用都做了判断；
+- 开发者模式关着时，重载会让 Chrome 把从文件夹装入的扩展停用（实测：`disableReasons.unsupportedDeveloperExtension`）；开着时重载不到 1 秒恢复，新权限也一并生效。用户装扩展时开发者模式本来就开着，但可能事后关掉。扩展查不到这个开关，所以引导里写明要保持打开；万一被停用，就是"扩展被停用"那一行：对话里的卡片直达扩展程序页面。商店版没有这个问题。e2e 测试要先打开开发者模式，否则重载后扩展就没了。
+
+**服务的空闲退出（D-340）**
+
+宿主只是在等服务，不算有人在用：`active > server.extension_hosts()` 才算活跃。否则退出应用后，只要 Chrome 开着，服务就永远不退出，扩展还显示已连接。
+
+**清单归属（D-341）**
+
+清单按 `manifest_state` 分四种：`missing`（没有）、`ours`（指向这个 `FINX_HOME`）、`dead`（指向的文件没了）、`other`（指向另一个 `FINX_HOME`）。应用自动刷新只碰 `ours` 和 `dead`；`other` 只有用户在连接引导里主动操作才接管。否则另一个 FinxWork，或者只隔离了 `FINX_HOME` 的测试，会把真实的清单改掉。凡是设了 `FINX_HOME` 的 e2e 都要同时设私有的 `HOME`，有测试检查。
 
 ## 9. 对外协议与界面
 
@@ -962,6 +1078,20 @@ action_timeout_secs = 10
 | 审批 | manual 模式下第一次打开某个 origin 时发出带 `proposed_grants`（本站点、所有网站）的 `approval_requested`；只允许一次时，第一次操作再问同一个问题；选"本会话允许"后不再询问；之后子智能体也能使用这条授权 |
 | `finx exec` | 没有配置 `browser.sites` 时访问外部站点得到说明配置方法的结果；配置以后能完成任务 |
 | 用户自己的 Chrome（三期） | 真实 Chrome 用 `Extensions.loadUnpacked` 装入扩展，ID 与 key 一致；扩展经 `install` 写的清单拉起真实的 `finx browser native-host`，宿主通过可执行文件核对连上 `finx serve`；会话打开页面、点击、看到结果，结果里说明这是用户的 Chrome；用户自己的标签页不出现在结果里；会话关闭后只关掉智能体的标签页（`crates/finx-cli/tests/e2e_browser_extension.rs`） |
+| 标签页的放开与接管 | 任务结束后标签页留着、调试器放开；下一个任务用同样的编号接管，并被告知旧 ref 作废；宿主被杀后约 1.3 秒恢复，任务接着用 |
+| 用户收回控制 | 模拟 `canceled_by_user`：状态列出会话，工具结果写明用户收回；`browser/allow` 后恢复 |
+| 交给用户 | `browser_wait {user}` 经 `call_tool` 发出询问，扩展弹窗显示并点"我处理好了"，任务带着页面快照继续 |
+| 交出标签页 | 弹窗交出当前标签页，客户端收到 `tab_offered`，`browser/assign_tab` 后模型列得出来，编号接着排 |
+| 替换程序 | 程序换了一份，旧宿主被拒绝并退出，扩展拉起新程序，会话找回标签页；拒绝只记一次日志 |
+| 服务被杀 | 宿主等到新服务，标签页还在原会话名下，`session/resume` 后读得到 |
+| 调用中断线 | 页面一直加载时杀宿主，模型看到"可能已经生效" |
+| 等浏览器 | 没有客户端跟状态时立刻报没连上；有客户端时一直等，`browser/cancel_wait` 后模型看到用户的选择 |
+| 文件夹里来了新构建 | 有标签页在用时不重载；任务结束后下一次 alarm 重载，标签页归属带过去 |
+| 新代码跑在旧清单下 | 没有 `chrome.storage` 也能连上；新清单出现后重载进去 |
+| 删除会话 | 标签页留着，移出分组 |
+| 多个连接 | 第二个连接不顶替第一个；选中的不在时不换到另一个；选择持久化 |
+| 宿主与空闲退出 | 只有宿主连着时服务照常空闲退出，宿主转为等待 |
+| 对话里的你的浏览器（桌面端） | `apps/desktop/e2e/your-browser.mjs`：真实应用、真实 Chrome、脚本模型走完清单修复、环境卡那一行、顶栏、标签页菜单、交给用户、通知、宿主被杀、收回控制、Chrome 退出后等待和卡片、交出标签页、全部关闭、诊断 |
 | 冒充扩展宿主 | 不是 finx 程序的连接声明 `kind: "extension"` 被拒，池里没有扩展 |
 | 面板显示过网页后退出 | 内置浏览器面板打开本地网页后发 SIGTERM，5 秒内正常退出，不用 SIGKILL 兜底；先关主窗口时（macOS），应用和标签页都还在，再发 SIGTERM 同样正常退出（`apps/desktop/e2e/browser-quit.mjs`，`FINXWORK_E2E_APP` 可换成打包版） |
 | 设置里连接浏览器 | 私有 HOME 下启动桌面端，"设置 › 浏览器"显示未连接；点连接后写好清单、复制扩展；真实 Chrome 从那个文件夹装入扩展后，引导显示已连接并写入配置；状态行显示"Google Chrome 156 · 使用中"；停止使用后配置改回 `auto`；Chrome 退出后显示未连接（`apps/desktop/e2e/system-browser.mjs`） |
@@ -1076,6 +1206,18 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-219 | 扩展上架商店、与应用分开更新：扩展和 finx 各自声明支持的 bridge 版本范围，服务取共同的最高版本；没有共同版本时连接保留但不可用，`ExtensionStatus.problem` 说明该更新哪一边；扩展有更新时，等到没有智能体标签页再重新加载 |
 | D-220 | 只是看起来能点的元素（自己的 `cursor: pointer` 或 `onclick` 属性）也给 ref，取自 DOM 快照的计算样式，不注入脚本；外面或里面已有 ref 时不给 |
 | D-221 | 一个网站一个问题：打开和操作公网站点都提议 `act` 级别的本站点和所有网站（`*`）两条授权；"所有网站"可以写进用户配置（`browser.sites."*"`，navigate 或 act），覆盖所有公网站点，不覆盖私有地址、站点 `deny`、域名策略、`Upload` 和 `Script`；扩展后端下 bypass 询问时，原因里写明是用户自己的 Chrome。取代 D-201 |
+| D-330 | 用户浏览器的标签页：扩展记归属，内核在任务结束、会话卸载、连接断开时放开不关，下次调用用 `Target.getTargets {finxSession}` 接管，编号不变；取代 D-214 的"内核断开即不再归属"。bridge 升到 2 |
+| D-331 | 被服务拒绝的宿主退出（码 3），由扩展拉起当前程序；拒绝原因进 `browser/status.refused`；扩展断线后 1 到 30 秒退避重连 |
+| D-332 | 调用用户浏览器时没连上就等：有客户端跟状态时等到连上或用户说这次不用；没有时从未连上过的立刻报错，连上过的等 35 秒。不换到内置浏览器 |
+| D-333 | 调用途中断线不自动重做，告诉模型可能已经生效 |
+| D-334 | 标签组以对话标题命名，颜色表示运行中、等用户、其余 |
+| D-335 | 用户关掉调试提示条后，这个对话不能再用用户的浏览器（也不能开新标签页），直到用户在应用里重新允许 |
+| D-336 | `browser_wait {user}` 把页面交给用户：每种模式都询问，沿用审批流程，批准后继续并带上快照；扩展弹窗也能说"我处理好了" |
+| D-337 | 多个浏览器或配置文件同时连着：先到先用，不顶替；用户选一个并持久化；选中的不在时不换到另一个 |
+| D-338 | 扩展和应用互相发起操作走 `{control}` 帧：`browser/extension`、`browser/control`，发给客户端的走 `browser/request`；用户只能交出在弹窗里点过的标签页 |
+| D-339 | 从文件夹装入的扩展自己看 `manifest.json` 和 `build.json`，变了就在空闲时重载；文件夹整体替换；旧清单下的新代码要能跑 |
+| D-340 | 宿主不算活跃连接，不阻止服务空闲退出 |
+| D-341 | 清单分 missing、ours、dead、other；自动刷新只碰 ours 和 dead，other 由用户主动接管；设了 `FINX_HOME` 的 e2e 必须同时设私有 `HOME` |
 | D-222 | 桌面端网站审批框：标题点名网站，下面一行是网址；按钮为拒绝、允许所有网站、始终允许此网站、允许一次，两个"始终"都写入配置；只在 bypass 下仍然询问时说明是用户自己的 Chrome |
 
 ### 待定问题

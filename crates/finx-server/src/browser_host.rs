@@ -26,16 +26,19 @@ pub(crate) struct HostLink {
     /// replaced by each `connect`, which ends the one before.
     inbound: Mutex<Option<(u64, mpsc::UnboundedSender<String>)>>,
     streams: AtomicU64,
+    /// An extension that lets tabs go and finds them again (browser-design §8.4.7).
+    keeps_tabs: bool,
 }
 
 impl HostLink {
-    pub(crate) fn new(conn: ConnHandle) -> Self {
+    pub(crate) fn new(conn: ConnHandle, keeps_tabs: bool) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(1);
         Self {
             id: NEXT.fetch_add(1, Ordering::Relaxed),
             conn,
             inbound: Mutex::new(None),
             streams: AtomicU64::new(0),
+            keeps_tabs,
         }
     }
 
@@ -58,6 +61,10 @@ impl HostLink {
 impl EmbeddedHost for HostLink {
     fn id(&self) -> u64 {
         self.id
+    }
+
+    fn keeps_tabs(&self) -> bool {
+        self.keeps_tabs
     }
 
     fn connect(&self) -> Result<Stream, BrowserError> {
@@ -289,6 +296,8 @@ mod tests {
                 action_timeout: Duration::from_secs(10),
                 label: Some("session-1".into()),
                 prefix: "",
+                numbers: Default::default(),
+                note: None,
             },
         );
         let url = serve_page("<title>Hosted</title><h1>Hello from the host</h1><button>Go</button>").await;

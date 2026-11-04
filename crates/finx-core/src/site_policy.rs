@@ -44,6 +44,7 @@ pub(crate) async fn evaluate(authorities: &[Authority], view: &SessionView) -> G
                 | Authority::Act { own: true, .. }
                 | Authority::Upload { own: true, .. }
                 | Authority::Script { own: true, .. }
+                | Authority::UserStep { own: true, .. }
         );
         match judge(authority, view).await {
             Verdict::Allow => {}
@@ -87,6 +88,12 @@ async fn judge(authority: &Authority, view: &SessionView) -> Verdict {
         Authority::Act { origin, action, own, .. } => act(origin, action, *own, view).await,
         Authority::Upload { origin, paths, own, .. } => upload(origin, paths, *own, view).await,
         Authority::Script { origin, .. } => script(origin, view).await,
+        // The call waits for the user, so the question is the point of it: asked in every mode.
+        Authority::UserStep { what, .. } => Verdict::Ask {
+            summary: what.clone(),
+            reason: "Only the user can do this in the page; the call goes on when they are done.".into(),
+            grants: Vec::new(),
+        },
         Authority::AppObserve { app } => desktop_app(app, None, view),
         Authority::AppAct { app, action } => desktop_app(app, Some(action), view),
     }
@@ -381,6 +388,7 @@ mod tests {
             trusted: true,
             env: Arc::new(LocalEnvironment::new(root.to_path_buf())),
             data_dir: root.join(".finx-data"),
+            own_folder: None,
             skill_roots: Arc::from([]),
             site_grants: grants,
             browser: Arc::new(policy),
@@ -453,6 +461,21 @@ mod tests {
         let every = view(PermissionMode::Manual, vec![grant(GrantAuthority::Act, "*")], SitePolicy::default(), dir.path());
         assert_eq!(evaluate(&[nav("https://93.184.215.14/x"), act_on("https://93.184.215.14")], &every).await, Gate::Allow);
         assert!(asks(&evaluate(&[nav("http://192.168.0.7/")], &every).await).is_some(), "never a private site");
+    }
+
+    /// A page handed to the user waits for them, so the question is the point of it: asked in
+    /// every mode and whatever is granted, with nothing to keep (browser-design §8.4.7).
+    #[tokio::test]
+    async fn a_step_left_to_the_user_asks_in_every_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        for mode in [PermissionMode::Manual, PermissionMode::AcceptEdits, PermissionMode::BypassPermissions] {
+            let granted = view(mode, vec![grant(GrantAuthority::Act, "*")], SitePolicy::default(), dir.path());
+            let gate = evaluate(&[Authority::UserStep { what: "sign in".into(), own: true }], &granted).await;
+            let Gate::Ask { summary, proposed_grants, own_browser, .. } = gate else { panic!("{mode:?}: {gate:?}") };
+            assert_eq!(summary, "sign in");
+            assert!(proposed_grants.is_empty());
+            assert!(own_browser);
+        }
     }
 
     /// `"*"` in `browser.sites`: every public site, without a question, in every mode and in

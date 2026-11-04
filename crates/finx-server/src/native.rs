@@ -30,6 +30,10 @@ use finx_protocol::api::SessionResumeParams;
 use finx_protocol::api::SessionSnapshot;
 use finx_protocol::api::SkillsListParams;
 use finx_protocol::api::method;
+use finx_protocol::bot::BotCreateParams;
+use finx_protocol::bot::BotIdParams;
+use finx_protocol::bot::BotOpenParams;
+use finx_protocol::bot::BotUpdateParams;
 use finx_rpc::Id;
 use finx_rpc::Kind;
 use finx_rpc::RawMessage;
@@ -226,6 +230,7 @@ impl NativeProtocol {
                             customize: true,
                             embedded_browser: true,
                             input_queue: true,
+                            bots: true,
                         },
                     })
                 });
@@ -502,11 +507,24 @@ impl NativeProtocol {
                 if kind == BrowserHostKind::Extension
                     && let Err(reason) = crate::peer::is_this_program(conn.peer_pid)
                 {
-                    tracing::warn!(%reason, "refused an extension host");
-                    return conn.send_error(Some(id), &RpcError::invalid_request(format!("not finx's extension host: {reason}")));
+                    let message = format!("not finx's extension host: {reason}");
+                    server.host_refused(&message);
+                    // The host exits on this kind, and the extension starts the current one.
+                    return conn.send_error(Some(id), &RpcError {
+                        data: Some(json!({"kind": finx_protocol::api::HOST_REFUSED})),
+                        ..RpcError::invalid_request(message)
+                    });
                 }
-                // A later host replaces the one before it (browser-design §8.3.1).
-                let link = Arc::new(crate::browser_host::HostLink::new(conn.clone()));
+                let p = match (kind, params) {
+                    (BrowserHostKind::Extension, Some(_)) => finx_rpc::params::<finx_protocol::api::BrowserHostParams>(params).unwrap_or_default(),
+                    _ => Default::default(),
+                };
+                // An extension from before bridge versions speaks version 1 (D-219).
+                let range = p.bridge.unwrap_or(finx_protocol::api::BridgeRange { min: 1, max: 1 });
+                let bridge = finx_browser::methods::negotiate(range.min, range.max);
+                // A later host replaces the one before it on this connection (browser-design §8.3.1).
+                let keeps_tabs = kind == BrowserHostKind::Extension && bridge.is_ok_and(|b| b >= 2);
+                let link = Arc::new(crate::browser_host::HostLink::new(conn.clone(), keeps_tabs));
                 if let Some((before, _)) = self.browser_host.lock().replace((link.clone(), kind)) {
                     before.close();
                 }
@@ -514,12 +532,9 @@ impl NativeProtocol {
                 match kind {
                     BrowserHostKind::Embedded => server.0.browser_pool.set_host(Some(link)),
                     BrowserHostKind::Extension => {
+                        use finx_browser::EmbeddedHost;
                         use finx_browser::methods::BridgeMismatch;
                         use finx_protocol::api::ExtensionProblem;
-                        let p = finx_rpc::params::<finx_protocol::api::BrowserHostParams>(params).unwrap_or_default();
-                        // An extension from before bridge versions speaks version 1 (D-219).
-                        let range = p.bridge.unwrap_or(finx_protocol::api::BridgeRange { min: 1, max: 1 });
-                        let bridge = finx_browser::methods::negotiate(range.min, range.max);
                         let problem = bridge.err().map(|mismatch| match mismatch {
                             BridgeMismatch::ExtensionTooOld => ExtensionProblem::UpdateExtension,
                             BridgeMismatch::FinxTooOld => ExtensionProblem::UpdateFinx,
@@ -528,23 +543,57 @@ impl NativeProtocol {
                             browser: p.browser,
                             extension_version: p.extension_version,
                             problem,
+                            instance: p.instance.clone(),
+                            account: p.account,
+                            in_use: false,
                         };
+                        server.extension_connected(link.id(), conn.clone(), status);
                         if bridge.is_ok() {
-                            *server.0.extension.lock() = Some(status);
-                            server.0.browser_pool.set_extension(Some(link));
+                            server.0.browser_pool.add_extension(link, p.instance);
                         } else {
-                            // Kept for clients to say what to update, unless a usable one is here.
                             tracing::warn!(?range, ?problem, "an extension finx cannot use connected");
-                            if !server.0.browser_pool.has_extension() {
-                                *server.0.extension.lock() = Some(status);
-                            }
                         }
                         result = finx_protocol::api::BrowserHostResult { bridge: bridge.ok(), problem };
                     }
                 }
                 conn.send(reply(id, Ok::<_, RpcError>(result)));
                 server.browser_changed();
+                server.tell_extensions();
             }
+            method::BROWSER_REVEAL => match finx_rpc::params::<finx_protocol::api::BrowserRevealParams>(params) {
+                Ok(p) => conn.send(reply(id, server.reveal_tab(p).map(|()| json!({})))),
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BROWSER_CLOSE_TABS => match finx_rpc::params::<finx_protocol::api::BrowserCloseTabsParams>(params) {
+                Ok(p) => conn.send(reply(id, server.close_tabs(p).map(|()| json!({})))),
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BROWSER_ALLOW => match finx_rpc::params::<finx_protocol::api::BrowserSessionParams>(params) {
+                Ok(p) => {
+                    server.0.browser_pool.allow(&p.session_id);
+                    server.browser_changed();
+                    conn.send(reply(id, Ok::<_, RpcError>(json!({}))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BROWSER_CANCEL_WAIT => match finx_rpc::params::<finx_protocol::api::BrowserSessionParams>(params) {
+                Ok(p) => {
+                    server.0.browser_pool.decline(&p.session_id);
+                    conn.send(reply(id, Ok::<_, RpcError>(json!({}))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BROWSER_USE_EXTENSION => match finx_rpc::params::<finx_protocol::api::BrowserUseExtensionParams>(params) {
+                Ok(p) => {
+                    server.use_extension(&p.instance);
+                    conn.send(reply(id, Ok::<_, RpcError>(json!({}))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BROWSER_ASSIGN_TAB => match finx_rpc::params::<finx_protocol::api::BrowserAssignTabParams>(params) {
+                Ok(p) => conn.send(reply(id, server.assign_tab(p).map(|()| json!({})))),
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::BROWSER_STATUS => {
                 server.watch_browser(conn);
                 conn.send(reply(id, Ok::<_, RpcError>(server.browser_status())));
@@ -595,6 +644,66 @@ impl NativeProtocol {
                 server.unsubscribe_sessions(conn);
                 conn.send(finx_rpc::response(id, &json!({})));
             }
+            method::BOTS_SUBSCRIBE => {
+                let (conn, id) = (conn.clone(), id.clone());
+                tokio::task::spawn_blocking(move || server.bots_subscribe(&conn, |result| reply(&id, result)));
+            }
+            method::BOTS_UNSUBSCRIBE => {
+                server.bots_unsubscribe(conn);
+                conn.send(finx_rpc::response(id, &json!({})));
+            }
+            method::BOTS_CREATE => match finx_rpc::params::<BotCreateParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.bots_create(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_UPDATE => match finx_rpc::params::<BotUpdateParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.bots_update(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_AVATAR | method::BOTS_READ | method::BOTS_UNREAD => match finx_rpc::params::<BotIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id, name) = (conn.clone(), id.clone(), method_name.to_string());
+                    tokio::task::spawn_blocking(move || {
+                        let result = match name.as_str() {
+                            method::BOTS_AVATAR => server.bots_avatar(&p.bot_id).map(|r| json!(r)),
+                            method::BOTS_READ => server.bots_set_unread(&p.bot_id, 0).map(|()| json!({})),
+                            _ => server.bots_set_unread(&p.bot_id, 1).map(|()| json!({})),
+                        };
+                        conn.send(reply(&id, result));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_OPEN => match finx_rpc::params::<BotOpenParams>(params) {
+                Ok(p) => {
+                    // Answered as session/new is, whether the conversation is new or not.
+                    let attach = Self::attach_request(conn, id, p.events, p.history_limit, true);
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move {
+                        match server.bots_open(&p.bot_id, attach).await {
+                            Ok(()) => None,
+                            Err(err) => Some(finx_rpc::error_response(Some(&reply_id), &err)),
+                        }
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_CLEAR | method::BOTS_DELETE => match finx_rpc::params::<BotIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id, clear) = (conn.clone(), id.clone(), method_name == method::BOTS_CLEAR);
+                    tokio::spawn(async move {
+                        let result = if clear { server.bots_clear(&p.bot_id).await } else { server.bots_delete(&p.bot_id).await };
+                        conn.send(reply(&id, result.map(|()| json!({}))));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::DOC_OPEN => match finx_rpc::params::<finx_protocol::doc::DocOpenParams>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();
@@ -720,6 +829,12 @@ impl Protocol for NativeProtocol {
                     && let Ok(p) = finx_rpc::params::<finx_protocol::api::BrowserCdpParams>(params)
                 {
                     host.receive(p.stream, Box::<str>::from(p.data).into_string());
+                } else if method == method::BROWSER_EXTENSION
+                    && let Some((host, finx_protocol::api::BrowserHostKind::Extension)) = self.browser_host.lock().clone()
+                    && let Ok(p) = finx_rpc::params::<finx_protocol::api::ExtensionMessage>(params)
+                {
+                    use finx_browser::EmbeddedHost;
+                    self.server.extension_message(host.id(), p);
                 }
             }
             Kind::Response { .. } => {}
@@ -745,12 +860,11 @@ impl Protocol for NativeProtocol {
                 finx_protocol::api::BrowserHostKind::Embedded => self.server.0.browser_pool.remove_host(host.id()),
                 finx_protocol::api::BrowserHostKind::Extension => {
                     self.server.0.browser_pool.remove_extension(host.id());
-                    if !self.server.0.browser_pool.has_extension() {
-                        *self.server.0.extension.lock() = None;
-                    }
+                    self.server.extension_gone(host.id());
                 }
             }
             self.server.browser_changed();
+            self.server.tell_extensions();
         }
     }
 }

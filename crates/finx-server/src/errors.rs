@@ -12,6 +12,18 @@ pub fn session_not_found(id: &str) -> RpcError {
     RpcError::with_kind(error_code::SESSION_NOT_FOUND, "session_not_found", format!("session {id} not found"))
 }
 
+pub fn bot_not_found(id: &str) -> RpcError {
+    RpcError::with_kind(error_code::BOT_NOT_FOUND, "bot_not_found", format!("bot {id} not found"))
+}
+
+pub fn bot_default(message: impl Into<String>) -> RpcError {
+    RpcError::with_kind(error_code::BOT_DEFAULT, "bot_default", message)
+}
+
+pub fn bot_invalid(message: impl Into<String>) -> RpcError {
+    RpcError::with_kind(error_code::BOT_INVALID, "bot_invalid", message)
+}
+
 pub fn not_initialized() -> RpcError {
     RpcError::with_kind(error_code::NOT_INITIALIZED, "not_initialized", "send initialize first")
 }

@@ -108,6 +108,8 @@ input:disabled,textarea:disabled{cursor:default}
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
 .tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
 .tb .ic{stroke-width:2.175}
+/* A panel icon's straight lines centre on whole pixels at 16 px, so only a 1 px stroke (1.5 in the 24 grid) lands on a 2x screen's pixels. */
+.tb .ic.panel{stroke-width:1.5}
 .tb:hover{background:var(--fill2);color:var(--l1)}
 .tb.on{background:var(--fill2);color:var(--l1)}
 /* A toolbar button's tip (tips.tsx): placed by script, shown once placed. */
@@ -853,3 +855,33 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-unlock-go:hover:not(:disabled){filter:brightness(1.1)}
 .dcp-unlock-go .ic{width:14px;height:14px;stroke-width:3}
 .dcp-unlock-bad{min-height:18px;margin-top:4px;color:#e5484d;font-size:12px}
+
+/* The user's own browser in the info card, one row of the environment (browser-design §8.4.7): it goes
+   to the browser; ⋯ on hover goes to one tab. The same in the top bar while the card does not show. */
+.yr{position:relative}
+.yr-mark{display:block;flex:none;width:18px;height:18px}
+.yr .insp-row .sdot{flex:none;width:7px;height:7px;margin-left:auto}
+.yr .insp-row .sdot+.yr-go{margin-left:0}
+.insp-row .ic.yr-go{flex:none;width:13px;height:13px;margin-left:auto;color:var(--l3)}
+.yr:hover .insp-row .ic.yr-go{color:var(--l2)}
+.yr .insp-where{min-width:0}
+.yr-more{position:absolute;right:26px;top:5px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:var(--r-sm);background:var(--fill2);color:var(--l1);opacity:0}
+.yr-more .ic{width:14px;height:14px}
+.yr:hover .yr-more,.yr-more:focus-visible,.yr-more[aria-expanded="true"]{opacity:1}
+.yr-act{position:absolute;right:4px;top:4px;background:var(--fill2);color:var(--l1)}
+.yr.revoked .insp-row{padding-right:52px}
+.vmenu .yr-site{flex:none;display:flex;color:var(--l3)}
+.vmenu .yr-site img,.vmenu .yr-site svg{display:block;width:14px;height:14px}
+.vmenu .yr-tab{min-width:0;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.tb .yb-mark{display:block;width:17px;height:17px}
+.tb-dot{position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 1.5px var(--win)}
+/* A tab the person offered from their browser, above the composer. */
+.yours-offer{display:flex;align-items:center;gap:8px;min-width:0;padding:4px 4px 4px 13px;border-radius:var(--r-lg);background:var(--pill);box-shadow:0 0 0 .5px var(--pill-bd);font-size:13px}
+.yours-offer .yr-site{flex:none;display:flex;color:var(--l3)}
+.yours-offer .yr-site img,.yours-offer .yr-site svg{display:block;width:14px;height:14px}
+.yours-offer-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Settings › Browser: which of several, and each link from the browser to finx. */
+.browser-set .ext-row .mi-acct{color:var(--l2)}
+.browser-diag{margin:8px 0 0;padding:8px 13px;border-radius:var(--r-md);background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);font-family:var(--mono);font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.browser-diag-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
+

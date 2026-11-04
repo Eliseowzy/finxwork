@@ -59,6 +59,10 @@ pub struct AttachRequest {
 }
 
 pub(crate) enum HubCmd {
+    /// An operation the user asked for from the extension.
+    FromExtension {
+        op: Op,
+    },
     Attach(AttachRequest),
     Detach {
         conn: ConnHandle,
@@ -113,6 +117,16 @@ pub(crate) enum HubCmd {
     },
     /// The browsers' and desktop control's settings, after the configuration changed.
     System(Box<finx_core::SystemSettings>),
+    /// A bot's conversation: the bot's new name (bot-design §2.4).
+    BotName { name: String },
+}
+
+/// Where a session's changes are listed.
+pub(crate) enum Listing {
+    /// The session list (`sessions/changed`).
+    Sessions(Arc<ListFeed>),
+    /// A bot's conversation: its bot's row instead (bot-design §5.1).
+    Bot { id: String, bots: Arc<crate::bots::Registry> },
 }
 
 /// What the session's log says about it that its events do not: when it was created and how
@@ -140,6 +154,8 @@ pub struct HubShared {
     pub idle_since: AtomicU64,
     /// Each MCP server's latest status in this session, for the 自定义 page (`mcp/list`).
     pub mcp: parking_lot::Mutex<std::collections::BTreeMap<String, finx_protocol::McpServerInfo>>,
+    /// The approval that waits for the user to do something in a page: its call, and what.
+    pub handoff: parking_lot::Mutex<Option<(String, String)>>,
     done: watch::Receiver<bool>,
 }
 
@@ -196,7 +212,7 @@ struct Hub {
     /// Called with the session's last summary once it is closed.
     on_exit: Option<Box<dyn FnOnce(SessionSummary) + Send>>,
     done: watch::Sender<bool>,
-    feed: Arc<ListFeed>,
+    listing: Listing,
     base: SummaryBase,
     /// When the session last got busy: a task started while it was idle. Sub-agents keep it busy
     /// after that task ends, until `idle`.
@@ -210,7 +226,7 @@ pub(crate) fn spawn(
     transcript: Vec<TranscriptItem>,
     idle_after: Option<Duration>,
     first: Option<AttachRequest>,
-    feed: Arc<ListFeed>,
+    listing: Listing,
     base: SummaryBase,
     on_exit: Box<dyn FnOnce(SessionSummary) + Send>,
 ) -> HubHandle {
@@ -226,6 +242,7 @@ pub(crate) fn spawn(
         summary: parking_lot::Mutex::new(summary_of(&mirror, &base, true, 0)),
         idle_since: AtomicU64::new(0),
         mcp: parking_lot::Mutex::new(std::collections::BTreeMap::new()),
+        handoff: parking_lot::Mutex::new(None),
         done: done_rx,
     });
     let mut hub = Hub {
@@ -244,7 +261,7 @@ pub(crate) fn spawn(
         close_waiters: Vec::new(),
         on_exit: Some(on_exit),
         done: done_tx,
-        feed,
+        listing,
         base,
         busy_since: None,
     };
@@ -300,6 +317,9 @@ impl Hub {
 
     fn dispatch(&mut self, event: Event) {
         self.mirror.apply(&event);
+        if let Listing::Bot { id, bots } = &self.listing {
+            bots.on_event(id, &event, &self.mirror);
+        }
         match &event.msg {
             EventMsg::McpServerStatus { server, state, tools, error, .. } => {
                 self.shared.mcp.lock().insert(
@@ -307,8 +327,19 @@ impl Hub {
                     finx_protocol::McpServerInfo { server: server.clone(), state: *state, tools: *tools, error: error.clone() },
                 );
             }
+            EventMsg::ApprovalRequested { call_id, name, args, .. } => {
+                // The browser's tools are deferred: the model runs them through `call_tool`.
+                let (name, args) = if name == "call_tool" { (args.get("name").and_then(|v| v.as_str()).unwrap_or_default(), args.get("arguments")) } else { (name.as_str(), Some(args)) };
+                if let Some(what) = args.and_then(|a| a.get("user")).and_then(|v| v.as_str()).filter(|_| name == "browser_wait") {
+                    *self.shared.handoff.lock() = Some((call_id.clone(), what.to_string()));
+                }
+            }
             EventMsg::ApprovalResolved { call_id, .. } => {
                 self.answered.remove(call_id);
+                let mut handoff = self.shared.handoff.lock();
+                if handoff.as_ref().is_some_and(|(call, _)| call == call_id) {
+                    *handoff = None;
+                }
             }
             EventMsg::TaskStarted { .. } => {
                 if !self.shared.busy.swap(true, Ordering::Relaxed) {
@@ -390,7 +421,9 @@ impl Hub {
             summary.task_started_at = Some(list::rfc3339(since));
         }
         *self.shared.summary.lock() = summary.clone();
-        self.feed.publish(vec![summary], Vec::new());
+        if let Listing::Sessions(feed) = &self.listing {
+            feed.publish(vec![summary], Vec::new());
+        }
     }
 
     fn detached(&self, reason: DetachReason) -> SessionDetachedParams {
@@ -437,6 +470,12 @@ impl Hub {
                 let result = self.submit(conn.id, op, require_idle);
                 conn.queue.push_all(respond(result));
             }
+            // The user asked for it from the extension, which attaches to no session.
+            HubCmd::FromExtension { op } => {
+                if let Err(err) = self.apply(op, false) {
+                    tracing::debug!(%err, "an operation from the extension");
+                }
+            }
             HubCmd::History { before, limit, reply } => {
                 let _ = reply.send(self.mirror.history(&before, limit));
             }
@@ -476,6 +515,11 @@ impl Hub {
                     kernel.set_system_connectors(*settings);
                 }
             }
+            HubCmd::BotName { name } => {
+                if let Some(kernel) = &self.kernel {
+                    kernel.set_bot_name(name);
+                }
+            }
             HubCmd::Meta { op, reply } => {
                 let result = if self.closing {
                     Err(errors::session_closed(&self.shared.session.id))
@@ -492,6 +536,11 @@ impl Hub {
         if !self.subscribers.iter().any(|s| s.conn.id == conn) {
             return Err(errors::not_attached(id));
         }
+        self.apply(op, require_idle)
+    }
+
+    fn apply(&mut self, op: Op, require_idle: bool) -> Result<(), RpcError> {
+        let id = &self.shared.session.id;
         if self.closing {
             return Err(errors::session_closed(id));
         }

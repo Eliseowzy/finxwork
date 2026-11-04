@@ -64,7 +64,8 @@
     "protocol": "{{provider}} 的回复无法识别",
     "unknown": "这一轮没能完成",
     "working_other": "后台还有 {{count}} 个任务在运行。",
-    "stopWorking": "停止后台任务"
+    "stopWorking": "停止后台任务",
+    "no_reply": "这次没有收到回复"
   },
   "agents": {
     "launched_other": "派出了 {{count}} 个子智能体，在后台并行工作",
@@ -140,14 +141,14 @@
     "siteQuestionYours": "在你的浏览器里打开 {{site}}？",
     "siteActYours": "允许 finx 在你的浏览器里使用 {{site}}？",
     "siteYours": "用的是你已经登录的账号。",
-    "siteYoursBypass": "用的是你已经登录的账号，所以绕过权限也会先问你。"
+    "siteYoursBypass": "用的是你已经登录的账号，所以完全访问也会先问你。"
   },
   "notice": {
     "label": "关键提醒",
     "dismiss": "知道了"
   },
   "bypass": {
-    "title": "开启绕过权限？",
+    "title": "开启完全访问？",
     "body": "工具会直接运行、不再询问，包括改动 .git、shell 配置这类受保护的文件，以及工作区以外的文件。只有拒绝规则、询问规则和删除关键路径仍会拦下操作。请只在容器或临时副本这类隔离环境里使用。",
     "agree": "同意",
     "refuse": "拒绝"
@@ -505,5 +506,44 @@
     "offline": "还没连上 finx",
     "more": "更多",
     "resize": "调整文件面板宽度"
+  },
+  "yours": {
+    "tabs_other": "{{count}} 个标签页",
+    "reconnecting": "正在重新连接",
+    "opening": "正在打开",
+    "waitingYou": "等你处理",
+    "revoked": "已收回控制",
+    "outdated": "需要更新",
+    "allow": "允许",
+    "show": "在 {{name}} 中查看",
+    "closeAll": "全部关闭",
+    "tabsMenu": "标签页",
+    "waitingLine": "等你的浏览器连上",
+    "inYourBrowser": " · 你的浏览器",
+    "card": {
+      "title": "{{name}} 里的 FinxWork 扩展没有连上",
+      "desc": "在扩展程序页面确认它还在，而且是打开的。连上后任务自己继续，不用回来点。",
+      "other": "智能体选用的浏览器没有连上，{{other}} 连着。",
+      "refused": "它还在用旧程序。在扩展程序页面点一下 FinxWork 的刷新按钮，连上后任务自己继续。",
+      "outdated": {
+        "extension": "这个扩展太旧了。在扩展程序页面更新它，连上后任务自己继续。",
+        "finx": "FinxWork 太旧了，用不了这个扩展。更新后任务自己继续。"
+      },
+      "update": "检查更新",
+      "skip": "这次不用 {{name}}",
+      "open": "打开扩展程序页面",
+      "switch": "改用它"
+    },
+    "handoff": {
+      "title": "需要你在 {{name}} 里处理",
+      "go": "去 {{name}}",
+      "done": "我处理好了",
+      "again": "再去看看",
+      "skip": "跳过这一步",
+      "handled": "你已处理"
+    },
+    "offer": "交给这个对话：{{title}}",
+    "offerRemove": "不交了",
+    "notify": "任务在等你"
   }
 }

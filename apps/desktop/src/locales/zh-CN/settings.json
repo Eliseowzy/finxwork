@@ -287,7 +287,7 @@
     "off": "用你已登录的账号打开需要登录的网站。",
     "on": "需要你账号的网站会在这里打开。",
     "ready": "扩展已连接，还没有使用。",
-    "lost": "扩展没有连上。",
+    "lost": "扩展没有连上。确认 {{name}} 的扩展程序页面里 FinxWork 是打开的。",
     "closed": "{{name}} 没有打开，打开后会自动连上。",
     "none": "没有找到 Chrome、Edge 或 Brave。",
     "outdated": {
@@ -314,7 +314,7 @@
       "install": "在 {{name}} 里添加 FinxWork 扩展，只需要做一次：",
       "howto": {
         "open": "打开 {{name}} 的扩展程序页面。",
-        "developer": "打开页面右上角的“开发者模式”开关。",
+        "developer": "打开页面右上角的“开发者模式”开关，并保持打开：关掉后 Chrome 可能会停用这个扩展。",
         "drag": "把“FinxWork Extension”文件夹拖到扩展程序页面上。"
       },
       "openExtensions": "打开扩展程序页面",
@@ -385,7 +385,16 @@
     "defaultDesc": "智能体没指定时，新网页在这里打开。",
     "yoursOption": "{{name}}（你的浏览器）",
     "connectTitle": "连接你的浏览器",
-    "disconnect": "断开"
+    "disconnect": "断开",
+    "refused": "FinxWork 刚更新，扩展正在换用新版本，几秒内会自己连上。",
+    "refusedStuck": "扩展还在用旧程序。在扩展程序页面点一下 FinxWork 的刷新按钮。",
+    "elsewhere": "这个浏览器现在连着另一个 FinxWork。",
+    "takeOver": "改连这里…",
+    "useThis": "用这个",
+    "diagnose": "查看诊断信息",
+    "copyDiagnosis": "拷贝",
+    "hideDiagnosis": "收起",
+    "diagnosisCopied": "已拷贝诊断信息"
   },
   "desktop": {
     "enable": "允许 FinxWork 控制你电脑上的应用",

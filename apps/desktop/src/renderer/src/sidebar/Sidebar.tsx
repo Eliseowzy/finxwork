@@ -5,6 +5,8 @@ import {
   type ListSession, type ListView, type Section,
 } from "@finx/client";
 import { archive, confirmDelete, isArchivable, rename, sessionMenu, unarchive } from "../actions";
+import { attention } from "@finx/client";
+import { BotList } from "../bots/BotList";
 import { RenameField, StatusDot } from "../components";
 import { bucketTitle, listTime } from "../format";
 import { Icon } from "../icons";
@@ -22,6 +24,8 @@ export function listSections(st: Store, now: Date): Section[] {
 export function Sidebar() {
   const st = useStore();
   const { t } = useTranslation("common");
+  const { t: tb } = useTranslation("bots");
+  const bots = st.mode === "bots";
   const now = useNow(30_000);
   const secs = listSections(st, now);
   const projects = useMemo(() => projectsOf(st.sessions), [st.sessions]);
@@ -42,15 +46,24 @@ export function Sidebar() {
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
         <button className="tb" onClick={() => setSidebar(st, false)} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
-          <Icon name="sidebar" />
+          <Icon name="sidebar" className="panel" />
         </button>
+        <ModeSwitch />
       </div>
       <nav className="side-nav">
-        <button className={`nav-i ${st.selection.kind === "new" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "new" } })}>
-          <Icon name="plus" />
-          <span>{t("sidebar.newSession")}</span>
-          <span className="kbd">⌘N</span>
-        </button>
+        {bots ? (
+          <button className="nav-i" onClick={() => st.set({ botSheet: { kind: "new" } })}>
+            <Icon name="plus" />
+            <span>{tb("nav.newBot")}</span>
+            <span className="kbd">⌘N</span>
+          </button>
+        ) : (
+          <button className={`nav-i ${st.selection.kind === "new" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "new" } })}>
+            <Icon name="plus" />
+            <span>{t("sidebar.newSession")}</span>
+            <span className="kbd">⌘N</span>
+          </button>
+        )}
         <button className="nav-i" onClick={() => st.set({ searching: true })}>
           <Icon name="search" />
           <span>{t("sidebar.search")}</span>
@@ -61,6 +74,15 @@ export function Sidebar() {
           <span>{t("sidebar.customize")}</span>
         </button>
       </nav>
+      {bots ? (
+        <>
+          <div className="side-lh">
+            <span className="side-lh-t">{tb("list.title")}</span>
+          </div>
+          <BotList />
+        </>
+      ) : (
+      <>
       <div className="side-lh">
         <button
           className={`side-lh-t ${allShut ? "shut" : ""}`}
@@ -149,9 +171,38 @@ export function Sidebar() {
           </div>
         ) : null}
       </div>
+      </>
+      )}
       <UpdateReminder />
       <FootMenu />
     </aside>
+  );
+}
+
+/**
+ * The switch between the two modes, at the right of the sidebar's top (bot-mode-design §6.1). The other mode's
+ * segment carries a dot when something waits there: blue for a bot's new message, orange for an approval.
+ */
+function ModeSwitch() {
+  const st = useStore();
+  const { t } = useTranslation("bots");
+  const bots = attention(st.bots);
+  const sessionsWait = st.sessions.some((s) => !s.archived && stateOf(s) === "awaiting_approval");
+  const dot = st.mode === "sessions" ? (bots.unread ? "new" : bots.waiting ? "warn" : null) : null;
+  const sessionsDot = st.mode === "bots" && sessionsWait ? "warn" : null;
+  return (
+    <div className="seg mode" role="tablist" aria-label={t("mode.label")}>
+      {(["bots", "sessions"] as const).map((m) => {
+        const mark = m === "bots" ? dot : sessionsDot;
+        const label = t(m === "bots" ? "mode.botsTip" : "mode.sessionsTip");
+        return (
+          <button key={m} role="tab" data-mode={m} aria-selected={st.mode === m} aria-label={label} className={st.mode === m ? "on" : ""} title={label} onClick={() => st.setMode(m)}>
+            <Icon name={m === "bots" ? "bot" : "chats"} />
+            {mark && <i className={`mdot ${mark === "warn" ? "warn" : ""}`} aria-hidden="true" />}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -184,7 +235,7 @@ const SessionRow = memo(function SessionRow({ s, sel, project, branch, meta, gro
           {/* While a task is on, the title shimmers (waiting for an approval adds a dot); a failed session has a dot only, an idle or archived one neither. */}
           {renaming ? (
             <RenameField
-              s={s}
+              initial={title}
               className="srename"
               end={(title) => {
                 const st = store.current;

@@ -146,3 +146,35 @@ test("a stop hands what waits back, steering first, and a withdrawn message neve
   assert.deepEqual(v.returned?.map((m) => (m.content[0].type === "text" ? m.content[0].text : "")), ["next", "after"]);
   assert.equal(v.queued.length, 0);
 });
+
+test("bots: the demo's, a new one, and a conversation in messages that stays out of session lists", async () => {
+  const server = new MockServer({ speed: 400 });
+  const rpc = client(server);
+  await rpc.request("initialize", { protocol_version: 2 });
+  const { bots } = await rpc.request("bots/subscribe", {});
+  assert.deepEqual(bots.map((b) => b.name), ["FinxBot", "研究员", "运维", "写作助手", "记账"]);
+  assert.equal(bots.find((b) => b.default)?.avatar.kind, "mark");
+  assert.equal(bots.find((b) => b.name === "写作助手")?.unread, 2);
+  const changed: string[] = [];
+  rpc.on("bots/changed", ({ bots: rows }) => rows.forEach((b) => b.last && changed.push(`${b.last.from}:${b.last.text}`)));
+  const { bot } = await rpc.request("bots/create", { name: " 诗人 ", avatar: { kind: "char", shape: "cat", hue: "teal" } });
+  assert.equal(bot.name, "诗人");
+  const { session_id, snapshot } = await rpc.request("bots/open", { bot_id: bot.id });
+  let view = fromSnapshot(snapshot);
+  const done = new Promise<void>((resolve) => {
+    rpc.on("session/event", ({ event }) => {
+      view = applyEvent(view, event as Event);
+      if (event.type === "task_completed") resolve();
+    });
+  });
+  await rpc.request("session/op", { session_id, op: { type: "prompt", input: [{ type: "text", text: "写一首冬天的诗" }] } });
+  await done;
+  const sent = view.entries.flatMap((e) => (e.type === "message" && e.message.role === "assistant" ? e.message.content : [])).filter((c) => c.type === "tool_call" && c.name === "send_to_user");
+  assert.equal(sent.length, 1);
+  assert.ok(changed.some((c) => c.startsWith("bot:**冬**")), JSON.stringify(changed));
+  const { sessions } = await rpc.request("session/list", {});
+  assert.ok(sessions.every((s) => s.session_id !== session_id));
+  await assert.rejects(rpc.request("bots/delete", { bot_id: bots[0].id }), /default bot/);
+  await rpc.request("bots/delete", { bot_id: bot.id });
+  await assert.rejects(rpc.request("bots/open", { bot_id: bot.id }), /not found/);
+});

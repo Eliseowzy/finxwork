@@ -42,7 +42,7 @@ async function launch() {
   port = 9400 + Math.floor(Math.random() * 400);
   const args = [...(process.env.FINXWORK_E2E_NO_SANDBOX ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`];
   app = spawn(packaged ?? electron, packaged ? args : [desktop, ...args], {
-    env: { ...env, FINXWORK_USER_DATA: `${profile}-${++launches}`, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: `${profile}-${++launches}`, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
