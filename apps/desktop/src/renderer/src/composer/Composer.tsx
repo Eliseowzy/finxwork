@@ -50,8 +50,8 @@ export type Form =
       onEditLast: () => boolean;
     }
   | { mode: "new"; place: Place }
-  /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and of the settings only the permission mode under it. */
-  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void; permission: PermissionMode; onPermission: (m: PermissionMode) => void; permissionTip?: ReactNode; onPermissionPress?: () => void };
+  /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and no settings under it: they are in the bot's settings. */
+  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void };
 
 /**
  * Where the owner writes to finx: one line while empty — "+", the text,
@@ -148,14 +148,6 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             )}
           </div>
         </div>
-        {form.mode === "bot" && (
-          <div className="cmp-meta">
-            <span className="bperm" onClickCapture={form.onPermissionPress}>
-              {form.permissionTip}
-              <PermissionPicker value={form.permission} onChange={form.onPermission} />
-            </span>
-          </div>
-        )}
         {settings && (
           <div className="cmp-meta">
             {form.mode === "new" && (
@@ -436,6 +428,22 @@ const modes: PermissionMode[] = ["manual", "accept-edits", "bypass-permissions"]
  */
 function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange: (m: PermissionMode) => void }) {
   const { t } = useTranslation("session");
+  return (
+    <MenuButton className="mb" title={t("composer.permission")} label={<><Icon name="shield" /><span className="lbl">{permissionTitle(value)}</span></>}>
+      {(close) => <PermissionItems value={value} onChange={onChange} close={close} />}
+    </MenuButton>
+  );
+}
+
+/** The permission modes as a menu's items, wherever the button that opens them is. */
+export function PermissionItems({ value, onChange, close, bypassNote }: {
+  value: PermissionMode;
+  onChange: (m: PermissionMode) => void;
+  close: () => void;
+  /** What else the question before Full Access has to say here. */
+  bypassNote?: string;
+}) {
+  const { t } = useTranslation("session");
   const st = useStore();
   const choose = (m: PermissionMode) => {
     if (m !== "bypass-permissions" || value === m) return onChange(m);
@@ -443,7 +451,7 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
       sheet: {
         kind: "confirm",
         title: t("bypass.title"),
-        message: t("bypass.body"),
+        message: bypassNote ? `${t("bypass.body")}${bypassNote}` : t("bypass.body"),
         button: t("bypass.agree"),
         cancel: t("bypass.refuse"),
         run: async () => onChange(m),
@@ -451,13 +459,11 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
     });
   };
   return (
-    <MenuButton className="mb" title={t("composer.permission")} label={<><Icon name="shield" /><span className="lbl">{permissionTitle(value)}</span></>}>
-      {(close) =>
-        modes.map((m) => (
-          <MenuItem key={m} checked={m === value} label={permissionTitle(m)} desc={permissionDesc(m)} onClick={() => (close(), choose(m))} />
-        ))
-      }
-    </MenuButton>
+    <>
+      {modes.map((m) => (
+        <MenuItem key={m} checked={m === value} label={permissionTitle(m)} desc={permissionDesc(m)} onClick={() => (close(), choose(m))} />
+      ))}
+    </>
   );
 }
 
