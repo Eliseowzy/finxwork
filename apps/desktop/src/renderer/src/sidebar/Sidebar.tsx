@@ -48,7 +48,7 @@ export function Sidebar() {
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
         <button className="tb" onClick={() => setSidebar(st, false)} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
-          <Icon name="sidebar" />
+          <Icon name="sidebar" className="wide" />
         </button>
         <ModeSwitch />
       </div>
@@ -194,11 +194,12 @@ function ModeSwitch() {
   const sessionsDot = st.mode === "bots" && sessionsWait ? "warn" : null;
   return (
     <div className="seg mode" role="tablist" aria-label={t("mode.label")}>
-      {(["sessions", "bots"] as const).map((m) => {
+      {(["bots", "sessions"] as const).map((m) => {
         const mark = m === "bots" ? dot : sessionsDot;
+        const label = t(m === "bots" ? "mode.botsTip" : "mode.sessionsTip");
         return (
-          <button key={m} role="tab" aria-selected={st.mode === m} className={st.mode === m ? "on" : ""} title={t(m === "bots" ? "mode.botsTip" : "mode.sessionsTip")} onClick={() => st.setMode(m)}>
-            {t(m === "bots" ? "mode.bots" : "mode.sessions")}
+          <button key={m} role="tab" data-mode={m} aria-selected={st.mode === m} aria-label={label} className={st.mode === m ? "on" : ""} title={label} onClick={() => st.setMode(m)}>
+            <Icon name={m === "bots" ? "bot" : "chats"} />
             {mark && <i className={`mdot ${mark === "warn" ? "warn" : ""}`} aria-hidden="true" />}
           </button>
         );

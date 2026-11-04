@@ -106,7 +106,7 @@ const mac = process.platform === "darwin";
 let failed = false;
 try {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   const main = await attach((t) => t.type === "page" && /^(app:|file:|http:)/.test(t.url) && !t.url.includes("#settings"), "the main window");

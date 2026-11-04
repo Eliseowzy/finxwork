@@ -177,7 +177,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
     const s = saved();
     return {
       selection: s.selection ?? { kind: "new" },
-      mode: s.mode === "bots" ? "bots" : "sessions",
+      mode: s.mode === "sessions" ? "sessions" : s.mode === "bots" ? "bots" : (window.finx?.defaultMode ?? "bots"),
       lastSession: s.lastSession ?? { kind: "new" },
       lastBot: s.lastBot ?? null,
       botSheet: null,

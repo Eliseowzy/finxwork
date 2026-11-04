@@ -197,7 +197,8 @@ try {
   step("1. the switch: Bot mode has the default bot, FinxBot");
   let page = await launch();
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
-  await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
+  // A new profile starts in Bot mode, the switch's first icon.
+  check(await page.run(`(() => { const [a, b] = document.querySelectorAll(".seg.mode button"); return a.dataset.mode === "bots" && a.getAttribute("aria-selected") === "true" && b.dataset.mode === "sessions" && !a.textContent && !!a.querySelector("svg") && !!b.querySelector("svg"); })()`), "the switch: Bot first and selected, icons only");
   await page.until("FinxBot in the list", `${rows}.some((r) => r.name === "FinxBot")`, 30000);
   await page.until("its empty page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
   check(await page.run(`document.querySelector(".bav.mark") !== null`), "FinxBot has the mark");
@@ -445,9 +446,9 @@ try {
   step("2. back in session mode: the switch remembers both sides, and the draft");
   await page.run(`document.querySelector(".cmp-in").focus()`);
   await page.cdp("Input.insertText", { text: "还没发的草稿" });
-  await page.run(`document.querySelector('.seg.mode button[role=tab]').click()`);
+  await page.run(`document.querySelector('.seg.mode [data-mode=sessions]').click()`);
   await page.until("session mode", `!!document.querySelector(".side-nav .nav-i") && document.querySelector(".side-nav .nav-i span").textContent === "新会话"`);
-  await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
+  await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("back to FinxBot", `${rows}.find((r) => r.sel)?.name === "FinxBot"`);
   await page.until("the draft still there", `document.querySelector(".cmp-in")?.innerText.includes("还没发的草稿")`);
   page.close();

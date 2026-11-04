@@ -42,6 +42,7 @@ const bridge: Bridge = {
   version: arg("version"),
   language: arg("lang") as Language,
   kernel: arg("kernel") as KernelKind,
+  defaultMode: arg("mode") === "sessions" ? "sessions" : undefined,
   connectKernel: () => ipcRenderer.send("connect-kernel"),
   kernelStatus: () => ipcRenderer.invoke("kernel-status"),
   onKernelState: (cb: (s: KernelStatusView) => void) => listen("kernel-state", cb),

@@ -239,6 +239,8 @@ export type Bridge = {
   pickSkillSource(): Promise<string | null>;
   /** The path of a file or folder dropped on the page. */
   pathForFile(file: File): string;
+  /** Tests of session mode (FINXWORK_DEFAULT_MODE): a new profile starts there instead of in Bot mode. */
+  defaultMode?: "sessions";
   /** The 自定义 page's catalog skills: in the app's resources, or the repository's in development. */
   catalogDir: string;
   /** Files to attach, from the system's dialog; images read (up to 10 MB each), others by path. */

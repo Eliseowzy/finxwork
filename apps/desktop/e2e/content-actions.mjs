@@ -155,7 +155,7 @@ async function launch() {
   port = 9400 + Math.floor(Math.random() * 400);
   const program = packaged ? path.join(packaged, "Contents/MacOS/FinxWork") : electron;
   app = spawn(program, [...(packaged ? [] : [desktop]), `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
+    env: { ...process.env, FINX_HOME: home, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

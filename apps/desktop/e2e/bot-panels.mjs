@@ -214,7 +214,7 @@ try {
   }
   const page = await launch(home, profile);
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
-  await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
+  await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("FinxBot's page", `document.querySelector(".bhead h2")?.textContent === "FinxBot" && !!document.querySelector(".cmp-zone.bot")`, 30000);
   await page.run(`document.querySelector(".btip .btn")?.click()`);
 

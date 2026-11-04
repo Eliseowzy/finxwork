@@ -59,7 +59,7 @@ let app = null;
 try {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+    env: { ...process.env, FINX_HOME: home, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

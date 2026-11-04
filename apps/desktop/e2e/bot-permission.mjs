@@ -168,7 +168,7 @@ async function say(page, text) {
 
 async function intoBots(page) {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
-  await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
+  await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
 }
 
 let failed = false;
@@ -185,9 +185,9 @@ try {
   places.push(one);
   let page = await launch(one.home, one.profile);
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
-  // The default bot already has a conversation, in the config's manual mode.
-  const { result } = await finxCall(one.home, "bots/subscribe");
-  await finxCall(one.home, "bots/open", { bot_id: result.bots[0].id });
+  // A bot whose conversation is already there, in the config's manual mode.
+  const old = (await finxCall(one.home, "bots/create", { name: "老对话", avatar: { kind: "mono", hue: "slate" } })).result.bot;
+  await finxCall(one.home, "bots/open", { bot_id: old.id });
   await intoBots(page);
   await page.until("Full Access", `${mode} === "完全访问"`, 30000);
   check(!(await page.run(dialog)), "no dialog");
@@ -200,6 +200,12 @@ try {
   await page.until("the answer", `${bubbles} > 0`, 30000);
   check(made(one.home, "b.txt"), "b.txt without asking");
   check(!(await page.run(asking)), "no approval");
+
+  step("the conversation that was already there gets it too");
+  await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "老对话").click()`);
+  await page.until("老对话, Full Access", `document.querySelector(".bhead h2")?.textContent === "老对话" && ${mode} === "完全访问"`, 30000);
+  await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "FinxBot").click()`);
+  await page.until("FinxBot", `document.querySelector(".bhead h2")?.textContent === "FinxBot"`);
 
   step("知道了 closed the note for good");
   await page.cdp("Page.reload");

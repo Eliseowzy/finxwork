@@ -1,11 +1,13 @@
 /* Bot mode (docs/desktop/bot-mode-design.md §9): the prototype's styles (docs/desktop/bot-mode-demo.html), in the
    app's own tokens. Radii come from --r-*, never pills; colours from the design variables, except an avatar's own. */
 
-/* The mode switch: the global .seg at the right of the sidebar's top. The other mode's segment carries a dot when
-   something waits there: blue a bot's new message, orange an approval. */
-.side-top .mode{margin-left:auto}
-.side-top .mode button{padding:0 11px}
-.mdot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+/* The mode switch: the global .seg at the right of the sidebar's top, two icons. The other mode's segment carries a
+   dot when something waits there: blue a bot's new message, orange an approval. */
+.side-top .mode{margin-left:auto;border-radius:var(--r-md)}
+.side-top .mode button{position:relative;width:36px;height:28px;padding:0;justify-content:center;border-radius:var(--r-md);color:var(--l2)}
+.side-top .mode button.on{color:var(--l1)}
+.side-top .mode .ic{width:18px;height:18px;stroke-width:1.2}
+.mdot{position:absolute;top:4px;right:6px;width:6px;height:6px;border-radius:50%;background:var(--accent)}
 .mdot.warn{background:var(--orange)}
 .side-list.fadein{animation:fadein .28s var(--ease-out)}
 
