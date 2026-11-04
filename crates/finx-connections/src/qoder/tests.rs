@@ -224,11 +224,11 @@ async fn live_qoder_connection() {
     assert!(c.models.iter().any(|m| m.id == "auto"));
     let provider = llm.provider(&c.provider_id).unwrap();
     assert_eq!(
-        provider.models.len(),
+        provider.listing.entries.len(),
         c.models.iter().filter(|m| supports_model(&m.id)).count()
     );
     let model_id = std::env::var("FINX_QODER_TEST_MODEL").unwrap_or_else(|_| "auto".into());
-    let model = provider.model(&model_id).expect("model must be published");
+    let model = llm.lookup(&provider, &model_id).expect("model must be published");
     // Cantus rejects some general chat intents; validate its actual coding use case.
     let text_prompt = if model_id == "cmodel" {
         "Implement add(a,b) in Python. Start with the comment # FINX_QODER_RUST_OK."
@@ -399,7 +399,6 @@ async fn strict_transport_rejects_partial_and_malformed_tools_and_keeps_system()
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     for response in [
@@ -415,9 +414,12 @@ async fn strict_transport_rejects_partial_and_malformed_tools_and_keeps_system()
             )
             .mount(&s)
             .await;
+        // Qoder's catalog always gives a limit (capabilities.rs).
+        let mut model = provider.ad_hoc_model("auto");
+        model.max_output_tokens = Some(32_000);
         let events: Vec<_> = Http
             .stream(WireRequest {
-                model: Arc::new(provider.ad_hoc_model("auto")),
+                model: Arc::new(model),
                 credentials: Credentials::with_key("private".into()),
                 context: Arc::new(Context {
                     system: "finx system".into(),
@@ -479,7 +481,6 @@ async fn transport_surfaces_qoder_error_events_and_preserves_partial_content() {
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Default::default(),
-        models: vec![],
         listing: Default::default(),
     };
     let model = Arc::new(provider.ad_hoc_model("auto"));
@@ -572,8 +573,9 @@ async fn catalog_only_models_cannot_be_invoked_through_ad_hoc_references() {
         BTreeMap::from([("qoder".into(), Env::new() as Arc<dyn Environment>)]),
     );
     let provider = format!("local-{id}");
-    assert_eq!(llm.provider(&provider).unwrap().models.len(), 2);
-    assert!(llm.provider(&provider).unwrap().model("qfmodel").is_some());
+    let published = llm.provider(&provider).unwrap();
+    assert_eq!(published.listing.entries.len(), 2);
+    assert!(llm.lookup(&published, "qfmodel").is_some());
     assert!(
         manager
             .begin(&provider, "qfmodel", llm.http_client().unwrap())
@@ -718,7 +720,8 @@ async fn live_qoder_capability_matrix() {
     let filter = std::env::var("FINX_QODER_TEST_MODEL").ok();
     let mode = std::env::var("FINX_QODER_TEST_MODE").unwrap_or_default();
     let mut jobs = Vec::new();
-    for model in &provider.models {
+    let published = llm.directory().models(&provider);
+    for model in published.models.iter().map(|m| &m.model) {
         if filter.as_ref().is_some_and(|f| f != &model.id) {
             continue;
         }
@@ -784,7 +787,7 @@ async fn live_qoder_capability_matrix() {
             result
         }).await.unwrap_or_else(|_| json!({"status":"unknown", "reason":"timeout"}));
         let row = json!({"model":model.id, "probe":kind, "thinking":level,
-            "requested_max_tokens": if kind == "parameters" { model.default_max_output() } else {4096},
+            "requested_max_tokens": if kind == "parameters" { model.default_max_output() } else {Some(4096)},
             "requested_temperature": if kind == "parameters" { Some(if matches!(model.id.as_str(), "kmodel" | "kmodel_latest") {1.0} else {0.25}) } else {None},
             "elapsed_ms":start.elapsed().as_millis(), "observation":outcome});
         eprintln!("Qoder capability {} {} {}: {}", model.id, kind, level, outcome);
@@ -824,7 +827,6 @@ async fn capability_controls_preserve_images_and_only_caller_prompt_and_tools() 
             thinking_format: crate::adapter::thinking_format("qoder"),
             ..Default::default()
         },
-        models: vec![],
         listing: Default::default(),
     };
     let mut model = provider.ad_hoc_model("qfmodel");
@@ -924,7 +926,6 @@ async fn disproven_off_control_fails_before_network_even_with_stale_catalog() {
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     for id in ["dmodel", "dfmodel"] {
@@ -974,7 +975,6 @@ async fn kimi_temperature_constraint_is_explicit_and_preserves_verified_values()
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     for id in ["kmodel", "kmodel_latest"] {

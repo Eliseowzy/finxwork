@@ -280,3 +280,93 @@ async fn token_plans_save_independently_and_do_not_change_session_defaults() {
     assert!(removed["models"].as_array().unwrap().iter().all(|m| m["provider"] != "zhipu-coding-plan"));
     assert_eq!(removed["defaults"], defaults);
 }
+
+/// One session on `model` at `thinking`, one prompt: what reached the provider.
+async fn request_of(env: &TestEnv, client: &finx_rpc::Client, demux: &Demux, model: &str, thinking: &str) -> Value {
+    let cwd = env.workspace(&format!("w{}", env.mock.stats().requests.load(Ordering::Relaxed)));
+    let created = client.request("session/new", json!({"cwd": cwd, "model": model, "thinking": thinking})).await.unwrap();
+    assert_eq!(created["snapshot"]["session"]["thinking"], thinking, "{model} offers it");
+    let session = created["session_id"].as_str().unwrap().to_string();
+    let mut events = demux.subscribe(&session);
+    let turn = native_prompt(client, &mut events, &session, "hello", false).await;
+    assert_eq!(turn.end["type"], "task_completed", "{model}: {:?}", turn.end);
+    env.mock.stats().chat_controls().last().cloned().unwrap()
+}
+
+/// The fields of a request that say how much to think and write, as sent.
+fn sent(request: &Value) -> Value {
+    let fields = ["model", "max_tokens", "enable_thinking", "reasoning_effort", "thinking_budget", "thinking"];
+    Value::Object(fields.iter().filter_map(|f| Some((f.to_string(), request.get(*f)?.clone()))).collect())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn each_channel_describes_its_models_and_sends_the_levels_it_offers() {
+    // The compiled-in catalog: the mock's would empty what these channels borrow from.
+    let env = TestEnv::new("manual", "[models]\nnetwork = false\n").await;
+    let path = env.home.path().join("models.toml");
+    let mut config = std::fs::read_to_string(&path).unwrap();
+    for (provider, route) in [("bailian-token-plan", "bailian"), ("tencent-token-plan", "tencent"), ("zhipu-coding-plan", "zhipu")] {
+        config.push_str(&format!("\n[providers.{provider}]\nbase_url = \"{}/{route}/v1\"\n", env.mock.base_url()));
+    }
+    std::fs::write(path, config).unwrap();
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let demux = Demux::spawn(incoming);
+    for provider in ["bailian-token-plan", "tencent-token-plan", "zhipu-coding-plan"] {
+        client.request("auth/set", json!({"provider": provider, "api_key": "sk-plan-test"})).await.unwrap();
+    }
+    let models = client.request("models/list", json!({})).await.unwrap();
+
+    // The plan's list decides what exists; the plan's row in the catalog says what each can do.
+    let bailian = |id: &str| model(&models, &format!("bailian-token-plan/{id}"));
+    assert_eq!(bailian("qwen3.8-max")["thinking_levels"], json!(["off", "low", "medium", "xhigh"]));
+    assert_eq!(bailian("qwen3.8-max")["context_window"], 1_000_000);
+    assert_eq!(bailian("qwen3.8-max")["images"], true);
+    assert!(bailian("qwen3.8-max").get("cost").is_none(), "a plan is not billed per token");
+    assert_eq!(bailian("qwen3.7-max")["thinking_levels"], json!(["off", "low", "medium", "high", "max"]));
+    assert_eq!(bailian("glm-5.3")["thinking_levels"], json!(["low", "high", "max"]), "it always thinks");
+    assert_eq!(bailian("glm-5.3")["images"], false);
+    let dated = bailian("deepseek-v4.1-flash-1017");
+    assert_eq!((&dated["known"], &dated["shown"]), (&json!(true), &json!(true)), "a dated build has its row");
+    assert_eq!(dated["thinking_levels"], json!(["off", "low", "high", "max"]));
+    assert!(bailian("wan2.7-image").is_null(), "it does not chat");
+    assert_eq!((&bailian("auto")["known"], &bailian("auto")["shown"]), (&json!(false), &json!(false)), "a name only");
+
+    // A plan the catalog barely covers: the maker's row, as this channel calls the model.
+    let tencent = |id: &str| model(&models, &format!("tencent-token-plan/{id}"));
+    assert_eq!(tencent("glm-5.3")["context_window"], 1_000_000);
+    assert_eq!(tencent("glm-5.3")["known"], true);
+    assert_eq!(tencent("glm-5.3")["thinking_levels"], json!(["low", "high", "max"]));
+    assert_eq!(tencent("kimi-k3")["images"], true);
+    assert_eq!(tencent("deepseek/deepseek-flash")["thinking_levels"], json!(["low", "high", "max"]), "its switch is not known here");
+    assert_eq!(tencent("hy3")["thinking_levels"], json!(["off", "high"]), "`none` is one of its efforts");
+    assert!(tencent("glm-5.3").get("cost").is_none(), "nor is a maker's price this plan's");
+    // A routing name: in the menu, marked unknown, on no invented limits.
+    let auto = tencent("tc-code-latest");
+    assert_eq!((&auto["known"], &auto["shown"]), (&json!(false), &json!(true)));
+    assert_eq!(auto["thinking_levels"], json!([]));
+    // What a maker says it cannot do is not offered: this one cannot be switched off.
+    assert_eq!(model(&models, "zhipu-coding-plan/glm-5.3")["thinking_levels"], json!(["low", "high", "max"]));
+
+    // What is chosen reaches the provider, the way each model takes it.
+    let cases = [
+        ("bailian-token-plan/qwen3.8-max", "xhigh", json!({"model": "qwen3.8-max", "max_tokens": 32000, "enable_thinking": true, "reasoning_effort": "xhigh"})),
+        ("bailian-token-plan/qwen3.8-max", "off", json!({"model": "qwen3.8-max", "max_tokens": 32000, "enable_thinking": false})),
+        ("bailian-token-plan/qwen3.8-max", "default", json!({"model": "qwen3.8-max", "max_tokens": 32000})),
+        ("bailian-token-plan/qwen3.7-max", "low", json!({"model": "qwen3.7-max", "max_tokens": 32000, "enable_thinking": true, "thinking_budget": 4096})),
+        ("bailian-token-plan/glm-5.3", "high", json!({"model": "glm-5.3", "max_tokens": 32000, "reasoning_effort": "high"})),
+        ("bailian-token-plan/deepseek-v4.1-flash-1017", "max", json!({"model": "deepseek-v4.1-flash-1017", "max_tokens": 32000, "enable_thinking": true, "reasoning_effort": "max"})),
+        ("tencent-token-plan/glm-5.3", "high", json!({"model": "glm-5.3", "max_tokens": 32000, "reasoning_effort": "high"})),
+        ("tencent-token-plan/hy3", "off", json!({"model": "hy3", "max_tokens": 32000, "reasoning_effort": "none"})),
+        // The channel's name for the model, not the catalog's.
+        ("tencent-token-plan/deepseek/deepseek-flash", "low", json!({"model": "deepseek/deepseek-flash", "max_tokens": 32000, "reasoning_effort": "low"})),
+        ("tencent-token-plan/minimax-m3", "default", json!({"model": "minimax-m3", "max_tokens": 32000})),
+        // No limit nobody stated: a guess would cut replies short.
+        ("tencent-token-plan/tc-code-latest", "default", json!({"model": "tc-code-latest"})),
+        ("zhipu-coding-plan/glm-5.3", "low", json!({"model": "glm-5.3", "max_tokens": 32000, "reasoning_effort": "low"})),
+    ];
+    for (reference, thinking, expected) in cases {
+        let request = request_of(&env, &client, &demux, reference, thinking).await;
+        assert_eq!(sent(&request), expected, "{reference} at {thinking}");
+    }
+}

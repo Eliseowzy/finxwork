@@ -218,9 +218,10 @@ impl WireApi for OpenAiResponsesApi {
                     "response.completed" => {
                         let r = &v["response"];
                         if r["status"].as_str().is_some_and(|s| s != "completed") { yield StreamEvent::Failed(acc.fail(protocol("Response did not complete"))); return; }
-                        if let Some(output) = r["output"].as_array() {
+                        if let Some(output) = r["output"].as_array().filter(|output| !output.is_empty()) {
                             // Terminal items are authoritative (also capture non-streamed arguments
-                            // and encrypted reasoning). Display deltas remain incremental.
+                            // and encrypted reasoning). Display deltas remain incremental. An answer
+                            // that lists none has said it all in what was streamed.
                             acc = MessageAccumulator::for_model(&req.model);
                             for (i,v) in output.iter().enumerate() { item(&mut acc,i,v); }
                         }

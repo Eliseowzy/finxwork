@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.36 |
-| 日期 | 2026-11-03 |
+| 版本 | v1.37 |
+| 日期 | 2026-11-04 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -83,6 +83,7 @@
 | v1.34 | 2026-11-03 | 同时结束的会话共用一次硬盘冲刷（§9.3，D-97）：各自先 fsync 自己的日志，再由一次 F_FULLFSYNC 让硬盘把缓存全部写入，落盘保证不变。200 个会话同时跑满时任务 p95 降约一半、吞吐翻倍；首包 100 ms 时 p95 降约两成（§1.4）。没有设置 `FINX_LOG` 时日志用固定级别，不再解析过滤表达式 |
 | v1.35 | 2026-11-03 | 单次任务的固定内存（§1.4）：日志通道预留 256 行（原 4096 行，144 KiB）；`finx acp` 最多 4 个工作线程（D-91）；除 `finx serve` 外，I/O 驱动预留 256 个事件；TLS 会话缓存 32 个主机。macOS 上一次真实任务的 ACP 峰值占用 4.82 → 4.43 MiB，Linux 任务后的匿名内存 1.43 → 1.29 MiB。Q-20 补上系统框架的内存代价（约 1.2 MiB） |
 | v1.36 | 2026-11-03 | 工具结果的裁切改按 token 计（§5.5、§5.7、§7.5.5、§10.2，D-239）：按 4 字节 1 个 token 换算，不调用分词器；工具自身的预算默认 10,000 token（read 每页，bash 头 2,000 + 尾 8,000，子智能体汇报，Skill 正文），内核兜底为预算的 1.2 倍，即 12,000 token；单个结果仍不超过可用窗口的 10%。原来的上限是 50 KB（约 12,800 token），兜底多 4 KB。省略说明和 read 的分页提示改报 token 数；配置 `[tools.limits] max_bytes` 改为 `max_tokens`，旧写法按 4 字节 1 个 token 换算并给出 warning |
+| v1.37 | 2026-11-04 | 模型接入重构（model-catalog-design.md v1.3，D-330–D-340）：API、Token Plan、账号连接共用一次合并，模型的参数按渠道的声明、公共目录里这个渠道的行、模型厂商的行依次取。档位由目录写明的控制方式和渠道能发的参数决定：有档位发 `reasoning_effort`，只有预算才发预算，开关只发给有开关的模型（§4.13）。输出上限未知时不再猜 8,192：OpenAI 兼容请求不带上限，Anthropic 接口按必填给 8,192，预留 32,000（§4.8）。Anthropic 接口对新模型改用 adaptive 和 `output_config.effort` |
 
 ## 1. 目标与范围
 
@@ -810,7 +811,7 @@ pub struct WireRequest {
 | ToolResult | `{role: "tool", tool_call_id, content}`。`compat.tool_result_name` 开启时带上 `name`；接口不支持图片时，把图片挪到紧随其后的一条 user 消息里 |
 | tools | `tools: [{type: "function", function: {name, description, parameters}}]` |
 | 推理等级 | 由 `compat.thinking_format` 决定（§4.13） |
-| 输出上限 | 字段名由 `compat.max_tokens_field` 决定：`max_completion_tokens`（默认）或 `max_tokens` |
+| 输出上限 | 字段名由 `compat.max_tokens_field` 决定：`max_completion_tokens`（默认）或 `max_tokens`；模型的上限未知时不带（§4.8） |
 | 流式 | `stream: true`；`compat.stream_usage` 开启时加上 `stream_options: {include_usage: true}` |
 | 缓存键 | `compat.prompt_cache_key` 开启时发送 `prompt_cache_key` |
 
@@ -936,7 +937,7 @@ v1 内置的厂商：
 
 - 不少厂商同时提供 Anthropic 兼容端点（例如 DeepSeek 的 `https://api.deepseek.com/anthropic`）。需要使用时，新增一个 `api = "anthropic-messages"` 的厂商条目即可。
 - 内置目录中的模型列表和价格会过时，用户配置可以覆盖它们；维护方式已定（Q-08），见 model-catalog-design.md。完整示例见附录 C。
-- 目录中没有列出的模型 id 也可以直接使用：只要厂商存在，就按默认参数（上下文窗口 128,000，输出上限 8,192，不支持推理和图片）生成模型，并发出 warning。
+- 目录中没有列出的模型 id 也可以直接使用：只要厂商存在，就按默认参数（上下文窗口 128,000，不支持推理和图片）生成模型，并发出 warning。输出上限不知道就不设：OpenAI 兼容请求不带这个字段，由服务商决定；Anthropic 接口必须带，用 8,192；提示词给回复预留 32,000（model-catalog-design §4.8）。
 - 单价未配置（为 0）时，界面显示"费用未知"，而不是 0 元。
 
 ### 4.9 鉴权
@@ -1034,31 +1035,36 @@ pub enum ErrorKind {
 推理等级用服务商自己的档位，不再是 finx 统一的六档（v1.25 起，完整规则见 model-catalog-design §18）：`default | off | on | minimal | low | medium | high | xhigh | max`。
 
 - `default`：不发送任何推理参数，由服务商决定；任何模型都可以选。
-- 其余档位：每个模型只提供它支持、且请求格式发得出去的那几个（`ModelSummary.thinking_levels`）；不支持推理或请求格式不能指定推理的模型没有档位，界面隐藏这项设置。
+- 其余档位：每个模型只提供它目录里写明、且这个渠道发得出去的那几个（`ModelSummary.thinking_levels`）；不支持推理或控制方式不明的模型没有档位，界面隐藏这项设置。
 - 请求里出现的档位一定是模型提供的：不提供的档位按 `default` 处理，不再"降到最近的低一档"。
 
-各 `thinking_format` 发送的参数：
+OpenAI 兼容接口上，发什么由模型的控制方式决定，参数名由渠道的 `thinking_format` 决定：
 
-| thinking_format | off | on | 档位（minimal … max） | 推理内容字段 |
+| 模型 | 选一个档位时发送 |
+|---|---|
+| 有档位 | `reasoning_effort: <值>`；模型有开关时同时打开开关 |
+| 只有预算（`qwen` 格式） | 打开开关，加 `thinking_budget`（按下表） |
+
+| thinking_format | off | on | 预算 | 推理内容字段 |
 |---|---|---|---|---|
-| openai | `reasoning_effort: "none"` | 不发送 | `reasoning_effort: <档位>` | chat 接口不返回推理文本 |
-| deepseek | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 开启，并附带 `reasoning_effort: <档位>` | `reasoning_content` |
-| qwen | `enable_thinking: false` | `enable_thinking: true` | 开启，并附带 `thinking_budget`（按下表） | `reasoning_content` |
-| zai | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 同 on | `reasoning_content` |
-| openrouter | `reasoning: {effort: "none"}` | `reasoning: {enabled: true}` | `reasoning: {effort: <档位>}` | `reasoning` |
-| none | — | — | —（这类模型没有档位） | — |
+| 不写 | 只有 `none` 是模型的档位时才有：`reasoning_effort: "none"` | 无 | 无 | `reasoning_content` |
+| openai | `reasoning_effort: "none"` | 不发送 | 无 | chat 接口不返回推理文本 |
+| deepseek、zai | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 无 | `reasoning_content` |
+| qwen | `enable_thinking: false` | `enable_thinking: true` | `thinking_budget` | `reasoning_content` |
+| openrouter | `reasoning: {effort: "none"}` | `reasoning: {enabled: true}` | 全部用 `reasoning: {effort: <档位>}`，它替每个模型翻译 | `reasoning` |
+| none | —（这类模型没有档位） | — | — | — |
 
-- anthropic-messages：`default` 和 `off` 不发送 thinking 块（Claude 不发就不推理），`on` 和各档位按下表的预算开启。
+- anthropic-messages：`default` 不发送；`off` 发 `thinking: {type: "disabled"}`。只有档位的模型发 `thinking: {type: "adaptive", display: "summarized"}` 和 `output_config: {effort: <档位>}`（新模型收到 `budget_tokens` 会返回 400）；只有预算的模型发 `thinking: {type: "enabled", budget_tokens: <下表>}`；两者都有的发预算并带上档位。
 - 档位发送的值默认就是档位名，模型可以用 `thinking_levels = { high = "<服务商的值>" }` 改写。
 
-预算型推理（anthropic，以及 qwen 的 `thinking_budget`）的默认预算如下，模型可以用 `thinking_budgets` 覆盖：
+预算型推理（anthropic，以及 qwen 的 `thinking_budget`）的默认预算如下，限制在模型的范围之内，模型也可以用 `thinking_budgets` 覆盖。目录写了模型的最大预算时，`max` 就是这个最大值：
 
 | 等级 | minimal | low | medium（以及 on） | high | xhigh | max |
 |---|---|---|---|---|---|---|
 | 预算 token | 1,024 | 4,096 | 10,240 | 24,576 | 28,672 | 32,768 |
 
-- **预算上限**：实际预算不超过 `max_output_tokens − 4,096`，给回复正文留出空间。
-- **请求的 max_tokens**：取 `min(max_output_tokens, 预算 + 16,384)`。
+- **预算上限**：实际预算不超过 `max_output_tokens − 4,096`，给回复正文留出空间；上限未知时不限。
+- **请求的 max_tokens**：取 `min(max_output_tokens, 预算 + 16,384)`；上限未知时取 `预算 + 16,384`。
 
 ### 4.14 HTTP 客户端
 

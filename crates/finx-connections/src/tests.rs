@@ -153,7 +153,18 @@ async fn existing_connection_restores_without_secrets_in_catalog_and_disconnect_
     let llm = registry();
     let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
     let provider = format!("local-{}", r.connection_id);
-    assert!(llm.resolve(&format!("{provider}/flash")).unwrap().model.accepts_images());
+    let flash = llm.resolve(&format!("{provider}/flash")).unwrap().model;
+    assert!(flash.accepts_images());
+    assert_eq!(flash.context_window, 1_000_000, "the account's catalog");
+    // Not stated by anyone: left to the gateway, never a guess that cuts replies short.
+    assert_eq!(flash.max_output_tokens, None);
+    let body: serde_json::Value = serde_json::from_slice(&finx_llm::api::openai_chat::build_body(
+        &flash,
+        &finx_llm::Context::default(),
+        &finx_llm::RequestOptions::default(),
+    ))
+    .unwrap();
+    assert!(body.get("max_tokens").is_none() && body.get("max_completion_tokens").is_none(), "{body}");
     assert!(llm.resolve(&format!("{provider}/invented")).is_err());
     assert_eq!(env.calls.load(Ordering::Relaxed), 0);
     let lease = m.begin(&provider, "flash", client()).await.unwrap();

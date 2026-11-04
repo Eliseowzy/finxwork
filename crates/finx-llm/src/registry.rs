@@ -221,12 +221,17 @@ impl ModelRegistry {
                 return Err("provider ID is already owned".into());
             }
         }
-        sources.insert(source.to_string(), providers);
+        let replaced = sources.insert(source.to_string(), providers);
+        for p in replaced.iter().flatten().chain(sources.get(source).into_iter().flatten()) {
+            self.directory.forget(&p.id);
+        }
         Ok(())
     }
 
     pub fn remove_source(&self, source: &str) {
-        self.sources.write().remove(source);
+        for p in self.sources.write().remove(source).iter().flatten() {
+            self.directory.forget(&p.id);
+        }
     }
 
     pub fn install_authorizer(&self, resolver: Arc<dyn crate::connection::ConnectionAuthorizer>) {
@@ -243,11 +248,8 @@ impl ModelRegistry {
         &self.directory
     }
 
-    /// A provider's model: managed providers' as they are, the others' merged.
+    /// A provider's model, merged from its layers.
     pub fn lookup(&self, provider: &ProviderConfig, id: &str) -> Option<Arc<Model>> {
-        if matches!(provider.auth, crate::AuthConfig::Managed) {
-            return provider.model(id);
-        }
         self.directory.model(provider, id)
     }
 
@@ -326,11 +328,9 @@ impl ModelRegistry {
             return Ok(false);
         };
         let mut ids: Vec<String> = self.providers().filter_map(|p| p.listing.catalog_id).collect();
+        ids.extend(crate::public_catalog::MAKERS.iter().map(|id| id.to_string()));
         ids.sort();
         ids.dedup();
-        if ids.is_empty() {
-            return Ok(false);
-        }
         let http = self.http_client()?;
         let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
         let changed = crate::public_catalog::refresh(&http, url, &dir, &refs).await?;
@@ -370,8 +370,7 @@ impl ModelRegistry {
                     .collect::<Vec<_>>()
                     .join(", "),
             })?;
-        if matches!(provider.auth, crate::AuthConfig::Managed) && provider.model(model_id).is_none()
-        {
+        if matches!(provider.auth, crate::AuthConfig::Managed) && provider.entry(model_id).is_none() {
             return Err(ResolveError::BadReference(reference.to_string()));
         }
         Ok(match self.lookup(&provider, model_id) {

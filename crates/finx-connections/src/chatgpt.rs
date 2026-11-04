@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use finx_llm::connection::{Authorization, ConnectionRequest};
 use finx_llm::credentials::CredentialStore;
-use finx_llm::{AuthConfig, Credentials, Modality, ModelRegistry, ProviderConfig};
+use finx_llm::{AuthConfig, Credentials, ModelRegistry, ProviderConfig};
 use finx_protocol::api::{ChatGptLoginState, ChatGptStatus, ConnectionModel, ConnectionState, ConnectionView};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -242,7 +242,7 @@ impl ChatGpt {
             let mut providers = vec![];
             if p.enabled && !p.needs_login {
                 if let Some(id) = Self::provider(&p) {
-                    let mut provider = ProviderConfig {
+                    providers.push(ProviderConfig {
                         plan: None,
                         id,
                         name: "ChatGPT API".into(),
@@ -252,26 +252,11 @@ impl ChatGpt {
                         headers: Default::default(),
                         currency: Default::default(),
                         compat: Default::default(),
-                        models: vec![],
-                        listing: Default::default(),
-                    };
-                    provider.models = p
-                        .models
-                        .iter()
-                        .map(|m| {
-                            let mut model = provider.ad_hoc_model(&m.id);
-                            model.name = m.name.clone();
-                            model.context_window = m.context_window.unwrap_or(32768);
-                            model.reasoning = m.reasoning;
-                            model.thinking = m.thinking.clone();
-                            model.default_thinking = m.default_thinking;
-                            if m.images {
-                                model.input = vec![Modality::Text, Modality::Image];
-                            }
-                            Arc::new(model)
-                        })
-                        .collect();
-                    providers.push(provider);
+                        listing: finx_llm::catalog::Listing {
+                            entries: p.models.iter().map(crate::declared_model).collect(),
+                            ..Default::default()
+                        },
+                    });
                 }
             } else {
                 self.cancellation.read().cancel();
