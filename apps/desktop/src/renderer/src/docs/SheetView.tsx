@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { baseName, type RpcClient } from "@finx/client";
-import type { CellData, Impact, SheetInfo, SheetOp } from "@finx/protocol";
+import type { CellData, DocApplyResult, FoundCell, Impact, SheetInfo, SheetOp } from "@finx/protocol";
 import { Icon } from "../icons";
 import { isRpcKind } from "../rpcError";
 import { errorText, useStore } from "../store";
@@ -10,7 +10,8 @@ import { addr, areaOf, colName, MAX_COLS, MAX_ROWS, onSheet, parseAddr, parseRan
 import { useEditQueue } from "./sheet/editQueue";
 import { useGeometry } from "./sheet/geometry";
 import { ImpactBar } from "./sheet/ImpactBar";
-import { editTextOf, inputOp, readable, readSizes, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, writeSizes, type SelectionStats, type Sizes } from "./sheet/model";
+import { decimalsOf, editTextOf, inputOp, isHardcoded, lensAt, lensText, MAX_PASTE, parseTsv, pasteOps, readable, readLenses, readSizes, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, UNITS, withLens, writeLenses, writeSizes, type Lens, type SelectionStats, type Sizes, type Unit } from "./sheet/model";
+import { TraceBar, type Trace } from "./sheet/TraceBar";
 import { quoteToComposer, setDocInfo, setSheetViewing, type DocTab, type Jump } from "./state";
 
 export { inputOp } from "./sheet/model";
@@ -277,9 +278,15 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       setNote({ text: t("sheet.csvNoFormula"), kind: "refused" });
       return;
     }
+    return edited(() => rpc.request("doc/apply", { session_id: session, doc_id: docId, ops, base_revision: revision() }));
+  };
+
+  /** An edit on its way, after the ones before it; what it changed lights up, a refusal says why. */
+  const edited = (send: () => Promise<DocApplyResult>) => {
+    if (!sheet) return;
     return enqueue(async () => {
       try {
-        const r = await rpc.request("doc/apply", { session_id: session, doc_id: docId, ops, base_revision: revision() });
+        const r = await send();
         made(r);
         setNote(null);
         setLit({ edited: new Set(r.impact.edited.filter((e) => e.sheet === sheet.name).map((e) => e.cell)), affected: new Set(onSheet(r.impact.affected ?? [], sheet.name)) });
@@ -291,6 +298,101 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         else st.show(errorText(e), undefined, true);
       }
     });
+  };
+
+  /** Excel's ⌘D / ⌘R: the selection's first row (or column) across it; one cell takes the one above (or left). */
+  const fill = (direction: "down" | "right") => {
+    if (!sheet || !editable) return;
+    const g = selected;
+    const range = g.r1 === g.r2 && g.c1 === g.c2
+      ? direction === "down" ? (g.r1 > 1 ? rangeText({ ...g, r1: g.r1 - 1 }) : null) : g.c1 > 1 ? rangeText({ ...g, c1: g.c1 - 1 }) : null
+      : rangeText(g);
+    if (!range) return;
+    void edited(() => rpc.request("doc/fill", { session_id: session, doc_id: docId, sheet: sheet.name, range, direction, base_revision: revision() }));
+  };
+
+  /** A paste: the clipboard's text, cell by cell from the selection's top-left, as one edit; values only, as typed. */
+  const paste = (text: string) => {
+    if (!sheet || !editable) return;
+    const rows = parseTsv(text);
+    const ops = pasteOps(sheet.name, { r: selected.r1, c: selected.c1 }, rows);
+    if (!ops) return void (rows.length && st.show(t("sheet.pasteTooBig", { max: MAX_PASTE.toLocaleString() }), undefined, true));
+    const width = Math.max(...rows.map((row) => row.length));
+    setSel({ anchor: { r: selected.r1, c: selected.c1 }, focus: { r: selected.r1 + rows.length - 1, c: selected.c1 + width - 1 } });
+    void apply(ops);
+  };
+
+  // ── tracing (Excel's 追踪引用单元格 / 追踪从属单元格) ──
+  const [trace, setTrace] = useState<Trace | null>(null);
+  /** From the active cell, one step out; again from the same cell the same way, one step further. */
+  const traceFrom = async (direction: "up" | "down", again?: Trace) => {
+    if (!sheet) return;
+    const cell = again?.cell ?? addr(active);
+    const from = again?.sheet ?? sheet.name;
+    const same = trace && trace.sheet === from && trace.cell === cell && trace.direction === direction;
+    const depth = again ? again.depth : same ? Math.min(10, trace.depth + 1) : 1;
+    try {
+      const r = await rpc.request("doc/trace", { session_id: session, doc_id: docId, sheet: from, cell, direction, depth });
+      setTrace({ sheet: from, cell, direction, depth, cells: r.cells, more: !!r.more });
+    } catch (e) {
+      st.show(errorText(e), undefined, true);
+    }
+  };
+  // Formulas changed: the trace is worked out again, as far out as it went.
+  useEffect(() => {
+    if (trace) void traceFrom(trace.direction, trace);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info.revision]);
+
+  // ── showing formulas (Excel's 显示公式, ⌃`) ──
+  const [showFormulas, setShowFormulas] = useState(false);
+
+  // ── display units (spreadsheet-design §8.8): how numbers show here, never written to the file ──
+  const [lenses, setLenses] = useState<Record<string, Lens[]>>(() => readLenses(docId));
+  const sheetLenses = lenses[sheetName];
+  const setSheetLenses = (next: Lens[]) => {
+    const all = { ...lenses, [sheetName]: next };
+    setLenses(all);
+    writeLenses(docId, all);
+    if (next.length && !localStorage.getItem("finx.sheet.lensTold")) {
+      localStorage.setItem("finx.sheet.lensTold", "1");
+      st.show(t("sheet.lensFirst"));
+    }
+  };
+  /** One cell selected stands for its whole column, as a unit is a column's. */
+  const lensArea = () => (selected.r1 === selected.r2 && selected.c1 === selected.c2 ? { r1: 1, c1: selected.c1, r2: MAX_ROWS, c2: selected.c1 } : selected);
+  const activeLens = lensAt(sheetLenses, active.r, active.c);
+
+  // ── finding (⌘F, as Excel's 查找) ──
+  const [find, setFind] = useState<{ query: string; hits: FoundCell[] | null; at: number; more: boolean } | null>(null);
+  const findBox = useRef<HTMLInputElement>(null);
+  const openFind = () => {
+    setFind((f) => f ?? { query: "", hits: null, at: 0, more: false });
+    setTimeout(() => (findBox.current?.focus(), findBox.current?.select()));
+  };
+  useEffect(() => {
+    const onFind = () => root.current?.contains(document.activeElement) && openFind();
+    window.addEventListener("finx:find", onFind);
+    return () => window.removeEventListener("finx:find", onFind);
+  }, []);
+  const findNext = async (back: boolean) => {
+    if (!find || !find.query.trim()) return;
+    let { hits, at } = find;
+    if (!hits) {
+      try {
+        const r = await rpc.request("doc/find", { session_id: session, doc_id: docId, query: find.query.trim(), limit: 500 });
+        hits = r.cells;
+        at = 0;
+        setFind({ ...find, hits, at, more: !!r.more });
+      } catch (e) {
+        return st.show(errorText(e), undefined, true);
+      }
+    } else if (hits.length) {
+      at = (at + (back ? hits.length - 1 : 1)) % hits.length;
+      setFind({ ...find, at });
+    }
+    const hit = hits[at];
+    if (hit) jumpCell(hit.sheet, hit.cell);
   };
 
   // One commit per edit: Enter commits, then the editor's blur would again.
@@ -399,6 +501,9 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         return;
       }
     }
+    // What the person sees in a unit is said, so the agent does not take the values for what is shown (§8.8).
+    const shownIn = lensAt(sheetLenses, selected.r1, selected.c1);
+    if (shownIn && shownIn.unit !== 1) text += `\n\n${t("sheet.lensQuote", { unit: t(`sheet.unit${shownIn.unit}`) })}`;
     quoteToComposer(session, { quote: { path: info.path, doc_id: docId, sheet: sheet.name, range: selectedRange, text } });
     st.show(t("sheet.quoted"));
   };
@@ -478,10 +583,21 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       void copySelection();
     } else if (mod && e.key.toLowerCase() === "l") {
       void quoteSelection();
+    } else if (mod && !e.shiftKey && e.key.toLowerCase() === "d") {
+      fill("down");
+    } else if (mod && !e.shiftKey && e.key.toLowerCase() === "r") {
+      fill("right");
+    } else if (mod && (e.key === "[" || e.code === "BracketLeft")) {
+      void traceFrom("up");
+    } else if (mod && (e.key === "]" || e.code === "BracketRight")) {
+      void traceFrom("down");
+    } else if (e.ctrlKey && (e.key === "`" || e.code === "Backquote")) {
+      setShowFormulas((v) => !v);
     } else if (!mod && e.key.length === 1 && editable) {
       setEditing({ text: e.key, inBar: false });
     } else if (e.key === "Escape") {
       setLit(null);
+      setTrace(null);
     } else return;
     e.preventDefault();
   };
@@ -511,6 +627,11 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   };
 
   // Once per drawing, not per cell.
+  const cellAt = (r: number, c: number) => cache.current.cells.get(addr({ r, c }));
+  const traced = new Set(trace ? trace.cells.filter((x) => x.sheet === sheetName).map((x) => x.cell) : []);
+  if (trace && trace.sheet === sheetName) traced.add(trace.cell);
+  const found = new Set(find?.hits?.filter((x) => x.sheet === sheetName).map((x) => x.cell) ?? []);
+  const unitName = (u: Unit) => t(`sheet.unit${u}`);
   const dark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
   const cells: React.ReactNode[] = [];
   for (const r of rowsShown) {
@@ -528,11 +649,16 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       const d = cache.current.cells.get(key);
       const w = m ? colLeft[m.c2 + 1] - colLeft[m.c1] : widths[c];
       const h = m ? rowY(m.r2 + 1) - rowY(m.r1) : rowY(r + 1) - rowY(r);
-      const num = d?.value?.type === "number";
-      const align = d?.look?.align ?? (num ? "right" : d?.value?.type === "bool" || d?.value?.type === "error" ? "center" : "left");
+      const asFormula = showFormulas && !!d?.formula;
+      const lens = lensAt(sheetLenses, a.r, a.c);
+      const lensed = asFormula ? null : lensText(d, lens, i18n.language);
+      const text = asFormula ? d!.formula! : (lensed ?? d?.text);
+      const num = d?.value?.type === "number" && !asFormula;
+      const hard = isHardcoded(cellAt, a.r, a.c);
+      const align = asFormula ? "left" : (d?.look?.align ?? (num ? "right" : d?.value?.type === "bool" || d?.value?.type === "error" ? "center" : "left"));
       // Text runs on over empty cells to its right, as in Excel.
       let span = w;
-      if (!m && d?.text && align === "left" && !num) {
+      if (!m && text && align === "left" && !num) {
         for (let k = c + 1; k <= Math.min(nCols, c + 12) && !cache.current.cells.get(addr({ r, c: k }))?.text && !mergeAt(r, k); k++) span += widths[k];
       }
       const style: CSSProperties = {
@@ -543,16 +669,22 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         fontStyle: d?.look?.italic ? "italic" : undefined,
         justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start",
       };
-      const cls = ["sht-c", d?.text ? "has" : "", lit?.edited.has(key) ? "edited" : "", lit?.affected.has(key) ? "lit" : "", m ? "merged" : ""].join(" ");
+      const cls = ["sht-c", text ? "has" : "", lit?.edited.has(key) ? "edited" : "", lit?.affected.has(key) ? "lit" : "", m ? "merged" : "", traced.has(key) ? "traced" : "", found.has(key) ? "found" : "", hard ? "hard" : "", lensed !== null ? "lensed" : "", asFormula ? "asformula" : ""].join(" ");
+      const title = lensed !== null ? t("sheet.lensTip", { raw: d!.text, shown: lensed, unit: unitName(lens!.unit) }) : hard ? t("sheet.hardcoded") : (d?.formula ?? undefined);
       cells.push(
-        <div key={`${r}:${c}`} data-cell={key} className={cls} style={style} title={d?.formula ?? undefined}>
-          {d?.text && <span style={span > w ? { width: span, background: d.look?.fill ? undefined : "var(--sht-bg)" } : undefined}>{d.text}</span>}
+        <div key={`${r}:${c}`} data-cell={key} className={cls} style={style} title={title}>
+          {text && <span style={span > w ? { width: span, background: d?.look?.fill ? undefined : "var(--sht-bg)" } : undefined}>{text}</span>}
         </div>,
       );
     }
   }
 
   const heads: React.ReactNode[] = [];
+  /** A column shown in a unit other than the file's: its header says which (§8.8). */
+  function unitOfCol(c: number): Unit | null {
+    const l = sheetLenses?.findLast((x) => c >= x.area.c1 && c <= x.area.c2 && x.unit !== 1);
+    return l?.unit ?? null;
+  }
   for (const c of colsShown) {
     if (!widths[c]) continue;
     const fc = c <= frozen.cols;
@@ -561,7 +693,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       e.stopPropagation();
       setSel({ anchor: { r: 1, c }, focus: { r: Math.max(used.r2, 1), c } });
       grid.current?.focus();
-    }}>{colName(c)}</div>);
+    }}>{colName(c)}{unitOfCol(c) && <span className="sht-unit">{unitName(unitOfCol(c)!)}</span>}</div>);
   }
   /** Dragging a header's edge, as in Excel: the column (or row) before it takes the new size. */
   const resize = (kind: "cols" | "rows", n: number, start: number, from: number) => (e: React.MouseEvent) => {
@@ -626,6 +758,39 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   })();
   const activeBox = place(active.r, active.c, widths[active.c], rowY(active.r + 1) - rowY(active.r));
 
+  // Trace arrows, as Excel draws them: from the cell read to the formula reading it, a dot at
+  // its start; an end on another sheet is a dashed stub to a sheet mark.
+  const centre = (cell: string) => {
+    const p = parseAddr(cell);
+    if (!p) return null;
+    const b = place(p.r, p.c, widths[p.c] ?? 0, rowY(p.r + 1) - rowY(p.r));
+    return { x: (b.left as number) + (b.width as number) / 2, y: (b.top as number) + (b.height as number) / 2 };
+  };
+  const arrows: React.ReactNode[] = [];
+  for (const x of trace?.cells ?? []) {
+    if (!x.via || arrows.length >= 300) continue;
+    const cut = x.via.lastIndexOf("!");
+    const via = { sheet: x.via.slice(0, cut), cell: x.via.slice(cut + 1) };
+    const [from, to] = trace!.direction === "up" ? [{ sheet: x.sheet, cell: x.cell }, via] : [via, { sheet: x.sheet, cell: x.cell }];
+    const a = from.sheet === sheetName ? centre(from.cell) : null;
+    const b = to.sheet === sheetName ? centre(to.cell) : null;
+    const k = `${from.sheet}!${from.cell}>${to.sheet}!${to.cell}`;
+    if (a && b) {
+      arrows.push(<g key={k}><circle cx={a.x} cy={a.y} r={3} /><line x1={a.x} y1={a.y} x2={b.x} y2={b.y} markerEnd="url(#sht-arrow)" /></g>);
+    } else if (a || b) {
+      // The other end is on another sheet: a stub up and to the left of the cell here.
+      const p = (a ?? b)!;
+      const q = { x: p.x - 28, y: p.y - 22 };
+      arrows.push(
+        <g key={k} className="off">
+          {a ? <line x1={a.x} y1={a.y} x2={q.x} y2={q.y} markerEnd="url(#sht-arrow)" /> : <line x1={q.x} y1={q.y} x2={b!.x} y2={b!.y} markerEnd="url(#sht-arrow)" />}
+          <rect x={q.x - 7} y={q.y - 12} width={14} height={11} rx={1.5} />
+          <path d={`M${q.x - 7} ${q.y - 8.5}h14M${q.x - 2.5} ${q.y - 12}v11`} />
+        </g>,
+      );
+    }
+  }
+
   const pick = (e: React.MouseEvent) => {
     const el = scroller.current!;
     const rect = el.getBoundingClientRect();
@@ -644,18 +809,49 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
 
   if (!sheet) return <div className="fpn-empty">{t("sheet.empty")}</div>;
   return (
-    <div ref={root} className="sht" onKeyDown={onKey}>
+    <div
+      ref={root}
+      className="sht"
+      onKeyDown={onKey}
+      onPaste={(e) => {
+        if (editing || (e.target as HTMLElement).closest("input, textarea")) return;
+        e.preventDefault();
+        paste(e.clipboardData.getData("text/plain"));
+      }}
+    >
       <div className="sht-tools" role="toolbar" aria-label={t("sheet.tools")}>
         <div className="sht-group">
           <button className="tb" title={t("sheet.save")} aria-label={t("sheet.save")} disabled={!dirty} onClick={() => void save()}><Icon name="save" /></button>
           <button className="tb" title={t("sheet.undo")} aria-label={t("sheet.undo")} disabled={!editable || busy} onClick={() => void history("doc/undo")}><Icon name="undo" /></button>
           <button className="tb sht-redo" title={t("sheet.redo")} aria-label={t("sheet.redo")} disabled={!editable || busy} onClick={() => void history("doc/redo")}><Icon name="undo" /></button>
         </div>
+        <span className="sht-sep" />
+        <div className="sht-group">
+          <Tool icon="tracePre" label={t("sheet.traceUp")} tip={t("sheet.traceUpTip")} on={trace?.direction === "up"} onClick={() => void traceFrom("up")} />
+          <Tool icon="traceDep" label={t("sheet.traceDown")} tip={t("sheet.traceDownTip")} on={trace?.direction === "down"} onClick={() => void traceFrom("down")} />
+          {trace && <Tool icon="traceOff" label={t("sheet.traceClear")} onClick={() => setTrace(null)} />}
+          <Tool icon="fx" label={t("sheet.showFormulas")} tip={t("sheet.showFormulasTip")} on={showFormulas} onClick={() => setShowFormulas((v) => !v)} />
+        </div>
+        <span className="sht-sep" />
+        <div className="sht-group sht-numfmt">
+          <select className="sht-unitsel" aria-label={t("sheet.unit")} title={t("sheet.unitTip")} value={activeLens?.unit ?? 1} onChange={(e) => setSheetLenses(withLens(sheetLenses ?? [], lensArea(), { unit: Number(e.target.value) as Unit }))}>
+            {UNITS.map((u) => <option key={u} value={u}>{unitName(u)}</option>)}
+          </select>
+          <button className="tb sht-dec" title={t("sheet.decimalsMore")} aria-label={t("sheet.decimalsMore")} onClick={() => setSheetLenses(withLens(sheetLenses ?? [], lensArea(), { decimals: (had) => Math.min(10, (had ?? decimalsOf(activeCell?.text ?? "")) + 1) }))}>.00</button>
+          <button className="tb sht-dec" title={t("sheet.decimalsLess")} aria-label={t("sheet.decimalsLess")} onClick={() => setSheetLenses(withLens(sheetLenses ?? [], lensArea(), { decimals: (had) => Math.max(0, (had ?? decimalsOf(activeCell?.text ?? "")) - 1) }))}>.0</button>
+          {!!sheetLenses?.length && (
+            <span className="sht-lens" title={t("sheet.lensChipTip")}>
+              {activeLens ? t("sheet.lensChip", { unit: unitName(activeLens.unit), decimals: activeLens.decimals ?? t("sheet.decimalsFile") }) : t("sheet.lensChipOther")}
+              <button aria-label={t("sheet.lensClear")} title={t("sheet.lensClear")} onClick={() => setSheetLenses([])}><Icon name="x" /></button>
+            </span>
+          )}
+        </div>
         <div className="sht-tools-end">
           {busy && <span className="mini-spin" />}
           <span className={`fpn-state ${dirty ? "dirty" : ""}`}>{dirty ? t("sheet.unsaved") : ""}</span>
+          <button className={`tb ${find ? "on" : ""}`} title={t("sheet.find")} aria-label={t("sheet.find")} onClick={() => (find ? setFind(null) : openFind())}><Icon name="search" /></button>
           <button className={`tb ${showHistory ? "on" : ""}`} title={t("sheet.history")} aria-label={t("sheet.history")} onClick={() => setShowHistory((v) => !v)}><Icon name="clock" /></button>
-          <button className="tb" title={t("sheet.openExcel")} aria-label={t("sheet.openExcel")} onClick={() => void openExcel()}><Icon name="ext" /></button>
+          <Tool icon="ext" label={t("sheet.openInExcel")} tip={t("sheet.openExcel")} onClick={() => void openExcel()} />
         </div>
       </div>
       <div className="sht-bar">
@@ -689,7 +885,27 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
             }
           }}
         />
+        {activeLens && activeCell?.value?.type === "number" && <span className="sht-raw" title={t("sheet.rawTip")}>{editing ? t("sheet.rawInput") : t("sheet.raw")}</span>}
       </div>
+      {find && (
+        <form className="dcp-find sht-find" onSubmit={(e) => e.preventDefault()}>
+          <Icon name="search" />
+          <input
+            ref={findBox}
+            value={find.query}
+            placeholder={t("sheet.findPlaceholder")}
+            onChange={(e) => setFind({ query: e.target.value, hits: null, at: 0, more: false })}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") (e.preventDefault(), void findNext(e.shiftKey));
+              else if (e.key === "Escape") (setFind(null), grid.current?.focus());
+            }}
+          />
+          {find.hits && <span className="dcp-count">{find.hits.length ? `${find.at + 1}/${find.hits.length}${find.more ? "+" : ""}` : t("sheet.findNone")}</span>}
+          <button type="button" className="tb" aria-label={t("sheet.dismiss")} onClick={() => (setFind(null), grid.current?.focus())}><Icon name="x" /></button>
+        </form>
+      )}
+      {trace && <TraceBar trace={trace} onJump={jumpCell} onMore={() => void traceFrom(trace.direction)} onClose={() => setTrace(null)} />}
       {showHistory && (
         <div className="sht-history" role="dialog" aria-label={t("sheet.history")}>
           <div className="sht-history-head"><b>{t("sheet.history")}</b><button className="tb" aria-label={t("sheet.dismiss")} onClick={() => setShowHistory(false)}><Icon name="x" /></button></div>
@@ -743,6 +959,12 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
             }} />
             {heads}
             {cells}
+            {arrows.length > 0 && (
+              <svg className="sht-arrows" style={{ width: HEAD_W + colLeft[nCols + 1], height: HEAD_H + rowY(nRows + 1) }} aria-hidden="true">
+                <defs><marker id="sht-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L8 4L0 8z" /></marker></defs>
+                {arrows}
+              </svg>
+            )}
             <div className={`sht-sel ${multi ? "multi" : ""}`} style={selBox} />
             {!multi && <div className="sht-active" style={{ ...activeBox, zIndex: 5 }} />}
             {editing && !editing.inBar && (
@@ -828,6 +1050,16 @@ function Stat({ label, value, copy, className = "" }: { label: string; value: st
   return (
     <button className={`sht-stat ${className}`} title={t("sheet.copyStat")} onClick={() => void navigator.clipboard.writeText(copy).then(() => st.show(t("sheet.copied")))}>
       {label}: <b>{value}</b>
+    </button>
+  );
+}
+
+/** A toolbar button with its name beside the icon, as Excel's ribbon has them; a narrow panel keeps the icon. */
+function Tool({ icon, label, tip, on, onClick }: { icon: string; label: string; tip?: string; on?: boolean; onClick: () => void }) {
+  return (
+    <button className={`tb sht-btn ${on ? "on" : ""}`} title={tip ?? label} aria-label={label} aria-pressed={on} onClick={onClick}>
+      <Icon name={icon} />
+      <span>{label}</span>
     </button>
   );
 }

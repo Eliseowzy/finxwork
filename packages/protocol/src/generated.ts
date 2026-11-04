@@ -564,7 +564,31 @@ export type DocChangedParams = {
   info: DocInfo;
 };
 
+/** `doc/fill`: one edit that copies the range's first row (or column) across it, formulas moved as Excel moves them (relative references shift, `$` ones stay). */
+export type DocFillParams = {
+  base_revision?: number | null;
+  direction: FillDirection;
+  doc_id: string;
+  range: string;
+  session_id: string;
+  sheet: string;
+};
+
+/** `doc/find`: cells whose shown text or formula contains `query`, case folded. */
+export type DocFindParams = {
+  doc_id: string;
+  limit?: number | null;
+  query: string;
+  session_id: string;
+};
+
 export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls";
+
+export type DocFoundResult = {
+  /** At most 500 for a trace, `limit` for a search; `more` when there were others. */
+  cells: FoundCell[];
+  more?: boolean;
+};
 
 export type DocIdParams = {
   doc_id: string;
@@ -660,6 +684,16 @@ export type DocSaveParams = {
   /** Save as: another file. Without it, the file the document came from. */
   path?: string | null;
   session_id: string;
+};
+
+/** `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10). */
+export type DocTraceParams = {
+  cell: string;
+  depth?: number;
+  direction: TraceDirection;
+  doc_id: string;
+  session_id: string;
+  sheet: string;
 };
 
 /** What a session's document column shows: the page, and what is selected. */
@@ -1000,6 +1034,21 @@ export type FilesWriteResult = {
   /** Why it was refused. */
   message?: string | null;
   status: FileWriteStatus;
+};
+
+export type FillDirection = "down" | "right";
+
+/** A cell found or traced, as the grid lists it and the agent reads it. */
+export type FoundCell = {
+  cell: string;
+  /** For a trace: how many steps from the cell asked about. */
+  depth: number;
+  formula?: string | null;
+  label?: string | null;
+  sheet: string;
+  text: string;
+  /** For a trace: the cell it was reached from (`Sheet!B3`), for the grid's arrows. */
+  via?: string | null;
 };
 
 export type GrantAuthority = "navigate" | "act";
@@ -2050,6 +2099,8 @@ export type ToolState = {
   title: string;
 };
 
+export type TraceDirection = "up" | "down";
+
 export type TranscriptItem = {
   mail?: MailInfo | null;
   message: Message;
@@ -2137,12 +2188,15 @@ export interface Methods {
   "doc/apply": [DocApplyParams, DocApplyResult];
   "doc/cells": [DocCellsParams, DocCellsResult];
   "doc/close": [DocIdParams, Empty];
+  "doc/fill": [DocFillParams, DocApplyResult];
+  "doc/find": [DocFindParams, DocFoundResult];
   "doc/locate": [DocLocateParams, DocLocateResult];
   "doc/open": [DocOpenParams, DocOpenResult];
   "doc/recalc": [DocRecalcParams, DocApplyResult];
   "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
   "doc/save": [DocSaveParams, DocInfo];
+  "doc/trace": [DocTraceParams, DocFoundResult];
   "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
   "files/list": [FilesListParams, FilesListResult];

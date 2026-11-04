@@ -124,3 +124,126 @@ export function selectionStats(cells: readonly CellData[], area: Area): Selectio
 export function statText(n: number, locale?: string): string {
   return new Intl.NumberFormat(locale, { maximumFractionDigits: Math.abs(n) >= 100 ? 2 : 4 }).format(n);
 }
+
+// ── pasting (spreadsheet-design §8.7) ──
+
+/** Text from the clipboard as rows of cells, as Excel puts it there: tabs between cells, quotes around a cell holding a tab, line end or quote. */
+export function parseTsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let i = 0;
+  const s = text.replace(/\r\n?/g, "\n");
+  while (i < s.length) {
+    const ch = s[i];
+    if (ch === '"' && cell === "") {
+      // A quoted cell: "" inside is one quote.
+      let j = i + 1;
+      let quoted = "";
+      for (; j < s.length; j++) {
+        if (s[j] === '"' && s[j + 1] === '"') (quoted += '"'), j++;
+        else if (s[j] === '"') break;
+        else quoted += s[j];
+      }
+      if (j < s.length && (s[j + 1] === "\t" || s[j + 1] === "\n" || j + 1 === s.length)) {
+        cell = quoted;
+        i = j + 1;
+        continue;
+      }
+    }
+    if (ch === "\t") (row.push(cell), (cell = ""));
+    else if (ch === "\n") (row.push(cell), rows.push(row), (row = []), (cell = ""));
+    else cell += ch;
+    i++;
+  }
+  if (cell !== "" || row.length) (row.push(cell), rows.push(row));
+  return rows;
+}
+
+/** At most this many cells in one paste, as one edit (finx's own limit for an edit). */
+export const MAX_PASTE = 10_000;
+
+/** A paste at `at` (top-left) as edits, each cell read as typed; null when it is more than one edit takes. */
+export function pasteOps(sheet: string, at: { r: number; c: number }, rows: string[][]): SheetOp[] | null {
+  const n = rows.reduce((k, row) => k + row.length, 0);
+  if (n === 0 || n > MAX_PASTE) return null;
+  return rows.flatMap((row, i) => row.map((text, j) => inputOp(sheet, addr({ r: at.r + i, c: at.c + j }), text)));
+}
+
+// ── display units (spreadsheet-design §8.8): only how numbers show here, never written ──
+
+/** A unit numbers are shown in: 元 is the file's own. */
+export const UNITS = [1, 1e3, 1e4, 1e6, 1e8] as const;
+export type Unit = (typeof UNITS)[number];
+
+/** How part of a sheet shows its numbers; the last lens over a cell wins. `decimals` null keeps the file's. */
+export type Lens = { area: Area; unit: Unit; decimals: number | null };
+
+export function lensAt(lenses: readonly Lens[] | undefined, r: number, c: number): Lens | undefined {
+  if (!lenses) return undefined;
+  for (let i = lenses.length - 1; i >= 0; i--) {
+    const a = lenses[i].area;
+    if (r >= a.r1 && r <= a.r2 && c >= a.c1 && c <= a.c2) return lenses[i];
+  }
+  return undefined;
+}
+
+/** A plain amount as the file shows it: digits with separators, a sign or brackets, a currency; not %, dates, times or 1E+06. */
+const AMOUNT = /^\s*[-+(]?\s*[$¥€£]?\s*-?\d{1,3}(,\d{3})*(\.\d+)?\s*\)?\s*$|^\s*[-+(]?\s*[$¥€£]?\s*-?\d+(\.\d+)?\s*\)?\s*$/;
+
+/** The decimals the file shows a number with. */
+export const decimalsOf = (text: string) => /\.(\d+)/.exec(text)?.[1].length ?? 0;
+
+/**
+ * A cell as the lens shows it, or null when the lens leaves it as the file shows it: not a
+ * number, or shown as a percentage, a date, a time or in scientific notation.
+ */
+export function lensText(cell: CellData | undefined, lens: Lens | undefined, locale?: string): string | null {
+  if (!lens || cell?.value?.type !== "number" || cell.formula?.startsWith("=TEXT(") || !AMOUNT.test(cell.text)) return null;
+  const decimals = lens.decimals ?? decimalsOf(cell.text);
+  if (lens.unit === 1 && lens.decimals === null) return null;
+  const v = cell.value.value / lens.unit;
+  const out = new Intl.NumberFormat(locale, { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(Math.abs(v));
+  // Negative as the file shows it: in brackets, or with a minus.
+  return v < 0 ? (cell.text.includes("(") ? `(${out})` : `-${out}`) : out;
+}
+
+/** The lenses after setting a unit, or moving the decimals, over `area`; cells outside keep theirs. */
+export function withLens(lenses: readonly Lens[], area: Area, change: { unit?: Unit; decimals?: (had: number | null) => number | null }): Lens[] {
+  const under = lensAt(lenses, area.r1, area.c1);
+  const next: Lens = { area, unit: change.unit ?? under?.unit ?? 1, decimals: change.decimals ? change.decimals(under?.decimals ?? null) : (under?.decimals ?? null) };
+  // A lens entirely under the new one is gone.
+  const kept = lenses.filter((l) => !(l.area.r1 >= area.r1 && l.area.r2 <= area.r2 && l.area.c1 >= area.c1 && l.area.c2 <= area.c2));
+  return next.unit === 1 && next.decimals === null && !kept.some((l) => overlaps(l.area, area)) ? kept : [...kept, next];
+}
+
+const overlaps = (a: Area, b: Area) => a.r1 <= b.r2 && b.r1 <= a.r2 && a.c1 <= b.c2 && b.c1 <= a.c2;
+
+/** The lenses of a document, by sheet, kept on this Mac (others opening the file see it as it is). */
+export function readLenses(docId: string): Record<string, Lens[]> {
+  try {
+    return JSON.parse(localStorage.getItem(`finx.sheet.lens.${docId}`) ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+export function writeLenses(docId: string, lenses: Record<string, Lens[]>) {
+  const kept = Object.fromEntries(Object.entries(lenses).filter(([, l]) => l.length));
+  if (Object.keys(kept).length) localStorage.setItem(`finx.sheet.lens.${docId}`, JSON.stringify(kept));
+  else localStorage.removeItem(`finx.sheet.lens.${docId}`);
+}
+
+// ── hard-coded numbers (spreadsheet-design §8.7) ──
+
+/**
+ * A number typed in among formulas: both neighbours across the row are formulas, or both
+ * neighbours down the column. As in a row of yearly figures where one year was pasted over
+ * with its value, the cell Excel would flag as inconsistent with its neighbours.
+ */
+export function isHardcoded(at: (r: number, c: number) => CellData | undefined, r: number, c: number): boolean {
+  const d = at(r, c);
+  if (d?.value?.type !== "number" || d.formula) return false;
+  const f = (rr: number, cc: number) => !!at(rr, cc)?.formula;
+  return (f(r, c - 1) && f(r, c + 1)) || (f(r - 1, c) && f(r + 1, c));
+}

@@ -588,6 +588,15 @@ impl DocStore {
             .map_err(worker_error)
     }
 
+    /// The edits that fill `range` down or right (Excel's ⌘D, ⌘R), to apply as one revision.
+    pub async fn fill_ops(&self, doc: &Doc, sheet: &str, range: &str, direction: crate::sheet::FillDirection) -> Result<Vec<SheetOp>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetFill { handle: doc.handle, sheet: sheet.into(), range: range.into(), direction })
+            .await
+            .map_err(worker_error)
+    }
+
     async fn send(&self, doc: &Doc, ops: Vec<SheetOp>, preview: bool) -> Result<Applied, DocError> {
         self.worker.request(Request::SheetApply { handle: doc.handle, ops, preview }).await.map_err(worker_error)
     }

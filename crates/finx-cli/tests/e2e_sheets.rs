@@ -253,3 +253,64 @@ async fn a_csv_is_edited_in_its_own_encoding_and_an_xls_stays_read_only() {
     client.request("doc/save", json!({"session_id": session, "doc_id": id})).await.unwrap();
     assert_eq!(std::fs::read_to_string(&tsv).unwrap(), "名称\t金额\r\n项目\t120\r\n");
 }
+
+/// The grid's tools (spreadsheet-design §8.7): trace a cell's precedents and dependents, find
+/// cells, and fill down or right as Excel's ⌘D and ⌘R do, as one undoable edit.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_grid_traces_finds_and_fills() {
+    let env = TestEnv::new("manual", "").await;
+    let schema = SchemaCheck::new(&["DocFoundResult", "DocApplyResult"]);
+    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    client.request("initialize", json!({"protocol_version": 2, "client_info": {"name": "e2e"}})).await.unwrap();
+    let cwd = env.workspace("t");
+    let session = client.request("session/new", json!({"cwd": cwd})).await.unwrap()["session_id"].as_str().unwrap().to_string();
+    let file = cwd.join("模型.xlsx");
+    std::fs::write(&file, fixture()).unwrap();
+    let opened = client.request("doc/open", json!({"session_id": session, "path": file})).await.unwrap();
+    let doc = opened["info"]["doc_id"].as_str().unwrap().to_string();
+    let found = |r: &Json| -> Vec<String> { r["cells"].as_array().unwrap().iter().map(|c| format!("{}!{}", c["sheet"].as_str().unwrap(), c["cell"].as_str().unwrap())).collect() };
+
+    // Precedents, one step: what the enterprise value adds up, each reached from D15.
+    let up = client.request("doc/trace", json!({"session_id": session, "doc_id": doc, "sheet": "估值", "cell": "D15", "direction": "up"})).await.unwrap();
+    schema.check("DocFoundResult", &up);
+    let cells = found(&up);
+    assert!(cells.contains(&"估值!D3".to_string()) && cells.contains(&"估值!D14".to_string()), "{cells:?}");
+    assert!(up["cells"].as_array().unwrap().iter().all(|c| c["depth"] == 1 && c["via"] == "估值!D15"), "{up}");
+    // Two steps out: the second ring says which cell it came through.
+    let deeper = client.request("doc/trace", json!({"session_id": session, "doc_id": doc, "sheet": "估值", "cell": "D15", "direction": "up", "depth": 2})).await.unwrap();
+    assert!(deeper["cells"].as_array().unwrap().iter().any(|c| c["depth"] == 2 && c["via"].as_str().is_some_and(|v| v != "估值!D15")), "{deeper}");
+    // Dependents: WACC is read somewhere.
+    let down = client.request("doc/trace", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "cell": "B6", "direction": "down"})).await.unwrap();
+    assert!(!found(&down).is_empty());
+
+    // Find: by shown text.
+    let hits = client.request("doc/find", json!({"session_id": session, "doc_id": doc, "query": "wacc"})).await.unwrap();
+    schema.check("DocFoundResult", &hits);
+    assert!(found(&hits).contains(&"假设!A6".to_string()), "{hits}");
+    let one = client.request("doc/find", json!({"session_id": session, "doc_id": doc, "query": "0", "limit": 1})).await.unwrap();
+    assert_eq!(one["cells"].as_array().unwrap().len(), 1);
+    assert_eq!(one["more"], true);
+
+    // Fill right: the formula moves as Excel moves it; one revision, undone as one.
+    let before = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "利润表", "range": "B4:D4"})).await.unwrap();
+    let b4 = cell(&before, "B4")["formula"].as_str().unwrap().to_string();
+    assert!(b4.contains("B3"), "{b4}");
+    client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": [{"op": "set_value", "sheet": "假设", "cell": "K1", "value": 5}]})).await.unwrap();
+    let filled = client.request("doc/fill", json!({"session_id": session, "doc_id": doc, "sheet": "利润表", "range": "B4:D4", "direction": "right", "base_revision": 1})).await.unwrap();
+    schema.check("DocApplyResult", &filled);
+    assert_eq!(filled["revision"], 2);
+    let after = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "利润表", "range": "B4:D4"})).await.unwrap();
+    assert_eq!(cell(&after, "C4")["formula"], b4.replace("B3", "C3"));
+    assert_eq!(cell(&after, "D4")["formula"], b4.replace("B3", "D3"));
+    // Fill down: a value copies; the empty cell under an empty source stays empty.
+    client.request("doc/fill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "K1:K3", "direction": "down"})).await.unwrap();
+    let k = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "K1:K3"})).await.unwrap();
+    assert_eq!(cell(&k, "K3")["value"], json!({"type": "number", "value": 5.0}));
+    let undone = client.request("doc/undo", json!({"session_id": session, "doc_id": doc})).await.unwrap();
+    assert_eq!(undone["revision"], 4);
+    let k = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "K2:K3"})).await.unwrap();
+    assert!(k["cells"].as_array().unwrap().iter().all(|c| c["value"].is_null() || c["text"] == ""), "{k}");
+    // Nothing to fill into: refused, nothing written.
+    let refused = client.request("doc/fill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "K1", "direction": "down"})).await;
+    assert!(refused.is_err());
+}

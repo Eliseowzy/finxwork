@@ -129,6 +129,32 @@ impl Server {
         Ok(DocApplyResult { revision, impact, dirty })
     }
 
+    /// The grid's 追踪引用 / 追踪从属 (spreadsheet-design §8.7).
+    pub(crate) async fn doc_trace(&self, p: finx_protocol::doc::DocTraceParams) -> Result<finx_protocol::doc::DocFoundResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let cells = self.0.docs.trace(&doc, &p.sheet, &p.cell, p.direction, p.depth).await.map_err(rpc_error)?;
+        Ok(finx_protocol::doc::DocFoundResult { more: cells.len() >= 500, cells })
+    }
+
+    /// The grid's ⌘F.
+    pub(crate) async fn doc_find(&self, p: finx_protocol::doc::DocFindParams) -> Result<finx_protocol::doc::DocFoundResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let limit = p.limit.unwrap_or(200).clamp(1, 1000) as usize;
+        // One more than shown says whether there are others.
+        let mut cells = self.0.docs.find_cells(&doc, &p.query, limit + 1).await.map_err(rpc_error)?;
+        let more = cells.len() > limit;
+        cells.truncate(limit);
+        Ok(finx_protocol::doc::DocFoundResult { cells, more })
+    }
+
+    /// The grid's ⌘D / ⌘R: worked out by the worker, applied as one edit.
+    pub(crate) async fn doc_fill(&self, p: finx_protocol::doc::DocFillParams) -> Result<DocApplyResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let ops = self.0.docs.fill_ops(&doc, &p.sheet, &p.range, p.direction).await.map_err(rpc_error)?;
+        let (revision, impact, dirty) = self.0.docs.apply(&doc, &p.session_id, ops, p.base_revision, false).await.map_err(rpc_error)?;
+        Ok(DocApplyResult { revision, impact, dirty })
+    }
+
     pub(crate) async fn doc_save(&self, p: DocSaveParams) -> Result<DocInfo, RpcError> {
         let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
         let to = match &p.path {

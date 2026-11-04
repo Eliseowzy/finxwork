@@ -66,7 +66,8 @@ export function run(st: Store, c: Command) {
       return openProject(st);
     case "search":
       // In the file panel's editor, ⌘F is the editor's own Find (file-panel-design §5).
-      if (document.activeElement?.closest(".cm-editor")) return void window.dispatchEvent(new Event("finx:find"));
+      // In a workbook, ⌘F finds in it, as Excel's does (spreadsheet-design §8.7).
+      if (document.activeElement?.closest(".cm-editor, .sht")) return void window.dispatchEvent(new Event("finx:find"));
       return st.set({ searching: true });
     case "nextAttention":
       return next(st, needsAttention);

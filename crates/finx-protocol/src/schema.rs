@@ -86,6 +86,21 @@ pub fn document() -> Value {
             name::<crate::doc::DocApplyResult>(g),
         ),
         (
+            method::DOC_TRACE,
+            Some(name::<crate::doc::DocTraceParams>(g)),
+            name::<crate::doc::DocFoundResult>(g),
+        ),
+        (
+            method::DOC_FIND,
+            Some(name::<crate::doc::DocFindParams>(g)),
+            name::<crate::doc::DocFoundResult>(g),
+        ),
+        (
+            method::DOC_FILL,
+            Some(name::<crate::doc::DocFillParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
             method::DOC_SAVE,
             Some(name::<crate::doc::DocSaveParams>(g)),
             name::<crate::doc::DocInfo>(g),

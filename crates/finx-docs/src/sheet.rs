@@ -68,29 +68,9 @@ fn height_px(points: f64) -> f32 {
     (points * 4.0 / 3.0).round() as f32
 }
 
-/// A cell found or traced, as the agent reads it.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Found {
-    pub sheet: String,
-    pub cell: String,
-    pub text: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub formula: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub label: Option<String>,
-    /// For a trace: how many steps from the cell asked about.
-    #[serde(default)]
-    pub depth: u32,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum Direction {
-    /// What the cell reads.
-    Up,
-    /// What reads the cell.
-    Down,
-}
+pub use finx_protocol::doc::FillDirection;
+pub use finx_protocol::doc::FoundCell as Found;
+pub use finx_protocol::doc::TraceDirection as Direction;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Applied {
@@ -460,7 +440,7 @@ impl Sheets {
 }
 
 impl Sheets {
-    fn found(book: &Book, n: Node, depth: u32) -> Found {
+    fn found(book: &Book, n: Node, depth: u32, via: Option<Node>) -> Found {
         let style = book.style(n.0, n.1);
         Found {
             sheet: book.sheets[n.0].name.clone(),
@@ -469,6 +449,7 @@ impl Sheets {
             formula: book.formula(n.0, n.1).map(|f| formula_text(&display(f))),
             label: book.label(n.0, n.1),
             depth,
+            via: via.map(|v| format!("{}!{}", book.sheets[v.0].name, v.1)),
         }
     }
 
@@ -480,7 +461,7 @@ impl Sheets {
             for name in flat.names() {
                 for (at, _, text, formula) in flat.cells(&name, None).unwrap_or_default() {
                     if text.to_lowercase().contains(&q) || formula.as_deref().is_some_and(|f| f.to_lowercase().contains(&q)) {
-                        out.push(Found { sheet: name.clone(), cell: at.to_string(), text, formula: formula.map(|f| formula_text(&f)), label: None, depth: 0 });
+                        out.push(Found { sheet: name.clone(), cell: at.to_string(), text, formula: formula.map(|f| formula_text(&f)), label: None, depth: 0, via: None });
                         if out.len() >= limit {
                             return Ok(out);
                         }
@@ -499,7 +480,7 @@ impl Sheets {
                 let text = book.display(&book.value(s, c.at), &style).0;
                 let formula = book.formula(s, c.at).unwrap_or("");
                 if text.to_lowercase().contains(&q) || display(formula).to_lowercase().contains(&q) {
-                    out.push(Self::found(book, (s, c.at), 0));
+                    out.push(Self::found(book, (s, c.at), 0, None));
                     if out.len() >= limit {
                         return Ok(out);
                     }
@@ -544,7 +525,7 @@ impl Sheets {
                 };
                 for m in step {
                     if seen.insert(m) {
-                        out.push(Self::found(book, m, d));
+                        out.push(Self::found(book, m, d, Some(n)));
                         next.push(m);
                         if out.len() >= 500 {
                             return Ok(out);
@@ -555,6 +536,64 @@ impl Sheets {
             frontier = next;
         }
         Ok(out)
+    }
+
+    /// Excel's fill down (⌘D) or right (⌘R) as plain edits: the range's first row (or column)
+    /// copied across it, formulas moved by `formula::translate` as Excel moves them. A source
+    /// cell that is empty empties its targets; an error value is refused, as Excel would keep
+    /// it but a typed value would turn it into text.
+    pub fn fill(&mut self, handle: u64, sheet: &str, range: &str, direction: FillDirection) -> Result<Vec<SheetOp>, String> {
+        let rect = Rect::parse(range).ok_or_else(|| format!("not a range: {range}"))?;
+        let (first, last) = (rect.first, rect.last);
+        let targets = match direction {
+            FillDirection::Down => (last.row - first.row) as u64 * (last.col - first.col + 1) as u64,
+            FillDirection::Right => (last.col - first.col) as u64 * (last.row - first.row + 1) as u64,
+        };
+        if targets == 0 {
+            return Err(format!("{REFUSED}select the cells to fill as well as the ones to copy"));
+        }
+        if targets > MAX_CELLS {
+            return Err(format!("{range} fills {targets} cells; fill at most {MAX_CELLS} at a time"));
+        }
+        // Each source cell, as (value, stored formula).
+        let source: Box<dyn Fn(CellRef) -> (Value, Option<String>)> = if let Some(flat) = self.flat(handle) {
+            let cells: HashMap<CellRef, (Value, Option<String>)> = flat.cells(sheet, Some(rect)).ok_or_else(|| format!("no sheet named {sheet}"))?.into_iter().map(|(at, v, _, f)| (at, (v, f))).collect();
+            Box::new(move |at| cells.get(&at).cloned().unwrap_or((Value::Empty, None)))
+        } else {
+            let doc = self.doc(handle)?;
+            let book = &doc.book;
+            let s = book.sheet_index(sheet).ok_or_else(|| format!("no sheet named {sheet}"))?;
+            let cells: HashMap<CellRef, (Value, Option<String>)> = match direction {
+                FillDirection::Down => (first.col..=last.col).map(|c| CellRef::new(first.row, c)).collect::<Vec<_>>(),
+                FillDirection::Right => (first.row..=last.row).map(|r| CellRef::new(r, first.col)).collect(),
+            }
+            .into_iter()
+            .map(|at| (at, (book.value(s, at), book.formula(s, at).map(str::to_string))))
+            .collect();
+            Box::new(move |at| cells.get(&at).cloned().unwrap_or((Value::Empty, None)))
+        };
+        let mut ops = Vec::new();
+        let pairs: Vec<(CellRef, CellRef)> = match direction {
+            FillDirection::Down => (first.col..=last.col).flat_map(|c| (first.row + 1..=last.row).map(move |r| (CellRef::new(first.row, c), CellRef::new(r, c)))).collect(),
+            FillDirection::Right => (first.row..=last.row).flat_map(|r| (first.col + 1..=last.col).map(move |c| (CellRef::new(r, first.col), CellRef::new(r, c)))).collect(),
+        };
+        for (from, to) in pairs {
+            let (value, formula) = source(from);
+            let (sheet, cell) = (sheet.to_string(), to.to_string());
+            ops.push(match (formula, value) {
+                (Some(f), _) => {
+                    let moved = finx_sheet::formula::translate(&f, to.row as i64 - from.row as i64, to.col as i64 - from.col as i64)
+                        .map_err(|e| format!("{REFUSED}the formula in {from} cannot move to {to}: {e}"))?;
+                    SheetOp::SetFormula { sheet, cell, formula: formula_text(&display(&moved)) }
+                }
+                (None, Value::Number(n)) => SheetOp::SetValue { sheet, cell, value: CellInput::Number(n) },
+                (None, Value::Bool(b)) => SheetOp::SetValue { sheet, cell, value: CellInput::Bool(b) },
+                (None, Value::Text(t)) => SheetOp::SetValue { sheet, cell, value: CellInput::Text(t) },
+                (None, Value::Error(e)) => return Err(format!("{REFUSED}{from} holds the error {e}; fill it in Excel")),
+                (None, Value::Empty) => SheetOp::Clear { sheet, range: cell },
+            });
+        }
+        Ok(ops)
     }
 
     /// What the agent reads first (spreadsheet-design §9.1): each sheet's extent and inputs, the
@@ -620,7 +659,7 @@ impl Sheets {
             out.push('\n');
             if let Some(cells) = inputs.get(&s) {
                 let shown: Vec<String> = cells.iter().take(12).map(|c| {
-                    let f = Self::found(book, (s, *c), 0);
+                    let f = Self::found(book, (s, *c), 0, None);
                     format!("{}{} = {}", f.label.map(|l| format!("{l} ")).unwrap_or_default(), f.cell, f.text)
                 }).collect();
                 out.push_str(&format!("Inputs ({}): {}{}\n", cells.len(), shown.join("; "), if cells.len() > 12 { "; …" } else { "" }));
@@ -628,11 +667,11 @@ impl Sheets {
         }
         if let Some(e) = engine {
             let outputs: Vec<Node> = e.graph.reads.keys().copied().filter(|n| e.graph.read_by.get(n).is_none_or(|r| r.is_empty())).collect::<BTreeSet<_>>().into_iter().collect();
-            let labelled: Vec<String> = outputs.iter().map(|n| Self::found(book, *n, 0)).filter(|f| f.label.is_some()).take(15).map(|f| format!("{}!{} {} = {}", f.sheet, f.cell, f.label.unwrap(), f.text)).collect();
+            let labelled: Vec<String> = outputs.iter().map(|n| Self::found(book, *n, 0, None)).filter(|f| f.label.is_some()).take(15).map(|f| format!("{}!{} {} = {}", f.sheet, f.cell, f.label.unwrap(), f.text)).collect();
             if !labelled.is_empty() {
                 out.push_str(&format!("\nOutputs (formulas nothing else reads, {} in all): {}\n", outputs.len(), labelled.join("; ")));
             }
-            let held: Vec<String> = e.constants().iter().take(10).map(|n| Self::found(book, *n, 0)).map(|f| format!("{}!{} {}", f.sheet, f.cell, f.formula.unwrap_or_default())).collect();
+            let held: Vec<String> = e.constants().iter().take(10).map(|n| Self::found(book, *n, 0, None)).map(|f| format!("{}!{} {}", f.sheet, f.cell, f.formula.unwrap_or_default())).collect();
             if !held.is_empty() {
                 out.push_str(&format!("Held at their saved value (add-in functions or links to other files; Excel recomputes them): {}\n", held.join("; ")));
             }

@@ -456,6 +456,89 @@ pub struct DocApplyResult {
     pub dirty: bool,
 }
 
+/// A cell found or traced, as the grid lists it and the agent reads it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FoundCell {
+    pub sheet: String,
+    pub cell: String,
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub formula: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// For a trace: how many steps from the cell asked about.
+    #[serde(default)]
+    pub depth: u32,
+    /// For a trace: the cell it was reached from (`Sheet!B3`), for the grid's arrows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub via: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TraceDirection {
+    /// What the cell reads (Excel's precedents).
+    Up,
+    /// What reads the cell (Excel's dependents).
+    Down,
+}
+
+/// `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocTraceParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub sheet: String,
+    pub cell: String,
+    pub direction: TraceDirection,
+    #[serde(default = "one")]
+    pub depth: u32,
+}
+
+fn one() -> u32 {
+    1
+}
+
+/// `doc/find`: cells whose shown text or formula contains `query`, case folded.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocFindParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocFoundResult {
+    /// At most 500 for a trace, `limit` for a search; `more` when there were others.
+    pub cells: Vec<FoundCell>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub more: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FillDirection {
+    /// Excel's ⌘D: the range's first row into the rows under it.
+    Down,
+    /// Excel's ⌘R: the range's first column into the columns to its right.
+    Right,
+}
+
+/// `doc/fill`: one edit that copies the range's first row (or column) across it, formulas
+/// moved as Excel moves them (relative references shift, `$` ones stay).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocFillParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub sheet: String,
+    pub range: String,
+    pub direction: FillDirection,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<u64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DocRecalcParams {
     pub session_id: String,

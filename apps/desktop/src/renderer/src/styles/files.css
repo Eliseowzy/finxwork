@@ -98,11 +98,50 @@
 .fpn-note.bad>.ic{color:var(--red)}
 
 /* Workbooks (spreadsheet-design §8) */
-.sht{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;--sht-bg:var(--win);outline:none}
-.sht-tools{height:34px;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px;min-width:0;border-bottom:.5px solid var(--sep)}
+.sht{flex:1;min-height:0;display:flex;flex-direction:column;position:relative;--sht-bg:var(--win);outline:none;container-type:inline-size;--trace:#2f6fed}
+.sht-tools{min-height:34px;flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;padding:3px 8px;min-width:0;border-bottom:.5px solid var(--sep)}
 .sht-group{display:flex;align-items:center;gap:2px}
 .sht-tools-end{margin-left:auto;display:flex;align-items:center;gap:2px;min-width:0}
 .sht-tools .tb{height:28px;min-width:28px;padding:0}
+.sht-sep{flex:none;width:.5px;height:18px;background:var(--sep);margin:0 2px}
+.sht-tools .sht-btn{display:flex;align-items:center;gap:5px;padding:0 8px;font:inherit;font-size:12.5px;white-space:nowrap}
+.sht-btn span{white-space:nowrap}
+@container (max-width:520px){.sht-tools .sht-btn{padding:0}.sht-btn span{display:none}}
+.sht-numfmt{gap:4px}
+.sht-unitsel{height:24px;font:inherit;font-size:12.5px;background:var(--field);color:var(--l1);border:0;border-radius:var(--r-xs);padding:0 4px;outline:none}
+.sht-unitsel:focus{box-shadow:0 0 0 1.5px var(--accent)}
+.sht-tools .sht-dec{font-family:var(--mono);font-size:11px;min-width:30px}
+.sht-lens{flex:none;display:flex;align-items:center;gap:2px;height:22px;padding:0 2px 0 9px;border-radius:11px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:12px;white-space:nowrap}
+.sht-lens button{border:0;background:none;color:inherit;width:18px;height:18px;display:grid;place-items:center;border-radius:9px;cursor:default}
+.sht-lens button:hover{background:color-mix(in srgb,var(--accent) 20%,transparent)}
+.sht-lens .ic{width:10px;height:10px}
+.sht-raw{flex:none;font-size:11.5px;color:var(--accent);padding:0 4px;white-space:nowrap}
+.sht-unit{margin-left:3px;font-size:9.5px;line-height:13px;padding:0 3px;border-radius:3px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+.sht-h.col{grid-auto-flow:column}
+.sht-c.traced{box-shadow:inset 0 0 0 1.5px var(--trace)}
+.sht-c.found{background:color-mix(in srgb,#f5c542 30%,var(--sht-bg))}
+.sht-c.hard::after{content:"";position:absolute;left:0;top:0;z-index:2;border-style:solid;border-width:6px 6px 0 0;border-color:var(--orange) transparent transparent transparent}
+.sht-c.asformula span{font-family:var(--mono);font-size:11.5px;color:var(--l2)}
+.sht-arrows{position:absolute;left:0;top:0;pointer-events:none;z-index:5;overflow:visible}
+.sht-arrows line{stroke:var(--trace);stroke-width:1.4}
+.sht-arrows circle,.sht-arrows marker path{fill:var(--trace)}
+.sht-arrows .off line{stroke-dasharray:4 3}
+.sht-arrows .off rect{fill:var(--win);stroke:var(--trace);stroke-width:1}
+.sht-arrows .off path{stroke:var(--trace);stroke-width:.8;fill:none}
+.sht-find{padding:5px 8px}
+.sht-trace{flex:none;display:flex;flex-direction:column;max-height:180px;border-bottom:.5px solid var(--sep);font-size:12.5px}
+.sht-trace-head{display:flex;align-items:center;gap:6px;min-height:30px;padding:2px 6px 2px 12px;color:var(--l2)}
+.sht-trace-head>.ic{color:var(--trace);width:14px;height:14px}
+.sht-trace-head b{font-weight:500;color:var(--l1)}
+.sht-trace-end{margin-left:auto;display:flex;align-items:center;gap:4px}
+.sht-trace-list{overflow:auto;padding:0 4px 6px}
+.sht-trace-row{display:flex;align-items:baseline;gap:8px;width:100%;text-align:left;border:0;background:none;font:inherit;color:var(--l1);padding:3px 8px;border-radius:var(--r-xs);cursor:default}
+.sht-trace-row:hover{background:var(--fill)}
+.sht-trace-at{flex:none;font-family:var(--mono);font-size:11.5px;color:var(--trace)}
+.sht-trace-label{flex:none;color:var(--l2)}
+.sht-trace-v{flex:none;font-variant-numeric:tabular-nums}
+.sht-trace-row code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11.5px;color:var(--l3)}
+.sht-trace-empty{padding:2px 12px 8px;color:var(--l3)}
 .sht-bar{height:32px;flex:none;display:flex;align-items:center;gap:6px;padding:0 8px;min-width:0;border-bottom:.5px solid var(--sep)}
 .sht-name{width:72px;height:24px;font:inherit;font-size:12.5px;padding:0 6px;border:0;border-radius:var(--r-xs);background:var(--field);color:var(--l1);outline:none}
 .sht-fx{font-style:italic;color:var(--l3);font-size:12px}

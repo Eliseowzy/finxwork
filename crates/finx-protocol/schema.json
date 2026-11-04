@@ -95,6 +95,15 @@
       "$ref": "#/definitions/DocChangedParams"
     },
     {
+      "$ref": "#/definitions/DocFillParams"
+    },
+    {
+      "$ref": "#/definitions/DocFindParams"
+    },
+    {
+      "$ref": "#/definitions/DocFoundResult"
+    },
+    {
       "$ref": "#/definitions/DocIdParams"
     },
     {
@@ -123,6 +132,9 @@
     },
     {
       "$ref": "#/definitions/DocSaveParams"
+    },
+    {
+      "$ref": "#/definitions/DocTraceParams"
     },
     {
       "$ref": "#/definitions/DocViewParams"
@@ -2576,6 +2588,70 @@
       ],
       "type": "object"
     },
+    "DocFillParams": {
+      "description": "`doc/fill`: one edit that copies the range's first row (or column) across it, formulas moved as Excel moves them (relative references shift, `$` ones stay).",
+      "properties": {
+        "base_revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "direction": {
+          "$ref": "#/definitions/FillDirection"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "range": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "doc_id",
+        "range",
+        "session_id",
+        "sheet"
+      ],
+      "type": "object"
+    },
+    "DocFindParams": {
+      "description": "`doc/find`: cells whose shown text or formula contains `query`, case folded.",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "query",
+        "session_id"
+      ],
+      "type": "object"
+    },
     "DocFormat": {
       "oneOf": [
         {
@@ -2601,6 +2677,24 @@
           "type": "string"
         }
       ]
+    },
+    "DocFoundResult": {
+      "properties": {
+        "cells": {
+          "description": "At most 500 for a trace, `limit` for a search; `more` when there were others.",
+          "items": {
+            "$ref": "#/definitions/FoundCell"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cells"
+      ],
+      "type": "object"
     },
     "DocIdParams": {
       "properties": {
@@ -2917,6 +3011,40 @@
       "required": [
         "doc_id",
         "session_id"
+      ],
+      "type": "object"
+    },
+    "DocTraceParams": {
+      "description": "`doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10).",
+      "properties": {
+        "cell": {
+          "type": "string"
+        },
+        "depth": {
+          "default": 1,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "direction": {
+          "$ref": "#/definitions/TraceDirection"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cell",
+        "direction",
+        "doc_id",
+        "session_id",
+        "sheet"
       ],
       "type": "object"
     },
@@ -4436,6 +4564,70 @@
       },
       "required": [
         "status"
+      ],
+      "type": "object"
+    },
+    "FillDirection": {
+      "oneOf": [
+        {
+          "description": "Excel's ⌘D: the range's first row into the rows under it.",
+          "enum": [
+            "down"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Excel's ⌘R: the range's first column into the columns to its right.",
+          "enum": [
+            "right"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "FoundCell": {
+      "description": "A cell found or traced, as the grid lists it and the agent reads it.",
+      "properties": {
+        "cell": {
+          "type": "string"
+        },
+        "depth": {
+          "default": 0,
+          "description": "For a trace: how many steps from the cell asked about.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "formula": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sheet": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "via": {
+          "description": "For a trace: the cell it was reached from (`Sheet!B3`), for the grid's arrows.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "cell",
+        "sheet",
+        "text"
       ],
       "type": "object"
     },
@@ -8575,6 +8767,24 @@
       ],
       "type": "object"
     },
+    "TraceDirection": {
+      "oneOf": [
+        {
+          "description": "What the cell reads (Excel's precedents).",
+          "enum": [
+            "up"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "What reads the cell (Excel's dependents).",
+          "enum": [
+            "down"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "TranscriptItem": {
       "oneOf": [
         {
@@ -9001,6 +9211,14 @@
       "params": "DocIdParams",
       "result": "Empty"
     },
+    "doc/fill": {
+      "params": "DocFillParams",
+      "result": "DocApplyResult"
+    },
+    "doc/find": {
+      "params": "DocFindParams",
+      "result": "DocFoundResult"
+    },
     "doc/locate": {
       "params": "DocLocateParams",
       "result": "DocLocateResult"
@@ -9024,6 +9242,10 @@
     "doc/save": {
       "params": "DocSaveParams",
       "result": "DocInfo"
+    },
+    "doc/trace": {
+      "params": "DocTraceParams",
+      "result": "DocFoundResult"
     },
     "doc/undo": {
       "params": "DocIdParams",

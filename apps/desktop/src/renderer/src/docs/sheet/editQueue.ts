@@ -15,7 +15,11 @@ export type EditQueue = {
   made: (r: { revision: number; dirty: boolean }) => void;
   /** The revision the next edit goes against. */
   revision: () => number;
-  /** Whether `revision` was made here (and forgets those up to it): anything else is the agent's. */
+  /**
+   * Whether `revision` was made here (and forgets those up to it): anything else is the agent's.
+   * While an edit of this view is on its way, finx's doc/changed for it can come before its
+   * reply: a revision then is this view's (another's, in between, would have made the edit stale).
+   */
   takeOwn: (revision: number) => boolean;
 };
 
@@ -47,7 +51,7 @@ export function useEditQueue(session: string, info: DocInfo): EditQueue {
     },
     revision: () => revision.current,
     takeOwn: (r) => {
-      const mine = own.current.has(r);
+      const mine = own.current.has(r) || pending.current > 0;
       for (const x of own.current) if (x <= r) own.current.delete(x);
       return mine;
     },

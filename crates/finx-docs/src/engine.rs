@@ -41,6 +41,8 @@ pub enum Request {
     SheetSummary { handle: u64 },
     SheetFind { handle: u64, query: String, limit: usize },
     SheetTrace { handle: u64, sheet: String, cell: String, direction: crate::sheet::Direction, depth: u32 },
+    /// The edits a fill down or right makes, not applied.
+    SheetFill { handle: u64, sheet: String, range: String, direction: crate::sheet::FillDirection },
 }
 
 impl Request {
@@ -55,7 +57,8 @@ impl Request {
             | Request::SheetRecalc { handle, .. }
             | Request::SheetSummary { handle }
             | Request::SheetFind { handle, .. }
-            | Request::SheetTrace { handle, .. } => Some(*handle),
+            | Request::SheetTrace { handle, .. }
+            | Request::SheetFill { handle, .. } => Some(*handle),
             Request::Open { .. } | Request::SheetOpen { .. } => None,
         }
     }
@@ -330,6 +333,7 @@ fn handle(pdf: &mut Option<Result<Engine, String>>, sheets: &mut crate::sheet::S
         Request::SheetSummary { handle } => json(serde_json::to_value(sheets.summary(handle)?)),
         Request::SheetFind { handle, query, limit } => json(serde_json::to_value(sheets.find(handle, &query, limit)?)),
         Request::SheetTrace { handle, sheet, cell, direction, depth } => json(serde_json::to_value(sheets.trace(handle, &sheet, &cell, direction, depth)?)),
+        Request::SheetFill { handle, sheet, range, direction } => json(serde_json::to_value(sheets.fill(handle, &sheet, &range, direction)?)),
         Request::Close { handle } if sheets.close(handle) => Ok(serde_json::Value::Null),
         request => match pdf.get_or_insert_with(Engine::new) {
             Ok(engine) => engine.handle(request),

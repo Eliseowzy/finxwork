@@ -662,6 +662,27 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::DOC_TRACE => match finx_rpc::params::<finx_protocol::doc::DocTraceParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_trace(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_FIND => match finx_rpc::params::<finx_protocol::doc::DocFindParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_find(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_FILL => match finx_rpc::params::<finx_protocol::doc::DocFillParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_fill(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::DOC_SAVE => match finx_rpc::params::<finx_protocol::doc::DocSaveParams>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();

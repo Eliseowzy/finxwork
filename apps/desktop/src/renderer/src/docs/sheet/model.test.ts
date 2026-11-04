@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { editTextOf, inputOp, readable, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv } from "./model.ts";
+import { editTextOf, inputOp, isHardcoded, lensAt, lensText, parseTsv, pasteOps, readable, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, withLens, type Lens } from "./model.ts";
 
 test("what is typed reads as Excel reads it", () => {
   const v = (raw: string) => inputOp("S", "A1", raw);
@@ -62,4 +62,54 @@ test("status figures read without float noise", () => {
   assert.equal(statText(1122.6666666667, "en"), "1,122.67");
   assert.equal(statText(22.222222222, "en"), "22.2222");
   assert.equal(statText(0.085, "en"), "0.085");
+});
+
+test("a paste reads as Excel writes the clipboard", () => {
+  assert.deepEqual(parseTsv("a\tb\n1\t2\n"), [["a", "b"], ["1", "2"]]);
+  assert.deepEqual(parseTsv("a\r\nb"), [["a"], ["b"]]);
+  assert.deepEqual(parseTsv('"x\ty"\t"say ""hi"""\n"two\nlines"'), [["x\ty", 'say "hi"'], ["two\nlines"]]);
+  assert.deepEqual(parseTsv('5" disk\t1'), [['5" disk', "1"]]);
+  assert.deepEqual(parseTsv("a\t\tc"), [["a", "", "c"]]);
+  const ops = pasteOps("S", { r: 2, c: 2 }, [["1,234", "=B1"], ["", "x"]]);
+  assert.deepEqual(ops, [
+    { op: "set_value", sheet: "S", cell: "B2", value: 1234 },
+    { op: "set_formula", sheet: "S", cell: "C2", formula: "=B1" },
+    { op: "clear", sheet: "S", range: "B3" },
+    { op: "set_value", sheet: "S", cell: "C3", value: "x" },
+  ]);
+  assert.equal(pasteOps("S", { r: 1, c: 1 }, []), null);
+});
+
+test("a lens shows amounts in a unit and leaves the rest as the file shows it", () => {
+  const n = (text: string, value: number, formula?: string) => ({ cell: "A1", text, value: { type: "number", value }, formula }) as never;
+  const wan: Lens = { area: { r1: 1, c1: 1, r2: 9, c2: 1 }, unit: 1e4, decimals: 2 };
+  assert.equal(lensText(n("1,234,567.89", 1234567.89), wan, "en"), "123.46");
+  assert.equal(lensText(n("(12,000)", -12000), wan, "en"), "(1.20)");
+  assert.equal(lensText(n("-12000", -12000), wan, "en"), "-1.20");
+  // Percentages, dates and scientific notation stay.
+  for (const text of ["8.5%", "2024/1/1", "1.2E+06", "12:30"]) assert.equal(lensText(n(text, 1), wan, "en"), null, text);
+  // Text stays; the file's own decimals when the lens keeps them.
+  assert.equal(lensText({ cell: "A1", text: "x", value: { type: "text", value: "x" } } as never, wan, "en"), null);
+  assert.equal(lensText(n("1,344.00", 1344), { ...wan, unit: 1e3, decimals: null }, "en"), "1.34");
+  assert.equal(lensText(n("1,344.00", 1344), { ...wan, unit: 1, decimals: 0 }, "en"), "1,344");
+  // The last lens over a cell wins; one wholly under a new one goes.
+  const a = withLens([], { r1: 1, c1: 1, r2: 9, c2: 3 }, { unit: 1e4 });
+  const b = withLens(a, { r1: 2, c1: 2, r2: 2, c2: 2 }, { decimals: (d) => (d ?? 2) + 1 });
+  assert.equal(lensAt(b, 2, 2)!.decimals, 3);
+  assert.equal(lensAt(b, 2, 2)!.unit, 1e4);
+  assert.equal(lensAt(b, 3, 3)!.decimals, null);
+  assert.deepEqual(withLens(b, { r1: 1, c1: 1, r2: 9, c2: 3 }, { unit: 1, decimals: () => null }), []);
+});
+
+test("a number typed among formulas is marked", () => {
+  const grid: Record<string, unknown> = {
+    "1:1": { formula: "=X", value: { type: "number", value: 1 } },
+    "1:2": { value: { type: "number", value: 2 } },
+    "1:3": { formula: "=Y", value: { type: "number", value: 3 } },
+    "2:2": { value: { type: "number", value: 4 } },
+  };
+  const at = (r: number, c: number) => grid[`${r}:${c}`] as never;
+  assert.equal(isHardcoded(at, 1, 2), true);
+  assert.equal(isHardcoded(at, 1, 1), false);
+  assert.equal(isHardcoded(at, 2, 2), false);
 });
