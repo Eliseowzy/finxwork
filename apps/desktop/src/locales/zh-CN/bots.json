@@ -56,7 +56,9 @@
     "queued": "等它回完这一句就送达"
   },
   "fullAccess": {
-    "tip": "Bot 默认开启完全访问模式，任何系统操作将不再经过你的授权同意。你随时可以在这里调整权限设置。",
+    "title": "Bot 默认开启完全访问",
+    "body": "任何系统操作将不再经过你的授权同意，它创建的智能体和任务也一样。每个 Bot 各有一份设置，你随时可以调整：点顶部的名字就能打开。",
+    "settings": "打开设置",
     "ok": "知道了"
   },
   "sheet": {
@@ -117,6 +119,10 @@
     "nameHint": "双击修改名字",
     "model": "模型设定",
     "modelNote": "只影响这个 Bot。",
+    "permission": "权限",
+    "permissionMode": "权限模式",
+    "permissionNote": "{{desc}}。只对这个 Bot 生效，它创建的智能体和任务都按这个权限运行，改了立刻跟着变。",
+    "bypassNote": "这个 Bot 创建的智能体和任务也会一样。",
     "close": "关闭",
     "notifications": "通知",
     "muted": "免打扰",

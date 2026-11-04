@@ -255,9 +255,14 @@ try {
   await page.shot("n2-reopened");
 
   step("4. an approval says what it waits for; answered, it comes down");
-  await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
+  await page.run(`document.querySelector(".bhead").click()`);
+  await page.until("its settings", `!!document.querySelector(".bpn-perm .mb")`);
+  await page.run(`document.querySelector(".bpn-perm .mb").click()`);
   await page.until("the menu", `[...document.querySelectorAll(".mi")].some((e) => e.textContent.includes("询问权限"))`);
   await page.run(`[...document.querySelectorAll(".mi")].find((e) => e.textContent.includes("询问权限")).click()`);
+  await page.until("Ask Permissions", `document.querySelector(".bpn-perm .lbl")?.textContent === "询问权限"`);
+  await page.run(`document.querySelector(".bpn-top .tb").click()`);
+  await page.until("its settings closed", `!document.querySelector(".bpn")`);
   await say(page, "请确认");
   const asked = await untilRecord("the approval", (r) => r.id === `${group}:approval`);
   check(asked.body.startsWith("等你确认："), `it says so: ${asked.body}`);
