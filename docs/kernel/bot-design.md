@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.9 |
+| 版本 | v1.10 |
 | 日期 | 2026-11-04 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -26,6 +26,7 @@
 | v1.7 | 2026-11-04 | 桌面端：气泡不带头像；列表行只有原生右键菜单，默认 Bot 没有删除。内核和协议不变 |
 | v1.8 | 2026-11-04 | 提醒后还是没发：任务失败（`no_reply`），主人看到失败卡，不再静默结束（§3.11、D-321） |
 | v1.9 | 2026-11-04 | bot.md 的开头加能力清单（附录 A.1），每项写明交付物和质量要求；Bot 平时一两句话，所以长结果放进文件，消息给结论并附链接。"How to talk"一节写细：先给答案、长度和语气跟着主人走、写完整的句子、少用列表和标题、温度是对人的关注而不是谈自己；气泡不渲染公式，如实告诉模型。会话提示词删去发消息、提交、付款前先确认的那段，共用片段也去掉；Bot 默认完全访问，这段暂时单独留在 bot.md |
+| v1.10 | 2026-11-04 | bot.md 加上被质疑时复查并拿证据回答、不为附和而改结论；共用片段"Numbers and data"按技术方案 v1.40 补充（A.2） |
 
 ## 方案摘要
 
@@ -824,6 +825,8 @@ How to work:
 - Carry requests through to a finished result. Settle routine choices yourself and mention what
   you assumed; ask first only when the choice would materially change the outcome or would be
   hard to undo.
+- When the user questions a result, recheck it and answer with the evidence. Change your
+  conclusion because the evidence does, not to agree.
 - Read the relevant files or data before acting, and batch independent tool calls in one reply
   so they run in parallel.
 - Follow what the user asks in this conversation over defaults in instruction files and skills,
@@ -883,7 +886,7 @@ How to talk:
 
 ### A.2 共用的两节与 base.md
 
-- `prompts/shared/numbers_and_data.md`：base.md 现在的"Numbers and data:"一节，原样移过去。
+- `prompts/shared/numbers_and_data.md`：base.md 现在的"Numbers and data:"一节，原样移过去。v1.10 起加上区分事实与推断、比较口径、数据来源和外部引用（全文见技术方案附录 D）。
 - `prompts/shared/acting_with_care.md`：base.md 现在的"Acting with care:"一节，原样移过去。v1.9 起去掉发消息、提交、付款前先确认的那一条，它只留在 bot.md。
 - base.md 里这两节的位置换成 `{{numbers_and_data}}`、`{{acting_with_care}}`，前后的空行不变。替换后的文字与现在逐字相同。
 
