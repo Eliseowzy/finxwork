@@ -8,6 +8,7 @@ use finx_protocol::api::SessionSummary;
 use finx_protocol::api::SessionsChangedParams;
 use finx_protocol::api::method;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 use crate::conn::ConnHandle;
 use crate::conn::ConnId;
@@ -23,9 +24,15 @@ struct Watcher {
 #[derive(Default)]
 pub struct ListFeed {
     watchers: Mutex<Vec<Watcher>>,
+    /// Hears every change too (the extension's tab groups follow the sessions).
+    observer: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl ListFeed {
+    pub fn observe(&self, f: Arc<dyn Fn() + Send + Sync>) {
+        *self.observer.lock() = Some(f);
+    }
+
     /// Starts collecting changes for `conn`; `start` sends them after the list.
     pub fn watch(&self, conn: &ConnHandle) {
         let mut watchers = self.watchers.lock();
@@ -52,6 +59,10 @@ impl ListFeed {
     }
 
     pub fn publish(&self, sessions: Vec<SessionSummary>, deleted: Vec<String>) {
+        let observer = self.observer.lock().clone();
+        if let Some(observer) = observer {
+            observer();
+        }
         if self.watchers.lock().is_empty() {
             return;
         }

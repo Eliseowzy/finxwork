@@ -36,6 +36,8 @@ const check = (ok, message) => ok || fail(message);
 
 const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "fxf-")));
 const home = path.join(work, "finx");
+// A private HOME: the app registers the extension's host in the browsers under it.
+fs.mkdirSync(path.join(work, "home"), { recursive: true });
 const profile = path.join(work, "profile");
 const socket = path.join(home, "run/finx.sock");
 const opened = path.join(work, "opened.jsonl");
@@ -119,7 +121,7 @@ async function launch() {
   port = 9400 + Math.floor(Math.random() * 400);
   const program = packaged ? path.join(packaged, "Contents/MacOS/FinxWork") : electron;
   app = spawn(program, [...(packaged ? [] : [desktop]), `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

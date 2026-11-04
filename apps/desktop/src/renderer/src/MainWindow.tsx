@@ -8,6 +8,7 @@ import { Onboarding, onboardingEvent } from "./onboarding/Onboarding";
 import { layoutOf, setSidebar, usePeekEnd } from "./layout";
 import { SearchPalette } from "./search/Search";
 import { SessionPage } from "./session/SessionPage";
+import { useYoursWatcher } from "./session/Yours";
 import { Sidebar } from "./sidebar/Sidebar";
 import { useOverlay } from "./overlays";
 import { useStore } from "./store";
@@ -17,6 +18,7 @@ import { BotSheet } from "./bots/BotSheet";
 export function MainWindow() {
   const st = useStore();
   useCommands();
+  useYoursWatcher();
   const sel = st.selection;
   const session = sel.kind === "session" ? st.sessions.find((s) => s.session_id === sel.id) : undefined;
   // A selected session that is gone (deleted elsewhere): back to a new one. Gone only once the

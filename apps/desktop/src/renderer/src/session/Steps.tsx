@@ -8,6 +8,7 @@ import { Lightbox } from "../composer/Tile";
 import { Code } from "./Code";
 import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
+import { handoffOf } from "./Yours";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -139,8 +140,12 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const unknown = tool.state === "streaming" && tool.title === tool.name;
   // A message to a sub-agent reads as one: "Sent to name: the message".
   const toAgent = tool.name === "send_message";
-  const object = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : toolObject(tool);
-  const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : toolVerb(tool);
+  // A page handed to the user says what they were asked.
+  const handoff = handoffOf({ name: tool.name, args: tool.args });
+  const named = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
+  // The kernel's title for a page opened in the user's own browser.
+  const object = named.replace(/ in your browser$/, t("yours.inYourBrowser"));
+  const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : handoff !== null && tool.state === "done" ? t("yours.handoff.handled") : toolVerb(tool);
   return (
     <div
       className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}

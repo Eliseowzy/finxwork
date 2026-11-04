@@ -5,6 +5,7 @@ import { Icon } from "../icons";
 import { MenuButton, MenuItem } from "../composer/Composer";
 import { useStore } from "../store";
 import { ContextCard } from "./Context";
+import { YoursRow, type YoursView } from "./Yours";
 
 /**
  * Cards floating over the conversation's top right, one under the other:
@@ -14,7 +15,7 @@ import { ContextCard } from "./Context";
  * sidebar is: a group's heading, then rows. Shown or hidden with the
  * toolbar's button (⌥⌘0).
  */
-export function Inspector({ s, view }: { s: ListSession; view: SessionView }) {
+export function Inspector({ s, view, yours }: { s: ListSession; view: SessionView; yours: YoursView | null }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const cwd = view.info.cwd;
@@ -76,6 +77,8 @@ export function Inspector({ s, view }: { s: ListSession; view: SessionView }) {
               </span>
             )}
           </li>
+          {/* Only while the session has tabs in the user's own browser (browser-design §8.4.7). */}
+          {yours && <YoursRow yours={yours} sessionId={s.session_id} />}
         </ul>
       </section>
       <ContextCard id={s.session_id} view={view} />

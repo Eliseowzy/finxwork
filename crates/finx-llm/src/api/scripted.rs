@@ -10,14 +10,12 @@ use std::time::Duration;
 use crate::api::WireApi;
 use crate::api::WireRequest;
 use crate::auth::AuthConfig;
+use crate::catalog::ModelToml;
 use crate::catalog::ProviderConfig;
 use crate::error::ErrorKind;
 use crate::error::LlmError;
 use crate::model::Compat;
-use crate::model::Modality;
 use crate::model::Model;
-use crate::model::ModelCost;
-use crate::model::ThinkingBudgets;
 use crate::stream::LlmStream;
 use crate::stream::MessageAccumulator;
 use crate::stream::StreamEvent;
@@ -163,28 +161,23 @@ impl ScriptedApi {
         self.scripts.lock().len()
     }
 
+    /// The entry of model `scripted`, for tests to adjust.
+    pub fn entry() -> ModelToml {
+        ModelToml {
+            name: Some("Scripted".into()),
+            context_window: Some(128_000),
+            max_output_tokens: Some(8_192),
+            ..ModelToml::new(MODEL_ID)
+        }
+    }
+
     /// Provider `test` with model `scripted`, wired to this API.
     pub fn provider() -> ProviderConfig {
-        let model = Model {
-            id: MODEL_ID.into(),
-            name: "Scripted".into(),
-            provider: PROVIDER_ID.into(),
-            api: API_ID.into(),
-            base_url: "scripted://local".into(),
-            context_window: 128_000,
-            max_output_tokens: 8_192,
-            reasoning: false,
-            thinking: Vec::new(),
-            thinking_levels: BTreeMap::new(),
-            default_thinking: crate::types::ThinkingLevel::Default,
-            thinking_budgets: ThinkingBudgets::default(),
-            input: vec![Modality::Text],
-            cost: ModelCost::default(),
-            cost_tiers: Vec::new(),
-            currency: Currency::Usd,
-            compat: Compat::default(),
-            headers: BTreeMap::new(),
-        };
+        Self::provider_with(vec![Self::entry()])
+    }
+
+    /// Provider `test` with the given models, wired to this API.
+    pub fn provider_with(entries: Vec<ModelToml>) -> ProviderConfig {
         ProviderConfig {
             plan: None,
             id: PROVIDER_ID.into(),
@@ -195,9 +188,13 @@ impl ScriptedApi {
             headers: BTreeMap::new(),
             currency: Currency::Usd,
             compat: Compat::default(),
-            models: vec![Arc::new(model)],
-            listing: Default::default(),
+            listing: crate::catalog::Listing { entries, ..Default::default() },
         }
+    }
+
+    /// Model `scripted`, as a provider of this API resolves it.
+    pub fn model() -> Model {
+        Self::provider().build_model(None, &Self::entry())
     }
 }
 

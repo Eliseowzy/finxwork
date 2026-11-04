@@ -49,6 +49,24 @@ async fn serve(server: &MockServer, events: Vec<Value>) {
         .await;
 }
 #[tokio::test]
+async fn a_completion_listing_no_items_keeps_what_was_streamed() {
+    let server = MockServer::start().await;
+    serve(&server, vec![
+        json!({"type":"response.output_text.delta","output_index":0,"delta":"o"}),
+        json!({"type":"response.output_text.delta","output_index":0,"delta":"k"}),
+        json!({"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":2}}}),
+    ]).await;
+    let registry = registry(&server);
+    let model = registry.resolve("plan/gpt-test").unwrap().model;
+    let events: Vec<_> = registry.stream(model, context(), RequestOptions::default()).collect().await;
+    let StreamEvent::Done(message) = events.last().unwrap() else {
+        panic!("{events:?}")
+    };
+    assert_eq!(message.text(), "ok", "the reply stays in the history");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+    assert_eq!(message.usage.output, 2);
+}
+#[tokio::test]
 async fn completion_preserves_reasoning_tools_usage_and_stateless_replay() {
     let server = MockServer::start().await;
     let reasoning = json!({"type":"reasoning","id":"rs_1","encrypted_content":"opaque-ciphertext","summary":[{"type":"summary_text","text":"Checking"}]});

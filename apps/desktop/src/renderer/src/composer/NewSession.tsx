@@ -13,6 +13,7 @@ import { Composer } from "./Composer";
 import { onboardingEvent } from "../onboarding/Onboarding";
 import { needsKey } from "./KeySetup";
 import { useCommands } from "./skills";
+import { OfferedTab } from "../session/Yours";
 
 const greetings = ["new.greeting1", "new.greeting2", "new.greeting3", "new.greeting4"] as const;
 
@@ -91,6 +92,7 @@ export function NewSession() {
               <h1>{t(greeting)}</h1>
             </div>
           )}
+          <OfferedTab />
           <Composer
             form={{ mode: "new", place: { cwd, recent, names: projectNames([...recent, ...(cwd ? [cwd] : [])]), onCwd: (p) => set({ cwd: p, noProject: p === null }), onPick: pick } }}
             value={text}

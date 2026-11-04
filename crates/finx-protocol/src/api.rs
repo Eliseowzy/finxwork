@@ -144,6 +144,25 @@ pub mod method {
     pub const BOTS_DELETE: &str = "bots/delete";
     /// Server notification to `bots/subscribe`rs.
     pub const BOTS_CHANGED: &str = "bots/changed";
+    /// Brings a session's tab in the user's own browser to the front (browser-design §8.4.7).
+    pub const BROWSER_REVEAL: &str = "browser/reveal";
+    /// Closes a session's tabs in the user's own browser, or one of them.
+    pub const BROWSER_CLOSE_TABS: &str = "browser/close_tabs";
+    /// Lets a session use the user's own browser again, after the user took control back.
+    pub const BROWSER_ALLOW: &str = "browser/allow";
+    /// A session waiting for the user's own browser to connect stops waiting.
+    pub const BROWSER_CANCEL_WAIT: &str = "browser/cancel_wait";
+    /// Which of the connected extensions the agent uses.
+    pub const BROWSER_USE_EXTENSION: &str = "browser/use_extension";
+    /// Gives a tab the user offered from their browser to a session.
+    pub const BROWSER_ASSIGN_TAB: &str = "browser/assign_tab";
+    /// What the extension says, from its host's connection.
+    pub const BROWSER_EXTENSION: &str = "browser/extension";
+    /// Server notification to an extension host, for its extension.
+    pub const BROWSER_CONTROL: &str = "browser/control";
+    /// Server notification to connections that called `browser/status`: the extension asks
+    /// the app for something.
+    pub const BROWSER_REQUEST: &str = "browser/request";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -253,6 +272,10 @@ pub struct CancelRequestParams {
     pub id: RequestId,
 }
 
+/// The `kind` in the error's data when `browser/host` refuses an extension host because it is
+/// not the service's own program: it should exit, for the extension to start the current one.
+pub const HOST_REFUSED: &str = "host_refused";
+
 /// Which browser a `browser/host` connection provides.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -280,6 +303,12 @@ pub struct BrowserHostParams {
     /// that sends none has an extension from before them: version 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bridge: Option<BridgeRange>,
+    /// Tells this extension's browser and profile apart from others: kept by the extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// The account signed in to that browser profile, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// A range of bridge versions, both ends included.
@@ -322,16 +351,156 @@ pub struct ExtensionStatus {
     /// Set when the extension is connected but cannot be used until one side is updated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub problem: Option<ExtensionProblem>,
+    /// Tells this browser and profile apart from others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// The account signed in to that browser profile, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    /// The agent uses this one; the others wait.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub in_use: bool,
+}
+
+/// A session's tab in the user's own browser, as the extension reports it: the extension keeps
+/// which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct YoursTab {
+    pub target_id: String,
+    pub url: String,
+    pub title: String,
+    /// The agent is attached to it now, so a task is using it; Chrome shows its debugging bar.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attached: bool,
 }
 
 /// The result of `browser/status`, and the parameters of `browser/changed`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct BrowserStatus {
-    /// Set while the FinxWork extension is connected; with `problem` when it cannot be used.
+    /// The extension the agent uses, while one is connected; with `problem` when it cannot be
+    /// used. When several are connected, the others are in `extensions`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionStatus>,
     /// Whether a desktop app shows embedded browsers.
     pub embedded: bool,
+    /// Every extension connected, oldest first, when there is more than one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<ExtensionStatus>,
+    /// Each session's tabs in the user's own browser.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub tabs: std::collections::BTreeMap<String, Vec<YoursTab>>,
+    /// Why the last extension host was refused, until one connects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
+    /// Sessions the user took their browser back from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub revoked: Vec<String>,
+    /// Sessions waiting for the user's own browser to connect.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waiting: Vec<String>,
+}
+
+/// Parameters of `browser/reveal`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserRevealParams {
+    /// The session whose tab to show: the one last used, unless `target_id` says which.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+}
+
+/// Parameters of `browser/close_tabs`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserCloseTabsParams {
+    pub session_id: String,
+    /// Only this tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+}
+
+/// Parameters of `browser/allow` and `browser/cancel_wait`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserSessionParams {
+    pub session_id: String,
+}
+
+/// Parameters of `browser/use_extension`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserUseExtensionParams {
+    pub instance: String,
+}
+
+/// Parameters of `browser/assign_tab`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserAssignTabParams {
+    pub target_id: String,
+    pub session_id: String,
+}
+
+/// What the extension says through its host (`browser/extension`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtensionMessage {
+    /// Every session's tabs, whenever they change.
+    Tabs { sessions: std::collections::BTreeMap<String, Vec<YoursTab>> },
+    /// The user took control back, closing Chrome's debugging bar, from these sessions.
+    Revoked { sessions: Vec<String> },
+    /// The user asked to go back to a conversation.
+    OpenSession { session_id: String },
+    /// The user did what the session waits for in the page.
+    Done { session_id: String },
+    /// The user stopped a session's task from the extension.
+    Stop { session_id: String },
+    /// The user offered a tab of their own to a conversation.
+    OfferTab { target_id: String, url: String, title: String },
+    /// The user chose this browser and profile for the agent.
+    UseThis,
+}
+
+/// What a session looks like to the extension.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionSession {
+    pub title: String,
+    pub state: SessionState,
+    /// What it waits for the user to do in the page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<String>,
+}
+
+/// What the service tells the extension through its host (`browser/control`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowserControl {
+    /// Bring a tab and its window to the front.
+    Reveal {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_id: Option<String>,
+    },
+    CloseTabs {
+        session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_id: Option<String>,
+    },
+    /// A tab the user offered goes to this session.
+    AssignTab { target_id: String, session_id: String },
+    /// The sessions with tabs here, for the names of their tab groups and the extension's own
+    /// page.
+    Sessions { sessions: std::collections::BTreeMap<String, ExtensionSession> },
+    /// A session was deleted: its tabs are the user's now.
+    Forget { session_id: String },
+    /// Whether the agent uses this browser and profile.
+    InUse { in_use: bool },
+}
+
+/// What the extension asks of the app (`browser/request`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowserRequest {
+    OpenSession { session_id: String },
+    TabOffered { target_id: String, url: String, title: String },
 }
 
 /// Parameters of `browser/site_icon`.

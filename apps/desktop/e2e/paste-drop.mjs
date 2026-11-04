@@ -31,6 +31,8 @@ if (process.platform !== "darwin") {
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxp-"));
 const home = path.join(work, "finx");
+// A private HOME: the app registers the extension's host in the browsers under it.
+fs.mkdirSync(path.join(work, "home"), { recursive: true });
 const profile = path.join(work, "profile");
 const files = path.join(work, "files");
 fs.mkdirSync(home, { recursive: true });
@@ -59,7 +61,7 @@ let app = null;
 try {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

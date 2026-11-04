@@ -519,5 +519,45 @@
     "offline": "Not connected to finx",
     "more": "More",
     "resize": "Resize the File Panel"
+  },
+  "yours": {
+    "tabs_one": "{{count}} tab",
+    "tabs_other": "{{count}} tabs",
+    "reconnecting": "reconnecting",
+    "opening": "opening",
+    "waitingYou": "waiting for you",
+    "revoked": "taken back",
+    "outdated": "Needs an Update",
+    "allow": "Allow",
+    "show": "Show in {{name}}",
+    "closeAll": "Close All",
+    "tabsMenu": "Tabs",
+    "waitingLine": "Waiting for your browser",
+    "inYourBrowser": " · your browser",
+    "card": {
+      "title": "The FinxWork extension in {{name}} is not connected",
+      "desc": "On the extensions page, check that it is still there and turned on. The task goes on by itself once it connects.",
+      "other": "The browser chosen for the agent is not connected; {{other}} is.",
+      "refused": "It is still running the old program. Click its reload button on the extensions page; the task goes on by itself once it connects.",
+      "outdated": {
+        "extension": "This extension is too old. Update it on the extensions page; the task goes on by itself once it connects.",
+        "finx": "FinxWork is too old for this extension. Update it, and the task goes on by itself."
+      },
+      "update": "Check for Updates",
+      "skip": "Not {{name}} This Time",
+      "open": "Open Extensions Page",
+      "switch": "Use That One"
+    },
+    "handoff": {
+      "title": "Needs you in {{name}}",
+      "go": "Go to {{name}}",
+      "done": "I'm Done",
+      "again": "Look Again",
+      "skip": "Skip This Step",
+      "handled": "You handled"
+    },
+    "offer": "For this conversation: {{title}}",
+    "offerRemove": "Don't hand it over",
+    "notify": "A task is waiting for you"
   }
 }

@@ -188,6 +188,8 @@ impl Fixture {
                 action_timeout: Duration::from_secs(10),
                 label: None,
                 prefix: "",
+                numbers: Default::default(),
+                note: None,
             },
         )
     }

@@ -364,7 +364,7 @@ export function toolObject(t: Pick<ToolView, "name" | "title" | "category">): st
   const m = /^([A-Za-z][\w-]*)\s+(.+)$/s.exec(t.title);
   return m && (m[1] === t.name || toolWords.has(m[1])) ? m[2] : t.title;
 }
-const toolWords = new Set(["read", "write", "edit", "grep", "find", "ls", "fetch", "search"]);
+const toolWords = new Set(["read", "write", "edit", "grep", "find", "ls", "fetch", "search", "open"]);
 
 /** What a group of steps did, kind by kind in the order they first appear: [{ kind: "read", count: 2 }, …]. */
 export function workSummary(items: WorkItem[]): { kind: ToolCategory | "denied" | "thinking"; count: number }[] {

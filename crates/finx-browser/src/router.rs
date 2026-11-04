@@ -23,6 +23,10 @@ use crate::BrowserError;
 use crate::cdp::CdpEvent;
 use crate::cdp::Conn;
 
+/// Why a tab is out of reach when only the connection to the user's own browser went: the tab is
+/// still open there (browser-design §8.4.7), and what a call in flight did is not known.
+const CONNECTION_DROPPED: &str = "the connection to the browser dropped";
+
 /// Console entries kept per tab.
 const CONSOLE_KEPT: usize = 500;
 /// Notes kept per tab until a result reports them.
@@ -60,6 +64,17 @@ impl NavigationGuard for OpenGuard {
 }
 
 pub type OwnerId = u64;
+
+/// How a session numbered the tabs and refs it let go (§8.4.7), so that a tab keeps its number when
+/// the session finds it again, and an old ref never names a new element.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TabNumbers {
+    /// Target id → tab number.
+    pub tabs: HashMap<String, String>,
+    pub next_tab: u32,
+    pub next_ref: u64,
+    pub current: Option<String>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Frame {
@@ -187,6 +202,10 @@ impl Tab {
     pub fn is_closed(&self) -> bool {
         self.state.lock().closed.is_some()
     }
+
+    pub fn connection_dropped(&self) -> bool {
+        self.state.lock().closed.as_deref() == Some(CONNECTION_DROPPED)
+    }
 }
 
 struct Owner {
@@ -198,6 +217,8 @@ struct Owner {
     /// Before each tab's number.
     tab_prefix: &'static str,
     next_tab: u32,
+    /// The numbers of tabs this session had before, for when it finds them again.
+    known: HashMap<String, String>,
 }
 
 #[derive(Clone)]
@@ -234,17 +255,20 @@ pub struct Router {
     incoming: PathBuf,
     /// The desktop app's embedded browser (§8.3), which places tabs by `finxSession`.
     embedded: bool,
+    /// An owner that goes lets its tabs go instead of closing them (§8.4.7).
+    keeps_tabs: bool,
     /// Woken whenever a target is registered.
     registered: Notify,
 }
 
 impl Router {
-    pub(crate) fn start(conn: Arc<Conn>, events: mpsc::UnboundedReceiver<CdpEvent>, incoming: PathBuf, embedded: bool) -> Arc<Router> {
+    pub(crate) fn start(conn: Arc<Conn>, events: mpsc::UnboundedReceiver<CdpEvent>, incoming: PathBuf, embedded: bool, keeps_tabs: bool) -> Arc<Router> {
         let router = Arc::new(Router {
             conn,
             state: Mutex::new(State::default()),
             incoming,
             embedded,
+            keeps_tabs,
             registered: Notify::new(),
         });
         tokio::spawn(route(Arc::downgrade(&router), events));
@@ -269,7 +293,28 @@ impl Router {
         Ok(())
     }
 
-    pub fn add_owner(&self, guard: Arc<dyn NavigationGuard>, downloads: PathBuf, label: Option<String>, tab_prefix: &'static str) -> OwnerId {
+    pub fn keeps_tabs(&self) -> bool {
+        self.keeps_tabs
+    }
+
+    /// How `owner` numbered its open tabs.
+    pub fn numbers(&self, owner: OwnerId) -> (HashMap<String, String>, u32) {
+        let state = self.state.lock();
+        let Some(owner) = state.owners.get(&owner) else {
+            return (HashMap::new(), 1);
+        };
+        let tabs = owner.tabs.iter().filter(|t| !t.is_closed()).map(|t| (t.target_id.clone(), t.id.clone()));
+        (owner.known.clone().into_iter().chain(tabs).collect(), owner.next_tab)
+    }
+
+    pub fn add_owner(
+        &self,
+        guard: Arc<dyn NavigationGuard>,
+        downloads: PathBuf,
+        label: Option<String>,
+        tab_prefix: &'static str,
+        numbers: &TabNumbers,
+    ) -> OwnerId {
         let mut state = self.state.lock();
         state.next_owner += 1;
         let id = state.next_owner;
@@ -281,19 +326,25 @@ impl Router {
                 label,
                 tabs: Vec::new(),
                 tab_prefix,
-                next_tab: 1,
+                next_tab: numbers.next_tab.max(1),
+                known: numbers.tabs.clone(),
             },
         );
         id
     }
 
-    /// Forgets an owner and closes its tabs.
+    /// Forgets an owner and closes its tabs; where the tabs are the user's, lets them go.
     pub fn remove_owner(&self, owner: OwnerId) {
         let removed = self.state.lock().owners.remove(&owner);
         if let Some(removed) = removed {
             for tab in removed.tabs.iter().filter(|t| !t.is_closed()) {
-                self.conn
-                    .post(None, "Target.closeTarget", json!({ "targetId": tab.target_id }));
+                if self.keeps_tabs {
+                    self.conn
+                        .post(None, "Target.detachFromTarget", json!({ "targetId": tab.target_id, "finxRelease": true }));
+                } else {
+                    self.conn
+                        .post(None, "Target.closeTarget", json!({ "targetId": tab.target_id }));
+                }
             }
         }
     }
@@ -394,8 +445,11 @@ impl Router {
         let (tab, page) = match parent {
             Some(tab) => (tab, false),
             None => {
-                let id = format!("{}{}", owner_entry.tab_prefix, owner_entry.next_tab);
-                owner_entry.next_tab += 1;
+                let id = owner_entry.known.remove(target_id).unwrap_or_else(|| {
+                    let id = format!("{}{}", owner_entry.tab_prefix, owner_entry.next_tab);
+                    owner_entry.next_tab += 1;
+                    id
+                });
                 let tab = Arc::new(Tab {
                     id,
                     target_id: target_id.to_string(),
@@ -462,7 +516,7 @@ impl Router {
                     ("Target.attachedToTarget", _) => self.attached(Some(session), &event.params),
                     ("Target.detachedFromTarget", _) => {
                         if let Some(target_id) = event.params.get("targetId").and_then(Value::as_str) {
-                            self.gone(target_id, "the tab was closed");
+                            self.gone(target_id, detached_why(&event.params));
                         }
                     }
                     (_, Some(target)) => {
@@ -527,7 +581,7 @@ impl Router {
             "Target.targetCrashed" => self.gone(str_of(params, "targetId"), "the tab crashed"),
             "Target.detachedFromTarget" => {
                 if let Some(target_id) = params.get("targetId").and_then(Value::as_str) {
-                    self.gone(target_id, "the tab was closed");
+                    self.gone(target_id, detached_why(params));
                 }
             }
             "Browser.downloadWillBegin" => self.download_began(params),
@@ -633,6 +687,10 @@ impl Router {
                 .post(None, "Target.detachFromTarget", json!({ "sessionId": session }));
             return;
         };
+        // A page already open when the session found it has its title by now.
+        if kind == "page" {
+            tab.state.lock().title = str_of(info, "title").to_string();
+        }
         if kind == "page"
             && let Some(opener) = &parent_tab
         {
@@ -997,6 +1055,11 @@ fn remote_text(arg: &Value) -> String {
     }
 }
 
+/// Why a target detached: the browser end may say (the user took control back, §8.4.2).
+fn detached_why(params: &Value) -> &str {
+    params.get("reason").and_then(Value::as_str).unwrap_or("the tab was closed")
+}
+
 pub(crate) fn str_of<'a>(value: &'a Value, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
@@ -1017,11 +1080,12 @@ async fn route(router: std::sync::Weak<Router>, mut events: mpsc::UnboundedRecei
             warn_at = BACKLOG_WARN;
         }
     }
-    // The browser is gone: every tab says so.
+    // The browser is gone, or the connection to one that keeps its tabs: every tab says so.
     if let Some(router) = router.upgrade() {
+        let why = if router.keeps_tabs { CONNECTION_DROPPED } else { "the browser closed" };
         let tabs: Vec<Arc<Tab>> = router.state.lock().owners.values().flat_map(|o| o.tabs.clone()).collect();
         for tab in tabs {
-            tab.state.lock().closed.get_or_insert_with(|| "the browser closed".to_string());
+            tab.state.lock().closed.get_or_insert_with(|| why.to_string());
             tab.changed.notify_waiters();
         }
     }

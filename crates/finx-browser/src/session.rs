@@ -25,6 +25,7 @@ use crate::router::Frame;
 use crate::router::NavigationGuard;
 use crate::router::OwnerId;
 use crate::router::Tab;
+use crate::router::TabNumbers;
 use crate::router::str_of;
 use crate::snapshot;
 use crate::snapshot::Item;
@@ -66,6 +67,10 @@ pub struct SessionOptions {
     /// Put before each tab's number and each ref, so that the tabs and refs of two browsers in
     /// one finx session differ (connectors-entry-design §9.2): "" for the built-in browser.
     pub prefix: &'static str,
+    /// How the session numbered the tabs it had before, if it had any.
+    pub numbers: TabNumbers,
+    /// Said in the first result, in place of what the browser says.
+    pub note: Option<String>,
 }
 
 /// A page as approved: the tab, the frame, its document and origin. Execution runs only if
@@ -234,15 +239,19 @@ impl BrowserSession {
         });
         let owner = browser
             .router
-            .add_owner(guard.clone(), options.downloads.clone(), options.label.clone(), options.prefix);
-        let pending_note = Mutex::new(browser.note.clone());
+            .add_owner(guard.clone(), options.downloads.clone(), options.label.clone(), options.prefix, &options.numbers);
+        let pending_note = Mutex::new(options.note.clone().or_else(|| browser.note.clone()));
+        let refs = Refs {
+            next: options.numbers.next_ref,
+            ..Refs::default()
+        };
         Self {
             browser,
             owner,
             guard,
             options,
             current: Mutex::new(None),
-            refs: Mutex::new(Refs::default()),
+            refs: Mutex::new(refs),
             last: Mutex::new(HashMap::new()),
             worlds: Mutex::new(HashMap::new()),
             pending_note,
@@ -258,11 +267,33 @@ impl BrowserSession {
             .await;
             *self.current.lock() = Some(tab.id.clone());
         }
+        // The tab that was current, when the session finds its tabs again.
+        if let Some(current) = &self.options.numbers.current
+            && self.tabs().iter().any(|t| &t.id == current)
+        {
+            *self.current.lock() = Some(current.clone());
+        }
         Ok(())
     }
 
     pub fn is_dead(&self) -> bool {
         self.browser.is_dead()
+    }
+
+    /// The tabs are the user's and stay when the session lets them go.
+    pub fn keeps_tabs(&self) -> bool {
+        self.browser.router.keeps_tabs()
+    }
+
+    /// How this session numbered its tabs and refs, for a later session to go on from.
+    pub fn numbers(&self) -> TabNumbers {
+        let (tabs, next_tab) = self.browser.router.numbers(self.owner);
+        TabNumbers {
+            tabs,
+            next_tab,
+            next_ref: self.refs.lock().next,
+            current: self.current.lock().clone(),
+        }
     }
 
     fn conn(&self) -> &crate::cdp::Conn {
@@ -1601,6 +1632,9 @@ impl BrowserSession {
             if met {
                 break true;
             }
+            if tab.connection_dropped() {
+                return Err(CdpError::Closed.into());
+            }
             if tab.is_closed() {
                 return Err(BrowserError::StaleRef("The tab closed while waiting.".into()));
             }
@@ -1711,6 +1745,9 @@ impl BrowserSession {
     /// The result of a call that may have changed the page: what was done, where things
     /// stand, what happened on the side, and the snapshot's changes.
     async fn report(&self, tab: &Arc<Tab>, same_document: Option<(String, Frame, Vec<String>)>, done: &str) -> Result<Report, BrowserError> {
+        if tab.connection_dropped() {
+            return Err(CdpError::Closed.into());
+        }
         if tab.is_closed() {
             let why = tab.state.lock().closed.clone().unwrap_or_default();
             return Ok(Report {

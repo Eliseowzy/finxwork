@@ -14,6 +14,7 @@ import { Inspector } from "./Inspector";
 import { ContentScope } from "./scope";
 import { SidePanelButtons, SidePanelViews, useSidePanels } from "./SidePanels";
 import { useSession } from "./useSession";
+import { useYours, YoursButton } from "./Yours";
 
 // A session: its conversation, the composer and the bar of a running task,
 // with the info card over its right side, or in its place the background
@@ -30,6 +31,7 @@ export function SessionPage({ s }: { s: ListSession }) {
   const { browser, files, max } = panels;
   const layout = layoutOf(st);
   const info = layout.card !== "hidden" && !background && !browser && !files;
+  const yours = useYours(s.session_id, view);
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
   const dock = (info && layout.card === "docked") || (background && layoutOf({ ...st, inspector: true, peek: null }).card === "docked");
   // What the conversation's content belongs to (content-actions-design §3.4): its paths are under the session's folder.
@@ -74,6 +76,8 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
+          {/* The user's own browser, in the info card, or here while that does not show. */}
+          {yours && !info && <YoursButton yours={yours} sessionId={s.session_id} />}
           <SidePanelButtons panels={panels} />
         </GlassBar>
         {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
@@ -81,7 +85,7 @@ export function SessionPage({ s }: { s: ListSession }) {
           {/* Right-click on selected text: Copy (anything with a menu of its own shows that instead). */}
           <div className={`dwrap ${dock ? "dock" : ""}`} onContextMenu={() => selectionMenu(st)}>
             <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
-            {view && info && <Inspector s={s} view={view} />}
+            {view && info && <Inspector s={s} view={view} yours={yours} />}
             {view && background && <Background s={s} view={view} />}
           </div>
         </ContentScope>

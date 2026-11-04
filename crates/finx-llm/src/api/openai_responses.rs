@@ -243,7 +243,8 @@ impl WireApi for OpenAiResponsesApi {
                         // An empty list says nothing about what was streamed.
                         if let Some(output) = r["output"].as_array().filter(|o| !o.is_empty()) {
                             // Terminal items are authoritative (also capture non-streamed arguments
-                            // and encrypted reasoning). Display deltas remain incremental.
+                            // and encrypted reasoning). Display deltas remain incremental. An answer
+                            // that lists none has said it all in what was streamed.
                             acc = MessageAccumulator::for_model(&req.model);
                             for (i,v) in output.iter().enumerate() { item(&mut acc,i,v); }
                             passed_over = unreadable(output);

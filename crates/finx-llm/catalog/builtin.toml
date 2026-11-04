@@ -1,11 +1,14 @@
 # Built-in providers, and corrections to the public model catalog.
 #
-# Which models a provider offers comes from its own model list; each model's details come from
-# the public catalog (catalog/public, refreshed by `cargo run -p finx-llm --example sync_catalog`).
+# A provider says how to reach it and how it speaks: endpoint, authentication, `compat`. Which
+# models it offers comes from its own model list. Each model's details come from the public
+# catalog (catalog/public, refreshed by `cargo run -p finx-llm --example sync_catalog`): the row
+# of this channel (`catalog_id`), else the row of the model's maker.
 # Model entries here only fix what the catalog lacks or gets wrong; say why next to each.
-# Override or extend anything in ~/.finx/models.toml. Prices are per million tokens in the
-# provider's currency (or the entry's `currency`); the catalog's are US dollars.
-# See docs/kernel/model-catalog-design.md.
+# `thinking_format` is how the channel's thinking switch and budget are sent; left out, a model
+# can still be given its named efforts. Override or extend anything in ~/.finx/models.toml.
+# Prices are per million tokens in the provider's currency (or the entry's `currency`); the
+# catalog's are US dollars. See docs/kernel/model-catalog-design.md.
 
 [providers.deepseek]
 name = "DeepSeek"
@@ -70,7 +73,7 @@ base_url = "https://api.moonshot.cn/v1"
 api_key_env = "MOONSHOT_API_KEY"
 currency = "CNY"
 catalog_id = "moonshotai-cn"
-compat = { max_tokens_field = "max_tokens" }
+compat = { thinking_format = "deepseek", max_tokens_field = "max_tokens" }
 
 [providers.glm]
 name = "Zhipu GLM"
@@ -98,30 +101,28 @@ list_details = "ollama"
 compat = { max_tokens_field = "max_tokens" }
 
 # Subscription products have independent credentials and plan-only endpoints. Public catalogs
-# enrich capabilities, never the plan's model membership or token prices. Seed lists are the
+# describe their models, never the plan's membership or token prices. Seed lists are the
 # documented plan models, not the ordinary API catalog. See docs/kernel/token-plans.md.
 [providers.bailian-token-plan]
 name = "Bailian Token Plan"
 api = "openai-chat"
 base_url = "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
 api_key_env = "BAILIAN_TOKEN_PLAN_API_KEY"
-catalog_id = "alibaba-cn"
+catalog_id = "alibaba-token-plan-cn"
 plan = { key_url = "https://bailian.console.aliyun.com/cn-beijing/subscription/overview" }
-compat = { max_tokens_field = "max_tokens" }
+compat = { thinking_format = "qwen", max_tokens_field = "max_tokens" }
 
 [[providers.bailian-token-plan.models]]
 id = "qwen3.8-max"
 name = "Qwen3.8-Max"
-compat = { thinking_format = "qwen" }
-context_window = 1000000
-input = ["text", "image"]
-reasoning = true
 
+# The switch of its models is not documented, so a level "off" comes only from an effort `none`.
 [providers.tencent-token-plan]
 name = "Tencent Cloud Token Plan"
 api = "openai-chat"
 base_url = "https://tokenhub.tencentmaas.com/plan/v3"
 api_key_env = "TENCENT_TOKEN_PLAN_API_KEY"
+catalog_id = "tencent-token-plan"
 list_models = false
 plan = { key_url = "https://console.cloud.tencent.com/tokenhub" }
 compat = { max_tokens_field = "max_tokens" }
@@ -136,7 +137,6 @@ name = "Hy3 (Hy Token Plan)"
 
 [[providers.tencent-token-plan.models]]
 id = "hy4-preview"
-name = "Hy4 preview"
 
 [[providers.tencent-token-plan.models]]
 id = "glm-5.3"
@@ -173,8 +173,9 @@ base_url = "https://ark.cn-beijing.volces.com/api/plan/v3"
 api_key_env = "VOLCENGINE_AGENT_PLAN_API_KEY"
 list_models = false
 plan = { key_url = "https://ark.volcengine.com/region:cn-beijing/openManagement" }
-compat = { max_tokens_field = "max_tokens" }
+compat = { thinking_format = "deepseek", max_tokens_field = "max_tokens" }
 
+# The catalog does not know this routing name; the numbers are the plan's documented ones.
 [[providers.volcengine-agent-plan.models]]
 id = "ark-code-latest"
 name = "Ark Auto"
@@ -182,13 +183,17 @@ context_window = 256000
 max_output_tokens = 32768
 input = ["text", "image"]
 
+# The catalog only lists its dated builds. Levels: Ark's chat parameters for doubao-seed-2-1.
 [[providers.volcengine-agent-plan.models]]
 id = "doubao-seed-2.1-pro"
 name = "Doubao Seed 2.1 Pro"
 context_window = 1024000
 max_output_tokens = 65536
 input = ["text", "image"]
+reasoning = true
+thinking = ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
 
+# Ark's documented window for this plan; the catalog's row for the model is the maker's.
 [[providers.volcengine-agent-plan.models]]
 id = "glm-5.3"
 name = "GLM-5.3"
@@ -200,10 +205,12 @@ name = "Volcengine Ark Coding Plan"
 api = "openai-chat"
 base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
 api_key_env = "VOLCENGINE_CODING_PLAN_API_KEY"
+catalog_id = "volcengine-coding-plan"
 list_models = false
 plan = { key_url = "https://ark.volcengine.com/region:cn-beijing/openManagement" }
-compat = { max_tokens_field = "max_tokens" }
+compat = { thinking_format = "deepseek", max_tokens_field = "max_tokens" }
 
+# The catalog does not know this routing name; the numbers are the plan's documented ones.
 [[providers.volcengine-coding-plan.models]]
 id = "ark-code-latest"
 name = "Ark Auto"
@@ -216,49 +223,29 @@ name = "Z.ai GLM Coding Plan"
 api = "openai-chat"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 api_key_env = "ZAI_CODING_PLAN_API_KEY"
-catalog_id = "zhipuai"
+catalog_id = "zai-coding-plan"
 list_models = false
 plan = { key_url = "https://z.ai/manage-apikey/apikey-list" }
 compat = { thinking_format = "zai", max_tokens_field = "max_tokens", replay_thinking = true }
 
 [[providers.zai-coding-plan.models]]
 id = "glm-5.3"
-name = "GLM-5.3"
-context_window = 1000000
-reasoning = true
-thinking = ["off", "low", "high", "max"]
-input = ["text"]
 
 [[providers.zai-coding-plan.models]]
 id = "glm-5.3-flash"
-name = "GLM-5.3-Flash"
-context_window = 1000000
-reasoning = true
-thinking = ["off", "low", "high", "max"]
-input = ["text", "image"]
 
 [providers.zhipu-coding-plan]
 name = "Zhipu GLM Coding Plan"
 api = "openai-chat"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 api_key_env = "ZHIPU_CODING_PLAN_API_KEY"
-catalog_id = "zhipuai"
+catalog_id = "zhipuai-coding-plan"
 list_models = false
 plan = { key_url = "https://www.bigmodel.cn/glm-coding" }
 compat = { thinking_format = "zai", max_tokens_field = "max_tokens", replay_thinking = true }
 
 [[providers.zhipu-coding-plan.models]]
 id = "glm-5.3"
-name = "GLM-5.3"
-context_window = 1000000
-reasoning = true
-thinking = ["off", "low", "high", "max"]
-input = ["text"]
 
 [[providers.zhipu-coding-plan.models]]
 id = "glm-5.3-flash"
-name = "GLM-5.3-Flash"
-context_window = 1000000
-reasoning = true
-thinking = ["off", "low", "high", "max"]
-input = ["text", "image"]

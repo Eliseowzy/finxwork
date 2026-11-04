@@ -1,5 +1,5 @@
 // Packs the extension for the Chrome Web Store (browser-design D-219):
-// dist/finxwork-extension-<version>.zip, holding what loads (manifest.json, src/, icons/)
+// dist/finxwork-extension-<version>.zip, holding what loads (manifest.json, src/, icons/, _locales/)
 // without tests, types or the manifest's "key", which the store does not take.
 //
 //   pnpm --filter @finx/chrome-extension store-zip [--key path/to/key.pem]
@@ -35,7 +35,7 @@ const stage = path.join(dist, "stage");
 fs.rmSync(stage, { recursive: true, force: true });
 fs.mkdirSync(stage, { recursive: true });
 fs.writeFileSync(path.join(stage, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
-for (const dir of ["src", "icons"]) {
+for (const dir of ["src", "icons", "_locales"]) {
   fs.cpSync(path.join(root, dir), path.join(stage, dir), {
     recursive: true,
     filter: (f) => !f.endsWith(".test.js") && !f.endsWith(".d.ts") && path.basename(f) !== ".DS_Store",
