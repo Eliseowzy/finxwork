@@ -7,7 +7,7 @@ import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
 import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
-import { notify } from "./notify";
+import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testNotification } from "./notify";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { editors, opensFolders } from "./editors";
@@ -319,7 +319,10 @@ export function registerIPC() {
   ipcMain.handle("system-browser-open-quietly", (e) => (trusted(e) ? openSystemBrowserQuietly() : undefined));
   ipcMain.handle("system-browser-repair", (e) => (trusted(e) ? refreshSystemBrowser() : undefined));
   ipcMain.handle("system-browser-diagnose", (e) => (trusted(e) ? diagnoseSystemBrowser() : null));
-  ipcMain.on("notify", (e, n: unknown) => trusted(e) && notify(n));
+  ipcMain.handle("take-open-target", (e) => (trusted(e) ? takeOpenTarget() : null));
+  ipcMain.handle("screen-locked", (e) => (trusted(e) ? screenLocked() : false));
+  ipcMain.on("test-notification", (e) => trusted(e) && testNotification());
+  ipcMain.on("open-notification-settings", (e) => trusted(e) && openNotificationSettings());
   ipcMain.on("show-main-window", (e) => trusted(e) && void showMain());
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
@@ -463,7 +466,12 @@ export function registerIPC() {
     });
   });
   ipcMain.handle("preferences", (e) => (trusted(e) ? preferences() : null));
-  ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => (trusted(e) && typeof p === "object" && p !== null ? setPreferences(p) : null));
+  ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => {
+    if (!trusted(e) || typeof p !== "object" || p === null) return null;
+    const next = setPreferences(p);
+    notifier.refresh();
+    return next;
+  });
   ipcMain.handle("update-info", (e) => (trusted(e) ? updateInfo() : null));
   ipcMain.on("check-updates", (e) => trusted(e) && void check());
   ipcMain.on("download-update", (e) => trusted(e) && download());

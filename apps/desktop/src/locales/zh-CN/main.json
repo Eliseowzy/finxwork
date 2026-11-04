@@ -87,5 +87,14 @@
     "clearDetail": "内置浏览器将清除所有网站的 Cookie、存储和缓存，已登录的网站需要重新登录。",
     "clear": "清除",
     "cancel": "取消"
+  },
+  "notify": {
+    "approval": "等你确认：{{what}}",
+    "botFailed": "这次没能回复",
+    "sessionWaits": "任务在等你",
+    "sessionFailed": "任务失败了",
+    "sessionEnded": "任务已结束",
+    "testTitle": "FinxWork",
+    "testBody": "有回复或要确认时，你会这样收到提醒。"
   }
 }

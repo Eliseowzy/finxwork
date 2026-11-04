@@ -2,10 +2,25 @@
   "title": "Settings",
   "pages": {
     "general": "General",
+    "notifications": "Notifications",
     "models": "Models",
     "about": "About",
     "browser": "Browser",
     "desktop": "Computer Use"
+  },
+  "notifications": {
+    "enabled": "Allow notifications",
+    "enabledNote": "When the app isn't in front, you hear about bots' replies, things waiting for your approval and failed tasks, and the app's icon shows a number.",
+    "sound": "Sound",
+    "sessionEnded": "When a session's task ends",
+    "sessionEndedNote": "A task waiting for your approval or failing always tells you.",
+    "test": "Try it",
+    "testNote": "The first time, the system asks whether FinxWork may send notifications.",
+    "testButton": "Send one",
+    "system": "System notification settings",
+    "systemNote": "If notifications don't arrive, check here that they're allowed. You can also choose their style.",
+    "systemButton": "Open",
+    "muteNote": "To stop hearing from one bot, turn on Do Not Disturb in its settings."
   },
   "appearance": {
     "title": "Appearance",

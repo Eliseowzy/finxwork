@@ -123,6 +123,9 @@
     "permissionMode": "权限模式",
     "permissionNote": "{{desc}}。只对这个 Bot 生效，它创建的智能体和任务都按这个权限运行，改了立刻跟着变。",
     "bypassNote": "这个 Bot 创建的智能体和任务也会一样。",
-    "close": "关闭"
+    "close": "关闭",
+    "notifications": "通知",
+    "muted": "免打扰",
+    "mutedNote": "不发系统通知，也不计入应用图标上的数字。列表里的未读照常显示。"
   }
 }

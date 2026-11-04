@@ -206,6 +206,8 @@ async fn a_bot_that_never_sends_fails_so_the_owner_knows() {
     assert_eq!(end["error"]["retryable"], true, "{end}");
     assert!(sent(&events).is_empty());
     assert_eq!(events.iter().filter(|e| e["type"] == "turn_started").count(), 2);
+    // Its row says so: no message is coming, and the owner's system notification comes from this.
+    until_row(&mut wire, &bot, |b| b["failed"] == true).await;
     // Retrying asks again rather than saying there is nothing to continue.
     client.request("session/op", json!({"session_id": session, "op": {"type": "continue"}})).await.unwrap();
     let again = until_event(&mut wire, ended).await;
@@ -307,6 +309,10 @@ async fn renaming_avatars_clearing_and_deleting() {
     client.request("bots/update", json!({"bot_id": bot, "name": "编辑", "pinned": true})).await.unwrap();
     let row = until_row(&mut wire, &bot, |b| b["name"] == "编辑").await;
     assert_eq!(row["pinned"], true);
+    assert!(row.get("muted").is_none(), "a bot alerts by default: {row}");
+    let muted = client.request("bots/update", json!({"bot_id": bot, "muted": true})).await.unwrap();
+    assert_eq!(muted["bot"]["muted"], true);
+    until_row(&mut wire, &bot, |b| b["muted"] == true).await;
     say(&client, &session, "[[mock:send:我是编辑。]] 你叫什么").await;
     until_event(&mut wire, ended).await;
     let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).unwrap();
@@ -366,6 +372,7 @@ async fn bots_and_their_rows_survive_a_restart() {
         say(&client, &session, "[[mock:send:记下了。]] 记一下").await;
         until_event(&mut wire, ended).await;
         until_row(&mut wire, &bot, |b| b["unread"] == 1).await;
+        client.request("bots/update", json!({"bot_id": bot, "muted": true})).await.unwrap();
         client.request("server/shutdown", json!({})).await.unwrap();
         common::exit_code(&mut child).await;
     }
@@ -378,6 +385,7 @@ async fn bots_and_their_rows_survive_a_restart() {
     assert_eq!(bots[0]["id"], bot.as_str());
     assert_eq!(bots[0]["last"]["text"], "记下了。");
     assert_eq!(bots[0]["unread"], 1);
+    assert_eq!(bots[0]["muted"], true);
     // Its conversation loads again, with what was said.
     let opened = client.request("bots/open", json!({"bot_id": bot})).await.unwrap();
     assert!(opened["snapshot"]["transcript"].to_string().contains("记下了。"));

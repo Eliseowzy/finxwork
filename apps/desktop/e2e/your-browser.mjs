@@ -347,7 +347,7 @@ try {
   await main.until("the card", `document.querySelector('.appr')?.innerText.includes('sign in to the test site')`);
   await main.until("the row says so", `!!document.querySelector('.yr .sdot.w')`);
   await main.shot("6-handoff");
-  await untilIn("the notification", () => lines(notified), (l) => l.some((n) => n.session === session));
+  await untilIn("the notification", () => lines(notified), (l) => l.some((n) => n.group === `session:${session}`));
   await untilIn("the group says so", () => groupOf(tab.group), (g) => g.color === "orange");
   await main.run(`document.hasFocus = () => true`);
   fs.rmSync(opened, { force: true });

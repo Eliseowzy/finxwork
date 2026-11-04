@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.20 |
+| 版本 | v0.21 |
 | 日期 | 2026-11-04 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.21 | 2026-11-04 | 通知（notification-design.md），都在版本 2 之内：`BotSummary` 增加 `failed`、`muted`，`bots/update` 增加 `muted`。没有新方法 |
 | v0.20 | 2026-11-04 | Bot（bot-design.md §4，已实现），都在版本 2 之内、由 capabilities 的 `bots` 声明：方法 `bots/subscribe`、`bots/unsubscribe`、`bots/create`、`bots/update`、`bots/avatar`、`bots/open`、`bots/read`、`bots/unread`、`bots/clear`、`bots/delete`，通知 `bots/changed`；错误码 −32040 `bot_not_found`、−32041 `bot_default`、−32042 `bot_invalid`。Bot 的会话不进 `session/list`、`sessions/subscribe` 和 `sessions/changed` |
 | v0.19 | 2026-11-02 | 两个浏览器并存（desktop/connectors-entry-design §3.4、§9），版本 2 之内：`approval_requested` 和快照里的待审批项（PendingApproval）新增可选的 `own_browser`，为 true 时这次调用落在用户自己的浏览器里（用的是用户的真实登录状态），桌面端据此写"在你的浏览器里"；为 false 时不出现在 JSON 里，旧客户端忽略即可 |
 | v0.18 | 2026-10-30 | 模型不可用（desktop-design §7 P15），都在版本 2 之内：`session/new` 要的模型所属服务商不存在（例如本机连接已断开或删除）时，返回新错误码 −32022 `model_unavailable`，data 带 `provider`，不再是 invalid_params；引用格式不对仍是 invalid_params |

@@ -543,7 +543,6 @@
       "handled": "你已处理"
     },
     "offer": "交给这个对话：{{title}}",
-    "offerRemove": "不交了",
-    "notify": "任务在等你"
+    "offerRemove": "不交了"
   }
 }

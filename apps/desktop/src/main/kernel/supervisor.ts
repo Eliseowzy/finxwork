@@ -4,7 +4,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { RpcClient, RpcError, type Transport } from "@finx/client";
-import { PROTOCOL_VERSION, type BotSummary, type InitializeResult, type ServerCapabilities, type SessionState } from "@finx/protocol";
+import { PROTOCOL_VERSION, type BotSummary, type InitializeResult, type ServerCapabilities, type SessionState, type SessionSummary } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import type { LoginEnvironment } from "./env.ts";
 import { readRecord, stopRecorded, type ServiceRecord } from "./record.ts";
@@ -46,6 +46,17 @@ export type SupervisorOptions = {
   /** How long a started service has to answer. */
   startTimeoutMs?: number;
   trace?: (message: string) => void;
+  /** Follows the lists this connection already follows: the app's system notifications. */
+  lists?: ListFollower;
+};
+
+/** The service's lists: what they are on each new connection, then how they change. */
+export type ListFollower = {
+  reconnected(): void;
+  botList(list: BotSummary[]): void;
+  botsChanged(changed: BotSummary[], deleted: string[]): void;
+  sessionList(list: SessionSummary[]): void;
+  sessionsChanged(changed: SessionSummary[], deleted: string[]): void;
 };
 
 /** The longest Unix socket path (sockaddr_un's 104 bytes, with the terminator). */
@@ -299,15 +310,18 @@ export class Supervisor {
     this.control = { rpc, socket };
     this.busy.clear();
     socket.once("close", () => this.lost(socket));
+    this.o.lists?.reconnected();
     if (init.capabilities.sessions_subscribe) {
       rpc.on("sessions/changed", (c) => {
         for (const s of c.sessions) this.track(s.session_id, s.state);
         for (const id of c.deleted ?? []) this.busy.delete(id);
+        this.o.lists?.sessionsChanged(c.sessions, c.deleted ?? []);
         if (this.status.replacing) void this.replaceWhenIdle();
       });
       try {
         const list = await rpc.request("sessions/subscribe", { limit: 500 });
         for (const s of list.sessions) this.track(s.session_id, s.state);
+        this.o.lists?.sessionList(list.sessions);
       } catch {
         // Without the list the service is replaced only when asked.
       }
@@ -317,11 +331,13 @@ export class Supervisor {
       rpc.on("bots/changed", (c) => {
         for (const b of c.bots) this.trackBot(b);
         for (const id of c.deleted ?? []) this.busy.delete(`bot:${id}`);
+        this.o.lists?.botsChanged(c.bots, c.deleted ?? []);
         if (this.status.replacing) void this.replaceWhenIdle();
       });
       try {
         const list = await rpc.request("bots/subscribe", {});
         for (const b of list.bots) this.trackBot(b);
+        this.o.lists?.botList(list.bots);
       } catch {
         // Without the list a bot's work does not hold a replacement back.
       }

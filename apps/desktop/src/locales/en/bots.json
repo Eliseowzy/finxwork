@@ -124,6 +124,9 @@
     "permissionMode": "Permission mode",
     "permissionNote": "{{desc}}. Applies to this bot only. The agents and tasks it creates run with this mode too, and follow any change at once.",
     "bypassNote": "The agents and tasks this bot creates will do the same.",
-    "close": "Close"
+    "close": "Close",
+    "notifications": "Notifications",
+    "muted": "Do Not Disturb",
+    "mutedNote": "No system notifications, and it doesn't count in the number on the app's icon. Unread still shows in the list."
   }
 }

@@ -9,6 +9,7 @@ import { retireModelGateway } from "./retire-model-gateway";
 import { startKernel } from "./kernel";
 import { chooseLanguage } from "./language";
 import { setAppMenu } from "./menu";
+import { notifier, startNotifications } from "./notify";
 import { platform } from "./platform";
 import { applyAppearance } from "./preferences";
 import { startUpdater } from "./updater";
@@ -82,7 +83,8 @@ app.whenReady().then(async () => {
     return;
   }
   forgetSitesOnStart();
-  startKernel();
+  startNotifications();
+  startKernel(notifier);
   void refreshSystemBrowser();
   startUpdater();
   setAppMenu();

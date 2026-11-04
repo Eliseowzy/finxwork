@@ -15,10 +15,27 @@ import { useStore } from "./store";
 import { BotPage } from "./bots/BotPage";
 import { BotSheet } from "./bots/BotSheet";
 
+/** A clicked system notification opens what it is about, in its mode. The page may have just started for it. */
+function useOpenTarget() {
+  const { setMode, select, selectBot } = useStore();
+  useEffect(() => {
+    const take = async () => {
+      const target = await window.finx?.takeOpenTarget();
+      if (!target) return;
+      setMode(target.kind === "bot" ? "bots" : "sessions");
+      if (target.kind === "bot") selectBot(target.id);
+      else select(target.id);
+    };
+    void take();
+    return window.finx?.onOpenTarget(() => void take());
+  }, [setMode, select, selectBot]);
+}
+
 export function MainWindow() {
   const st = useStore();
   useCommands();
   useYoursWatcher();
+  useOpenTarget();
   const sel = st.selection;
   const session = sel.kind === "session" ? st.sessions.find((s) => s.session_id === sel.id) : undefined;
   // A selected session that is gone (deleted elsewhere): back to a new one. Gone only once the
