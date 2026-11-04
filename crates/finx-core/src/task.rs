@@ -163,6 +163,11 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
     }
     match session.build_context().messages.last() {
         Some(Message::User(_)) | Some(Message::ToolResult(_)) => start_task(session, None),
+        // A bot that ended up silent: retrying asks it again (bot-design §3.11).
+        _ if session.unanswered() => {
+            session.record(EntryKind::Unanswered);
+            start_task(session, None);
+        }
         _ => session.warn("nothing to continue: the conversation already ends with a complete reply"),
     }
 }
@@ -559,8 +564,14 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
             turn += 1;
             continue;
         }
-        // A bot about to stop without answering its owner is reminded once (bot-design §3.11).
-        if message.stop_reason != StopReason::Length && !reminded && session.unanswered() {
+        // A bot about to stop without answering its owner is reminded once; reminded and still
+        // silent, the owner is told rather than left waiting (bot-design §3.11).
+        if message.stop_reason != StopReason::Length && session.unanswered() {
+            if reminded {
+                let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
+                error.retryable = true;
+                return TaskOutcome::Failed(error);
+            }
             reminded = true;
             session.record(EntryKind::Unanswered);
             turn += 1;

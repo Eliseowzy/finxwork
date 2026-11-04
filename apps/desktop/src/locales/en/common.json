@@ -248,7 +248,8 @@
     "context_overflow": "Compact the context or start a new session.",
     "content_filtered": "Rephrase the request, or switch models.",
     "retryable": "Retry in a moment.",
-    "unknown": "Retry, or look at the details."
+    "unknown": "Retry, or look at the details.",
+    "no_reply": "The model ended its turn without sending you anything. Retry, or try another model."
   },
   "search": {
     "title": "Search Sessions",

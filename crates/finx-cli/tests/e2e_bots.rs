@@ -187,6 +187,31 @@ async fn messages_in_a_row_are_answered_in_order() {
     assert_eq!(sent(&seen), ["春天的诗", "夏天的诗", "秋天的诗", "冬天的诗"]);
 }
 
+/// Reminded and still silent, the task fails: the owner is told, not left waiting (bot-design
+/// §3.11, D-321). What it only wrote stays private.
+#[tokio::test]
+async fn a_bot_that_never_sends_fails_so_the_owner_knows() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:mute]] 还在吗").await;
+    let events = until_event(&mut wire, ended).await;
+    let end = events.last().unwrap();
+    assert_eq!(end["type"], "task_failed", "{end}");
+    assert_eq!(end["error"]["kind"], "no_reply", "{end}");
+    assert_eq!(end["error"]["retryable"], true, "{end}");
+    assert!(sent(&events).is_empty());
+    assert_eq!(events.iter().filter(|e| e["type"] == "turn_started").count(), 2);
+    // Retrying asks again rather than saying there is nothing to continue.
+    client.request("session/op", json!({"session_id": session, "op": {"type": "continue"}})).await.unwrap();
+    let again = until_event(&mut wire, ended).await;
+    assert_eq!(again.last().unwrap()["type"], "task_failed", "{again:?}");
+}
+
 /// A bot that answers in plain text is reminded and sends it; the reminder is the model's alone
 /// (bot-design §3.11).
 #[tokio::test]

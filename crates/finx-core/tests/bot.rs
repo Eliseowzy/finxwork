@@ -272,7 +272,9 @@ async fn the_reminder_comes_once_per_task() {
     )
     .await;
     let result = h.kernel.run(prompt("在吗")).await.unwrap();
-    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    // Reminded and still silent: the owner is told (D-321).
+    let TaskEnd::Failed(error) = &result.end else { panic!("{:?}", result.end) };
+    assert_eq!((error.kind.as_str(), error.retryable), ("no_reply", true));
     assert!(sent(&result.events).is_empty());
     assert_eq!(h.api.requests().len(), 2);
     // The next task gets its own.

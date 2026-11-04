@@ -597,6 +597,8 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => done("quiet"),
             }
         }
+        // A bot that never sends, reminded or not (bot-design §3.11).
+        "mute" => Plan::Step(Step::text("写了字，没有发。".to_string())),
         "confirm" => match step {
             0 => Plan::Step(Step::calls(vec![
                 ("send_to_user", json!({ "text": "要执行命令，确认一下。" })),

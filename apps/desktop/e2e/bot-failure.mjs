@@ -41,6 +41,7 @@ const socket = path.join(home, "run/finx.sock");
 const asked = new Map();
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 } })}\n\ndata: [DONE]\n\n`;
+let mutedAnswers = 0;
 const provider = http.createServer((req, res) => {
   let body = "";
   req.on("data", (c) => (body += c));
@@ -51,7 +52,14 @@ const provider = http.createServer((req, res) => {
     const said = typeof last === "string" ? last : last.map((c) => c.text ?? "").join("");
     const times = (asked.get(said) ?? 0) + 1;
     asked.set(said, times);
-    if (times === 1) return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "mock: this request is refused once" } }));
+    // Writes and never sends: the request and the one after the reminder.
+    const muted = JSON.stringify(request.messages).includes("这次不回话");
+    if (muted && mutedAnswers < 2) {
+      mutedAnswers++;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      return res.end(sse({ role: "assistant", content: "只写了字，没有发。" }, "stop"));
+    }
+    if (times === 1 && !muted) return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "mock: this request is refused once" } }));
     res.writeHead(200, { "content-type": "text/event-stream" });
     if (!request.tools?.some((t) => t.function?.name === "send_to_user")) return res.end(sse({ role: "assistant", content: "ok" }, "stop"));
     const call = { index: 0, id: `call_${times}`, type: "function", function: { name: "send_to_user", arguments: JSON.stringify({ text: `接着回了：${said}`, end_turn: true }) } };
@@ -196,6 +204,18 @@ try {
   check(!(await page.run(`!!document.querySelector(".tr.bots .fcard")`)), "the card is gone");
   check(await page.run(`!!document.querySelector(".tr.bots .fpast")`), "a quiet line says it failed once");
   await page.shot("02-retried");
+
+  step("reminded and still silent: the owner is told, and 重试 gets the answer");
+  const before = (await page.run(bubbles)).length;
+  await say(page, "这次不回话");
+  await page.until("the card", `!!document.querySelector(".tr.bots .fcard")`, 30000);
+  check((await page.run(`document.querySelector(".tr.bots .fcard .fc-tx").innerText`)).includes("没有收到回复"), "the card says no reply came");
+  check((await page.run(bubbles)).length === before, "what it only wrote stays private");
+  await page.shot("03-no-reply");
+  await page.run(`document.querySelector(".tr.bots .fcard .fc-side .btn.primary").click()`);
+  await page.until("the answer", `${bubbles}.length > ${before}`, 30000);
+  await page.until("not busy", `!${busy}`);
+  check(!(await page.run(`!!document.querySelector(".tr.bots .fcard")`)), "the card is gone");
   page.close();
   console.log("\n✔ a bot's failure card and its retry work end to end");
 } catch (e) {

@@ -64,7 +64,8 @@
     "protocol": "{{provider}} 的回复无法识别",
     "unknown": "这一轮没能完成",
     "working_other": "后台还有 {{count}} 个任务在运行。",
-    "stopWorking": "停止后台任务"
+    "stopWorking": "停止后台任务",
+    "no_reply": "这次没有收到回复"
   },
   "agents": {
     "launched_other": "派出了 {{count}} 个子智能体，在后台并行工作",

@@ -66,7 +66,8 @@
     "unknown": "This task couldn't finish",
     "working_one": "{{count}} background task is still working.",
     "working_other": "{{count}} background tasks are still working.",
-    "stopWorking": "Stop background tasks"
+    "stopWorking": "Stop background tasks",
+    "no_reply": "No reply this time"
   },
   "agents": {
     "launched_one": "Started {{count}} sub-agent, working in the background",
