@@ -4,7 +4,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { RpcClient, RpcError, type Transport } from "@finx/client";
-import { PROTOCOL_VERSION, type InitializeResult, type ServerCapabilities, type SessionState } from "@finx/protocol";
+import { PROTOCOL_VERSION, type BotSummary, type InitializeResult, type ServerCapabilities, type SessionState } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import type { LoginEnvironment } from "./env.ts";
 import { readRecord, stopRecorded, type ServiceRecord } from "./record.ts";
@@ -109,7 +109,7 @@ export class Supervisor {
   private env: Promise<LoginEnvironment> | null = null;
   private cycle: Promise<void> | null = null;
   private control: { rpc: RpcClient; socket: net.Socket } | null = null;
-  /** Sessions with a task running, as the control connection hears of them. */
+  /** Sessions with a task running, and bots at work, as the control connection hears of them. */
   private readonly busy = new Map<string, SessionState>();
   private expectClose = false;
   /** The last service was stopped to be replaced. */
@@ -312,6 +312,20 @@ export class Supervisor {
         // Without the list the service is replaced only when asked.
       }
     }
+    // A bot's conversation is not in the session list: its row says when it works (bot-design §5.2).
+    if (init.capabilities.bots) {
+      rpc.on("bots/changed", (c) => {
+        for (const b of c.bots) this.trackBot(b);
+        for (const id of c.deleted ?? []) this.busy.delete(`bot:${id}`);
+        if (this.status.replacing) void this.replaceWhenIdle();
+      });
+      try {
+        const list = await rpc.request("bots/subscribe", {});
+        for (const b of list.bots) this.trackBot(b);
+      } catch {
+        // Without the list a bot's work does not hold a replacement back.
+      }
+    }
     this.attempt = 0;
     this.set({ state: "ready", version: init.server_info.version ?? undefined, replacing: stale, ours, reason: undefined, output: undefined, attempt: undefined });
     if (stale) void this.replaceWhenIdle();
@@ -343,6 +357,14 @@ export class Supervisor {
   private track(id: string, state: SessionState) {
     if (state === "running" || state === "awaiting_approval") this.busy.set(id, state);
     else this.busy.delete(id);
+  }
+
+  /** A bot works while it answers, waits for an approval or has helpers at work. */
+  private trackBot(b: BotSummary) {
+    const key = `bot:${b.id}`;
+    if (b.waiting) this.busy.set(key, "awaiting_approval");
+    else if (b.typing || (b.helpers ?? 0) > 0) this.busy.set(key, "running");
+    else this.busy.delete(key);
   }
 
   /** Replaces the service now if no task runs; otherwise the list's next change tries again. */
