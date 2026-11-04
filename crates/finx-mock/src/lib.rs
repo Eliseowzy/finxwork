@@ -45,6 +45,7 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -63,6 +64,10 @@ pub const MODEL_ID: &str = "mock-1";
 /// A key the mock's model list refuses (401), for key checks.
 pub const REJECTED_KEY: &str = "sk-rejected";
 
+/// What a list under a path with `/bailian/` answers: part of the real plan's list, dated builds,
+/// a routing name and models that do not chat included.
+const BAILIAN_PLAN_MODELS: &[&str] = &["qwen3.8-max", "qwen3.7-max", "glm-5.3", "deepseek-v4.1-flash-1017", "wan2.7-image", "auto"];
+
 #[derive(Default)]
 pub struct Stats {
     pub requests: AtomicU64,
@@ -80,6 +85,8 @@ pub struct Stats {
     pub model_lists: AtomicU64,
     /// Requests for the public model catalog (`/catalog/api.json`).
     pub catalog_fetches: AtomicU64,
+    /// What the latest chat requests asked for, all but their messages and tools.
+    chat_controls: Mutex<VecDeque<Value>>,
 }
 
 impl Stats {
@@ -93,7 +100,27 @@ impl Stats {
     pub fn churn_bodies(&self) -> Vec<u32> {
         self.churn_bodies.lock().clone()
     }
+
+    /// What the latest chat requests asked for, oldest first: their fields, all but the messages
+    /// and tools, for tests of what reaches a provider.
+    pub fn chat_controls(&self) -> Vec<Value> {
+        self.chat_controls.lock().iter().cloned().collect()
+    }
+
+    fn record_controls(&self, request: &Value) {
+        let Some(fields) = request.as_object() else { return };
+        let controls: serde_json::Map<String, Value> =
+            fields.iter().filter(|(k, _)| !matches!(k.as_str(), "messages" | "tools")).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut recorded = self.chat_controls.lock();
+        if recorded.len() == CONTROLS_KEPT {
+            recorded.pop_front();
+        }
+        recorded.push_back(Value::Object(controls));
+    }
 }
+
+/// How many requests' controls are remembered; long simulations should not grow with them.
+const CONTROLS_KEPT: usize = 256;
 
 /// Latency of the simulated gateway.
 #[derive(Clone, Copy, Debug, Default)]
@@ -162,7 +189,7 @@ impl MockServer {
         &self.shared.stats
     }
 
-    /// A public model catalog in the upstream format, naming every built-in `catalog_id`.
+    /// A public model catalog in the upstream format.
     pub fn catalog_url(&self) -> String {
         format!("http://{}/catalog/api.json", self.addr)
     }
@@ -219,7 +246,8 @@ async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
             if request.authorization.as_deref() == Some(&format!("Bearer {REJECTED_KEY}")) {
                 write_json(&mut stream, 401, &json!({"error": {"message": "Authentication Fails, Your api key is invalid"}})).await
             } else {
-                let data = json!([{"id": MODEL_ID, "object": "model"}, {"id": "mock-2", "object": "model"}, {"id": "deepseek-flash", "object": "model"}]);
+                let ids: &[&str] = if request.path.contains("/bailian/") { BAILIAN_PLAN_MODELS } else { &[MODEL_ID, "mock-2", "deepseek-flash"] };
+                let data: Vec<Value> = ids.iter().map(|id| json!({"id": id, "object": "model"})).collect();
                 write_json(&mut stream, 200, &json!({"object": "list", "data": data})).await
             }
         } else {
@@ -275,7 +303,8 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
 }
 
 /// The catalog the mock serves: DeepSeek's flash with a window no real catalog has, so a test
-/// can tell it was taken; the other built-in catalog ids empty.
+/// can tell it was taken; some other built-in catalog ids empty, the rest missing, which costs
+/// only those.
 fn catalog() -> Value {
     let mut root = serde_json::Map::new();
     for id in ["alibaba-cn", "anthropic", "moonshotai-cn", "openai", "openrouter", "zhipuai"] {
@@ -917,6 +946,7 @@ async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> i
                 Ok(v) => v,
                 Err(_) => return write_json(stream, 400, &json!({"error": {"message": "invalid JSON"}})).await,
             };
+            shared.stats.record_controls(&request);
             let messages = request.get("messages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
             let (name, arg, prompt, step) = directive(messages);
             let plan = plan(shared, messages, &name, &arg, &prompt, step);

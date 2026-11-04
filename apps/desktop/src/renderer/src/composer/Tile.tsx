@@ -290,14 +290,14 @@ function FileBadge({ path, folder }: { path: string; folder: boolean }) {
   if (folder)
     return (
       <span className="tile-badge f-folder" aria-hidden>
-        <svg viewBox="0 0 32 32"><path d="M3 9.5A2.5 2.5 0 0 1 5.5 7h6.4l2.6 2.6h12A2.5 2.5 0 0 1 29 12.1V24a2.5 2.5 0 0 1-2.5 2.5h-21A2.5 2.5 0 0 1 3 24z" /></svg>
+        <Icon name="folder" />
       </span>
     );
   const ext = (/\.([A-Za-z0-9]{1,6})$/.exec(path)?.[1] ?? "").toLowerCase();
   const family = families.find(([, re]) => re.test(ext))?.[0] ?? "other";
   return (
     <span className={`tile-badge f-${family}`} aria-hidden>
-      <svg viewBox="0 0 32 32"><path className="pg" d="M5 3h15l7 7v19H5z" /><path className="ear" d="M20 3v7h7z" /></svg>
+      <Icon name="file" />
       <b>{ext.slice(0, 4) || "FILE"}</b>
     </span>
   );

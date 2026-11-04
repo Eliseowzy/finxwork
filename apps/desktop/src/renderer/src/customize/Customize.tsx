@@ -143,11 +143,11 @@ export function Customize() {
 
   const addMenu = [
     { header: t("add.skills") },
-    { id: "upload", label: t("add.upload"), icon: "upload", run: a.upload },
-    ...(a.create ? [{ id: "create", label: t("add.create"), icon: "chat", run: a.create }] : []),
+    { id: "upload", label: t("add.upload"), icon: "upload" as const, run: a.upload },
+    ...(a.create ? [{ id: "create", label: t("add.create"), icon: "chat" as const, run: a.create }] : []),
     null,
     { header: t("add.connectors") },
-    { id: "custom", label: t("add.custom"), icon: "plug", run: a.addCustom },
+    { id: "custom", label: t("add.custom"), icon: "plug" as const, run: a.addCustom },
   ];
 
   let body;

@@ -6,6 +6,7 @@ use super::Target;
 use finx_llm::{
     Message, RequestOptions, ThinkingLevel, ToolChoice, WireRequest,
     api::openai_chat,
+    model::REQUEST_MAX_OUTPUT_TOKENS,
 };
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -57,7 +58,7 @@ pub(crate) fn build(req: &WireRequest, target: &Target, ids: &Ids, request: &str
     parameters.insert("enable_thinking".into(), json!(enable_thinking));
     parameters.insert(
         "max_tokens".into(),
-        json!(req.options.max_output_tokens.unwrap_or_else(|| req.model.default_max_output())),
+        json!(req.options.max_output_tokens.or_else(|| req.model.default_max_output()).unwrap_or(REQUEST_MAX_OUTPUT_TOKENS)),
     );
     if thinking.is_effort() {
         parameters.insert("reasoning_effort".into(), json!(thinking.as_str()));

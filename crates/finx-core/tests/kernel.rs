@@ -1145,11 +1145,6 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
     registry.register_api(api.clone());
     let mut other = ScriptedApi::provider();
     other.id = "other".into();
-    other.models = other
-        .models
-        .iter()
-        .map(|m| Arc::new(finx_llm::Model { provider: "other".into(), ..(**m).clone() }))
-        .collect();
     registry.insert_provider(other);
     deps.llm = Arc::new(registry);
     let config = Config { model: "other/scripted".into(), ..Config::default() };

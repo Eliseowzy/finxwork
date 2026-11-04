@@ -147,9 +147,9 @@ export function SkillPage({ c, a, detail, project, onBack }: { c: Customize; a: 
   const menu = (): MenuItem[] =>
     item
       ? [
-          { id: "reveal", label: t("skill.reveal"), icon: "folder", run: () => window.finx?.revealPath(item.dir) },
+          { id: "reveal", label: t("skill.reveal"), icon: "folder" as const, run: () => window.finx?.revealPath(item.dir) },
           // Only the person's own, in ~/.finx/skills (DD-35, DD-36).
-          ...(item.entry.removable ? [null, { id: "remove", label: t("skill.removeSkill"), icon: "trash", danger: true, run: () => c.removeSkill(item) }] : []),
+          ...(item.entry.removable ? [null, { id: "remove", label: t("skill.removeSkill"), icon: "trash" as const, danger: true, run: () => c.removeSkill(item) }] : []),
         ]
       : [];
   const badge = item?.group === "system" ? t("skill.builtIn") : item?.group === "project" ? t("skill.source.repo") : null;
@@ -334,12 +334,12 @@ function ServerPage({ c, a, s, onBack }: { c: Customize; a: Actions; s: McpServe
         : null;
 
   const menu = (): MenuItem[] => [
-    ...(s.editable && !s.connector ? [{ id: "edit", label: t("connector.edit"), icon: "edit", run: () => a.edit(s) }, null] : []),
-    ...(!untrusted ? [{ id: "check", label: t("connector.recheck"), icon: "retry", run: () => void c.check(s.name) }] : []),
-    ...(s.connector && cat ? [{ id: "reinstall", label: t("managed.reinstall"), icon: "retry", run: () => a.addConnector(cat) }] : []),
-    ...(!s.connector ? [{ id: "copy", label: remote ? t("connector.copyAddress") : t("connector.copyCommand"), icon: "copy", run: copy }] : []),
-    ...(s.auth === "oauth" && s.auth_state === "logged_in" ? [{ id: "logout", label: t("connector.signOut"), icon: "logout", run: () => void c.logout(s.name) }] : []),
-    ...(s.editable ? [null, { id: "remove", label: t("connector.removeConnector"), icon: "trash", danger: true, run: () => c.removeServer(s) }] : []),
+    ...(s.editable && !s.connector ? [{ id: "edit", label: t("connector.edit"), icon: "edit" as const, run: () => a.edit(s) }, null] : []),
+    ...(!untrusted ? [{ id: "check", label: t("connector.recheck"), icon: "retry" as const, run: () => void c.check(s.name) }] : []),
+    ...(s.connector && cat ? [{ id: "reinstall", label: t("managed.reinstall"), icon: "retry" as const, run: () => a.addConnector(cat) }] : []),
+    ...(!s.connector ? [{ id: "copy", label: remote ? t("connector.copyAddress") : t("connector.copyCommand"), icon: "copy" as const, run: copy }] : []),
+    ...(s.auth === "oauth" && s.auth_state === "logged_in" ? [{ id: "logout", label: t("connector.signOut"), icon: "logout" as const, run: () => void c.logout(s.name) }] : []),
+    ...(s.editable ? [null, { id: "remove", label: t("connector.removeConnector"), icon: "trash" as const, danger: true, run: () => c.removeServer(s) }] : []),
   ];
 
   const signing = c.signingIn.get(s.name);
