@@ -25,8 +25,8 @@
   },
   "browserNote": "This page runs outside the app: its preferences aren't kept.",
   "models": {
-    "subscription": "Subscriptions & plans",
-    "subscriptionNote": "Connect and manage your existing accounts and model plans.",
+    "subscription": "Use a subscription",
+    "subscriptionNote": "Uses each account’s subscription allowance. API keys are billed separately.",
     "chatgpt": {
       "forget": "Forget account",
       "note": "Sign in with your ChatGPT account",
@@ -143,14 +143,11 @@
       }
     },
     "plans": {
-      "connect": "Connect Token Plan",
-      "subtitle": "Connect your existing model plan",
-      "choose": "Choose your plan",
-      "chooseNote": "Select your subscription, then enter its API key.",
-      "allPlans": "All plans",
-      "pickerNote": "Add each plan once, then manage it here anytime.",
+      "title": "Token Plan",
       "added": "Added",
-      "needsAttention": "Check connection",
+      "subtitle": "Connect your existing model plan",
+      "connect": "Connect Token Plan",
+      "chooseNote": "Select your subscription, then enter its API key.",
       "details": "Connection details",
       "endpoint": "Endpoint",
       "protocol": "Protocol",
@@ -160,31 +157,26 @@
       "catalogNote": "Preset models do not confirm account access. Availability depends on your subscription.",
       "getKey": "Get API key",
       "keyPlaceholder": "Paste the API key for this plan",
-      "keyNote": "Your key is saved in the local credential store. Use the key for this specific plan.",
-      "save": "Save and connect",
-      "saving": "Saving…",
-      "verified": "Connection verified",
-      "verifiedNote": "The plan model list is available. Choose a model from the model menu to use it.",
-      "saved": "API key saved",
-      "unverifiedNote": "Connection not yet verified; your first model request will verify it. You can manage visible models now.",
-      "done": "Done",
       "removeNote": "Removes the saved key from this device. Your subscription with the provider stays active.",
+      "unverified": "API key saved, connection not verified yet; your first model request will verify it.",
+      "replaced": "API key replaced",
+      "replaceTitle": "Replace Key",
       "products": {
         "bailian-token-plan": {
           "name": "Bailian Token Plan",
-          "note": "Alibaba Cloud · multi-model plan"
+          "note": "Alibaba Cloud · multi-model"
         },
         "tencent-token-plan": {
           "name": "Tencent Cloud Token Plan",
-          "note": "General and Hy plans share one key"
+          "note": "General and Hy share a key"
         },
         "volcengine-agent-plan": {
           "name": "Volcengine Ark Agent Plan",
-          "note": "Use your dedicated Agent Plan key"
+          "note": "Agent Plan key only"
         },
         "volcengine-coding-plan": {
           "name": "Volcengine Ark Coding Plan",
-          "note": "Connect your existing Coding Plan"
+          "note": "Coding Plan key only"
         },
         "zai-coding-plan": {
           "name": "Z.ai GLM Coding Plan",

@@ -25,8 +25,8 @@
   },
   "browserNote": "这个页面运行在应用之外，偏好不会保存。",
   "models": {
-    "subscription": "订阅与套餐",
-    "subscriptionNote": "连接已有账户或模型套餐，在这里管理接入方式。",
+    "subscription": "使用订阅",
+    "subscriptionNote": "使用对应账户的订阅额度，API Key 单独计费。",
     "chatgpt": {
       "forget": "忘记账户",
       "note": "使用 ChatGPT 账户登录",
@@ -143,14 +143,11 @@
       }
     },
     "plans": {
-      "connect": "接入 Token Plan",
-      "subtitle": "连接你已有的模型套餐",
-      "choose": "选择你的套餐",
-      "chooseNote": "选择已订阅的服务，下一步填写 API Key。",
-      "allPlans": "所有套餐",
-      "pickerNote": "套餐只需添加一次，之后可以随时管理。",
+      "title": "Token Plan",
       "added": "已接入",
-      "needsAttention": "需要检查连接",
+      "subtitle": "连接你已有的模型套餐",
+      "connect": "接入 Token Plan",
+      "chooseNote": "选择已订阅的服务，下一步填写 API Key。",
       "details": "连接详情",
       "endpoint": "接入地址",
       "protocol": "接口协议",
@@ -160,15 +157,10 @@
       "catalogNote": "预置模型不代表账户已获得访问权限，实际可用范围以你的套餐为准。",
       "getKey": "获取密钥",
       "keyPlaceholder": "粘贴这个套餐的 API Key",
-      "keyNote": "密钥会保存在本机凭据存储中。请使用当前套餐对应的密钥。",
-      "save": "保存并接入",
-      "saving": "正在保存…",
-      "verified": "已验证连接",
-      "verifiedNote": "已获取套餐模型目录，可在模型菜单中选择使用。",
-      "saved": "密钥已保存",
-      "unverifiedNote": "尚未验证连接；首次模型请求时验证。你可以先管理要显示的模型。",
-      "done": "完成",
       "removeNote": "从本机移除保存的密钥，不会取消服务商的套餐订阅。",
+      "unverified": "密钥已保存，尚未验证连接；首次模型请求时验证。",
+      "replaced": "密钥已更换",
+      "replaceTitle": "更换密钥",
       "products": {
         "bailian-token-plan": {
           "name": "百炼 Token Plan",
@@ -176,15 +168,15 @@
         },
         "tencent-token-plan": {
           "name": "腾讯云 Token Plan",
-          "note": "通用与 Hy 套餐，共用一个密钥"
+          "note": "通用与 Hy 套餐共用密钥"
         },
         "volcengine-agent-plan": {
           "name": "火山方舟 Agent Plan",
-          "note": "使用 Agent Plan 专属密钥"
+          "note": "Agent Plan 专属密钥"
         },
         "volcengine-coding-plan": {
           "name": "火山方舟 Coding Plan",
-          "note": "使用已有的 Coding Plan 套餐"
+          "note": "Coding Plan 专属密钥"
         },
         "zai-coding-plan": {
           "name": "Z.ai GLM Coding Plan",

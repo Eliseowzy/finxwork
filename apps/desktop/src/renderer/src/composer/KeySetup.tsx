@@ -22,12 +22,13 @@ export function keyProviders(providers: ProviderSummary[]): ProviderSummary[] {
 /**
  * Saves a key with auth/set: finx asks the provider first, and a refused key is
  * not saved (its error says so). A key finx could not check is saved, and the
- * page says it was not checked.
+ * page says it was not checked (`unverified`, or in the usual words). Returns whether it was.
  */
-export async function saveKey(st: ReturnType<typeof useStore>, provider: string, key: string): Promise<void> {
+export async function saveKey(st: ReturnType<typeof useStore>, provider: string, key: string, unverified?: string): Promise<boolean> {
   try {
     const result = await st.call("auth/set", { provider, api_key: key });
-    if (!result.verified) st.show(i18n.t("session:key.unverified"));
+    if (!result.verified) st.show(unverified ?? i18n.t("session:key.unverified"));
+    return result.verified;
   } catch (e) {
     if (e instanceof RpcError && e.kind === "key_rejected") throw new Error(i18n.t("session:key.rejected", { message: e.message }));
     throw e;
