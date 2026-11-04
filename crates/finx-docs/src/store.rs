@@ -1,9 +1,11 @@
 //! DocStore (design §5.2): one per service, one entry per file, shared by every session that
-//! opened it. A document's directory is `<docs>/<doc_id>/`: `base.pdf` (the file as opened),
-//! `current.pdf` (the working copy) and `meta.json`. Sessions only keep what they look at.
+//! opened it. A document's directory is `<docs>/<doc_id>/`: `base.<ext>` (the file as opened or
+//! last saved), `current.<ext>` (the working copy), `meta.json`, and for a workbook
+//! `revisions.jsonl` (its edits, spreadsheet-design §6). Sessions only keep what they look at.
 //!
-//! Phase one only reads: the working copy is the file as last opened, and opening a file that
-//! changed on disk takes the new contents.
+//! PDFs are read only: opening a file that changed on disk takes the new contents. Workbooks
+//! are edited in the working copy and saved back on request; a workbook with unsaved edits is
+//! kept even when its file changes on disk, and saving over that change needs `force`.
 
 use finx_protocol::doc::Anchor;
 use finx_protocol::doc::Capability;
@@ -11,7 +13,9 @@ use finx_protocol::doc::DocFormat;
 use finx_protocol::doc::DocInfo;
 use finx_protocol::doc::DocLayout;
 use finx_protocol::doc::DocViewing;
+use finx_protocol::doc::Impact;
 use finx_protocol::doc::Rect;
+use finx_protocol::doc::SheetOp;
 use finx_protocol::doc::TextBlock;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -26,6 +30,12 @@ use crate::engine::Rendered;
 use crate::engine::Request;
 use crate::layout;
 use crate::layout::PageChars;
+use crate::sheet::Applied;
+use crate::sheet::Cells;
+use crate::sheet::Direction;
+use crate::sheet::Found;
+use crate::sheet::REFUSED;
+use crate::sheet::SheetOpened;
 use crate::worker::Launcher;
 use crate::worker::Worker;
 use crate::worker::WorkerError;
@@ -39,7 +49,7 @@ pub const MAX_RENDER_SIDE: u32 = 2000;
 pub enum DocError {
     #[error("{0}: no such file")]
     NotFound(String),
-    #[error("{0} is not a PDF")]
+    #[error("{0} is not a document finx opens: PDF, xlsx or xlsm")]
     NotPdf(String),
     #[error("{0} is larger than 1 GB")]
     TooLarge(String),
@@ -51,6 +61,15 @@ pub enum DocError {
     NotOpen(String),
     #[error("no page {page}: the document has {pages}")]
     NoPage { page: u32, pages: u32 },
+    /// A workbook edit that would risk the file (spreadsheet-design §5.3.3).
+    #[error("{0}")]
+    Refused(String),
+    #[error("the document changed: it is at revision {now}, the edit was made against {base}")]
+    Stale { base: u64, now: u64 },
+    #[error("{0} changed on disk since it was opened; save again with force to write over it")]
+    Conflict(String),
+    #[error("{0}")]
+    NotEditable(String),
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -79,10 +98,36 @@ struct View {
     token: String,
 }
 
+/// One edit of a workbook, as kept in `revisions.jsonl`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Revision {
+    ops: Vec<SheetOp>,
+    undo: Vec<SheetOp>,
+    session: String,
+    at_ms: u128,
+}
+
+/// A workbook's edits: the first `applied` are in the working copy, the rest can be redone;
+/// `saved` is how many were applied when it was last saved, if that state is still reachable.
+#[derive(Debug, Default)]
+struct History {
+    revisions: Vec<Revision>,
+    applied: usize,
+    saved: Option<usize>,
+}
+
+impl History {
+    fn dirty(&self) -> bool {
+        self.saved != Some(self.applied)
+    }
+}
+
 pub struct Doc {
     pub id: String,
     pub path: PathBuf,
     dir: PathBuf,
+    /// `pdf`, `xlsx`, `xlsm`: the working copy's extension.
+    ext: &'static str,
     handle: u64,
     /// The password it was opened with, in memory only: the pages of every session need it.
     password: Option<String>,
@@ -90,6 +135,9 @@ pub struct Doc {
     pages: Mutex<HashMap<u32, Arc<PageText>>>,
     /// The sessions that have it open, and what each shows.
     views: Mutex<HashMap<String, View>>,
+    history: Mutex<History>,
+    /// One edit at a time: revisions stay in order.
+    editing: tokio::sync::Mutex<()>,
 }
 
 impl Doc {
@@ -107,7 +155,15 @@ impl Doc {
 
     /// The working copy.
     pub fn current(&self) -> PathBuf {
-        self.dir.join("current.pdf")
+        self.dir.join(format!("current.{}", self.ext))
+    }
+
+    pub fn is_sheet(&self) -> bool {
+        self.ext != "pdf"
+    }
+
+    fn dirty(&self) -> bool {
+        self.is_sheet() && self.history.lock().dirty()
     }
 
     fn check_page(&self, page: u32) -> Result<(), DocError> {
@@ -191,7 +247,8 @@ impl DocStore {
         let stamp = Meta { path: canonical.clone(), size: meta.len(), modified_ms: modified_ms(&meta) };
         let existing = self.docs.lock().get(&id).cloned();
         let doc = match existing {
-            Some(doc) if self.unchanged(&doc.dir, &stamp) => doc,
+            // Unsaved edits are not dropped because the file changed: saving says so (`Conflict`).
+            Some(doc) if doc.dirty() || self.unchanged(&doc.dir, doc.ext, &stamp) => doc,
             stale => {
                 if let Some(doc) = stale {
                     self.worker.close(doc.handle).await;
@@ -205,10 +262,10 @@ impl DocStore {
         Ok((doc, token))
     }
 
-    fn unchanged(&self, dir: &Path, stamp: &Meta) -> bool {
+    fn unchanged(&self, dir: &Path, ext: &str, stamp: &Meta) -> bool {
         let Ok(text) = std::fs::read_to_string(dir.join("meta.json")) else { return false };
         let Ok(meta) = serde_json::from_str::<Meta>(&text) else { return false };
-        meta.size == stamp.size && meta.modified_ms == stamp.modified_ms && dir.join("current.pdf").is_file()
+        meta.size == stamp.size && meta.modified_ms == stamp.modified_ms && dir.join(format!("current.{ext}")).is_file()
     }
 
     async fn load(&self, canonical: &Path, id: &str, stamp: Meta, password: Option<String>) -> Result<Doc, DocError> {
@@ -216,16 +273,28 @@ impl DocStore {
         std::fs::create_dir_all(&dir)?;
         let mut head = [0u8; 1024];
         let n = std::io::Read::read(&mut std::fs::File::open(canonical)?, &mut head)?;
-        if !head[..n].windows(5).any(|w| w == b"%PDF-") {
+        let ext_of = canonical.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+        let ext: &'static str = if head[..n].windows(5).any(|w| w == b"%PDF-") {
+            "pdf"
+        } else if head[..n].starts_with(b"PK") && matches!(ext_of.as_deref(), Some("xlsx" | "xlsm")) {
+            if ext_of.as_deref() == Some("xlsm") { "xlsm" } else { "xlsx" }
+        } else if head[..n].starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) && matches!(ext_of.as_deref(), Some("xlsx" | "xlsm")) {
+            return Err(DocError::Unreadable(canonical.display().to_string(), "the workbook is encrypted: remove its password in Excel to open it here".into()));
+        } else {
             return Err(DocError::NotPdf(canonical.display().to_string()));
-        }
-        if !self.unchanged(&dir, &stamp) {
+        };
+        let kept = self.unchanged(&dir, ext, &stamp);
+        if !kept {
             // Written beside, then renamed: a half copy is never taken for the file.
-            let partial = dir.join("current.pdf.partial");
+            let partial = dir.join(format!("current.{ext}.partial"));
             std::fs::copy(canonical, &partial)?;
-            std::fs::copy(&partial, dir.join("base.pdf"))?;
-            std::fs::rename(&partial, dir.join("current.pdf"))?;
+            std::fs::copy(&partial, dir.join(format!("base.{ext}")))?;
+            std::fs::rename(&partial, dir.join(format!("current.{ext}")))?;
             std::fs::write(dir.join("meta.json"), serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
+            let _ = std::fs::remove_file(dir.join("revisions.jsonl"));
+        }
+        if ext != "pdf" {
+            return self.load_sheet(canonical, id, dir, ext, kept).await;
         }
         let (handle, opened): (u64, Opened) = self.worker.open(dir.join("current.pdf"), password.clone()).await.map_err(|e| match e {
             WorkerError::Failed(m) if m.starts_with("password") => DocError::Password,
@@ -256,16 +325,69 @@ impl DocStore {
             save_in_place: !read_only,
             scanned: !opened.has_text && opened.pages > 0,
             encrypted,
+            sheets: Vec::new(),
         };
         Ok(Doc {
             id: id.to_string(),
             path: canonical.to_path_buf(),
             dir,
+            ext: "pdf",
             handle,
             password: if encrypted { password } else { None },
             info: Mutex::new(info),
             pages: Mutex::default(),
             views: Mutex::default(),
+            history: Mutex::default(),
+            editing: tokio::sync::Mutex::new(()),
+        })
+    }
+
+    async fn load_sheet(&self, canonical: &Path, id: &str, dir: PathBuf, ext: &'static str, kept: bool) -> Result<Doc, DocError> {
+        let current = dir.join(format!("current.{ext}"));
+        let (handle, opened): (u64, SheetOpened) = self.worker.open_sheet(current).await.map_err(|e| match e {
+            WorkerError::Failed(m) => DocError::Unreadable(canonical.display().to_string(), m),
+            e => DocError::Worker(e),
+        })?;
+        // A working copy kept from an earlier run keeps its edits, to undo or save.
+        let mut history = History { saved: Some(0), ..Default::default() };
+        if kept && let Ok(text) = std::fs::read_to_string(dir.join("revisions.jsonl")) {
+            history.revisions = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+            history.applied = history.revisions.len();
+            let same = std::fs::read(dir.join(format!("base.{ext}"))).ok() == std::fs::read(dir.join(format!("current.{ext}"))).ok();
+            history.saved = if same { Some(history.applied) } else { None };
+        }
+        let mut capabilities = vec![Capability::View, Capability::Cells, Capability::EditValues, Capability::EditFormulas];
+        if opened.calc_unavailable.is_none() {
+            capabilities.push(Capability::Calc);
+        }
+        let read_only = std::fs::metadata(canonical).map(|m| m.permissions().readonly()).unwrap_or(true);
+        let info = DocInfo {
+            doc_id: id.to_string(),
+            path: canonical.display().to_string(),
+            format: if ext == "xlsm" { DocFormat::Xlsm } else { DocFormat::Xlsx },
+            layout: DocLayout::Grid,
+            pages: None,
+            outline: Vec::new(),
+            capabilities,
+            revision: history.applied as u64,
+            dirty: history.dirty(),
+            save_in_place: !read_only,
+            scanned: false,
+            encrypted: false,
+            sheets: opened.sheets,
+        };
+        Ok(Doc {
+            id: id.to_string(),
+            path: canonical.to_path_buf(),
+            dir,
+            ext,
+            handle,
+            password: None,
+            info: Mutex::new(info),
+            pages: Mutex::default(),
+            views: Mutex::default(),
+            history: Mutex::new(history),
+            editing: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -408,6 +530,162 @@ impl DocStore {
         };
         Ok(self.worker.request(Request::Render { handle: doc.handle, page, clip, dpi, max_side: MAX_RENDER_SIDE }).await?)
     }
+}
+
+/// Workbooks (spreadsheet-design §6, §7).
+impl DocStore {
+    fn sheet(doc: &Doc) -> Result<(), DocError> {
+        if doc.is_sheet() { Ok(()) } else { Err(DocError::NotEditable(format!("{} is not a workbook", doc.path.display()))) }
+    }
+
+    /// A range's cells, as the grid shows them.
+    pub async fn cells(&self, doc: &Doc, sheet: &str, range: &str) -> Result<Cells, DocError> {
+        Self::sheet(doc)?;
+        self.worker.request(crate::engine::Request::SheetCells { handle: doc.handle, sheet: sheet.into(), range: range.into() }).await.map_err(worker_error)
+    }
+
+    /// What the agent reads first (spreadsheet-design §9.1).
+    pub async fn summary(&self, doc: &Doc) -> Result<String, DocError> {
+        Self::sheet(doc)?;
+        self.worker.request(Request::SheetSummary { handle: doc.handle }).await.map_err(worker_error)
+    }
+
+    pub async fn find_cells(&self, doc: &Doc, query: &str, limit: usize) -> Result<Vec<Found>, DocError> {
+        Self::sheet(doc)?;
+        self.worker.request(Request::SheetFind { handle: doc.handle, query: query.into(), limit }).await.map_err(worker_error)
+    }
+
+    pub async fn trace(&self, doc: &Doc, sheet: &str, cell: &str, direction: Direction, depth: u32) -> Result<Vec<Found>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetTrace { handle: doc.handle, sheet: sheet.into(), cell: cell.into(), direction, depth })
+            .await
+            .map_err(worker_error)
+    }
+
+    async fn send(&self, doc: &Doc, ops: Vec<SheetOp>, preview: bool) -> Result<Applied, DocError> {
+        self.worker.request(Request::SheetApply { handle: doc.handle, ops, preview }).await.map_err(worker_error)
+    }
+
+    fn record(&self, doc: &Doc) -> Result<(u64, bool), DocError> {
+        let h = doc.history.lock();
+        let mut lines = String::new();
+        for r in &h.revisions[..h.applied] {
+            lines.push_str(&serde_json::to_string(r).map_err(std::io::Error::other)?);
+            lines.push('\n');
+        }
+        // The redo tail is kept in memory only: a restart starts from what is applied.
+        std::fs::write(doc.dir.join("revisions.jsonl"), lines)?;
+        let mut info = doc.info.lock();
+        info.revision += 1;
+        info.dirty = h.dirty();
+        Ok((info.revision, info.dirty))
+    }
+
+    /// Edits a workbook (`preview`: only works out the impact). One revision per call.
+    pub async fn apply(&self, doc: &Doc, session: &str, ops: Vec<SheetOp>, base: Option<u64>, preview: bool) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let now = doc.info.lock().revision;
+        if let Some(base) = base
+            && base != now
+        {
+            return Err(DocError::Stale { base, now });
+        }
+        let applied = self.send(doc, ops.clone(), preview).await?;
+        if preview {
+            return Ok((now, applied.impact, doc.dirty()));
+        }
+        {
+            let mut h = doc.history.lock();
+            let n = h.applied;
+            h.revisions.truncate(n);
+            if h.saved.is_some_and(|s| s > n) {
+                h.saved = None;
+            }
+            h.revisions.push(Revision { ops, undo: applied.undo, session: session.to_string(), at_ms: now_ms() });
+            h.applied += 1;
+        }
+        let (revision, dirty) = self.record(doc)?;
+        Ok((revision, applied.impact, dirty))
+    }
+
+    /// Takes back the last edit, whoever made it, in whichever session.
+    pub async fn undo(&self, doc: &Doc) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let ops = {
+            let h = doc.history.lock();
+            let i = h.applied.checked_sub(1).ok_or_else(|| DocError::NotEditable("nothing to undo".into()))?;
+            h.revisions[i].undo.clone()
+        };
+        let applied = self.send(doc, ops, false).await?;
+        doc.history.lock().applied -= 1;
+        let (revision, dirty) = self.record(doc)?;
+        Ok((revision, applied.impact, dirty))
+    }
+
+    pub async fn redo(&self, doc: &Doc) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let ops = {
+            let h = doc.history.lock();
+            h.revisions.get(h.applied).map(|r| r.ops.clone()).ok_or_else(|| DocError::NotEditable("nothing to redo".into()))?
+        };
+        let applied = self.send(doc, ops, false).await?;
+        doc.history.lock().applied += 1;
+        let (revision, dirty) = self.record(doc)?;
+        Ok((revision, applied.impact, dirty))
+    }
+
+    /// Writes the working copy to its file, or to `to` (save as). Over a file that changed on
+    /// disk since it was opened only with `force`.
+    pub async fn save(&self, doc: &Doc, to: Option<&Path>, force: bool) -> Result<DocInfo, DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let target = to.map(Path::to_path_buf).unwrap_or_else(|| doc.path.clone());
+        let in_place = target == doc.path;
+        if in_place && !force {
+            let text = std::fs::read_to_string(doc.dir.join("meta.json"))?;
+            let meta: Meta = serde_json::from_str(&text).map_err(std::io::Error::other)?;
+            let disk = std::fs::metadata(&doc.path);
+            let same = disk.as_ref().is_ok_and(|d| d.len() == meta.size && modified_ms(d) == meta.modified_ms);
+            if !same {
+                return Err(DocError::Conflict(doc.path.display().to_string()));
+            }
+        }
+        // Beside the target, then renamed over it: never half written. The original's
+        // permissions carry over to the new file.
+        let name = target.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let partial = target.with_file_name(format!(".{name}.finx-partial"));
+        std::fs::copy(doc.current(), &partial)?;
+        if let Ok(m) = std::fs::metadata(&target) {
+            let _ = std::fs::set_permissions(&partial, m.permissions());
+        }
+        std::fs::rename(&partial, &target)?;
+        if in_place {
+            std::fs::copy(doc.current(), doc.dir.join(format!("base.{}", doc.ext)))?;
+            let m = std::fs::metadata(&doc.path)?;
+            let stamp = Meta { path: doc.path.clone(), size: m.len(), modified_ms: modified_ms(&m) };
+            std::fs::write(doc.dir.join("meta.json"), serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
+            let mut h = doc.history.lock();
+            h.saved = Some(h.applied);
+            doc.info.lock().dirty = false;
+        }
+        Ok(doc.info())
+    }
+}
+
+fn worker_error(e: WorkerError) -> DocError {
+    match e {
+        WorkerError::Failed(m) if m.starts_with(REFUSED) => DocError::Refused(m[REFUSED.len()..].to_string()),
+        WorkerError::Failed(m) => DocError::NotEditable(m),
+        e => DocError::Worker(e),
+    }
+}
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
 }
 
 fn modified_ms(meta: &std::fs::Metadata) -> u128 {

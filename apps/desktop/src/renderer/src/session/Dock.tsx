@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { docViewingBlock, type ListSession, type SessionView } from "@finx/client";
+import { docViewingBlock, sheetViewingBlock, type ListSession, type SessionView } from "@finx/client";
 import type { QueuedInput, UserMessage } from "@finx/protocol";
 import type { Attachment } from "../composer/attachments";
 import { addAttachments, fromInput, toInput } from "../composer/attachments";
@@ -8,6 +8,7 @@ import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
 import { viewingDoc } from "../files/state";
+import { sheetViewingOf } from "../docs/state";
 import { useStore } from "../store";
 import { Approval } from "./Approval";
 import { Notice } from "./Notice";
@@ -96,7 +97,9 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     const input = toInput(sent.text, sent.attachments);
     // The PDF the file panel shows goes along, so "this page" means something (§7.4).
     const tab = st.files ? viewingDoc(id) : undefined;
-    if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
+    const sheet = sheetViewingOf(id);
+    if (tab?.info.layout === "grid" && sheet && input.length) input.push(sheetViewingBlock(sheet.path, sheet.doc_id, sheet.sheet, sheet.range, sheet.text));
+    else if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
     const ok = await st.op(id, { type: "prompt", input, mode: live ? (followUp ? "follow_up" : "steer") : undefined });
     if (!ok) change(sent);
   };

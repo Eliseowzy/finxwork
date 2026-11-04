@@ -4,6 +4,7 @@
 
 pub mod engine;
 pub mod layout;
+pub mod sheet;
 pub mod store;
 pub mod worker;
 

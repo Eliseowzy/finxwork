@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSP
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "../components";
 import { PdfView, Unlock } from "../docs/PdfView";
+import { SheetView } from "../docs/SheetView";
 import { useSessionDocs } from "../docs/state";
 import { Icon } from "../icons";
 import { useStore } from "../store";
@@ -9,6 +10,7 @@ import { fileMenu, openRef } from "../session/contentMenus";
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
 import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { ImageView } from "./ImageView";
 import { Tree } from "./Tree";
 
 // The file panel (file-panel-design §3): the session's open files as tabs, with the file's tools
@@ -104,12 +106,12 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
         <div className="brp-tabs" role="tablist">
           {s.tabs.map((x) => {
             const on = x.path === s.active;
-            const dirty = !!x.doc?.dirty;
+            const dirty = !!x.doc?.dirty || !!docs.tabs.find((d) => d.info.doc_id === x.pdf?.docId)?.info.dirty;
             const locked = x.read?.kind === "text" && !x.read.writable;
             return (
               <div key={x.path} role="tab" aria-selected={on} className={`brp-tab fpn-tab no-drag ${on ? "on" : ""} ${dirty ? "dirty" : ""}`} title={x.rel ?? x.path} onClick={() => activate(s, x.path)}>
                 <span className="brp-tab-ic">
-                  <Icon name={locked ? "lock" : x.pdf ? "doc" : "file"} />
+                  <Icon name={locked ? "lock" : x.pdf ? (/\.xls[xm]$/i.test(x.path) ? "grid" : "doc") : "file"} />
                 </span>
                 <span className="brp-tab-t">{x.name}</span>
                 <button
@@ -146,7 +148,11 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
               const doc = docs.tabs.find((d) => d.info.doc_id === x.pdf?.docId);
               return doc && (
                 <div key={doc.token} className="dcp-viewer" hidden={x !== tab}>
-                  <PdfView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                  {doc.info.layout === "grid" ? (
+                    <SheetView rpc={st.rpc!} session={session} tab={doc} activeView={x === tab} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                  ) : (
+                    <PdfView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                  )}
                 </div>
               );
             })}
@@ -233,9 +239,7 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   if (!read) return <div className="fpn-empty"><span className="mini-spin" aria-label={t("files.loading")} /></div>;
   if (read.kind === "image" && read.image) {
     return (
-      <div className="fpn-img">
-        <img src={`data:${read.image.mime_type};base64,${read.image.data}`} alt={tab.name} />
-      </div>
+      <ImageView key={tab.path} src={`data:${read.image.mime_type};base64,${read.image.data}`} alt={tab.name} />
     );
   }
   if (read.kind === "binary") return <Card tab={tab} text={t("files.binary")} />;
@@ -243,9 +247,7 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   const text = tab.doc?.text ?? read.text ?? "";
   if (tab.preview && /\.svg$/i.test(tab.name)) {
     return (
-      <div className="fpn-img">
-        <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} alt={tab.name} />
-      </div>
+      <ImageView key={tab.path} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} alt={tab.name} />
     );
   }
   if (tab.preview && /\.(md|markdown)$/i.test(tab.name)) {

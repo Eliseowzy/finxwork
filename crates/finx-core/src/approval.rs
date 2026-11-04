@@ -62,9 +62,60 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
     match call.name.as_str() {
         "bash" => evaluate_bash(arg("command"), view),
         "write" | "edit" => evaluate_file_change(call, &args, arg("path"), view),
+        "doc_edit" => evaluate_doc_edit(&args, arg("doc"), view),
+        "doc_save" => evaluate_doc_save(arg("doc"), arg("path"), view),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
             (ToolKind::Mutating, _) => ask(format!("{} {}", call.name, call.arguments), None),
+        },
+    }
+}
+
+/// A workbook edit lands in its working copy, where it can be undone (spreadsheet-design §5.3,
+/// document-editor-design §5.3): it runs without asking when file edits do.
+fn evaluate_doc_edit(args: &serde_json::Value, doc: &str, view: &SessionView) -> Gate {
+    let n = args.get("ops").and_then(|v| v.as_array()).map_or(0, Vec::len);
+    let note = args.get("note").and_then(|v| v.as_str()).map(|n| format!(": {n}")).unwrap_or_default();
+    match view.permission_mode {
+        PermissionMode::AcceptEdits | PermissionMode::BypassPermissions => Gate::Allow,
+        PermissionMode::Manual => Gate::Ask {
+            summary: format!("edit {doc} ({n} change(s)){note}"),
+            reason: None,
+            proposed_rule: None,
+            proposed_mode: Some(PermissionMode::AcceptEdits),
+            proposed_grants: Vec::new(),
+            own_browser: false,
+        },
+    }
+}
+
+/// Saving writes the user's file: judged like `write` when the call names the file by its
+/// path; a document named by its id is asked about unless every action runs.
+fn evaluate_doc_save(doc: &str, path: &str, view: &SessionView) -> Gate {
+    if view.permission_mode == PermissionMode::BypassPermissions {
+        return Gate::Allow;
+    }
+    let target = if path.is_empty() { doc } else { path };
+    let summary = format!("save {target}");
+    if !target.contains(['/', '.']) {
+        return ask(summary, None);
+    }
+    let resolved = canonical_lossy(&view.env.resolve(target));
+    if !workspace_roots(view).iter().any(|root| resolved.starts_with(root)) {
+        return ask(summary, Some(OUTSIDE_WORKSPACE.into()));
+    }
+    if let Some(name) = protected::protected(&resolved, view) {
+        return ask(summary, Some(protected_reason(&name)));
+    }
+    match view.permission_mode {
+        PermissionMode::AcceptEdits => Gate::Allow,
+        _ => Gate::Ask {
+            summary,
+            reason: None,
+            proposed_rule: None,
+            proposed_mode: Some(PermissionMode::AcceptEdits),
+            proposed_grants: Vec::new(),
+            own_browser: false,
         },
     }
 }
@@ -418,6 +469,33 @@ mod tests {
 
     fn gate(command: &str, view: &SessionView) -> Gate {
         evaluate(&bash(command), ToolKind::Mutating, view)
+    }
+
+    fn doc_call(name: &str, args: serde_json::Value) -> ToolCall {
+        ToolCall { id: "c".into(), name: name.into(), arguments: args.into(), arguments_error: None }
+    }
+
+    #[test]
+    fn workbook_edits_ask_only_when_file_edits_do() {
+        let dir = tempfile::tempdir().unwrap();
+        let edit = doc_call("doc_edit", json!({"doc": "model.xlsx", "ops": [{"op": "set_value", "sheet": "S", "cell": "B6", "value": 0.09}], "note": "WACC 9%"}));
+        match evaluate(&edit, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)) {
+            Gate::Ask { summary, proposed_mode, .. } => {
+                assert_eq!(summary, "edit model.xlsx (1 change(s)): WACC 9%");
+                assert_eq!(proposed_mode, Some(PermissionMode::AcceptEdits));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(evaluate(&edit, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
+
+        // Saving is writing the file: inside the workspace like `write`, outside always asked.
+        let save = doc_call("doc_save", json!({"doc": "model.xlsx"}));
+        assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
+        let outside = doc_call("doc_save", json!({"doc": "/elsewhere/model.xlsx"}));
+        assert!(matches!(evaluate(&outside, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Ask { .. }));
+        let by_id = doc_call("doc_save", json!({"doc": "3f2a9c0d1e2b4a5c"}));
+        assert!(matches!(evaluate(&by_id, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Ask { .. }));
+        assert!(matches!(evaluate(&by_id, ToolKind::Mutating, &view(dir.path(), PermissionMode::BypassPermissions)), Gate::Allow));
     }
 
     /// The reason of an `Ask` that offers nothing for the rest of the session.

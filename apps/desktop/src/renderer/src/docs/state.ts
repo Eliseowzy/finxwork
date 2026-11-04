@@ -11,8 +11,12 @@ import { toComposer } from "../composer/inbox";
 /** `password`: an encrypted document's, from finx, for pdf.js; in memory only (§9.4.3). */
 export type DocTab = { info: DocInfo; token: string; page: number; password?: string };
 
+/** A workbook selection is a local document anchor until the protocol exposes cell anchors. */
+export type CellAnchor = { kind: "cells"; sheet: string; range: string; text?: string };
+export type DocAnchor = Anchor | CellAnchor;
+
 /** Where to go in a document, and what to light up there; `seq` tells two jumps to the same place apart. */
-export type Jump = { doc_id: string; anchor: Anchor; seq: number };
+export type Jump = { doc_id: string; anchor: DocAnchor; seq: number };
 
 /** Which tab shows a document, and in what order, is the file panel's (files/state). */
 export type SessionDocs = { tabs: DocTab[]; jump: Jump | null };
@@ -46,7 +50,7 @@ export function docTab(session: string, docId: string | null | undefined): DocTa
  * Opens a document for a session (or finds it open), and goes to `anchor` in it. An encrypted
  * one finx cannot open without its password resolves to null.
  */
-export async function openDoc(rpc: RpcClient, session: string, what: { path: string } | { doc_id: string }, anchor?: Anchor, password?: string): Promise<DocTab | null> {
+export async function openDoc(rpc: RpcClient, session: string, what: { path: string } | { doc_id: string }, anchor?: DocAnchor, password?: string): Promise<DocTab | null> {
   const known = "doc_id" in what ? docTab(session, what.doc_id) : docsOf(session).tabs.find((t) => t.info.path === what.path);
   let tab = known;
   if (!tab) {
@@ -79,6 +83,13 @@ export function setDocPassword(session: string, docId: string, password: string)
   set(session, { ...d, tabs: d.tabs.map((t) => (t.info.doc_id === docId ? { ...t, password } : t)) });
 }
 
+/** What finx says a document is now: a workbook's revision and unsaved state after an edit, the agent's included. */
+export function setDocInfo(session: string, info: DocInfo) {
+  const d = docsOf(session);
+  if (!d.tabs.some((t) => t.info.doc_id === info.doc_id)) return;
+  set(session, { ...d, tabs: d.tabs.map((t) => (t.info.doc_id === info.doc_id ? { ...t, info } : t)) });
+}
+
 /** The page the document is at, kept for when it comes back. */
 export function setPage(session: string, docId: string, page: number) {
   const d = docsOf(session);
@@ -92,15 +103,28 @@ export function quoteToComposer(session: string, quoted: { quote: DocQuote; imag
   toComposer(session, [docAttachment(quoted.quote, quoted.image)]);
 }
 
+export type SheetViewing = { doc_id: string; path: string; sheet: string; range: string; text: string };
+const sheetViews = new Map<string, SheetViewing>();
+
+/** The live workbook selection included with the next message from this session. */
+export function setSheetViewing(session: string, view: SheetViewing | null, docId?: string) {
+  if (view) sheetViews.set(session, view);
+  else if (!docId || sheetViews.get(session)?.doc_id === docId) sheetViews.delete(session);
+}
+
+export function sheetViewingOf(session: string): SheetViewing | undefined {
+  return sheetViews.get(session);
+}
+
 // ---- opening from the conversation ----
 
 /** What a session's conversation opens documents with: file tiles, links, citations. Null outside a session. */
 export type DocOpener = {
   session: string;
   /** Opens a document in the file panel, at `anchor`, or at the block or page `target` (`p12.b3`) names. */
-  open: (what: { path: string } | { doc_id: string }, anchor?: Anchor, target?: string) => void;
+  open: (what: { path: string } | { doc_id: string }, anchor?: DocAnchor, target?: string) => void;
   /** Where a citation points, for its hover: the file and the anchor; only the file while it wants its password; null when it is gone. */
-  locate: (docId: string, target: string) => Promise<{ anchor: Anchor; path: string } | { locked: true; path: string } | null>;
+  locate: (docId: string, target: string) => Promise<{ anchor: DocAnchor; path: string } | { locked: true; path: string } | null>;
 };
 
 export const DocContext = createContext<DocOpener | null>(null);
@@ -116,13 +140,24 @@ export function lockedPath(e: unknown): string | null {
   return typeof path === "string" ? path : null;
 }
 
-/** Paths that open as documents (pdf.js), not as text. */
+/** Paths that open as documents (pdf.js, or the workbook grid), not as text. */
 export function opensAsDoc(path: string): boolean {
-  return /\.pdf$/i.test(path);
+  return /\.(pdf|xlsx|xlsm)$/i.test(path);
 }
 
 /** A citation link's target: `finxdoc:<doc_id>#p12.b3`. */
 export function parseCitation(href: string): { doc_id: string; target: string } | null {
-  const m = /^finxdoc:([0-9a-f]{16})(?:#(p\d+(?:\.b\d+)?))?$/.exec(href.trim());
-  return m ? { doc_id: m[1], target: m[2] ?? "p1" } : null;
+  const m = /^finxdoc:([0-9a-f]{16})(?:#(.+))?$/.exec(href.trim());
+  if (!m) return null;
+  let target = m[2] ?? "p1";
+  try { target = decodeURIComponent(target); } catch { /* keep the target as written */ }
+  return /^(?:p\d+(?:\.b\d+)?|.+![A-Za-z]{1,3}\d+(?::[A-Za-z]{1,3}\d+)?)$/.test(target) ? { doc_id: m[1], target } : null;
+}
+
+export function cellTarget(target: string): CellAnchor | null {
+  const bang = target.lastIndexOf("!");
+  if (bang < 1) return null;
+  const sheet = target.slice(0, bang).replace(/^'(.*)'$/, "$1").replace(/''/g, "'");
+  const range = target.slice(bang + 1);
+  return /^[A-Za-z]{1,3}\d+(?::[A-Za-z]{1,3}\d+)?$/.test(range) ? { kind: "cells", sheet, range: range.toUpperCase() } : null;
 }

@@ -57,13 +57,14 @@ put("crlf.txt", "first\r\nsecond\r\n");
 put("data/gbk.csv", Buffer.from([0xb1, 0xa8, 0xb8, 0xe6, 0x2c, 0x31, 0x0a]));
 put("bin/blob.bin", Buffer.from([0, 1, 2, 3, 0, 5]));
 put("assets/logo.png", Buffer.from("89504e470d0a1a0a0000000d4948445200000001000000010806000000" + "1f15c4890000000d49444154789c636000020000050001e9fadcd80000000049454e44ae426082", "hex"));
+fs.copyFileSync(path.join(root, "crates/finx-sheet/tests/fixtures/gen/dcf_model.xlsx"), path.join(proj, "model.xlsx"));
 const disk = (rel) => fs.readFileSync(path.join(proj, rel), "utf8");
 
 // ── the model: reads a file, then answers with links ──
 const reply = [
   "改好了：[入口](src/app.ts:3)，说明在 [说明](docs/notes.md)。",
   "",
-  "其他：`crlf.txt`、[图](assets/logo.png)、[数据](data/gbk.csv)、[二进制](bin/blob.bin)、`src/`。",
+  "其他：`crlf.txt`、[图](assets/logo.png)、[数据](data/gbk.csv)、[二进制](bin/blob.bin)、[模型](model.xlsx)、`src/`。",
 ].join("\n");
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n` +
@@ -258,6 +259,27 @@ try {
   check(sides.file < sides.tree && Math.abs(sides.treeEnd - sides.panelEnd) < 2, `the file is not on the left with the tree on the right: ${JSON.stringify(sides)}`);
   await page.shot("1-opened");
 
+  step("an Excel workbook shows as a grid, edits a cell, saves, and quotes the selection");
+  await page.run(`${chip("模型")}.click()`);
+  await page.until("the workbook grid", `${activeTab} === "model.xlsx" && !!document.querySelector(".sht-canvas") && [...document.querySelectorAll(".sht-tab")].some((x) => x.textContent.includes("假设"))`);
+  await page.run(`document.querySelector(".sht-name").select()`);
+  await page.cdp("Input.insertText", { text: "B6" });
+  await key("Enter", "Enter", 13);
+  await page.until("WACC selected", `document.querySelector('.sht-c[data-cell="B6"]')?.textContent === "8.5%"`).catch(async (e) => {
+    fail(`${e.message}: address ${await page.run(`document.querySelector(".sht-name")?.value`)}, B6 ${JSON.stringify(await page.run(`document.querySelector('.sht-c[data-cell="B6"]')?.textContent ?? null`))}, cells ${JSON.stringify(await page.run(`[...document.querySelectorAll(".sht-c[data-cell]")].slice(0,8).map((x) => [x.dataset.cell,x.textContent])`))}, note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}`);
+  });
+  await page.run(`(() => { const x = document.querySelector(".sht-formula"); x.focus(); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(x, "9%"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
+  await page.until("WACC changed", `document.querySelector('.sht-c[data-cell="B6"]')?.textContent === "9.0%" && !!document.querySelector(".fpn-tab.on.dirty")`, 10000);
+  await page.run(`document.querySelector(".sht-selection-tools button").click()`);
+  await page.until("the cell quote in the composer", `!!document.querySelector(".tile.quote")`);
+  await page.run(`[...document.querySelectorAll(".sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label"))).click()`);
+  await page.until("the workbook saved", `!document.querySelector(".fpn-tab.on.dirty")`, 10000).catch(async (e) => {
+    fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}, save disabled ${await page.run(`[...document.querySelectorAll(".sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label")))?.disabled`)}`);
+  });
+  await page.shot("1-workbook");
+  await page.run(`[...document.querySelectorAll(".fpn-tab")].find((x) => x.textContent.includes("app.ts")).click()`);
+  await page.until("app.ts back in front", `${activeTab} === "app.ts"`);
+
   step("typing saves after a pause; ⌘S saves at once");
   await typeAtEnd("// one\n");
   await page.until("unsaved", `${either((s) => s.files.unsaved)}.includes(${status})`, 3000);
@@ -307,6 +329,14 @@ try {
   step("an image shows; GBK text is read-only; a binary file says why and opens elsewhere");
   await page.run(`${chip("图")}.click()`);
   await page.until("the image", `!!document.querySelector(".fpn-img img")?.src.startsWith("data:image/png;base64,")`);
+  // A pinch (Chromium's control-modified wheel) zooms it; a double click takes it back to fitted.
+  const imgWidth = `document.querySelector(".fpn-img img").getBoundingClientRect().width`;
+  await page.until("the image laid out", `${imgWidth} > 0`);
+  const fitted = await page.run(imgWidth);
+  await page.run(`(() => { const r = document.querySelector(".fpn-img img").getBoundingClientRect(); document.querySelector(".fpn-img").dispatchEvent(new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, clientX: r.left, clientY: r.top, bubbles: true, cancelable: true })); })()`);
+  await page.until("pinched larger", `${imgWidth} > ${fitted} * 2 && document.querySelector(".fpn-img").classList.contains("zoomed")`);
+  await page.run(`document.querySelector(".fpn-img").dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 1, clientY: 1 }))`);
+  await page.until("back to fitted", `Math.abs(${imgWidth} - ${fitted}) < 0.01`);
   await page.run(`${chip("数据")}.click()`);
   await page.until("GBK read-only", `${activeTab} === "gbk.csv" && (${editorText}).includes("报告,1") && ${either((s) => s.files.readOnlyEncoding.replace("{{encoding}}", "GBK"))}.includes(${status})`);
   await typeAtEnd("x");

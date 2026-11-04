@@ -4,7 +4,7 @@ import { displayTitle, runningAgents, type ListSession } from "@finx/client";
 import { SidebarToggle } from "../components";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
-import { DocContext, docsOf, lockedPath, type DocOpener } from "../docs/state";
+import { cellTarget, DocContext, docsOf, lockedPath, type DocOpener } from "../docs/state";
 import { layoutOf, setCard } from "../layout";
 import { useStore } from "../store";
 import { FilePanel } from "../files/FilePanel";
@@ -44,9 +44,10 @@ export function SessionPage({ s }: { s: ListSession }) {
       session: id,
       open: (what, anchor, target) =>
         void st.run(async () => {
-          const shown = await showDoc(st, id, cwd, what, anchor);
+          const cells = target ? cellTarget(target) : null;
+          const shown = await showDoc(st, id, cwd, what, cells ?? anchor);
           // A citation's block or page, once its document is open in the session (not while it asks for its password).
-          if (shown && target && "doc_id" in what) {
+          if (shown && target && !cells && "doc_id" in what) {
             try {
               const r = await rpc.request("doc/locate", { session_id: id, doc_id: what.doc_id, target });
               await showDoc(st, id, cwd, what, r.anchor);
@@ -61,6 +62,12 @@ export function SessionPage({ s }: { s: ListSession }) {
         try {
           // A hover must not bring the column out: finx opens the document, the column stays as it is.
           const path = known ?? (await rpc.request("doc/open", { session_id: id, doc_id: docId })).info.path;
+          const cells = cellTarget(target);
+          if (cells) {
+            const got = await rpc.request("doc/cells", { session_id: id, doc_id: docId, sheet: cells.sheet, range: cells.range });
+            const text = got.cells.slice(0, 6).map((c) => `${c.cell} = ${c.text || "(empty)"}`).join("\n");
+            return { anchor: { ...cells, text }, path };
+          }
           const r = await rpc.request("doc/locate", { session_id: id, doc_id: docId, target });
           return { anchor: r.anchor, path };
         } catch (e) {

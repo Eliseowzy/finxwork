@@ -380,6 +380,17 @@ export function registerIPC() {
     const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
     return r.canceled ? null : (r.filePaths[0] ?? null);
   });
+  ipcMain.handle("pick-save-file", async (e, defaultPath: unknown) => {
+    if (!trusted(e) || typeof defaultPath !== "string") return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const ext = path.extname(defaultPath).toLowerCase();
+    const options = {
+      defaultPath,
+      filters: [{ name: "Excel workbook", extensions: ext === ".xlsm" ? ["xlsm"] : ["xlsx"] }],
+    };
+    const r = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
+    return r.canceled ? null : (r.filePath ?? null);
+  });
   // A skill to upload (自定义 › 上传技能): its folder, or an archive or a SKILL.md; finx reads it.
   ipcMain.handle("pick-skill-source", async (e) => {
     if (!trusted(e)) return null;

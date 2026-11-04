@@ -20,6 +20,7 @@ const paths: Record<string, string> = {
   more: "<circle cx=\"3.6\" cy=\"8\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"8\" cy=\"8\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"12.4\" cy=\"8\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/>",
   x: "<path d=\"M4.3 4.3l7.4 7.4M11.7 4.3l-7.4 7.4\"/>",
   check: "<path d=\"M3.4 8.4l3 3 6.2-6.8\"/>",
+  save: "<path d=\"M3.2 3.6c0-.5.4-.9.9-.9h6.6l2.6 2.6v6.6c0 .5-.4.9-.9.9H4.1c-.5 0-.9-.4-.9-.9V3.6zM5.4 2.7v2.8h4.4V2.7M5 13.1V9.4c0-.3.2-.5.5-.5h5c.3 0 .5.2.5.5v3.7\"/>",
   minus: "<path d=\"M4.5 8h7\"/>",
   caret: "<path d=\"M4.8 6.4h6.4L8 10z\" fill=\"currentColor\" stroke=\"none\"/>",
   chevD: "<path d=\"M4.5 6.3L8 9.8l3.5-3.5\"/>",

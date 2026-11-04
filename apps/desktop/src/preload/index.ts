@@ -64,6 +64,7 @@ const bridge: Bridge = {
   onCommand: (cb: (c: Command) => void) => listen("command", cb),
   setMenuState: (s: MenuState) => ipcRenderer.send("menu-state", s),
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
+  pickSaveFile: (defaultPath: string) => ipcRenderer.invoke("pick-save-file", defaultPath),
   pickSkillSource: () => ipcRenderer.invoke("pick-skill-source"),
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   catalogDir: arg("catalog"),

@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | v0.1（方案稿） |
 | 日期 | 2026-11-04 |
-| 状态 | 讨论中，未实现。写入路径、计算引擎、迭代计算已做零期验证（[spreadsheet-validation-2026-11-03.md](spreadsheet-validation-2026-11-03.md)）；真 Excel 判定待补（§13） |
+| 状态 | 内核已实现（2026-11-04，§16）：finx-sheet、DocStore 的写入、协议、智能体工具；界面、CSV、XLS 未做。零期验证见 [spreadsheet-validation-2026-11-03.md](spreadsheet-validation-2026-11-03.md)；真 Excel 判定待补（§13） |
 | 关系 | document-editor-design.md 的第二种格式（它的 §10、EQ-07）：沿用外壳、DocStore、锚点、修订、审批、`doc/*` 协议与 `doc` 工具组，本文只写表格不同的地方。文件面板见 file-panel-design.md |
 
 ## 方案摘要
@@ -42,6 +42,7 @@
 - 13. 测试与开工前的补测
 - 14. 分期与工作量
 - 15. 决策与待定问题
+- 16. 实现记录
 
 ## 0. 阅读说明
 
@@ -621,3 +622,34 @@ Wind    D16 =WSS(…)：外部函数，用文件里存的值
 | SQ-07 | BIFF2～4 老格式的只读查看 | 一期提示另存为，按用户反馈再定 |
 | SQ-08 | 迭代结果在改假设后是否仍与 Excel 一致 | 原型两种起点收敛到同一结果；以 Excel 实测为准（V7） |
 | SQ-09 | 安装包体积增量 | 开工第一天实测（V10） |
+
+## 16. 实现记录
+
+### 16.1 已实现（2026-11-04）
+
+| 部分 | 位置 | 测试 |
+|---|---|---|
+| 扫描、外科式写入、三层自检、公式规范化 | `crates/finx-sheet`（package、scan、patch、verify、formula） | 回归测试、随机修改测试（86 份语料各 40 次；`FINX_SHEET_CORPUS` 加真实模型） |
+| 读取模型、数字格式、标签 | book、styles | styles 单元测试；真实模型目测 |
+| 依赖图、反馈集、计算、迭代、可信判断、影响面、写回结果 | deps、calc | `tests/calc.rs`（Excel 保存的文件逐格一致、函数参考值、循环收敛、真实模型）、`tests/impact.rs`（改 WACC → 写入 → 重新打开） |
+| worker 请求、DocStore 的修订、撤销重做、保存、冲突 | `crates/finx-docs`（sheet、engine、store） | `finx-cli/tests/e2e_sheets.rs` |
+| `doc/cells`、`doc/apply`、`doc/undo`、`doc/redo`、`doc/save` | finx-protocol、finx-server | 同上，含 schema 检查 |
+| `doc_open` 结构摘要、`doc_read` 区域、`doc_find` 单元格、`doc_edit`、`sheet_calc`、`sheet_trace`、`doc_save`；审批规则 | finx-core docs、approval | approval 单元测试；e2e 用脚本化模型（finx-mock `sheet:PATH`） |
+
+### 16.2 与方案不同或补充的地方
+
+- **结果写回用一种单独的写入**：`NewValue::Result` 只换公式格的 `<v>`，公式字节不动；共享公式组不因此拆开。
+- **可信判断**：打开时引擎结果与文件里存的值不一致的公式格，连同下游，都不信任（§5.6.4）。这样 RAND 等易变函数、IronCalc 不支持的函数、不收敛的循环都自然落入"需在 Excel 中重算"。
+- **IronCalc 自己的错误值**（`#ERROR!`、`#CIRC!` 等）不是 Excel 的错误类型，一律不写回。零期之后才发现：IronCalc 不支持表格的结构化引用（`[@PE]`），这类公式算出 `#ERROR!`，自检拦下了写入。表格计算列因此标为"需在 Excel 中重算"。
+- **未知函数当作常量**：IronCalc 返回 `#NAME?` 而文件里存的不是 `#NAME?` 的公式（万得等插件函数），用存的值。
+- **网格显示工作副本里的值**（§5.6.3）：每次写入后重新读取工作副本；引擎只用来算影响面。写入被拒绝时引擎从工作副本重建。
+- **修订的重做部分只在内存里**：重启后从已应用的修订继续。
+- **测试速度**：debug 构建下给 zlib-rs、crc32fast、quick-xml、calamine、zip 和 finx-sheet 开 opt-level 3（工作区 Cargo.toml），随机修改测试从 187 s 降到 16 s。
+
+### 16.3 未做
+
+- 界面（§8）：表格画布、公式栏、高亮、审批卡片里的影响面、出处标记；随之还有 `doc/changed` 事件（目前智能体的修改只经 `doc_opened` 让文件面板显示文档）。
+- CSV（§10.1）、XLS 只读（§10.2）。
+- "全部重算"与"重新计算循环"的协议方法（引擎里已有 `recalc_cycles_from_zero`）。
+- §11 的性能优化（紧凑索引、局部自检）。
+- 保存时拿会话的文件锁（§6.3）。

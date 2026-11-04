@@ -1,8 +1,8 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { FileDoc, RpcError, baseName, type RpcClient } from "@finx/client";
-import type { Anchor, FilesListResult, FilesReadResult } from "@finx/protocol";
+import type { FilesListResult, FilesReadResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
-import { closeDoc, docTab, lockedPath, openDoc, opensAsDoc, setDocPassword, type DocTab } from "../docs/state";
+import { closeDoc, docTab, lockedPath, openDoc, opensAsDoc, setDocInfo, setDocPassword, type DocAnchor, type DocTab } from "../docs/state";
 import { errorText, type Store } from "../store";
 
 // The file panel's files (file-panel-design §10), by session: the open tabs with their
@@ -36,7 +36,7 @@ export type Tab = {
 };
 
 /** `locked`: it waits for its password, `wrong` once one was refused; `opening`: doc/open on its way. */
-export type PdfState = { docId: string | null; locked: { wrong: boolean; anchor?: Anchor } | null; opening: Promise<void> | null };
+export type PdfState = { docId: string | null; locked: { wrong: boolean; anchor?: DocAnchor } | null; opening: Promise<void> | null };
 
 /** A folder of the tree: its entries once read. */
 export type Dir = { list: FilesListResult | null; error: string | null };
@@ -132,7 +132,7 @@ function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path)): Tab {
 }
 
 /** Opens a PDF tab's document in finx, with its password when one was given; an anchor is gone to once it opens. */
-function openPdf(s: SessionFiles, tab: Tab, anchor?: Anchor, password?: string): Promise<void> {
+function openPdf(s: SessionFiles, tab: Tab, anchor?: DocAnchor, password?: string): Promise<void> {
   const pdf = tab.pdf!;
   const opening = (async () => {
     if (!rpc) return void (tab.error = t("files.offline"));
@@ -159,11 +159,18 @@ function openPdf(s: SessionFiles, tab: Tab, anchor?: Anchor, password?: string):
  * A PDF's file changed under its tab (written again, its password changed): what showed is let go
  * and the file opened afresh, asking for its password again if it has one.
  */
-function reopenPdf(s: SessionFiles, tab: Tab, anchor?: Anchor): Promise<void> {
-  const docId = tab.pdf!.docId;
-  tab.pdf = { docId: null, locked: null, opening: null };
-  if (docId) void closeDoc(rpc, s.session, docId);
-  return openPdf(s, tab, anchor);
+function reopenPdf(s: SessionFiles, tab: Tab, anchor?: DocAnchor): Promise<void> {
+  const pdf = tab.pdf!;
+  if (pdf.opening) return pdf.opening;
+  const docId = pdf.docId;
+  pdf.docId = null;
+  pdf.locked = null;
+  const reopening = (async () => {
+    if (docId) await closeDoc(rpc, s.session, docId);
+    return openPdf(s, tab, anchor);
+  })();
+  pdf.opening = reopening;
+  return reopening;
 }
 
 /** An encrypted PDF's password, from the tab that asks for it. */
@@ -359,7 +366,7 @@ export const inSession = (cwd: string, path: string) => path === cwd || under(cw
  * A document from the conversation (a file tile, a citation), in the session's panel at
  * `anchor`. One named by its id is found by its path first. Whether it shows (not waiting for its password).
  */
-export async function showDoc(st: Store, session: string, cwd: string, what: { path: string } | { doc_id: string }, anchor?: Anchor): Promise<boolean> {
+export async function showDoc(st: Store, session: string, cwd: string, what: { path: string } | { doc_id: string }, anchor?: DocAnchor): Promise<boolean> {
   if (!rpc) return false;
   const s = filesOf(session, cwd);
   const path = "path" in what ? what.path : (docTab(session, what.doc_id)?.info.path ?? (await pathOfDoc(rpc, session, what.doc_id)));
@@ -409,7 +416,11 @@ export async function lockedOut(session: string, docId: string, e: unknown): Pro
   return true;
 }
 
-/** finx says the agent opened a document: it gets a tab in the session's panel, which stays as it is. */
+/**
+ * finx says the agent opened a document: it gets a tab in the session's panel, which stays as it
+ * is. Said again after the agent edits or saves a workbook: its tab takes the new revision, and
+ * the grid reads its cells again (spreadsheet-design §8.4).
+ */
 export function useDocEvents(rpc: RpcClient | null, session: string, cwd: string | undefined) {
   useEffect(() => {
     if (!rpc || !cwd) return;
@@ -417,6 +428,7 @@ export function useDocEvents(rpc: RpcClient | null, session: string, cwd: string
       if (p.session_id !== session || p.event.type !== "doc_opened") return;
       const s = filesOf(session, cwd);
       const path = p.event.info.path;
+      setDocInfo(session, p.event.info);
       if (s.tabs.some((x) => x.path === path)) return;
       const tab = newTab(s, path, true);
       s.tabs.push(tab);

@@ -198,7 +198,7 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
     if (rects.length) setFlash({ parts: [{ page: anchor.page, rects }], seq: Date.now() });
   };
   useEffect(() => {
-    if (jump) void go(jump.anchor);
+    if (jump && jump.anchor.kind !== "cells") void go(jump.anchor);
   }, [jump?.seq]);
   useEffect(() => {
     if (!flash) return;

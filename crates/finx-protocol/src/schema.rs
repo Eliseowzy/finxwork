@@ -61,6 +61,31 @@ pub fn document() -> Value {
             name::<crate::doc::DocResolveResult>(g),
         ),
         (
+            method::DOC_CELLS,
+            Some(name::<crate::doc::DocCellsParams>(g)),
+            name::<crate::doc::DocCellsResult>(g),
+        ),
+        (
+            method::DOC_APPLY,
+            Some(name::<crate::doc::DocApplyParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_UNDO,
+            Some(name::<crate::doc::DocIdParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_REDO,
+            Some(name::<crate::doc::DocIdParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_SAVE,
+            Some(name::<crate::doc::DocSaveParams>(g)),
+            name::<crate::doc::DocInfo>(g),
+        ),
+        (
             method::SESSION_NEW,
             Some(name::<api::SessionNewParams>(g)),
             name::<api::SessionNewResult>(g),

@@ -233,6 +233,8 @@ export type Bridge = {
   onCommand(cb: (c: Command) => void): () => void;
   setMenuState(state: MenuState): void;
   pickDirectory(): Promise<string | null>;
+  /** A destination chosen for Save As. */
+  pickSaveFile(defaultPath: string): Promise<string | null>;
   /** A skill to upload, from the system's dialog: a folder, or a .zip, .skill or .md file. */
   pickSkillSource(): Promise<string | null>;
   /** The path of a file or folder dropped on the page. */

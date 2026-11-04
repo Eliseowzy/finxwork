@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { baseName, type DocQuote, type WebComment } from "@finx/client";
-import { useDocOpener } from "../docs/state";
+import { opensAsDoc, useDocOpener } from "../docs/state";
 import { Icon } from "../icons";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { quoteName, webName } from "./attachments";
@@ -57,10 +57,11 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
     if (!path) return;
     if (e.altKey) return window.finx?.revealPath(path);
     if (kind === "folder") return window.finx?.openFolder(path);
+    if (docs && opensAsDoc(path)) return docs.open({ path });
     if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
     docs.open({ path });
   };
-  const pages = !quote ? "" : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
+  const pages = !quote ? "" : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
   const type = web ? hostOf(web.url) : quote ? pages : kindOf(name ?? "", kind === "folder", t("composer.folder"));
   const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
@@ -128,7 +129,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
           comment={quote.comment}
           rows={[[t("composer.webDetails.file"), baseName(quote.path)], ...(quote.text ? [[t("composer.webDetails.text"), quote.text] as Row] : [])]}
           more={[]}
-          action={docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), docs.open({ doc_id: quote.doc_id }, quote.block ? undefined : { kind: "page", page: quote.page }, quote.block)) } : undefined}
+          action={docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }, quote.block)) } : undefined}
         />
       )}
     </div>

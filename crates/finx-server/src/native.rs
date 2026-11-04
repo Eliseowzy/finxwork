@@ -620,6 +620,41 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::DOC_CELLS => match finx_rpc::params::<finx_protocol::doc::DocCellsParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_cells(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_APPLY => match finx_rpc::params::<finx_protocol::doc::DocApplyParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_apply(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_UNDO => match finx_rpc::params::<finx_protocol::doc::DocIdParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_undo(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_REDO => match finx_rpc::params::<finx_protocol::doc::DocIdParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_redo(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_SAVE => match finx_rpc::params::<finx_protocol::doc::DocSaveParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_save(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::DOC_RESOLVE => match finx_rpc::params::<finx_protocol::doc::DocResolveParams>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();
