@@ -353,9 +353,16 @@ export function recheckActive() {
 /** The file panel in front, in place of the browser's. */
 const showPanel = (st: Store) => st.set({ files: true, browser: false, background: false });
 
+/** A file opened from the conversation shows on its own: the tree stays closed unless the person opened it. */
+const fileOnly = (s: SessionFiles) => {
+  if (s.tree === null) s.tree = false;
+};
+
 /** A file a reply or a step points at, opened in the session's panel at its lines (DD-91). */
 export function showFile(st: Store, session: string, cwd: string, path: string, at?: { line?: number; endLine?: number }) {
-  openFile(filesOf(session, cwd), path, at);
+  const s = filesOf(session, cwd);
+  fileOnly(s);
+  openFile(s, path, at);
   showPanel(st);
 }
 
@@ -381,6 +388,7 @@ export async function showDoc(st: Store, session: string, cwd: string, what: { p
   if (!rpc) return false;
   const s = filesOf(session, cwd);
   const path = "path" in what ? what.path : (docTab(session, what.doc_id)?.info.path ?? (await pathOfDoc(rpc, session, what.doc_id)));
+  fileOnly(s);
   openFile(s, path);
   showPanel(st);
   const tab = s.tabs.find((x) => x.path === path);
