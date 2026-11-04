@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.36 |
-| 日期 | 2026-11-03 |
+| 版本 | v1.37 |
+| 日期 | 2026-11-04 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -83,6 +83,7 @@
 | v1.34 | 2026-11-03 | 同时结束的会话共用一次硬盘冲刷（§9.3，D-97）：各自先 fsync 自己的日志，再由一次 F_FULLFSYNC 让硬盘把缓存全部写入，落盘保证不变。200 个会话同时跑满时任务 p95 降约一半、吞吐翻倍；首包 100 ms 时 p95 降约两成（§1.4）。没有设置 `FINX_LOG` 时日志用固定级别，不再解析过滤表达式 |
 | v1.35 | 2026-11-03 | 单次任务的固定内存（§1.4）：日志通道预留 256 行（原 4096 行，144 KiB）；`finx acp` 最多 4 个工作线程（D-91）；除 `finx serve` 外，I/O 驱动预留 256 个事件；TLS 会话缓存 32 个主机。macOS 上一次真实任务的 ACP 峰值占用 4.82 → 4.43 MiB，Linux 任务后的匿名内存 1.43 → 1.29 MiB。Q-20 补上系统框架的内存代价（约 1.2 MiB） |
 | v1.36 | 2026-11-03 | 工具结果的裁切改按 token 计（§5.5、§5.7、§7.5.5、§10.2，D-239）：按 4 字节 1 个 token 换算，不调用分词器；工具自身的预算默认 10,000 token（read 每页，bash 头 2,000 + 尾 8,000，子智能体汇报，Skill 正文），内核兜底为预算的 1.2 倍，即 12,000 token；单个结果仍不超过可用窗口的 10%。原来的上限是 50 KB（约 12,800 token），兜底多 4 KB。省略说明和 read 的分页提示改报 token 数；配置 `[tools.limits] max_bytes` 改为 `max_tokens`，旧写法按 4 字节 1 个 token 换算并给出 warning |
+| v1.37 | 2026-11-04 | Bot（bot-design.md）：会话头部加 `bot`，日志加 `bot_name`、`unanswered` 两种条目（§9.2）；配置加 `bot_prompt_file`（§10.2）。Bot 会话的基础提示词换成 bot.md，其余各段不变 |
 
 ## 1. 目标与范围
 
@@ -2258,6 +2259,7 @@ pub struct SessionHeader {
     pub finx_version: String,
     pub forked_from: Option<ForkRef>,   // M2：派生来源
     pub agent: Option<AgentOrigin>,     // 子智能体的会话才有：根、父、名字、深度、创建它的调用
+    pub bot: Option<BotRef>,            // Bot 的会话才有：Bot 的 id 和建会话时的名字（bot-design §2.1）
 }
 
 pub struct Entry {
@@ -2293,6 +2295,8 @@ pub enum EntryKind {
     Branch,                        // M2：回退标记，parent 指向回退点
     Title { title: String },       // M2
     Date { date: String },         // YYYY-MM-DD：告诉模型日期变了（§7.2）
+    BotName { name: String },      // Bot 会话：告诉模型它的新名字（bot-design §2.4）
+    Unanswered,                    // Bot 会话：任务要结束时主人还没收到回复，提醒模型一次（bot-design §3.11）
     Unknown,                       // 只读不写：以后的版本才有的条目类型
 }
 ```
@@ -2379,6 +2383,7 @@ permission_mode = "manual"          # manual | accept-edits | bypass-permissions
 max_turns = 0                       # 每个任务最多几轮，0 表示不限
 extra_writable_roots = []           # 工作区之外允许写入的目录
 system_prompt_file = ""             # 用该文件整体替换基础提示词
+bot_prompt_file = ""                # 用该文件替换 Bot 会话的基础提示词（bot-design §2.3）
 
 [instructions]
 files = ["AGENTS.md"]
