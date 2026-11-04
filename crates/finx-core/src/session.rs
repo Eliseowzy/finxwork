@@ -107,6 +107,19 @@ pub(crate) struct SessionState {
     /// The name given with `set_title`, and whether the session is archived.
     pub(crate) title: Option<String>,
     pub(crate) archived: bool,
+    /// A bot's session: its names (bot-design §2.4).
+    pub(crate) bot: Option<BotNames>,
+    /// A bot's session: what its sub-agents' prompts start from instead of `base_prompt`,
+    /// built like a session's (bot-design §2.3).
+    pub(crate) helper_prompt: Option<Arc<str>>,
+}
+
+/// A bot session's names.
+pub(crate) struct BotNames {
+    /// The one its system prompt gives.
+    pub(crate) given: String,
+    /// The bot's name now.
+    pub(crate) current: String,
 }
 
 impl SessionState {
@@ -142,6 +155,8 @@ impl SessionState {
             idle: false,
             title: None,
             archived: false,
+            bot: None,
+            helper_prompt: None,
         }
     }
 
@@ -225,6 +240,8 @@ pub(crate) struct Session {
     pub(crate) request_estimates: Mutex<Vec<(finx_llm::Message, u64)>>,
     /// finx's data directory, canonical.
     pub(crate) data_dir: PathBuf,
+    /// See [`SessionView::own_folder`].
+    pub(crate) own_folder: Option<PathBuf>,
     /// See [`SessionView::skill_roots`].
     pub(crate) skill_roots: Arc<[PathBuf]>,
     pub(crate) trusted: bool,
@@ -332,6 +349,21 @@ impl Session {
             self.record(EntryKind::Date {
                 date: today.format("%Y-%m-%d").to_string(),
             });
+        }
+    }
+
+    /// Gives a bot's new name, as `note_date` does a new date (bot-design §2.4).
+    pub(crate) fn note_bot_name(&self) {
+        let renamed = {
+            let state = self.state.lock();
+            let Some(bot) = &state.bot else {
+                return;
+            };
+            let known = crate::context::name_in_context(&state.history).unwrap_or(&bot.given);
+            (known != bot.current).then(|| bot.current.clone())
+        };
+        if let Some(name) = renamed {
+            self.record(EntryKind::BotName { name });
         }
     }
 
@@ -501,6 +533,7 @@ impl Session {
             trusted: self.trusted,
             env: self.env.clone(),
             data_dir: self.data_dir.clone(),
+            own_folder: self.own_folder.clone(),
             skill_roots: self.skill_roots.clone(),
             site_grants: state.site_grants.clone(),
             browser: self.system.get().browser.policy.clone(),

@@ -386,7 +386,7 @@ impl Server {
                 .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?,
         };
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
-        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
+        let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
         }
@@ -409,6 +409,7 @@ impl Server {
             trusted: workspace.trusted,
             config: Arc::new(workspace.config),
             interactive_approvals: true,
+            bot: None,
         };
         let kernel = Kernel::start(options, deps)
             .await
@@ -453,7 +454,7 @@ impl Server {
         }
         let workspace = Workspace::open(&self.0.home, &header.cwd, &self.0.overrides)
             .map_err(errors::from_runtime)?;
-        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
+        let no_project = self.0.home.has_no_project(&workspace.cwd);
         let store: Arc<dyn SessionStore> = self.0.store.clone();
         let mut deps = workspace
             .kernel_deps(self.0.llm.clone(), store, &[])
@@ -485,6 +486,7 @@ impl Server {
             trusted: workspace.trusted,
             config: Arc::new(workspace.config),
             interactive_approvals: true,
+            bot_name: None,
         };
         let kernel = Kernel::resume(options, deps)
             .await
@@ -923,7 +925,7 @@ fn last_active(s: &finx_core::store::SessionSummary) -> String {
 fn disk_summary(home: &FinxHome, s: &finx_core::store::SessionSummary) -> SessionSummary {
     SessionSummary {
         session_id: s.id.clone(),
-        no_project: home.is_chat_dir(&s.cwd),
+        no_project: home.has_no_project(&s.cwd),
         cwd: s.cwd.clone(),
         created_at: s.created_at.clone(),
         updated_at: last_active(s),

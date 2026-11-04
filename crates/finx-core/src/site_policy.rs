@@ -381,6 +381,7 @@ mod tests {
             trusted: true,
             env: Arc::new(LocalEnvironment::new(root.to_path_buf())),
             data_dir: root.join(".finx-data"),
+            own_folder: None,
             skill_roots: Arc::from([]),
             site_grants: grants,
             browser: Arc::new(policy),

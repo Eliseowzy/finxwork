@@ -210,6 +210,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         project_root: None,
         trusted: true,
         interactive_approvals: interactive,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps).await.unwrap();
     Some(Harness {

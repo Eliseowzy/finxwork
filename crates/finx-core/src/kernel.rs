@@ -40,6 +40,8 @@ use crate::agents;
 use crate::agents::AgentTree;
 use crate::agents::ChildDeps;
 use crate::approval::ApprovalPolicy;
+use crate::bot;
+use crate::bot::BotIdentity;
 use crate::browser::BrowserHandle;
 use crate::desktop::DesktopHandle;
 use crate::config::Config;
@@ -54,12 +56,15 @@ use crate::mcp::tools::Shown;
 use crate::paths::FinxHome;
 use crate::prompt;
 use crate::prompt::PromptInputs;
+use crate::prompt::PromptProfile;
 use crate::session::Internal;
+use crate::session::BotNames;
 use crate::session::Session;
 use crate::session::SessionState;
 use crate::skills;
 use crate::skills::SkillRef;
 use crate::skills::SkillState;
+use crate::store::BotRef;
 use crate::store::Entry;
 use crate::store::EntryKind;
 use crate::store::SessionHeader;
@@ -104,6 +109,9 @@ pub struct StartOptions {
     pub trusted: bool,
     /// Whether a front end can answer approval requests. Without one, "ask" means "deny".
     pub interactive_approvals: bool,
+    /// A bot's session (bot-design §2.2): its header names the bot, its prompt is a bot's and
+    /// it gets `send_to_user`.
+    pub bot: Option<BotIdentity>,
 }
 
 pub struct ResumeOptions {
@@ -117,6 +125,8 @@ pub struct ResumeOptions {
     pub project_root: Option<PathBuf>,
     pub trusted: bool,
     pub interactive_approvals: bool,
+    /// A bot's session: the bot's name now, when it may have changed (bot-design §2.4).
+    pub bot_name: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -230,6 +240,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
             }),
         }));
     }
+    let own_folder = launch.home.private_folder(&crate::protected::canonical_lossy(launch.deps.env.cwd()));
     let session = Arc::new(Session {
         id: launch.id.clone(),
         llm: launch.deps.llm,
@@ -259,6 +270,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         context_report: Mutex::new(None),
         request_estimates: Mutex::new(Vec::new()),
         data_dir: crate::protected::canonical_data_dir(launch.home.root()),
+        own_folder,
         skill_roots,
         trusted: launch.trusted,
         interactive_approvals: launch.interactive_approvals,
@@ -469,6 +481,8 @@ fn mcp_manager(deps: &KernelDeps, config: &Config, project_root: Option<PathBuf>
 /// A new session's system prompt, with the skills it lists and warnings for the user.
 struct BuiltPrompt {
     text: String,
+    /// A bot's session: its sub-agents' prompt, a session's built from the same inputs.
+    helper: Option<String>,
     skills: Vec<SkillRef>,
     warnings: Vec<String>,
 }
@@ -493,6 +507,7 @@ fn build_prompt(
     tools: &ToolRegistry,
     project_root: Option<&Path>,
     context_window: u64,
+    profile: &PromptProfile,
 ) -> Result<BuiltPrompt, KernelError> {
     let cwd = deps.env.cwd().to_path_buf();
     let (files, mut warnings) = instructions::discover(home, &cwd, project_root, &config.instruction_files);
@@ -503,21 +518,32 @@ fn build_prompt(
         tracing::info!(skill = %shadowed.name, %path, by = ?shadowed.detail, "skill shadowed");
     }
     warnings.extend(scan.warnings());
-    let text = prompt::build_system_prompt(&PromptInputs {
-        config,
-        tools,
-        env: deps.env.as_ref(),
-        instructions: &files,
-        skills: &scan.catalog.text,
-        project_root,
-        git_branch: project_root.and_then(instructions::git_branch),
-        date: prompt::date_text(chrono::Local::now().date_naive()),
-        // The desktop app being connected, as for the browser's and computer use's defaults.
-        in_app: deps.browser_pool.as_ref().is_some_and(|p| p.has_host()),
-    })
-    .map_err(|e| KernelError::Other(format!("cannot build the system prompt: {e}")))?;
+    let git_branch = project_root.and_then(instructions::git_branch);
+    let date = prompt::date_text(chrono::Local::now().date_naive());
+    let build = |profile: &PromptProfile| {
+        prompt::build_system_prompt(&PromptInputs {
+            profile,
+            config,
+            tools,
+            env: deps.env.as_ref(),
+            instructions: &files,
+            skills: &scan.catalog.text,
+            project_root,
+            git_branch: git_branch.clone(),
+            date: date.clone(),
+            // The desktop app being connected, as for the browser's and computer use's defaults.
+            in_app: deps.browser_pool.as_ref().is_some_and(|p| p.has_host()),
+        })
+        .map_err(|e| KernelError::Other(format!("cannot build the system prompt: {e}")))
+    };
+    let text = build(profile)?;
+    let helper = match profile {
+        PromptProfile::Bot { .. } => Some(build(&PromptProfile::Session)?),
+        PromptProfile::Session => None,
+    };
     Ok(BuiltPrompt {
         text,
+        helper,
         skills: scan.set.references(),
         warnings,
     })
@@ -533,6 +559,14 @@ impl Kernel {
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
+        // After the sub-agents took their tools: they never send to the user.
+        if opts.bot.is_some() {
+            deps.tools = extended(&deps.tools, "bot", bot::tools);
+        }
+        let profile = match &opts.bot {
+            Some(bot) => PromptProfile::Bot { name: bot.name.clone() },
+            None => PromptProfile::Session,
+        };
         let system = SystemCell::new(&opts.config);
         let starting = starting_tools(&deps, &system);
         let mut warnings = Vec::new();
@@ -542,12 +576,18 @@ impl Kernel {
         let context_window = u64::from(resolved.model.context_window);
         let BuiltPrompt {
             text: system_prompt,
+            helper,
             skills,
             warnings: prompt_warnings,
-        } = build_prompt(&opts.home, &opts.config, &deps, &starting, opts.project_root.as_deref(), context_window)?;
+        } = build_prompt(&opts.home, &opts.config, &deps, &starting, opts.project_root.as_deref(), context_window, &profile)?;
         warnings.extend(prompt_warnings);
         let id = uuid::Uuid::now_v7().to_string();
-        let created = deps.store.create(&SessionHeader::new(id.clone(), opts.cwd.clone()))?;
+        let mut header = SessionHeader::new(id.clone(), opts.cwd.clone());
+        header.bot = opts.bot.as_ref().map(|bot| BotRef {
+            id: bot.id.clone(),
+            name: bot.name.clone(),
+        });
+        let created = deps.store.create(&header)?;
         let model_ref = resolved.model.reference();
         let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
         // The level asked for, when the model offers it; else the provider decides. A level
@@ -568,6 +608,11 @@ impl Kernel {
         state.base_prompt = system_prompt.into();
         state.mcp_section = mcp_section;
         state.skills = Arc::from(skills);
+        state.helper_prompt = helper.map(Arc::from);
+        state.bot = opts.bot.map(|bot| BotNames {
+            given: bot.name.clone(),
+            current: bot.name,
+        });
         let (kernel, session) = launch(Launch {
             id: id.clone(),
             root_id: id.clone(),
@@ -625,6 +670,10 @@ impl Kernel {
         let loaded = deps.store.open(&opts.session)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
+        let bot_ref = loaded.header.bot.clone();
+        if bot_ref.is_some() {
+            deps.tools = extended(&deps.tools, "bot", bot::tools);
+        }
         let system = SystemCell::new(&opts.config);
         let starting = starting_tools(&deps, &system);
         let history = History::from_entries(loaded.entries);
@@ -701,16 +750,35 @@ impl Kernel {
         let mut warnings = loaded.warnings;
         warnings.extend(replaced);
         let context_window = u64::from(resolved.model.context_window);
+        let project_root = opts.project_root.as_deref();
+        let profile = match &bot_ref {
+            Some(bot) => PromptProfile::Bot { name: bot.name.clone() },
+            None => PromptProfile::Session,
+        };
+        let mut helper = None;
         let system_prompt = match system_prompt {
             Some(text) => text,
             None => {
-                let project_root = opts.project_root.as_deref();
-                let built = build_prompt(&opts.home, &opts.config, &deps, &starting, project_root, context_window)?;
+                let built = build_prompt(&opts.home, &opts.config, &deps, &starting, project_root, context_window, &profile)?;
                 warnings.extend(built.warnings);
                 skills = built.skills;
+                helper = built.helper;
                 built.text.into()
             }
         };
+        // A bot's helpers are new sessions: their prompt is built as things are now.
+        if bot_ref.is_some() && helper.is_none() {
+            let built = build_prompt(
+                &opts.home,
+                &opts.config,
+                &deps,
+                &starting,
+                project_root,
+                context_window,
+                &PromptProfile::Session,
+            )?;
+            helper = Some(built.text);
+        }
         let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
         let mut state = SessionState::new(
             history,
@@ -726,6 +794,11 @@ impl Kernel {
         state.next_task_no = max_task;
         state.title = title;
         state.archived = archived;
+        state.helper_prompt = helper.map(Arc::from);
+        state.bot = bot_ref.map(|bot| BotNames {
+            current: opts.bot_name.clone().unwrap_or_else(|| bot.name.clone()),
+            given: bot.name,
+        });
         let model_ref = state.model.reference();
         let overridden = opts.model.is_some() || opts.thinking.is_some() || opts.permission_mode.is_some();
         let (mut kernel, session) = launch(Launch {
@@ -803,6 +876,15 @@ impl Kernel {
     /// (connectors-entry-design §9.4). Returns whether they differ from the current ones.
     pub fn set_system_connectors(&self, settings: SystemSettings) -> bool {
         self.session.upgrade().is_some_and(|session| session.system.set(settings))
+    }
+
+    /// A bot's new name, which the model is told at the next turn boundary (bot-design §2.4).
+    pub fn set_bot_name(&self, name: String) {
+        if let Some(session) = self.session.upgrade()
+            && let Some(bot) = session.state.lock().bot.as_mut()
+        {
+            bot.current = name;
+        }
     }
 
     pub fn session_id(&self) -> &str {

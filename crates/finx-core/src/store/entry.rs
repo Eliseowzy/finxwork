@@ -40,6 +40,18 @@ pub struct SessionHeader {
     /// Set for a sub-agent's session: who started it. Such sessions stay out of session lists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentOrigin>,
+    /// Set for a bot's session (bot-design §2.2). Such sessions stay out of session lists too.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot: Option<BotRef>,
+}
+
+/// The bot a session belongs to.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BotRef {
+    pub id: String,
+    /// Its name when the session started, which the system prompt gives; later names come as
+    /// `bot_name` entries.
+    pub name: String,
 }
 
 /// Where a sub-agent's session comes from.
@@ -65,7 +77,13 @@ impl SessionHeader {
             cwd,
             finx_version: env!("CARGO_PKG_VERSION").to_string(),
             agent: None,
+            bot: None,
         }
+    }
+
+    /// Whether session lists show the session: neither a sub-agent's nor a bot's.
+    pub fn listed(&self) -> bool {
+        self.agent.is_none() && self.bot.is_none()
     }
 }
 
@@ -143,6 +161,11 @@ pub enum EntryKind {
     Date {
         /// `YYYY-MM-DD`
         date: String,
+    },
+    /// A bot's session: the bot's name changed since the context last gave it; the model is
+    /// told the new one (bot-design §2.4).
+    BotName {
+        name: String,
     },
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.

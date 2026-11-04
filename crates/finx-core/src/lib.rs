@@ -5,6 +5,7 @@
 
 mod agents;
 pub mod approval;
+pub mod bot;
 mod browser;
 pub mod browser_install;
 mod budget;
@@ -41,6 +42,7 @@ mod task;
 mod tool_exec;
 
 pub use agents::RestoredAgent;
+pub use bot::BotIdentity;
 pub use config::Config;
 pub use config::ConfigError;
 pub use config::DEFAULT_MODEL;

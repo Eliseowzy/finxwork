@@ -58,6 +58,29 @@ pub fn date_message(date: &str, ts: Timestamp) -> UserMessage {
     }
 }
 
+/// The user message that gives a bot its new name (bot-design §2.4).
+pub fn bot_name_message(name: &str, ts: Timestamp) -> UserMessage {
+    UserMessage {
+        content: vec![UserContent::Text {
+            text: format!("<environment_update>\nyour name: {name}\n</environment_update>"),
+        }],
+        ts,
+    }
+}
+
+/// The bot's name the current context last gave, when not the system prompt's: the newest
+/// name entry since the last compaction.
+pub fn name_in_context(history: &History) -> Option<&str> {
+    for entry in history.branch_back() {
+        match &entry.kind {
+            EntryKind::BotName { name } => return Some(name),
+            EntryKind::Compaction(_) => break,
+            _ => {}
+        }
+    }
+    None
+}
+
 /// The date the current context last gave the model: the newest date entry since the last
 /// compaction, else the one in the system prompt.
 pub fn date_in_context(history: &History, base_prompt: &str) -> Option<chrono::NaiveDate> {
@@ -129,14 +152,15 @@ pub fn branch_messages(branch: &[&Entry]) -> Vec<Message> {
     out
 }
 
-/// The message an entry adds to the context; `ts` is the entry's. A delivered report and a
-/// new date are user messages; a user message that mentions skills carries their
+/// The message an entry adds to the context; `ts` is the entry's. A delivered report, a new
+/// date and a bot's new name are user messages; a user message that mentions skills carries their
 /// instructions first (docs/kernel/skill-design.md §6.3.4).
 pub fn entry_message(kind: &EntryKind, ts: Timestamp) -> Option<Cow<'_, Message>> {
     match kind {
         EntryKind::Message { message, skills, .. } if !skills.is_empty() => Some(Cow::Owned(with_skills(message, skills))),
         EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } => Some(Cow::Borrowed(message)),
         EntryKind::Date { date } => Some(Cow::Owned(Message::from(date_message(date, ts)))),
+        EntryKind::BotName { name } => Some(Cow::Owned(Message::from(bot_name_message(name, ts)))),
         _ => None,
     }
 }

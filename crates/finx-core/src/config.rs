@@ -27,6 +27,7 @@ pub struct ConfigFile {
     pub max_turns: Option<u32>,
     pub extra_writable_roots: Option<Vec<PathBuf>>,
     pub system_prompt_file: Option<PathBuf>,
+    pub bot_prompt_file: Option<PathBuf>,
     pub instructions: Option<InstructionsFile>,
     pub tools: Option<ToolsFile>,
     pub compaction: Option<CompactionFile>,
@@ -467,6 +468,8 @@ pub struct Config {
     pub max_turns: u32,
     pub extra_writable_roots: Vec<PathBuf>,
     pub system_prompt_file: Option<PathBuf>,
+    /// Replaces the base section of bots' system prompts (bot-design §2.3).
+    pub bot_prompt_file: Option<PathBuf>,
     pub instruction_files: Vec<String>,
     pub instructions_extra: String,
     pub project_root_markers: Vec<String>,
@@ -563,6 +566,7 @@ impl Config {
             max_turns: file.max_turns.unwrap_or(0),
             extra_writable_roots: file.extra_writable_roots.unwrap_or_default(),
             system_prompt_file: file.system_prompt_file,
+            bot_prompt_file: file.bot_prompt_file,
             instruction_files: instructions.files.unwrap_or_else(|| vec!["AGENTS.md".to_string()]),
             instructions_extra: instructions.extra.unwrap_or_default(),
             project_root_markers: instructions
@@ -1030,7 +1034,7 @@ fn tighten_desktop(table: &mut toml::Table) -> Vec<String> {
 
 fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
     let mut removed = Vec::new();
-    for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file"] {
+    for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file", "bot_prompt_file"] {
         if table.remove(key).is_some() {
             removed.push(key.to_string());
         }
