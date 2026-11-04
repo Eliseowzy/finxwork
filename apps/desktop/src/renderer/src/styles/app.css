@@ -124,17 +124,23 @@ input:disabled,textarea:disabled{cursor:default}
 .nav-i:hover{background:var(--fill)}
 .nav-i.sel{background:var(--side-sel)}
 .nav-i .cnt{margin-left:auto;font-size:11.5px;color:var(--l2);font-variant-numeric:tabular-nums}
-.side-list{flex:1;overflow-y:auto;min-height:0;padding:0 8px 8px}
+/* The list's right margin is its scrollbar's lane, reserved whether it scrolls or not: rows sit 8 from both
+   edges of the sidebar, like the actions above them, and never shift when the list starts to scroll. */
+.side-list{flex:1;overflow-y:auto;min-height:0;padding:0 0 8px 8px;scrollbar-gutter:stable}
+.side-list::-webkit-scrollbar{width:8px}
+.side-list::-webkit-scrollbar-thumb{border-width:2px}
 .side-list>[role=group]{display:flex;flex-direction:column;gap:2px}
-/* The list's heading, a step below the actions so the list reads as its own part: its name, and ▾ to collapse every group (▸ when all are shut). */
+/* The list's heading, a step below the actions so the list reads as its own part: its name, and ▾ to collapse every group (▸ when all are shut).
+   The view options are as quiet as the name, their icon ending where the rows' text may. */
 .side-lh{display:flex;align-items:center;padding:12px 8px 4px;flex:none}
-.side-lh>.tb{margin:-2px 4px -2px auto}
-.side-lh-t{display:flex;align-items:center;gap:4px;height:24px;padding:0 10px;border:0;background:none;font:inherit;font-size:12px;color:var(--l2);border-radius:var(--r-sm)}
+.side-lh>.tb{margin:-2px 2px -2px auto;color:var(--l2)}
+.side-lh>.tb:hover,.side-lh>.tb.on{color:var(--l1)}
+.side-lh-t{display:flex;align-items:center;gap:5px;height:24px;padding:0 10px;border:0;background:none;font:inherit;font-size:12px;color:var(--l2);border-radius:var(--r-sm)}
 .side-lh-t:hover:not(:disabled){color:var(--l1)}
-.side-lh-t .ic{width:14px;height:14px;transition:transform .15s var(--ease-out)}
+.side-lh-t .ic{width:16px;height:16px;transition:transform .15s var(--ease-out)}
 .side-lh-t.shut .ic{transform:rotate(-90deg)}
 /* A group's heading: its title, its count, and ▾ (▸ when collapsed); a click collapses or opens it. */
-.grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:400;color:var(--l2);padding:24px 10px 6px;margin-bottom:2px;display:flex;align-items:center;gap:6px;background:var(--side-head);border:0;width:100%;text-align:left}
+.grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:400;color:var(--l2);padding:24px 10px 6px;margin-bottom:2px;display:flex;align-items:center;gap:5px;background:var(--side-head);border:0;width:100%;text-align:left}
 .side-list>[role=group]:first-child .grp-h{padding-top:8px}
 .grp-h:hover{color:var(--l1)}
 .grp-h .n{font-weight:500;color:var(--l3)}
@@ -197,6 +203,8 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 @keyframes shimmer{from{-webkit-mask-position:93% 0;mask-position:93% 0}to{-webkit-mask-position:7% 0;mask-position:7% 0}}
 @media (prefers-reduced-motion:reduce){.shimmer{animation:none;-webkit-mask-image:none;mask-image:none}}
 .smeta{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
+/* Nothing to show takes no gap: the title runs to the row's padding, the same as on its left. */
+.smeta:empty{display:none}
 .sl2{display:flex;align-items:baseline;gap:8px;font-size:11px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:2px}
 .sl2t{flex:1;min-width:0;display:flex;align-items:center;gap:9px;overflow:hidden}
 /* The project, then the branch, each after its icon; the branch gives way first. */
