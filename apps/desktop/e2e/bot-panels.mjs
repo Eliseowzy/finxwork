@@ -85,6 +85,9 @@ function pdf() {
 
 const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxq-"));
 const home = path.join(work, "finx");
+// A private HOME: the app registers the extension's host in the browsers under it.
+const userHome = path.join(work, "home");
+fs.mkdirSync(userHome);
 const profile = path.join(work, "profile");
 // A row's menu is native: finx's test seam records it and answers from a file.
 const menus = path.join(work, "menus");
@@ -124,7 +127,7 @@ let app = null;
 async function launch(home, profile) {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(packaged ?? electron, packaged ? [`--remote-debugging-port=${port}`] : [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus },
+    env: { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
