@@ -58,13 +58,6 @@
     "toBottom": "Back to the bottom",
     "queued": "Delivered once it finishes this reply"
   },
-  "ask": {
-    "title": "Needs your approval",
-    "allow": "Allow",
-    "deny": "Don't allow",
-    "allowed": "Allowed",
-    "denied": "Not allowed"
-  },
   "sheet": {
     "newTitle": "New Bot",
     "editTitle": "Change name and avatar",

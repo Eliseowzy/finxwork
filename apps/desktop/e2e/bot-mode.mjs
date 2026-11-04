@@ -129,25 +129,32 @@ async function quit() {
 }
 
 // ── what the page shows ──
-const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub:not(.bask)")].map((b) => b.innerText.trim())`;
+const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].map((b) => b.innerText.trim())`;
 const mine = `[...document.querySelectorAll(".tr.bots .um .bub")].map((b) => b.innerText.trim())`;
 const rows = `[...document.querySelectorAll(".brow")].map((r) => ({ name: r.querySelector(".bname").textContent, line: r.querySelector(".bprev")?.textContent ?? "", unread: r.querySelector(".bbadge")?.textContent ?? "", sel: r.classList.contains("sel"), pinned: !!r.querySelector(".bpin") }))`;
 const busy = `!!document.querySelector(".tr.bots .bm.working")`;
+const asking = `!!document.querySelector(".cmp-zone.bot .appr")`;
 
-/** Answers every card the bot asks with (allow or not) until it is idle, has replied after the
+/** Answers every approval the bot asks for (allow or not) until it is idle, has replied after the
  * last answer, and `done()` holds. */
 async function answerAll(page, allow, done, from, ms = 180000) {
   const end = Date.now() + ms;
   let last = from;
   for (;;) {
-    if (await page.run(`!!document.querySelector(".bask:not(.done)")`)) {
-      note(`${allow ? "allowed" : "not allowed"}: ${await page.run(`document.querySelector(".bask:not(.done) .bask-d")?.textContent`)}`);
+    if (await page.run(asking)) {
+      note(`${allow ? "allowed" : "not allowed"}: ${await page.run(`document.querySelector(".appr .appr-pre")?.textContent`)}`);
       last = (await page.run(bubbles)).length;
-      await page.run(`document.querySelector(".bask:not(.done) .bask-f .btn${allow ? ".primary" : ":not(.primary)"}").click()`);
+      if (allow) await page.run(`document.querySelector(".appr .btn.primary").click()`);
+      else {
+        // Deny opens a line for why: leave it empty.
+        await page.run(`document.querySelector(".appr-f .btn").click()`);
+        await page.until("the line for why", `!!document.querySelector(".appr .btn.danger")`);
+        await page.run(`document.querySelector(".appr .btn.danger").click()`);
+      }
       await sleep(500);
     }
-    if (done() && !(await page.run(busy)) && !(await page.run(`!!document.querySelector(".bask:not(.done)")`)) && (await page.run(bubbles)).length > last) return;
-    if (Date.now() > end) fail("timed out waiting for the bot to finish after its cards");
+    if (done() && !(await page.run(busy)) && !(await page.run(asking)) && (await page.run(bubbles)).length > last) return;
+    if (Date.now() > end) fail("timed out waiting for the bot to finish after its approvals");
     await sleep(500);
   }
 }
@@ -237,17 +244,20 @@ try {
 
   step("8/9. two things for helpers, a quick question meanwhile");
   // Work a helper can finish by itself: in manual mode a helper's commands are refused, not asked
-  // (subagent-design D-43); the approval card from the bot is step 11.
+  // (subagent-design D-43); the approval the bot itself asks for is step 11.
   const n0 = (await page.run(bubbles)).length;
   await say(page, "请交给两个后台帮手分别去做，做完分别告诉我：一个写一首关于秋天的十四行诗；一个把《静夜思》翻译成英文。");
   await sleep(2500);
   await say(page, "顺便问一下，1 公里是多少英里？");
-  let sawHelper = false, sawTwo = false;
+  const isQuick = (t) => /0\.62/.test(t);
+  const isSonnet = (t) => /秋|autumn/i.test(t) && t.length > 120;
+  const isTranslation = (t) => /moon/i.test(t);
+  let sawHelper = false, sawTwo = false, quiet = 0;
   const end = Date.now() + 300000;
   for (;;) {
-    if (await page.run(`!!document.querySelector(".bask .btn.primary")`)) {
-      note(`allowed: ${await page.run(`document.querySelector(".bask:not(.done) .bask-d")?.textContent`)}`);
-      await page.run(`document.querySelector(".bask .btn.primary").click()`);
+    if (await page.run(asking)) {
+      note(`allowed: ${await page.run(`document.querySelector(".appr .appr-pre")?.textContent`)}`);
+      await page.run(`document.querySelector(".appr .btn.primary").click()`);
     }
     const label = await page.run(`document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? ""`);
     if (label && (!sawHelper || (!sawTwo && label.includes("两件事")))) {
@@ -259,56 +269,60 @@ try {
       await page.shot(sawTwo ? "06-helpers" : "06-helper");
       note(`its row says: ${await page.run(`${rows}.find((r) => r.sel)?.line`)}`);
     }
-    const n = (await page.run(bubbles)).length;
-    if (n >= n0 + 3 && !(await page.run(busy))) break;
-    if (Date.now() > end) fail("timed out waiting for the helpers' work and the quick answer");
+    // Until all three came: between a helper's end and the bot's relay, nothing shows as busy.
+    const sofar = (await page.run(bubbles)).slice(n0);
+    const done = sofar.some(isQuick) && sofar.some(isSonnet) && sofar.some(isTranslation) && !(await page.run(busy)) && !(await page.run(asking));
+    quiet = done ? quiet + 1 : 0;
+    if (quiet >= 6) break;
+    if (Date.now() > end) fail(`timed out waiting for the helpers' work and the quick answer: ${JSON.stringify(sofar.map((t) => t.slice(0, 40)))}`);
     await sleep(500);
   }
   const mixed = (await page.run(bubbles)).slice(n0);
   for (const t of mixed) note(`→ ${t.replace(/\s+/g, " ").slice(0, 90)}`);
-  check(mixed.some((t) => /0\.62|0\.621/.test(t)), "the quick question was answered");
-  check(mixed.some((t) => /秋/.test(t) && t.length > 60), "the sonnet came back");
-  check(mixed.some((t) => /moon/i.test(t)), "the translation came back");
   check(sawHelper, "the work went to helpers");
   if (!sawTwo) note("(never two helpers at once)");
   await page.shot("07-mixed");
 
   step("10. 'no need any more': the helper stops, the bot says so");
   await say(page, "请交给后台帮手去做：写一篇 3000 字左右的短篇小说，主题是秋天的银杏，写完告诉我。");
-  await page.until("a helper at work", `(document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? "") !== ""`, 120000);
+  // It may ask first (say, to look at its folder): allowed.
+  for (const until10 = Date.now() + 120000; !(await page.run(`(document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? "") !== ""`)); await sleep(300)) {
+    if (await page.run(asking)) await page.run(`document.querySelector(".appr .btn.primary").click()`);
+    if (Date.now() > until10) fail("timed out waiting for a helper at work");
+  }
   note(`busy bubble: ${await page.run(`document.querySelector(".tr.bots .bm.working .wb-t")?.textContent`)}`);
   await sleep(1500);
   const asked10 = (await page.run(bubbles)).length;
   await say(page, "那篇小说不用写了，停下吧。");
-  await page.until("the helper stopped and the bot replied", `!${busy} && ${bubbles}.length > ${asked10}`, 180000);
+  // It may look at its folder first, which asks: allowed.
+  await answerAll(page, true, () => true, asked10);
   const after10 = (await page.run(bubbles)).slice(asked10);
   for (const t of after10) note(`→ ${t.replace(/\s+/g, " ").slice(0, 90)}`);
   check(after10.every((t) => t.length < 1500), "no story came after it was called off");
   await page.shot("07b-stopped");
 
-  step("11. an approval: a card from the bot; allowed, the work goes on");
+  step("11. an approval: the prompt above the composer, none in the conversation; allowed, the work goes on");
   const hello = () => fs.readdirSync(path.join(home, "bots")).map((id) => path.join(home, "bots", id, "files", "hello.txt")).find((f) => fs.existsSync(f));
   const n1 = (await page.run(bubbles)).length;
   await say(page, "在你的文件夹里新建 hello.txt，内容写 hi。");
-  await page.until("the approval card", `!!document.querySelector(".bask:not(.done)")`, 120000);
+  await page.until("the approval", asking, 120000);
+  check(!(await page.run(`!!document.querySelector(".tr.bots .appr")`)), "the conversation has no approval in it");
   const rowWaiting = await page.until("the row's [待确认]", `${rows}.find((r) => r.sel)?.line.includes("[待确认]") && ${rows}.find((r) => r.sel)?.line`);
   note(`row: ${rowWaiting}`);
   await page.shot("08-approval");
   // It may ask more than once (look first, then write): allow each, until it is done.
   await answerAll(page, true, () => !!hello(), n1);
   check(fs.readFileSync(hello(), "utf8").trim() === "hi", "hello.txt says hi");
-  check(await page.run(`[...document.querySelectorAll(".bask.done .bask-r")].some((e) => e.textContent.includes("已允许"))`), "the answered card says 已允许");
   check(!(await page.run(`${rows}.find((r) => r.sel)?.line.includes("[待确认]")`)), "the row's [待确认] is gone");
   await page.shot("09-allowed");
 
   step("11. not allowed: the bot says so, nothing happens");
   const n1b = (await page.run(bubbles)).length;
   await say(page, "把你文件夹里的 hello.txt 删掉。");
-  await page.until("the approval card", `!!document.querySelector(".bask:not(.done)")`, 120000);
+  await page.until("the approval", asking, 120000);
   await answerAll(page, false, () => true, n1b);
   note(`it says: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
   check(!!hello(), "hello.txt is still there");
-  check(await page.run(`[...document.querySelectorAll(".bask.done .bask-r")].some((e) => e.textContent.includes("没有允许"))`), "the answered card says 没有允许");
   check(!(await page.run(`${rows}.find((r) => r.sel)?.line.includes("[待确认]")`)), "the row's [待确认] is gone");
   await page.shot("09b-denied");
 
@@ -400,7 +414,7 @@ try {
   page = await launch();
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.until("Bot mode, FinxBot", `${rows}.some((r) => r.name === "FinxBot")`, 30000);
-  // Should it have asked after all, the card is there: allowed, the work goes on.
+  // Should it have asked after all, the prompt is there: allowed, the work goes on.
   await answerAll(page, true, () => true, 0, 120000);
   check((await page.run(bubbles)).some((t) => t.includes("银杏") && t.length > 100), "the answer is in the conversation");
   note(`it wrote: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 60)}…`);

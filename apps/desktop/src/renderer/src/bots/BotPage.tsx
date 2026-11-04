@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { baseName, botChat, botWorking, busyBubble, conversation, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
-import type { BotSummary, PendingApproval, UserMessage } from "@finx/protocol";
+import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
 import { Composer } from "../composer/Composer";
@@ -11,6 +11,7 @@ import { durationText, timeLine } from "../format";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { AgentCard, ReportCard } from "../session/Agents";
+import { Approval } from "../session/Approval";
 import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
@@ -107,16 +108,10 @@ function useMarkRead(bot: BotSummary) {
   }, [bot.id, unread, st.call]);
 }
 
-/** An approval answered here, kept on the page as it was answered (finx's log does not keep it). */
-type Answered = { approval: PendingApproval; allowed: boolean; ts: number };
-type Shown = BotItem | { kind: "answered"; key: string; ts: number; a: Answered };
-
 function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: SessionView; session: string; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("bots");
-  const st = useStore();
   const items = useMemo(() => botChat(view), [view]);
   const busy = busyBubble(view);
-  const [answered, setAnswered] = useState<Map<string, Answered>>(new Map());
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [dock, setDock] = useState(0);
   const scroll = useRef<HTMLDivElement>(null);
@@ -150,7 +145,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     else if (el && fromEnd.current !== null) el.scrollTop = el.scrollHeight - fromEnd.current;
     fromEnd.current = null;
     if (el && el.scrollTop < el.clientHeight * 1.5) earlier();
-  }, [items, busy?.typing, busy?.helpers.length, dock, answered]);
+  }, [items, busy?.typing, busy?.helpers.length, dock]);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
@@ -166,15 +161,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
-  // The conversation with the cards answered here, in the order things happened.
-  const shown = useMemo((): Shown[] => {
-    const extra: Shown[] = [...answered.entries()]
-      .filter(([id]) => !items.some((i) => i.kind === "approval" && i.key === id))
-      .map(([id, a]) => ({ kind: "answered" as const, key: `answered:${id}`, ts: a.ts, a }));
-    const settled: Shown[] = [...items.filter((i) => i.kind !== "approval"), ...extra].sort((x, y) => x.ts - y.ts);
-    return [...settled, ...items.filter((i) => i.kind === "approval")];
-  }, [items, answered]);
-  const empty = shown.length === 0 && !busy;
+  const empty = items.length === 0 && !busy;
   const working = busy?.helpers.length ?? 0;
   return (
     <>
@@ -193,8 +180,8 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
             </div>
           ) : (
             <div className="tr bots" role="log" aria-label={t("chat.log")}>
-              {shown.map((item, i) => {
-                const prev = shown[i - 1];
+              {items.map((item, i) => {
+                const prev = items[i - 1];
                 const fresh = !seen.current!.has(item.key);
                 const line = <TimeSince at={item.ts} previous={prev?.ts} />;
                 const lead = !prev || prev.kind === "user" || !!timeLine(new Date(item.ts), new Date(prev.ts), new Date(), PAUSE);
@@ -214,26 +201,11 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                         onProcess={() => setOpen((o) => (o.has(item.key) ? new Set([...o].filter((k) => k !== item.key)) : new Set([...o, item.key])))}
                       />
                     );
-                  case "approval":
-                    return (
-                      <AskCard
-                        key={item.key}
-                        bot={bot}
-                        lead={lead}
-                        approval={item.approval}
-                        onAnswer={(allowed) => {
-                          setAnswered((m) => new Map(m).set(item.key, { approval: item.approval, allowed, ts: Date.now() }));
-                          void st.op(session, { type: "approval", call_id: item.approval.call_id, decision: allowed ? { type: "approve" } : { type: "deny" } });
-                        }}
-                      />
-                    );
-                  case "answered":
-                    return <AskCard key={item.key} bot={bot} lead={lead} approval={item.a.approval} allowed={item.a.allowed} />;
                   case "failure":
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
                 }
               })}
-              {busy && <BusyBubble bot={bot} busy={busy} lead={!shown.length || shown.at(-1)!.kind === "user"} retry={view.live?.retry} />}
+              {busy && <BusyBubble bot={bot} busy={busy} lead={!items.length || items.at(-1)!.kind === "user"} retry={view.live?.retry} />}
             </div>
           )}
         </div>
@@ -351,44 +323,6 @@ function Process({ steps, summary }: { steps: Step[]; summary: string }) {
             return null;
         }
       })}
-    </div>
-  );
-}
-
-/**
- * An approval as the bot asks for it (bot-mode-design §6.13): a card in its bubble's shape, Allow and
- * Don't allow; answered, the answer stays on the card.
- */
-function AskCard({ bot, lead, approval, allowed, onAnswer }: { bot: BotSummary; lead: boolean; approval: PendingApproval; allowed?: boolean; onAnswer?: (allowed: boolean) => void }) {
-  const { t } = useTranslation("bots");
-  const done = allowed !== undefined;
-  return (
-    <div className="bm">
-      {lead ? <BotAvatar bot={bot} size={28} /> : <span className="bm-sp" />}
-      <div className="bm-b">
-        <div className={`bbub bask ${done ? "done" : ""}`}>
-          <div className="bask-t">
-            <Icon name="shield" />
-            {t("ask.title")}
-          </div>
-          <div className="bask-d sel-text">{approval.summary}</div>
-          {done ? (
-            <div className="bask-r">
-              {allowed && <Icon name="check" className="sm" />}
-              {allowed ? t("ask.allowed") : t("ask.denied")}
-            </div>
-          ) : (
-            <div className="bask-f">
-              <button className="btn sm primary" onClick={() => onAnswer?.(true)}>
-                {t("ask.allow")}
-              </button>
-              <button className="btn sm" onClick={() => onAnswer?.(false)}>
-                {t("ask.deny")}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
     </div>
   );
 }
@@ -516,7 +450,12 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
   };
   return (
     <Composer
-      form={{ mode: "bot", onHeight }}
+      form={{
+        mode: "bot",
+        // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
+        above: view.live && view.live.approvals.length > 0 && <Approval key={view.live.approvals[0].call_id} sessionId={session} view={view} />,
+        onHeight,
+      }}
       value={draft.text}
       onChange={(text) => change({ ...draft, text })}
       attachments={draft.attachments}

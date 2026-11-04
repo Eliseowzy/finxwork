@@ -40,6 +40,8 @@ export type MenuState = {
     archived: boolean;
     inspector: boolean;
   };
+  /** The bot on screen waits for an approval: it has no `session` entry (its session has no such menu). */
+  botApprovable: boolean;
   sidebar: boolean;
   /** The toast offers Undo (⌘Z undoes it rather than typing). */
   undo: boolean;

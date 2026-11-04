@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { approvalPreview, argsOf, callTarget, describe, toolObject, type ApprovalPreview, type ListSession, type SessionView } from "@finx/client";
+import { approvalPreview, argsOf, callTarget, describe, toolObject, type ApprovalPreview, type SessionView } from "@finx/client";
 import type { ApprovalDecision, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
@@ -24,7 +24,7 @@ import { Code } from "./Code";
  * its own button, names the app by its name and icon, and says so when
  * FinxWork lacks the system permission the call needs.
  */
-export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
+export function Approval({ sessionId, view }: { sessionId: string; view: SessionView }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const live = view.live!;
@@ -43,7 +43,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   const give = async (decision: ApprovalDecision) => {
     if (busy) return;
     setBusy(true);
-    await st.op(s.session_id, { type: "approval", call_id: a.call_id, decision });
+    await st.op(sessionId, { type: "approval", call_id: a.call_id, decision });
     setBusy(false);
   };
   const deny = () => give({ type: "deny", feedback: feedback.trim() || undefined });

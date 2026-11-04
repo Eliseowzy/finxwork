@@ -1,11 +1,12 @@
-import type { ErrorInfo, PendingApproval } from "@finx/protocol";
+import type { ErrorInfo } from "@finx/protocol";
 import { runningAgents, type AgentView, type SessionView } from "./session.ts";
 import { conversation, userText, type Step, type WorkItem } from "./steps.ts";
 
 // A bot's conversation as Bot mode shows it (docs/kernel/bot-design.md §3.4):
-// the owner's messages, each message the bot sent with send_to_user, approval
-// cards and failures, in the order they were sent. What the bot did and wrote
-// for itself is the "process" of the message that followed it.
+// the owner's messages, each message the bot sent with send_to_user and
+// failures, in the order they were sent. What the bot did and wrote for itself
+// is the "process" of the message that followed it. An approval is no part of
+// it: it pops up above the composer, as on a session's page.
 
 export const SEND_TO_USER = "send_to_user";
 
@@ -14,7 +15,6 @@ export type BotItem =
   | { kind: "user"; key: string; text: string; images: { mime_type: string; data: string }[]; files: string[]; skills: string[]; ts: number; queued: boolean }
   /** A message from the bot; process: what it did since its last message (or since the task began), took: how long that was. */
   | { kind: "bot"; key: string; text: string; ts: number; process: Step[]; took: number }
-  | { kind: "approval"; key: string; approval: PendingApproval; ts: number }
   /** last: no task ran since, so it can be retried. */
   | { kind: "failure"; key: string; error: ErrorInfo; ts: number; last: boolean };
 
@@ -37,7 +37,7 @@ function delivered(item: WorkItem): string | null {
   return typeof text === "string" && text.trim() !== "" ? text : null;
 }
 
-/** The conversation as bubbles and cards, oldest first. */
+/** The conversation as bubbles and failure cards, oldest first. */
 export function botChat(v: SessionView): BotItem[] {
   const times = sendTimes(v);
   const out: BotItem[] = [];
@@ -94,10 +94,7 @@ export function botChat(v: SessionView): BotItem[] {
     out.push({ kind: "user", key: q.id, text, images, files, skills: [], ts: q.message.ts, queued: true });
   }
   // In the order things were sent; the same time keeps the history's order.
-  const ordered = out.map((item, i) => ({ item, i })).sort((a, b) => a.item.ts - b.item.ts || a.i - b.i).map((x) => x.item);
-  // Cards that wait come last, in the order they were asked.
-  for (const a of v.live?.approvals ?? []) ordered.push({ kind: "approval", key: a.call_id, approval: a, ts: Date.now() });
-  return ordered;
+  return out.map((item, i) => ({ item, i })).sort((a, b) => a.item.ts - b.item.ts || a.i - b.i).map((x) => x.item);
 }
 
 /** A background helper at work, as the busy bubble shows it. */

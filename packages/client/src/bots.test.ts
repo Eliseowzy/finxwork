@@ -118,7 +118,7 @@ test("a message sent while the bot answered keeps its place, whether queued or i
   );
 });
 
-test("a failed, refused or cancelled send shows nothing; an approval card waits at the end", () => {
+test("a failed, refused or cancelled send shows nothing; an approval is no part of the conversation", () => {
   const v = play([
     { type: "task_started", task_id: "t1" },
     user("u1", "nginx 挂了", 10_000),
@@ -130,7 +130,7 @@ test("a failed, refused or cancelled send shows nothing; an approval card waits 
   ]);
   const items = botChat(v);
   // The send that waits for the approval with the rest of its batch shows already.
-  assert.deepEqual(items.map((i) => i.kind), ["user", "bot", "approval"]);
+  assert.deepEqual(items.map((i) => i.kind), ["user", "bot"]);
   assert.equal(busyBubble(v), null, "waiting for the owner is not being busy");
   const failed = applyEvents(v, [
     { seq: 20, ts: 0, ...done("c1", "send_to_user", "invalid arguments: text must not be empty", true) } as Event,

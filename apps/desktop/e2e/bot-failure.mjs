@@ -157,7 +157,7 @@ async function quit() {
   await exited;
 }
 
-const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub:not(.bask)")].map((b) => b.innerText.trim())`;
+const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].map((b) => b.innerText.trim())`;
 const busy = `!!document.querySelector(".tr.bots .bm.working")`;
 
 async function say(page, text) {

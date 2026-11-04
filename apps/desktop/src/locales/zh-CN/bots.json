@@ -57,13 +57,6 @@
     "toBottom": "回到底部",
     "queued": "等它回完这一句就送达"
   },
-  "ask": {
-    "title": "需要你确认",
-    "allow": "允许",
-    "deny": "不允许",
-    "allowed": "已允许",
-    "denied": "没有允许"
-  },
   "sheet": {
     "newTitle": "新建 Bot",
     "editTitle": "改名字、换头像",

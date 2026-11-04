@@ -115,15 +115,6 @@ button.wb-h{cursor:pointer}
 .wb-s .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
 @media (prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.6}}
 
-/* An approval: a card from the bot, in its bubble's shape; answered, the answer stays on it. */
-.bask{display:flex;flex-direction:column;gap:4px;width:min(420px,100%)}
-.bask-t{display:flex;align-items:center;gap:6px;font-size:12.5px;line-height:18px;color:var(--orange)}
-.bask-t .ic{width:14px;height:14px}
-.bask-d{white-space:pre-wrap;overflow-wrap:anywhere}
-.bask-f{display:flex;gap:var(--sp-1);margin-top:var(--sp-1)}
-.bask.done .bask-t{color:var(--l3)}
-.bask-r{display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12.5px;color:var(--l2)}
-.bask-r .ic{color:var(--green)}
 
 /* A new bot's empty page: its avatar, its name, one line on how to start. */
 .bempty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--sp-1);padding-top:14vh}

@@ -251,12 +251,12 @@ async fn approvals_come_after_the_message_that_asks_and_count_as_unread() {
     let session = open(&client, &bot).await;
     say(&client, &session, "[[mock:confirm:touch confirmed.txt]] 建个文件").await;
     let events = until_event(&mut wire, |e| e["type"] == "approval_requested").await;
-    // The message that asks shows before the card: the call's start, not its result.
+    // The message that asks shows before the approval: the call's start, not its result.
     assert_eq!(sent(&events), ["要执行命令，确认一下。"]);
     let call = events.last().unwrap()["call_id"].clone();
     let row = until_row(&mut wire, &bot, |b| b["waiting"].is_string()).await;
     assert_eq!(row["waiting"], "touch confirmed.txt");
-    assert_eq!(row["unread"], 2, "the message and the card");
+    assert_eq!(row["unread"], 2, "the message and the approval");
     let op = json!({"session_id": session, "op": {"type": "approval", "call_id": call, "decision": {"type": "approve"}}});
     client.request("session/op", op).await.unwrap();
     let events = until_event(&mut wire, ended).await;

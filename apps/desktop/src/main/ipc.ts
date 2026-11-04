@@ -25,7 +25,7 @@ function trusted(e: IpcMainEvent | IpcMainInvokeEvent): boolean {
   return !!e.senderFrame && ours(e.senderFrame.url);
 }
 
-const noMenuState: MenuState = { main: false, session: null, sidebar: true, undo: false };
+const noMenuState: MenuState = { main: false, session: null, botApprovable: false, sidebar: true, undo: false };
 let menuState = noMenuState;
 export const currentMenuState = () => menuState;
 export const menuStateListeners = new Set<() => void>();
