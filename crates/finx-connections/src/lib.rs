@@ -239,6 +239,7 @@ impl Manager {
                     return None;
                 }
                 let mut p = ProviderConfig {
+                    plan: None,
                     id: record.provider_id.clone(),
                     name: view.display_name.clone(),
                     api: "openai-chat".into(),

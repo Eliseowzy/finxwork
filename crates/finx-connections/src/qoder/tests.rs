@@ -390,6 +390,7 @@ async fn strict_transport_rejects_partial_and_malformed_tools_and_keeps_system()
     use futures::StreamExt;
     let (s, _, _, http) = setup().await;
     let provider = ProviderConfig {
+        plan: None,
         id: "local-test".into(),
         name: "test".into(),
         api: "openai-chat".into(),
@@ -469,6 +470,7 @@ async fn transport_surfaces_qoder_error_events_and_preserves_partial_content() {
     use futures::StreamExt;
     let (server, _, _, http) = setup().await;
     let provider = finx_llm::ProviderConfig {
+        plan: None,
         id: "test".into(),
         name: "test".into(),
         api: "openai-chat".into(),
@@ -810,6 +812,7 @@ async fn capability_controls_preserve_images_and_only_caller_prompt_and_tools() 
     use futures::StreamExt;
     let (server, _, _, http) = setup().await;
     let provider = ProviderConfig {
+        plan: None,
         id: "qoder-test".into(),
         name: "test".into(),
         api: "openai-chat".into(),
@@ -912,6 +915,7 @@ async fn disproven_off_control_fails_before_network_even_with_stale_catalog() {
     use futures::StreamExt;
     let (server, _, _, http) = setup().await;
     let provider = ProviderConfig {
+        plan: None,
         id: "test".into(),
         name: "test".into(),
         api: "openai-chat".into(),
@@ -961,6 +965,7 @@ async fn kimi_temperature_constraint_is_explicit_and_preserves_verified_values()
     use futures::StreamExt;
     let (server, _, _, http) = setup().await;
     let provider = ProviderConfig {
+        plan: None,
         id: "test".into(),
         name: "test".into(),
         api: "openai-chat".into(),

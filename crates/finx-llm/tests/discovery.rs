@@ -275,3 +275,45 @@ async fn a_model_the_provider_does_not_have_marks_its_list_for_refresh() {
     assert_eq!(llm.directory().take_missing(), std::collections::BTreeSet::from(["oai".to_string()]));
     assert!(llm.directory().take_missing().is_empty(), "taken once");
 }
+
+#[tokio::test]
+async fn a_plan_request_uses_its_own_key_and_never_falls_back_to_the_regular_api() {
+    use finx_llm::{Context, Message, RequestOptions, StreamEvent, UserMessage};
+    use futures::StreamExt;
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/plan/v3/chat/completions"))
+        .and(header("authorization", "Bearer sk-plan-fixture"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({"error": {"message": "plan expired"}})))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let catalog = Catalog::from_toml(&format!(r#"
+        [providers.plan]
+        api = "openai-chat"
+        base_url = "{uri}/plan/v3"
+        api_key = "sk-plan-fixture"
+        list_models = false
+        plan = {{ key_url = "https://example.invalid/keys" }}
+        [[providers.plan.models]]
+        id = "shared-model"
+
+        [providers.regular]
+        api = "openai-chat"
+        base_url = "{uri}/api/v3"
+        api_key = "sk-payg-fixture"
+        list_models = false
+        [[providers.regular.models]]
+        id = "shared-model"
+        "#, uri = server.uri())).unwrap();
+    let llm = ModelRegistry::new(catalog, RegistryOptions::default());
+    let model = llm.resolve("plan/shared-model").unwrap().model;
+    let context = Context { system: String::new(), messages: vec![Message::from(UserMessage::text("hi"))], tools: vec![] };
+    let mut stream = llm.stream(model, context, RequestOptions::default());
+    let mut failed = false;
+    while let Some(event) = stream.next().await {
+        failed |= matches!(event, StreamEvent::Failed(_));
+    }
+    assert!(failed);
+    assert_eq!(server.received_requests().await.unwrap().len(), 1, "no request to the ordinary API");
+}

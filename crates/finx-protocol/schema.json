@@ -6288,6 +6288,17 @@
         },
         "name": {
           "type": "string"
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TokenPlanSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Subscription product metadata; API-key authentication alone does not imply a plan."
         }
       },
       "required": [
@@ -7712,6 +7723,30 @@
           "type": "string"
         }
       ]
+    },
+    "TokenPlanSummary": {
+      "description": "Connection details for a subscription product, never its secret or entitlement status.",
+      "properties": {
+        "api": {
+          "type": "string"
+        },
+        "base_url": {
+          "type": "string"
+        },
+        "dynamic_models": {
+          "type": "boolean"
+        },
+        "key_url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "api",
+        "base_url",
+        "dynamic_models",
+        "key_url"
+      ],
+      "type": "object"
     },
     "ToolCategory": {
       "description": "What a tool call does, for display. The values are a subset of the ACP tool kinds.",

@@ -884,6 +884,9 @@ pub struct SessionDefaults {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ProviderSummary {
+    /// Subscription product metadata; API-key authentication alone does not imply a plan.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan: Option<TokenPlanSummary>,
     pub id: String,
     pub name: String,
     pub auth: AuthKind,
@@ -897,6 +900,15 @@ pub struct ProviderSummary {
     /// Where its models came from; absent while it has no credentials.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub listing: Option<ProviderListing>,
+}
+
+/// Connection details for a subscription product, never its secret or entitlement status.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct TokenPlanSummary {
+    pub key_url: String,
+    pub base_url: String,
+    pub api: String,
+    pub dynamic_models: bool,
 }
 
 /// A provider's model list as the kernel last saw it.

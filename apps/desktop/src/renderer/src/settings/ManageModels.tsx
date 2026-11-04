@@ -22,7 +22,7 @@ export type ModelSource = {
   /** Why the last refresh failed. */
   failure?: string;
   /** Asks for the list again (models/refresh, connections/models). */
-  refresh: () => Promise<unknown>;
+  refresh?: () => Promise<unknown>;
 };
 
 /** "显示 2 / 共 2 个模型", "刚刚更新": a source's models as its row and the dialog say them. */
@@ -84,9 +84,9 @@ export function ManageModels({ source, onClose }: { source: ModelSource; onClose
       </div>
       <div className="mm-bar">
         <input className="field" type="search" placeholder={t("models.manage.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
-        <button className="btn" disabled={busy !== null || source.refreshing} onClick={() => void run("refresh", source.refresh)}>
+        {source.refresh && <button className="btn" disabled={busy !== null || source.refreshing} onClick={() => void run("refresh", source.refresh!)}>
           {refreshing ? t("models.manage.refreshing") : t("models.manage.refresh")}
-        </button>
+        </button>}
       </div>
       <p className="mm-status">{status}</p>
       {source.failure && <p className="mrow-err">{t("models.manage.failed", { message: source.failure })}</p>}

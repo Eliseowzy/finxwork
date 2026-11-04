@@ -186,6 +186,7 @@ impl ScriptedApi {
             headers: BTreeMap::new(),
         };
         ProviderConfig {
+            plan: None,
             id: PROVIDER_ID.into(),
             name: "Test".into(),
             api: API_ID.into(),

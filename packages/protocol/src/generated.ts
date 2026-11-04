@@ -1425,6 +1425,8 @@ export type ProviderSummary = {
   /** Where its models came from; absent while it has no credentials. */
   listing?: ProviderListing | null;
   name: string;
+  /** Subscription product metadata; API-key authentication alone does not imply a plan. */
+  plan?: TokenPlanSummary | null;
 };
 
 /** Input waiting for the running task. */
@@ -1834,6 +1836,14 @@ export type TaskTrigger = "user" | "mail";
 
 /** How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others are the providers' own levels, and a model offers only those it supports (docs/kernel/model-catalog-design.md §18). */
 export type ThinkingLevel = "default" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "on";
+
+/** Connection details for a subscription product, never its secret or entitlement status. */
+export type TokenPlanSummary = {
+  api: string;
+  base_url: string;
+  dynamic_models: boolean;
+  key_url: string;
+};
 
 /** What a tool call does, for display. The values are a subset of the ACP tool kinds. */
 export type ToolCategory = "read" | "edit" | "delete" | "move" | "search" | "execute" | "fetch" | "other";
