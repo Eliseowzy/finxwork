@@ -42,8 +42,6 @@ export function Sidebar() {
   // The list's own heading collapses every group, or opens them all once every one is shut.
   const ids = secs.map((sec) => `${sec.grouping}:${sec.key}`);
   const allShut = ids.length > 0 && ids.every((id) => st.collapsed.includes(id));
-  const list = useRef<HTMLDivElement>(null);
-  const gutter = useGutter(list, !bots);
   return (
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
@@ -85,7 +83,7 @@ export function Sidebar() {
         </>
       ) : (
       <>
-      <div className="side-lh" style={{ paddingRight: 8 + gutter }}>
+      <div className="side-lh">
         <button
           className={`side-lh-t ${allShut ? "shut" : ""}`}
           title={allShut ? t("sidebar.expandAll") : t("sidebar.collapseAll")}
@@ -98,7 +96,7 @@ export function Sidebar() {
         </button>
         <ListViewMenu />
       </div>
-      <div ref={list} className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
+      <div className={`side-list ${byProject ? "by-project" : ""}`} role="list" aria-label={t("sidebar.sessions")}>
         {secs.map((sec) => {
           const id = `${sec.grouping}:${sec.key}`;
           const open = !st.collapsed.includes(id);
@@ -535,25 +533,6 @@ function ListViewMenu() {
       )}
     </>
   );
-}
-
-/** The width a scroller's scrollbar takes from its content, so what sits above can line up with its rows. */
-function useGutter(ref: RefObject<HTMLElement | null>, shown: boolean): number {
-  const [gutter, setGutter] = useState(0);
-  useLayoutEffect(() => {
-    // Not there in Bot mode, which lists bots instead.
-    const el = ref.current;
-    if (!el) return;
-    const read = () => setGutter(el.offsetWidth - el.clientWidth);
-    const seen = new ResizeObserver(read);
-    seen.observe(el);
-    // Its rows coming and going change whether it scrolls without changing its own size.
-    const rows = new MutationObserver(read);
-    rows.observe(el, { childList: true, subtree: true });
-    read();
-    return () => (seen.disconnect(), rows.disconnect());
-  }, [shown]);
-  return gutter;
 }
 
 /**
