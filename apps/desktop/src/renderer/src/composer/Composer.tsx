@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { homePath } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
-import { permissionDesc, permissionTitle, menuModels, modelTitle, thinkingFor, thinkingTitle } from "../format";
+import { permissionDesc, permissionTitle, modelTitle, thinkingFor, thinkingTitle } from "../format";
 import { Icon } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
@@ -12,6 +12,7 @@ import { ConnectorsItem } from "./ConnectorsMenu";
 import { QuickSwitches } from "./QuickSwitches";
 import { SkillsItem } from "./SkillsMenu";
 import { keyEvent } from "./KeySetup";
+import { ModelList } from "./ModelList";
 import { PromptEditor, type EditorHandle } from "./PromptEditor";
 import { Tile } from "./Tile";
 
@@ -452,8 +453,8 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
  * Its menu starts, when the model can be told how hard to think, with one row
  * for the level — "default" (the provider decides) and the provider's own
  * levels for this model — which opens its own menu; then the models that can
- * be used (their provider at the right) and the current one even when its key
- * is missing, in a list of fixed height that scrolls. Choosing another model keeps the level when that model offers it, else
+ * be used and the current one even when its key is missing, by provider, in a
+ * list of fixed height that scrolls (ModelList). Choosing another model keeps the level when that model offers it, else
  * takes the level that model starts with, and says so (model-catalog-design
  * §18). Choosing a model whose key is missing asks for the key (§8.4).
  */
@@ -464,7 +465,9 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
   const entry = models.models.find((m) => m.id === current);
   const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
   const thinks = levels.length > 0;
-  const providerName = (id: string) => models.providers.find((p) => p.id === id)?.name ?? id;
+  // A name another provider's model in the menu has too says whose it is.
+  const twin = entry && models.models.some((m) => m.shown && m.id !== entry.id && m.name === entry.name);
+  const title = current ? modelTitle(current, models) + (twin ? ` · ${models.providers.find((p) => p.id === entry.provider)?.name ?? entry.provider}` : "") : t("composer.model");
   const choose = (id: string, provider: string, available: boolean) => {
     const next = models.models.find((m) => m.id === id);
     // A session's switch follows the kernel's rule, which thinkingFor mirrors.
@@ -482,7 +485,7 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
       title={t("composer.model")}
       label={
         <>
-          <span className="lbl strong">{current ? modelTitle(current, models) : t("composer.model")}</span>
+          <span className="lbl strong">{title}</span>
           {thinks && <span className="sub">{thinkingTitle(thinking)}</span>}
         </>
       }
@@ -501,17 +504,7 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
               <div className="msep" role="separator" />
             </>
           )}
-          <div className="mlist">
-            {menuModels(models, current).map((m) => (
-              <MenuItem
-                key={m.id}
-                checked={m.id === current}
-                label={m.name}
-                value={m.note ? t(`composer.${m.note}`) : providerName(m.provider)}
-                onClick={() => (close(), choose(m.id, m.provider, m.available))}
-              />
-            ))}
-          </div>
+          <ModelList models={models} current={current} search onPick={(m) => (close(), choose(m.id, m.provider, m.available))} />
         </>
       )}
     </MenuButton>

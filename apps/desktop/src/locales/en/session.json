@@ -187,6 +187,9 @@
     "gone": "Not in the model list",
     "thinkingChanged": "{{model}} has no “{{from}}” level; thinking is now “{{to}}”",
     "thinkingDefault": "The provider decides",
+    "recentModels": "Recent",
+    "findModel": "Search models or providers",
+    "noModel": "No matching models",
     "webComment": "Page comment",
     "webElement": "Page element",
     "webDetails": {
