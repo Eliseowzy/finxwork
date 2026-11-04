@@ -361,20 +361,20 @@ async fn a_message_to_a_running_agent_joins_its_next_turn() {
 #[tokio::test]
 async fn an_idle_agent_takes_new_work_and_keeps_its_history() {
     let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
-    h.script(ROOT, spawn("c1", "helper", "First job.", true));
+    h.script(ROOT, spawn("c1", "worker", "First job.", true));
     h.script(
         ROOT,
-        Script::tool_call("c2", "send_message", json!({ "to": "helper", "message": "Second job.", "wait": true })),
+        Script::tool_call("c2", "send_message", json!({ "to": "worker", "message": "Second job.", "wait": true })),
     );
     h.script(ROOT, Script::text("ok"));
-    h.script("helper", Script::text("first result"));
-    h.script("helper", Script::text("second result"));
+    h.script("worker", Script::text("first result"));
+    h.script("worker", Script::text("second result"));
     h.prompt("two jobs").await;
     h.until_idle().await;
 
     let second = tool_results(&h.requests(ROOT)[2]).pop().unwrap();
     assert!(second.ends_with("second result"), "{second}");
-    let history = user_texts(&h.requests("helper")[1]);
+    let history = user_texts(&h.requests("worker")[1]);
     assert!(history[0].contains("First job."));
     assert_eq!(history.last().unwrap(), "Second job.");
 }

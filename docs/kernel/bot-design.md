@@ -199,7 +199,7 @@ pub enum PromptProfile {
 - **内核自己决定用哪个配置**：`Kernel::start` 带 `bot` 时用 Bot 配置，否则用会话配置。提示词的文字不经过协议，桌面端只告诉服务层"打开这个 Bot"。
 - **共用的两节**：base.md 里"Numbers and data""Acting with care"两节，两种配置都要。把它们移到 `prompts/shared/numbers_and_data.md` 和 `prompts/shared/acting_with_care.md`，base.md 和 bot.md 用 `{{numbers_and_data}}`、`{{acting_with_care}}` 引用，内置文本第一次用时替换一次。会话配置拼出的文字与现在逐字相同（测试拿现在的 base.md 原文比对）。各自不同的是身份、一轮怎么过、怎么工作、怎么说话（bot.md 全文见附录 A.1）。
 - **覆盖文件也按配置分**：`system_prompt_file` 只换会话配置的基础段，意思不变；另加 `bot_prompt_file` 换 Bot 配置的。覆盖文件里也可以用上面这些标记。`bot_prompt_file` 的用途是调提示词时不用重新编译，验收时改几句就能对比。
-- **子智能体用会话配置**：子智能体本来沿用父的系统提示词（子智能体方案 D-42）。Bot 的提示词讲的是怎么跟主人聊天、只有 `send_to_user` 可见，子智能体没有这个工具，它的回复是写给 Bot 的汇报。所以 Bot 会话开始时，用同一份输入（工作目录、指令、技能、环境）按会话配置多拼一份，存在 `SessionState.helper_prompt`；`spawn_agent` 有它就用它代替父的基础提示词。指令和技能只扫描一次，拼两遍。恢复 Bot 会话时按当时的输入重拼这一份：子智能体都是新会话，本来就以当时为准。
+- **子智能体用会话配置**：子智能体本来沿用父的系统提示词（子智能体方案 D-42）。Bot 的提示词讲的是怎么跟主人聊天、只有 `send_to_user` 可见，子智能体没有这个工具，它的回复是写给 Bot 的汇报。所以 Bot 会话开始时，用同一份输入（工作目录、指令、技能、环境）按会话配置多拼一份，存在 `SessionState.sub_agent_prompt`；`spawn_agent` 有它就用它代替父的基础提示词。指令和技能只扫描一次，拼两遍。恢复 Bot 会话时按当时的输入重拼这一份：子智能体都是新会话，本来就以当时为准。
   - 代价：子智能体的第一个请求用不上 Bot 提示词的缓存。子智能体与 Bot 的工具列表本来就不同（没有智能体工具和 `send_to_user`），损失只是一次系统提示词长度的未命中。
 
 **为什么不让桌面端把提示词传进来**
@@ -499,10 +499,10 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 | `src/prompts/base.md`、`src/prompts/bot.md`（新）、`src/prompts/shared/numbers_and_data.md`（新）、`src/prompts/shared/acting_with_care.md`（新） | 附录 A |
 | `src/config.rs` | `bot_prompt_file` |
 | `src/bot.rs`（新） | `BotIdentity { id, name }`；`SendToUser` 工具；`tools()`；`unanswered()`：主人最近的一句话有没有回过（§3.11） |
-| `src/kernel.rs` | `StartOptions.bot`、`ResumeOptions.bot_name`；按头部挂 `send_to_user`；按配置拼提示词，Bot 会话多拼一份 `helper_prompt`；`set_bot_name()` |
-| `src/session.rs` | `SessionState` 记 Bot 的名字（头部的和当前的）与 `helper_prompt`；`note_bot_name()`；`unanswered()`；填 `own_folder` |
+| `src/kernel.rs` | `StartOptions.bot`、`ResumeOptions.bot_name`；按头部挂 `send_to_user`；按配置拼提示词，Bot 会话多拼一份 `sub_agent_prompt`；`set_bot_name()` |
+| `src/session.rs` | `SessionState` 记 Bot 的名字（头部的和当前的）与 `sub_agent_prompt`；`note_bot_name()`；`unanswered()`；填 `own_folder` |
 | `src/context.rs` | `BotName` 条目变成环境更新的消息；`name_in_context()`；`Unanswered` 条目变成提醒（附录 A.6） |
-| `src/agents/mod.rs` | `spawn` 有 `helper_prompt` 时用它（§2.3） |
+| `src/agents/mod.rs` | `spawn` 有 `sub_agent_prompt` 时用它（§2.3） |
 | `src/tool_exec.rs` | 成功的 `ends_task` 结果记到 `TaskCtx` |
 | `src/task.rs` | 这一批之后检查结束标记（§3.3）；轮次边界调 `note_bot_name`；正常结束前没回话时提醒一次（§3.11） |
 | `tests/bot.rs`（新） | §8 的内核测试 |

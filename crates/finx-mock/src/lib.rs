@@ -461,7 +461,7 @@ fn unanswered_sends(messages: &[Value]) -> Vec<String> {
     if texts.is_empty() { vec!["send done".to_string()] } else { texts }
 }
 
-/// The text of the latest user message: a report, after a bot's helper finished.
+/// The text of the latest user message: a report, after a bot's sub-agent finished.
 fn last_user_text(messages: &[Value]) -> String {
     messages
         .iter()
