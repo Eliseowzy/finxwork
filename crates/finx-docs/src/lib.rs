@@ -3,6 +3,7 @@
 //! (`finx doc-worker`).
 
 mod atomic;
+pub mod autofill;
 pub mod engine;
 pub mod kind;
 pub mod layout;

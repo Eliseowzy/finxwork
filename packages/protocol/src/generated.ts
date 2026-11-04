@@ -540,6 +540,20 @@ export type DocApplyResult = {
   revision: number;
 };
 
+/** `doc/autofill`: Excel's fill handle dragged from `source` to `target` (the source with the rows or columns the drag added on one side), as one edit. Numbers, dates, text ending in a number and the built-in lists (周一, 一月, Jan…) carry on as a series; anything else, and formulas moved as Excel moves them, repeats. */
+export type DocAutofillParams = {
+  base_revision?: number | null;
+  doc_id: string;
+  /** Only work it out, for what the drag shows as it goes: nothing is written. */
+  preview?: boolean;
+  session_id: string;
+  sheet: string;
+  source: string;
+  /** The key Excel holds to switch (⌥ on a Mac, Ctrl elsewhere): a single number counts up, a series is copied instead. */
+  switch?: boolean;
+  target: string;
+};
+
 /** A range of a sheet, as the grid shows it (spreadsheet-design §7 `doc/cells`). */
 export type DocCellsParams = {
   doc_id: string;
@@ -2186,6 +2200,7 @@ export interface Methods {
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
   "doc/apply": [DocApplyParams, DocApplyResult];
+  "doc/autofill": [DocAutofillParams, DocApplyResult];
   "doc/cells": [DocCellsParams, DocCellsResult];
   "doc/close": [DocIdParams, Empty];
   "doc/fill": [DocFillParams, DocApplyResult];

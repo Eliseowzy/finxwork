@@ -101,6 +101,11 @@ pub fn document() -> Value {
             name::<crate::doc::DocApplyResult>(g),
         ),
         (
+            method::DOC_AUTOFILL,
+            Some(name::<crate::doc::DocAutofillParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
             method::DOC_SAVE,
             Some(name::<crate::doc::DocSaveParams>(g)),
             name::<crate::doc::DocInfo>(g),

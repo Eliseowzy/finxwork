@@ -279,6 +279,7 @@ try {
   });
   await page.run(`(() => { const x = document.querySelector(".dcp-viewer:not([hidden]) .sht-formula"); x.focus(); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set; set.call(x, "9%"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
   await page.until("WACC changed", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="B6"]')?.textContent === "9.0%" && !!document.querySelector(".fpn-tab.on.dirty")`, 10000);
+  await page.until("ask agent offered for a cell with a value", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools button")`);
   await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools button").click()`);
   await page.until("the cell quote in the composer", `!!document.querySelector(".tile.quote")`);
   // ⌘S saves the workbook in view even with the focus in the composer.
@@ -397,13 +398,32 @@ try {
   for (let i = 0; i < 3; i++) await key("ArrowDown", "ArrowDown", 40, 8);
   await key("d", "KeyD", 68, META);
   await until("filled down", async () => { const v = await valuesAt("H2:H5"); return v.H4 === 1 && v.H5 === 1; }, 5000);
+  // The fill handle: 1…4 dragged down four rows carries on to 8, the tip showing 8 on the way.
+  await goCell("J2");
+  await page.run(`(() => { const d = new DataTransfer(); d.setData("text/plain", "1\\n2\\n3\\n4\\n"); document.querySelector("${V} .sht-canvas").dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
+  await until("1…4 pasted", async () => (await valuesAt("J5")).J5 === 4, 5000);
+  await page.until("the fill handle", `!!document.querySelector("${V} .sht-fill-handle")`);
+  const centre = (sel) => page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  const handle = await centre(`${V} .sht-fill-handle`);
+  const j9 = await centre(`${V} .sht-c[data-cell="J9"]`);
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...handle });
+  await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...handle, button: "left", clickCount: 1 });
+  for (let i = 1; i <= 4; i++) await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: handle.x, y: handle.y + ((j9.y - handle.y) * i) / 4, button: "left", buttons: 1 });
+  await page.until("the drag's tip", `/^8(\\.0+)?$/.test(document.querySelector("${V} .sht-fill-tip")?.textContent ?? "")`, 5000);
+  check(await page.run(`!!document.querySelector("${V} .sht-fill-to")`), "the drag draws no box");
+  await page.shot("1-fill-drag");
+  await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...j9, button: "left", clickCount: 1 });
+  await until("filled on to 8", async () => { const v = await valuesAt("J6:J9"); return v.J6 === 5 && v.J9 === 8; }, 5000);
+  await page.until("the filled cells selected, 1…8 summed", `/8/.test(document.querySelector("${V} .sht-stats")?.textContent ?? "") && /36/.test(document.querySelector("${V} .sht-stats")?.textContent ?? "")`, 5000);
+  await page.until("J9 shown", `/^8(\\.0+)?$/.test(document.querySelector('${V} .sht-c[data-cell="J9"]')?.textContent ?? "")`);
+  await page.shot("1-fill-done");
   await goCell("C4");
   await page.run(`(() => { const x = document.querySelector("${V} .sht-formula"); x.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(x, "5"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
   await page.until("C4 marked as typed among formulas", `!!document.querySelector('${V} .sht-c[data-cell="C4"].hard')`);
   check(!(await page.run(`!!document.querySelector("${V} .sht-agent")`)), "a person's own edits were taken for the agent's");
   await page.shot("1-tools");
   await page.run(`document.querySelector("${V} .sht-canvas").focus()`);
-  for (let i = 0; i < 3; i++) await key("z", "KeyZ", 90, META);
+  for (let i = 0; i < 5; i++) await key("z", "KeyZ", 90, META);
   await page.until("the edits undone", `!document.querySelector(".fpn-tab.on.dirty")`, 10000);
   await page.run(`[...document.querySelectorAll(".fpn-tab")].find((x) => x.textContent.includes("app.ts")).click()`);
   await page.until("app.ts back in front", `${activeTab} === "app.ts"`);

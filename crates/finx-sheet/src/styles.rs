@@ -228,6 +228,13 @@ pub fn format_number(v: f64, fmt: &str, date1904: bool) -> (String, Option<&'sta
     (text, color)
 }
 
+/// Whether a number format shows a number as a date or a time (its first section decides).
+pub fn is_date_format(fmt: &str) -> bool {
+    let sections = split_sections(fmt);
+    let (section, _) = take_color(sections[0].as_str());
+    !(section.eq_ignore_ascii_case("general") || section.is_empty()) && is_date(&section)
+}
+
 pub fn general(v: f64) -> String {
     if v == 0.0 {
         return "0".into();

@@ -313,4 +313,31 @@ async fn the_grid_traces_finds_and_fills() {
     // Nothing to fill into: refused, nothing written.
     let refused = client.request("doc/fill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "K1", "direction": "down"})).await;
     assert!(refused.is_err());
+
+    // The fill handle: 1…4 dragged down carries on to 8, Q1 counts on, a formula moves; one edit.
+    let ops = json!([
+        {"op": "set_value", "sheet": "假设", "cell": "M1", "value": 1}, {"op": "set_value", "sheet": "假设", "cell": "M2", "value": 2},
+        {"op": "set_value", "sheet": "假设", "cell": "M3", "value": 3}, {"op": "set_value", "sheet": "假设", "cell": "M4", "value": 4},
+        {"op": "set_value", "sheet": "假设", "cell": "N1", "value": "Q1"}, {"op": "set_formula", "sheet": "假设", "cell": "O1", "formula": "=M1*2"},
+    ]);
+    client.request("doc/apply", json!({"session_id": session, "doc_id": doc, "ops": ops})).await.unwrap();
+    // Previewed as the drag goes: what the last cell would show, nothing written.
+    let preview = client.request("doc/autofill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "source": "M1:M4", "target": "M1:M8", "preview": true})).await.unwrap();
+    assert!(preview["impact"]["edited"].as_array().unwrap().iter().any(|e| e["cell"] == "M8" && e["after_text"] == "8"), "{preview}");
+    let untouched = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "M8"})).await.unwrap();
+    assert!(untouched["cells"].as_array().unwrap().iter().all(|c| c["value"].is_null()), "{untouched}");
+    let dragged = client.request("doc/autofill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "source": "M1:M4", "target": "M1:M8"})).await.unwrap();
+    schema.check("DocApplyResult", &dragged);
+    let m = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "M5:M8"})).await.unwrap();
+    assert_eq!(cell(&m, "M8")["value"], json!({"type": "number", "value": 8.0}));
+    client.request("doc/autofill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "source": "N1:O1", "target": "N1:O3"})).await.unwrap();
+    let n = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "N3:O3"})).await.unwrap();
+    assert_eq!(cell(&n, "N3")["value"], json!({"type": "text", "value": "Q3"}));
+    assert_eq!(cell(&n, "O3")["formula"], "=M3*2");
+    // Dragged up from M5:M8 (5…8): 4 above it, written over the old one.
+    client.request("doc/autofill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "source": "M5:M8", "target": "M4:M8"})).await.unwrap();
+    let m4 = client.request("doc/cells", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "range": "M4"})).await.unwrap();
+    assert_eq!(cell(&m4, "M4")["value"], json!({"type": "number", "value": 4.0}));
+    // Not along one side: refused.
+    assert!(client.request("doc/autofill", json!({"session_id": session, "doc_id": doc, "sheet": "假设", "source": "M1:M4", "target": "M1:N8"})).await.is_err());
 }

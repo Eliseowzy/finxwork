@@ -155,6 +155,14 @@ impl Server {
         Ok(DocApplyResult { revision, impact, dirty })
     }
 
+    /// The grid's fill handle: the series worked out by the worker, applied as one edit.
+    pub(crate) async fn doc_autofill(&self, p: finx_protocol::doc::DocAutofillParams) -> Result<DocApplyResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let ops = self.0.docs.autofill_ops(&doc, &p.sheet, &p.source, &p.target, p.switch).await.map_err(rpc_error)?;
+        let (revision, impact, dirty) = self.0.docs.apply(&doc, &p.session_id, ops, p.base_revision, p.preview).await.map_err(rpc_error)?;
+        Ok(DocApplyResult { revision, impact, dirty })
+    }
+
     pub(crate) async fn doc_save(&self, p: DocSaveParams) -> Result<DocInfo, RpcError> {
         let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
         let to = match &p.path {

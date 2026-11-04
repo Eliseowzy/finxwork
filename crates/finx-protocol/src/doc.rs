@@ -539,6 +539,28 @@ pub struct DocFillParams {
     pub base_revision: Option<u64>,
 }
 
+/// `doc/autofill`: Excel's fill handle dragged from `source` to `target` (the source with the
+/// rows or columns the drag added on one side), as one edit. Numbers, dates, text ending in a
+/// number and the built-in lists (周一, 一月, Jan…) carry on as a series; anything else, and
+/// formulas moved as Excel moves them, repeats.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DocAutofillParams {
+    pub session_id: String,
+    pub doc_id: String,
+    pub sheet: String,
+    pub source: String,
+    pub target: String,
+    /// The key Excel holds to switch (⌥ on a Mac, Ctrl elsewhere): a single number counts up,
+    /// a series is copied instead.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub switch: bool,
+    /// Only work it out, for what the drag shows as it goes: nothing is written.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub preview: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<u64>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DocRecalcParams {
     pub session_id: String,

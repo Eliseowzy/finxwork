@@ -683,6 +683,13 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::DOC_AUTOFILL => match finx_rpc::params::<finx_protocol::doc::DocAutofillParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_autofill(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::DOC_SAVE => match finx_rpc::params::<finx_protocol::doc::DocSaveParams>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();

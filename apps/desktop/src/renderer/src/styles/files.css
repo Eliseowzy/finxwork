@@ -159,6 +159,9 @@
 .sht-sel.multi{background:none;border-width:2px}
 .sht-sel.multi::before{content:"";position:absolute;inset:-2px;background:color-mix(in srgb,var(--accent) 10%,transparent);clip-path:var(--sht-hole)}
 .sht-active{position:absolute;pointer-events:none;border:2px solid var(--accent);box-sizing:border-box}
+.sht-fill-handle{position:absolute;z-index:7;width:7px;height:7px;background:var(--accent);border:1px solid var(--sht-bg,var(--win));box-sizing:border-box;cursor:crosshair}
+.sht-fill-to{position:absolute;pointer-events:none;border:1px dashed var(--accent);box-sizing:border-box}
+.sht-fill-tip{position:absolute;z-index:10;padding:2px 6px;border:1px solid var(--sep);border-radius:var(--r-xs);background:var(--win);box-shadow:var(--shadow);color:var(--l1);font-size:11px;white-space:nowrap;pointer-events:none}
 .sht-edit{position:absolute;box-sizing:border-box;font:inherit;padding:0 4px;border:2px solid var(--accent);background:var(--sht-bg);color:var(--l1);outline:none}
 .sht-tabs{flex:none;display:flex;align-items:center;gap:8px;padding:4px 8px;border-top:.5px solid var(--sep);min-width:0}
 .sht-tablist{flex:1;min-width:0;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
@@ -167,8 +170,7 @@
 .sht-tab:hover{background:var(--fill)}
 .sht-tab.on{background:var(--fill2);color:var(--l1);font-weight:600}
 .sht-tab .ic{width:12px;height:12px}
-.sht-selection-tools{position:absolute;z-index:10;transform:translateX(-50%);height:30px;display:flex;align-items:center;gap:2px;padding:3px 5px;border:1px solid var(--sep);border-radius:var(--r-md);background:var(--win);box-shadow:var(--shadow);font-size:11px;white-space:nowrap;cursor:default}
-.sht-selection-tools>span{padding:0 6px;color:var(--l3);font-family:var(--mono)}
+.sht-selection-tools{position:absolute;z-index:10;height:30px;display:flex;align-items:center;gap:2px;padding:3px 5px;border:1px solid var(--sep);border-radius:var(--r-md);background:var(--win);box-shadow:var(--shadow);font-size:11px;white-space:nowrap;cursor:default}
 .sht-selection-tools button{height:24px;display:flex;align-items:center;gap:4px;padding:0 7px;border:0;border-radius:var(--r-xs);background:none;color:var(--l1);font:inherit;cursor:default}
 .sht-selection-tools button:hover{background:var(--fill)}
 .sht-selection-tools .ic{width:12px;height:12px}

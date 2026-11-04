@@ -240,14 +240,23 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
 
   // The status bar's figures for the selection, as in Excel; read from finx, so cells out of sight count too.
   const [stats, setStats] = useState<SelectionStats | null>(null);
+  // The selection last read, and whether anything was in it (a single cell has no figures but may hold a value).
+  const [statsOf, setStatsOf] = useState({ key: "", any: false });
+  const statsKey = `${sheetName}!${selectedRange}`;
+  const inUse = { r1: Math.max(selected.r1, used.r1), c1: Math.max(selected.c1, used.c1), r2: Math.min(selected.r2, used.r2), c2: Math.min(selected.c2, used.c2) };
+  const inUseSize = inUse.r1 > inUse.r2 || inUse.c1 > inUse.c2 ? 0 : (inUse.r2 - inUse.r1 + 1) * (inUse.c2 - inUse.c1 + 1);
+  // Only a selection with something in it is offered to the agent; one too large to count is taken to have.
+  const selectionFilled = inUseSize > STATS_MAX_CELLS || (inUseSize > 0 && statsOf.key === statsKey && statsOf.any);
   useEffect(() => {
-    const inUse = { r1: Math.max(selected.r1, used.r1), c1: Math.max(selected.c1, used.c1), r2: Math.min(selected.r2, used.r2), c2: Math.min(selected.c2, used.c2) };
-    const size = (inUse.r2 - inUse.r1 + 1) * (inUse.c2 - inUse.c1 + 1);
-    if (!sheet || sheet.chart || inUse.r1 > inUse.r2 || inUse.c1 > inUse.c2 || size > STATS_MAX_CELLS) return setStats(null);
+    if (!sheet || sheet.chart || inUseSize === 0 || inUseSize > STATS_MAX_CELLS) return setStats(null);
     let gone = false;
     const timer = setTimeout(() => {
       rpc.request("doc/cells", { session_id: session, doc_id: docId, sheet: sheet.name, range: rangeText(inUse) })
-        .then((r) => !gone && setStats(selectionStats(r.cells, selected)))
+        .then((r) => {
+          if (gone) return;
+          setStats(selectionStats(r.cells, selected));
+          setStatsOf({ key: statsKey, any: r.cells.some((c) => !!c.text || !!c.value) });
+        })
         .catch(() => !gone && setStats(null));
     }, 80);
     return () => {
@@ -309,6 +318,88 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       : rangeText(g);
     if (!range) return;
     void edited(() => rpc.request("doc/fill", { session_id: session, doc_id: docId, sheet: sheet.name, range, direction, base_revision: revision() }));
+  };
+
+  /** The fill handle being dragged: the cells it would fill to, and what the farthest would show. */
+  const [filling, setFilling] = useState<{ to: Area; tip: string | null } | null>(null);
+  const fillSeq = useRef(0);
+
+  /** Dragging Excel's fill handle: the drag adds rows or columns on the side it goes furthest past; inside the source, it takes them back. */
+  const dragFill = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!sheet || !editable || e.button !== 0) return;
+    const from = selected;
+    const name = sheet.name;
+    const anchor = sel.anchor;
+    const same = (a: Area, b: Area) => a.r1 === b.r1 && a.c1 === b.c1 && a.r2 === b.r2 && a.c2 === b.c2;
+    const grows = (to: Area) => to.r1 < from.r1 || to.r2 > from.r2 || to.c1 < from.c1 || to.c2 > from.c2;
+    const switched = (ev: MouseEvent) => ev.altKey || ev.ctrlKey;
+    const targetOf = (q: Pos): Area => {
+      const down = q.r - from.r2, up = from.r1 - q.r, right = q.c - from.c2, left = from.c1 - q.c;
+      const v = Math.max(down, up), h = Math.max(right, left);
+      if (v <= 0 && h <= 0) {
+        if (q.r < from.r2 && from.r2 - q.r >= from.c2 - q.c) return { ...from, r2: q.r };
+        if (q.c < from.c2) return { ...from, c2: q.c };
+        return from;
+      }
+      if (v >= h) return down > 0 ? { ...from, r2: q.r } : { ...from, r1: q.r };
+      return right > 0 ? { ...from, c2: q.c } : { ...from, c1: q.c };
+    };
+    // The cell whose value the tip shows: the farthest the drag reaches, in the source's first line.
+    const farthest = (to: Area) =>
+      to.r2 > from.r2 ? addr({ r: to.r2, c: from.c1 }) : to.r1 < from.r1 ? addr({ r: to.r1, c: from.c1 }) : to.c2 > from.c2 ? addr({ r: from.r1, c: to.c2 }) : addr({ r: from.r1, c: to.c1 });
+    let to = from;
+    let held = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const preview = () => {
+      clearTimeout(timer);
+      const mine = ++fillSeq.current;
+      if (!grows(to)) return;
+      const target = to;
+      timer = setTimeout(() => {
+        rpc.request("doc/autofill", { session_id: session, doc_id: docId, sheet: name, source: rangeText(from), target: rangeText(target), switch: held, preview: true })
+          .then((r) => {
+            if (mine !== fillSeq.current) return;
+            const shown = r.impact.edited.find((x) => x.sheet === name && x.cell === farthest(target))?.after_text;
+            setFilling((f) => f && { ...f, tip: shown || null });
+          })
+          .catch(() => {});
+      }, 120);
+    };
+    const move = (ev: MouseEvent) => {
+      const q = pick(ev as unknown as React.MouseEvent);
+      if (!q) return;
+      const next = targetOf(q);
+      if (same(next, to) && switched(ev) === held) return;
+      to = next;
+      held = switched(ev);
+      setFilling({ to, tip: null });
+      preview();
+    };
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      clearTimeout(timer);
+      fillSeq.current++;
+      document.body.style.cursor = "";
+      setFilling(null);
+      if (same(to, from)) return;
+      const target = to;
+      const corner = { r: anchor.r === target.r1 ? target.r2 : target.r1, c: anchor.c === target.c1 ? target.c2 : target.c1 };
+      setSel({ anchor, focus: corner });
+      if (grows(target)) {
+        void edited(() => rpc.request("doc/autofill", { session_id: session, doc_id: docId, sheet: name, source: rangeText(from), target: rangeText(target), switch: switched(ev), base_revision: revision() }));
+      } else {
+        // Taken back inside the source: the rows (or columns) given up are emptied.
+        const gone = target.r2 < from.r2 ? { ...from, r1: target.r2 + 1 } : { ...from, c1: target.c2 + 1 };
+        void apply([{ op: "clear", sheet: name, range: rangeText(gone) }]);
+      }
+      grid.current?.focus();
+    };
+    document.body.style.cursor = "crosshair";
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
   };
 
   /** A paste: the clipboard's text, cell by cell from the selection's top-left, as one edit; values only, as typed. */
@@ -847,7 +938,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
           <span className={`fpn-state ${dirty ? "dirty" : ""}`}>{dirty ? t("sheet.unsaved") : ""}</span>
           <button className={`tb ${find ? "on" : ""}`} title={t("sheet.find")} aria-label={t("sheet.find")} onClick={() => (find ? setFind(null) : openFind())}><Icon name="search" /></button>
           <button className={`tb ${showHistory ? "on" : ""}`} title={t("sheet.history")} aria-label={t("sheet.history")} onClick={() => setShowHistory((v) => !v)}><Icon name="clock" /></button>
-          <Tool icon="ext" label={t("sheet.openInExcel")} tip={t("sheet.openExcel")} onClick={() => void openExcel()} />
+          <button className="tb" title={t("sheet.openInExcel")} aria-label={t("sheet.openInExcel")} onClick={() => void openExcel()}><Icon name="ext" /></button>
         </div>
       </div>
       <div className="sht-bar">
@@ -963,6 +1054,20 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
             )}
             <div className={`sht-sel ${multi ? "multi" : ""}`} style={selBox} />
             {!multi && <div className="sht-active" style={{ ...activeBox, zIndex: 5 }} />}
+            {filling && (() => {
+              const to = filling.to;
+              const box = place(to.r1, to.c1, colLeft[to.c2 + 1] - colLeft[to.c1], rowY(to.r2 + 1) - rowY(to.r1));
+              return (
+                <>
+                  <div className="sht-fill-to" style={{ ...box, zIndex: 6 }} />
+                  {filling.tip && <div className="sht-fill-tip" style={{ left: Math.min((box.left as number) + (box.width as number) + 6 / zoom, view.left + view.w - 80 / zoom), top: Math.min((box.top as number) + (box.height as number) + 6 / zoom, view.top + view.h - 30 / zoom), transform: `scale(${1 / zoom})`, transformOrigin: "top left" }}>{filling.tip}</div>}
+                </>
+              );
+            })()}
+            {editable && !editing && !filling && (
+              <div className="sht-fill-handle" aria-label={t("sheet.fillHandle")} title={t("sheet.fillHandle")} onMouseDown={dragFill}
+                style={{ left: (selBox.left as number) + (selBox.width as number) - 4, top: (selBox.top as number) + (selBox.height as number) - 4 }} />
+            )}
             {editing && !editing.inBar && (
               <input
                 autoFocus
@@ -984,11 +1089,12 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
                 }}
               />
             )}
-            {!editing && (
-              <div className="sht-selection-tools" onMouseDown={(e) => e.stopPropagation()} style={{ left: view.left + view.w / 2, top: view.top + view.h - 44 / zoom, transform: `translateX(-50%) scale(${1 / zoom})`, transformOrigin: "top center" }}>
-                <span>{sheet.name}!{selectedRange}</span>
-                <button onClick={(e) => { e.stopPropagation(); void quoteSelection(); }}><Icon name="chat" />{t("sheet.askFinx")}</button>
-                <button onClick={(e) => { e.stopPropagation(); void copySelection(); }}><Icon name="copy" />{t("sheet.copy")}</button>
+            {!editing && !filling && selectionFilled && (
+              <div className="sht-selection-tools" onMouseDown={(e) => e.stopPropagation()} style={{
+                left: Math.max(view.left + HEAD_W, Math.min((selBox.left as number) + (selBox.width as number) + 8 / zoom, view.left + view.w - 96 / zoom)),
+                top: Math.max(view.top + HEAD_H, Math.min((selBox.top as number) + (selBox.height as number) + 8 / zoom, view.top + view.h - 40 / zoom)),
+                transform: `scale(${1 / zoom})`, transformOrigin: "top left" }}>
+                <button onClick={(e) => { e.stopPropagation(); void quoteSelection(); }}><Icon name="chat" />{t("sheet.askAgent")}</button>
               </div>
             )}
           </div>
