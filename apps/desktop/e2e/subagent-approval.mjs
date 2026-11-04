@@ -11,6 +11,7 @@
 //   node apps/desktop/e2e/subagent-approval.mjs
 //   FINXWORK_E2E_SHOTS=<folder> …   also screenshots each step
 //   FINXWORK_E2E_NO_BUILD=1 …       uses the builds there are
+//   FINXWORK_E2E_APP=dist/FinxWork.app/Contents/MacOS/FinxWork …   the packaged app, with its own finx
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
@@ -23,6 +24,7 @@ const finx = path.join(root, "target/debug/finx");
 const mockModel = path.join(root, "target/debug/finx-mock");
 const electron = path.join(desktop, "node_modules/.bin/electron");
 const shots = process.env.FINXWORK_E2E_SHOTS;
+const packaged = process.env.FINXWORK_E2E_APP ? path.resolve(process.env.FINXWORK_E2E_APP) : null;
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { stdio: "inherit", ...opts });
 const step = (s) => console.log(`\n▶ ${s}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,8 +69,8 @@ let app = null;
 let model = null;
 async function launch() {
   const port = 9400 + Math.floor(Math.random() * 400);
-  app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+  app = spawn(packaged ?? electron, packaged ? [`--remote-debugging-port=${port}`] : [desktop, `--remote-debugging-port=${port}`], {
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -134,7 +136,7 @@ const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub
 let failed = false;
 let page = null;
 try {
-  if (!process.env.FINXWORK_E2E_NO_BUILD) {
+  if (!process.env.FINXWORK_E2E_NO_BUILD && !packaged) {
     step("building finx, its test servers and the app");
     sh("cargo", ["build", "-p", "finx-cli", "-p", "finx-mock"], { cwd: root });
     sh("pnpm", ["--dir", desktop, "build"]);
