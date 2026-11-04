@@ -368,13 +368,13 @@ try {
   await goCell("B3");
   await page.run(`(() => { const x = document.querySelector("${V} .sht-unitsel"); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(x, "10000"); x.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   await page.until("B3 in 万", `${shownText("B3")} === "0.13"`);
-  check(await page.run(`!!document.querySelector("${V} .sht-lens") && !!document.querySelector("${V} .sht-h.col .sht-unit") && !!document.querySelector("${V} .sht-raw")`), "the unit is not said on the toolbar, the column and the formula bar");
+  check(await page.run(`!!document.querySelector("${V} .sht-h.col .sht-unit") && !!document.querySelector("${V} .sht-raw")`), "the unit is not said on the column and the formula bar");
   const bar = await page.run(`document.querySelector("${V} .sht-formula").value`);
   check(bar === "1344" || bar.startsWith("="), `the formula bar shows ${JSON.stringify(bar)}, not the file's value`);
   check(!(await page.run(`!!document.querySelector(".fpn-tab.on.dirty")`)), "a display unit made the workbook unsaved");
   await page.run(`${tool((s) => s.sheet.decimalsMore)}.click()`);
   await page.until("one more decimal", `${shownText("B3")} === "0.134"`);
-  await page.run(`document.querySelector("${V} .sht-lens button").click()`);
+  await page.run(`(() => { const x = document.querySelector("${V} .sht-unitsel"); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value").set.call(x, "reset"); x.dispatchEvent(new Event("change", { bubbles: true })); })()`);
   await page.until("B3 as in the file", `${shownText("B3")} === "1,344.00"`);
   step("⌘F finds a cell and goes to it");
   await page.run(`${tool((s) => s.sheet.find)}.click()`);

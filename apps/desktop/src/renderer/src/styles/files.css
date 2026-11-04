@@ -111,10 +111,6 @@
 .sht-unitsel{height:24px;font:inherit;font-size:12.5px;background:var(--field);color:var(--l1);border:0;border-radius:var(--r-xs);padding:0 4px;outline:none}
 .sht-unitsel:focus{box-shadow:0 0 0 1.5px var(--accent)}
 .sht-tools .sht-dec{font-family:var(--mono);font-size:11px;min-width:30px}
-.sht-lens{flex:none;display:flex;align-items:center;gap:2px;height:22px;padding:0 2px 0 9px;border-radius:11px;background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent);font-size:12px;white-space:nowrap}
-.sht-lens button{border:0;background:none;color:inherit;width:18px;height:18px;display:grid;place-items:center;border-radius:9px;cursor:default}
-.sht-lens button:hover{background:color-mix(in srgb,var(--accent) 20%,transparent)}
-.sht-lens .ic{width:10px;height:10px}
 .sht-raw{flex:none;font-size:11.5px;color:var(--accent);padding:0 4px;white-space:nowrap}
 .sht-unit{margin-left:3px;font-size:9.5px;line-height:13px;padding:0 3px;border-radius:3px;background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
 .sht-h.col{grid-auto-flow:column}

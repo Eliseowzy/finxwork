@@ -834,17 +834,13 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         </div>
         <span className="sht-sep" />
         <div className="sht-group sht-numfmt">
-          <select className="sht-unitsel" aria-label={t("sheet.unit")} title={t("sheet.unitTip")} value={activeLens?.unit ?? 1} onChange={(e) => setSheetLenses(withLens(sheetLenses ?? [], lensArea(), { unit: Number(e.target.value) as Unit }))}>
+          <select className="sht-unitsel" aria-label={t("sheet.unit")} title={t("sheet.unitTip")} value={activeLens?.unit ?? 1} onChange={(e) => setSheetLenses(e.target.value === "reset" ? [] : withLens(sheetLenses ?? [], lensArea(), { unit: Number(e.target.value) as Unit }))}>
             {UNITS.map((u) => <option key={u} value={u}>{unitName(u)}</option>)}
+            {/* Everything on the sheet back as the file shows it. */}
+            {!!sheetLenses?.length && <option value="reset">{t("sheet.lensClear")}</option>}
           </select>
           <button className="tb sht-dec" title={t("sheet.decimalsMore")} aria-label={t("sheet.decimalsMore")} onClick={() => setSheetLenses(withLens(sheetLenses ?? [], lensArea(), { decimals: (had) => Math.min(10, (had ?? decimalsOf(activeCell?.text ?? "")) + 1) }))}>.00</button>
           <button className="tb sht-dec" title={t("sheet.decimalsLess")} aria-label={t("sheet.decimalsLess")} onClick={() => setSheetLenses(withLens(sheetLenses ?? [], lensArea(), { decimals: (had) => Math.max(0, (had ?? decimalsOf(activeCell?.text ?? "")) - 1) }))}>.0</button>
-          {!!sheetLenses?.length && (
-            <span className="sht-lens" title={t("sheet.lensChipTip")}>
-              {activeLens ? t("sheet.lensChip", { unit: unitName(activeLens.unit), decimals: activeLens.decimals ?? t("sheet.decimalsFile") }) : t("sheet.lensChipOther")}
-              <button aria-label={t("sheet.lensClear")} title={t("sheet.lensClear")} onClick={() => setSheetLenses([])}><Icon name="x" /></button>
-            </span>
-          )}
         </div>
         <div className="sht-tools-end">
           {busy && <span className="mini-spin" />}
