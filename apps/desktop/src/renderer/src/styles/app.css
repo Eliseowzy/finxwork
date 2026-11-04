@@ -732,6 +732,7 @@ button.insp-row:active{background:var(--fill2)}
 .sheet{margin:auto;border:0;padding:0;max-width:calc(100vw - 48px);max-height:calc(100vh - 80px);overflow-y:auto;color:var(--l1);background:var(--win);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1)}
 /* The main window while the settings window is open: dimmed as under a dialog. */
 .settings-dim{position:fixed;inset:0;z-index:100;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
+.sheet:focus-visible{outline:none}
 .sheet::backdrop{background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
 .sheet-in{padding:22px 24px 18px}
 @keyframes sheet{from{opacity:0;transform:scale(.97)}}

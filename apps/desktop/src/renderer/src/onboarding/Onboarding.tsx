@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ProviderSummary } from "@finx/protocol";
 import { Icon, MarkMotion } from "../icons";
 import { SubscriptionConnections } from "../settings/LocalApplicationConnection";
-import { KeyEntry, ProviderTiles } from "../settings/ProviderConnections";
+import { KeyEntry, ProviderTiles, TokenPlanSection } from "../settings/ProviderConnections";
 import { useStore } from "../store";
 import "../styles/connections.css";
 import "../styles/providers.css";
@@ -73,6 +73,7 @@ function Connect() {
         <p>{t("onboarding.connect.intro")}</p>
       </header>
       <SubscriptionConnections />
+      <TokenPlanSection firstRun />
       <section className="connections-api onb-api" aria-labelledby="onb-api-heading">
         <div className="connections-section-heading">
           <div>

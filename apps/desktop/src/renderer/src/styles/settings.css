@@ -101,6 +101,7 @@
 .models .mrow .provider-brand{width:28px;height:28px}
 .models .mrow .brand-initial{border-radius:var(--r-sm);font-size:13px}
 .models .mrow .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
+.mrow .fn .badge{margin-left:6px;vertical-align:1px}
 .models .fdesc.ok{color:var(--green)}
 .models .fdesc.warn{color:var(--orange)}
 .mlogo{position:relative;width:28px;height:28px;flex:none;display:grid;place-items:center;border-radius:var(--r-sm);font-size:16px;font-weight:650}
@@ -110,6 +111,9 @@
 .mrow-add:first-child{border-top:0;border-radius:var(--r-lg)}
 .mrow-add:hover{background:var(--fill)}
 .mrow-add .ic{width:14px;height:14px}
+/* The plus on the marks' centre line, its words on the names' left edge. */
+.settings .mrow-add{gap:12px}
+.mrow-add .ic{margin:0 7px}
 .mrow-err{margin:6px 4px 0;font-size:12px;line-height:1.5;color:var(--red)}
 .models-add .sheet-in{padding:0}
 .models-add-body{padding:6px 22px 24px}
@@ -136,6 +140,12 @@
 .mm-tag.warn{background:var(--orange-bg,var(--fill2));color:var(--orange)}
 .mm-tag.new{background:var(--accent-bg);color:var(--accent-t)}
 .mm-empty{margin:14px 8px;font-size:12px;color:var(--l3)}
+.mm-list:has(+.mm-foot){padding-bottom:8px}
+/* A Token Plan's sheet: how it connects, and a new key. */
+.mm-foot{display:flex;align-items:flex-start;gap:13px;padding:8px 22px;border-top:.5px solid var(--sep)}
+.mm-foot .plan-details{flex:1;min-width:0}
+.mm-foot .plan-details[open]{padding-bottom:5px}
+.mm-foot .btn{height:26px;padding:0 12px;font-size:12px}
 .mrow-add .ic{color:var(--accent-t)}
 .models .mrow-add>.ic{color:var(--accent-t)}
 .mlogo.source-icon,.connection-logo.source-icon{background:none}
