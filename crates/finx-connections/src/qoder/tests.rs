@@ -1,4 +1,5 @@
 use super::*;
+use super::transport::Http;
 use parking_lot::Mutex;
 use std::{
     collections::BTreeMap,

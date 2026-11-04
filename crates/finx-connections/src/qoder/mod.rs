@@ -1,9 +1,10 @@
 //! Qoder global desktop protocol. Independent JobTokens; source login is read-only.
 mod capabilities;
 mod cosy;
+mod legacy;
+mod route;
 mod sse;
 mod transport;
-use transport::Http;
 #[cfg(test)]
 mod tests;
 use crate::{
@@ -24,25 +25,12 @@ const MODEL_BASE: &str = "https://api2-v2.qoder.sh/model/v1";
 
 // Models whose App HTTP route is verified with text and a complete tool roundtrip.
 // Unknown catalog entries stay visible but cannot bypass this check via ad-hoc IDs.
+pub(crate) const SUPPORTED: &[&str] = &[
+    "auto", "ultimate", "fast", "efficient", "smodel", "cmodel", "qmodel_38max", "qfmodel", "gmodel",
+    "gfmodel", "kmodel_latest", "kmodel", "dmodel", "dfmodel", "mmodel",
+];
 pub(crate) fn supports_model(model: &str) -> bool {
-    matches!(
-        model,
-        "auto"
-            | "ultimate"
-            | "fast"
-            | "efficient"
-            | "smodel"
-            | "cmodel"
-            | "qmodel_38max"
-            | "qfmodel"
-            | "gmodel"
-            | "gfmodel"
-            | "kmodel_latest"
-            | "kmodel"
-            | "dmodel"
-            | "dfmodel"
-            | "mmodel"
-    )
+    SUPPORTED.contains(&model)
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Job {
@@ -68,6 +56,14 @@ pub(crate) struct Qoder {
     retry_at: i64,
     last_failure: Option<ConnectionError>,
     refresh_uncertain: bool,
+    /// The account's user id, from the source login: the legacy route signs with it.
+    subject: Option<String>,
+    /// The catalog's entries by model, for the legacy route's requests.
+    targets: legacy::Targets,
+    /// The account's legacy queue places and leases, across requests.
+    queue: Arc<legacy::Queue>,
+    /// Where the legacy chat could not serve; cleared when the catalog is read again.
+    degraded: Arc<route::Degraded>,
     #[cfg(test)]
     openapi: String,
     #[cfg(test)]
@@ -151,6 +147,10 @@ impl Qoder {
             retry_at: 0,
             last_failure: None,
             refresh_uncertain: false,
+            subject: None,
+            targets: Arc::default(),
+            queue: Arc::default(),
+            degraded: Arc::default(),
             #[cfg(test)]
             openapi: OPENAPI.into(),
             #[cfg(test)]
@@ -200,6 +200,7 @@ impl Qoder {
     }
     async fn resolve(&mut self, http: &reqwest::Client, rejected: bool) -> Result<Job> {
         let login = self.source().await?;
+        self.subject = login.subject.clone();
         let now = self.environment.now();
         if !self.loaded {
             if let Some(value) = self.environment.get(&self.id).await? {
@@ -317,11 +318,21 @@ impl ProductAdapter for Qoder {
         Ok(Authorization {
             base_url: MODEL_BASE.into(),
             credentials: Credentials::with_key(job.token),
-            transport: Some(Arc::new(Http)),
+            transport: Some(Arc::new(route::Route {
+                degraded: self.degraded.clone(),
+                legacy: legacy::Legacy {
+                    base: legacy::BASE.into(),
+                    uid: self.subject.clone().unwrap_or_default(),
+                    machine: self.saved.machine_id.clone(),
+                    targets: self.targets.clone(),
+                    queue: self.queue.clone(),
+                },
+            })),
         })
     }
     async fn catalog(&mut self, http: &reqwest::Client) -> Result<Vec<ConnectionModel>> {
         let value = self.catalog_value(http).await?;
+        self.remember_targets(&value);
         let entries = value["app"]
             .as_array()
             .ok_or_else(|| ConnectionError::format("catalog", "app"))?;
@@ -353,6 +364,13 @@ impl ProductAdapter for Qoder {
     }
 }
 impl Qoder {
+    fn remember_targets(&mut self, catalog: &Value) {
+        let targets = legacy::targets_of(catalog);
+        if !targets.is_empty() {
+            *self.targets.write() = targets;
+            self.degraded.reset();
+        }
+    }
     async fn catalog_value(&mut self, http: &reqwest::Client) -> Result<Value> {
         let job = self.resolve(http, false).await?;
         let login = self.source().await?;
