@@ -314,6 +314,13 @@ try {
   await page.until("the colour", `document.querySelector('.bpn-pick .bs-hue[title="梅紫"]').classList.contains("on")`);
   check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.hue === "plum", "finx keeps the colour");
   check(await page.run(`!!document.querySelector(".bpn-pick")`), "the choices stay open for the next one");
+  fs.copyFileSync(path.join(root, "assets/brand/app/finxwork-mark-on-light-256.png"), path.join(menus, "avatar.png"));
+  await pressOn(page, `document.querySelector(".bpn-pick .link")`);
+  await page.until("the uploaded picture in the list, the top and the panel", `document.querySelectorAll(".brow .bav.pic img[src^='data:image/png'], .bhead .bav.pic img[src^='data:image/png'], .bpn-av .bav.pic img[src^='data:image/png']").length === 3`, 15000);
+  check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.kind === "image", "finx keeps the picture");
+  await page.shot("m3-picture");
+  await pressOn(page, `document.querySelector('.bpn-pick .bs-shape[title="小猫"]')`);
+  await page.until("back to a character", `!document.querySelector(".bpn-av .bav.pic")`);
   await press(page, ".bpn-av");
   await page.until("closed by the avatar again", `!document.querySelector(".bpn-pick")`);
 
@@ -344,6 +351,15 @@ try {
   await pressOn(page, menuItem("高"));
   await page.until("high", `${thinkRow}.querySelector(".lbl").textContent === "高"`);
   await page.shot("m3-model");
+  await page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+  await sleep(500);
+  await page.shot("m3-model-light");
+  await press(page, ".bpn-av");
+  await page.until("the choices in light", `!!document.querySelector(".bpn-pick .bs-shape")`);
+  await sleep(300);
+  await page.shot("m3-avatar-light");
+  await press(page, ".bpn-av");
+  await page.cdp("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
   await say(page, "你好");
   await page.until("the answer", `${bubbles} > 0`, 30000);
   check(lastRequest?.model === "mock-2", `the request's model: ${lastRequest?.model}`);

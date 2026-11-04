@@ -409,7 +409,8 @@ export function registerIPC() {
       properties: ["openFile"] as "openFile"[],
       filters: [{ name: i18n.t("main:dialog.images"), extensions: ["png", "jpg", "jpeg", "heic"] }],
     };
-    const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+    // End-to-end tests: the system's dialog cannot be driven, so a file stands for what was picked.
+    const r = menuTests ? { canceled: false, filePaths: [path.join(menuTests, "avatar.png")] } : await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
     const file = r.canceled ? undefined : r.filePaths[0];
     if (!file) return null;
     const size = await fs.promises.stat(file).then((s) => s.size, () => 0);
