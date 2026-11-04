@@ -46,10 +46,11 @@ export function useResumeAfterCompact(sessionId: string, view: SessionView) {
   }, [sessionId, live]);
 }
 
-/** The provider of a session's model, as `models/list` names it. */
-function useProvider(sessionId: string) {
+/** The provider of a session's model, as `models/list` names it. A bot's session is not in the
+ * session list: its page gives the model. */
+function useProvider(sessionId: string, given?: string) {
   const st = useStore();
-  const model = st.sessions.find((s) => s.session_id === sessionId)?.model ?? undefined;
+  const model = given ?? st.sessions.find((s) => s.session_id === sessionId)?.model ?? undefined;
   const id = model?.split("/")[0] ?? "";
   const name = st.models.providers.find((p) => p.id === id)?.name ?? id;
   const ready = st.models.models.find((m) => m.id === model)?.available ?? false;
@@ -92,12 +93,12 @@ function ModelItems({ current, models, onPick }: { current?: string; models: Mod
  * The session's current failure, with its way out. Background tasks the failure did not stop are
  * told of, with a way to stop them: they go on, with the same model, until they end by themselves.
  */
-export function FailureCard({ error, working, sessionId }: { error?: ErrorInfo; working: number; sessionId: string }) {
+export function FailureCard({ error, working, sessionId, model }: { error?: ErrorInfo; working: number; sessionId: string; model?: string }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const kind = error?.kind ?? "unknown";
   const tone = toneOf(kind);
-  const provider = useProvider(sessionId);
+  const provider = useProvider(sessionId, model);
   const [open, setOpen] = useState(false);
   const retry = () => st.op(sessionId, { type: "continue" });
   const askKey = (id = provider.id) => window.dispatchEvent(new CustomEvent(keyEvent, { detail: id }));

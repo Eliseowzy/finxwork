@@ -230,7 +230,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                   case "answered":
                     return <AskCard key={item.key} bot={bot} lead={lead} approval={item.a.approval} allowed={item.a.allowed} />;
                   case "failure":
-                    return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} /> : <PastFailure key={item.key} error={item.error} />;
+                    return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
                 }
               })}
               {busy && <BusyBubble bot={bot} busy={busy} lead={!shown.length || shown.at(-1)!.kind === "user"} retry={view.live?.retry} />}
@@ -295,8 +295,10 @@ function BotBubble({ bot, item, lead, fresh, line, open, onProcess }: {
   bot: BotSummary; item: Extract<BotItem, { kind: "bot" }>; lead: boolean; fresh: boolean; line: React.ReactNode; open: boolean; onProcess: () => void;
 }) {
   const { t } = useTranslation("bots");
+  // Thinking and private text only: no steps to count.
   const steps = processSteps(item.process);
-  const summary = t("chat.processLine", { time: durationText(item.took), count: steps });
+  const time = durationText(item.took);
+  const summary = steps > 0 ? t("chat.processLine", { time, count: steps }) : t("chat.processTime", { time });
   return (
     <>
       {line}
@@ -507,7 +509,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
-    const input = toInput(sent.text, sent.attachments.filter((a) => a.kind !== "folder"));
+    const input = toInput(sent.text, sent.attachments);
     // While it answers, a message waits for the step under way and is answered next (bot-design §3.1).
     const ok = await st.op(session, { type: "prompt", input, mode: view.live ? "steer" : undefined });
     if (!ok) change(sent);
