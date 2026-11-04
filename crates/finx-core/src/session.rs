@@ -367,6 +367,12 @@ impl Session {
         }
     }
 
+    /// A bot's session whose owner has had no reply to their latest message (bot-design §3.11).
+    pub(crate) fn unanswered(&self) -> bool {
+        let state = self.state.lock();
+        state.bot.is_some() && crate::bot::unanswered(&state.history)
+    }
+
     /// Writes the waiting reports into the history, oldest first.
     pub(crate) fn deliver_mail(&self) {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();

@@ -13,6 +13,7 @@ use finx_core::TaskEnd;
 use finx_core::store::EntryKind;
 use finx_core::store::SessionStore;
 use finx_llm::Catalog;
+use finx_llm::ErrorKind;
 use finx_llm::Message;
 use finx_llm::ModelRegistry;
 use finx_llm::RegistryOptions;
@@ -229,6 +230,117 @@ async fn end_turn_waits_for_input_that_came_meanwhile() {
     assert_eq!(requests.len(), 2);
     let last_user = requests[1].messages.iter().rev().find(|m| matches!(m, Message::User(_))).unwrap();
     assert_eq!(texts(last_user), "再写一首夏天的");
+}
+
+const REMINDER: &str = "<reply_reminder>";
+
+fn reminders(h: &Harness) -> usize {
+    let store = JsonlStore::new(h.home.sessions_dir());
+    let (_, entries) = store.read(&SessionRef::Id(h.kernel.session_id().to_string())).unwrap();
+    entries.iter().filter(|e| matches!(e.kind, EntryKind::Unanswered)).count()
+}
+
+/// A bot that writes its answer as plain text, which the user never sees, is reminded once and
+/// sends it (bot-design §3.11).
+#[tokio::test]
+async fn a_bot_that_answers_in_plain_text_is_reminded_to_send() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::text("2。"), send_last("c1", "2。")],
+    )
+    .await;
+    let result = h.kernel.run(prompt("1 加 1 等于几？")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(sent(&result.events), ["2。"]);
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 2);
+    let last = requests[1].messages.last().unwrap();
+    assert!(texts(last).starts_with(REMINDER), "{}", texts(last));
+    assert_eq!(reminders(&h), 1);
+    // The reminder is the model's alone: no event shows it.
+    assert!(result.events.iter().all(|e| !format!("{:?}", e.msg).contains(REMINDER)));
+}
+
+/// Once per task: a bot that again sends nothing ends its task.
+#[tokio::test]
+async fn the_reminder_comes_once_per_task() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::text("嗯。"), Script::text("嗯嗯。"), Script::text("在。"), send_last("c1", "在。")],
+    )
+    .await;
+    let result = h.kernel.run(prompt("在吗")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert!(sent(&result.events).is_empty());
+    assert_eq!(h.api.requests().len(), 2);
+    // The next task gets its own.
+    let result = h.kernel.run(prompt("在吗？")).await.unwrap();
+    assert_eq!(sent(&result.events), ["在。"]);
+    assert_eq!((h.api.requests().len(), reminders(&h)), (4, 2));
+}
+
+/// A retry after a failure answers the failed task's message: it is reminded too.
+#[tokio::test]
+async fn a_retried_task_is_reminded_too() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::fail(ErrorKind::QuotaExceeded, "quota exceeded"), Script::text("2。"), send_last("c1", "2。")],
+    )
+    .await;
+    let result = h.kernel.run(prompt("1 加 1 等于几？")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Failed(_)), "{:?}", result.end);
+    h.kernel.submit(Op::Continue).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert_eq!(sent(&events), ["2。"]);
+    assert_eq!(reminders(&h), 1);
+}
+
+/// Answered, or nobody waiting: no reminder. A message that came after the bot's last one is
+/// waiting for its own answer.
+#[tokio::test]
+async fn only_an_unanswered_message_brings_a_reminder() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            // Answered, then a private last word.
+            send("c1", "好的。"),
+            Script::text("Done."),
+            // A report wakes the bot, which has nothing to tell.
+            Script::tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." }))
+                .then_tool_call("c3", "send_to_user", json!({ "text": "交给帮手了。", "end_turn": true })),
+            Script::text("Found: 42."),
+            Script::text("Nothing to add."),
+        ],
+    )
+    .await;
+    h.kernel.run(prompt("记一下")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    assert_eq!(h.api.requests().len(), 5);
+    assert_eq!(reminders(&h), 0);
+
+    // A message that comes while the bot works, then a private last word: reminded.
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            send("c1", "春天的诗。").then_sleep(Duration::from_millis(400)),
+            Script::text("Both done."),
+            send_last("c2", "夏天的诗。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("再写一首夏天的")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert_eq!(sent(&events), ["春天的诗。", "夏天的诗。"]);
+    assert_eq!(reminders(&h), 1);
 }
 
 /// A bot's helpers write reports, not chat: a session's prompt, and no send_to_user

@@ -167,6 +167,9 @@ pub enum EntryKind {
     BotName {
         name: String,
     },
+    /// A bot's session: its task was about to end with the owner's message unanswered, and the
+    /// model is reminded to reply, once per task (bot-design §3.11).
+    Unanswered,
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.
     #[serde(other, skip_serializing)]

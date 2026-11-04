@@ -419,6 +419,7 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
     let mut turn: u32 = 0;
     let mut last_message: Option<String> = None;
     let mut compactions = Compactions::default();
+    let mut reminded = false;
     loop {
         // Turn boundary: reports first, then queued steering input, so the user has the last word.
         session.deliver_mail();
@@ -555,6 +556,13 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         }
         if let Some(message) = session.take_follow_up() {
             session.record_user(message);
+            turn += 1;
+            continue;
+        }
+        // A bot about to stop without answering its owner is reminded once (bot-design §3.11).
+        if message.stop_reason != StopReason::Length && !reminded && session.unanswered() {
+            reminded = true;
+            session.record(EntryKind::Unanswered);
             turn += 1;
             continue;
         }

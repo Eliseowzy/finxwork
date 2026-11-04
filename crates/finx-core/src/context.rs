@@ -68,6 +68,18 @@ pub fn bot_name_message(name: &str, ts: Timestamp) -> UserMessage {
     }
 }
 
+/// The user message that reminds a bot its owner has had no reply (bot-design §3.11).
+pub fn unanswered_message(ts: Timestamp) -> UserMessage {
+    UserMessage {
+        content: vec![UserContent::Text {
+            text: "<reply_reminder>\nThe user has not received a reply to their last message: what you write \
+                   stays private, and only send_to_user reaches them. Call send_to_user with your reply now.\n</reply_reminder>"
+                .into(),
+        }],
+        ts,
+    }
+}
+
 /// The bot's name the current context last gave, when not the system prompt's: the newest
 /// name entry since the last compaction.
 pub fn name_in_context(history: &History) -> Option<&str> {
@@ -153,14 +165,15 @@ pub fn branch_messages(branch: &[&Entry]) -> Vec<Message> {
 }
 
 /// The message an entry adds to the context; `ts` is the entry's. A delivered report, a new
-/// date and a bot's new name are user messages; a user message that mentions skills carries their
-/// instructions first (docs/kernel/skill-design.md §6.3.4).
+/// date, a bot's new name and its reply reminder are user messages; a user message that mentions
+/// skills carries their instructions first (docs/kernel/skill-design.md §6.3.4).
 pub fn entry_message(kind: &EntryKind, ts: Timestamp) -> Option<Cow<'_, Message>> {
     match kind {
         EntryKind::Message { message, skills, .. } if !skills.is_empty() => Some(Cow::Owned(with_skills(message, skills))),
         EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } => Some(Cow::Borrowed(message)),
         EntryKind::Date { date } => Some(Cow::Owned(Message::from(date_message(date, ts)))),
         EntryKind::BotName { name } => Some(Cow::Owned(Message::from(bot_name_message(name, ts)))),
+        EntryKind::Unanswered => Some(Cow::Owned(Message::from(unanswered_message(ts)))),
         _ => None,
     }
 }

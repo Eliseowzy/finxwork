@@ -187,6 +187,32 @@ async fn messages_in_a_row_are_answered_in_order() {
     assert_eq!(sent(&seen), ["春天的诗", "夏天的诗", "秋天的诗", "冬天的诗"]);
 }
 
+/// A bot that answers in plain text is reminded and sends it; the reminder is the model's alone
+/// (bot-design §3.11).
+#[tokio::test]
+async fn a_bot_that_forgets_to_send_is_reminded_and_the_user_sees_one_message() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:quiet:2。]] 1 加 1 等于几？").await;
+    let events = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&events), ["2。"]);
+    assert_eq!(events.iter().filter(|e| e["type"] == "turn_started").count(), 2);
+    assert!(events.iter().all(|e| !e.to_string().contains("reply_reminder")));
+    let row = until_row(&mut wire, &bot, |b| b["last"]["from"] == "bot").await;
+    assert_eq!((row["last"]["text"].as_str(), row["unread"].as_u64()), (Some("2。"), Some(1)));
+    // The conversation loads without it; the log keeps it.
+    let opened = client.request("bots/open", json!({"bot_id": bot})).await.unwrap();
+    let transcript = opened["snapshot"]["transcript"].to_string();
+    assert!(transcript.contains("2。") && !transcript.contains("reply_reminder"), "{transcript}");
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).expect("the log");
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
+}
+
 #[tokio::test]
 async fn a_helper_works_in_the_background_and_the_bot_relays_its_report() {
     let env = TestEnv::new("manual", "").await;

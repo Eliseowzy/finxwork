@@ -585,6 +585,18 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 json!({ "text": format!("查到了：{}", last_user_text(messages)), "end_turn": true }),
             )])),
         },
+        // A bot that answers in plain text, which the user never sees, and sends once reminded
+        // (bot-design §3.11).
+        "quiet" => {
+            let answer = if arg.is_empty() { prompt } else { arg };
+            match step {
+                0 => Plan::Step(Step::text(answer.to_string())),
+                _ if last_user_text(messages).contains("<reply_reminder>") => {
+                    Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": answer, "end_turn": true }))]))
+                }
+                _ => done("quiet"),
+            }
+        }
         "confirm" => match step {
             0 => Plan::Step(Step::calls(vec![
                 ("send_to_user", json!({ "text": "要执行命令，确认一下。" })),
