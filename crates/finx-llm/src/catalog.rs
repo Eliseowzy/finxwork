@@ -4,16 +4,16 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::auth::AuthConfig;
+use crate::model::CatalogThinking;
 use crate::model::Compat;
 use crate::model::DEFAULT_CONTEXT_WINDOW;
-use crate::model::DEFAULT_MAX_OUTPUT_TOKENS;
 use crate::model::Modality;
 use crate::model::Model;
 use crate::model::ModelCost;
 use crate::model::ThinkingBudgets;
+use crate::model::ThinkingControl;
 use crate::model::ThinkingFormat;
 use crate::types::ThinkingLevel;
 use crate::types::Currency;
@@ -130,6 +130,25 @@ pub struct ModelToml {
     /// Currency of `cost`; defaults to the provider's.
     pub currency: Option<Currency>,
     pub compat: Option<Compat>,
+    /// What the public catalog's row says about its thinking; never written by hand.
+    #[serde(skip)]
+    pub catalog_thinking: Option<CatalogThinking>,
+}
+
+impl ModelToml {
+    /// A model known by its id alone.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self { id: id.into(), ..Default::default() }
+    }
+
+    /// Whether it says anything about what the model can do, beyond its name and price.
+    pub fn describes_model(&self) -> bool {
+        self.context_window.is_some()
+            || self.max_output_tokens.is_some()
+            || self.reasoning.is_some()
+            || self.thinking.is_some()
+            || self.input.is_some()
+    }
 }
 
 /// Where a provider's model list and model details come from (docs/kernel/model-catalog-design.md).
@@ -143,7 +162,8 @@ pub struct Listing {
     pub from: Option<String>,
     /// Extra details the server offers per model ("ollama").
     pub details: Option<String>,
-    /// The models.toml and built-in entries, as written: only the fields they set.
+    /// What the channel itself declares, in only the fields it sets: the models.toml and built-in
+    /// entries, or an account connection's catalog.
     pub entries: Vec<ModelToml>,
 }
 
@@ -164,38 +184,25 @@ pub struct ProviderConfig {
     pub headers: BTreeMap<String, String>,
     pub currency: Currency,
     pub compat: Compat,
-    pub models: Vec<Arc<Model>>,
     pub listing: Listing,
     pub plan: Option<PlanConfig>,
 }
 
 impl ProviderConfig {
-    pub fn model(&self, id: &str) -> Option<Arc<Model>> {
-        self.models.iter().find(|m| m.id == id).cloned()
+    /// What this channel declares about a model.
+    pub fn entry(&self, id: &str) -> Option<&ModelToml> {
+        self.listing.entries.iter().find(|e| e.id == id)
     }
 
-    /// A model that is not in the catalog, with default limits and no reasoning or images.
+    /// A channel that decides which models exist: anything else does not. A key's plan, or an
+    /// account connection.
+    pub fn fixed_membership(&self) -> bool {
+        self.plan.is_some() || matches!(self.auth, AuthConfig::Managed)
+    }
+
+    /// A model nothing describes: default limits and no reasoning or images.
     pub fn ad_hoc_model(&self, id: &str) -> Model {
-        Model {
-            id: id.to_string(),
-            name: id.to_string(),
-            provider: self.id.clone(),
-            api: self.api.clone(),
-            base_url: self.base_url.clone(),
-            context_window: DEFAULT_CONTEXT_WINDOW,
-            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
-            reasoning: false,
-            thinking: Vec::new(),
-            thinking_levels: BTreeMap::new(),
-            default_thinking: ThinkingLevel::Default,
-            thinking_budgets: ThinkingBudgets::default(),
-            input: vec![Modality::Text],
-            cost: ModelCost::default(),
-            cost_tiers: Vec::new(),
-            currency: self.currency,
-            compat: self.compat.clone(),
-            headers: self.headers.clone(),
-        }
+        self.build_model(None, &ModelToml::new(id))
     }
 
     /// The model an entry describes, over `base` (lower layers) and then the defaults.
@@ -212,20 +219,33 @@ impl ProviderConfig {
         let compat = self.compat.merged(&m.compat.clone().unwrap_or_default());
         let api = m.api.clone().unwrap_or_else(|| self.api.clone());
         let reasoning = m.reasoning.unwrap_or(false);
-        let thinking = offered_thinking(reasoning, &api, &compat, m.thinking.as_deref(), m.thinking_levels.as_ref());
+        let row = m.catalog_thinking.as_ref();
+        let thinking = offered_thinking(reasoning, &api, &compat, row, m.thinking.as_deref(), m.thinking_levels.as_ref());
         let default_thinking = m.default_thinking.filter(|l| thinking.contains(l)).unwrap_or_default();
+        let thinking_control = match row {
+            Some(row) if !row.efforts.is_empty() && row.budget => ThinkingControl::EffortOrBudget,
+            Some(row) if !row.efforts.is_empty() => ThinkingControl::Effort,
+            Some(row) if row.budget => ThinkingControl::Budget,
+            _ if m.thinking_budgets.is_some() => ThinkingControl::Budget,
+            _ => ThinkingControl::Effort,
+        };
+        let mut thinking_levels = m.thinking_levels.unwrap_or_default();
+        if row.is_some_and(|row| row.off_effort) {
+            thinking_levels.entry(ThinkingLevel::Off.as_str().to_string()).or_insert_with(|| "none".to_string());
+        }
         Model {
             name: m.name.unwrap_or_else(|| m.id.clone()),
             provider: self.id.clone(),
             api,
             base_url: m.base_url.unwrap_or_else(|| self.base_url.clone()),
             context_window: m.context_window.unwrap_or(DEFAULT_CONTEXT_WINDOW),
-            max_output_tokens: m.max_output_tokens.unwrap_or(DEFAULT_MAX_OUTPUT_TOKENS),
+            max_output_tokens: m.max_output_tokens,
             reasoning,
             thinking,
             default_thinking,
-            thinking_levels: m.thinking_levels.unwrap_or_default(),
+            thinking_levels,
             thinking_budgets: m.thinking_budgets.unwrap_or_default(),
+            thinking_control,
             input: m.input.unwrap_or_else(|| vec![Modality::Text]),
             // Token rates from the public catalog are not subscription spending.
             cost: if self.plan.is_some() { ModelCost::default() } else { m.cost.unwrap_or_default() },
@@ -238,18 +258,72 @@ impl ProviderConfig {
     }
 }
 
-/// The thinking levels a model offers: those its layers name, else what its request format can
-/// say. A provider format that sends nothing about thinking offers nothing (§18).
+/// What a channel can send about thinking besides efforts.
+#[derive(Clone, Copy)]
+struct WireThinking {
+    switch: bool,
+    budget: bool,
+}
+
+fn wire_thinking(api: &str, format: Option<ThinkingFormat>) -> WireThinking {
+    match (api, format) {
+        ("anthropic-messages", _) => WireThinking { switch: true, budget: true },
+        ("openai-chat", Some(ThinkingFormat::Deepseek | ThinkingFormat::Zai)) => WireThinking { switch: true, budget: false },
+        ("openai-chat", Some(ThinkingFormat::Qwen | ThinkingFormat::Openrouter)) => WireThinking { switch: true, budget: true },
+        _ => WireThinking { switch: false, budget: false },
+    }
+}
+
+/// The levels of a model whose row says how it is controlled, on a channel that can send it
+/// (docs/kernel/model-catalog-design.md §18.2): its named efforts, else budgets, else on and off.
+/// "Off" only where it can really be switched off.
+pub fn offered_by_row(row: &CatalogThinking, api: &str, format: Option<ThinkingFormat>) -> Vec<ThinkingLevel> {
+    use ThinkingLevel::*;
+    let wire = wire_thinking(api, format);
+    let off = row.off_effort || (row.switch && wire.switch);
+    if !row.efforts.is_empty() || row.off_effort {
+        let mut levels = row.efforts.clone();
+        levels.extend(off.then_some(Off));
+        return levels;
+    }
+    if row.budget && wire.budget {
+        let mut levels = vec![Low, Medium, High, Max];
+        // A budget model of this protocol thinks only when asked to.
+        levels.extend((off || api == "anthropic-messages").then_some(Off));
+        return levels;
+    }
+    if off { vec![Off, On] } else { Vec::new() }
+}
+
+/// The levels of a model that thinks when nothing says how it is controlled: what the request
+/// format can say.
+fn assumed_levels(api: &str, format: Option<ThinkingFormat>) -> Vec<ThinkingLevel> {
+    use ThinkingLevel::*;
+    if api == "anthropic-messages" {
+        return vec![Off, Low, Medium, High, Max];
+    }
+    match format {
+        Some(ThinkingFormat::Openai) => vec![Low, Medium, High],
+        Some(ThinkingFormat::Openrouter) => vec![Off, Low, Medium, High],
+        Some(ThinkingFormat::Deepseek | ThinkingFormat::Qwen | ThinkingFormat::Zai) => vec![Off, On],
+        _ => Vec::new(),
+    }
+}
+
+/// The thinking levels a model offers: those its layers name, else what its catalog row and its
+/// channel allow. A row that names no control means the model cannot be told, except through an
+/// aggregator, which translates for each model.
 fn offered_thinking(
     reasoning: bool,
     api: &str,
     compat: &Compat,
+    row: Option<&CatalogThinking>,
     named: Option<&[ThinkingLevel]>,
     values: Option<&BTreeMap<String, String>>,
 ) -> Vec<ThinkingLevel> {
     use ThinkingLevel::*;
     let format = compat.thinking_format;
-    if !reasoning || (api == "openai-chat" && matches!(format, None | Some(ThinkingFormat::None))) {
+    if !reasoning || format == Some(ThinkingFormat::None) {
         return Vec::new();
     }
     let from_values = || -> Option<Vec<ThinkingLevel>> {
@@ -257,15 +331,10 @@ fn offered_thinking(
             values?.iter().filter(|(_, v)| !v.is_empty()).filter_map(|(k, _)| k.parse().ok()).collect();
         (!levels.is_empty()).then_some(levels)
     };
-    let mut levels = named.map(<[ThinkingLevel]>::to_vec).or_else(from_values).unwrap_or_else(|| {
-        if api == "anthropic-messages" {
-            return vec![Off, Low, Medium, High, Max];
-        }
-        match format {
-            Some(ThinkingFormat::Openai) => vec![Low, Medium, High],
-            Some(ThinkingFormat::Openrouter) => vec![Off, Low, Medium, High],
-            _ => vec![Off, On],
-        }
+    let mut levels = named.map(<[ThinkingLevel]>::to_vec).or_else(from_values).unwrap_or_else(|| match row {
+        Some(row) if *row != CatalogThinking::default() => offered_by_row(row, api, format),
+        Some(_) if format != Some(ThinkingFormat::Openrouter) => Vec::new(),
+        _ => assumed_levels(api, format),
     });
     levels.retain(|l| *l != Default);
     levels.sort();
@@ -385,7 +454,7 @@ pub(crate) fn merge_model(base: &mut ModelToml, over: ModelToml) {
             })*
         };
     }
-    take!(name, api, base_url, context_window, max_output_tokens, reasoning, thinking, default_thinking, thinking_budgets, input);
+    take!(name, api, base_url, context_window, max_output_tokens, reasoning, thinking, default_thinking, thinking_budgets, input, catalog_thinking);
     if over.cost.is_some() || over.currency.is_some() {
         base.cost = over.cost;
         base.currency = over.currency;
@@ -433,7 +502,7 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
             Some(ListModelsToml::Path(path)) => Some(path.clone()),
             Some(ListModelsToml::Enabled(true)) | None => default_path.map(str::to_string),
         };
-        let mut provider = ProviderConfig {
+        providers.insert(id.clone(), ProviderConfig {
             plan: p.plan.clone(),
             name: p.name.clone().unwrap_or_else(|| id.clone()),
             id: id.clone(),
@@ -443,18 +512,14 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
             headers,
             currency,
             compat,
-            models: Vec::new(),
             listing: Listing {
                 catalog_id: p.catalog_id.clone(),
                 path: if p.list_from.is_some() { None } else { path },
                 from: p.list_from.clone(),
                 details: p.list_details.clone(),
-                entries: Vec::new(),
+                entries,
             },
-        };
-        provider.models = entries.iter().map(|m| Arc::new(provider.build_model(None, m))).collect();
-        provider.listing.entries = entries;
-        providers.insert(id, provider);
+        });
     }
     Ok(Catalog { providers })
 }
@@ -480,11 +545,10 @@ mod tests {
         assert_eq!(catalog.providers["deepseek-anthropic"].listing.path, None);
         assert_eq!(catalog.providers["ollama"].listing.path.as_deref(), Some("/models"));
         assert_eq!(catalog.providers["anthropic"].listing.path.as_deref(), Some("/v1/models"));
-        // Every catalog id has a compiled-in snapshot.
-        for p in catalog.providers.values() {
-            if let Some(id) = &p.listing.catalog_id {
-                assert!(crate::public_catalog::embedded(id).is_some(), "{id}");
-            }
+        // Every catalog id and every maker has a compiled-in snapshot.
+        let ids = catalog.providers.values().filter_map(|p| p.listing.catalog_id.as_deref());
+        for id in ids.chain(crate::public_catalog::MAKERS.iter().copied()) {
+            assert!(crate::public_catalog::embedded(id).is_some(), "{id}");
         }
     }
 
@@ -498,7 +562,6 @@ mod tests {
             assert!(p.auth.env_vars().iter().all(|env| envs.insert(env.clone())));
             assert!(p.base_url.contains("/plan/") || p.base_url.contains("/coding/") || p.base_url.contains("token-plan."));
             assert!(p.listing.from.is_none(), "a plan never borrows a pay-as-you-go list");
-            assert!(p.models.iter().all(|m| !m.cost.is_configured()));
         }
         for p in catalog.providers.values().filter(|p| p.plan.is_none()) {
             assert!(p.auth.env_vars().iter().all(|env| !envs.contains(env)));
@@ -510,6 +573,7 @@ mod tests {
         assert_eq!(glm.models.len(), 2);
         assert!(glm.get("glm-5.3").unwrap().model.reasoning);
         assert!(glm.get("glm-5.3-flash").unwrap().model.input.contains(&Modality::Image));
+        assert!(glm.models.iter().all(|m| !m.model.cost.is_configured()));
     }
 
     #[test]
@@ -546,11 +610,11 @@ mod tests {
         // Fields the user did not set keep the values of the layers below.
         assert!(flash.reasoning);
         assert_eq!(flash.name, "DeepSeek-V4.1-Flash");
-        assert_eq!(flash.max_output_tokens, 393_216);
+        assert_eq!(flash.max_output_tokens, Some(393_216));
         assert_eq!(flash.thinking, [ThinkingLevel::Off, ThinkingLevel::Low, ThinkingLevel::High, ThinkingLevel::Max]);
         assert_eq!(flash.compat.thinking_format, Some(ThinkingFormat::Deepseek));
-        let vllm = catalog.providers["my-vllm"].model("qwen3-coder").unwrap();
-        assert_eq!(vllm.max_output_tokens, DEFAULT_MAX_OUTPUT_TOKENS);
+        let vllm = crate::directory::ModelDirectory::new(None).model(&catalog.providers["my-vllm"], "qwen3-coder").unwrap();
+        assert_eq!(vllm.max_output_tokens, None, "not known: left to the provider");
         assert_eq!(
             catalog.providers["my-vllm"].auth,
             AuthConfig::ApiKey {

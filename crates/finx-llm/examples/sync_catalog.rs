@@ -3,12 +3,14 @@
 //! cargo run -p finx-llm --example sync_catalog [-- --input api.json] [--check]
 //!
 //! Downloads the public catalog (or reads `--input`), projects the providers the built-in
-//! catalog names, rewrites `crates/finx-llm/catalog/public/*.json` and prints what changed.
+//! catalog names and the model makers, rewrites `crates/finx-llm/catalog/public/*.json` and prints what changed.
 //! `--check` only reports, and exits 1 when the snapshot is out of date.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use finx_llm::Catalog;
+use finx_llm::catalog::ProviderConfig;
 use finx_llm::catalog::ModelToml;
+use finx_llm::catalog::offered_by_row;
 use finx_llm::directory::derive_thinking;
 use finx_llm::public_catalog;
 use finx_llm::public_catalog::PublicModel;
@@ -25,6 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let builtin = Catalog::builtin()?;
     let mut ids: Vec<String> = builtin.providers.values().filter_map(|p| p.listing.catalog_id.clone()).collect();
+    ids.extend(public_catalog::MAKERS.iter().map(|id| id.to_string()));
     ids.sort();
     ids.dedup();
 
@@ -42,7 +45,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
-    let projected = public_catalog::project(&raw, &refs, &finx_llm::discovery::now())?;
+    let projection = public_catalog::project(&raw, &refs, &finx_llm::discovery::now())?;
+    // The snapshot has to cover every id: the service tolerates a provider going missing upstream,
+    // this does not.
+    if !projection.failed.is_empty() {
+        eprintln!("{}", projection.failed.join("\n"));
+        std::process::exit(1);
+    }
+    let projected = projection.providers;
 
     let mut stale = false;
     for (id, provider) in &projected {
@@ -66,7 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             continue;
         };
         for entry in &provider.listing.entries {
-            for field in redundant(entry, public.model(&entry.id)) {
+            for field in redundant(provider, entry, public.model(&entry.id)) {
                 println!("{pid}/{}: `{field}` in builtin.toml now matches the catalog and can go", entry.id);
             }
         }
@@ -98,7 +108,7 @@ fn diff(old: Option<&PublicProvider>, new: &PublicProvider) -> Vec<String> {
 }
 
 /// Fields of a built-in entry that say the same as the catalog.
-fn redundant(entry: &ModelToml, public: Option<&PublicModel>) -> Vec<&'static str> {
+fn redundant(provider: &ProviderConfig, entry: &ModelToml, public: Option<&PublicModel>) -> Vec<&'static str> {
     let Some(p) = public else { return Vec::new() };
     let mut out = Vec::new();
     if entry.context_window.is_some() && entry.context_window == p.context_window {
@@ -114,8 +124,7 @@ fn redundant(entry: &ModelToml, public: Option<&PublicModel>) -> Vec<&'static st
         out.push("name");
     }
     if let Some(levels) = &entry.thinking
-        && let (Some(derived), _) = derive_thinking(&p.reasoning_options)
-        && *levels == derived
+        && *levels == offered_by_row(&derive_thinking(&p.reasoning_options).0, &provider.api, provider.compat.thinking_format)
     {
         out.push("thinking");
     }

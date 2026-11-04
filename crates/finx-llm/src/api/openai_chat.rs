@@ -26,6 +26,7 @@ use crate::error::LlmError;
 use crate::model::MaxTokensField;
 use crate::model::Model;
 use crate::model::SystemRole;
+use crate::model::ThinkingControl;
 use crate::model::ThinkingFormat;
 use crate::stream::LlmStream;
 use crate::stream::MessageAccumulator;
@@ -508,12 +509,14 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
     if compat.stream_usage.unwrap_or(true) {
         body.insert("stream_options".into(), json!({ "include_usage": true }));
     }
-    let max_tokens = opts.max_output_tokens.unwrap_or_else(|| model.default_max_output());
-    let field = match compat.max_tokens_field.unwrap_or(MaxTokensField::MaxCompletionTokens) {
-        MaxTokensField::MaxCompletionTokens => "max_completion_tokens",
-        MaxTokensField::MaxTokens => "max_tokens",
-    };
-    body.insert(field.into(), json!(max_tokens));
+    // A limit not known is the provider's to apply: a guess here cuts replies short.
+    if let Some(max_tokens) = opts.max_output_tokens.or_else(|| model.default_max_output()) {
+        let field = match compat.max_tokens_field.unwrap_or(MaxTokensField::MaxCompletionTokens) {
+            MaxTokensField::MaxCompletionTokens => "max_completion_tokens",
+            MaxTokensField::MaxTokens => "max_tokens",
+        };
+        body.insert(field.into(), json!(max_tokens));
+    }
     if let Some(temperature) = opts.temperature {
         body.insert("temperature".into(), json!(temperature));
     }
@@ -559,45 +562,61 @@ struct FunctionDefinition<'a> {
     strict: Option<bool>,
 }
 
-/// Thinking parameters for a level the model offers (docs/kernel/model-catalog-design.md §18):
-/// `Default` sends nothing, `Off` the format's way of switching reasoning off, `On` switches it
-/// on without a level, and the effort levels send the provider's own value.
+/// Thinking parameters for a level the model offers (docs/kernel/model-catalog-design.md §18.3):
+/// `Default` sends nothing. An effort goes out as `reasoning_effort`, whichever channel it is,
+/// with the channel's switch only when the model has one; a level of a model that takes only a
+/// budget goes out as that budget. `Off` and `On` are the model's `none` effort or the channel's
+/// switch.
 fn apply_thinking(body: &mut Map<String, Value>, model: &Model, level: ThinkingLevel) {
     let level = model.resolve_thinking(level);
-    if !model.reasoning || level == ThinkingLevel::Default {
+    let format = model.compat.thinking_format;
+    if !model.reasoning || level == ThinkingLevel::Default || format == Some(ThinkingFormat::None) {
         return;
     }
-    let effort = level.is_effort().then(|| model.thinking_value(level));
-    let switch = |on: bool| json!({ "type": if on { "enabled" } else { "disabled" } });
-    let on = level != ThinkingLevel::Off;
-    match model.compat.thinking_format.unwrap_or(ThinkingFormat::None) {
-        ThinkingFormat::None => {}
-        ThinkingFormat::Openai => {
-            let value = if on { effort } else { Some("none".to_string()) };
-            if let Some(value) = value {
+    if format == Some(ThinkingFormat::Openrouter) {
+        let reasoning = match level {
+            ThinkingLevel::On => json!({ "enabled": true }),
+            ThinkingLevel::Off => json!({ "effort": "none" }),
+            level => json!({ "effort": model.thinking_value(level) }),
+        };
+        body.insert("reasoning".into(), reasoning);
+        return;
+    }
+    match level {
+        ThinkingLevel::Off => match model.off_effort() {
+            Some(value) => {
                 body.insert("reasoning_effort".into(), json!(value));
             }
+            None => apply_switch(body, format, false),
+        },
+        ThinkingLevel::On => apply_switch(body, format, true),
+        level if format == Some(ThinkingFormat::Qwen) && model.thinking_control == ThinkingControl::Budget => {
+            apply_switch(body, format, true);
+            body.insert("thinking_budget".into(), json!(model.thinking_budget(level)));
         }
-        ThinkingFormat::Deepseek | ThinkingFormat::Zai => {
-            body.insert("thinking".into(), switch(on));
-            if let Some(effort) = effort {
-                body.insert("reasoning_effort".into(), json!(effort));
+        level => {
+            // A model that cannot be switched off may refuse being switched on.
+            if model.offers(ThinkingLevel::Off) && model.off_effort().is_none() {
+                apply_switch(body, format, true);
             }
+            body.insert("reasoning_effort".into(), json!(model.thinking_value(level)));
         }
-        ThinkingFormat::Qwen => {
+    }
+}
+
+/// The channel's way of turning thinking on and off.
+fn apply_switch(body: &mut Map<String, Value>, format: Option<ThinkingFormat>, on: bool) {
+    match format {
+        Some(ThinkingFormat::Deepseek | ThinkingFormat::Zai) => {
+            body.insert("thinking".into(), json!({ "type": if on { "enabled" } else { "disabled" } }));
+        }
+        Some(ThinkingFormat::Qwen) => {
             body.insert("enable_thinking".into(), json!(on));
-            if effort.is_some() {
-                body.insert("thinking_budget".into(), json!(model.thinking_budget(level)));
-            }
         }
-        ThinkingFormat::Openrouter => {
-            let reasoning = match effort {
-                Some(effort) => json!({ "effort": effort }),
-                None if on => json!({ "enabled": true }),
-                None => json!({ "effort": "none" }),
-            };
-            body.insert("reasoning".into(), reasoning);
+        Some(ThinkingFormat::Openai) if !on => {
+            body.insert("reasoning_effort".into(), json!("none"));
         }
+        _ => {}
     }
 }
 
@@ -968,23 +987,67 @@ mod tests {
     }
 
     #[test]
-    fn glm_plan_effort_and_legacy_toggle_have_distinct_wire_values() {
+    fn a_level_goes_out_the_way_the_model_and_its_channel_take_it() {
+        use ThinkingLevel::*;
         let catalog = crate::Catalog::builtin().unwrap();
-        let model = &catalog.providers["zhipu-coding-plan"].models[0];
-        let mut body = Map::new();
-        apply_thinking(&mut body, model, ThinkingLevel::High);
-        assert_eq!(body["thinking"]["type"], "enabled");
-        assert_eq!(body["reasoning_effort"], "high");
-        body.clear();
-        apply_thinking(&mut body, model, ThinkingLevel::Off);
-        assert_eq!(body["thinking"]["type"], "disabled");
-        assert!(!body.contains_key("reasoning_effort"));
-        let mut legacy = model.as_ref().clone();
-        legacy.thinking = vec![ThinkingLevel::Off, ThinkingLevel::On];
-        body.clear();
-        apply_thinking(&mut body, &legacy, ThinkingLevel::On);
-        assert_eq!(body["thinking"]["type"], "enabled");
-        assert!(!body.contains_key("reasoning_effort"));
+        let directory = crate::directory::ModelDirectory::new(None);
+        let thinking = |reference: &str, level: ThinkingLevel| -> Value {
+            let (provider, id) = reference.split_once('/').unwrap();
+            let model = directory.model(&catalog.providers[provider], id).unwrap_or_else(|| panic!("{reference}"));
+            assert!(model.offers(level), "{reference} {level:?}: {:?}", model.thinking);
+            let mut body = Map::new();
+            apply_thinking(&mut body, &model, level);
+            Value::Object(body)
+        };
+        let cases: &[(&str, ThinkingLevel, Value)] = &[
+            // Named efforts, whichever channel: the switch only for a model that has one.
+            ("qwen/qwen3.8-max", Xhigh, json!({"enable_thinking": true, "reasoning_effort": "xhigh"})),
+            ("qwen/qwen3.8-max", Off, json!({"enable_thinking": false})),
+            ("qwen/deepseek-v4.1-flash", High, json!({"enable_thinking": true, "reasoning_effort": "high"})),
+            ("qwen/glm-5.3", High, json!({"reasoning_effort": "high"})),
+            ("zhipu-coding-plan/glm-5.3", Max, json!({"reasoning_effort": "max"})),
+            ("glm/glm-5.2", High, json!({"thinking": {"type": "enabled"}, "reasoning_effort": "high"})),
+            ("glm/glm-5.2", Off, json!({"thinking": {"type": "disabled"}})),
+            ("deepseek/deepseek-flash", Low, json!({"thinking": {"type": "enabled"}, "reasoning_effort": "low"})),
+            ("kimi/kimi-k3", High, json!({"reasoning_effort": "high"})),
+            ("kimi/kimi-k2.6", Off, json!({"thinking": {"type": "disabled"}})),
+            ("kimi/kimi-k2.6", On, json!({"thinking": {"type": "enabled"}})),
+            ("openai/gpt-6-sol", Off, json!({"reasoning_effort": "none"})),
+            ("openai/gpt-6-sol", Xhigh, json!({"reasoning_effort": "xhigh"})),
+            // A channel whose switch is not known: efforts still go out, `none` is one of them.
+            ("tencent-token-plan/hy3", High, json!({"reasoning_effort": "high"})),
+            ("tencent-token-plan/hy3", Off, json!({"reasoning_effort": "none"})),
+            ("tencent-token-plan/kimi-k3", Max, json!({"reasoning_effort": "max"})),
+            // Only a budget: the budget. The highest level is as much as the model takes.
+            ("qwen/qwen3.7-max", Low, json!({"enable_thinking": true, "thinking_budget": 4_096})),
+            ("qwen/qwen3.7-max", Max, json!({"enable_thinking": true, "thinking_budget": 131_072 - 4_096})),
+            ("qwen/qwen3.7-max", Off, json!({"enable_thinking": false})),
+            // Everything under `reasoning`.
+            ("openrouter/deepseek/deepseek-v4-pro", High, json!({"reasoning": {"effort": "high"}})),
+        ];
+        for (reference, level, expected) in cases {
+            assert_eq!(&thinking(reference, *level), expected, "{reference} {level:?}");
+        }
+        // Levels that do not exist for a model are not offered at all.
+        let levels = |reference: &str| {
+            let (provider, id) = reference.split_once('/').unwrap();
+            directory.model(&catalog.providers[provider], id).unwrap().thinking.clone()
+        };
+        assert_eq!(levels("zhipu-coding-plan/glm-5.3"), [Low, High, Max], "it cannot be fully switched off");
+        assert_eq!(levels("kimi/kimi-k3"), [Low, High, Max]);
+        assert_eq!(levels("kimi/kimi-k2.7-code"), [] as [ThinkingLevel; 0], "`disabled` is an error there");
+        assert_eq!(levels("tencent-token-plan/minimax-m3"), [] as [ThinkingLevel; 0], "a bare switch, not known on this channel");
+    }
+
+    #[test]
+    fn an_output_limit_not_known_is_left_out() {
+        let mut model = test_model(API_ID);
+        model.max_output_tokens = None;
+        let body = |opts: &RequestOptions| -> Value { serde_json::from_slice(&build_body(&model, &Context::default(), opts)).unwrap() };
+        let none = body(&RequestOptions::default());
+        assert!(none.get("max_tokens").is_none() && none.get("max_completion_tokens").is_none(), "{none}");
+        let asked = body(&RequestOptions { max_output_tokens: Some(100), ..Default::default() });
+        assert_eq!(asked["max_completion_tokens"], 100, "a request's own limit still applies");
     }
 
     #[test]

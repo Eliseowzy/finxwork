@@ -17,6 +17,8 @@ use crate::error::ErrorKind;
 use crate::error::LlmError;
 use crate::model::AuthHeader;
 use crate::model::Model;
+use crate::model::REQUIRED_MAX_OUTPUT_TOKENS;
+use crate::model::ThinkingControl;
 use crate::stream::LlmStream;
 use crate::stream::MessageAccumulator;
 use crate::stream::StreamEvent;
@@ -336,25 +338,46 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
             body.insert("tool_choice".into(), json!({ "type": "none" }));
         }
     }
-    // Without a thinking block Claude does not think: `Default` and `Off` send none.
-    let thinking = model.resolve_thinking(opts.thinking);
-    if model.reasoning && !matches!(thinking, ThinkingLevel::Default | ThinkingLevel::Off) {
-        let budget = model.thinking_budget(thinking);
-        let max_tokens = model.max_output_tokens.min(budget + 16_384).max(budget + 1);
-        body.insert("max_tokens".into(), json!(max_tokens));
-        body.insert("thinking".into(), json!({ "type": "enabled", "budget_tokens": budget }));
-    } else {
-        let max_tokens = opts.max_output_tokens.unwrap_or_else(|| model.default_max_output());
-        body.insert("max_tokens".into(), json!(max_tokens));
-        if let Some(temperature) = opts.temperature {
-            body.insert("temperature".into(), json!(temperature));
-        }
-    }
+    apply_thinking(&mut body, model, opts);
     body.insert("stream".into(), json!(true));
     for (key, value) in &opts.extra_body {
         body.insert(key.clone(), value.clone());
     }
     messages.finish(&body)
+}
+
+/// The output limit and the thinking parameters. A level goes out the way the model takes it: a
+/// budget where its row lists one (newer models reject that), else an effort, which needs adaptive
+/// thinking to think at all. `Default` sends nothing, and each model does what it does by default.
+fn apply_thinking(body: &mut Map<String, Value>, model: &Model, opts: &RequestOptions) {
+    let level = if model.reasoning { model.resolve_thinking(opts.thinking) } else { ThinkingLevel::Default };
+    let thinks = !matches!(level, ThinkingLevel::Default | ThinkingLevel::Off);
+    let effort = level.is_effort().then(|| json!({ "effort": model.thinking_value(level) }));
+    if thinks && model.thinking_control != ThinkingControl::Effort {
+        let budget = model.thinking_budget(level);
+        body.insert("max_tokens".into(), json!(model.budget_max_tokens(budget)));
+        body.insert("thinking".into(), json!({ "type": "enabled", "budget_tokens": budget }));
+        if let (ThinkingControl::EffortOrBudget, Some(effort)) = (model.thinking_control, effort) {
+            body.insert("output_config".into(), effort);
+        }
+        return;
+    }
+    let max_tokens = opts.max_output_tokens.or_else(|| model.default_max_output()).unwrap_or(REQUIRED_MAX_OUTPUT_TOKENS);
+    body.insert("max_tokens".into(), json!(max_tokens));
+    if thinks {
+        // Without `display` the reasoning of newer models comes back empty.
+        body.insert("thinking".into(), json!({ "type": "adaptive", "display": "summarized" }));
+        if let Some(effort) = effort {
+            body.insert("output_config".into(), effort);
+        }
+        return;
+    }
+    if level == ThinkingLevel::Off {
+        body.insert("thinking".into(), json!({ "type": "disabled" }));
+    }
+    if let Some(temperature) = opts.temperature {
+        body.insert("temperature".into(), json!(temperature));
+    }
 }
 
 fn is_image(content: &UserContent) -> bool {
@@ -651,7 +674,8 @@ mod tests {
     #[test]
     fn builds_body_with_grouped_tool_results() {
         let mut model = test_model(API_ID);
-        model.max_output_tokens = 64_000;
+        model.max_output_tokens = Some(64_000);
+        model.thinking_control = ThinkingControl::Budget;
         let call = |id: &str| ToolCall {
             id: id.into(),
             name: "read".into(),
@@ -714,5 +738,50 @@ mod tests {
         assert_eq!(body["thinking"]["budget_tokens"], 4_096);
         assert_eq!(body["max_tokens"], 4_096 + 16_384);
         assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+    }
+
+    #[test]
+    fn a_level_goes_out_the_way_the_model_takes_it() {
+        use ThinkingLevel::*;
+        let catalog = crate::Catalog::builtin().unwrap();
+        let directory = crate::directory::ModelDirectory::new(None);
+        let body = |provider: &str, id: &str, level: ThinkingLevel| -> Value {
+            let model = directory.model(&catalog.providers[provider], id).unwrap();
+            assert!(model.offers(level), "{id} {level:?}: {:?}", model.thinking);
+            let opts = RequestOptions { thinking: level, ..RequestOptions::default() };
+            serde_json::from_slice(&build_body(&model, &Context::default(), &opts)).unwrap()
+        };
+        // Effort only: a budget would be refused.
+        let opus = body("anthropic", "claude-opus-5-5", Xhigh);
+        assert_eq!(opus["thinking"], json!({"type": "adaptive", "display": "summarized"}));
+        assert_eq!(opus["output_config"], json!({"effort": "xhigh"}));
+        assert_eq!(opus["max_tokens"], 32_000);
+        // Effort, and it can be turned off.
+        assert_eq!(body("anthropic", "claude-sonnet-5", Off)["thinking"], json!({"type": "disabled"}));
+        assert!(body("anthropic", "claude-sonnet-5", Off).get("output_config").is_none());
+        assert_eq!(body("anthropic", "claude-sonnet-5", Low)["output_config"], json!({"effort": "low"}));
+        // Both: thinking on older models takes a budget, and the effort goes along.
+        let opus_45 = body("anthropic", "claude-opus-4-5", High);
+        assert_eq!(opus_45["thinking"], json!({"type": "enabled", "budget_tokens": 24_576}));
+        assert_eq!(opus_45["output_config"], json!({"effort": "high"}));
+        // Only a budget; no budget, no thinking.
+        let haiku = body("anthropic", "claude-haiku-4-5", Low);
+        assert_eq!(haiku["thinking"], json!({"type": "enabled", "budget_tokens": 4_096}));
+        assert!(haiku.get("output_config").is_none());
+        assert_eq!(body("anthropic", "claude-haiku-4-5", Off)["thinking"], json!({"type": "disabled"}));
+        // `Default` says nothing, and the same endpoint shape serves DeepSeek's account.
+        let plain = body("anthropic", "claude-opus-5-5", Default);
+        assert!(plain.get("thinking").is_none() && plain.get("output_config").is_none());
+        let deepseek = body("deepseek-anthropic", "deepseek-flash", High);
+        assert_eq!(deepseek["output_config"], json!({"effort": "high"}));
+        assert_eq!(body("deepseek-anthropic", "deepseek-flash", Off)["thinking"], json!({"type": "disabled"}));
+    }
+
+    #[test]
+    fn a_required_output_limit_is_filled_in() {
+        let mut model = test_model(API_ID);
+        model.max_output_tokens = None;
+        let body: Value = serde_json::from_slice(&build_body(&model, &Context::default(), &RequestOptions::default())).unwrap();
+        assert_eq!(body["max_tokens"], REQUIRED_MAX_OUTPUT_TOKENS);
     }
 }

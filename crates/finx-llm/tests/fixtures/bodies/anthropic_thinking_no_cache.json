@@ -1,5 +1,5 @@
 {
-  "max_tokens": 26624,
+  "max_tokens": 32000,
   "messages": [
     {
       "content": [
@@ -146,6 +146,9 @@
     }
   ],
   "model": "test-model",
+  "output_config": {
+    "effort": "medium"
+  },
   "stream": true,
   "system": [
     {
@@ -154,8 +157,8 @@
     }
   ],
   "thinking": {
-    "budget_tokens": 10240,
-    "type": "enabled"
+    "display": "summarized",
+    "type": "adaptive"
   },
   "tool_choice": {
     "type": "none"

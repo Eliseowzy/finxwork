@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use finx_llm::catalog::{Listing, ModelToml};
 use finx_llm::{
     connection::{Authorization, ConnectionAuthorizer, ConnectionRequest},
     *,
@@ -85,7 +86,7 @@ fn setup(server: &MockServer) -> (ModelRegistry, Arc<AtomicUsize>, Arc<AtomicUsi
             ..Default::default()
         },
     );
-    let mut p = ProviderConfig {
+    let p = ProviderConfig {
         plan: None,
         id: "local-test".into(),
         name: "Managed".into(),
@@ -95,10 +96,8 @@ fn setup(server: &MockServer) -> (ModelRegistry, Arc<AtomicUsize>, Arc<AtomicUsi
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
-        listing: Default::default(),
+        listing: Listing { entries: vec![ModelToml::new("flash")], ..Default::default() },
     };
-    p.models.push(Arc::new(p.ad_hoc_model("flash")));
     registry.replace_source("connections", vec![p]).unwrap();
     let calls = Arc::new(AtomicUsize::new(0));
     let released = Arc::new(AtomicUsize::new(0));
@@ -221,7 +220,7 @@ async fn authorization_network_failures_are_retried_each_with_its_own_lease() {
             ..Default::default()
         },
     );
-    let mut p = ProviderConfig {
+    let p = ProviderConfig {
         plan: None,
         id: "local-test".into(),
         name: "Managed".into(),
@@ -231,10 +230,8 @@ async fn authorization_network_failures_are_retried_each_with_its_own_lease() {
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
-        listing: Default::default(),
+        listing: Listing { entries: vec![ModelToml::new("flash")], ..Default::default() },
     };
-    p.models.push(Arc::new(p.ad_hoc_model("flash")));
     registry.replace_source("connections", vec![p]).unwrap();
     let leases = Arc::new(AtomicUsize::new(0));
     registry.install_authorizer(Arc::new(Flaky {
