@@ -5,6 +5,8 @@ import {
   type ListSession, type ListView, type Section,
 } from "@finx/client";
 import { archive, confirmDelete, isArchivable, rename, sessionMenu, unarchive } from "../actions";
+import { attention } from "@finx/client";
+import { BotList } from "../bots/BotList";
 import { RenameField, StatusDot } from "../components";
 import { bucketTitle, listTime } from "../format";
 import { Icon } from "../icons";
@@ -22,6 +24,8 @@ export function listSections(st: Store, now: Date): Section[] {
 export function Sidebar() {
   const st = useStore();
   const { t } = useTranslation("common");
+  const { t: tb } = useTranslation("bots");
+  const bots = st.mode === "bots";
   const now = useNow(30_000);
   const secs = listSections(st, now);
   const projects = useMemo(() => projectsOf(st.sessions), [st.sessions]);
@@ -39,20 +43,29 @@ export function Sidebar() {
   const ids = secs.map((sec) => `${sec.grouping}:${sec.key}`);
   const allShut = ids.length > 0 && ids.every((id) => st.collapsed.includes(id));
   const list = useRef<HTMLDivElement>(null);
-  const gutter = useGutter(list);
+  const gutter = useGutter(list, !bots);
   return (
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
         <button className="tb" onClick={() => setSidebar(st, false)} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
           <Icon name="sidebar" />
         </button>
+        <ModeSwitch />
       </div>
       <nav className="side-nav">
-        <button className={`nav-i ${st.selection.kind === "new" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "new" } })}>
-          <Icon name="plus" />
-          <span>{t("sidebar.newSession")}</span>
-          <span className="kbd">⌘N</span>
-        </button>
+        {bots ? (
+          <button className="nav-i" onClick={() => st.set({ botSheet: { kind: "new" } })}>
+            <Icon name="plus" />
+            <span>{tb("nav.newBot")}</span>
+            <span className="kbd">⌘N</span>
+          </button>
+        ) : (
+          <button className={`nav-i ${st.selection.kind === "new" ? "sel" : ""}`} onClick={() => st.set({ selection: { kind: "new" } })}>
+            <Icon name="plus" />
+            <span>{t("sidebar.newSession")}</span>
+            <span className="kbd">⌘N</span>
+          </button>
+        )}
         <button className="nav-i" onClick={() => st.set({ searching: true })}>
           <Icon name="search" />
           <span>{t("sidebar.search")}</span>
@@ -63,6 +76,15 @@ export function Sidebar() {
           <span>{t("sidebar.customize")}</span>
         </button>
       </nav>
+      {bots ? (
+        <>
+          <div className="side-lh">
+            <span className="side-lh-t">{tb("list.title")}</span>
+          </div>
+          <BotList />
+        </>
+      ) : (
+      <>
       <div className="side-lh" style={{ paddingRight: 8 + gutter }}>
         <button
           className={`side-lh-t ${allShut ? "shut" : ""}`}
@@ -151,9 +173,37 @@ export function Sidebar() {
           </div>
         ) : null}
       </div>
+      </>
+      )}
       <UpdateReminder />
       <FootMenu />
     </aside>
+  );
+}
+
+/**
+ * The switch between the two modes, at the right of the sidebar's top (bot-mode-design §6.1). The other mode's
+ * segment carries a dot when something waits there: blue for a bot's new message, orange for an approval.
+ */
+function ModeSwitch() {
+  const st = useStore();
+  const { t } = useTranslation("bots");
+  const bots = attention(st.bots);
+  const sessionsWait = st.sessions.some((s) => !s.archived && stateOf(s) === "awaiting_approval");
+  const dot = st.mode === "sessions" ? (bots.unread ? "new" : bots.waiting ? "warn" : null) : null;
+  const sessionsDot = st.mode === "bots" && sessionsWait ? "warn" : null;
+  return (
+    <div className="seg mode" role="tablist" aria-label={t("mode.label")}>
+      {(["sessions", "bots"] as const).map((m) => {
+        const mark = m === "bots" ? dot : sessionsDot;
+        return (
+          <button key={m} role="tab" aria-selected={st.mode === m} className={st.mode === m ? "on" : ""} title={t(m === "bots" ? "mode.botsTip" : "mode.sessionsTip")} onClick={() => st.setMode(m)}>
+            {t(m === "bots" ? "mode.bots" : "mode.sessions")}
+            {mark && <i className={`mdot ${mark === "warn" ? "warn" : ""}`} aria-hidden="true" />}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -487,10 +537,12 @@ function ListViewMenu() {
 }
 
 /** The width a scroller's scrollbar takes from its content, so what sits above can line up with its rows. */
-function useGutter(ref: RefObject<HTMLElement | null>): number {
+function useGutter(ref: RefObject<HTMLElement | null>, shown: boolean): number {
   const [gutter, setGutter] = useState(0);
   useLayoutEffect(() => {
-    const el = ref.current!;
+    // Not there in Bot mode, which lists bots instead.
+    const el = ref.current;
+    if (!el) return;
     const read = () => setGutter(el.offsetWidth - el.clientWidth);
     const seen = new ResizeObserver(read);
     seen.observe(el);
@@ -499,7 +551,7 @@ function useGutter(ref: RefObject<HTMLElement | null>): number {
     rows.observe(el, { childList: true, subtree: true });
     read();
     return () => (seen.disconnect(), rows.disconnect());
-  }, []);
+  }, [shown]);
   return gutter;
 }
 

@@ -48,7 +48,9 @@ export type Form =
       /** ↑ in the empty composer: the last message that waits for the task comes back to edit; true when one did. */
       onEditLast: () => boolean;
     }
-  | { mode: "new"; place: Place };
+  | { mode: "new"; place: Place }
+  /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and no settings under it: bots use the defaults. */
+  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void };
 
 /**
  * Where the owner writes to finx: one line while empty — "+", the text,
@@ -68,7 +70,8 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   canSend?: boolean;
   attachments: Attachment[];
   onAttachments: (a: Attachment[]) => void;
-  settings: Settings;
+  /** None for a bot's conversation. */
+  settings?: Settings;
   /** What `/` offers: the built-in commands and the skills (`skills/list`). */
   commands: CommandInfo[];
 }) {
@@ -89,7 +92,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   useEffect(() => {
     if (!(document.activeElement instanceof HTMLInputElement)) area.current?.focus();
   }, []);
-  const onHeight = form.mode === "session" ? form.onHeight : undefined;
+  const onHeight = form.mode === "new" ? undefined : form.onHeight;
   useEffect(() => {
     const el = col.current;
     if (!el || !onHeight) return;
@@ -107,7 +110,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
     <div className={`cmp-zone ${form.mode}`}>
       {dropping && <div className="drop-veil" aria-hidden="true" />}
       <div className="cmp-col" ref={col}>
-        {form.mode === "session" && form.above}
+        {form.mode !== "new" && form.above}
         <div
           className={`cmp ${dropping ? "dropping" : ""}`}
           onMouseDown={(e) => e.target instanceof HTMLElement && e.target.matches(".cmp,.cmp-row,.cmp-att") && (e.preventDefault(), area.current?.focus())}
@@ -144,17 +147,19 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             )}
           </div>
         </div>
-        <div className="cmp-meta">
-          {form.mode === "new" && (
-            <>
-              <EnvironmentPicker />
-              <ProjectPicker place={form.place} />
-            </>
-          )}
-          <PermissionPicker value={settings.permission} onChange={settings.onPermission} />
-          <span className="sp" />
-          <ModelPicker settings={settings} />
-        </div>
+        {settings && (
+          <div className="cmp-meta">
+            {form.mode === "new" && (
+              <>
+                <EnvironmentPicker />
+                <ProjectPicker place={form.place} />
+              </>
+            )}
+            <PermissionPicker value={settings.permission} onChange={settings.onPermission} />
+            <span className="sp" />
+            <ModelPicker settings={settings} />
+          </div>
+        )}
       </div>
     </div>
   );

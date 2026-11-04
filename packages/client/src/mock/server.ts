@@ -604,11 +604,14 @@ export class MockServer {
       const steers = this.take(s, "steer", true);
       if (steers.length > 0) {
         for (const x of steers) this.join(s, x);
-        // A bot answers each message on its own (bot-design §3.1).
-        const answer = s.bot
-          ? steers.flatMap((x) => botScript(userText(x.input).text).turns)
-          : steerScript(steers.map((x) => userText(x.input).text).join("；")).turns;
-        script = { ...script, turns: [...script.turns.slice(0, i), ...answer, ...script.turns.slice(i)] };
+        // A bot answers each message on its own, after the one it is on (bot-design §3.1).
+        if (s.bot) {
+          const answer = steers.flatMap((x) => botScript(userText(x.input).text).turns);
+          script = { ...script, turns: [...script.turns.slice(0, i + 1), ...answer, ...script.turns.slice(i + 1)] };
+        } else {
+          const answer = steerScript(steers.map((x) => userText(x.input).text).join("；")).turns;
+          script = { ...script, turns: [...script.turns.slice(0, i), ...answer, ...script.turns.slice(i)] };
+        }
       }
       const turn = script.turns[i];
       this.emit(s, { type: "turn_started", task_id, turn: i + 1 });

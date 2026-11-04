@@ -45,9 +45,9 @@ export function listTime(d: Date, now: Date): string {
   return sameDay(d, now) ? agoText(d, now) : shortTime(d, now);
 }
 
-/** A time line before a message, only for the first one and after a pause of half an hour: "Today 18:22". */
-export function timeLine(at: Date, previous: Date | undefined, now: Date): string | null {
-  if (previous && at.getTime() - previous.getTime() < 30 * 60_000) return null;
+/** A time line before a message, only for the first one and after a pause (half an hour; Bot mode's, ten minutes): "Today 18:22". */
+export function timeLine(at: Date, previous: Date | undefined, now: Date, pause = 30 * 60_000): string | null {
+  if (previous && at.getTime() - previous.getTime() < pause) return null;
   const day = sameDay(at, now) ? t("time.today") : isYesterday(at, now) ? t("time.yesterday") : withinWeek(at, now) ? weekday(at, language()) : monthDay(at, language());
   return `${day} ${hourMinute(at)}`;
 }

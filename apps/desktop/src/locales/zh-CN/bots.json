@@ -1,0 +1,127 @@
+{
+  "mode": {
+    "label": "模式",
+    "sessions": "会话",
+    "bots": "Bot",
+    "sessionsTip": "会话模式",
+    "botsTip": "Bot 模式"
+  },
+  "nav": {
+    "newBot": "新建 Bot"
+  },
+  "list": {
+    "title": "Bot",
+    "label": "Bot 列表",
+    "loading": "正在载入…"
+  },
+  "line": {
+    "waiting": "[待确认]",
+    "helpers": "正在处理{{things}}",
+    "typing": "正在输入…",
+    "empty": "还没说过话",
+    "image": "[图片]",
+    "file": "[文件] {{name}}"
+  },
+  "head": {
+    "edit": "改名字、换头像",
+    "waiting": "等你确认",
+    "more": "更多"
+  },
+  "things": {
+    "1": "一件事",
+    "2": "两件事",
+    "3": "三件事",
+    "4": "四件事",
+    "5": "五件事",
+    "6": "六件事",
+    "7": "七件事",
+    "8": "八件事",
+    "9": "九件事",
+    "10": "十件事",
+    "many": "{{count}} 件事"
+  },
+  "chat": {
+    "log": "对话",
+    "placeholder": "发消息给 {{name}}",
+    "empty": "第一句话告诉它要帮你做什么。以后有事随时发，一次发几件也行。",
+    "copy": "拷贝",
+    "process": "过程",
+    "processLine": "用时 {{time}} · {{count}} 步",
+    "processFold": "收起过程",
+    "busyOpen": "看看它在做什么",
+    "busyClose": "收起",
+    "retrying": "连接不稳，正在重试",
+    "earlier": "更早的消息",
+    "loadingEarlier": "正在载入更早的消息",
+    "toBottom": "回到底部",
+    "queued": "等它回完这一句就送达"
+  },
+  "ask": {
+    "title": "需要你确认",
+    "allow": "允许",
+    "deny": "不允许",
+    "allowed": "已允许",
+    "denied": "没有允许"
+  },
+  "sheet": {
+    "newTitle": "新建 Bot",
+    "editTitle": "改名字、换头像",
+    "sub": "起个名字，挑个头像。要它做什么，直接在对话里说。",
+    "name": "名字",
+    "placeholder": "比如：研究员",
+    "avatar": "头像",
+    "upload": "上传图片…",
+    "cancel": "取消",
+    "create": "创建",
+    "save": "保存",
+    "mono": "名字的第一个字",
+    "mark": "FinxWork 标志",
+    "tooLarge": "图片太大了：最大 10 MB",
+    "unreadable": "读不了这张图片",
+    "shapes": {
+      "round": "圆圆",
+      "box": "方块",
+      "ghost": "小幽灵",
+      "cloud": "云朵",
+      "dome": "圆顶",
+      "cat": "小猫",
+      "egg": "蛋",
+      "gem": "宝石"
+    },
+    "hues": {
+      "slate": "石板蓝",
+      "sage": "鼠尾草绿",
+      "clay": "陶土红",
+      "ochre": "赭黄",
+      "plum": "梅紫",
+      "teal": "青",
+      "rose": "玫瑰",
+      "stone": "石灰"
+    }
+  },
+  "menu": {
+    "more": "更多操作",
+    "edit": "改名字、换头像",
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "read": "标为已读",
+    "unread": "标为未读",
+    "clear": "清空聊天记录",
+    "delete": "删除 Bot",
+    "default": "默认 Bot"
+  },
+  "clear": {
+    "title": "清空和「{{name}}」的聊天记录？",
+    "message": "清空以后它不再记得之前聊过的内容。",
+    "working": "手上的{{things}}会停下。",
+    "button": "清空",
+    "done": "聊天记录已清空"
+  },
+  "delete": {
+    "title": "删除「{{name}}」？",
+    "message": "它的聊天记录、做出来的文件和手上的事都会一起删除。",
+    "button": "删除",
+    "done": "已删除「{{name}}」"
+  },
+  "pinned": "已置顶"
+}

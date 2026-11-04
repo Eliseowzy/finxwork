@@ -66,6 +66,8 @@ const paths: Record<string, string> = {
   // Stacked sheets: work going on in the background.
   layers: "<path d=\"M8 2.3l5.6 2.9L8 8.1 2.4 5.2z\"/><path d=\"M2.4 8l5.6 2.9L13.6 8\"/><path d=\"M2.4 10.8l5.6 2.9 5.6-2.9\"/>",
   pause: "<path d=\"M6 4.2v7.6M10 4.2v7.6\"/>",
+  // A pinned bot (bot-mode-design §6.16).
+  pin: "<path d=\"M10 2.4l3.6 3.6-1.9.8-2.5 2.5.2 2.8-1.1 1.1-5-5 1.1-1.1 2.8.2 2.5-2.5z\"/><path d=\"M5.3 10.7L2.6 13.4\"/>",
   // 自定义: three tiles and a fourth being added.
   blocks: "<rect x=\"2.8\" y=\"2.8\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"9.3\" y=\"2.8\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><rect x=\"2.8\" y=\"9.3\" width=\"3.9\" height=\"3.9\" rx=\"1.1\"/><path d=\"M11.25 9.1v4.3M9.1 11.25h4.3\"/>",
   // A skill: an open book.

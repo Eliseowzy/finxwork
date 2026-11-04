@@ -61,6 +61,8 @@ export function run(st: Store, c: Command) {
   const s = selected(st);
   switch (c) {
     case "newSession":
+      // In Bot mode, ⌘N makes a bot (bot-mode-design §6.1).
+      if (st.mode === "bots") return st.set({ botSheet: { kind: "new" }, searching: false });
       return st.set({ selection: { kind: "new" }, searching: false });
     case "openProject":
       return openProject(st);

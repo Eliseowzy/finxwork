@@ -36,10 +36,11 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const open = () => {
     if (!info) return;
     if (info.kind === null) return void openRef(st, info, target.line);
+    if (scope.panel === false) return info.kind === "folder" ? window.finx?.openFolder(info.path) : void openRef(st, info, target.line);
     if (info.kind === "folder") return inSession(scope.cwd, info.path) ? showFolder(st, scope.session, scope.cwd, info.path) : window.finx?.openFolder(info.path);
     showFile(st, scope.session, scope.cwd, info.path, { line: target.line, endLine: target.endLine });
   };
-  const menu = () => info && void fileMenu(st, info, target.line, open);
+  const menu = () => info && void fileMenu(st, info, target.line, scope.panel === false ? undefined : open);
   return (
     <span
       className={`fref ${code !== undefined ? "mono" : ""} ${missing ? "gone" : ""}`}

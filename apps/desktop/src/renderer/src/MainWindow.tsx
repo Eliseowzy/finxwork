@@ -11,6 +11,8 @@ import { SessionPage } from "./session/SessionPage";
 import { Sidebar } from "./sidebar/Sidebar";
 import { useOverlay } from "./overlays";
 import { useStore } from "./store";
+import { BotPage } from "./bots/BotPage";
+import { BotSheet } from "./bots/BotSheet";
 
 export function MainWindow() {
   const st = useStore();
@@ -26,6 +28,13 @@ export function MainWindow() {
     if (session) listed.current = sel.id;
     else if (st.loaded && listed.current === sel.id) st.set({ selection: { kind: "new" } });
   }, [sel, st.loaded, session, st.set]);
+  // Bot mode shows a bot: the one chosen last, else the first; one deleted makes way for the first.
+  const bot = sel.kind === "bot" ? st.bots.find((b) => b.id === sel.id) : undefined;
+  useEffect(() => {
+    if (st.mode !== "bots" || !st.botsLoaded || sel.kind === "customize" || bot) return;
+    const next = st.bots.find((b) => b.id === st.lastBot) ?? st.bots[0];
+    if (next) st.selectBot(next.id);
+  }, [st.mode, st.botsLoaded, sel, bot, st.bots]);
   // A peek ends when it fits again, when another session or page is chosen, and with Esc.
   usePeekEnd(st);
   useEffect(() => {
@@ -50,7 +59,15 @@ export function MainWindow() {
       {sidebar === "over" && <div className="peek-scrim" onClick={() => setSidebar(st, false)} />}
       {/* The toast sits in the content, under its title bar: never over the composer at the bottom. */}
       <section className="content">
-        {sel.kind === "customize" ? <Customize /> : session ? <SessionPage key={session.session_id} s={session} /> : <NewSession />}
+        {sel.kind === "customize" ? (
+          <Customize />
+        ) : st.mode === "bots" ? (
+          bot ? <BotPage key={bot.id} bot={bot} /> : <div className="empty"><span className="mini-spin" /></div>
+        ) : session ? (
+          <SessionPage key={session.session_id} s={session} />
+        ) : (
+          <NewSession />
+        )}
         <ToastView />
       </section>
       {st.searching && <SearchPalette />}
@@ -58,6 +75,7 @@ export function MainWindow() {
           (the main process does), and the click that did it lands on the dim, not on what is under it. */}
       {settingsOpen && <div className="settings-dim" />}
       <SheetHost />
+      {st.botSheet && <BotSheet key={JSON.stringify(st.botSheet)} sheet={st.botSheet} />}
       <KeySheet />
     </div>
   );

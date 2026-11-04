@@ -1,0 +1,144 @@
+/* Bot mode (docs/desktop/bot-mode-design.md §9): the prototype's styles (docs/desktop/bot-mode-demo.html), in the
+   app's own tokens. Radii come from --r-*, never pills; colours from the design variables, except an avatar's own. */
+
+/* The mode switch: the global .seg at the right of the sidebar's top. The other mode's segment carries a dot when
+   something waits there: blue a bot's new message, orange an approval. */
+.side-top .mode{margin-left:auto}
+.side-top .mode button{padding:0 11px}
+.mdot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none}
+.mdot.warn{background:var(--orange)}
+.side-list.fadein{animation:fadein .28s var(--ease-out)}
+
+/* An avatar: a rounded square, as square as the window, its corner by its size. Its colour is its own, the same in
+   both themes, like a photo. */
+.bav{position:relative;flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:hidden;background:var(--h,#858b95);color:#fff;font-weight:600;line-height:1;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.06)}
+:root[data-theme="dark"] .bav{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .bav{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.08)}}
+.bav>svg{width:100%;height:100%;display:block}
+/* The default bot: the FinxWork α on ink. */
+.bav.mark{background:#0e1015}
+.bav.mark>img{width:68%;height:68%;display:block}
+.bav.pic{background:var(--fill2)}
+.bav.pic>img{width:100%;height:100%;object-fit:cover;display:block}
+.bav.s22{width:22px;height:22px;border-radius:var(--r-xs);font-size:11.5px}
+.bav.s28{width:28px;height:28px;border-radius:var(--r-sm);font-size:13.5px}
+.bav.s36{width:36px;height:36px;border-radius:var(--r-md);font-size:16px}
+.bav.s64{width:64px;height:64px;border-radius:var(--r-xl);font-size:28px}
+/* Busy, it moves: a character looks around and blinks; the mark and a letter breathe. No status dot besides. */
+.bav .eyes{transform-box:fill-box;transform-origin:center}
+.bav.busy .eyes{animation:glance 3.6s var(--ease-in-out) infinite}
+@keyframes glance{0%,16%{transform:none}24%,42%{transform:translateX(-1.4px)}50%,68%{transform:translateX(1.4px)}76%,84%{transform:none}88%{transform:scaleY(.15)}92%,100%{transform:none}}
+.bav .ch{font-weight:inherit}
+.bav.busy.mark>img,.bav.busy .ch{animation:live-breathe 2.4s ease-in-out infinite}
+@media (prefers-reduced-motion:reduce){.bav.busy .eyes,.bav.busy.mark>img,.bav.busy .ch{animation:none}}
+
+/* The list: a row per bot, as a chat app's. Its two lines are 36 high, the avatar's height; padding, corners, hover
+   and selection are a session row's (.srow). */
+.side-list.bots{display:flex;flex-direction:column;gap:2px}
+.brow{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:var(--r-md);outline-offset:-2px;cursor:default}
+.brow:hover{background:var(--fill)}
+.brow.sel{background:var(--side-sel)}
+.bmain{flex:1;min-width:0}
+.bl1{position:relative;display:flex;align-items:center;gap:5px;height:20px}
+.bname{flex:0 1 auto;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bpin{width:12px;height:12px;color:var(--l3);flex:none}
+.btime{margin-left:auto;flex:none;padding-left:6px;font-size:11px;color:var(--l3);font-variant-numeric:tabular-nums}
+.brow .rowact{margin-left:auto;display:none}
+.brow:hover .btime,.brow.menu-open .btime{display:none}
+.brow:hover .rowact,.brow.menu-open .rowact{display:flex}
+.brow.menu-open .rowact{background:var(--fill2);color:var(--l1)}
+.bl2{display:flex;align-items:center;gap:8px;height:16px;font-size:12px;color:var(--l2)}
+.bprev{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bprev .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+.btag{color:var(--orange)}
+.bbadge{flex:none;min-width:16px;height:16px;padding:0 5px;border-radius:var(--r-sm);background:var(--accent);color:#fff;font-size:10.5px;font-weight:600;line-height:16px;text-align:center;font-variant-numeric:tabular-nums}
+.vmenu .mi .mi-note{margin-left:auto;padding-left:16px;font-size:11.5px;color:var(--l3)}
+
+/* The page's top: avatar and name (a click changes them), then what the bot is doing now. */
+.bhead{display:flex;align-items:center;gap:8px;min-width:0;height:28px;padding:0 7px 0 3px;margin-left:-3px;border:0;border-radius:var(--r-sm);background:none;color:inherit;font:inherit}
+.bhead:hover{background:var(--fill2)}
+.bhead h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.spage.bot .ctitle{display:flex;align-items:center;gap:8px;min-width:0}
+.spage.bot .ctitle .sub{flex:none;font-size:12px;color:var(--l2)}
+.spage.bot .ctitle .sub.warn{color:var(--orange)}
+.spage.bot .ctitle .sub .shimmer{display:inline-block;vertical-align:top}
+
+/* The conversation: bubbles on both sides, as in a chat app; a message shows whole once sent. The owner's bubble is
+   a session page's; the bot's sits on the left, a shade off the window, its avatar beside the first of a run. Two
+   bubbles in a row from the same side sit close (6); a change of side puts them apart (21). On hover, the time and
+   buttons go beside the bubble, taking no room under it. */
+.tr.bots .um{margin-bottom:var(--sp-1)}
+.tr.bots .um:has(+ .um){margin-bottom:0}
+.tr.bots .um+.um{margin-top:-7px}
+.tr.bots .um .msg-act{top:auto;bottom:0;right:100%;padding:0 6px 0 0}
+.tr.bots .um.queued .bub{opacity:.72}
+.bm{display:flex;gap:10px;align-items:flex-start;border-radius:var(--r-md)}
+.tr.bots .bm+.bm{margin-top:-7px}
+.bm>.bav{margin-top:5px}
+.bm-sp{width:28px;flex:none}
+.bm-b{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start}
+.bline{position:relative;display:flex;align-items:flex-end;gap:6px;max-width:100%}
+.bbub{min-width:0;max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--msg);font-size:15px;line-height:21px;overflow-wrap:anywhere}
+.bbub .md>*+*{margin-top:8px}
+.bbub .md pre{background:var(--win)}
+.bbub .md :is(pre,table,.md-table){max-width:100%;overflow-x:auto}
+.bline .msg-act{position:static;flex:none;padding:0 0 6px}
+.bm:hover .msg-act,.bline .msg-act:focus-within{opacity:1}
+.msg-act .tb.on{color:var(--l1);background:var(--fill)}
+
+/* A message's process: the session page's steps, opened under the bubble from its hover button. */
+.bm .tg-b.bproc{width:min(640px,100%);margin:6px 0 2px}
+.bproc-h{padding:var(--sp-1) var(--sp-2) 2px;font-size:12px;color:var(--l3)}
+
+/* Busy: the last bubble. Three dots while it answers; with helpers at work, what they do, opening to each one's
+   steps and how long it has worked. */
+.wbub{display:flex;flex-direction:column;padding:0}
+.wb-h{display:flex;align-items:center;gap:9px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}
+button.wb-h{cursor:pointer}
+.dots{display:inline-flex;align-items:center;gap:4px;height:21px;flex:none}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--l3);animation:dot 1.3s ease-in-out infinite}
+.dots i:nth-child(2){animation-delay:.16s}
+.dots i:nth-child(3){animation-delay:.32s}
+@keyframes dot{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-3px);opacity:.95}}
+.wb-t{min-width:0;font-size:14px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-h .chev{width:14px;height:14px;margin-left:-5px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s var(--ease-out)}
+.wb-h[aria-expanded="true"] .chev{transform:none}
+.wb-l{display:flex;flex-direction:column;gap:2px;padding:0 6px 8px;min-width:280px}
+.wb-r{display:flex;align-items:baseline;gap:8px;width:100%;min-width:0;padding:5px 9px;border-radius:var(--r-md);font-size:13px;line-height:19px;color:var(--l1)}
+.wb-rl{flex:0 1 auto;max-width:46%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-ra{flex:1;min-width:0;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-ra .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+.wb-rt{flex:none;font-size:12px;color:var(--l3);font-variant-numeric:tabular-nums}
+.wb-s{display:flex;align-items:baseline;gap:8px;min-width:0;padding:2px 9px;font-size:13px;line-height:19px;color:var(--l3)}
+.wb-s>span:first-child{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wb-s.now{color:var(--l1)}
+.wb-s .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+@media (prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.6}}
+
+/* An approval: a card from the bot, in its bubble's shape; answered, the answer stays on it. */
+.bask{display:flex;flex-direction:column;gap:4px;width:min(420px,100%)}
+.bask-t{display:flex;align-items:center;gap:6px;font-size:12.5px;line-height:18px;color:var(--orange)}
+.bask-t .ic{width:14px;height:14px}
+.bask-d{white-space:pre-wrap;overflow-wrap:anywhere}
+.bask-f{display:flex;gap:var(--sp-1);margin-top:var(--sp-1)}
+.bask.done .bask-t{color:var(--l3)}
+.bask-r{display:flex;align-items:center;gap:5px;margin-top:2px;font-size:12.5px;color:var(--l2)}
+.bask-r .ic{color:var(--green)}
+
+/* A new bot's empty page: its avatar, its name, one line on how to start. */
+.bempty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--sp-1);padding-top:14vh}
+.bempty h3{margin:var(--sp-2) 0 0;font-size:20px;font-weight:600}
+.bempty p{margin:0;max-width:320px;color:var(--l2);font-size:13px;line-height:1.6}
+
+/* Making a bot: a name and an avatar, nothing else. */
+.bsheet .sub{margin-bottom:var(--sp-3)}
+.bs-top{display:flex;align-items:center;gap:var(--sp-2);margin-bottom:var(--sp-3)}
+.bs-name{flex:1;display:flex;flex-direction:column;gap:var(--sp-1);font-size:12px;color:var(--l2)}
+.bs-name .field{height:30px;font-size:14px}
+.bs-k{margin:0 0 var(--sp-1);font-size:12px;color:var(--l2)}
+.bs-shapes{display:flex;flex-wrap:wrap;gap:var(--sp-1);margin-bottom:var(--sp-2)}
+.bs-shape{padding:0;border:0;background:none;border-radius:var(--r-md);line-height:0}
+.bs-shape.on{box-shadow:0 0 0 2px var(--win),0 0 0 3.5px var(--accent)}
+.bs-hues{display:flex;gap:10px;padding:2px}
+.bs-hue{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:var(--h)}
+.bs-hue.on{box-shadow:0 0 0 2px var(--win),0 0 0 3.5px var(--l1)}

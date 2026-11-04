@@ -400,6 +400,27 @@ export function registerIPC() {
     if (r.canceled) return [];
     return attachFiles(r.filePaths);
   });
+  // A bot's avatar (bot-mode-design §6.3): the system reads the picture, HEIC too; the page gets
+  // a square 256 px PNG, which is all finx keeps.
+  ipcMain.handle("pick-avatar", async (e) => {
+    if (!trusted(e)) return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      properties: ["openFile"] as "openFile"[],
+      filters: [{ name: i18n.t("main:dialog.images"), extensions: ["png", "jpg", "jpeg", "heic"] }],
+    };
+    const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+    const file = r.canceled ? undefined : r.filePaths[0];
+    if (!file) return null;
+    const size = await fs.promises.stat(file).then((s) => s.size, () => 0);
+    if (size > 10 * 1024 * 1024) return { error: "too_large" };
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return { error: "unreadable" };
+    const { width, height } = img.getSize();
+    const side = Math.min(width, height);
+    const square = img.crop({ x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), width: side, height: side });
+    return { png: square.resize({ width: 256, height: 256, quality: "best" }).toPNG().toString("base64") };
+  });
   // What is pasted into the composer: the files and folders copied (in Finder, Explorer), else
   // a picture with no file (a screenshot). Read only when the person pastes.
   ipcMain.handle("paste-files", async (e): Promise<PastedItem[]> => {
