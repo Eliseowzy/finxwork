@@ -12,6 +12,7 @@ use finx_core::StartOptions;
 use finx_core::Workspace;
 use finx_protocol::Event;
 use finx_protocol::EventMsg;
+use finx_protocol::api::SessionState;
 use finx_protocol::api::method;
 use finx_protocol::bot::Avatar;
 use finx_protocol::bot::AvatarInput;
@@ -64,6 +65,8 @@ struct BotFile {
     default: bool,
     #[serde(default)]
     pinned: bool,
+    #[serde(default)]
+    muted: bool,
     created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
@@ -86,6 +89,7 @@ struct Bot {
     typing: bool,
     helpers: u32,
     waiting: Option<String>,
+    failed: bool,
 }
 
 impl Bot {
@@ -95,6 +99,7 @@ impl Bot {
             typing: false,
             helpers: 0,
             waiting: None,
+            failed: false,
         }
     }
 
@@ -112,6 +117,8 @@ impl Bot {
             typing: self.typing,
             helpers: self.helpers,
             waiting: self.waiting.clone(),
+            failed: self.failed,
+            muted: f.muted,
             created_at: f.created_at.clone(),
         }
     }
@@ -195,7 +202,7 @@ impl Registry {
             let Some(bot) = guard.as_mut().and_then(|bots| bots.get_mut(id)) else {
                 return;
             };
-            let before = (bot.typing, bot.helpers, bot.waiting.clone());
+            let before = (bot.typing, bot.helpers, bot.waiting.clone(), bot.failed);
             let mut kept = false;
             match &event.msg {
                 // A message to the user is a bubble from the call's start, as the client shows it.
@@ -224,7 +231,8 @@ impl Registry {
             bot.typing = mirror.busy();
             bot.helpers = mirror.agents_working();
             bot.waiting = mirror.first_approval().map(str::to_string);
-            (kept || before != (bot.typing, bot.helpers, bot.waiting.clone()), kept)
+            bot.failed = mirror.state() == SessionState::Failed;
+            (kept || before != (bot.typing, bot.helpers, bot.waiting.clone(), bot.failed), kept)
         };
         if kept {
             self.save_later(id);
@@ -238,8 +246,8 @@ impl Registry {
     pub(crate) fn on_unloaded(&self, id: &str) {
         let changed = self.with(|bots| {
             bots.get_mut(id).is_some_and(|bot| {
-                let was = bot.typing || bot.helpers > 0 || bot.waiting.is_some();
-                (bot.typing, bot.helpers, bot.waiting) = (false, 0, None);
+                let was = bot.typing || bot.helpers > 0 || bot.waiting.is_some() || bot.failed;
+                (bot.typing, bot.helpers, bot.waiting, bot.failed) = (false, 0, None, false);
                 was
             })
         });
@@ -416,6 +424,9 @@ impl Server {
             if let Some(pinned) = params.pinned {
                 bot.file.pinned = pinned;
             }
+            if let Some(muted) = params.muted {
+                bot.file.muted = muted;
+            }
             match name {
                 Some(name) if name != bot.file.name => {
                     bot.file.name = name.clone();
@@ -583,6 +594,7 @@ fn new_file(name: String, avatar: Avatar, default: bool) -> BotFile {
         avatar,
         default,
         pinned: false,
+        muted: false,
         created_at: list::now(),
         session_id: None,
         summary: Kept::default(),

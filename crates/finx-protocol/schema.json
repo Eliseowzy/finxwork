@@ -1118,6 +1118,10 @@
           "description": "The bot every user has: it cannot be deleted.",
           "type": "boolean"
         },
+        "failed": {
+          "description": "Its last task failed, so no message may be coming. Only while its conversation is loaded.",
+          "type": "boolean"
+        },
         "helpers": {
           "description": "Background helpers (sub-agents) at work.",
           "format": "uint32",
@@ -1136,6 +1140,10 @@
               "type": "null"
             }
           ]
+        },
+        "muted": {
+          "description": "The owner asked not to be alerted about this bot, on any device.",
+          "type": "boolean"
         },
         "name": {
           "type": "string"
@@ -1190,6 +1198,12 @@
         },
         "bot_id": {
           "type": "string"
+        },
+        "muted": {
+          "type": [
+            "boolean",
+            "null"
+          ]
         },
         "name": {
           "type": [
