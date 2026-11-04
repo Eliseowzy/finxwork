@@ -25,8 +25,8 @@
   },
   "browserNote": "This page runs outside the app: its preferences aren't kept.",
   "models": {
-    "subscription": "Use a subscription",
-    "subscriptionNote": "Uses each account’s subscription allowance. API keys are billed separately.",
+    "subscription": "Subscriptions & plans",
+    "subscriptionNote": "Connect and manage your existing accounts and model plans.",
     "chatgpt": {
       "forget": "Forget account",
       "note": "Sign in with your ChatGPT account",
@@ -49,7 +49,7 @@
     "default": "Default",
     "reasoning": "Thinking",
     "context": "{{size}} context",
-    "api": "Use an API key",
+    "api": "API & custom services",
     "qwen": "QwenWork",
     "add": "Add API service",
     "close": "Close",
@@ -140,6 +140,60 @@
         "check_account": "Check account or organization permissions in the source app.",
         "retry": "Retry later. Existing connections and model catalogs are retained.",
         "check_details": "Check the failed step and error code to troubleshoot or contact support."
+      }
+    },
+    "plans": {
+      "connect": "Connect Token Plan",
+      "subtitle": "Connect your existing model plan",
+      "choose": "Choose your plan",
+      "chooseNote": "Select your subscription, then enter its API key.",
+      "allPlans": "All plans",
+      "pickerNote": "Add each plan once, then manage it here anytime.",
+      "added": "Added",
+      "needsAttention": "Check connection",
+      "details": "Connection details",
+      "endpoint": "Endpoint",
+      "protocol": "Protocol",
+      "catalog": "Models",
+      "dynamicCatalog": "Fetched from the plan service; refreshable",
+      "seedCatalog": "Plan presets, updated with the app",
+      "catalogNote": "Preset models do not confirm account access. Availability depends on your subscription.",
+      "getKey": "Get API key",
+      "keyPlaceholder": "Paste the API key for this plan",
+      "keyNote": "Your key is saved in the local credential store. Use the key for this specific plan.",
+      "save": "Save and connect",
+      "saving": "Saving…",
+      "verified": "Connection verified",
+      "verifiedNote": "The plan model list is available. Choose a model from the model menu to use it.",
+      "saved": "API key saved",
+      "unverifiedNote": "Connection not yet verified; your first model request will verify it. You can manage visible models now.",
+      "done": "Done",
+      "removeNote": "Removes the saved key from this device. Your subscription with the provider stays active.",
+      "products": {
+        "bailian-token-plan": {
+          "name": "Bailian Token Plan",
+          "note": "Alibaba Cloud · multi-model plan"
+        },
+        "tencent-token-plan": {
+          "name": "Tencent Cloud Token Plan",
+          "note": "General and Hy plans share one key"
+        },
+        "volcengine-agent-plan": {
+          "name": "Volcengine Ark Agent Plan",
+          "note": "Use your dedicated Agent Plan key"
+        },
+        "volcengine-coding-plan": {
+          "name": "Volcengine Ark Coding Plan",
+          "note": "Connect your existing Coding Plan"
+        },
+        "zai-coding-plan": {
+          "name": "Z.ai GLM Coding Plan",
+          "note": "International account"
+        },
+        "zhipu-coding-plan": {
+          "name": "Zhipu GLM Coding Plan",
+          "note": "China account"
+        }
       }
     }
   },

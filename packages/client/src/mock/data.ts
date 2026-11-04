@@ -1,3 +1,4 @@
+import { demoTokenPlans } from "./token-plans.ts";
 import type { ModelsListResult, ModelSummary, PermissionMode, ProviderSummary, SkillsListResult, SkillUse, ThinkingLevel } from "@finx/protocol";
 import { skillMentions } from "../mentions.ts";
 import type { TaskScript } from "./script.ts";
@@ -419,6 +420,7 @@ export type DemoSelection = ReadonlyMap<string, boolean>;
  */
 export function demoModels(stored: ReadonlySet<string> = new Set(), selection: DemoSelection = new Map(), fetchedAt = "2026-10-30T08:00:00Z"): ModelsListResult {
   const providers: ProviderSummary[] = [
+    ...demoTokenPlans.map(p => ({ ...p, credential: stored.has(p.id) ? "stored" as const : "missing" as const })),
     { id: "deepseek", name: "DeepSeek", auth: "api_key", credential: "env", credential_source: "DEEPSEEK_API_KEY", key_env: ["DEEPSEEK_API_KEY"] },
     { id: "anthropic", name: "Anthropic", auth: "api_key", credential: stored.has("anthropic") ? "stored" : "missing", key_env: ["ANTHROPIC_API_KEY"] },
     { id: "kimi", name: "Moonshot Kimi", auth: "api_key", credential: stored.has("kimi") ? "stored" : "missing", key_env: ["MOONSHOT_API_KEY"] },
@@ -443,6 +445,7 @@ export function demoModels(stored: ReadonlySet<string> = new Set(), selection: D
   };
   const usd = (input: number, output: number) => ({ input, output, currency: "USD" as const });
   const all = [
+    ...demoTokenPlans.map(p => model(`${p.id}/${p.id.startsWith("volcengine") ? "ark-code-latest" : p.id.startsWith("bailian") ? "qwen3.8-max" : p.id.startsWith("tencent") ? "tc-code-latest" : "glm-5.3"}`, p.id.startsWith("volcengine") ? "Ark Auto" : p.id.startsWith("bailian") ? "Qwen3.8-Max" : p.id.startsWith("tencent") ? "Auto" : "GLM-5.3", 131072, false, false)),
     model("deepseek/deepseek-flash", "DeepSeek-V4.1-Flash", 1_048_576, true, true, { released: "2026-10-17", cost: usd(0.15, 0.6) }),
     model("deepseek/deepseek-v4-pro", "DeepSeek-V4-Pro", 1_048_576, true, false, { released: "2026-09-02", cost: usd(0.66, 1.98) }),
     model("deepseek/deepseek-v4-flash", "DeepSeek V4 Flash", 1_048_576, true, true, { released: "2026-06-20", deprecated: true, cost: usd(0.15, 0.6) }),
@@ -456,6 +459,7 @@ export function demoModels(stored: ReadonlySet<string> = new Set(), selection: D
   for (const p of providers) {
     if (p.credential === "missing") continue;
     const mine = models.filter((m) => m.provider === p.id);
+    if (p.plan && !p.plan.dynamic_models) continue;
     p.listing = { source: p.id === "ollama" ? "provider" : "provider", fetched_at: fetchedAt, refreshing: false, models: mine.length, shown: mine.filter((m) => m.shown).length };
   }
   return {

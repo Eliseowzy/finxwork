@@ -22,6 +22,7 @@ fn entry() -> Value {
 
 fn model(base: &str) -> Arc<finx_llm::Model> {
     let provider = ProviderConfig {
+        plan: None,
         id: "qoder".into(),
         name: "Qoder".into(),
         api: "openai-chat".into(),

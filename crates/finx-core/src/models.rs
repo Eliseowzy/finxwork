@@ -115,6 +115,12 @@ pub fn list(llm: &ModelRegistry, defaults: &SessionDefaults, refreshing: &dyn Fn
     for provider in llm.providers() {
         let (credential, credential_source) = credential_of(&provider.auth.status(&provider.id));
         let mut summary = ProviderSummary {
+            plan: provider.plan.as_ref().map(|plan| finx_protocol::api::TokenPlanSummary {
+                key_url: plan.key_url.clone(),
+                base_url: provider.base_url.clone(),
+                api: provider.api.clone(),
+                dynamic_models: provider.listing.path.is_some(),
+            }),
             id: provider.id.clone(),
             name: provider.name.clone(),
             auth: match provider.auth {

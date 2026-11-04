@@ -243,6 +243,7 @@ impl ChatGpt {
             if p.enabled && !p.needs_login {
                 if let Some(id) = Self::provider(&p) {
                     let mut provider = ProviderConfig {
+                        plan: None,
                         id,
                         name: "ChatGPT API".into(),
                         api: "openai-responses".into(),

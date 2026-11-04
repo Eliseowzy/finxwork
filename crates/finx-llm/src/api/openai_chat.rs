@@ -578,7 +578,7 @@ fn apply_thinking(body: &mut Map<String, Value>, model: &Model, level: ThinkingL
                 body.insert("reasoning_effort".into(), json!(value));
             }
         }
-        ThinkingFormat::Deepseek => {
+        ThinkingFormat::Deepseek | ThinkingFormat::Zai => {
             body.insert("thinking".into(), switch(on));
             if let Some(effort) = effort {
                 body.insert("reasoning_effort".into(), json!(effort));
@@ -589,9 +589,6 @@ fn apply_thinking(body: &mut Map<String, Value>, model: &Model, level: ThinkingL
             if effort.is_some() {
                 body.insert("thinking_budget".into(), json!(model.thinking_budget(level)));
             }
-        }
-        ThinkingFormat::Zai => {
-            body.insert("thinking".into(), switch(on));
         }
         ThinkingFormat::Openrouter => {
             let reasoning = match effort {
@@ -968,6 +965,26 @@ mod tests {
         let off: Value = serde_json::from_slice(&build_body(&model, &ctx, &off_opts)).unwrap();
         assert_eq!(off["thinking"]["type"], "disabled");
         assert!(off.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn glm_plan_effort_and_legacy_toggle_have_distinct_wire_values() {
+        let catalog = crate::Catalog::builtin().unwrap();
+        let model = &catalog.providers["zhipu-coding-plan"].models[0];
+        let mut body = Map::new();
+        apply_thinking(&mut body, model, ThinkingLevel::High);
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["reasoning_effort"], "high");
+        body.clear();
+        apply_thinking(&mut body, model, ThinkingLevel::Off);
+        assert_eq!(body["thinking"]["type"], "disabled");
+        assert!(!body.contains_key("reasoning_effort"));
+        let mut legacy = model.as_ref().clone();
+        legacy.thinking = vec![ThinkingLevel::Off, ThinkingLevel::On];
+        body.clear();
+        apply_thinking(&mut body, &legacy, ThinkingLevel::On);
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert!(!body.contains_key("reasoning_effort"));
     }
 
     #[test]

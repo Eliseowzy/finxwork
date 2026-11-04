@@ -226,3 +226,57 @@ async fn the_thinking_level_follows_the_model_and_is_remembered() {
     let models = client.request("models/list", json!({})).await.unwrap();
     assert_eq!(model(&models, "deepseek/deepseek-flash")["default_thinking"], "default");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn token_plans_save_independently_and_do_not_change_session_defaults() {
+    let env = TestEnv::new("manual", "").await;
+    let path = env.home.path().join("models.toml");
+    let mut config = std::fs::read_to_string(&path).unwrap();
+    // All endpoints used by this test are local; the regular API provider stays unconnected.
+    config.push_str(&format!(
+        "\n[providers.bailian-token-plan]\nbase_url = \"{}\"\n\n[providers.zhipu-coding-plan]\nbase_url = \"{}/coding/v4\"\n",
+        env.mock.base_url(), env.mock.base_url(),
+    ));
+    std::fs::write(path, config).unwrap();
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let demux = Demux::spawn(incoming);
+    let before = client.request("models/list", json!({})).await.unwrap();
+    let defaults = before["defaults"].clone();
+    assert_eq!(before["providers"].as_array().unwrap().iter().filter(|p| p.get("plan").is_some()).count(), 6);
+    assert_eq!(provider(&before, "bailian-token-plan")["plan"]["dynamic_models"], true);
+    assert_eq!(provider(&before, "zhipu-coding-plan")["plan"]["dynamic_models"], false);
+
+    let rejected = client.request("auth/set", json!({"provider": "bailian-token-plan", "api_key": finx_mock::REJECTED_KEY})).await.unwrap_err();
+    assert_eq!(rejected.code, -32021);
+    let saved = client.request("auth/set", json!({"provider": "bailian-token-plan", "api_key": "sk-plan-test"})).await.unwrap();
+    assert_eq!(saved["verified"], true);
+    let saved = client.request("auth/set", json!({"provider": "zhipu-coding-plan", "api_key": "sk-glm-plan-test"})).await.unwrap();
+    assert_eq!(saved["verified"], false, "saving a static plan cannot claim validation");
+    let after = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(after["defaults"], defaults);
+    assert_eq!(provider(&after, "qwen")["credential"], "missing");
+    assert_eq!(provider(&after, "glm")["credential"], "missing");
+    assert_eq!(provider(&after, "zai-coding-plan")["credential"], "missing");
+    let glm: Vec<_> = after["models"].as_array().unwrap().iter().filter(|m| m["provider"] == "zhipu-coding-plan").collect();
+    assert_eq!(glm.len(), 2);
+    assert!(glm.iter().all(|m| m.get("cost").is_none()));
+    assert!(model(&after, "bailian-token-plan/qwen3.8-max").is_null(), "a successful list replaces fallback seeds");
+    assert!(!after.to_string().contains("sk-plan-test"));
+
+    // The subscription model is a regular harness model through its dedicated provider route.
+    let cwd = env.workspace("plan-session");
+    let created = client.request("session/new", json!({"cwd": cwd, "model": "bailian-token-plan/mock-2"})).await.unwrap();
+    let session = created["session_id"].as_str().unwrap().to_string();
+    let mut events = demux.subscribe(&session);
+    let turn = native_prompt(&client, &mut events, &session, "hello", false).await;
+    assert_eq!(turn.end["type"], "task_completed", "{:?}", turn.end);
+
+    client.request("auth/set", json!({"provider": "zhipu-coding-plan", "api_key": "sk-glm-replacement-test"})).await.unwrap();
+    client.request("auth/delete", json!({"provider": "zhipu-coding-plan"})).await.unwrap();
+    let removed = client.request("models/list", json!({})).await.unwrap();
+    assert_eq!(provider(&removed, "zhipu-coding-plan")["credential"], "missing");
+    assert_eq!(provider(&removed, "bailian-token-plan")["credential"], "stored");
+    assert!(removed["models"].as_array().unwrap().iter().all(|m| m["provider"] != "zhipu-coding-plan"));
+    assert_eq!(removed["defaults"], defaults);
+}

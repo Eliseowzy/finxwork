@@ -86,6 +86,7 @@ fn setup(server: &MockServer) -> (ModelRegistry, Arc<AtomicUsize>, Arc<AtomicUsi
         },
     );
     let mut p = ProviderConfig {
+        plan: None,
         id: "local-test".into(),
         name: "Managed".into(),
         api: "openai-chat".into(),
@@ -221,6 +222,7 @@ async fn authorization_network_failures_are_retried_each_with_its_own_lease() {
         },
     );
     let mut p = ProviderConfig {
+        plan: None,
         id: "local-test".into(),
         name: "Managed".into(),
         api: "openai-chat".into(),

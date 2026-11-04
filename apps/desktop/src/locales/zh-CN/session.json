@@ -177,6 +177,9 @@
     "gone": "不在模型列表中",
     "thinkingChanged": "{{model}} 没有「{{from}}」档，思考强度改为「{{to}}」",
     "thinkingDefault": "由服务商决定",
+    "recentModels": "最近使用",
+    "findModel": "搜索模型或服务商",
+    "noModel": "没有匹配的模型",
     "webComment": "网页批注",
     "webElement": "网页元素",
     "webDetails": {

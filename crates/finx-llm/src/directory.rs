@@ -208,6 +208,9 @@ impl ModelDirectory {
     /// read: its line of the public catalog and the provider's list. A model the catalog knows
     /// is found even when the list leaves it out.
     pub fn model(&self, provider: &ProviderConfig, id: &str) -> Option<Arc<Model>> {
+        if provider.plan.is_some() {
+            return self.models(provider).get(id).map(|m| m.model.clone());
+        }
         if !provider.listing.is_dynamic() {
             return provider.model(id);
         }
@@ -250,15 +253,16 @@ impl ModelDirectory {
         let public = listing.catalog_id.as_deref().and_then(|id| self.public(id));
         let listed: Option<&[ListedModel]> = list
             .as_ref()
-            .filter(|l| l.source == ListSource::Provider && !l.models.is_empty())
+            .filter(|l| l.source == ListSource::Provider && (provider.plan.is_some() || !l.models.is_empty()))
             .map(|l| l.models.as_slice());
         let (source, mut ids): (IdSource, Vec<String>) = match (listed, &public) {
             (Some(listed), _) => (IdSource::Provider, listed.iter().map(|m| m.id.clone()).collect()),
-            (None, Some(public)) => (IdSource::Catalog, public.models.iter().map(|m| m.id.clone()).collect()),
-            (None, None) => (IdSource::Config, Vec::new()),
+            (None, Some(public)) if provider.plan.is_none() => (IdSource::Catalog, public.models.iter().map(|m| m.id.clone()).collect()),
+            (None, _) => (IdSource::Config, Vec::new()),
         };
         for entry in &listing.entries {
-            if !ids.contains(&entry.id) {
+            // A plan list is authoritative; seeds only cover a missing list endpoint.
+            if !(provider.plan.is_some() && listed.is_some()) && !ids.contains(&entry.id) {
                 ids.push(entry.id.clone());
             }
         }
@@ -340,6 +344,7 @@ fn build(
     let mut model = provider.build_model(Some(&lower), &top);
     // Long-context prices are the catalog's, in dollars; a price set above replaces them all.
     if let Some(public) = public
+        && provider.plan.is_none()
         && model.currency == Currency::Usd
         && lower.cost == public.cost
         && top.cost.is_none()
@@ -577,6 +582,41 @@ mod tests {
         alternate.id = "alt".into();
         alternate.listing = Listing { from: Some("p".into()), catalog_id: Some("deepseek".into()), ..Default::default() };
         assert_eq!(directory.models(&alternate).models.len(), 2);
+    }
+
+    #[test]
+    fn plans_use_only_their_own_membership_and_never_public_prices() {
+        let dir = tempfile::tempdir().unwrap();
+        let directory = ModelDirectory::new(Some(dir.path().to_path_buf()));
+        let mut p = provider(vec![ModelToml { id: "deepseek-flash".into(), ..Default::default() }]);
+        p.plan = Some(crate::catalog::PlanConfig { key_url: "https://example.invalid/plan".into() });
+        let seeds = directory.models(&p);
+        assert_eq!(seeds.source, IdSource::Config);
+        assert_eq!(seeds.models.len(), 1, "do not import the full API catalog");
+        let m = &seeds.get("deepseek-flash").unwrap().model;
+        assert!(m.context_window > 100_000, "still enrich model capabilities");
+        assert!(!m.cost.is_configured());
+        assert!(m.cost_tiers.is_empty());
+        directory.invalidate();
+        assert!(directory.model(&p, "deepseek-v4-pro").is_none(), "single-model lookup also respects plan membership");
+
+        let mut list = ModelList {
+            version: 1, fetched_at: Some(crate::discovery::now()), checked_at: crate::discovery::now(),
+            source: ListSource::Provider, credential: None, error: None,
+            models: vec![ListedModel { id: "new-plan-model".into(), ..Default::default() }],
+        };
+        crate::discovery::write_json(&dir.path().join("lists/p.json"), &list).unwrap();
+        directory.invalidate();
+        let live = directory.models(&p);
+        assert_eq!(live.source, IdSource::Provider);
+        assert_eq!(live.models.len(), 1);
+        assert!(live.get("new-plan-model").is_some());
+        assert!(directory.model(&p, "deepseek-flash").is_none(), "removed seeds stay removed");
+
+        list.models.clear();
+        crate::discovery::write_json(&dir.path().join("lists/p.json"), &list).unwrap();
+        directory.invalidate();
+        assert!(directory.models(&p).models.is_empty(), "an empty successful list is authoritative too");
     }
 
     #[test]

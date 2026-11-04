@@ -9,6 +9,10 @@ import ollama from "../assets/providers/ollama.svg?raw";
 import openai from "../assets/providers/openai.svg?raw";
 import openrouter from "../assets/providers/openrouter.svg?raw";
 import qwen from "../assets/providers/qwen.svg?raw";
+import alibabacloud from "../assets/providers/alibabacloud.svg?raw";
+import tencentcloud from "../assets/providers/tencentcloud.svg?raw";
+import volcengine from "../assets/providers/volcengine.svg?raw";
+import zai from "../assets/providers/zai.svg?raw";
 import zhipu from "../assets/providers/zhipu.svg?raw";
 import { keyProviders, saveKey } from "../composer/KeySetup";
 import { Icon } from "../icons";
@@ -21,7 +25,11 @@ import "../styles/providers.css";
 // first-run page.
 
 /** The providers' own marks (assets/providers/README.md), by provider id. */
-const marks: Record<string, string> = { anthropic, deepseek, google: gemini, kimi, ollama, openai, openrouter, qwen, glm: zhipu };
+const marks: Record<string, string> = { anthropic, deepseek, google: gemini, kimi, ollama, openai, openrouter, qwen, glm: zhipu,
+  "bailian-token-plan": alibabacloud, "tencent-token-plan": tencentcloud,
+  "volcengine-agent-plan": volcengine, "volcengine-coding-plan": volcengine,
+  "zai-coding-plan": zai, "zhipu-coding-plan": zhipu,
+};
 
 /** A provider's mark: its own for the known ones (a variant endpoint as its provider), a code glyph for a custom endpoint, else its initial. */
 export function Brand({ id: given, name }: { id: string; name?: string }) {
@@ -51,7 +59,7 @@ export function ProviderTiles({ onPick, skip = [] }: { onPick: (p: ProviderSumma
   const st = useStore();
   const label = useTileName();
   // The Anthropic-compatible DeepSeek endpoint is the same account as DeepSeek: Settings has it.
-  const providers = keyProviders(st.models.providers).filter((p) => p.id !== "deepseek-anthropic" && !skip.includes(p.id));
+  const providers = keyProviders(st.models.providers).filter((p) => !p.plan && p.id !== "deepseek-anthropic" && !skip.includes(p.id));
   // The catalog lists models for some providers only; the others are found once the key is in.
   const count = (p: ProviderSummary) => st.models.models.filter((m) => m.provider === p.id).length;
   return (
@@ -158,7 +166,7 @@ export function KeyEntry({ provider, onBack, onSaved }: { provider: ProviderSumm
 }
 
 export function useTileName() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation("settings");
   const zh = i18n.language.startsWith("zh");
-  return (p: ProviderSummary) => (zh ? tileNames[p.id]?.zh : tileNames[p.id]?.en) ?? p.name;
+  return (p: ProviderSummary) => p.plan ? t(`models.plans.products.${p.id}.name`, { defaultValue: p.name }) : (zh ? tileNames[p.id]?.zh : tileNames[p.id]?.en) ?? p.name;
 }

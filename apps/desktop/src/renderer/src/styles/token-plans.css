@@ -1,0 +1,59 @@
+/* A compact, separate group shared by Settings and first-run connections. */
+.token-plan-connected{margin-top:12px}
+.token-plan-row{width:100%;text-align:left;cursor:pointer}
+.token-plan-row .fn,.token-plan-row .fdesc{display:block}
+.token-plan-row>.ic,.token-plan-entry>.ic,.token-plan-option>.ic{flex:none;color:var(--l3);width:14px;height:14px}
+.token-plan-entry{display:flex;align-items:center;gap:16px;width:100%;min-height:72px;margin-top:12px;padding:15px 18px;border:1px solid var(--sep);border-radius:11px;background:var(--win);color:var(--l1);text-align:left;cursor:pointer;transition:background .15s,border-color .15s}
+.token-plan-entry:hover,.token-plan-option:hover,.token-plan-row:hover{background:var(--fill2)}
+.token-plan-entry:focus-visible,.token-plan-option:focus-visible,.token-plan-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.token-plan-stack{display:flex;align-items:center;flex:none;padding-right:2px;isolation:isolate}
+.token-plan-stack>span{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;border:2px solid var(--win);background:var(--win);box-shadow:0 0 0 1px var(--sep)}
+.token-plan-stack>span+span{margin-left:-13px}
+.token-plan-stack .provider-brand{width:18px;height:18px}
+.token-plan-entry-text{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.token-plan-entry-text strong{font-size:13px;font-weight:600}
+.token-plan-entry-text>span{font-size:11px;line-height:1.5;color:var(--l3)}
+.token-plan-dialog{max-width:calc(100vw - 32px)}
+.token-plan-dialog .sheet-in{padding:0;overflow:auto;max-height:calc(100dvh - 64px)}
+.token-plan-toolbar{display:flex;align-items:center;justify-content:space-between;min-height:54px;padding:16px 20px 6px;font-size:11px;color:var(--l3)}
+.token-plan-back{display:flex;align-items:center;gap:3px;background:none;border:0;padding:4px 0;color:var(--l2);cursor:pointer;font-size:12px}
+.token-plan-back .ic{width:14px;height:14px}
+.token-plan-heading{padding:14px 28px 22px}
+.token-plan-heading h2{font-size:20px;font-weight:650;letter-spacing:-.4px;line-height:1.45;margin:0 0 7px}
+.token-plan-heading p{margin:0;color:var(--l3);font-size:12px;line-height:1.6}
+.token-plan-picker{margin:0 20px;border:1px solid var(--sep);border-radius:12px;overflow:hidden}
+.token-plan-option{display:flex;align-items:center;gap:13px;text-align:left;width:100%;padding:15px 16px;background:var(--win);border:0;color:var(--l1);cursor:pointer}
+.token-plan-option+.token-plan-option{border-top:1px solid var(--sep)}
+.token-plan-mark{width:40px;height:40px;display:grid;place-items:center;flex:none;border:1px solid var(--sep);border-radius:50%;background:var(--win)}
+.token-plan-mark .provider-brand{width:24px;height:24px}
+.token-plan-option-text{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.token-plan-option-text strong{font-size:13px;line-height:1.4;font-weight:600}
+.token-plan-option-text>span{font-size:11px;line-height:1.4;color:var(--l3)}
+.token-plan-badge{font-size:10px;color:var(--l3);flex:none}
+.token-plan-picker-note{font-size:11px;color:var(--l3);line-height:1.6;margin:16px 28px 24px;text-align:center}
+.token-plan-product-heading{text-align:center;padding-top:12px}
+.token-plan-product-heading .token-plan-mark{margin:0 auto 14px;width:52px;height:52px}
+.token-plan-product-heading .provider-brand{width:30px;height:30px}
+.token-plan-product-heading h2{font-size:18px}
+.token-plan-body{padding:0 28px 26px}
+.token-plan-key-label{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;margin:4px 0 9px}
+.token-plan-key-label label{font-weight:550}
+.token-plan-key-label a{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--accent-t);text-decoration:none}
+.token-plan-key-label .ic{width:12px;height:12px}
+.token-plan-key{display:block;width:100%;height:39px;padding:0 12px;font-size:12px}
+.token-plan-note,.token-plan-status{color:var(--l3);font-size:11px;line-height:1.7;margin:10px 0 18px}
+.token-plan-details{border-top:1px solid var(--sep);padding-top:14px;font-size:11px;color:var(--l2);line-height:1.6;margin:18px 0 24px}
+.token-plan-details summary{cursor:pointer}
+.token-plan-details dl{display:grid;grid-template-columns:68px minmax(0,1fr);gap:8px;margin:14px 0 0}
+.token-plan-details dt{color:var(--l3)}
+.token-plan-details dd{margin:0;overflow-wrap:anywhere;user-select:text}
+.token-plan-details p{color:var(--l3);margin:12px 0 0}
+.token-plan-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px}
+.token-plan-result{display:flex;align-items:flex-start;gap:10px;padding:14px;background:var(--fill2);border-radius:10px;font-size:12px;line-height:1.6}
+.token-plan-result>.ic{color:var(--green);margin-top:2px;flex:none}
+.token-plan-result p{font-size:11px;color:var(--l2);margin:4px 0 0}
+.token-plan-body .err{font-size:12px;line-height:1.6;color:var(--red);overflow-wrap:anywhere;margin:12px 0}
+.token-plan-remove{border-top:1px solid var(--sep);padding-top:16px;margin-top:20px;font-size:11px;color:var(--l2)}
+.token-plan-text-button{background:none;border:0;padding:0;font-size:11px;color:var(--l3);cursor:pointer}
+@media(max-width:440px){.token-plan-entry{padding:14px;gap:12px}.token-plan-stack>span{width:26px;height:26px}.token-plan-stack>span+span{margin-left:-12px}.token-plan-stack .provider-brand{width:16px;height:16px}.token-plan-picker{margin:0 14px}.token-plan-option{padding:13px 12px;gap:10px}.token-plan-body,.token-plan-heading{padding-left:22px;padding-right:22px}.token-plan-badge{max-width:32px;line-height:1.4}}
+@media(prefers-reduced-motion:reduce){.token-plan-entry{transition:none}}

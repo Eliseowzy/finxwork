@@ -25,8 +25,8 @@
   },
   "browserNote": "这个页面运行在应用之外，偏好不会保存。",
   "models": {
-    "subscription": "使用订阅",
-    "subscriptionNote": "使用对应账户的订阅额度，API Key 单独计费。",
+    "subscription": "订阅与套餐",
+    "subscriptionNote": "连接已有账户或模型套餐，在这里管理接入方式。",
     "chatgpt": {
       "forget": "忘记账户",
       "note": "使用 ChatGPT 账户登录",
@@ -49,7 +49,7 @@
     "default": "默认",
     "reasoning": "支持思考",
     "context": "上下文 {{size}}",
-    "api": "用 API Key",
+    "api": "API 与自定义服务",
     "qwen": "千问办公",
     "add": "添加 API 服务",
     "close": "关闭",
@@ -140,6 +140,60 @@
         "check_account": "请检查来源应用中的账户或组织权限。",
         "retry": "可稍后重试；已有连接和模型目录会保留。",
         "check_details": "请查看失败阶段和错误码，排查配置或联系支持。"
+      }
+    },
+    "plans": {
+      "connect": "接入 Token Plan",
+      "subtitle": "连接你已有的模型套餐",
+      "choose": "选择你的套餐",
+      "chooseNote": "选择已订阅的服务，下一步填写 API Key。",
+      "allPlans": "所有套餐",
+      "pickerNote": "套餐只需添加一次，之后可以随时管理。",
+      "added": "已接入",
+      "needsAttention": "需要检查连接",
+      "details": "连接详情",
+      "endpoint": "接入地址",
+      "protocol": "接口协议",
+      "catalog": "模型目录",
+      "dynamicCatalog": "从套餐服务获取，可刷新",
+      "seedCatalog": "套餐预置目录，随应用更新",
+      "catalogNote": "预置模型不代表账户已获得访问权限，实际可用范围以你的套餐为准。",
+      "getKey": "获取密钥",
+      "keyPlaceholder": "粘贴这个套餐的 API Key",
+      "keyNote": "密钥会保存在本机凭据存储中。请使用当前套餐对应的密钥。",
+      "save": "保存并接入",
+      "saving": "正在保存…",
+      "verified": "已验证连接",
+      "verifiedNote": "已获取套餐模型目录，可在模型菜单中选择使用。",
+      "saved": "密钥已保存",
+      "unverifiedNote": "尚未验证连接；首次模型请求时验证。你可以先管理要显示的模型。",
+      "done": "完成",
+      "removeNote": "从本机移除保存的密钥，不会取消服务商的套餐订阅。",
+      "products": {
+        "bailian-token-plan": {
+          "name": "百炼 Token Plan",
+          "note": "阿里云 · 多模型套餐"
+        },
+        "tencent-token-plan": {
+          "name": "腾讯云 Token Plan",
+          "note": "通用与 Hy 套餐，共用一个密钥"
+        },
+        "volcengine-agent-plan": {
+          "name": "火山方舟 Agent Plan",
+          "note": "使用 Agent Plan 专属密钥"
+        },
+        "volcengine-coding-plan": {
+          "name": "火山方舟 Coding Plan",
+          "note": "使用已有的 Coding Plan 套餐"
+        },
+        "zai-coding-plan": {
+          "name": "Z.ai GLM Coding Plan",
+          "note": "国际站账户"
+        },
+        "zhipu-coding-plan": {
+          "name": "智谱 GLM Coding Plan",
+          "note": "中国站账户"
+        }
       }
     }
   },

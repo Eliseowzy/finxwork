@@ -89,6 +89,15 @@ pub struct ProviderToml {
     /// Extra per-model details the server offers ("ollama").
     pub list_details: Option<String>,
     pub models: Option<Vec<ModelToml>>,
+    /// A subscription product, independent of its API-key authentication.
+    pub plan: Option<PlanConfig>,
+}
+
+/// Product metadata. Endpoints and credentials still use the normal provider machinery.
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanConfig {
+    pub key_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -157,6 +166,7 @@ pub struct ProviderConfig {
     pub compat: Compat,
     pub models: Vec<Arc<Model>>,
     pub listing: Listing,
+    pub plan: Option<PlanConfig>,
 }
 
 impl ProviderConfig {
@@ -217,7 +227,8 @@ impl ProviderConfig {
             thinking_levels: m.thinking_levels.unwrap_or_default(),
             thinking_budgets: m.thinking_budgets.unwrap_or_default(),
             input: m.input.unwrap_or_else(|| vec![Modality::Text]),
-            cost: m.cost.unwrap_or_default(),
+            // Token rates from the public catalog are not subscription spending.
+            cost: if self.plan.is_some() { ModelCost::default() } else { m.cost.unwrap_or_default() },
             cost_tiers: Vec::new(),
             currency,
             compat,
@@ -314,6 +325,9 @@ fn merge(base: &mut CatalogFile, over: CatalogFile) {
 }
 
 fn merge_provider(base: &mut ProviderToml, over: ProviderToml) {
+    if over.plan.is_some() {
+        base.plan = over.plan;
+    }
     if over.name.is_some() {
         base.name = over.name;
     }
@@ -420,6 +434,7 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
             Some(ListModelsToml::Enabled(true)) | None => default_path.map(str::to_string),
         };
         let mut provider = ProviderConfig {
+            plan: p.plan.clone(),
             name: p.name.clone().unwrap_or_else(|| id.clone()),
             id: id.clone(),
             api,
@@ -471,6 +486,30 @@ mod tests {
                 assert!(crate::public_catalog::embedded(id).is_some(), "{id}");
             }
         }
+    }
+
+    #[test]
+    fn subscription_products_keep_routes_and_credentials_separate() {
+        let catalog = Catalog::builtin().unwrap();
+        let plans: Vec<_> = catalog.providers.values().filter(|p| p.plan.is_some()).collect();
+        assert_eq!(plans.len(), 6);
+        let mut envs = std::collections::BTreeSet::new();
+        for p in &plans {
+            assert!(p.auth.env_vars().iter().all(|env| envs.insert(env.clone())));
+            assert!(p.base_url.contains("/plan/") || p.base_url.contains("/coding/") || p.base_url.contains("token-plan."));
+            assert!(p.listing.from.is_none(), "a plan never borrows a pay-as-you-go list");
+            assert!(p.models.iter().all(|m| !m.cost.is_configured()));
+        }
+        for p in catalog.providers.values().filter(|p| p.plan.is_none()) {
+            assert!(p.auth.env_vars().iter().all(|env| !envs.contains(env)));
+        }
+        assert_eq!(catalog.providers["bailian-token-plan"].listing.path.as_deref(), Some("/models"));
+        assert!(plans.iter().filter(|p| p.id != "bailian-token-plan").all(|p| p.listing.path.is_none()));
+        let directory = crate::directory::ModelDirectory::new(None);
+        let glm = directory.models(&catalog.providers["zhipu-coding-plan"]);
+        assert_eq!(glm.models.len(), 2);
+        assert!(glm.get("glm-5.3").unwrap().model.reasoning);
+        assert!(glm.get("glm-5.3-flash").unwrap().model.input.contains(&Modality::Image));
     }
 
     #[test]
