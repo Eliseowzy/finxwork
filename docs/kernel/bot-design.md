@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.5 |
+| 版本 | v1.6 |
 | 日期 | 2026-11-04 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -22,6 +22,7 @@
 | v1.3 | 2026-11-04 | Bot 的权限模式可选，默认由第一次进入 Bot 模式时的选择决定（§3.8、D-318）。全在桌面端，内核和协议不动 |
 | v1.4 | 2026-11-04 | 去掉第一次进入时的弹窗：Bot 默认完全访问，权限选择器上方浮一次提示气泡（§3.8、D-318）。仍然只改桌面端 |
 | v1.5 | 2026-11-04 | 试用后改：Bot 页有内置浏览器和文件面板，和会话页共用 `session/SidePanels.tsx`；桌面端不再提供清空聊天记录和标为已读/未读，`bots/clear`、`bots/unread` 留在协议里，没有界面入口（D-319）。没有清空以后，系统提示词在 Bot 的对话里不再更新（Q-200） |
+| v1.6 | 2026-11-04 | 桌面端加 Bot 设置面板 `bots/BotPanel.tsx`：名字和头像用 `bots/update`，模型和思考强度用 Bot 会话已有的 `set_model`，内核和协议不变（D-320） |
 
 ## 方案摘要
 
@@ -541,7 +542,7 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 |---|---|
 | `renderer/src/store.tsx` | 模式；`Selection` 加 `{ kind: "bot"; id }`；各模式记住选中项；Bot 列表的订阅 |
 | `renderer/src/sidebar/Sidebar.tsx` | 顶栏的 Bot 和会话图标切换和提醒点；导航第一行；Bot 列表 |
-| `renderer/src/bots/`（新）：`BotList.tsx`、`BotPage.tsx`、`BotSheet.tsx`、`Avatar.tsx`、`actions.ts`、`useBotSession.ts` | 列表和 ⋯ 菜单、对话页、新建与编辑、头像与动效、菜单项、接入 Bot 会话 |
+| `renderer/src/bots/`（新）：`BotList.tsx`、`BotPage.tsx`、`BotPanel.tsx`、`BotSheet.tsx`、`Avatar.tsx`、`actions.ts`、`useBotSession.ts` | 列表和 ⋯ 菜单、对话页、Bot 设置、新建、头像与动效、菜单项、接入 Bot 会话 |
 | `renderer/src/composer/Composer.tsx` | Bot 模式：只有发送，下面一行只有权限选择器 |
 | `renderer/src/search/Search.tsx` | Bot 模式下 ⌘K 按名字和最近一句找 Bot |
 | `renderer/src/MainWindow.tsx`、`commands.ts` | 按模式显示会话页或 Bot 页；菜单命令 |
@@ -744,6 +745,7 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-317 | 确认用会话页同一个授权窗口，弹在输入框上方，不进对话 | 授权是对话之外的操作；两种模式一套交互和能力，不用另写一张卡；主人试用后的决定 | §3.8 |
 | D-318 | Bot 的权限模式和会话一样可选，默认完全访问，权限选择器上方提示一次；默认值存在桌面端，接入新会话时发一次 `set_permission_mode` | 主人的决定，进入时弹窗太重；内核和协议不用改；沙箱另行设计 | §3.8 |
 | D-319 | 桌面端不提供清空聊天记录和标为已读/未读；列表只有置顶、重命名（原地）、删除，名字和头像在顶栏 ⋯；Bot 页和会话页共用文件面板和浏览器 | 主人的决定：统一入口，不给清空的选择；服务层接口先留着，要不要删另说 | PRD §6.16 |
+| D-320 | Bot 的模型和思考强度就是它会话的设置，用 `set_model` 改，随会话保存，不加 Bot 级字段；设置面板取代顶栏 ⋯ 和编辑表单 | 一个 Bot 只有一个会话，再存一份只会多一个要同步的地方 |
 
 ## 15. 待定问题
 
