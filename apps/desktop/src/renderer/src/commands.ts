@@ -12,7 +12,7 @@ import { useStore, type Store } from "./store";
 // about the window. A page outside the app (a browser preview) has no menu:
 // the same shortcuts work from the keyboard.
 
-/** Commands a session's page carries out itself (it knows the pending approval). */
+/** Commands a session's or a bot's page carries out itself (it knows the pending approval). */
 export const pageCommand = "finx-page-command";
 
 export function useCommands() {
@@ -33,6 +33,8 @@ export function useCommands() {
   }, []);
 
   const s = selected(st);
+  const sel = st.selection;
+  const bot = sel.kind === "bot" ? st.bots.find((b) => b.id === sel.id) : undefined;
   const state: MenuState = {
     main: true,
     session: s
@@ -44,12 +46,13 @@ export function useCommands() {
           inspector: layoutOf(st).card !== "hidden" && !st.background,
         }
       : null,
+    botApprovable: !!bot?.waiting,
     sidebar: layoutOf(st).sidebar !== "hidden",
     undo: st.toast?.undo !== undefined,
   };
   const key = JSON.stringify(state);
   useEffect(() => window.finx?.setMenuState(JSON.parse(key)), [key]);
-  useEffect(() => () => window.finx?.setMenuState({ main: false, session: null, sidebar: true, undo: false }), []);
+  useEffect(() => () => window.finx?.setMenuState({ main: false, session: null, botApprovable: false, sidebar: true, undo: false }), []);
 }
 
 function selected(st: Store): ListSession | undefined {
@@ -61,6 +64,8 @@ export function run(st: Store, c: Command) {
   const s = selected(st);
   switch (c) {
     case "newSession":
+      // In Bot mode, ⌘N makes a bot (bot-mode-design §6.1).
+      if (st.mode === "bots") return st.set({ botSheet: { kind: "new" }, searching: false });
       return st.set({ selection: { kind: "new" }, searching: false });
     case "openProject":
       return openProject(st);
@@ -77,7 +82,7 @@ export function run(st: Store, c: Command) {
     case "toggleSidebar":
       return setSidebar(st, layoutOf(st).sidebar === "hidden");
     case "approve":
-      return s && window.dispatchEvent(new CustomEvent(pageCommand, { detail: "approve" }));
+      return (s || st.selection.kind === "bot") && window.dispatchEvent(new CustomEvent(pageCommand, { detail: "approve" }));
     case "interrupt":
       return s && (isRunning(s) || stateOf(s) === "awaiting_approval") && st.op(s.session_id, { type: "interrupt" });
     case "rename":

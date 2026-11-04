@@ -114,7 +114,7 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
         above: (
           <>
             {notice && <Notice key={`${notice.code}:${notice.ts}`} notice={notice} onClose={() => close(notice)} />}
-            {live !== null && live.approvals.length > 0 && <Approval key={live.approvals[0].call_id} s={s} view={view} />}
+            {live !== null && live.approvals.length > 0 && <Approval key={live.approvals[0].call_id} sessionId={id} view={view} />}
             {view.queued.length > 0 && (
               <Queue
                 items={view.queued}

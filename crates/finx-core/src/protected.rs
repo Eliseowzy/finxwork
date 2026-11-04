@@ -77,7 +77,10 @@ const PROTECTED_FILES: &[&str] = &[
 /// Inside the workspace only the part below the workspace root counts.
 pub(crate) fn protected(path: &Path, view: &SessionView) -> Option<String> {
     let path = canonical_lossy(path);
-    if path.starts_with(&view.data_dir) {
+    // A session's own folder in the data directory holds the user's files, not finx's data;
+    // the rules below still apply inside it.
+    let own = view.own_folder.as_ref().is_some_and(|own| path.starts_with(own));
+    if path.starts_with(&view.data_dir) && !own {
         return Some("finx data directory".into());
     }
     if view.skill_roots.iter().any(|root| path.starts_with(root)) {
@@ -248,6 +251,7 @@ mod tests {
             trusted: false,
             env: Arc::new(LocalEnvironment::new(workspace.to_path_buf())),
             data_dir: canonical_lossy(data_dir),
+            own_folder: None,
             skill_roots: Arc::from([]),
             site_grants: Vec::new(),
             browser: Arc::default(),
@@ -288,6 +292,35 @@ mod tests {
         std::fs::create_dir_all(&nested).unwrap();
         let inside_cargo = view_for(&nested, &dir.path().join("finx-home"));
         assert_eq!(protected(&nested.join("src/lib.rs"), &inside_cargo), None);
+    }
+
+    /// A session without a project, or a bot's, works in its own folder in the data directory:
+    /// writing there is not writing finx's data (bot-design §2.5).
+    #[test]
+    fn a_sessions_own_folder_in_the_data_directory_is_writable() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = FinxHome::new(canonical_lossy(&dir.path().join("finx-home")));
+        let bot = home.bot_files_dir("b1");
+        let chat = home.new_chat_dir().unwrap();
+        std::fs::create_dir_all(&bot).unwrap();
+        for own in [&bot, &chat] {
+            let own = canonical_lossy(own);
+            let mut view = view_for(&own, home.root());
+            view.own_folder = home.private_folder(&own);
+            assert_eq!(protected(&own.join("report.xlsx"), &view), None);
+            assert_eq!(protected(&own.join("notes/a.md"), &view), None);
+            // Names stay protected inside it.
+            assert_eq!(protected(&own.join(".git/config"), &view).as_deref(), Some(".git"));
+            assert_eq!(protected(&own.join(".bashrc"), &view).as_deref(), Some(".bashrc"));
+            // The rest of the data directory does too.
+            for other in [home.config_file(), home.bot_dir("b1").join("bot.json"), home.bot_files_dir("b2").join("x")] {
+                assert_eq!(protected(&other, &view).as_deref(), Some("finx data directory"), "{}", other.display());
+            }
+        }
+        // Without its own folder, a session in the data directory protects all of it.
+        let own = canonical_lossy(&bot);
+        let view = view_for(&own, home.root());
+        assert_eq!(protected(&own.join("report.xlsx"), &view).as_deref(), Some("finx data directory"));
     }
 
     #[test]

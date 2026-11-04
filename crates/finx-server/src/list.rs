@@ -55,10 +55,14 @@ impl ListFeed {
         if self.watchers.lock().is_empty() {
             return;
         }
-        let frame = Bytes::from(finx_rpc::notification(
+        self.send(Bytes::from(finx_rpc::notification(
             method::SESSIONS_CHANGED,
             &SessionsChangedParams { sessions, deleted },
-        ));
+        )));
+    }
+
+    /// Sends a notification, encoded once, to every watcher. The bot list uses it too.
+    pub fn send(&self, frame: Bytes) {
         let mut watchers = self.watchers.lock();
         watchers.retain(|w| !w.conn.queue.is_closed());
         for watcher in watchers.iter_mut() {

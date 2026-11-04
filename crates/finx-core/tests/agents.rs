@@ -96,6 +96,7 @@ impl Harness {
             project_root: None,
             trusted: false,
             interactive_approvals: interactive,
+            bot: None,
         };
         let kernel = Kernel::start(options, deps).await.unwrap();
         Harness {
@@ -699,6 +700,7 @@ async fn a_resumed_session_knows_its_earlier_agents_as_their_logs_left_them() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let kernel = Kernel::resume(options, deps(&api, &work, &home)).await.unwrap();
     let mut h = Harness { kernel, api, lanes, work, home, _dir };
@@ -755,6 +757,7 @@ async fn sub_agents_can_be_turned_off() {
             project_root: None,
             trusted: false,
             interactive_approvals: false,
+            bot: None,
         },
         KernelDeps {
             llm: Arc::new(registry),

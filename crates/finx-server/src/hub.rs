@@ -113,6 +113,16 @@ pub(crate) enum HubCmd {
     },
     /// The browsers' and desktop control's settings, after the configuration changed.
     System(Box<finx_core::SystemSettings>),
+    /// A bot's conversation: the bot's new name (bot-design §2.4).
+    BotName { name: String },
+}
+
+/// Where a session's changes are listed.
+pub(crate) enum Listing {
+    /// The session list (`sessions/changed`).
+    Sessions(Arc<ListFeed>),
+    /// A bot's conversation: its bot's row instead (bot-design §5.1).
+    Bot { id: String, bots: Arc<crate::bots::Registry> },
 }
 
 /// What the session's log says about it that its events do not: when it was created and how
@@ -196,7 +206,7 @@ struct Hub {
     /// Called with the session's last summary once it is closed.
     on_exit: Option<Box<dyn FnOnce(SessionSummary) + Send>>,
     done: watch::Sender<bool>,
-    feed: Arc<ListFeed>,
+    listing: Listing,
     base: SummaryBase,
     /// When the session last got busy: a task started while it was idle. Sub-agents keep it busy
     /// after that task ends, until `idle`.
@@ -210,7 +220,7 @@ pub(crate) fn spawn(
     transcript: Vec<TranscriptItem>,
     idle_after: Option<Duration>,
     first: Option<AttachRequest>,
-    feed: Arc<ListFeed>,
+    listing: Listing,
     base: SummaryBase,
     on_exit: Box<dyn FnOnce(SessionSummary) + Send>,
 ) -> HubHandle {
@@ -244,7 +254,7 @@ pub(crate) fn spawn(
         close_waiters: Vec::new(),
         on_exit: Some(on_exit),
         done: done_tx,
-        feed,
+        listing,
         base,
         busy_since: None,
     };
@@ -300,6 +310,9 @@ impl Hub {
 
     fn dispatch(&mut self, event: Event) {
         self.mirror.apply(&event);
+        if let Listing::Bot { id, bots } = &self.listing {
+            bots.on_event(id, &event, &self.mirror);
+        }
         match &event.msg {
             EventMsg::McpServerStatus { server, state, tools, error, .. } => {
                 self.shared.mcp.lock().insert(
@@ -390,7 +403,9 @@ impl Hub {
             summary.task_started_at = Some(list::rfc3339(since));
         }
         *self.shared.summary.lock() = summary.clone();
-        self.feed.publish(vec![summary], Vec::new());
+        if let Listing::Sessions(feed) = &self.listing {
+            feed.publish(vec![summary], Vec::new());
+        }
     }
 
     fn detached(&self, reason: DetachReason) -> SessionDetachedParams {
@@ -474,6 +489,11 @@ impl Hub {
             HubCmd::System(settings) => {
                 if let Some(kernel) = &self.kernel {
                     kernel.set_system_connectors(*settings);
+                }
+            }
+            HubCmd::BotName { name } => {
+                if let Some(kernel) = &self.kernel {
+                    kernel.set_bot_name(name);
                 }
             }
             HubCmd::Meta { op, reply } => {

@@ -79,6 +79,7 @@
   },
   "dialog": {
     "skillSource": "Skills",
+    "images": "Images",
     "application": "Applications"
   },
   "browserMenu": {

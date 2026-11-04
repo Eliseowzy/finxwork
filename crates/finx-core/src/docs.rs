@@ -418,6 +418,7 @@ impl TypedTool for DocView {
             ],
             details: Some(json!({ "doc_id": doc.id, "page": args.page })),
             is_error: false,
+            ends_task: false,
         })
     }
 }

@@ -413,7 +413,7 @@ function useTaskParts(end: TaskEndItem, chain: TaskChain | undefined, started: n
   ].filter(Boolean);
 }
 
-function MessageTime({ at }: { at: Date }) {
+export function MessageTime({ at }: { at: Date }) {
   // The clock only redraws it; the time is read now. When a message turns a minute old it moves to the
   // minute clock, whose last tick can be most of a minute behind, and would read as "just now" again.
   useNow(agoInterval(at));

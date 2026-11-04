@@ -14,6 +14,7 @@ use crate::PROTOCOL_VERSION;
 use crate::api;
 use crate::api::error_code;
 use crate::api::method;
+use crate::bot;
 use crate::customize;
 use crate::event::Event;
 use crate::files;
@@ -195,6 +196,16 @@ pub fn document() -> Value {
         (method::FILES_READ, Some(name::<files::FilesReadParams>(g)), name::<files::FilesReadResult>(g)),
         (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_SUBSCRIBE, None, name::<bot::BotsResult>(g)),
+        (method::BOTS_UNSUBSCRIBE, None, name::<api::Empty>(g)),
+        (method::BOTS_CREATE, Some(name::<bot::BotCreateParams>(g)), name::<bot::BotResult>(g)),
+        (method::BOTS_UPDATE, Some(name::<bot::BotUpdateParams>(g)), name::<bot::BotResult>(g)),
+        (method::BOTS_AVATAR, Some(name::<bot::BotIdParams>(g)), name::<bot::BotAvatarResult>(g)),
+        (method::BOTS_OPEN, Some(name::<bot::BotOpenParams>(g)), name::<api::SessionNewResult>(g)),
+        (method::BOTS_READ, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_UNREAD, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_CLEAR, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_DELETE, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),
@@ -208,6 +219,7 @@ pub fn document() -> Value {
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::FILES_CHANGED, name::<files::FilesChangedParams>(g)),
+        (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),
         (

@@ -993,6 +993,7 @@ impl TypedTool for BrowserScreenshot {
             ],
             details: Some(details),
             is_error: false,
+            ends_task: false,
         })
     }
 }
@@ -1544,6 +1545,7 @@ impl TypedTool for BrowserBatch {
             content,
             details,
             is_error: stopped.is_some(),
+            ends_task: false,
         })
     }
 }

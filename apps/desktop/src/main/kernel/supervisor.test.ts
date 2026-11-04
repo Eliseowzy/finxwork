@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { after, test } from "node:test";
 import { parseEnv, withLocale } from "./env.ts";
 import { alive, readRecord } from "./record.ts";
-import { Supervisor, tryConnect, type KernelStatus } from "./supervisor.ts";
+import { RpcClient } from "@finx/client";
+import { Supervisor, socketTransport, tryConnect, type KernelStatus } from "./supervisor.ts";
 
 // The supervisor against the real finx (the repository's debug build), in a
 // FINX_HOME of its own: start, reuse, crash, replace, quit.
@@ -123,6 +126,69 @@ test("a service of another version is replaced once no task runs", { skip: !buil
     const now = readRecord(app.s.current.endpoint);
     if (now) process.kill(now.pid, "SIGTERM");
   } finally {
+    cleanup();
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("a bot at work holds the replacement back until it is done", { skip: !built && "run `cargo build` first" }, async () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxw-"));
+  // The model: holds the bot's request until released, then answers with a message.
+  let release = () => {};
+  const held = new Promise<void>((r) => (release = r));
+  const provider = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", async () => {
+      await held;
+      const call = { index: 0, id: "c1", type: "function", function: { name: "send_to_user", arguments: JSON.stringify({ text: "好了", end_turn: true }) } };
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(
+        `data: ${JSON.stringify({ choices: [{ index: 0, delta: { role: "assistant", tool_calls: [call] }, finish_reason: null }] })}\n\n` +
+          `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\ndata: [DONE]\n\n`,
+      );
+    });
+  });
+  await new Promise<void>((r) => provider.listen(0, "127.0.0.1", r));
+  let client: { rpc: RpcClient; close: () => void } | null = null;
+  try {
+    const port = (provider.address() as AddressInfo).port;
+    fs.writeFileSync(
+      path.join(home, "models.toml"),
+      `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${port}/v1"\nauth = "none"\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
+    );
+    fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\n[models]\nnetwork = false\n`);
+    const old = supervisor(home);
+    old.s.start();
+    await old.s.ready();
+    const before = readRecord(old.s.current.endpoint)!;
+    old.s.stop();
+    // A window puts the default bot to work: its request to the model waits.
+    const c = await tryConnect(old.s.current.endpoint, 2000);
+    assert.ok(c.ok);
+    const rpc = new RpcClient(socketTransport(c.socket));
+    client = { rpc, close: () => c.socket.destroy() };
+    await rpc.request("initialize", { protocol_version: 2, client_info: { name: "supervisor-test" } });
+    const { bots } = await rpc.request("bots/subscribe", {});
+    const opened = await rpc.request("bots/open", { bot_id: bots[0].id });
+    let typing = false;
+    rpc.on("bots/changed", (ch) => (typing ||= ch.bots.some((b) => b.typing)));
+    await rpc.request("session/op", { session_id: opened.session_id, op: { type: "prompt", input: [{ type: "text", text: "在吗" }] } });
+    await until(() => typing);
+    // An app that expects another version would replace the service, but the bot works.
+    const app = supervisor(home, { expected: "99.0.0" });
+    app.s.start();
+    await app.s.ready();
+    assert.equal(app.s.current.replacing, true);
+    await new Promise((r) => setTimeout(r, 500));
+    assert.ok(alive(before.pid), "the service stays while the bot works");
+    // Done: now it is replaced.
+    release();
+    await until(() => !alive(before.pid));
+    await until(() => app.s.current.state === "ready" && readRecord(app.s.current.endpoint)?.pid !== before.pid);
+  } finally {
+    release();
+    client?.close();
+    provider.close();
     cleanup();
     fs.rmSync(home, { recursive: true, force: true });
   }

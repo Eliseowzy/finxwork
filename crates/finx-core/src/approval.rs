@@ -383,6 +383,7 @@ mod tests {
             trusted: false,
             env: Arc::new(LocalEnvironment::new(dir.to_path_buf())),
             data_dir: canonical_lossy(&dir.join("finx-home")),
+            own_folder: None,
             skill_roots: Arc::from([]),
             site_grants: vec![],
             browser: Arc::default(),

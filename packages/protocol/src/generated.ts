@@ -117,6 +117,110 @@ export type AuthSetResult = {
   verified: boolean;
 };
 
+/** A bot's avatar. */
+export type Avatar = {
+  kind: "mark";
+} | {
+  hue: AvatarHue;
+  kind: "char";
+  shape: AvatarShape;
+} | {
+  hue: AvatarHue;
+  kind: "mono";
+} | {
+  kind: "image";
+  rev: number;
+};
+
+/** The colours behind an avatar's character or initial: muted, the same in both themes. */
+export type AvatarHue = "slate" | "sage" | "clay" | "ochre" | "plum" | "teal" | "rose" | "stone";
+
+/** An avatar given to `bots/create` and `bots/update`. */
+export type AvatarInput = {
+  kind: "mark";
+} | {
+  hue: AvatarHue;
+  kind: "char";
+  shape: AvatarShape;
+} | {
+  hue: AvatarHue;
+  kind: "mono";
+} | {
+  kind: "image";
+  png: string;
+};
+
+/** The characters an avatar can show, drawn by the client. */
+export type AvatarShape = "round" | "box" | "ghost" | "cloud" | "dome" | "cat" | "egg" | "gem";
+
+export type BotAvatarResult = {
+  /** `data:image/png;base64,…` */
+  data: string;
+};
+
+export type BotCreateParams = {
+  avatar: AvatarInput;
+  /** 1 to 20 characters once trimmed. */
+  name: string;
+};
+
+/** Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. */
+export type BotIdParams = {
+  bot_id: string;
+};
+
+/** Parameters of `bots/open`, which answers as `session/new` does. */
+export type BotOpenParams = {
+  bot_id: string;
+  events?: EventFilter;
+  history_limit?: number | null;
+};
+
+/** Result of `bots/create` and `bots/update`. */
+export type BotResult = {
+  bot: BotSummary;
+};
+
+export type BotSummary = {
+  avatar: Avatar;
+  /** RFC 3339. */
+  created_at: string;
+  /** The bot every user has: it cannot be deleted. */
+  default?: boolean;
+  /** Background helpers (sub-agents) at work. */
+  helpers?: number;
+  id: string;
+  last?: LastMessage | null;
+  name: string;
+  pinned?: boolean;
+  /** Its conversation, once there is one. */
+  session_id?: string | null;
+  /** It is answering: its conversation runs a task. */
+  typing?: boolean;
+  /** Messages and approval requests since the user last looked (`bots/read`). */
+  unread?: number;
+  /** The oldest approval it waits for: what the call does. */
+  waiting?: string | null;
+};
+
+export type BotUpdateParams = {
+  avatar?: AvatarInput | null;
+  bot_id: string;
+  name?: string | null;
+  pinned?: boolean | null;
+};
+
+/** Server notification to `bots/subscribe`rs: the bots that changed, and those deleted. */
+export type BotsChangedParams = {
+  bots: BotSummary[];
+  deleted?: string[];
+};
+
+/** Result of `bots/subscribe`. */
+export type BotsResult = {
+  bots: BotSummary[];
+};
+
 /** A range of bridge versions, both ends included. */
 export type BridgeRange = {
   max: number;
@@ -899,6 +1003,17 @@ export type InitializeResult = {
   server_info: PeerInfo;
 };
 
+/** The last message of a bot's conversation, for its row in the list. */
+export type LastMessage = {
+  from: Speaker;
+  /** The images it carried. */
+  images?: number;
+  /** The start of its text as written (at most 1000 characters): the client takes the line to show from it, as it does for the conversation. */
+  text: string;
+  /** RFC 3339. */
+  ts: string;
+};
+
 export type ListingError = {
   /** An error kind (`auth`, `network`, …). */
   kind: string;
@@ -1477,6 +1592,8 @@ export type ServerCapabilities = {
   agents: boolean;
   /** `auth/set`, `auth/delete`, and `providers` in `models/list`. */
   auth: boolean;
+  /** Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4). */
+  bots: boolean;
   /** The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6). */
   customize: boolean;
   /** `browser/host` and `browser/cdp`: a client can show the browser tools' pages (browser-design §8.3). */
@@ -1827,6 +1944,8 @@ export type SnapshotResult = {
   snapshot: SessionSnapshot;
 };
 
+export type Speaker = "user" | "bot";
+
 export type StopReason = "stop" | "length" | "tool_use" | "error" | "aborted";
 
 export type TaskOutcome = "completed" | "failed" | "interrupted";
@@ -1936,6 +2055,16 @@ export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 export interface Methods {
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
+  "bots/avatar": [BotIdParams, BotAvatarResult];
+  "bots/clear": [BotIdParams, Empty];
+  "bots/create": [BotCreateParams, BotResult];
+  "bots/delete": [BotIdParams, Empty];
+  "bots/open": [BotOpenParams, SessionNewResult];
+  "bots/read": [BotIdParams, Empty];
+  "bots/subscribe": [Record<string, never>, BotsResult];
+  "bots/unread": [BotIdParams, Empty];
+  "bots/unsubscribe": [Record<string, never>, Empty];
+  "bots/update": [BotUpdateParams, BotResult];
   "browser/host": [BrowserHostParams, BrowserHostResult];
   "browser/site_icon": [BrowserSiteIconParams, BrowserSiteIconResult];
   "browser/status": [Record<string, never>, BrowserStatus];
@@ -2003,6 +2132,7 @@ export interface Methods {
 
 /** Notifications: their params. */
 export interface ServerNotifications {
+  "bots/changed": BotsChangedParams;
   "browser/cdp": BrowserCdpParams;
   "browser/changed": BrowserStatus;
   "config/changed": ConfigChangedParams;
@@ -2049,6 +2179,9 @@ export const RPC_ERROR_KINDS = {
   "-32031": "mcp_login_failed",
   "-32032": "doc_unavailable",
   "-32033": "doc_password",
+  "-32040": "bot_not_found",
+  "-32041": "bot_default",
+  "-32042": "bot_invalid",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

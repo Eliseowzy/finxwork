@@ -99,6 +99,7 @@ fn start_options(work: &Path, home: &FinxHome, config: Config) -> StartOptions {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     }
 }
 
@@ -531,6 +532,7 @@ async fn resumed_sessions_reconnect_and_keep_one_prompt_entry() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &h.work, &h.home, vec![config])).await.unwrap();
     let result = kernel.run(vec![UserContent::Text { text: "add".into() }]).await.unwrap();

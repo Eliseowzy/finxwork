@@ -125,6 +125,7 @@ async fn harness(config: Config) -> Harness {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps(&api, &work, &home)).await.unwrap();
     Harness {
@@ -483,6 +484,7 @@ async fn saved_output_is_still_readable_after_a_compaction_and_a_resume() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &work, &home)).await.unwrap();
     let third = run(&mut kernel, "read it once more").await;

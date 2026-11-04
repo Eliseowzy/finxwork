@@ -245,6 +245,9 @@ pub struct ToolOutput {
     pub content: Vec<UserContent>,
     pub details: Option<Value>,
     pub is_error: bool,
+    /// The task ends once this batch of calls is done, unless new input waits: the model said
+    /// its last word (bot-design §3.3).
+    pub ends_task: bool,
 }
 
 impl ToolOutput {
@@ -253,6 +256,7 @@ impl ToolOutput {
             content: vec![UserContent::Text { text: text.into() }],
             details: None,
             is_error: false,
+            ends_task: false,
         }
     }
 
@@ -265,6 +269,11 @@ impl ToolOutput {
 
     pub fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
+        self
+    }
+
+    pub fn ending_task(mut self) -> Self {
+        self.ends_task = true;
         self
     }
 }

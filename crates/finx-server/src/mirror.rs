@@ -113,6 +113,16 @@ impl SessionMirror {
         self.agents.iter().any(|a| a.status == AgentStatus::Running)
     }
 
+    /// How many sub-agents are working.
+    pub fn agents_working(&self) -> u32 {
+        self.agents.iter().filter(|a| a.status == AgentStatus::Running).count() as u32
+    }
+
+    /// What the oldest pending approval asks about.
+    pub fn first_approval(&self) -> Option<&str> {
+        self.active.as_ref()?.approvals.first().map(|a| a.summary.as_str())
+    }
+
     pub fn approval_pending(&self, call_id: &str) -> bool {
         self.active
             .as_ref()

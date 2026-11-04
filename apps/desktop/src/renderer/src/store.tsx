@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { listView, mergeSessions, RpcError, RpcClient, type ListSession, type ListView } from "@finx/client";
+import { listView, mergeBots, mergeSessions, RpcError, RpcClient, sortBots, type ListSession, type ListView } from "@finx/client";
 import { draftThinking } from "./format";
-import type { Methods, ModelsListResult, Op, PermissionMode, ThinkingLevel } from "@finx/protocol";
+import type { BotSummary, Methods, ModelsListResult, Op, PermissionMode, ThinkingLevel } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import { i18n } from "../../shared/i18n";
 import { toInput, type Attachment } from "./composer/attachments";
@@ -13,7 +13,13 @@ import type { Peek } from "./layout";
 // open sheet, toast). A session's conversation is its page's
 // (session/useSession.ts).
 
-export type Selection = { kind: "new" } | { kind: "session"; id: string } | { kind: "customize" };
+export type Selection = { kind: "new" } | { kind: "session"; id: string } | { kind: "customize" } | { kind: "bot"; id: string };
+
+/** Which of the two ways the window is used: projects and their sessions, or bots (bot-mode-design §6.1). */
+export type Mode = "sessions" | "bots";
+
+/** The form that makes a bot or changes its name and avatar (bot-mode-design §6.3). */
+export type BotSheet = { kind: "new" };
 
 /**
  * Where the 自定义 page is (customize-design §10.1): skills or connectors, the person's own or
@@ -40,6 +46,17 @@ export type Draft = { cwd: string | null; noProject?: boolean; model: string | n
 
 type UI = {
   selection: Selection;
+  mode: Mode;
+  /** What each mode showed last, to go back to it (bot-mode-design §6.1). */
+  lastSession: Selection;
+  lastBot: string | null;
+  botSheet: BotSheet | null;
+  /** A bot's settings beside its conversation (bot-mode-design §6.5.1). */
+  botPanel: boolean;
+  /** For each bot, the conversation that was last given bots' default permission mode: what is picked in it afterwards stays. */
+  botDefaulted: Record<string, string>;
+  /** The owner closed the note about Full Access over the permission picker (bot-mode-design §6.13). */
+  botTipSeen: boolean;
   inspector: boolean;
   /** The context card is open (closed, it shows only the share used). */
   contextOpen: boolean;
@@ -89,12 +106,18 @@ export type Store = UI & {
   sessions: ListSession[];
   /** The list arrived. */
   loaded: boolean;
+  /** Bot mode's bots, as finx pushes them, in the list's order. */
+  bots: BotSummary[];
+  botsLoaded: boolean;
   /** The window's width, which lays it out (layout.ts). */
   width: number;
   /** Models, providers with their keys, and the defaults of a new session. */
   models: ModelsListResult;
   set: (patch: Partial<UI>) => void;
   select: (id: string) => void;
+  selectBot: (id: string) => void;
+  /** Switches mode, back to what that mode showed last. */
+  setMode: (mode: Mode) => void;
   /** Runs a change against finx; failures become a toast. Resolves to whether it worked. */
   run: (action: () => Promise<unknown>, done?: string) => Promise<boolean>;
   show: (text: string, undo?: () => void, bad?: boolean) => void;
@@ -124,7 +147,7 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Saved = Pick<UI, "selection" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
+type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "botDefaulted" | "botTipSeen" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
 
 function saved(): Partial<Saved> {
   if (location.hash.startsWith("#settings")) return {};
@@ -143,6 +166,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const [server, setServer] = useState("");
   const [sessions, setSessions] = useState<ListSession[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [bots, setBots] = useState<BotSummary[]>([]);
+  const [botsLoaded, setBotsLoaded] = useState(false);
   const [models, setModels] = useState<ModelsListResult>(noModels);
   const [width, setWidth] = useState(() => window.innerWidth);
   useEffect(() => {
@@ -154,6 +179,13 @@ export function FinxProvider({ children }: { children: ReactNode }) {
     const s = saved();
     return {
       selection: s.selection ?? { kind: "new" },
+      mode: s.mode === "sessions" ? "sessions" : s.mode === "bots" ? "bots" : (window.finx?.defaultMode ?? "bots"),
+      lastSession: s.lastSession ?? { kind: "new" },
+      lastBot: s.lastBot ?? null,
+      botSheet: null,
+      botPanel: false,
+      botDefaulted: s.botDefaulted ?? {},
+      botTipSeen: s.botTipSeen ?? false,
       inspector: s.inspector ?? true,
       contextOpen: s.contextOpen ?? true,
       background: false,
@@ -234,27 +266,56 @@ export function FinxProvider({ children }: { children: ReactNode }) {
         setKernel("ready");
       })
       .catch(() => {});
+    // The bots as well, as finx pushes them (bot-design §4).
+    const offBots = rpc.on("bots/changed", (c) => setBots((list) => sortBots(mergeBots(list, c.bots, c.deleted ?? []))));
+    rpc
+      .request("bots/subscribe", {})
+      .then((r) => {
+        if (stop) return;
+        setBots(sortBots(r.bots));
+        setBotsLoaded(true);
+      })
+      .catch(() => {});
     return () => {
       stop = true;
       off();
       offModels();
+      offBots();
     };
   }, [rpc]);
   const kernelState: KernelState = status?.state === "failed" ? "down" : kernel;
 
   useEffect(() => {
     if (location.hash.startsWith("#settings")) return;
-    const v: Saved = { selection: ui.selection, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
+    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, botDefaulted: ui.botDefaulted, botTipSeen: ui.botTipSeen, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
     try {
       localStorage.setItem("main-view", JSON.stringify(v));
     } catch {
       // The window's layout is a convenience; without storage it just doesn't stick.
     }
-  }, [ui.selection, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
+  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.botDefaulted, ui.botTipSeen, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);
   const select = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "session", id } })), []);
+  const selectBot = useCallback((id: string) => setUI((u) => ({ ...u, selection: { kind: "bot", id }, lastBot: id })), []);
+  const latestBots = useRef(bots);
+  latestBots.current = bots;
+  const setMode = useCallback(
+    (mode: Mode) =>
+      setUI((u) => {
+        if (u.mode === mode) return u;
+        if (mode === "bots") {
+          const list = latestBots.current;
+          const bot = list.find((b) => b.id === u.lastBot) ?? list[0];
+          const lastSession = u.selection.kind === "bot" ? u.lastSession : u.selection;
+          return { ...u, mode, lastSession, selection: bot ? { kind: "bot", id: bot.id } : u.selection.kind === "customize" ? u.selection : { kind: "new" } };
+        }
+        const lastBot = u.selection.kind === "bot" ? u.selection.id : u.lastBot;
+        return { ...u, mode, lastBot, selection: u.lastSession.kind === "bot" ? { kind: "new" } : u.lastSession };
+      }),
+    [],
+  );
   const show = useCallback((text: string, undo?: () => void, bad?: boolean) => {
     clearTimeout(toastTimer.current);
     const id = Date.now();
@@ -299,8 +360,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   );
 
   const store = useMemo<Store>(
-    () => ({ ...ui, rpc, kernel: kernelState, status, server, sessions, loaded, width, models, set, select, run, show, call, op, refreshModels, start }),
-    [ui, rpc, kernelState, status, server, sessions, loaded, width, models, set, select, run, show, call, op, refreshModels, start],
+    () => ({ ...ui, rpc, kernel: kernelState, status, server, sessions, loaded, bots, botsLoaded, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, start }),
+    [ui, rpc, kernelState, status, server, sessions, loaded, bots, botsLoaded, width, models, set, select, selectBot, setMode, run, show, call, op, refreshModels, start],
   );
   return <Ctx.Provider value={store}>{children}</Ctx.Provider>;
 }

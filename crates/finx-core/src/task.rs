@@ -29,6 +29,8 @@ use finx_protocol::TaskTrigger;
 use parking_lot::Mutex;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::Mail;
@@ -54,11 +56,21 @@ pub(crate) struct TaskCtx {
     /// the model's reply and the tool calls stop on it, so `steer_now` ends the turn alone.
     turn: Arc<Mutex<CancellationToken>>,
     pub(crate) usage: Mutex<UsageTotals>,
+    /// A call of the running batch asked to end the task after it (`ToolOutput::ends_task`).
+    end_requested: AtomicBool,
 }
 
 impl TaskCtx {
     pub(crate) fn turn(&self) -> CancellationToken {
         self.turn.lock().clone()
+    }
+
+    pub(crate) fn request_end(&self) {
+        self.end_requested.store(true, Ordering::Relaxed);
+    }
+
+    fn take_end_request(&self) -> bool {
+        self.end_requested.swap(false, Ordering::Relaxed)
     }
 
     fn next_turn(&self) {
@@ -151,6 +163,11 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
     }
     match session.build_context().messages.last() {
         Some(Message::User(_)) | Some(Message::ToolResult(_)) => start_task(session, None),
+        // A bot that ended up silent: retrying asks it again (bot-design §3.11).
+        _ if session.unanswered() => {
+            session.record(EntryKind::Unanswered);
+            start_task(session, None);
+        }
         _ => session.warn("nothing to continue: the conversation already ends with a complete reply"),
     }
 }
@@ -218,6 +235,7 @@ fn reserve(state: &mut SessionState) -> TaskCtx {
         cancel,
         turn,
         usage: Mutex::new(UsageTotals::default()),
+        end_requested: AtomicBool::new(false),
     }
 }
 
@@ -406,6 +424,7 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
     let mut turn: u32 = 0;
     let mut last_message: Option<String> = None;
     let mut compactions = Compactions::default();
+    let mut reminded = false;
     loop {
         // Turn boundary: reports first, then queued steering input, so the user has the last word.
         session.deliver_mail();
@@ -425,8 +444,10 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         if let Err(outcome) = check_context(session, task, &mut compactions).await {
             return outcome;
         }
-        // Past midnight, or a compaction left only the system prompt's date.
+        // Past midnight, or a compaction left only the system prompt's date; the same for a
+        // bot's name.
         session.note_date();
+        session.note_bot_name();
         // The turn starts: `steer_now` ends it alone. Steering input that came while the MCP
         // servers or a compaction were awaited makes this request too.
         task.next_turn();
@@ -500,6 +521,8 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
                 session.record(EntryKind::message(Message::ToolResult(result)));
             }
         }
+        // Taken now, so that it never outlives its batch.
+        let last_word = task.take_end_request();
         end_turn(session, task, turn, &message);
         if task.cancel.is_cancelled() {
             return TaskOutcome::Interrupted;
@@ -517,6 +540,14 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
             }
             TurnDecision::Default => {}
         }
+        // A call said this was its last word (bot-design §3.3); input that came meanwhile is
+        // answered first.
+        if last_word && !session.has_steer() {
+            return TaskOutcome::Completed {
+                last_message,
+                reason: CompletionReason::Done,
+            };
+        }
         if max_turns > 0 && turn + 1 >= max_turns {
             session.warn(format!("stopped after {max_turns} turns (max_turns)"));
             return TaskOutcome::Completed {
@@ -530,6 +561,19 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         }
         if let Some(message) = session.take_follow_up() {
             session.record_user(message);
+            turn += 1;
+            continue;
+        }
+        // A bot about to stop without answering its owner is reminded once; reminded and still
+        // silent, the owner is told rather than left waiting (bot-design §3.11).
+        if message.stop_reason != StopReason::Length && session.unanswered() {
+            if reminded {
+                let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
+                error.retryable = true;
+                return TaskOutcome::Failed(error);
+            }
+            reminded = true;
+            session.record(EntryKind::Unanswered);
             turn += 1;
             continue;
         }
