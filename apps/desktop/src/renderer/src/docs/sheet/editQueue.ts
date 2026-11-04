@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { DocInfo } from "@finx/protocol";
 import { setDocInfo } from "../state";
 
-// Edits, undo and recalc of a workbook run one after another, never dropped: what is typed while
+// Edits and undo of a workbook run one after another, never dropped: what is typed while
 // one is on its way waits for it, and goes against the revision it made.
 
 export type EditQueue = {

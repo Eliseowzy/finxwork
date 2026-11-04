@@ -291,16 +291,6 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       }
     });
 
-  const recalc = (circularOnly: boolean) =>
-    enqueue(async () => {
-      try {
-        const result = await rpc.request("doc/recalc", { session_id: session, doc_id: docId, circular_only: circularOnly });
-        setImpact({ impact: result.impact, byAgent: false });
-        setLit({ edited: new Set(), affected: new Set(onSheet([...(result.impact.affected ?? []), ...(result.impact.needs_excel ?? [])], sheetName)) });
-        st.show(t(result.impact.affected_count || result.impact.needs_excel?.length ? "sheet.recalcCompared" : "sheet.recalcMatches"));
-      } catch (error) { st.show(errorText(error), undefined, true); }
-    });
-
   /** Saves in place (over a change on disk with `force`), or to `path` (save as). */
   const save = async (force = false, path?: string) => {
     // What is typed and on its way is saved with the rest.
@@ -663,10 +653,6 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
           <button className="tb" title={t("sheet.undo")} aria-label={t("sheet.undo")} disabled={!editable || busy} onClick={() => void history("doc/undo")}><Icon name="undo" /></button>
           <button className="tb sht-redo" title={t("sheet.redo")} aria-label={t("sheet.redo")} disabled={!editable || busy} onClick={() => void history("doc/redo")}><Icon name="undo" /></button>
           <button className={`tb ${showHistory ? "on" : ""}`} title={t("sheet.history")} aria-label={t("sheet.history")} onClick={() => setShowHistory((v) => !v)}><Icon name="clock" /></button>
-          {info.capabilities.includes("calc") && <>
-            <button className="tb" title={t("sheet.recalcAll")} aria-label={t("sheet.recalcAll")} disabled={busy} onClick={() => void recalc(false)}><Icon name="recalc" /></button>
-            <button className="tb" title={t("sheet.recalcCycles")} aria-label={t("sheet.recalcCycles")} disabled={busy} onClick={() => void recalc(true)}><Icon name="cycles" /></button>
-          </>}
           <button className="tb" title={t("sheet.save")} aria-label={t("sheet.save")} disabled={!dirty} onClick={() => void save()}><Icon name="save" /></button>
           <button className="tb" title={t("sheet.openExcel")} aria-label={t("sheet.openExcel")} onClick={() => void openExcel()}><Icon name="ext" /></button>
         </div>

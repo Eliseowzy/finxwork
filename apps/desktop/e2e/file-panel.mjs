@@ -285,10 +285,8 @@ try {
   await page.until("the workbook saved", `!document.querySelector(".fpn-tab.on.dirty")`, 10000).catch(async (e) => {
     fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}, save disabled ${await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar .tb")].find((b) => ${either((s) => s.sheet.save)}.includes(b.getAttribute("aria-label")))?.disabled`)}`);
   });
-  step("recalculation compares values; selection tools keep their size while zooming");
-  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-bar button")].find((b) => ${either((s) => s.sheet.recalcAll)}.includes(b.getAttribute("aria-label"))).click()`);
-  await page.until("the recalculation report", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-impact")`);
-  await page.until("selection tools after recalculation", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools")`);
+  step("selection tools keep their size while zooming");
+  await page.until("selection tools", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools")`);
   const toolsWidth = await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-selection-tools").getBoundingClientRect().width`);
   await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-zoom button:last-child").click()`);
   await page.until("zoomed in", `document.querySelector(".dcp-viewer:not([hidden]) .sht-zoom-n").textContent !== "100%"`);
