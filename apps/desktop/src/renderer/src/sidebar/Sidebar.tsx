@@ -42,7 +42,7 @@ export function Sidebar() {
     <aside className="side" aria-label={t("sidebar.label")}>
       <div className="side-top drag">
         <button className="tb" onClick={() => setSidebar(st, false)} title={t("window.hideSidebar")} aria-label={t("window.hideSidebar")}>
-          <Icon name="sidebar" />
+          <Icon name="sidebar" className="panel" />
         </button>
       </div>
       <nav className="side-nav">
