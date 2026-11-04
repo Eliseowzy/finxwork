@@ -540,7 +540,7 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 | 文件 | 改什么 |
 |---|---|
 | `renderer/src/store.tsx` | 模式；`Selection` 加 `{ kind: "bot"; id }`；各模式记住选中项；Bot 列表的订阅 |
-| `renderer/src/sidebar/Sidebar.tsx` | 顶栏的"会话 \| Bot"切换和提醒点；导航第一行；Bot 列表 |
+| `renderer/src/sidebar/Sidebar.tsx` | 顶栏的 Bot 和会话图标切换和提醒点；导航第一行；Bot 列表 |
 | `renderer/src/bots/`（新）：`BotList.tsx`、`BotPage.tsx`、`BotSheet.tsx`、`Avatar.tsx`、`actions.ts`、`useBotSession.ts` | 列表和 ⋯ 菜单、对话页、新建与编辑、头像与动效、菜单项、接入 Bot 会话 |
 | `renderer/src/composer/Composer.tsx` | Bot 模式：只有发送，下面一行只有权限选择器 |
 | `renderer/src/search/Search.tsx` | Bot 模式下 ⌘K 按名字和最近一句找 Bot |
