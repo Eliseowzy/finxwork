@@ -11,13 +11,31 @@
       "$ref": "#/definitions/AuthSetResult"
     },
     {
+      "$ref": "#/definitions/BrowserAssignTabParams"
+    },
+    {
       "$ref": "#/definitions/BrowserCdpParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserCloseTabsParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserControl"
     },
     {
       "$ref": "#/definitions/BrowserHostParams"
     },
     {
       "$ref": "#/definitions/BrowserHostResult"
+    },
+    {
+      "$ref": "#/definitions/BrowserRequest"
+    },
+    {
+      "$ref": "#/definitions/BrowserRevealParams"
+    },
+    {
+      "$ref": "#/definitions/BrowserSessionParams"
     },
     {
       "$ref": "#/definitions/BrowserSiteIconParams"
@@ -27,6 +45,9 @@
     },
     {
       "$ref": "#/definitions/BrowserStatus"
+    },
+    {
+      "$ref": "#/definitions/BrowserUseExtensionParams"
     },
     {
       "$ref": "#/definitions/CancelRequestParams"
@@ -108,6 +129,9 @@
     },
     {
       "$ref": "#/definitions/Event"
+    },
+    {
+      "$ref": "#/definitions/ExtensionMessage"
     },
     {
       "$ref": "#/definitions/FilesChangedParams"
@@ -812,6 +836,22 @@
       ],
       "type": "object"
     },
+    "BrowserAssignTabParams": {
+      "description": "Parameters of `browser/assign_tab`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "target_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "target_id"
+      ],
+      "type": "object"
+    },
     "BrowserCdpParams": {
       "description": "Parameters of the `browser/cdp` notification, in both directions.",
       "properties": {
@@ -832,6 +872,164 @@
         "stream"
       ],
       "type": "object"
+    },
+    "BrowserCloseTabsParams": {
+      "description": "Parameters of `browser/close_tabs`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        },
+        "target_id": {
+          "description": "Only this tab.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "BrowserControl": {
+      "description": "What the service tells the extension through its host (`browser/control`).",
+      "oneOf": [
+        {
+          "description": "Bring a tab and its window to the front.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "reveal"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "close_tabs"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "target_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A tab the user offered goes to this session.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "assign_tab"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id",
+            "target_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The sessions with tabs here, for the names of their tab groups and the extension's own page.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "sessions"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "additionalProperties": {
+                "$ref": "#/definitions/ExtensionSession"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A session was deleted: its tabs are the user's now.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "forget"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Whether the agent uses this browser and profile.",
+          "properties": {
+            "in_use": {
+              "type": "boolean"
+            },
+            "kind": {
+              "enum": [
+                "in_use"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "in_use",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "BrowserHostKind": {
       "description": "Which browser a `browser/host` connection provides.",
@@ -855,6 +1053,13 @@
     "BrowserHostParams": {
       "description": "Parameters of `browser/host`. Older hosts send none: the embedded browser.",
       "properties": {
+        "account": {
+          "description": "The account signed in to that browser profile, when it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "bridge": {
           "anyOf": [
             {
@@ -875,6 +1080,13 @@
         },
         "extension_version": {
           "description": "The FinxWork extension's version, for an extension host.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "instance": {
+          "description": "Tells this extension's browser and profile apart from others: kept by the extension.",
           "type": [
             "string",
             "null"
@@ -911,6 +1123,86 @@
           "description": "Set when the extension cannot be used. The connection stays, so clients can say what to update, but carries no browser."
         }
       },
+      "type": "object"
+    },
+    "BrowserRequest": {
+      "description": "What the extension asks of the app (`browser/request`).",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "open_session"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "tab_offered"
+              ],
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "title",
+            "url"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "BrowserRevealParams": {
+      "description": "Parameters of `browser/reveal`.",
+      "properties": {
+        "session_id": {
+          "description": "The session whose tab to show: the one last used, unless `target_id` says which.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "target_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "BrowserSessionParams": {
+      "description": "Parameters of `browser/allow` and `browser/cancel_wait`.",
+      "properties": {
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
       "type": "object"
     },
     "BrowserSiteIconParams": {
@@ -959,11 +1251,61 @@
               "type": "null"
             }
           ],
-          "description": "Set while the FinxWork extension is connected; with `problem` when it cannot be used."
+          "description": "The extension the agent uses, while one is connected; with `problem` when it cannot be used. When several are connected, the others are in `extensions`."
+        },
+        "extensions": {
+          "description": "Every extension connected, oldest first, when there is more than one.",
+          "items": {
+            "$ref": "#/definitions/ExtensionStatus"
+          },
+          "type": "array"
+        },
+        "refused": {
+          "description": "Why the last extension host was refused, until one connects.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revoked": {
+          "description": "Sessions the user took their browser back from.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tabs": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/definitions/YoursTab"
+            },
+            "type": "array"
+          },
+          "description": "Each session's tabs in the user's own browser.",
+          "type": "object"
+        },
+        "waiting": {
+          "description": "Sessions waiting for the user's own browser to connect.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         }
       },
       "required": [
         "embedded"
+      ],
+      "type": "object"
+    },
+    "BrowserUseExtensionParams": {
+      "description": "Parameters of `browser/use_extension`.",
+      "properties": {
+        "instance": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "instance"
       ],
       "type": "object"
     },
@@ -3578,6 +3920,157 @@
       },
       "type": "object"
     },
+    "ExtensionMessage": {
+      "description": "What the extension says through its host (`browser/extension`).",
+      "oneOf": [
+        {
+          "description": "Every session's tabs, whenever they change.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "tabs"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "additionalProperties": {
+                "items": {
+                  "$ref": "#/definitions/YoursTab"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user took control back, closing Chrome's debugging bar, from these sessions.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "revoked"
+              ],
+              "type": "string"
+            },
+            "sessions": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "sessions"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user asked to go back to a conversation.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "open_session"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user did what the session waits for in the page.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "done"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user stopped a session's task from the extension.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "stop"
+              ],
+              "type": "string"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "session_id"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user offered a tab of their own to a conversation.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "offer_tab"
+              ],
+              "type": "string"
+            },
+            "target_id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "target_id",
+            "title",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The user chose this browser and profile for the agent.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "use_this"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ExtensionProblem": {
       "description": "Why a connected extension cannot be used: it and finx share no bridge version.",
       "oneOf": [
@@ -3597,9 +4090,39 @@
         }
       ]
     },
+    "ExtensionSession": {
+      "description": "What a session looks like to the extension.",
+      "properties": {
+        "handoff": {
+          "description": "What it waits for the user to do in the page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "state": {
+          "$ref": "#/definitions/SessionState"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "state",
+        "title"
+      ],
+      "type": "object"
+    },
     "ExtensionStatus": {
       "description": "The user's own browser, lent through the FinxWork extension (browser-design §8.4).",
       "properties": {
+        "account": {
+          "description": "The account signed in to that browser profile, when it has one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "browser": {
           "description": "\"Google Chrome 141.0.7390.54\", when the extension said.",
           "type": [
@@ -3608,6 +4131,17 @@
           ]
         },
         "extension_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "in_use": {
+          "description": "The agent uses this one; the others wait.",
+          "type": "boolean"
+        },
+        "instance": {
+          "description": "Tells this browser and profile apart from others.",
           "type": [
             "string",
             "null"
@@ -8129,13 +8663,38 @@
           "type": "string"
         }
       ]
+    },
+    "YoursTab": {
+      "description": "A session's tab in the user's own browser, as the extension reports it: the extension keeps which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7).",
+      "properties": {
+        "attached": {
+          "description": "The agent is attached to it now, so a task is using it; Chrome shows its debugging bar.",
+          "type": "boolean"
+        },
+        "target_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "title",
+        "url"
+      ],
+      "type": "object"
     }
   },
   "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
   "title": "finx native protocol",
   "x-client-notifications": {
     "$/cancel_request": "CancelRequestParams",
-    "browser/cdp": "BrowserCdpParams"
+    "browser/cdp": "BrowserCdpParams",
+    "browser/extension": "ExtensionMessage"
   },
   "x-error-codes": {
     "-32002": "session_not_found",
@@ -8179,9 +8738,29 @@
       "params": "AuthSetParams",
       "result": "AuthSetResult"
     },
+    "browser/allow": {
+      "params": "BrowserSessionParams",
+      "result": "Empty"
+    },
+    "browser/assign_tab": {
+      "params": "BrowserAssignTabParams",
+      "result": "Empty"
+    },
+    "browser/cancel_wait": {
+      "params": "BrowserSessionParams",
+      "result": "Empty"
+    },
+    "browser/close_tabs": {
+      "params": "BrowserCloseTabsParams",
+      "result": "Empty"
+    },
     "browser/host": {
       "params": "BrowserHostParams",
       "result": "BrowserHostResult"
+    },
+    "browser/reveal": {
+      "params": "BrowserRevealParams",
+      "result": "Empty"
     },
     "browser/site_icon": {
       "params": "BrowserSiteIconParams",
@@ -8189,6 +8768,10 @@
     },
     "browser/status": {
       "result": "BrowserStatus"
+    },
+    "browser/use_extension": {
+      "params": "BrowserUseExtensionParams",
+      "result": "Empty"
     },
     "chatgpt/cancel": {
       "params": "ChatGptCancelParams",
@@ -8427,6 +9010,8 @@
   "x-server-notifications": {
     "browser/cdp": "BrowserCdpParams",
     "browser/changed": "BrowserStatus",
+    "browser/control": "BrowserControl",
+    "browser/request": "BrowserRequest",
     "config/changed": "ConfigChangedParams",
     "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",

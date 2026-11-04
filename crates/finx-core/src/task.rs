@@ -351,7 +351,10 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
     };
     match next {
         Some((task, work, trigger)) => launch(session, task, work, trigger),
-        None => session.check_idle(),
+        None => {
+            crate::browser::task_ended(&session.tool_state);
+            session.check_idle();
+        }
     }
 }
 

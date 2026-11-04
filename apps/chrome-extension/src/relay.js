@@ -87,6 +87,11 @@ export class TargetRelay {
         return { sessionId: t.sessionId };
       }
       case "Target.detachFromTarget": {
+        // The session that had this tab ended: the tab stays, and it may find it again.
+        if (params.finxRelease === true) {
+          this.drop(this.target(params.targetId), "the session let it go", "release");
+          return {};
+        }
         const s = typeof params.sessionId === "string" ? this.sessions.get(params.sessionId) : undefined;
         // A child target (an iframe, a worker) is the page's to detach; a page stays attached
         // until it is closed.
@@ -122,8 +127,8 @@ export class TargetRelay {
   /** Before the kernel's session on a page starts: attach its debugger, where that is needed. */
   async attachPage(_t) {}
 
-  /** Lets a page go: `close` closes it, `shutdown` is the browser ending, `gone` is a page
-   * that went by itself (closed, crashed, detached). */
+  /** Lets a page go: `close` closes it, `shutdown` is the browser ending, `release` is the
+   * session that had it ending, `gone` is a page that went by itself (closed, crashed, detached). */
   release(_t, _how) {}
 
   activate(_t) {}

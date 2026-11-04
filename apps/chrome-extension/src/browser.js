@@ -17,6 +17,7 @@ import { TargetRelay } from "./relay.js";
  * @property {(tabId: number) => Promise<void>} attach  Attaches the debugger.
  * @property {(tabId: number) => void} detach
  * @property {(tabId: number, child: string | undefined, method: string, params: object) => Promise<unknown>} send
+ * @property {(label: string) => {tabId: number, url: string, title: string}[]} released  A session's tabs, as kept across browsers.
  */
 
 /** @typedef {import("./relay.js").Target & {tabId: number, url: string, title: string}} Tab */
@@ -97,20 +98,30 @@ export class ExtensionBrowser extends TargetRelay {
     }
   }
 
-  /** A tab the kernel closes is closed; at the end, the debugger lets go of the rest and
-   * leaves them open for the user; one that went by itself needs nothing. */
+  /** A tab the kernel closes is closed; at the end, and when a session lets a tab go, the
+   * debugger lets go and leaves it open for the user; one that went by itself needs nothing. */
   release(t, how) {
     this.byTab.delete(t.tabId);
     if (how === "close") this.tabs.close(t.tabId);
-    else if (how === "shutdown" && t.sessionId) this.tabs.detach(t.tabId);
+    else if ((how === "shutdown" || how === "release") && t.sessionId) this.tabs.detach(t.tabId);
   }
 
   activate(t) {
     this.tabs.activate(t.tabId);
   }
 
-  // Downloads go where the user's Chrome puts them; the kernel is not told. And the user
-  // does not hand tabs of their own to the agent here, so `Target.getTargets` lists none.
+  // Downloads go where the user's Chrome puts them; the kernel is not told.
+
+  /** A session's tabs that no browser of the kernel holds now: the ones it let go, those of a
+   * connection that dropped, and the ones the user gave it (§8.4.7). */
+  listTargets(params) {
+    const label = typeof params.finxSession === "string" ? params.finxSession : undefined;
+    if (!label) return [];
+    for (const { tabId, url, title } of this.tabs.released(label)) {
+      if (!this.byTab.has(tabId)) this.register(tabId, url, label).title = title;
+    }
+    return [...this.byTab.values()].filter((t) => t.finxSession === label && !t.sessionId).map((t) => this.info(t));
+  }
 
   describe(t) {
     return { url: t.url, title: t.title };

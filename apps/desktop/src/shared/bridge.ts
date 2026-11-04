@@ -125,10 +125,24 @@ export type SystemBrowserId = "chrome" | "edge" | "brave" | "chromium";
 export type SystemBrowser = {
   id: SystemBrowserId;
   name: string;
-  /** finx is registered as the extension's host for it. */
+  /** finx is registered as the extension's host for it, by this home. */
   registered: boolean;
+  /** What its host manifest points at: this home's host, one that is gone, or another home's. */
+  manifest: "missing" | "ours" | "dead" | "other";
   /** It is running now. */
   running: boolean;
+};
+
+/** Each link from the browser to finx's service, as this machine has it. */
+export type SystemBrowserDiagnosis = {
+  app: string;
+  service: string | null;
+  launcher: string;
+  program: string | null;
+  programExists: boolean;
+  extensionFolder: string;
+  extensionBuild: string | null;
+  browsers: { name: string; running: boolean; manifest: SystemBrowser["manifest"] }[];
 };
 
 /** Desktop control (finx's desktop tools, through agent-desktop): the program and the app's own permissions. */
@@ -213,6 +227,16 @@ export type Bridge = {
   systemBrowsers(): Promise<SystemBrowser[]>;
   setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; message: string }>;
   openSystemBrowser(id: SystemBrowserId, page?: "extensions"): Promise<boolean>;
+  /** A task waits for the user's own browser: starts it behind what the user is doing. */
+  openSystemBrowserQuietly(): Promise<void>;
+  /** A host was refused: the files follow the service's program again. */
+  repairSystemBrowser(): Promise<void>;
+  diagnoseSystemBrowser(): Promise<SystemBrowserDiagnosis>;
+  /** A system notification while the app is not in front; a click opens the session. */
+  notify(n: { title: string; body: string; session: string }): void;
+  onOpenSession(cb: (session: string) => void): () => void;
+  /** Brings the main window to the front. */
+  showMainWindow(): void;
   revealBrowserExtension(): void;
   systemBrowserIcon(id: SystemBrowserId): Promise<string | null>;
   /** Desktop control's program and the app's permissions for it; `configured` is `desktop.executable`. */

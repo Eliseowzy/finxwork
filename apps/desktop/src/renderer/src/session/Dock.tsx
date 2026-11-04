@@ -12,6 +12,7 @@ import { useStore } from "../store";
 import { Approval } from "./Approval";
 import { Notice } from "./Notice";
 import { Queue } from "./Queue";
+import { OfferedTab, YoursWaitCard } from "./Yours";
 
 /** What the owner had written in each session and not sent yet. */
 const drafts = new Map<string, { text: string; attachments: Attachment[] }>();
@@ -97,6 +98,7 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
     // The PDF the file panel shows goes along, so "this page" means something (§7.4).
     const tab = st.files ? viewingDoc(id) : undefined;
     if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
+    await st.giveOffered(id, input);
     const ok = await st.op(id, { type: "prompt", input, mode: live ? (followUp ? "follow_up" : "steer") : undefined });
     if (!ok) change(sent);
   };
@@ -114,6 +116,8 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
         above: (
           <>
             {notice && <Notice key={`${notice.code}:${notice.ts}`} notice={notice} onClose={() => close(notice)} />}
+            <YoursWaitCard sessionId={id} />
+            <OfferedTab />
             {live !== null && live.approvals.length > 0 && <Approval key={live.approvals[0].call_id} s={s} view={view} />}
             {view.queued.length > 0 && (
               <Queue

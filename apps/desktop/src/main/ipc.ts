@@ -6,7 +6,8 @@ import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, Deskt
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
-import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { notify } from "./notify";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { editors, opensFolders } from "./editors";
@@ -315,6 +316,11 @@ export function registerIPC() {
     return key ? desktopApp(key) : null;
   });
   ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
+  ipcMain.handle("system-browser-open-quietly", (e) => (trusted(e) ? openSystemBrowserQuietly() : undefined));
+  ipcMain.handle("system-browser-repair", (e) => (trusted(e) ? refreshSystemBrowser() : undefined));
+  ipcMain.handle("system-browser-diagnose", (e) => (trusted(e) ? diagnoseSystemBrowser() : null));
+  ipcMain.on("notify", (e, n: unknown) => trusted(e) && notify(n));
+  ipcMain.on("show-main-window", (e) => trusted(e) && void showMain());
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));

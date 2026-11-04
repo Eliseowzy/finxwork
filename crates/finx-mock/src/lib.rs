@@ -568,6 +568,41 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("browsers done: {}", last_tool_result(messages)))),
             }
         }
+        // The user's own browser: a page opened there, its tabs, what a tab shows, and handing
+        // the page to the user (browser-design §8.4.7).
+        "yours" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim(), "browser": "yours"}))])),
+            _ => Plan::Step(Step::text(format!("yours opened: {}", last_tool_result(messages)))),
+        },
+        "yours_tabs" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_tabs", json!({}))])),
+            _ => Plan::Step(Step::text(format!("yours tabs: {}", last_tool_result(messages)))),
+        },
+        "yours_read" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_snapshot", json!({"tab": arg.trim()}))])),
+            _ => Plan::Step(Step::text(format!("yours read: {}", last_tool_result(messages)))),
+        },
+        // A sub-agent opens a page there, and reports.
+        "yours_agent" => match step {
+            0 => {
+                let task = format!("[[mock:yours:{}]] open it", arg.trim());
+                Plan::Step(Step::calls(vec![("spawn_agent", json!({"description": "打开页面", "task": task, "name": "opener", "wait": true}))]))
+            }
+            _ => Plan::Step(Step::text(format!("agent done: {}", last_tool_result(messages)))),
+        },
+        // Reads the first tab there, then keeps it in use for this many milliseconds.
+        "yours_hold" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_snapshot", json!({"tab": "y1"}))])),
+            _ => Plan::Step(Step {
+                parts: vec![Part::Text("held".into())],
+                finish: "stop",
+                delay: Duration::from_millis(arg.trim().parse().unwrap_or(1000)),
+            }),
+        },
+        "handoff" => match step {
+            0 => Plan::Step(Step::calls(vec![("call_tool", json!({"name": "browser_wait", "arguments": {"user": arg.trim()}}))])),
+            _ => Plan::Step(Step::text(format!("handoff done: {}", last_tool_result(messages)))),
+        },
         // A page opened without naming a browser: where the user's default sends it.
         "default_browser" => match step {
             0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim()}))])),

@@ -110,9 +110,11 @@ pub struct Server(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) connections: Arc<finx_connections::Manager>,
     pub(crate) model_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    /// Connections that called `browser/status`, and the extension's last word (crate::browser_status).
+    /// Connections that called `browser/status`, the extensions connected, and why the last
+    /// host was refused (crate::browser_status).
     pub(crate) browser_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    pub(crate) extension: Mutex<Option<finx_protocol::api::ExtensionStatus>>,
+    pub(crate) extensions: Mutex<Vec<crate::browser_status::ExtensionEntry>>,
+    pub(crate) host_refused: Mutex<Option<String>>,
     /// Model lists and the catalog (crate::models).
     pub(crate) model_upkeep: crate::models::Upkeep,
     pub(crate) home: FinxHome,
@@ -131,7 +133,7 @@ pub(crate) struct Inner {
     /// Detect create/run/close bursts shorter than the memory-upkeep polling interval.
     closed_sessions: AtomicU64,
     /// Connections following the session list.
-    feed: Arc<ListFeed>,
+    pub(crate) feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
     pub(crate) defaults: SessionDefaults,
     /// The 自定义 page's subscriptions and file watching (crate::customize).
@@ -164,7 +166,8 @@ impl Server {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
             browser_watchers: Mutex::new(HashMap::new()),
-            extension: Mutex::new(None),
+            extensions: Mutex::new(Vec::new()),
+            host_refused: Mutex::new(None),
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
             defaults,
@@ -191,6 +194,7 @@ impl Server {
         connections.on_change(Arc::new(move || {
             if let Some(inner) = weak.upgrade() { Server(inner).models_changed(); }
         }));
+        server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
         Ok(server)
     }
@@ -238,7 +242,7 @@ impl Server {
         self.forget_model_watcher(conn.id);
         self.forget_customize(conn.id);
         self.forget_files(conn.id);
-        self.0.browser_watchers.lock().remove(&conn.id);
+        self.forget_browser_watcher(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -791,6 +795,7 @@ impl Server {
                 .map_err(|e| RpcError::internal(format!("cannot move the session files: {e}")))?;
         }
         self.0.feed.publish(Vec::new(), vec![id.to_string()]);
+        self.forget_browser_session(id);
         Ok(())
     }
 

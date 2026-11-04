@@ -233,6 +233,8 @@ pub enum Authority {
     Upload { origin: String, paths: Vec<PathBuf>, target: PageTarget, own: bool },
     /// Runs a script on a page: it can read and change anything there.
     Script { origin: String, target: PageTarget, own: bool },
+    /// Hands a page to the user for what only they can do: a sign-in, a CAPTCHA.
+    UserStep { what: String, own: bool },
     /// Reads a desktop app's window. `app` is its bundle id, or its name when it has none.
     AppObserve { app: String },
     /// Acts on a desktop app. `action` says what, for the user.

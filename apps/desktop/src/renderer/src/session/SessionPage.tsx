@@ -16,6 +16,7 @@ import { selectionMenu } from "./contentMenus";
 import { Inspector } from "./Inspector";
 import { ContentScope, recheckFiles } from "./scope";
 import { useSession } from "./useSession";
+import { useYours, YoursButton } from "./Yours";
 
 // A session: its conversation, the composer and the bar of a running task,
 // with the info card over its right side, or in its place the background
@@ -73,6 +74,7 @@ export function SessionPage({ s }: { s: ListSession }) {
   }, [rpc, s.session_id, cwd]);
   const layout = layoutOf(st);
   const info = layout.card !== "hidden" && !background && !browser && !files;
+  const yours = useYours(s.session_id, view);
   // The background card keeps the conversation clear of it as the info card does, when there is room for one.
   const dock = (info && layout.card === "docked") || (background && layoutOf({ ...st, inspector: true, peek: null }).card === "docked");
   // The first page the session opens brings the browser panel out.
@@ -131,6 +133,8 @@ export function SessionPage({ s }: { s: ListSession }) {
               {running > 0 && <span className="tb-badge">{running}</span>}
             </button>
           )}
+          {/* The user's own browser, in the info card, or here while that does not show. */}
+          {yours && !info && <YoursButton yours={yours} sessionId={s.session_id} />}
           {/* The browser panel's button; a session with no pages yet gets a blank tab to start from. While the
               panel is open it sits at the panel's right end instead, where it puts the panel away. */}
           {window.finx && !browser && (
@@ -171,7 +175,7 @@ export function SessionPage({ s }: { s: ListSession }) {
           {/* Right-click on selected text: Copy (anything with a menu of its own shows that instead). */}
           <div className={`dwrap ${dock ? "dock" : ""}`} onContextMenu={() => selectionMenu(st)}>
             <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
-            {view && info && <Inspector s={s} view={view} />}
+            {view && info && <Inspector s={s} view={view} yours={yours} />}
             {view && background && <Background s={s} view={view} />}
           </div>
         </ContentScope>

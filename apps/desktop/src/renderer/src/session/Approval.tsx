@@ -9,6 +9,7 @@ import { Icon, Mark } from "../icons";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { Code } from "./Code";
+import { handoffOf, revealYours, useYourBrowser } from "./Yours";
 
 /**
  * A tool call waiting for the owner (Op::Approval), popped up right above
@@ -39,6 +40,9 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   // "Always": the chosen app grant also goes into ~/.finx/config.toml.
   const [remember, setRemember] = useState(false);
   const field = useRef<HTMLInputElement>(null);
+  // A page handed to the person (browser_wait with user): they went to it, and may say they are done.
+  const [went, setWent] = useState(false);
+  const yourBrowser = useYourBrowser();
 
   const give = async (decision: ApprovalDecision) => {
     if (busy) return;
@@ -109,6 +113,45 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
     </>
   );
   const queue = live.approvals.length > 1 && <span className="qx-tag">{t("approval.queue", { n: 1, total: live.approvals.length })}</span>;
+  const handoff = handoffOf(a);
+  if (handoff !== null) {
+    const name = a.own_browser ? yourBrowser.name : t("browser.builtIn");
+    const go = () => {
+      setWent(true);
+      if (a.own_browser) void revealYours(st, yourBrowser.browser, s.session_id);
+      else st.set({ browser: true, background: false, files: false, filesMax: false });
+    };
+    return (
+      <div className="appr" role="region" aria-label={t("approval.label")}>
+        <div className="appr-h">
+          <Mark size={16} />
+          <b>{t("yours.handoff.title", { name })}</b>
+        </div>
+        <div className="appr-site">
+          <span className="sel-text">{handoff}</span>
+        </div>
+        <div className="appr-f">
+          {denying ? (
+            denyField
+          ) : (
+            <>
+              <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("yours.handoff.skip")}</button>
+              <span className="appr-sp" />
+              {went && <button className="btn" onClick={go}>{t("yours.handoff.again")}</button>}
+              {went ? (
+                <button className="btn primary" disabled={busy} onClick={() => give({ type: "approve" })}>
+                  {t("yours.handoff.done")}
+                  <span className="kret">⌘↩</span>
+                </button>
+              ) : (
+                <button className="btn primary" onClick={go}>{t("yours.handoff.go", { name })}</button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
   if (site) {
     const origin = grants[0].origin;
     const every = grants.findIndex((g) => g.origin === "*");
