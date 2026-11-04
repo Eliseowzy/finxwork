@@ -208,7 +208,7 @@
       "desc": "Changes files in the workspace without asking; asks before commands"
     },
     "bypass-permissions": {
-      "title": "Bypass Permissions",
+      "title": "Full Access",
       "desc": "Runs everything without asking, except deny rules, ask rules and deleting critical paths"
     }
   },

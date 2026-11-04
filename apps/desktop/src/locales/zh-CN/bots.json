@@ -57,6 +57,13 @@
     "toBottom": "回到底部",
     "queued": "等它回完这一句就送达"
   },
+  "fullAccess": {
+    "title": "Bot 的对话开启完全访问？",
+    "lead": "Bot 所有的对话将开启完全访问模式。",
+    "decline": "不同意时，Bot 用询问权限：修改文件、运行命令前都先问你。之后可以在每个 Bot 的输入框下面单独改。",
+    "agree": "同意",
+    "refuse": "不同意"
+  },
   "sheet": {
     "newTitle": "新建 Bot",
     "editTitle": "改名字、换头像",

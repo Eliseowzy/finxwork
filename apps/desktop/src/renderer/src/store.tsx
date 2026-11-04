@@ -32,7 +32,7 @@ export type CustomizeView = {
   detail: { kind: "skill" | "connector"; id: string; catalog?: boolean; tab: string } | null;
 };
 
-export type Sheet = { kind: "confirm"; title: string; message: string; button: string; cancel?: string; run: () => Promise<unknown>; done?: string };
+export type Sheet = { kind: "confirm"; title: string; message: string; button: string; cancel?: string; run: () => Promise<unknown>; done?: string; onCancel?: () => void };
 
 export type Toast = { text: string; undo?: () => void; bad?: boolean; id: number };
 
@@ -51,6 +51,10 @@ type UI = {
   lastSession: Selection;
   lastBot: string | null;
   botSheet: BotSheet | null;
+  /** What bots' conversations start with, once the owner was asked on first entering Bot mode (bot-mode-design §6.13). */
+  botPermission: PermissionMode | null;
+  /** For each bot, the conversation that was last given that default: what is picked in it afterwards stays. */
+  botDefaulted: Record<string, string>;
   inspector: boolean;
   /** The context card is open (closed, it shows only the share used). */
   contextOpen: boolean;
@@ -141,7 +145,7 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
+type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "botPermission" | "botDefaulted" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
 
 function saved(): Partial<Saved> {
   if (location.hash.startsWith("#settings")) return {};
@@ -177,6 +181,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       lastSession: s.lastSession ?? { kind: "new" },
       lastBot: s.lastBot ?? null,
       botSheet: null,
+      botPermission: s.botPermission ?? null,
+      botDefaulted: s.botDefaulted ?? {},
       inspector: s.inspector ?? true,
       contextOpen: s.contextOpen ?? true,
       background: false,
@@ -278,13 +284,13 @@ export function FinxProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (location.hash.startsWith("#settings")) return;
-    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
+    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, botPermission: ui.botPermission, botDefaulted: ui.botDefaulted, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
     try {
       localStorage.setItem("main-view", JSON.stringify(v));
     } catch {
       // The window's layout is a convenience; without storage it just doesn't stick.
     }
-  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
+  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.botPermission, ui.botDefaulted, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);

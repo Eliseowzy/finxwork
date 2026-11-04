@@ -38,6 +38,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
   const { t } = useTranslation("bots");
   const [view, session, loadEarlier] = useBotSession(bot.id, bot.session_id ?? undefined);
   useMarkRead(bot);
+  useBotPermission(bot.id, view, session);
   const scope = useMemo(() => (session && view ? { session, cwd: view.info.cwd, panel: false } : null), [session, view?.info.cwd]);
   const busy = botWorking(bot);
   const [menu, setMenu] = useState<{ x: number; y: number; key: boolean } | null>(null);
@@ -80,6 +81,38 @@ export function BotPage({ bot }: { bot: BotSummary }) {
       </div>
     </div>
   );
+}
+
+/**
+ * What bots may do (bot-mode-design §6.13). The first time in Bot mode asks whether their
+ * conversations use Full Access; declining means Ask Permissions. A conversation new to that
+ * answer gets it once, so what is picked in it afterwards stays.
+ */
+function useBotPermission(bot: string, view: SessionView | null, session: string | null) {
+  const st = useStore();
+  const { t } = useTranslation("bots");
+  const { t: ts } = useTranslation("session");
+  const asked = useRef(false);
+  useEffect(() => {
+    if (st.botPermission !== null || st.sheet || asked.current) return;
+    asked.current = true;
+    st.set({
+      sheet: {
+        kind: "confirm",
+        title: t("fullAccess.title"),
+        message: `${t("fullAccess.lead")}${ts("bypass.body")}${t("fullAccess.decline")}`,
+        button: t("fullAccess.agree"),
+        cancel: t("fullAccess.refuse"),
+        run: async () => st.set({ botPermission: "bypass-permissions" }),
+        onCancel: () => st.set({ botPermission: "manual" }),
+      },
+    });
+  }, [st.botPermission, st.sheet]);
+  useEffect(() => {
+    if (!st.botPermission || !view || !session || st.botDefaulted[bot] === session) return;
+    st.set({ botDefaulted: { ...st.botDefaulted, [bot]: session } });
+    if (view.info.permission_mode !== st.botPermission) void st.op(session, { type: "set_permission_mode", mode: st.botPermission });
+  }, [st.botPermission, bot, session, view === null]);
 }
 
 /** What the bot is doing, after its name: waiting for the owner, working on things, or answering. */
@@ -418,7 +451,7 @@ const drafts = new Map<string, { text: string; attachments: Attachment[] }>();
 /** What failed tasks handed back that is in a composer already. */
 const handed = new WeakSet<UserMessage[]>();
 
-/** The composer of a bot's page: only Send (bot-mode-design §6.14); every message goes in as it is sent. */
+/** The composer of a bot's page: only Send, and the permission mode under it (bot-mode-design §6.14); every message goes in as it is sent. */
 function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: SessionView; session: string; onHeight: (h: number) => void }) {
   const { t } = useTranslation("bots");
   const st = useStore();
@@ -455,6 +488,8 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
         above: view.live && view.live.approvals.length > 0 && <Approval key={view.live.approvals[0].call_id} sessionId={session} view={view} />,
         onHeight,
+        permission: view.info.permission_mode,
+        onPermission: (mode) => st.op(session, { type: "set_permission_mode", mode }),
       }}
       value={draft.text}
       onChange={(text) => change({ ...draft, text })}

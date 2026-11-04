@@ -50,8 +50,8 @@ export type Form =
       onEditLast: () => boolean;
     }
   | { mode: "new"; place: Place }
-  /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and no settings under it: bots use the defaults. */
-  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void };
+  /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and of the settings only the permission mode under it. */
+  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void; permission: PermissionMode; onPermission: (m: PermissionMode) => void };
 
 /**
  * Where the owner writes to finx: one line while empty — "+", the text,
@@ -148,6 +148,11 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             )}
           </div>
         </div>
+        {form.mode === "bot" && (
+          <div className="cmp-meta">
+            <PermissionPicker value={form.permission} onChange={form.onPermission} />
+          </div>
+        )}
         {settings && (
           <div className="cmp-meta">
             {form.mode === "new" && (
@@ -423,7 +428,7 @@ const modes: PermissionMode[] = ["manual", "accept-edits", "bypass-permissions"]
 
 /**
  * How much finx may do without asking (the approval mode), named as it is.
- * Switching into bypass-permissions asks first, every time it is switched on:
+ * Switching into Full Access (bypass-permissions) asks first, every time it is switched on:
  * agreeing switches, refusing keeps the mode. Staying in it asks nothing more.
  */
 function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange: (m: PermissionMode) => void }) {

@@ -199,9 +199,13 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode button[role=tab]:last-child').click()`);
   await page.until("FinxBot in the list", `${rows}.some((r) => r.name === "FinxBot")`, 30000);
+  // Declined: the rest of this walk has approvals to answer (e2e/bot-permission.mjs has both answers).
+  await page.until("the question about Full Access", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
+  await page.run(`document.querySelector("dialog.sheet[open] .btn:not(.danger)").click()`);
   await page.until("its empty page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
   check(await page.run(`document.querySelector(".bav.mark") !== null`), "FinxBot has the mark");
-  check((await page.run(`document.querySelector(".cmp-meta")`)) === null, "a bot's composer has no permission and model row");
+  await page.until("the permission mode under the composer", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "询问权限"`);
+  check((await page.run(`document.querySelectorAll(".cmp-zone.bot .cmp-meta .mb").length`)) === 1, "of a session's settings, a bot's composer has the permission mode only");
   await page.shot("01-bot-mode");
 
   step("4/6/7. a question: one message back, whole, nothing internal in it");

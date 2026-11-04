@@ -140,14 +140,14 @@
     "siteQuestionYours": "在你的浏览器里打开 {{site}}？",
     "siteActYours": "允许 finx 在你的浏览器里使用 {{site}}？",
     "siteYours": "用的是你已经登录的账号。",
-    "siteYoursBypass": "用的是你已经登录的账号，所以绕过权限也会先问你。"
+    "siteYoursBypass": "用的是你已经登录的账号，所以完全访问也会先问你。"
   },
   "notice": {
     "label": "关键提醒",
     "dismiss": "知道了"
   },
   "bypass": {
-    "title": "开启绕过权限？",
+    "title": "开启完全访问？",
     "body": "工具会直接运行、不再询问，包括改动 .git、shell 配置这类受保护的文件，以及工作区以外的文件。只有拒绝规则、询问规则和删除关键路径仍会拦下操作。请只在容器或临时副本这类隔离环境里使用。",
     "agree": "同意",
     "refuse": "拒绝"

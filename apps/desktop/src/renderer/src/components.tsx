@@ -115,12 +115,16 @@ export function SheetHost() {
   const sheet = st.sheet;
   if (!sheet) return null;
   const close = () => st.set({ sheet: null });
+  const decline = () => {
+    close();
+    sheet.onCancel?.();
+  };
   return (
-    <Dialog label={sheet.title} width={420} onClose={close}>
+    <Dialog label={sheet.title} width={420} onClose={decline}>
       <h3>{sheet.title}</h3>
       <p className="sub">{sheet.message}</p>
       <div className="sheet-foot">
-        <button className="btn" onClick={close}>{sheet.cancel ?? t("sheet.cancel")}</button>
+        <button className="btn" onClick={decline}>{sheet.cancel ?? t("sheet.cancel")}</button>
         <button
           className="btn primary danger"
           onClick={async () => {
