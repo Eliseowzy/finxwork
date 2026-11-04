@@ -9,6 +9,7 @@ publish.workspace = true
 [dependencies]
 futures.workspace = true
 finx-connections.workspace = true
+base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
 finx-browser.workspace = true

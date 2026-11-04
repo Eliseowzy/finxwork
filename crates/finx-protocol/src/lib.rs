@@ -4,6 +4,7 @@
 //! additive; clients must ignore unknown event types and fields.
 
 pub mod api;
+pub mod bot;
 pub mod customize;
 pub mod doc;
 pub mod files;

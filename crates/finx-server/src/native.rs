@@ -30,6 +30,10 @@ use finx_protocol::api::SessionResumeParams;
 use finx_protocol::api::SessionSnapshot;
 use finx_protocol::api::SkillsListParams;
 use finx_protocol::api::method;
+use finx_protocol::bot::BotCreateParams;
+use finx_protocol::bot::BotIdParams;
+use finx_protocol::bot::BotOpenParams;
+use finx_protocol::bot::BotUpdateParams;
 use finx_rpc::Id;
 use finx_rpc::Kind;
 use finx_rpc::RawMessage;
@@ -226,6 +230,7 @@ impl NativeProtocol {
                             customize: true,
                             embedded_browser: true,
                             input_queue: true,
+                            bots: true,
                         },
                     })
                 });
@@ -595,6 +600,66 @@ impl NativeProtocol {
                 server.unsubscribe_sessions(conn);
                 conn.send(finx_rpc::response(id, &json!({})));
             }
+            method::BOTS_SUBSCRIBE => {
+                let (conn, id) = (conn.clone(), id.clone());
+                tokio::task::spawn_blocking(move || server.bots_subscribe(&conn, |result| reply(&id, result)));
+            }
+            method::BOTS_UNSUBSCRIBE => {
+                server.bots_unsubscribe(conn);
+                conn.send(finx_rpc::response(id, &json!({})));
+            }
+            method::BOTS_CREATE => match finx_rpc::params::<BotCreateParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.bots_create(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_UPDATE => match finx_rpc::params::<BotUpdateParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::task::spawn_blocking(move || conn.send(reply(&id, server.bots_update(p))));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_AVATAR | method::BOTS_READ | method::BOTS_UNREAD => match finx_rpc::params::<BotIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id, name) = (conn.clone(), id.clone(), method_name.to_string());
+                    tokio::task::spawn_blocking(move || {
+                        let result = match name.as_str() {
+                            method::BOTS_AVATAR => server.bots_avatar(&p.bot_id).map(|r| json!(r)),
+                            method::BOTS_READ => server.bots_set_unread(&p.bot_id, 0).map(|()| json!({})),
+                            _ => server.bots_set_unread(&p.bot_id, 1).map(|()| json!({})),
+                        };
+                        conn.send(reply(&id, result));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_OPEN => match finx_rpc::params::<BotOpenParams>(params) {
+                Ok(p) => {
+                    // Answered as session/new is, whether the conversation is new or not.
+                    let attach = Self::attach_request(conn, id, p.events, p.history_limit, true);
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move {
+                        match server.bots_open(&p.bot_id, attach).await {
+                            Ok(()) => None,
+                            Err(err) => Some(finx_rpc::error_response(Some(&reply_id), &err)),
+                        }
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_CLEAR | method::BOTS_DELETE => match finx_rpc::params::<BotIdParams>(params) {
+                Ok(p) => {
+                    let (conn, id, clear) = (conn.clone(), id.clone(), method_name == method::BOTS_CLEAR);
+                    tokio::spawn(async move {
+                        let result = if clear { server.bots_clear(&p.bot_id).await } else { server.bots_delete(&p.bot_id).await };
+                        conn.send(reply(&id, result.map(|()| json!({}))));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
             method::DOC_OPEN => match finx_rpc::params::<finx_protocol::doc::DocOpenParams>(params) {
                 Ok(p) => {
                     let reply_id = id.clone();

@@ -126,6 +126,24 @@ pub mod method {
     pub const BROWSER_CHANGED: &str = "browser/changed";
     /// A site's icon, for the lists of sites the browsers may open (browser-design §10.1).
     pub const BROWSER_SITE_ICON: &str = "browser/site_icon";
+    // Bots (docs/kernel/bot-design.md §4).
+    /// Every bot now, and `bots/changed` on this connection from then on.
+    pub const BOTS_SUBSCRIBE: &str = "bots/subscribe";
+    pub const BOTS_UNSUBSCRIBE: &str = "bots/unsubscribe";
+    pub const BOTS_CREATE: &str = "bots/create";
+    pub const BOTS_UPDATE: &str = "bots/update";
+    /// A bot's uploaded avatar.
+    pub const BOTS_AVATAR: &str = "bots/avatar";
+    /// Loads or attaches a bot's conversation, making it when there is none yet.
+    pub const BOTS_OPEN: &str = "bots/open";
+    /// The user is looking at the bot: nothing is unread.
+    pub const BOTS_READ: &str = "bots/read";
+    pub const BOTS_UNREAD: &str = "bots/unread";
+    /// Starts the bot's conversation over.
+    pub const BOTS_CLEAR: &str = "bots/clear";
+    pub const BOTS_DELETE: &str = "bots/delete";
+    /// Server notification to `bots/subscribe`rs.
+    pub const BOTS_CHANGED: &str = "bots/changed";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -171,6 +189,12 @@ pub mod error_code {
     pub const DOC_UNAVAILABLE: i64 = -32032;
     /// `doc/open`: the document is encrypted and the password is missing or wrong.
     pub const DOC_PASSWORD: i64 = -32033;
+    /// `bots/*`: no bot has that id.
+    pub const BOT_NOT_FOUND: i64 = -32040;
+    /// `bots/delete` of the default bot, or the mark as another bot's avatar.
+    pub const BOT_DEFAULT: i64 = -32041;
+    /// `bots/create`, `bots/update`: an empty or long name, or an unusable avatar.
+    pub const BOT_INVALID: i64 = -32042;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -205,6 +229,9 @@ pub mod error_code {
         (MCP_LOGIN_FAILED, "mcp_login_failed"),
         (DOC_UNAVAILABLE, "doc_unavailable"),
         (DOC_PASSWORD, "doc_password"),
+        (BOT_NOT_FOUND, "bot_not_found"),
+        (BOT_DEFAULT, "bot_default"),
+        (BOT_INVALID, "bot_invalid"),
     ];
 }
 
@@ -424,6 +451,9 @@ pub struct ServerCapabilities {
     /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
     #[serde(default)]
     pub input_queue: bool,
+    /// Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).
+    #[serde(default)]
+    pub bots: bool,
 }
 
 // ---- Sessions ----

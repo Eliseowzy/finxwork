@@ -11,6 +11,30 @@
       "$ref": "#/definitions/AuthSetResult"
     },
     {
+      "$ref": "#/definitions/BotAvatarResult"
+    },
+    {
+      "$ref": "#/definitions/BotCreateParams"
+    },
+    {
+      "$ref": "#/definitions/BotIdParams"
+    },
+    {
+      "$ref": "#/definitions/BotOpenParams"
+    },
+    {
+      "$ref": "#/definitions/BotResult"
+    },
+    {
+      "$ref": "#/definitions/BotUpdateParams"
+    },
+    {
+      "$ref": "#/definitions/BotsChangedParams"
+    },
+    {
+      "$ref": "#/definitions/BotsResult"
+    },
+    {
       "$ref": "#/definitions/BrowserCdpParams"
     },
     {
@@ -790,6 +814,411 @@
           "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "Avatar": {
+      "description": "A bot's avatar.",
+      "oneOf": [
+        {
+          "description": "The FinxWork mark: the default bot's alone.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "mark"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A character on a colour.",
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "char"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/AvatarShape"
+            }
+          },
+          "required": [
+            "hue",
+            "kind",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "The first character of the bot's name on a colour.",
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "mono"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "hue",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An image uploaded for the bot, which `bots/avatar` gives; `rev` changes with each one.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "image"
+              ],
+              "type": "string"
+            },
+            "rev": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "rev"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AvatarHue": {
+      "description": "The colours behind an avatar's character or initial: muted, the same in both themes.",
+      "enum": [
+        "slate",
+        "sage",
+        "clay",
+        "ochre",
+        "plum",
+        "teal",
+        "rose",
+        "stone"
+      ],
+      "type": "string"
+    },
+    "AvatarInput": {
+      "description": "An avatar given to `bots/create` and `bots/update`.",
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {
+              "enum": [
+                "mark"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "char"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/AvatarShape"
+            }
+          },
+          "required": [
+            "hue",
+            "kind",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "hue": {
+              "$ref": "#/definitions/AvatarHue"
+            },
+            "kind": {
+              "enum": [
+                "mono"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "hue",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "A square PNG, base64, which the client cropped and scaled (256 px).",
+          "properties": {
+            "kind": {
+              "enum": [
+                "image"
+              ],
+              "type": "string"
+            },
+            "png": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "png"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AvatarShape": {
+      "description": "The characters an avatar can show, drawn by the client.",
+      "enum": [
+        "round",
+        "box",
+        "ghost",
+        "cloud",
+        "dome",
+        "cat",
+        "egg",
+        "gem"
+      ],
+      "type": "string"
+    },
+    "BotAvatarResult": {
+      "properties": {
+        "data": {
+          "description": "`data:image/png;base64,…`",
+          "type": "string"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "BotCreateParams": {
+      "properties": {
+        "avatar": {
+          "$ref": "#/definitions/AvatarInput"
+        },
+        "name": {
+          "description": "1 to 20 characters once trimmed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "avatar",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BotIdParams": {
+      "description": "Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`.",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bot_id"
+      ],
+      "type": "object"
+    },
+    "BotOpenParams": {
+      "description": "Parameters of `bots/open`, which answers as `session/new` does.",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "events": {
+          "$ref": "#/definitions/EventFilter",
+          "default": {}
+        },
+        "history_limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bot_id"
+      ],
+      "type": "object"
+    },
+    "BotResult": {
+      "description": "Result of `bots/create` and `bots/update`.",
+      "properties": {
+        "bot": {
+          "$ref": "#/definitions/BotSummary"
+        }
+      },
+      "required": [
+        "bot"
+      ],
+      "type": "object"
+    },
+    "BotSummary": {
+      "properties": {
+        "avatar": {
+          "$ref": "#/definitions/Avatar"
+        },
+        "created_at": {
+          "description": "RFC 3339.",
+          "type": "string"
+        },
+        "default": {
+          "description": "The bot every user has: it cannot be deleted.",
+          "type": "boolean"
+        },
+        "helpers": {
+          "description": "Background helpers (sub-agents) at work.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "last": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LastMessage"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "session_id": {
+          "description": "Its conversation, once there is one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "typing": {
+          "description": "It is answering: its conversation runs a task.",
+          "type": "boolean"
+        },
+        "unread": {
+          "description": "Messages and approval requests since the user last looked (`bots/read`).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "waiting": {
+          "description": "The oldest approval it waits for: what the call does.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "avatar",
+        "created_at",
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "BotUpdateParams": {
+      "properties": {
+        "avatar": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AvatarInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bot_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pinned": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "bot_id"
+      ],
+      "type": "object"
+    },
+    "BotsChangedParams": {
+      "description": "Server notification to `bots/subscribe`rs: the bots that changed, and those deleted.",
+      "properties": {
+        "bots": {
+          "items": {
+            "$ref": "#/definitions/BotSummary"
+          },
+          "type": "array"
+        },
+        "deleted": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "bots"
+      ],
+      "type": "object"
+    },
+    "BotsResult": {
+      "description": "Result of `bots/subscribe`.",
+      "properties": {
+        "bots": {
+          "items": {
+            "$ref": "#/definitions/BotSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "bots"
+      ],
       "type": "object"
     },
     "BridgeRange": {
@@ -4010,6 +4439,34 @@
       ],
       "type": "object"
     },
+    "LastMessage": {
+      "description": "The last message of a bot's conversation, for its row in the list.",
+      "properties": {
+        "from": {
+          "$ref": "#/definitions/Speaker"
+        },
+        "images": {
+          "description": "The images it carried.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "description": "The start of its text as written (at most 1000 characters): the client takes the line to show from it, as it does for the conversation.",
+          "type": "string"
+        },
+        "ts": {
+          "description": "RFC 3339.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "text",
+        "ts"
+      ],
+      "type": "object"
+    },
     "ListingError": {
       "properties": {
         "kind": {
@@ -6458,6 +6915,11 @@
           "description": "`auth/set`, `auth/delete`, and `providers` in `models/list`.",
           "type": "boolean"
         },
+        "bots": {
+          "default": false,
+          "description": "Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).",
+          "type": "boolean"
+        },
         "customize": {
           "default": false,
           "description": "The 自定义 page's methods: `config/*`, `credentials/*`, `skills/install`, `skills/remove`, `skills/set_enabled`, `skills/files`, `mcp/list`, `mcp/tools`, `mcp/check`, and their notifications (docs/desktop/customize-design.md §6).",
@@ -7651,6 +8113,13 @@
       ],
       "type": "object"
     },
+    "Speaker": {
+      "enum": [
+        "user",
+        "bot"
+      ],
+      "type": "string"
+    },
     "StopReason": {
       "enum": [
         "stop",
@@ -8128,6 +8597,9 @@
     "-32031": "mcp_login_failed",
     "-32032": "doc_unavailable",
     "-32033": "doc_password",
+    "-32040": "bot_not_found",
+    "-32041": "bot_default",
+    "-32042": "bot_invalid",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -8143,6 +8615,44 @@
     "auth/set": {
       "params": "AuthSetParams",
       "result": "AuthSetResult"
+    },
+    "bots/avatar": {
+      "params": "BotIdParams",
+      "result": "BotAvatarResult"
+    },
+    "bots/clear": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/create": {
+      "params": "BotCreateParams",
+      "result": "BotResult"
+    },
+    "bots/delete": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/open": {
+      "params": "BotOpenParams",
+      "result": "SessionNewResult"
+    },
+    "bots/read": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/subscribe": {
+      "result": "BotsResult"
+    },
+    "bots/unread": {
+      "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/unsubscribe": {
+      "result": "Empty"
+    },
+    "bots/update": {
+      "params": "BotUpdateParams",
+      "result": "BotResult"
     },
     "browser/host": {
       "params": "BrowserHostParams",
@@ -8390,6 +8900,7 @@
   },
   "x-protocol-version": 2,
   "x-server-notifications": {
+    "bots/changed": "BotsChangedParams",
     "browser/cdp": "BrowserCdpParams",
     "browser/changed": "BrowserStatus",
     "config/changed": "ConfigChangedParams",
