@@ -136,7 +136,7 @@
 |---|---|---|
 | 系统提示词 | `prompt.rs` 按 base → `<tool_guidelines>` → `<user_instructions>` / `<project_instructions>` → `<extra_instructions>` → `<environment>` 组装；会话启动时生成，写进 system_prompt 条目，之后不变（总方案 §7.2、D-15） | 清单作为新的一段插进去，随之冻结 |
 | 项目根与指令文件 | `instructions.rs` 向上找 `.git` 确定项目根，再从项目根到 cwd 逐级查找 AGENTS.md | 项目层 Skill 用同样的目录链 |
-| read | 只读工具，任何权限模式下都直接执行；接受绝对路径；单次最多 2,000 行或 50 KB | 模型激活不需要任何改动 |
+| read | 只读工具，任何权限模式下都直接执行；接受绝对路径；单次最多 2,000 行或 10,000 token | 模型激活不需要任何改动 |
 | bash | 不是只读命令时按权限模式审批 | Skill 里的脚本照常审批 |
 | 受保护路径 | `.finx`、`.agents` 已在列表中（`.agents` 的理由正是"存放给编码智能体的指令和脚本"），数据目录 `~/.finx` 也受保护；`.claude` 不在 | 需要补上 `.claude` 和额外路径（§8.3） |
 | 压缩 | 新上下文只有保留的用户原话和摘要（总方案 §7.6.4） | 模型读过的 SKILL.md 是工具结果，压缩后就不在了（§7.2） |
@@ -406,7 +406,7 @@ The following skills provide specialized instructions for specific tasks. When a
 
 1. 模型看到清单，判断任务与某个 Skill 匹配，调用 `read(path=<SKILL.md 的绝对路径>)`。read 是只读工具，任何权限模式下都直接执行。
 2. 读到正文后，按其中的指引用 read 读 `references/…`，用 bash 运行 `scripts/…`。模型按清单里的说明，把相对路径拼成绝对路径。
-3. 读取结果是普通的工具结果，按总方案 §5.7 裁切。SKILL.md 超过 2,000 行或 50 KB 时，模型会看到省略说明，再按 offset 读余下的部分。
+3. 读取结果是普通的工具结果，按总方案 §5.7 裁切。SKILL.md 超过 2,000 行或 10,000 token 时，模型会看到省略说明，再按 offset 读余下的部分。
 
 - 内核不判断模型是否应该使用某个 Skill，也不记录激活。二期的压缩保留从历史中推导激活（§7.2），同样不需要额外的状态。
 

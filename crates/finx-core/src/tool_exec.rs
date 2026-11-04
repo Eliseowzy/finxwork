@@ -348,11 +348,12 @@ async fn run_tool(
     for hook in &session.hooks {
         output = hook.after_tool(&call, output).await;
     }
-    // Safety net on top of each tool's own limits (leaves room for their notes). The result is
-    // cut once, here, and never changes afterwards; the full text stays readable in a file.
+    // Safety net on top of each tool's own limits (a fifth over them, room for their notes). The
+    // result is cut once, here, and never changes afterwards; the full text stays readable in a
+    // file.
     cap_result(
         &mut output.content,
-        limits.max_bytes + 4096,
+        limits.safety_net_tokens(),
         Some(&session.output_dir),
         &call.id,
         limits.max_saved_bytes,

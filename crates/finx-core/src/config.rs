@@ -402,6 +402,9 @@ pub struct BashFile {
 #[serde(deny_unknown_fields)]
 pub struct LimitsFile {
     pub max_lines: Option<usize>,
+    pub max_tokens: Option<usize>,
+    /// The limit from before it was counted in tokens: loading turns it into `max_tokens`
+    /// (`migrate_legacy`), so it is never set here.
     pub max_bytes: Option<usize>,
     pub max_saved_bytes: Option<u64>,
     pub max_parallel: Option<usize>,
@@ -546,10 +549,8 @@ impl Config {
         if let Some(v) = limits_file.max_lines {
             limits.max_lines = v.max(1);
         }
-        if let Some(v) = limits_file.max_bytes {
-            // A smaller limit also shrinks the command output's head and tail to fit.
-            limits = limits.capped(v);
-            limits.max_bytes = v.max(1024);
+        if let Some(v) = limits_file.max_tokens {
+            limits = limits.with_max_tokens(v);
         }
         if let Some(v) = limits_file.max_saved_bytes {
             limits.max_saved_bytes = v.max(1024);
@@ -889,7 +890,8 @@ pub fn merge_all(tables: impl IntoIterator<Item = toml::Table>) -> toml::Table {
     merged
 }
 
-/// Renames settings from before the permission modes were renamed, with a warning.
+/// Renames settings from before the permission modes were renamed, and the byte limit of tool
+/// results from before it was counted in tokens, with a warning.
 fn migrate_legacy(table: &mut toml::Table, source: &str, warnings: &mut Vec<String>) {
     if let Some(value) = table.remove("approval_mode") {
         warnings.push(format!("`approval_mode` is now called `permission_mode` ({source})"));
@@ -900,6 +902,19 @@ fn migrate_legacy(table: &mut toml::Table, source: &str, warnings: &mut Vec<Stri
     {
         warnings.push(format!("permission mode '{name}' is now called '{mode}' ({source})"));
         *name = mode.to_string();
+    }
+    if let Some(toml::Value::Table(tools)) = table.get_mut("tools")
+        && let Some(toml::Value::Table(limits)) = tools.get_mut("limits")
+        && let Some(value) = limits.remove("max_bytes")
+    {
+        warnings.push(format!(
+            "`tools.limits.max_bytes` is now `tools.limits.max_tokens`, at 4 bytes per token ({source})"
+        ));
+        let value = match value {
+            toml::Value::Integer(bytes) => toml::Value::Integer((bytes.max(0) as u64).div_ceil(4) as i64),
+            other => other,
+        };
+        limits.entry("max_tokens").or_insert(value);
     }
 }
 
@@ -1118,6 +1133,31 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    #[test]
+    fn tool_result_limits_count_tokens() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("user.toml");
+        std::fs::write(&user, "[tools.limits]\nmax_tokens = 4000\n").unwrap();
+        let loaded = load(&user, None, false, &[]).unwrap();
+        let limits = &loaded.config.limits;
+        assert_eq!((limits.max_tokens, limits.head_tokens, limits.tail_tokens), (4_000, 800, 3_200));
+        assert!(loaded.warnings.is_empty());
+
+        // The byte limit from before is read as tokens, with a warning.
+        std::fs::write(&user, "[tools.limits]\nmax_bytes = 51201\n").unwrap();
+        let legacy = load(&user, None, false, &[]).unwrap();
+        assert_eq!(legacy.config.limits.max_tokens, 12_801);
+        assert_eq!(
+            legacy.warnings,
+            vec![format!(
+                "`tools.limits.max_bytes` is now `tools.limits.max_tokens`, at 4 bytes per token ({})",
+                user.display()
+            )]
+        );
+        let flag = load(&dir.path().join("none.toml"), None, false, &["tools.limits.max_bytes=8000".into()]).unwrap();
+        assert_eq!(flag.config.limits.max_tokens, 2_000);
     }
 
     #[test]

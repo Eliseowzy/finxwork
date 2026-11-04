@@ -9,7 +9,8 @@ the task's working set grows with the number of turns.
 Scenarios:
   short  1 turn: memory of a minimal task
   long   1000 turns, each reading a ~1 KiB file
-  big    100 turns, each reading ~50 KB (the read tool's output cap)
+  big    100 turns, each reading a 60 KiB file cut to the read tool's output cap
+         (10,000 tokens, ~40 KB; 50 KB before the cap was counted in tokens)
 
 Reported per binary and scenario:
   peak RSS         highest resident set size, from the kernel's accounting (wait4)

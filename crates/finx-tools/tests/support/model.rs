@@ -11,7 +11,9 @@ use std::cell::OnceCell;
 
 /// The default output limits of read.
 pub const MAX_LINES: usize = 2000;
-pub const MAX_BYTES: usize = 50 * 1024;
+pub const MAX_TOKENS: usize = 10_000;
+/// The bytes the token budget stands for, at 4 bytes per token.
+pub const MAX_BYTES: usize = MAX_TOKENS * 4;
 pub const MAX_LINE_CHARS: usize = 2000;
 /// The bytes of a long line read decodes. Characters past them are counted as the bytes that
 /// start a character, so for invalid UTF-8 there the count is approximate (see text.rs).
@@ -201,7 +203,7 @@ impl ReadModel {
         }
         let more = end < total;
         if more {
-            let why = if byte_limited { " (50 KB limit)" } else { "" };
+            let why = if byte_limited { format!(" ({MAX_TOKENS}-token limit)") } else { String::new() };
             out.push_str(&format!("\n[Showing lines {start}-{end} of {total}{why}. Use offset={} to continue.]", end + 1));
         }
         let details = json!({

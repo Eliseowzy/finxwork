@@ -163,17 +163,17 @@ pub(crate) fn render(used: &[InUse], limits: &OutputLimits) -> Vec<(SkillText, u
 
 /// The block within [`MAX_KEPT_TOKENS`], cut at the end.
 fn fit(skill: &SkillRef, body: &str, limits: &OutputLimits) -> String {
-    let mut bytes = (MAX_KEPT_TOKENS * 4) as usize;
+    let mut tokens = MAX_KEPT_TOKENS as usize;
     loop {
         let capped = OutputLimits {
-            max_bytes: bytes.min(limits.max_bytes),
+            max_tokens: tokens.min(limits.max_tokens),
             ..limits.clone()
         };
         let block = commands::skill_block(skill, body, &capped);
-        if estimate_text(&block) <= MAX_KEPT_TOKENS || bytes < 256 {
+        if estimate_text(&block) <= MAX_KEPT_TOKENS || tokens < 64 {
             return block;
         }
-        bytes = bytes * 3 / 4;
+        tokens = tokens * 3 / 4;
     }
 }
 

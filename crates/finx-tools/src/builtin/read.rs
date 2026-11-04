@@ -19,7 +19,9 @@ use crate::text;
 use crate::tool::ToolCtx;
 use crate::tool::ToolError;
 use crate::tool::ToolOutput;
+use crate::truncate::bytes_for_tokens;
 use crate::truncate::format_size;
+use crate::truncate::tokens_for_bytes;
 use crate::typed::TypedTool;
 
 /// Read first: enough for most text files, which then need no second read, and for telling
@@ -51,9 +53,9 @@ pub struct ReadArgs {
 impl TypedTool for ReadTool {
     type Args = ReadArgs;
     const NAME: &'static str = "read";
-    const DESCRIPTION: &'static str = "Read a file from the workspace. Text output is limited to 2000 lines or 50 KB; \
-        use offset and limit to read a large file in parts. Images (png, jpeg, gif, webp) are returned as images \
-        when the model accepts them.";
+    const DESCRIPTION: &'static str = "Read a file from the workspace. Text output is limited to 2000 lines or \
+        10000 tokens; use offset and limit to read a large file in parts. Images (png, jpeg, gif, webp) are \
+        returned as images when the model accepts them.";
 
     fn guidelines(&self) -> &[&'static str] {
         &["Use read to view files instead of running cat, head or tail in bash."]
@@ -113,7 +115,7 @@ impl TypedTool for ReadTool {
         let window = LineWindow {
             offset: args.offset.unwrap_or(1).max(1) as u64,
             max_lines: args.limit.unwrap_or(limits.max_lines).clamp(1, limits.max_lines),
-            max_bytes: limits.max_bytes,
+            max_bytes: bytes_for_tokens(limits.max_tokens),
             max_line_chars: limits.max_line_chars,
         };
         let text = if head.truncated {
@@ -164,7 +166,7 @@ fn show_lines(text: &TextWindow, window: &LineWindow, display: &str) -> Result<T
     if more {
         let of = if text.total_exact { total.to_string() } else { format!("at least {total}") };
         let why = if text.byte_limited {
-            format!(" ({} limit)", budget_label(window.max_bytes))
+            format!(" ({}-token limit)", tokens_for_bytes(window.max_bytes as u64))
         } else {
             String::new()
         };
@@ -306,11 +308,6 @@ async fn read_image(
     })
 }
 
-/// "50 KB".
-fn budget_label(bytes: usize) -> String {
-    if bytes.is_multiple_of(1024) { format!("{} KB", bytes / 1024) } else { format_size(bytes as u64) }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,16 +390,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_byte_budget_says_why_the_window_ended() {
+    async fn the_token_budget_says_why_the_window_ended() {
         let dir = tempfile::tempdir().unwrap();
-        // 3000 lines of 32 bytes: 50 KB end the window at line 1600.
+        // 3000 lines of 32 bytes: 10,000 tokens (40,000 bytes) end the window at line 1250.
         let body: String = (1..=3000).map(|i| format!("{i:031}\n")).collect();
         std::fs::write(dir.path().join("wide.txt"), body).unwrap();
         let out = read(dir.path(), json!({"path": "wide.txt"})).await.unwrap();
         let text = out.content_text();
-        let note = "\n\n[Showing lines 1-1600 of 3000 (50 KB limit). Use offset=1601 to continue.]";
+        let note = "\n\n[Showing lines 1-1250 of 3000 (10000-token limit). Use offset=1251 to continue.]";
         assert!(text.ends_with(note), "{text}");
-        assert_eq!(text.lines().filter(|l| l.len() == 31).count(), 1600);
+        assert_eq!(text.lines().filter(|l| l.len() == 31).count(), 1250);
         // A smaller limit ends it first.
         let out = read(dir.path(), json!({"path": "wide.txt", "offset": 2990, "limit": 5})).await.unwrap();
         assert!(out.content_text().ends_with("[Showing lines 2990-2994 of 3000. Use offset=2995 to continue.]"));
