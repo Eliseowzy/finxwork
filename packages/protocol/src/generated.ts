@@ -189,8 +189,12 @@ export type BotSummary = {
   created_at: string;
   /** The bot every user has: it cannot be deleted. */
   default?: boolean;
+  /** Its last task failed, so no message may be coming. Only while its conversation is loaded. */
+  failed?: boolean;
   id: string;
   last?: LastMessage | null;
+  /** The owner asked not to be alerted about this bot, on any device. */
+  muted?: boolean;
   name: string;
   pinned?: boolean;
   /** Its conversation, once there is one. */
@@ -206,6 +210,7 @@ export type BotSummary = {
 export type BotUpdateParams = {
   avatar?: AvatarInput | null;
   bot_id: string;
+  muted?: boolean | null;
   name?: string | null;
   pinned?: boolean | null;
 };

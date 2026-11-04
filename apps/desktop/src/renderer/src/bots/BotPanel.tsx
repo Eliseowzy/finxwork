@@ -37,6 +37,24 @@ export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; vie
         <div className="form">
           {view && session && <ModelSection view={view} session={session} />}
           {view && session && <PermissionSection view={view} session={session} />}
+          <section>
+            <h3 className="fhead">{t("panel.notifications")}</h3>
+            <div className="fgroup">
+              <div className="frow">
+                <span className="fl">{t("panel.muted")}</span>
+                <div className="fv">
+                  <button
+                    className={`sw ${bot.muted ? "on" : ""}`}
+                    role="switch"
+                    aria-checked={!!bot.muted}
+                    aria-label={t("panel.muted")}
+                    onClick={() => void st.run(() => st.call("bots/update", { bot_id: bot.id, muted: !bot.muted }))}
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="set-note">{t("panel.mutedNote")}</p>
+          </section>
           {!bot.default && (
             <section className="fgroup">
               <button className="frow bpn-del" onClick={() => runBotAction(st, bot, "delete")}>

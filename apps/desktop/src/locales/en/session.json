@@ -559,7 +559,6 @@
       "handled": "You handled"
     },
     "offer": "For this conversation: {{title}}",
-    "offerRemove": "Don't hand it over",
-    "notify": "A task is waiting for you"
+    "offerRemove": "Don't hand it over"
   }
 }

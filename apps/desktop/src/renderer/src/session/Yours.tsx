@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
-import { callTarget, displayTitle, pendingApproval, type RpcClient, type SessionView } from "@finx/client";
+import { callTarget, pendingApproval, type RpcClient, type SessionView } from "@finx/client";
 import type { BrowserStatus, YoursTab } from "@finx/protocol";
 import type { SystemBrowser } from "../../../shared/bridge";
 import { MenuButton } from "../composer/Composer";
@@ -297,7 +297,6 @@ function useFollowStatus(rpc: RpcClient | null, st: Store) {
 
 /** In the main window, whichever page shows. */
 export function useYoursWatcher() {
-  const { t } = useTranslation("session");
   const st = useStore();
   useFollowStatus(st.rpc, st);
   const current = useBrowserStatus();
@@ -318,23 +317,4 @@ export function useYoursWatcher() {
     const timer = setInterval(() => void window.finx?.openSystemBrowserQuietly(), OPEN_EVERY_MS);
     return () => clearInterval(timer);
   }, [waitsForBrowser]);
-
-  // A click on a system notification.
-  useEffect(() => window.finx?.onOpenSession((session) => st.select(session)), [st.select]);
-
-  // A session that starts waiting for the person while the app is not in front. The list's
-  // first arrival says what already waits; that is no news.
-  const waited = useRef<Set<string> | null>(null);
-  useEffect(() => {
-    if (!st.loaded) return;
-    const now = new Set(st.sessions.filter((s) => s.state === "awaiting_approval").map((s) => s.session_id));
-    const before = waited.current;
-    waited.current = now;
-    if (!before || document.hasFocus()) return;
-    for (const s of st.sessions) {
-      if (now.has(s.session_id) && !before.has(s.session_id)) {
-        window.finx?.notify({ title: displayTitle(s), body: t("yours.notify"), session: s.session_id });
-      }
-    }
-  }, [st.sessions, st.loaded]);
 }

@@ -1,6 +1,7 @@
 /** Tabs opened from the new-session page, before a conversation exists. */
 export const homeBrowserSession = "finxwork:home-browser";
 
+import type { AlertTarget } from "@finx/client";
 import type { Language, LanguageChoice } from "./i18n";
 import type { UpdateInfo } from "./update";
 import type { BrowserComment } from "./annotations";
@@ -70,6 +71,16 @@ export type Preferences = {
   searchEngine: string;
   /** The search engines the person added, beside the built-in ones. */
   searchEngines: SearchEngine[];
+  notifications: NotificationSettings;
+};
+
+/** The app's system notifications on this device (notification-design §5.5). Muting a bot is the bot's own. */
+export type NotificationSettings = {
+  /** Off: no notifications and no number on the app's icon. */
+  enabled: boolean;
+  sound: boolean;
+  /** Also when a session's task ends; waiting and failing always say so. */
+  sessionEnded: boolean;
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
@@ -234,9 +245,14 @@ export type Bridge = {
   /** A host was refused: the files follow the service's program again. */
   repairSystemBrowser(): Promise<void>;
   diagnoseSystemBrowser(): Promise<SystemBrowserDiagnosis>;
-  /** A system notification while the app is not in front; a click opens the session. */
-  notify(n: { title: string; body: string; session: string }): void;
-  onOpenSession(cb: (session: string) => void): () => void;
+  /** What a clicked system notification opens, once; the page asks when it starts and when told. */
+  takeOpenTarget(): Promise<AlertTarget | null>;
+  onOpenTarget(cb: () => void): () => void;
+  testNotification(): void;
+  openNotificationSettings(): void;
+  /** A window can keep the focus behind a locked screen: nobody is looking then. */
+  screenLocked(): Promise<boolean>;
+  onScreenUnlocked(cb: () => void): () => void;
   /** Brings the main window to the front. */
   showMainWindow(): void;
   revealBrowserExtension(): void;

@@ -113,6 +113,12 @@ pub struct BotSummary {
     /// The oldest approval it waits for: what the call does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiting: Option<String>,
+    /// Its last task failed, so no message may be coming. Only while its conversation is loaded.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub failed: bool,
+    /// The owner asked not to be alerted about this bot, on any device.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub muted: bool,
     /// RFC 3339.
     pub created_at: String,
 }
@@ -145,6 +151,8 @@ pub struct BotUpdateParams {
     pub avatar: Option<AvatarInput>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pinned: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub muted: Option<bool>,
 }
 
 /// Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`.

@@ -48,18 +48,20 @@ const provider = http.createServer((req, res) => {
 });
 await new Promise((r) => provider.listen(0, "127.0.0.1", r));
 
-/** A FINX_HOME and profile of their own. Short: the kernel's socket lives under them. */
+/** A FINX_HOME, HOME and profile of their own: the app registers the extension's host in the
+ * browsers under that HOME. Short: the kernel's socket lives under them. */
 function place() {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxq-"));
   const home = path.join(work, "finx");
+  const userHome = path.join(work, "home");
   fs.mkdirSync(home, { recursive: true });
-  fs.mkdirSync(path.join(work, "home"), { recursive: true });
+  fs.mkdirSync(userHome);
   fs.writeFileSync(
     path.join(home, "models.toml"),
     `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
   );
   fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n`);
-  return { work, home, profile: path.join(work, "profile") };
+  return { work, home, userHome, profile: path.join(work, "profile") };
 }
 
 /** One request to finx over its socket. */
@@ -87,10 +89,10 @@ function finxCall(home, method, params = {}) {
 
 // ── the app, driven over the DevTools protocol ──
 let app = null;
-async function launch(home, profile) {
+async function launch({ home, userHome, profile }) {
   const port = 9400 + Math.floor(Math.random() * 400);
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, HOME: path.join(home, "../home"), FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+    env: { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -193,7 +195,7 @@ try {
   step("by default: Full Access, a conversation already there included, a note and no dialog");
   const one = place();
   places.push(one);
-  let page = await launch(one.home, one.profile);
+  let page = await launch(one);
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   // A bot whose conversation is already there, in the config's manual mode.
   const old = (await finxCall(one.home, "bots/create", { name: "老对话", avatar: { kind: "mono", hue: "slate" } })).result.bot;
@@ -282,7 +284,7 @@ try {
   step("the note's Open Settings opens them, says where the mode is, and closes the note for good");
   const two = place();
   places.push(two);
-  page = await launch(two.home, two.profile);
+  page = await launch(two);
   await intoBots(page);
   await page.until("the note", tip, 30000);
   await page.run(`[...document.querySelectorAll(".knote .btn")].find((b) => b.textContent === "打开设置").click()`);
@@ -302,7 +304,7 @@ try {
   step("opening the settings from the name at the top closes the note too");
   const three = place();
   places.push(three);
-  page = await launch(three.home, three.profile);
+  page = await launch(three);
   await intoBots(page);
   await page.until("the note", tip, 30000);
   await settings(page);

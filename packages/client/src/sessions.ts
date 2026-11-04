@@ -30,7 +30,7 @@ export function inTask(s: ListSession): boolean {
 }
 
 /** The title, else the start of its first message, else its project (empty without one). */
-export function displayTitle(s: ListSession): string {
+export function displayTitle(s: Pick<ListSession, "title" | "preview" | "no_project" | "cwd">): string {
   return s.title?.trim() || s.preview?.trim().split("\n")[0] || (s.no_project ? "" : baseName(s.cwd));
 }
 

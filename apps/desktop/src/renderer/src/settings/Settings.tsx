@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import type { Appearance, KernelStatusView, Preferences } from "../../../shared/bridge";
+import type { Appearance, KernelStatusView, NotificationSettings, Preferences } from "../../../shared/bridge";
 import { i18n, languages, pickLanguage, resolveLanguage, type LanguageChoice } from "../../../shared/i18n";
 import { SheetHost, ToastView } from "../components";
 import { agoText } from "../format";
@@ -15,6 +15,7 @@ import "../styles/settings.css";
 
 const pages = [
   { id: "general", icon: "gear" },
+  { id: "notifications", icon: "bell" },
   { id: "models", icon: "cube" },
   { id: "browser", icon: "globe" },
   { id: "desktop", icon: "laptop" },
@@ -62,6 +63,7 @@ export function SettingsWindow() {
         </div>
         <div className="set-body">
           {page === "general" && <General />}
+          {page === "notifications" && <Notifications />}
           {page === "models" && <ModelConnections />}
           {page === "browser" && <BrowserSettings />}
           {page === "desktop" && <DesktopSettings />}
@@ -83,6 +85,44 @@ function SRow({ title, desc, children }: { title: ReactNode; desc?: ReactNode; c
         {desc && <div className="fdesc">{desc}</div>}
       </div>
       {children}
+    </div>
+  );
+}
+
+/** Notifications: this device's system notifications (notification-design §5.5). Muting a bot is in the bot's own settings. */
+function Notifications() {
+  const { t } = useTranslation("settings");
+  const [prefs, setPrefs] = useState<Preferences>();
+  useEffect(() => {
+    window.finx?.getPreferences().then(setPrefs);
+  }, []);
+  const on = prefs?.notifications;
+  const set = (p: Partial<NotificationSettings>) => window.finx?.setPreferences({ notifications: { ...on!, ...p } }).then(setPrefs);
+  const toggle = (key: keyof NotificationSettings, label: string, disabled = false) => (
+    <button className={`sw ${on?.[key] ? "on" : ""}`} role="switch" aria-checked={!!on?.[key]} aria-label={label} disabled={!on || disabled} onClick={() => set({ [key]: !on![key] })} />
+  );
+  return (
+    <div className="form">
+      <div className="fgroup">
+        <SRow title={t("notifications.enabled")} desc={t("notifications.enabledNote")}>
+          {toggle("enabled", t("notifications.enabled"))}
+        </SRow>
+        <SRow title={t("notifications.sound")}>{toggle("sound", t("notifications.sound"), !on?.enabled)}</SRow>
+        <SRow title={t("notifications.sessionEnded")} desc={t("notifications.sessionEndedNote")}>
+          {toggle("sessionEnded", t("notifications.sessionEnded"), !on?.enabled)}
+        </SRow>
+      </div>
+      <div className="fgroup">
+        <SRow title={t("notifications.test")} desc={t("notifications.testNote")}>
+          <button className="btn" onClick={() => window.finx?.testNotification()}>{t("notifications.testButton")}</button>
+        </SRow>
+        {window.finx?.platform === "mac" && (
+          <SRow title={t("notifications.system")} desc={t("notifications.systemNote")}>
+            <button className="btn" onClick={() => window.finx?.openNotificationSettings()}>{t("notifications.systemButton")}</button>
+          </SRow>
+        )}
+      </div>
+      <p className="set-note">{t("notifications.muteNote")}</p>
     </div>
   );
 }
