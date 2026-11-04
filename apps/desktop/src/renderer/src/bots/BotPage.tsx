@@ -114,19 +114,24 @@ function FullAccessTip({ onClose }: { onClose: () => void }) {
 }
 
 /**
- * Nothing is unread while the owner looks: the bot is on screen and the window in front
- * (bot-design §5.3). What comes while the window is behind is unread until it is in front again.
+ * Nothing is unread while the owner looks: the bot is on screen, the window in front and the
+ * screen not locked (bot-design §5.3). What comes meanwhile is unread until they are back.
  */
 function useMarkRead(bot: BotSummary) {
   const st = useStore();
   const unread = bot.unread ?? 0;
   useEffect(() => {
-    const read = () => {
-      if ((bot.unread ?? 0) > 0 && document.hasFocus()) void st.call("bots/read", { bot_id: bot.id }).catch(() => {});
+    const read = async () => {
+      if ((bot.unread ?? 0) === 0 || !document.hasFocus() || (await window.finx?.screenLocked())) return;
+      void st.call("bots/read", { bot_id: bot.id }).catch(() => {});
     };
-    read();
+    void read();
     window.addEventListener("focus", read);
-    return () => window.removeEventListener("focus", read);
+    const offUnlocked = window.finx?.onScreenUnlocked(() => void read());
+    return () => {
+      window.removeEventListener("focus", read);
+      offUnlocked?.();
+    };
   }, [bot.id, unread, st.call]);
 }
 

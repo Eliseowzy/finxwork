@@ -118,6 +118,9 @@
     "nameHint": "Double-click to rename",
     "model": "Model settings",
     "modelNote": "Applies to this bot only.",
-    "close": "Close"
+    "close": "Close",
+    "notifications": "Notifications",
+    "muted": "Do Not Disturb",
+    "mutedNote": "No system notifications, and it doesn't count in the number on the app's icon. Unread still shows in the list."
   }
 }

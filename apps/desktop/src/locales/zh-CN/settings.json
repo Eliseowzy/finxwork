@@ -2,10 +2,25 @@
   "title": "设置",
   "pages": {
     "general": "通用",
+    "notifications": "通知",
     "models": "模型",
     "about": "关于",
     "browser": "浏览器",
     "desktop": "电脑操控"
+  },
+  "notifications": {
+    "enabled": "允许通知",
+    "enabledNote": "应用不在前台时，Bot 的回复、要你确认的事和失败的任务会通知你，应用图标上也会显示数字。",
+    "sound": "提示音",
+    "sessionEnded": "会话任务结束时通知",
+    "sessionEndedNote": "任务等你确认或失败时总会通知。",
+    "test": "试一下",
+    "testNote": "第一次发送时，系统会询问是否允许 FinxWork 发通知。",
+    "testButton": "发一条",
+    "system": "系统通知设置",
+    "systemNote": "如果没有收到通知，可以在这里检查是否已允许，也可以选择通知的样式。",
+    "systemButton": "打开",
+    "muteNote": "不想收到某个 Bot 的通知，可以在它的设置里打开免打扰。"
   },
   "appearance": {
     "title": "外观",

@@ -117,6 +117,9 @@
     "nameHint": "双击修改名字",
     "model": "模型设定",
     "modelNote": "只影响这个 Bot。",
-    "close": "关闭"
+    "close": "关闭",
+    "notifications": "通知",
+    "muted": "免打扰",
+    "mutedNote": "不发系统通知，也不计入应用图标上的数字。列表里的未读照常显示。"
   }
 }
