@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.4 |
+| 版本 | v1.5 |
 | 日期 | 2026-11-04 |
 | 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明）。v1.3：桌面端退出时不再重建停靠窗口，面板显示过网页后也能一次退出（§8.3.4）。v1.4：用户自己的浏览器按对话显示，任务结束后放开标签页、之后再接管，连接断了能自己恢复，需要用户时等用户（§8.4.7，D-330 至 D-341） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
@@ -28,7 +28,7 @@
   - 页面文字包在不可伪造的标记里；
   - 敏感字段（密码、验证码、银行卡）的值不进快照；
   - 系统提示词要求模型不执行页面里的指令（§7.7）。
-- **没有审批人的场景**：`finx exec` 和子智能体只能访问配置里允许的站点和已经授权的站点，所以 `browser.sites` 一期就提供（§10）。
+- **没有审批人的场景**：无交互的 `finx exec` 和它的子智能体只能访问配置里允许的站点和已经授权的站点，所以 `browser.sites` 一期就提供（§10）。
 - **会话隔离与池化**：同一进程里按用户目录共用一个浏览器进程（进程级 `BrowserPool`，经 `KernelDeps` 注入）；每个会话只持有租约和自己的标签页，事件按标签页分发，会话结束时自动关掉自己的标签页；登录状态由使用同一用户目录的会话共享。浏览器不拆成独立服务（§6.1、§6.6）。
 - **分期**：
   - 一期：托管浏览器 + 7 个工具 + 权限与审批改造，约 3.5 周；
@@ -115,7 +115,7 @@
   - 它按工具名分派：bash、write、edit 有专门的规则，其他改动工具在 manual 和 accept-edits 模式下每次都询问；
   - `Gate::Ask` 的"本会话以后都允许"只能带一条命令前缀（`proposed_rule: CommandRule`）或一个权限模式；
   - 会话规则存在 `session_rules` 里，只在内存中，恢复会话后没有；子智能体通过 `share_permissions` 始终使用主会话当前的权限模式和会话规则。
-- **没有审批人**：子智能体和非交互的会话（`interactive_approvals = false`）遇到 `Ask` 时，调用直接得到"没有人可以批准"的结果。
+- **没有审批人**：非交互的会话（`interactive_approvals = false`）和它的子智能体遇到 `Ask` 时，调用直接得到"没有人可以批准"的结果。
 - **MCP 工具**：一期不审批（MCP 方案 D-107）。所以如果浏览器控制走 MCP 服务器，点击、提交表单都会直接执行（见 §3.1）。
 - **工具分类**：协议里的 `ToolCategory` 是 ACP 工具类型的子集：read、edit、delete、move、search、execute、fetch、other。
 - **依赖**：工作区依赖里有 reqwest，没有 WebSocket 库。
@@ -413,7 +413,7 @@ pub struct BrowserHandle {
 
 - **标签页**：子智能体拿到父会话的全部工具，浏览器工具也在内（MCP 方案 D-110）。子智能体有自己的 `BrowserSession`，从同一个 `BrowserPool` 拿到同一个 `Browser`，与父会话共用浏览器进程但标签页分开。子智能体的会话现在没有 `session_state`，改造后也要有自己的 `SessionState`，几个子智能体可以同时在不同的标签页里工作。
 - **结束时关标签页**（D-206）：`AgentTree` 会保留已经结束的子智能体，以便之后 `send_message`，它的会话要到主会话结束才释放。所以子智能体交回报告时，内核就从它的 `SessionState` 里移除 `BrowserSession`，关闭它的标签页、释放租约，而不是等 Drop。之后再给它发消息、它又用浏览器时，重新建立。
-- **审批**：子智能体没有审批人。它与 `session_rules` 一样，始终使用主会话当前的站点授权（`share_permissions`），只能访问这些站点、配置里允许的站点和 localhost。需要新站点时得到"没有人可以批准"的结果，由父会话自己去做，或者先替它取得授权。
+- **审批**：子智能体与 `session_rules` 一样，始终使用主会话当前的站点授权（`share_permissions`）。需要新站点时问主用户（子智能体方案 §10），授权记在主会话上，整棵树都能用；无交互运行时得到"没有人可以批准"的结果，由父会话处理。
 
 ### 6.5 并发
 
@@ -511,7 +511,7 @@ pub trait Tool {
 - **会话授权**（D-180）：
   - `Gate::Ask` 新增 `proposed_grants: Vec<Grant>`，`Grant = { authority: navigate | act | upload, origin }`。公网站点提议两条：本站点和所有网站（D-221）；私有地址只提议本站点。所以是列表而不是 `Option`（D-208）；
   - 用户选"本会话允许"时，`ApprovalDecision::ApproveForSession` 新增可选的 `grant: Option<usize>`，指明选的是 `proposed_grants` 里的哪一条，缺省为第一条。内核只接受提议过的授权，客户端不能自己构造一条更宽的；
-  - 选中的授权加入会话的 `site_grants`。它与 `session_rules` 并列：只在内存中，恢复会话后要重新批准；子智能体通过 `share_permissions` 共享主会话当前的授权；
+  - 选中的授权加入主会话的 `site_grants`，子智能体问的也一样。它与 `session_rules` 并列：只在内存中，恢复会话后要重新批准；子智能体通过 `share_permissions` 共享主会话当前的授权；
   - `SessionView` 新增 `site_grants`（与 `session_rules` 一样，取的是共享后的那一份），以及配置里的 `browser.sites` 和域名策略。`site_policy.rs` 只读 `SessionView`，不直接碰会话；
   - `Act` 的授权包含同一 origin 的 `Navigate`；
   - **一个网站一个问题**（D-221）：打开和操作提议的都是 `Act` 级别的授权。允许一个网站，就是允许在上面浏览和操作，不再为同一个网站先问打开、再问操作；
@@ -521,7 +521,7 @@ pub trait Tool {
     - 只能由用户在审批框里主动选择，不是默认值。界面写明风险：被注入指令的页面可能诱导模型在用户登录的网站上操作；
   - `Upload` 和 `Script` 不提出会话授权，每次都问。
 - **不管什么模式都拒绝**：域名策略和站点授权里的 `deny`、云元数据地址。
-- **没有审批人**：`finx exec`、子智能体和非交互会话遇到需要审批的调用时，得到"没有人可以批准"的结果，结果里写明需要在配置的 `browser.sites` 里允许哪个 origin。
+- **没有审批人**：非交互的 `finx exec`、会话和它们的子智能体遇到需要审批的调用时，得到"没有人可以批准"的结果，结果里写明需要在配置的 `browser.sites` 里允许哪个 origin。
 - **永久允许**（D-197）：审批时选"永久允许"，写入用户配置（`~/.finx/config.toml`）的 `browser.sites`，与命令审批的 `[[rules]]` 放在同一个文件，用户在一处查看和修改所有权限。只写用户配置，不写项目配置。
   - 协议：`ApproveForSession` 加可选的 `persist: true`，对它选中的那条授权生效；旧客户端不发这个字段，行为不变；
   - "所有网站"写成 `"*" = "act"`（D-221）；已有的 `deny` 不覆盖，`act` 不降成 `navigate`；文件里其他内容和注释保持原样；

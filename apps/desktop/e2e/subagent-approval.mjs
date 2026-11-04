@@ -268,11 +268,15 @@ try {
 
   step("in a bot: the same window, the row waits, and the bot keeps talking");
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
-  await page.until("the permission mode under the composer", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "完全访问"`, 30000);
-  await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
+  // Full Access by default: its settings have the mode.
+  await page.until("the bot's page", `!!document.querySelector(".bhead")`, 30000);
+  await page.run(`document.querySelector(".bhead").click()`);
+  await page.until("the permission mode in its settings", `document.querySelector(".bpn-perm .lbl")?.textContent === "完全访问"`, 30000);
+  await page.run(`document.querySelector(".bpn-perm .mb").click()`);
   await page.until("the menu", `[...document.querySelectorAll(".mi")].some((e) => e.textContent.includes("询问权限"))`);
   await page.run(`[...document.querySelectorAll(".mi")].find((e) => e.textContent.includes("询问权限")).click()`);
-  await page.until("Ask Permissions", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "询问权限"`);
+  await page.until("Ask Permissions", `document.querySelector(".bpn-perm .lbl")?.textContent === "询问权限"`);
+  await page.run(`document.querySelector(".bhead").click()`);
   await write("[[mock:relay_run:touch h.txt]] 建个文件");
   await page.until("the approval", `!!document.querySelector(".cmp-zone.bot .appr")`);
   check((await page.run(who)) === "子智能体 · 运行 touch h.txt", `who asks: ${await page.run(who)}`);
