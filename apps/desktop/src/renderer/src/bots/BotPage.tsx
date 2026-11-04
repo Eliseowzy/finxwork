@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
+import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, processSteps, type BotItem, type WorkingAgent, type SessionView, type Step } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
@@ -167,7 +167,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     else if (el && fromEnd.current !== null) el.scrollTop = el.scrollHeight - fromEnd.current;
     fromEnd.current = null;
     if (el && el.scrollTop < el.clientHeight * 1.5) earlier();
-  }, [items, busy?.typing, busy?.helpers.length, dock]);
+  }, [items, busy?.typing, busy?.agents.length, dock]);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
@@ -184,7 +184,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   };
 
   const empty = items.length === 0 && !busy;
-  const working = busy?.helpers.length ?? 0;
+  const working = busy?.agents.length ?? 0;
   return (
     <>
       <div className="cscroll" ref={scroll} onScroll={onScroll}>
@@ -346,14 +346,14 @@ function Process({ steps, summary }: { steps: Step[]; summary: string }) {
 }
 
 /**
- * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with helpers at work,
- * what they do, opening to one helper's steps or a line for each.
+ * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with sub-agents at work,
+ * what they do, opening to one's steps or a line for each.
  */
-function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[] }; retry?: { at: number } }) {
+function BusyBubble({ busy, retry }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number } }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
-  const helpers = busy.helpers;
+  const agents = busy.agents;
   const dots = (
     <span className="dots" aria-hidden="true">
       <i />
@@ -363,16 +363,16 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
   );
   // Retrying the model for more than ten seconds says so (bot-mode-design §7).
   const unstable = retry && now - retry.at > 10_000;
-  const shown = open && helpers.length > 0;
+  const shown = open && agents.length > 0;
   return (
     <div className="bm working">
       <div className="bm-b">
         <div className="bline">
           <div className={`bbub wbub ${shown ? "open" : ""}`}>
-            {helpers.length > 0 ? (
+            {agents.length > 0 ? (
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
-                <span className="wb-t">{helpers.length > 1 ? t("line.helpers", { things: thingsText(helpers.length) }) : helpers[0].label}</span>
+                <span className="wb-t">{agents.length > 1 ? t("line.agents", { things: thingsText(agents.length) }) : agents[0].label}</span>
                 <Icon name="chevD" className="chev" />
               </button>
             ) : (
@@ -383,7 +383,7 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
             )}
             {shown && (
               <div className="wb-l">
-                {helpers.length > 1 ? helpers.map((h) => <HelperRow key={h.id} h={h} now={now} />) : <HelperSteps h={helpers[0]} now={now} />}
+                {agents.length > 1 ? agents.map((h) => <AgentRow key={h.id} h={h} now={now} />) : <AgentSteps h={agents[0]} now={now} />}
               </div>
             )}
           </div>
@@ -393,7 +393,7 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
   );
 }
 
-function HelperRow({ h, now }: { h: Helper; now: number }) {
+function AgentRow({ h, now }: { h: WorkingAgent; now: number }) {
   return (
     <div className="wb-r">
       <span className="wb-rl">{h.label}</span>
@@ -403,8 +403,8 @@ function HelperRow({ h, now }: { h: Helper; now: number }) {
   );
 }
 
-/** One helper's steps: those done in grey, the one it is on shimmering, with how long it has worked. */
-function HelperSteps({ h, now }: { h: Helper; now: number }) {
+/** One sub-agent's steps: those done in grey, the one it is on shimmering, with how long it has worked. */
+function AgentSteps({ h, now }: { h: WorkingAgent; now: number }) {
   const tools = conversation(h.agent.view).flatMap((s) => (s.kind === "work" ? s.items.flatMap((i) => (i.kind === "tool" ? [i.tool] : [])) : []));
   const shown = tools.slice(-8);
   return (
@@ -437,6 +437,7 @@ const handed = new WeakSet<UserMessage[]>();
 
 /** The composer of a bot's page: only Send, and the permission mode under it (bot-mode-design §6.14); every message goes in as it is sent. */
 function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: SessionView; session: string; onHeight: (h: number) => void }) {
+  const asking = pendingApproval(view);
   const { t } = useTranslation("bots");
   const st = useStore();
   const [draft, setDraft] = useState(() => drafts.get(bot.id) ?? { text: "", attachments: [] });
@@ -479,7 +480,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       form={{
         mode: "bot",
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
-        above: view.live && view.live.approvals.length > 0 && <Approval key={view.live.approvals[0].call_id} sessionId={session} view={view} />,
+        above: asking && <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />,
         onHeight,
         permission: view.info.permission_mode,
         onPermission: (mode) => st.op(session, { type: "set_permission_mode", mode }),

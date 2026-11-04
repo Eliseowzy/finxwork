@@ -182,13 +182,13 @@ export type BotResult = {
 };
 
 export type BotSummary = {
+  /** Sub-agents at work. */
+  agents_working?: number;
   avatar: Avatar;
   /** RFC 3339. */
   created_at: string;
   /** The bot every user has: it cannot be deleted. */
   default?: boolean;
-  /** Background helpers (sub-agents) at work. */
-  helpers?: number;
   id: string;
   last?: LastMessage | null;
   name: string;
@@ -1556,6 +1556,12 @@ export type Op = {
   call_id: string;
   decision: ApprovalDecision;
   type: "approval";
+} | {
+  /** The agent's id. */
+  agent: string;
+  call_id: string;
+  decision: ApprovalDecision;
+  type: "agent_approval";
 } | {
   model: string;
   thinking?: ThinkingLevel | null;

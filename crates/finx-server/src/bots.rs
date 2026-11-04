@@ -84,7 +84,7 @@ struct Bot {
     file: BotFile,
     // From its conversation's events while it is loaded.
     typing: bool,
-    helpers: u32,
+    agents_working: u32,
     waiting: Option<String>,
 }
 
@@ -93,7 +93,7 @@ impl Bot {
         Self {
             file,
             typing: false,
-            helpers: 0,
+            agents_working: 0,
             waiting: None,
         }
     }
@@ -110,7 +110,7 @@ impl Bot {
             last: f.summary.last.clone(),
             unread: f.summary.unread,
             typing: self.typing,
-            helpers: self.helpers,
+            agents_working: self.agents_working,
             waiting: self.waiting.clone(),
             created_at: f.created_at.clone(),
         }
@@ -195,7 +195,7 @@ impl Registry {
             let Some(bot) = guard.as_mut().and_then(|bots| bots.get_mut(id)) else {
                 return;
             };
-            let before = (bot.typing, bot.helpers, bot.waiting.clone());
+            let before = (bot.typing, bot.agents_working, bot.waiting.clone());
             let mut kept = false;
             match &event.msg {
                 // A message to the user is a bubble from the call's start, as the client shows it.
@@ -219,12 +219,17 @@ impl Registry {
                     bot.file.summary.unread += 1;
                     kept = true;
                 }
+                // What a sub-agent asks counts like the bot's own.
+                EventMsg::AgentEvent { event, .. } if matches!(event.msg, EventMsg::ApprovalRequested { .. }) => {
+                    bot.file.summary.unread += 1;
+                    kept = true;
+                }
                 _ => {}
             }
             bot.typing = mirror.busy();
-            bot.helpers = mirror.agents_working();
+            bot.agents_working = mirror.agents_working();
             bot.waiting = mirror.first_approval().map(str::to_string);
-            (kept || before != (bot.typing, bot.helpers, bot.waiting.clone()), kept)
+            (kept || before != (bot.typing, bot.agents_working, bot.waiting.clone()), kept)
         };
         if kept {
             self.save_later(id);
@@ -238,8 +243,8 @@ impl Registry {
     pub(crate) fn on_unloaded(&self, id: &str) {
         let changed = self.with(|bots| {
             bots.get_mut(id).is_some_and(|bot| {
-                let was = bot.typing || bot.helpers > 0 || bot.waiting.is_some();
-                (bot.typing, bot.helpers, bot.waiting) = (false, 0, None);
+                let was = bot.typing || bot.agents_working > 0 || bot.waiting.is_some();
+                (bot.typing, bot.agents_working, bot.waiting) = (false, 0, None);
                 was
             })
         });

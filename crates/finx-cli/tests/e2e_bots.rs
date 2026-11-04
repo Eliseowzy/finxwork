@@ -239,7 +239,7 @@ async fn a_bot_that_forgets_to_send_is_reminded_and_the_user_sees_one_message() 
 }
 
 #[tokio::test]
-async fn a_helper_works_in_the_background_and_the_bot_relays_its_report() {
+async fn a_sub_agent_works_in_the_background_and_the_bot_relays_its_report() {
     let env = TestEnv::new("manual", "").await;
     let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
     native_init(&client).await;
@@ -254,15 +254,15 @@ async fn a_helper_works_in_the_background_and_the_bot_relays_its_report() {
     assert_eq!(texts[0], "在查了。");
     assert!(texts[1].starts_with("查到了："), "{texts:?}");
     assert!(events.iter().any(|e| e["type"] == "agent_started" && e["description"] == "查资料"));
-    // The row counted the helper while it worked.
-    let mut helpers = Vec::new();
+    // The row counted the sub-agent while it worked.
+    let mut working = Vec::new();
     while let Ok(changed) = wire.bots.try_recv() {
         for row in changed["bots"].as_array().into_iter().flatten().filter(|b| b["id"] == bot.as_str()) {
-            helpers.push(row["helpers"].as_u64().unwrap_or(0));
+            working.push(row["agents_working"].as_u64().unwrap_or(0));
         }
     }
-    assert!(helpers.contains(&1), "{helpers:?}");
-    assert_eq!(helpers.last(), Some(&0));
+    assert!(working.contains(&1), "{working:?}");
+    assert_eq!(working.last(), Some(&0));
 }
 
 #[tokio::test]
@@ -288,6 +288,40 @@ async fn approvals_come_after_the_message_that_asks_and_count_as_unread() {
     assert!(sent(&events)[0].starts_with("做完了"));
     assert!(env.home.path().join("bots").join(&bot).join("files").join("confirmed.txt").exists());
     until_row(&mut wire, &bot, |b| b.get("waiting").is_none() && b.get("typing").is_none()).await;
+}
+
+#[tokio::test]
+async fn what_a_sub_agent_asks_waits_on_the_row_and_the_bot_keeps_talking() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:relay_run:touch made.txt]] 建个文件").await;
+    let asked = |e: &Value| e["type"] == "agent_event" && e["event"]["type"] == "approval_requested";
+    let events = until_event(&mut wire, asked).await;
+    assert_eq!(sent(&events), ["交给子智能体了。"]);
+    let ask = events.last().unwrap().clone();
+
+    let row = until_row(&mut wire, &bot, |b| b["waiting"].is_string()).await;
+    assert_eq!(row["waiting"], "touch made.txt");
+    assert_eq!(row["agents_working"], 1);
+    assert_eq!(row["unread"], 2, "the message and the approval");
+
+    // The question does not hold the bot up.
+    say(&client, &session, "还在吗").await;
+    until_event(&mut wire, |e| e["type"] == "tool_started" && e["args"]["text"] == "做完了：还在吗").await;
+    let files = env.home.path().join("bots").join(&bot).join("files");
+    assert!(!files.join("made.txt").exists());
+
+    let op = json!({"session_id": session, "op": {"type": "agent_approval", "agent": ask["agent_id"], "call_id": ask["event"]["call_id"], "decision": {"type": "approve"}}});
+    client.request("session/op", op).await.unwrap();
+    let events = until_event(&mut wire, |e| e["type"] == "idle").await;
+    assert!(files.join("made.txt").exists());
+    assert!(sent(&events).iter().any(|t| t.contains("<agent_report")), "{events:?}");
+    until_row(&mut wire, &bot, |b| b.get("waiting").is_none() && b.get("agents_working").is_none()).await;
 }
 
 #[tokio::test]

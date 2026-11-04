@@ -1107,6 +1107,12 @@
     },
     "BotSummary": {
       "properties": {
+        "agents_working": {
+          "description": "Sub-agents at work.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
         "avatar": {
           "$ref": "#/definitions/Avatar"
         },
@@ -1117,12 +1123,6 @@
         "default": {
           "description": "The bot every user has: it cannot be deleted.",
           "type": "boolean"
-        },
-        "helpers": {
-          "description": "Background helpers (sub-agents) at work.",
-          "format": "uint32",
-          "minimum": 0.0,
-          "type": "integer"
         },
         "id": {
           "type": "string"
@@ -6805,6 +6805,34 @@
             }
           },
           "required": [
+            "call_id",
+            "decision",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Answers what a sub-agent asks: its `approval_requested`, carried by an `agent_event`.",
+          "properties": {
+            "agent": {
+              "description": "The agent's id.",
+              "type": "string"
+            },
+            "call_id": {
+              "type": "string"
+            },
+            "decision": {
+              "$ref": "#/definitions/ApprovalDecision"
+            },
+            "type": {
+              "enum": [
+                "agent_approval"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "agent",
             "call_id",
             "decision",
             "type"

@@ -3,7 +3,7 @@ import type {
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage,
 } from "@finx/protocol";
 import { botScript, demoBots, relayScript, type DemoBot } from "./bots.ts";
-import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } from "../session.ts";
+import { applyEvent, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
 import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, siteScript, steerScript, wantsSite, type DemoSession, type DemoTask } from "./data.ts";
@@ -97,7 +97,7 @@ interface Session {
 
 /** What a client following a sub-agent gets of its events, as finx sends them. */
 const followed = new Set<string>([
-  "task_started", "turn_started", "message_completed", "stream_retry", "tool_started", "tool_running", "tool_completed",
+  "task_started", "turn_started", "message_completed", "stream_retry", "tool_started", "tool_running", "tool_completed", "approval_requested", "approval_resolved",
   "compaction_started", "compaction_completed", "compaction_failed", "turn_completed", "task_completed", "task_failed", "task_interrupted", "warning",
 ]);
 
@@ -262,11 +262,11 @@ export class MockServer {
     } else if (e.type === "message_completed" && e.message.role === "user" && !e.mail) {
       const images = e.message.content.filter((c) => c.type === "image").length;
       next = { ...next, last: { from: "user", text: textOf(e.message.content).slice(0, 1000), images, ts: iso(e.message.ts) } };
-    } else if (e.type === "approval_requested") {
+    } else if (e.type === "approval_requested" || (e.type === "agent_event" && e.event.type === "approval_requested")) {
       next = { ...next, unread: (next.unread ?? 0) + 1 };
     }
     const v = s.view;
-    next = { ...next, typing: v.live !== null, helpers: runningAgents(v).length, waiting: v.live?.approvals[0]?.summary };
+    next = { ...next, typing: v.live !== null, agents_working: runningAgents(v).length, waiting: pendingApproval(v)?.approval.summary };
     bot.summary = next;
     if (JSON.stringify(next) !== JSON.stringify(was)) this.botsChanged([next]);
   }
@@ -1083,6 +1083,11 @@ export class MockServer {
       }
       case "approval": {
         const resolve = s.run?.approvals.get(op.call_id);
+        if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
+        return resolve(op.decision);
+      }
+      case "agent_approval": {
+        const resolve = s.children.find((c) => c.id === op.agent)?.run?.approvals.get(op.call_id);
         if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
         return resolve(op.decision);
       }

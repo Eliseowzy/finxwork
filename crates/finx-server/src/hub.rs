@@ -4,6 +4,7 @@
 use finx_core::Kernel;
 use finx_core::skills::SkillRef;
 use finx_llm::Timestamp;
+use finx_protocol::ApprovalDecision;
 use finx_protocol::Event;
 use finx_protocol::EventMsg;
 use finx_protocol::Op;
@@ -154,9 +155,38 @@ pub struct HubShared {
     pub idle_since: AtomicU64,
     /// Each MCP server's latest status in this session, for the 自定义 page (`mcp/list`).
     pub mcp: parking_lot::Mutex<std::collections::BTreeMap<String, finx_protocol::McpServerInfo>>,
-    /// The approval that waits for the user to do something in a page: its call, and what.
-    pub handoff: parking_lot::Mutex<Option<(String, String)>>,
+    /// The approval that waits for the user to do something in a page.
+    pub handoff: parking_lot::Mutex<Option<Handoff>>,
     done: watch::Receiver<bool>,
+}
+
+/// An approval that waits for the user to do something in a page.
+pub struct Handoff {
+    /// The sub-agent that asks, if one does.
+    pub agent: Option<String>,
+    pub call_id: String,
+    /// What the user is asked to do.
+    pub what: String,
+}
+
+impl Handoff {
+    /// What says the user did it.
+    pub fn done(&self) -> Op {
+        let (call_id, decision) = (self.call_id.clone(), ApprovalDecision::Approve);
+        match &self.agent {
+            Some(agent) => Op::AgentApproval { agent: agent.clone(), call_id, decision },
+            None => Op::Approval { call_id, decision },
+        }
+    }
+}
+
+/// An approval among those answered. Sessions choose their call ids apart from each other, so a
+/// sub-agent's goes by its id too.
+fn answered_key(agent: Option<&str>, call_id: &str) -> String {
+    match agent {
+        Some(agent) => format!("{agent}/{call_id}"),
+        None => call_id.to_string(),
+    }
 }
 
 /// Milliseconds since the first call, plus one, so that 0 can mean "in use".
@@ -327,20 +357,35 @@ impl Hub {
                     finx_protocol::McpServerInfo { server: server.clone(), state: *state, tools: *tools, error: error.clone() },
                 );
             }
+            _ => {}
+        }
+        // The session's approvals, and a sub-agent's as its `agent_event` carries them.
+        let (agent, asked) = match &event.msg {
+            EventMsg::AgentEvent { agent_id, event } => (Some(agent_id.as_str()), &event.msg),
+            msg => (None, msg),
+        };
+        match asked {
             EventMsg::ApprovalRequested { call_id, name, args, .. } => {
                 // The browser's tools are deferred: the model runs them through `call_tool`.
                 let (name, args) = if name == "call_tool" { (args.get("name").and_then(|v| v.as_str()).unwrap_or_default(), args.get("arguments")) } else { (name.as_str(), Some(args)) };
                 if let Some(what) = args.and_then(|a| a.get("user")).and_then(|v| v.as_str()).filter(|_| name == "browser_wait") {
-                    *self.shared.handoff.lock() = Some((call_id.clone(), what.to_string()));
+                    *self.shared.handoff.lock() = Some(Handoff {
+                        agent: agent.map(str::to_string),
+                        call_id: call_id.clone(),
+                        what: what.to_string(),
+                    });
                 }
             }
             EventMsg::ApprovalResolved { call_id, .. } => {
-                self.answered.remove(call_id);
+                self.answered.remove(&answered_key(agent, call_id));
                 let mut handoff = self.shared.handoff.lock();
-                if handoff.as_ref().is_some_and(|(call, _)| call == call_id) {
+                if handoff.as_ref().is_some_and(|h| &h.call_id == call_id && h.agent.as_deref() == agent) {
                     *handoff = None;
                 }
             }
+            _ => {}
+        }
+        match &event.msg {
             EventMsg::TaskStarted { .. } => {
                 if !self.shared.busy.swap(true, Ordering::Relaxed) {
                     self.busy_since = Some(event.ts);
@@ -395,6 +440,8 @@ impl Hub {
             | EventMsg::ArchivedChanged { .. }
             | EventMsg::Idle => true,
             msg if msg.is_task_end() => true,
+            // What a sub-agent asks shows in the list like the session's own.
+            EventMsg::AgentEvent { event, .. } => matches!(event.msg, EventMsg::ApprovalRequested { .. } | EventMsg::ApprovalResolved { .. }),
             // A new session's first message becomes its preview.
             EventMsg::MessageCompleted {
                 message: finx_llm::Message::User(user),
@@ -560,6 +607,15 @@ impl Hub {
                 let call_id = call_id.clone();
                 self.forward(op)?;
                 self.answered.insert(call_id);
+                return Ok(());
+            }
+            Op::AgentApproval { agent, call_id, .. } => {
+                let key = answered_key(Some(agent), call_id);
+                if !self.mirror.agent_approval_pending(agent, call_id) || self.answered.contains(&key) {
+                    return Err(errors::approval_not_pending(call_id));
+                }
+                self.forward(op)?;
+                self.answered.insert(key);
                 return Ok(());
             }
             _ => {}

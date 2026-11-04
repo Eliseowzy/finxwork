@@ -16,7 +16,7 @@
   },
   "line": {
     "waiting": "[待确认]",
-    "helpers": "正在处理{{things}}",
+    "agents": "正在处理{{things}}",
     "typing": "正在输入…",
     "empty": "还没说过话",
     "image": "[图片]",

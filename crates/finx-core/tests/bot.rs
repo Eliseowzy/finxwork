@@ -313,7 +313,7 @@ async fn only_an_unanswered_message_brings_a_reminder() {
             Script::text("Done."),
             // A report wakes the bot, which has nothing to tell.
             Script::tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." }))
-                .then_tool_call("c3", "send_to_user", json!({ "text": "交给帮手了。", "end_turn": true })),
+                .then_tool_call("c3", "send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })),
             Script::text("Found: 42."),
             Script::text("Nothing to add."),
         ],
@@ -354,7 +354,7 @@ async fn a_bots_helpers_get_a_sessions_prompt_and_no_send_to_user() {
         PermissionMode::Manual,
         vec![
             Script::tool_call("c1", "spawn_agent", json!({ "description": "查资料", "task": "Find it." }))
-                .then_tool_call("c2", "send_to_user", json!({ "text": "交给帮手了。", "end_turn": true })),
+                .then_tool_call("c2", "send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })),
             // The helper's only request.
             Script::text("Found: 42."),
             // The bot, woken by the report.
@@ -364,7 +364,7 @@ async fn a_bots_helpers_get_a_sessions_prompt_and_no_send_to_user() {
     .await;
     h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
-    assert_eq!(sent(&events), ["交给帮手了。", "查到了：42。"]);
+    assert_eq!(sent(&events), ["交给子智能体了。", "查到了：42。"]);
     let requests = h.api.requests();
     assert_eq!(requests.len(), 3);
     let helper = &requests[1];

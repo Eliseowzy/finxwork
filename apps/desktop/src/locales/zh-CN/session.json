@@ -74,7 +74,8 @@
       "completed": "完成",
       "failed": "失败",
       "interrupted": "已中断",
-      "closed": "已关闭"
+      "closed": "已关闭",
+      "awaiting_approval": "等你批准"
     },
     "open": "在后台面板中查看执行过程",
     "report": "<b>{{name}}</b> 的汇报",
@@ -113,6 +114,7 @@
   },
   "approval": {
     "label": "等你批准",
+    "agent": "子智能体 · {{name}}",
     "queue": "第 {{n}} / {{total}} 项",
     "runCommand": "运行这条命令？",
     "useTool": "{{verb}} {{object}}？",

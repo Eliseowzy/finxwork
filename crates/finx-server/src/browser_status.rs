@@ -3,7 +3,6 @@
 //! `browser/site_icon` gives a site's icon for the lists of sites (browser-design §10.1).
 
 use finx_protocol::Op;
-use finx_protocol::ApprovalDecision;
 use finx_protocol::api::BrowserAssignTabParams;
 use finx_protocol::api::BrowserCloseTabsParams;
 use finx_protocol::api::BrowserControl;
@@ -177,11 +176,11 @@ impl Server {
                 self.browser_request(&BrowserRequest::TabOffered { target_id, url, title });
             }
             ExtensionMessage::Done { session_id } => {
-                let call = self.hubs().into_iter().find_map(|hub| {
-                    (*hub.shared.session.id == *session_id).then(|| hub.shared.handoff.lock().as_ref().map(|(call, _)| call.clone())).flatten()
+                let done = self.hubs().into_iter().find_map(|hub| {
+                    (*hub.shared.session.id == *session_id).then(|| hub.shared.handoff.lock().as_ref().map(crate::hub::Handoff::done)).flatten()
                 });
-                if let Some(call_id) = call {
-                    self.extension_op(session_id, Op::Approval { call_id, decision: ApprovalDecision::Approve });
+                if let Some(op) = done {
+                    self.extension_op(session_id, op);
                 }
             }
             ExtensionMessage::Stop { session_id } => self.extension_op(session_id, Op::Interrupt),
@@ -237,7 +236,7 @@ impl Server {
                     ExtensionSession {
                         title: title.lines().next().unwrap_or_default().to_string(),
                         state: summary.state,
-                        handoff: hub.shared.handoff.lock().as_ref().map(|(_, what)| what.clone()),
+                        handoff: hub.shared.handoff.lock().as_ref().map(|h| h.what.clone()),
                     },
                 );
             }

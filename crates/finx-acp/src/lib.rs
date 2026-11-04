@@ -407,7 +407,7 @@ impl AcpProtocol {
     /// The client answered one of our permission requests.
     /// (See [`decode_option`] for the option ids.)
     fn permission_answer(&self, id: &Id, result: Result<&RawValue, &RpcError>, conn: &ConnHandle) {
-        let Some((session, call_id)) = self.shared.permissions.lock().remove(id) else {
+        let Some(asked) = self.shared.permissions.lock().remove(id) else {
             return;
         };
         let decision = match result {
@@ -423,8 +423,11 @@ impl AcpProtocol {
         let server = self.server.clone();
         let conn = conn.clone();
         tokio::spawn(async move {
-            let op = Op::Approval { call_id, decision };
-            let _ = server.submit(&session, conn, op, false, Box::new(|_| Vec::new())).await;
+            let op = match asked.agent {
+                Some(agent) => Op::AgentApproval { agent, call_id: asked.call_id, decision },
+                None => Op::Approval { call_id: asked.call_id, decision },
+            };
+            let _ = server.submit(&asked.session, conn, op, false, Box::new(|_| Vec::new())).await;
         });
     }
 }

@@ -1,6 +1,6 @@
 //! Sub-agents: sessions that the main agent starts with `spawn_agent` and talks to with
-//! `send_message`. Each is an ordinary session with its own log, which never asks for approval
-//! and cannot start agents of its own. When one has nothing left to do, its report goes back to
+//! `send_message`. Each is an ordinary session with its own log, whose questions go to the main
+//! session's user, and it cannot start agents of its own. When one has nothing left to do, its report goes back to
 //! the main session: as the result of a call that waits for it, or as mail that joins the main
 //! session's history at its next turn boundary and wakes it when it is idle.
 
@@ -227,6 +227,16 @@ impl AgentTree {
         true
     }
 
+    /// The user's answer to what agent `agent` asks. False when there is no such agent.
+    pub(crate) fn answer(&self, agent: &str, call_id: &str, decision: finx_protocol::ApprovalDecision) -> bool {
+        let state = self.state.lock();
+        let Some(agent) = state.agents.iter().find(|a| a.id == agent) else {
+            return false;
+        };
+        send_now(&agent.ops, Op::Approval { call_id: call_id.to_string(), decision });
+        true
+    }
+
     /// Passes an event of agent `id`'s session on to the main session's clients (`agent_event`).
     fn forward(&self, id: &str, event: &Event) {
         if followed(&event.msg) {
@@ -264,9 +274,9 @@ impl AgentTree {
         let root = self.root()?;
         let (system_prompt, base_prompt, mcp_section, skills, model, thinking, permission_mode, session_rules, site_grants, parent_task) = {
             let state = root.state.lock();
-            // A bot's helpers start from a session's prompt, not the bot's (bot-design §2.3).
-            let (system_prompt, base_prompt) = match &state.helper_prompt {
-                Some(helper) => (crate::mcp::compose(helper, state.mcp_section.as_deref()).into(), helper.clone()),
+            // A bot's sub-agents start from a session's prompt, not the bot's (bot-design §2.3).
+            let (system_prompt, base_prompt) = match &state.sub_agent_prompt {
+                Some(prompt) => (crate::mcp::compose(prompt, state.mcp_section.as_deref()).into(), prompt.clone()),
                 None => (state.system_prompt.clone(), state.base_prompt.clone()),
             };
             (
@@ -319,6 +329,9 @@ impl AgentTree {
             config: self.deps.config.clone(),
             system: root.system.clone(),
             trusted: self.deps.trusted,
+            interactive_approvals: root.interactive_approvals,
+            main: Arc::downgrade(&root),
+            approval_line: root.approval_line.clone(),
             locks: root.locks.clone(),
         })
         .map_err(|err| ToolError::Failed(format!("cannot start the agent: {err}")))?;
@@ -680,6 +693,8 @@ fn followed(msg: &EventMsg) -> bool {
             | EventMsg::ToolStarted { .. }
             | EventMsg::ToolRunning { .. }
             | EventMsg::ToolCompleted { .. }
+            | EventMsg::ApprovalRequested { .. }
+            | EventMsg::ApprovalResolved { .. }
             | EventMsg::CompactionStarted { .. }
             | EventMsg::CompactionCompleted { .. }
             | EventMsg::CompactionFailed { .. }

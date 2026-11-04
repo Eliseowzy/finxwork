@@ -53,6 +53,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
         const a = l.agent;
         const status = a?.status ?? (l.starting ? "running" : undefined);
         const tone = status === "completed" ? "ok" : status === "interrupted" ? "int" : status === "running" || status === undefined ? "" : "bad";
+        const asks = (a?.view.live?.approvals.length ?? 0) > 0;
         return (
           <button key={l.call_id} className="agc-r" title={t("agents.open")} onClick={() => show(a?.id)}>
             <AgentGlyph status={a?.status} />
@@ -69,7 +70,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
               </>
             )}
             <span className={`agc-s ${tone}`}>
-              {status && <span>{t(`agents.status.${status}`)}</span>}
+              {status && <span>{t(asks ? "agents.status.awaiting_approval" : `agents.status.${status}`)}</span>}
               {a && <span className="tm">{agentTime(a, now)}</span>}
             </span>
             <Icon name="chevR" className="go" />

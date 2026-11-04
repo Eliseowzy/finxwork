@@ -25,6 +25,7 @@ use finx_tools::cap_result;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+use tokio::sync::OwnedMutexGuard;
 use tokio::sync::oneshot;
 
 use crate::context::NOT_EXECUTED;
@@ -34,9 +35,9 @@ use crate::task::TaskCtx;
 
 pub(crate) const NO_APPROVER: &str = "This tool call needs approval, but nobody can approve it in this \
     non-interactive run. Do not retry it; tell the user what you wanted to do instead.";
-/// The same for a sub-agent, which never asks: its parent decides what to do instead.
-pub(crate) const SUB_AGENT_NO_APPROVER: &str = "This tool call needs approval, and a sub-agent cannot ask for it. \
-    Do not retry it or work around it; list it in your report so your parent can handle it.";
+/// The same for a sub-agent: its parent decides what to do instead.
+pub(crate) const SUB_AGENT_NO_APPROVER: &str = "This tool call needs approval, but nobody can approve it in this \
+    non-interactive run. Do not retry it or work around it; list it in your report so your parent can handle it.";
 pub(crate) const TRUNCATED_CALL: &str = "The response hit the output token limit, so the arguments may be \
     incomplete. Re-issue the tool call.";
 /// How long a cancelled tool may take to stop on its own.
@@ -107,7 +108,11 @@ pub(crate) async fn execute_batch(
                 continue;
             }
         };
-        match gate(session, &call, tool.as_ref(), &authorities).await {
+        let Some((verdict, _asking)) = judge(session, task, &call, tool.as_ref(), &authorities).await else {
+            prepared.push(Prepared::Done(immediate(session, &call, NOT_EXECUTED)));
+            continue;
+        };
+        match verdict {
             Gate::Allow => {
                 runs_before = true;
                 prepared.push(Prepared::Run(tool, call, authorities));
@@ -233,6 +238,33 @@ async fn gate(session: &Session, call: &ToolCall, tool: &dyn Tool, authorities: 
     Gate::Allow
 }
 
+/// The verdict on a call and, when it has to ask, its turn to: the whole tree asks the user one
+/// question at a time (subagent-design §10.1). A call that had to wait is judged again, as an
+/// answer given meanwhile may settle it. `None` when the turn ended while it waited.
+async fn judge(
+    session: &Session,
+    task: &TaskCtx,
+    call: &ToolCall,
+    tool: &dyn Tool,
+    authorities: &[Authority],
+) -> Option<(Gate, Option<OwnedMutexGuard<()>>)> {
+    let verdict = gate(session, call, tool, authorities).await;
+    if !matches!(verdict, Gate::Ask { .. }) || !session.interactive_approvals {
+        return Some((verdict, None));
+    }
+    if let Ok(asking) = session.approval_line.clone().try_lock_owned() {
+        return Some((verdict, Some(asking)));
+    }
+    let turn = task.turn();
+    let asking = tokio::select! {
+        asking = session.approval_line.clone().lock_owned() => asking,
+        _ = turn.cancelled() => return None,
+    };
+    session.follow_main();
+    let verdict = gate(session, call, tool, authorities).await;
+    Some((verdict, Some(asking)))
+}
+
 /// What approving for the session would keep, and where the call works.
 struct Proposal {
     rule: Option<CommandRule>,
@@ -277,21 +309,26 @@ async fn request_approval(
     match decision {
         ApprovalDecision::Approve => Approval::Granted,
         ApprovalDecision::ApproveForSession { grant, persist } => {
+            // What is kept is the main session's: the whole tree follows it.
+            let main = session.main_session();
+            let keeper = main.as_deref().unwrap_or(session);
             // With nothing proposed, this approves the call only.
             if let Some(rule) = proposal.rule {
-                session.add_session_rule(rule);
+                keeper.add_session_rule(rule);
             }
             if let Some(mode) = proposal.mode {
-                session.set_permission_mode(mode);
+                keeper.set_permission_mode(mode);
             }
             // Only a grant that was proposed: a client cannot name a wider one. An index out
             // of range keeps nothing beyond this call.
             if let Some(grant) = proposal.grants.into_iter().nth(grant.unwrap_or(0)) {
                 if persist {
-                    session.remember_site(&grant);
+                    keeper.remember_site(&grant);
                 }
-                session.add_site_grant(grant);
+                keeper.add_site_grant(grant);
             }
+            // The call goes on now, before the change reaches a sub-agent by itself.
+            session.follow_main();
             Approval::Granted
         }
         ApprovalDecision::Deny { feedback } => Approval::Denied(feedback),

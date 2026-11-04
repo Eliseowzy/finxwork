@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
-import { callTarget, displayTitle, type RpcClient, type SessionView } from "@finx/client";
+import { callTarget, displayTitle, pendingApproval, type RpcClient, type SessionView } from "@finx/client";
 import type { BrowserStatus, YoursTab } from "@finx/protocol";
 import type { SystemBrowser } from "../../../shared/bridge";
 import { MenuButton } from "../composer/Composer";
@@ -86,7 +86,7 @@ export function useYours(sessionId: string, view: SessionView | undefined | null
   const waiting = current?.waiting?.includes(sessionId) ?? false;
   const revoked = current?.revoked?.includes(sessionId) ?? false;
   const outdated = !!current?.extension?.problem;
-  const approval = view?.live?.approvals[0];
+  const approval = view ? pendingApproval(view)?.approval : undefined;
   const handoff = approval && approval.own_browser ? handoffOf(approval) : null;
   if (connected) {
     const now = current?.tabs?.[sessionId] ?? [];
