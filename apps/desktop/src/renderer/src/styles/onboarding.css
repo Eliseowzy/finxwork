@@ -47,6 +47,9 @@
 .onb-local .fdesc.warn{color:var(--orange)}
 .onb-local .mrow .mlogo{width:36px;height:36px;border-radius:var(--r-md);font-size:19px}
 .onb-local .mrow .btn{height:26px;padding:0 12px;font-size:12px}
+.onb-local .mrow .provider-brand{width:36px;height:36px}
+.onb-api .fgroup>.frow.plan-entry{padding:10px 16px;gap:14px;min-height:60px}
+.onb-api .plan-entry .fn{font-size:14px;font-weight:550}
 .onb-local .mrow-err{margin:0;padding:0 16px 10px 66px}
 .onb-fold{width:100%;border:0;border-top:.5px solid var(--sep);background:none;font:inherit;font-size:12px;color:var(--l2);text-align:left;cursor:pointer;gap:10px;padding:10px 16px}
 .onb-fold:last-child{border-radius:0 0 var(--r-lg) var(--r-lg)}

@@ -1,4 +1,3 @@
-import { TokenPlanConnections } from "./TokenPlanConnections";
 import { useCallback, useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -291,7 +290,6 @@ export function SubscriptionConnections() {
         ...missing.map(row),
       ]}
     </div>
-    <TokenPlanConnections />
     <p className="connections-footnote">{t("models.subscriptionNote")}</p>
   </section>;
 }

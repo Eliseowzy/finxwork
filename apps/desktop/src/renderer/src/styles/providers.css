@@ -3,7 +3,7 @@
 .provider-form-top{padding:24px 28px 26px}.provider-form-top h2{margin:0;font-size:18px;line-height:1.5;letter-spacing:-.4px}.provider-form-top .choice-anthropic h2{font-family:Georgia,serif;font-size:21px;font-weight:500}.provider-form-top .provider-icon-button{flex-shrink:0}.provider-form .provider-dialog-footer{margin-top:24px}@media(max-width:440px){.provider-form-top{padding:22px 20px 24px}}
 .provider-saved-top .btn{flex:none;height:26px;padding:0 11px;font-size:12px}.provider-confirm{display:flex;gap:6px;flex:none}.provider-confirm-note{margin:10px 0 0 41px;font-size:11px;line-height:1.6;color:var(--l2)}.provider-saved .err{margin:8px 0 0 41px;font-size:12px;color:var(--red)}
 /* The provider tiles and the key form (settings/ProviderConnections.tsx). */
-.provider-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:11px}
+.provider-tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));grid-auto-rows:1fr;gap:11px}
 /* Tiles: the mark above the name, so four fit a row with whole names. */
 .provider-tiles .provider-choice{display:flex;flex-direction:column;padding:16px 14px 13px}
 .provider-tiles .provider-wordmark{flex-direction:column;align-items:flex-start;gap:11px;min-width:0;white-space:normal}
@@ -19,3 +19,32 @@
 .provider-icon-button{padding:0;color:var(--l2);transition:background .15s,color .15s}
 .provider-icon-button:hover{background:var(--fill3);color:var(--l1)}
 .provider-icon-button .ic{width:12px;height:12px;stroke-width:1.8}
+/* A plan already connected, among the tiles: its mark and name step back, its label does not. */
+.provider-choice.added:disabled{opacity:1}
+.provider-choice.added .provider-wordmark{opacity:.48}
+/* The Token Plans' entry: a row of Settings › Models, the marks in place of one mark. */
+.fgroup+.plan-entry-group{margin-top:var(--sp-1)}
+.plan-entry{width:100%;border:0;border-radius:var(--r-lg);background:none;font:inherit;color:var(--l1);text-align:left;cursor:pointer}
+.fgroup>.frow.plan-entry{min-height:52px}
+.plan-entry:hover{background:var(--fill)}
+.plan-entry .ft{display:block;flex:1;min-width:0}
+.plan-entry .fn,.plan-entry .fdesc{display:block}
+.plan-entry>.ic{width:14px;height:14px;color:var(--l3)}
+.plan-marks{display:flex;flex:none}
+.plan-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:var(--r-sm);background:var(--win);box-shadow:0 0 0 1.5px var(--win2)}
+.plan-mark+.plan-mark{margin-left:-4px}
+.plan-mark .provider-brand{width:16px;height:16px}
+/* A Token Plan: where its key comes from, beside the field's label, and how it connects. */
+.provider-form label>a{float:right;display:inline-flex;align-items:center;gap:4px;font-weight:400;color:var(--accent-t);text-decoration:none}
+.provider-form label>a:hover{text-decoration:underline}
+.provider-form label>a .ic{width:12px;height:12px}
+.plan-details{font-size:12px;line-height:1.55;color:var(--l2)}
+.plan-details summary{display:inline-flex;align-items:center;gap:4px;height:26px;cursor:pointer}
+.plan-details summary:hover{color:var(--l1)}
+.plan-details summary .ic{width:12px;height:12px;transition:transform .15s var(--ease-out)}
+.plan-details[open] summary .ic{transform:rotate(90deg)}
+.plan-details dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 13px;margin:4px 0 0}
+.plan-details dt{color:var(--l3)}
+.plan-details dd{margin:0;overflow-wrap:anywhere;user-select:text}
+.plan-details p{margin:8px 0;color:var(--l3)}
+.key-entry .plan-details{margin:-4px 0 8px}

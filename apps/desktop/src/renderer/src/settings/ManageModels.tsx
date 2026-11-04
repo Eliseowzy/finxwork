@@ -37,7 +37,7 @@ function isNew(m: ModelSummary, now: Date): boolean {
   return !!m.released && now.getTime() - new Date(m.released).getTime() < 30 * 86_400_000;
 }
 
-export function ManageModels({ source, onClose }: { source: ModelSource; onClose: () => void }) {
+export function ManageModels({ source, footer, onClose }: { source: ModelSource; footer?: ReactNode; onClose: () => void }) {
   const { t } = useTranslation("settings");
   const st = useStore();
   const [query, setQuery] = useState("");
@@ -119,6 +119,7 @@ export function ManageModels({ source, onClose }: { source: ModelSource; onClose
         ))}
         {models.length === 0 && <p className="mm-empty">{t("models.manage.none")}</p>}
       </div>
+      {footer}
     </Dialog>
   );
 }
