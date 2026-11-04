@@ -265,9 +265,10 @@ try {
   await page.shot("m4-file-panel");
 
   if (packaged) {
-    step("a PDF opens in the document column (PDFium: the packaged app)");
+    step("a PDF opens in the file panel (PDFium: the packaged app)");
     await page.run(`${tag("report.pdf")}.click()`);
-    await page.until("the PDF's page", `!!document.querySelector(".dcp .page canvas")`, 30000);
+    await page.until("the PDF's page", `!!document.querySelector(".fpn .page canvas")`, 30000);
+    await page.until("its text", `document.querySelector(".fpn .textLayer")?.textContent.includes("Report")`, 30000);
     await page.shot("m5-pdf");
   } else console.log("  · (no PDFium in a development build: run with FINXWORK_E2E_APP for the PDF)");
 
