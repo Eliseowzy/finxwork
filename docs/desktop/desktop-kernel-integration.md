@@ -529,7 +529,7 @@ defaults: { model: string; thinking: ThinkingLevel; permission_mode: PermissionM
 |---|---|---|---|
 | manual | 询问权限 | Ask Permissions | 写文件、运行命令前都先问 |
 | accept-edits | 自动接受编辑 | Accept Edits | 工作区内的文件修改直接执行，命令仍然先问 |
-| bypass-permissions | 绕过权限 | Bypass Permissions | 除拒绝规则、询问规则和关键路径删除外，一律直接执行 |
+| bypass-permissions | 完全访问 | Full Access | 除拒绝规则、询问规则和关键路径删除外，一律直接执行 |
 
 ### 9.2 类型生成
 
