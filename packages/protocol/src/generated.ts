@@ -1638,6 +1638,8 @@ export type ServerCapabilities = {
   sessions_subscribe: boolean;
   /** Transcripts carry `task_end` items. */
   transcript_task_end: boolean;
+  /** `doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it refuses a workbook as "not a PDF". */
+  workbooks: boolean;
 };
 
 export type SessionAttachParams = {

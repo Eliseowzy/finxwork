@@ -444,6 +444,11 @@ pub struct ServerCapabilities {
     /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
     #[serde(default)]
     pub input_queue: bool,
+    /// `doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the
+    /// workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it
+    /// refuses a workbook as "not a PDF".
+    #[serde(default)]
+    pub workbooks: bool,
 }
 
 // ---- Sessions ----

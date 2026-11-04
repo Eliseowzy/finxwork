@@ -7103,6 +7103,11 @@
           "default": false,
           "description": "Transcripts carry `task_end` items.",
           "type": "boolean"
+        },
+        "workbooks": {
+          "default": false,
+          "description": "`doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it refuses a workbook as \"not a PDF\".",
+          "type": "boolean"
         }
       },
       "required": [

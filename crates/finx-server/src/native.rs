@@ -226,6 +226,7 @@ impl NativeProtocol {
                             customize: true,
                             embedded_browser: true,
                             input_queue: true,
+                            workbooks: true,
                         },
                     })
                 });
