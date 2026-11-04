@@ -244,7 +244,7 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("FinxBot's page", `document.querySelector(".bhead-n")?.textContent === "FinxBot" && !!document.querySelector(".cmp-zone.bot")`, 30000);
-  await page.run(`document.querySelector(".btip .btn")?.click()`);
+  await page.run(`document.querySelector(".knote .btn.primary")?.click()`);
 
   step("its avatar and name in the middle of the top; a hover shows the arrow, a click its settings");
   const head = await page.run(`(() => { const b = document.querySelector(".bhead").getBoundingClientRect(), t = document.querySelector(".scol > .ctool").getBoundingClientRect(); return { off: Math.abs(b.x + b.width / 2 - (t.x + t.width / 2)), more: !!document.querySelector(".ctool .tb[aria-haspopup=menu]") }; })()`);

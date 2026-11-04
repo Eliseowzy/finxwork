@@ -57,7 +57,9 @@
     "queued": "Delivered once it finishes this reply"
   },
   "fullAccess": {
-    "tip": "Bots use Full Access by default: system actions no longer ask for your approval. You can change this here at any time.",
+    "title": "Bots use Full Access by default",
+    "body": "System actions no longer ask for your approval, and the same goes for the agents and tasks it creates. Each bot has its own setting, which you can change at any time: click its name at the top.",
+    "settings": "Open Settings",
     "ok": "Got it"
   },
   "sheet": {
@@ -118,6 +120,10 @@
     "nameHint": "Double-click to rename",
     "model": "Model settings",
     "modelNote": "Applies to this bot only.",
+    "permission": "Permissions",
+    "permissionMode": "Permission mode",
+    "permissionNote": "{{desc}}. Applies to this bot only. The agents and tasks it creates run with this mode too, and follow any change at once.",
+    "bypassNote": "The agents and tasks this bot creates will do the same.",
     "close": "Close"
   }
 }

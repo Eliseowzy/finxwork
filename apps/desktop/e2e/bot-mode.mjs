@@ -212,12 +212,15 @@ try {
   await page.until("its empty page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
   check(await page.run(`document.querySelector(".bav.mark") !== null`), "FinxBot has the mark");
   // Full Access by default (e2e/bot-permission.mjs); this walk has approvals to answer.
-  await page.until("the permission mode under the composer", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "完全访问"`, 30000);
-  await page.run(`document.querySelector(".cmp-zone.bot .cmp-meta .mb").click()`);
+  check(await page.run(`!document.querySelector(".cmp-zone.bot .cmp-meta")`), "nothing of a session's settings under a bot's composer");
+  await page.run(`document.querySelector(".bhead").click()`);
+  await page.until("the permission mode in its settings", `document.querySelector(".bpn-perm .lbl")?.textContent === "完全访问"`, 30000);
+  await page.run(`document.querySelector(".bpn-perm .mb").click()`);
   await page.until("the menu", `[...document.querySelectorAll(".mi")].some((e) => e.textContent.includes("询问权限"))`);
   await page.run(`[...document.querySelectorAll(".mi")].find((e) => e.textContent.includes("询问权限")).click()`);
-  await page.until("Ask Permissions", `document.querySelector(".cmp-zone.bot .cmp-meta .lbl")?.textContent === "询问权限"`);
-  check((await page.run(`document.querySelectorAll(".cmp-zone.bot .cmp-meta .mb").length`)) === 1, "of a session's settings, a bot's composer has the permission mode only");
+  await page.until("Ask Permissions", `document.querySelector(".bpn-perm .lbl")?.textContent === "询问权限"`);
+  await page.run(`document.querySelector(".bhead").click()`);
+  await page.until("the settings away", `!document.querySelector(".bpn")`);
   await page.shot("01-bot-mode");
 
   step("4/6/7. a question: one message back, whole, nothing internal in it");

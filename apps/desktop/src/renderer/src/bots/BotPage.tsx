@@ -30,6 +30,8 @@ import { useBotSession } from "./useBotSession";
 
 /** Bot mode's pause before a time line (bot-mode-design §6.6). */
 const PAUSE = 10 * 60_000;
+/** A bot's settings out, in the one place beside the conversation. */
+const OPEN_SETTINGS = { botPanel: true, files: false, filesMax: false, browser: false, browserMax: false };
 
 /**
  * A bot's page (bot-mode-design §6.5–§6.17): its avatar and name in the
@@ -63,7 +65,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
             className="bhead"
             title={t("head.settings")}
             aria-expanded={settings}
-            onClick={() => st.set({ botPanel: !settings, files: false, filesMax: false, browser: false, browserMax: false })}
+            onClick={() => st.set({ ...OPEN_SETTINGS, botPanel: !settings })}
           >
             <BotAvatar bot={bot} size={22} busy={busy} />
             <span className="bhead-n">{bot.name}</span>
@@ -100,14 +102,24 @@ function useBotPermission(bot: string, view: SessionView | null, session: string
   }, [bot, session, view === null]);
 }
 
-/** The note over the permission picker: bots' default, and where to change it; until closed, the picker is used or the owner writes. */
-function FullAccessTip({ onClose }: { onClose: () => void }) {
+/**
+ * What bots may do, said once above the composer as a key notice is (bot-mode-design §6.13): the
+ * setting is out of sight, so this says it holds and leads to it. It covers nothing, so it stays
+ * until Got it or the settings are opened, which close it for good.
+ */
+function FullAccessNote({ onSettings, onClose }: { onSettings: () => void; onClose: () => void }) {
   const { t } = useTranslation("bots");
   return (
-    <div className="btip" role="status">
-      {t("fullAccess.tip")}
-      <div className="btip-f">
-        <button className="btn sm" onClick={onClose}>{t("fullAccess.ok")}</button>
+    <div className="knote" role="status">
+      <div className="knote-h">
+        <Icon name="warn" className="knote-i" />
+        <b>{t("fullAccess.title")}</b>
+      </div>
+      <p className="knote-b">{t("fullAccess.body")}</p>
+      <div className="appr-f">
+        <span className="appr-sp" />
+        <button className="btn" onClick={onSettings}>{t("fullAccess.settings")}</button>
+        <button className="btn primary" onClick={onClose}>{t("fullAccess.ok")}</button>
       </div>
     </div>
   );
@@ -435,7 +447,7 @@ const drafts = new Map<string, { text: string; attachments: Attachment[] }>();
 /** What failed tasks handed back that is in a composer already. */
 const handed = new WeakSet<UserMessage[]>();
 
-/** The composer of a bot's page: only Send, and the permission mode under it (bot-mode-design §6.14); every message goes in as it is sent. */
+/** The composer of a bot's page: only Send (bot-mode-design §6.14); every message goes in as it is sent. */
 function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: SessionView; session: string; onHeight: (h: number) => void }) {
   const asking = pendingApproval(view);
   const { t } = useTranslation("bots");
@@ -463,7 +475,6 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
     change({ ...d, attachments: addAttachments(d.attachments, more) });
   });
   const commands = useCommands({ session_id: session });
-  const closeTip = () => st.botTipSeen || st.set({ botTipSeen: true });
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
@@ -480,19 +491,13 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       form={{
         mode: "bot",
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
-        above: asking && <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />,
+        above: asking
+          ? <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />
+          : !st.botAccessSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessNote onSettings={() => st.set(OPEN_SETTINGS)} onClose={() => st.set({ botAccessSeen: true })} />,
         onHeight,
-        permission: view.info.permission_mode,
-        onPermission: (mode) => st.op(session, { type: "set_permission_mode", mode }),
-        permissionTip: !st.botTipSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessTip onClose={closeTip} />,
-        onPermissionPress: closeTip,
       }}
       value={draft.text}
-      onChange={(text) => {
-        // The note sits over the text: writing closes it.
-        if (text) closeTip();
-        change({ ...draft, text });
-      }}
+      onChange={(text) => change({ ...draft, text })}
       attachments={draft.attachments}
       onAttachments={(attachments) => change({ ...draft, attachments })}
       onSend={() => void send()}
