@@ -153,12 +153,21 @@ function finxCall(method, params = {}) {
 // ── the app, driven over the DevTools protocol ──
 let app = null;
 let port = 0;
+let browserHostReady = false;
 async function launch() {
   port = 9400 + Math.floor(Math.random() * 400);
   const program = packaged ? path.join(packaged, "Contents/MacOS/FinxWork") : electron;
   app = spawn(program, [...(packaged ? [] : [desktop]), `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
-    stdio: ["ignore", "ignore", "inherit"],
+    env: { ...process.env, FINXWORK_TRACE: "1", FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
+    stdio: ["ignore", "pipe", "inherit"],
+  });
+  // The composer can be ready before the app's browser-host connection. The
+  // kernel uses that connection to decide whether to include the app's format.
+  // Wait for its real readiness signal, not a fixed delay or a weaker assertion.
+  let startup = "";
+  app.stdout.on("data", (chunk) => {
+    startup = (startup + chunk.toString()).slice(-8192);
+    if (startup.includes("browser host: ready")) browserHostReady = true;
   });
   let target;
   for (let i = 0; i < 100 && !target; i++) {
@@ -274,6 +283,9 @@ try {
   const watchCopies = `navigator.clipboard.writeText = async (t) => void (window.__copied ??= []).push(t)`;
   await page.run(watchCopies);
   const copied = () => page.run(`(window.__copied ?? []).at(-1) ?? null`);
+
+  for (let i = 0; i < 100 && !browserHostReady; i++) await sleep(100);
+  check(browserHostReady, "the app's browser host never became ready");
 
   step("a task reads a file, runs echo and answers");
   await page.run(`document.querySelector(".cmp-in").focus()`);

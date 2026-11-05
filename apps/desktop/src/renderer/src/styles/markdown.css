@@ -1,0 +1,79 @@
+/* FinxWork's reading surface. UI sizes remain independent of content sizes. */
+:root {
+  --md-size:15px; --md-leading:1.6; --md-code-size:13px;
+  --md-fg:#0b1633; --md-muted:#5b6478; --md-link:var(--accent-fg);
+  --md-prose-width:730px; --md-rich-width:1040px;
+}
+@media(prefers-color-scheme:dark){:root{--md-fg:#e8ecf4;--md-muted:#9aa3b5}}
+.md{font:var(--md-size)/var(--md-leading) var(--font);color:var(--md-fg);min-width:0;overflow-wrap:anywhere}
+.md[data-mode=compact]{--md-size:14px}
+.md>*{margin:0}
+.md>*+*{margin-top:.8em}
+.md :is(h1,h2,h3,h4,h5,h6){font-weight:650;line-height:1.35;scroll-margin-top:32px;text-wrap:pretty}
+.md :is(h1,h2,h3,h4,h5,h6):not(:first-child){margin-top:1.5em}
+.md h1{font-size:1.5em}.md h2{font-size:1.25em}.md h3{font-size:1.125em}.md h4{font-size:1em}.md h5{font-size:.95em}.md h6{font-size:.9em;color:var(--md-muted)}
+.md p{text-wrap:pretty}
+.md ul,.md ol{padding-inline-start:1.5em}
+.md li+li{margin-top:.3em}.md li>p+p{margin-top:.65em}
+.md li>:is(ul,ol){margin-top:.35em}.md ul ul{list-style-type:circle}.md ul ul ul{list-style-type:square}
+.md li::marker{color:var(--md-muted)}
+.md li.task-list-item{margin-left:0;position:relative}
+.md li.task-list-item>input{position:absolute;inset-inline-start:-1.4em;top:.4em;accent-color:var(--accent)}
+.md blockquote{padding-inline-start:.85em;border-inline-start:3px solid var(--fill3);border-left-width:3px;color:var(--md-muted)}
+.md blockquote>*{margin:0}.md blockquote>*+*{margin-top:.65em}
+.md .md-callout{padding:12px 16px;border:1px solid var(--sep);border-inline-start:3px solid var(--md-link);border-radius:var(--r-sm);color:var(--md-fg);background:var(--win2)}
+.md .md-callout[data-kind=warning]{border-inline-start-color:var(--warn)}
+.md .md-callout[data-kind=caution]{border-inline-start-color:var(--danger)}
+.md .md-callout[data-kind=tip]{border-inline-start-color:var(--ok)}
+.md a{color:var(--md-link);text-underline-offset:3px}
+.md a:focus-visible,.md summary:focus-visible,.md-tools button:focus-visible,.md-table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.md code{font-size:.9em;box-decoration-break:clone;-webkit-box-decoration-break:clone;overflow-wrap:anywhere}
+.md pre code{font-size:var(--md-code-size);line-height:1.6;overflow-wrap:normal}
+.md pre{tab-size:4}
+.md .cblock pre{max-height:520px;overscroll-behavior:contain}
+.md-color{display:inline-block;width:.75em;height:.75em;margin-inline-end:.35em;border-radius:2px;box-shadow:0 0 0 1px var(--field-bd)}
+.md-details{border:1px solid var(--sep);border-radius:var(--r-md);padding:10px 14px}
+.md-details>summary{cursor:pointer;font-weight:600;color:var(--md-link)}
+.md-details[open]>summary{margin-bottom:.75em}
+.md-details>*+*{margin-top:.65em}
+.md .footnotes{font-size:.875em;color:var(--md-muted);border-top:1px solid var(--sep);padding-top:1em}
+.md .footnotes .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.md sup{line-height:0}
+.md-table{overflow:visible;min-width:0;max-width:100%}
+.md-table-scroll{overflow:auto;max-height:520px;border:1px solid var(--sep);border-radius:var(--r-sm);overscroll-behavior-x:contain}
+.md table{width:100%;font-size:14px;line-height:1.6;font-variant-numeric:tabular-nums}
+.md :is(th,td){padding:8px 12px;min-width:80px;border-bottom:1px solid var(--sep);vertical-align:top}
+.md th{position:sticky;top:0;background:var(--win2);z-index:1;font-weight:600}
+.md tbody tr:last-child td{border-bottom:0}
+.md td[align=right],.md td[style*="right"]{white-space:nowrap}
+.md-tools{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:5px 0;color:var(--md-muted);font:12px/1.5 var(--font)}
+.md-tools button,.md-table-return{font:inherit;color:var(--md-link);border:0;border-radius:var(--r-xs);background:none;padding:4px 7px;cursor:pointer}
+.md-tools button:hover{background:var(--fill)}
+.md-tools>span[role=status]{margin-inline-start:auto}
+.md-diagram{border:1px solid var(--sep);border-radius:var(--r-md);padding:8px 12px;background:var(--win);min-width:0}
+.md-diagram .cblock{margin-top:8px}
+.md-diagram-svg{overflow:auto;min-height:80px;padding:12px 0}
+.md-diagram-loading{min-height:120px;display:grid;place-items:center;color:var(--md-muted)}
+.md-render-note{font-size:13px;color:var(--md-muted)}
+.md-expanded{max-width:calc(100vw - 48px);max-height:calc(100vh - 48px)}
+.md-expanded .sheet-in{padding:16px;overflow:auto}
+.md-expanded .md-table-scroll{max-height:calc(100vh - 150px)}
+.md-expanded .md-diagram-svg{max-height:calc(100vh - 140px)}
+.md .katex{font-size:1.05em}
+.md .katex-display{overflow:auto;max-width:100%;padding:6px 0;margin:.8em 0}
+.md .katex-error{color:inherit!important;font-family:var(--mono);font-size:.9em;white-space:pre-wrap}
+/* The conversation owns the available width, including when side panels open.
+   Ordinary rows remain narrow; rich blocks can use the center column's space. */
+.markdown-chat{container-type:inline-size}
+.markdown-chat>.dbody{max-width:calc(var(--md-rich-width) + 68px)}
+.markdown-chat .tr>.am{width:100%;align-self:center}
+.markdown-chat .am>.md>*{max-width:var(--md-prose-width);margin-inline:auto}
+.markdown-chat .am>.msg-act{left:max(-2px,calc((100% - var(--md-prose-width))/2 - 2px))}
+.markdown-chat .tr>:not(.am){max-width:var(--md-prose-width);width:100%;align-self:center}
+.markdown-chat .tr>.um{width:auto;align-self:flex-end;max-width:min(78%,var(--md-prose-width))}
+.markdown-chat .am>.md>.md-wide{width:100%;max-width:var(--md-rich-width)}
+@container(max-width:600px){.markdown-chat .am>.md>.md-wide{width:100%;max-width:100%;margin-inline-start:0}}
+/* Keep offscreen completed rows out of layout/paint, while preserving DOM search,
+   anchors and selections. Measured sizes replace the initial estimate. */
+.tr>.am:not(:last-child){content-visibility:auto;contain-intrinsic-block-size:auto 180px}
+@media print{.md-tools{display:none}.md-table-scroll{overflow:visible;max-height:none}.tr>.am{content-visibility:visible;contain:none}.md-wide{width:100%!important;margin:0!important}}

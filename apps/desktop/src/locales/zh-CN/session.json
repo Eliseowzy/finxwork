@@ -687,5 +687,24 @@
       "unreachable": "{{name}} 连不上",
       "bad_response": "{{name}} 的回答读不了"
     }
+  },
+  "markdown": {
+    "table": "数据表格",
+    "copyMarkdown": "复制 Markdown",
+    "copyTsv": "复制到 Excel",
+    "copyRich": "复制富文本表格",
+    "copied": "已复制",
+    "copyFailed": "复制失败，请重试",
+    "expand": "展开",
+    "close": "关闭",
+    "tableOpen": "表格已展开 · 返回",
+    "details": "展开详情",
+    "diagram": "图形",
+    "source": "源码",
+    "exportSvg": "导出 SVG",
+    "diagramFailed": "此图无法渲染，已在操作栏下方显示源码。",
+    "rendering": "正在绘制图形…",
+    "footnotes": "脚注",
+    "backToReference": "返回引用位置"
   }
 }

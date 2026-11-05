@@ -229,7 +229,7 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
     return (
       <ContentScope value={{ session: s.session, cwd: dirOf(tab.path) }}>
         <div className="fpn-md">
-          <Markdown text={text} />
+          <Markdown text={text} mode="document" />
         </div>
       </ContentScope>
     );
