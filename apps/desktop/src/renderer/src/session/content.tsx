@@ -155,7 +155,8 @@ export function InlineCode({ children }: { children?: ReactNode }) {
     const file = scope ? fileOfCode(children, windows()) : null;
     if (file && scope) return <FileTag target={file} scope={scope} code={children} />;
   }
-  return <code>{children}</code>;
+  const color = typeof children === "string" && /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.test(children.trim()) ? children.trim() : null;
+  return <code>{color && <span className="md-color" aria-hidden="true" style={{ backgroundColor: color }} />}{children}</code>;
 }
 
 // ── code blocks ──

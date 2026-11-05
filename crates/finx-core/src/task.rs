@@ -35,6 +35,7 @@ use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::Mail;
+use crate::bot::Owed;
 use crate::commands::Command;
 use crate::compaction;
 use crate::compaction::CompactError;
@@ -215,12 +216,13 @@ fn go_back(session: &Session, state: &mut SessionState, resend: Resend) -> (Task
     (reserve(state), resend.input)
 }
 
-/// A sub-agent's report arrived. It joins the history at the next turn boundary, or starts a
-/// task when nothing runs.
+/// A sub-agent's report or message arrived. It joins the history at the next turn boundary, or
+/// starts a task when nothing runs and it is the kind that does.
 pub(crate) fn on_mail(session: &Arc<Session>, mail: Mail) {
-    // From an agent a `resend` removed, it belongs to what was taken back. A routine's run is on
+    // From an agent a `resend` removed, it belongs to what was taken back; a sub-agent's session,
+    // with no list of its own, hears only from agents at work. A routine's run is on
     // no such list, and a bot's conversation does not go back.
-    let kept = mail.info.kind == MailKind::Routine || session.agents.as_ref().is_some_and(|tree| tree.has(&mail.info.from.id));
+    let kept = mail.info.kind == MailKind::Routine || session.agents.as_ref().is_none_or(|tree| tree.has(&mail.info.from.id));
     let wake = {
         let mut state = session.state.lock();
         if kept {
@@ -246,7 +248,7 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
     match session.build_context().messages.last() {
         Some(Message::User(_)) | Some(Message::ToolResult(_)) => start_task(session, None),
         // A bot that ended up silent: retrying asks it again (bot-design §3.11).
-        _ => match session.unanswered() {
+        _ => match session.owed().reminder() {
             Some(reminder) => {
                 session.record(reminder);
                 start_task(session, None);
@@ -677,8 +679,9 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // No calls: the model means to stop. A bot that has not answered its owner's latest
         // message is reminded once, before anything that came meanwhile joins: a reply to the
         // next message would count as answering this one too (bot-design §3.11).
-        let silent = if message.stop_reason == StopReason::Length { None } else { session.unanswered() };
-        if !reminded && let Some(reminder) = &silent {
+        let owed = if message.stop_reason == StopReason::Length { Owed::Nothing } else { session.owed() };
+        let reminder = owed.reminder();
+        if !reminded && let Some(reminder) = &reminder {
             reminded = true;
             hold_input = true;
             session.record(reminder.clone());
@@ -695,12 +698,23 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
             turn += 1;
             continue;
         }
-        // Reminded and still silent, with nothing else to answer: the owner is told rather than
-        // left waiting (D-321).
-        if silent.is_some() {
-            let mut error = ErrorInfo::new(NO_REPLY, "the model ended its turn without sending a reply");
-            error.retryable = true;
-            return TaskOutcome::Failed(error);
+        match owed {
+            // Reminded and still silent, with nothing else to answer: the owner is told rather than
+            // left waiting (D-321).
+            Owed::Reply | Owed::RoutineReport => {
+                let mut error = ErrorInfo::new(NO_REPLY, "the model ended its turn without sending a reply");
+                error.retryable = true;
+                return TaskOutcome::Failed(error);
+            }
+            // What came of its work gets one reminder too, once nothing newer is waiting; it may
+            // have nothing worth telling (bot-turn-design §6).
+            Owed::Delivery if !reminded => {
+                reminded = true;
+                session.record(EntryKind::Undelivered);
+                turn += 1;
+                continue;
+            }
+            _ => {}
         }
         let reason = if message.stop_reason == StopReason::Length {
             session.warn("the reply was cut off by the output token limit");

@@ -40,6 +40,12 @@
 //! | `relay[:LABEL]` | a bot's `spawn_agent` (described LABEL) with "在查了。" sent and `end_turn`; when the report wakes it, `查到了：<the report>` sent with `end_turn` |
 //! | `web_search:QUERY[\|allowed=A,B][\|blocked=C][\|recency=week]` | `tool_search` for the search tool, `call_tool` on `web_search`, then `search done: <its result>` |
 //! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
+//! | `relay_slow:SECONDS` | a bot's opening line and a `spawn_agent` (named `writer`) that runs `sleep SECONDS`, a private line that ends the turn, then `回复：<the latest message>` sent with `end_turn` for whatever comes next, its report too |
+//! | `check` | `tool_search`, `call_tool` on `list_agents`, its result sent with `end_turn`, then as `relay_slow` |
+//! | `stop_all` | the same with `stop_agents` and `all`, ahead of any message |
+//! | `relay_note:SECONDS` | as `relay_slow`, with a sub-agent that runs `note:SECONDS:3 月的数据整月缺失。` |
+//! | `note_session:SECONDS` | the same in a session: `spawn_agent`, `交给子智能体了。`, then `回复：<the latest message>` for whatever comes next |
+//! | `note:SECONDS:TEXT` | half a second later, a sub-agent's `send_message` of TEXT to `main`, then a bash call running `sleep SECONDS`, then `写完了。` |
 //! | `routine:NAME\|SCHEDULE\|RUN` | a bot's `manage_routine` create, with RUN as the routine's prompt in brackets (`[[mock:RUN]]`); then, for its result and for each report that wakes it, `转告：<the text>` sent with `end_turn` |
 //! | `say:TEXT` | TEXT, as it is |
 //!
@@ -494,13 +500,15 @@ fn unanswered_sends(messages: &[Value]) -> Vec<String> {
     if texts.is_empty() { vec!["send done".to_string()] } else { texts }
 }
 
-/// The text of the latest user message: a report, after a bot's sub-agent finished.
+/// The text of the latest user message, past the word that follows a bot's owner's: a report,
+/// after a bot's sub-agent finished.
 fn last_user_text(messages: &[Value]) -> String {
     messages
         .iter()
         .rev()
-        .find(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+        .filter(|m| m.get("role").and_then(Value::as_str) == Some("user"))
         .map(content_text)
+        .find(|text| !text.starts_with("<reminder>"))
         .unwrap_or_default()
 }
 
@@ -512,6 +520,11 @@ fn last_tool_result(messages: &[Value]) -> String {
         .find(|m| m.get("role").and_then(Value::as_str) == Some("tool"))
         .map(content_text)
         .unwrap_or_default()
+}
+
+/// A bot's whole answer to the latest message, a report or the owner's.
+fn answer_latest(messages: &[Value]) -> Step {
+    Step::calls(vec![("send_to_user", json!({ "text": format!("回复：{}", last_user_text(messages)), "end_turn": true }))])
 }
 
 fn now_us() -> u128 {
@@ -703,6 +716,60 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 json!({ "text": format!("查到了：{}", last_user_text(messages)), "end_turn": true }),
             )])),
         },
+        // Long work handed over, and the bot goes on talking (bot-turn-design §3).
+        "relay_slow" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，这个要一会儿，写好发你。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "写长文", "task": format!("[[mock:bash:sleep {arg}]] Write it and report."), "name": "writer" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
+        // The same with a sub-agent that speaks up on the way (agent-messaging-design §3.1).
+        "relay_note" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，我先把数据汇总出来。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "汇总销售数据", "task": format!("[[mock:note:{arg}:3 月的数据整月缺失。]] Sum it and report."), "name": "sales" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
+        "note_session" => match step {
+            0 => Plan::Step(Step::calls(vec![(
+                "spawn_agent",
+                json!({ "description": "汇总销售数据", "task": format!("[[mock:note:{arg}:3 月的数据整月缺失。]] Sum it and report."), "name": "sales" }),
+            )])),
+            1 => Plan::Step(Step::text("交给子智能体了。".to_string())),
+            _ => Plan::Step(Step::text(format!("回复：{}", last_user_text(messages)))),
+        },
+        "note" => {
+            let (seconds, text) = arg.split_once(':').unwrap_or((arg, "something came up"));
+            match step {
+                // By then the bot has ended its turn.
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(500),
+                    ..Step::calls(vec![("send_message", json!({ "to": "main", "message": text }))])
+                }),
+                1 => Plan::Step(Step::calls(vec![("bash", json!({ "command": format!("sleep {seconds}") }))])),
+                _ => Plan::Step(Step::text("写完了。".to_string())),
+            }
+        }
+        // Asked how the agents stand, or to stop them: the tools are deferred (bot-turn-design §5.3).
+        "check" | "stop_all" => {
+            let (tool, arguments) = if name == "check" { ("list_agents", json!({})) } else { ("stop_agents", json!({ "all": true })) };
+            match step {
+                0 => Plan::Step(Step::calls(vec![("tool_search", json!({ "query": tool }))])),
+                1 => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": tool, "arguments": arguments }))])),
+                2 => Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": last_tool_result(messages), "end_turn": true }))])),
+                _ => Plan::Step(answer_latest(messages)),
+            }
+        }
         // A bot that answers in plain text, which the user never sees, and sends once reminded
         // (bot-design §3.11). It takes long enough for a next message to come meanwhile.
         "quiet" => {

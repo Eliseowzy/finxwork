@@ -42,7 +42,9 @@ const provider = http.createServer((req, res) => {
   req.on("end", async () => {
     if (!req.url?.endsWith("/chat/completions")) return res.writeHead(404).end();
     const { messages } = JSON.parse(body);
-    const users = messages.filter((m) => m.role === "user" && !textOf(m).startsWith("<environment_update>"));
+    // Not what the kernel adds: the model is kept up to date, and each of the owner's messages is followed by a word.
+    const added = (m) => /^<(environment_update|reminder)>/.test(textOf(m));
+    const users = messages.filter((m) => m.role === "user" && !added(m));
     const last = users.at(-1);
     const said = last ? textOf(last) : "";
     res.writeHead(200, { "content-type": "text/event-stream" });
@@ -58,7 +60,7 @@ const provider = http.createServer((req, res) => {
       return res.end(sse(say(answer), "stop"));
     }
     // The list of routines the kernel adds may come after the tool's result.
-    const latest = messages.filter((m) => !textOf(m).startsWith("<environment_update>")).at(-1);
+    const latest = messages.filter((m) => !added(m)).at(-1);
     if (latest.role === "tool") return res.end(sse(send("记好了。"), "tool_calls"));
     const report = /<routine_report[^>]*>\n([\s\S]*?)\n<\/routine_report>/.exec(said)?.[1];
     if (report) return res.end(sse(send(`转告：${report}`), "tool_calls"));

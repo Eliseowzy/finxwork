@@ -110,7 +110,7 @@ pub(crate) struct SessionState {
     pub(crate) estimate_ratio: f64,
     /// Where measuring the largest turn stopped; see `budget`.
     pub(crate) turn_scan: crate::budget::TurnScan,
-    /// Sub-agents' reports not yet in the history, oldest first.
+    /// Sub-agents' reports and messages not yet in the history, oldest first.
     pub(crate) inbox: VecDeque<Mail>,
     /// The last task was interrupted: reports wait for new input instead of starting a task.
     pub(crate) hold: bool,
@@ -127,6 +127,8 @@ pub(crate) struct SessionState {
     /// A bot's session: what its sub-agents' prompts start from instead of `base_prompt`,
     /// built like a session's (bot-design §2.3).
     pub(crate) sub_agent_prompt: Option<Arc<str>>,
+    /// A bot's session: which `bot.md` its prompt comes from (bot-turn-design §8).
+    pub(crate) prompt_template: Option<String>,
 }
 
 /// A bot session's names.
@@ -174,6 +176,7 @@ impl SessionState {
             bot: None,
             routines: None,
             sub_agent_prompt: None,
+            prompt_template: None,
         }
     }
 
@@ -281,6 +284,8 @@ pub(crate) struct Session {
     pub(crate) agents: Option<Arc<AgentTree>>,
     /// A sub-agent's session.
     pub(crate) sub_agent: bool,
+    /// What it can do about other agents.
+    pub(crate) agent_role: crate::deferred::AgentRole,
     /// A sub-agent's main session, which holds the permissions the whole tree follows.
     pub(crate) main: Option<Weak<Session>>,
     /// Shared with the sub-agents: whoever holds it may ask the user, so that the tree asks one
@@ -369,6 +374,9 @@ impl Session {
             mail: None,
             skills: uses,
         });
+        if self.state.lock().bot.is_some() {
+            self.record(EntryKind::ReplyNudge);
+        }
     }
 
     /// Gives the model today's date when the context last gave another one, or none: the
@@ -401,6 +409,16 @@ impl Session {
         }
     }
 
+    /// What a bot's session still owes its owner (bot-turn-design §6).
+    pub(crate) fn owed(&self) -> crate::bot::Owed {
+        let state = self.state.lock();
+        if state.bot.is_some() {
+            crate::bot::owed(&state.history)
+        } else {
+            crate::bot::Owed::Nothing
+        }
+    }
+
     /// Gives a bot's routines as they are now, when the context last gave another list. A bot
     /// that never had any hears nothing of them (routine-design §4.4).
     pub(crate) fn note_routines(&self) {
@@ -420,27 +438,17 @@ impl Session {
         }
     }
 
-    /// A bot's session with something its owner has not heard about (bot-design §3.11): the
-    /// reminder to record.
-    pub(crate) fn unanswered(&self) -> Option<EntryKind> {
-        let state = self.state.lock();
-        state.bot.as_ref()?;
-        let waiting = crate::bot::unanswered(&state.history)?;
-        Some(EntryKind::Unanswered {
-            routine: waiting == crate::bot::Waiting::RoutineReport,
-        })
-    }
-
-    /// Writes the waiting reports into the history, oldest first. True when a routine's is among
-    /// them.
+    /// Writes the waiting reports and messages into the history, oldest first. True when a
+    /// routine's is among them.
     pub(crate) fn deliver_mail(&self) -> bool {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();
         let routine = mails.iter().any(|mail| mail.info.kind == MailKind::Routine);
         for mail in mails {
             let message = Message::from(mail.message);
-            let entry = self.record(EntryKind::Mail {
-                mail: Box::new(mail.info.clone()),
-                message: message.clone(),
+            let info = Box::new(mail.info.clone());
+            let entry = self.record(match mail.info.kind {
+                MailKind::Report | MailKind::Routine => EntryKind::Mail { mail: info, message: message.clone() },
+                MailKind::Message => EntryKind::AgentMessage { mail: info, message: message.clone() },
             });
             self.emit(EventMsg::MessageCompleted {
                 message_id: entry.id,
@@ -489,6 +497,12 @@ impl Session {
 
     pub(crate) fn has_steer(&self) -> bool {
         !self.state.lock().steer.is_empty()
+    }
+
+    /// Input that waits for the running task, in either queue.
+    pub(crate) fn has_queued_input(&self) -> bool {
+        let state = self.state.lock();
+        !state.steer.is_empty() || !state.follow_up.is_empty()
     }
 
     pub(crate) fn take_follow_up(&self) -> Option<Input> {
@@ -564,11 +578,11 @@ impl Session {
                 })
                 .collect();
             // An agent started before keeps its place, and the model, back where it was still
-            // waiting for this report, gets it again.
+            // waiting for this report or message, gets it again.
             let again: Vec<Mail> = taken_back
                 .iter()
                 .filter_map(|entry| match &entry.kind {
-                    EntryKind::Mail { mail, message: Message::User(user) } if !removed.contains(&mail.from.id) => Some(Mail {
+                    EntryKind::Mail { mail, message: Message::User(user) } | EntryKind::AgentMessage { mail, message: Message::User(user) } if !removed.contains(&mail.from.id) => Some(Mail {
                         info: (**mail).clone(),
                         message: (**user).clone(),
                         wake: false,

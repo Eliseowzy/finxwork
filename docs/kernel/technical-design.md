@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.48 |
+| 版本 | v1.51 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -94,7 +94,10 @@
 | v1.45 | 2026-11-05 | 撤回重发（[message-resend-design.md](message-resend-design.md)，D-370–D-385），取代原计划的 `Rewind`：新 Op `resend`（§8.1），任务在跑就先停，对话回到这条用户消息之前，再发新消息，回退和发送是一个动作；新事件 `session_rewound`（§8.2）；`branch` 条目开始写入，带 `before_first`（§9.2、§9.5）；恢复时设置、标题、归档、累计用量和任务号按全文件读，不再只看当前分支（§9.4，D-374）。被撤回段启动的子智能体关闭摘除，保留段的继续跑，它在被撤回段送达的汇报重新投递。一期只回退对话，磁盘文件不动 |
 | v1.46 | 2026-11-05 | 定时任务（routine-design.md，已实现）：`finx serve` 调度，数据在 `~/.finx/finx.db`，是第一个本地数据库；依赖 `rusqlite`（带内置 SQLite）和 `jiff`，只在 `finx-server`。命令行和 `finx exec` 不碰它（§9.1） |
 | v1.47 | 2026-11-05 | 表格引擎的时区表只留 UTC，文档工具的定义每个进程只生成一次（§1.4，D-99）：Excel 合入后每条命令多约 310 次缺页，`session/new` 慢约 0.6 ms。本地命令的缺页预算开始拦截（D-98） |
-| v1.48 | 2026-11-05 | 超长消息的读取（§1.4，D-445）：一超过上限就报错，已读入的部分当即释放，后面边读边丢；错误带上请求的 `id`；长行的读缓冲不再靠 `realloc` 增长，`finx acp < /dev/zero` 由 2.1 GiB 降到约 138 MiB；`server.max_frame_bytes` 默认值由 32 MiB 提到 128 MiB（protocol-design §4.4） |
+| v1.48 | 2026-11-05 | 修正本地命令的数字（§1.4、§18）：Linux 上原来写的 1.0–1.7 ms 是 `cargo-zigbuild` 的非 PIE 版本，而且测在 Excel 合入之前。和 CI 同样的静态 PIE 在固定机器上是 1.7–2.7 ms，`status`、`doctor`、`sessions` 没有达到 2 ms 的目标 |
+| v1.49 | 2026-11-05 | Bot 的回合和插话（[bot-turn-design.md](bot-turn-design.md)）：日志加 `undelivered`、`reply_nudge` 条目，`system_prompt` 条目加 `template`（§7.2、§9.2）；所有主会话的目录多一组 `agents`：`check_agents`、`stop_agents`（subagent-design §6.6） |
+| v1.50 | 2026-11-05 | 智能体之间能互发消息（[agent-messaging-design.md](agent-messaging-design.md)）：子智能体有 `send_message`，事件的 `mail.kind` 多一个 `message`，日志加 `agent_message` 条目（§9.2、subagent-design §9.2）；`check_agents` 改名 `list_agents`，子智能体也有 |
+| v1.51 | 2026-11-05 | 超长消息的读取（§1.4，D-445）：一超过上限就报错，已读入的部分当即释放，后面边读边丢；错误带上请求的 `id`；长行的读缓冲不再靠 `realloc` 增长，`finx acp < /dev/zero` 由 2.1 GiB 降到约 138 MiB；`server.max_frame_bytes` 默认值由 32 MiB 提到 128 MiB（protocol-design §4.4） |
 
 ## 1. 目标与范围
 
@@ -140,7 +143,7 @@
 | 指标 | 目标 |
 |---|---|
 | 冷启动：`finx exec` 从启动到发出第一个模型请求（不含网络与外部鉴权命令） | < 100 ms |
-| 本地命令（`--version`、`models`、`doctor`、`sessions`）从启动到退出，按 `hyperfine -N` 的均值计 | Linux 上 < 2 ms，在固定机器上交替测量；CI 守的是缺页预算（D-98） |
+| 本地命令（`--version`、`models`、`doctor`、`sessions`）从启动到退出，按 `hyperfine -N` 的均值计 | Linux 上 < 2 ms，在固定机器上交替测量；CI 守的是缺页预算（D-98）。目前 `status`、`doctor`、`sessions` 没有达到，见下 |
 | 内核处理并转发每个流式增量的开销 | < 0.1 ms；事件只携带增量，不复制整条消息 |
 | 空闲会话的常驻内存 | < 30 MB |
 | 单次工具调用的输出在内存中的占用 | ≤ 1 MB，超出部分写入磁盘 |
@@ -203,16 +206,18 @@
   - 其余来自约 10 MB 的可执行文件和参数解析。
 - **Linux 的情况**：Linux 上没有框架这一项，创建进程本身也更便宜。
 
-**Linux 上的本地命令**（2026-11-05，1 vCPU 的 x86_64 机器，静态 musl 的 dist 构建，`tools/bench/local_ab.py`：每个版本 6 份拷贝、各 100 次，取各份中位数的中位数）：
+**Linux 上的本地命令**（2026-11-05，和 CI 同样的静态 PIE 加 musl 的 malloc，取中位数。固定机器是 1 vCPU 的 x86_64，`tools/bench/local_ab.py`：每个版本 6 份拷贝、各 100 次；CI 是 `2eaa7ed` 那次运行）：
 
-| 命令 | 耗时 | 缺页 | 同机上 `/usr/bin/true` |
-|---|---:|---:|---:|
-| `--help` | 1.00 ms | 87 | 0.70 ms，57 次缺页 |
-| `status --json` | 1.73 ms | 190 | |
-| `doctor --json` | 1.71 ms | 190 | |
-| `sessions --json`（8 个 8 MiB 的会话） | 1.26 ms | 114 | |
+| 命令 | 固定机器 | CI（EPYC 9V74） | CI 上的缺页 | 缺页预算 |
+|---|---:|---:|---:|---:|
+| `--help` | 1.7 ms | 1.36 ms | 241 | 253 |
+| `status --json` | 2.7 ms | 1.71 ms | 365 | 383 |
+| `doctor --json` | 2.7 ms | 1.74 ms | 363 | 382 |
+| `sessions --json`（8 个 8 MiB 的会话） | 2.3 ms | 1.49 ms | 302 | 317 |
 
-- **这张表是 `cargo-zigbuild` 的版本**：非 PIE，malloc 是 zig 自己的。CI 和普通 `cargo build` 得到的是静态 PIE 加 musl 的 malloc，同样的代码每条命令多约 150 次缺页，慢 0.7～0.9 ms（D-99）。
+- **2 ms 的目标没有全部达到**：固定机器上只有 `--help` 在 2 ms 以内。这台机器偏慢，`/usr/bin/true` 约 0.70 ms，上面那次 CI 是 0.48 ms；但慢的 runner（EPYC 7763）上，`status` 最快一次也有 2.05 ms。放弃 PIE 能省约 0.55 ms，代价是可执行文件的地址固定，不采用（D-99）。
+- **`cargo-zigbuild` 的数字更小，不是正式成绩**：它编出的是非 PIE，malloc 是 zig 自己的，同样的代码每条命令少约 150 次缺页，快 0.7～0.9 ms（D-99）。1105 报告 §1～§7 的绝对数字是这个版本，比较的结论不受影响。
+- **macOS 上现在约 5.2–5.9 ms**（1105 报告 §8.3），前面 macOS 那张表是 10-28 的数字。
 - **耗时主要花在缺页上**：不同版本之间的耗时差异，96% 可以由缺页数解释，约 6.4 µs 一次。其中约三分之一是堆和数据段的新页，其余是第一次碰到的代码页，每次还顺带映射相邻的页。
 - **CI 守缺页，不守耗时**（D-98）：同一个二进制的缺页数只差 1% 左右，耗时在 GitHub runner 上却能差 18%～60%。
 - **全局选项的副本**：clap 构建解析器时，把 `-c`、`--mcp-config` 复制进每个子命令，约 41 KB 新内存，每次启动都要付。命令行上没有这些选项时（`parse_plain`），用不带副本的解析器，理解结果相同；帮助和报错仍由完整的解析器给出，因为它们要列出全局选项。
@@ -1804,7 +1809,7 @@ pub enum TurnDecision { Default, Continue, End }
 - **顺序**：environment 含日期和 git 分支，变化最频繁，放在最后；同一项目里新开的会话，系统提示词直到 environment 之前都相同，前缀缓存能命中更长的一段。
 
 - **标签包裹**：每一段都用标签包起来（如 `<project_instructions path="…">`），让模型能区分内容的来源。
-- **冻结**：系统提示词在会话启动时生成，之后不再变化，并写入日志的 system_prompt 条目；resume 时沿用日志中的版本。
+- **冻结**：系统提示词在会话启动时生成，之后不再变化，并写入日志的 system_prompt 条目；resume 时沿用日志中的版本。Bot 会话有一个例外：条目记下内置模板 bot.md 的哈希，恢复时不同就重新生成，写一条新条目（bot-design D-353）。
   - 理由：请求前缀保持稳定，有利于命中缓存；会话行为也可以复现。
   - M2 提供 `--refresh-instructions` 参数，用于重新生成。
 - **日期变化**（D-234）：系统提示词里的日期是会话开始那天的，跨天继续的会话靠追加告诉模型新的日期，系统提示词不动。
@@ -2979,7 +2984,7 @@ finxwork/
 
 **启动耗时**：已达到 §1.4 的冷启动目标。从进程启动到发出第一个模型请求，实测约 5 ms，各阶段耗时见 §1.4。
 
-**本地命令**：macOS 上实测 4.1–5.0 ms（含 1.5 ms 的空进程开销），Linux 上 1.0–1.7 ms，见 §1.4。
+**本地命令**：macOS 上约 5.2–5.9 ms，Linux 上固定机器 1.7–2.7 ms，其中 `status`、`doctor`、`sessions` 没有达到 2 ms 的目标，见 §1.4。
 
 **服务并发**：200 个会话同时新建，单个 session/new 的 p50 为 9–12 ms；服务空闲时新建一个会话 0.22–0.25 ms；每个空闲会话的活跃堆约 32 KiB；200 个会话同时跑任务，进程峰值占用约 79 MiB。以 256 的打开文件数软上限启动，1000 个会话同时跑任务也没有失败。见 §1.4。
 

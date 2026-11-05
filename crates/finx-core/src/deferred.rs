@@ -1,5 +1,5 @@
-//! Built-in tools kept out of the tool list: the browsers' and computer use's
-//! (docs/desktop/computer-use-design.md §5). Like the tools of deferred MCP servers (mcp-design
+//! Built-in tools kept out of the tool list: the browsers', computer use's and those for looking
+//! at agents (docs/desktop/computer-use-design.md §5, bot-turn-design §5.3). Like the tools of deferred MCP servers (mcp-design
 //! §7), each group takes one line of the catalog in the system prompt; `tool_search` gives the
 //! definitions and the group's guidelines, and `call_tool` runs them. The tool list and the
 //! prompt's prefix stay the same whether a session uses them or not.
@@ -32,6 +32,16 @@ impl Group {
     }
 }
 
+/// A session's place among agents, which says what it can do about them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AgentRole {
+    /// A main session.
+    Main,
+    SubAgent,
+    /// Sub-agents are turned off.
+    None,
+}
+
 /// A session's deferred built-in tools, as its system connectors have them now.
 #[derive(Default)]
 pub(crate) struct Deferred {
@@ -49,11 +59,15 @@ const CUA: &str = "cua";
 const CUA_SUMMARY: &str = "Computer use: see and operate the other apps on this computer";
 const DOC: &str = "doc";
 const DOC_SUMMARY: &str = "Documents and workbooks (PDF, XLSX, XLSM): open them beside the conversation; read or search pages and cell ranges, trace or calculate formulas, and edit or save workbooks";
+const AGENTS: &str = "agents";
+const AGENTS_SUMMARY: &str = "See how your agents stand, or stop them";
+const SUB_AGENT_AGENTS_SUMMARY: &str = "See the other agents in this session";
 
 impl Deferred {
     /// The groups `settings` turn on; `pool` says whether the process has browsers, `app`
-    /// whether the desktop app is connected, `docs` whether it keeps documents.
-    pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool, docs: bool) -> Self {
+    /// whether the desktop app is connected, `docs` whether it keeps documents, `agents` what this
+    /// session is among agents.
+    pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool, docs: bool, agents: AgentRole) -> Self {
         let mut groups = Vec::new();
         if settings.web_search.enabled {
             groups.push(Group {
@@ -97,6 +111,19 @@ impl Deferred {
                 tools: crate::docs::doc_tools(),
             });
         }
+        match agents {
+            AgentRole::Main => groups.push(Group {
+                name: AGENTS,
+                summary: AGENTS_SUMMARY.into(),
+                tools: crate::agents::deferred_agent_tools(),
+            }),
+            AgentRole::SubAgent => groups.push(Group {
+                name: AGENTS,
+                summary: SUB_AGENT_AGENTS_SUMMARY.into(),
+                tools: crate::agents::deferred_sub_agent_tools(),
+            }),
+            AgentRole::None => {}
+        }
         Self { groups }
     }
 
@@ -124,7 +151,7 @@ mod tests {
 
     #[test]
     fn document_catalog_advertises_workbook_support() {
-        let deferred = Deferred::of(&SystemSettings::of(&Config::default()), false, false, true);
+        let deferred = Deferred::of(&SystemSettings::of(&Config::default()), false, false, true, super::AgentRole::None);
         let doc = deferred.group("doc").expect("document group");
         assert!(doc.summary.contains("XLSX"));
         assert!(doc.summary.contains("cell ranges"));

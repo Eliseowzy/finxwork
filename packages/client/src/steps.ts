@@ -63,6 +63,8 @@ export type Step =
   | { kind: "agents"; key: string; launches: AgentLaunch[] }
   /** A sub-agent's report, delivered to the session as mail; no_reply: it had not replied, and the text only says so to the model. routine: a routine's run sent it. */
   | { kind: "report"; key: string; agent_id: string; name: string; status: AgentStatus; text: string; no_reply: boolean; ts: number; agent?: AgentView; routine?: { id: string; run: string } }
+  /** What a sub-agent sent while it worked, delivered to the session as mail: its round of work goes on. */
+  | { kind: "agent_message"; key: string; agent_id: string; name: string; text: string; ts: number; agent?: AgentView }
   /** Where a task ended; chain: the whole of a piece of work that ends here. */
   | { kind: "end"; key: string; end: TaskEndItem; chain?: TaskChain }
   | { kind: "note"; key: string; note: NoteEntry };
@@ -112,7 +114,8 @@ export function conversation(v: SessionView): Step[] {
           const text = m.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n");
           const from = e.mail.from;
           const routine = e.mail.routine_id ? { id: e.mail.routine_id, run: from.id } : undefined;
-          out.push({ kind: "report", key: e.message_id, agent_id: from.id, name: from.name, status: e.mail.status, text: reportBody(text), no_reply: e.mail.no_reply === true, ts: m.ts, agent: byId.get(from.id), routine });
+          if (e.mail.kind === "message") out.push({ kind: "agent_message", key: e.message_id, agent_id: from.id, name: from.name, text: messageBody(text), ts: m.ts, agent: byId.get(from.id) });
+          else out.push({ kind: "report", key: e.message_id, agent_id: from.id, name: from.name, status: e.mail.status, text: reportBody(text), no_reply: e.mail.no_reply === true, ts: m.ts, agent: byId.get(from.id), routine });
         } else if (m.role === "user") {
           const { text, files, comments, quotes, tabs } = userText(m.content);
           const images = m.content.flatMap((c) => (c.type === "image" ? [{ mime_type: c.mime_type, data: c.data }] : []));
@@ -200,7 +203,8 @@ function taskEnds(v: SessionView): { ends: Map<number, { hidden: boolean; chain?
   const reported = new Map<string, number[]>();
   const close = (id: string, i: number) => reported.set(id, [...(reported.get(id) ?? []), i]);
   v.entries.forEach((e, i) => {
-    if (e.type === "message" && e.mail) close(e.mail.from.id, i);
+    // A message on the way ends no round.
+    if (e.type === "message" && e.mail && e.mail.kind !== "message") close(e.mail.from.id, i);
     if (e.type === "tool_result" && detailsOf(e.result).reported === true) close(String(detailsOf(e.result).agent_id), i);
   });
 
@@ -220,7 +224,7 @@ function taskEnds(v: SessionView): { ends: Map<number, { hidden: boolean; chain?
       const id = String(d.agent_id ?? "");
       if (d.background === true && ((reported.get(id) ?? []).some((j) => j > i) || running.has(id))) open.set(id, (open.get(id) ?? 0) + 1);
     }
-    if ((e.type === "message" && e.mail) || (e.type === "tool_result" && detailsOf(e.result).reported === true)) {
+    if ((e.type === "message" && e.mail && e.mail.kind !== "message") || (e.type === "tool_result" && detailsOf(e.result).reported === true)) {
       const id = e.type === "message" ? e.mail!.from.id : String(detailsOf(e.result).agent_id);
       open.set(id, Math.max(0, (open.get(id) ?? 0) - 1));
     }
@@ -258,6 +262,12 @@ export function detailsOf(r: ToolResultMessage | undefined): Record<string, unkn
 /** A report's own words: the mail's text without the wrapper and the note after it. */
 export function reportBody(text: string): string {
   const m = /^<(?:agent|routine)_report[^>]*>\n?([\s\S]*?)\n?<\/(?:agent|routine)_report>/.exec(text.trim());
+  return (m ? m[1] : text).trim();
+}
+
+/** A message's own words: the mail's text without the agent_message wrapper. */
+export function messageBody(text: string): string {
+  const m = /^<agent_message[^>]*>\n?([\s\S]*?)\n?<\/agent_message>$/.exec(text.trim());
   return (m ? m[1] : text).trim();
 }
 

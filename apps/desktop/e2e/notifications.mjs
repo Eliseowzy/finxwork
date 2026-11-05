@@ -42,7 +42,8 @@ const provider = http.createServer((req, res) => {
     if (!req.url?.endsWith("/chat/completions")) return res.writeHead(404).end();
     const { messages, tools } = JSON.parse(body);
     const isBot = tools?.some((t) => t.function?.name === "send_to_user");
-    const last = messages.at(-1);
+    // Past the word that follows each of the owner's messages (bot-design §3.14).
+    const last = messages.filter((m) => !JSON.stringify(m.content ?? "").includes("<reminder>")).at(-1);
     const answer = (text) => res.end(isBot ? sse(call("send_to_user", { text, end_turn: true }), "tool_calls") : sse({ role: "assistant", content: text }, "stop"));
     const said = typeof last.content === "string" ? last.content : (last.content ?? []).map((c) => c.text ?? "").join("");
     if (last.role !== "tool" && said.includes("请失败")) return res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: { message: "mock: refused" } }));

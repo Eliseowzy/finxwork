@@ -2,29 +2,29 @@
    browser panel's (.bgp.brp, .brp-strip, .brp-tab in app.css); below them its own bar, the
    tree beside the editor or the preview, and a note when there is a choice to make. */
 
-/* GitHub's colours, as the conversation's code blocks have them (Shiki's GitHub themes), for the editor (files/Editor.tsx). */
+/* FinxWork's syntax colours, shared with the conversation's Shiki themes, for the editor (files/Editor.tsx). */
 :root {
-  --syn-keyword: #cf222e;
-  --syn-string: #0a3069;
-  --syn-comment: #6e7781;
-  --syn-constant: #0550ae;
-  --syn-function: #8250df;
-  --syn-type: #953800;
-  --syn-property: #0550ae;
-  --syn-invalid: #82071e;
+  --syn-keyword: #1B36D9;
+  --syn-string: #087F78;
+  --syn-comment: #626775;
+  --syn-constant: #7543BA;
+  --syn-function: #1A5CE6;
+  --syn-type: #7543BA;
+  --syn-property: #A94716;
+  --syn-invalid: #B0232F;
   /* The lines a link pointed at, and search matches. */
   --target: rgba(255, 196, 0, .22);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --syn-keyword: #ff7b72;
-    --syn-string: #a5d6ff;
-    --syn-comment: #8b949e;
-    --syn-constant: #79c0ff;
-    --syn-function: #d2a8ff;
-    --syn-type: #ffa657;
-    --syn-property: #79c0ff;
-    --syn-invalid: #ffa198;
+    --syn-keyword: #7AB0FF;
+    --syn-string: #59CDB8;
+    --syn-comment: #9AA3B5;
+    --syn-constant: #B69AFF;
+    --syn-function: #91BFFF;
+    --syn-type: #B69AFF;
+    --syn-property: #F3B46B;
+    --syn-invalid: #FF8C94;
     --target: rgba(255, 196, 0, .16);
   }
 }

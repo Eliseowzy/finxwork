@@ -67,7 +67,7 @@ const dev = http.createServer((_, res) => res.writeHead(200, { "content-type": "
 await new Promise((r) => dev.listen(0, "127.0.0.1", r));
 const devURL = `http://127.0.0.1:${dev.address().port}/`;
 
-// ── the model: reads a file and runs echo, then replies; the reply waits before its last block closes ──
+// ── the model: reads a file and runs echo, then replies; the reply waits for the draft checks before its last block closes ──
 const reply = [
   "改好了。入口在 [应用入口](src/app.ts:3)，说明见 [报告草稿](docs/%E6%8A%A5%E5%91%8A%20%E8%8D%89%E7%A8%BF.md)，旧的 [不存在](src/missing.ts) 已删掉。",
   "",
@@ -89,6 +89,7 @@ const reply = [
 const rest = "\n```\n\n就这些。";
 const systems = [];
 let pausing = false;
+let resumeReply = () => {};
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n` +
   `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`;
@@ -114,7 +115,12 @@ const provider = http.createServer((req, res) => {
       await sleep(20);
     }
     pausing = true;
-    await sleep(3000);
+    // Keep the draft open until the UI assertions have observed it. A fixed
+    // delay can expire while Chromium is busy compiling its first render.
+    await new Promise((resolve) => {
+      resumeReply = resolve;
+      res.once("close", resolve);
+    });
     pausing = false;
     chunk(rest);
     res.end(sse({}, "stop").split("\n\n").slice(1).join("\n\n"));
@@ -265,6 +271,14 @@ try {
     sh("pnpm", ["--dir", desktop, "build"]);
   }
   const page = await launch();
+  // Ask the live kernel before reloading the new-session page: a logged ready
+  // event can belong to a connection the supervisor has since replaced.
+  let hosted = false;
+  for (let i = 0; i < 100 && !hosted; i++) {
+    hosted = (await finxCall("browser/status").catch(() => null))?.result?.embedded === true;
+    if (!hosted) await sleep(100);
+  }
+  check(hosted, "the app's browser host never became ready");
   await page.until("the new session page", `!!document.querySelector(".cmp-in")`);
   // The project, as picked before: a new session works in it.
   await page.run(`localStorage.setItem("main-view", JSON.stringify({ ...JSON.parse(localStorage.getItem("main-view") ?? "{}"), draft: { cwd: ${JSON.stringify(proj)}, model: null, thinking: null, permission: "manual" } }))`);
@@ -274,6 +288,7 @@ try {
   const watchCopies = `navigator.clipboard.writeText = async (t) => void (window.__copied ??= []).push(t)`;
   await page.run(watchCopies);
   const copied = () => page.run(`(window.__copied ?? []).at(-1) ?? null`);
+
 
   step("a task reads a file, runs echo and answers");
   await page.run(`document.querySelector(".cmp-in").focus()`);
@@ -287,6 +302,7 @@ try {
   const draftBars = await page.run(`[...document.querySelectorAll(".am .cblock")].map((b) => [b.querySelector(".cb-lang")?.textContent ?? "", b.querySelectorAll(".cb-b").length, !!b.querySelector(".cb-warn")])`);
   check(same(draftBars, [["bash", 2, false], ["sh", 2, true], ["python", 0, false]]), `the blocks while writing: ${JSON.stringify(draftBars)}`);
   await page.shot("1-writing");
+  resumeReply();
   await page.until("the reply done", `document.body.innerText.includes("就这些")`, 20000);
   await page.until("the task ended", `!document.querySelector(".working")`, 20000);
 

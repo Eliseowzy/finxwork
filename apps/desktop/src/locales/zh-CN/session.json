@@ -80,6 +80,7 @@
     },
     "open": "在后台面板中查看执行过程",
     "report": "<b>{{name}}</b> 的汇报",
+    "message": "<b>{{name}}</b> 发来消息",
     "noReply": {
       "interrupted": "停下时还没有回复",
       "completed": "做完了，但没有回复"
@@ -91,7 +92,8 @@
     "stopped_other": "{{count}} 条后台任务已中断，回复 finx 就能接着做",
     "sent": "已发消息给",
     "sending": "正在发消息给",
-    "messageObject": "{{to}}：{{message}}"
+    "messageObject": "{{to}}：{{message}}",
+    "mainAgent": "主智能体"
   },
   "background": {
     "title": "后台任务",
@@ -687,5 +689,24 @@
       "unreachable": "{{name}} 连不上",
       "bad_response": "{{name}} 的回答读不了"
     }
+  },
+  "markdown": {
+    "table": "数据表格",
+    "copyMarkdown": "复制 Markdown",
+    "copyTsv": "复制到 Excel",
+    "copyRich": "复制富文本表格",
+    "copied": "已复制",
+    "copyFailed": "复制失败，请重试",
+    "expand": "展开",
+    "close": "关闭",
+    "tableOpen": "表格已展开 · 返回",
+    "details": "展开详情",
+    "diagram": "图形",
+    "source": "源码",
+    "exportSvg": "导出 SVG",
+    "diagramFailed": "此图无法渲染，已在操作栏下方显示源码。",
+    "rendering": "正在绘制图形…",
+    "footnotes": "脚注",
+    "backToReference": "返回引用位置"
   }
 }

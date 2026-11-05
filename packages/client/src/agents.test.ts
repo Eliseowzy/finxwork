@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, SessionSnapshot, Usage, UsageTotals } from "@finx/protocol";
 import { applyEvents, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "./session.ts";
-import { agentBrief, agentTaskOf, conversation, reportBody, taskGists } from "./steps.ts";
+import { agentBrief, agentTaskOf, conversation, messageBody, reportBody, taskGists } from "./steps.ts";
 import { agentTask } from "./mock/agents.ts";
 
 // Sub-agents as the window shows them: what spawn_agent started, their own
@@ -45,6 +45,12 @@ const report = (agent: string, name: string, body: string, status: "completed" |
   message_id: `mail-${agent}-${seq + 1}`,
   message: { role: "user", content: [{ type: "text", text: `<agent_report agent="${name}" status="${status}">\n${body}\n</agent_report>` }], ts: 1000 * (seq + 1) },
   mail: { id: `m-${agent}-${seq + 1}`, from: { id: agent, name }, kind: "report", status, ...(no_reply ? { no_reply } : {}) },
+});
+const note = (agent: string, name: string, body: string): EventMsg => ({
+  type: "message_completed",
+  message_id: `note-${agent}-${seq + 1}`,
+  message: { role: "user", content: [{ type: "text", text: `<agent_message from="${name}">\n${body}\n</agent_message>` }], ts: 1000 * (seq + 1) },
+  mail: { id: `n-${agent}-${seq + 1}`, from: { id: agent, name }, kind: "message", status: "running" },
 });
 const inner = (agent: string, n: number, msg: EventMsg): EventMsg => ({ type: "agent_event", agent_id: agent, event: { seq: n, ts: 1000 * (seq + 1), ...msg } as Event });
 const done = (task: string): EventMsg => ({ type: "task_completed", task_id: task, usage: totals, reason: "done" });
@@ -251,6 +257,62 @@ test("tasks that open alike show the sentence that tells them apart", () => {
   assert.deepEqual(taskGists(["在根目录为一个 Python 包写单元测试。只做 mathutil 部分。", "在根目录为一个 Python 包写单元测试。只做 textutil 部分。"]), ["只做 mathutil 部分。", "只做 textutil 部分。"]);
   // List marks go too; underscores in names stay.
   assert.deepEqual(taskGists(["- Add __init__.py to a.", "- Add __init__.py to b."]), ["Add __init__.py to a.", "Add __init__.py to b."]);
+});
+
+test("what a sub-agent sends on the way is a step of its own, and its round of work goes on", () => {
+  let v = play([
+    { type: "task_started", task_id: "t1" },
+    user("u1", "sum the sales"),
+    assistant("a1", [spawnCall("c1", "sales")]),
+    ...spawned("c1", "ag1", "sales"),
+    assistant("a2", [{ type: "text", text: "It works." }]),
+    done("t1"),
+    { type: "task_started", task_id: "t2", trigger: "mail" },
+    note("ag1", "sales", "March is missing."),
+    assistant("a3", [{ type: "text", text: "Heard." }]),
+    done("t2"),
+  ]);
+  let steps = conversation(v);
+  assert.deepEqual(steps.map((s) => s.kind), ["user", "agents", "text", "agent_message", "text"], "no end: the agent still works");
+  const m = steps[3];
+  assert.ok(m.kind === "agent_message" && m.name === "sales" && m.text === "March is missing." && m.agent?.id === "ag1");
+  assert.deepEqual(runningAgents(v).map((a) => a.name), ["sales"]);
+
+  v = play(
+    [
+      { type: "agent_status", agent_id: "ag1", name: "sales", status: "completed" },
+      { type: "task_started", task_id: "t3", trigger: "mail" },
+      report("ag1", "sales", "Summed."),
+      assistant("a4", [{ type: "text", text: "Done." }]),
+      done("t3"),
+    ],
+    v,
+  );
+  steps = conversation(v);
+  assert.deepEqual(steps.map((s) => s.kind), ["user", "agents", "text", "agent_message", "text", "report", "text", "end"]);
+  const end = steps.at(-1);
+  assert.ok(end?.kind === "end" && end.chain?.agents === 1, "the report ended the piece of work");
+});
+
+test("what a peer sends shows in the agent's own conversation", () => {
+  const v = play([
+    { type: "task_started", task_id: "t1" },
+    user("u1", "go"),
+    assistant("a1", [spawnCall("c1", "caller")]),
+    ...spawned("c1", "ag1", "caller"),
+    inner("ag1", 1, { type: "task_started", task_id: "t1" }),
+    inner("ag1", 2, user("x1", agentTask("caller", "Write the caller."))),
+    inner("ag1", 3, note("ag2", "api", "The API is in api.rs.")),
+  ]);
+  const own = conversation(v.agents[0].view);
+  const m = own.at(-1);
+  assert.ok(m?.kind === "agent_message" && m.name === "api" && m.text === "The API is in api.rs.");
+  assert.equal(v.agents[0].status, "running");
+});
+
+test("a message's own words come without the wrapper", () => {
+  assert.equal(messageBody('<agent_message from="a">\nMarch is missing.\n\nGoing on.\n</agent_message>'), "March is missing.\n\nGoing on.");
+  assert.equal(messageBody("plain"), "plain");
 });
 
 test("a report's own words come without the wrapper and the note after it", () => {

@@ -151,6 +151,14 @@ pub enum EntryKind {
         mail: Box<MailInfo>,
         message: Message,
     },
+    /// What a sub-agent sent while it worked, delivered: `message` is what the model sees. An
+    /// entry of its own rather than another kind of `Mail`: a version that doesn't know it keeps
+    /// its place in the branch, where a `Mail` it cannot read would cut the branch there
+    /// (agent-messaging-design §8).
+    AgentMessage {
+        mail: Box<MailInfo>,
+        message: Message,
+    },
     /// Marks a rewind: the parent is the point the branch continues from.
     Branch {
         /// It went back before the first user message: the next one is the session's first.
@@ -188,6 +196,13 @@ pub enum EntryKind {
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         routine: bool,
     },
+    /// A bot's session: its task was about to end with what came of its work unsent, and the
+    /// model is reminded of it, once per task (bot-turn-design §6).
+    Undelivered,
+    /// A bot's session: follows each message from its owner. Models often answer in plain text
+    /// whatever the system prompt says; a word right after the message mostly settles it
+    /// (bot-design §3.14).
+    ReplyNudge,
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.
     #[serde(other, skip_serializing)]
@@ -231,6 +246,9 @@ pub struct SystemPromptEntry {
     pub skills: Vec<SkillRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<String>,
+    /// A bot's session: which `bot.md` the text comes from (bot-turn-design §8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
 }
 
 /// The data of an [`EntryKind::AgentSpawned`].
@@ -347,6 +365,7 @@ mod tests {
             r#"{"id":"541a9254","parent":"541a9253","ts":1793224076429,"type":"compaction","seq":2,"reason":"overflow","summary":"s","retained":[],"model":"m/x","usage":{"input":1,"output":2,"cache_read":0,"cache_write":0,"cost":{"currency":"USD","input":0.0,"output":0.0,"cache_read":0.0,"cache_write":0.0,"total":0.0}},"tokens_before":9,"tokens_after":3,"dropped_messages":4}"#,
             r#"{"id":"2787b99f","parent":"ba255377","ts":1793224073141,"type":"agent_spawned","agent_id":"01a1847b-dfb5-729b-a322-ae11d3728a76","name":"a0","session_file":"/tmp/sessions/2026/10/29/20261029T054753-01a1847b.jsonl","call_id":"call_1"}"#,
             r#"{"id":"2787b9a0","parent":"2787b99f","ts":1793224073142,"type":"mail","mail":{"id":"m1","from":{"id":"01a1847b","name":"a0"},"kind":"report","status":"completed"},"message":{"role":"user","content":[{"type":"text","text":"report"}],"ts":3}}"#,
+            r#"{"id":"2787b9a7","parent":"2787b9a0","ts":1793224073142,"type":"agent_message","mail":{"id":"m2","from":{"id":"01a1847b","name":"a0"},"kind":"message","status":"running"},"message":{"role":"user","content":[{"type":"text","text":"note"}],"ts":3}}"#,
             r#"{"id":"2787b9a1","parent":"2787b9a0","ts":1793224073143,"type":"system_prompt","text":"be brief","tools":["read","bash"]}"#,
             r#"{"id":"2787b9a3","parent":"2787b9a1","ts":1793224073145,"type":"system_prompt","text":"be brief","tools":["read"],"skills":[{"name":"review","path":"/p/.finx/skills/review/SKILL.md","scope":"project","model_invocable":true,"argument_hint":"[file]"}],"mcp":"MCP servers: vault"}"#,
             r#"{"id":"2787b9a4","parent":"2787b9a3","ts":1793224073146,"type":"message","message":{"role":"user","content":[{"type":"text","text":"<skill>"}],"ts":3},"skill":{"name":"review","path":"/p/.finx/skills/review/SKILL.md","input":"/review a.rs"}}"#,
