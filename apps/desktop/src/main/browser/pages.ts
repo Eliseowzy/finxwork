@@ -462,13 +462,15 @@ export function openBrowser(finxSession = homeBrowserSession) {
 
 /**
  * A page the person opened from a conversation, as a link in a reply (content-actions-design
- * §5.2): the conversation's tab already at that address, else a new tab of its own.
+ * §5.2): the conversation's tab already at that address, else a new tab of its own. `fresh`:
+ * that tab shows the page as it is now, for a local file that may have been written again.
  */
-export function openURL(finxSession: string, url: string) {
+export function openURL(finxSession: string, url: string, fresh = false) {
   const same = (a: string, b: string) => a.replace(/\/$/, "") === b.replace(/\/$/, "");
   const existing = currentTabs().find((t) => t.session === finxSession && same(t.url, url));
-  if (existing) showTab(existing.targetId);
-  else createHomeTab(url, finxSession);
+  if (!existing) return createHomeTab(url, finxSession);
+  if (fresh) tabContents(existing.targetId)?.reload();
+  showTab(existing.targetId);
 }
 
 function createHomeTab(url: string, owner = homeBrowserSession) {
