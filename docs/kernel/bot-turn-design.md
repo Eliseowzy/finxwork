@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.9 |
+| 版本 | v0.10 |
 | 日期 | 2026-11-05 |
 | 状态 | 已实现（分支 `feat/bot-turn`）；实施结果和与原方案的出入见 §13，主人已确认这些出入 |
 | 关系 | 确认后改 [bot-design.md](bot-design.md) 的 §3、§11、附录 A，[PRD](../desktop/bot-mode-design.md) 的 §6.7、§6.9，以及 [子智能体方案](subagent-design.md) 的工具部分（§5.3 的两个工具是所有主会话共用的内核能力）。依赖子智能体方案 v2.3（子智能体的确认由主用户批准，在分支 `feat/subagent-approvals`） |
@@ -243,6 +243,8 @@ What you wrote stays private and has not reached the user. If they are waiting f
 没有采用的：表情回应、语音、小部件、群聊、对等智能体和云智能体，finx 现在没有这些能力；子智能体数量的软上限，finx 不设上限；待办队列，见 §9。
 
 ### 7.2 新文本
+
+> 这是第一版的定稿，现在的文字见 [bot-design](bot-design.md) 附录 A.1，改动的依据见 §14。
 
 替换 `bot.md` 的"How a turn works"，用我们自己的措辞和工具名。下面是统计以后定下的文字，和主人看过的第一版有几处不同（§13.2）：
 
@@ -562,3 +564,51 @@ send_message lets it continue later. The result lists what stopped and what had 
 ### 13.7 接着做的：智能体之间的通信
 
 §13.6 最后留下的中途通知，做成了 [智能体通信方案](agent-messaging-design.md)。`check_agents` 因此改名 `list_agents`，本方案里的名字都跟着改了；子智能体现在也有这个工具和 `send_message`，§5.3 里"子智能体调不到"的部分以那份方案为准。
+
+## 14. 提示词第二版（2026-11-05）
+
+主人试用时看到两个问题：发过去不能马上有回复；复杂的活不主动交给子智能体。主人要求先靠提示词解决，不加内核机制。
+
+### 14.1 真实记录里看到的
+
+读主人三个 Bot 的日志，模型不是没看到规则，是自己绕过去了：
+
+| 模型的思考 | 对应的文字问题 |
+|---|---|
+| `answer directly without needing any tools`；或写着要用 `send_to_user`，输出的却是文字 | 把 `send_to_user` 当成干活的工具 |
+| `Since I have the answer now largely`，之前已经想了约一万字符 | "有没有答案"要先把答案想一遍 |
+| `this will take maybe 3-4 searches ... do 2 parallel searches now`，最后 9 轮 | "超过约两轮"要预估，还能靠并行绕过 |
+| `Hmm, but it's the core deliverable.` | 没说主要的活也能交出去 |
+| `I already have most facts` | 子智能体看不到对话，模型嫌写说明麻烦 |
+| `But I already sent an ack.` | 确认和委派分两步，第二步又犹豫 |
+
+参考提示词的框架和第一版几乎一样，差别在 `Handle only ...`、`must go`、`if it's quick`、`You delegate`、`instead of blocking your own turn` 这些措辞，第一版为了首调用率把其中几处放松了。
+
+### 14.2 改了什么
+
+- 不加机制，只改模型读到的文字：`bot.md`、每句话后面的提示、没回话的提醒、Bot 版 `spawn_agent`（bot-design D-480–D-482，全文在附录 A）。
+- 提示的语序试了七种，差别很大：只有定稿这种语序，简单问题和长对话的委派能同时达标。
+
+### 14.3 统计
+
+全部是百炼 Token Plan。新增场景：`complex`（6 个调研、报表、长文请求）、`simple`（6 个短问题）、`medium`、`lookup`、`ask`；`FINX_BENCH_SEED` 让 Bot 带着一段真实对话开始。`complex` 拿到决定就停，不等活做完。"自己跑"指委派之前自己跑了几轮工具。
+
+| 情况 | 看什么 | 第一版 | 第二版 |
+|---|---|---|---|
+| `qwen3.8-flash`，新 Bot，复杂任务 | 委派；自己跑（最多）；第一个气泡中位数 | 8/12；5；7.9 秒 | 18/18；2；6.2 秒 |
+| `qwen3.8-flash`，新 Bot，短问题 | 第一步发消息；彻底没回 | 3/18；5/18 | 18/18 和另一组 34/36；0 和 1/36 |
+| `deepseek-v4.1-flash`，新 Bot，复杂任务 | 委派；自己跑（最多）；气泡 | 6/12；5；2.7 秒 | 18/18；0；1.8 秒 |
+| `deepseek-v4.1-flash`，新 Bot，短问题 | 第一步发消息；彻底没回 | 15/18；1/18 | 18/18；0 |
+| `qwen3.8-flash`，带 2.7 万 token 的真实对话 | 委派；自己跑（最多）；第一步发消息；气泡 | 8/12；5；11/12；7.7 秒 | 10/12；0；12/12；13.3 秒。没交的 2 次都是这段对话已经研究过的问题 |
+| `qwen3.8-flash`，带 25 万 token 的真实对话，写报告 | 委派；气泡中位数 | 没有定稿的提示时 1 到 2/6；约 30 秒 | 5/6；23 秒 |
+
+不委派的一面（18 遍）：短问题两个模型都是 0 次开子智能体；单次查询 `qwen3.8-flash` 2 次、`deepseek-v4.1-flash` 4 次，有一点过度；`medium` 约一半，写脚本的交了，一步能算完的没交。
+
+### 14.4 还没解决的
+
+- **第一个气泡在长对话里还是慢**：25 万 token 时中位数 20 到 30 秒，主要是读上下文；2.7 万 token 这一组还比第一版慢，可能是测试时的并发，没有单独查。这些数字都是没有缓存时的，种子的每次运行工作目录不同，缓存命中不了。
+- **压缩挡在第一条回复前面**：对话正好到压缩线时，先压缩约一分钟才开始回，最慢 100 到 120 秒。提示词管不到，要改得动内核。
+- **历史里的旧习惯和失败记录**：25 万 token 那段对话里子智能体因为额度错误失败过，模型的思考写着 `agents hit quota errors earlier`，所以还有一次自己写。
+- **寒暄偶尔还是写成文字**："谢谢"这种，定稿提示的两组共 54 遍里 1 遍提醒后也没发，主人看到失败卡。
+- **没测过的模型**：`gpt-6.1-sol` 这次没跑，统计只有上面两个模型。
+- **百炼的额度错误不重试**：`Allocated quota exceeded` 的 429 带 `insufficient_quota`，内核按欠费处理（`finx-llm/src/error.rs`）。测试中它时断时续，当时额度也确实紧张，是不是该重试还没定。
