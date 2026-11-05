@@ -21,7 +21,8 @@ export { inputOp } from "./sheet/model";
 // into sight (doc/cells); edits go back as SheetOps (doc/apply) and come back with their impact,
 // which the grid lights up. The agent's edits arrive as a new revision of the document.
 
-type Sel = { anchor: Pos; focus: Pos };
+/** A selection: from `anchor` to `focus`; `at`, when set, the active cell Enter and Tab have moved to inside it. */
+type Sel = { anchor: Pos; focus: Pos; at?: Pos };
 
 const BLOCK = 100;
 const HEAD_W = 44;
@@ -44,7 +45,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   const sheet: SheetInfo | undefined = (info.sheets ?? []).find((s) => s.name === sheetName);
   const [sel, setSel] = useState<Sel>({ anchor: { r: 1, c: 1 }, focus: { r: 1, c: 1 } });
   const [editing, setEditing] = useState<{ text: string; inBar: boolean } | null>(null);
-  const [lit, setLit] = useState<{ edited: Set<string>; affected: Set<string> } | null>(null);
+  // Cells lit up: what the agent changed (till dismissed), or what one of your edits changed downstream (till you move on). Your own edits are not marked, as in Excel.
+  const [lit, setLit] = useState<{ cells: Set<string>; mine?: boolean } | null>(null);
   const [impact, setImpact] = useState<{ impact: Impact; byAgent: boolean } | null>(null);
   const [note, setNote] = useState<{ text: string; kind: "refused" | "conflict" } | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -151,7 +153,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         for (const [k, v] of cache.current.cells) if (old.cells.has(k) && old.cells.get(k)!.text !== v.text) changed.add(k);
         for (const k of old.cells.keys()) if (!cache.current.cells.has(k) && old.cells.get(k)!.text) changed.add(k);
         if (changed.size) {
-          setLit({ edited: new Set(), affected: changed });
+          setLit({ cells: changed });
           const first = changed.values().next().value as string | undefined;
           setAgentNotice({ count: changed.size, first });
           logActivity({ revision: info.revision, title: t("sheet.agentChanged", { count: changed.size }) });
@@ -230,7 +232,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   }, [sheetName]);
 
   // ── editing ──
-  const active = sel.focus;
+  // The active cell is where the selection began, as in Excel; the focus is the end that moves.
+  const active = sel.at ?? sel.anchor;
   const activeCell = cache.current.cells.get(addr(active));
   const selected = areaOf(sel.anchor, sel.focus);
   const selectedRange = rangeText(selected);
@@ -278,7 +281,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     setSheetName(jump.anchor.sheet);
     reach(range.r2, range.c2);
     setSel({ anchor: { r: range.r1, c: range.c1 }, focus: { r: range.r2, c: range.c2 } });
-    setLit({ edited: new Set(), affected: new Set([addr({ r: range.r1, c: range.c1 })]) });
+    setLit({ cells: new Set([addr({ r: range.r1, c: range.c1 })]) });
   }, [jump?.seq, docId]);
 
   const apply = async (ops: SheetOp[]) => {
@@ -298,7 +301,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         const r = await send();
         made(r);
         setNote(null);
-        setLit({ edited: new Set(r.impact.edited.filter((e) => e.sheet === sheet.name).map((e) => e.cell)), affected: new Set(onSheet(r.impact.affected ?? [], sheet.name)) });
+        setLit({ cells: new Set(onSheet(r.impact.affected ?? [], sheet.name)), mine: true });
         setImpact(r.impact.affected_count || r.impact.key_outputs?.length || r.impact.needs_excel?.length ? { impact: r.impact, byAgent: false } : null);
         logActivity({ revision: r.revision, title: t("sheet.youChanged", { count: r.impact.edited.length }), impact: r.impact });
         setAgentNotice(null);
@@ -500,6 +503,19 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     return done;
   };
 
+  /** After an undo or redo, as in Excel: the cells it changed are selected, on their sheet, and brought into sight. */
+  const selectChanged = (changed: { sheet: string; cell: string }[]) => {
+    const on = changed.some((x) => x.sheet === sheetName) ? sheetName : changed[0]?.sheet;
+    const at = changed.filter((x) => x.sheet === on).map((x) => parseAddr(x.cell)).filter((p): p is Pos => !!p);
+    if (!on || !at.length) return;
+    const top = { r: Math.min(...at.map((p) => p.r)), c: Math.min(...at.map((p) => p.c)) };
+    const bottom = { r: Math.max(...at.map((p) => p.r)), c: Math.max(...at.map((p) => p.c)) };
+    if (on !== sheetName) setSheetName(on);
+    reach(bottom.r, bottom.c);
+    setSel({ anchor: top, focus: bottom });
+    requestAnimationFrame(() => reveal(top));
+  };
+
   const history = (which: "doc/undo" | "doc/redo") =>
     enqueue(async () => {
       try {
@@ -507,6 +523,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         made(r);
         setImpact(null);
         setLit(null);
+        selectChanged(r.impact.edited);
         logActivity({ revision: r.revision, title: t(which === "doc/undo" ? "sheet.undone" : "sheet.redone"), impact: r.impact });
       } catch (e) {
         st.show(errorText(e), undefined, true);
@@ -624,6 +641,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     reach(q.r, q.c);
     setSel((s) => (extend ? { anchor: s.anchor, focus: q } : { anchor: q, focus: q }));
     requestAnimationFrame(() => reveal(q));
+    // Moving on puts out what your last edit lit downstream; what the agent changed stays till dismissed.
+    setLit((l) => (l?.mine ? null : l));
   };
   const jumpCell = (targetSheet: string, cell: string) => {
     const p = parseAddr(cell);
@@ -634,6 +653,25 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     setImpact(null);
     setAgentNotice(null);
     requestAnimationFrame(() => reveal(p));
+  };
+  /** Enter (down) or Tab (across), back with ⇧: in a range the active cell goes round inside it and the range stays, as in Excel; else on to the next cell. */
+  const advance = (down: boolean, back: boolean) => {
+    const g = areaOf(sel.anchor, sel.focus);
+    const d = back ? -1 : 1;
+    if (g.r1 === g.r2 && g.c1 === g.c2) return go(down ? { r: active.r + d, c: active.c } : { r: active.r, c: active.c + d }, false);
+    let { r, c } = active;
+    if (down) {
+      r += d;
+      if (r > g.r2) (r = g.r1), (c = c + 1 > g.c2 ? g.c1 : c + 1);
+      else if (r < g.r1) (r = g.r2), (c = c - 1 < g.c1 ? g.c2 : c - 1);
+    } else {
+      c += d;
+      if (c > g.c2) (c = g.c1), (r = r + 1 > g.r2 ? g.r1 : r + 1);
+      else if (c < g.c1) (c = g.c2), (r = r - 1 < g.r1 ? g.r2 : r - 1);
+    }
+    setSel((s) => ({ ...s, at: { r, c } }));
+    setLit((l) => (l?.mine ? null : l));
+    requestAnimationFrame(() => reveal({ r, c }));
   };
   /** ⌘+arrow: to the edge of the data, as Excel goes. */
   const edge = (p: Pos, dr: number, dc: number): Pos => {
@@ -660,10 +698,10 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       void openExcel();
     } else if (arrows[e.key]) {
       const [dr, dc] = arrows[e.key];
-      go(mod ? edge(sel.focus, dr, dc) : { r: sel.focus.r + dr, c: sel.focus.c + dc }, e.shiftKey);
+      const from = e.shiftKey ? sel.focus : active;
+      go(mod ? edge(from, dr, dc) : { r: from.r + dr, c: from.c + dc }, e.shiftKey);
     } else if (e.key === "Enter" || e.key === "Tab") {
-      const back = e.shiftKey ? -1 : 1;
-      go(e.key === "Enter" ? { r: active.r + back, c: active.c } : { r: active.r, c: active.c + back }, false);
+      advance(e.key === "Enter", e.shiftKey);
     } else if (e.key === "F2") {
       editable && setEditing({ text: editText, inBar: false });
     } else if ((e.key === "Backspace" || e.key === "Delete") && sheet && editable) {
@@ -760,7 +798,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         fontStyle: d?.look?.italic ? "italic" : undefined,
         justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start",
       };
-      const cls = ["sht-c", text ? "has" : "", lit?.edited.has(key) ? "edited" : "", lit?.affected.has(key) ? "lit" : "", m ? "merged" : "", traced.has(key) ? "traced" : "", found.has(key) ? "found" : "", hard ? "hard" : "", lensed !== null ? "lensed" : "", asFormula ? "asformula" : ""].join(" ");
+      const cls = ["sht-c", text ? "has" : "", lit?.cells.has(key) ? "lit" : "", m ? "merged" : "", traced.has(key) ? "traced" : "", found.has(key) ? "found" : "", hard ? "hard" : "", lensed !== null ? "lensed" : "", asFormula ? "asformula" : ""].join(" ");
       const title = lensed !== null ? t("sheet.lensTip", { raw: d!.text, shown: lensed, unit: unitName(lens!.unit) }) : hard ? t("sheet.hardcoded") : (d?.formula ?? undefined);
       cells.push(
         <div key={`${r}:${c}`} data-cell={key} className={cls} style={style} title={title}>
@@ -1006,7 +1044,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       {loadError && <div className="fpn-note" role="alert"><span>{t("sheet.loadFailed")} {loadError}</span><button className="btn sm" onClick={() => { setLoadError(null); reread(false); }}>{t("files.retry")}</button></div>}
       {!editable && !sheet.chart && <div className="fpn-note" role="status"><Icon name="lock" /><span>{t("sheet.readOnly")}</span><button className="btn sm" onClick={() => void openExcel()}>{t("sheet.openExcel")}</button></div>}
       {agentNotice && <div className="sht-agent" role="status"><Icon name="sparkle" /><span>{t("sheet.agentChanged", { count: agentNotice.count })}</span>{agentNotice.first && <button className="btn sm" onClick={() => jumpCell(sheet.name, agentNotice.first!)}>{agentNotice.first}</button>}<button className="tb" aria-label={t("sheet.dismiss")} onClick={() => setAgentNotice(null)}><Icon name="x" /></button></div>}
-      {impact && <ImpactBar impact={impact.impact} onClose={() => setImpact(null)} onJump={jumpCell} />}
+      {impact && <ImpactBar impact={impact.impact} onClose={() => (setImpact(null), setLit((l) => (l?.mine ? null : l)))} onJump={jumpCell} />}
       {sheet.chart ? (
         <div className="fpn-empty sht-chart"><Icon name="grid" /><span>{t("sheet.chart")}</span><button className="btn" onClick={() => void openExcel()}>{t("sheet.openExcel")}</button></div>
       ) : (
@@ -1080,7 +1118,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
                   e.stopPropagation();
                   if (e.key === "Enter" || e.key === "Tab") {
                     commit(editing.text);
-                    go(e.key === "Enter" ? { r: active.r + 1, c: active.c } : { r: active.r, c: active.c + 1 }, false);
+                    advance(e.key === "Enter", e.shiftKey);
                     e.preventDefault();
                   } else if (e.key === "Escape") {
                     setEditing(null);

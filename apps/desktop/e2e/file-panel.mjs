@@ -336,6 +336,13 @@ try {
   });
   check(/6/.test(stats) && /3,368/.test(stats), `the selection figures: ${JSON.stringify(stats)}`);
   await page.shot("1-workbook");
+  // Enter and Tab go round inside the range, which stays, as in Excel: A2 → A3 → A4 → B2; ⇧Enter back to A4; Tab across to B4.
+  const nameIs = (at) => page.until(`the active cell at ${at}`, `document.querySelector(".dcp-viewer:not([hidden]) .sht-name").value === "${at}" && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-sel.multi")`, 3000);
+  for (const at of ["A3", "A4", "B2"]) await key("Enter", "Enter", 13), await nameIs(at);
+  await key("Enter", "Enter", 13, 8);
+  await nameIs("A4");
+  await key("Tab", "Tab", 9);
+  await nameIs("B4");
 
   // The workbook's tools (spreadsheet-design §8.7, §8.8), as one who uses Excel reaches for them.
   const V = ".dcp-viewer:not([hidden])";
@@ -390,7 +397,7 @@ try {
   await page.run(`(() => { const d = new DataTransfer(); d.setData("text/plain", "1\\t2\\n3\\t4\\n"); document.querySelector("${V} .sht-canvas").dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
   const valuesAt = async (range) => Object.fromEntries((await finxCall("doc/cells", { session_id: other, doc_id: remoteDoc, sheet: "利润表", range })).result.cells.map((c) => [c.cell, c.value?.value]));
   await until("the pasted cells", async () => { const v = await valuesAt("H2:I3"); return v.H2 === 1 && v.I2 === 2 && v.H3 === 3 && v.I3 === 4; }, 5000);
-  check(await page.run(`document.querySelector("${V} .sht-name").value`) === "I3", "the paste is not selected");
+  check(await page.run(`document.querySelector("${V} .sht-name").value`) === "H2" && await page.run(`!!document.querySelector("${V} .sht-sel.multi")`), "the paste is not selected from its top-left");
   await page.run(`document.querySelector("${V} .sht-name").select()`);
   await page.cdp("Input.insertText", { text: "H2" });
   await key("Enter", "Enter", 13);
@@ -416,6 +423,9 @@ try {
   await until("filled on to 8", async () => { const v = await valuesAt("J6:J9"); return v.J6 === 5 && v.J9 === 8; }, 5000);
   await page.until("the filled cells selected, 1…8 summed", `/8/.test(document.querySelector("${V} .sht-stats")?.textContent ?? "") && /36/.test(document.querySelector("${V} .sht-stats")?.textContent ?? "")`, 5000);
   await page.until("J9 shown", `/^8(\\.0+)?$/.test(document.querySelector('${V} .sht-c[data-cell="J9"]')?.textContent ?? "")`);
+  // As in Excel: the active cell stays where the selection began, and the cells filled carry no box of their own.
+  check((await page.run(`document.querySelector("${V} .sht-name").value`)) === "J2", "the active cell moved off J2 with the fill");
+  check(await page.run(`["J6", "J7", "J8", "J9"].every((c) => getComputedStyle(document.querySelector('${V} .sht-c[data-cell="' + c + '"]')).boxShadow === "none")`), "the filled cells are boxed on their own");
   await page.shot("1-fill-done");
   await goCell("C4");
   await page.run(`(() => { const x = document.querySelector("${V} .sht-formula"); x.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(x, "5"); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
@@ -423,7 +433,11 @@ try {
   check(!(await page.run(`!!document.querySelector("${V} .sht-agent")`)), "a person's own edits were taken for the agent's");
   await page.shot("1-tools");
   await page.run(`document.querySelector("${V} .sht-canvas").focus()`);
-  for (let i = 0; i < 5; i++) await key("z", "KeyZ", 90, META);
+  await key("ArrowDown", "ArrowDown", 40);
+  // An undo selects what it changed back, as Excel's does.
+  await key("z", "KeyZ", 90, META);
+  await page.until("the undone cell selected", `document.querySelector("${V} .sht-name").value === "C4"`, 5000);
+  for (let i = 0; i < 4; i++) await key("z", "KeyZ", 90, META);
   await page.until("the edits undone", `!document.querySelector(".fpn-tab.on.dirty")`, 10000);
   await page.run(`[...document.querySelectorAll(".fpn-tab")].find((x) => x.textContent.includes("app.ts")).click()`);
   await page.until("app.ts back in front", `${activeTab} === "app.ts"`);
