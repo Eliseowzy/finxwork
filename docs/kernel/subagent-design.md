@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v2.3 |
-| 日期 | 2026-11-04 |
+| 版本 | v2.4 |
+| 日期 | 2026-11-05 |
 | 状态 | 已定稿；一期已实现并通过验收（§15）；二期、三期未开始 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §2 核心概念、§6 内核运行时、§8 对外协议、§9 会话持久化；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
 
@@ -117,6 +117,7 @@
 | v2.1 | 2026-11-03 | 子的任务说明加上文件边界和验证结果（附录 A.2，D-238），Q-52 定下 |
 | v2.2 | 2026-11-03 | 三期的"重建登记表"先做显示部分：主会话再次加载时，按 `agent_spawned` 和子会话自己的日志重建子智能体记录，快照的 `agents` 照常带上它们；它们的名字仍被占用，发消息返回"已关闭"（§9.4，D-264）。起因：空闲卸载后再打开的会话，桌面端把已汇报的子智能体显示成"执行中" |
 | v2.3 | 2026-11-04 | 子智能体要确认的调用改由主用户批准，不再直接拒绝（§10，修订 D-43，新增 D-346–D-349）：问题走 `agent_event`，答复用新 Op `agent_approval`，授权窗口写明是哪个子智能体，整棵树一次只问一个，"本会话都允许"记在根会话上；只有无交互运行才直接拒绝 |
+| v2.4 | 2026-11-05 | 主会话多两个按需加载的工具：`check_agents` 查状态和近期操作，`stop_agents` 叫停（§6.6、D-354）；Bot 的 `spawn_agent`、`send_message` 没有 `wait`（§6.1、D-350）；等待开始时已有输入排着就不等（§8.2、D-355）；`spawn_agent` 描述的最后一段改成让模型去查，不再让它直接说"还在做"（附录 A.1）。依据见 [Bot 回合方案](bot-turn-design.md) |
 
 ## 1. 目标与原则
 
@@ -379,6 +380,8 @@ impl AgentTree {
 - 子会话只有基础工具，没有这两个工具（D-53）。
 - `kind()` 返回 `ReadOnly`：不需要审批，同一批调用里可以并行。工具本身不读写文件；子会话里的每个工具调用照常经过权限判定（§10）。
 - `agents.enabled = false` 时两个工具都不注册。
+- 主会话另有两个按需加载的工具（§6.6）。
+- **Bot 的主会话用另一组定义**：`spawn_agent`、`send_message` 的参数里没有 `wait`，子智能体永远在后台（D-350，[Bot 回合方案](bot-turn-design.md) §5.1）。内部走同一个 `AgentTree`，`wait` 固定为 false；模型照旧传了也被忽略。
 
 ### 6.2 spawn_agent
 
@@ -460,6 +463,24 @@ impl AgentTree {
 
 - **效果**：同一个文件被并发修改时，最坏情况是某个智能体的修改被拒绝，要重读再改；不会悄悄覆盖别人的修改。
 - **管不到的**：bash 里的命令改文件。内核看不出一条命令会改哪些文件，这部分只能靠提示和任务划分。
+
+### 6.6 check_agents 和 stop_agents
+
+活交到后台以后，主智能体要能看它们做到哪了，也要能叫停。两件事所有主会话都需要，会话模式和 Bot 共用（D-354，[Bot 回合方案](bot-turn-design.md) §5.3）。
+
+- **按需加载**：不进工具列表，和浏览器、电脑操控走同一条路：系统提示词的目录 `<deferred_tools>` 里多一组 `agents`，模型用 `tool_search` 取定义，用 `call_tool` 调用（MCP 方案 §7）。
+- **谁有这一组**：有智能体树的会话，也就是没有关掉子智能体的主会话。子会话没有树，所以目录里没有这一组，`tool_search` 搜不到，`call_tool` 也调不到。启动、恢复和设置变化重建目录时都这样判断。
+- **不需要审批**：和 `spawn_agent`、`send_message` 一样，只管自己派出去的子智能体。
+- **名字**：不叫 `agent_status`，协议里已经有同名的事件。
+
+| 工具 | 参数 | 结果 |
+|---|---|---|
+| `check_agents` | `agents`（名字或 id 的列表，不写就是全部） | 每个一行：名字（标签）、状态、跑了多久、上次有动静是多久以前；在等确认时写明等什么；另一行是最近五步。数据来自驱动任务已经收到的事件，不用问模型 |
+| `stop_agents` | `agents`，或者 `all: true`，两个都没有时报错 | 就是 `agent_interrupt`（§12.2）：停在这一步，保留会话，之后可以用 `send_message` 继续，汇报不唤醒父。最多等 10 秒，结果写明 `Stopped`、`Already finished`、`Still stopping`、`No such agent` |
+
+不给默认值，免得一个空调用停掉全部。`send_message` 的 `interrupt` 留着，用于改方向：它让子智能体停下这一步、接着处理新消息。
+
+**代价**：停下多一步取定义；目录多一行，已有的会话恢复时写一条新的 `system_prompt` 条目，缓存失效一次；没有别的按需加载组的会话（比如命令行），工具列表多 `tool_search`、`call_tool` 两个定义。
 
 ## 7. Mailbox
 
@@ -566,6 +587,8 @@ enum Route {
 同步等待没有时长上限（§4.4），这是用户在等待期间重新拿回主智能体的方式。
 
 实现：会话维护一个输入计数（`watch`），插话或追加入队时加一，智能体工具在等待时同时监听它。信件到达不会打断等待。
+
+**等待开始之前就到的话**也算（D-355）：模型写这个调用时用户发来的话，等待开始时已经排在队列里，计数不会再变。开始等待时队列里已有输入，就不等了，结果和上面一样。不然这句话要等子智能体做完才被读到：真实走查里，一句"1 公里是多少英里"等了近一分钟。
 
 ### 8.3 失败时交还排队的输入
 
@@ -787,7 +810,7 @@ ACP 是"一问一答"的：编辑器发一次 `session/prompt`，agent 在处理
 | 情况 | 子智能体 | 父 |
 |---|---|---|
 | `send_message(interrupt: true)` | 中断当前任务，然后处理新消息 | 这次中断不汇报；新一轮工作结束后汇报 |
-| 前端发 `agent_interrupt` | 当前任务中断，状态变为 interrupted；之后仍可接收消息 | 收到 status=interrupted 的汇报，不唤醒 |
+| 前端发 `agent_interrupt`，或主智能体调用 `stop_agents`（§6.6） | 当前任务中断，状态变为 interrupted；之后仍可接收消息 | 收到 status=interrupted 的汇报，不唤醒 |
 | 父的任务失败 | 不受影响 | 之后的汇报照常唤醒它 |
 | 根会话关闭 | 整棵树关闭：中断任务、日志落盘 | — |
 | 前端发 `agent_close` | 关闭，状态为 closed | 收到一封说明它已关闭的信件，不唤醒 |
@@ -1050,7 +1073,10 @@ crates/finx-core/src/agents/
 - 异步创建 → 父结束任务 → 子完成 → 父被唤醒 → `idle`。
 - 同步创建：汇报作为工具结果返回，父的信箱里没有它。
 - 一条回复里三个同步创建并发执行，一起返回。
-- 同步等待中用户插话：等待结束，子继续运行，汇报之后以信件送达。
+- 同步等待中用户插话：等待结束，子继续运行，汇报之后以信件送达。等待开始之前就到的话同样如此。
+- `check_agents`：经 `tool_search`、`call_tool` 调用；状态、标签、近期操作、等确认；不认识的名字。
+- `stop_agents`：点名和 `all`，两个都没有时报错；结果写明停了什么、早已结束的；汇报不唤醒；之后 `send_message` 能接着做。
+- 子会话、关掉子智能体的会话没有 `agents` 这一组；设置变化重建目录后还在；恢复以后一样。
 - 给运行中的子发消息：消息在它的下一个轮次边界出现，最后只有一份汇报。
 - 给空闲的子发消息：开始新一轮工作。
 - `interrupt` 参数：先中断，再处理新消息，排队的旧消息不丢。
@@ -1101,7 +1127,7 @@ crates/finx-core/src/agents/
 | 编号 | 决策 | 理由 | 章节 |
 |---|---|---|---|
 | D-40 | 子智能体是独立的普通会话，由内核里每棵树一个的控制面管理；每个会话仍然同一时刻只运行一个任务（D-20 不变） | 复用会话、日志、权限和插话的全部机制；子会话可以单独查看和恢复 | §3 §4 |
-| D-41 | 只有主智能体有两个工具：`spawn_agent(description, task, name, wait)`、`send_message(to, message, wait, interrupt)`。默认异步，`wait: true` 时同步；不单独提供等待工具 | 满足 G1、G3；同一条回复里的多个同步调用就是"等全部" | §6 |
+| D-41 | 只有主智能体有两个工具：`spawn_agent(description, task, name, wait)`、`send_message(to, message, wait, interrupt)`。默认异步，`wait: true` 时同步，Bot 的主会话没有 `wait`（D-350）；不单独提供等待工具 | 满足 G1、G3；同一条回复里的多个同步调用就是"等全部" | §6 |
 | D-42 | 子会话的设置与父相同：模型、推理等级、配置、工作目录、系统提示词（含项目指令）；工具为父的基础工具；不继承父的对话；缓存键用子会话自己的 id | 能力相同（G9）；不继承对话时，子的上下文干净、行为可预测 | §5 |
 | D-43 | 子智能体要确认的调用由主用户批准（v2.3 修订，原来是直接拒绝，依据见 §10.5）；无交互运行才直接拒绝，由子写进汇报、交给父处理。权限完全继承根会话：权限模式、会话规则和站点授权始终取根会话当前的值，不提升，也不降低 | 主智能体没法替用户确认（G11）；用户只面对一个审批入口；子拿到的权限不超过用户给主智能体的，委派不会变成绕开审批的后门；finx 没有沙箱兜底（§10.4） | §10 |
 | D-44 | 子空闲时汇报一次。结果路由在树的锁内决定：同步等待中就作为工具结果，否则作为信件，只交付一次 | 没有过时的中间汇报，也不会重复 | §7.4 |
@@ -1121,6 +1147,9 @@ crates/finx-core/src/agents/
 | D-347 | 整棵树一次只问一个，由内核排队；排过队的调用轮到时重新判定 | 客户端、ACP、命令行都不用处理并发审批，窗口不会在手底下换问题；前面的答复能放行后面排着的 | §10.1 |
 | D-348 | "本会话都允许"记在根会话上，整棵树生效，子立刻跟上 | 权限属于主会话（D-43）；用户答一次就够 | §10.2 |
 | D-349 | 子等答复时不挡根会话，问题不设超时 | Bot 和会话都要能接着说话；没有证据说明需要超时 | §10.1 |
+| D-350 | Bot 的主会话没有 `wait`，子智能体永远在后台（会话模式不变） | 真实统计里 Bot 16/16 都走了同步等待，主人的话被挡住；拿掉比多写一句提示词确定 | §6.1 |
+| D-354 | `check_agents`、`stop_agents` 是所有主会话共用的内核能力，按需加载（目录里的 `agents` 组）；子会话没有；`stop_agents` 要点名或 `all: true`，就是 `agent_interrupt` | 活在后台以后两种模式都要查和停；不进工具列表，平时不占定义 | §6.6 |
+| D-355 | 等待开始时队列里已有输入，就不等 | 否则模型写调用期间发来的话要等子智能体做完才被读到 | §8.2 |
 
 ### 18.2 待定问题
 
@@ -1155,7 +1184,13 @@ Several agents can run at once: call spawn_agent several times in one reply. You
 
 The agent runs in the background. Its report comes to you as a new message when it finishes, even after you end your turn. So to wait, end your turn: that is not your final answer. Set wait=true only when the next step of this reply needs the report.
 
-Leave delegated work to the agent: do not redo it or guess its result, and if asked before it reports, say it is still working. Only you see the reports; the user sees each agent's status, so relay what matters.
+Leave delegated work to the agent: do not redo it or guess its result; check_agents shows how it stands. Only you see the reports; the user sees each agent's status, so relay what matters.
+```
+
+Bot 的主会话用同一段描述，只有讲后台的那段不同，也没有 `wait` 参数：
+
+```
+The agent runs in the background. Its report comes to you as a new message when it finishes, even after you end your turn. So end your turn rather than wait for it: that is not your final answer.
 ```
 
 | 参数 | 参数说明 |
@@ -1177,6 +1212,26 @@ Send a message to one of your sub-agents. It keeps the context of its earlier wo
 | `message` | `The message.` |
 | `wait` | `Block until the agent is done and return its report. Only when the next step of this reply needs it. Default false.` |
 | `interrupt` | `Stop the agent's current work before delivering the message. Default false.` |
+
+目录里的一行：`- agents: Check on your running agents, or stop them`
+
+check_agents：
+
+```
+See how your agents stand: each one's label, status, how long it has run, its recent steps and how long ago it last did anything. Name agents, or leave it out for all. For diagnosing, not for waiting: a report comes to you when an agent is done.
+```
+
+stop_agents：
+
+```
+Stop running agents at once: name them, or set all to true. A stopped agent keeps its context, and send_message lets it continue later. The result lists what stopped and what had already finished.
+```
+
+| 参数 | 参数说明 |
+|---|---|
+| `check_agents.agents` | `Names or ids of the agents to look at. All of them when left out.` |
+| `stop_agents.agents` | `Names or ids of the agents to stop.` |
+| `stop_agents.all` | `Stop every running agent.` |
 
 ### A.2 任务说明模板
 
@@ -1232,6 +1287,9 @@ It keeps its work and context: send_message lets it continue where it stopped.
 | 消息已排队 | `Queued for "explore-api"; it reads the message at its next step.` |
 | 消息开启新工作 | `"explore-api" started working on your message. To wait for its report, end your turn: that is not your final answer. The report comes to you as a new message when the agent finishes, and you continue your work from there.` |
 | 结果的 details（给界面，不发给模型） | `spawn_agent`：`agent_id`、`name`、`session_file`、`status`、`background`、`reported`；`send_message`：`agent_id`、`name`、`background`、`reported`。`background`：这次调用开始的一轮工作会以邮件汇报；`reported`：结果本身就是汇报 |
+| `check_agents` 的一行 | `writer (写长文): running for 2m13s, last activity 4s ago`，或 `, waiting for the user to approve: …`，或 `writer (写长文): completed, 3m ago`；下一行 `  recent steps: a; b`。`writer: closed, from an earlier run`，`nobody: no such agent`，`You have no agents.` |
+| `stop_agents` 的结果 | `Stopped: a. Already finished: b. Still stopping: c. No such agent: d.`，没有的部分不写；什么都没停时 `No agents are running.` |
+| `stop_agents` 什么也没写 | `name the agents to stop, or set all to true` |
 | task 为空 | `task must not be empty.` |
 | 找不到 | `No agent named "{to}". Your agents: {names}.` |
 | 已关闭 | `Agent "{to}" is closed. Start a new one with spawn_agent.` |
