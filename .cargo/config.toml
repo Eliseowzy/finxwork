@@ -1,0 +1,6 @@
+[env]
+# IronCalc's time-zone tables hold about 30,000 string pointers. A static PIE relocates them when it
+# starts, whatever the command, and macOS rebases them: about 260 page faults and 1 MiB of private
+# memory in every process. The engine runs in UTC and Excel's NOW() takes no zone, so they stay out.
+# See D-99 in docs/kernel/technical-design.md.
+CHRONO_TZ_TIMEZONE_FILTER = "^UTC$"
