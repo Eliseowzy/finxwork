@@ -54,7 +54,8 @@
     "earlier": "Earlier messages",
     "loadingEarlier": "Loading earlier messages",
     "toBottom": "Back to the bottom",
-    "queued": "Delivered once it finishes this reply"
+    "queued": "Delivered once it finishes this reply",
+    "fileGone": "File no longer there"
   },
   "fullAccess": {
     "title": "Bots use Full Access by default",
