@@ -141,7 +141,7 @@ async fn sign_in_with_chatgpt(server: &Server) -> Result<(), RpcError> {
 
 /// A session cannot start until the person sets something up: in ACP, `auth_required`.
 fn auth_required_for_no_model(err: RpcError) -> RpcError {
-    if err.kind() == Some("no_model") {
+    if matches!(err.kind(), Some("no_model" | "no_credentials")) {
         return RpcError::with_kind(AUTH_REQUIRED, "auth_required", err.message);
     }
     err
@@ -304,7 +304,6 @@ impl AcpProtocol {
             },
             "session/new" => match finx_rpc::params::<NewSessionRequest>(params) {
                 Ok(request) => {
-                    let cwd = request.cwd.clone();
                     let (mcp_servers, skipped) = mcp::servers(&request.mcp_servers);
                     for line in &skipped {
                         tracing::warn!("{line}");
@@ -314,15 +313,11 @@ impl AcpProtocol {
                         cwd: Some(request.cwd),
                         extra_roots: request.additional_directories,
                         mcp_servers,
+                        require_credentials: true,
                         ..NewSession::default()
                     };
                     let (reply_id, conn_out) = (id.clone(), conn.clone());
                     self.spawn(id, conn, async move {
-                        let checked = server.clone();
-                        let missing = tokio::task::spawn_blocking(move || missing_credentials(&checked, &cwd)).await.ok().flatten();
-                        if let Some(missing) = missing {
-                            return Some(finx_rpc::error_response(Some(&reply_id), &auth_required(missing)));
-                        }
                         match server.create_session(args, attach).await {
                             Ok(session) => {
                                 announce_commands(&server, &conn_out, &session).await;

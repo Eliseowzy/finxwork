@@ -1071,10 +1071,9 @@ fn close_command(word: &str) -> Option<&'static str> {
 /// What a command line that names no command comes to: `finx` and `finx "PROMPT"` are the
 /// interactive mode (§4.5). Looks only at the words, so that other commands parse as before.
 fn first_word(args: Vec<std::ffi::OsString>) -> Result<Vec<std::ffi::OsString>, String> {
-    let words: Vec<String> = args.iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+    let word_at = |index: usize| args.get(index).map(|arg| arg.to_string_lossy());
     let mut index = 1;
-    while index < words.len() {
-        let word = words[index].as_str();
+    while let Some(word) = word_at(index) {
         if word == "-c" || word == "--config" || word == "--mcp-config" {
             index += 2;
         } else if word.starts_with("-c") && word.len() > 2 && !word.starts_with("--") || word.starts_with("--config=") || word.starts_with("--mcp-config=") {
@@ -1095,12 +1094,14 @@ fn first_word(args: Vec<std::ffi::OsString>) -> Result<Vec<std::ffi::OsString>, 
         }
         out
     };
-    let Some(word) = words.get(index) else { return Ok(interactive(index, None)) };
-    if ["-h", "--help", "-V", "-v", "--version"].contains(&word.as_str()) || COMMAND_WORDS.contains(&word.as_str()) {
-        return Ok(args);
+    let Some(word) = word_at(index) else { return Ok(interactive(index, None)) };
+    let word = word.as_ref();
+    if ["-h", "--help", "-V", "-v", "--version"].contains(&word) || COMMAND_WORDS.contains(&word) {
+        return Ok(args.clone());
     }
     if word == "--" {
-        return Ok(interactive(index, Some(&words[index + 1..].join(" "))));
+        let rest: Vec<String> = args[index + 1..].iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+        return Ok(interactive(index, Some(&rest.join(" "))));
     }
     if word.starts_with('-') {
         return Ok(interactive(index, None));

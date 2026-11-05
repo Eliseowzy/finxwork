@@ -244,6 +244,7 @@ impl NativeProtocol {
                 Ok(p) => {
                     let attach = Self::attach_request(conn, id, p.events, p.history_limit, true);
                     let args = NewSession {
+                        require_credentials: false,
                         cwd: p.cwd,
                         extra_roots: p.extra_roots,
                         model: p.model,

@@ -87,6 +87,9 @@ pub struct NewSession {
     pub model: Option<String>,
     pub thinking: Option<ThinkingLevel>,
     pub permission_mode: Option<PermissionMode>,
+    /// Refuse a model whose provider has no credentials yet, for clients that have a way to send
+    /// the person to sign in (ACP); others hear of it when a task fails.
+    pub require_credentials: bool,
     /// MCP servers the client brings for this session; the same name replaces a configured one.
     pub mcp_servers: Vec<McpServerConfig>,
 }
@@ -456,6 +459,13 @@ impl Server {
         };
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
         let model = self.session_model(args.model, workspace.config.model.clone()).await?;
+        if args.require_credentials
+            && let Ok(resolved) = self.0.llm.resolve(&model)
+            && let Some(provider) = self.0.llm.provider(&resolved.model.provider)
+            && matches!(provider.auth.status(&provider.id), finx_llm::AuthStatus::Missing(_))
+        {
+            return Err(errors::no_credentials(&model, &provider.id));
+        }
         let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");

@@ -119,6 +119,15 @@ pub fn from_store(err: StoreError, id: &str) -> RpcError {
     }
 }
 
+/// The model named or configured cannot run yet.
+pub fn no_credentials(model: &str, provider: &str) -> RpcError {
+    RpcError::with_kind(
+        error_code::NO_MODEL,
+        "no_credentials",
+        format!("{model} has no credentials yet: run `finx login {provider}` in a terminal, or sign in here"),
+    )
+}
+
 /// Nothing to run a session on yet. Clients send the person to set a model up.
 pub fn no_model() -> RpcError {
     RpcError::with_kind(

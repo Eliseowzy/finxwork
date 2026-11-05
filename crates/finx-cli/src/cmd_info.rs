@@ -258,21 +258,9 @@ fn file_entry(path: &Path) -> Value {
     json!({ "path": path, "exists": path.exists() })
 }
 
-/// The groups of tools a session finds through `tool_search`, in the order they are listed.
-fn deferred_groups(tools: &[ToolEntry]) -> Vec<String> {
-    let mut groups: Vec<String> = Vec::new();
-    for tool in tools.iter().filter(|t| !t.loaded && t.available) {
-        if !groups.contains(&tool.group) {
-            groups.push(tool.group.clone());
-        }
-    }
-    groups
-}
-
 /// For `finx status`: the list on its own would read as if these were all the tools there are.
-fn tools_line(tools: &[ToolEntry]) -> String {
-    let base = tools.iter().filter(|t| t.group == "base" && t.available).count();
-    let groups = deferred_groups(tools).join(", ");
+fn tools_line((base, groups): &(usize, Vec<&'static str>)) -> String {
+    let groups = groups.join(", ");
     match (groups.is_empty(), lang::current()) {
         (true, Lang::Zh) => format!("基础 {base} 个"),
         (true, _) => format!("{base} basic"),
@@ -392,7 +380,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         Some(Err(err)) => json!({ "ref": default_model, "error": err.to_string() }),
         None => json!({ "ref": null, "error": "no model is set up" }),
     };
-    let tools = finx_core::tool_list::builtin(&rt.config);
+    let tools = finx_core::tool_list::summary(&rt.config);
     let skill_report = scan_skills(rt);
     let skills_line = if rt.config.skills.enabled {
         format!(
@@ -417,7 +405,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         "thinking": rt.config.thinking,
         "permission_mode": rt.config.permission_mode,
         "tools": rt.config.enabled_tools,
-        "deferred_tools": deferred_groups(&tools),
+        "deferred_tools": tools.1,
         "mcp_servers": rt.mcp_servers.iter().filter(|s| s.is_enabled()).map(|s| s.name.as_str()).collect::<Vec<_>>(),
         "skills": {
             "enabled": rt.config.skills.enabled,

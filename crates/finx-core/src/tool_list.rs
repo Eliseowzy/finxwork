@@ -61,6 +61,15 @@ pub fn builtin(config: &Config) -> Vec<ToolEntry> {
     list
 }
 
+/// How many tools of the base group are on, and the groups found through `tool_search`: what
+/// `finx status` says, cheaply.
+pub fn summary(config: &Config) -> (usize, Vec<&'static str>) {
+    let settings = SystemSettings::of(config);
+    let role = if config.agents_enabled { AgentRole::Main } else { AgentRole::None };
+    let groups = Deferred::names_of(&settings, true, false, true, role);
+    (config.enabled_tools.len(), groups)
+}
+
 /// What a session has now.
 pub(crate) fn of_session(session: &crate::session::Session) -> Vec<ToolEntry> {
     let mut list = Vec::new();
