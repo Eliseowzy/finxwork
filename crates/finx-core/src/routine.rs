@@ -155,10 +155,15 @@ pub struct RunOutcome {
 }
 
 /// Whether a run's reply says there is nothing to tell, and what it says it checked. Only at the
-/// start: a report may well mention the phrase later on.
+/// start, as a report may well mention the phrase later on, and only the phrase itself: a real
+/// report opened with "NOTHING_TO_REPORT? No, …". What is not plainly quiet goes to the bot.
 pub(crate) fn quiet_note(reply: &str) -> Option<String> {
     let rest = reply.trim().strip_prefix(NOTHING_TO_REPORT)?;
-    Some(rest.trim_start_matches(|c: char| c.is_whitespace() || ":：-–—.。".contains(c)).trim().to_string())
+    let note = rest.trim_start_matches(|c: char| c.is_whitespace() || ":：-–—.。,，;；".contains(c));
+    if note.len() == rest.len() && !rest.is_empty() && !rest.starts_with(['(', '（']) {
+        return None;
+    }
+    Some(note.trim().to_string())
 }
 
 /// A run's steps as clients show them, from its log: empty when the log is gone. The brief it
@@ -230,7 +235,7 @@ struct ManageArgs {
     /// A short name the user sees, in their language. Required on create.
     #[serde(default)]
     name: Option<String>,
-    /// What to do on each run, written as an intent rather than fixed tool steps. A run cannot see this conversation, message the user or change routines: its report comes back to you, and you do those. Say what to check, what is worth reporting, when to report nothing, what to do if the check fails, when the job is finished, and where to keep anything the next run needs.
+    /// What to do on each run, in the user's language, written as an intent rather than fixed tool steps. A run cannot see this conversation, message the user or change routines: its report comes back to you, and you do those. Say what to check, what is worth reporting, when to report nothing, what to do if the check fails, when the job is finished, and where to keep anything the next run needs.
     #[serde(default)]
     prompt: Option<String>,
     /// 5-field cron in the user's local time, using the time they said ("8am" is "0 8 * * *"). Prefix CRON_TZ=<IANA zone> when the time belongs elsewhere, such as a market's hours. Or one moment, which runs once and finishes by itself: "in 20m" or "2026-11-10 09:00". Work that must be ready by a time starts early enough to finish.
@@ -412,8 +417,19 @@ mod tests {
         assert_eq!(quiet_note("  NOTHING_TO_REPORT: price is 412, above 300\n").as_deref(), Some("price is 412, above 300"));
         assert_eq!(quiet_note("NOTHING_TO_REPORT 价格 412").as_deref(), Some("价格 412"));
         assert_eq!(quiet_note("NOTHING_TO_REPORT — 没有变化。").as_deref(), Some("没有变化。"));
+        assert_eq!(quiet_note("NOTHING_TO_REPORT\n无 ALERT").as_deref(), Some("无 ALERT"));
+        assert_eq!(quiet_note("NOTHING_TO_REPORT（无 ALERT）").as_deref(), Some("（无 ALERT）"));
         assert_eq!(quiet_note("It fell to 290. Earlier checks said NOTHING_TO_REPORT."), None);
         assert_eq!(quiet_note(""), None);
+    }
+
+    /// From the real thing: a run that found an alert opened like this, and the alert was lost.
+    #[test]
+    fn a_reply_that_questions_the_phrase_is_a_report() {
+        assert_eq!(quiet_note("NOTHING_TO_REPORT? No — there is something to report.\n\nALERT 磁盘只剩 3%"), None);
+        assert_eq!(quiet_note("NOTHING_TO_REPORT？不，有告警"), None);
+        assert_eq!(quiet_note("NOTHING_TO_REPORTS"), None);
+        assert_eq!(quiet_note("NOTHING_TO_REPORT_X"), None);
     }
 
     #[test]

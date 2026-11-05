@@ -83,8 +83,8 @@ pub fn routines_message(text: &str, ts: Timestamp) -> UserMessage {
 pub fn unanswered_message(routine: bool, ts: Timestamp) -> UserMessage {
     let text = if routine {
         "<reply_reminder>\nThe routine report above has not reached the user: what you write stays private, and only \
-         send_to_user reaches them. Pass on what it says now. If the user no longer wants these, pause the routine and tell \
-         them you did.\n</reply_reminder>"
+         send_to_user reaches them. Pass on what it says now. If it holds nothing they asked to hear, send nothing and write \
+         only NOTHING_TO_REPORT. If the user no longer wants these, pause the routine and tell them you did.\n</reply_reminder>"
     } else {
         "<reply_reminder>\nThe user has not received a reply to their last message: what you write \
          stays private, and only send_to_user reaches them. Call send_to_user with your reply now.\n</reply_reminder>"

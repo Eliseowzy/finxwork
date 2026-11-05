@@ -270,7 +270,7 @@ impl Registry {
                 // A message to the user is a bubble from the call's start, as the client shows it.
                 EventMsg::ToolStarted { name, args, .. } if name == finx_core::bot::SEND_TO_USER => {
                     if !finx_core::bot::sends_files(args)
-                        && let Some(text) = args.get("text").and_then(|t| t.as_str()).filter(|t| !t.trim().is_empty())
+                        && let Some(text) = finx_core::bot::words_of(args)
                     {
                         bot.file.summary.last = Some(last(Speaker::Bot, text, 0, None, event.ts));
                         bot.file.summary.unread += 1;

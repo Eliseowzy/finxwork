@@ -55,8 +55,10 @@ pub(crate) enum Waiting {
 
 /// What has reached the owner of nothing since: no `send_to_user` after it succeeded
 /// (bot-design §3.11). The message may be an earlier task's, as when a failed task is retried; a
-/// sub-agent's report that woke the bot after its reply leaves nobody waiting.
+/// sub-agent's report that woke the bot after its reply leaves nobody waiting, and so does a
+/// routine's report when its reply says it holds nothing to tell (routine-design D-440).
 pub(crate) fn unanswered(history: &History) -> Option<Waiting> {
+    let mut last_reply = None;
     for entry in history.branch_back() {
         match &entry.kind {
             EntryKind::Message {
@@ -66,11 +68,27 @@ pub(crate) fn unanswered(history: &History) -> Option<Waiting> {
             EntryKind::Message {
                 message: Message::User(_), ..
             } => return Some(Waiting::Owner),
-            EntryKind::Mail { mail, .. } if mail.kind == MailKind::Routine => return Some(Waiting::RoutineReport),
+            EntryKind::Message {
+                message: Message::Assistant(reply),
+                ..
+            } if last_reply.is_none() => last_reply = Some(reply),
+            EntryKind::Mail { mail, .. }
+                if mail.kind == MailKind::Routine && !last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some()) =>
+            {
+                return Some(Waiting::RoutineReport);
+            }
             _ => {}
         }
     }
     None
+}
+
+/// The words a call sends the owner: no blank ones, and not the phrase that is between the kernel
+/// and the model, which the tool refuses (routine-design D-440).
+pub fn words_of(args: &Value) -> Option<&str> {
+    args.get("text")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty() && crate::routine::quiet_note(text).is_none())
 }
 
 /// Whether a call sends files: by its type, or without one by what it carries (bot-design §3.12).
@@ -216,6 +234,10 @@ impl TypedTool for SendToUser {
     async fn run(&self, args: SendArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         // An empty value is no value: some models fill in every optional parameter.
         let text = args.text.as_deref().filter(|text| !text.trim().is_empty());
+        // Between the kernel and the model: the owner never reads it (routine-design D-440).
+        if text.is_some_and(|text| crate::routine::quiet_note(text).is_some()) {
+            return Err(invalid("NOTHING_TO_REPORT is not a message for the user: send nothing and write it as plain text"));
+        }
         let files = args.files.unwrap_or_default();
         let options = args.options.unwrap_or_default();
         let sent = ToolOutput::text("Sent.");

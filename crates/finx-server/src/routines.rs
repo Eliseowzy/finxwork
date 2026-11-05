@@ -703,7 +703,10 @@ impl Routines {
     }
 
     async fn schedule(self: Arc<Self>) {
-        let stop = self.stop.get().cloned().unwrap_or_default();
+        // Only the service that stays up keeps time.
+        let Some(stop) = self.stop.get().cloned() else {
+            return;
+        };
         loop {
             let now = Timestamp::now();
             let (fires, next) = self.check(now).await;
@@ -991,7 +994,7 @@ impl Routines {
         let EventMsg::ToolStarted { name, args, .. } = &event.msg else {
             return;
         };
-        if name != SEND_TO_USER || !args.get("text").and_then(|text| text.as_str()).is_some_and(|text| !text.trim().is_empty()) {
+        if name != SEND_TO_USER || finx_core::bot::words_of(args).is_none() {
             return;
         }
         let at = stamp(Timestamp::now());
@@ -1773,8 +1776,9 @@ mod tests {
         let fires = check(&routines, "2026-11-05T01:00:00Z").await;
         routines.finish(&fires[0], ended(RoutineOutcome::Reported), true, at("2026-11-05T01:00:10Z")).await;
         assert!(routines.find("b1", &saved.id).unwrap().last_run.unwrap().1.delivered.is_none());
-        // An empty message is an error, and reaches nobody.
+        // An empty message is an error, and reaches nobody; so is the phrase.
         routines.on_event("b1", &sent("  "));
+        routines.on_event("b1", &sent("NOTHING_TO_REPORT"));
         assert!(routines.find("b1", &saved.id).unwrap().last_run.unwrap().1.delivered.is_none());
         routines.on_event("b1", &sent("跌到 290 了。"));
         assert!(routines.find("b1", &saved.id).unwrap().last_run.unwrap().1.delivered.is_some());

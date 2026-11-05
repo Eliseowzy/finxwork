@@ -260,11 +260,12 @@ impl AgentTree {
 
     /// Closes every sub-agent's session and every run's, and waits until their logs are closed.
     pub(crate) async fn shutdown(&self) {
-        let (agents, runs): (Vec<(mpsc::Sender<Op>, Option<JoinHandle<()>>)>, Vec<JoinHandle<()>>) = {
+        let (agents, runs) = {
             let mut state = self.state.lock();
             state.closing = true;
-            let runs = state.runs.iter_mut().filter_map(run::ActiveRun::close).collect();
-            (state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect(), runs)
+            let runs: Vec<JoinHandle<()>> = state.runs.iter_mut().filter_map(run::ActiveRun::close).collect();
+            let agents: Vec<_> = state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect();
+            (agents, runs)
         };
         for (ops, _) in &agents {
             let _ = ops.send(Op::Shutdown).await;

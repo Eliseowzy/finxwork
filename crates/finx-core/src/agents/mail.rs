@@ -26,7 +26,8 @@ const RESUMABLE: &str = "It keeps its work and context: send_message lets it con
 /// Follow a routine's report: the bot writes what the owner reads (routine-design §2.3). Here
 /// rather than in the bot's prompt, which is frozen when a conversation starts.
 const ROUTINE_REPORTED: &str = "This routine is the user's own request: pass on what it found with send_to_user, in your own \
-    words and without talking about runs or reports. If the job is finished, delete the routine.";
+    words and without talking about runs or reports. If it holds nothing they asked to hear, send nothing and write only \
+    NOTHING_TO_REPORT. If the job is finished, delete the routine.";
 const ROUTINE_FAILED: &str = "This routine failed. Tell the user what failed and what would fix it with send_to_user. You will \
     not hear about later failures until it works again.";
 

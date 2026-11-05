@@ -87,7 +87,9 @@ impl Schedule {
                 .map_err(|e| unreadable(e.to_string()))?;
             return Ok(Schedule::Once(at.timestamp()));
         }
-        Cron::parse(text.trim(), zone, rest).map(Schedule::Cron).map_err(unreadable)
+        // One space between fields, however it was written: models break the line in it too.
+        let written = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        Cron::parse(&written, zone, rest).map(Schedule::Cron).map_err(unreadable)
     }
 
     /// Reads a schedule for a routine being saved: it must still come up.
@@ -412,6 +414,12 @@ mod tests {
 
     fn cron(text: &str) -> Schedule {
         Schedule::parse(text, at("2026-11-05T00:00:00Z"), &shanghai()).unwrap()
+    }
+
+    #[test]
+    fn a_schedule_is_kept_on_one_line() {
+        let written = cron("CRON_TZ=America/New_York\n*/20  9-16 * * 1-5 ");
+        assert_eq!(written.stored(&shanghai()), "CRON_TZ=America/New_York */20 9-16 * * 1-5");
     }
 
     fn next(schedule: &Schedule, after: &str) -> String {

@@ -264,7 +264,8 @@ async fn a_report_wakes_the_bot_and_it_tells_the_user() {
         "<routine_report routine=\"跌破 300\" id=\"r_1\" scheduled=\"Thu 2026-11-05 09:00\" ran=\"Thu 2026-11-05 09:00\">\n\
          跌到 290 了。\n</routine_report>\n\
          This routine is the user's own request: pass on what it found with send_to_user, in your own words and without \
-         talking about runs or reports. If the job is finished, delete the routine."
+         talking about runs or reports. If it holds nothing they asked to hear, send nothing and write only \
+         NOTHING_TO_REPORT. If the job is finished, delete the routine."
     );
     // Clients know where it came from; no agent ever showed.
     let mail = events
@@ -463,6 +464,66 @@ async fn a_bot_silent_after_the_reminder_fails_the_task() {
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     assert_eq!(sent(&events), ["跌到 290 了。"]);
     assert_eq!(routine_reminders(&h), 2);
+}
+
+/// A report may hold nothing the owner asked to hear: the bot says so, and that is no failure,
+/// whether it says so at once or when reminded (routine-design D-440).
+#[tokio::test]
+async fn a_bot_may_find_nothing_to_tell_in_a_report() {
+    for (bot_replies, reminders) in [(vec!["NOTHING_TO_REPORT"], 0), (vec!["没有告警，不用打扰。", "NOTHING_TO_REPORT: 没有告警"], 1)] {
+        let mut scripts = vec![Script::text("无 ALERT")];
+        scripts.extend(bot_replies.iter().map(|reply| Script::text(*reply)));
+        let mut h = bot(scripts).await;
+        let rx = h.kernel.start_run(a_run()).unwrap();
+        let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+        outcome(rx).await;
+        assert!(events.iter().any(|e| matches!(e.msg, EventMsg::TaskCompleted { .. })), "{bot_replies:?}");
+        assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::TaskFailed { .. })), "{bot_replies:?}");
+        assert!(sent(&events).is_empty());
+        assert_eq!(routine_reminders(&h), reminders);
+        assert_eq!(h.api.requests().len(), 1 + bot_replies.len());
+    }
+}
+
+/// The phrase is not for the owner, even when a model sends it instead of writing it.
+#[tokio::test]
+async fn the_phrase_never_reaches_the_owner() {
+    let mut h = bot(vec![
+        Script::text("无 ALERT"),
+        Script::tool_call("c1", "send_to_user", json!({ "text": "NOTHING_TO_REPORT", "end_turn": true })),
+        Script::text("NOTHING_TO_REPORT"),
+    ])
+    .await;
+    let rx = h.kernel.start_run(a_run()).unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    outcome(rx).await;
+    let refused = events.iter().find_map(|e| match &e.msg {
+        EventMsg::ToolCompleted { result, .. } if result.tool_name == "send_to_user" => Some(result.is_error),
+        _ => None,
+    });
+    assert_eq!(refused, Some(true));
+    assert!(events.iter().any(|e| matches!(e.msg, EventMsg::TaskCompleted { .. })));
+    assert_eq!(routine_reminders(&h), 0);
+}
+
+/// Nothing to tell about a report says nothing about what the owner asked and never heard back on.
+#[tokio::test]
+async fn nothing_to_tell_does_not_answer_the_owner() {
+    let mut h = bot(vec![
+        Script::text("想一想。"),
+        Script::text("再想想。"),
+        Script::text("无 ALERT"),
+        Script::text("NOTHING_TO_REPORT"),
+        send_last("c1", "这才回你。"),
+    ])
+    .await;
+    h.kernel.submit(Op::prompt("写一首诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    assert!(events.iter().any(|e| matches!(e.msg, EventMsg::TaskFailed { .. })));
+    let rx = h.kernel.start_run(a_run()).unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    outcome(rx).await;
+    assert_eq!(sent(&events), ["这才回你。"]);
 }
 
 /// Told already, nobody waits; and a sub-agent's report never counted.
