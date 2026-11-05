@@ -52,6 +52,15 @@ export function timeLine(at: Date, previous: Date | undefined, now: Date, pause 
   return `${day} ${hourMinute(at)}`;
 }
 
+/** A moment near now or not: "今晚 23:00", "明天 00:00", "昨天 09:00", "11 月 10 日 09:00". */
+export function momentText(d: Date, now: Date): string {
+  const time = hourMinute(d);
+  if (sameDay(d, now)) return `${t(d.getHours() >= 18 ? "time.tonight" : "time.today")} ${time}`;
+  if (isYesterday(now, d)) return `${t("time.tomorrow")} ${time}`;
+  if (isYesterday(d, now)) return `${t("time.yesterday")} ${time}`;
+  return `${monthDay(d, language())} ${time}`;
+}
+
 /** How long something took or has run, in its two largest units: "48 s", "2 min 14 s", "3 hr 5 min", "2 d 4 hr", "1 hr". */
 /** A file's size as people read it. */
 export const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);

@@ -252,14 +252,42 @@ async fn a_private_answer_goes_out_before_the_next_message_is_answered() {
     let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
     let session = open(&client, &bot).await;
     say(&client, &session, "[[mock:quiet:春天的诗]] 写一首春天的诗").await;
+    // The next message lands while this reply is written. Earlier, it joins this request and the
+    // model reads both at once, which `finx-core/tests/bot.rs` covers.
+    let mut seen = until_event(&mut wire, |e| e["type"] == "turn_started").await;
     say(&client, &session, "[[mock:send:夏天的诗]] 写一首夏天的诗").await;
-    let mut seen = Vec::new();
     while sent(&seen).len() < 2 {
         seen.extend(until_event(&mut wire, ended).await);
     }
     assert_eq!(sent(&seen), ["春天的诗", "夏天的诗"]);
     let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).expect("the log");
     assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
+}
+
+/// A message that lands as a silent bot's task fails is answered, wherever exactly it lands: it
+/// never goes back to the composer (bot-design §3.11). The moment cannot be aimed at from here, so
+/// this walks across it; `finx-core/tests/bot.rs` holds the task there.
+#[tokio::test]
+async fn a_message_that_lands_as_a_silent_bot_fails_is_still_answered() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    for ms in 0..20 {
+        let created = client.request("bots/create", json!({"name": format!("测试{ms}"), "avatar": {"kind": "mono", "hue": "sage"}})).await.unwrap();
+        let session = open(&client, created["bot"]["id"].as_str().unwrap()).await;
+        say(&client, &session, "[[mock:mute]] 还在吗").await;
+        tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+        say(&client, &session, "[[mock:send:夏天的诗]] 写一首夏天的诗").await;
+        let mut seen = Vec::new();
+        while sent(&seen).is_empty() {
+            seen.extend(until_event(&mut wire, ended).await);
+            let end = seen.last().unwrap();
+            assert!(end.get("returned_input").and_then(Value::as_array).is_none_or(Vec::is_empty), "{ms} ms: {end}");
+        }
+        assert_eq!(sent(&seen), ["夏天的诗"], "{ms} ms");
+    }
 }
 
 #[tokio::test]

@@ -687,6 +687,7 @@ mod tests {
                     kind: finx_protocol::MailKind::Report,
                     status: AgentStatus::Completed,
                     no_reply: false,
+                    routine_id: None,
                 }),
                 skills: Vec::new(),
             },

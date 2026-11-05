@@ -61,8 +61,8 @@ export type Step =
   | { kind: "work"; key: string; items: WorkItem[]; live: boolean }
   /** Sub-agents started by consecutive spawn_agent calls, each as it is now. */
   | { kind: "agents"; key: string; launches: AgentLaunch[] }
-  /** A sub-agent's report, delivered to the session as mail; no_reply: it had not replied, and the text only says so to the model. */
-  | { kind: "report"; key: string; agent_id: string; name: string; status: AgentStatus; text: string; no_reply: boolean; ts: number; agent?: AgentView }
+  /** A sub-agent's report, delivered to the session as mail; no_reply: it had not replied, and the text only says so to the model. routine: a routine's run sent it. */
+  | { kind: "report"; key: string; agent_id: string; name: string; status: AgentStatus; text: string; no_reply: boolean; ts: number; agent?: AgentView; routine?: { id: string; run: string } }
   /** Where a task ended; chain: the whole of a piece of work that ends here. */
   | { kind: "end"; key: string; end: TaskEndItem; chain?: TaskChain }
   | { kind: "note"; key: string; note: NoteEntry };
@@ -111,7 +111,8 @@ export function conversation(v: SessionView): Step[] {
         if (m.role === "user" && e.mail) {
           const text = m.content.flatMap((c) => (c.type === "text" ? [c.text] : [])).join("\n");
           const from = e.mail.from;
-          out.push({ kind: "report", key: e.message_id, agent_id: from.id, name: from.name, status: e.mail.status, text: reportBody(text), no_reply: e.mail.no_reply === true, ts: m.ts, agent: byId.get(from.id) });
+          const routine = e.mail.routine_id ? { id: e.mail.routine_id, run: from.id } : undefined;
+          out.push({ kind: "report", key: e.message_id, agent_id: from.id, name: from.name, status: e.mail.status, text: reportBody(text), no_reply: e.mail.no_reply === true, ts: m.ts, agent: byId.get(from.id), routine });
         } else if (m.role === "user") {
           const { text, files, comments, quotes, tabs } = userText(m.content);
           const images = m.content.flatMap((c) => (c.type === "image" ? [{ mime_type: c.mime_type, data: c.data }] : []));
@@ -249,14 +250,14 @@ export function openChain(v: SessionView): { started?: number; usage?: UsageTota
 }
 
 /** A tool result's structured details (spawn_agent's and send_message's: agent_id, background, reported). */
-function detailsOf(r: ToolResultMessage | undefined): Record<string, unknown> {
+export function detailsOf(r: ToolResultMessage | undefined): Record<string, unknown> {
   const d = (r as { details?: unknown } | undefined)?.details;
   return d && typeof d === "object" && !Array.isArray(d) ? (d as Record<string, unknown>) : {};
 }
 
-/** A report's own words: the mail's text without the agent_report wrapper and the note after it. */
+/** A report's own words: the mail's text without the wrapper and the note after it. */
 export function reportBody(text: string): string {
-  const m = /^<agent_report[^>]*>\n?([\s\S]*?)\n?<\/agent_report>/.exec(text.trim());
+  const m = /^<(?:agent|routine)_report[^>]*>\n?([\s\S]*?)\n?<\/(?:agent|routine)_report>/.exec(text.trim());
   return (m ? m[1] : text).trim();
 }
 

@@ -65,6 +65,10 @@ pub struct AgentOrigin {
     pub call_id: String,
     /// The parent's task at that time.
     pub parent_task: String,
+    /// A routine's run (routine-design §2.1): the routine. No `spawn_agent` call started it, and
+    /// the parent's log has no mention of it unless it reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine: Option<String>,
 }
 
 impl SessionHeader {
@@ -172,9 +176,18 @@ pub enum EntryKind {
     BotName {
         name: String,
     },
+    /// A bot's session: its routines changed since the context last gave them; the model is told
+    /// the new list (routine-design §4.4).
+    Routines {
+        text: String,
+    },
     /// A bot's session: its task was about to end with the owner's message unanswered, and the
     /// model is reminded to reply, once per task (bot-design §3.11).
-    Unanswered,
+    Unanswered {
+        /// What waits is a routine's report rather than the owner's message (routine-design §2.4).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        routine: bool,
+    },
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.
     #[serde(other, skip_serializing)]

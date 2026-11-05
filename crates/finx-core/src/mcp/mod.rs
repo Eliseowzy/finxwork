@@ -867,7 +867,7 @@ impl crate::session::Session {
     }
 }
 
-fn required_error(failed: &[(String, String)]) -> finx_protocol::ErrorInfo {
+pub(crate) fn required_error(failed: &[(String, String)]) -> finx_protocol::ErrorInfo {
     let list: Vec<String> = failed.iter().map(|(name, error)| format!("'{name}': {error}")).collect();
     finx_protocol::ErrorInfo::new(
         "mcp_unavailable",

@@ -22,6 +22,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
@@ -120,6 +121,17 @@ pub(crate) enum HubCmd {
     System(Box<finx_core::SystemSettings>),
     /// A bot's conversation: the bot's new name (bot-design §2.4).
     BotName { name: String },
+    /// A bot's conversation: what its model is to know of its routines (routine-design §4.4).
+    Routines { text: String },
+    /// A bot's conversation: starts a routine's run (routine-design §7.2). `None` when the
+    /// session is closing, so another attempt can load it again.
+    StartRun {
+        run: finx_core::routine::RoutineRun,
+        reply: oneshot::Sender<Option<Result<oneshot::Receiver<finx_core::routine::RunOutcome>, String>>>,
+    },
+    StopRun { run_id: String },
+    /// A run started here has ended.
+    RunEnded,
 }
 
 /// Where a session's changes are listed.
@@ -127,7 +139,11 @@ pub(crate) enum Listing {
     /// The session list (`sessions/changed`).
     Sessions(Arc<ListFeed>),
     /// A bot's conversation: its bot's row instead (bot-design §5.1).
-    Bot { id: String, bots: Arc<crate::bots::Registry> },
+    Bot {
+        id: String,
+        bots: Arc<crate::bots::Registry>,
+        routines: Arc<crate::routines::Routines>,
+    },
 }
 
 /// What the session's log says about it that its events do not: when it was created and how
@@ -146,6 +162,9 @@ pub struct SummaryBase {
 pub struct HubShared {
     pub session: Arc<SessionShared>,
     pub busy: AtomicBool,
+    /// Routines' runs under way: none shows, but the session stays loaded for them
+    /// (routine-design §7.2).
+    pub routine_runs: AtomicUsize,
     pub attached: AtomicU32,
     /// The session as the list shows it, kept current by the hub.
     pub summary: parking_lot::Mutex<SessionSummary>,
@@ -268,6 +287,7 @@ pub(crate) fn spawn(
     let shared = Arc::new(HubShared {
         session: SessionShared::new(&mirror.info().session_id),
         busy: AtomicBool::new(false),
+        routine_runs: AtomicUsize::new(0),
         attached: AtomicU32::new(0),
         summary: parking_lot::Mutex::new(summary_of(&mirror, &base, true, 0)),
         idle_since: AtomicU64::new(0),
@@ -347,8 +367,9 @@ impl Hub {
 
     fn dispatch(&mut self, event: Event) {
         self.mirror.apply(&event);
-        if let Listing::Bot { id, bots } = &self.listing {
+        if let Listing::Bot { id, bots, routines } = &self.listing {
             bots.on_event(id, &event, &self.mirror);
+            routines.on_event(id, &event);
         }
         // The session's approvals, and a sub-agent's as its `agent_event` carries them.
         let (agent, asked) = match &event.msg {
@@ -571,6 +592,31 @@ impl Hub {
                     kernel.set_bot_name(name);
                 }
             }
+            HubCmd::Routines { text } => {
+                if let Some(kernel) = &self.kernel {
+                    kernel.set_routines(text);
+                }
+            }
+            HubCmd::StartRun { run, reply } => {
+                let started = match &self.kernel {
+                    Some(kernel) if !self.closing => Some(kernel.start_run(run)),
+                    _ => None,
+                };
+                if matches!(started, Some(Ok(_))) {
+                    self.shared.routine_runs.fetch_add(1, Ordering::Relaxed);
+                    self.update_idle();
+                }
+                let _ = reply.send(started);
+            }
+            HubCmd::StopRun { run_id } => {
+                if let Some(kernel) = &self.kernel {
+                    kernel.stop_run(&run_id);
+                }
+            }
+            HubCmd::RunEnded => {
+                self.shared.routine_runs.fetch_sub(1, Ordering::Relaxed);
+                self.update_idle();
+            }
             HubCmd::Meta { op, reply } => {
                 let result = if self.closing {
                     Err(errors::session_closed(&self.shared.session.id))
@@ -635,7 +681,7 @@ impl Hub {
     }
 
     fn unused(&self) -> bool {
-        self.subscribers.is_empty() && !self.working() && !self.closing
+        self.subscribers.is_empty() && !self.working() && self.shared.routine_runs.load(Ordering::Relaxed) == 0 && !self.closing
     }
 
     fn update_idle(&mut self) {

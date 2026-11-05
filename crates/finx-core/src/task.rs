@@ -23,6 +23,7 @@ use finx_protocol::CompletionReason;
 use finx_protocol::Delta;
 use finx_protocol::ErrorInfo;
 use finx_protocol::EventMsg;
+use finx_protocol::MailKind;
 use finx_protocol::PromptMode;
 use finx_protocol::Role;
 use finx_protocol::TaskTrigger;
@@ -49,6 +50,9 @@ use crate::tool_exec;
 
 /// After this many compactions in one task, the user hears that detail may be getting lost.
 const MANY_COMPACTIONS: u32 = 3;
+
+/// The failure of a bot's task that sent nothing, even reminded.
+const NO_REPLY: &str = "no_reply";
 
 pub(crate) struct TaskCtx {
     pub(crate) id: String,
@@ -214,8 +218,9 @@ fn go_back(session: &Session, state: &mut SessionState, resend: Resend) -> (Task
 /// A sub-agent's report arrived. It joins the history at the next turn boundary, or starts a
 /// task when nothing runs.
 pub(crate) fn on_mail(session: &Arc<Session>, mail: Mail) {
-    // From an agent a `resend` removed, it belongs to what was taken back.
-    let kept = session.agents.as_ref().is_some_and(|tree| tree.has(&mail.info.from.id));
+    // From an agent a `resend` removed, it belongs to what was taken back. A routine's run is on
+    // no such list, and a bot's conversation does not go back.
+    let kept = mail.info.kind == MailKind::Routine || session.agents.as_ref().is_some_and(|tree| tree.has(&mail.info.from.id));
     let wake = {
         let mut state = session.state.lock();
         if kept {
@@ -241,11 +246,13 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
     match session.build_context().messages.last() {
         Some(Message::User(_)) | Some(Message::ToolResult(_)) => start_task(session, None),
         // A bot that ended up silent: retrying asks it again (bot-design §3.11).
-        _ if session.unanswered() => {
-            session.record(EntryKind::Unanswered);
-            start_task(session, None);
-        }
-        _ => session.warn("nothing to continue: the conversation already ends with a complete reply"),
+        _ => match session.unanswered() {
+            Some(reminder) => {
+                session.record(reminder);
+                start_task(session, None);
+            }
+            None => session.warn("nothing to continue: the conversation already ends with a complete reply"),
+        },
     }
 }
 
@@ -409,22 +416,20 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
                     last_message,
                     reason,
                 });
-                // Input that arrived after the last turn boundary starts the next task.
-                let next = if going_back { None } else { state.steer.pop_front().or_else(|| state.follow_up.pop_front()) };
-                if next.is_some() {
-                    session.emit_queue(state);
-                }
-                next
+                if going_back { None } else { take_next(session, state) }
             }
             TaskOutcome::Failed(error) => {
-                let returned_input = if going_back { Vec::new() } else { hand_back(session, state) };
+                // A bot's silence says nothing against the model: input that came after the task's
+                // last look at the queue is answered, as it is a moment later (bot-design §3.11).
+                let silent = error.kind == NO_REPLY;
+                let returned_input = if going_back || silent { Vec::new() } else { hand_back(session, state) };
                 session.emit(EventMsg::TaskFailed {
                     task_id: task.id.clone(),
                     error,
                     usage,
                     returned_input,
                 });
-                None
+                if silent { take_next(session, state) } else { None }
             }
             TaskOutcome::Interrupted => {
                 let returned_input = if going_back { Vec::new() } else { hand_back(session, state) };
@@ -458,6 +463,15 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
             session.check_idle();
         }
     }
+}
+
+/// Input that arrived after the last turn boundary starts the next task.
+fn take_next(session: &Session, state: &mut SessionState) -> Option<Input> {
+    let next = state.steer.pop_front().or_else(|| state.follow_up.pop_front());
+    if next.is_some() {
+        session.emit_queue(state);
+    }
+    next
 }
 
 /// A task that ends early hands what still waits back to the front end, in the order it would
@@ -517,7 +531,10 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
     loop {
         // Turn boundary: reports first, then queued steering input, so the user has the last word.
         if !hold_input {
-            session.deliver_mail();
+            // A routine's report is new, as the owner's next words are.
+            if session.deliver_mail() {
+                reminded = false;
+            }
             for message in session.take_steer() {
                 session.record_user(message);
                 // The owner's next words count anew.
@@ -541,6 +558,7 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // bot's name.
         session.note_date();
         session.note_bot_name();
+        session.note_routines();
         // The turn starts: `steer_now` ends it alone. Steering input that came while the MCP
         // servers or a compaction were awaited makes this request too.
         task.next_turn();
@@ -659,11 +677,11 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // No calls: the model means to stop. A bot that has not answered its owner's latest
         // message is reminded once, before anything that came meanwhile joins: a reply to the
         // next message would count as answering this one too (bot-design §3.11).
-        let silent = message.stop_reason != StopReason::Length && session.unanswered();
-        if silent && !reminded {
+        let silent = if message.stop_reason == StopReason::Length { None } else { session.unanswered() };
+        if !reminded && let Some(reminder) = &silent {
             reminded = true;
             hold_input = true;
-            session.record(EntryKind::Unanswered);
+            session.record(reminder.clone());
             turn += 1;
             continue;
         }
@@ -679,8 +697,8 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         }
         // Reminded and still silent, with nothing else to answer: the owner is told rather than
         // left waiting (D-321).
-        if silent {
-            let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
+        if silent.is_some() {
+            let mut error = ErrorInfo::new(NO_REPLY, "the model ended its turn without sending a reply");
             error.retryable = true;
             return TaskOutcome::Failed(error);
         }

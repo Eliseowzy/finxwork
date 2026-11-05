@@ -13,3 +13,6 @@ export const releasesURL: string = __FINXWORK_RELEASES__;
  * an update uses it too.
  */
 export const testHome: string = __FINXWORK_TEST_HOME__;
+
+/** A copy run with data of its own, as tests run it: it leaves the person's system alone. */
+export const isolatedRun = (): boolean => !!(process.env.FINXWORK_USER_DATA || process.env.FINX_HOME || testHome);

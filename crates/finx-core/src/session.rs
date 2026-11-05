@@ -12,6 +12,7 @@ use finx_llm::now_ms;
 use finx_protocol::ApprovalDecision;
 use finx_protocol::CommandRule;
 use finx_protocol::EventMsg;
+use finx_protocol::MailKind;
 use finx_protocol::PermissionMode;
 use finx_protocol::PromptMode;
 use finx_protocol::QueuedInput;
@@ -120,6 +121,9 @@ pub(crate) struct SessionState {
     pub(crate) archived: bool,
     /// A bot's session: its names (bot-design §2.4).
     pub(crate) bot: Option<BotNames>,
+    /// A bot's session: what the model is to know of its routines, once the service said
+    /// (routine-design §4.4).
+    pub(crate) routines: Option<String>,
     /// A bot's session: what its sub-agents' prompts start from instead of `base_prompt`,
     /// built like a session's (bot-design §2.3).
     pub(crate) sub_agent_prompt: Option<Arc<str>>,
@@ -168,13 +172,16 @@ impl SessionState {
             title: None,
             archived: false,
             bot: None,
+            routines: None,
             sub_agent_prompt: None,
         }
     }
 
-    /// A waiting report would start a task now.
+    /// A waiting report would start a task now. Stopping the bot's work holds back the reports
+    /// of that work; a routine's is a new thing the owner asked for, and it would be lost with
+    /// the session if it waited (routine-design §2.4).
     pub(crate) fn has_waking_mail(&self) -> bool {
-        !self.hold && self.inbox.iter().any(|mail| mail.wake)
+        self.inbox.iter().any(|mail| mail.wake && (!self.hold || mail.info.kind == MailKind::Routine))
     }
 
     /// Whether `id` is a message of the user's on the current branch, which `resend` may name.
@@ -394,15 +401,41 @@ impl Session {
         }
     }
 
-    /// A bot's session whose owner has had no reply to their latest message (bot-design §3.11).
-    pub(crate) fn unanswered(&self) -> bool {
-        let state = self.state.lock();
-        state.bot.is_some() && crate::bot::unanswered(&state.history)
+    /// Gives a bot's routines as they are now, when the context last gave another list. A bot
+    /// that never had any hears nothing of them (routine-design §4.4).
+    pub(crate) fn note_routines(&self) {
+        let changed = {
+            let state = self.state.lock();
+            let Some(text) = &state.routines else {
+                return;
+            };
+            match crate::context::routines_in_context(&state.history) {
+                Some(given) => given != text,
+                None => text != crate::routine::NO_ROUTINES,
+            }
+            .then(|| text.clone())
+        };
+        if let Some(text) = changed {
+            self.record(EntryKind::Routines { text });
+        }
     }
 
-    /// Writes the waiting reports into the history, oldest first.
-    pub(crate) fn deliver_mail(&self) {
+    /// A bot's session with something its owner has not heard about (bot-design §3.11): the
+    /// reminder to record.
+    pub(crate) fn unanswered(&self) -> Option<EntryKind> {
+        let state = self.state.lock();
+        state.bot.as_ref()?;
+        let waiting = crate::bot::unanswered(&state.history)?;
+        Some(EntryKind::Unanswered {
+            routine: waiting == crate::bot::Waiting::RoutineReport,
+        })
+    }
+
+    /// Writes the waiting reports into the history, oldest first. True when a routine's is among
+    /// them.
+    pub(crate) fn deliver_mail(&self) -> bool {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();
+        let routine = mails.iter().any(|mail| mail.info.kind == MailKind::Routine);
         for mail in mails {
             let message = Message::from(mail.message);
             let entry = self.record(EntryKind::Mail {
@@ -416,6 +449,7 @@ impl Session {
                 skills: Vec::new(),
             });
         }
+        routine
     }
 
     /// Sends `Idle` once nothing is left to do: no task, no queued input, no report that

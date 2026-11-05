@@ -54,6 +54,8 @@ type UI = {
   botSheet: BotSheet | null;
   /** A bot's settings beside its conversation (bot-mode-design §6.5.1). */
   botPanel: boolean;
+  /** A bot's routines beside its conversation, and which of them is open (bot-mode-design §6.21); null when closed. */
+  botRoutines: { routine?: string; run?: string } | null;
   /** For each bot, the conversation that was last given bots' default permission mode: what is picked in it afterwards stays. */
   botDefaulted: Record<string, string>;
   /** The owner closed the note about Full Access above the composer, or opened a bot's settings (bot-mode-design §6.13). */
@@ -189,6 +191,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       lastBot: s.lastBot ?? null,
       botSheet: null,
       botPanel: false,
+      botRoutines: null,
       botDefaulted: s.botDefaulted ?? {},
       botAccessSeen: s.botAccessSeen ?? false,
       inspector: s.inspector ?? true,

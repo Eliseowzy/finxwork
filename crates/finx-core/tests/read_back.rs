@@ -92,6 +92,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        routines: None,
     }
 }
 

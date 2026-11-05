@@ -36,6 +36,8 @@ export function preferences(): Preferences {
       notifications: notificationsFrom(p.notifications, defaultNotifications),
       ...(p.moveDeclined === true && { moveDeclined: true }),
       ...(p.browserCookies === "untilQuit" && { browserCookies: "untilQuit" as const }),
+      ...(p.routinesAtLogin === false && { routinesAtLogin: false }),
+      ...(p.routinesKeepAwake === true && { routinesKeepAwake: true }),
     };
   } catch {
     cached = { ...defaults };
@@ -55,6 +57,14 @@ export function setPreferences(p: Partial<Preferences>): Preferences {
   if ("browserCookies" in p) {
     if (p.browserCookies === "untilQuit") next.browserCookies = "untilQuit";
     else delete next.browserCookies;
+  }
+  if ("routinesAtLogin" in p) {
+    if (p.routinesAtLogin === false) next.routinesAtLogin = false;
+    else delete next.routinesAtLogin;
+  }
+  if ("routinesKeepAwake" in p) {
+    if (p.routinesKeepAwake === true) next.routinesKeepAwake = true;
+    else delete next.routinesKeepAwake;
   }
   cached = next;
   fs.mkdirSync(path.dirname(file()), { recursive: true });

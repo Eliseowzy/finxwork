@@ -122,11 +122,82 @@
     "modelNote": "只影响这个 Bot。",
     "permission": "权限",
     "permissionMode": "权限模式",
-    "permissionNote": "{{desc}}。只对这个 Bot 生效，它创建的智能体和任务都按这个权限运行，改了立刻跟着变。",
+    "permissionNote": "{{desc}}。只对这个 Bot 生效，它创建的智能体和任务都按这个权限运行，改了立刻跟着变。定时任务在你不在的时候也按这个权限运行。",
     "bypassNote": "这个 Bot 创建的智能体和任务也会一样。",
     "close": "关闭",
     "notifications": "通知",
     "muted": "免打扰",
     "mutedNote": "不发系统通知，也不计入应用图标上的数字。列表里的未读照常显示。"
+  },
+  "routines": {
+    "title": "定时任务",
+    "back": "返回",
+    "new": "新建",
+    "newDraft": "帮我建一个定时任务：",
+    "editDraft": "把定时任务「{{name}}」改成：",
+    "edit": "在对话里修改",
+    "paused": "已暂停",
+    "finished": "已结束",
+    "enabled": "启用",
+    "when": "时间",
+    "upcoming": "接下来",
+    "listSeparator": "、",
+    "prompt": "说明",
+    "runs": "最近运行",
+    "noRuns": "还没有运行过。",
+    "earlier": "更早的运行",
+    "running": "正在运行…",
+    "lastFailed": "上次没做成 · {{time}}",
+    "whenNext": "{{when}} · 下次 {{time}}",
+    "note": "定时任务在这台 Mac 上运行。合盖或关机时不跑，下次开机后补最近一次。退出应用后照跑，但不弹通知。",
+    "unavailable": "定时任务现在用不了",
+    "empty": {
+      "title": "还没有定时任务",
+      "body": "跟 {{name}} 说一句就能建，比如\"每天早上 8 点给我一份盘前简报\"。"
+    },
+    "runNow": "立即运行",
+    "runNowNote": "立即运行会真的去做这件事。",
+    "stop": "停止",
+    "delete": {
+      "title": "删除定时任务「{{name}}」？",
+      "message": "删除后不再运行。",
+      "button": "删除",
+      "done": "已删除定时任务「{{name}}」"
+    },
+    "late": "晚了 {{time}}",
+    "result": {
+      "delivered": "发给你了",
+      "relaying": "正在转告",
+      "undelivered": "没有送达",
+      "quiet": "没有要说的",
+      "failed": "没做成",
+      "skipped": "跳过",
+      "skippedWhy": "上一次还在运行",
+      "interrupted": "已停止",
+      "quietRange": "{{from}} 到 {{to}}",
+      "quietCount": "{{count}} 次，点开看每一次"
+    },
+    "run": {
+      "title": "一次运行",
+      "result": "结果",
+      "scheduled": "计划时间",
+      "started": "开始",
+      "took": "用时",
+      "usage": "用量",
+      "found": "查到的",
+      "report": "汇报",
+      "why": "原因",
+      "steps": "过程",
+      "showInChat": "在对话里看"
+    },
+    "line": {
+      "create": "已创建定时任务「{{name}}」· {{time}}",
+      "update": "已修改定时任务「{{name}}」· {{time}}",
+      "pause": "已暂停定时任务「{{name}}」",
+      "resume": "已恢复定时任务「{{name}}」· {{time}}",
+      "delete": "已删除定时任务「{{name}}」"
+    },
+    "fromRun": "定时任务 · {{name}} · {{time}} 的运行",
+    "fromRoutine": "来自定时任务「{{name}}」"
   }
 }

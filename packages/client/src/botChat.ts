@@ -1,6 +1,6 @@
 import type { ErrorInfo } from "@finx/protocol";
 import { runningAgents, type AgentView, type SessionView } from "./session.ts";
-import { conversation, userText, type Step, type ToolView, type WorkItem } from "./steps.ts";
+import { conversation, detailsOf, userText, type Step, type ToolView, type WorkItem } from "./steps.ts";
 import { baseName } from "./text.ts";
 
 // A bot's conversation as Bot mode shows it (docs/kernel/bot-design.md §3.4):
@@ -11,16 +11,37 @@ import { baseName } from "./text.ts";
 // on a session's page.
 
 export const SEND_TO_USER = "send_to_user";
+export const MANAGE_ROUTINE = "manage_routine";
+
+/** What the bot did to a routine, which the chat shows as a line (bot-mode-design §6.21). */
+export interface RoutineChange {
+  action: "create" | "update" | "pause" | "resume" | "delete";
+  routine_id: string;
+  name: string;
+  when: string;
+  next_run?: string;
+}
+
+/** The run of a routine whose report a message passes on. */
+export interface RoutineSource {
+  routine_id: string;
+  run_id: string;
+  name: string;
+  /** When the report came (ms). */
+  at: number;
+}
 
 export type BotItem =
   /** queued: sent while the bot was busy, not in its conversation yet. */
   | { kind: "user"; key: string; text: string; images: { mime_type: string; data: string }[]; files: string[]; skills: string[]; ts: number; queued: boolean }
   /** A message from the bot; process: what it did since its last message (or since the task began), took: how long that was. */
-  | { kind: "bot"; key: string; text: string; ts: number; process: Step[]; took: number }
+  | { kind: "bot"; key: string; text: string; ts: number; process: Step[]; took: number; source?: RoutineSource }
   /** Files and images the bot sent, as one message, with its words if it had any. */
-  | { kind: "attachment"; key: string; files: BotFile[]; text?: string; ts: number; process: Step[]; took: number }
+  | { kind: "attachment"; key: string; files: BotFile[]; text?: string; ts: number; process: Step[]; took: number; source?: RoutineSource }
   /** A question, with answers to tap if they can be listed; open: they can still be tapped. */
-  | { kind: "question"; key: string; text: string; options: string[]; open: boolean; ts: number; process: Step[]; took: number }
+  | { kind: "question"; key: string; text: string; options: string[]; open: boolean; ts: number; process: Step[]; took: number; source?: RoutineSource }
+  /** What the bot did to a routine, as a line in the chat. */
+  | ({ kind: "routine"; key: string; ts: number } & RoutineChange)
   /** last: no task ran since, so it can be retried. */
   | { kind: "failure"; key: string; error: ErrorInfo; ts: number; last: boolean };
 
@@ -42,7 +63,7 @@ function sendTimes(v: SessionView): Map<string, number> {
   for (const e of v.entries) {
     if (e.type !== "message" || e.message.role !== "assistant") continue;
     const done = e.message.ts + (e.message.duration_ms ?? 0);
-    for (const c of e.message.content) if (c.type === "tool_call" && c.name === SEND_TO_USER) at.set(c.id, done);
+    for (const c of e.message.content) if (c.type === "tool_call" && (c.name === SEND_TO_USER || c.name === MANAGE_ROUTINE)) at.set(c.id, done);
   }
   return at;
 }
@@ -89,18 +110,35 @@ function delivered(item: WorkItem): Sent | null {
   return text !== null ? { kind: "bot", text } : null;
 }
 
+/** What a manage_routine call changed; reading a routine changes nothing, and has no details. */
+function routineChange(item: WorkItem): RoutineChange | null {
+  if (item.kind !== "tool" || item.tool.name !== MANAGE_ROUTINE || item.tool.state !== "done") return null;
+  const d = detailsOf(item.tool.result);
+  if (typeof d.action !== "string" || typeof d.routine_id !== "string") return null;
+  return {
+    action: d.action as RoutineChange["action"],
+    routine_id: d.routine_id,
+    name: String(d.name ?? ""),
+    when: String(d.when ?? ""),
+    next_run: typeof d.next_run === "string" ? d.next_run : undefined,
+  };
+}
+
 /** The conversation as bubbles and failure cards, oldest first. */
 export function botChat(v: SessionView): BotItem[] {
   const times = sendTimes(v);
   const out: BotItem[] = [];
   let process: Step[] = [];
   let since: number | undefined;
+  // The run whose report this task passes on.
+  let source: RoutineSource | undefined;
   const keep = (s: Step) => process.push(s);
   for (const s of conversation(v)) {
     switch (s.kind) {
       case "user":
         out.push({ kind: "user", key: s.key, text: s.text, images: s.images, files: s.files, skills: s.skills, ts: s.ts, queued: false });
         since ??= s.ts;
+        source = undefined;
         break;
       case "work": {
         // A work step splits where the bot sent a message: what came before is that message's process.
@@ -113,26 +151,35 @@ export function botChat(v: SessionView): BotItem[] {
           const sent = delivered(item);
           if (sent === null) {
             if (!(item.kind === "tool" && item.tool.name === SEND_TO_USER)) items.push(item);
+            const change = routineChange(item);
+            if (change) out.push({ kind: "routine", key: `routine:${item.key}`, ts: times.get(item.key) ?? since ?? Date.now(), ...change });
             continue;
           }
           flush();
           const ts = times.get(item.key) ?? since ?? Date.now();
-          out.push({ ...sent, key: item.key, ts, process, took: since === undefined ? 0 : Math.max(0, ts - since) });
+          out.push({ ...sent, key: item.key, ts, process, took: since === undefined ? 0 : Math.max(0, ts - since), source });
           process = [];
           since = ts;
         }
         flush();
         break;
       }
+      case "report":
+        if (s.routine) {
+          source = { routine_id: s.routine.id, run_id: s.routine.run, name: s.name, at: s.ts };
+          since ??= s.ts;
+        }
+        keep(s);
+        break;
       case "text":
       case "agents":
-      case "report":
         keep(s);
         break;
       case "end":
         if (s.end.outcome === "failed" && s.end.error) out.push({ kind: "failure", key: s.key, error: s.end.error, ts: s.end.ts, last: false });
         process = [];
         since = undefined;
+        source = undefined;
         break;
       case "note":
         break;
