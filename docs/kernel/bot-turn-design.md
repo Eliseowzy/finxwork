@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.7 |
+| 版本 | v0.8 |
 | 日期 | 2026-11-05 |
 | 状态 | 已实现（分支 `feat/bot-turn`）；实施结果和与原方案的出入见 §13，主人已确认这些出入 |
 | 关系 | 确认后改 [bot-design.md](bot-design.md) 的 §3、§11、附录 A，[PRD](../desktop/bot-mode-design.md) 的 §6.7、§6.9，以及 [子智能体方案](subagent-design.md) 的工具部分（§5.3 的两个工具是所有主会话共用的内核能力）。依赖子智能体方案 v2.3（子智能体的确认由主用户批准，在分支 `feat/subagent-approvals`） |
@@ -160,7 +160,7 @@ Bot   send_to_user("写好了，一共一万零二百字：[作文](…)", end_t
 - **提示词**：子智能体用会话的提示词，不是 `bot.md`，任务说明告诉它回复交给派它的智能体。
 - **主人看得到、但不算它在说话的**：
   - 授权窗口：只有子智能体要确认时才弹，写明是谁（子智能体方案 §10）。包括要主人去网页上操作一步的那种，这是唯一由它的模型写字、直接给主人看的地方。
-  - 进度：气泡里的标签和步骤。
+  - 进度：气泡里的名字（§13.6）。
   - "过程"里的汇报卡片：主人主动展开才看到。
 - **汇报不等于告诉了主人**：汇报只有主 Bot 看得到，转告是它的责任（§6）。
 
@@ -230,7 +230,7 @@ What you wrote stays private and has not reached the user. If they are waiting f
 | 唤醒 | 过时、重复的可以不发，不写"(no change)"这种填充 | 没话找话 | 只有"只发值得说的" | 有 |
 | 委派 | 不在自己的回合做重要工作；超过约两轮工具调用就交出去 | 中等的活 36 遍全是自己做 | 没写 | 有 |
 | 委派 | 什么算重要工作，逐项列出 | 模型自己判断时偏向"这不算" | 只有工具描述一句 | 有 |
-| 委派 | 交出去是为了腾出手，不是把一件事拆成几份；同一条线的后续归同一个子智能体 | 开一堆新的 | 工具描述提了后续 | 有 |
+| 委派 | 交出去是为了腾出手，不是把一件事拆成几份；同一条线的后续归同一个子智能体 | 开一堆新的 | 工具描述提了后续 | 有，但范围比参考窄：只有紧接着同一件工作的才归原来那个，不相关的事各开一个（§13.6） |
 | 委派 | 交出去以后接着做别的或结束，汇报会唤醒你，不空等不反复查 | 干等（16/16） | 只有工具描述 | 有 |
 | 委派 | 查进度的时机：跑得久、被问到、说"还在做"之前；停滞了要如实说 | 假装还在做 | 工具描述让它直接说"还在做" | 有 |
 | 停下 | 任何语言、任何措辞；优先于之前的一切 | 只认"停止"两个字 | 没写 | 有 |
@@ -290,9 +290,10 @@ You stay available to the user while agents work in the background.
   files or data, web research beyond a quick lookup, longer command sequences, long writing, and
   anything likely to take more than a few seconds. Answer conversation and trivial lookups
   yourself, with send_to_user.
-- Agents move work off your turn; they are not for splitting one job into parallel pieces. Keep a
-  line of work with one agent: related requests, follow-ups and corrections go to it with
-  send_message rather than to a new agent.
+- Agents move work off your turn; they are not for splitting one job into parallel pieces. Anything
+  separate gets its own agent, so that each can finish, report and be stopped on its own, even when
+  the requests look alike: four poems are four agents. Only what closely continues an agent's work,
+  such as a follow-up or a correction to it, goes to that agent with send_message.
 - After starting an agent, carry on with anything else or end the turn. Its report wakes you, so
   never sit waiting or keep checking on it.
 - Use check_agents when an agent has run unusually long, when the user asks about it, and before
@@ -534,3 +535,22 @@ send_message lets it continue later. The result lists what stopped and what had 
 - **问进度**：12 遍有 3 遍没查就说"还在写"。
 - **提醒后还是只写文字**：加了提示以后很少（短问题 72 个任务里 0 个，改主意 13 个任务里 1 个），但还会有，那时主人看到失败卡。主人同意先保持失败卡：这种情况已经很少，不值得为它改"只有 `send_to_user` 可见"（D-302、D-321）。真实使用里还常遇到，再看 bot-design §11 的办法。
 - **费用**：一万字的整条时序每遍大约 1 元以上，所以整条时序只用两千字跑了 3 遍。
+
+### 13.6 主人试用后又改的两处
+
+主人用自己的模型连发四首"一万字的诗"，看到两个问题：
+
+**气泡里出现了命令**。点开"它在忙"能看到 `pwd && ls -la`、`tool_search`。主人定下：气泡最多只写哪些子智能体在跑、叫什么。一件事时只有名字，没有什么可点的；几件事时写"正在处理四件事"，点开一行一个名字。命令、步骤和用时都不显示（bot-design D-358）。
+
+**四首诗交给了同一个子智能体**。原因是 §7.2 第一版那句 "Keep a line of work with one agent: related requests, follow-ups and corrections go to it"。这句对照的是参考里的"相关任务、后续跟进和修正应归属同一个执行器"，模型把四首诗当成了相关任务。参考里紧接着还有一句，用户明确在多任务时可以多开；当时因为 finx 不设上限，把那句整个删了，这个例外也跟着没了。主人定下的规则比参考更明确：不相关的事独立开，只有高度相关的才在同一个子智能体里继续（bot-design D-357）。§7.2 已经是新文字。
+
+**这条还没有统计**。改完时测试用的 Key 余额用完了（402）。`bot_turns.mjs` 加了四个场景，有余额时跑：
+
+| 场景 | 内容 | 目标 |
+|---|---|---|
+| `fan` | 连发四首一万字的诗 | 四个子智能体 |
+| `apart` | 一篇作文，加一份不相关的调研 | 两个子智能体 |
+| `whole` | 一篇作文，分四章 | 一个子智能体，不拆 |
+| `follow` | 一篇作文，开工后说"写短一点" | 一个子智能体，修正用 `send_message` 发给它 |
+
+**接下来讨论**：子智能体要不要、怎么在中途往外通知。任务开独立以后，这件事的急迫性小了，但长期可能还是需要。这次日志里，子智能体被告知"每完成一首就用报告通知我"，于是去连接器里搜 "message parent agent"，Bot 也跟主人说了"每完成一首就先发给你"：现在的机制做不到，子智能体只有一轮做完才汇报。
