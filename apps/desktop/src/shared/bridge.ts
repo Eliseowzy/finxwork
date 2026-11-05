@@ -310,6 +310,8 @@ export type Bridge = {
   editors(): Promise<EditorInfo[]>;
   /** A web page in a conversation's embedded browser: the tab already at the address, else a new one. */
   openURL(session: string, url: string): Promise<void>;
+  /** An HTML file in the session's browser, as it is now; false when it is not there. */
+  openPageFile(session: string, path: string): Promise<boolean>;
   /** Opens a folder itself in Finder (Explorer, the file manager). */
   openFolder(path: string): void;
   /** A new terminal window, its shell in this folder. */

@@ -1,8 +1,10 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
+import { pathToFileURL } from "node:url";
 import { shell } from "electron";
 import type { OpenFileResult, PathInfo } from "../shared/bridge";
+import { isPageFile } from "../shared/pageFile";
 import { editors, launchOf, opensFolders } from "./editors";
 import { bundle, launches, relativeIn, resolveFrom } from "./paths";
 import { platform } from "./platform";
@@ -58,6 +60,13 @@ export function pathInfo(base: string, paths: string[]): Promise<PathInfo[]> {
       return { path: abs, rel: relativeIn(base, abs), kind: st ? (st.isDirectory() ? "folder" : "file") : null };
     }),
   );
+}
+
+/** An HTML file's address for the session's browser; null when it is not one or is not there. */
+export async function pageOfFile(file: string): Promise<string | null> {
+  if (!isPageFile(file)) return null;
+  const st = await fs.promises.stat(file).catch(() => null);
+  return st?.isFile() ? pathToFileURL(file).href : null;
 }
 
 function launch(program: string, args: string[]): Promise<boolean> {

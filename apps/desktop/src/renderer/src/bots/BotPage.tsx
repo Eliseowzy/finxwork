@@ -268,11 +268,15 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     const el = scroll.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
   };
+  const lastTop = useRef(0);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atEnd.current = below < 80;
+    // Only scrolling up leaves the end: not a picture that grew the page just as a scroll to the end landed.
+    if (below < 80) atEnd.current = true;
+    else if (el.scrollTop < lastTop.current) atEnd.current = false;
+    lastTop.current = el.scrollTop;
     setAway(below > 240);
     if (el.scrollTop < el.clientHeight * 1.5) earlier();
   };

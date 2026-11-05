@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Icon } from "../icons";
 import { useStore } from "../store";
-import { fileMenu } from "../session/contentMenus";
+import { fileMenu, otherView } from "../session/contentMenus";
 import { joinPath, listDir, openFile, relativeTo, toggleDir, type SessionFiles } from "./state";
 
 // The session's folder as a tree (file-panel-design §8): each folder read when it is opened,
@@ -44,7 +44,7 @@ export function Tree({ s }: { s: SessionFiles }) {
   }, [active, s.active]);
 
   const open = (r: Row) => (r.dir ? toggleDir(s, r.path) : openFile(s, r.path));
-  const menu = (r: Row) => void fileMenu(st, { path: r.path, rel: relativeTo(s.cwd, r.path), kind: r.dir ? "folder" : "file" }, undefined);
+  const menu = (r: Row) => void fileMenu(st, { path: r.path, rel: relativeTo(s.cwd, r.path), kind: r.dir ? "folder" : "file" }, undefined, undefined, r.dir ? undefined : otherView(st, s.session, s.cwd, r.path, "source"));
   const move = (i: number) => {
     const next = Math.max(0, Math.min(rows.length - 1, i));
     setFocus(next);

@@ -5,7 +5,9 @@ import { baseName, type DocQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
 import { opensAsDoc } from "../files/kind";
 import { Icon } from "../icons";
+import { opensAsPage, showPage } from "../session/contentMenus";
 import { SiteIcon, siteOrigin } from "../siteIcon";
+import { useStore } from "../store";
 import { quoteName, webName } from "./attachments";
 
 // What a message carries, as square tiles, the same in the composer and in
@@ -304,10 +306,12 @@ export function Lightbox({ src, caption, onStep, onClose }: { src: string; capti
   );
 }
 
-/** Opens a file: beside the conversation (a PDF as a document, Markdown previewed), one the panel cannot show in its own app. */
+/** Opens a file: beside the conversation (a PDF as a document, Markdown previewed, an HTML file as its page), one the panel cannot show in its own app. */
 export function useOpenFile() {
   const docs = useDocOpener();
+  const st = useStore();
   return (path: string) => {
+    if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
     if (docs && opensAsDoc(path)) return docs.open({ path });
     if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
     docs.open({ path });
