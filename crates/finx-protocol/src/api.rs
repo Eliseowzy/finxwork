@@ -620,6 +620,10 @@ pub struct ServerCapabilities {
     /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
     #[serde(default)]
     pub input_queue: bool,
+    /// Starting again from an earlier message: the `resend` op and `session_rewound`
+    /// (docs/kernel/message-resend-design.md).
+    #[serde(default)]
+    pub message_resend: bool,
     /// Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).
     #[serde(default)]
     pub bots: bool,

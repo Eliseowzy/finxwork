@@ -46,7 +46,15 @@ export function useSession(id: string): [SessionView | null, () => Promise<void>
       pending = [];
       keep(id, view);
       setGot({ id, view });
+      // It went back past all this view holds: a new snapshot says what is left.
+      if (view.stale && !renewing) {
+        renewing = true;
+        attach()
+          .catch((e) => !stop && show(errorText(e), undefined, true))
+          .finally(() => (renewing = false));
+      }
     };
+    let renewing = false;
     const attach = async () => {
       // Loads the session from its log, or attaches when finx has it loaded already.
       const { snapshot } = await rpc.request("session/resume", { session_id: id });

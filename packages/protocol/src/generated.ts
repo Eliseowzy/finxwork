@@ -896,6 +896,13 @@ export type Event = {
   id: string;
   type: "input_withdrawn";
 } | {
+  message_id: string;
+  /** The sub-agents started in the part taken back: they are gone. */
+  removed_agents?: string[];
+  /** What still waited for the running task, handed back as with an interruption. */
+  returned_input?: UserMessage[];
+  type: "session_rewound";
+} | {
   context_window: number;
   model: string;
   permission_mode: PermissionMode;
@@ -1541,6 +1548,13 @@ export type Op = {
   mode?: PromptMode;
   type: "prompt";
 } | {
+  /** As for `Prompt`. */
+  commands?: boolean;
+  input: UserContent[];
+  /** The `message_id` of a user message on the current branch. */
+  message_id: string;
+  type: "resend";
+} | {
   type: "continue";
 } | {
   type: "interrupt";
@@ -1731,6 +1745,8 @@ export type ServerCapabilities = {
   /** Input that waits for the running task, as a client shows and changes it: `queue_changed`, `input_withdrawn`, the `withdraw`, `requeue` and `steer_now` ops, and `returned_input` on `task_failed` (docs/kernel/input-queue-design.md). */
   input_queue: boolean;
   max_frame_bytes: number;
+  /** Starting again from an earlier message: the `resend` op and `session_rewound` (docs/kernel/message-resend-design.md). */
+  message_resend: boolean;
   model_connections: boolean;
   /** Model lists asked from providers (docs/kernel/model-catalog-design.md §8): `shown`, `known`, `deprecated` on models, `listing` on providers, `models/refresh`, `models/show`, and a checked `auth/set`. */
   model_discovery: boolean;
@@ -2178,7 +2194,7 @@ export type UserMessage = {
 };
 
 /** Warnings a client may recognise. A client meeting a code it does not know shows `message`. */
-export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
+export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready" | "resend_rejected";
 
 /** A session's tab in the user's own browser, as the extension reports it: the extension keeps which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7). */
 export type YoursTab = {

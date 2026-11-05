@@ -439,6 +439,13 @@ impl Hub {
             msg if msg.is_task_end() => true,
             // What a sub-agent asks shows in the list like the session's own.
             EventMsg::AgentEvent { event, .. } => matches!(event.msg, EventMsg::ApprovalRequested { .. } | EventMsg::ApprovalResolved { .. }),
+            // Back before the first message: the one that takes its place becomes the preview.
+            EventMsg::SessionRewound { .. } => {
+                if !self.mirror.has_user_message() {
+                    self.base.preview = None;
+                }
+                true
+            }
             // A new session's first message becomes its preview.
             EventMsg::MessageCompleted {
                 message: finx_llm::Message::User(user),

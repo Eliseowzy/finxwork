@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.42 |
-| 日期 | 2026-11-04 |
+| 版本 | v1.43 |
+| 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -89,6 +89,7 @@
 | v1.40 | 2026-11-04 | 基础提示词补六点（附录 D）：解释、审查、诊断类请求只调查和回答，要求动手才动手；被质疑时复查并拿证据回答，不为附和而改结论；分清查到的和推断的，不虚构执行结果；比较口径一致，分清报告期与发布日、实际与预测；优先用连接的工具或官方接口取数，外部事实就近附链接；默认在回复里作答，临时脚本放临时目录。后三点中的数字规矩在共用片段里，Bot 同样生效 |
 | v1.41 | 2026-11-04 | 调试构建的配置（§15.1，D-342）：`dev` 只给工作区自己的 crate 行号表，依赖不带调试信息。三种 `-p` 组合各构建一次后 target 由 12.96 小到 9.36 GiB，冷编译快约一成，改一个函数后的重编译不变，工作区代码的 `RUST_BACKTRACE` 仍有 file:line。体积的另一半是增量缓存和测试可执行文件，不随调试信息变化；新增 `tools/clean_target.py`，持有 cargo 的构建锁后清理增量缓存和散放的目标文件 |
 | v1.42 | 2026-11-04 | 子智能体要确认的调用改由主用户批准（subagent-design v2.3）：Op `agent_approval`；"审批请求同一时刻只发一个"的范围扩大到整棵智能体树（§6.6） |
+| v1.43 | 2026-11-05 | 撤回重发（[message-resend-design.md](message-resend-design.md)，D-370–D-385），取代原计划的 `Rewind`：新 Op `resend`（§8.1），任务在跑就先停，对话回到这条用户消息之前，再发新消息，回退和发送是一个动作；新事件 `session_rewound`（§8.2）；`branch` 条目开始写入，带 `before_first`（§9.2、§9.5）；恢复时设置、标题、归档、累计用量和任务号按全文件读，不再只看当前分支（§9.4，D-374）。被撤回段启动的子智能体关闭摘除，保留段的继续跑，它在被撤回段送达的汇报重新投递。一期只回退对话，磁盘文件不动 |
 
 ## 1. 目标与范围
 
@@ -2096,6 +2097,8 @@ pub enum Op {
     /// 用户输入：会话空闲时开始新任务；任务进行中按 mode 排队。commands 为 true（默认）时，
     /// 开头的 `/compact` 与任意位置的 `/skill:名字` 由内核的命令表解析；智能体之间的消息设为 false（skill-design §6.3）
     Prompt { input: Vec<UserContent>, #[serde(default)] mode: PromptMode, #[serde(default = "yes")] commands: bool },
+    /// 从一条已发出的用户消息重新开始：任务在跑就先停，对话回到它之前，再发 input（message-resend-design）
+    Resend { message_id: String, input: Vec<UserContent>, #[serde(default = "yes")] commands: bool },
     /// 从当前历史继续，用于失败后重试
     Continue,
     Interrupt,
@@ -2118,7 +2121,7 @@ pub enum PermissionMode { Manual /* 默认 */, AcceptEdits, BypassPermissions }
 
 `PermissionMode` 反序列化时也接受旧取值：`ask`、`read-only` 对应 manual，`auto-edit` 对应 accept-edits，`full-auto` 对应 bypass-permissions。`plan` 和 `auto` 会报"尚未提供"（Q-29）。
 
-M2 增加 `Rewind { to: EntryId }`（§9.5）。
+回退没有单独的 Op：回退的时刻就是发送的时刻，由 `Resend` 一步完成（§9.5，D-370）。
 
 ### 8.2 Event
 
@@ -2155,6 +2158,8 @@ pub enum EventMsg {
     TaskCompleted { task_id: String, usage: UsageTotals, last_message: Option<String> },
     TaskFailed { task_id: String, error: ErrorInfo, usage: UsageTotals },
     TaskInterrupted { task_id: String, returned_input: Vec<UserMessage>, usage: UsageTotals },
+    // resend：对话回到 message_id 之前。removed_agents：随被撤回段关闭的子智能体；returned_input：交还的排队输入
+    SessionRewound { message_id: String, removed_agents: Vec<String>, returned_input: Vec<UserMessage> },
     SettingsChanged { model: String, thinking: ThinkingLevel, permission_mode: PermissionMode },
     Warning { message: String, code: Option<WarningCode> },   // code：客户端可自己措辞的提醒，现有 BypassPermissions
     AgentStarted { agent_id: String, name: String, session_file: PathBuf, call_id: String },
@@ -2303,7 +2308,7 @@ pub enum EntryKind {
         dropped_messages: u32,     // 压缩请求超限、没有进入摘要的消息数，通常为 0（为 0 时不写）
     },
     Task { task_id: String, status: TaskStatus, error: Option<ErrorInfo> },
-    Branch,                        // M2：回退标记，parent 指向回退点
+    Branch { before_first: bool }, // 回退标记，parent 指向回退点；before_first：回到了第一条用户消息之前，会话列表据此重置预览
     Title { title: String },       // M2
     Date { date: String },         // YYYY-MM-DD：告诉模型日期变了（§7.2）
     BotName { name: String },      // Bot 会话：告诉模型它的新名字（bot-design §2.4）
@@ -2340,8 +2345,9 @@ pub enum EntryKind {
 2. **找当前叶子**：建立 id 到条目的索引，当前叶子就是文件中的最后一个条目。分支操作也只追加新条目，所以这条规则始终成立。
 3. **恢复状态**：沿 parent 链得到当前分支，然后：
    - 取最后一个 system_prompt 作为系统提示词；
+   - 设置、标题、归档、累计用量和任务编号属于会话，不属于某条分支，按全文件的顺序读（D-374）：回退拿不走它们，回退点之后收紧的权限模式依然收紧；
    - 依次叠加 settings 条目，得到当前设置；
-   - 逐条累计 usage：assistant 消息的 usage 加上 compaction 条目的 usage（摘要请求也计费）。
+   - 逐条累计 usage：assistant 消息的 usage 加上 compaction 条目的 usage（摘要请求也计费）；被撤回段的钱已经花了，照算。
    - 上下文用量与任务内用同一个函数计算（§7.5），基准取自日志里 assistant 消息自带的 usage，超限标记也从日志恢复；不需要额外的用量记录。
 4. **补记中断**：如果最后一个 task 条目只有 started 而没有结束状态（说明进程崩溃过），补写一条 interrupted。
 5. **规范化**：按 §7.1 规范化，补齐悬空的工具调用。
@@ -2357,9 +2363,9 @@ pub enum EntryKind {
 
 ### 9.5 分支、派生与列表（M2）
 
-- **回退**：发送 `Op::Rewind { to }`，只能回退到某条 user 消息之前。
-  - 内核写入一条 `branch` 条目，它的 parent 指向回退点，之后的新条目都接在它后面；
-  - 这样同一个文件里形成了分支，"最后一个条目即当前叶子"的规则依然成立。
+- **回退**：发送 `Op::Resend { message_id, input }`，只能回退到当前分支上某条 user 消息之前，回退和发送新消息是一个动作（[message-resend-design.md](message-resend-design.md)）。
+  - 内核写入一条 `branch` 条目，它的 parent 指向回退点，也就是那条消息的 parent，之后的新条目都接在它后面；
+  - 这样同一个文件里形成了分支，"最后一个条目即当前叶子"的规则依然成立。被撤回的内容留在文件里，不再属于对话。
 - **派生**：把当前分支复制为一个新的会话文件，头部记录 `forked_from {session_id, entry_id}`。
 - **列表**：`finx sessions` 按从新到旧的顺序扫描目录，读取每个文件的头部、第一条用户消息和标题。
   - 默认只列出本项目的会话（按头部的 cwd 判断）；`--all` 列出全部。

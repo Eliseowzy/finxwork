@@ -207,6 +207,17 @@ pub enum EventMsg {
     InputWithdrawn {
         id: String,
     },
+    /// `resend`: the conversation went back to just before `message_id`. That message and all
+    /// after it are no longer part of it, and the input that replaces it follows.
+    SessionRewound {
+        message_id: String,
+        /// The sub-agents started in the part taken back: they are gone.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        removed_agents: Vec<String>,
+        /// What still waited for the running task, handed back as with an interruption.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        returned_input: Vec<UserMessage>,
+    },
     SettingsChanged {
         model: String,
         thinking: ThinkingLevel,
@@ -360,6 +371,8 @@ pub enum WarningCode {
     /// MCP servers that were not ready for the session's first request. A client that shows
     /// `mcp_server_status` already has this.
     McpServersNotReady,
+    /// A `resend` was refused and nothing changed: its input is still the client's.
+    ResendRejected,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

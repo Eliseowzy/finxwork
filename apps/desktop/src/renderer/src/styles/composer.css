@@ -110,6 +110,9 @@
 .tile-badge .ic path:first-child{opacity:.9}
 .tile-badge .ic path+path{fill:color-mix(in srgb,var(--c) 55%,#fff);stroke:none}
 .tile-badge b{position:absolute;left:0;right:0;bottom:8px;text-align:center;font-size:5.5px;font-weight:700;line-height:7px;letter-spacing:0;color:#fff;text-transform:uppercase}
+.tile-badge.f-tabs .ic{width:20px;height:20px;fill:none;stroke:var(--l2);stroke-width:1.75}
+.tile-badge.f-tabs .ic path:first-child{opacity:1}
+.tile-badge.f-tabs .ic path+path{fill:none;stroke:var(--l2)}
 .f-pdf{--c:#f2564a}.f-word{--c:#3d7cf5}.f-sheet{--c:#27a55c}.f-slide{--c:#f08a24}.f-image{--c:#a35cf0}.f-media{--c:#e8478f}.f-archive{--c:#9b7b52}.f-text{--c:#7d8796}.f-code{--c:#14a3b8}.f-folder{--c:#4aa3f5}
 .tile-x{position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border:0;border-radius:50%;background:var(--l1);color:var(--win);display:flex;align-items:center;justify-content:center;box-shadow:0 0 0 2px var(--pill);opacity:0;transition:opacity .12s}
 .tile:hover .tile-x,.tile-x:focus-visible{opacity:1}
@@ -151,6 +154,11 @@
 .cq-ib{width:24px;height:24px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:inline-flex;align-items:center;justify-content:center}
 .cq-ib:hover{background:var(--fill2);color:var(--l1)}
 .cq-ib .ic{width:14px;height:14px}
+/* The sent message the composer holds: its row keeps its × in view, and says what sending will do. */
+.cq-again{padding-bottom:2px}
+.cq-find{border:0;background:none;text-align:left;cursor:pointer}
+.cq-x{flex:none;margin-right:4px}
+.cq-why{margin:0;padding:0 8px 2px 40px;font-size:12px;line-height:18px;color:var(--l3)}
 @media (prefers-reduced-motion:reduce){.cq,.cq-row{animation:none}}
 .mb{height:26px;border:0;border-radius:var(--r-sm);background:none;padding:0 7px;display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:var(--l2);white-space:nowrap;min-width:0}
 .mb:hover,.mb[aria-expanded="true"]{background:var(--fill);color:var(--l1)}

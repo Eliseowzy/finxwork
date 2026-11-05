@@ -4008,6 +4008,39 @@
           "type": "object"
         },
         {
+          "description": "`resend`: the conversation went back to just before `message_id`. That message and all after it are no longer part of it, and the input that replaces it follows.",
+          "properties": {
+            "message_id": {
+              "type": "string"
+            },
+            "removed_agents": {
+              "description": "The sub-agents started in the part taken back: they are gone.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "returned_input": {
+              "description": "What still waited for the running task, handed back as with an interruption.",
+              "items": {
+                "$ref": "#/definitions/UserMessage"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "session_rewound"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "context_window": {
               "default": 0,
@@ -6698,6 +6731,37 @@
           "type": "object"
         },
         {
+          "description": "Starts again from a message the user sent earlier: the running task stops, the conversation goes back to just before that message, and `input` takes its place. Nothing changes until this op: `session_rewound` says it happened, a `warning` with the code `resend_rejected` that it did not (docs/kernel/message-resend-design.md).",
+          "properties": {
+            "commands": {
+              "description": "As for `Prompt`.",
+              "type": "boolean"
+            },
+            "input": {
+              "items": {
+                "$ref": "#/definitions/UserContent"
+              },
+              "type": "array"
+            },
+            "message_id": {
+              "description": "The `message_id` of a user message on the current branch.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "resend"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Continue from the current history (retry after a failure).",
           "properties": {
             "type": {
@@ -7529,6 +7593,11 @@
           "format": "uint64",
           "minimum": 0.0,
           "type": "integer"
+        },
+        "message_resend": {
+          "default": false,
+          "description": "Starting again from an earlier message: the `resend` op and `session_rewound` (docs/kernel/message-resend-design.md).",
+          "type": "boolean"
         },
         "model_connections": {
           "default": false,
@@ -9170,6 +9239,13 @@
           "description": "MCP servers that were not ready for the session's first request. A client that shows `mcp_server_status` already has this.",
           "enum": [
             "mcp_servers_not_ready"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A `resend` was refused and nothing changed: its input is still the client's.",
+          "enum": [
+            "resend_rejected"
           ],
           "type": "string"
         }

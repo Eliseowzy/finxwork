@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.22 |
-| 日期 | 2026-11-04 |
+| 版本 | v0.23 |
+| 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.23 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |
 | v0.22 | 2026-11-04 | 子智能体的确认转给用户（subagent-design v2.3），版本 2 之内：`agent_event` 也转 `approval_requested`、`approval_resolved`；新 Op `agent_approval`；快照 `agents[].active_task.approvals`；列表的 `awaiting_approval` 和 Bot 的 `waiting` 算上子智能体的问题；ACP 转成 `session/request_permission`。`BotSummary.helpers` 改名 `agents_working` |
 | v0.21 | 2026-11-04 | 通知（notification-design.md），都在版本 2 之内：`BotSummary` 增加 `failed`、`muted`，`bots/update` 增加 `muted`。没有新方法 |
 | v0.20 | 2026-11-04 | Bot（bot-design.md §4，已实现），都在版本 2 之内、由 capabilities 的 `bots` 声明：方法 `bots/subscribe`、`bots/unsubscribe`、`bots/create`、`bots/update`、`bots/avatar`、`bots/open`、`bots/read`、`bots/unread`、`bots/clear`、`bots/delete`，通知 `bots/changed`；错误码 −32040 `bot_not_found`、−32041 `bot_default`、−32042 `bot_invalid`。Bot 的会话不进 `session/list`、`sessions/subscribe` 和 `sessions/changed` |
@@ -839,6 +840,19 @@ capabilities 的 `agents` 为 true 的服务提供以下内容，都是增量：
 | Op `agent_interrupt` | `{agent}`（id 或名字）：只停这个子智能体当前的任务，它保留会话、之后仍可接收消息；不是运行中的子智能体时，会话发一条 warning |
 | Op `agent_approval` | `{agent, call_id, decision}`：答复这个子智能体的 `approval_requested`，`agent` 是它的 id。已答复过或没有在等，返回 `approval_not_pending` |
 | 会话列表 | 子智能体工作期间，SessionSummary 的 state 为 running，busy 为 true，task_started_at 从这段工作开始算起，直到 `idle` |
+
+### 6.11 撤回重发（v0.23）
+
+capabilities 的 `message_resend` 为 true 的服务提供以下内容，都是增量（[message-resend-design.md](message-resend-design.md)）：
+
+| 项 | 内容 |
+|---|---|
+| Op `resend` | `{message_id, input, commands?}`：从当前分支上的一条用户消息重新开始。任务在跑就先停，对话回到这条消息之前，再发 `input`。结果都走事件 |
+| 事件 `session_rewound` | `{message_id, removed_agents?, returned_input?}`：对话回到了 `message_id` 之前，它和它之后的内容不再属于对话。`removed_agents` 是随被撤回段关闭的子智能体，`returned_input` 是交还的排队输入。总在新消息之前发出；任务在跑时，先发它的结束事件 |
+| warning code `resend_rejected` | 这次 `resend` 没有生效，会话不变，话还在客户端手里。原因：消息不在当前分支上或不是用户的、内容为空、内容是 `/compact` 或 `/context`、已有一个 resend 在等任务停下、Bot 的会话 |
+| 会话镜像 | 把转录截到这条消息之前，去掉 `removed_agents`，重算失败状态；累计用量不减。"快照 + 之后的事件 = 从头接收"仍然成立 |
+| 会话列表 | 回到第一条用户消息之前时预览清空，下一条成为新预览。未加载的会话靠日志里 `branch` 条目的 `before_first` |
+| 历史分页 | 目标在已加载范围内时 `before` 游标仍然有效。不在范围内时，新消息可能和旧游标的下标重叠，客户端整体重新接入，不拼接 |
 
 ## 7. ACP 兼容
 

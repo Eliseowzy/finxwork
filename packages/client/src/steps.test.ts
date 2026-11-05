@@ -92,10 +92,10 @@ test("an approval previews the command, the change, or what is written", () => {
 
 test("a message's attached files go to the model as a block of paths and come back as files, not words", () => {
   const content = [{ type: "text", text: "look at these" }, { type: "image", mime_type: "image/png", data: "AAAA" }, attachedBlock(["/w/a.rs", "/w/docs/"])] as const;
-  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [], quotes: [] });
-  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [], quotes: [] });
+  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [], quotes: [], tabs: [] });
+  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [], quotes: [], tabs: [] });
   const web = { url: "https://example.com/", title: "Example", tag: "h1", text: "Hello", selector: "#h", comment: "shorter" };
-  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web], quotes: [] });
+  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web], quotes: [], tabs: [] });
   const v = play([{ type: "message_completed", message_id: "u1", message: { role: "user", content: [...content], ts: 1 } }]);
   const [u] = conversation(v);
   assert.ok(u.kind === "user");
@@ -135,6 +135,6 @@ test("a call through call_tool is told as the tool it runs", () => {
 test("quoted parts of documents come back as quotes, and what the column shows is not shown", () => {
   const quote = { path: "/w/合同.pdf", doc_id: "0123456789abcdef", page: 3, text: "违约金为合同总额的 20%", block: "p3.b12" };
   const content = [{ type: "text" as const, text: "这条合理吗" }, docQuoteBlock([quote]), docViewingBlock("/w/合同.pdf", "0123456789abcdef", 3, 12)];
-  assert.deepEqual(userText(content), { text: "这条合理吗", files: [], comments: [], quotes: [quote] });
+  assert.deepEqual(userText(content), { text: "这条合理吗", files: [], comments: [], quotes: [quote], tabs: [] });
   assert.match((content[2] as { text: string }).text, /page 3 of 12/);
 });

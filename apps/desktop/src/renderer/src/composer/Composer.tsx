@@ -48,6 +48,12 @@ export type Form =
       onHeight: (h: number) => void;
       /** ↑ in the empty composer: the last message that waits for the task comes back to edit; true when one did. */
       onEditLast: () => boolean;
+      /** A sent message being written again: the caret comes here when it changes (message-resend-design §5.1). */
+      again?: string;
+      /** Esc, unless a menu takes it: stops writing that message again; true when it did. */
+      onEscape?: () => boolean;
+      /** The words are on their way: they stay as they are until finx answers. */
+      locked?: boolean;
     }
   | { mode: "new"; place: Place }
   /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and no settings under it: they are in the bot's settings. */
@@ -90,9 +96,10 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   const col = useRef<HTMLDivElement>(null);
   const ready = canSend && (value.trim() !== "" || attachments.length > 0);
   // Not away from a field being typed in, such as a title being renamed (a double-click on a row opens its page too).
+  const again = form.mode === "session" ? form.again : undefined;
   useEffect(() => {
     if (!(document.activeElement instanceof HTMLInputElement)) area.current?.focus();
-  }, []);
+  }, [again]);
   const onHeight = form.mode === "new" ? undefined : form.onHeight;
   useEffect(() => {
     const el = col.current;
@@ -136,7 +143,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
           {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} />}
           <div className="cmp-row">
             <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} commands={commands} onSkill={(name) => area.current?.insertSkill(name)} />
-            <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} placeholder={placeholder} label={t("composer.label")} commands={commands} />
+            <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} onEscape={form.mode === "session" ? form.onEscape : undefined} readOnly={form.mode === "session" && form.locked} placeholder={placeholder} label={t("composer.label")} commands={commands} />
             {stop ? (
               <button className="send stop" onClick={stop} title={t("composer.stop")} aria-label={t("composer.stop")}>
                 <Icon name="stop" className="fill" />
@@ -171,7 +178,7 @@ function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number)
   return (
     <div className="cmp-att">
       {items.map((a, i) => (
-        <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
+        <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" || a.kind === "tabs" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
       ))}
     </div>
   );
