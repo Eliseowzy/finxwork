@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.3 |
+| 版本 | v1.4 |
 | 日期 | 2026-11-05 |
-| 状态 | 已实现（分支 feat/routines），脚本模型和桌面端走查都过了；真实模型统计（§12）和手动验证（§13）还没做。界面见 PRD §6.21，原型 [routine-demo.html](../desktop/routine-demo.html) |
+| 状态 | 已实现（分支 feat/routines），脚本模型和桌面端走查都过了，真实模型统计做完（§12.1）；手动验证（§13）还没做。界面见 PRD §6.21，原型 [routine-demo.html](../desktop/routine-demo.html) |
 | 关系 | 落实 Bot PRD 的 F18（[docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md) §6.21，下称 PRD）。扩展 [bot-design.md](bot-design.md)（下称 Bot 方案）和 [subagent-design.md](subagent-design.md)（下称子智能体方案）；常驻部分接 [desktop-kernel-integration.md](../desktop/desktop-kernel-integration.md) 的 DQ-09 |
 
 变更记录：
@@ -18,13 +18,14 @@
 | v1.1 | 2026-11-05 | 管理入口定为顶栏图标加右侧面板，运行详情显示步骤（D-435）：协议加 `bots/routine_run`，桌面端是新文件 `bots/RoutinesPanel.tsx`，不改 Bot 设置 |
 | v1.3 | 2026-11-05 | 桌面端实现后回写：真实模型统计是单独的脚本 `tools/bench/routine_turns.mjs`（§12）；主线的 D-400 把提醒改成按主人的每句话算，定时任务的信也算一句（§2.4）；运行详情的"过程"不重复最后一句话（§9）。决策编号整体移到 D-410 起，和主线的 D-400 及另一个分支的 D-370 起错开 |
 | v1.2 | 2026-11-05 | 内核和服务层实现后回写：Bot 被主人中断后，定时任务的信照样唤醒它（§2.4、D-436）；一个数据目录只有一个服务调度（§3.6、D-437）；`finx serve` 才调度，`finx acp` 不调度（§5）；锚点的写法（§5.2）；立即运行不改下次到点（§5.7）；任务列表的文字加载后再设，不进启动选项（§6）；时间写法多一个 `in 30s` |
+| v1.4 | 2026-11-05 | 真实模型统计做完（§12.1、§12.2）。按数字改了四处：Bot 看过汇报觉得没有主人要听的，写 `NOTHING_TO_REPORT` 就结束，不算失败，这个词也发不出去（§2.4、D-440）；说明自带用语时，运行也用这个开头（附录 A.3、D-441）；说明用主人的语言写（附录 A.2、D-442）；只认这个词本身，`NOTHING_TO_REPORT?` 算汇报（§2.2、D-443）。时间写法里的换行收成一个空格（§3.4）。修了测试里的问题：第一个任务建好就起真的调度器，按真实时钟和注入的时钟抢着跑；现在只有常驻服务才计时 |
 
 ## 方案摘要
 
 - **只有 Bot 有定时任务**：普通会话没有。任务属于某一个 Bot，删 Bot 时一起删。
 - **一次到点分两步**：先在后台跑一次"定时运行"，它看不到聊天记录，只有保存的说明。有话要说才把结果交给 Bot，由 Bot 读着聊天记录，用自己的话发给主人。没话说的运行不碰 Bot 的对话，也不花读整段对话的钱。
 - **默认交给 Bot，明说没话才不交**：运行最后的回复默认就是汇报；以固定开头 `NOTHING_TO_REPORT` 开始才算没话说。模型没守规矩，最多多唤醒 Bot 一次，不会丢结果。
-- **转告不能丢**：现在的没回话提醒不管汇报。改成定时任务的汇报也算在等回复：Bot 只写了私有文字就要结束时提醒一次，还不发就出失败卡。
+- **转告不能丢**：现在的没回话提醒不管汇报。改成定时任务的汇报也算在等回复：Bot 只写了私有文字就要结束时提醒一次，还不发就出失败卡。Bot 看过汇报，觉得没有主人要听的，写 `NOTHING_TO_REPORT` 就正常结束。
 - **一个工具 `manage_routine`**：只在 Bot 的主会话里有，常驻。创建、读取、修改、暂停、恢复、删除。任务列表不用工具查，定义变化时追加一条环境更新，和日期、改名一样。
 - **时间**：五段式 cron，默认本机时区，可以加 `CRON_TZ=` 前缀（比如美股交易时段）；一次性任务写 `2026-11-10 09:00` 或 `in 20m`。工具结果返回内核算出的接下来几次运行时间，由模型转告主人。
 - **调度在服务层**：不放桌面端，也不放单个会话的内核。最多隔 30 秒看一次墙上时钟。睡眠和关机错过的只补最近一次；上一次还没跑完就跳过这次，并记下原因。时间解析和到点判断不认识 Bot，以后别的功能也能用。
@@ -138,7 +139,7 @@
 | 结果 | 怎么判断 | Bot 的对话 | 运行记录 |
 |---|---|---|---|
 | 有话说 | 任务完成，最后的回复不以 `NOTHING_TO_REPORT` 开头 | 一封信，唤醒 Bot | `reported` 和汇报全文 |
-| 没话说 | 任务完成，回复去掉首尾空白后以 `NOTHING_TO_REPORT` 开头 | 不动 | `quiet` 和那一行说明 |
+| 没话说 | 任务完成，回复去掉首尾空白后以 `NOTHING_TO_REPORT` 开头，后面是空白、分隔标点或括号（D-443） | 不动 | `quiet` 和那一行说明 |
 | 没有回复 | 任务完成，没有任何文字 | 一封信，写明没有回复 | `reported` |
 | 失败 | 任务失败（重试用完等） | 连续失败的第一次发信，之后只记录，直到再成功一次（D-423） | `failed` 和错误 |
 | 中断 | 服务关闭、主人在面板上停止 | 不动 | `interrupted` |
@@ -164,6 +165,8 @@
 - `unanswered` 往回找时，定时任务的信（`MailKind::Routine`）和主人的话一样，返回"在等回复"。子智能体的信不变。
 - 提醒条目 `unanswered` 加一个字段 `routine: bool`，换一段文字（附录 A.6）。旧日志没有这个字段，读成 `false`。
 - 提醒过还是没发：和主人的话相同，任务以 `no_reply` 失败，主人看到失败卡，有系统通知，可以重试（D-321）。
+- **Bot 看过觉得没什么要说，不算失败（D-440）**：信和提醒都告诉它，汇报里没有主人要听的内容时，什么都不发，只写 `NOTHING_TO_REPORT`。它这样回复，这封信就算有了交代，任务正常结束。统计里 Bot 在保存的说明里写过"没有 ALERT 就只报告'无 ALERT'，我看到就不打扰用户"，到点确实没打扰，却因此判成 `no_reply`：主人在本来该安静的时候收到失败卡和通知。别的沉默仍然算失败，真正丢了的汇报主人能知道。这个判断在 `bot::unanswered`，它只给这封信交代，主人没回的话照样要回。
+- **这个词到不了主人那里**：模型有时把它发出去（统计里 1/11，改措辞之前）。`send_to_user` 拒绝这样的文字，不算气泡、未读或送达（`bot::words_of`）。
 - 提醒按主人的每句话算（Bot 方案 D-400），一封定时任务的信也算一句：同一个任务里先提醒过主人的话，信送达后还能再提醒一次。
 - **主人中断过 Bot，信照样唤醒它（D-436）**：中断后子智能体的汇报要等主人下一句话，这是对的，主人刚说了停。定时任务不一样：主人昨晚停掉一段回复，不等于今早 9 点的提醒不要了。而且收件箱只在内存里，信等在那里，会话空闲卸载时就丢了。所以 `has_waking_mail` 对定时任务的信不看这个状态。
 - Bot 真的不该转告时（主人说过这周别提醒），应该暂停任务并说一句，而不是沉默。附录 A.6 这样写。
@@ -273,6 +276,7 @@ cron 的规则：
 - 支持 `*`、列表（`1,15`）、范围（`1-5`）、步长（`*/15`）。不支持名字（`MON`）和 `L`、`W`、`?`，报错时说明。
 - 星期 0 和 7 都是周日。日和星期都限定时，满足其一就算（标准 cron 的规则）。
 - `0 9 10 11 *` 是每年 11 月 10 日，不是一次。**一次性任务不用定死日期的 cron 表达**：那样没有年份，也分不出"只这一次"和"每年"（D-415）。
+- 读的时候把空白收成一个空格，保存和面板上显示的都是这个样子。统计里模型在 `CRON_TZ=…` 后面写过换行。
 
 报错都写清原因和当前时间，模型能自己改：
 
@@ -283,7 +287,7 @@ cron 的规则：
 | 时区不认识 | `Unknown time zone "…": use an IANA name such as Asia/Shanghai.` |
 | 永远不会运行（2 月 30 日） | `This schedule never runs.` |
 
-**模型不用知道现在几点**：模型只有日期，没有时钟（`prompt.rs:140`）。"20 分钟后"写 `in 20m`，由内核算；"今晚 9 点"用日期就够，万一已经过了，报错里有当前时间。不给模型加时钟，也就不用每轮多一段会变的文字。
+**模型不用知道现在几点**：模型只有日期，没有时钟（`prompt.rs:140`）。"20 分钟后"写 `in 20m`，由内核算；"今晚 9 点"用日期就够，万一已经过了，报错里有当前时间。不给模型加时钟，也就不用每轮多一段会变的文字。统计里"20 分钟后"有 9/12 还是先跑了 `date`，多一次调用，时间也都对，不值得为此加时钟。
 
 ### 3.5 下次运行怎么算
 
@@ -643,7 +647,7 @@ pub struct RoutineSummary {
 - 数据库：从无到有；从旧版本迁移并留备份；遇到更新的版本和损坏的文件时不读不写，聊天不受影响；`last_slot` 和运行记录在同一个事务；启动时把空的 `outcome` 改成 `interrupted`；软删除后不再调度；只留 50 次日志；文件权限 0600。
 - `unanswered`：定时任务的信算在等回复，子智能体的信不算；发过之后不算。
 - 环境更新：变化时追加一条，不变不追加；压缩后重新给；全删后写 none；运行状态变化不追加。
-- 运行结果：`NOTHING_TO_REPORT` 的判断，写在回复中间的不算；连续失败只发第一封。
+- 运行结果：`NOTHING_TO_REPORT` 的判断，写在回复中间的不算，后面紧跟问号的不算；连续失败只发第一封。
 
 **脚本模型（finx-mock）**：
 
@@ -651,6 +655,7 @@ pub struct RoutineSummary {
 - 没话说：Bot 日志一条都不多，没有请求发给 Bot 的模型，没有 `agent_*` 事件。
 - 有话说：Bot 被唤醒，出一个气泡，未读加一，`delivered` 记上。
 - Bot 只写私有文字：提醒一次；还不发：`no_reply` 失败。
+- Bot 写 `NOTHING_TO_REPORT`：正常结束，马上写和提醒后才写都一样；主人有没回的话照样要回；把这个词发出去：工具拒绝，不算送达。
 - 运行跑的时候会话不卸载，服务不退出；关闭服务时记 `interrupted`。
 - 会话没加载时到点：加载、跑、空闲后卸载。
 
@@ -663,11 +668,68 @@ pub struct RoutineSummary {
 | 时间写对 | 比对 cron 和说的时间；美股类是否用 `CRON_TZ`；是否把时间告诉主人 | 全对 |
 | 说明写得全 | 人工看保存的说明：查什么、什么值得说、什么时候不说、查不到怎么办、什么时候结束 | 记录，不设线；不好就改参数说明 |
 | 没话说 | 运行查到"没变化"时是否写 `NOTHING_TO_REPORT` | 漏写不超过 1/12（漏写的代价只是多唤醒一次） |
+| 说明自带用语 | Bot 让运行没事时写别的话：运行还写不写这个词；Bot 被唤醒却没什么要说时怎么办（`nothing`） | 不算失败，不打扰主人 |
 | 转告 | 有话说的运行，Bot 是否发出气泡 | 不超过 1/36 失败（同 D-316 的统计方式） |
 | 说话自然 | 气泡里有没有"运行""汇报"这类词 | 人工看 |
 | 费用 | 记下没话说和有话说两种运行的 token，和一次普通回话比较 | 记录 |
 
 提示词的增减按这些数字定，不先写长段落（§15 第一行）。
+
+### 12.1 实测（2026-11-05）
+
+模型 `bailian-token-plan/deepseek-v4.1-flash`，每个场景 12 遍，每遍一个新 Bot。一共三轮：第一轮是最初的文字，7 个场景全跑；后两轮只跑改动影响到的场景，第三轮是现在的文字（附录 A）。
+
+**会不会建、时间对不对**（第一轮，后面的改动不碰这些）：
+
+| 场景 | 建了 | 时间 | 判断线 |
+|---|---|---|---|
+| 每天早上 8 点提醒喝水 | 12/12 | 12/12 是 `0 8 * * *` | 过 |
+| 每个工作日晚上 9 点半提醒写日报 | 12/12 | 12/12 是 `30 21 * * 1-5` | 过 |
+| 20 分钟后提醒关火 | 12/12 | 12/12 存成时刻 | 过 |
+| 特斯拉跌破 300 告诉我 | 12/12 | 8 次用 `CRON_TZ=America/New_York`；4 次用本机时间，选的是收盘后或覆盖整个夜里的时段，夏令时切换后差一小时也不误事 | 过 |
+| 我每周一都要看这张表（这次只算总数） | 0/12 | 8/12 提议设定时任务，其余的只回答，或者说把表发来以后可以直接读 | 过 |
+
+这 60 遍都没有碰 `crontab`、`launchctl` 和长 `sleep`。有一次把两个 cron 写在一格里，报错后自己改对了。
+
+**没话说和转告**（三轮）：
+
+| 场景 | 第一轮 | 第二轮（加了 D-440） | 第三轮（现在的文字） |
+|---|---|---|---|
+| 查了没事 | 11/12 安静；1 次漏写，Bot 不打扰主人，却判成 `no_reply` 失败 | 10/12 安静；2 次漏写，Bot 不打扰主人，没有失败 | 12/12 安静 |
+| 说明自带"没事就报告无 ALERT" | 没测 | 1/12 安静；11 次唤醒 Bot，没有失败，1 次把这个词发给了主人 | 10/12 安静；2 次唤醒 Bot，都写这个词结束，没有失败，也没打扰主人 |
+| 查到告警 | 11/12 报告，Bot 都发了，4 次靠提醒；1 次运行判成没话说 | 12/12 报告，Bot 都发了，2 次靠提醒 | 11/12 报告，Bot 都发了，4 次靠提醒；1 次运行判成没话说 |
+| 气泡里谈运行、汇报 | 0 | 0 | 0 |
+
+- **运行把真告警判成没话说**，是这次统计里最要紧的问题。第三轮那次的回复以 `NOTHING_TO_REPORT? No — there is something to report.` 开头，接着是告警原文，而判断只看开头。现在只认这个词本身（D-443），这种回复算汇报。这是确定的字符串判断，有单元测试，没有再跑真实模型。第一轮那次脚本没打出原文，靠整点的下一次运行才把告警带到，可能同因，不能确定。
+- **转告本身**：运行报告了的 34 次，Bot 都发出去了，没有失败，10 次靠提醒。判断线是 1/36，样本还差一点。
+- **说明的语言**：第一轮有 7/60 写成英文，加了 "in the user's language"（D-442）之后 0/49。运行留下的那行说明还有 4/22 是英文，它跟着运行说明的语言，只在运行记录里看得到，不值得再加一句。
+- **说明写得全不全**（人工读第一轮的 60 条）：提醒类都短而清楚，写明只做这一件事。盯价格的都写了查什么、到多少算数、查不到怎么办，多数写了状态放在哪个文件，防止重复提醒。有的写"发消息给用户"，运行说明把它转成写进回复，实测没有问题。
+
+**费用**（一次的 token 合计，含读缓存。Bot 都是新的，对话很短）：
+
+| | token |
+|---|---|
+| 一次普通回话（3 遍的平均） | 10386 |
+| 一次运行，没话说（三轮的平均各是） | 10148、8923、11439 |
+| 一次运行，有话说 | 17312、13313、12704 |
+| Bot 转告，随对话变长还会变多 | 12705、14718、16110 |
+
+没话说的运行和一次普通回话差不多，不读整段对话，所以对话再长也是这个数。
+
+### 12.2 没解决的：确认的话常常到不了主人
+
+建好之后该说的那句"设好了，明早 8 点第一次"，48 遍里 32 遍发出来了，都带时间；另外 16 遍写成了私有文字，主人收不到。对话里那一行"已创建定时任务 · 时间"48 遍都有，所以主人仍然知道建了什么、下次什么时候；丢的是"那时电脑要开着"这句。
+
+| 模型的第一步 | 遍数 | 确认到了主人 |
+|---|---|---|
+| 先发一句"好，我来设"（bot.md 的要求） | 23 | 7 |
+| 直接建，建完写成私有文字，靠提醒才发 | 23 | 23 |
+| 直接建，建完就发 | 2 | 2 |
+
+照规矩先回一句的，确认反而多半丢了：提醒从历史末尾往回找，碰到那一句就算回过话了。这不是定时任务独有的问题（Bot 方案 §11），这里不单独修，因为分支 `feat/bot-turn` 的 `bot::owed` 已经把"发过之后工具又有了结果"算作欠一句话。合并时要注意：
+
+- 定时任务的信要保留自己的提醒文字（附录 A.6），Bot 写了 `NOTHING_TO_REPORT` 就不算欠（D-440）。
+- 合并后重跑这个脚本的 `explicit`、`evening`、`once`、`watch`，看 `lostWords` 有没有降到接近 0。
 
 **性能**：用 `tools/bench/ratchet.py` 跑启动和内存棘轮，确认命令行和 `finx exec` 的启动不变（它们不打开库）、服务常驻内存的增量和 §3.6 的实测相符、`dist` 的体积增量在预期之内。
 
@@ -706,6 +768,7 @@ pub struct RoutineSummary {
 
 | 改进 | 要解决的问题 | 什么情况下做 | 做法 |
 |---|---|---|---|
+| 运行记录分清"Bot 判断不用说" | 现在和真的没送到一样写"没有送达" | 主人看记录时常被它误导 | Bot 的回复以 `NOTHING_TO_REPORT` 开头时，服务层把这次运行改成 `quiet` |
 | 更强的"要主动建"段落 | 模型该建任务时不建 | §12 的统计里明说的漏建超过判断线 | 写进工具描述；不进 bot.md（§2.3）。要进系统提示词得先解决 Q-200 |
 | 运行直接发消息 | 有话说的运行多读一次整段对话 | 实测转告的费用明显偏高（长对话、频繁提醒） | 运行带 `send_to_user`，气泡由运行发，Bot 日志追加一封不唤醒的信。代价：运行不知道聊天内容，Bot 把不了关；要做一条新的气泡来源 |
 | 提醒不开运行 | 单纯的提醒也要一次小运行，多一次请求和几秒 | 提醒显得慢或文字生硬 | 一次性任务加"直接唤醒 Bot"的方式，到点把说明作为信送进主会话 |
@@ -799,6 +862,10 @@ pub struct RoutineSummary {
 | D-437 | 一个数据目录只有一个服务调度，靠 `finx.db.lock`；`finx acp` 不调度 | 否则同一个任务会到点跑两次 | §3.6 |
 | D-438 | 没有库时，服务不为定时任务起任务、线程，也不读时区；第一个任务创建时才开始调度 | 实测调度循环一启动就让 socket 的 `session/new` 慢 0.09 毫秒 | §3.6 |
 | D-439 | 内置 SQLite 只编用得上的部分，写在 `.cargo/config.toml` | 每个进程的启动都要为体积付钱；全文搜索等要用时再打开 | §3.6 |
+| D-440 | Bot 读过定时任务的汇报，觉得没有主人要听的，只写 `NOTHING_TO_REPORT`：不算没回话，任务正常结束；`send_to_user` 拒绝发这个词 | 统计里合理的沉默被判成失败，主人在该安静的时候收到失败卡。别的沉默仍然算失败，不丢真正的汇报 | §2.4 |
+| D-441 | 运行说明讲明：任务说明另有用语时，没话说也用这个开头 | Bot 常在说明里写"没事就报告'无 ALERT'"，运行照办。这种任务不是偶尔漏写，而是每次到点都唤醒 Bot，读一遍整段对话 | 附录 A.3 |
+| D-442 | 保存的说明用主人的语言写 | 统计里 7/60 写成英文，主人在面板上读的是它；加这几个词之后 0/49 | 附录 A.2 |
+| D-443 | 判断没话说只认这个词本身：后面要跟空白、分隔标点或括号 | 统计里一次真告警以 `NOTHING_TO_REPORT? No — …` 开头，被判成没话说，告警丢了。认不准的都交给 Bot（D-413） | §2.2 |
 
 ## 19. 待定问题
 
@@ -846,7 +913,7 @@ result, and when it falls at night, that the computer has to be awake then.
 action: What to do.
 id: The routine's id. Required except on create.
 name: A short name the user sees, in their language. Required on create.
-prompt: What to do on each run, written as an intent rather than fixed tool steps. A run cannot
+prompt: What to do on each run, in the user's language, written as an intent rather than fixed tool steps. A run cannot
   see this conversation, message the user or change routines: its report comes back to you, and
   you do those. Say what to check, what is worth reporting, when to report nothing, what to do
   if the check fails, when the job is finished, and where to keep anything the next run needs.
@@ -877,9 +944,9 @@ else that reaches other people, spends money or cannot be undone: say in your re
 would do, and {bot} will ask the user. If a tool call is refused, nobody is here to approve it:
 do not retry it or work around it, say so in your reply.
 
-If there is nothing the instructions ask to report, reply with NOTHING_TO_REPORT and one line on
-what you checked and found. If you could not check, that is worth reporting: say what failed in
-a normal reply.
+If there is nothing the instructions ask to report, start your reply with NOTHING_TO_REPORT, even
+when they give other words for that case, and add one line on what you checked and found. If you
+could not check, that is worth reporting: say what failed in a normal reply.
 
 <instructions>
 {prompt}
@@ -901,7 +968,8 @@ a normal reply.
 {reply}
 </routine_report>
 This routine is the user's own request: pass on what it found with send_to_user, in your own
-words and without talking about runs or reports. If the job is finished, delete the routine.
+words and without talking about runs or reports. If it holds nothing they asked to hear, send
+nothing and write only NOTHING_TO_REPORT. If the job is finished, delete the routine.
 ```
 
 失败：
@@ -925,7 +993,14 @@ not hear about later failures until it works again.
 ```
 <reply_reminder>
 The routine report above has not reached the user: what you write stays private, and only
-send_to_user reaches them. Pass on what it says now. If the user no longer wants these, pause the
-routine and tell them you did.
+send_to_user reaches them. Pass on what it says now. If it holds nothing they asked to hear, send
+nothing and write only NOTHING_TO_REPORT. If the user no longer wants these, pause the routine and
+tell them you did.
 </reply_reminder>
+```
+
+`send_to_user` 收到这个词时的错误：
+
+```
+NOTHING_TO_REPORT is not a message for the user: send nothing and write it as plain text
 ```
