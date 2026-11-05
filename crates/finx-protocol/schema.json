@@ -327,6 +327,21 @@
     },
     {
       "$ref": "#/definitions/TranscriptPage"
+    },
+    {
+      "$ref": "#/definitions/WebSearchSetKeyParams"
+    },
+    {
+      "$ref": "#/definitions/WebSearchSetKeyResult"
+    },
+    {
+      "$ref": "#/definitions/WebSearchStatus"
+    },
+    {
+      "$ref": "#/definitions/WebSearchTestParams"
+    },
+    {
+      "$ref": "#/definitions/WebSearchTestResult"
     }
   ],
   "definitions": {
@@ -2799,7 +2814,7 @@
       "description": "A secret for configuration values to refer to as `${credential:<name>}`.",
       "properties": {
         "name": {
-          "description": "Starts with `mcp.`: 1-96 letters, digits, `.`, `_` or `-` after it.",
+          "description": "Starts with `mcp.` or `web-search.`: 1-96 letters, digits, `.`, `_` or `-` after it.",
           "type": "string"
         },
         "value": {
@@ -5023,6 +5038,13 @@
     "LastMessage": {
       "description": "The last message of a bot's conversation, for its row in the list.",
       "properties": {
+        "file": {
+          "description": "A bot's message of files: the name of the first that is not an image.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "from": {
           "$ref": "#/definitions/Speaker"
         },
@@ -9251,6 +9273,254 @@
         }
       ]
     },
+    "WebSearchErrorKind": {
+      "description": "Why a search with a service failed.",
+      "enum": [
+        "auth_failed",
+        "quota_exhausted",
+        "rate_limited",
+        "unreachable",
+        "bad_response"
+      ],
+      "type": "string"
+    },
+    "WebSearchFailure": {
+      "properties": {
+        "at_ms": {
+          "description": "When, in milliseconds since the epoch.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/definitions/WebSearchErrorKind"
+        }
+      },
+      "required": [
+        "at_ms",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "WebSearchKeySource": {
+      "description": "Where a service's key comes from.",
+      "oneOf": [
+        {
+          "description": "Saved with `web_search/set_key`: it can be replaced and removed here.",
+          "enum": [
+            "saved"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "An environment variable, named in `key_env`.",
+          "enum": [
+            "env"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The model account's.",
+          "enum": [
+            "account"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "WebSearchNeeds": {
+      "description": "What a service needs before it can be used.",
+      "oneOf": [
+        {
+          "enum": [
+            "key"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "It works as it is; a key only raises its limits.",
+          "enum": [
+            "nothing"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A connected model account, whose key it shares.",
+          "enum": [
+            "account"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "WebSearchSetKeyParams": {
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key",
+        "source"
+      ],
+      "type": "object"
+    },
+    "WebSearchSetKeyResult": {
+      "description": "The result of `web_search/set_key`. A key the service refused is not saved; one that could not be tried is, and the service then goes first in the list, switched on.",
+      "properties": {
+        "saved": {
+          "type": "boolean"
+        },
+        "test": {
+          "$ref": "#/definitions/WebSearchTestResult"
+        }
+      },
+      "required": [
+        "saved",
+        "test"
+      ],
+      "type": "object"
+    },
+    "WebSearchSource": {
+      "description": "One service, in the list's order.",
+      "properties": {
+        "configured": {
+          "description": "It has what it needs.",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Its switch: searches skip it when off.",
+          "type": "boolean"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WebSearchFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Its last search, when that failed; a search that works clears it."
+        },
+        "id": {
+          "type": "string"
+        },
+        "key": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WebSearchKeySource"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "key_env": {
+          "description": "The variable the key comes from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key_url": {
+          "description": "Where to get a key.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "needs": {
+          "$ref": "#/definitions/WebSearchNeeds"
+        }
+      },
+      "required": [
+        "configured",
+        "enabled",
+        "id",
+        "name",
+        "needs"
+      ],
+      "type": "object"
+    },
+    "WebSearchStatus": {
+      "description": "The result of `web_search/status`.",
+      "properties": {
+        "current": {
+          "description": "The service searches use now: the first that is usable and whose last search did not fail.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "enabled": {
+          "description": "`web_search.enabled`.",
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/definitions/WebSearchSource"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "enabled",
+        "sources"
+      ],
+      "type": "object"
+    },
+    "WebSearchTestParams": {
+      "properties": {
+        "source": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "type": "object"
+    },
+    "WebSearchTestResult": {
+      "description": "How one real search went.",
+      "properties": {
+        "count": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "elapsed_ms": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WebSearchErrorKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ok": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "count",
+        "elapsed_ms",
+        "ok"
+      ],
+      "type": "object"
+    },
     "YoursTab": {
       "description": "A session's tab in the user's own browser, as the extension reports it: the extension keeps which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7).",
       "properties": {
@@ -9632,6 +9902,17 @@
     "skills/set_enabled": {
       "params": "SkillsSetEnabledParams",
       "result": "SkillsSetEnabledResult"
+    },
+    "web_search/set_key": {
+      "params": "WebSearchSetKeyParams",
+      "result": "WebSearchSetKeyResult"
+    },
+    "web_search/status": {
+      "result": "WebSearchStatus"
+    },
+    "web_search/test": {
+      "params": "WebSearchTestParams",
+      "result": "WebSearchTestResult"
     }
   },
   "x-protocol-version": 2,

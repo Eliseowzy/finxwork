@@ -450,14 +450,12 @@ async fn direct_servers_put_their_tools_in_the_list() {
     let server = test_server(McpTestOptions::default()).await;
     let mut config = http_config("tools", &server);
     config.exposure = Some(McpExposure::Direct);
-    let mut h = Harness::start(
-        vec![config],
-        Some(server),
-        vec![
-            Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })),
-            Script::text("ok"),
-        ],
-    )
+    // No deferred group at all: web search, on by default, is one.
+    let no_search = Config { web_search: finx_core::config::WebSearchSettings { enabled: false, ..Default::default() }, ..Config::default() };
+    let mut h = Harness::start_with(no_search, vec![config], Some(server), |api| {
+        api.push(Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })));
+        api.push(Script::text("ok"));
+    })
     .await;
     let (end, events) = h.run("echo directly").await;
     assert!(matches!(end, TaskEnd::Completed { .. }));

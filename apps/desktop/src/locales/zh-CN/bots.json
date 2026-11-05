@@ -53,7 +53,8 @@
     "earlier": "更早的消息",
     "loadingEarlier": "正在载入更早的消息",
     "toBottom": "回到底部",
-    "queued": "等它回完这一句就送达"
+    "queued": "等它回完这一句就送达",
+    "fileGone": "文件已不在"
   },
   "fullAccess": {
     "title": "Bot 默认开启完全访问",

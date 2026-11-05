@@ -7,6 +7,12 @@ const ScopeContext = createContext<Scope>(null);
 export const ContentScope = ScopeContext.Provider;
 export const useScope = () => useContext(ScopeContext);
 
+/**
+ * Inside a bot's conversation: an image on this computer written in its words shows
+ * (bot-design §3.12). Elsewhere a reply's image is only its alt text.
+ */
+export const LocalImages = createContext(false);
+
 /** Inside the block a reply is still writing: nothing in it acts yet (§3.5). */
 export const DraftContext = createContext(false);
 

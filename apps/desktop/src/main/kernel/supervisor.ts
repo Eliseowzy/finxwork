@@ -11,8 +11,8 @@ import { readRecord, stopRecorded, type ServiceRecord } from "./record.ts";
 
 // Keeps a finx service that matches the app running, and says how it is
 // (desktop-kernel-integration §5–§6): connect to the one already there, or
-// start the app's own; check its version and capabilities; when it goes
-// away, start it again; replace an older one once no task runs. It talks to
+// start the app's own; check its version, capabilities and file; when it goes
+// away, start it again; replace one that differs once no task runs. It talks to
 // the service on a control connection of its own and never touches what the
 // windows' connections carry.
 
@@ -61,6 +61,7 @@ export type ListFollower = {
 
 /** The longest Unix socket path (sockaddr_un's 104 bytes, with the terminator). */
 const MAX_SOCKET_PATH = 103;
+const COMPARE_CHUNK = 1 << 20;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A Unix socket as an RpcClient transport. */
@@ -281,6 +282,13 @@ export class Supervisor {
   /** initialize on a fresh control connection; on success the service is ready. */
   private async handshake(socket: net.Socket): Promise<Handshake> {
     const rpc = new RpcClient(socketTransport(socket));
+    // finx writes its record before it listens: this is the service that answers.
+    const record = readRecord(this.o.endpoint);
+    const ours = !!record?.exe && !!this.o.binary && sameFile(record.exe, this.o.binary);
+    // Only as the app opens. On a reconnect, a service that isn't ours was started by whoever
+    // got there first, another app still open or a terminal, and replacing it would have the
+    // two replace each other for as long as both run.
+    const another = !ours && this.status.state === "starting" && (await this.anotherBuild(record));
     let init: InitializeResult;
     try {
       init = await withTimeout(
@@ -291,20 +299,21 @@ export class Supervisor {
       socket.destroy();
       return e instanceof RpcError && e.kind === "invalid_params" ? "incompatible" : "silent";
     }
-    const record = readRecord(this.o.endpoint);
-    const ours = !!record?.exe && !!this.o.binary && sameFile(record.exe, this.o.binary);
     // Replaced: a service of another version than the app ships (an older app's, or one
     // started from a terminal; after an update in place the app's own path runs the old
-    // version), one that lacks what the app needs, or the app's own when its binary was
-    // rebuilt since (development). Only once in a row: if the service the app just started
-    // still differs, starting it again would not help.
+    // version), one that lacks what the app needs, the app's own when its binary was
+    // rebuilt since (development), or one found as the app opens that runs another build:
+    // the version need not change from one build to the next (desktop-release DD-25), and
+    // a terminal's counts like an older app's. Only once in a row: if the service the app
+    // just started still differs, starting it again would not help.
     const versionOff = this.o.expected !== null && init.server_info.version !== this.o.expected;
     const lacking = this.o.required.some((c) => !init.capabilities[c]);
     const rebuilt = ours && fs.statSync(this.o.binary!).mtimeMs > Date.parse(record!.started_at) + 1000;
     const swapped = ours && this.swapped(record!);
-    const stale = (versionOff || lacking || rebuilt || swapped) && !(ours && this.replaced);
+    const stale = (versionOff || lacking || rebuilt || swapped || another) && !(ours && this.replaced);
     if (!stale) this.replaced = false;
     if (ours && this.replaced && (versionOff || lacking)) this.o.trace?.("the app's own finx differs from what the app expects; keeping it");
+    if (another) this.o.trace?.(`the service runs another build (${record!.exe}); replacing it once no task runs`);
     // The app's life does not hang on this connection (a test's either).
     socket.unref();
     this.control = { rpc, socket };
@@ -361,13 +370,25 @@ export class Supervisor {
     }
   }
 
-  /** A service this supervisor (or the app before an update) started runs a file no longer at the app's path. */
+  /** A service this supervisor (or the app before an update) started runs a file no longer at its path. */
   private swapped(record: ServiceRecord): boolean {
     if (!this.o.starts) return false;
     const noted = readStarts(this.o.starts)[this.o.endpoint];
     if (!noted || noted.pid !== record.pid) return false;
-    const now = fileId(this.o.binary!);
+    const now = fileId(record.exe!);
     return !!now && (now.dev !== noted.dev || now.ino !== noted.ino);
+  }
+
+  /**
+   * A service not running the app's file: whether it runs another build, as far as the
+   * files tell. A record naming no file tells nothing, and without a file of its own the
+   * app has nothing to start in the service's place; a file that is gone is another build.
+   */
+  private async anotherBuild(record: ServiceRecord | null): Promise<boolean> {
+    const binary = this.o.binary;
+    if (!record?.exe || !binary || !fileId(binary)) return false;
+    // A file replaced since the service started says nothing about what it runs.
+    return this.swapped(record) || !(await sameBytes(record.exe, binary));
   }
 
   private track(id: string, state: SessionState) {
@@ -446,6 +467,29 @@ function sameFile(a: string, b: string): boolean {
     return fs.realpathSync(a) === fs.realpathSync(b);
   } catch {
     return a === b;
+  }
+}
+
+/** Whether two files hold the same bytes, read only as far as the first difference; one that cannot be read does not. */
+export async function sameBytes(a: string, b: string): Promise<boolean> {
+  let x: fs.promises.FileHandle | undefined;
+  let y: fs.promises.FileHandle | undefined;
+  try {
+    x = await fs.promises.open(a, "r");
+    y = await fs.promises.open(b, "r");
+    const size = (await x.stat()).size;
+    if ((await y.stat()).size !== size) return false;
+    const [p, q] = [Buffer.allocUnsafe(COMPARE_CHUNK), Buffer.allocUnsafe(COMPARE_CHUNK)];
+    for (let at = 0; at < size; at += COMPARE_CHUNK) {
+      const [r, s] = await Promise.all([x.read(p, 0, COMPARE_CHUNK, at), y.read(q, 0, COMPARE_CHUNK, at)]);
+      if (r.bytesRead !== s.bytesRead || !p.subarray(0, r.bytesRead).equals(q.subarray(0, s.bytesRead))) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await x?.close();
+    await y?.close();
   }
 }
 

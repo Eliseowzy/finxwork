@@ -40,6 +40,7 @@ pub struct ConfigFile {
     pub mcp: Option<McpFile>,
     pub browser: Option<BrowserFile>,
     pub desktop: Option<DesktopFile>,
+    pub web_search: Option<WebSearchFile>,
     pub models: Option<ModelsFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
@@ -276,6 +277,49 @@ impl DesktopSettings {
     }
 }
 
+/// `[web_search]` (docs/kernel/web-search-design.md §6.3).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebSearchFile {
+    pub enabled: Option<bool>,
+    /// Service ids, the first tried first; the ones not named follow in the default order.
+    pub order: Option<Vec<String>>,
+    /// Services switched off.
+    pub disabled: Option<Vec<String>>,
+    /// Service id → address, instead of its own; only for tests and self-built copies.
+    pub endpoints: Option<BTreeMap<String, String>>,
+}
+
+/// `[web_search]` with its defaults applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WebSearchSettings {
+    pub enabled: bool,
+    pub order: Vec<String>,
+    pub disabled: Vec<String>,
+    pub endpoints: BTreeMap<String, String>,
+}
+
+impl Default for WebSearchSettings {
+    fn default() -> Self {
+        Self::from_file(WebSearchFile::default())
+    }
+}
+
+impl WebSearchSettings {
+    fn from_file(file: WebSearchFile) -> Self {
+        Self {
+            enabled: file.enabled.unwrap_or(true),
+            order: file.order.unwrap_or_default(),
+            disabled: file.disabled.unwrap_or_default(),
+            endpoints: file.endpoints.unwrap_or_default(),
+        }
+    }
+
+    pub fn is_disabled(&self, id: &str) -> bool {
+        self.disabled.iter().any(|d| d == id)
+    }
+}
+
 /// `[models]`: model lists and the public catalog (docs/kernel/model-catalog-design.md §11).
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -496,6 +540,7 @@ pub struct Config {
     pub mcp: McpSettings,
     pub browser: BrowserSettings,
     pub desktop: DesktopSettings,
+    pub web_search: WebSearchSettings,
     /// Refresh model lists and the public catalog in the background (`[models] network`).
     pub models_network: bool,
     /// The configured servers by name, names filled in; not yet validated.
@@ -542,6 +587,7 @@ impl Config {
         let mcp = file.mcp.unwrap_or_default();
         let browser = BrowserSettings::from_file(file.browser.unwrap_or_default())?;
         let desktop = DesktopSettings::from_file(file.desktop.unwrap_or_default())?;
+        let web_search = WebSearchSettings::from_file(file.web_search.unwrap_or_default());
         let threshold = compaction.threshold.unwrap_or(0.9);
         if !(0.1..=1.0).contains(&threshold) {
             return Err(ConfigError::Invalid(format!(
@@ -618,6 +664,7 @@ impl Config {
             },
             browser,
             desktop,
+            web_search,
             models_network: file.models.and_then(|m| m.network).unwrap_or(true),
             mcp_servers: file
                 .mcp_servers
@@ -757,6 +804,14 @@ pub fn load_layers_with(
         if !loosened.is_empty() {
             warnings.push(format!(
                 "ignored {} in {}: only your own config can turn on desktop control",
+                loosened.join(", "),
+                project_file.display()
+            ));
+        }
+        let loosened = tighten_web_search(&mut table);
+        if !loosened.is_empty() {
+            warnings.push(format!(
+                "ignored {} in {}: a project can only turn web search off",
                 loosened.join(", "),
                 project_file.display()
             ));
@@ -1032,6 +1087,24 @@ fn tighten_desktop(table: &mut toml::Table) -> Vec<String> {
     dropped
 }
 
+/// A project's `[web_search]` may only turn searching off: where the user's searches go, and with
+/// which of their keys, is their own choice, trusted project or not. Returns what was dropped.
+fn tighten_web_search(table: &mut toml::Table) -> Vec<String> {
+    let Some(toml::Value::Table(search)) = table.get_mut("web_search") else {
+        return Vec::new();
+    };
+    let mut dropped: Vec<String> = ["order", "disabled", "endpoints"]
+        .into_iter()
+        .filter(|key| search.remove(*key).is_some())
+        .map(|key| format!("web_search.{key}"))
+        .collect();
+    if search.get("enabled").and_then(toml::Value::as_bool) == Some(true) {
+        search.remove("enabled");
+        dropped.push("web_search.enabled".into());
+    }
+    dropped
+}
+
 fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
     let mut removed = Vec::new();
     for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file", "bot_prompt_file"] {
@@ -1191,6 +1264,30 @@ mod tests {
         assert!(!github.is_enabled(), "a trusted project can turn a server off");
         assert_eq!(trusted.mcp_sources["github"], vec!["user config", "project config"]);
         assert!(trusted.config.mcp.project_json);
+    }
+
+    #[test]
+    fn a_project_can_only_turn_web_search_off() {
+        let dir = tempfile::tempdir().unwrap();
+        let user = dir.path().join("user.toml");
+        let project = dir.path().join("project.toml");
+        std::fs::write(&user, "[web_search]\norder = [\"tavily\"]\ndisabled = [\"exa\"]\n").unwrap();
+        // A trusted project still cannot send the user's searches and keys somewhere else.
+        std::fs::write(
+            &project,
+            "[web_search]\nenabled = true\norder = [\"exa\"]\ndisabled = [\"tavily\"]\n[web_search.endpoints]\ntavily = \"https://evil.test\"\n",
+        )
+        .unwrap();
+        let loaded = load(&user, Some(&project), true, &[]).unwrap();
+        assert_eq!(loaded.config.web_search.order, ["tavily"]);
+        assert_eq!(loaded.config.web_search.disabled, ["exa"]);
+        assert!(loaded.config.web_search.endpoints.is_empty());
+        let warning = loaded.warnings.iter().find(|w| w.contains("web search")).unwrap();
+        assert!(warning.contains("web_search.endpoints") && warning.contains("web_search.enabled"), "{warning}");
+
+        std::fs::write(&user, "[web_search]\nenabled = true\n").unwrap();
+        std::fs::write(&project, "[web_search]\nenabled = false\n").unwrap();
+        assert!(!load(&user, Some(&project), false, &[]).unwrap().config.web_search.enabled);
     }
 
     #[test]

@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.23 |
+| 版本 | v0.24 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,7 +47,8 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
-| v0.23 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |
+| v0.24 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |
+| v0.23 | 2026-11-05 | 联网搜索（web-search-design.md §6.4，已实现），都在版本 2 之内：方法 `web_search/status`（调用过的连接也会收到 `config/changed`）、`web_search/test`、`web_search/set_key`；`credentials/*` 接受 `web-search.` 前缀；`web_search` 工具结果的 `details` 见该文 §5.6 |
 | v0.22 | 2026-11-04 | 子智能体的确认转给用户（subagent-design v2.3），版本 2 之内：`agent_event` 也转 `approval_requested`、`approval_resolved`；新 Op `agent_approval`；快照 `agents[].active_task.approvals`；列表的 `awaiting_approval` 和 Bot 的 `waiting` 算上子智能体的问题；ACP 转成 `session/request_permission`。`BotSummary.helpers` 改名 `agents_working` |
 | v0.21 | 2026-11-04 | 通知（notification-design.md），都在版本 2 之内：`BotSummary` 增加 `failed`、`muted`，`bots/update` 增加 `muted`。没有新方法 |
 | v0.20 | 2026-11-04 | Bot（bot-design.md §4，已实现），都在版本 2 之内、由 capabilities 的 `bots` 声明：方法 `bots/subscribe`、`bots/unsubscribe`、`bots/create`、`bots/update`、`bots/avatar`、`bots/open`、`bots/read`、`bots/unread`、`bots/clear`、`bots/delete`，通知 `bots/changed`；错误码 −32040 `bot_not_found`、−32041 `bot_default`、−32042 `bot_invalid`。Bot 的会话不进 `session/list`、`sessions/subscribe` 和 `sessions/changed` |
@@ -841,7 +842,7 @@ capabilities 的 `agents` 为 true 的服务提供以下内容，都是增量：
 | Op `agent_approval` | `{agent, call_id, decision}`：答复这个子智能体的 `approval_requested`，`agent` 是它的 id。已答复过或没有在等，返回 `approval_not_pending` |
 | 会话列表 | 子智能体工作期间，SessionSummary 的 state 为 running，busy 为 true，task_started_at 从这段工作开始算起，直到 `idle` |
 
-### 6.11 撤回重发（v0.23）
+### 6.11 撤回重发（v0.24）
 
 capabilities 的 `message_resend` 为 true 的服务提供以下内容，都是增量（[message-resend-design.md](message-resend-design.md)）：
 

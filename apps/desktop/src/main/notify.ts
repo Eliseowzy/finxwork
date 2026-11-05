@@ -32,7 +32,7 @@ function inFront(): boolean {
 function words(n: Alert): { title: string; body: string } {
   switch (n.kind) {
     case "bot_message":
-      return { title: n.name, body: n.text };
+      return { title: n.name, body: n.text || (n.images ? i18n.t("main:notify.image") : n.file ? i18n.t("main:notify.file", { name: n.file }) : "") };
     case "bot_approval":
       return { title: n.name, body: i18n.t("main:notify.approval", { what: n.text }) };
     case "bot_failed":

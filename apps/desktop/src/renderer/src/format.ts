@@ -53,6 +53,9 @@ export function timeLine(at: Date, previous: Date | undefined, now: Date, pause 
 }
 
 /** How long something took or has run, in its two largest units: "48 s", "2 min 14 s", "3 hr 5 min", "2 d 4 hr", "1 hr". */
+/** A file's size as people read it. */
+export const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);
+
 export function durationText(ms: number): string {
   const s = Math.max(1, Math.round(ms / 1000));
   const part = (unit: "seconds" | "minutes" | "hours" | "days", count: number) => t(`time.${unit}`, { count });

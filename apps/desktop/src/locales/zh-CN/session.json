@@ -202,6 +202,9 @@
     "connectors": "连接器",
     "browseConnectors": "浏览连接器",
     "manageConnectors": "管理连接器",
+    "searchSwitch": "联网搜索",
+    "searchOn": "已打开联网搜索，所有对话从下一步起可以使用",
+    "searchOff": "已关闭联网搜索，所有对话从下一步起不再搜索",
     "browserSwitch": "浏览器",
     "computerSwitch": "电脑操控",
     "computerGrant": "需要授权",
@@ -216,7 +219,9 @@
     "manageSkills": "管理技能",
     "noSkills": "还没有可用的技能",
     "tabKind": "浏览器标签页",
-    "tabs_other": "{{count}} 个标签页"
+    "tabs_other": "{{count}} 个标签页",
+    "prevImage": "上一张",
+    "nextImage": "下一张"
   },
   "inspector": {
     "label": "会话详情",
@@ -561,5 +566,26 @@
     "sending": "正在撤回…",
     "refused": "没能重发，内容还在输入框里",
     "gone": "这条消息已在别处被撤回，内容留在了输入框里"
+  },
+  "webSearch": {
+    "only": " · 仅 {{sites}}",
+    "siteSeparator": "、",
+    "failed": "搜索失败",
+    "and": "，",
+    "stop": "。",
+    "openSettings": "打开设置",
+    "noneUsable": "所有搜索服务都关了，或者还没设置好。",
+    "failedOver": "{{failed}}，这次用 {{name}}",
+    "foot_zero": "没有结果 · {{name}} · {{seconds}} 秒",
+    "foot_other": "{{count}} 条结果 · {{name}} · {{seconds}} 秒",
+    "footAfter_zero": "没有结果 · {{seconds}} 秒",
+    "footAfter_other": "{{count}} 条结果 · {{seconds}} 秒",
+    "why": {
+      "auth_failed": "{{name}} 拒绝了密钥",
+      "quota_exhausted": "{{name}} 额度用完了",
+      "rate_limited": "{{name}} 限流",
+      "unreachable": "{{name}} 连不上",
+      "bad_response": "{{name}} 的回答读不了"
+    }
   }
 }
