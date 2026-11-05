@@ -1,5 +1,10 @@
 {
   "definition": "Minor page faults of one fresh process, spawn to exit: the median of 50 runs of the static dist build on the CI's Linux runner (bench_cli.py). A command without a number is only reported. Set a number about 5% above what the command measures, because changes elsewhere move the binary's layout and with it a few faults. Raising a number needs a reason below.",
-  "reason": "No numbers yet: they come from the CI's runners, once the runs show that both kinds of runner agree.",
-  "page_faults": {}
+  "reason": "CI run 41986118445 (binary b182cf613216, EPYC 9V45) measured 241, 365, 364 and 302; these are 5% above. Runners agree: one binary took the same medians on EPYC 7763 and 9V45. The numbers include the Excel engine's static data that a static PIE relocates at start, after its time-zone tables were cut to UTC (technical design D-99).",
+  "page_faults": {
+    "help": 253,
+    "status": 383,
+    "doctor": 382,
+    "sessions": 317
+  }
 }

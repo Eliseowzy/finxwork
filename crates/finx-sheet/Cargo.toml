@@ -8,6 +8,8 @@ publish.workspace = true
 
 [dependencies]
 calamine.workspace = true
+# Not used here: it turns on the filter for IronCalc's copy (technical design D-99).
+chrono-tz.workspace = true
 encoding_rs.workspace = true
 ironcalc_base.workspace = true
 quick-xml.workspace = true
