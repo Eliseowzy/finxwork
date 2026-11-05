@@ -204,3 +204,49 @@ async fn upgrade_replaces_the_program_and_its_components() {
     assert!(env.home.path().join("addons/pdf/99.0.0/libpdfium.test").is_file(), "the component came along");
     assert!(!env.home.path().join("addons/pdf").join(VERSION).exists(), "and the old one went");
 }
+
+/// tools/release/install.sh against a local release: what `curl … | sh` does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_install_script_checks_and_installs() {
+    let releases = Releases::start();
+    let program = b"#!/bin/sh\necho finx 9.9.9\n";
+    let main = archive(&[("finx", program, 0o755), ("README.md", b"read me", 0o644)]);
+    let name = format!("finx-9.9.9-{}.tar.gz", target());
+    let sums = format!("{}  {name}\n", sha256(&main));
+    for dir in ["/latest/download", "/download/v9.9.9"] {
+        releases.put(&format!("{dir}/{name}"), main.clone());
+        releases.put(&format!("{dir}/SHA256SUMS"), sums.clone().into_bytes());
+    }
+    let script = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/release/install.sh");
+    let home = tempfile::tempdir().unwrap();
+    let dir = home.path().join("bin");
+    let install = |extra: &[&str]| {
+        std::process::Command::new("sh")
+            .arg(&script)
+            .args(extra)
+            .env("HOME", home.path())
+            .env("FINX_RELEASES_URL", &releases.base)
+            .env("FINX_INSTALL_DIR", &dir)
+            .output()
+            .unwrap()
+    };
+    let out = install(&[]);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "{stdout}{}", String::from_utf8_lossy(&out.stderr));
+    assert!(stdout.contains("installed finx 9.9.9"), "{stdout}");
+    assert!(stdout.contains("is not in your PATH"), "{stdout}");
+    assert_eq!(std::fs::read(dir.join("finx")).unwrap(), program);
+    let out = install(&["--version", "9.9.9"]);
+    assert!(out.status.success());
+
+    // A file that is not what the list says is not installed.
+    std::fs::remove_file(dir.join("finx")).unwrap();
+    releases.put(&format!("/latest/download/{name}"), archive(&[("finx", b"something else", 0o755)]));
+    let out = install(&[]);
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("does not match"));
+    assert!(!dir.join("finx").exists());
+
+    let out = install(&["--version", "1.0.0"]);
+    assert!(!out.status.success(), "a version that does not exist");
+}

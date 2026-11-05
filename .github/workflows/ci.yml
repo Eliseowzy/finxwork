@@ -44,6 +44,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: The public build compiles and the generated reference is current
+        run: |
+          cargo check -p finx-cli --no-default-features
+          node tools/gen-protocol-docs.mjs --check
+          sh tools/check-public.sh
       - name: Client and desktop tests
         run: |
           pnpm install --frozen-lockfile

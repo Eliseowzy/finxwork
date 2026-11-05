@@ -1012,7 +1012,7 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "finx-acp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "agent-client-protocol-schema",
  "bytes",
@@ -1032,7 +1032,7 @@ dependencies = [
 
 [[package]]
 name = "finx-bench"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "finx-browser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1069,7 +1069,7 @@ dependencies = [
 
 [[package]]
 name = "finx-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "finx-connections"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes",
  "async-stream",
@@ -1152,7 +1152,7 @@ dependencies = [
 
 [[package]]
 name = "finx-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1198,7 +1198,7 @@ dependencies = [
 
 [[package]]
 name = "finx-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "png",
@@ -1211,7 +1211,7 @@ dependencies = [
 
 [[package]]
 name = "finx-docs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "finx-protocol",
@@ -1232,7 +1232,7 @@ dependencies = [
 
 [[package]]
 name = "finx-eval"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1247,7 +1247,7 @@ dependencies = [
 
 [[package]]
 name = "finx-llm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1275,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "finx-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1302,7 +1302,7 @@ dependencies = [
 
 [[package]]
 name = "finx-mock"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1316,7 +1316,7 @@ dependencies = [
 
 [[package]]
 name = "finx-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "finx-llm",
  "schemars 0.8.22",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "finx-rpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "memchr",
@@ -1339,7 +1339,7 @@ dependencies = [
 
 [[package]]
 name = "finx-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "finx-sheet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "calamine",
  "chrono-tz",
@@ -1387,7 +1387,7 @@ dependencies = [
 
 [[package]]
 name = "finx-tools"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",

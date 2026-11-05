@@ -87,8 +87,9 @@ Run `finx <command> --help` for a command's options.
 #[command(
     name = "finx",
     version,
-    about = "finx: an agent kernel for software tasks",
+    about = "finx: an AI agent for your terminal, your editor and your programs",
     help_template = TOP_LEVEL_HELP,
+    override_usage = "finx [\"PROMPT\"]\n       finx <COMMAND>",
     disable_version_flag = true,
     // The last one wins, so that a wrapper or an alias can set a flag and the command line can
     // still change it. Clap applies this to every subcommand.

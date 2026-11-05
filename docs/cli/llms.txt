@@ -1,0 +1,16 @@
+# finx
+
+> An AI agent for the terminal, editors and programs. `finx exec --json "TASK"` runs one task and prints one JSON result; the answer is in `final_output`.
+
+## Docs
+
+- [Quickstart](quickstart.md): install, connect a model, first task
+- [Scripting](scripting.md): finx exec, the result object, exit codes, CI, environment variables
+- [Models](models.md): every way to connect a model
+- [Tools](tools.md): the tools, components, MCP servers, Skills
+- [Permissions](permissions.md): modes, rules, protected paths, project trust
+- [ACP](acp.md): editors
+- [JSON-RPC](json-rpc.md): programs that drive finx
+- [Protocol reference](protocol-reference.md): every method
+- [Privacy](privacy.md): every network access, what is stored
+- [Troubleshooting](troubleshooting.md): finx doctor, common messages

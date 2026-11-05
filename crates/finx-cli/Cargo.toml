@@ -10,6 +10,11 @@ publish.workspace = true
 name = "finx"
 path = "src/main.rs"
 
+[features]
+default = ["local-accounts"]
+# The public release is built without this: --no-default-features.
+local-accounts = ["finx-connections/local-accounts"]
+
 [dependencies]
 crossterm.workspace = true
 unicode-width.workspace = true

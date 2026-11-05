@@ -32,7 +32,7 @@
 
 ## 验证
 
-- `FINX_SHEET_CORPUS=/Users/eliseo/ai-excel/corpus/real cargo test -p finx-sheet`：单元、计算、随机写入、影响面往返、回归；真实模型的计算一致性、循环从 0 重算、修改后往返均覆盖。语料不进仓库。
+- `FINX_SHEET_CORPUS=<语料目录> cargo test -p finx-sheet`：单元、计算、随机写入、影响面往返、回归；真实模型的计算一致性、循环从 0 重算、修改后往返均覆盖。语料不进仓库。
 - `cargo test -p finx-cli --test e2e_sheets --test e2e_docs`：4 条，覆盖协议与智能体流程、重算不改修订/文件、CSV 原编码保存、TSV 保存、错误表名和格式转换拒绝、XLS 编辑/保存拒绝。
 - `FINX_UPDATE_SNAPSHOTS=1 cargo test -p finx-protocol`，随后 `node packages/protocol/scripts/generate.mjs`：已更新 schema 和 TypeScript 类型。
 - `pnpm --filter @finx/desktop typecheck` 与 `node --test apps/desktop/src/shared/locales.test.ts`：通过。
