@@ -155,6 +155,43 @@ async fn exec_ops_stdin_answers_approvals() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn exec_ops_stdin_answers_what_a_sub_agent_asks() {
+    let env = TestEnv::new("manual", "").await;
+    let mut child = env
+        .finx(&["exec", "--json", "--ops-stdin", "[[mock:delegate:touch made.txt]] run it"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut asked = 0;
+    while let Some(line) = lines.next_line().await.unwrap() {
+        let event: Value = serde_json::from_str(&line).unwrap();
+        if event["type"] == "agent_event" && event["event"]["type"] == "approval_requested" {
+            asked += 1;
+            let op = json!({"type": "agent_approval", "agent": event["agent_id"], "call_id": event["event"]["call_id"], "decision": {"type": "approve"}});
+            stdin.write_all(format!("{op}\n").as_bytes()).await.unwrap();
+            stdin.flush().await.unwrap();
+        }
+    }
+    assert_eq!(common::exit_code(&mut child).await, 0);
+    assert_eq!(asked, 1);
+    assert!(env.work().join("made.txt").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn with_nobody_to_ask_exec_refuses_a_sub_agents_call() {
+    let env = TestEnv::new("manual", "").await;
+    let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:delegate:touch made.txt]] run it"]).await;
+    assert_eq!(code, 0);
+    let refused = events.iter().find(|e| e["type"] == "agent_event" && e["event"]["type"] == "tool_completed").expect("the call ended");
+    let text = refused["event"]["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("nobody can approve it") && text.contains("list it in your report"), "{text}");
+    assert!(!env.work().join("made.txt").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exec_reports_retries_failures_and_cutoffs() {
     let env = TestEnv::new("bypass-permissions", "").await;
     let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:retry]] once"]).await;

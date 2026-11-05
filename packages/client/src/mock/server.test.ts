@@ -152,7 +152,7 @@ test("bots: the demo's, a new one, and a conversation in messages that stays out
   const rpc = client(server);
   await rpc.request("initialize", { protocol_version: 2 });
   const { bots } = await rpc.request("bots/subscribe", {});
-  assert.deepEqual(bots.map((b) => b.name), ["FinxBot", "研究员", "运维", "写作助手", "记账"]);
+  assert.deepEqual(bots.map((b) => b.name), ["FinxBot", "研究员", "运维", "写作助手", "分析师", "记账"]);
   assert.equal(bots.find((b) => b.default)?.avatar.kind, "mark");
   assert.equal(bots.find((b) => b.name === "写作助手")?.unread, 2);
   const changed: string[] = [];

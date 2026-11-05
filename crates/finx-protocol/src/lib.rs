@@ -12,6 +12,7 @@ mod event;
 pub mod mcp;
 mod op;
 pub mod schema;
+pub mod web_search;
 
 pub use event::AgentRef;
 pub use event::AgentStatus;

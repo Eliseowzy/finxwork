@@ -95,6 +95,8 @@
     "sessionFailed": "任务失败了",
     "sessionEnded": "任务已结束",
     "testTitle": "FinxWork",
-    "testBody": "有回复或要确认时，你会这样收到提醒。"
+    "testBody": "有回复或要确认时，你会这样收到提醒。",
+    "image": "[图片]",
+    "file": "[文件] {{name}}"
   }
 }

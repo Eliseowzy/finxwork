@@ -124,8 +124,23 @@ export interface SessionView {
 const progressTail = 16 * 1024;
 
 export function statusOf(v: SessionView): SessionStatus {
-  if (v.live) return v.live.approvals.length > 0 ? "awaiting_approval" : "running";
+  if (pendingApproval(v)) return "awaiting_approval";
+  if (v.live) return "running";
   return v.failure ? "failed" : "idle";
+}
+
+/**
+ * What waits for the owner: the session's own question or, while the session itself may be idle,
+ * a sub-agent's, which its own session holds. finx asks them one at a time.
+ */
+export function pendingApproval(v: SessionView): { approval: PendingApproval; agent?: AgentView } | null {
+  const own = v.live?.approvals[0];
+  if (own) return { approval: own };
+  for (const agent of runningAgents(v)) {
+    const approval = agent.view.live?.approvals[0];
+    if (approval) return { approval, agent };
+  }
+  return null;
 }
 
 /** The state a snapshot describes. */

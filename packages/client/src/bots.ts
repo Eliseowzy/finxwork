@@ -19,22 +19,22 @@ export function mergeBots(list: BotSummary[], changed: BotSummary[], deleted: st
   return [...out, ...changed.filter((c) => !deleted.includes(c.id))];
 }
 
-/** Background helpers at work, or answering: what its row and title bar say it does. */
+/** Sub-agents at work, or answering: what its row and title bar say it does. */
 export function botWorking(b: BotSummary): boolean {
-  return !!b.typing || (b.helpers ?? 0) > 0;
+  return !!b.typing || (b.agents_working ?? 0) > 0;
 }
 
 /** The row's second line, the first that applies: an approval waits, it is busy, its last message. */
 export type BotLine =
   | { kind: "waiting"; text: string }
-  | { kind: "helpers"; count: number }
+  | { kind: "agents"; count: number }
   | { kind: "typing" }
   | { kind: "last"; from: LastMessage["from"]; text: string; images: number; files: string[] }
   | { kind: "empty" };
 
 export function botLine(b: BotSummary): BotLine {
   if (b.waiting) return { kind: "waiting", text: b.waiting };
-  if ((b.helpers ?? 0) > 0) return { kind: "helpers", count: b.helpers ?? 0 };
+  if ((b.agents_working ?? 0) > 0) return { kind: "agents", count: b.agents_working ?? 0 };
   if (b.typing) return { kind: "typing" };
   if (!b.last) return { kind: "empty" };
   const { text, files } = lastText(b.last);
@@ -50,7 +50,7 @@ const attached = "Attached files:\n";
  */
 export function lastText(last: LastMessage): { text: string; files: string[] } {
   let text = last.text;
-  let files: string[] = [];
+  let files: string[] = last.file ? [last.file] : [];
   if (last.from === "user") {
     const at = text.indexOf(attached);
     if (at >= 0) {

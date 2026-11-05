@@ -154,7 +154,9 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
         json!({ "path": env.home.skills_dir().join("pdf-tools/references/formats.md") }),
     ));
     api.push(Script::text("done"));
-    let mut kernel = start(&env, &api, PermissionMode::Manual, Config::default(), ALL_TOOLS).await;
+    // No deferred group, so what the model gets is the frozen prompt alone, as logged.
+    let no_search = || Config { web_search: finx_core::config::WebSearchSettings { enabled: false, ..Default::default() }, ..Config::default() };
+    let mut kernel = start(&env, &api, PermissionMode::Manual, no_search(), ALL_TOOLS).await;
     let result = kernel.run(prompt("extract the tables from report.pdf")).await.unwrap();
     assert_eq!(result.end, TaskEnd::Completed { last_message: Some("done".into()) });
     assert!(
@@ -227,7 +229,7 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
         thinking: None,
         permission_mode: None,
         home: env.home.clone(),
-        config: Arc::new(Config::default()),
+        config: Arc::new(no_search()),
         project_root: None,
         trusted: false,
         interactive_approvals: false,

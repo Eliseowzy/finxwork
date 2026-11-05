@@ -16,6 +16,8 @@
 .appr-h b{font-weight:600;flex:none;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .appr-h .why{flex:1;min-width:0;color:var(--l2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appr-h .qx-tag{margin-left:auto;flex:none}
+.appr-who{margin-left:auto;flex:0 1 auto;min-width:0;color:var(--l2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appr-who+.qx-tag{margin-left:0}
 .appr-app{flex:none;display:inline-flex;align-items:center;gap:5px;max-width:30%;padding:1px 8px 1px 4px;border-radius:999px;background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appr-app img{width:16px;height:16px;flex:none}
 /* A website's question: why it asks, when the mode would not, and the address, under the title. */
@@ -114,6 +116,14 @@
 .tile-x .ic{width:10px;height:10px;stroke-width:3.3}
 /* An image over the window, on a dark veil. */
 .lightbox{position:fixed;inset:0;z-index:100;cursor:zoom-out;display:flex;align-items:center;justify-content:center;padding:40px;background:rgba(0,0,0,.72);animation:fade .15s;-webkit-app-region:no-drag}
+/* Several images: step through them; which one it is, under it. */
+.lightbox.many{padding:40px 55px 48px}
+.lb-cap{position:absolute;left:0;right:0;bottom:13px;text-align:center;font-size:12.5px;line-height:18px;color:rgba(255,255,255,.72);font-variant-numeric:tabular-nums;pointer-events:none}
+.lb-go{position:absolute;top:50%;width:34px;height:34px;margin-top:-17px;padding:0;border:0;border-radius:var(--r-sm);background:rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center}
+.lb-go:hover{background:rgba(255,255,255,.24)}
+.lb-go.prev{left:13px}
+.lb-go.next{right:13px}
+.lb-go .ic{width:18px;height:18px}
 .lightbox img{max-width:100%;max-height:100%;border-radius:var(--r-md);box-shadow:0 20px 60px rgba(0,0,0,.5);animation:zoomin .2s cubic-bezier(.2,0,0,1)}
 @keyframes zoomin{from{transform:scale(.96);opacity:.6}to{transform:none;opacity:1}}
 

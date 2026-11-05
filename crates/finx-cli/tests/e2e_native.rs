@@ -139,6 +139,70 @@ async fn stdio_runs_a_full_session() {
     assert_eq!(common::exit_code(&mut child).await, 0);
 }
 
+/// The next thing a sub-agent asks, as its `agent_event`.
+async fn until_asked(events: &mut tokio::sync::mpsc::UnboundedReceiver<finx_rpc::Incoming>) -> Value {
+    loop {
+        let incoming = recv(events).await;
+        if incoming.method() != "session/event" {
+            continue;
+        }
+        let event = incoming.params()["event"].clone();
+        if event["type"] == "agent_event" && event["event"]["type"] == "approval_requested" {
+            return event;
+        }
+        assert_ne!(event["type"], "idle", "ended without asking");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_clients_of_a_session_answer_what_its_sub_agents_ask() {
+    let env = TestEnv::new("manual", "").await;
+    let schema = SchemaCheck::new(&["SnapshotResult", "Event"]);
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let demux = Demux::spawn(incoming);
+    let cwd = env.workspace("delegate");
+    let (session, _) = new_session(&client, &cwd).await;
+    let mut events = demux.subscribe(&session);
+    let op = json!({"session_id": session, "op": {"type": "prompt", "input": [{"type": "text", "text": "[[mock:delegate:touch a.txt|touch b.txt]] run them"}]}});
+    client.request("session/op", op).await.unwrap();
+
+    let first = until_asked(&mut events).await;
+    schema.check("Event", &first);
+    let answer = |asked: &Value, decision: Value| json!({"session_id": session, "op": {"type": "agent_approval", "agent": asked["agent_id"], "call_id": asked["event"]["call_id"], "decision": decision}});
+
+    // A client that comes now sees it in the snapshot, under the sub-agent; the list says the
+    // session waits for the user.
+    let attach = client.request("session/attach", json!({"session_id": session})).await.unwrap();
+    schema.check("SnapshotResult", &attach);
+    let asking = attach["snapshot"]["agents"].as_array().unwrap().iter().find(|a| a["agent_id"] == first["agent_id"]).unwrap();
+    assert_eq!(asking["active_task"]["approvals"][0]["call_id"], first["event"]["call_id"]);
+    let list = client.request("session/list", json!({})).await.unwrap();
+    assert_eq!(list["sessions"][0]["state"], "awaiting_approval");
+
+    // The session's own approval op is not the way, and the first answer counts.
+    let own = json!({"session_id": session, "op": {"type": "approval", "call_id": first["event"]["call_id"], "decision": {"type": "approve"}}});
+    let err = client.request("session/op", own).await.unwrap_err();
+    assert_eq!(err.kind(), Some("approval_not_pending"));
+    client.request("session/op", answer(&first, json!({"type": "approve"}))).await.unwrap();
+    let err = client.request("session/op", answer(&first, json!({"type": "approve"}))).await.unwrap_err();
+    assert_eq!(err.kind(), Some("approval_not_pending"));
+
+    // One question at a time: the other sub-agent asks now.
+    let second = until_asked(&mut events).await;
+    assert_ne!(second["agent_id"], first["agent_id"]);
+    client.request("session/op", answer(&second, json!({"type": "approve"}))).await.unwrap();
+    loop {
+        let incoming = recv(&mut events).await;
+        if incoming.method() == "session/event" && incoming.params()["event"]["type"] == "idle" {
+            break;
+        }
+    }
+    assert!(cwd.join("a.txt").exists() && cwd.join("b.txt").exists());
+    let list = client.request("session/list", json!({})).await.unwrap();
+    assert_eq!(list["sessions"][0]["state"], "idle");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_session_without_a_project_works_in_a_folder_of_its_own() {
     let env = TestEnv::new("manual", "").await;

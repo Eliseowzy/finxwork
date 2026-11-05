@@ -47,6 +47,13 @@ pub enum Op {
         call_id: String,
         decision: ApprovalDecision,
     },
+    /// Answers what a sub-agent asks: its `approval_requested`, carried by an `agent_event`.
+    AgentApproval {
+        /// The agent's id.
+        agent: String,
+        call_id: String,
+        decision: ApprovalDecision,
+    },
     SetModel {
         model: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]

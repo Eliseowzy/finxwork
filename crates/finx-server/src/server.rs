@@ -1004,6 +1004,11 @@ mod tests {
             .unwrap();
         let location = created.location.clone();
         drop(created);
+        // The writer creates the log in the background.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !location.metadata().is_ok_and(|m| m.len() > 0) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         let (data_dir, _) = FinxHome::session_data_dir(&location, &id);
         std::fs::create_dir_all(data_dir.join("tool-output")).unwrap();
         std::fs::write(

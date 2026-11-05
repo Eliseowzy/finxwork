@@ -8,6 +8,7 @@ import { Lightbox } from "../composer/Tile";
 import { Code } from "./Code";
 import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
+import { SearchResults, searchCall, searchDetails } from "./SearchResults";
 import { handoffOf } from "./Yours";
 
 /**
@@ -142,10 +143,15 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const toAgent = tool.name === "send_message";
   // A page handed to the user says what they were asked.
   const handoff = handoffOf({ name: tool.name, args: tool.args });
-  const named = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
+  // A web search reads as the words searched for, and opens to the pages found.
+  const search = searchCall(tool);
+  const found = search && searchDetails(tool);
+  const named = search
+    ? search.query + (search.sites.length ? t("webSearch.only", { sites: search.sites.join(t("webSearch.siteSeparator")) }) : "")
+    : toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
   // The kernel's title for a page opened in the user's own browser.
   const object = named.replace(/ in your browser$/, t("yours.inYourBrowser"));
-  const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : handoff !== null && tool.state === "done" ? t("yours.handoff.handled") : toolVerb(tool);
+  const verb = search && tool.state === "failed" ? t("webSearch.failed") : toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : handoff !== null && tool.state === "done" ? t("yours.handoff.handled") : toolVerb(tool);
   return (
     <div
       className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}
@@ -181,7 +187,7 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
         </div>
       )}
       {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
-      {output && <div className="out sel-text">{output}</div>}
+      {found ? open && <SearchResults details={found} /> : output && <div className="out sel-text">{output}</div>}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { AssistantContent, BotSummary, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, fromSnapshot, type SessionView } from "./session.ts";
 import { attention, botLine, initialOf, lastText, mergeBots, plain, searchBots, sortBots } from "./bots.ts";
-import { botChat, busyBubble, processSteps } from "./botChat.ts";
+import { botChat, busyBubble, imageRatio, imageRows, processSteps } from "./botChat.ts";
 
 const bot = (id: string, o: Partial<BotSummary> = {}): BotSummary => ({ id, name: id, avatar: { kind: "mono", hue: "slate" }, created_at: "2026-11-01T00:00:00Z", ...o });
 const at = (minute: number) => `2026-11-04T10:${String(minute).padStart(2, "0")}:00Z`;
@@ -22,10 +22,10 @@ test("pinned bots first, then the latest message; busy ones keep their place", (
   assert.deepEqual(attention([bot("x", { unread: 2 }), bot("y", { waiting: "rm -rf build" })]), { unread: true, waiting: true });
 });
 
-test("a row's second line: an approval, then helpers, then answering, then the last message", () => {
+test("a row's second line: an approval, then sub-agents, then answering, then the last message", () => {
   const last = { from: "user" as const, text: "看看这个\nAttached files:\n/Users/me/报告.pdf\n/Users/me/data.xlsx", ts: at(1) };
-  assert.deepEqual(botLine(bot("a", { waiting: "重启 nginx", helpers: 2, typing: true, last })), { kind: "waiting", text: "重启 nginx" });
-  assert.deepEqual(botLine(bot("a", { helpers: 2, typing: true, last })), { kind: "helpers", count: 2 });
+  assert.deepEqual(botLine(bot("a", { waiting: "重启 nginx", agents_working: 2, typing: true, last })), { kind: "waiting", text: "重启 nginx" });
+  assert.deepEqual(botLine(bot("a", { agents_working: 2, typing: true, last })), { kind: "agents", count: 2 });
   assert.deepEqual(botLine(bot("a", { typing: true, last })), { kind: "typing" });
   assert.deepEqual(botLine(bot("a", { last })), { kind: "last", from: "user", text: "看看这个", images: 0, files: ["报告.pdf", "data.xlsx"] });
   assert.deepEqual(botLine(bot("a")), { kind: "empty" });
@@ -103,7 +103,7 @@ test("a message sent while the bot answered keeps its place, whether queued or i
     { type: "queue_changed", queued: [{ id: "u2", mode: "steer", message: { content: [{ type: "text", text: "再写一首夏天的" }], ts: 10_500 } }] },
   ]);
   assert.deepEqual(botChat(live).map((i) => i.kind === "user" && `${i.text}${i.queued ? " (queued)" : ""}`), ["写一首春天的诗", "再写一首夏天的 (queued)"]);
-  assert.deepEqual(busyBubble(live), { typing: true, helpers: [] });
+  assert.deepEqual(busyBubble(live), { typing: true, agents: [] });
   const later = applyEvents(live, [
     { seq: 10, ts: 0, ...assistant("a1", [send("c1", "春天的诗。", true)], 11_000, 2000) } as Event,
     { seq: 11, ts: 0, ...started("c1") } as Event,
@@ -145,7 +145,7 @@ test("a failed, refused or cancelled send shows nothing; an approval is no part 
   assert.ok(failure.kind === "failure" && failure.last && failure.error.kind === "rate_limited");
 });
 
-test("helpers at work make the bot busy, each with what it was asked to do", () => {
+test("sub-agents at work make the bot busy, each with what it was asked to do", () => {
   const v = play([
     { type: "task_started", task_id: "t1" },
     user("u1", "调研一下", 10_000),
@@ -161,10 +161,106 @@ test("helpers at work make the bot busy, each with what it was asked to do", () 
   ]);
   const busy = busyBubble(v);
   assert.equal(busy?.typing, false);
-  assert.deepEqual(busy?.helpers.map((h) => [h.label, h.step]), [["调研更新方案", "curl releases"]]);
+  assert.deepEqual(busy?.agents.map((h) => [h.label, h.step]), [["调研更新方案", "curl releases"]]);
   // The launch is part of the first message's process.
   const bubble = botChat(v).find((i) => i.kind === "bot");
   assert.ok(bubble?.kind === "bot" && bubble.process.some((s) => s.kind === "agents"));
+});
+
+// ---- message types (bot-design §3.12) ----
+
+const attachCall = (id: string, paths: string[], over: Record<string, unknown> = { type: "attachment" }): AssistantContent => ({ type: "tool_call", id, name: "send_to_user", arguments: { files: paths.map((path) => ({ path })), ...over } });
+const askCall = (id: string, text: string, options: string[]): AssistantContent => ({ type: "tool_call", id, name: "send_to_user", arguments: { type: "question", text, options: options.map((label) => ({ label })) } });
+const sentFiles = (id: string, files: Record<string, unknown>[]): EventMsg => ({
+  type: "tool_completed",
+  call_id: id,
+  result: { call_id: id, tool_name: "send_to_user", content: [{ type: "text", text: "Sent." }], is_error: false, ts: 0, details: { files } },
+});
+const shape = (v: SessionView) => botChat(v).map((i) => (i.kind === "attachment" ? `files:${i.files.map((f) => f.name).join(",")}` : i.kind === "question" ? `ask:${i.text}${i.open ? " (open)" : ""}` : i.kind === "bot" ? `bot:${i.text}` : i.kind === "user" ? `user:${i.text}` : i.kind));
+
+test("files show once they were found to be there, with what the result says of each", () => {
+  const begun: EventMsg[] = [{ type: "task_started", task_id: "t1" }, user("u1", "发我", 10_000), assistant("a1", [send("c1", "好了。"), attachCall("c2", ["chart.png", "报告.pdf"])], 11_000), started("c1"), started("c2")];
+  assert.deepEqual(shape(play(begun)), ["user:发我", "bot:好了。"], "words at once, files when done");
+
+  const v = play([...begun, done("c1"), sentFiles("c2", [{ path: "/b/files/chart.png", size: 2048, image: true, width: 960, height: 600 }, { path: "/b/files/报告.pdf", size: 4096 }])]);
+  assert.deepEqual(shape(v), ["user:发我", "bot:好了。", "files:chart.png,报告.pdf"]);
+  const item = botChat(v)[2];
+  assert.ok(item.kind === "attachment");
+  assert.deepEqual(item.files, [
+    { path: "/b/files/chart.png", name: "chart.png", size: 2048, image: true, width: 960, height: 600 },
+    { path: "/b/files/报告.pdf", name: "报告.pdf", size: 4096, image: false },
+  ]);
+  assert.equal(item.ts, 11_000, "in the order sent");
+
+  const wrong = play([...begun, done("c1"), done("c2", "send_to_user", "gone.pdf: no such file", true)]);
+  assert.deepEqual(shape(wrong), ["user:发我", "bot:好了。"], "a wrong path shows nothing");
+});
+
+test("files may come with words, and a call without a type is what it carries", () => {
+  const v = play([
+    { type: "task_started", task_id: "t1" },
+    user("u1", "发我", 10_000),
+    assistant("a1", [attachCall("c1", ["a.pdf"], { text: "在这里。" }), { type: "tool_call", id: "c2", name: "send_to_user", arguments: { text: "选哪个？", options: [{ label: "甲" }] } }], 11_000),
+    started("c1"),
+    started("c2"),
+  ]);
+  assert.deepEqual(shape(v), ["user:发我", "ask:选哪个？ (open)"], "words with files wait for the files, as files do");
+  const sent = play([
+    { type: "task_started", task_id: "t1" },
+    user("u1", "发我", 10_000),
+    assistant("a1", [attachCall("c1", ["a.pdf"], { text: "在这里。" })], 11_000),
+    started("c1"),
+    sentFiles("c1", [{ path: "/b/a.pdf", size: 1 }]),
+  ]);
+  const item = botChat(sent)[1];
+  assert.ok(item.kind === "attachment");
+  assert.equal(item.text, "在这里。");
+});
+
+test("the latest question can be tapped until the owner says anything", () => {
+  const asked: EventMsg[] = [
+    { type: "task_started", task_id: "t1" },
+    user("u1", "发出去", 10_000),
+    assistant("a1", [askCall("c1", "发给谁？", ["财务组", "全部门"])], 11_000),
+    started("c1"),
+    done("c1"),
+    { type: "task_completed", task_id: "t1", usage: { per_model: {} }, reason: "done" },
+  ];
+  const open = play(asked);
+  assert.deepEqual(shape(open), ["user:发出去", "ask:发给谁？ (open)"]);
+  const item = botChat(open)[1];
+  assert.ok(item.kind === "question");
+  assert.deepEqual(item.options, ["财务组", "全部门"]);
+
+  const answered = play([...asked, { type: "task_started", task_id: "t2" }, user("u2", "财务组", 20_000)]);
+  assert.deepEqual(shape(answered), ["user:发出去", "ask:发给谁？", "user:财务组"]);
+
+  const asking = play([...asked, { type: "task_started", task_id: "t2" }, assistant("a2", [askCall("c2", "什么时候？", ["现在"])], 30_000), started("c2")]);
+  assert.deepEqual(shape(asking), ["user:发出去", "ask:发给谁？", "ask:什么时候？ (open)"], "only the latest");
+
+  const told = play([...asked, { type: "task_started", task_id: "t2" }, assistant("a2", [send("c2", "顺便说一声。")], 30_000), started("c2")]);
+  assert.deepEqual(shape(told), ["user:发出去", "ask:发给谁？ (open)", "bot:顺便说一声。"], "the bot's own words leave it open");
+
+  const empty = play([{ type: "task_started", task_id: "t1" }, user("u1", "发", 10_000), assistant("a1", [askCall("c1", "发给谁？", [])], 11_000), started("c1")]);
+  const none = botChat(empty)[1];
+  assert.ok(none.kind === "question");
+  assert.deepEqual(none.options, [], "answers that cannot be listed: the question alone");
+});
+
+test("images sit in rows of two or three, the rows of two first, never one alone", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(imageRows), [[1], [2], [3], [2, 2], [2, 3], [3, 3], [2, 2, 3], [2, 3, 3], [3, 3, 3], [2, 2, 3, 3]]);
+  assert.deepEqual(imageRows(0), []);
+  assert.equal(imageRatio({ width: 960, height: 600 }, false), 1.6);
+  assert.equal(imageRatio({ width: 750, height: 1334 }, false), 0.75, "a phone's shot is cut in a row");
+  assert.equal(imageRatio({ width: 1600, height: 500 }, false), 2);
+  assert.equal(imageRatio({ width: 750, height: 1334 }, true).toFixed(2), "0.56", "alone it keeps its shape");
+  assert.equal(imageRatio({ width: 100, height: 2000 }, true), 0.5);
+  assert.equal(imageRatio({}, false), 1.6, "of unknown size");
+});
+
+test("a row says what files a bot sent", () => {
+  assert.deepEqual(botLine(bot("a", { last: { from: "bot", text: "", images: 2, file: "报告.pdf", ts: at(1) } })), { kind: "last", from: "bot", text: "", images: 2, files: ["报告.pdf"] });
+  assert.deepEqual(botLine(bot("a", { last: { from: "bot", text: "", file: "报告.pdf", ts: at(1) } })), { kind: "last", from: "bot", text: "", images: 0, files: ["报告.pdf"] });
 });
 
 test("a search finds bots by name or by what was last said", () => {
