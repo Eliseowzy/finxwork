@@ -862,11 +862,17 @@ pub fn load_layers_with(
     }
     let kept = merged.clone();
     let mut unknown = Vec::new();
-    let file: ConfigFile = serde_ignored::deserialize(toml::Value::Table(merged), |path| unknown.push(dotted(&path)))
-        .map_err(|e: toml::de::Error| ConfigError::Parse {
-            path: "merged configuration".into(),
-            message: e.to_string(),
-        })?;
+    let file: ConfigFile = serde_ignored::deserialize(toml::Value::Table(merged), |path| unknown.push(dotted(&path))).map_err(|e: toml::de::Error| {
+        // Only now is it worth going through the files, to name the one that holds the mistake.
+        let layers = [Some(files.user), files.project, files.user_project];
+        let culprit = layers.into_iter().flatten().find_map(|path| {
+            let text = std::fs::read_to_string(path).ok()?;
+            let err = unknown_keys(&text).err()?;
+            Some((path.display().to_string(), err.to_string()))
+        });
+        let (path, message) = culprit.unwrap_or_else(|| ("merged configuration".to_string(), e.to_string()));
+        ConfigError::Parse { path, message }
+    })?;
     // Typed on this command line, not found in a file another version may have written.
     if let Some(key) = unknown.iter().find(|key| origins.get(*key) == Some(&ConfigLayer::Flag)) {
         return Err(ConfigError::Invalid(unknown_key_message(key)));
@@ -964,10 +970,18 @@ fn read_table(path: &Path) -> Result<toml::Table, ConfigError> {
         path: path.to_path_buf(),
         source,
     })?;
-    toml::from_str::<toml::Table>(&text).map_err(|e| ConfigError::Parse {
+    let table = toml::from_str::<toml::Table>(&text).map_err(|e| ConfigError::Parse {
         path: path.display().to_string(),
         message: e.to_string(),
-    })
+    })?;
+    // One name would quietly replace the other once the old one is migrated.
+    if table.contains_key("permission_mode") && table.contains_key("approval_mode") {
+        return Err(ConfigError::Parse {
+            path: path.display().to_string(),
+            message: "permission_mode and approval_mode are the same setting: keep permission_mode".to_string(),
+        });
+    }
+    Ok(table)
 }
 
 /// `:12` when the key's line can be found.
