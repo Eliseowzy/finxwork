@@ -4,6 +4,7 @@ import { i18n } from "../../../shared/i18n";
 import { isPageFile } from "../../../shared/pageFile";
 import type { Store } from "../store";
 import { showFile } from "../files/state";
+import { bringBrowserBack } from "./browserPanel";
 import { recheckFiles, type Scope } from "./scope";
 
 // What a reply's files, links, code blocks and steps do, from a click or their native menus
@@ -64,7 +65,10 @@ export const opensAsPage = (path: string) => !!window.finx && isPageFile(path);
 /** An HTML file as the page it is, in the session's browser (DD-157), brought to the front. */
 export function showPage(st: Store, session: string, path: string) {
   void st.run(async () => {
-    if (await window.finx?.openPageFile(session, path)) return st.set({ browser: true, background: false, files: false, filesMax: false });
+    if (await window.finx?.openPageFile(session, path)) {
+      bringBrowserBack(session);
+      return st.set({ browser: true, background: false, files: false, filesMax: false });
+    }
     recheckFiles();
     st.show(t("content.missing", { name: baseName(path) }), undefined, true);
   });
@@ -148,6 +152,7 @@ export function openLink(st: Store, url: string, scope: Scope, external: boolean
   if (external || !scope) return finx.openExternal(url);
   void st.run(async () => {
     await finx.openURL(scope.session, url);
+    bringBrowserBack(scope.session);
     st.set({ browser: true, background: false, files: false, filesMax: false });
   });
 }

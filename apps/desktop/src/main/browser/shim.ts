@@ -29,11 +29,12 @@ export interface PageEvents {
 }
 
 export interface PageHost {
-  create(o: { targetId: string; url: string; finxSession?: string; openerId?: string }, events: PageEvents): Page;
+  /** `byPerson`: the person opened it, in the panel; otherwise the agent or a page did. */
+  create(o: { targetId: string; url: string; finxSession?: string; openerId?: string; byPerson?: boolean }, events: PageEvents): Page;
   /** User-opened tabs explicitly handed to this conversation, active tab last. */
   pending?(finxSession: string): string[];
   adopt?(targetId: string, events: PageEvents): Page;
-  /** Show the tab in its window's panel. */
+  /** The agent asks to show the tab in its window's panel. */
   activate(targetId: string): void;
   /** Where downloads go; `report` is called as each one starts and ends. */
   downloads(dir: string, report: (d: Download) => void): void;
@@ -120,7 +121,7 @@ export class EmbeddedBrowser extends TargetRelay<Target> {
       gone: (reason) => this.drop(t, reason, "gone"),
     };
     t.page = adoptedId && this.host.adopt ? this.host.adopt(adoptedId, events)
-      : this.host.create({ targetId, url, finxSession, openerId }, events);
+      : this.host.create({ targetId, url, finxSession, openerId, byPerson }, events);
     return this.add(t);
   }
 

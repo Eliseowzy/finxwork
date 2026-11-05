@@ -64,9 +64,10 @@ function menuActionOk(a: unknown): a is BrowserMenuAction {
 /** A panel as the page reports it: a session id or null, a rectangle of finite numbers or null. */
 function browserPanel(p: unknown): p is BrowserPanel {
   if (typeof p !== "object" || p === null) return false;
-  const { session, rect, hold } = p as Record<string, unknown>;
+  const { session, rect, hold, editing } = p as Record<string, unknown>;
   if (session !== null && typeof session !== "string") return false;
   if (hold !== undefined && typeof hold !== "boolean") return false;
+  if (editing !== undefined && typeof editing !== "boolean") return false;
   if (rect === null) return true;
   if (typeof rect !== "object" || rect === undefined) return false;
   const r = rect as Record<string, unknown>;
