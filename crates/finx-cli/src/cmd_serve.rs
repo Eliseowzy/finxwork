@@ -98,3 +98,8 @@ pub async fn acp(overrides: &[String]) -> anyhow::Result<u8> {
     finx_server::serve_stdio(server.clone(), finx_acp::AcpProtocol::new(server)).await;
     Ok(0)
 }
+
+/// Whether a service answers on the default socket.
+pub(crate) fn service_runs(home: &finx_core::paths::FinxHome) -> bool {
+    std::os::unix::net::UnixStream::connect(home.root().join("run").join("finx.sock")).is_ok()
+}

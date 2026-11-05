@@ -5,10 +5,13 @@ mod approval_prompt;
 mod cli_shape;
 mod cmd_browser;
 mod cmd_chat;
+mod cmd_config;
+mod cmd_web_search;
 mod cmd_check;
 mod cmd_customize;
 mod cmd_exec;
 mod cmd_info;
+mod cmd_install;
 mod cmd_login;
 mod cmd_mcp;
 mod cmd_serve;
@@ -33,7 +36,7 @@ const TOP_LEVEL_HELP: &str = "\
 
 Run tasks:
   exec        Run a task without an interactive interface
-  sessions    List recent sessions of this project
+  sessions    List, rename and remove sessions
 
 Models:
   login       Connect a model: a key, a subscription, a service
@@ -41,14 +44,20 @@ Models:
   models      List the models in the model menu
 
 Tools and extensions:
+  tools       List the tools a session here would have
   mcp         List, add and remove MCP servers
   skills      List the skills a session here would offer
+  web-search  Show, set up and check web search
   browser     Set up the browser the agent uses
+  install     Install a component: pdf, browser, computer
+  uninstall   Remove a component
 
 Setup:
+  config      Read and change the configuration
   status      Show the effective configuration
   doctor      Check configuration, credentials and directories
   trust       Trust a project's own configuration
+  upgrade     Upgrade finx to the latest release
   completion  Print a shell completion script
 
 For other programs:
@@ -175,7 +184,9 @@ enum Command {
         #[arg(long)]
         forget: bool,
     },
-    /// List recent sessions of this project
+    /// List, rename and remove sessions
+    ///
+    /// Of this project; --all for every project.
     #[command(args_conflicts_with_subcommands = true)]
     Sessions {
         #[command(flatten)]
@@ -192,6 +203,35 @@ enum Command {
         list: ModelsArgs,
         #[command(subcommand)]
         action: Option<ModelsAction>,
+    },
+    /// List the tools a session here would have
+    ///
+    /// With a name, its description and parameters.
+    Tools {
+        /// One tool
+        name: Option<String>,
+        /// Every tool of a group that is off, one line each
+        #[arg(long)]
+        all: bool,
+        /// Print JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Read and change the configuration
+    ///
+    /// Each value comes from one layer: your file, this project's, or the command line.
+    #[command(args_conflicts_with_subcommands = true)]
+    Config {
+        #[command(flatten)]
+        list: ConfigListArgs,
+        #[command(subcommand)]
+        action: Option<ConfigAction>,
+    },
+    /// Show, set up and check web search
+    #[command(name = "web-search", args_conflicts_with_subcommands = true)]
+    WebSearch {
+        #[command(subcommand)]
+        action: WebSearchAction,
     },
     /// Show the effective configuration
     ///
@@ -212,6 +252,31 @@ enum Command {
         /// Also make one real request to the default model
         #[arg(long)]
         online: bool,
+    },
+    /// Install a component: pdf, browser, computer
+    ///
+    /// What most people do not need stays out of the program until it is asked for.
+    Install {
+        #[arg(value_parser = ["pdf", "browser", "computer"])]
+        component: String,
+    },
+    /// Remove a component
+    Uninstall {
+        #[arg(value_parser = ["pdf", "browser", "computer"])]
+        component: String,
+    },
+    /// Upgrade finx to the latest release
+    #[command(alias = "update")]
+    Upgrade {
+        /// Only say whether there is a newer release
+        #[arg(long)]
+        check: bool,
+        /// This version, even an older one
+        #[arg(long, value_name = "V")]
+        version: Option<String>,
+        /// With --check: print JSON
+        #[arg(long, requires = "check")]
+        json: bool,
     },
     /// Print a shell completion script
     ///
@@ -242,6 +307,9 @@ enum Command {
     Trust {
         /// Project directory (default: the current directory)
         dir: Option<PathBuf>,
+        /// Stop trusting it
+        #[arg(long)]
+        remove: bool,
     },
     /// List, add and remove MCP servers
     #[command(args_conflicts_with_subcommands = true)]
@@ -422,6 +490,111 @@ struct McpListArgs {
 enum SessionsAction {
     /// List recent sessions of this project
     List(SessionsArgs),
+    /// Move a session to the trash folder
+    Remove {
+        /// A session id, or a unique part of one
+        session: String,
+    },
+    /// Give a session a title
+    Rename {
+        /// `last` (of this project), a session id, or a unique part of one
+        session: String,
+        title: String,
+    },
+}
+
+// What `finx config` and `finx config list` show.
+#[derive(Args, Clone)]
+struct ConfigListArgs {
+    /// Say which layer each value comes from
+    #[arg(long)]
+    show_origin: bool,
+    /// Print JSON
+    #[arg(long)]
+    json: bool,
+}
+
+// The file a config command means.
+#[derive(Args, Clone)]
+struct ScopeArgs {
+    /// ~/.finx/config.toml
+    #[arg(long, overrides_with_all = ["local", "project"])]
+    global: bool,
+    /// Only for you, only in this project
+    #[arg(long, overrides_with_all = ["global", "project"])]
+    local: bool,
+    /// The project's .finx/config.toml, for everyone who uses the repository
+    #[arg(long, overrides_with_all = ["global", "local"])]
+    project: bool,
+}
+
+impl ScopeArgs {
+    fn scope(&self) -> Option<cmd_config::Scope> {
+        match (self.global, self.local, self.project) {
+            (true, _, _) => Some(cmd_config::Scope::Global),
+            (_, true, _) => Some(cmd_config::Scope::Local),
+            (_, _, true) => Some(cmd_config::Scope::Project),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Subcommand)]
+#[command(defer = true)]
+enum ConfigAction {
+    /// List the values in effect
+    List(ConfigListArgs),
+    /// Print one value; exit 1 when it is not set
+    Get {
+        key: String,
+        #[command(flatten)]
+        scope: ScopeArgs,
+        /// Say which layer it comes from
+        #[arg(long)]
+        show_origin: bool,
+        /// Print JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Save a value
+    Set {
+        key: String,
+        value: String,
+        #[command(flatten)]
+        scope: ScopeArgs,
+    },
+    /// Remove a value from a file
+    Unset {
+        key: String,
+        #[command(flatten)]
+        scope: ScopeArgs,
+    },
+    /// Print where a configuration file is
+    Path {
+        #[command(flatten)]
+        scope: ScopeArgs,
+    },
+}
+
+#[derive(Subcommand)]
+#[command(defer = true)]
+enum WebSearchAction {
+    /// Show each search service and which one searches use now
+    Status {
+        /// Print JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Try a service's key from standard input, and keep it unless it is refused
+    SetKey { service: String },
+    /// Make one real search; exit 1 when it fails
+    Check {
+        /// A service (default: the one searches use now)
+        service: Option<String>,
+        /// Print JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 // What `finx sessions` and `finx sessions list` show.
@@ -660,6 +833,10 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
             let online = cmd_info::online_check(overrides).await;
             cmd_info::doctor(overrides, json, strict, Some(online))
         }
+        Command::Install { component } => cmd_install::install(&component).await,
+        Command::Upgrade { check, version, json } => cmd_install::upgrade(check, version, json).await,
+        Command::WebSearch { action: WebSearchAction::SetKey { service } } => cmd_web_search::set_key(overrides, &service).await,
+        Command::WebSearch { action: WebSearchAction::Check { service, json } } => cmd_web_search::check(overrides, service, json).await,
         Command::Serve { listen, idle_exit, .. } => cmd_serve::serve(overrides, listen, idle_exit).await,
         Command::Acp => cmd_serve::acp(overrides).await,
         Command::Browser {
@@ -700,6 +877,10 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         Command::Sessions { .. }
         | Command::Models { .. }
         | Command::Status { .. }
+        | Command::Tools { .. }
+        | Command::Uninstall { .. }
+        | Command::Config { .. }
+        | Command::WebSearch { action: WebSearchAction::Status { .. } }
         | Command::Doctor { online: false, .. }
         | Command::Completion { .. }
         | Command::Skills { .. }
@@ -861,6 +1042,21 @@ fn main() -> ExitCode {
         Command::Sessions { list, action: None } | Command::Sessions { action: Some(SessionsAction::List(list)), .. } => {
             cmd_info::sessions(list.all, list.limit, list.json)
         }
+        Command::Sessions { action: Some(SessionsAction::Remove { session }), .. } => cmd_info::sessions_remove(&session),
+        Command::Sessions { action: Some(SessionsAction::Rename { session, title }), .. } => cmd_info::sessions_rename(&session, &title),
+        Command::Uninstall { component } => cmd_install::uninstall(&component),
+        Command::Tools { name, all, json } => cmd_info::tools(&overrides, name.as_deref(), all, json),
+        Command::Config { list, action: None } | Command::Config { action: Some(ConfigAction::List(list)), .. } => {
+            cmd_config::list(&overrides, list.show_origin, list.json)
+        }
+        Command::Config { action: Some(action), .. } => match action {
+            ConfigAction::List(_) => unreachable!("handled above"),
+            ConfigAction::Get { key, scope, show_origin, json } => cmd_config::get(&overrides, &key, scope.scope(), show_origin, json),
+            ConfigAction::Set { key, value, scope } => cmd_config::set(&overrides, &key, &value, scope.scope()),
+            ConfigAction::Unset { key, scope } => cmd_config::unset(&overrides, &key, scope.scope()),
+            ConfigAction::Path { scope } => cmd_config::path(scope.scope()),
+        },
+        Command::WebSearch { action: WebSearchAction::Status { json } } => cmd_web_search::status(&overrides, json),
         Command::Models { list, action: None } | Command::Models { action: Some(ModelsAction::List(list)), .. } => {
             cmd_info::models(&overrides, list.provider.as_deref(), list.all, list.refresh, list.json, None)
         }
@@ -887,7 +1083,7 @@ fn main() -> ExitCode {
             SkillsAction::Enable { skill } => cmd_customize::skills_switch(&skill, true),
             SkillsAction::Disable { skill } => cmd_customize::skills_switch(&skill, false),
         },
-        Command::Trust { dir } => cmd_info::trust(dir),
+        Command::Trust { dir, remove } => cmd_info::trust(dir, remove),
         Command::Mcp { list, command: None } | Command::Mcp { command: Some(McpCommand::List(list)), .. } if !list.check => {
             cmd_mcp::list(&overrides, list.json)
         }

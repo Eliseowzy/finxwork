@@ -43,10 +43,9 @@ pub struct ApprovalPolicy;
 #[async_trait]
 impl Hooks for ApprovalPolicy {
     async fn before_tool(&self, call: &ToolCall, tool: &dyn Tool, authorities: &[Authority], view: &SessionView) -> Gate {
-        // MCP tools are not approved for now: they run in every mode. A built-in tool run
-        // through call_tool is judged as itself.
+        // A built-in tool run through call_tool is judged as itself.
         if tool.origin_for(&call.arguments.to_value()) == ToolOrigin::Mcp {
-            return Gate::Allow;
+            return evaluate_mcp(call, tool, view);
         }
         // Tools that say what they do on which site are judged by that (browser-design §7.1).
         if !authorities.is_empty() {
@@ -54,6 +53,50 @@ impl Hooks for ApprovalPolicy {
         }
         evaluate(call, tool.kind_for(&call.arguments.to_value()), view)
     }
+}
+
+/// The kernel cannot tell what a tool from outside does (standalone-cli-design §8.5). So it asks,
+/// unless the tool says it only reads and its server is the user's own, the user trusts the
+/// server, or every action runs. Rules name such a tool by its full name, as a command's first
+/// word; that is also how "don't ask again" is kept for the session.
+fn evaluate_mcp(call: &ToolCall, tool: &dyn Tool, view: &SessionView) -> Gate {
+    let args = call.arguments.to_value();
+    let through_call_tool = call.name == crate::mcp::tools::CALL_TOOL;
+    let name = match args.get("name").and_then(|v| v.as_str()) {
+        Some(name) if through_call_tool => name.to_string(),
+        _ => call.name.clone(),
+    };
+    let rules: Vec<CommandRule> = view.config_rules.iter().chain(view.session_rules.iter()).cloned().collect();
+    let words = [name.clone()];
+    if let Some(rule) = rules::first_match(&rules, &words, RuleDecision::Deny) {
+        return Gate::Deny(format!(
+            "The tool is blocked by the rule `{}`{}",
+            rule.prefix.join(" "),
+            rule.reason.as_deref().map(|r| format!(": {r}")).unwrap_or_default()
+        ));
+    }
+    if let Some(rule) = rules::first_match(&rules, &words, RuleDecision::Ask) {
+        return ask(mcp_summary(&name, &args, through_call_tool), Some(rule_reason(rule)));
+    }
+    if view.permission_mode == PermissionMode::BypassPermissions
+        || tool.runs_unasked(&args)
+        || rules::first_match(&rules, &words, RuleDecision::Allow).is_some()
+    {
+        return Gate::Allow;
+    }
+    Gate::Ask {
+        summary: mcp_summary(&name, &args, through_call_tool),
+        reason: None,
+        proposed_rule: Some(CommandRule { prefix: vec![name], decision: RuleDecision::Allow, reason: None }),
+        proposed_mode: None,
+        proposed_grants: Vec::new(),
+        own_browser: false,
+    }
+}
+
+fn mcp_summary(name: &str, args: &serde_json::Value, through_call_tool: bool) -> String {
+    let shown = if through_call_tool { args.get("arguments").unwrap_or(&serde_json::Value::Null) } else { args };
+    format!("{name} {shown}")
 }
 
 pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {

@@ -120,7 +120,7 @@ fn edit(key_path: String, value: Value) -> ConfigEdit {
 
 /// Writes `edits` to one layer, checked against the workspace's other layers; then removes
 /// the saved credentials nothing refers to any more.
-fn write(home: &FinxHome, ws: &Workspace, layer: ConfigLayer, edits: &[ConfigEdit]) -> anyhow::Result<ConfigWriteResult> {
+pub(crate) fn write(home: &FinxHome, ws: &Workspace, layer: ConfigLayer, edits: &[ConfigEdit]) -> anyhow::Result<ConfigWriteResult> {
     let dir = ws.project_root.clone().unwrap_or_else(|| ws.cwd.clone());
     let project = dir.join(".finx").join("config.toml");
     let user = home.config_file();

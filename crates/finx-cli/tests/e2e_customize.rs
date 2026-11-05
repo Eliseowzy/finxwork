@@ -80,7 +80,7 @@ async fn skill_state(env: &TestEnv, cwd: &Path, name: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_command_line_adds_switches_and_removes_skills_and_servers() {
-    let env = TestEnv::new("manual", "").await;
+    let env = TestEnv::new("bypass-permissions", "").await;
     let work = project(&env, "repo");
     let download = write_skill(&env.workspace("downloads"), "weekly", "Weekly report.");
     let from = download.to_str().unwrap();
@@ -322,7 +322,7 @@ async fn the_page_manages_configuration_skills_and_servers_through_the_service()
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_session_records_its_servers_for_the_page() {
-    let env = TestEnv::new("manual", "").await;
+    let env = TestEnv::new("bypass-permissions", "").await;
     let work = project(&env, "repo");
     std::fs::write(
         env.home.path().join("config.toml"),

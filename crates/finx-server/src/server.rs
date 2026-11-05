@@ -24,6 +24,8 @@ use finx_protocol::api::ResourceReadResult;
 use finx_protocol::api::SessionInfo;
 use finx_protocol::api::SessionListParams;
 use finx_protocol::api::SessionListResult;
+use finx_protocol::api::ToolsListParams;
+use finx_protocol::api::ToolsListResult;
 use finx_protocol::api::SessionSummary;
 use finx_protocol::api::SkillsListParams;
 use finx_protocol::api::SkillsListResult;
@@ -781,6 +783,26 @@ impl Server {
 
     /// What a session started in `cwd` would find, as `finx skills --all --json` reports it.
     /// Blocking I/O.
+    /// A loaded session's tools, or the built-in tools under the configuration of a session
+    /// without a project.
+    pub async fn list_tools(&self, params: ToolsListParams) -> Result<ToolsListResult, RpcError> {
+        if let Some(id) = params.session_id {
+            let (tx, rx) = oneshot::channel();
+            self.loaded(&id)?.send(HubCmd::Tools { reply: tx }).await?;
+            let tools = rx.await.map_err(|_| errors::session_closed(&id))?;
+            return Ok(ToolsListResult { tools });
+        }
+        let server = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let chats = server.0.home.chats_dir();
+            std::fs::create_dir_all(&chats).map_err(|e| RpcError::internal(e.to_string()))?;
+            let workspace = Workspace::open(&server.0.home, &chats, &server.0.overrides).map_err(errors::from_runtime)?;
+            Ok(ToolsListResult { tools: finx_core::tool_list::builtin(&workspace.config) })
+        })
+        .await
+        .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
+    }
+
     fn scan_skills(&self, cwd: &Path) -> Result<SkillsListResult, RpcError> {
         let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).map_err(errors::from_runtime)?;
         let window = finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
@@ -856,7 +878,7 @@ impl Server {
                 "session {id} is loaded; close it first"
             )));
         }
-        let (header, location) = self
+        let (header, _) = self
             .0
             .store
             .header(&SessionRef::Id(id.to_string()))
@@ -865,21 +887,7 @@ impl Server {
             return Err(errors::session_not_found(id));
         }
         let trash = self.0.home.root().join("trash").join("sessions");
-        std::fs::create_dir_all(&trash)
-            .map_err(|e| RpcError::internal(format!("cannot create {}: {e}", trash.display())))?;
-        let name = location
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(format!("{id}.jsonl")));
-        // The session's files go with its log.
-        let (data_dir, _) = FinxHome::session_data_dir(&location, id);
-        std::fs::rename(&location, trash.join(&name))
-            .map_err(|e| RpcError::internal(format!("cannot move the log: {e}")))?;
-        if data_dir.is_dir() {
-            let dir_name = name.with_extension("");
-            std::fs::rename(&data_dir, trash.join(dir_name))
-                .map_err(|e| RpcError::internal(format!("cannot move the session files: {e}")))?;
-        }
+        self.0.store.move_to_trash(&SessionRef::Id(id.to_string()), &trash).map_err(|e| errors::from_store(e, id))?;
         self.forget_browser_session(id);
         Ok(())
     }

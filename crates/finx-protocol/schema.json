@@ -386,6 +386,12 @@
       "$ref": "#/definitions/SnapshotResult"
     },
     {
+      "$ref": "#/definitions/ToolsListParams"
+    },
+    {
+      "$ref": "#/definitions/ToolsListResult"
+    },
+    {
       "$ref": "#/definitions/TranscriptPage"
     },
     {
@@ -6236,6 +6242,13 @@
         }
       ]
     },
+    "McpApproval": {
+      "description": "How much a server's tools are trusted to run unasked.",
+      "enum": [
+        "never"
+      ],
+      "type": "string"
+    },
     "McpAuthKind": {
       "oneOf": [
         {
@@ -6815,6 +6828,17 @@
     "McpServerConfig": {
       "description": "One MCP server: a local command (stdio) or a URL (Streamable HTTP).\n\nString values may contain `${VAR}` and `${VAR:-default}`; they are expanded from finx's environment when the server connects, so a missing variable fails only this server.",
       "properties": {
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/McpApproval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`never`: its tools run without asking in every permission mode. Taken only from the user's own configuration file."
+        },
         "args": {
           "items": {
             "type": "string"
@@ -10350,6 +10374,71 @@
       ],
       "type": "string"
     },
+    "ToolEntry": {
+      "description": "One tool, as `tools/list` and `finx tools --json` give it.",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "`base`, `agents`, `deferred` (the two tools that reach the others), `web`, `doc`, `browser`, `cua`, `bot` or `mcp`.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/ToolEntryKind"
+        },
+        "loaded": {
+          "description": "In the model's tool list from the start, rather than found through `tool_search`.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "needs": {
+          "description": "What it takes: the setting or the component missing, or a limit on an available tool.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "$ref": "#/definitions/ToolEntryOrigin"
+        },
+        "parameters": {
+          "description": "JSON Schema of its arguments."
+        }
+      },
+      "required": [
+        "available",
+        "description",
+        "group",
+        "kind",
+        "loaded",
+        "name",
+        "origin",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "ToolEntryKind": {
+      "description": "What a tool does to the world: read-only tools may run side by side.",
+      "enum": [
+        "read_only",
+        "mutating"
+      ],
+      "type": "string"
+    },
+    "ToolEntryOrigin": {
+      "description": "Where a tool comes from.",
+      "enum": [
+        "builtin",
+        "mcp"
+      ],
+      "type": "string"
+    },
     "ToolResultMessage": {
       "properties": {
         "call_id": {
@@ -10423,6 +10512,33 @@
         "name",
         "running",
         "title"
+      ],
+      "type": "object"
+    },
+    "ToolsListParams": {
+      "description": "Parameters of `tools/list`.",
+      "properties": {
+        "session_id": {
+          "description": "A loaded session: the tools it really has now, those of connected MCP servers included. Without one, the built-in tools under the current configuration.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ToolsListResult": {
+      "properties": {
+        "tools": {
+          "items": {
+            "$ref": "#/definitions/ToolEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tools"
       ],
       "type": "object"
     },
@@ -11447,6 +11563,10 @@
     "skills/set_enabled": {
       "params": "SkillsSetEnabledParams",
       "result": "SkillsSetEnabledResult"
+    },
+    "tools/list": {
+      "params": "ToolsListParams",
+      "result": "ToolsListResult"
     },
     "web_search/set_key": {
       "params": "WebSearchSetKeyParams",

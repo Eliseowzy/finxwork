@@ -222,6 +222,7 @@ pub fn document() -> Value {
         (method::CONNECTIONS_REMOVE, Some(name::<api::ConnectionIdParams>(g)), name::<api::ConnectionsSnapshot>(g)),
         (method::CONNECTIONS_MODELS, Some(name::<api::ConnectionIdParams>(g)), name::<api::ConnectionsSnapshot>(g)),
         (method::SKILLS_LIST, Some(name::<api::SkillsListParams>(g)), name::<api::SkillsListResult>(g)),
+        (method::TOOLS_LIST, Some(name::<api::ToolsListParams>(g)), name::<api::ToolsListResult>(g)),
         (method::CONFIG_READ, Some(name::<customize::ConfigReadParams>(g)), name::<customize::ConfigReadResult>(g)),
         (method::CONFIG_WRITE, Some(name::<customize::ConfigWriteParams>(g)), name::<customize::ConfigWriteResult>(g)),
         (method::CREDENTIALS_SET, Some(name::<customize::CredentialsSetParams>(g)), name::<api::Empty>(g)),

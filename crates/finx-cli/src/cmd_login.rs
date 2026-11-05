@@ -46,6 +46,21 @@ impl std::fmt::Display for KeyRejected {
 
 impl std::error::Error for KeyRejected {}
 
+/// A key: asked for without showing it at a terminal, otherwise read from standard input.
+pub(crate) fn read_key() -> anyhow::Result<String> {
+    let key = if std::io::stdin().is_terminal() {
+        read_hidden("Paste the key (not shown): ")?
+    } else {
+        let mut text = String::new();
+        std::io::stdin().lock().read_to_string(&mut text).context("cannot read the key from standard input")?;
+        text.trim().to_string()
+    };
+    if key.is_empty() {
+        bail!("the key is empty");
+    }
+    Ok(key)
+}
+
 fn ask_line(question: &str) -> anyhow::Result<String> {
     eprint!("{question}");
     std::io::stderr().flush()?;

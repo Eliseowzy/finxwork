@@ -17,6 +17,7 @@ encoding_rs.workspace = true
 futures.workspace = true
 flate2.workspace = true
 tar.workspace = true
+tempfile.workspace = true
 finx-browser.workspace = true
 finx-desktop.workspace = true
 finx-docs.workspace = true
@@ -50,7 +51,6 @@ libc.workspace = true
 [dev-dependencies]
 finx-mock.workspace = true
 png.workspace = true
-tempfile.workspace = true
 
 [build-dependencies]
 ring.workspace = true

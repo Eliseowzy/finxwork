@@ -1046,6 +1046,11 @@ impl Kernel {
         }
     }
 
+    /// The tools the session has now; nothing after it closed.
+    pub fn tools(&self) -> Vec<finx_protocol::api::ToolEntry> {
+        self.session.upgrade().map(|session| crate::tool_list::of_session(&session)).unwrap_or_default()
+    }
+
     /// What fills the context window now; `None` after the session closed. Kept until the
     /// history, the model or the tools change, so it may be asked for often.
     pub fn context(&self) -> Option<finx_protocol::ContextReport> {

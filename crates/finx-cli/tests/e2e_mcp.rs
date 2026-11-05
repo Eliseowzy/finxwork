@@ -70,8 +70,8 @@ async fn session_file(env: &TestEnv) -> PathBuf {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exec_finds_and_runs_a_deferred_tool() {
-    // `manual` asks before changes, but MCP calls run without asking.
-    let env = TestEnv::new("manual", &server_toml("vault", 120)).await;
+    // Asking is covered below; this is about finding and running.
+    let env = TestEnv::new("bypass-permissions", &server_toml("vault", 120)).await;
     let output = env.finx(&["exec", "--output", "stream-json", "[[mock:mcp:vault:Apollo]] get the code"]).output().await.unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
@@ -159,7 +159,7 @@ async fn mcp_commands_list_check_and_get_servers() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn native_client_brings_a_direct_server() {
-    let env = TestEnv::new("manual", "").await;
+    let env = TestEnv::new("bypass-permissions", "").await;
     let (mut child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
     native_init(&client).await;
     let demux = Demux::spawn(incoming);
@@ -236,7 +236,7 @@ async fn acp_prompt(client: &Client, rx: &mut IncomingRx, session: &str, text: &
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn acp_client_brings_servers_for_new_and_loaded_sessions() {
-    let env = TestEnv::new("manual", "").await;
+    let env = TestEnv::new("bypass-permissions", "").await;
     let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
     let init = client
         .request("initialize", json!({"protocolVersion": 1, "clientCapabilities": {"session": {"notices": {}}},
@@ -277,4 +277,18 @@ async fn acp_client_brings_servers_for_new_and_loaded_sessions() {
     assert_eq!(turn.reply, released("Helix"));
     drop(client);
     common::exit_code(&mut child).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_tool_that_may_change_things_is_refused_when_nobody_can_approve() {
+    let env = TestEnv::new("manual", &server_toml("vault", 120)).await;
+    let output = env.finx(&["exec", "--json", "[[mock:mcp:vault:Apollo]] get the code"]).output().await.unwrap();
+    assert_eq!(output.status.code(), Some(3), "{}", String::from_utf8_lossy(&output.stdout));
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(result.to_string().contains("mcp__vault__"), "{result}");
+    // The user can trust the server, in their own file.
+    let trusted = format!("{}approval = \"never\"\n", server_toml("vault", 120));
+    let env = TestEnv::new("manual", &trusted).await;
+    let output = env.finx(&["exec", "--json", "[[mock:mcp:vault:Apollo]] get the code"]).output().await.unwrap();
+    assert_eq!(output.status.code(), Some(0), "{}", String::from_utf8_lossy(&output.stdout));
 }

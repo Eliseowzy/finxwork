@@ -323,3 +323,123 @@ async fn a_key_saved_elsewhere_reaches_a_running_service() {
     .await;
     assert!(heard.is_ok(), "models/changed never came");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn config_reads_and_changes_values_and_says_where() {
+    let env = TestEnv::new("manual", "").await;
+    let (code, stdout, stderr) = run(&env, &["config", "set", "thinking", "low"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.starts_with("thinking set to low in ") && stdout.contains("config.toml"), "{stdout}");
+    let (code, stdout, _) = run(&env, &["config", "get", "thinking"]).await;
+    assert_eq!((code, stdout.trim()), (0, "low"));
+    let (code, stdout, _) = run(&env, &["config", "get", "thinking", "--show-origin"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.starts_with("user") && stdout.contains("low"), "{stdout}");
+    let (code, stdout, _) = run(&env, &["-c", "thinking=high", "config", "get", "thinking", "--json"]).await;
+    assert_eq!(code, 0);
+    let got = parsed(&stdout);
+    assert_eq!((got["value"].as_str(), got["origin"].as_str()), (Some("high"), Some("flag")));
+    let (code, stdout, _) = run(&env, &["config", "--json"]).await;
+    assert_eq!(code, 0);
+    assert_eq!(parsed(&stdout)["config"]["thinking"], "low");
+    let (code, stdout, _) = run(&env, &["config", "unset", "thinking"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.starts_with("thinking unset in "), "{stdout}");
+    // Not set is not a mistake, an unknown key is.
+    let (code, stdout, _) = run(&env, &["config", "get", "thinking"]).await;
+    assert_eq!((code, stdout.as_str()), (1, ""));
+    let (code, _, stderr) = run(&env, &["config", "set", "thinkng", "low"]).await;
+    assert_eq!(code, 2);
+    assert!(stderr.contains("did you mean `thinking`"), "{stderr}");
+    let (code, stdout, _) = run(&env, &["config", "path"]).await;
+    assert_eq!(code, 0);
+    assert_eq!(stdout.trim(), env.home.path().join("config.toml").display().to_string());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_agent_cannot_change_what_it_may_do_through_config() {
+    let env = TestEnv::new("manual", "").await;
+    let out = env.finx(&["config", "set", "permission_mode", "bypass-permissions"]).env("AI_AGENT", "1").output().await.unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("run this in a terminal yourself"));
+    let out = env.finx(&["config", "unset", "mcp_servers.mail.approval"]).env("AI_AGENT", "1").output().await.unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let out = env.finx(&["config", "set", "thinking", "low"]).env("AI_AGENT", "1").output().await.unwrap();
+    assert_eq!(out.status.code(), Some(0));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tools_are_listed_with_what_they_need() {
+    let env = TestEnv::new("manual", "").await;
+    let (code, stdout, stderr) = run(&env, &["tools"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.lines().any(|line| line.starts_with("read ") && line.contains("available")), "{stdout}");
+    assert!(stdout.lines().any(|line| line.starts_with("browser_*") && line.contains("browser.enabled = true")), "{stdout}");
+    let (code, stdout, _) = run(&env, &["tools", "--all"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("browser_navigate"), "{stdout}");
+    let (code, stdout, _) = run(&env, &["tools", "--json"]).await;
+    assert_eq!(code, 0);
+    let tools = parsed(&stdout);
+    let tools = tools["tools"].as_array().unwrap();
+    let bash = tools.iter().find(|t| t["name"] == "bash").unwrap();
+    assert_eq!((bash["group"].as_str(), bash["loaded"].as_bool(), bash["kind"].as_str()), (Some("base"), Some(true), Some("mutating")));
+    let (code, stdout, _) = run(&env, &["tools", "read"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("\"properties\""), "{stdout}");
+    let (code, _, stderr) = run(&env, &["tools", "raed"]).await;
+    assert_eq!(code, 2);
+    assert!(stderr.contains("did you mean read"), "{stderr}");
+    let (code, stdout, _) = run(&env, &["status", "--json"]).await;
+    assert_eq!(code, 0);
+    assert!(parsed(&stdout)["deferred_tools"].as_array().unwrap().iter().any(|g| g == "doc"), "{stdout}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sessions_are_renamed_and_removed() {
+    let env = TestEnv::new("manual", "").await;
+    let out = env.finx(&["exec", "--json", "say hello"]).current_dir(env.work.path()).output().await.unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let id = parsed(&String::from_utf8_lossy(&out.stdout))["session_id"].as_str().unwrap().to_string();
+    let (code, stdout, stderr) = run(&env, &["sessions", "rename", &id, "a good name"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("renamed to \"a good name\""), "{stdout}");
+    let (code, stdout, _) = run(&env, &["sessions", "--all", "--json"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("a good name"), "{stdout}");
+    let (code, stdout, stderr) = run(&env, &["sessions", "remove", &id]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.starts_with("moved session "), "{stdout}");
+    let (code, stdout, _) = run(&env, &["sessions", "--all", "--json"]).await;
+    assert_eq!(code, 0);
+    assert!(!stdout.contains(&id), "{stdout}");
+    let (code, _, _) = run(&env, &["sessions", "remove", &id]).await;
+    assert_eq!(code, 2);
+    assert!(env.home.path().join("trash/sessions").read_dir().unwrap().next().is_some());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn trust_can_be_taken_back() {
+    let env = TestEnv::new("manual", "").await;
+    let project = env.work.path().to_str().unwrap();
+    let (code, stdout, _) = run(&env, &["trust", project]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.starts_with("trusted "), "{stdout}");
+    let (code, stdout, _) = run(&env, &["trust", project, "--remove"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.starts_with("no longer trusting "), "{stdout}");
+    let (code, stdout, _) = run(&env, &["trust", project, "--remove"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("was not trusted"), "{stdout}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn web_search_says_how_it_stands() {
+    let env = TestEnv::new("manual", "").await;
+    let (code, stdout, stderr) = run(&env, &["web-search", "status", "--json"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(parsed(&stdout)["sources"].as_array().is_some_and(|s| !s.is_empty()), "{stdout}");
+    let (code, stdout, _) = run(&env, &["web-search", "status"]).await;
+    assert_eq!(code, 0);
+    assert!(stdout.contains("exa"), "{stdout}");
+}

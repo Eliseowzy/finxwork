@@ -2,6 +2,7 @@
 //! local commands, each printing text or, with `--json`, one JSON document.
 
 use finx_core::JsonlStore;
+use finx_core::SessionRef;
 use finx_core::SessionStore;
 use finx_core::instructions;
 use finx_core::skills;
@@ -11,7 +12,11 @@ use finx_llm::AuthStatus;
 use finx_llm::ProviderConfig;
 use finx_protocol::api::CredentialState;
 use finx_protocol::api::ListingSource;
+use finx_core::lang;
+use finx_core::lang::Lang;
 use finx_protocol::api::SessionDefaults;
+use finx_protocol::api::ToolEntry;
+use finx_protocol::api::ToolsListResult;
 use serde_json::Value;
 use serde_json::json;
 use std::io::Write;
@@ -253,6 +258,119 @@ fn file_entry(path: &Path) -> Value {
     json!({ "path": path, "exists": path.exists() })
 }
 
+/// The groups of tools a session finds through `tool_search`, in the order they are listed.
+fn deferred_groups(tools: &[ToolEntry]) -> Vec<String> {
+    let mut groups: Vec<String> = Vec::new();
+    for tool in tools.iter().filter(|t| !t.loaded && t.available) {
+        if !groups.contains(&tool.group) {
+            groups.push(tool.group.clone());
+        }
+    }
+    groups
+}
+
+/// For `finx status`: the list on its own would read as if these were all the tools there are.
+fn tools_line(tools: &[ToolEntry]) -> String {
+    let base = tools.iter().filter(|t| t.group == "base" && t.available).count();
+    let groups = deferred_groups(tools).join(", ");
+    match (groups.is_empty(), lang::current()) {
+        (true, Lang::Zh) => format!("基础 {base} 个"),
+        (true, _) => format!("{base} basic"),
+        (false, Lang::Zh) => format!("基础 {base} 个，按需 {groups}"),
+        (false, _) => format!("{base} basic, on demand {groups}"),
+    }
+}
+
+/// `finx tools`: what a session here would have. `name` prints one tool's definition.
+pub fn tools(overrides: &[String], name: Option<&str>, all: bool, as_json: bool) -> anyhow::Result<u8> {
+    let rt = setup::init_local(std::env::current_dir()?, overrides)?;
+    let tools = finx_core::tool_list::builtin(&rt.config);
+    if let Some(name) = name {
+        let Some(tool) = tools.iter().find(|t| t.name == name) else {
+            let close = tools.iter().map(|t| t.name.as_str()).find(|t| strsim::osa_distance(t, name) <= 2);
+            let hint = close.map(|c| format!("; did you mean {c}?")).unwrap_or_default();
+            let mcp = if name.starts_with("mcp__") { "; an MCP server's tools show under `finx mcp get SERVER`" } else { "" };
+            anyhow::bail!("no tool named {name}{hint}{mcp}");
+        };
+        if as_json {
+            print_json(&serde_json::to_value(tool)?)?;
+            return Ok(0);
+        }
+        println!("{}  ({})", tool.name, tool.group);
+        println!("\n{}\n", tool.description);
+        if let Some(needs) = &tool.needs {
+            println!("{}: {needs}\n", lang::say("Needs", "需要"));
+        }
+        println!("{}", serde_json::to_string_pretty(&tool.parameters)?);
+        return Ok(0);
+    }
+    if as_json {
+        print_json(&serde_json::to_value(ToolsListResult { tools })?)?;
+        return Ok(0);
+    }
+    let mut rows: Vec<[String; 4]> = Vec::new();
+    let mut listed: Vec<&str> = Vec::new();
+    for tool in &tools {
+        // A group that is off as a whole takes one line, unless every tool was asked for.
+        let whole_group_off = !all && !tool.available && tool.group != "base" && tools.iter().filter(|t| t.group == tool.group).all(|t| !t.available);
+        if whole_group_off {
+            if !listed.contains(&tool.group.as_str()) {
+                listed.push(&tool.group);
+                let count = tools.iter().filter(|t| t.group == tool.group).count();
+                rows.push([
+                    format!("{}_*", tool.group),
+                    tool.group.clone(),
+                    match lang::current() {
+                        Lang::Zh => format!("{count} 个工具"),
+                        _ => format!("{count} tools"),
+                    },
+                    state_of(tool),
+                ]);
+            }
+            continue;
+        }
+        if !all && tool.needs.is_some() && !tool.available {
+            continue;
+        }
+        rows.push([tool.name.clone(), tool.group.clone(), first_line(&tool.description), state_of(tool)]);
+    }
+    for server in rt.mcp_servers.iter().filter(|s| s.is_enabled()) {
+        rows.push([
+            format!("mcp__{}__*", server.name),
+            "mcp".to_string(),
+            lang::say("known once connected", "连接后才知道").to_string(),
+            format!("finx mcp get {}", server.name),
+        ]);
+    }
+    let name_width = rows.iter().map(|r| r[0].chars().count()).max().unwrap_or(0);
+    let group_width = rows.iter().map(|r| r[1].chars().count()).max().unwrap_or(0);
+    let about_width = rows.iter().map(|r| r[2].chars().count()).max().unwrap_or(0);
+    for [name, group, about, state] in &rows {
+        println!("{name:<name_width$}  {group:<group_width$}  {about:<about_width$}  {state}");
+    }
+    Ok(0)
+}
+
+fn state_of(tool: &ToolEntry) -> String {
+    let word = if tool.available { lang::say("available", "可用") } else { lang::say("off", "未开启") };
+    match &tool.needs {
+        Some(needs) => format!("{word}: {needs}"),
+        None => word.to_string(),
+    }
+}
+
+/// A description's first sentence, kept short enough for one row.
+fn first_line(description: &str) -> String {
+    let line = description.lines().next().unwrap_or_default();
+    let sentence = line.split(". ").next().unwrap_or(line).trim_end_matches('.');
+    const WIDTH: usize = 56;
+    if sentence.chars().count() <= WIDTH {
+        return sentence.to_string();
+    }
+    let cut: String = sentence.chars().take(WIDTH - 1).collect();
+    format!("{}…", cut.trim_end())
+}
+
 pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
     let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     let project_dir = rt.project_root.clone().unwrap_or_else(|| rt.cwd.clone());
@@ -274,6 +392,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         Some(Err(err)) => json!({ "ref": default_model, "error": err.to_string() }),
         None => json!({ "ref": null, "error": "no model is set up" }),
     };
+    let tools = finx_core::tool_list::builtin(&rt.config);
     let skill_report = scan_skills(rt);
     let skills_line = if rt.config.skills.enabled {
         format!(
@@ -298,6 +417,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         "thinking": rt.config.thinking,
         "permission_mode": rt.config.permission_mode,
         "tools": rt.config.enabled_tools,
+        "deferred_tools": deferred_groups(&tools),
         "mcp_servers": rt.mcp_servers.iter().filter(|s| s.is_enabled()).map(|s| s.name.as_str()).collect::<Vec<_>>(),
         "skills": {
             "enabled": rt.config.skills.enabled,
@@ -382,7 +502,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         ("credentials", credentials),
         ("thinking", text(&info["thinking"])),
         ("permissions", text(&info["permission_mode"])),
-        ("tools", text(&info["tools"])),
+        ("tools", tools_line(&tools)),
         ("mcp servers", mcp_line(rt)),
         ("skills", skills_line),
         ("from environment", text(&info["env_overrides"])),
@@ -439,6 +559,30 @@ pub async fn online_check(overrides: &[String]) -> (bool, String) {
         Ok(detail) => (true, detail),
         Err(err) => (false, format!("{err:#}").lines().next().unwrap_or_default().to_string()),
     }
+}
+
+/// Each component's state: none of them is required, so none fails the check.
+fn component_rows(home: &finx_core::paths::FinxHome) -> Vec<(&'static str, String)> {
+    use finx_core::release;
+    let pdf = match finx_docs::engine::locate_library() {
+        Some(path) => format!("ready ({})", path.display()),
+        None => "not installed: finx install pdf".to_string(),
+    };
+    let browser = match finx_browser::launch::find_executable() {
+        Some(path) => format!("ready ({})", path.display()),
+        None if home.browser_dir().join("chromium").exists() => "ready (Chrome for Testing)".to_string(),
+        None => "not installed: finx install browser".to_string(),
+    };
+    let mut rows = vec![("pdf component", pdf), ("browser component", browser)];
+    if cfg!(target_os = "macos") {
+        let computer = if release::Addon::Computer.installed(home, release::VERSION) {
+            "ready".to_string()
+        } else {
+            "not installed: finx install computer".to_string()
+        };
+        rows.push(("computer component", computer));
+    }
+    rows
 }
 
 pub fn doctor(overrides: &[String], as_json: bool, strict: bool, online: Option<(bool, String)>) -> anyhow::Result<u8> {
@@ -517,6 +661,9 @@ pub fn doctor(overrides: &[String], as_json: bool, strict: bool, online: Option<
                 (true, broken) => format!("{active} loaded, {broken} failed to load (`finx skills --all`)"),
             };
             check("skills", true, detail);
+            for (name, detail) in component_rows(&rt.home) {
+                check(name, true, detail);
+            }
             warnings = rt.warnings.clone();
             warnings.extend(report.warnings());
         }
@@ -689,7 +836,37 @@ pub async fn browser_install() -> anyhow::Result<u8> {
     }
 }
 
-pub fn trust(dir: Option<PathBuf>) -> anyhow::Result<u8> {
+/// Moves a session's log and files to the trash folder, unless another process has it open.
+pub fn sessions_remove(session: &str) -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let store = JsonlStore::new(home.sessions_dir());
+    let trash = home.root().join("trash").join("sessions");
+    let id = store.move_to_trash(&SessionRef::Id(session.to_string()), &trash)?;
+    println!("moved session {} to {}", finx_core::short_id(&id), crate::cmd_customize::shorten(&home, &trash));
+    Ok(0)
+}
+
+pub fn sessions_rename(session: &str, title: &str) -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let store = JsonlStore::new(home.sessions_dir());
+    let Some(title) = finx_core::clean_title(title) else { anyhow::bail!("the title is empty") };
+    let reference = if session == "last" {
+        let cwd = std::env::current_dir()?;
+        SessionRef::LastIn(setup::workspace(&std::fs::canonicalize(&cwd)?))
+    } else {
+        SessionRef::Id(session.to_string())
+    };
+    let (header, location) = store.header(&reference)?;
+    store.append(&reference, vec![finx_core::store::EntryKind::Title { title: title.clone() }])?;
+    println!(
+        "session {} renamed to \"{title}\" in {}",
+        finx_core::short_id(&header.id),
+        crate::cmd_customize::shorten(&home, &location)
+    );
+    Ok(0)
+}
+
+pub fn trust(dir: Option<PathBuf>, remove: bool) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let dir = match dir {
         Some(dir) => dir,
@@ -697,6 +874,15 @@ pub fn trust(dir: Option<PathBuf>) -> anyhow::Result<u8> {
     };
     let dir = std::fs::canonicalize(&dir)?;
     let root = instructions::find_project_root(&dir, &[".git".to_string()]).unwrap_or(dir);
+    if remove {
+        let file = crate::cmd_customize::shorten(&home, &home.trusted_file());
+        if instructions::untrust(&home, &root)? {
+            println!("no longer trusting {} in {file}", root.display());
+        } else {
+            println!("{} was not trusted", root.display());
+        }
+        return Ok(0);
+    }
     if instructions::trust(&home, &root)? {
         let file = crate::cmd_customize::shorten(&home, &home.trusted_file());
         println!("trusted {} in {file}", root.display());

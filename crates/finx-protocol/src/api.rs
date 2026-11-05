@@ -85,6 +85,7 @@ pub mod method {
     pub const SESSION_UNARCHIVE: &str = "session/unarchive";
     /// A loaded session's skills and `/` commands, or the skills a directory would give a session.
     pub const SKILLS_LIST: &str = "skills/list";
+    pub const TOOLS_LIST: &str = "tools/list";
     /// Stores a provider's API key in the credential store.
     pub const AUTH_SET: &str = "auth/set";
     pub const AUTH_DELETE: &str = "auth/delete";
@@ -1450,6 +1451,56 @@ pub struct CatalogInfo {
     /// Skills left out to fit the budget, in priority order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub left_out: Vec<String>,
+}
+
+/// Parameters of `tools/list`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsListParams {
+    /// A loaded session: the tools it really has now, those of connected MCP servers included.
+    /// Without one, the built-in tools under the current configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsListResult {
+    pub tools: Vec<ToolEntry>,
+}
+
+/// Where a tool comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolEntryOrigin {
+    Builtin,
+    Mcp,
+}
+
+/// What a tool does to the world: read-only tools may run side by side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolEntryKind {
+    ReadOnly,
+    Mutating,
+}
+
+/// One tool, as `tools/list` and `finx tools --json` give it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolEntry {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema of its arguments.
+    pub parameters: serde_json::Value,
+    /// `base`, `agents`, `deferred` (the two tools that reach the others), `web`, `doc`, `browser`,
+    /// `cua`, `bot` or `mcp`.
+    pub group: String,
+    pub origin: ToolEntryOrigin,
+    pub kind: ToolEntryKind,
+    /// In the model's tool list from the start, rather than found through `tool_search`.
+    pub loaded: bool,
+    pub available: bool,
+    /// What it takes: the setting or the component missing, or a limit on an available tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<String>,
 }
 
 /// Parameters of `skills/list`: `session_id` or `cwd`, or neither for what a session without

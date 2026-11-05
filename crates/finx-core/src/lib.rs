@@ -30,6 +30,7 @@ pub mod mcp;
 pub mod models;
 pub mod paths;
 pub mod prompt;
+pub mod release;
 mod protected;
 pub mod routine;
 pub mod rules;
@@ -42,6 +43,7 @@ pub mod store;
 pub mod trash;
 pub mod web_search;
 mod task;
+pub mod tool_list;
 mod tool_exec;
 
 pub use agents::RestoredAgent;

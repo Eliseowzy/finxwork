@@ -802,6 +802,7 @@ pub fn load_layers_with(
                 project_file.display()
             ));
         }
+        strip_mcp_approval(&mut table, project_file, &mut warnings);
         note_mcp_servers(&table, "project config", &mut mcp_sources);
         note_origins(&table, "", ConfigLayer::Project, &mut origins);
         merge_tables(&mut merged, table, "");
@@ -815,6 +816,7 @@ pub fn load_layers_with(
         if let Some(project_root) = files.project_root {
             anchor_skill_paths(&mut table, project_root);
         }
+        strip_mcp_approval(&mut table, user_project, &mut warnings);
         note_mcp_servers(&table, "personal project config", &mut mcp_sources);
         note_origins(&table, "", ConfigLayer::UserProject, &mut origins);
         merge_tables(&mut merged, table, "");
@@ -996,6 +998,14 @@ fn known_keys(table: &str) -> &'static [&'static str] {
 }
 
 /// "unknown setting `tool`; did you mean `tools`?"
+/// What is wrong with a key someone typed: nothing for one finx knows, or under a table whose keys
+/// are not fixed.
+pub fn key_problem(key: &str) -> Option<String> {
+    let (table, last) = key.rsplit_once('.').unwrap_or(("", key));
+    let known = known_keys(table);
+    (!known.is_empty() && !known.contains(&last)).then(|| unknown_key_message(key))
+}
+
 fn unknown_key_message(key: &str) -> String {
     let (table, last) = key.rsplit_once('.').unwrap_or(("", key));
     let closest = known_keys(table)
@@ -1198,6 +1208,22 @@ fn tighten_web_search(table: &mut toml::Table) -> Vec<String> {
         dropped.push("web_search.enabled".into());
     }
     dropped
+}
+
+/// Trusting a server for good is for the user's own file: a repository could otherwise switch off
+/// the questions about the tools it brings.
+fn strip_mcp_approval(table: &mut toml::Table, file: &Path, warnings: &mut Vec<String>) {
+    let Some(toml::Value::Table(servers)) = table.get_mut("mcp_servers") else { return };
+    for (name, server) in servers.iter_mut() {
+        if let toml::Value::Table(server) = server
+            && server.remove("approval").is_some()
+        {
+            warnings.push(format!(
+                "ignored mcp_servers.{name}.approval in {}: it counts only in ~/.finx/config.toml",
+                file.display()
+            ));
+        }
+    }
 }
 
 fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {

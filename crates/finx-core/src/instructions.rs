@@ -107,6 +107,22 @@ pub fn is_trusted(home: &FinxHome, project_dir: &Path) -> bool {
     file.paths.iter().any(|p| canonical(p) == target)
 }
 
+/// Stops trusting a directory. Returns false when it was not trusted.
+pub fn untrust(home: &FinxHome, project_dir: &Path) -> io::Result<bool> {
+    let path = home.trusted_file();
+    let Some(mut file) = std::fs::read_to_string(&path).ok().and_then(|text| toml::from_str::<TrustedFile>(&text).ok()) else {
+        return Ok(false);
+    };
+    let target = canonical(project_dir);
+    let before = file.paths.len();
+    file.paths.retain(|p| canonical(p) != target);
+    if file.paths.len() == before {
+        return Ok(false);
+    }
+    std::fs::write(&path, toml::to_string(&file).map_err(io::Error::other)?)?;
+    Ok(true)
+}
+
 /// Marks a directory as trusted. Returns false when it already was.
 pub fn trust(home: &FinxHome, project_dir: &Path) -> io::Result<bool> {
     let path = home.trusted_file();
