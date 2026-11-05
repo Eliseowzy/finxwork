@@ -11,7 +11,7 @@ import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testN
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { editors, opensFolders } from "./editors";
-import { openExternal, openFile, openFolder, openTerminal, pathInfo, reveal } from "./files";
+import { openExternal, openFile, openFolder, openTerminal, pageOfFile, pathInfo, reveal } from "./files";
 import { gitBranch } from "./git";
 import { connectKernel, kernelBinary, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { clipboardContent } from "./clipboard";
@@ -64,9 +64,10 @@ function menuActionOk(a: unknown): a is BrowserMenuAction {
 /** A panel as the page reports it: a session id or null, a rectangle of finite numbers or null. */
 function browserPanel(p: unknown): p is BrowserPanel {
   if (typeof p !== "object" || p === null) return false;
-  const { session, rect, hold } = p as Record<string, unknown>;
+  const { session, rect, hold, editing } = p as Record<string, unknown>;
   if (session !== null && typeof session !== "string") return false;
   if (hold !== undefined && typeof hold !== "boolean") return false;
+  if (editing !== undefined && typeof editing !== "boolean") return false;
   if (rect === null) return true;
   if (typeof rect !== "object" || rect === undefined) return false;
   const r = rect as Record<string, unknown>;
@@ -279,6 +280,14 @@ export function registerIPC() {
     if (!trusted(e)) return;
     if (typeof session !== "string" || !session || session === "finxwork:home-browser" || !web(url)) throw new Error("Invalid page to open");
     openURL(session, url);
+  });
+  // An HTML file from a conversation, as the page it is (content-actions-design DD-157): false when it is not there.
+  ipcMain.handle("browser-open-file", async (e, session: unknown, file: unknown) => {
+    if (!trusted(e) || !revealable(file)) return false;
+    if (typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid page to open");
+    const url = await pageOfFile(file.replace(/^~(?=$|\/)/, os.homedir()));
+    if (url) openURL(session, url, true);
+    return !!url;
   });
   ipcMain.handle("browser-claim-home", (e, session: unknown) => {
     if (!trusted(e) || typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid browser session");

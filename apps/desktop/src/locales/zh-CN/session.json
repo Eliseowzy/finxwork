@@ -464,6 +464,8 @@
   },
   "content": {
     "open": "打开",
+    "viewSource": "查看源码",
+    "previewInBrowser": "在内置浏览器中预览",
     "openWith": "打开方式",
     "systemApp": "系统默认应用",
     "revealFinder": "在访达中显示",

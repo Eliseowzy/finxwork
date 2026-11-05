@@ -21,6 +21,7 @@ import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const desktop = path.resolve(import.meta.dirname, "..");
 const root = path.resolve(desktop, "../..");
@@ -59,6 +60,16 @@ write("src/app.ts", Array.from({ length: 12 }, (_, i) => `export const line${i +
 write("docs/报告 草稿.md", "# 报告\n");
 write("run.command", "#!/bin/sh\necho ran > /tmp/should-not-run\n", 0o755);
 write("scripts/build.sh", "#!/bin/sh\necho build\n", 0o755);
+// Its title says that its script ran, and whether it could read another file: by fetch, or through a frame.
+const firstPage = `<!doctype html><title>第一版</title><iframe id="f" src="file:///etc/hosts"></iframe><script>
+  onload = async () => {
+    const fetched = await fetch("file:///etc/hosts").then(() => true, () => false);
+    let framed = false;
+    try { framed = (document.getElementById("f").contentDocument?.body?.innerText ?? "").length > 0; } catch {}
+    document.title = fetched || framed ? "读到了别的文件" : "第一版 · 脚本跑了";
+  };
+</script>`;
+write("report/季度 报告.html", firstPage);
 write("assets/logo.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
 fs.mkdirSync(path.join(proj, "apps/web"), { recursive: true });
 
@@ -72,6 +83,8 @@ const reply = [
   "改好了。入口在 [应用入口](src/app.ts:3)，说明见 [报告草稿](docs/%E6%8A%A5%E5%91%8A%20%E8%8D%89%E7%A8%BF.md)，旧的 [不存在](src/missing.ts) 已删掉。",
   "",
   "行内：`src/app.ts:5`、`apps/web/`、`feat/x`、`cargo test`、`src/nope.ts`、`run.command`、`scripts/build.sh`、`assets/logo.png`。",
+  "",
+  "页面：[季度报告](report/%E5%AD%A3%E5%BA%A6%20%E6%8A%A5%E5%91%8A.html)，标题在 [第二行](report/%E5%AD%A3%E5%BA%A6%20%E6%8A%A5%E5%91%8A.html:2)。",
   "",
   `开发服务 ${devURL} 已启动，文档见 [Electron 文档](https://www.electronjs.org/docs/latest/api/shell)，有问题 [写信](mailto:a@b.co)。`,
   "",
@@ -298,7 +311,7 @@ try {
   await page.run(`document.querySelector("button.send").click()`);
 
   step("while the last block is still being written, it has no buttons; the finished ones do");
-  await page.until("the reply paused in its last block", `document.querySelectorAll(".am .cblock").length === 3`, 30000);
+  await page.until("the reply paused in its last block", `document.querySelectorAll(".am .cblock").length === 3 && [...document.querySelectorAll(".am .cb-lang")].at(-1)?.textContent === "python"`, 30000);
   check(pausing, "the reply was not paused in its last block");
   const draftBars = await page.run(`[...document.querySelectorAll(".am .cblock")].map((b) => [b.querySelector(".cb-lang")?.textContent ?? "", b.querySelectorAll(".cb-b").length, !!b.querySelector(".cb-warn")])`);
   check(same(draftBars, [["bash", 2, false], ["sh", 2, true], ["python", 0, false]]), `the blocks while writing: ${JSON.stringify(draftBars)}`);
@@ -311,7 +324,7 @@ try {
   check(systems.length >= 1 && systems[0].includes("In the FinxWork app") && systems[0].includes("[prompt.rs](src/prompt.rs:11)"), "the system prompt has no app section");
 
   step("files: links always, inline code only when the file is there");
-  await page.until("the tags looked up", `document.querySelectorAll(".am .fref").length === 8`);
+  await page.until("the tags looked up", `document.querySelectorAll(".am .fref").length === 10`);
   const tags = await page.run(`[...document.querySelectorAll(".am .fref")].map((c) => [c.querySelector(".fref-n").textContent, c.querySelector(".fref-l")?.textContent ?? "", c.classList.contains("gone"), c.classList.contains("mono")])`);
   check(
     same(tags, [
@@ -323,6 +336,8 @@ try {
       ["run.command", "", false, true],
       ["scripts/build.sh", "", false, true],
       ["assets/logo.png", "", false, true],
+      ["季度报告", "", false, false],
+      ["第二行", ":2", false, false],
     ]),
     `the tags: ${JSON.stringify(tags)}`,
   );
@@ -421,7 +436,7 @@ try {
   step("a link opens in the session's browser, once; ⌘ opens the default browser");
   const session = await page.run(`JSON.parse(localStorage.getItem("main-view")).selection.id`);
   await page.run(`${link(devURL.replace("http://", "").replace(/\/$/, ""))}.click()`);
-  await page.until("the page in the session's browser", `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(devURL)}).length === 1)`);
+  await page.until("the page in the session's browser", `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(devURL)}).length === 1)`, 15000);
   await page.until("the browser panel", `!!document.querySelector(".brp:not(.fpn)")`);
   await page.run(`${link(devURL.replace("http://", "").replace(/\/$/, ""))}.click()`);
   await sleep(600);
@@ -440,6 +455,36 @@ try {
   const icons = path.join(home, "browser/icons");
   const kept = fs.existsSync(icons) ? fs.readdirSync(icons).map((f) => fs.readFileSync(path.join(icons, f), "utf8")) : [];
   check(!kept.some((k) => k.includes("electronjs")), "the linked site was asked for its icon");
+
+  step("an HTML file opens as its page in the session's browser, once, as it is now; its source is a menu away (DD-157)");
+  const pageURL = pathToFileURL(path.join(proj, "report/季度 报告.html")).href;
+  const pageTabs = `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(pageURL)}))`;
+  await page.run(`${chip("季度报告")}.click()`);
+  // Only the package has the fuse that takes away what Electron adds to file: pages (build-app.mjs).
+  const pageTitle = packaged ? "第一版 · 脚本跑了" : "读到了别的文件";
+  await page.until(packaged ? "the page's script ran, and could not read another file" : "the page's script ran", `${pageTabs}.then((t) => t.length === 1 && t[0].title === ${JSON.stringify(pageTitle)})`);
+  await page.until("the browser panel in front", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.shot("3a-html-page");
+  write("report/季度 报告.html", "<!doctype html><title>第二版</title>");
+  await page.run(`${chip("季度报告")}.click()`);
+  await page.until("the page as written again, in the same tab", `${pageTabs}.then((t) => t.length === 1 && t[0].title === "第二版")`);
+  shown = shownNow().length;
+  pick("view");
+  await page.run(rightClick(chip("季度报告")));
+  const pageItems = ids(await nextMenu("the HTML file", shown));
+  check(same(pageItems, ["open", "view", "with", "reveal", "-", "copyPath", "copyRel"]), `the HTML file's menu: ${JSON.stringify(pageItems)}`);
+  await page.until("its source in the file panel", `${activeTab} === "季度 报告.html" && (document.querySelector(".fpn .cm-content")?.innerText ?? "").includes("第二版")`);
+  const previewLabels = JSON.stringify(Object.values(strings).map((s) => s.content.previewInBrowser));
+  await page.run(`[...document.querySelectorAll(".fpn-tools button")].find((b) => ${previewLabels}.includes(b.getAttribute("aria-label"))).click()`);
+  await page.until("back to the page from its source", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.run(`${chip("第二行")}.click()`);
+  await page.until("a reference to lines shows the source", `${activeTab} === "季度 报告.html"`);
+  shown = shownNow().length;
+  pick("view");
+  await page.run(rightClick(chip("第二行")));
+  check(same(ids(await nextMenu("the lines' tag", shown)), pageItems), "the lines' tag has the same items");
+  await page.until("the page from the lines' menu", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  check((await page.run(pageTabs)).length === 1, "the page opened another tab");
 
   step("code blocks: Copy, and Open in Terminal for a shell's; hidden characters are told of and kept");
   await page.run(`document.querySelectorAll(".am .cblock")[1].querySelector(".cb-b").click()`);

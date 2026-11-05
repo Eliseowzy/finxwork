@@ -168,22 +168,32 @@
 .bproc-h{padding:var(--sp-1) var(--sp-2) 2px;font-size:12px;color:var(--l3)}
 .tg-b.bproc>.am{padding:var(--sp-1) var(--sp-2)}
 
-/* Busy: the last bubble. Three dots while it answers; with sub-agents at work, what they do, opening to each one's
-   steps and how long it has worked. */
-.wbub{display:flex;flex-direction:column;padding:0}
-.wb-h{display:flex;align-items:center;gap:9px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}
+/* Busy: the last bubble. Three dots while it answers; with sub-agents at work, the dots quieten and what they do opens
+   out after them, shimmering like the list. Several open to each one's name. */
+.wbub{--shimmer-on:var(--win2);display:flex;flex-direction:column;padding:0}
+.wb-h{display:flex;align-items:center;gap:7px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}
 button.wb-h{cursor:pointer}
 .dots{display:inline-flex;align-items:center;gap:4px;height:21px;flex:none}
-.dots i{width:6px;height:6px;border-radius:50%;background:var(--l3);animation:dot 1.3s ease-in-out infinite}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--l3);animation:dot 1.3s ease-in-out infinite;transition:width .2s var(--ease-out),height .2s var(--ease-out)}
 .dots i:nth-child(2){animation-delay:.16s}
 .dots i:nth-child(3){animation-delay:.32s}
 @keyframes dot{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-3px);opacity:.95}}
+/* Beside words the dots are smaller and only glow in turn, left to right, twice for each pass of the words' shimmer. */
+.dots.quiet{gap:3px}
+.dots.quiet i{width:4px;height:4px;background:var(--l2);animation:dot-quiet 1.2s ease-in-out infinite}
+.dots.quiet i:nth-child(2){animation-delay:.2s}
+.dots.quiet i:nth-child(3){animation-delay:.4s}
+@keyframes dot-quiet{0%,60%,100%{opacity:.35}30%{opacity:1}}
+/* The words open out from behind the dots, cut rather than ellipsised on the way; the shimmer stays on the words themselves. */
+.wb-w{display:flex;min-width:0;overflow:hidden;text-overflow:ellipsis;interpolate-size:allow-keywords;animation:wb-open .24s var(--ease-out)}
+.wb-w .wb-t{text-overflow:inherit}
+@keyframes wb-open{from{width:0;opacity:0;text-overflow:clip}to{width:auto;opacity:1;text-overflow:clip}}
 .wb-t{min-width:0;font-size:14px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb-h .chev{width:14px;height:14px;margin-left:-5px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s var(--ease-out)}
+.wb-h .chev{width:14px;height:14px;margin-left:-3px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s var(--ease-out)}
 .wb-h[aria-expanded="true"] .chev{transform:none}
 .wb-l{display:flex;flex-direction:column;gap:2px;padding:0 15px 10px}
 .wb-r{min-width:0;font-size:14px;line-height:21px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media (prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.6}}
+@media (prefers-reduced-motion:reduce){.dots i,.dots.quiet i{animation:none;opacity:.6;transition:none}.wb-w{animation:none}}
 
 /* A new bot's empty page: its avatar, its name, one line on how to start. */
 .bempty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--sp-1);padding-top:14vh}

@@ -120,8 +120,8 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    // Only the person going up leaves the end. Rows settle their heights after the scroll that followed
-    // them, which moves the position with no one touching anything: that goes back to the end.
+    // Only the person going up leaves the end. Rows settle their heights and pictures load after the scroll
+    // that followed them, which moves the position with no one touching anything: that goes back to the end.
     if (below < 80) atEnd.current = true;
     else if (el.scrollTop < lastTop.current && performance.now() - touched.current < 1000) atEnd.current = false;
     else if (atEnd.current) el.scrollTop = el.scrollHeight;

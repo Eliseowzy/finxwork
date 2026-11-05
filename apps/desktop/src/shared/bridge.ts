@@ -94,6 +94,8 @@ export type BrowserPanel = {
   rect: { x: number; y: number; width: number; height: number } | null;
   /** The tab steps aside for now (a dialog is over the window): the page gets a picture of it to show meanwhile. */
   hold?: boolean;
+  /** The person is typing in the panel's address field: the agent's tabs do not take the panel from them. */
+  editing?: boolean;
 };
 
 /** A picture of a session's shown tab, taken as it stepped aside; `width` in CSS pixels. */
@@ -112,6 +114,8 @@ export type BrowserTab = {
   canGoBack: boolean;
   canGoForward: boolean;
   annotating?: boolean;
+  /** A blank tab the person opened: the panel's address field waits for them. The agent's blank tabs do not take the keyboard. */
+  asksAddress?: boolean;
 };
 
 /** The size a tab lays out at: the panel's, or a phone's or a tablet's. */
@@ -310,6 +314,8 @@ export type Bridge = {
   editors(): Promise<EditorInfo[]>;
   /** A web page in a conversation's embedded browser: the tab already at the address, else a new one. */
   openURL(session: string, url: string): Promise<void>;
+  /** An HTML file in the session's browser, as it is now; false when it is not there. */
+  openPageFile(session: string, path: string): Promise<boolean>;
   /** Opens a folder itself in Finder (Explorer, the file manager). */
   openFolder(path: string): void;
   /** A new terminal window, its shell in this folder. */

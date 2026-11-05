@@ -138,6 +138,51 @@ async fn output_finx_cannot_read_is_a_failure_that_names_it() {
 }
 
 #[tokio::test]
+async fn output_finx_cannot_read_is_named_when_only_its_own_event_lists_it() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        vec![
+            json!({"type": "response.output_item.done", "output_index": 0, "item": {"type": "new_kind", "text": "private"}}),
+            json!({"type": "response.completed", "response": {"status": "completed", "id": "r", "output": [],
+                "usage": {"input_tokens": 9, "output_tokens": 46}}}),
+        ],
+    )
+    .await;
+    let events = run(&server).await;
+    let Some(StreamEvent::Failed(message)) = events.last() else { panic!("{events:?}") };
+    let error = message.error.as_ref().unwrap();
+    assert!(error.message.contains("new_kind") && !error.message.contains("private"), "{}", error.message);
+}
+
+/// What the subscription route sent when a model chose to say nothing, captured 2026-11-05.
+#[tokio::test]
+async fn an_empty_answer_is_a_reply_not_a_failure() {
+    let server = MockServer::start().await;
+    let part = json!({"annotations": [], "logprobs": [], "text": "", "type": "output_text"});
+    serve(
+        &server,
+        vec![
+            json!({"type": "response.output_item.added", "output_index": 0, "item": {"type": "message", "role": "assistant",
+                "phase": "final_answer", "status": "in_progress", "content": []}}),
+            json!({"type": "response.content_part.added", "output_index": 0, "content_index": 0, "part": part}),
+            json!({"type": "response.output_text.done", "output_index": 0, "content_index": 0, "text": ""}),
+            json!({"type": "response.content_part.done", "output_index": 0, "content_index": 0, "part": part}),
+            json!({"type": "response.output_item.done", "output_index": 0, "item": {"type": "message", "role": "assistant",
+                "phase": "final_answer", "status": "completed", "content": [part]}}),
+            json!({"type": "response.completed", "response": {"status": "completed", "id": "r", "output": [],
+                "usage": {"input_tokens": 2778, "output_tokens": 4}}}),
+        ],
+    )
+    .await;
+    let events = run(&server).await;
+    let Some(StreamEvent::Done(message)) = events.last() else { panic!("{events:?}") };
+    assert!(message.content.is_empty() && message.error.is_none(), "{message:?}");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+    assert_eq!(message.usage.output, 4);
+}
+
+#[tokio::test]
 async fn an_empty_output_list_keeps_what_was_streamed() {
     let server = MockServer::start().await;
     serve(

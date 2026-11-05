@@ -478,6 +478,8 @@
   },
   "content": {
     "open": "Open",
+    "viewSource": "View Source",
+    "previewInBrowser": "Preview in Built-in Browser",
     "openWith": "Open With",
     "systemApp": "Default App",
     "revealFinder": "Show in Finder",

@@ -268,11 +268,15 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     const el = scroll.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
   };
+  const lastTop = useRef(0);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atEnd.current = below < 80;
+    // Only scrolling up leaves the end: not a picture that grew the page just as a scroll to the end landed.
+    if (below < 80) atEnd.current = true;
+    else if (el.scrollTop < lastTop.current) atEnd.current = false;
+    lastTop.current = el.scrollTop;
     setAway(below > 240);
     if (el.scrollTop < el.clientHeight * 1.5) earlier();
   };
@@ -488,23 +492,25 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
 
 /**
  * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with sub-agents at work,
- * what the bot called the work, and no more. Several show as a count that opens to their names.
+ * they quieten and what the bot called the work opens out after them, shimmering, and no more.
+ * Several show as a count that opens to their names.
  */
 function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number }; onOpen: () => void }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
   const agents = busy.agents;
+  // Retrying the model for more than ten seconds says so (bot-mode-design §7).
+  const unstable = retry && now - retry.at > 10_000;
+  const label = agents.length === 1 ? agents[0].label : unstable ? t("chat.retrying") : undefined;
+  const several = agents.length > 1;
   const dots = (
-    <span className="dots" aria-hidden="true">
+    <span className={`dots ${several || label ? "quiet" : ""}`} aria-hidden="true">
       <i />
       <i />
       <i />
     </span>
   );
-  // Retrying the model for more than ten seconds says so (bot-mode-design §7).
-  const unstable = retry && now - retry.at > 10_000;
-  const several = agents.length > 1;
   const shown = open && several;
   useLayoutEffect(() => {
     if (shown) onOpen();
@@ -519,19 +525,25 @@ function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: 
             {several ? (
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
-                <span className="wb-t">{t("line.agents", { things: thingsText(agents.length) })}</span>
+                <span className="wb-w">
+                  <span className="wb-t shimmer">{t("line.agents", { things: thingsText(agents.length) })}</span>
+                </span>
                 <Icon name="chevD" className="chev" />
               </button>
             ) : (
-              <div className="wb-h" title={agents.length === 0 ? t("line.typing") : undefined}>
+              <div className="wb-h" title={label ?? t("line.typing")}>
                 {dots}
-                {agents.length === 1 ? <span className="wb-t">{agents[0].label}</span> : unstable && <span className="wb-t">{t("chat.retrying")}</span>}
+                {label && (
+                  <span className="wb-w">
+                    <span className="wb-t shimmer">{label}</span>
+                  </span>
+                )}
               </div>
             )}
             {shown && (
               <div className="wb-l">
                 {agents.map((a) => (
-                  <div key={a.id} className="wb-r">
+                  <div key={a.id} className="wb-r shimmer">
                     {a.label}
                   </div>
                 ))}

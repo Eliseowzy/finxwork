@@ -4,7 +4,7 @@ import { imageRatio, imageRows, type BotFile } from "@finx/client";
 import { Lightbox, Tile, useOpenFile } from "../composer/Tile";
 import { sizeText } from "../format";
 import { Markdown } from "../session/Markdown";
-import { fileMenu } from "../session/contentMenus";
+import { fileMenu, otherView } from "../session/contentMenus";
 import { useFileInfo, useScope } from "../session/scope";
 import { useStore } from "../store";
 
@@ -18,7 +18,7 @@ function useFileMenu() {
   return (e: MouseEvent, path: string) => {
     e.preventDefault();
     e.stopPropagation();
-    void window.finx?.pathInfo(scope?.cwd ?? "", [path]).then(([info]) => info && fileMenu(st, info, undefined, () => openFile(path)));
+    void window.finx?.pathInfo(scope?.cwd ?? "", [path]).then(([info]) => info && fileMenu(st, info, undefined, () => openFile(path), scope ? otherView(st, scope.session, scope.cwd, path, "page") : undefined));
   };
 }
 
