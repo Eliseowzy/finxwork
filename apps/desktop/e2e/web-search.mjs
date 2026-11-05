@@ -243,6 +243,8 @@ try {
   await set.shot("5-keys-added");
 
   step("dragging a row changes the order, and the configuration");
+  // Painted positions: wait for the rows to stop gliding from the last change of order.
+  await sleep(400);
   const point = (el) => `(() => { const r = ${el}.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`;
   const from = await set.run(point(`${row("Tavily")}.querySelector('.ws-grip')`));
   const to = await set.run(point(`${row("Brave")}.querySelector('.ws-grip')`));
@@ -419,7 +421,8 @@ try {
   await set.shot("16-settings-dark");
   await theme(set, false);
   await set.shot("17-settings-light");
-  await set.run(`window.close()`).catch(() => {});
+  // Not awaited: a window that closes first never answers.
+  void set.run(`window.close()`).catch(() => {});
   await sleep(800);
   const showRow = (at) => main.run(`[...document.querySelectorAll('.tool')].filter(t => t.querySelector('.ws-res'))[${at}]?.scrollIntoView({ block: 'center' })`);
   await main.run(`[...document.querySelectorAll('.tool')].filter(t => !t.querySelector('.ws-res')).slice(0, 2).forEach(t => t.querySelector('.th').click())`);
