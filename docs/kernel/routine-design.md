@@ -744,7 +744,7 @@ pub struct RoutineSummary {
 
 ## 13. 实现时要先试的
 
-下面这些都还没试。代码已经按这张表的第一列写好，要靠打包后的应用或另一台机器验证。`jiff` 的体积试过了：代码段约 0.25 MB，关掉 `perf-inline` 和 `tz-fat` 几乎不变。Linux musl 也试过了：CI 用 `musl-tools` 的编译器构建 `dist`，带内置 SQLite，通过（2026-11-05）。`cargo-zigbuild` 那条路没试，这台机器现在没有 zig；`ring` 已经这样编译过 C，预计能过。
+下面这些都还没试。代码已经按这张表的第一列写好，要靠打包后的应用或另一台机器验证。`jiff` 的体积试过了：代码段约 0.25 MB，关掉 `perf-inline` 和 `tz-fat` 几乎不变。Linux musl 也试过了：CI 用 `musl-tools` 的编译器构建 `dist`，带内置 SQLite，通过（2026-11-05）。`cargo-zigbuild` 也能编过（2026-11-05，[性能手册 §8](benchmarks/performance-playbook.md) 的配方）。
 
 | 事项 | 不确定什么 | 不行的话 |
 |---|---|---|

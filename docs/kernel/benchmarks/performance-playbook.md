@@ -167,18 +167,15 @@ CI 的二进制保持静态 PIE，它也是唯一能看见带指针的静态表�
 ## 8. 环境
 
 - **macOS**：Apple M2 Max，常被其他会话占用。
-- **Linux**：1 vCPU、约 2 GiB 的 x86_64 主机。上面没有编译器，也不要在上面装工具链，在 Mac 上交叉编译后拷过去。下面的 `finx` 和 CI 的链接方式相同：静态 PIE，工具链自带的 `rcrt1.o` 和 `libc.a`，只是用 rust-lld 代替 CI 的 GNU ld。`libdl.a` 是空的，CI 上的 `-ldl` 找到的也是 glibc 的空存根。在 Mac 上用 zig 只编 C：
+- **Linux**：1 vCPU、约 2 GiB 的 x86_64 主机。上面没有编译器，也不要在上面装工具链，在 Mac 上交叉编译后拷过去。下面的 `finx` 和 CI 的链接方式相同：静态 PIE，工具链自带的 `rcrt1.o` 和 `libc.a`，只是用 rust-lld 代替 CI 的 GNU ld。`cargo-zigbuild` 只用来编 C（`ring`、SQLite）。`libdl.a` 是空的，CI 上的 `-ldl` 找到的也是 glibc 的空存根：
   ```bash
   mkdir -p target/empty-libs && printf '!<arch>\n' > target/empty-libs/libdl.a
-  CC_x86_64_unknown_linux_musl="zig cc -target x86_64-linux-musl" \
-  AR_x86_64_unknown_linux_musl="zig ar" \
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=rust-lld \
-  CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C linker-flavor=ld.lld -C link-self-contained=yes -L native=$PWD/target/empty-libs" \
-    cargo build --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C linker=rust-lld -C linker-flavor=ld.lld -C link-self-contained=yes -L native=$PWD/target/empty-libs" \
+    cargo-zigbuild zigbuild --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
   zig cc -target x86_64-linux-musl -O2 -static tools/bench/startup_launcher.c -o target/startup-launcher
   zig cc -target x86_64-linux-musl -O2 -static tools/bench/memrun.c -o target/memrun-linux
   ```
-  需要 zig 0.17。这样编出来的缺页数和 CI 差 ±2%（`sessions` ±4%）。**不要再用 `cargo-zigbuild` 比较 CI 的数字**：它编出来的是非 PIE，malloc 是 zig 自己的，1103 和 1105 §1～§7 的 Linux 数字都是这样来的（§3）。正式的 Linux 版还没有定用哪种。1 vCPU 不能外推多核容量，并发结论以多核机器为准。
+  需要 zig 0.17 和 cargo-zigbuild。这样编出来的缺页数和 CI 差 ±2%（`sessions` ±4%）。**不带这个 `RUSTFLAGS` 不能和 CI 的数字比**：链接由 zig 来做，出来的是非 PIE，malloc 是 zig 自己的，1103 和 1105 §1～§7 的 Linux 数字都是这样来的（§3）。正式的 Linux 版用哪种还没有定。1 vCPU 不能外推多核容量，并发结论以多核机器为准。
 - **真实服务商测试**：key 只放环境变量，经 ssh 时走标准输入，不写进文件、仓库或命令历史；跑完清理临时目录。
 - **主机地址和登录别名不要写进仓库。**
 
