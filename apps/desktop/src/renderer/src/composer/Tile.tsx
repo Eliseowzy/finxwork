@@ -32,7 +32,7 @@ function hostOf(url: string) {
  * A part of a web page shows what was said about it, or its text, and the site.
  */
 export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onContextMenu, onRemove }: {
-  kind: "file" | "folder" | "image" | "web" | "doc";
+  kind: "file" | "folder" | "image" | "web" | "doc" | "tabs";
   web?: WebComment;
   /** A quoted part of a document: shows where it is from, and opens there. */
   quote?: DocQuote;
@@ -67,7 +67,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
   };
   const pages = !quote ? "" : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
-  const type = web ? hostOf(web.url) : quote ? pages : kindOf(name ?? "", kind === "folder", t("composer.folder"));
+  const type = web ? hostOf(web.url) : quote ? pages : kind === "tabs" ? t("composer.tabKind") : kindOf(name ?? "", kind === "folder", t("composer.folder"));
   const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
   const quoteKind = !quote ? "" : quote.comment ? t("doc.comment") : quote.region ? t("doc.region") : t("doc.quote");
   const plain = !src && !web && !quote;
@@ -79,7 +79,13 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
           <img src={src} alt="" />
         ) : plain ? (
           <>
-            <FileBadge path={name ?? path ?? ""} folder={kind === "folder"} />
+            {kind === "tabs" ? (
+              <span className="tile-badge f-tabs" aria-hidden>
+                <Icon name="globe" />
+              </span>
+            ) : (
+              <FileBadge path={name ?? path ?? ""} folder={kind === "folder"} />
+            )}
             <span className="tile-text">
               <span className="tile-name">
                 <span className="tile-stem">{dot > 0 ? label.slice(0, dot) : label}</span>

@@ -14,7 +14,7 @@
     "app": "node scripts/build-app.mjs",
     "release": "node scripts/release.mjs",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "node --test src/renderer/src/docs/*.test.ts src/renderer/src/docs/sheet/*.test.ts src/renderer/src/files/*.test.ts src/shared/*.test.ts src/main/*.test.ts src/main/kernel/*.test.ts src/main/browser/*.test.ts scripts/*.test.mjs",
+    "test": "node --test src/renderer/src/docs/*.test.ts src/renderer/src/docs/sheet/*.test.ts src/renderer/src/files/*.test.ts src/shared/*.test.ts src/main/*.test.ts src/main/kernel/*.test.ts src/main/browser/*.test.ts src/renderer/src/composer/*.test.ts scripts/*.test.mjs",
     "e2e": "node e2e/stale-model.mjs",
     "e2e:chatgpt": "node e2e/chatgpt.mjs"
   },

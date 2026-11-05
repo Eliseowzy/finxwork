@@ -318,7 +318,7 @@ mod tests {
     }
 
     fn branch() -> Entry {
-        entry(EntryKind::Branch)
+        entry(EntryKind::Branch { before_first: false })
     }
 
     async fn calls_after_close(writer: SessionWriter, calls: &Arc<Mutex<Vec<String>>>) -> Vec<String> {

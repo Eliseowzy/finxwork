@@ -40,6 +40,7 @@ use crate::compaction::CompactError;
 use crate::hooks::TurnDecision;
 use crate::session::ActiveTask;
 use crate::session::Input;
+use crate::session::Resend;
 use crate::session::Session;
 use crate::session::SessionState;
 use crate::store::EntryKind;
@@ -141,12 +142,88 @@ pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: P
     start_task(session, Some(message));
 }
 
+/// `resend`: starts again from an earlier message of the user's. Everything happens now, as one
+/// step: a running task stops first, and then the conversation goes back and the new input
+/// starts the next task. Until then the session is as it was.
+pub(crate) fn on_resend(session: &Arc<Session>, message_id: String, input: Vec<UserContent>, commands: bool) {
+    {
+        let state = session.state.lock();
+        let refused = if state.bot.is_some() {
+            Some("a bot's conversation does not go back")
+        } else if state.pending_resend.is_some() {
+            Some("another resend is waiting for the running task to stop")
+        } else if !state.has_user_message(&message_id) {
+            Some("that message is not in the conversation")
+        } else if input.iter().all(|c| matches!(c, UserContent::Text { text } if text.trim().is_empty())) {
+            Some("there is nothing to send")
+        } else {
+            None
+        };
+        if let Some(why) = refused {
+            return session.reject_resend(why);
+        }
+    }
+    let mut skills = Vec::new();
+    if commands {
+        let known = session.state.lock().skills.clone();
+        match crate::commands::resolve(&input, &known, &session.config.limits) {
+            // Not a message: sending it from there would go back and send nothing.
+            Command::Compact | Command::Context => return session.reject_resend("a command is not a message"),
+            Command::Prompt { skills: loaded, warnings } => {
+                for warning in warnings {
+                    session.warn(warning);
+                }
+                skills = loaded;
+            }
+        }
+    }
+    let next = {
+        let mut guard = session.state.lock();
+        let state = &mut *guard;
+        let resend = Resend {
+            target: message_id,
+            input: Input {
+                id: state.input_id(),
+                message: UserMessage {
+                    content: input,
+                    ts: now_ms(),
+                },
+                skills,
+            },
+        };
+        match &state.active_task {
+            // This alone, not the sub-agents as a stop does: those started earlier work on.
+            Some(task) => {
+                task.cancel.cancel();
+                state.pending_resend = Some(resend);
+                None
+            }
+            None => Some(go_back(session, state, resend)),
+        }
+    };
+    if let Some((task, input)) = next {
+        launch(session, task, Work::Prompt(Some(input)), TaskTrigger::User);
+    }
+}
+
+/// Goes back as `resend` says, and reserves the task that goes on from there. Under the state
+/// lock, so that input arriving meanwhile waits for that task.
+fn go_back(session: &Session, state: &mut SessionState, resend: Resend) -> (TaskCtx, Input) {
+    let returned_input = hand_back(session, state);
+    session.rewind(state, &resend.target, returned_input);
+    (reserve(state), resend.input)
+}
+
 /// A sub-agent's report arrived. It joins the history at the next turn boundary, or starts a
 /// task when nothing runs.
 pub(crate) fn on_mail(session: &Arc<Session>, mail: Mail) {
+    // From an agent a `resend` removed, it belongs to what was taken back.
+    let kept = session.agents.as_ref().is_some_and(|tree| tree.has(&mail.info.from.id));
     let wake = {
         let mut state = session.state.lock();
-        state.inbox.push_back(mail);
+        if kept {
+            state.inbox.push_back(mail);
+        }
         state.active_task.is_none() && state.has_waking_mail()
     };
     if let Some(tree) = &session.agents {
@@ -324,6 +401,9 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
         if state.active_task.as_ref().is_some_and(|t| t.id == task.id) {
             state.active_task = None;
         }
+        // A `resend` waited for this end, however it came: it takes what still waits, below.
+        let resend = state.pending_resend.take();
+        let going_back = resend.is_some();
         let next_input = match outcome {
             TaskOutcome::Completed { last_message, reason } => {
                 session.emit(EventMsg::TaskCompleted {
@@ -332,13 +412,13 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
                     last_message,
                     reason,
                 });
-                take_next(session, state)
+                if going_back { None } else { take_next(session, state) }
             }
             TaskOutcome::Failed(error) => {
                 // A bot's silence says nothing against the model: input that came after the task's
                 // last look at the queue is answered, as it is a moment later (bot-design §3.11).
                 let silent = error.kind == NO_REPLY;
-                let returned_input = if silent { Vec::new() } else { hand_back(session, state) };
+                let returned_input = if going_back || silent { Vec::new() } else { hand_back(session, state) };
                 session.emit(EventMsg::TaskFailed {
                     task_id: task.id.clone(),
                     error,
@@ -348,9 +428,9 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
                 if silent { take_next(session, state) } else { None }
             }
             TaskOutcome::Interrupted => {
-                let returned_input = hand_back(session, state);
+                let returned_input = if going_back { Vec::new() } else { hand_back(session, state) };
                 // Stopped on purpose: reports do not restart the work until new input arrives.
-                state.hold = true;
+                state.hold = !going_back;
                 session.emit(EventMsg::TaskInterrupted {
                     task_id: task.id.clone(),
                     returned_input,
@@ -362,10 +442,14 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
         // Reports that arrived while the reply was being written start a task of their own,
         // after the reply is complete. The next task is the session's before the lock goes, so
         // input arriving meanwhile waits for it instead of starting another.
-        match next_input {
-            Some(input) => Some((reserve(state), Work::Prompt(Some(input)), TaskTrigger::User)),
-            None if state.has_waking_mail() => Some((reserve(state), Work::Prompt(None), TaskTrigger::Mail)),
-            None => None,
+        match (resend, next_input) {
+            (Some(resend), _) => {
+                let (next, input) = go_back(session, state, resend);
+                Some((next, Work::Prompt(Some(input)), TaskTrigger::User))
+            }
+            (None, Some(input)) => Some((reserve(state), Work::Prompt(Some(input)), TaskTrigger::User)),
+            (None, None) if state.has_waking_mail() => Some((reserve(state), Work::Prompt(None), TaskTrigger::Mail)),
+            (None, None) => None,
         }
     };
     match next {

@@ -230,6 +230,7 @@ impl NativeProtocol {
                             customize: true,
                             embedded_browser: true,
                             input_queue: true,
+                            message_resend: true,
                             workbooks: true,
                             bots: true,
                         },

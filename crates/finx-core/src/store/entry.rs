@@ -148,7 +148,12 @@ pub enum EntryKind {
         message: Message,
     },
     /// Marks a rewind: the parent is the point the branch continues from.
-    Branch,
+    Branch {
+        /// It went back before the first user message: the next one is the session's first.
+        /// Session lists go by this, without following parents.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        before_first: bool,
+    },
     Title {
         title: String,
     },
@@ -297,7 +302,7 @@ mod tests {
         let back: Entry = serde_json::from_str(&json).unwrap();
         assert_eq!(back, entry);
         let branch: Entry = serde_json::from_str(r#"{"id":"x","parent":"y","ts":1,"type":"branch"}"#).unwrap();
-        assert_eq!(branch.kind, EntryKind::Branch);
+        assert_eq!(branch.kind, EntryKind::Branch { before_first: false });
     }
 
     #[test]

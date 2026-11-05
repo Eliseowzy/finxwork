@@ -62,6 +62,12 @@ impl FileTracker {
         self.seen.lock().insert(key(path), stamp);
     }
 
+    /// Forgets every file, as a session that has just resumed knows none: the conversation went
+    /// back and no longer holds what the model read.
+    pub fn clear(&self) {
+        self.seen.lock().clear();
+    }
+
     /// Checks that `current` matches what this session last saw.
     pub fn verify(&self, path: &Path, current: FileStamp) -> Result<(), StaleReason> {
         match self.seen.lock().get(&key(path)) {

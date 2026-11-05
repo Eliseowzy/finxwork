@@ -147,6 +147,42 @@ test("a stop hands what waits back, steering first, and a withdrawn message neve
   assert.equal(v.queued.length, 0);
 });
 
+test("a resend stops the task, hands back what waits and goes back; a later attach sees the same", async () => {
+  const server = new MockServer({ speed: 50 });
+  const rpc = client(server);
+  const { session_id, snapshot } = await rpc.request("session/new", { cwd: "/tmp/demo" });
+  let v = fromSnapshot(snapshot);
+  let asked!: () => void;
+  const asking = new Promise<void>((resolve) => (asked = resolve));
+  const kinds: string[] = [];
+  rpc.on("session/event", ({ event }) => {
+    v = applyEvent(v, event as Event);
+    kinds.push(event.type);
+    if (event.type === "approval_requested") asked();
+  });
+  const op = (o: Op) => rpc.request("session/op", { session_id, op: o });
+  await op({ type: "prompt", input: [{ type: "text", text: "hi" }] });
+  await asking;
+  await op({ type: "prompt", input: [{ type: "text", text: "after" }], mode: "follow_up" });
+  const first = v.entries.find((e) => e.type === "message" && e.message.role === "user");
+  assert.ok(first?.type === "message");
+  // A message that is not there: refused, nothing changes.
+  await op({ type: "resend", message_id: "nothing-like-it", input: [{ type: "text", text: "no" }] });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(v.refused);
+  kinds.length = 0;
+  await op({ type: "resend", message_id: first.message_id, input: [{ type: "text", text: "说点别的" }] });
+  assert.deepEqual(kinds.slice(0, 5), ["task_interrupted", "queue_changed", "session_rewound", "task_started", "message_completed"]);
+  assert.deepEqual(v.returned?.map((m) => (m.content[0].type === "text" ? m.content[0].text : "")), ["after"]);
+  assert.deepEqual(v.rewound?.gone, [first.message_id]);
+  const said = v.entries.find((e) => e.type === "message" && e.message.role === "user");
+  assert.ok(said?.type === "message" && said.message_id !== first.message_id);
+  assert.deepEqual(said.message.content, [{ type: "text", text: "说点别的" }]);
+  const attached = await rpc.request("session/attach", { session_id });
+  const ids = (items: { type: string; message_id?: string }[]) => items.filter((e) => e.type === "message").map((e) => e.message_id);
+  assert.deepEqual(ids(attached.snapshot.transcript.items), ids(v.entries));
+});
+
 test("bots: the demo's, a new one, and a conversation in messages that stays out of session lists", async () => {
   const server = new MockServer({ speed: 400 });
   const rpc = client(server);
