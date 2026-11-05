@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.12 |
+| 版本 | v1.13 |
 | 日期 | 2026-11-04 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -29,6 +29,7 @@
 | v1.10 | 2026-11-04 | bot.md 加上被质疑时复查并拿证据回答、不为附和而改结论；共用片段"Numbers and data"按技术方案 v1.40 补充（A.2） |
 | v1.11 | 2026-11-04 | 权限选择器移到 Bot 设置面板，第一次的提示改成输入框上方的关键提醒（§3.8、D-318）。仍然只改桌面端 |
 | v1.12 | 2026-11-04 | 系统通知（notification-design.md）：`BotSummary` 增加 `failed`（只在会话加载时有，任务失败为真）和 `muted`（存在 bot.json），`bots/update` 能改 `muted` |
+| v1.13 | 2026-11-05 | `send_to_user` 加 `type`：`text`、`attachment`（一次发一个或多个文件和图片，可以带文字）、`question`（提问，答案列得出来时带选项）（§3.12），依据真实模型统计定的（D-328）。列表摘要 `LastMessage` 加 `file`；两个截图工具的结果写上保存路径。§11 里的"附件与卡片"做了 |
 
 ## 方案摘要
 
@@ -258,9 +259,9 @@ pub enum PromptProfile {
   - 模型边查边想的文字是私有的，不会漏给主人；
   - 先回一句再去做事、做的过程中发进展、做完发结果，都是"发不发、什么时候发"的选择，由模型决定；
   - 什么时候算这一轮说完了，模型用 `end_turn` 明说。
-- **参数**：`text`（必填，去掉首尾空白后不为空，按 Markdown 渲染）；`end_turn`（可选，布尔）。描述与参数说明见附录 A.3。
-- **执行**：只读工具（`ToolKind::ReadOnly`），不走审批、不占锁。校验 `text`，返回 `Sent.`；`end_turn` 为真时，结果带结束任务的标记（§3.3）。`describe` 的标题取 `text` 的第一行，供"过程"和命令行显示。
-- **不另记条目、不发新事件**：调用的参数在 `tool_started` 和历史里本来就有，桌面端按工具名认出它。
+- **参数**：`type` 说明这是什么消息，不写就是 `text`；各类型的参数见 §3.12。`end_turn`（可选，布尔）。描述与参数说明见附录 A.3。
+- **执行**：只读工具（`ToolKind::ReadOnly`），不走审批、不占锁。校验参数，返回 `Sent.`；`end_turn` 为真、或者是提问时，结果带结束任务的标记（§3.3）。`describe` 的标题取 `text` 的第一行，附件取文件名，供"过程"和命令行显示。
+- **不另记条目、不发新事件**：调用的参数在 `tool_started` 和历史里本来就有，附件的文件信息在结果的 `details` 里，桌面端按工具名认出它。
 - **只在 Bot 会话里有**：按头部的 `bot` 挂上（§2.2）。后台帮手没有这个工具，它的汇报照旧回到 Bot。
 - **没发就结束**：模型一次都没调用就要结束这一轮时，内核提醒它一次（§3.11）。
 
@@ -280,7 +281,9 @@ pub enum PromptProfile {
 | 历史里的东西 | 显示成 |
 |---|---|
 | 主人的消息 | 右边的气泡，附件在上方 |
-| 成功的 `send_to_user` 调用 | 左边的气泡，内容是 `text` |
+| `send_to_user`，`text` | 左边的气泡，内容是 `text` |
+| `send_to_user`，`attachment` | 左边的图片组和文件组（§3.12） |
+| `send_to_user`，`question` | 左边的气泡，带可以点的选项（§3.12） |
 | 失败的 `send_to_user`（`text` 为空、被钩子拒绝、没有执行） | 不显示 |
 | 助手的文字、思考 | 不显示；归进它后面那个气泡的"过程" |
 | 其他工具调用和结果 | 同上 |
@@ -290,7 +293,7 @@ pub enum PromptProfile {
 | 等确认的调用 | 不进对话；输入框上方的授权窗口（§3.8） |
 | 任务失败 | 失败卡，带"重试"（§3.9） |
 
-- **实时显示**：气泡来自写完的助手消息里的 `send_to_user` 调用（`text` 不为空），按调用在消息里的顺序。助手消息写完（`message_completed`）紧接着就是这一批的 `tool_started`，两者几乎同时到。调用最后失败了（被钩子拒绝、没有执行）就不显示；这种情况很少。服务层的列表摘要用 `tool_started`，与此同步。
+- **实时显示**：气泡来自写完的助手消息里的 `send_to_user` 调用，按调用在消息里的顺序。助手消息写完（`message_completed`）紧接着就是这一批的 `tool_started`，两者几乎同时到。调用最后失败了（被钩子拒绝、没有执行）就不显示；这种情况很少。服务层的列表摘要用 `tool_started`，与此同步。附件例外，等执行成功才显示（§3.12）。
   - 不等结果才显示，是因为同一批里只要有一个调用要确认，整批都要等确认答复以后才执行：先发的那句"要重启 nginx，你确认一下"得在授权窗口之前让主人看到。
 - **按时间排**：对话按时间排序，同一时间按历史的顺序。主人的消息取发出的时间（`UserMessage.ts`，消息到达内核时就定了，排队的也一样）；Bot 的气泡取那条助手消息写完的时间（`ts + duration_ms`）。这样，Bot 回话中途发出的话，实时看到的位置和重新打开后的一样。否则按历史的顺序，排队的消息要到这一步结束才写进历史，重新打开时会挪到 Bot 那一步的气泡后面。
 - **过程**：一个气泡的过程是同一个任务里、从上一个气泡（或任务开始）到它之间的步骤，用时从任务开始或上一个气泡算起。
@@ -351,6 +354,71 @@ pub enum PromptProfile {
 - **代价**：只在漏发时多一次请求，前面的内容都在缓存里。
 - **效果**：同样的测试，漏发从 16/36 降到 0 或 1/36：加提醒以后的三组短问题共 108 个任务，漏 2 个，都是模型被提醒后又只写了文字（§8、§11）。
 
+### 3.12 消息类型
+
+主人定（2026-11-04）：`send_to_user` 加 `type`。类型好扩展，文件、问题这些也适合独立发出来。不另造工具。
+
+| `type` | 什么时候用 | 必填 | 可选 | 显示 |
+|---|---|---|---|---|
+| `text`（默认） | 说话 | `text` | `end_turn` | 文字气泡，调用开始就显示 |
+| `attachment` | 发一个或多个文件、图片 | `files` | `text`、`end_turn` | 文字气泡（有文字时）、图片组和文件组，执行成功才显示 |
+| `question` | 要主人拿主意 | `text` | `options` | 气泡，答案列得出来时带选项，这一轮随之结束 |
+
+- **参数一层平的**，写法和 `browser_tabs` 一样。`type` 是普通的字符串枚举，不用 `oneOf`：这个工具每个请求都带，不能冒服务商不接受的险。不写 `type` 就是 `text`，已有的历史不用迁移。
+- **不写 `type` 时，看它带了什么**：带 `files` 是 `attachment`，带 `options` 是 `question`，否则是 `text`。明写了 `type` 又带着别的类型的参数才报错。空字符串和空数组算没写：有的模型会把可选参数都填上空值。
+
+**`attachment`**
+
+- `files: [{ path }]`，至少一个，按顺序显示；`text` 可选，显示在文件上面的气泡里。一次调用是一条消息，未读加一。
+- `path` 走 `Environment::resolve`：绝对路径、相对工作目录、`~/`、`file://` 都认；找不到时先试 `find_path_variant`，和 `read` 一样。不收网址，报错让模型先存成文件。这样保住"回复不加载任何东西"（content-actions-design §5.1）。
+- 检查放在 `run`，不放在 `check`：预检在这一批执行之前，模型可能在同一步里先生成文件再发。只读调用排在同一批前面的写操作之后（`tool_gate` 是先来先得的读写锁），这样发得出去。
+- 有一个路径不对，整条报错，列出所有不对的路径，不显示，不会只发出去一半。
+- 结果文字是 `Sent.`；`details` 给界面，不发给模型：`{ "text": 文字（有才写）, "files": [{ "path": 绝对路径, "size": 字节数, "image": true, "width": 960, "height": 600 }, …] }`。PNG、JPEG、GIF、WebP 且不超过 10 MB（`files::MAX_IMAGE`，和文件面板一样）才带 `image`；按文件内容判断，不按扩展名。尺寸从文件头读，版面一开始就定，图片读进来时不跳。
+- 只存路径，不复制文件。代价：之后文件被覆盖，旧消息打开的是新内容；被删了，那一行写"文件已不在"（§11）。
+
+**`question`**
+
+- `text` 是问题。`options: [{ label }]` 可选，不能重名；答案列不出来时（比如对方的名字）不写，就是一个普通的问题。用对象不用字符串，以后可以加字段。
+- 成功后总是结束这一轮（`ends_task`），不用写 `end_turn`。
+- 点选项就是发一条内容为 `label` 的普通消息（`Op::Prompt`，和输入框相同），内核没有等待状态，不记新条目。模型看到的就是主人回了这句。
+- 选项能不能点由客户端从历史算（`botChat`）：最新的问题，后面没有主人的话。主人直接写别的，选项也收起。
+- 和授权无关：工具要授权还是走授权窗口（D-317）。
+
+**其他**
+
+- **显示时机**：`text`、`question` 和现在一样，调用开始就显示（D-312）。`attachment` 等 `tool_completed`：路径可能不对，文件也可能在同一步才生成。服务层的未读和最近一句同样。
+- **列表摘要**：`LastMessage` 加可选的 `file`（第一个不是图片的文件名）；`images` 是图片数，`text` 是文字（没有就是空的）。客户端有文字显示文字，否则显示 `[图片]` 或 `[文件] 名字`，系统通知同样。
+- **截图**：`browser_screenshot`、`cua_screenshot` 的结果文字写上保存路径，否则模型不知道路径，发不出自己的截图。
+- **提醒（§3.11）不变**：任何类型成功的 `send_to_user` 都算回过话。
+- **给模型的说明写在工具描述里**（附录 A.3）：已有 Bot 的系统提示词是冻结的（Q-200），工具描述恢复时会重建。bot.md 只改一处，"links the file" 改成发文件。
+- **验证**：`finx-core/tests/bot.rs`（文件的详情、按内容认图片、同一步生成再发、路径错、提问、类型和参数对不上）；`finx-cli/tests/e2e_bots.rs`（列表一行和未读）；`packages/client/src/bots.test.ts`（气泡、选项开合、每行几张）；`apps/desktop/e2e/bot-messages.mjs`（真实应用加脚本化模型，PRD §11 第 19 到 21 条）。真实模型用不用这些类型，用 `tools/bench/bot_turns.mjs N files choice` 统计。
+- **真实模型统计**（DeepSeek flash，`tools/bench/bot_turns.mjs`，每个场景 12 遍）。第一版要求附件不带文字、提问必须有选项，模型几乎每次都想把文字和文件放在一个调用里，还常不写 `type`；它之后能自己改对，但每次白白多一轮请求。两条规则都放开以后，拒绝降到 0，调用少了四成，主人看到的样子不变：
+
+| 场景 | 版本 | 用了对应类型 | 被拒绝的调用 | 调用总数 |
+|---|---|---|---|---|
+| `files`：写两个文件发给我 | 第一版 | 12/12 | 19 | 40 |
+| `files` | 放开后 | 12/12 | 0 | 24 |
+| `choice`：A、B 两版选一个 | 第一版 | 12/12 | 0 | 14 |
+| `choice` | 放开后 | 12/12 | 0 | 12 |
+| `open`：问收件人（答案列不出来） | 第一版 | 7/12 | 2 | 13 |
+| `open` | 放开后 | 12/12 | 0 | 12 |
+
+  和改动之前的代码做对照（同一天、同样的场景和次数），看有没有退步，也看有没有滥用提问。日常问答里 `question` 一次都没用，`mixed` 里 12 遍有 11 遍用 `attachment` 发文件。样本小，只能看方向：
+
+  | 场景 | 版本 | 第一个调用是发消息 | 提醒后才发 | 提醒后仍不回话（失败） | 其他 |
+  |---|---|---|---|---|---|
+  | `hello` | 对照 | 21/36 | 15 | 0 | |
+  | `hello` | 现在 | 26/36 | 10 | 0 | |
+  | `quick` | 对照 | 10/36 | 13 | 9 | |
+  | `quick` | 现在 | 19/36 | 13 | 0 | |
+  | `poems` | 对照 | 10/12 | 2 | 0 | 按顺序回来 6/12 |
+  | `poems` | 现在 | 8/12 | 4 | 0 | 按顺序回来 5/12 |
+
+  `poems` 两边都比 §8 记录的旧数据差（当时 10/12 到 12/12），不是这次改动带来的：常见的情况是第一首写成了私有的文字，后面几首正常发出，提醒只看主人最新一句之后发过没有，第一首就丢了。留给回合规则的改进处理。
+
+
+- **以后的类型**：`session`（会话卡，随二期，PRD §6.18）；`secret`（密钥输入，等 Bot 真向主人要 token 时再做，要先有模型看不到、命令用得到的存储）。
+
 ## 4. 协议
 
 `initialize` 结果的 capabilities 加 `bots: true`。以下都是增量。
@@ -410,6 +478,8 @@ pub struct LastMessage {
     pub text: String,
     /// 带的图片数。
     pub images: u32,
+    /// Bot 发的文件里，第一个不是图片的文件名。
+    pub file: Option<String>,
     pub ts: String,
 }
 ```
@@ -435,7 +505,8 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 | 事件 | 更新 |
 |---|---|
 | 主人的消息（message_completed，用户消息） | last |
-| `send_to_user` 的 tool_started（`text` 不为空，与桌面端同一个规则；之后失败的极少，列表不回退） | last；未读规则见 §5.3 |
+| `send_to_user` 的 tool_started（不发文件，`text` 不为空，与桌面端同一个规则；之后失败的极少，列表不回退） | last；未读规则见 §5.3 |
+| `send_to_user` 成功的 tool_completed，`details` 里有 `files` | last（`images`、`file`）；未读规则见 §5.3 |
 | 任务开始与终止 | typing |
 | 子智能体开始、状态变化 | helpers |
 | 审批出现与答复 | waiting；未读规则见 §5.3 |
@@ -688,7 +759,8 @@ pub trait SessionHost: Send + Sync + 'static {
 | bot.md 补一句"长活交给后台帮手" | Bot 自己做长活，挡住了后面的话 | 验收时长活没交出去的比例不可忽略 | 在"一轮怎么过"里加一句，指向 `spawn_agent`。验收时中等的活 12 遍都是 Bot 自己做的，期间来的话在工具调用的间隙照常回了；帮手又不能要确认（子智能体方案 D-43），要跑命令的活交出去多半做不成。先做下面的"帮手的确认转给主人"，再看要不要补 |
 | 表情回应 `react_to_message`（眼睛和对勾） | 回一句"在查了"有时显得小题大做；看不出哪句在处理 | 主人要，或者先回的那句显得啰嗦 | 一个工具：对主人的某条消息放一个回应，可以代替先回的那句；做完换成对勾 |
 | Bot 的引用 | 结果回的是哪句说不清 | 主人要 | `send_to_user` 加可选的 `reply_to`；桌面端按 PRD 的规则显示 |
-| 附件与卡片 | Bot 要发文件、图片 | 主人要 | `send_to_user` 加附件参数 |
+| 发送时复制文件 | 文件被覆盖后，旧消息打开的是新内容；迭代一张图时看不到旧版 | 真实使用里遇到 | 发送时复制到会话的输出目录，消息指向副本 |
+| 提问的多选和选项说明 | 只能选一个，选项放不下说明 | 真实使用里遇到 | `options` 的对象加字段；`question` 加多选 |
 | 主人引用 Bot 的话 | 主人想指着某句回复 | 主人要 | 消息带被引用的那句的 id 和原文 |
 | 后台帮手带对话做前缀 | 帮手不知道"那份周报"指什么，Bot 得在任务说明里写全 | 发现任务说明经常写不全 | 子会话头部记 `forked_from`，引用 Bot 日志里的位置，不复制 |
 | 帮手的结果直接发给主人 | 转述多一次模型调用，可能丢信息 | 发现转述常丢东西 | 帮手的最后回复作为 Bot 的气泡发出，Bot 历史里追加一封不唤醒的信 |
@@ -753,6 +825,13 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-319 | 桌面端不提供清空聊天记录和标为已读/未读；列表只有置顶、重命名（原地）、删除，名字和头像在顶栏 ⋯；Bot 页和会话页共用文件面板和浏览器 | 主人的决定：统一入口，不给清空的选择；服务层接口先留着，要不要删另说 | PRD §6.16 |
 | D-320 | Bot 的模型和思考强度就是它会话的设置，用 `set_model` 改，随会话保存，不加 Bot 级字段；设置面板取代顶栏 ⋯ 和编辑表单 | 一个 Bot 只有一个会话，再存一份只会多一个要同步的地方 |
 | D-321 | 提醒后还是没发算失败（`no_reply`，可重试），不算完成 | 真实使用里遇到过：一个连接上的模型回复全被解析成空，主人发了话什么反馈都没有。转告不了的沉默不能算做完 |
+| D-322 | `send_to_user` 加 `type`（`text`、`attachment`、`question`），不写就是 `text`；不另造工具；参数一层平的，`type` 是普通字符串枚举 | 主人定：类型好扩展，文件和问题适合独立发出来；这个工具每个请求都带，不用 `oneOf` 冒险 | §3.12 |
+| D-323 | `attachment` 用 `files: [{ path }]`，一次调用发多个，是一条消息，可以带 `text`；只收本机路径；有一个不对就整条报错 | 主人定：一次发多个，参数没有变复杂。不收网址保住"回复不加载任何东西"。可以带文字见 D-328 | §3.12 |
+| D-324 | 附件的路径在执行时检查；结果的 `details` 带绝对路径、大小、是否图片和尺寸；界面和列表等执行成功才算 | 模型可能在同一步先生成文件再发；`details` 不进上下文；尺寸让版面不跳 | §3.12 |
+| D-325 | `question` 的答案是一条普通消息，内核没有等待状态，发出即结束任务；选项能不能点由客户端从历史算 | 最小机制，不加条目和事件；主人直接写别的也自然接上 | §3.12 |
+| D-326 | `LastMessage` 加可选的 `file` | 文件名不是 Bot 说的话，不能放进 `text`；附件标记的格式只有输入框认（§4） | §3.12 |
+| D-327 | 两个截图工具的结果文字写上保存路径 | 模型不知道路径就发不出自己的截图 | §3.12 |
+| D-328 | `attachment` 可以带 `text`（显示在文件上面），`question` 可以没有 `options`，不写 `type` 时看带了什么 | 真实模型统计：第一版里模型几乎每次都想把文字和文件放在一个调用里，12 遍被拒绝 19 次，每次白白多一轮请求；是接口形状和模型习惯不合，不是提示词能解决的。放开后拒绝降到 0，调用少四成，主人看到的样子不变 | §3.12 |
 
 ## 15. 待定问题
 
@@ -773,7 +852,7 @@ pub trait SessionHost: Send + Sync + 'static {
 | 方面 | 要点 | 和我们的关系 |
 |---|---|---|
 | 工具怎么组织 | 常驻的工具只有十来个，其余几十个（后台帮手、待办、改名换头像、搜索等）用到时再按名字取 | finx 已有延迟加载工具的机制；Bot 的工具变多以后照此，常驻部分保持很短 |
-| 发给主人的扩展 | 同一个发送工具加一个类型字段：文字、附件、带选项的提问卡、密钥输入卡；文字里可以带图片。`reply_to` 用来开分支话题，只收纳大段的次要内容，默认不用 | 附件、提问卡都走 `send_to_user` 的类型，不另造工具；`reply_to` 与 PRD 里的"引用"不是一回事，做引用时再想清楚 |
+| 发给主人的扩展 | 同一个发送工具加一个类型字段：文字、附件、带选项的提问卡、密钥输入卡；文字里可以带图片。`reply_to` 用来开分支话题，只收纳大段的次要内容，默认不用 | 文字、附件、提问已做（§3.12）；密钥卡和文字带图片等需要时再加；`reply_to` 与 PRD 里的"引用"不是一回事，做引用时再想清楚 |
 | 一轮的规矩 | 超过大约两轮工具调用的活必须交给后台帮手；带 `end_turn` 的最后一条不和还要做的事放在同一步；只有确认做完才说做完，最后一条带结果本身，不能只指向前面的消息 | 验收时如果发现长活挡住了回话、或者 `end_turn` 和别的调用并发，先补这几句（§11） |
 | 表情回应 | 社交性的回应：赞同、感谢、好消息、好笑，小事做完放一个对勾。代替不了需要的回复，也代替不了长活开始前的那句话；一条消息最多一个 | 原型里用"眼睛"表示处理中，定位不同，做表情回应时重新考虑 |
 | 后台帮手 | 默认接着 Bot 的对话往下做；同一条线索的后续和修改交给同一个帮手；用待办列表记下每件交代的事，每次有新消息或帮手做完时核对一遍；主人说"停"就一次停掉全部 | "帮手带对话"已在 §11；待办列表是"每件事都有结局"的一个做法 |
@@ -805,8 +884,7 @@ limited to:
 4. Writing and running programs.
 
 You work in your own folder by reading and writing files, running commands and using the other
-tools you have. Long results go in a file there; your message gives the conclusion and links
-the file.
+tools you have. Long results go in a file there: send the conclusion, then the file.
 
 How a turn works:
 The user sees only what you send with send_to_user. Everything else you write stays private and
@@ -898,18 +976,41 @@ How to talk:
 
 ```
 Send a message to the user. It is the only way they see anything from you: each call shows up as
-one chat bubble, all at once, rendered as Markdown.
+one message, all at once.
 ```
 
 参数（schema 里的说明）：
 
 ```
-text: The message.
+type: What this message is. text (the default): words, rendered as Markdown. attachment: one or
+more files or images, with words if they help. question: a question, when you need the user to
+decide; it ends your turn and their answer comes back as their next message; send any background
+first as a text message.
+text: The message. For attachment, the words to go with the files. For question, the question in
+one sentence.
+files: For attachment, what to send, in order.
+files[].path: A file on this computer, absolute or relative to your folder. Save anything from
+the web to a file first.
+options: For question, answers the user can tap, each worded the way they would say it. Leave it
+out when the answers cannot be listed.
+options[].label: The answer.
 end_turn: True on your last message, once your work for now is done: the turn ends right after
 it. Leave it out for a first reply or an update while you keep working.
 ```
 
-结果：`Sent.`；`text` 为空时返回错误 `text must not be empty`。
+结果：`Sent.`。错误：
+
+```
+text must not be empty
+files goes with type attachment
+options goes with type question
+give at least one file
+an option's label must not be empty
+two options have the same label: <label>
+<path>: no such file
+<path>: not a file
+<path>: a web address, save it to a file first
+```
 
 ### A.4 改名的环境更新
 
