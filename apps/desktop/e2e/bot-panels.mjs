@@ -46,7 +46,8 @@ const provider = http.createServer((req, res) => {
     if (!req.url?.endsWith("/chat/completions")) return res.writeHead(404).end();
     lastRequest = JSON.parse(body);
     const { messages, tools } = lastRequest;
-    const last = messages.at(-1);
+    // Past the word that follows each of the owner's messages (bot-design §3.14).
+    const last = messages.filter((m) => !JSON.stringify(m.content ?? "").includes("<reminder>")).at(-1);
     res.writeHead(200, { "content-type": "text/event-stream" });
     if (last.role === "tool") {
       toolResult = typeof last.content === "string" ? last.content : last.content.map((c) => c.text ?? "").join("");

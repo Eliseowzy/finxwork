@@ -132,6 +132,7 @@ finx-sheet（纯 Rust，无 I/O 副作用，便于测试）
 - **SD-05**：SheetBackend 跑在已有的 `finx doc-worker` 里。Rust 的 panic 本来能接住，但零期中 IronCalc 的读取器在真实文件上 panic 过，10 万行的表在原型里峰值内存达到 722 MB，放在单独进程里，出事不会拖垮内核。
 - **SD-06**：新 crate `finx-sheet`，`finx-docs` 依赖它。它不碰 DocStore、不碰协议，只做"字节进、字节出"，可以单独跑随机测试。零期原型 `xlpatch`（约 3,800 行，含测试与工具）整理后放入。
 - **依赖**：`zip`、`quick-xml`（工作区已有）、`calamine`（MIT，读 xls 与自检）、`ironcalc_base`（MIT/Apache-2.0，只用计算，不开启它的 xlsx 读写）。都是纯 Rust，不需要往 `build-app.mjs` 里加运行时文件；安装包体积的增量开工时实测（SQ-09）。
+- **时区**：`ironcalc_base` 带进来的 `chrono-tz` 只保留 UTC，引擎也跑在 UTC（内核技术方案 D-99）。Excel 的 `NOW()`、`TODAY()` 不带时区；`NOW("Asia/Shanghai")` 是 IronCalc 自己的扩展，这里返回 `#VALUE!`。
 
 ## 4. 统一模型的扩展
 

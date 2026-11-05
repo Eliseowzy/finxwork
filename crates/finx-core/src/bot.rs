@@ -4,6 +4,7 @@
 
 use async_trait::async_trait;
 use finx_llm::Message;
+use finx_protocol::AgentStatus;
 use finx_tools::Environment;
 use finx_tools::Tool;
 use finx_tools::ToolCategory;
@@ -44,43 +45,70 @@ pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
     vec![Arc::new(Typed::new(SendToUser)), crate::routine::tool()]
 }
 
-/// What a bot has not answered.
+/// What a bot about to end its turn still owes its owner.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Waiting {
-    /// The owner's latest message.
-    Owner,
-    /// A routine's report, which the owner asked for (routine-design §2.4).
+pub(crate) enum Owed {
+    Nothing,
+    /// Nothing reached them since their latest message (bot-design §3.11). The message may be an
+    /// earlier task's, as when a failed task is retried.
+    Reply,
+    /// Nothing reached them since a routine's report, which they asked for, unless the bot's reply
+    /// says it holds nothing to tell (routine-design §2.4, D-441).
     RoutineReport,
+    /// Something came of its work since its last message: a sub-agent's report or message, or the
+    /// results of its tools (bot-turn-design §6). It may have nothing worth telling.
+    Delivery,
 }
 
-/// What has reached the owner of nothing since: no `send_to_user` after it succeeded
-/// (bot-design §3.11). The message may be an earlier task's, as when a failed task is retried; a
-/// sub-agent's report that woke the bot after its reply leaves nobody waiting, and so does a
-/// routine's report when its reply says it holds nothing to tell (routine-design D-441).
-pub(crate) fn unanswered(history: &History) -> Option<Waiting> {
+impl Owed {
+    /// The reminder for what must not go unanswered.
+    pub(crate) fn reminder(self) -> Option<EntryKind> {
+        match self {
+            Owed::Reply => Some(EntryKind::Unanswered { routine: false }),
+            Owed::RoutineReport => Some(EntryKind::Unanswered { routine: true }),
+            Owed::Nothing | Owed::Delivery => None,
+        }
+    }
+}
+
+/// Looks back from the end of the history to the last message that reached the owner.
+pub(crate) fn owed(history: &History) -> Owed {
+    let mut worked = false;
     let mut last_reply = None;
     for entry in history.branch_back() {
         match &entry.kind {
             EntryKind::Message {
                 message: Message::ToolResult(result),
                 ..
-            } if result.tool_name == SEND_TO_USER && !result.is_error => return None,
+            } => {
+                if result.tool_name == SEND_TO_USER && !result.is_error {
+                    break;
+                }
+                // Starting an agent or telling it something gives the owner nothing to hear, and a
+                // message the tool refused is nothing that came of the work.
+                worked |= !matches!(result.tool_name.as_str(), "spawn_agent" | "send_message" | SEND_TO_USER);
+            }
             EntryKind::Message {
                 message: Message::User(_), ..
-            } => return Some(Waiting::Owner),
+            } => return Owed::Reply,
             EntryKind::Message {
                 message: Message::Assistant(reply),
                 ..
             } if last_reply.is_none() => last_reply = Some(reply),
-            EntryKind::Mail { mail, .. }
-                if mail.kind == MailKind::Routine && !last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some()) =>
-            {
-                return Some(Waiting::RoutineReport);
+            EntryKind::Mail { mail, .. } if mail.kind == MailKind::Routine => {
+                if !last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some()) {
+                    return Owed::RoutineReport;
+                }
             }
+            // A stopped agent's report wakes nobody, and nobody waits for it.
+            EntryKind::Mail { mail, .. } => worked |= mail.status != AgentStatus::Interrupted,
+            EntryKind::AgentMessage { .. } => worked = true,
             _ => {}
         }
     }
-    None
+    // Its reply can say there is nothing to tell (routine-design D-441).
+    let settled = last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some());
+    if worked && !settled { Owed::Delivery } else { Owed::Nothing }
 }
 
 /// The words a call sends the owner: no blank ones, and not the phrase that is between the kernel

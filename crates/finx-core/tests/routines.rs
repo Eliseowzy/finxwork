@@ -218,6 +218,7 @@ async fn a_run_sees_no_chat_and_cannot_message_or_change_routines() {
         assert!(!names.iter().any(|n| n == name), "{name} in {names:?}");
     }
     // The bot has them.
+    assert!(!run.system.contains("- agents:"), "it is on its own: {}", run.system);
     let names = tool_names(&requests[0]);
     assert!(names.iter().any(|n| n == "manage_routine") && names.iter().any(|n| n == "send_to_user"), "{names:?}");
 }

@@ -252,6 +252,29 @@ fn structured_references_keep_the_formula_and_trace_their_inputs() {
     );
 }
 
+/// Only UTC is built in (technical design D-99). NOW() and TODAY(), all that Excel has, work;
+/// IronCalc's own NOW("Asia/Shanghai"), which Excel does not take, is an error.
+#[test]
+fn time_functions_with_only_utc() {
+    let mut e = engine(&fixture("gen/funcs.xlsx"));
+    let s = e.book.sheet_index("Data").unwrap();
+    let at = |a| CellRef::parse(a).unwrap();
+    for (cell, text) in [
+        ("Z1", "=NOW()"),
+        ("Z2", "=TODAY()"),
+        ("Z3", "=NOW(\"Asia/Shanghai\")"),
+    ] {
+        let v = NewValue::Formula {
+            text: text.into(),
+            cached: None,
+        };
+        e.apply(&[((s, at(cell)), v)]).unwrap();
+    }
+    assert!(matches!(e.value((s, at("Z1"))), Value::Number(v) if v > 40_000.0));
+    assert!(matches!(e.value((s, at("Z2"))), Value::Number(v) if v > 40_000.0));
+    assert_eq!(e.value((s, at("Z3"))), Value::Error("#VALUE!".into()));
+}
+
 #[test]
 fn aggregate_options_and_textjoin_empty_values() {
     let mut e = engine(&fixture("gen/funcs.xlsx"));

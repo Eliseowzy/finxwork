@@ -317,6 +317,128 @@ async fn a_sub_agent_works_in_the_background_and_the_bot_relays_its_report() {
     assert_eq!(working.last(), Some(&0));
 }
 
+/// The whole timeline of a long job (bot-turn-design §3): the first message before anything else,
+/// the work in the background, the owner's next messages answered while it runs, and its result
+/// delivered when the report comes. No wait, no reminder.
+#[tokio::test]
+async fn a_long_job_goes_to_the_background_and_the_bot_keeps_talking() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+
+    say(&client, &session, "[[mock:relay_slow:3]] 写一篇一万字的小作文").await;
+    let started = std::time::Instant::now();
+    let first = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&first), ["好，这个要一会儿，写好发你。"]);
+    let tools: Vec<&str> = first.iter().filter(|e| e["type"] == "tool_started").filter_map(|e| e["name"].as_str()).collect();
+    assert_eq!(tools, ["send_to_user", "spawn_agent"], "the message comes first");
+    assert_eq!(first.last().unwrap()["type"], "task_completed", "the turn ends while the agent works");
+    assert!(started.elapsed() < std::time::Duration::from_secs(3), "the turn did not wait for the agent");
+
+    // The owner goes on talking: an answer each, while the work goes on.
+    say(&client, &session, "刚才给你发啥了你知道么").await;
+    let second = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&second), ["回复：刚才给你发啥了你知道么"]);
+    assert!(started.elapsed() < std::time::Duration::from_secs(3), "it answered while the agent worked");
+    assert!(!second.iter().any(|e| e["type"] == "agent_status" && e["status"] == "completed"));
+
+    // Then the report wakes it, and the result reaches the owner.
+    let rest = until_event(&mut wire, |e| e["type"] == "idle").await;
+    let results = sent(&rest);
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert!(results[0].starts_with("回复：<agent_report agent=\"writer\" status=\"completed\">"), "{results:?}");
+    assert!(rest.iter().any(|e| e["type"] == "task_started" && e["trigger"] == "mail"));
+
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).unwrap();
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count() + log.matches("\"type\":\"undelivered\"").count(), 0, "no reminder was needed");
+}
+
+/// A sub-agent speaks up on the way (agent-messaging-design §3.1): the bot is woken and tells the
+/// owner, the work goes on, and its report still follows.
+#[tokio::test]
+async fn a_working_agent_speaks_up_and_the_bot_tells_the_owner() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+
+    say(&client, &session, "[[mock:relay_note:2]] 把 sales.csv 按月汇总").await;
+    let first = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&first), ["好，我先把数据汇总出来。"]);
+
+    // The message wakes the bot, and the agent is still at work when the owner hears.
+    let spoke = until_event(&mut wire, ended).await;
+    let said = sent(&spoke);
+    assert_eq!(said, ["回复：<agent_message from=\"sales\">\n3 月的数据整月缺失。\n</agent_message>"]);
+    assert!(spoke.iter().any(|e| e["type"] == "task_started" && e["trigger"] == "mail"));
+    let told = spoke.iter().find(|e| e["type"] == "message_completed" && e.get("mail").is_some()).unwrap();
+    assert_eq!((told["mail"]["kind"].as_str(), told["mail"]["status"].as_str()), (Some("message"), Some("running")));
+    assert!(!spoke.iter().any(|e| e["type"] == "agent_status" && e["status"] == "completed"), "{spoke:?}");
+    until_row(&mut wire, &bot, |b| b["agents_working"] == 1).await;
+
+    // Then its report, as ever.
+    let rest = until_event(&mut wire, |e| e["type"] == "idle").await;
+    let results = sent(&rest);
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert!(results[0].starts_with("回复：<agent_report agent=\"sales\" status=\"completed\">"), "{results:?}");
+
+    // The bot's own log, not its agent's, which names the bot's session too.
+    let header = format!("\"id\":\"{session}\"");
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.lines().next().is_some_and(|l| l.contains(&header))).unwrap();
+    assert_eq!(log.matches("\"type\":\"agent_message\"").count(), 1, "{log}");
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count() + log.matches("\"type\":\"undelivered\"").count(), 0, "no reminder was needed");
+}
+
+/// The owner asks how it is going and then drops it: the bot finds the deferred tools, says what
+/// they show, and the stopped work stays quiet (bot-turn-design §5.3).
+#[tokio::test]
+async fn the_bot_checks_on_the_work_and_stops_it() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+
+    say(&client, &session, "[[mock:relay_slow:60]] 写一篇一万字的小作文").await;
+    until_event(&mut wire, ended).await;
+    until_row(&mut wire, &bot, |b| b["agents_working"] == 1).await;
+
+    say(&client, &session, "[[mock:check]] 写到哪了").await;
+    let checked = until_event(&mut wire, ended).await;
+    let said = sent(&checked);
+    assert_eq!(said.len(), 1, "{said:?}");
+    assert!(said[0].starts_with("writer (写长文): running for"), "{said:?}");
+    assert!(said[0].contains("recent steps: sleep 60"), "{said:?}");
+
+    say(&client, &session, "[[mock:stop_all]] 算了不用了").await;
+    let stopped = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&stopped), ["Stopped: writer."]);
+    let tools: Vec<&str> = stopped.iter().filter(|e| e["type"] == "tool_started").filter_map(|e| e["name"].as_str()).collect();
+    assert_eq!(tools[..2], ["tool_search", "call_tool"], "stopped before saying so: {tools:?}");
+    assert!(stopped.iter().any(|e| e["type"] == "agent_status" && e["status"] == "interrupted"));
+    until_row(&mut wire, &bot, |b| b.get("agents_working").is_none_or(|n| n == 0)).await;
+
+    // Its report does not wake the bot: nothing more comes.
+    let quiet = tokio::time::timeout(std::time::Duration::from_secs(1), until_event(&mut wire, |e| e["type"] == "task_started")).await;
+    assert!(quiet.is_err(), "a stopped agent's report wakes no one");
+
+    // The next message brings it along, and the bot talks as ever.
+    say(&client, &session, "[[mock:send:在。]] 还在吗").await;
+    let next = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&next), ["在。"]);
+    let report = |e: &Value| e["type"] == "message_completed" && e["mail"]["status"] == "interrupted";
+    assert!(stopped.iter().chain(&next).any(report), "{stopped:?} {next:?}");
+}
+
 #[tokio::test]
 async fn approvals_come_after_the_message_that_asks_and_count_as_unread() {
     let env = TestEnv::new("manual", "").await;
@@ -472,7 +594,9 @@ async fn bots_and_their_rows_survive_a_restart() {
     assert_eq!(bots[0]["muted"], true);
     // Its conversation loads again, with what was said.
     let opened = client.request("bots/open", json!({"bot_id": bot})).await.unwrap();
-    assert!(opened["snapshot"]["transcript"].to_string().contains("记下了。"));
+    let transcript = opened["snapshot"]["transcript"].to_string();
+    assert!(transcript.contains("记下了。"));
+    assert!(!transcript.contains("<reminder>"), "what it is told is not shown: {transcript}");
 }
 
 /// The head of a PNG: enough to tell what it is and how large.

@@ -12,13 +12,14 @@
 | 每个指标的瓶颈、可选做法和损益 | [第二轮报告](1103-round2-performance-report.md) |
 | 场景仿真体系和 Linux 启动阶段拆解 | [1103 报告](1103-kernel-performance-report.md)、[仿真说明](../simulation.md) |
 | 本地命令的门槛，一次变慢的归因和收回 | [1105 报告](1105-local-command-gate-report.md) |
-| 决策的来龙去脉 | 技术方案 §1.4、§9.3、D-91、D-96、D-97、D-98、Q-19、Q-20、Q-92、Q-96 |
+| 决策的来龙去脉 | 技术方案 §1.4、§9.3、D-91、D-96、D-97、D-98、D-99、Q-19、Q-20、Q-92、Q-96 |
 
 | 工具（`tools/bench/`） | 用途 | 平台 |
 |---|---|---|
 | `ratchet.py` | 两个构建全矩阵交替对照，给出中位数、p 值和退化项 | macOS；可经 ssh 带上 Linux |
 | `local_ab.py` | 本地命令的多版本对照：每个版本多份拷贝，给出耗时和缺页 | Linux |
 | `bench_cli.py`、`local-command-budget.json` | CI 的本地命令门槛：缺页预算和最快一次的耗时 | 门槛只在 Linux 上生效 |
+| `fault_trace.py` | 一条命令的每次缺页归到哪个段、是读是写：读内核的 tracepoint，什么都不用装 | Linux，root |
 | `bench_startup.py`、`bench_protocol_startup.py`、`startup_launcher.c` | CLI、ACP、socket 到首个模型请求的耗时 | 两者；原生计时器只用于 Linux |
 | `mem_once.py` | 一次启动的峰值内存（本地模拟模型，不花钱） | 两者 |
 | `mem_real.py` | 和对照程序连真实服务商比较内存；key 从环境变量读 | 两者 |
@@ -63,6 +64,8 @@
 | 两个二进制的启动相差 3.6%，p ≈ 0，它们却逐字节相同 | 不同文件占不同的物理页（推断）。上一个进程跑的是同一份文件时快 6%；各份拷贝之间的标准差 1.7%，重新拷贝后数字会变 | 每个版本多份新拷贝，比较各份的中位数，相邻两次不用同一份文件。`local_ab.py` 和 `ratchet.py` 的启动对比都已这样做 |
 | 每个版本 6 份拷贝，同一个二进制还报出退化，单项 +18%（macOS，每份 15 次） | 每份次数少，中位数不稳。每边 6 份时，一项指标碰巧 p<0.05 且变差的概率固定约 2%，只有中位数够稳，2% 的变差线才滤得掉 | 每份 100 次（`ratchet.py`、`local_ab.py` 的默认值），数字见 [1105 报告 §6](1105-local-command-gate-report.md)。这时仍有约十分之一的轮次报出 1 项，先重跑：下一轮换了拷贝，碰巧的不会再现 |
 | CI 上同一个二进制的本地命令耗时相差 18%～60% | runner 的基线分两档（约 0.45 / 0.6 ms），一轮之内还有短时拖尾 | 不用 CI 的耗时判断快慢，看缺页数 |
+| 固定机器上 `status` 190 次缺页，CI 上 300 次，CI 上的新问题在固定机器上看不到 | zig 交叉编译的是非 PIE，malloc 也是 zig 自己的；CI 是静态 PIE 加 musl 的 mallocng。Excel 合入在 zig 版上只多 2 次缺页，在 CI 上多 310 次 | 对照 CI 的数字，用 §8 里和 CI 同样的链接方式。用 zig 版的旧数字时记得它们不是一种二进制（[1105 报告 §8](1105-local-command-gate-report.md)） |
+| Linux 的 `Anonymous` 同一个二进制时而 0.75 MiB，时而 2.8 MiB | Debian 默认透明大页 `always`。线程栈的映射碰巧 2 MiB 对齐时，第一次写就整块映射 2 MiB。对齐与否看地址随机化，所以时有时无 | 看 `smaps_rollup` 的 `AnonHugePages`。要比较进程自己的内存，启动前调 `prctl(PR_SET_THP_DISABLE)`，这个设置能跨 exec |
 | 打点版本上省了 91 µs，正式构建只省 40 µs | 打点的开销和单份拷贝的偏差都算了进去 | 打点只用来定位。收益要用不打点的构建、多份拷贝来量 |
 | 2 次运行就发现"内存翻倍"（1.72 MiB） | 离群值，15 次中位数是 0.72 MiB | 内存也要多跑取中位数 |
 | 对照程序的自定义连接不生效 | 它的 0.0.16 版只读 `$HOME/.fx`，`FX_HOME` 是之后才加的 | 用临时 HOME。全新目录每次都会触发后台升级，要设 `FX_AUTO_UPGRADE=0` |
@@ -72,7 +75,7 @@
 | 当时的想法 | 怎么证伪的 | 结论 |
 |---|---|---|
 | 启动慢是 clap 计算慢 | 同一进程里第一次解析 557 µs，之后每次 34 µs | 成本是冷代码首次执行。一次 `exec` 有 389 次缺页，空进程 56 次。优化方向是少执行代码，不是改算法 |
-| musl 的 malloc 拖慢启动，换 mimalloc | 阶段对比：总耗时 +21%～+28%，进程装载多 0.5 ms，参数解析没变快 | 不换。macOS 上之前也试过，内存更差 |
+| musl 的 malloc 拖慢启动，换 mimalloc | 阶段对比：总耗时 +21%～+28%，进程装载多 0.5 ms，参数解析没变快 | 不换。macOS 上之前也试过，内存更差。**注意**：这次对比的基线是 zig 交叉编译的版本，它的 malloc 是 zig 自己的，不是 musl 的（§3）。正式的 Linux 版如果不用 zig，这一条要重测 |
 | 延迟打开日志文件能省启动时间 | 全矩阵对照：socket 的 session/new 慢 20–55 µs，首请求没变快 | 工作只是从启动挪到了第一行日志到来时，已撤回（`7b48695`）。留下的是真正省掉解析的固定级别 |
 | `notify` 链接 CoreServices 是 700 个镜像的元凶 | 空的 C 程序分别链接：只链接 CoreFoundation 或 Security 就已是 704 个，CoreServices 只多约 0.1 ms | 根子是证书校验要用的 Security，不是文件监听 |
 | 系统框架只多约 0.4 MiB | 后来看全部分配事件：ObjC 的 `load_images` 在堆上约 490 KiB，加数据段脏页约 0.67 MiB | 实际约 1.2 MiB。只看 `vmmap` 会低估 |
@@ -84,6 +87,9 @@
 | 启动快慢的差别来自重编后的代码布局 | 基线加一行无关代码重编两次，每个版本 6 份拷贝：首请求只差 ±0.5%，缺页只差 ±1 | 布局漂移很小。大头是单份文件的偏差（§3） |
 | 少分配就一定少缺页 | ACP 的 `initialize` 少 19 次缺页，第一次 `session/new` 多 10 次，合计只少 7 次 | 早期的垃圾少了，分配器可复用的块也少了。短命令省得实在，长驻进程要降峰值才算真省 |
 | 32 个空闲连接上限能控制资源 | 交替对照：任务延迟和 CPU 都变差，且让任务失败（见 §6） | 已去掉（D-96）。结合"不加未经证明的限制"的原则，这类上限要先有证据 |
+| 静态链接就没有加载时的重定位 | `kernel-simulation.sh` 原来的注释这么写。静态 PIE 没有动态链接器，但自己的 `rcrt1.o` 照样重定位 | 只有非 PIE 才没有。重定位写到的每一页都是一次缺页，也都变成进程私有（D-99） |
+| RELR（`-z pack-relative-relocs`）能省掉重定位的缺页 | 重定位表从 773 KB 压到 9 KB，但被写的数据页一页不少：缺页只少 3～10 次，只有 `--help` 快约 3%，其余耗时在噪声内 | 不采用。省的是表本身，贵的是写数据页。二进制小约 760 KB，以后在意体积时再看 |
+| 把表格引擎放进单独的进程，启动就不用付它的代价 | 它已经跑在 `finx doc-worker` 进程里（SD-05）。代价来自同一个可执行文件里的静态数据，和代码在不在这个进程里跑无关 | 要省就得拆成另一个文件，上限是 Excel 剩下的约 46 次缺页，还要放弃单文件交付。不做（D-99） |
 
 ## 5. 定位问题的方法
 
@@ -107,8 +113,9 @@
    - 采集依赖 Linux 的原生计时器，脚本要和 `bench_startup.py`、`bench_protocol_startup.py` 放在一起。
 5. **本地命令变慢**：先分清是工作量还是噪声。
    1. `local_ab.py` 交替对比。耗时变了而缺页没变，多半不是工作量的变化。
-   2. 在单独的 worktree 里加阶段打点：`clock_gettime` 加 `getrusage` 的 `ru_minflt`，存进一个全局表，进程退出前打印。打点**绝不合入**。
-   3. 想知道谁碰了新页，加一个只用于诊断的计数分配器，按阶段统计次数和字节数，大块分配打印调用栈。解析器那 41 KB 就是这样找到的。
+   2. `fault_trace.py` 看多出来的缺页落在哪个段。落在 `.data.rel.ro`、`.rela.dyn`，而且每条命令都多同样的次数（连 `--help` 也是），是新增了带指针的静态表，这时看是谁加的表，不用看代码路径。Excel 那 310 次就是这样一次定位的。
+   3. 在单独的 worktree 里加阶段打点：`clock_gettime` 加 `getrusage` 的 `ru_minflt`，存进一个全局表，进程退出前打印。打点**绝不合入**。
+   4. 想知道谁碰了新页，加一个只用于诊断的计数分配器，按阶段统计次数和字节数，大块分配打印调用栈。解析器那 41 KB 就是这样找到的。
 6. **内存大**：按这个顺序看。
    1. `mem_stages.py`：涨在启动、建会话还是任务？
    2. `vmmap --summary <pid>`：是堆、栈、框架数据段还是页表？和对照程序逐项比。
@@ -130,9 +137,10 @@
 | 活跃堆远小于 malloc 脏页 | `heap`、`vmmap`：约 650 KiB 对约 2.2 MiB | 实测 |
 | `finx exec` 自有内存约 1 MiB（Linux） | 它自己退出，读不到明细，按 ACP 估算 | **估算** |
 | 本地命令在版本之间的耗时差异主要来自缺页 | 5 个版本 × 4 条命令，组内 R² 0.963，约 6.4 µs 一次 | 实测，只在 1 vCPU 的 Linux 上 |
-| GitHub 有两种 runner 硬件 | `/usr/bin/true` 的耗时分成两档 | **推断**，产物现在开始记录 CPU 型号 |
+| GitHub 有多种 runner 硬件 | 产物记录的 CPU 型号：EPYC 7763、9V45、9V74 | 实测 |
 | 字节相同的拷贝速度不同是物理缓存造成的 | 同一 inode 的硬链接表现一致，不同拷贝不同，重新拷贝后变化 | **推断**，没有直接测缓存命中 |
-| 缺页数在两种 runner 上一致 | 内核和镜像相同 | **未验证**，所以预算先只报告不拦截 |
+| 缺页数在不同 runner 上一致 | 同一个二进制（`a47887a6`）在 EPYC 7763 和 9V45 上中位数完全相同，每轮的最小、最大值只差 ±1；耗时差 50% | 实测，所以预算可以拦截（D-98） |
+| 带指针的静态表在 macOS 上也花钱 | `__DATA_CONST` 涨 1.2 MB，物理占用涨 1.2～1.4 MiB，去掉表后回落。可执行文件的目标版本是 11.0，用的是启动时一次性 rebase 的格式 | 实测。提高目标版本后能不能按需修正，没有测 |
 
 **长任务每轮的开销**（3000 轮，约 860 万条指令、1 ms CPU）：33% 是写工具的写屏障和 rename，这是保护用户文件的（D-104），不要动；18% 是重新序列化历史（Q-96）；5% 是 bash 子进程。不牺牲安全或内存，上限约 −25%。
 
@@ -150,20 +158,24 @@
 
 新增来源可以用 `mem_alloc_events.py` 看，比如 `finx_core::docs` 的工具定义和模型目录。还没有逐项归因。
 
-CI 目前只守本地命令（缺页预算加最快一次的耗时，D-98），**内存和负载都没有守护**，优化成果会被新功能悄悄吃掉。开工前先重测基线，不要沿用报告里的数字。
+CI 目前只守本地命令（缺页预算加最快一次的耗时，D-98；预算 2026-11-05 填好，开始拦截），**内存和负载都没有守护**，优化成果会被新功能悄悄吃掉。开工前先重测基线，不要沿用报告里的数字。
+
+CI 的二进制保持静态 PIE，它也是唯一能看见带指针的静态表的地方：这些表在非 PIE 上不花钱，在 macOS 上却要花内存（D-99）。
 
 1103 两份报告里 ±3% 以内的启动差异都是单份拷贝测的，不能当成版本差异（§3）。
 
 ## 8. 环境
 
 - **macOS**：Apple M2 Max，常被其他会话占用。
-- **Linux**：1 vCPU、约 2 GiB 的 x86_64 主机。上面没有编译器，也不要在上面装工具链，在 Mac 上交叉编译后拷过去：
+- **Linux**：1 vCPU、约 2 GiB 的 x86_64 主机。上面没有编译器，也不要在上面装工具链，在 Mac 上交叉编译后拷过去。下面的 `finx` 和 CI 的链接方式相同：静态 PIE，工具链自带的 `rcrt1.o` 和 `libc.a`，只是用 rust-lld 代替 CI 的 GNU ld。`cargo-zigbuild` 只用来编 C（`ring`、SQLite）。`libdl.a` 是空的，CI 上的 `-ldl` 找到的也是 glibc 的空存根：
   ```bash
-  cargo-zigbuild zigbuild --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
+  mkdir -p target/empty-libs && printf '!<arch>\n' > target/empty-libs/libdl.a
+  CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_RUSTFLAGS="-C linker=rust-lld -C linker-flavor=ld.lld -C link-self-contained=yes -L native=$PWD/target/empty-libs" \
+    cargo-zigbuild zigbuild --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
   zig cc -target x86_64-linux-musl -O2 -static tools/bench/startup_launcher.c -o target/startup-launcher
   zig cc -target x86_64-linux-musl -O2 -static tools/bench/memrun.c -o target/memrun-linux
   ```
-  需要 zig 0.17 和 cargo-zigbuild。Linux 版用 musl 静态的 `dist` 配置，这是正式成绩的口径。1 vCPU 不能外推多核容量，并发结论以多核机器为准。
+  需要 zig 0.17 和 cargo-zigbuild。这样编出来的缺页数和 CI 差 ±2%（`sessions` ±4%）。**不带这个 `RUSTFLAGS` 不能和 CI 的数字比**：链接由 zig 来做，出来的是非 PIE，malloc 是 zig 自己的，1103 和 1105 §1～§7 的 Linux 数字都是这样来的（§3）。正式的 Linux 版用哪种还没有定。1 vCPU 不能外推多核容量，并发结论以多核机器为准。
 - **真实服务商测试**：key 只放环境变量，经 ssh 时走标准输入，不写进文件、仓库或命令历史；跑完清理临时目录。
 - **主机地址和登录别名不要写进仓库。**
 

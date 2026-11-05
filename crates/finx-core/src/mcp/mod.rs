@@ -790,15 +790,16 @@ impl crate::session::Session {
 
     /// The `system_prompt` entry for the current prompt and tools.
     pub(crate) fn record_system_prompt(&self) {
-        let (text, mcp, skills) = {
+        let (text, mcp, skills, template) = {
             let state = self.state.lock();
-            (state.base_prompt.clone(), state.mcp_section.clone(), state.skills.to_vec())
+            (state.base_prompt.clone(), state.mcp_section.clone(), state.skills.to_vec(), state.prompt_template.clone())
         };
         self.record(crate::store::EntryKind::SystemPrompt(Box::new(crate::store::SystemPromptEntry {
             text,
             tools: self.tools().names(),
             skills,
             mcp,
+            template,
         })));
     }
 

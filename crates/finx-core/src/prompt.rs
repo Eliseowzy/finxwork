@@ -82,6 +82,20 @@ fn base_section(profile: &PromptProfile, config: &Config) -> io::Result<String> 
     })
 }
 
+/// Which `bot.md` a bot's prompt comes from: what is stored with its prompt, so that a new one
+/// reaches the bots that already have a conversation (bot-turn-design §8).
+pub fn bot_template(config: &Config) -> io::Result<String> {
+    use std::hash::Hash;
+    use std::hash::Hasher;
+    let text = match &config.bot_prompt_file {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => BOT_PROMPT.to_string(),
+    };
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    with_shared(&text).hash(&mut hasher);
+    Ok(format!("{:016x}", hasher.finish()))
+}
+
 pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
     let base = base_section(inputs.profile, inputs.config)?;
     let mut prompt = base.trim_end().to_string();

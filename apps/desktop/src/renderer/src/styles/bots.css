@@ -181,16 +181,8 @@ button.wb-h{cursor:pointer}
 .wb-t{min-width:0;font-size:14px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wb-h .chev{width:14px;height:14px;margin-left:-5px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s var(--ease-out)}
 .wb-h[aria-expanded="true"] .chev{transform:none}
-.wb-l{display:flex;flex-direction:column;gap:2px;padding:0 6px 8px;min-width:280px}
-.wb-r{display:flex;align-items:baseline;gap:8px;width:100%;min-width:0;padding:5px 9px;border-radius:var(--r-md);font-size:13px;line-height:19px;color:var(--l1)}
-.wb-rl{flex:0 1 auto;max-width:46%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb-ra{flex:1;min-width:0;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb-ra .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
-.wb-rt{flex:none;font-size:12px;color:var(--l3);font-variant-numeric:tabular-nums}
-.wb-s{display:flex;align-items:baseline;gap:8px;min-width:0;padding:2px 9px;font-size:13px;line-height:19px;color:var(--l3)}
-.wb-s>span:first-child{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb-s.now{color:var(--l1)}
-.wb-s .shimmer{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+.wb-l{display:flex;flex-direction:column;gap:2px;padding:0 15px 10px}
+.wb-r{min-width:0;font-size:14px;line-height:21px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @media (prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.6}}
 
 /* A new bot's empty page: its avatar, its name, one line on how to start. */

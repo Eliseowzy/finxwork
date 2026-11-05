@@ -80,6 +80,7 @@
     },
     "open": "在后台面板中查看执行过程",
     "report": "<b>{{name}}</b> 的汇报",
+    "message": "<b>{{name}}</b> 发来消息",
     "noReply": {
       "interrupted": "停下时还没有回复",
       "completed": "做完了，但没有回复"
@@ -91,7 +92,8 @@
     "stopped_other": "{{count}} 条后台任务已中断，回复 finx 就能接着做",
     "sent": "已发消息给",
     "sending": "正在发消息给",
-    "messageObject": "{{to}}：{{message}}"
+    "messageObject": "{{to}}：{{message}}",
+    "mainAgent": "主智能体"
   },
   "background": {
     "title": "后台任务",

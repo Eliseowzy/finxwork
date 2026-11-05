@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.25 |
+| 版本 | v0.26 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.26 | 2026-11-05 | 子智能体运行中能发消息（agent-messaging-design.md），版本 2 之内：`MailInfo.kind` 多一个 `message`；客户端不认识这个值时当汇报显示不合适，所以和内核一起升级 |
 | v0.25 | 2026-11-05 | 定时任务（routine-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `routines` 声明：方法 `bots/routine`、`bots/routine_runs`、`bots/routine_run`、`bots/routine_set_enabled`、`bots/routine_run_now`、`bots/routine_stop`、`bots/routine_delete`；`BotSummary` 增加 `routines`、`routines_error`；`MailKind` 增加 `routine`，`MailInfo` 增加 `routine_id`；错误码 −32043 `routine_not_found`、−32044 `routine_busy`、−32045 `routines_unavailable`。新建和修改只走对话，没有方法 |
 | v0.24 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |
 | v0.23 | 2026-11-05 | 联网搜索（web-search-design.md §6.4，已实现），都在版本 2 之内：方法 `web_search/status`（调用过的连接也会收到 `config/changed`）、`web_search/test`、`web_search/set_key`；`credentials/*` 接受 `web-search.` 前缀；`web_search` 工具结果的 `details` 见该文 §5.6 |
@@ -840,7 +841,7 @@ capabilities 的 `agents` 为 true 的服务提供以下内容，都是增量：
 | 事件 `agent_event` | `{agent_id, event}`：子智能体自己会话里的一个事件，seq 是子会话自己的。只转改变它对话的事件：task_started、turn_started、message_completed、stream_retry、tool_started、tool_running、tool_completed、approval_requested、approval_resolved、compaction_*、turn_completed、task_completed、task_failed、task_interrupted、warning；增量、工具进度、设置不转 |
 | `agent_status.elapsed_ms` | 空闲状态带上这一轮工作的用时 |
 | 快照的 `agents` | AgentSnapshot 数组，按启动顺序：agent_id、name、call_id、session_file、status、since（状态最近一次变化的时间，运行中即这一轮的开始）、summary、usage、error、elapsed_ms，以及它自己的 transcript 与 active_task（与 `history_limit` 一样截取）。只含这个服务加载会话之后启动的子智能体 |
-| TranscriptItem 的 `mail` | 子智能体的汇报以 user 消息进入历史，带 MailInfo，客户端据此显示成汇报 |
+| TranscriptItem 的 `mail` | 子智能体的汇报和运行中发的消息以 user 消息进入历史，带 MailInfo，客户端按 `kind` 显示：`report` 是汇报，这一轮到此结束；`message` 是中途的消息（agent-messaging-design §8），它还在做 |
 | MailInfo 的 `no_reply`（v0.12） | 子智能体这一轮既没有回复也没有出错时为 true，比如还没回复就被停下；为 false 时省略。这时汇报正文只是写给模型的一句说明，客户端应显示自己的文字；`agent_status` 也不带 summary |
 | Op `agent_interrupt` | `{agent}`（id 或名字）：只停这个子智能体当前的任务，它保留会话、之后仍可接收消息；不是运行中的子智能体时，会话发一条 warning |
 | Op `agent_approval` | `{agent, call_id, decision}`：答复这个子智能体的 `approval_requested`，`agent` 是它的 id。已答复过或没有在等，返回 `approval_not_pending` |

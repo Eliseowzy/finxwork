@@ -8,11 +8,13 @@ use finx_protocol::ErrorInfo;
 use finx_protocol::EventMsg;
 use finx_protocol::Op;
 use finx_protocol::PromptMode;
+use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
 use super::AgentTree;
+use super::Progress;
 use super::Report;
 use crate::kernel::Kernel;
 
@@ -90,11 +92,15 @@ impl Round {
     }
 }
 
-pub(super) async fn drive(tree: Arc<AgentTree>, id: String, mut kernel: Kernel) {
+pub(super) async fn drive(tree: Arc<AgentTree>, id: String, mut kernel: Kernel, progress: Arc<Mutex<Progress>>) {
     let mut round = Round::new();
     let mut closed = false;
     while let Some(event) = kernel.next_event().await {
         tree.forward(&id, &event);
+        if matches!(event.msg, EventMsg::TaskStarted { .. }) && round.started.is_none() {
+            progress.lock().begin();
+        }
+        progress.lock().saw(&event.msg);
         round.note(&event.msg);
         match event.msg {
             EventMsg::TaskStarted { .. } => {

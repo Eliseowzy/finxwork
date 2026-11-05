@@ -34,17 +34,24 @@ use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Once per process: deriving these schemas takes about 0.3 ms, and every session asks for the list
+/// three times (D-99). The tools hold no state: a session's documents come through its context.
 pub(crate) fn doc_tools() -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(Typed::new(DocOpen)),
-        Arc::new(Typed::new(DocRead)),
-        Arc::new(Typed::new(DocFind)),
-        Arc::new(Typed::new(DocView)),
-        Arc::new(Typed::new(DocEdit)),
-        Arc::new(Typed::new(SheetCalc)),
-        Arc::new(Typed::new(SheetTrace)),
-        Arc::new(Typed::new(DocSave)),
-    ]
+    static TOOLS: std::sync::OnceLock<Vec<Arc<dyn Tool>>> = std::sync::OnceLock::new();
+    TOOLS
+        .get_or_init(|| {
+            vec![
+                Arc::new(Typed::new(DocOpen)),
+                Arc::new(Typed::new(DocRead)),
+                Arc::new(Typed::new(DocFind)),
+                Arc::new(Typed::new(DocView)),
+                Arc::new(Typed::new(DocEdit)),
+                Arc::new(Typed::new(SheetCalc)),
+                Arc::new(Typed::new(SheetTrace)),
+                Arc::new(Typed::new(DocSave)),
+            ]
+        })
+        .clone()
 }
 
 /// What a session's document tools need.

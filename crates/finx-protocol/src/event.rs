@@ -507,6 +507,8 @@ pub struct AgentRef {
 pub enum MailKind {
     /// What a sub-agent reports when it has finished a round of work.
     Report,
+    /// What a sub-agent sends with `send_message` while it works: its round goes on.
+    Message,
     /// What a run of a routine has to say, or that it failed: `from` is the run and the
     /// routine's name (docs/kernel/routine-design.md §2.3).
     Routine,
