@@ -362,7 +362,11 @@ enum Command {
     /// Serve ACP on stdio, for editors such as Zed
     ///
     /// The Agent Client Protocol.
-    Acp,
+    Acp {
+        /// Sign in at this terminal instead of serving: what an editor runs for you
+        #[arg(long)]
+        login: bool,
+    },
     /// Describe the native protocol
     Protocol {
         #[command(subcommand)]
@@ -880,7 +884,8 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         Command::WebSearch { action: WebSearchAction::SetKey { service } } => cmd_web_search::set_key(overrides, &service).await,
         Command::WebSearch { action: WebSearchAction::Check { service, json } } => cmd_web_search::check(overrides, service, json).await,
         Command::Serve { listen, idle_exit, .. } => cmd_serve::serve(overrides, listen, idle_exit).await,
-        Command::Acp => cmd_serve::acp(overrides).await,
+        Command::Acp { login: true } => cmd_login::login(overrides, Default::default()).await,
+        Command::Acp { login: false } => cmd_serve::acp(overrides).await,
         Command::Browser {
             command: BrowserCommand::Install,
         } => cmd_info::browser_install().await,

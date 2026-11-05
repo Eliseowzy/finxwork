@@ -75,3 +75,19 @@ pub use store::SessionStore;
 pub use store::short_id;
 
 pub use finx_browser::BrowserPool;
+
+/// Opens an address in the person's browser, unless `FINX_NO_BROWSER` says there is none. Returns
+/// false when it could not.
+pub fn open_in_browser(url: &str) -> bool {
+    if std::env::var_os("FINX_NO_BROWSER").is_some() {
+        return true;
+    }
+    let opened = if cfg!(target_os = "macos") {
+        std::process::Command::new("open").arg(url).status()
+    } else if cfg!(windows) {
+        std::process::Command::new("cmd").args(["/C", "start", "", url]).status()
+    } else {
+        std::process::Command::new("xdg-open").arg(url).status()
+    };
+    opened.is_ok()
+}

@@ -210,6 +210,39 @@ async fn an_acp_client_hears_auth_required() {
     assert_eq!(sessions_in(&env), 0);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_acp_client_is_offered_ways_to_sign_in() {
+    let env = bare().await;
+    let (_child, client, _incoming) = env.spawn_rpc(&["acp"]);
+    let init = |terminal: bool| json!({"protocolVersion": 1, "clientCapabilities": {"auth": {"terminal": terminal}}, "clientInfo": {"name": "e2e", "version": "1"}});
+    let plain = client.request("initialize", init(false)).await.unwrap();
+    let ids: Vec<&str> = plain["authMethods"].as_array().unwrap().iter().filter_map(|m| m["id"].as_str()).collect();
+    assert_eq!(ids, ["finx-chatgpt", "finx-saved"]);
+    let with_terminal = client.request("initialize", init(true)).await.unwrap();
+    let terminal = &with_terminal["authMethods"][0];
+    assert_eq!((terminal["id"].as_str(), terminal["type"].as_str()), (Some("finx-terminal"), Some("terminal")));
+    assert_eq!(terminal["args"], json!(["--login"]));
+
+    // Nothing saved yet: the method says so.
+    let err = client.request("authenticate", json!({"methodId": "finx-saved"})).await.unwrap_err();
+    assert_eq!((err.code, err.kind()), (-32000, Some("auth_required")), "{err:?}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_acp_client_hears_which_key_a_configured_model_lacks() {
+    let env = bare().await;
+    std::fs::write(env.home.path().join("config.toml"), "model = \"deepseek/deepseek-flash\"\n").unwrap();
+    let (_child, client, _incoming) = env.spawn_rpc(&["acp"]);
+    client.request("initialize", json!({"protocolVersion": 1, "clientCapabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}})).await.unwrap();
+    let cwd = env.workspace("project");
+    let err = client.request("session/new", json!({"cwd": cwd, "mcpServers": []})).await.unwrap_err();
+    assert_eq!((err.code, err.kind()), (-32000, Some("auth_required")), "{err:?}");
+    assert!(err.message.contains("finx login deepseek"), "{}", err.message);
+    assert_eq!(sessions_in(&env), 0);
+    let err = client.request("authenticate", json!({"methodId": "finx-saved"})).await.unwrap_err();
+    assert!(err.message.contains("deepseek"), "{}", err.message);
+}
+
 /// The only connection went away and nothing else is set up: the session's history can still be
 /// read, the session says what happened, and a prompt fails instead of reaching some other model.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

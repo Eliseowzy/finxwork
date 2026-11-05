@@ -429,6 +429,12 @@ impl Server {
             .map_err(|e| errors::from_kernel(e, "new"))
     }
 
+    /// The model a new session at `cwd` would start on, if there is one. Blocking I/O.
+    pub fn default_model_at(&self, cwd: &Path) -> Option<String> {
+        let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).ok()?;
+        finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
+    }
+
     /// Starts a session; `attach` receives its snapshot before any event. Returns the id.
     pub async fn create_session(&self, args: NewSession, attach: AttachRequest) -> Result<String, RpcError> {
         if args.cwd.as_ref().is_some_and(|cwd| !cwd.is_absolute()) {

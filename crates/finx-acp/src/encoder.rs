@@ -409,7 +409,11 @@ impl AcpEncoder {
                 state.answer = Some(Ok(json!({ "stopReason": "cancelled" })));
             }
             EventMsg::TaskFailed { error, .. } => {
-                state.answer = Some(Err(errors::task_failed(error)));
+                state.answer = Some(Err(if error.kind == "auth" {
+                    finx_rpc::RpcError::with_kind(-32000, "auth_required", error.message.clone())
+                } else {
+                    errors::task_failed(error)
+                }));
             }
             EventMsg::Idle => {
                 if let Some(answer) = state.answer.take() {

@@ -345,9 +345,128 @@ pub fn document() -> Value {
         "x-client-notifications": notifications(&client_notifications),
         "x-server-notifications": notifications(&server_notifications),
         "x-error-codes": errors,
+        "x-stability": {
+            "methods": methods.iter().map(|(m, ..)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
+            "notifications": client_notifications.iter().chain(&server_notifications).map(|(m, _)| (m.to_string(), json!(stability(m)))).collect::<Map<String, Value>>(),
+        },
         "anyOf": roots.iter().map(|n| reference(n)).collect::<Vec<_>>(),
         "definitions": definitions,
     }))
+}
+
+/// How much a method or notification can be relied on (standalone-cli-design §9.2). `stable`
+/// follows the compatibility rules; `experimental` may change with any version; `internal` is for
+/// the desktop app and the extension host.
+pub fn stability(name: &str) -> &'static str {
+    const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request"];
+    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "bots/", "browser/", "routines/", "bot/", "connector/"];
+    if INTERNAL.contains(&name) {
+        "internal"
+    } else if EXPERIMENTAL.iter().any(|prefix| name.starts_with(prefix)) {
+        "experimental"
+    } else {
+        "stable"
+    }
+}
+
+/// What a schema `new` breaks of what `old` promised as stable: the same names, and the same
+/// shapes for what those names take and return (§9.3).
+pub fn broken_promises(old: &Value, new: &Value) -> Vec<String> {
+    let mut problems = Vec::new();
+    let mut roots: Vec<String> = vec!["Event".to_string(), "Op".to_string()];
+    for (table, kinds) in [("x-methods", "methods"), ("x-client-notifications", "notifications"), ("x-server-notifications", "notifications")] {
+        let Some(entries) = old[table].as_object() else { continue };
+        for (name, entry) in entries {
+            if old["x-stability"][kinds][name] != "stable" {
+                continue;
+            }
+            let Some(now) = new[table].get(name) else {
+                problems.push(format!("{name} is gone"));
+                continue;
+            };
+            if now != entry {
+                problems.push(format!("{name} changed its types: {entry} is now {now}"));
+            }
+            match entry {
+                Value::String(notification) => roots.push(notification.clone()),
+                _ => roots.extend(["params", "result"].iter().filter_map(|key| entry[*key].as_str().map(str::to_string))),
+            }
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    while let Some(name) = roots.pop() {
+        if !seen.insert(name.clone()) {
+            continue;
+        }
+        let definition = &old["definitions"][&name];
+        collect_references(definition, &mut roots);
+        match new["definitions"].get(&name) {
+            Some(now) => shape_problems(&name, definition, now, &mut problems),
+            None => problems.push(format!("the type {name} is gone")),
+        }
+    }
+    problems
+}
+
+fn collect_references(value: &Value, out: &mut Vec<String>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(reference) = map.get("$ref").and_then(Value::as_str).and_then(|r| r.strip_prefix("#/definitions/")) {
+                out.push(reference.to_string());
+            }
+            map.values().for_each(|v| collect_references(v, out));
+        }
+        Value::Array(items) => items.iter().for_each(|v| collect_references(v, out)),
+        _ => {}
+    }
+}
+
+/// Adding is allowed: an optional field, a variant. Taking away, or changing a type, is not; a
+/// field that becomes required breaks whoever sends the old form.
+fn shape_problems(path: &str, old: &Value, new: &Value, out: &mut Vec<String>) {
+    if old.get("type") != new.get("type") && old.get("type").is_some() {
+        out.push(format!("{path} changed type: {} is now {}", old["type"], new["type"]));
+    }
+    if old.get("$ref").is_some() && old.get("$ref") != new.get("$ref") {
+        out.push(format!("{path} now refers to {} instead of {}", new["$ref"], old["$ref"]));
+    }
+    if let (Some(old_values), Some(new_values)) = (old["enum"].as_array(), new["enum"].as_array()) {
+        for value in old_values {
+            if !new_values.contains(value) {
+                out.push(format!("{path} lost the value {value}"));
+            }
+        }
+    }
+    if let Some(properties) = old["properties"].as_object() {
+        for (name, shape) in properties {
+            match new["properties"].get(name) {
+                Some(now) => shape_problems(&format!("{path}.{name}"), shape, now, out),
+                None => out.push(format!("{path}.{name} is gone")),
+            }
+        }
+    }
+    let required = |value: &Value| -> Vec<String> {
+        value["required"].as_array().map(|list| list.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default()
+    };
+    let before = required(old);
+    for name in required(new) {
+        if !before.contains(&name) && old["properties"].get(&name).is_some() {
+            out.push(format!("{path}.{name} became required"));
+        } else if !before.contains(&name) && old["properties"].is_object() {
+            out.push(format!("{path}.{name} is new and required"));
+        }
+    }
+    if let Some(old_variants) = old["oneOf"].as_array().or(old["anyOf"].as_array()) {
+        let tag = |variant: &Value| variant["properties"]["type"]["enum"][0].as_str().map(str::to_string);
+        let new_variants = new["oneOf"].as_array().or(new["anyOf"].as_array());
+        for variant in old_variants {
+            let Some(name) = tag(variant) else { continue };
+            match new_variants.and_then(|all| all.iter().find(|v| tag(v).as_deref() == Some(&name))) {
+                Some(now) => shape_problems(&format!("{path}<{name}>"), variant, now, out),
+                None => out.push(format!("{path} lost the variant {name}")),
+            }
+        }
+    }
 }
 
 /// The value with object keys in sorted order, whatever order serde_json keeps maps in.
@@ -367,6 +486,67 @@ fn sorted(value: Value) -> Value {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn every_method_has_a_tier_and_the_counts_are_what_the_design_says() {
+        let doc = document();
+        let methods = doc["x-stability"]["methods"].as_object().unwrap();
+        assert_eq!(methods.len(), doc["x-methods"].as_object().unwrap().len());
+        assert_eq!(methods["tools/list"], "stable");
+        assert_eq!(methods["session/op"], "stable");
+        assert_eq!(methods["doc/open"], "experimental");
+        assert_eq!(methods["browser/host"], "internal");
+        assert_eq!(doc["x-stability"]["notifications"]["session/event"], "stable");
+    }
+
+    #[test]
+    fn taking_away_a_promise_is_caught_and_adding_is_not() {
+        let old = json!({
+            "x-methods": { "a/b": { "params": "P", "result": "R" }, "doc/x": { "result": "R" } },
+            "x-stability": { "methods": { "a/b": "stable", "doc/x": "experimental" }, "notifications": {} },
+            "definitions": {
+                "Event": {}, "Op": {},
+                "P": { "type": "object", "properties": { "x": { "type": "string" } }, "required": ["x"] },
+                "R": { "type": "object", "properties": { "y": { "$ref": "#/definitions/Y" } } },
+                "Y": { "type": "string", "enum": ["one", "two"] }
+            }
+        });
+        let mut grown = old.clone();
+        grown["definitions"]["P"]["properties"]["z"] = json!({ "type": "string" });
+        grown["definitions"]["Y"]["enum"] = json!(["one", "two", "three"]);
+        grown["x-methods"]["c/d"] = json!({ "result": "R" });
+        grown["x-methods"].as_object_mut().unwrap().remove("doc/x");
+        assert_eq!(broken_promises(&old, &grown), Vec::<String>::new());
+
+        let mut cut = old.clone();
+        cut["x-methods"].as_object_mut().unwrap().remove("a/b");
+        assert_eq!(broken_promises(&old, &cut), vec!["a/b is gone"]);
+        let mut cut = old.clone();
+        cut["definitions"]["Y"]["enum"] = json!(["one"]);
+        assert!(broken_promises(&old, &cut)[0].contains("lost the value"));
+        let mut cut = old.clone();
+        cut["definitions"]["P"]["properties"]["x"]["type"] = json!("number");
+        assert!(broken_promises(&old, &cut)[0].contains("changed type"));
+        let mut cut = old.clone();
+        cut["definitions"]["P"]["properties"].as_object_mut().unwrap().remove("x");
+        assert!(broken_promises(&old, &cut).iter().any(|p| p.contains("P.x is gone")));
+        let mut cut = old.clone();
+        cut["definitions"]["R"]["required"] = json!(["y"]);
+        assert!(broken_promises(&old, &cut)[0].contains("became required"));
+    }
+
+    /// `schema-released.json` is the schema of the last release; the release script copies it. What
+    /// it promised has to hold until the protocol version changes (§9.3).
+    #[test]
+    fn what_the_last_release_promised_still_holds() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schema-released.json");
+        let Ok(text) = std::fs::read_to_string(&path) else { return };
+        let old: Value = serde_json::from_str(&text).unwrap();
+        let new = document();
+        if old["x-protocol-version"] == new["x-protocol-version"] {
+            assert_eq!(broken_promises(&old, &new), Vec::<String>::new());
+        }
+    }
 
     #[test]
     fn every_method_and_event_is_described() {

@@ -218,17 +218,7 @@ fn print_step(step: &finx_protocol::customize::McpProbeStep) {
 
 /// Opens `url` in the system browser, unless `FINX_NO_BROWSER` is set.
 pub(crate) fn open_browser(url: &str) {
-    if std::env::var_os("FINX_NO_BROWSER").is_some() {
-        return;
-    }
-    let opened = if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(url).status()
-    } else if cfg!(windows) {
-        std::process::Command::new("cmd").args(["/C", "start", "", url]).status()
-    } else {
-        std::process::Command::new("xdg-open").arg(url).status()
-    };
-    if opened.is_err() {
+    if !finx_core::open_in_browser(url) {
         eprintln!("note: could not open a browser; open the address above yourself");
     }
 }
