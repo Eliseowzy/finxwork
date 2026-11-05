@@ -405,6 +405,27 @@ try {
   for (let i = 0; i < 3; i++) await key("ArrowDown", "ArrowDown", 40, 8);
   await key("d", "KeyD", 68, META);
   await until("filled down", async () => { const v = await valuesAt("H2:H5"); return v.H4 === 1 && v.H5 === 1; }, 5000);
+  step("a right-click in the selection keeps it and opens Excel's cell menu; Clear Contents clears it");
+  const rightClick = async (at) => {
+    const p = await page.run(`(() => { const r = document.querySelector('${V} .sht-c[data-cell="${at}"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...p });
+    await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...p, button: "right", buttons: 2, clickCount: 1 });
+    await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...p, button: "right", clickCount: 1 });
+  };
+  const shownMenus = path.join(menus, "shown.jsonl");
+  const menusBefore = lines(shownMenus).length;
+  pick("clear");
+  await rightClick("H3");
+  await until("the cell menu", () => lines(shownMenus).length > menusBefore, 5000);
+  const cellMenu = lines(shownMenus).at(-1);
+  const ids = cellMenu.filter((x) => x !== "-").map((x) => x.id);
+  for (const id of ["cut", "copy", "paste", "clear", "fillDown", "fillRight", "traceUp", "traceDown", "formulas", "quote"]) check(ids.includes(id), `the cell menu has no ${id}: ${JSON.stringify(ids)}`);
+  check(cellMenu.find((x) => x.id === "copy")?.accel === "CmdOrCtrl+C", "the cell menu shows no ⌘C");
+  await until("H2:H5 cleared", async () => { const v = await valuesAt("H2:H5"); return Object.values(v).every((x) => x === undefined || x === null); }, 5000);
+  check((await page.run(`document.querySelector("${V} .sht-name").value`)) === "H2" && (await page.run(`!!document.querySelector("${V} .sht-sel.multi")`)), "the right-click moved off the selection");
+  step("a right-click outside the selection selects the cell it lands on");
+  await rightClick("K3");
+  await page.until("K3 selected", `document.querySelector("${V} .sht-name").value === "K3" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
   // The fill handle: 1…4 dragged down four rows carries on to 8, the tip showing 8 on the way.
   await goCell("J2");
   await page.run(`(() => { const d = new DataTransfer(); d.setData("text/plain", "1\\n2\\n3\\n4\\n"); document.querySelector("${V} .sht-canvas").dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
@@ -437,7 +458,7 @@ try {
   // An undo selects what it changed back, as Excel's does.
   await key("z", "KeyZ", 90, META);
   await page.until("the undone cell selected", `document.querySelector("${V} .sht-name").value === "C4"`, 5000);
-  for (let i = 0; i < 4; i++) await key("z", "KeyZ", 90, META);
+  for (let i = 0; i < 5; i++) await key("z", "KeyZ", 90, META);
   await page.until("the edits undone", `!document.querySelector(".fpn-tab.on.dirty")`, 10000);
   await page.run(`[...document.querySelectorAll(".fpn-tab")].find((x) => x.textContent.includes("app.ts")).click()`);
   await page.until("app.ts back in front", `${activeTab} === "app.ts"`);

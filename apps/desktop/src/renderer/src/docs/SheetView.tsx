@@ -6,6 +6,7 @@ import { Icon } from "../icons";
 import { isRpcKind } from "../rpcError";
 import { errorText, useStore } from "../store";
 import { openRef } from "../session/contentMenus";
+import type { MenuItem } from "../../../shared/bridge";
 import { addr, areaOf, colName, MAX_COLS, MAX_ROWS, onSheet, parseAddr, parseRange, rangeText, type Area, type Pos } from "./cellref";
 import { useEditQueue } from "./sheet/editQueue";
 import { useGeometry } from "./sheet/geometry";
@@ -597,6 +598,64 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     } catch (error) { st.show(errorText(error), undefined, true); }
   };
 
+  /** ⌘X: the selection copied, then cleared (values only, as the grid copies). */
+  const cutSelection = async () => {
+    if (!sheet || !editable) return;
+    const range = selectedRange;
+    try {
+      await navigator.clipboard.writeText(toTsv(selected, await selectionText()));
+    } catch (error) { return st.show(errorText(error), undefined, true); }
+    void apply([{ op: "clear", sheet: sheet.name, range }]);
+  };
+
+  /** Paste from the menu, where no paste event comes: the clipboard's text, read here. */
+  const pasteClipboard = async () => {
+    if (!editable) return;
+    try {
+      paste(await navigator.clipboard.readText());
+    } catch (error) { st.show(errorText(error), undefined, true); }
+  };
+
+  /** Right-click (or ⌃-click, the menu key, ⇧F10) on the grid: what can be done to the selection, as Excel's cell menu. */
+  const cellMenu = async () => {
+    if (!sheet) return;
+    const off = !editable;
+    const single = selected.r1 === selected.r2 && selected.c1 === selected.c2;
+    const items: MenuItem[] = [
+      { id: "cut", label: t("sheet.cut"), accel: "CmdOrCtrl+X", enabled: !off },
+      { id: "copy", label: t("sheet.copy"), accel: "CmdOrCtrl+C" },
+      { id: "paste", label: t("sheet.paste"), accel: "CmdOrCtrl+V", enabled: !off },
+      { separator: true },
+      { id: "clear", label: t("sheet.clearContents"), enabled: !off },
+      { id: "fillDown", label: t("sheet.fillDown"), accel: "CmdOrCtrl+D", enabled: !off && (!single || selected.r1 > 1) },
+      { id: "fillRight", label: t("sheet.fillRight"), accel: "CmdOrCtrl+R", enabled: !off && (!single || selected.c1 > 1) },
+      { separator: true },
+      { id: "traceUp", label: t("sheet.traceUp"), accel: "CmdOrCtrl+[" },
+      { id: "traceDown", label: t("sheet.traceDown"), accel: "CmdOrCtrl+]" },
+      ...(trace ? [{ id: "traceOff", label: t("sheet.traceClear") }] : []),
+      { id: "formulas", label: t("sheet.showFormulas"), accel: "Ctrl+`", checked: showFormulas },
+      { separator: true },
+      { id: "quote", label: t("sheet.askAgent"), accel: "CmdOrCtrl+L" },
+      { id: "excel", label: t("sheet.openExcel"), accel: "Alt+CmdOrCtrl+E" },
+    ];
+    const id = await window.finx?.popupMenu(items);
+    grid.current?.focus();
+    switch (id) {
+      case "cut": return void cutSelection();
+      case "copy": return void copySelection();
+      case "paste": return void pasteClipboard();
+      case "clear": return void apply([{ op: "clear", sheet: sheet.name, range: selectedRange }]);
+      case "fillDown": return fill("down");
+      case "fillRight": return fill("right");
+      case "traceUp": return void traceFrom("up");
+      case "traceDown": return void traceFrom("down");
+      case "traceOff": return setTrace(null);
+      case "formulas": return setShowFormulas((v) => !v);
+      case "quote": return void quoteSelection();
+      case "excel": return void openExcel();
+    }
+  };
+
   const quoteSelection = async () => {
     if (!sheet) return;
     const count = (selected.r2 - selected.r1 + 1) * (selected.c2 - selected.c1 + 1);
@@ -710,6 +769,10 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       void history(e.shiftKey ? "doc/redo" : "doc/undo");
     } else if (mod && e.key.toLowerCase() === "c") {
       void copySelection();
+    } else if (mod && e.key.toLowerCase() === "x") {
+      void cutSelection();
+    } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+      void cellMenu();
     } else if (mod && e.key.toLowerCase() === "l") {
       void quoteSelection();
     } else if (mod && !e.shiftKey && e.key.toLowerCase() === "d") {
@@ -1062,6 +1125,14 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               const p = pick(e);
               if (!p) return;
               if (editing) commit(editing.text);
+              // A right-click (⌃-click on a Mac) keeps a selection it lands in, as Excel does, and drags nothing; the menu comes on contextmenu.
+              if (e.button === 2 || (e.button === 0 && e.ctrlKey && window.finx?.platform === "mac")) {
+                const inside = p.r >= selected.r1 && p.r <= selected.r2 && p.c >= selected.c1 && p.c <= selected.c2;
+                if (!inside) go(p, false);
+                grid.current?.focus();
+                return;
+              }
+              if (e.button !== 0) return;
               go(p, e.shiftKey);
               grid.current?.focus();
               const move = (ev: MouseEvent) => {
@@ -1076,6 +1147,11 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               window.addEventListener("mouseup", up);
             }}
             onDoubleClick={() => editable && setEditing({ text: editText, inBar: false })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              if (editing) return;
+              void cellMenu();
+            }}
           >
             <div className="sht-corner" style={{ left: view.left, top: view.top, width: HEAD_W, height: HEAD_H }} onMouseDown={(e) => {
               e.stopPropagation();

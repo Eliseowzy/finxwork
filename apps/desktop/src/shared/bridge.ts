@@ -12,7 +12,8 @@ import type { SearchEngine } from "./search";
 export type PlatformId = "mac" | "win" | "linux";
 
 /** A native menu's item: `icon` a PNG data URL drawn before the label, `submenu` items it opens to (its own id unused). */
-export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; submenu?: MenuItem[] } | { separator: true };
+/** A native menu item; `accel` is the shortcut it shows on its right (an Electron accelerator, shown only: the page handles the keys). */
+export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; accel?: string; submenu?: MenuItem[] } | { separator: true };
 
 /** A path a reply wrote, looked up under its session's folder: absolute, relative when it is under the folder, and what it is (null: nothing there). */
 export type PathInfo = { path: string; rel: string | null; kind: "file" | "folder" | null };

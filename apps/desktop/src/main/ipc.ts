@@ -177,7 +177,7 @@ function menuIcon(icon: unknown) {
 const menuTests = process.env.FINXWORK_E2E_MENU;
 function testMenu(items: MenuItem[]): string | null {
   const dir = menuTests!;
-  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
+  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.accel && { accel: it.accel }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
   fs.appendFileSync(path.join(dir, "shown.jsonl"), JSON.stringify(plain(items)) + "\n");
   const pick = path.join(dir, "pick");
   if (!fs.existsSync(pick)) return null;
@@ -437,7 +437,7 @@ export function registerIPC() {
         list.map((it) => {
           if ("separator" in it) return { type: "separator" as const };
           const icon = menuIcon(it.icon);
-          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }) };
+          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }), ...(typeof it.accel === "string" && { accelerator: it.accel, registerAccelerator: false }) };
           if (Array.isArray(it.submenu)) return { ...common, submenu: build(it.submenu) };
           return { ...common, type: it.checked === undefined ? ("normal" as const) : ("checkbox" as const), checked: it.checked, click: () => (chosen = it.id) };
         });
