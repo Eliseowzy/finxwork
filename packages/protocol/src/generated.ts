@@ -1128,6 +1128,8 @@ export type InitializeResult = {
 
 /** The last message of a bot's conversation, for its row in the list. */
 export type LastMessage = {
+  /** A bot's message of files: the name of the first that is not an image. */
+  file?: string | null;
   from: Speaker;
   /** The images it carried. */
   images?: number;

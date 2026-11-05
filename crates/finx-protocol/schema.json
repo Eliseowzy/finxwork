@@ -5005,6 +5005,13 @@
     "LastMessage": {
       "description": "The last message of a bot's conversation, for its row in the list.",
       "properties": {
+        "file": {
+          "description": "A bot's message of files: the name of the first that is not an image.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "from": {
           "$ref": "#/definitions/Speaker"
         },

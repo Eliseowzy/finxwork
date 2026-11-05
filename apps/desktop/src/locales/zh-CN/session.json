@@ -216,7 +216,9 @@
     "skills": "技能",
     "browseSkills": "浏览技能",
     "manageSkills": "管理技能",
-    "noSkills": "还没有可用的技能"
+    "noSkills": "还没有可用的技能",
+    "prevImage": "上一张",
+    "nextImage": "下一张"
   },
   "inspector": {
     "label": "会话详情",

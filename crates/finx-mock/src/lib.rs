@@ -34,6 +34,8 @@
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
 //! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
+//! | `attach:PATH[,PATH…]` | a bot's `send_to_user` of those files with `end_turn` |
+//! | `ask:QUESTION\|A\|B…` | a bot's `send_to_user` of that question and its answers |
 //! | `relay[:LABEL]` | a bot's `spawn_agent` (described LABEL) with "在查了。" sent and `end_turn`; when the report wakes it, `查到了：<the report>` sent with `end_turn` |
 //! | `web_search:QUERY[\|allowed=A,B][\|blocked=C][\|recency=week]` | `tool_search` for the search tool, `call_tool` on `web_search`, then `search done: <its result>` |
 //! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
@@ -633,6 +635,26 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 ))
             }
             _ => done("send"),
+        },
+        "attach" => match step {
+            0 => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({
+                    "type": "attachment",
+                    "files": arg.split(',').map(|path| json!({ "path": path })).collect::<Vec<_>>(),
+                    "end_turn": true,
+                }),
+            )])),
+            _ => done("attach"),
+        },
+        "ask" => match step {
+            0 => {
+                let mut parts = arg.split('|');
+                let question = parts.next().unwrap_or_default();
+                let options: Vec<_> = parts.map(|label| json!({ "label": label })).collect();
+                Plan::Step(Step::calls(vec![("send_to_user", json!({ "type": "question", "text": question, "options": options }))]))
+            }
+            _ => done("ask"),
         },
         // Commands for sub-agents, one each, which the user may have to approve.
         "delegate" => match step {

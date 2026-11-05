@@ -226,7 +226,9 @@
     "skills": "Skills",
     "browseSkills": "Browse skills",
     "manageSkills": "Manage skills",
-    "noSkills": "No skills available"
+    "noSkills": "No skills available",
+    "prevImage": "Previous image",
+    "nextImage": "Next image"
   },
   "inspector": {
     "label": "Session Details",

@@ -1037,12 +1037,15 @@ impl TypedTool for BrowserScreenshot {
             .and_then(|()| std::fs::write(&path, &png))
             .is_ok();
         let mut details = json!({ "url": report.url, "title": report.title, "tab_id": report.tab });
+        // The path goes to the model too: a bot sends the user a screenshot by it (bot-design §3.12).
+        let mut text = report.text;
         if saved {
             details["screenshot_path"] = json!(path);
+            text.push_str(&format!("\nSaved to {}.", path.display()));
         }
         Ok(ToolOutput {
             content: vec![
-                UserContent::Text { text: report.text },
+                UserContent::Text { text },
                 UserContent::Image {
                     mime_type: "image/png".into(),
                     data: base64::engine::general_purpose::STANDARD.encode(&png),

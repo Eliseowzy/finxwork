@@ -103,6 +103,63 @@
 .bbub .md pre{background:var(--win)}
 .bbub .md :is(pre,table,.md-table){max-width:100%;overflow-x:auto}
 .bline .msg-act{position:static;flex:none;padding:0 0 6px}
+
+/* A message of files (bot-mode-design §6.6.1): its images together, then its files, a run's distance apart. Every
+   block has a bubble's corners, so a message of any kind sits in a run with the others. */
+.batt{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;max-width:100%}
+
+/* The images. One keeps its own proportions (at most 480 wide and 420 tall, never enlarged). Several take a bubble's
+   full width, up to three in a row; in a row they share one height and keep their proportions, so a chart's axes stay
+   in view. The outer corners are a bubble's, the inner ones a step off square, so the group reads as one thing with
+   its pictures still apart. */
+.bims{display:flex;flex-direction:column;gap:2px;width:640px;max-width:100%}
+.bims.one{width:min(480px,calc(420px*var(--r)),var(--w))}
+.bims-r{display:flex;gap:2px}
+.bim{position:relative;flex:var(--r) 1 0;min-width:0;aspect-ratio:var(--r);padding:0;border:0;border-radius:var(--r-xs);background:var(--fill);overflow:hidden;cursor:zoom-in;outline-offset:-2px}
+.bims.one .bim{flex:1}
+.bim img{display:block;width:100%;height:100%;object-fit:cover;object-position:left top}
+.bim:hover img{opacity:.88}
+.bim::after{content:"";position:absolute;inset:0;border-radius:inherit;box-shadow:inset 0 0 0 .5px var(--sep);pointer-events:none}
+.bims-r:first-child .bim:first-child{border-top-left-radius:var(--r-xl)}
+.bims-r:first-child .bim:last-child{border-top-right-radius:var(--r-xl)}
+.bims-r:last-child .bim:first-child{border-bottom-left-radius:var(--r-xl)}
+.bims-r:last-child .bim:last-child{border-bottom-right-radius:var(--r-xl)}
+
+/* The files. A bubble with a row per file; one file is a bubble with one row. The hairline between rows starts where
+   the names do. A long name gives way before its extension. */
+.bfiles{display:flex;flex-direction:column;width:320px;max-width:100%;border-radius:var(--r-xl);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
+.bfiles .tile.file{width:100%;height:52px}
+.bfiles .tile.file .tile-open{background:none;box-shadow:none;border-radius:0;outline-offset:-2px}
+.bfiles .tile.file .tile-open:hover{background:var(--fill)}
+.bfiles .tile+.tile::before{content:"";position:absolute;z-index:1;top:0;left:53px;right:0;height:.5px;background:var(--sep)}
+.bfiles .tile.file .tile-name{display:flex;font-size:13.5px;line-height:18px}
+.bfiles .tile-stem{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.bfiles .tile-ext{flex:none}
+.bfiles .tile.file .tile-kind{font-size:11.5px;font-weight:400;line-height:15px;letter-spacing:0;font-variant-numeric:tabular-nums}
+.bfiles .tile.gone .tile-open{cursor:default}
+.bfiles .tile.gone .tile-open:hover{background:none}
+.bfiles .tile.gone .tile-badge{filter:grayscale(1);opacity:.5}
+.bfiles .tile.gone .tile-name{color:var(--l2)}
+.bfiles .tile.gone .tile-kind{color:var(--l3)}
+
+/* An image on this computer written in a bot's words: as wide as one sent as a file, inside the bubble. */
+.md-img{display:block;max-width:min(480px,100%);padding:0;border:0;background:none;border-radius:var(--r-md);overflow:hidden;box-shadow:0 0 0 .5px var(--sep);cursor:zoom-in}
+.md-img img{display:block;max-width:100%;height:auto;max-height:420px;object-fit:contain}
+.md-img:hover img{opacity:.88}
+
+/* A question (bot-mode-design §6.6.2): the answers as rows in the same bubble. Once the owner said anything, the rows
+   fold away and it reads as an ordinary exchange. As wide as a message of files, so a run lines up. */
+.bbub.bq{min-width:320px;padding:0;overflow:hidden;transition:min-width .22s var(--ease-out)}
+.bbub.bq.done{min-width:0}
+.bq-q{padding:9px 15px}
+.bq-fold{display:grid;grid-template-rows:1fr;transition:grid-template-rows .22s var(--ease-out)}
+.bq-fold.shut{grid-template-rows:0fr}
+.bq-opts{min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.bq-opt{display:block;width:100%;padding:8px 15px;border:0;border-top:.5px solid var(--sep);background:none;font:inherit;font-size:14px;line-height:20px;color:var(--l1);text-align:left;overflow-wrap:anywhere;outline-offset:-2px}
+.bq-opt:hover{background:var(--fill)}
+.bq-opt:active{background:var(--fill2)}
+@media (prefers-reduced-motion:reduce){.bbub.bq,.bq-fold{transition:none}}
+
 .bm:hover .msg-act,.bline .msg-act:focus-within{opacity:1}
 .msg-act .tb.on{color:var(--l1);background:var(--fill)}
 

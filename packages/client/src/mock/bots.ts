@@ -11,6 +11,42 @@ export function send(text: string, end = false): ToolScript {
   return { name: "send_to_user", args: end ? { text, end_turn: true } : { text }, output: "Sent.", ms: 60 };
 }
 
+/** Files and images on their own. */
+export function attach(paths: string[], end = false, text?: string): ToolScript {
+  const files = paths.map((name) => {
+    const path = `/Users/demo/.finx/bots/analyst/files/${name}`;
+    const chart = demoCharts[name];
+    return chart ? { path, size: 128_000, image: true, width: chart.width, height: chart.height } : { path, size: name.endsWith(".pdf") ? 2_400_000 : 186_000 };
+  });
+  const args = { type: "attachment", files: paths.map((path) => ({ path })), ...(text ? { text } : {}), ...(end ? { end_turn: true } : {}) };
+  return { name: "send_to_user", args, output: "Sent.", details: { files, ...(text ? { text } : {}) }, ms: 60 };
+}
+
+/** A question with answers to tap. */
+export function ask(text: string, options: string[]): ToolScript {
+  return { name: "send_to_user", args: { type: "question", text, options: options.map((label) => ({ label })) }, output: "Sent.", ms: 60 };
+}
+
+/** A small chart with a white ground, as a bot's would be. */
+function chart(title: string, points: number[]): { width: number; height: number; svg: string } {
+  const width = 960;
+  const height = 600;
+  const line = points.map((v, i) => `${80 + (i * 800) / (points.length - 1)},${500 - v * 340}`).join(" ");
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/><text x="40" y="60" font-family="sans-serif" font-size="28" font-weight="600" fill="#0b0b0b">${title}</text><line x1="80" x2="880" y1="500" y2="500" stroke="#e7e6e2" stroke-width="2"/><polyline points="${line}" fill="none" stroke="#2a78d6" stroke-width="4" stroke-linejoin="round"/></svg>`;
+  return { width, height, svg };
+}
+
+const demoCharts: Record<string, ReturnType<typeof chart>> = {
+  "margin.png": chart("Gross margin", [0.78, 0.82, 0.74, 0.68, 0.66, 0.6, 0.28]),
+  "materials.png": chart("Materials cost", [0.2, 0.22, 0.26, 0.3, 0.38, 0.48, 0.82]),
+};
+
+/** The picture at a path of the demo's, as files/read gives it. */
+export function demoImage(path: string): { mime_type: string; data: string } | null {
+  const shown = demoCharts[path.split("/").at(-1) ?? ""];
+  return shown ? { mime_type: "image/svg+xml", data: btoa(shown.svg) } : null;
+}
+
 export interface DemoBot {
   name: string;
   avatar: Avatar;
@@ -68,6 +104,28 @@ export function demoBots(): DemoBot[] {
         {
           prompt: "帮我把这句开场白改得口语一点：「本次会议旨在对第三季度的经营情况进行全面回顾。」",
           script: { turns: [{ tools: [send("改好了：「今天咱们一起回顾一下第三季度做得怎么样。」"), send("要更正式一点的话，也可以说「今天我们回顾第三季度的经营情况」。", true)] }] },
+        },
+      ],
+    },
+    {
+      name: "分析师",
+      avatar: { kind: "char", shape: "round", hue: "teal" },
+      ago: 8 * hour,
+      history: [
+        {
+          prompt: "把三季度的毛利率分析一下，出张趋势图，再整理一份报告给我。",
+          script: {
+            turns: [
+              { tools: [send("在拉三季度的数据，做完发你。")] },
+              { tools: [{ name: "bash", args: { command: "python make_charts.py" }, output: "Exit code: 0", ms: 900 }] },
+              {
+                tools: [
+                  attach(["margin.png", "materials.png", "三季度毛利率分析.pdf", "毛利率明细.xlsx"], false, "三季度毛利率 38.6%，比二季度低 2.6 个百分点。主要是原材料涨价，销售费用基本没变。"),
+                  ask("报告要发给谁？", ["先留给我看", "发给财务组", "发给全部门"]),
+                ],
+              },
+            ],
+          },
         },
       ],
     },
