@@ -139,13 +139,14 @@ function StopButton({ s, a, className }: { s: ListSession; a: AgentView; classNa
 /** How an agent stands, at a row's right: how long, or a dot when it stopped or failed. */
 function Meta({ a, now }: { a: AgentView; now: number }) {
   const { t } = useTranslation("session");
-  const dot = a.status === "interrupted" ? "w" : a.status === "failed" || a.status === "closed" ? "c" : "";
+  const asks = (a.view.live?.approvals.length ?? 0) > 0;
+  const dot = asks || a.status === "interrupted" ? "w" : a.status === "failed" || a.status === "closed" ? "c" : "";
   return (
     <span className={`smeta ${dot}`}>
       {dot ? (
         <>
           <span className={`sdot ${dot}`} />
-          {t(`agents.status.${a.status}`)}
+          {t(asks ? "agents.status.awaiting_approval" : `agents.status.${a.status}`)}
         </>
       ) : (
         agentTime(a, now)

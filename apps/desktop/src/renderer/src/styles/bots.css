@@ -167,7 +167,7 @@
 .bm .tg-b.bproc{width:min(640px,100%);margin:6px 0 2px}
 .bproc-h{padding:var(--sp-1) var(--sp-2) 2px;font-size:12px;color:var(--l3)}
 
-/* Busy: the last bubble. Three dots while it answers; with helpers at work, what they do, opening to each one's
+/* Busy: the last bubble. Three dots while it answers; with sub-agents at work, what they do, opening to each one's
    steps and how long it has worked. */
 .wbub{display:flex;flex-direction:column;padding:0}
 .wb-h{display:flex;align-items:center;gap:9px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}

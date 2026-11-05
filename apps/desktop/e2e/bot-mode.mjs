@@ -270,17 +270,17 @@ try {
     await page.run(`document.querySelector('.bm .msg-act button[aria-label="过程"]').click()`);
   } else note("(no message with steps yet)");
 
-  step("8/9. two things for helpers, a quick question meanwhile");
-  // Work a helper can finish by itself: in manual mode a helper's commands are refused, not asked
+  step("8/9. two things for sub-agents, a quick question meanwhile");
+  // Work a sub-agent can finish by itself, with no question for the owner to answer
   // (subagent-design D-43); the approval the bot itself asks for is step 11.
   const n0 = (await page.run(bubbles)).length;
-  await say(page, "请交给两个后台帮手分别去做，做完分别告诉我：一个写一首关于秋天的十四行诗；一个把《静夜思》翻译成英文。");
+  await say(page, "请交给两个子智能体分别去做，做完分别告诉我：一个写一首关于秋天的十四行诗；一个把《静夜思》翻译成英文。");
   await sleep(2500);
   await say(page, "顺便问一下，1 公里是多少英里？");
   const isQuick = (t) => /0\.62/.test(t);
   const isSonnet = (t) => /秋|autumn/i.test(t) && t.length > 120;
   const isTranslation = (t) => /moon/i.test(t);
-  let sawHelper = false, sawTwo = false, quiet = 0;
+  let sawAgent = false, sawTwo = false, quiet = 0;
   const end = Date.now() + 300000;
   for (;;) {
     if (await page.run(asking)) {
@@ -288,35 +288,35 @@ try {
       await page.run(`document.querySelector(".appr .btn.primary").click()`);
     }
     const label = await page.run(`document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? ""`);
-    if (label && (!sawHelper || (!sawTwo && label.includes("两件事")))) {
-      sawHelper = true;
+    if (label && (!sawAgent || (!sawTwo && label.includes("两件事")))) {
+      sawAgent = true;
       sawTwo ||= label.includes("两件事");
       note(`busy bubble: ${label}`);
       await page.run(`document.querySelector(".tr.bots .bm.working button.wb-h")?.click()`);
       await sleep(800);
-      await page.shot(sawTwo ? "06-helpers" : "06-helper");
+      await page.shot(sawTwo ? "06-agents" : "06-agent");
       note(`its row says: ${await page.run(`${rows}.find((r) => r.sel)?.line`)}`);
     }
-    // Until all three came: between a helper's end and the bot's relay, nothing shows as busy.
+    // Until all three came: between a sub-agent's end and the bot's relay, nothing shows as busy.
     const sofar = (await page.run(bubbles)).slice(n0);
     const done = sofar.some(isQuick) && sofar.some(isSonnet) && sofar.some(isTranslation) && !(await page.run(busy)) && !(await page.run(asking));
     quiet = done ? quiet + 1 : 0;
     if (quiet >= 6) break;
-    if (Date.now() > end) fail(`timed out waiting for the helpers' work and the quick answer: ${JSON.stringify(sofar.map((t) => t.slice(0, 40)))}`);
+    if (Date.now() > end) fail(`timed out waiting for the sub-agents' work and the quick answer: ${JSON.stringify(sofar.map((t) => t.slice(0, 40)))}`);
     await sleep(500);
   }
   const mixed = (await page.run(bubbles)).slice(n0);
   for (const t of mixed) note(`→ ${t.replace(/\s+/g, " ").slice(0, 90)}`);
-  check(sawHelper, "the work went to helpers");
-  if (!sawTwo) note("(never two helpers at once)");
+  check(sawAgent, "the work went to sub-agents");
+  if (!sawTwo) note("(never two sub-agents at once)");
   await page.shot("07-mixed");
 
-  step("10. 'no need any more': the helper stops, the bot says so");
-  await say(page, "请交给后台帮手去做：写一篇 3000 字左右的短篇小说，主题是秋天的银杏，写完告诉我。");
+  step("10. 'no need any more': the sub-agent stops, the bot says so");
+  await say(page, "请交给子智能体去做：写一篇 3000 字左右的短篇小说，主题是秋天的银杏，写完告诉我。");
   // It may ask first (say, to look at its folder): allowed.
   for (const until10 = Date.now() + 120000; !(await page.run(`(document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? "") !== ""`)); await sleep(300)) {
     if (await page.run(asking)) await page.run(`document.querySelector(".appr .btn.primary").click()`);
-    if (Date.now() > until10) fail("timed out waiting for a helper at work");
+    if (Date.now() > until10) fail("timed out waiting for a sub-agent at work");
   }
   note(`busy bubble: ${await page.run(`document.querySelector(".tr.bots .bm.working .wb-t")?.textContent`)}`);
   await sleep(1500);

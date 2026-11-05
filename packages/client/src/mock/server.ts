@@ -3,7 +3,7 @@ import type {
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage,
 } from "@finx/protocol";
 import { botScript, demoBots, demoImage, relayScript, type DemoBot } from "./bots.ts";
-import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } from "../session.ts";
+import { applyEvent, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
 import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, siteScript, steerScript, wantsSite, type DemoSession, type DemoTask } from "./data.ts";
@@ -97,7 +97,7 @@ interface Session {
 
 /** What a client following a sub-agent gets of its events, as finx sends them. */
 const followed = new Set<string>([
-  "task_started", "turn_started", "message_completed", "stream_retry", "tool_started", "tool_running", "tool_completed",
+  "task_started", "turn_started", "message_completed", "stream_retry", "tool_started", "tool_running", "tool_completed", "approval_requested", "approval_resolved",
   "compaction_started", "compaction_completed", "compaction_failed", "turn_completed", "task_completed", "task_failed", "task_interrupted", "warning",
 ]);
 
@@ -266,12 +266,12 @@ export class MockServer {
     } else if (e.type === "message_completed" && e.message.role === "user" && !e.mail) {
       const images = e.message.content.filter((c) => c.type === "image").length;
       next = { ...next, last: { from: "user", text: textOf(e.message.content).slice(0, 1000), images, ts: iso(e.message.ts) } };
-    } else if (e.type === "approval_requested") {
+    } else if (e.type === "approval_requested" || (e.type === "agent_event" && e.event.type === "approval_requested")) {
       next = { ...next, unread: (next.unread ?? 0) + 1 };
     }
     const v = s.view;
     const failed = e.type === "task_failed" || (e.type !== "task_started" && !!next.failed);
-    next = { ...next, typing: v.live !== null, helpers: runningAgents(v).length, waiting: v.live?.approvals[0]?.summary, failed };
+    next = { ...next, typing: v.live !== null, agents_working: runningAgents(v).length, waiting: pendingApproval(v)?.approval.summary, failed };
     bot.summary = next;
     if (JSON.stringify(next) !== JSON.stringify(was)) this.botsChanged([next]);
   }
@@ -926,6 +926,14 @@ export class MockServer {
         const q = p as P<"config/write">;
         return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;
       }
+      case "web_search/status":
+        return this.customize.webSearchStatus() satisfies R<"web_search/status">;
+      case "web_search/test":
+        return this.customize.webSearchTest() satisfies R<"web_search/test">;
+      case "web_search/set_key": {
+        const q = p as P<"web_search/set_key">;
+        return this.customize.webSearchSetKey(q.source, q.key) satisfies R<"web_search/set_key">;
+      }
       case "credentials/set":
         return this.customize.credentialsSet((p as P<"credentials/set">).name) satisfies R<"credentials/set">;
       case "credentials/delete":
@@ -1094,6 +1102,11 @@ export class MockServer {
       }
       case "approval": {
         const resolve = s.run?.approvals.get(op.call_id);
+        if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
+        return resolve(op.decision);
+      }
+      case "agent_approval": {
+        const resolve = s.children.find((c) => c.id === op.agent)?.run?.approvals.get(op.call_id);
         if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
         return resolve(op.decision);
       }

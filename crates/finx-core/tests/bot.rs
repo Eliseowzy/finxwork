@@ -176,7 +176,7 @@ async fn a_bot_talks_through_send_to_user_and_ends_its_turn() {
     assert!(!system.contains("{{"), "every mark is filled in");
     assert!(system.contains("Numbers and data:") && system.contains("Acting with care:"));
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user"]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user", "tool_search", "call_tool"]);
 
     // The header names the bot; lists leave the session out.
     let store = JsonlStore::new(h.home.sessions_dir());
@@ -313,7 +313,7 @@ async fn only_an_unanswered_message_brings_a_reminder() {
             Script::text("Done."),
             // A report wakes the bot, which has nothing to tell.
             Script::tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." }))
-                .then_tool_call("c3", "send_to_user", json!({ "text": "交给帮手了。", "end_turn": true })),
+                .then_tool_call("c3", "send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })),
             Script::text("Found: 42."),
             Script::text("Nothing to add."),
         ],
@@ -345,17 +345,17 @@ async fn only_an_unanswered_message_brings_a_reminder() {
     assert_eq!(reminders(&h), 1);
 }
 
-/// A bot's helpers write reports, not chat: a session's prompt, and no send_to_user
+/// A bot's sub-agents write reports, not chat: a session's prompt, and no send_to_user
 /// (bot-design §2.3, D-311).
 #[tokio::test]
-async fn a_bots_helpers_get_a_sessions_prompt_and_no_send_to_user() {
+async fn a_bots_sub_agents_get_a_sessions_prompt_and_no_send_to_user() {
     let mut h = bot(
         "研究员",
         PermissionMode::Manual,
         vec![
             Script::tool_call("c1", "spawn_agent", json!({ "description": "查资料", "task": "Find it." }))
-                .then_tool_call("c2", "send_to_user", json!({ "text": "交给帮手了。", "end_turn": true })),
-            // The helper's only request.
+                .then_tool_call("c2", "send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })),
+            // The sub-agent's only request.
             Script::text("Found: 42."),
             // The bot, woken by the report.
             send_last("c3", "查到了：42。"),
@@ -364,15 +364,15 @@ async fn a_bots_helpers_get_a_sessions_prompt_and_no_send_to_user() {
     .await;
     h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
-    assert_eq!(sent(&events), ["交给帮手了。", "查到了：42。"]);
+    assert_eq!(sent(&events), ["交给子智能体了。", "查到了：42。"]);
     let requests = h.api.requests();
     assert_eq!(requests.len(), 3);
-    let helper = &requests[1];
-    assert!(helper.system.starts_with("You are FinxWork"), "{}", helper.system);
-    let names: Vec<&str> = helper.tools.iter().map(|t| t.name.as_str()).collect();
+    let agent = &requests[1];
+    assert!(agent.system.starts_with("You are FinxWork"), "{}", agent.system);
+    let names: Vec<&str> = agent.tools.iter().map(|t| t.name.as_str()).collect();
     assert!(!names.contains(&"send_to_user") && !names.contains(&"spawn_agent"), "{names:?}");
-    // The helper works in the bot's folder too.
-    assert!(helper.system.contains(&format!("cwd: {}", h.folder.display())));
+    // The sub-agent works in the bot's folder too.
+    assert!(agent.system.contains(&format!("cwd: {}", h.folder.display())));
     assert!(requests[2].system.starts_with("You are 研究员"));
 }
 

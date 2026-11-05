@@ -77,7 +77,8 @@
       "completed": "Done",
       "failed": "Failed",
       "interrupted": "Stopped",
-      "closed": "Closed"
+      "closed": "Closed",
+      "awaiting_approval": "Waiting for you"
     },
     "open": "Show its work in the background panel",
     "report": "Report from <b>{{name}}</b>",
@@ -122,6 +123,7 @@
   },
   "approval": {
     "label": "Waiting for your approval",
+    "agent": "Sub-agent · {{name}}",
     "queue": "{{n}} of {{total}}",
     "runCommand": "Run this command?",
     "useTool": "{{verb}} {{object}}?",
@@ -209,6 +211,9 @@
     "connectors": "Connectors",
     "browseConnectors": "Browse Connectors",
     "manageConnectors": "Manage Connectors",
+    "searchSwitch": "Web Search",
+    "searchOn": "Web search is on, for every conversation from its next step",
+    "searchOff": "Web search is off, for every conversation from its next step",
     "browserSwitch": "Browser",
     "computerSwitch": "Computer Use",
     "computerGrant": "Needs permission",
@@ -560,5 +565,28 @@
     },
     "offer": "For this conversation: {{title}}",
     "offerRemove": "Don't hand it over"
+  },
+  "webSearch": {
+    "only": " · only {{sites}}",
+    "siteSeparator": ", ",
+    "failed": "Search failed",
+    "and": "; ",
+    "stop": ".",
+    "openSettings": "Open Settings",
+    "noneUsable": "Every search service is off or not set up.",
+    "failedOver": "{{failed}}; used {{name}} instead",
+    "foot_zero": "No results · {{name}} · {{seconds}} s",
+    "foot_one": "{{count}} result · {{name}} · {{seconds}} s",
+    "foot_other": "{{count}} results · {{name}} · {{seconds}} s",
+    "footAfter_zero": "No results · {{seconds}} s",
+    "footAfter_one": "{{count}} result · {{seconds}} s",
+    "footAfter_other": "{{count}} results · {{seconds}} s",
+    "why": {
+      "auth_failed": "{{name}} rejected the key",
+      "quota_exhausted": "{{name}} is out of quota",
+      "rate_limited": "{{name}} is limiting requests",
+      "unreachable": "{{name}} could not be reached",
+      "bad_response": "{{name}} sent an unreadable answer"
+    }
   }
 }

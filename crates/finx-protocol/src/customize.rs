@@ -143,7 +143,7 @@ pub struct ConfigChangedParams {
 /// A secret for configuration values to refer to as `${credential:<name>}`.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CredentialsSetParams {
-    /// Starts with `mcp.`: 1-96 letters, digits, `.`, `_` or `-` after it.
+    /// Starts with `mcp.` or `web-search.`: 1-96 letters, digits, `.`, `_` or `-` after it.
     pub name: String,
     pub value: String,
 }

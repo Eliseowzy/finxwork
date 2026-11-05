@@ -16,6 +16,8 @@
 .appr-h b{font-weight:600;flex:none;max-width:70%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .appr-h .why{flex:1;min-width:0;color:var(--l2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appr-h .qx-tag{margin-left:auto;flex:none}
+.appr-who{margin-left:auto;flex:0 1 auto;min-width:0;color:var(--l2);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appr-who+.qx-tag{margin-left:0}
 .appr-app{flex:none;display:inline-flex;align-items:center;gap:5px;max-width:30%;padding:1px 8px 1px 4px;border-radius:999px;background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appr-app img{width:16px;height:16px;flex:none}
 /* A website's question: why it asks, when the mode would not, and the address, under the title. */

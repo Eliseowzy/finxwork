@@ -375,11 +375,11 @@ export class Supervisor {
     else this.busy.delete(id);
   }
 
-  /** A bot works while it answers, waits for an approval or has helpers at work. */
+  /** A bot works while it answers, waits for an approval or has sub-agents at work. */
   private trackBot(b: BotSummary) {
     const key = `bot:${b.id}`;
     if (b.waiting) this.busy.set(key, "awaiting_approval");
-    else if (b.typing || (b.helpers ?? 0) > 0) this.busy.set(key, "running");
+    else if (b.typing || (b.agents_working ?? 0) > 0) this.busy.set(key, "running");
     else this.busy.delete(key);
   }
 

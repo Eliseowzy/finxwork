@@ -174,8 +174,8 @@ export function imageRatio(f: Pick<BotFile, "width" | "height">, alone: boolean)
   return alone ? clamp(own, 0.5, 4) : clamp(own, 0.75, 2);
 }
 
-/** A background helper at work, as the busy bubble shows it. */
-export interface Helper {
+/** A sub-agent at work, as the busy bubble shows it. */
+export interface WorkingAgent {
   id: string;
   /** What the bot called the work. */
   label: string;
@@ -187,10 +187,10 @@ export interface Helper {
 }
 
 /** What the busy bubble shows, or null when the bot is not busy: waiting for an approval alone is not busy. */
-export function busyBubble(v: SessionView): { typing: boolean; helpers: Helper[] } | null {
-  const helpers = runningAgents(v).map((a) => ({ id: a.id, label: a.description || a.name, step: a.view.live?.tools.at(-1)?.title, since: a.since, agent: a }));
+export function busyBubble(v: SessionView): { typing: boolean; agents: WorkingAgent[] } | null {
+  const agents = runningAgents(v).map((a) => ({ id: a.id, label: a.description || a.name, step: a.view.live?.tools.at(-1)?.title, since: a.since, agent: a }));
   const typing = !!v.live && v.live.approvals.length === 0;
-  return typing || helpers.length > 0 ? { typing, helpers } : null;
+  return typing || agents.length > 0 ? { typing, agents } : null;
 }
 
 /** The steps of a bot message's process, counted as the process line shows them ("6 步"). */

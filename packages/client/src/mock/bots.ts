@@ -3,7 +3,7 @@ import type { TaskScript, ToolScript } from "./script.ts";
 
 // Bot mode in the mock (docs/kernel/bot-design.md): the demo's bots and what
 // they answer. A bot talks only through send_to_user: a quick question gets
-// one message, work that takes time goes to a background helper whose report
+// one message, work that takes time goes to a sub-agent whose report
 // the bot relays, and an action that needs the owner asks first.
 
 /** A message to the owner; the last of a turn ends it. */
@@ -133,10 +133,10 @@ export function demoBots(): DemoBot[] {
   ];
 }
 
-/** What a helper writes for a request, and what the bot then tells the owner. */
-function research(topic: string): { helper: TaskScript; told: string } {
+/** What a sub-agent writes for a request, and what the bot then tells the owner. */
+function research(topic: string): { agent: TaskScript; told: string } {
   return {
-    helper: {
+    agent: {
       turns: [
         { tools: [{ name: "bash", args: { command: `curl -s https://example.com/search?q=${encodeURIComponent(topic)}` }, output: "Exit code: 0\nOutput:\n…", progress: ["Fetching…", "Parsing results…"], ms: 2600 }] },
         { tools: [{ name: "read", args: { path: "notes.md" }, output: "…", ms: 900 }] },
@@ -178,15 +178,15 @@ export function botScript(text: string): TaskScript {
   if (/nginx|重启|restart/i.test(t)) return restartScript();
   if (/查|调研|对比|整理|统计|列出|分析|找|研究|汇总/.test(t)) {
     const topic = t.replace(/^(帮我|请|麻烦)?/, "").slice(0, 24);
-    const { helper } = research(topic);
-    const spawn: ToolScript = { name: "spawn_agent", args: { description: topic.slice(0, 20), task: t }, output: "started", ms: 80, agent: helper };
+    const { agent } = research(topic);
+    const spawn: ToolScript = { name: "spawn_agent", args: { description: topic.slice(0, 20), task: t }, output: "started", ms: 80, agent: agent };
     return { turns: [{ tools: [spawn, send("在查了，查完告诉你。", true)] }] };
   }
   if (/^(你好|早|嗨|hi|hello|在吗)/i.test(t)) return { turns: [{ tools: [send("在的！有什么要我做的？", true)] }] };
   return { turns: [{ think: "想想怎么回答。", tools: [send(`好的。「${t.slice(0, 30)}」这件事，我的看法是先把目标说清楚，再分两步做。要我直接开始吗？`, true)] }] };
 }
 
-/** What the bot says when its helpers' reports come in. */
+/** What the bot says when its sub-agents' reports come in. */
 export function relayScript(reports: string[]): TaskScript {
   const topic = reports[0]?.match(/关于「(.+?)」/)?.[1] ?? "那件事";
   return { turns: [{ tools: [send(research(topic).told, true)] }] };

@@ -24,6 +24,8 @@ async fn read_line() -> Option<String> {
 
 /// What the kernel asks about, from an `ApprovalRequested` event.
 pub struct Question<'a> {
+    /// The sub-agent that asks, if one does.
+    pub agent: Option<&'a str>,
     pub name: &'a str,
     pub summary: &'a str,
     pub reason: Option<&'a str>,
@@ -53,7 +55,8 @@ pub async fn ask(style: &Style, question: Question<'_>) -> ApprovalDecision {
         (None, None) => None,
     };
     eprintln!();
-    eprintln!("{}", style.yellow(&format!("? Allow {}: {}", question.name, question.summary)));
+    let who = question.agent.map_or(String::new(), |agent| format!("[agent {agent}] "));
+    eprintln!("{}", style.yellow(&format!("? {who}Allow {}: {}", question.name, question.summary)));
     if let Some(reason) = question.reason {
         eprintln!("  {}", style.dim(&format!("reason: {reason}")));
     }

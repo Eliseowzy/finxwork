@@ -7,7 +7,7 @@
 //   - late:    a task sent only after the kernel's reminder (bot-design §3.11): its first
 //              reply had no call at all;
 //   - leaked:  a message names a tool or carries an id;
-//   - delegated: long work went to a background helper (spawn_agent);
+//   - delegated: long work went to a sub-agent (spawn_agent);
 //   - ordered: the four poems came back in the order asked;
 //   - attached: a file went out as an attachment message; linked: only as a link in words;
 //   - asked: a choice went out as a question with options; prose: only as words ending in a question;
@@ -53,7 +53,7 @@ const call = (method, params = {}) =>
   });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** Events of `session` until it is idle (nothing runs, no helper works), or `ms` pass. */
+/** Events of `session` until it is idle (nothing runs, no sub-agent works), or `ms` pass. */
 function collect(session, ms) {
   const events = [];
   return {
@@ -144,7 +144,7 @@ for (const [name, prompts] of Object.entries(scenarios)) {
     else if (calls.some((e) => /[?？]\s*$/.test(String(e.args.text ?? "")))) t.prose++;
     t.sends += sent.length;
     t.leaked += sent.filter((s) => tools.test(s)).length;
-    // Each task the owner started (a helper's report needs no reply first): did its first reply
+    // Each task the owner started (a sub-agent's report needs no reply first): did its first reply
     // start with a send, and did it send at all?
     let inTask = false, first = null, sentInTask = false, replies = [];
     for (const e of c.events) {

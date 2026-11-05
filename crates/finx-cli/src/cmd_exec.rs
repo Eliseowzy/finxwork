@@ -148,33 +148,46 @@ async fn drive(
             eprintln!("{}", renderer.style().yellow(&format!("warning: {message}")));
         }
         outcome.observe(&event.msg);
-        match &event.msg {
-            EventMsg::ApprovalRequested {
-                call_id,
+        // The session's approvals, and a sub-agent's as its `agent_event` carries them.
+        let (agent, asked) = match &event.msg {
+            EventMsg::AgentEvent { agent_id, event } => (Some(agent_id), &event.msg),
+            msg => (None, msg),
+        };
+        if let EventMsg::ApprovalRequested {
+            call_id,
+            name,
+            summary,
+            reason,
+            proposed_rule,
+            proposed_mode,
+            proposed_grants,
+            ..
+        } = asked
+            && interactive
+            && !run.ops_stdin
+        {
+            let question = approval_prompt::Question {
+                agent: agent.and_then(|id| outcome.agent_label(id)),
                 name,
                 summary,
-                reason,
-                proposed_rule,
-                proposed_mode,
-                proposed_grants,
-                ..
-            } if interactive && !run.ops_stdin => {
-                let question = approval_prompt::Question {
-                    name,
-                    summary,
-                    reason: reason.as_deref(),
-                    rule: proposed_rule.as_ref(),
-                    mode: *proposed_mode,
-                    grants: proposed_grants,
-                };
-                let decision = approval_prompt::ask(renderer.style(), question).await;
-                let _ = ops
-                    .send(Op::Approval {
-                        call_id: call_id.clone(),
-                        decision,
-                    })
-                    .await;
-            }
+                reason: reason.as_deref(),
+                rule: proposed_rule.as_ref(),
+                mode: *proposed_mode,
+                grants: proposed_grants,
+            };
+            let decision = approval_prompt::ask(renderer.style(), question).await;
+            let call_id = call_id.clone();
+            let op = match agent {
+                Some(agent) => Op::AgentApproval {
+                    agent: agent.clone(),
+                    call_id,
+                    decision,
+                },
+                None => Op::Approval { call_id, decision },
+            };
+            let _ = ops.send(op).await;
+        }
+        match &event.msg {
             // The exit code is that of the last task; the run ends once nothing is left to do,
             // so that sub-agents still working are not cut off.
             EventMsg::TaskCompleted { .. } => exit_code = 0,
@@ -229,6 +242,12 @@ struct Outcome {
 }
 
 impl Outcome {
+    /// What sub-agent `id` goes by.
+    fn agent_label(&self, id: &str) -> Option<&str> {
+        let agent = self.agents.iter().find(|a| a.id == id)?;
+        Some(if agent.description.is_empty() { &agent.name } else { &agent.description })
+    }
+
     fn observe(&mut self, msg: &EventMsg) {
         match msg {
             EventMsg::SessionStarted { model, .. } | EventMsg::SettingsChanged { model, .. } => {

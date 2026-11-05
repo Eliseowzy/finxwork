@@ -19,6 +19,7 @@ use crate::customize;
 use crate::event::Event;
 use crate::files;
 use crate::op::Op;
+use crate::web_search;
 
 /// Registers `T` and returns its definition name.
 fn name<T: JsonSchema>(generator: &mut SchemaGenerator) -> String {
@@ -189,6 +190,9 @@ pub fn document() -> Value {
         (method::MCP_LOGIN_CANCEL, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
         (method::CONNECTORS_INSTALL, Some(name::<customize::ConnectorInstallParams>(g)), name::<customize::ConnectorInstallResult>(g)),
         (method::MCP_LOGOUT, Some(name::<customize::McpLogoutParams>(g)), name::<api::Empty>(g)),
+        (method::WEB_SEARCH_STATUS, None, name::<web_search::WebSearchStatus>(g)),
+        (method::WEB_SEARCH_TEST, Some(name::<web_search::WebSearchTestParams>(g)), name::<web_search::WebSearchTestResult>(g)),
+        (method::WEB_SEARCH_SET_KEY, Some(name::<web_search::WebSearchSetKeyParams>(g)), name::<web_search::WebSearchSetKeyResult>(g)),
         (method::BROWSER_HOST, Some(name::<api::BrowserHostParams>(g)), name::<api::BrowserHostResult>(g)),
         (method::BROWSER_STATUS, None, name::<api::BrowserStatus>(g)),
         (method::BROWSER_SITE_ICON, Some(name::<api::BrowserSiteIconParams>(g)), name::<api::BrowserSiteIconResult>(g)),
