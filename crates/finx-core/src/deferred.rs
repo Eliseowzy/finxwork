@@ -1,5 +1,5 @@
-//! Built-in tools kept out of the tool list: the browsers' and computer use's
-//! (docs/desktop/computer-use-design.md §5). Like the tools of deferred MCP servers (mcp-design
+//! Built-in tools kept out of the tool list: the browsers', computer use's and those for checking
+//! on sub-agents (docs/desktop/computer-use-design.md §5, bot-turn-design §5.3). Like the tools of deferred MCP servers (mcp-design
 //! §7), each group takes one line of the catalog in the system prompt; `tool_search` gives the
 //! definitions and the group's guidelines, and `call_tool` runs them. The tool list and the
 //! prompt's prefix stay the same whether a session uses them or not.
@@ -49,11 +49,14 @@ const CUA: &str = "cua";
 const CUA_SUMMARY: &str = "Computer use: see and operate the other apps on this computer";
 const DOC: &str = "doc";
 const DOC_SUMMARY: &str = "Documents (PDF): open one beside the conversation for the user, read, search and look at its pages";
+const AGENTS: &str = "agents";
+const AGENTS_SUMMARY: &str = "Check on your running agents, or stop them";
 
 impl Deferred {
     /// The groups `settings` turn on; `pool` says whether the process has browsers, `app`
-    /// whether the desktop app is connected, `docs` whether it keeps documents.
-    pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool, docs: bool) -> Self {
+    /// whether the desktop app is connected, `docs` whether it keeps documents, `agents` whether
+    /// this session can have sub-agents: a main session.
+    pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool, docs: bool, agents: bool) -> Self {
         let mut groups = Vec::new();
         let builtin = settings.browser.builtin_on(app);
         let yours = settings.browser.yours_on(app);
@@ -88,6 +91,13 @@ impl Deferred {
                 name: DOC,
                 summary: DOC_SUMMARY.into(),
                 tools: crate::docs::doc_tools(),
+            });
+        }
+        if agents {
+            groups.push(Group {
+                name: AGENTS,
+                summary: AGENTS_SUMMARY.into(),
+                tools: crate::agents::deferred_agent_tools(),
             });
         }
         Self { groups }

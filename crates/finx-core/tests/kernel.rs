@@ -179,9 +179,11 @@ async fn writes_a_file_then_answers() {
     let requests = h.api.requests();
     assert_eq!(requests.len(), 2);
     assert!(requests[0].system.contains("You are FinxWork"));
-    // The four built-in tools, then the sub-agent tools (on by default).
+    // The four built-in tools, then the sub-agent tools (on by default), then the way to the
+    // deferred ones: the sub-agents' other two, at least.
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message"]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "tool_search", "call_tool"]);
+    assert!(requests[0].system.contains("- agents: Check on your running agents, or stop them"));
     assert!(tool_results(&requests[1])[0].starts_with("Wrote 2 bytes"));
 
     // Events arrive in strict sequence order and the task is bracketed.
@@ -688,7 +690,7 @@ async fn bad_tool_calls_become_error_results() {
     let results = tool_results(&h.api.requests()[1]);
     assert_eq!(
         results[0],
-        "Unknown tool 'nope'. Available tools: read, write, edit, bash, spawn_agent, send_message."
+        "Unknown tool 'nope'. Available tools: read, write, edit, bash, spawn_agent, send_message, tool_search, call_tool."
     );
     assert!(results[1].starts_with("invalid arguments:"), "{}", results[1]);
 }

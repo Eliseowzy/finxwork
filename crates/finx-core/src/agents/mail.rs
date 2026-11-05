@@ -141,7 +141,7 @@ fn cut(root: &Session, name: &str, seq: u64, body: String) -> String {
         .unwrap_or_default()
 }
 
-fn duration(elapsed: Duration) -> String {
+pub(super) fn duration(elapsed: Duration) -> String {
     let secs = elapsed.as_secs();
     if secs < 60 {
         format!("{secs}s")

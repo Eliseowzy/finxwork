@@ -34,6 +34,7 @@ use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
 
 use crate::agents::Mail;
+use crate::bot::Owed;
 use crate::commands::Command;
 use crate::compaction;
 use crate::compaction::CompactError;
@@ -164,7 +165,7 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
     match session.build_context().messages.last() {
         Some(Message::User(_)) | Some(Message::ToolResult(_)) => start_task(session, None),
         // A bot that ended up silent: retrying asks it again (bot-design §3.11).
-        _ if session.unanswered() => {
+        _ if session.owed() == Owed::Reply => {
             session.record(EntryKind::Unanswered);
             start_task(session, None);
         }
@@ -433,6 +434,8 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         session.deliver_mail();
         for message in session.take_steer() {
             session.record_user(message);
+            // The owner's next words count anew.
+            reminded = false;
         }
         session.apply_pending_model();
         // System connectors' and MCP tools join or change only here, between requests.
@@ -456,6 +459,7 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         task.next_turn();
         for message in session.take_steer() {
             session.record_user(message);
+            reminded = false;
         }
         let (model, thinking) = session.current_model();
         let ctx = session.build_context();
@@ -564,21 +568,34 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         }
         if let Some(message) = session.take_follow_up() {
             session.record_user(message);
+            reminded = false;
             turn += 1;
             continue;
         }
         // A bot about to stop without answering its owner is reminded once; reminded and still
-        // silent, the owner is told rather than left waiting (bot-design §3.11).
-        if message.stop_reason != StopReason::Length && session.unanswered() {
-            if reminded {
-                let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
-                error.retryable = true;
-                return TaskOutcome::Failed(error);
+        // silent, the owner is told rather than left waiting (bot-design §3.11). What came of its
+        // work gets one reminder too; it may have nothing worth telling (bot-turn-design §6).
+        if message.stop_reason != StopReason::Length {
+            match session.owed() {
+                Owed::Reply if reminded => {
+                    let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
+                    error.retryable = true;
+                    return TaskOutcome::Failed(error);
+                }
+                Owed::Reply => {
+                    reminded = true;
+                    session.record(EntryKind::Unanswered);
+                    turn += 1;
+                    continue;
+                }
+                Owed::Delivery if !reminded => {
+                    reminded = true;
+                    session.record(EntryKind::Undelivered);
+                    turn += 1;
+                    continue;
+                }
+                _ => {}
             }
-            reminded = true;
-            session.record(EntryKind::Unanswered);
-            turn += 1;
-            continue;
         }
         let reason = if message.stop_reason == StopReason::Length {
             session.warn("the reply was cut off by the output token limit");

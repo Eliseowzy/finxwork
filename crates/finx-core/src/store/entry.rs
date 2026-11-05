@@ -170,6 +170,13 @@ pub enum EntryKind {
     /// A bot's session: its task was about to end with the owner's message unanswered, and the
     /// model is reminded to reply, once per task (bot-design §3.11).
     Unanswered,
+    /// A bot's session: its task was about to end with what came of its work unsent, and the
+    /// model is reminded of it, once per task (bot-turn-design §6).
+    Undelivered,
+    /// A bot's session: follows each message from its owner. Models often answer in plain text
+    /// whatever the system prompt says; a word right after the message mostly settles it
+    /// (bot-design §3.13).
+    ReplyNudge,
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.
     #[serde(other, skip_serializing)]
@@ -213,6 +220,9 @@ pub struct SystemPromptEntry {
     pub skills: Vec<SkillRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp: Option<String>,
+    /// A bot's session: which `bot.md` the text comes from (bot-turn-design §8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template: Option<String>,
 }
 
 /// The data of an [`EntryKind::AgentSpawned`].

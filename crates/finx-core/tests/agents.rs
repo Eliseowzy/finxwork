@@ -260,7 +260,9 @@ async fn a_background_agent_reports_and_wakes_the_main_agent() {
     let task = &user_texts(&child[0])[0];
     assert!(task.contains("Count the files."), "{task}");
     assert!(task.contains("Markdown report"), "{task}");
-    assert_eq!(child[0].system, root[0].system, "same system prompt");
+    // The main session's prompt, without the catalog that lists the group only it has.
+    assert!(root[0].system.starts_with(child[0].system.trim_end()), "same system prompt");
+    assert!(root[0].system.contains("- agents:") && !child[0].system.contains("<deferred_tools>"));
     let child_tools: Vec<&str> = child[0].tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(child_tools, ["read", "write", "edit", "bash"], "no agent tools for a sub-agent");
 
@@ -681,6 +683,149 @@ async fn an_answer_for_no_such_agent_is_a_warning() {
     h.until(|m| matches!(m, EventMsg::Warning { message, .. } if message.contains("nobody"))).await;
 }
 
+/// A deferred tool of the main session, as the model runs it.
+fn call_tool(id: &str, name: &str, arguments: serde_json::Value) -> Script {
+    Script::tool_call(id, "call_tool", json!({ "name": name, "arguments": arguments }))
+}
+
+#[tokio::test]
+async fn check_agents_tells_how_they_stand() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "slow", "Take your time.", false));
+    // Later than the agent's first step.
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(500)).then_tool_call("s1", "tool_search", json!({ "query": "check_agents" })));
+    h.script(ROOT, call_tool("c2", "check_agents", json!({})));
+    h.script(ROOT, call_tool("c3", "check_agents", json!({ "agents": ["nobody"] })));
+    h.script(ROOT, Script::text("it is still at it"));
+    h.script(ROOT, Script::text("it is done"));
+    h.script("slow", Script::tool_call("k1", "bash", json!({ "command": "echo hi\necho there" })));
+    h.script("slow", Script::default().then_sleep(Duration::from_secs(1)).then_text("all done"));
+    h.prompt("how is it going?").await;
+    h.until_idle().await;
+    let last = h.requests(ROOT).into_iter().nth(4).unwrap();
+    let results = tool_results(&last);
+    let found = &results[1];
+    assert!(found.contains("check_agents") && found.contains("stop_agents"), "the group comes whole: {found}");
+    let status = &results[2];
+    assert!(status.contains("slow (slow work): running for"), "{status}");
+    assert!(status.contains("last activity") && status.ends_with("recent steps: echo hi…"), "{status}");
+    assert_eq!(results[3], "nobody: no such agent");
+}
+
+#[tokio::test]
+async fn check_agents_says_when_an_agent_waits_for_the_user() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "writer", "Write x.txt.", false));
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(500)).then_tool_call("c2", "check_agents", json!({})));
+    h.script(ROOT, Script::text("it needs you"));
+    h.script(ROOT, Script::text("it is written"));
+    h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
+    h.script("writer", Script::text("wrote x.txt"));
+    h.prompt("write x").await;
+    let (asking, _) = h.until_asked().await;
+    h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let status = tool_results(&h.requests(ROOT)[2]).pop().unwrap();
+    assert!(status.contains("waiting for the user to approve: "), "{status}");
+    h.kernel.submit(answer(&asking, ApprovalDecision::Approve)).await.unwrap();
+    h.until_idle().await;
+}
+
+#[tokio::test]
+async fn stop_agents_stops_them_and_says_what_it_did() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "slow", "Take your time.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "quick work", "task": "Be quick.", "name": "quick", "wait": true })));
+    // Nobody is named: an error, not everything stopped.
+    h.script(ROOT, call_tool("c3", "stop_agents", json!({})));
+    h.script(ROOT, call_tool("c4", "stop_agents", json!({ "agents": ["slow", "quick", "nobody"] })));
+    h.script(ROOT, call_tool("c5", "stop_agents", json!({ "all": true })));
+    h.script(ROOT, Script::text("stopped"));
+    h.script("slow", Script::tool_call("k1", "bash", json!({ "command": "sleep 30" })));
+    h.script("quick", Script::text("quick done"));
+    h.prompt("then stop").await;
+    let started = Instant::now();
+    let events = h.until_idle().await;
+    assert!(started.elapsed() < Duration::from_secs(20), "the command was stopped");
+
+    let results = tool_results(&h.requests(ROOT).into_iter().nth(4).unwrap());
+    assert!(results[2].contains("name the agents to stop, or set all to true"), "{}", results[2]);
+    assert_eq!(results[3], "Stopped: slow. Already finished: quick. No such agent: nobody.");
+    assert_eq!(results[4], "No agents are running.");
+    assert!(events.iter().any(|e| matches!(
+        &e.msg,
+        EventMsg::AgentStatus { name, status: AgentStatus::Interrupted, .. } if name == "slow"
+    )));
+    // It does not wake the main session: its request came only because the task went on.
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::TaskStarted { trigger: TaskTrigger::Mail, .. })));
+}
+
+/// A stopped agent keeps its session: `send_message` lets it go on (bot-turn-design §5.3).
+#[tokio::test]
+async fn a_stopped_agent_can_go_on() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "slow", "Take your time.", false));
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(300)).then_tool_call("c2", "stop_agents", json!({ "agents": ["slow"] })));
+    h.script(ROOT, Script::text("stopped"));
+    h.script("slow", Script::tool_call("k1", "bash", json!({ "command": "sleep 30" })));
+    h.prompt("go, then stop").await;
+    h.until_idle().await;
+
+    h.script(ROOT, Script::tool_call("c3", "send_message", json!({ "to": "slow", "message": "Go on.", "wait": true })));
+    h.script(ROOT, Script::text("it finished"));
+    h.script("slow", Script::text("finished now"));
+    h.prompt("carry on").await;
+    h.until_idle().await;
+    let root = h.requests(ROOT);
+    let results = tool_results(root.last().unwrap());
+    let answer = results.last().unwrap();
+    assert!(answer.starts_with("Agent \"slow\" completed after") && answer.contains("finished now"), "{results:?}");
+    assert!(user_texts(&h.requests("slow").pop().unwrap()).iter().any(|t| t.contains("Go on.")));
+}
+
+#[tokio::test]
+async fn a_sub_agent_cannot_reach_the_tools_for_checking_and_stopping() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "curious", "Look around.", true));
+    h.script(ROOT, Script::text("done"));
+    h.script("curious", Script::tool_call("k1", "check_agents", json!({})).then_tool_call("k2", "call_tool", json!({ "name": "stop_agents", "arguments": { "all": true } })));
+    h.script("curious", Script::text("I could not."));
+    h.prompt("look").await;
+    h.until_idle().await;
+    let requests = h.requests("curious");
+    let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
+    assert_eq!(names, ["read", "write", "edit", "bash"]);
+    let results = tool_results(&requests[1]);
+    assert!(results[0].contains("Unknown tool 'check_agents'"), "{}", results[0]);
+    assert!(results[1].contains("Unknown tool 'call_tool'"), "{}", results[1]);
+}
+
+/// Input that came before a wait began ends it too: the model has not read it yet, and would not
+/// until the agent is done (bot-turn-design §4.3).
+#[tokio::test]
+async fn a_wait_ends_at_once_when_input_is_already_queued() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    // The call comes after the message.
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(600)).then_tool_call("c1", "spawn_agent", json!({ "description": "slow work", "task": "Take your time.", "name": "slow", "wait": true })));
+    h.script(ROOT, Script::text("1 km is 0.62 miles"));
+    h.script(ROOT, Script::text("it is done"));
+    h.script("slow", Script::default().then_sleep(Duration::from_secs(2)).then_text("all done"));
+    h.prompt("do it").await;
+    h.until(|m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.prompt("how many miles is 1 km?").await;
+    let started = Instant::now();
+    h.until(|m| matches!(m, EventMsg::AgentStarted { .. })).await;
+    let events = h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert!(started.elapsed() < Duration::from_millis(1800), "the question did not wait for the agent");
+    assert!(events.iter().any(|e| matches!(
+        &e.msg,
+        EventMsg::MessageCompleted { message: Message::Assistant(reply), .. } if reply.text() == "1 km is 0.62 miles"
+    )));
+    let waited = tool_results(&h.requests(ROOT)[1]).pop().unwrap();
+    assert!(waited.starts_with("Stopped waiting because the user sent a new message."), "{waited}");
+    // Its report still comes.
+    let events = h.until_idle().await;
+    assert_eq!(mails(&events), [("slow".to_string(), AgentStatus::Completed)]);
+}
+
 #[tokio::test]
 async fn sub_agents_follow_the_main_sessions_permissions() {
     let mut h = Harness::start(PermissionMode::Manual, false).await;
@@ -1014,6 +1159,11 @@ async fn a_resumed_session_knows_its_earlier_agents_as_their_logs_left_them() {
     let results = tool_results(root.last().unwrap());
     assert_eq!(results[results.len() - 2], "Agent \"counter\" is closed. Start a new one with spawn_agent.");
     assert!(results[results.len() - 1].starts_with("Agent \"counter-2\" completed after"), "{results:?}");
+    // Resumed, the main session has the group for checking and stopping, and its agents still don't.
+    assert!(root.last().unwrap().system.contains("- agents:"));
+    let new = &h.requests("counter-2")[0];
+    assert!(!new.system.contains("<deferred_tools>"), "{}", new.system);
+    assert!(!new.tools.iter().any(|t| t.name == "call_tool"));
 }
 
 #[tokio::test]
@@ -1059,4 +1209,5 @@ async fn sub_agents_can_be_turned_off() {
     kernel.run(vec![finx_llm::UserContent::Text { text: "hi".into() }]).await.unwrap();
     let names: Vec<String> = api.requests()[0].tools.iter().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["read", "write", "edit", "bash"]);
+    assert!(!api.requests()[0].system.contains("<deferred_tools>"), "no agents, nothing to check on");
 }

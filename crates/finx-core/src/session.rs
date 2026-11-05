@@ -113,6 +113,8 @@ pub(crate) struct SessionState {
     /// A bot's session: what its sub-agents' prompts start from instead of `base_prompt`,
     /// built like a session's (bot-design §2.3).
     pub(crate) sub_agent_prompt: Option<Arc<str>>,
+    /// A bot's session: which `bot.md` its prompt comes from (bot-turn-design §8).
+    pub(crate) prompt_template: Option<String>,
 }
 
 /// A bot session's names.
@@ -158,6 +160,7 @@ impl SessionState {
             archived: false,
             bot: None,
             sub_agent_prompt: None,
+            prompt_template: None,
         }
     }
 
@@ -341,6 +344,9 @@ impl Session {
             mail: None,
             skills: uses,
         });
+        if self.state.lock().bot.is_some() {
+            self.record(EntryKind::ReplyNudge);
+        }
     }
 
     /// Gives the model today's date when the context last gave another one, or none: the
@@ -373,10 +379,14 @@ impl Session {
         }
     }
 
-    /// A bot's session whose owner has had no reply to their latest message (bot-design §3.11).
-    pub(crate) fn unanswered(&self) -> bool {
+    /// What a bot's session still owes its owner (bot-turn-design §6).
+    pub(crate) fn owed(&self) -> crate::bot::Owed {
         let state = self.state.lock();
-        state.bot.is_some() && crate::bot::unanswered(&state.history)
+        if state.bot.is_some() {
+            crate::bot::owed(&state.history)
+        } else {
+            crate::bot::Owed::Nothing
+        }
     }
 
     /// Writes the waiting reports into the history, oldest first.
@@ -433,6 +443,12 @@ impl Session {
 
     pub(crate) fn has_steer(&self) -> bool {
         !self.state.lock().steer.is_empty()
+    }
+
+    /// Input that waits for the running task, in either queue.
+    pub(crate) fn has_queued_input(&self) -> bool {
+        let state = self.state.lock();
+        !state.steer.is_empty() || !state.follow_up.is_empty()
     }
 
     pub(crate) fn take_follow_up(&self) -> Option<Input> {

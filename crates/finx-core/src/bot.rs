@@ -3,6 +3,7 @@
 
 use async_trait::async_trait;
 use finx_llm::Message;
+use finx_protocol::AgentStatus;
 use finx_tools::Environment;
 use finx_tools::Tool;
 use finx_tools::ToolCategory;
@@ -35,23 +36,42 @@ pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
     vec![Arc::new(Typed::new(SendToUser))]
 }
 
-/// Whether nothing reached the owner since their latest message: no `send_to_user` after it
-/// succeeded (bot-design §3.11). The message may be an earlier task's, as when a failed task is
-/// retried; a report that woke the bot after its reply leaves nobody waiting.
-pub(crate) fn unanswered(history: &History) -> bool {
+/// What a bot about to end its turn still owes its owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Owed {
+    Nothing,
+    /// Nothing reached them since their latest message (bot-design §3.11). The message may be an
+    /// earlier task's, as when a failed task is retried.
+    Reply,
+    /// Something came of its work since its last message: a report, or the results of its tools
+    /// (bot-turn-design §6). It may have nothing worth telling.
+    Delivery,
+}
+
+/// Looks back from the end of the history to the last message that reached the owner.
+pub(crate) fn owed(history: &History) -> Owed {
+    let mut worked = false;
     for entry in history.branch_back() {
         match &entry.kind {
             EntryKind::Message {
                 message: Message::ToolResult(result),
                 ..
-            } if result.tool_name == SEND_TO_USER && !result.is_error => return false,
+            } => {
+                if result.tool_name == SEND_TO_USER && !result.is_error {
+                    break;
+                }
+                // Starting an agent or telling it something gives the owner nothing to hear.
+                worked |= !matches!(result.tool_name.as_str(), "spawn_agent" | "send_message");
+            }
             EntryKind::Message {
                 message: Message::User(_), ..
-            } => return true,
+            } => return Owed::Reply,
+            // A stopped agent's report wakes nobody, and nobody waits for it.
+            EntryKind::Mail { mail, .. } => worked |= mail.status != AgentStatus::Interrupted,
             _ => {}
         }
     }
-    false
+    if worked { Owed::Delivery } else { Owed::Nothing }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
