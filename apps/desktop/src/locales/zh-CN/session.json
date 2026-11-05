@@ -464,6 +464,8 @@
   },
   "content": {
     "open": "打开",
+    "viewSource": "查看源码",
+    "previewInBrowser": "在内置浏览器中预览",
     "openWith": "打开方式",
     "systemApp": "系统默认应用",
     "revealFinder": "在访达中显示",
@@ -692,11 +694,10 @@
   },
   "markdown": {
     "table": "数据表格",
-    "copyMarkdown": "复制 Markdown",
-    "copyTsv": "复制到 Excel",
-    "copyRich": "复制富文本表格",
+    "copyTable": "拷贝表格",
+    "copyAsMarkdown": "拷贝为 Markdown",
     "copied": "已复制",
-    "copyFailed": "复制失败，请重试",
+    "copyFailed": "拷贝失败，请重试",
     "expand": "展开",
     "close": "关闭",
     "tableOpen": "表格已展开 · 返回",

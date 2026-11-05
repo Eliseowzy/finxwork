@@ -132,7 +132,7 @@ export type Avatar = {
   rev: number;
 };
 
-/** The colours behind an avatar's character or initial: muted, the same in both themes. */
+/** The colours behind an avatar's character or initial, the same in both themes. */
 export type AvatarHue = "slate" | "sage" | "clay" | "ochre" | "plum" | "teal" | "rose" | "stone";
 
 /** An avatar given to `bots/create` and `bots/update`. */
@@ -150,8 +150,8 @@ export type AvatarInput = {
   png: string;
 };
 
-/** The characters an avatar can show, drawn by the client. */
-export type AvatarShape = "round" | "box" | "ghost" | "cloud" | "dome" | "cat" | "egg" | "gem";
+/** The characters an avatar can show, told apart by their eyes and drawn by the client. Each alias is what the bots made before these eyes have in their `bot.json`. */
+export type AvatarShape = "tall" | "dot" | "smile" | "wink" | "lid" | "bar" | "side" | "odd";
 
 export type BotAvatarResult = {
   /** `data:image/png;base64,…` */

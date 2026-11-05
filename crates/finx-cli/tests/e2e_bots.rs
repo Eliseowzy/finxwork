@@ -129,7 +129,7 @@ async fn a_bot_talks_in_messages_and_its_row_follows() {
     assert_eq!(bots[0]["avatar"], json!({"kind": "mark"}));
 
     let created = client
-        .request("bots/create", json!({"name": "  研究员 ", "avatar": {"kind": "char", "shape": "cat", "hue": "teal"}}))
+        .request("bots/create", json!({"name": "  研究员 ", "avatar": {"kind": "char", "shape": "wink", "hue": "teal"}}))
         .await
         .unwrap();
     schema.check("BotResult", &created);
@@ -622,6 +622,25 @@ async fn bots_and_their_rows_survive_a_restart() {
     let transcript = opened["snapshot"]["transcript"].to_string();
     assert!(transcript.contains("记下了。"));
     assert!(!transcript.contains("<reminder>"), "what it is told is not shown: {transcript}");
+}
+
+/// A bot made before the characters were told apart by their eyes: its `bot.json` keeps the old name.
+#[tokio::test]
+async fn a_bot_saved_with_an_old_character_stays_in_the_list() {
+    let env = TestEnv::new("manual", "").await;
+    let id = "0193f0aa-0000-7000-8000-000000000001";
+    let dir = env.home.path().join("bots").join(id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let saved = json!({"version": 1, "id": id, "name": "老朋友", "avatar": {"kind": "char", "shape": "ghost", "hue": "teal"}, "created_at": "2026-11-03T14:05:00Z"});
+    std::fs::write(dir.join("bot.json"), saved.to_string()).unwrap();
+
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let _wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let row = listed["bots"].as_array().unwrap().iter().find(|b| b["id"] == id).expect("the old bot is still listed");
+    assert_eq!(row["name"], "老朋友");
+    assert_eq!(row["avatar"], json!({"kind": "char", "shape": "lid", "hue": "teal"}));
 }
 
 /// The head of a PNG: enough to tell what it is and how large.

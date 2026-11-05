@@ -8,6 +8,7 @@ import { toolDo } from "../format";
 import { Icon, Mark } from "../icons";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
+import { bringBrowserBack } from "./browserPanel";
 import { Code } from "./Code";
 import { handoffOf, revealYours, useYourBrowser } from "./Yours";
 
@@ -151,7 +152,10 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
     const go = () => {
       setWent(true);
       if (a.own_browser) void revealYours(st, yourBrowser.browser, sessionId);
-      else st.set({ browser: true, background: false, files: false, filesMax: false });
+      else {
+        bringBrowserBack(sessionId);
+        st.set({ browser: true, background: false, files: false, filesMax: false });
+      }
     };
     return (
       <div className="appr" role="region" aria-label={t("approval.label")}>

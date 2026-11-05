@@ -42,6 +42,26 @@ test("code and escaped pipes never disappear as provisional tables", () => {
   const table = "|a|b|\n|-|-|\n|x\\|y|z|";
   assert.equal(pendingText(table), table);
 });
+// A bracket mid-reply must not rebuild what is finished: ids stay, so React keeps the nodes.
+for (const text of ["先看 `arr[0]` 的值。\n\n第二段\n\n第三段\n\n第四段", "写 [注意] 这句。\n\n第二段\n\n第三段\n\n第四段", "- [x] done\n\n第二段\n\n第三段\n\n第四段", "匹配 `[^a-z]` 的字符。\n\n第二段\n\n第三段\n\n第四段", "> [!NOTE]\n> 提示\n\n第二段\n\n第三段\n\n第四段", "```text\n[r]: https://example.com\n```\n\n第二段\n\n第三段\n\n第四段"]) test(`no definition, no whole-document parse: ${text.slice(0, 20)}`, () => {
+  const split = createMarkdownSlices();
+  let most = 0;
+  for (let i = 1; i <= text.length; i++) {
+    const blocks = split(text.slice(0, i), true).length;
+    assert.ok(blocks >= most - 1, `${blocks} blocks after ${most} at ${i}`); // Only the last block may still merge.
+    most = Math.max(most, blocks);
+  }
+  assert.ok(most >= 4);
+});
+test("a definition arriving late still resolves what was written before it", () => {
+  for (const [text, html] of [["Read [doc][r].\n\nMiddle\n\n[r]: https://example.com", 'href="https://example.com"'], ["A[^1].\n\nMiddle\n\n[^1]: source", "data-footnote"], ["- x\n  [r]: https://example.com\n\nRead [r].", 'href="https://example.com"'], ["> [r]: https://example.com\n\nRead [r].", 'href="https://example.com"']] as const) {
+    const split = createMarkdownSlices();
+    for (let i = 1; i < text.length; i++) split(text.slice(0, i), true);
+    const [only, ...rest] = split(text, false);
+    assert.equal(rest.length, 0, text);
+    assert.ok(render(only.text).includes(html), text);
+  }
+});
 test("replaced source resets cached prefixes", () => {
   const split = createMarkdownSlices();
   split("# old\n\nold tail", true);

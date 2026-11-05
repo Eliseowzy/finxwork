@@ -320,11 +320,11 @@ try {
   await press(page, ".bpn-av");
   await page.until("the choices", `!!document.querySelector(".bpn-pick .bs-shape")`);
   await page.shot("m3-avatar");
-  await pressOn(page, `document.querySelector('.bpn-pick .bs-shape[title="小猫"]')`);
+  await pressOn(page, `document.querySelector('.bpn-pick .bs-shape[title="眨眼"]')`);
   await page.until("the new avatar in the list, the top and the panel", `document.querySelectorAll(".brow .bav:not(.mark), .bhead .bav:not(.mark), .bpn-av .bav:not(.mark)").length === 3`);
-  check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.shape === "cat", "finx keeps the character");
-  await pressOn(page, `document.querySelector('.bpn-pick .bs-hue[title="梅紫"]')`);
-  await page.until("the colour", `document.querySelector('.bpn-pick .bs-hue[title="梅紫"]').classList.contains("on")`);
+  check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.shape === "wink", "finx keeps the character");
+  await pressOn(page, `document.querySelector('.bpn-pick .bs-hue[title="丁香紫"]')`);
+  await page.until("the colour", `document.querySelector('.bpn-pick .bs-hue[title="丁香紫"]').classList.contains("on")`);
   check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.hue === "plum", "finx keeps the colour");
   check(await page.run(`!!document.querySelector(".bpn-pick")`), "the choices stay open for the next one");
   fs.copyFileSync(path.join(root, "assets/brand/app/finxwork-mark-on-light-256.png"), path.join(menus, "avatar.png"));
@@ -332,7 +332,7 @@ try {
   await page.until("the uploaded picture in the list, the top and the panel", `document.querySelectorAll(".brow .bav.pic img[src^='data:image/png'], .bhead .bav.pic img[src^='data:image/png'], .bpn-av .bav.pic img[src^='data:image/png']").length === 3`, 15000);
   check((await finxCall(home, "bots/subscribe")).result.bots[0].avatar.kind === "image", "finx keeps the picture");
   await page.shot("m3-picture");
-  await pressOn(page, `document.querySelector('.bpn-pick .bs-shape[title="小猫"]')`);
+  await pressOn(page, `document.querySelector('.bpn-pick .bs-shape[title="眨眼"]')`);
   await page.until("back to a character", `!document.querySelector(".bpn-av .bav.pic")`);
   await press(page, ".bpn-av");
   await page.until("closed by the avatar again", `!document.querySelector(".bpn-pick")`);

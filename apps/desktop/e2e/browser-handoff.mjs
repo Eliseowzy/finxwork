@@ -145,7 +145,8 @@ try {
   await page.run(`document.querySelector('.brp-addr').requestSubmit()`);
   await page.until("real page loaded", `document.querySelector('.brp-tab-t')?.textContent === 'Browser button test'`, 60000);
   await page.shot("home-browser");
-  await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);
+  // While the panel is open, its button sits at the end of the panel's strip.
+  await page.run(`[...document.querySelectorAll(".brp .brp-strip > button")].at(-1).click()`);
   await page.until("panel hidden", `!document.querySelector('.brp')`);
   await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);
   await page.until("tab restored", `document.querySelectorAll('.brp-tab').length === 1 && document.querySelector('.brp-tab-t')?.textContent === 'Browser button test'`, 60000);

@@ -21,34 +21,15 @@ const MermaidBlock = lazy(() => import("./markdown/Mermaid"));
 const SourceContext = createContext("");
 
 /** One component tree throughout streaming and completion. AST-aware slices keep
- * settled blocks memoized; document-scoped references take the whole-document path. */
+ * settled blocks memoized; document-scoped references take the whole-document path.
+ * How often text arrives while it is written is useSession's to pace. */
 export function Markdown({ text, streaming = false, mode = "chat" }: { text: string; streaming?: boolean; mode?: "chat" | "document" | "compact" }) {
   const prefix = useId();
-  const shown = useStreamText(text, streaming);
   const split = useRef(createMarkdownSlices());
-  const blocks = useMemo(() => split.current(shown, streaming), [shown, streaming]);
+  const blocks = useMemo(() => split.current(text, streaming), [text, streaming]);
   return <div className="md sel-text" data-mode={mode}>
     {blocks.map((block) => <Block key={block.id} text={block.text} pending={block.pending} prefix={prefix} offset={block.id} mode={mode} />)}
   </div>;
-}
-
-/** Throttle presentation only. Session events, approvals and errors still flush
- * immediately through useSession; completion always uses the final source. */
-function useStreamText(text: string, streaming: boolean) {
-  const [shown, setShown] = useState(text);
-  const latest = useRef(text);
-  latest.current = text;
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => {
-    if (!streaming) {
-      clearTimeout(timer.current); timer.current = undefined;
-      setShown(text);
-    } else if (!timer.current) {
-      timer.current = setTimeout(() => { timer.current = undefined; setShown(latest.current); }, document.hidden ? 200 : 32);
-    }
-  }, [text, streaming]);
-  useEffect(() => () => clearTimeout(timer.current), []);
-  return !streaming || !text.startsWith(shown) ? text : shown;
 }
 
 // Compatibility for callers; Chat uses Markdown directly so completion never

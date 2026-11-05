@@ -478,6 +478,8 @@
   },
   "content": {
     "open": "Open",
+    "viewSource": "View Source",
+    "previewInBrowser": "Preview in Built-in Browser",
     "openWith": "Open With",
     "systemApp": "Default App",
     "revealFinder": "Show in Finder",
@@ -717,9 +719,8 @@
   },
   "markdown": {
     "table": "Data table",
-    "copyMarkdown": "Copy Markdown",
-    "copyTsv": "Copy for Excel",
-    "copyRich": "Copy rich table",
+    "copyTable": "Copy table",
+    "copyAsMarkdown": "Copy as Markdown",
     "copied": "Copied",
     "copyFailed": "Could not copy. Try again.",
     "expand": "Expand",

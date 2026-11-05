@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.24 |
+| 版本 | v1.26 |
 | 日期 | 2026-11-05 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -40,7 +40,9 @@
 | v1.21 | 2026-11-05 | 子智能体运行中能发消息，唤醒 Bot（§3.6，[智能体通信方案](agent-messaging-design.md)）；`check_agents` 改名 `list_agents`；bot.md 跟着改（附录 A.1），回合规则第 3 条的最后一句按统计改了（智能体通信方案 §16.2） |
 | v1.22 | 2026-11-05 | 合并主干：定时任务的 `bot::unanswered` 和回合方案的 `bot::owed` 合成一个 `owed`，分四种：没欠、主人的话没回、定时任务的汇报没转告、做事的结果没说。前两种没回要提醒，还不发就失败；最后一种提醒一次。Bot 回复说没什么可告诉的（D-441）时不算欠 |
 | v1.23 | 2026-11-05 | `bots/create` 可以带 `model`、`thinking`，存在 `bot.json`，第一段对话用它们启动；不带时用配置的（§2.1、§4、D-459） |
-| v1.24 | 2026-11-05 | 提示词第二版：`bot.md` 改成"主人跟你说话，活由子智能体做"，判断从估轮数改成看类型；每句话后面的提示和没回话的提醒改文字；Bot 版 `spawn_agent` 的描述去掉"自己做"的出口（§3.14、附录 A、D-480–D-482；统计见[回合方案](bot-turn-design.md) §14） |
+| v1.24 | 2026-11-05 | 模型回了一条空回复不再算连接错误，交给 §3.11 判断要不要提醒；读不出来的内容才算失败（D-464）；D-321 里没查明的"回复全是空"有了原因 |
+| v1.25 | 2026-11-05 | 头像的小角色换成 8 种眼神（§4，PRD DD-158）；旧名字仍能读出来 |
+| v1.26 | 2026-11-05 | 提示词第二版：`bot.md` 改成"主人跟你说话，活由子智能体做"，判断从估轮数改成看类型；每句话后面的提示和没回话的提醒改文字；Bot 版 `spawn_agent` 的描述去掉"自己做"的出口（§3.14、附录 A、D-480–D-482；统计见[回合方案](bot-turn-design.md) §14） |
 
 ## 方案摘要
 
@@ -140,7 +142,7 @@
   "version": 1,
   "id": "0193…",
   "name": "研究员",
-  "avatar": { "kind": "char", "shape": "round", "hue": "slate" },
+  "avatar": { "kind": "char", "shape": "tall", "hue": "slate" },
   "default": false,
   "pinned": false,
   "created_at": "2026-11-03T14:05:00Z",
@@ -155,7 +157,7 @@
 - `id` 是 UUID v7。目录 0700，文件 0600，写入走原子替换（总方案 §9.1）。
 - `avatar.kind`：
   - `mark`：品牌 α，只有默认 Bot 能用；
-  - `char`：小角色，`shape` 取 round、box、ghost、cloud、dome、cat、egg、gem，`hue` 取 slate、sage、clay、ochre、plum、teal、rose、stone；
+  - `char`：小角色，靠眼神区分，`shape` 取 tall、dot、smile、wink、lid、bar、side、odd，`hue` 取 slate、sage、clay、ochre、plum、teal、rose、stone。之前的名字（box、round、cloud、cat、ghost、dome、gem、egg，依次对应）仍然读得出来，下次写回时换成新名字，否则读不出来的 `bot.json` 会让这个 Bot 从列表里消失；
   - `mono`：名字的第一个字，只存 `hue`，字随名字变；
   - `image`：avatar.png，`rev` 每换一次图加一。
 - `summary` 是列表用的缓存：最近一句和未读数，变化时写回（§5.2）。在忙、子智能体数、在等的确认是瞬时状态，不写。
@@ -953,6 +955,7 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-400 | 模型要结束时先查没回话，再看排队的话；提醒的那次请求不带排队的话；提醒按主人的每句话算 | 连发时写成私有文字的第一句回答会丢（13/36）：后面发出的消息让提醒以为回过了。不加提示词，第一首丢失降到 2/36。排队的话只在漏发时晚一次请求进上下文 | §3.11、§8 |
 | D-440 | 提醒过还是没发的任务（`no_reply`）结束时，队列里的话不退回，取一条开新任务回；失败照样报 | 任务最后看过队列之后还要等日志落盘，这时到的话会退回输入框、没人回，晚几毫秒到的却正常回。模型没坏，结果不该差在这几毫秒。其他失败照旧交还（输入队列方案 D-204）：那时模型或连接出了问题，下一句多半也回不了 | §3.11；输入队列方案 §3.4 |
 | D-459 | 模型和思考强度随 `bots/create` 给，存在 `bot.json`，开第一段对话时用 | 建好再 `bots/open` 加 `set_model`，要多走三次调用，中途失败就留下一个用错模型的 Bot；会话要到第一次打开才有，这个选择本来就该和 Bot 一起存。对话开始后模型归会话管，不再看这两个字段 |
+| D-464 | 模型回了一条空回复，收发层当正常回复交上去，由 §3.11 判断；只有读不出来的内容才报连接错误。这家连接的 `response.completed` 不列内容，读不出来的内容要看 `response.output_item.done` | 2026-11-05 派出子智能体后模型该结束这一轮，它写了一条空消息结束（后端明确返回 `final_answer`、文本为空、4 个 token），却被当成"收到无法识别的回复"，出失败卡，重试还是一样。抓包复现 3/3。提醒和 `no_reply` 都在 §3.11，主人的话没人回照样失败。D-321 那次约 46 个 token 全丢：同一个连接，空的 `output` 曾经清掉流式收到的内容，已在当时修好 | §3.11；`crates/finx-llm/src/api/openai_responses.rs` |
 | D-480 | 每句话后面的提示改成 `Reply with send_to_user, and write no text outside the call. Think after it is sent. Long work goes to an agent.`，没回话的提醒也加上 `write no text outside the call` | 模型把 `send_to_user` 当成干活的工具，闲聊就直接写文字；这句是模型做决定前最后读到的，在长对话里比系统提示词管用 | §3.14 |
 | D-481 | `bot.md` 第二版：开头讲清主人跟你说话、活由子智能体做和等待的代价；判断从"超过约两轮"改成"能不能用几句话马上答好"，委派按类型列；回应模型不委派的三个理由；加三个例子；能力清单移到规则后面 | 模型的思考里引用了"两轮"还是说服自己不委派；统计见回合方案 §14 | 附录 A.1 |
 | D-482 | Bot 版 `spawn_agent` 的描述去掉 `Do quick, blocking or tightly coupled steps yourself`，`task` 参数的说明改短；`send_to_user` 的结果还是 `Sent.` | 工具文字不再给模型留出口；结果里加提醒实测没有帮助（0/6 对 2/6）；会话模式不变 | 附录 A.1、[子智能体方案](subagent-design.md)附录 A.1 |
