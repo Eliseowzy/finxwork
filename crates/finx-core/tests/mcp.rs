@@ -406,14 +406,12 @@ async fn direct_servers_put_their_tools_in_the_list() {
     let server = test_server(McpTestOptions::default()).await;
     let mut config = http_config("tools", &server);
     config.exposure = Some(McpExposure::Direct);
-    let mut h = Harness::start(
-        vec![config],
-        Some(server),
-        vec![
-            Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })),
-            Script::text("ok"),
-        ],
-    )
+    // No deferred group at all: web search, on by default, is one.
+    let no_search = Config { web_search: finx_core::config::WebSearchSettings { enabled: false, ..Default::default() }, ..Config::default() };
+    let mut h = Harness::start_with(no_search, vec![config], Some(server), |api| {
+        api.push(Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })));
+        api.push(Script::text("ok"));
+    })
     .await;
     let (end, events) = h.run("echo directly").await;
     assert!(matches!(end, TaskEnd::Completed { .. }));
@@ -488,9 +486,9 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let config = http_config("test", &server);
     let lanes = Arc::new(Lanes::default());
     let push = |lane: &str, script: Script| lanes.0.lock().entry(lane.to_string()).or_default().push_back(script);
-    push("root", Script::tool_call("r1", "spawn_agent", json!({ "description": "say hello", "task": "echo hello", "name": "helper", "wait": true })));
-    push("helper", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the helper" } })));
-    push("helper", Script::text("helper done"));
+    push("root", Script::tool_call("r1", "spawn_agent", json!({ "description": "say hello", "task": "echo hello", "name": "worker", "wait": true })));
+    push("worker", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the worker" } })));
+    push("worker", Script::text("worker done"));
     push("root", Script::text("root done"));
     let routed = lanes.clone();
     let mut h = Harness::start_with(Config::default(), vec![config], Some(server), move |api| {
@@ -500,12 +498,12 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let (end, _) = h.run("delegate").await;
     assert_eq!(end, TaskEnd::Completed { last_message: Some("root done".into()) });
     let calls = h.api.calls();
-    let helper: Vec<&Context> = calls.iter().map(|c| &c.context).filter(|c| lane_of(c) == "helper").collect();
-    let names = tool_names(helper[0]);
+    let worker: Vec<&Context> = calls.iter().map(|c| &c.context).filter(|c| lane_of(c) == "worker").collect();
+    let names = tool_names(worker[0]);
     assert!(names.contains(&"call_tool".to_string()) && names.contains(&"tool_search".to_string()), "{names:?}");
     assert!(!names.contains(&"spawn_agent".to_string()), "{names:?}");
-    assert!(helper[0].system.contains("<deferred_tools>"));
-    assert_eq!(tool_results(helper[1])[0], "echo: from the helper");
+    assert!(worker[0].system.contains("<deferred_tools>"));
+    assert_eq!(tool_results(worker[1])[0], "echo: from the worker");
     assert_eq!(h.server.as_ref().unwrap().calls(), 1, "one call on the shared connection");
 }
 

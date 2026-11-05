@@ -1233,11 +1233,13 @@ name = "finx-mock"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "parking_lot",
  "ring",
  "serde",
  "serde_json",
  "tokio",
+ "url",
 ]
 
 [[package]]

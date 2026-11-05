@@ -239,17 +239,9 @@
   "catalog": {
     "by": "finx featured",
     "connectors": {
-      "exa": "Exa web search, page fetching and research-agent tools for AI agents over MCP.",
       "dingtalk": "Work with DingTalk documents, calendars, tasks and more using its official CLI. This connector is intended for DingTalk’s public cloud edition; the dedicated edition has not been tested. Some organizations’ security policies may prevent authorization.",
       "feishu": "Work with Feishu documents, messages, calendars and tasks through the official CLI.",
       "wecom": "Scan to bind a WeCom bot and use the capabilities enabled by your organization."
-    },
-    "ways": {
-      "exa": {
-        "none": "No account: search and page reading within a free rate limit, without the research agent. May be refused over a proxy or IPv6.",
-        "oauth": "Sign in with your Exa account in the browser; usage counts toward your Exa team. Every tool, the research agent included.",
-        "token": "An API key created in the Exa dashboard, kept in the system keychain. Every tool, the research agent included."
-      }
     }
   },
   "addc": {

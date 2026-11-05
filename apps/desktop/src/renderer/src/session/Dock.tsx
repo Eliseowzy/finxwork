@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type ListSession, type SessionView } from "@finx/client";
+import { docViewingBlock, pendingApproval, type ListSession, type SessionView } from "@finx/client";
 import type { QueuedInput, UserMessage } from "@finx/protocol";
 import type { Attachment } from "../composer/attachments";
 import { addAttachments, fromInput, toInput } from "../composer/attachments";
@@ -80,6 +80,7 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
   }, [view.withdrawn, view.queued]);
 
   const live = view.live;
+  const asking = pendingApproval(view);
   const info = view.info;
   const commands = useCommands({ session_id: id });
   const [, redraw] = useState(0);
@@ -118,7 +119,7 @@ export function Dock({ s, view, onHeight }: { s: ListSession; view: SessionView;
             {notice && <Notice key={`${notice.code}:${notice.ts}`} notice={notice} onClose={() => close(notice)} />}
             <YoursWaitCard sessionId={id} />
             <OfferedTab />
-            {live !== null && live.approvals.length > 0 && <Approval key={live.approvals[0].call_id} sessionId={id} view={view} />}
+            {asking && <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={id} view={view} />}
             {view.queued.length > 0 && (
               <Queue
                 items={view.queued}

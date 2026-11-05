@@ -43,3 +43,4 @@ mod docs;
 mod files;
 mod models;
 mod peer;
+mod web_search;

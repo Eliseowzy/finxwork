@@ -95,6 +95,8 @@
     "sessionFailed": "A task failed",
     "sessionEnded": "A task has ended",
     "testTitle": "FinxWork",
-    "testBody": "This is how you'll hear about replies and approvals."
+    "testBody": "This is how you'll hear about replies and approvals.",
+    "image": "[Image]",
+    "file": "[File] {{name}}"
   }
 }

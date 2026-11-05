@@ -31,7 +31,7 @@ function hostOf(url: string) {
  * One attachment. An image with no path (one from a sent message) has no name to show; it only opens large.
  * A part of a web page shows what was said about it, or its text, and the site.
  */
-export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
+export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onContextMenu, onRemove }: {
   kind: "file" | "folder" | "image" | "web" | "doc";
   web?: WebComment;
   /** A quoted part of a document: shows where it is from, and opens there. */
@@ -42,6 +42,11 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
   src?: string;
   /** A part of a page's or a quoted region's picture, as a data URL: shown in its details, not as a tile of its own. */
   shot?: string;
+  /** A file's second line instead of its type. */
+  meta?: string;
+  /** The file is no longer there: it shows, and opens nothing. */
+  gone?: boolean;
+  onContextMenu?: (e: React.MouseEvent) => void;
   onRemove?: () => void;
 }) {
   const { t } = useTranslation("session");
@@ -50,17 +55,15 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
   const tile = useRef<HTMLDivElement>(null);
   const label = name ?? (web ? webName(web) : quote ? quoteName(quote) : t("chat.image"));
   const docs = useDocOpener();
-  // A file opens beside the conversation (a PDF as a document, Markdown previewed), one the panel cannot
-  // show in its own app, a folder in the file manager; ⌥ shows it in the file manager.
+  const openFile = useOpenFile();
+  // A folder opens in the file manager, a file as openFile does; ⌥ shows it in the file manager.
   const open = (e: React.MouseEvent) => {
     if (src) return setLarge(true);
     if (web || quote) return setDetails((d) => !d);
-    if (!path) return;
+    if (!path || gone) return;
     if (e.altKey) return window.finx?.revealPath(path);
     if (kind === "folder") return window.finx?.openFolder(path);
-    if (docs && opensAsDoc(path)) return docs.open({ path });
-    if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
-    docs.open({ path });
+    openFile(path);
   };
   const pages = !quote ? "" : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
@@ -68,8 +71,9 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
   const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
   const quoteKind = !quote ? "" : quote.comment ? t("doc.comment") : quote.region ? t("doc.region") : t("doc.quote");
   const plain = !src && !web && !quote;
+  const dot = label.lastIndexOf(".");
   return (
-    <div ref={tile} className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""} ${quote ? "quote" : ""} ${plain ? "file" : ""}`} title={details ? undefined : title}>
+    <div ref={tile} className={`tile ${src ? "img" : "doc"} ${web ? "web" : ""} ${quote ? "quote" : ""} ${plain ? "file" : ""} ${gone ? "gone" : ""}`} title={details ? undefined : title} onContextMenu={onContextMenu}>
       <button className="tile-open" onClick={open} aria-expanded={web || quote ? details : undefined} aria-label={src ? t("composer.view", { name: label }) : web || quote ? `${type}: ${label}` : t("composer.reveal", { name: label })}>
         {src ? (
           <img src={src} alt="" />
@@ -77,8 +81,11 @@ export function Tile({ kind, path, name, src, web, quote, shot, onRemove }: {
           <>
             <FileBadge path={name ?? path ?? ""} folder={kind === "folder"} />
             <span className="tile-text">
-              <span className="tile-name">{label}</span>
-              {type && <span className="tile-kind">{type}</span>}
+              <span className="tile-name">
+                <span className="tile-stem">{dot > 0 ? label.slice(0, dot) : label}</span>
+                {dot > 0 && <span className="tile-ext">{label.slice(dot)}</span>}
+              </span>
+              {(meta ?? type) && <span className="tile-kind">{meta ?? type}</span>}
             </span>
           </>
         ) : (
@@ -249,25 +256,56 @@ function Details({ anchor, onClose, icon, kind, where, shot, comment, rows, more
   );
 }
 
-/** An image over the whole window; a click anywhere or Esc closes it. */
-export function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+/**
+ * An image over the whole window; a click anywhere or Esc closes it. With onStep, one of several:
+ * arrows and the ← → keys go through them. caption: what it is, under it.
+ */
+export function Lightbox({ src, caption, onStep, onClose }: { src: string; caption?: string; onStep?: (by: 1 | -1) => void; onClose: () => void }) {
+  const { t } = useTranslation("session");
   useEffect(() => {
     // Ahead of everything else that listens for Esc (an approval, a menu).
     const key = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key === "Escape") onClose();
+      else if (onStep && e.key === "ArrowLeft") onStep(-1);
+      else if (onStep && e.key === "ArrowRight") onStep(1);
+      else return;
       e.preventDefault();
       e.stopPropagation();
-      onClose();
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [onClose]);
+  }, [onClose, onStep]);
+  const step = (by: 1 | -1) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onStep?.(by);
+  };
   return createPortal(
-    <div className="lightbox" role="dialog" aria-modal="true" onClick={onClose}>
+    <div className={`lightbox ${onStep ? "many" : ""}`} role="dialog" aria-modal="true" onClick={onClose}>
       <img src={src} alt="" />
+      {caption && <div className="lb-cap">{caption}</div>}
+      {onStep && (
+        <>
+          <button className="lb-go prev" aria-label={t("composer.prevImage")} title={t("composer.prevImage")} onClick={step(-1)}>
+            <Icon name="chevL" />
+          </button>
+          <button className="lb-go next" aria-label={t("composer.nextImage")} title={t("composer.nextImage")} onClick={step(1)}>
+            <Icon name="chevR" />
+          </button>
+        </>
+      )}
     </div>,
     document.body,
   );
+}
+
+/** Opens a file: beside the conversation (a PDF as a document, Markdown previewed), one the panel cannot show in its own app. */
+export function useOpenFile() {
+  const docs = useDocOpener();
+  return (path: string) => {
+    if (docs && opensAsDoc(path)) return docs.open({ path });
+    if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
+    docs.open({ path });
+  };
 }
 
 /** Files the panel shows only as "binary": Office documents, media, archives — these open in their own app. */

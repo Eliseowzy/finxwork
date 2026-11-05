@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { approvalPreview, argsOf, callTarget, describe, toolObject, type ApprovalPreview, type SessionView } from "@finx/client";
+import { approvalPreview, argsOf, callTarget, describe, pendingApproval, toolObject, type ApprovalPreview, type SessionView } from "@finx/client";
 import type { ApprovalDecision, CellChange, Impact, SheetOp, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
@@ -12,8 +12,8 @@ import { Code } from "./Code";
 import { handoffOf, revealYours, useYourBrowser } from "./Yours";
 
 /**
- * A tool call waiting for the owner (Op::Approval), popped up right above
- * the composer in its shape: what finx wants to do and why it asks, the
+ * A tool call waiting for the owner (Op::Approval), the session's own or a
+ * sub-agent's, which says who asks. Popped up right above the composer in its shape: what finx wants to do and why it asks, the
  * command or the change itself, and the answers as buttons, one click each.
  * Deny opens a line for why, which goes back to the model; stopping the
  * whole task is the composer's Stop. Keys: ⌘↩ (the menu's Approve) allows
@@ -28,8 +28,9 @@ import { handoffOf, revealYours, useYourBrowser } from "./Yours";
 export function Approval({ sessionId, view }: { sessionId: string; view: SessionView }) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const live = view.live!;
-  const a = live.approvals[0];
+  const { approval: a, agent } = pendingApproval(view)!;
+  // A sub-agent's call is in its own session.
+  const live = (agent?.view ?? view).live!;
   // What the call runs: a browser's or computer use's tool comes through call_tool.
   const target = callTarget(a.name, a.args);
   const tool = live.tools.find((x) => x.call_id === a.call_id) ?? { ...describe(a.name, argsOf(a.args), view.info.cwd), name: a.name };
@@ -77,7 +78,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
   const give = async (decision: ApprovalDecision) => {
     if (busy) return;
     setBusy(true);
-    await st.op(sessionId, { type: "approval", call_id: a.call_id, decision });
+    await st.op(sessionId, agent ? { type: "agent_approval", agent: agent.id, call_id: a.call_id, decision } : { type: "approval", call_id: a.call_id, decision });
     setBusy(false);
   };
   const deny = () => give({ type: "deny", feedback: feedback.trim() || undefined });
@@ -143,6 +144,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
     </>
   );
   const queue = live.approvals.length > 1 && <span className="qx-tag">{t("approval.queue", { n: 1, total: live.approvals.length })}</span>;
+  const who = agent && <span className="appr-who" title={agent.name}>{t("approval.agent", { name: agent.description || agent.name })}</span>;
   const handoff = handoffOf(a);
   if (handoff !== null) {
     const name = a.own_browser ? yourBrowser.name : t("browser.builtIn");
@@ -156,6 +158,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
         <div className="appr-h">
           <Mark size={16} />
           <b>{t("yours.handoff.title", { name })}</b>
+          {who}
         </div>
         <div className="appr-site">
           <span className="sel-text">{handoff}</span>
@@ -198,6 +201,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
           <b title={origin}>
             {t(!own ? "approval.siteQuestion" : opening ? "approval.siteQuestionYours" : "approval.siteActYours", { site: hostOf(origin) })}
           </b>
+          {who}
           {queue}
         </div>
         <div className="appr-site">
@@ -244,6 +248,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
           </span>
         )}
         {a.reason && <span className="why" title={a.reason}>{a.reason}</span>}
+        {who}
         {queue}
       </div>
       {sheetArgs ? <SheetApproval impact={sheetImpact} ops={Array.isArray(sheetArgs.ops) ? sheetArgs.ops as SheetOp[] : []} /> : <Preview p={preview} />}

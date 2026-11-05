@@ -1,13 +1,15 @@
-import { memo, useState, type ReactNode } from "react";
+import { memo, useContext, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
-import { baseName } from "@finx/client";
+import { baseName, fileOfLink } from "@finx/client";
+import { Lightbox } from "../composer/Tile";
+import { useStore } from "../store";
 import { parseCitation, useDocOpener } from "../docs/state";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import { splitBlocks, withoutOpenTable } from "@finx/client";
 import { CodeBlock, InlineCode, Link } from "./content";
-import { DraftContext } from "./scope";
+import { DraftContext, LocalImages, useScope } from "./scope";
 
 /**
  * The model's reply as GitHub Markdown, rendered as React elements (raw HTML
@@ -111,13 +113,46 @@ function Cite({ docId, target, children }: { docId: string; target: string; chil
   );
 }
 
+/**
+ * An image in a reply: its alt text, so a reply loads nothing from the network. In a bot's
+ * conversation, one on this computer shows, and opens large: a model writes `![chart](chart.png)`
+ * as readily as it sends the file.
+ */
+function ReplyImage({ src, alt }: { src?: string; alt?: string }) {
+  const st = useStore();
+  const scope = useScope();
+  const allowed = useContext(LocalImages);
+  const file = allowed && scope && src ? fileOfLink(src, window.finx?.platform === "win") : null;
+  const [picture, setPicture] = useState<string | null>(null);
+  const [large, setLarge] = useState(false);
+  useEffect(() => {
+    if (!file || !scope) return;
+    let live = true;
+    st.call("files/read", { session_id: scope.session, path: file.path })
+      .then((read) => live && setPicture(read.image ? `data:${read.image.mime_type};base64,${read.image.data}` : null))
+      .catch(() => live && setPicture(null));
+    return () => {
+      live = false;
+    };
+  }, [file?.path, scope?.session]);
+  if (!picture) return <span>{alt}</span>;
+  return (
+    <>
+      <button className="md-img" title={alt || file?.path} aria-label={alt || file?.path} onClick={() => setLarge(true)}>
+        <img src={picture} alt={alt ?? ""} draggable={false} />
+      </button>
+      {large && <Lightbox src={picture} caption={alt || undefined} onClose={() => setLarge(false)} />}
+    </>
+  );
+}
+
 const components: Components = {
   a: ({ href, children }) => {
     const cite = href ? parseCitation(href) : null;
     if (cite) return <Cite docId={cite.doc_id} target={cite.target}>{children}</Cite>;
     return <Link href={href}>{children}</Link>;
   },
-  img: ({ alt }) => <span>{alt}</span>,
+  img: ({ src, alt }) => <ReplyImage src={typeof src === "string" ? src : undefined} alt={alt} />,
   // Inline code only: a block's is drawn by its `pre`, coloured when it names its language.
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
   pre: ({ node, children }) => {

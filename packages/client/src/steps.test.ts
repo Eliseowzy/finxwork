@@ -146,6 +146,7 @@ test("a call through call_tool is told as the tool it runs", () => {
   assert.deepEqual(callTarget("read", { path: "a" }), { name: "read", args: { path: "a" } });
   assert.deepEqual(callTarget("call_tool", {}), { name: "call_tool", args: {} });
   assert.equal(describe("call_tool", { name: "read", arguments: { path: "/p/a.md" } }, "/p").title, "read a.md");
+  assert.deepEqual(describe("call_tool", { name: "web_search", arguments: { query: "贵州茅台 三季报" } }, "/p"), { category: "search", title: "贵州茅台 三季报" });
 });
 
 test("quoted parts of documents come back as quotes, and what the column shows is not shown", () => {

@@ -88,8 +88,10 @@ impl SessionMirror {
 
     /// What the session is doing, as lists show it.
     pub fn state(&self) -> SessionState {
+        if self.first_approval().is_some() {
+            return SessionState::AwaitingApproval;
+        }
         match &self.active {
-            Some(task) if !task.approvals.is_empty() => SessionState::AwaitingApproval,
             Some(_) => SessionState::Running,
             None if self.failed => SessionState::Failed,
             None => SessionState::Idle,
@@ -118,15 +120,24 @@ impl SessionMirror {
         self.agents.iter().filter(|a| a.status == AgentStatus::Running).count() as u32
     }
 
-    /// What the oldest pending approval asks about.
+    /// What the oldest pending approval asks about, the session's own or a sub-agent's.
     pub fn first_approval(&self) -> Option<&str> {
-        self.active.as_ref()?.approvals.first().map(|a| a.summary.as_str())
+        self.active
+            .as_ref()
+            .and_then(|task| task.approvals.first())
+            .map(|a| a.summary.as_str())
+            .or_else(|| self.agents.iter().filter(|a| a.status == AgentStatus::Running).find_map(|a| a.session.first_approval()))
     }
 
     pub fn approval_pending(&self, call_id: &str) -> bool {
         self.active
             .as_ref()
             .is_some_and(|task| task.approvals.iter().any(|a| a.call_id == call_id))
+    }
+
+    /// A sub-agent's approval, which its own session's mirror holds.
+    pub fn agent_approval_pending(&self, agent: &str, call_id: &str) -> bool {
+        self.agents.iter().any(|a| a.agent_id == agent && a.session.approval_pending(call_id))
     }
 
     pub fn transcript(&self) -> &[TranscriptItem] {
@@ -828,6 +839,74 @@ mod tests {
             &items[1],
             TranscriptItem::TaskEnd { task_id, outcome: TaskOutcome::Completed, reason: Some(CompletionReason::Done), .. } if task_id == "t1"
         ));
+    }
+
+    #[test]
+    fn what_a_sub_agent_asks_shows_while_the_session_itself_is_idle() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        m.apply(&ev(
+            1,
+            EventMsg::AgentStarted {
+                agent_id: "a1".into(),
+                name: "writer".into(),
+                description: "写文件".into(),
+                session_file: PathBuf::from("/a1"),
+                call_id: "spawn".into(),
+            },
+        ));
+        let inner = |seq, msg| EventMsg::AgentEvent {
+            agent_id: "a1".into(),
+            event: Box::new(ev(seq, msg)),
+        };
+        m.apply(&ev(
+            2,
+            inner(
+                1,
+                EventMsg::TaskStarted {
+                    task_id: "t1".into(),
+                    trigger: Default::default(),
+                },
+            ),
+        ));
+        m.apply(&ev(
+            3,
+            inner(
+                2,
+                EventMsg::ApprovalRequested {
+                    call_id: "c1".into(),
+                    name: "bash".into(),
+                    args: serde_json::json!({"command": "rm x"}),
+                    summary: "rm x".into(),
+                    reason: None,
+                    proposed_rule: None,
+                    proposed_mode: None,
+                    proposed_grants: Vec::new(),
+                    own_browser: false,
+                },
+            ),
+        ));
+        assert!(!m.busy());
+        assert_eq!(m.state(), SessionState::AwaitingApproval);
+        assert_eq!(m.first_approval(), Some("rm x"));
+        assert!(m.agent_approval_pending("a1", "c1"));
+        assert!(!m.approval_pending("c1"), "the session's own are apart");
+        assert!(!m.agent_approval_pending("a2", "c1"));
+        let snap = m.snapshot(None);
+        assert_eq!(snap.agents[0].active_task.as_ref().unwrap().approvals[0].call_id, "c1");
+
+        m.apply(&ev(
+            4,
+            inner(
+                3,
+                EventMsg::ApprovalResolved {
+                    call_id: "c1".into(),
+                    decision: finx_protocol::ApprovalDecision::Approve,
+                },
+            ),
+        ));
+        assert_eq!(m.state(), SessionState::Idle);
+        assert_eq!(m.first_approval(), None);
+        assert!(!m.agent_approval_pending("a1", "c1"));
     }
 
     #[test]

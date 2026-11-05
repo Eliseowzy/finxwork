@@ -14,6 +14,7 @@ import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeD
 import { ImageView } from "./ImageView";
 import { isGrid, isMarkdown, isSvg, previewable } from "./kind";
 import { Tree } from "./Tree";
+import { sizeText } from "../format";
 
 // The file panel (file-panel-design §3): the session's open files as tabs, with the file's tools
 // (how its edits stand, preview or source, its menu, the tree) at the strip's end; the editor or
@@ -29,7 +30,6 @@ const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
 /** An encoding as people know it. */
 const encodingName = (e: string) => (e === "gb18030" ? "GBK" : e.startsWith("utf-16") ? "UTF-16" : e.toUpperCase());
 
-const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);
 
 const dirOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))) || path;
 

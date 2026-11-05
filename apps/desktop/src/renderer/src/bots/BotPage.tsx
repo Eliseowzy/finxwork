@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, botChat, botWorking, busyBubble, conversation, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
+import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, processSteps, type BotItem, type WorkingAgent, type SessionView, type Step } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
@@ -19,13 +19,14 @@ import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
 import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
-import { ContentScope } from "../session/scope";
+import { ContentScope, LocalImages } from "../session/scope";
 import { Work } from "../session/Steps";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
 import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
+import { Question, SentFiles } from "./Messages";
 import { useBotSession } from "./useBotSession";
 
 /** Bot mode's pause before a time line (bot-mode-design §6.6). */
@@ -77,7 +78,15 @@ export function BotPage({ bot }: { bot: BotSummary }) {
         <ContentScope value={scope}>
           <div className="dwrap" onContextMenu={() => selectionMenu(st)}>
             <div className="dmain">
-              {view && session ? <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}
+              {view && session ? (
+                <LocalImages.Provider value={true}>
+                  <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} />
+                </LocalImages.Provider>
+              ) : (
+                <div className="empty">
+                  <span className="mini-spin" />
+                </div>
+              )}
             </div>
           </div>
         </ContentScope>
@@ -149,6 +158,7 @@ function useMarkRead(bot: BotSummary) {
 
 function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: SessionView; session: string; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("bots");
+  const st = useStore();
   const items = useMemo(() => botChat(view), [view]);
   const busy = busyBubble(view);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -184,7 +194,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     else if (el && fromEnd.current !== null) el.scrollTop = el.scrollHeight - fromEnd.current;
     fromEnd.current = null;
     if (el && el.scrollTop < el.clientHeight * 1.5) earlier();
-  }, [items, busy?.typing, busy?.helpers.length, dock]);
+  }, [items, busy?.typing, busy?.agents.length, dock]);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
@@ -193,6 +203,16 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     setAway(below > 240);
     if (el.scrollTop < el.clientHeight * 1.5) earlier();
   };
+  // What grows on its own, a picture read after its message showed, stays in view at the end.
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!body.current) return;
+    const follow = new ResizeObserver(() => {
+      if (atEnd.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+    });
+    follow.observe(body.current);
+    return () => follow.disconnect();
+  }, []);
   const toEnd = () => {
     const el = scroll.current;
     if (!el) return;
@@ -201,11 +221,11 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   };
 
   const empty = items.length === 0 && !busy;
-  const working = busy?.helpers.length ?? 0;
+  const working = busy?.agents.length ?? 0;
   return (
     <>
       <div className="cscroll" ref={scroll} onScroll={onScroll}>
-        <div className="dbody" style={{ paddingBottom: dock + 40 }}>
+        <div className="dbody" ref={body} style={{ paddingBottom: dock + 40 }}>
           {view.before && (
             <div className="tdiv earlier">
               {paging ? <span className="mini-spin" aria-label={t("chat.loadingEarlier")} /> : <button className="link" onClick={earlier}>{t("chat.earlier")}</button>}
@@ -223,19 +243,41 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                 const prev = items[i - 1];
                 const fresh = !seen.current!.has(item.key);
                 const line = <TimeSince at={item.ts} previous={prev?.ts} />;
+                const message = (shown: React.ReactNode, copy?: string) => (
+                  <BotMessage
+                    key={item.key}
+                    item={item as SentItem}
+                    fresh={fresh}
+                    line={line}
+                    copy={copy}
+                    open={open.has(item.key)}
+                    onProcess={() => setOpen((o) => (o.has(item.key) ? new Set([...o].filter((k) => k !== item.key)) : new Set([...o, item.key])))}
+                  >
+                    {shown}
+                  </BotMessage>
+                );
                 switch (item.kind) {
                   case "user":
                     return <UserBubble key={item.key} item={item} fresh={fresh} line={line} />;
                   case "bot":
-                    return (
-                      <BotBubble
-                        key={item.key}
-                        item={item}
-                        fresh={fresh}
-                        line={line}
-                        open={open.has(item.key)}
-                        onProcess={() => setOpen((o) => (o.has(item.key) ? new Set([...o].filter((k) => k !== item.key)) : new Set([...o, item.key])))}
-                      />
+                    return message(
+                      <div className="bbub">
+                        <Markdown text={item.text} />
+                      </div>,
+                      item.text,
+                    );
+                  case "attachment":
+                    return message(<SentFiles files={item.files} text={item.text} />, item.text);
+                  case "question":
+                    return message(
+                      <Question
+                        text={item.text}
+                        options={item.options}
+                        open={item.open}
+                        // A tapped answer is the owner's message: while the bot works, it waits for the step under way (bot-design §3.1).
+                        onAnswer={(label) => st.op(session, { type: "prompt", input: [{ type: "text", text: label }], mode: view.live ? "steer" : undefined })}
+                      />,
+                      item.text,
                     );
                   case "failure":
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
@@ -299,8 +341,11 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function BotBubble({ item, fresh, line, open, onProcess }: {
-  item: Extract<BotItem, { kind: "bot" }>; fresh: boolean; line: React.ReactNode; open: boolean; onProcess: () => void;
+type SentItem = Extract<BotItem, { kind: "bot" | "attachment" | "question" }>;
+
+/** A message from the bot: what it sent, its time and buttons beside it on hover, and its process under it. */
+function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
+  item: SentItem; fresh: boolean; line: React.ReactNode; copy?: string; open: boolean; onProcess: () => void; children: React.ReactNode;
 }) {
   const { t } = useTranslation("bots");
   // Thinking and private text only: no steps to count.
@@ -313,14 +358,12 @@ function BotBubble({ item, fresh, line, open, onProcess }: {
       <div className={`bm ${fresh ? "add-anim" : ""}`}>
         <div className="bm-b">
           <div className="bline">
-            <div className="bbub">
-              <Markdown text={item.text} />
-            </div>
+            {children}
             <div className="msg-act">
               <span className="msg-meta">
                 <MessageTime at={new Date(item.ts)} />
               </span>
-              <CopyButton text={item.text} />
+              {copy !== undefined && <CopyButton text={copy} />}
               {item.process.length > 0 && (
                 <button className={`tb ${open ? "on" : ""}`} aria-label={t("chat.process")} title={open ? t("chat.processFold") : `${t("chat.process")}：${summary}`} aria-expanded={open} onClick={onProcess}>
                   <Icon name="list" className="sm" />
@@ -363,14 +406,14 @@ function Process({ steps, summary }: { steps: Step[]; summary: string }) {
 }
 
 /**
- * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with helpers at work,
- * what they do, opening to one helper's steps or a line for each.
+ * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with sub-agents at work,
+ * what they do, opening to one's steps or a line for each.
  */
-function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[] }; retry?: { at: number } }) {
+function BusyBubble({ busy, retry }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number } }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
-  const helpers = busy.helpers;
+  const agents = busy.agents;
   const dots = (
     <span className="dots" aria-hidden="true">
       <i />
@@ -380,16 +423,16 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
   );
   // Retrying the model for more than ten seconds says so (bot-mode-design §7).
   const unstable = retry && now - retry.at > 10_000;
-  const shown = open && helpers.length > 0;
+  const shown = open && agents.length > 0;
   return (
     <div className="bm working">
       <div className="bm-b">
         <div className="bline">
           <div className={`bbub wbub ${shown ? "open" : ""}`}>
-            {helpers.length > 0 ? (
+            {agents.length > 0 ? (
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
-                <span className="wb-t">{helpers.length > 1 ? t("line.helpers", { things: thingsText(helpers.length) }) : helpers[0].label}</span>
+                <span className="wb-t">{agents.length > 1 ? t("line.agents", { things: thingsText(agents.length) }) : agents[0].label}</span>
                 <Icon name="chevD" className="chev" />
               </button>
             ) : (
@@ -400,7 +443,7 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
             )}
             {shown && (
               <div className="wb-l">
-                {helpers.length > 1 ? helpers.map((h) => <HelperRow key={h.id} h={h} now={now} />) : <HelperSteps h={helpers[0]} now={now} />}
+                {agents.length > 1 ? agents.map((h) => <AgentRow key={h.id} h={h} now={now} />) : <AgentSteps h={agents[0]} now={now} />}
               </div>
             )}
           </div>
@@ -410,7 +453,7 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; helpers: Helper[
   );
 }
 
-function HelperRow({ h, now }: { h: Helper; now: number }) {
+function AgentRow({ h, now }: { h: WorkingAgent; now: number }) {
   return (
     <div className="wb-r">
       <span className="wb-rl">{h.label}</span>
@@ -420,8 +463,8 @@ function HelperRow({ h, now }: { h: Helper; now: number }) {
   );
 }
 
-/** One helper's steps: those done in grey, the one it is on shimmering, with how long it has worked. */
-function HelperSteps({ h, now }: { h: Helper; now: number }) {
+/** One sub-agent's steps: those done in grey, the one it is on shimmering, with how long it has worked. */
+function AgentSteps({ h, now }: { h: WorkingAgent; now: number }) {
   const tools = conversation(h.agent.view).flatMap((s) => (s.kind === "work" ? s.items.flatMap((i) => (i.kind === "tool" ? [i.tool] : [])) : []));
   const shown = tools.slice(-8);
   return (
@@ -454,6 +497,7 @@ const handed = new WeakSet<UserMessage[]>();
 
 /** The composer of a bot's page: only Send (bot-mode-design §6.14); every message goes in as it is sent. */
 function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: SessionView; session: string; onHeight: (h: number) => void }) {
+  const asking = pendingApproval(view);
   const { t } = useTranslation("bots");
   const st = useStore();
   const [draft, setDraft] = useState(() => drafts.get(bot.id) ?? { text: "", attachments: [] });
@@ -495,8 +539,8 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       form={{
         mode: "bot",
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
-        above: view.live && view.live.approvals.length > 0
-          ? <Approval key={view.live.approvals[0].call_id} sessionId={session} view={view} />
+        above: asking
+          ? <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />
           : !st.botAccessSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessNote onSettings={() => st.set(OPEN_SETTINGS)} onClose={() => st.set({ botAccessSeen: true })} />,
         onHeight,
       }}

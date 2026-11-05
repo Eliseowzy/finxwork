@@ -119,7 +119,7 @@ target/release/finx-sim --scenario macro --corrupt-evidence \
 
 一键验证：`tools/kernel-simulation.sh verify`；标准压力波次：`tools/kernel-simulation.sh load`。`CARGO_TARGET_DIR` 可以指向独立构建目录。
 
-启动专项：`tools/kernel-simulation.sh protocol-startup` 测 ACP / Unix socket 新进程经过初始化、建会话到首个真实模型请求；`startup` 测 CLI 首请求；`cli-startup` 测本地命令墙钟。三种口径独立报告，数据与复测说明见 [启动专项报告](benchmarks/1103-kernel-performance-report.md)。
+启动专项：`tools/kernel-simulation.sh protocol-startup` 测 ACP / Unix socket 新进程经过初始化、建会话到首个真实模型请求；`startup` 测 CLI 首请求；`cli-startup` 测本地命令的缺页数和墙钟（门槛的定义见技术方案 D-98）。三种口径独立报告，数据与复测说明见 [启动专项报告](benchmarks/1103-kernel-performance-report.md)、[本地命令门槛报告](benchmarks/1105-local-command-gate-report.md)。
 
 Mock MCP 配置使用 `required = true`：场景必须等工具就绪才开始。普通可选 MCP 的启动等待预算在 200 个进程同时启动时可能耗尽，不能把缺失的测试依赖混入模型阶段。
 

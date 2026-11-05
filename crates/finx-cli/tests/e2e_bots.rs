@@ -240,8 +240,30 @@ async fn a_bot_that_forgets_to_send_is_reminded_and_the_user_sees_one_message() 
     assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
 }
 
+/// The first answer of a burst only written as plain text still goes out, ahead of the next one:
+/// a reply to the next message must not count as answering it too (bot-design §3.11).
 #[tokio::test]
-async fn a_helper_works_in_the_background_and_the_bot_relays_its_report() {
+async fn a_private_answer_goes_out_before_the_next_message_is_answered() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:quiet:春天的诗]] 写一首春天的诗").await;
+    say(&client, &session, "[[mock:send:夏天的诗]] 写一首夏天的诗").await;
+    let mut seen = Vec::new();
+    while sent(&seen).len() < 2 {
+        seen.extend(until_event(&mut wire, ended).await);
+    }
+    assert_eq!(sent(&seen), ["春天的诗", "夏天的诗"]);
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).expect("the log");
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
+}
+
+#[tokio::test]
+async fn a_sub_agent_works_in_the_background_and_the_bot_relays_its_report() {
     let env = TestEnv::new("manual", "").await;
     let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
     native_init(&client).await;
@@ -256,15 +278,15 @@ async fn a_helper_works_in_the_background_and_the_bot_relays_its_report() {
     assert_eq!(texts[0], "在查了。");
     assert!(texts[1].starts_with("查到了："), "{texts:?}");
     assert!(events.iter().any(|e| e["type"] == "agent_started" && e["description"] == "查资料"));
-    // The row counted the helper while it worked.
-    let mut helpers = Vec::new();
+    // The row counted the sub-agent while it worked.
+    let mut working = Vec::new();
     while let Ok(changed) = wire.bots.try_recv() {
         for row in changed["bots"].as_array().into_iter().flatten().filter(|b| b["id"] == bot.as_str()) {
-            helpers.push(row["helpers"].as_u64().unwrap_or(0));
+            working.push(row["agents_working"].as_u64().unwrap_or(0));
         }
     }
-    assert!(helpers.contains(&1), "{helpers:?}");
-    assert_eq!(helpers.last(), Some(&0));
+    assert!(working.contains(&1), "{working:?}");
+    assert_eq!(working.last(), Some(&0));
 }
 
 #[tokio::test]
@@ -290,6 +312,40 @@ async fn approvals_come_after_the_message_that_asks_and_count_as_unread() {
     assert!(sent(&events)[0].starts_with("做完了"));
     assert!(env.home.path().join("bots").join(&bot).join("files").join("confirmed.txt").exists());
     until_row(&mut wire, &bot, |b| b.get("waiting").is_none() && b.get("typing").is_none()).await;
+}
+
+#[tokio::test]
+async fn what_a_sub_agent_asks_waits_on_the_row_and_the_bot_keeps_talking() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:relay_run:touch made.txt]] 建个文件").await;
+    let asked = |e: &Value| e["type"] == "agent_event" && e["event"]["type"] == "approval_requested";
+    let events = until_event(&mut wire, asked).await;
+    assert_eq!(sent(&events), ["交给子智能体了。"]);
+    let ask = events.last().unwrap().clone();
+
+    let row = until_row(&mut wire, &bot, |b| b["waiting"].is_string()).await;
+    assert_eq!(row["waiting"], "touch made.txt");
+    assert_eq!(row["agents_working"], 1);
+    assert_eq!(row["unread"], 2, "the message and the approval");
+
+    // The question does not hold the bot up.
+    say(&client, &session, "还在吗").await;
+    until_event(&mut wire, |e| e["type"] == "tool_started" && e["args"]["text"] == "做完了：还在吗").await;
+    let files = env.home.path().join("bots").join(&bot).join("files");
+    assert!(!files.join("made.txt").exists());
+
+    let op = json!({"session_id": session, "op": {"type": "agent_approval", "agent": ask["agent_id"], "call_id": ask["event"]["call_id"], "decision": {"type": "approve"}}});
+    client.request("session/op", op).await.unwrap();
+    let events = until_event(&mut wire, |e| e["type"] == "idle").await;
+    assert!(files.join("made.txt").exists());
+    assert!(sent(&events).iter().any(|t| t.contains("<agent_report")), "{events:?}");
+    until_row(&mut wire, &bot, |b| b.get("waiting").is_none() && b.get("agents_working").is_none()).await;
 }
 
 #[tokio::test]
@@ -389,4 +445,61 @@ async fn bots_and_their_rows_survive_a_restart() {
     // Its conversation loads again, with what was said.
     let opened = client.request("bots/open", json!({"bot_id": bot})).await.unwrap();
     assert!(opened["snapshot"]["transcript"].to_string().contains("记下了。"));
+}
+
+/// The head of a PNG: enough to tell what it is and how large.
+fn png_head(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    bytes.extend(width.to_be_bytes());
+    bytes.extend(height.to_be_bytes());
+    bytes.extend([8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
+#[tokio::test]
+async fn files_and_questions_show_in_the_bots_row_and_count_as_unread() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let schema = SchemaCheck::new(&["BotsChangedParams"]);
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    let created = client.request("bots/create", json!({"name": "\u{7814}\u{7a76}\u{5458}", "avatar": {"kind": "mono", "hue": "teal"}})).await.unwrap();
+    let bot = created["bot"]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    let folder = env.home.path().join("bots").join(&bot).join("files");
+    std::fs::write(folder.join("chart.png"), png_head(960, 600)).unwrap();
+    std::fs::write(folder.join("report.pdf"), b"%PDF").unwrap();
+
+    // Files: the row says what was sent; the result says what each one is.
+    say(&client, &session, "[[mock:attach:chart.png,report.pdf]] send them").await;
+    let events = until_event(&mut wire, ended).await;
+    let done = events.iter().find(|e| e["type"] == "tool_completed" && e["result"]["tool_name"] == "send_to_user").expect("the result");
+    assert_eq!(done["result"]["is_error"], false);
+    let files = done["result"]["details"]["files"].as_array().expect("the files");
+    assert_eq!(files[0]["image"], true);
+    assert_eq!((files[0]["width"].as_u64(), files[0]["height"].as_u64()), (Some(960), Some(600)));
+    assert!(files[1].get("image").is_none());
+    let row = until_row(&mut wire, &bot, |b| b["last"]["from"] == "bot").await;
+    schema.check("BotsChangedParams", &json!({"bots": [row.clone()]}));
+    assert_eq!(row["last"]["text"], "");
+    assert_eq!(row["last"]["images"], 1);
+    assert_eq!(row["last"]["file"], "report.pdf");
+    assert_eq!(row["unread"], 1);
+
+    // A question: its words, and the task ends with no reminder.
+    say(&client, &session, "[[mock:ask:send to whom?|finance|everyone]] then?").await;
+    let events = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&events), ["send to whom?"]);
+    let row = until_row(&mut wire, &bot, |b| b["last"]["text"] == "send to whom?").await;
+    assert!(row["last"].get("file").is_none());
+    assert_eq!(row["unread"], 2);
+
+    // A wrong path: nothing to see, nothing unread.
+    say(&client, &session, "[[mock:attach:missing.pdf]] again").await;
+    let events = until_event(&mut wire, |e| e["type"] == "tool_completed").await;
+    assert_eq!(events.last().unwrap()["result"]["is_error"], true);
+    let list = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let row = list["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot.as_str()).unwrap().clone();
+    assert_eq!(row["unread"], 2);
 }

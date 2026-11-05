@@ -475,36 +475,36 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
             provider: id.clone(),
             message: message.to_string(),
         };
-        let api = p.api.clone().ok_or_else(|| invalid("missing `api`"))?;
-        let base_url = p.base_url.clone().ok_or_else(|| invalid("missing `base_url`"))?;
+        let api = p.api.ok_or_else(|| invalid("missing `api`"))?;
+        let base_url = p.base_url.ok_or_else(|| invalid("missing `base_url`"))?;
         let auth = match p.auth.as_deref() {
             Some("none") => AuthConfig::None,
             Some(other) => return Err(invalid(&format!("unknown auth '{other}' (only \"none\" is supported)"))),
-            None => match p.api_key_command.clone() {
+            None => match p.api_key_command {
                 Some(command) => AuthConfig::Command { command, ttl_secs: 300 },
                 None => AuthConfig::ApiKey {
-                    env: p.api_key_env.clone().map(StringOrList::into_vec).unwrap_or_default(),
-                    value: p.api_key.clone(),
+                    env: p.api_key_env.map(StringOrList::into_vec).unwrap_or_default(),
+                    value: p.api_key,
                 },
             },
         };
-        let headers = p.headers.clone().unwrap_or_default();
+        let headers = p.headers.unwrap_or_default();
         let currency = p.currency.unwrap_or_default();
-        let compat = p.compat.clone().unwrap_or_default();
-        let entries = p.models.clone().unwrap_or_default();
+        let compat = p.compat.unwrap_or_default();
+        let entries = p.models.unwrap_or_default();
         let default_path = match api.as_str() {
             "anthropic-messages" => Some("/v1/models"),
             "openai-chat" => Some("/models"),
             _ => None,
         };
-        let path = match &p.list_models {
+        let path = match p.list_models {
             Some(ListModelsToml::Enabled(false)) => None,
-            Some(ListModelsToml::Path(path)) => Some(path.clone()),
+            Some(ListModelsToml::Path(path)) => Some(path),
             Some(ListModelsToml::Enabled(true)) | None => default_path.map(str::to_string),
         };
-        providers.insert(id.clone(), ProviderConfig {
-            plan: p.plan.clone(),
-            name: p.name.clone().unwrap_or_else(|| id.clone()),
+        let config = ProviderConfig {
+            plan: p.plan,
+            name: p.name.unwrap_or_else(|| id.clone()),
             id: id.clone(),
             api,
             base_url,
@@ -513,13 +513,14 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
             currency,
             compat,
             listing: Listing {
-                catalog_id: p.catalog_id.clone(),
+                catalog_id: p.catalog_id,
                 path: if p.list_from.is_some() { None } else { path },
-                from: p.list_from.clone(),
-                details: p.list_details.clone(),
+                from: p.list_from,
+                details: p.list_details,
                 entries,
             },
-        });
+        };
+        providers.insert(id, config);
     }
     Ok(Catalog { providers })
 }

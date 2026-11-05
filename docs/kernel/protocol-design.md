@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.21 |
-| 日期 | 2026-11-04 |
+| 版本 | v0.23 |
+| 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,8 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.23 | 2026-11-05 | 联网搜索（web-search-design.md §6.4，已实现），都在版本 2 之内：方法 `web_search/status`（调用过的连接也会收到 `config/changed`）、`web_search/test`、`web_search/set_key`；`credentials/*` 接受 `web-search.` 前缀；`web_search` 工具结果的 `details` 见该文 §5.6 |
+| v0.22 | 2026-11-04 | 子智能体的确认转给用户（subagent-design v2.3），版本 2 之内：`agent_event` 也转 `approval_requested`、`approval_resolved`；新 Op `agent_approval`；快照 `agents[].active_task.approvals`；列表的 `awaiting_approval` 和 Bot 的 `waiting` 算上子智能体的问题；ACP 转成 `session/request_permission`。`BotSummary.helpers` 改名 `agents_working` |
 | v0.21 | 2026-11-04 | 通知（notification-design.md），都在版本 2 之内：`BotSummary` 增加 `failed`、`muted`，`bots/update` 增加 `muted`。没有新方法 |
 | v0.20 | 2026-11-04 | Bot（bot-design.md §4，已实现），都在版本 2 之内、由 capabilities 的 `bots` 声明：方法 `bots/subscribe`、`bots/unsubscribe`、`bots/create`、`bots/update`、`bots/avatar`、`bots/open`、`bots/read`、`bots/unread`、`bots/clear`、`bots/delete`，通知 `bots/changed`；错误码 −32040 `bot_not_found`、−32041 `bot_default`、−32042 `bot_invalid`。Bot 的会话不进 `session/list`、`sessions/subscribe` 和 `sessions/changed` |
 | v0.19 | 2026-11-02 | 两个浏览器并存（desktop/connectors-entry-design §3.4、§9），版本 2 之内：`approval_requested` 和快照里的待审批项（PendingApproval）新增可选的 `own_browser`，为 true 时这次调用落在用户自己的浏览器里（用的是用户的真实登录状态），桌面端据此写"在你的浏览器里"；为 false 时不出现在 JSON 里，旧客户端忽略即可 |
@@ -321,7 +323,7 @@ pub enum Outgoing {
 - 接入同一会话的任何连接都可以提交 Op，包括审批。
 - **先答复者生效**：中枢收到某个 call_id 的审批后，把它记为"已答复、等待内核确认"。同一 call_id 再来的审批直接返回 `approval_not_pending`，不交给内核。
 - 内核确认后发出 approval_resolved，所有接入的连接都会收到，各自关闭审批界面。
-- **待审批项属于会话**：客户端断开后再接入，或者另一个客户端后来接入，都能在快照的 `active_task.approvals` 里看到并答复。
+- **待审批项属于会话**：客户端断开后再接入，或者另一个客户端后来接入，都能在快照的 `active_task.approvals` 里看到并答复。子智能体的问题在 `agents[].active_task.approvals`，用 `agent_approval` 答复，规则相同；整棵树同一时刻只有一个问题（subagent-design §10.1）。
 - 原生协议不使用服务端请求来做审批（D-24）。ACP 是单客户端、请求式的协议，由 ACP 投影转换成 `session/request_permission`（§7.6）。
 
 ### 3.8 会话生命周期
@@ -830,12 +832,13 @@ capabilities 的 `agents` 为 true 的服务提供以下内容，都是增量：
 
 | 项 | 内容 |
 |---|---|
-| 事件 `agent_event` | `{agent_id, event}`：子智能体自己会话里的一个事件，seq 是子会话自己的。只转改变它对话的事件：task_started、turn_started、message_completed、stream_retry、tool_started、tool_running、tool_completed、compaction_*、turn_completed、task_completed、task_failed、task_interrupted、warning；增量、工具进度、设置不转 |
+| 事件 `agent_event` | `{agent_id, event}`：子智能体自己会话里的一个事件，seq 是子会话自己的。只转改变它对话的事件：task_started、turn_started、message_completed、stream_retry、tool_started、tool_running、tool_completed、approval_requested、approval_resolved、compaction_*、turn_completed、task_completed、task_failed、task_interrupted、warning；增量、工具进度、设置不转 |
 | `agent_status.elapsed_ms` | 空闲状态带上这一轮工作的用时 |
 | 快照的 `agents` | AgentSnapshot 数组，按启动顺序：agent_id、name、call_id、session_file、status、since（状态最近一次变化的时间，运行中即这一轮的开始）、summary、usage、error、elapsed_ms，以及它自己的 transcript 与 active_task（与 `history_limit` 一样截取）。只含这个服务加载会话之后启动的子智能体 |
 | TranscriptItem 的 `mail` | 子智能体的汇报以 user 消息进入历史，带 MailInfo，客户端据此显示成汇报 |
 | MailInfo 的 `no_reply`（v0.12） | 子智能体这一轮既没有回复也没有出错时为 true，比如还没回复就被停下；为 false 时省略。这时汇报正文只是写给模型的一句说明，客户端应显示自己的文字；`agent_status` 也不带 summary |
 | Op `agent_interrupt` | `{agent}`（id 或名字）：只停这个子智能体当前的任务，它保留会话、之后仍可接收消息；不是运行中的子智能体时，会话发一条 warning |
+| Op `agent_approval` | `{agent, call_id, decision}`：答复这个子智能体的 `approval_requested`，`agent` 是它的 id。已答复过或没有在等，返回 `approval_not_pending` |
 | 会话列表 | 子智能体工作期间，SessionSummary 的 state 为 running，busy 为 true，task_started_at 从这段工作开始算起，直到 `idle` |
 
 ## 7. ACP 兼容
@@ -967,6 +970,7 @@ tool_completed 的 content：
 ### 7.6 审批
 
 approval_requested 转换成 session/request_permission：
+子智能体的问题（`agent_event` 里的 approval_requested）同样转换，`toolCallId` 为 `agent-{agent_id}/{call_id}`，标题前面写子智能体的标签，答复转成 `agent_approval`。
 
 ```json
 {

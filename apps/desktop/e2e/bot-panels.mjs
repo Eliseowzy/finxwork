@@ -304,6 +304,7 @@ try {
   step("settings: a choice of avatar applies at once");
   await press(page, ".bhead");
   await page.until("its settings", `!!document.querySelector(".bpn-av")`);
+  await page.until("the panel slid in", `document.querySelector(".bpn").getAnimations().length === 0`);
   const hover = await page.run(`(() => { const r = document.querySelector(".bpn-av").getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...hover });
   await page.until("the avatar says it can be changed", `Number(getComputedStyle(document.querySelector(".bpn-av-edit")).opacity) === 1`);

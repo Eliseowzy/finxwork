@@ -102,6 +102,10 @@ pub mod method {
     pub const CONFIG_CHANGED: &str = "config/changed";
     pub const CREDENTIALS_SET: &str = "credentials/set";
     pub const CREDENTIALS_DELETE: &str = "credentials/delete";
+    // 联网搜索 (docs/kernel/web-search-design.md §6.4).
+    pub const WEB_SEARCH_STATUS: &str = "web_search/status";
+    pub const WEB_SEARCH_TEST: &str = "web_search/test";
+    pub const WEB_SEARCH_SET_KEY: &str = "web_search/set_key";
     // The file panel (docs/desktop/file-panel-design.md §9).
     pub const FILES_LIST: &str = "files/list";
     pub const FILES_READ: &str = "files/read";

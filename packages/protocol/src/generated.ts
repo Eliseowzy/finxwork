@@ -182,6 +182,8 @@ export type BotResult = {
 };
 
 export type BotSummary = {
+  /** Sub-agents at work. */
+  agents_working?: number;
   avatar: Avatar;
   /** RFC 3339. */
   created_at: string;
@@ -189,8 +191,6 @@ export type BotSummary = {
   default?: boolean;
   /** Its last task failed, so no message may be coming. Only while its conversation is loaded. */
   failed?: boolean;
-  /** Background helpers (sub-agents) at work. */
-  helpers?: number;
   id: string;
   last?: LastMessage | null;
   /** The owner asked not to be alerted about this bot, on any device. */
@@ -684,7 +684,7 @@ export type CredentialsDeleteParams = {
 
 /** A secret for configuration values to refer to as `${credential:<name>}`. */
 export type CredentialsSetParams = {
-  /** Starts with `mcp.`: 1-96 letters, digits, `.`, `_` or `-` after it. */
+  /** Starts with `mcp.` or `web-search.`: 1-96 letters, digits, `.`, `_` or `-` after it. */
   name: string;
   value: string;
 };
@@ -1326,6 +1326,8 @@ export type InitializeResult = {
 
 /** The last message of a bot's conversation, for its row in the list. */
 export type LastMessage = {
+  /** A bot's message of files: the name of the first that is not an image. */
+  file?: string | null;
   from: Speaker;
   /** The images it carried. */
   images?: number;
@@ -1759,6 +1761,12 @@ export type Op = {
   call_id: string;
   decision: ApprovalDecision;
   type: "approval";
+} | {
+  /** The agent's id. */
+  agent: string;
+  call_id: string;
+  decision: ApprovalDecision;
+  type: "agent_approval";
 } | {
   model: string;
   thinking?: ThinkingLevel | null;
@@ -2418,6 +2426,71 @@ export type UserMessage = {
 /** Warnings a client may recognise. A client meeting a code it does not know shows `message`. */
 export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
 
+/** Why a search with a service failed. */
+export type WebSearchErrorKind = "auth_failed" | "quota_exhausted" | "rate_limited" | "unreachable" | "bad_response";
+
+export type WebSearchFailure = {
+  /** When, in milliseconds since the epoch. */
+  at_ms: number;
+  kind: WebSearchErrorKind;
+};
+
+/** Where a service's key comes from. */
+export type WebSearchKeySource = "saved" | "env" | "account";
+
+/** What a service needs before it can be used. */
+export type WebSearchNeeds = "key" | "nothing" | "account";
+
+export type WebSearchSetKeyParams = {
+  key: string;
+  source: string;
+};
+
+/** The result of `web_search/set_key`. A key the service refused is not saved; one that could not be tried is, and the service then goes first in the list, switched on. */
+export type WebSearchSetKeyResult = {
+  saved: boolean;
+  test: WebSearchTestResult;
+};
+
+/** One service, in the list's order. */
+export type WebSearchSource = {
+  /** It has what it needs. */
+  configured: boolean;
+  /** Its switch: searches skip it when off. */
+  enabled: boolean;
+  /** Its last search, when that failed; a search that works clears it. */
+  failure?: WebSearchFailure | null;
+  id: string;
+  key?: WebSearchKeySource | null;
+  /** The variable the key comes from. */
+  key_env?: string | null;
+  /** Where to get a key. */
+  key_url?: string | null;
+  name: string;
+  needs: WebSearchNeeds;
+};
+
+/** The result of `web_search/status`. */
+export type WebSearchStatus = {
+  /** The service searches use now: the first that is usable and whose last search did not fail. */
+  current?: string | null;
+  /** `web_search.enabled`. */
+  enabled: boolean;
+  sources: WebSearchSource[];
+};
+
+export type WebSearchTestParams = {
+  source: string;
+};
+
+/** How one real search went. */
+export type WebSearchTestResult = {
+  count: number;
+  elapsed_ms: number;
+  error?: WebSearchErrorKind | null;
+  ok: boolean;
+};
+
 /** A session's tab in the user's own browser, as the extension reports it: the extension keeps which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7). */
 export type YoursTab = {
   /** The agent is attached to it now, so a task is using it; Chrome shows its debugging bar. */
@@ -2520,6 +2593,9 @@ export interface Methods {
   "skills/read": [SkillsReadParams, SkillsReadResult];
   "skills/remove": [SkillsRemoveParams, Empty];
   "skills/set_enabled": [SkillsSetEnabledParams, SkillsSetEnabledResult];
+  "web_search/set_key": [WebSearchSetKeyParams, WebSearchSetKeyResult];
+  "web_search/status": [Record<string, never>, WebSearchStatus];
+  "web_search/test": [WebSearchTestParams, WebSearchTestResult];
 }
 
 /** Notifications: their params. */
