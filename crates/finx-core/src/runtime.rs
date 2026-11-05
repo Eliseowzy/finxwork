@@ -157,6 +157,34 @@ impl Workspace {
     }
 }
 
+/// What an untrusted project at `project_dir` would bring if it were trusted, one line each, the
+/// commands of its servers among them (standalone-cli-design §12.2). Nothing means nothing to ask.
+pub fn what_trust_brings(project_dir: &Path) -> Vec<String> {
+    let mut lines = Vec::new();
+    let path = project_dir.join(".mcp.json");
+    if let Some((servers, _)) = std::fs::read_to_string(&path).ok().and_then(|text| mcp::parse_mcp_json(&text, &path).ok())
+        && !servers.is_empty()
+    {
+        lines.push(format!(".mcp.json: {} MCP server(s)", servers.len()));
+        for server in &servers {
+            let how = match (&server.command, &server.url) {
+                (Some(command), _) => std::iter::once(command.clone()).chain(server.args.iter().cloned()).collect::<Vec<_>>().join(" "),
+                (None, Some(url)) => url.clone(),
+                (None, None) => "(no command)".to_string(),
+            };
+            lines.push(format!("  {}: {how}", server.name));
+        }
+    }
+    let path = project_dir.join(".finx").join("config.toml");
+    if let Some(mut table) = std::fs::read_to_string(&path).ok().and_then(|text| toml::from_str::<toml::Table>(&text).ok()) {
+        let items = config::strip_untrusted(&mut table);
+        if !items.is_empty() {
+            lines.push(format!(".finx/config.toml: {}", items.join(", ")));
+        }
+    }
+    lines
+}
+
 /// `.mcp.json` at the project root, when `mcp.project_json` is on and the project trusted.
 fn project_mcp_json(config: &Config, project_dir: &Path, trusted: bool, warnings: &mut Vec<String>) -> Vec<McpServerConfig> {
     let path = project_dir.join(".mcp.json");

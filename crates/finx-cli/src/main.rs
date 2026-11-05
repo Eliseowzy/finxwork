@@ -12,11 +12,13 @@ mod cmd_customize;
 mod cmd_exec;
 mod cmd_info;
 mod cmd_install;
+mod cmd_interactive;
 mod cmd_login;
 mod cmd_mcp;
 mod cmd_serve;
 mod render;
 mod setup;
+mod term;
 
 use anyhow::Context as _;
 use clap::Args;
@@ -36,6 +38,7 @@ const TOP_LEVEL_HELP: &str = "\
 
 Run tasks:
   exec        Run a task without an interactive interface
+  resume      Continue a session in the terminal
   sessions    List, rename and remove sessions
 
 Models:
@@ -69,6 +72,8 @@ Options:
 {options}
 
 Examples:
+  finx
+  finx \"fix the failing test\"
   finx exec \"fix the failing test\"
   finx exec --json \"summarize the changes\" | jq -r .final_output
   finx exec --resume last \"now update the changelog\"
@@ -138,6 +143,17 @@ enum Command {
         #[arg(long)]
         tool_test: bool,
     },
+    /// The interactive mode: what `finx` and `finx "PROMPT"` come to
+    #[command(hide = true)]
+    Interactive {
+        /// The first message
+        prompt: Option<String>,
+        /// Working directory (default: the current directory)
+        #[arg(long)]
+        cwd: Option<PathBuf>,
+        #[command(flatten)]
+        run: RunArgs,
+    },
     /// Run a task without an interactive interface
     Exec {
         /// The task ("-" reads it from stdin)
@@ -151,6 +167,16 @@ enum Command {
         /// Do not keep a session log
         #[arg(long, conflicts_with = "resume")]
         no_save: bool,
+        #[command(flatten)]
+        args: ExecArgs,
+    },
+    /// Continue a session in the terminal
+    Resume {
+        /// `last` (of this project), a session id, or a unique part of one
+        #[arg(default_value = "last", value_name = "last|ID")]
+        session: String,
+        /// The next message
+        prompt: Option<String>,
         #[command(flatten)]
         run: RunArgs,
     },
@@ -707,7 +733,8 @@ enum ProtocolCommand {
     Schema,
 }
 
-#[derive(Args, Clone)]
+// What every command that runs the agent takes (standalone-cli-design §4.3).
+#[derive(Args, Clone, Default)]
 pub struct RunArgs {
     /// Model as provider/model-id
     #[arg(short, long)]
@@ -724,16 +751,6 @@ pub struct RunArgs {
     /// including changes to .git and shell profiles. Use only in an isolated environment
     #[arg(long, overrides_with = "permission_mode")]
     pub dangerously_skip_permissions: bool,
-    /// text: the reply as it streams; json: one result object at the end; stream-json: events
-    /// as JSON lines
-    #[arg(long, value_enum, default_value_t = OutputFormat::Text, overrides_with = "json")]
-    pub output: OutputFormat,
-    /// Same as --output json
-    #[arg(long, overrides_with = "output")]
-    pub json: bool,
-    /// Read operations (JSON lines) from stdin, e.g. approvals
-    #[arg(long)]
-    pub ops_stdin: bool,
     /// Stop a task after this many turns
     #[arg(long)]
     pub max_turns: Option<u32>,
@@ -743,6 +760,23 @@ pub struct RunArgs {
     /// Another directory the task may write to (repeatable)
     #[arg(long = "add-dir", value_name = "DIR")]
     pub add_dir: Vec<PathBuf>,
+}
+
+// `finx exec` on top of a run's own: what to print, and what comes from outside.
+#[derive(Args, Clone)]
+pub struct ExecArgs {
+    #[command(flatten)]
+    pub run: RunArgs,
+    /// text: the reply as it streams; json: one result object at the end; stream-json: every event
+    /// as JSON lines
+    #[arg(long, value_enum, default_value_t = OutputFormat::Text, overrides_with = "json")]
+    pub output: OutputFormat,
+    /// Same as --output json
+    #[arg(long, overrides_with = "output")]
+    pub json: bool,
+    /// Read operations (JSON lines) from stdin, e.g. approvals
+    #[arg(long)]
+    pub ops_stdin: bool,
     /// Attach an image: png, jpeg, gif or webp (repeatable)
     #[arg(long, value_name = "PATH")]
     pub image: Vec<PathBuf>,
@@ -769,11 +803,13 @@ fn parse_permission_mode(name: &str) -> Result<ModeArg, String> {
     PermissionMode::parse_with_notice(name).map(|(mode, notice)| ModeArg { mode, notice })
 }
 
-impl RunArgs {
+impl ExecArgs {
     pub fn format(&self) -> OutputFormat {
         if self.json { OutputFormat::Json } else { self.output }
     }
+}
 
+impl RunArgs {
     /// The mode chosen on the command line, if any.
     pub fn permission_mode(&self) -> Option<PermissionMode> {
         if self.dangerously_skip_permissions {
@@ -819,11 +855,17 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
             cwd,
             resume,
             no_save,
-            run,
+            args,
         } => match resume {
-            Some(session) => cmd_exec::resume(overrides, &session, &prompt, &run).await,
-            None => cmd_exec::exec(overrides, &prompt, cwd, !no_save, &run).await,
+            Some(session) => cmd_exec::resume(overrides, &session, &prompt, &args).await,
+            None => cmd_exec::exec(overrides, &prompt, cwd, !no_save, &args).await,
         },
+        Command::Interactive { prompt, cwd, run } => {
+            cmd_interactive::interactive(overrides, cmd_interactive::Start { prompt, cwd, resume: None, run }).await
+        }
+        Command::Resume { session, prompt, run } => {
+            cmd_interactive::interactive(overrides, cmd_interactive::Start { prompt, cwd: None, resume: Some(session), run }).await
+        }
         Command::Login { provider, key_stdin, model, base_url, api, no_key } => {
             cmd_login::login(overrides, cmd_login::LoginArgs { provider, key_stdin, model, base_url, api, no_key }).await
         }
@@ -900,7 +942,7 @@ fn run_async(overrides: &[String], command: Command) -> anyhow::Result<u8> {
     // `finx acp` among them, serve one client: four workers are plenty, and each idle worker
     // costs its stack and queues.
     let mut builder = match command {
-        Command::Exec { .. } | Command::Chat { .. } => {
+        Command::Exec { .. } | Command::Chat { .. } | Command::Interactive { .. } | Command::Resume { .. } => {
             tokio::runtime::Builder::new_current_thread()
         }
         _ => {
@@ -983,8 +1025,8 @@ fn pointer(args: &[std::ffi::OsString]) -> Option<&'static str> {
     let words: Vec<_> = args.iter().skip(1).map(|arg| arg.to_string_lossy()).take_while(|word| word != "--").collect();
     let words: Vec<&str> = words.iter().map(|word| word.as_ref()).collect();
     let has = |names: &[&str]| words.iter().any(|word| names.contains(word));
-    if words.first() == Some(&"resume") || has(&["--continue", "-r"]) || (words.first() != Some(&"exec") && has(&["--resume"])) {
-        return Some("To continue a session: finx exec --resume <last|ID> \"PROMPT\"");
+    if has(&["--continue", "-r"]) || (words.first() != Some(&"exec") && has(&["--resume"])) || (words.first() == Some(&"resume") && has(&["-p", "--print"])) {
+        return Some("To continue a session: finx resume [last|ID], or in a script finx exec --resume <last|ID> \"PROMPT\"");
     }
     if has(&["-p", "--print"]) {
         return Some("To run one task: finx exec \"PROMPT\"");
@@ -992,10 +1034,75 @@ fn pointer(args: &[std::ffi::OsString]) -> Option<&'static str> {
     if words.starts_with(&["models", "login"]) || words.starts_with(&["models", "logout"]) {
         return Some("Accounts have their own commands: finx login chatgpt, finx logout chatgpt");
     }
+    // What the first word's rewrite let through (§4.5).
+    if words.first() == Some(&"interactive") && words.iter().skip(1).filter(|word| !word.starts_with('-')).count() > 1 {
+        return Some("A prompt goes in quotes: finx \"fix the login test\"");
+    }
     if words.starts_with(&["models", "show"]) {
         return Some("`finx models unhide MODEL` puts a model back in the menu; `finx models` lists them");
     }
     None
+}
+
+/// The commands `finx` knows without building its parser; `cli_shape` keeps this in step with them.
+const COMMAND_WORDS: &[&str] = &[
+    "doc-worker", "connector", "chat", "interactive", "exec", "resume", "login", "logout", "sessions", "models", "tools", "config", "web-search", "status",
+    "doctor", "install", "uninstall", "upgrade", "update", "completion", "skills", "browser", "trust", "mcp", "serve", "acp", "protocol", "help",
+];
+
+/// How far a word may be from a command to count as a slip: one step for a short command, two for
+/// a longer one, a swap of neighbours being one step.
+fn close_command(word: &str) -> Option<&'static str> {
+    COMMAND_WORDS
+        .iter()
+        .filter(|command| !["doc-worker", "connector", "interactive", "chat"].contains(command))
+        .map(|command| (strsim::osa_distance(word, command), *command))
+        .filter(|(distance, command)| *distance <= if command.len() < 6 { 1 } else { 2 })
+        .min()
+        .map(|(_, command)| command)
+}
+
+/// What a command line that names no command comes to: `finx` and `finx "PROMPT"` are the
+/// interactive mode (§4.5). Looks only at the words, so that other commands parse as before.
+fn first_word(args: Vec<std::ffi::OsString>) -> Result<Vec<std::ffi::OsString>, String> {
+    let words: Vec<String> = args.iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+    let mut index = 1;
+    while index < words.len() {
+        let word = words[index].as_str();
+        if word == "-c" || word == "--config" || word == "--mcp-config" {
+            index += 2;
+        } else if word.starts_with("-c") && word.len() > 2 && !word.starts_with("--") || word.starts_with("--config=") || word.starts_with("--mcp-config=") {
+            index += 1;
+        } else {
+            break;
+        }
+    }
+    let interactive = |rest_from: usize, prompt: Option<&str>| {
+        let mut out: Vec<std::ffi::OsString> = args[..rest_from].to_vec();
+        out.insert(1, "interactive".into());
+        match prompt {
+            Some(prompt) => {
+                out.push("--".into());
+                out.push(prompt.into());
+            }
+            None => out.extend_from_slice(&args[rest_from..]),
+        }
+        out
+    };
+    let Some(word) = words.get(index) else { return Ok(interactive(index, None)) };
+    if ["-h", "--help", "-V", "-v", "--version"].contains(&word.as_str()) || COMMAND_WORDS.contains(&word.as_str()) {
+        return Ok(args);
+    }
+    if word == "--" {
+        return Ok(interactive(index, Some(&words[index + 1..].join(" "))));
+    }
+    if word.starts_with('-') {
+        return Ok(interactive(index, None));
+    }
+    if let Some(command) = close_command(word) {
+        return Err(format!("error: no command {word}; did you mean `finx {command}`?\n\nTo send it as a message: finx -- {word}"));
+    }
+    Ok(interactive(index, None))
 }
 
 /// A command line clap did not take. Help and the version go out as usual; a mistake says what to
@@ -1026,7 +1133,13 @@ fn main() -> ExitCode {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
-    let args: Vec<_> = std::env::args_os().collect();
+    let args = match first_word(std::env::args_os().collect()) {
+        Ok(args) => args,
+        Err(message) => {
+            eprintln!("{message}");
+            return ExitCode::from(2);
+        }
+    };
     let parsed = parse_plain(&args).map_or_else(|| Cli::try_parse_from(&args), Ok);
     let Cli {
         overrides,
@@ -1248,7 +1361,7 @@ mod parsing_tests {
         ]).unwrap();
         assert_eq!(cli.overrides, ["thinking=low"]);
         assert_eq!(cli.mcp_config, [PathBuf::from("tools.json")]);
-        assert!(matches!(cli.command, Command::Exec { run, .. } if run.model.as_deref() == Some("mock/bench")));
+        assert!(matches!(cli.command, Command::Exec { args, .. } if args.run.model.as_deref() == Some("mock/bench")));
         let error = Cli::try_parse_from(["finx", "exec", "hello", "--no-save", "--resume", "last"])
             .err().expect("conflicting arguments");
         assert_eq!(error.kind(), ErrorKind::ArgumentConflict);

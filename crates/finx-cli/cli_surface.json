@@ -73,6 +73,7 @@
       "mcp remove",
       "mcp enable",
       "mcp disable",
+      "resume",
       "serve",
       "acp",
       "protocol",

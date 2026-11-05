@@ -39,8 +39,31 @@ pub struct ConfigFile {
     pub desktop: Option<DesktopFile>,
     pub web_search: Option<WebSearchFile>,
     pub models: Option<ModelsFile>,
+    pub ui: Option<UiFile>,
+    pub history: Option<HistoryFile>,
+    pub update: Option<UpdateFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
+}
+
+/// `[ui]`: how the interactive mode shows things.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UiFile {
+    /// Write the model's reasoning into the scrollback, dimmed.
+    pub show_thinking: Option<bool>,
+}
+
+/// `[history]`: what was typed in the interactive mode.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct HistoryFile {
+    pub enabled: Option<bool>,
+}
+
+/// `[update]`
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UpdateFile {
+    /// Let the interactive mode look for a new release, at most once a day.
+    pub check: Option<bool>,
 }
 
 /// `[mcp]`: settings for every MCP server.
@@ -502,6 +525,12 @@ pub struct Config {
     pub instructions_extra: String,
     pub project_root_markers: Vec<String>,
     pub enabled_tools: Vec<String>,
+    /// `ui.show_thinking`
+    pub show_thinking: bool,
+    /// `history.enabled`
+    pub history_enabled: bool,
+    /// `update.check`
+    pub update_check: bool,
     pub bash_default_timeout: Duration,
     pub bash_max_timeout: Duration,
     pub bash_shell: Option<String>,
@@ -602,6 +631,9 @@ impl Config {
             project_root_markers: instructions
                 .project_root_markers
                 .unwrap_or_else(|| vec![".git".to_string()]),
+            show_thinking: file.ui.as_ref().and_then(|ui| ui.show_thinking).unwrap_or(false),
+            history_enabled: file.history.as_ref().and_then(|history| history.enabled).unwrap_or(true),
+            update_check: file.update.as_ref().and_then(|update| update.check).unwrap_or(true),
             enabled_tools: tools
                 .enabled
                 .unwrap_or_else(|| finx_tools::DEFAULT_TOOLS.iter().map(|s| s.to_string()).collect()),
@@ -982,6 +1014,9 @@ fn known_keys(table: &str) -> &'static [&'static str] {
         "desktop" => fields_of::<DesktopFile>(),
         "web_search" => fields_of::<WebSearchFile>(),
         "models" => fields_of::<ModelsFile>(),
+        "ui" => fields_of::<UiFile>(),
+        "history" => fields_of::<HistoryFile>(),
+        "update" => fields_of::<UpdateFile>(),
         "agents" => fields_of::<AgentsFile>(),
         "skills" => fields_of::<SkillsFile>(),
         "server" => fields_of::<ServerFile>(),
@@ -1226,7 +1261,7 @@ fn strip_mcp_approval(table: &mut toml::Table, file: &Path, warnings: &mut Vec<S
     }
 }
 
-fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
+pub(crate) fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
     let mut removed = Vec::new();
     for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file", "bot_prompt_file"] {
         if table.remove(key).is_some() {

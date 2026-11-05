@@ -26,6 +26,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 use crate::OutputFormat;
+use crate::ExecArgs;
 use crate::RunArgs;
 use crate::approval_prompt;
 use crate::render::Renderer;
@@ -36,8 +37,9 @@ pub async fn exec(
     prompt: &str,
     cwd: Option<PathBuf>,
     save: bool,
-    run: &RunArgs,
+    args: &ExecArgs,
 ) -> anyhow::Result<u8> {
+    let run = &args.run;
     let cwd = match cwd {
         Some(cwd) => cwd,
         None => std::env::current_dir()?,
@@ -46,8 +48,8 @@ pub async fn exec(
     rt.warnings.extend(run.warnings());
     let model = setup::session_model(&rt, run.model.clone())?;
     setup::check_credentials(&rt, &model)?;
-    let prompt = input_of(setup::read_prompt(prompt)?, &run.image)?;
-    let interactive = interactive(run);
+    let prompt = input_of(setup::read_prompt(prompt)?, &args.image)?;
+    let interactive = interactive(args);
     let deps = rt.kernel_deps(save, &run.add_dir)?;
     let options = StartOptions {
         model,
@@ -62,15 +64,16 @@ pub async fn exec(
         bot: None,
     };
     let kernel = Kernel::start(options, deps).await?;
-    drive(kernel, prompt, run, interactive, save, &rt.warnings).await
+    drive(kernel, prompt, args, interactive, save, &rt.warnings).await
 }
 
 pub async fn resume(
     overrides: &[String],
     session: &str,
     prompt: &str,
-    run: &RunArgs,
+    args: &ExecArgs,
 ) -> anyhow::Result<u8> {
+    let run = &args.run;
     let home = setup::home()?;
     let store = JsonlStore::new(home.sessions_dir());
     let (header, path) = match session {
@@ -82,10 +85,10 @@ pub async fn resume(
         }
         id => store.header(&SessionRef::Id(id.to_string()))?,
     };
-    let prompt = input_of(setup::read_prompt(prompt)?, &run.image)?;
+    let prompt = input_of(setup::read_prompt(prompt)?, &args.image)?;
     let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
-    let interactive = interactive(run);
+    let interactive = interactive(args);
     let deps = rt.kernel_deps(true, &run.add_dir)?;
     let options = ResumeOptions {
         session: SessionRef::Path(path),
@@ -101,15 +104,15 @@ pub async fn resume(
     };
     let kernel = Kernel::resume(options, deps).await?;
     setup::check_credentials(&rt, &kernel.info().model)?;
-    drive(kernel, prompt, run, interactive, true, &rt.warnings).await
+    drive(kernel, prompt, args, interactive, true, &rt.warnings).await
 }
 
 /// Approvals are asked for in the terminal only when the output is text for a person.
-fn interactive(run: &RunArgs) -> bool {
-    run.ops_stdin || (run.format() == OutputFormat::Text && std::io::stdin().is_terminal())
+fn interactive(args: &ExecArgs) -> bool {
+    args.ops_stdin || (args.format() == OutputFormat::Text && std::io::stdin().is_terminal())
 }
 
-fn with_run_overrides(overrides: &[String], run: &RunArgs) -> Vec<String> {
+pub(crate) fn with_run_overrides(overrides: &[String], run: &RunArgs) -> Vec<String> {
     let mut all = overrides.to_vec();
     if let Some(max_turns) = run.max_turns {
         all.push(format!("max_turns={max_turns}"));
@@ -151,7 +154,7 @@ fn input_of(text: String, images: &[PathBuf]) -> anyhow::Result<Vec<UserContent>
 async fn drive(
     mut kernel: Kernel,
     input: Vec<UserContent>,
-    run: &RunArgs,
+    run: &ExecArgs,
     interactive: bool,
     saved: bool,
     warnings: &[String],
@@ -192,6 +195,7 @@ async fn drive(
         if let EventMsg::ApprovalRequested {
             call_id,
             name,
+            args,
             summary,
             reason,
             proposed_rule,
@@ -211,7 +215,7 @@ async fn drive(
                 mode: *proposed_mode,
                 grants: proposed_grants,
             };
-            let decision = approval_prompt::ask(renderer.style(), question).await;
+            let decision = approval_prompt::ask(renderer.style(), question, args).await;
             let call_id = call_id.clone();
             let op = match agent {
                 Some(agent) => Op::AgentApproval {

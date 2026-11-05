@@ -22,6 +22,7 @@ use crate::cmd_customize::shorten;
 use crate::cmd_serve;
 use crate::setup;
 
+#[derive(Default)]
 pub struct LoginArgs {
     pub provider: Option<String>,
     pub key_stdin: bool,

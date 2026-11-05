@@ -289,9 +289,9 @@ fn run_options_are_named_on_every_surface() {
     assert_eq!(longs(&exec), all, "each flag of finx exec is in run_options or exec_flags");
 }
 
-fn exec_args(cli: Cli) -> crate::RunArgs {
+fn exec_args(cli: Cli) -> crate::ExecArgs {
     match cli.command {
-        Command::Exec { run, .. } => run,
+        Command::Exec { args, .. } => args,
         _ => panic!("not finx exec"),
     }
 }
@@ -302,8 +302,8 @@ fn the_last_flag_wins() {
         let line = [&["finx", "exec", "hello"], args].concat();
         exec_args(Cli::try_parse_from(line).unwrap())
     };
-    assert_eq!(parse(&["-m", "a/b", "-m", "c/d"]).model.as_deref(), Some("c/d"));
-    let mode = |args: &[&str]| parse(args).permission_mode();
+    assert_eq!(parse(&["-m", "a/b", "-m", "c/d"]).run.model.as_deref(), Some("c/d"));
+    let mode = |args: &[&str]| parse(args).run.permission_mode();
     assert_eq!(mode(&["--permission-mode", "manual", "--dangerously-skip-permissions"]), Some(PermissionMode::BypassPermissions));
     assert_eq!(mode(&["--dangerously-skip-permissions", "--permission-mode", "manual"]), Some(PermissionMode::Manual));
     assert_eq!(mode(&["--permission-mode", "manual", "--permission-mode", "accept-edits"]), Some(PermissionMode::AcceptEdits));
@@ -364,8 +364,7 @@ fn json_is_asked_for_in_every_spelling() {
 fn spellings_from_elsewhere_get_a_pointer() {
     let to_resume = "finx exec --resume";
     for line in [
-        &["finx", "resume"][..],
-        &["finx", "resume", "last", "-p", "next"],
+        &["finx", "resume", "last", "-p", "next"][..],
         &["finx", "--continue"],
         &["finx", "-r"],
         &["finx", "--resume", "abc"],
@@ -381,4 +380,30 @@ fn spellings_from_elsewhere_get_a_pointer() {
     assert_eq!(pointer(&os(&["finx", "exec", "hi", "--resume"])), None);
     assert_eq!(pointer(&os(&["finx", "status", "--nope"])), None);
     assert_eq!(pointer(&os(&["finx", "exec", "--", "-p"])), None);
+}
+
+/// The first word is judged before the parser is built, from this list (§4.5).
+#[test]
+fn the_list_of_command_words_is_the_parsers() {
+    let mut named: BTreeSet<String> = Cli::command().get_subcommands().flat_map(|c| std::iter::once(c.get_name().to_string()).chain(c.get_all_aliases().map(str::to_string))).collect();
+    named.insert("help".to_string());
+    let listed: BTreeSet<String> = crate::COMMAND_WORDS.iter().map(|word| (*word).to_string()).collect();
+    assert_eq!(named, listed);
+}
+
+#[test]
+fn the_first_word_decides_what_a_command_line_means() {
+    let rewritten = |args: &[&str]| crate::first_word(args.iter().map(Into::into).collect()).map(|out| out.iter().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>());
+    let of = |words: &[&str]| Ok(words.iter().map(|w| (*w).to_string()).collect::<Vec<_>>());
+    assert_eq!(rewritten(&["finx"]), of(&["finx", "interactive"]));
+    assert_eq!(rewritten(&["finx", "-m", "a/b"]), of(&["finx", "interactive", "-m", "a/b"]));
+    assert_eq!(rewritten(&["finx", "fix the test"]), of(&["finx", "interactive", "fix the test"]));
+    assert_eq!(rewritten(&["finx", "-c", "x=1", "fix it"]), of(&["finx", "interactive", "-c", "x=1", "fix it"]));
+    assert_eq!(rewritten(&["finx", "--", "status", "how"]), of(&["finx", "interactive", "--", "status how"]));
+    assert_eq!(rewritten(&["finx", "status"]), of(&["finx", "status"]));
+    assert_eq!(rewritten(&["finx", "-c", "x=1", "status"]), of(&["finx", "-c", "x=1", "status"]));
+    assert_eq!(rewritten(&["finx", "--help"]), of(&["finx", "--help"]));
+    assert_eq!(rewritten(&["finx", "-V"]), of(&["finx", "-V"]));
+    assert!(rewritten(&["finx", "stauts"]).is_err(), "a slip does not start a session");
+    assert!(rewritten(&["finx", "hello"]).is_ok(), "hello is not help");
 }
