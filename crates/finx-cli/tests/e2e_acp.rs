@@ -186,6 +186,49 @@ async fn acp_runs_tools_with_permissions() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn acp_asks_the_client_what_a_sub_agent_asks() {
+    let env = TestEnv::new("manual", "").await;
+    let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
+    init(&client).await;
+    let cwd = env.workspace("acp");
+    let (session, _, _) = new_session(&client, &mut rx, &cwd).await;
+
+    // The prompt is answered once the sub-agent is done, so the question comes before that.
+    let request = {
+        let client = client.clone();
+        let params = json!({"sessionId": session, "prompt": [{"type": "text", "text": "[[mock:delegate:touch made.txt]] run it"}]});
+        tokio::spawn(async move { client.request("session/prompt", params).await })
+    };
+    let mut asked = None;
+    let mut request = Box::pin(request);
+    let result = loop {
+        tokio::select! {
+            done = &mut request => break done.expect("prompt task"),
+            incoming = rx.recv() => {
+                let incoming = incoming.expect("connection closed");
+                check(&incoming);
+                if let Incoming::Request { id, method, params, .. } = &incoming && method == "session/request_permission" {
+                    assert!(asked.is_none(), "one question");
+                    assert!(!cwd.join("made.txt").exists());
+                    asked = Some(params.clone());
+                    client.respond(id, json!({"outcome": {"outcome": "selected", "optionId": "approve"}}));
+                }
+            }
+            _ = tokio::time::sleep(common::WAIT) => panic!("prompt timed out"),
+        }
+    };
+    assert_eq!(result.unwrap()["stopReason"], "end_turn");
+    let asked: Value = asked.expect("the client was asked");
+    let tool = &asked["toolCall"];
+    // Who asks shows, and its id is apart from the session's calls.
+    assert!(tool["toolCallId"].as_str().unwrap().starts_with("agent-"), "{tool}");
+    assert_eq!(tool["title"], "运行 touch made.txt: touch made.txt");
+    assert!(cwd.join("made.txt").exists());
+    drop(client);
+    common::exit_code(&mut child).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn acp_settings_cancellation_and_busy_prompts() {
     let env = TestEnv::new("manual", "").await;
     let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);

@@ -16,7 +16,7 @@
   },
   "line": {
     "waiting": "[Needs you]",
-    "helpers": "Working on {{things}}",
+    "agents": "Working on {{things}}",
     "typing": "Typing…",
     "empty": "No messages yet",
     "image": "[Image]",

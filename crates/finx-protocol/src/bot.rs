@@ -107,9 +107,9 @@ pub struct BotSummary {
     /// It is answering: its conversation runs a task.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub typing: bool,
-    /// Background helpers (sub-agents) at work.
+    /// Sub-agents at work.
     #[serde(default, skip_serializing_if = "is_zero")]
-    pub helpers: u32,
+    pub agents_working: u32,
     /// The oldest approval it waits for: what the call does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub waiting: Option<String>,

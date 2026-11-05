@@ -21,6 +21,7 @@ use finx_llm::ThinkingLevel;
 use finx_llm::api::scripted::Script;
 use finx_llm::api::scripted::ScriptedApi;
 use finx_protocol::AgentStatus;
+use finx_protocol::ApprovalDecision;
 use finx_protocol::Event;
 use finx_protocol::EventMsg;
 use finx_protocol::Op;
@@ -360,27 +361,296 @@ async fn a_message_to_a_running_agent_joins_its_next_turn() {
 #[tokio::test]
 async fn an_idle_agent_takes_new_work_and_keeps_its_history() {
     let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
-    h.script(ROOT, spawn("c1", "helper", "First job.", true));
+    h.script(ROOT, spawn("c1", "worker", "First job.", true));
     h.script(
         ROOT,
-        Script::tool_call("c2", "send_message", json!({ "to": "helper", "message": "Second job.", "wait": true })),
+        Script::tool_call("c2", "send_message", json!({ "to": "worker", "message": "Second job.", "wait": true })),
     );
     h.script(ROOT, Script::text("ok"));
-    h.script("helper", Script::text("first result"));
-    h.script("helper", Script::text("second result"));
+    h.script("worker", Script::text("first result"));
+    h.script("worker", Script::text("second result"));
     h.prompt("two jobs").await;
     h.until_idle().await;
 
     let second = tool_results(&h.requests(ROOT)[2]).pop().unwrap();
     assert!(second.ends_with("second result"), "{second}");
-    let history = user_texts(&h.requests("helper")[1]);
+    let history = user_texts(&h.requests("worker")[1]);
     assert!(history[0].contains("First job."));
     assert_eq!(history.last().unwrap(), "Second job.");
 }
 
+/// What a sub-agent asks, as the main session's events carry it: its id and the call's.
+fn asked(msg: &EventMsg) -> Option<(String, String)> {
+    let EventMsg::AgentEvent { agent_id, event } = msg else {
+        return None;
+    };
+    let EventMsg::ApprovalRequested { call_id, .. } = &event.msg else {
+        return None;
+    };
+    Some((agent_id.clone(), call_id.clone()))
+}
+
+fn answer(asking: &(String, String), decision: ApprovalDecision) -> Op {
+    Op::AgentApproval {
+        agent: asking.0.clone(),
+        call_id: asking.1.clone(),
+        decision,
+    }
+}
+
+impl Harness {
+    /// Until a sub-agent asks: who asks, and what came until then.
+    async fn until_asked(&mut self) -> ((String, String), Vec<Event>) {
+        let events = self.until(|m| asked(m).is_some()).await;
+        (asked(&events.last().unwrap().msg).unwrap(), events)
+    }
+
+    /// The events of the next while, in which nothing is expected to end.
+    async fn for_a_while(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+        while let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(400), self.kernel.next_event()).await {
+            events.push(event);
+        }
+        events
+    }
+}
+
 #[tokio::test]
-async fn a_sub_agent_never_asks_for_approval() {
+async fn a_sub_agent_asks_the_user_and_goes_on() {
     let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "writer", "Write x.txt.", false));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("it is written"));
+    h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
+    h.script("writer", Script::text("wrote x.txt"));
+    h.prompt("write x").await;
+    let (asking, events) = h.until_asked().await;
+
+    // The question is the sub-agent's: the main session has none of its own.
+    assert_eq!(asking.1, "w1");
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::ApprovalRequested { .. })));
+    assert!(!h.work.join("x.txt").exists());
+
+    h.kernel.submit(answer(&asking, ApprovalDecision::Approve)).await.unwrap();
+    let events = h.until_idle().await;
+    assert_eq!(std::fs::read_to_string(h.work.join("x.txt")).unwrap(), "hi");
+    assert!(events.iter().any(|e| matches!(
+        &e.msg,
+        EventMsg::AgentEvent { event, .. } if matches!(event.msg, EventMsg::ApprovalResolved { .. })
+    )));
+    assert_eq!(mails(&events), [("writer".to_string(), AgentStatus::Completed)]);
+}
+
+#[tokio::test]
+async fn denying_a_sub_agents_call_refuses_that_call_and_it_goes_on() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "writer", "Write x.txt.", false));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("it was refused"));
+    h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
+    h.script("writer", Script::text("The user refused x.txt."));
+    h.prompt("write x").await;
+    let (asking, _) = h.until_asked().await;
+    h.kernel
+        .submit(answer(&asking, ApprovalDecision::Deny { feedback: Some("not that file".into()) }))
+        .await
+        .unwrap();
+    let events = h.until_idle().await;
+
+    let refused = &tool_results(&h.requests("writer")[1])[0];
+    assert!(refused.contains("The user denied this tool call. Feedback: not that file"), "{refused}");
+    assert!(!h.work.join("x.txt").exists());
+    // It was not stopped: it reports as usual.
+    assert_eq!(mails(&events), [("writer".to_string(), AgentStatus::Completed)]);
+}
+
+#[tokio::test]
+async fn a_call_waiting_for_a_sub_agent_waits_for_its_question_too() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "writer", "Write x.txt.", true));
+    h.script(ROOT, Script::text("it is written"));
+    h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
+    h.script("writer", Script::text("wrote x.txt"));
+    h.prompt("write x").await;
+    let (asking, _) = h.until_asked().await;
+    h.kernel.submit(answer(&asking, ApprovalDecision::Approve)).await.unwrap();
+    h.until_idle().await;
+    assert!(tool_results(&h.requests(ROOT)[1])[0].contains("wrote x.txt"));
+}
+
+#[tokio::test]
+async fn approving_for_the_session_holds_for_the_whole_tree() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "writer", "Write x.txt and y.txt.", false));
+    h.script(ROOT, Script::text("started"));
+    // Woken by the report, it writes as well.
+    h.script(ROOT, Script::tool_call("r1", "write", json!({ "path": "z.txt", "content": "root" })));
+    h.script(ROOT, Script::text("all written"));
+    h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
+    h.script("writer", Script::tool_call("w2", "write", json!({ "path": "y.txt", "content": "hi" })));
+    h.script("writer", Script::text("wrote both"));
+    h.prompt("write them").await;
+    let (asking, _) = h.until_asked().await;
+    h.kernel
+        .submit(answer(&asking, ApprovalDecision::ApproveForSession { grant: None, persist: false }))
+        .await
+        .unwrap();
+    let events = h.until_idle().await;
+
+    // The main session changed, and nobody was asked again.
+    assert!(events.iter().any(|e| matches!(
+        e.msg,
+        EventMsg::SettingsChanged {
+            permission_mode: PermissionMode::AcceptEdits,
+            ..
+        }
+    )));
+    assert!(!events.iter().any(|e| asked(&e.msg).is_some() || matches!(e.msg, EventMsg::ApprovalRequested { .. })));
+    for file in ["x.txt", "y.txt", "z.txt"] {
+        assert!(h.work.join(file).exists(), "{file}");
+    }
+}
+
+#[tokio::test]
+async fn the_tree_asks_one_question_at_a_time() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "one", "Write a.txt.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "two work", "task": "Write b.txt.", "name": "two", "wait": false })));
+    // Later than the sub-agents' first calls, the main session has a question of its own.
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(800)).then_tool_call("r1", "write", json!({ "path": "c.txt", "content": "root" })));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("all reported"));
+    // The same call id in both: each session chooses its own.
+    for (name, file) in [("one", "a.txt"), ("two", "b.txt")] {
+        h.script(name, Script::tool_call("same", "write", json!({ "path": file, "content": name })));
+        h.script(name, Script::text("written"));
+    }
+    h.prompt("write them").await;
+    let (first, _) = h.until_asked().await;
+    let quiet = h.for_a_while().await;
+    assert!(!quiet.iter().any(|e| asked(&e.msg).is_some() || matches!(e.msg, EventMsg::ApprovalRequested { .. })), "one at a time");
+
+    h.kernel.submit(answer(&first, ApprovalDecision::Approve)).await.unwrap();
+    let (second, _) = h.until_asked().await;
+    assert_ne!(second.0, first.0);
+    let quiet = h.for_a_while().await;
+    assert!(!quiet.iter().any(|e| asked(&e.msg).is_some() || matches!(e.msg, EventMsg::ApprovalRequested { .. })), "one at a time");
+
+    // The main session asks in its turn, the last to come.
+    h.kernel.submit(answer(&second, ApprovalDecision::Approve)).await.unwrap();
+    h.until(|m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
+    h.kernel
+        .submit(Op::Approval {
+            call_id: "r1".into(),
+            decision: ApprovalDecision::Approve,
+        })
+        .await
+        .unwrap();
+    h.until_idle().await;
+    for file in ["a.txt", "b.txt", "c.txt"] {
+        assert!(h.work.join(file).exists(), "{file}");
+    }
+}
+
+#[tokio::test]
+async fn an_answer_settles_the_question_still_waiting_its_turn() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "one", "Write a.txt.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "two work", "task": "Write b.txt.", "name": "two", "wait": false })));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("all reported"));
+    for (name, file) in [("one", "a.txt"), ("two", "b.txt")] {
+        h.script(name, Script::tool_call("same", "write", json!({ "path": file, "content": name })));
+        h.script(name, Script::text("written"));
+    }
+    h.prompt("write them").await;
+    let (first, _) = h.until_asked().await;
+    h.for_a_while().await;
+    h.kernel
+        .submit(answer(&first, ApprovalDecision::ApproveForSession { grant: None, persist: false }))
+        .await
+        .unwrap();
+    let events = h.until_idle().await;
+    assert!(!events.iter().any(|e| asked(&e.msg).is_some()), "the other no longer has to ask");
+    assert!(h.work.join("a.txt").exists() && h.work.join("b.txt").exists());
+}
+
+#[tokio::test]
+async fn stopping_a_sub_agent_ends_its_question_and_the_next_one_asks() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "one", "Write a.txt.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "two work", "task": "Write b.txt.", "name": "two", "wait": false })));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("reported"));
+    for (name, file) in [("one", "a.txt"), ("two", "b.txt")] {
+        h.script(name, Script::tool_call("same", "write", json!({ "path": file, "content": name })));
+        h.script(name, Script::text("written"));
+    }
+    h.prompt("write them").await;
+    let (first, _) = h.until_asked().await;
+    h.kernel.submit(Op::AgentInterrupt { agent: first.0.clone() }).await.unwrap();
+    let (second, events) = h.until_asked().await;
+    assert_ne!(second.0, first.0);
+    assert!(events.iter().any(|e| matches!(
+        &e.msg,
+        EventMsg::AgentEvent { agent_id, event } if *agent_id == first.0
+            && matches!(event.msg, EventMsg::ApprovalResolved { decision: ApprovalDecision::Abort, .. })
+    )));
+    h.kernel.submit(answer(&second, ApprovalDecision::Approve)).await.unwrap();
+    h.until_idle().await;
+    assert_eq!(h.work.read_dir().unwrap().filter_map(|e| e.ok()).filter(|e| e.file_name().to_string_lossy().ends_with(".txt")).count(), 1);
+}
+
+#[tokio::test]
+async fn stopping_everything_ends_the_question_and_the_ones_in_line() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "one", "Write a.txt.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "two work", "task": "Write b.txt.", "name": "two", "wait": false })));
+    h.script(ROOT, Script::text("started"));
+    for (name, file) in [("one", "a.txt"), ("two", "b.txt")] {
+        h.script(name, Script::tool_call("same", "write", json!({ "path": file, "content": name })));
+    }
+    h.prompt("write them").await;
+    h.until_asked().await;
+    h.for_a_while().await;
+    h.kernel.submit(Op::Interrupt).await.unwrap();
+    let events = h.until_idle().await;
+    // The stop reaches each sub-agent in turn, so the next in line may just get to ask. Nothing
+    // stays open, and nothing ran.
+    let asked_now = events.iter().filter(|e| asked(&e.msg).is_some()).count();
+    let ended = events
+        .iter()
+        .filter(|e| matches!(&e.msg, EventMsg::AgentEvent { event, .. } if matches!(event.msg, EventMsg::ApprovalResolved { decision: ApprovalDecision::Abort, .. })))
+        .count();
+    assert_eq!(ended, asked_now + 1, "every question ended, the open one too");
+    assert!(!h.work.join("a.txt").exists() && !h.work.join("b.txt").exists());
+}
+
+#[tokio::test]
+async fn the_main_session_goes_on_while_a_sub_agent_asks() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.script(ROOT, spawn("c1", "writer", "Write x.txt.", false));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("an answer meanwhile"));
+    h.script(ROOT, Script::text("it is written"));
+    h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
+    h.script("writer", Script::text("wrote x.txt"));
+    h.prompt("write x").await;
+    let (asking, _) = h.until_asked().await;
+    h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+
+    h.prompt("something else").await;
+    let events = h.until(|m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert!(events.iter().any(|e| matches!(
+        &e.msg,
+        EventMsg::MessageCompleted { message: Message::Assistant(reply), .. } if reply.text() == "an answer meanwhile"
+    )));
+    assert!(!h.work.join("x.txt").exists(), "the question still waits");
+
+    h.kernel.submit(answer(&asking, ApprovalDecision::Approve)).await.unwrap();
+    h.until_idle().await;
+    assert!(h.work.join("x.txt").exists());
+}
+
+#[tokio::test]
+async fn with_nobody_to_ask_a_sub_agents_call_is_refused() {
+    let mut h = Harness::start(PermissionMode::Manual, false).await;
     h.script(ROOT, spawn("c1", "writer", "Write x.txt.", true));
     h.script(ROOT, Script::text("ok"));
     h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
@@ -389,12 +659,26 @@ async fn a_sub_agent_never_asks_for_approval() {
     let events = h.until_idle().await;
 
     assert!(
-        !events.iter().any(|e| matches!(e.msg, EventMsg::ApprovalRequested { .. })),
+        !events.iter().any(|e| asked(&e.msg).is_some() || matches!(e.msg, EventMsg::ApprovalRequested { .. })),
         "nobody is asked"
     );
     let refused = &tool_results(&h.requests("writer")[1])[0];
-    assert!(refused.contains("a sub-agent cannot ask for it"), "{refused}");
+    assert!(refused.contains("nobody can approve it") && refused.contains("list it in your report"), "{refused}");
     assert!(!h.work.join("x.txt").exists());
+}
+
+#[tokio::test]
+async fn an_answer_for_no_such_agent_is_a_warning() {
+    let mut h = Harness::start(PermissionMode::Manual, true).await;
+    h.kernel
+        .submit(Op::AgentApproval {
+            agent: "nobody".into(),
+            call_id: "c".into(),
+            decision: ApprovalDecision::Approve,
+        })
+        .await
+        .unwrap();
+    h.until(|m| matches!(m, EventMsg::Warning { message, .. } if message.contains("nobody"))).await;
 }
 
 #[tokio::test]

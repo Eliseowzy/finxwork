@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Weak;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use tokio::sync::oneshot;
@@ -111,7 +112,7 @@ pub(crate) struct SessionState {
     pub(crate) bot: Option<BotNames>,
     /// A bot's session: what its sub-agents' prompts start from instead of `base_prompt`,
     /// built like a session's (bot-design §2.3).
-    pub(crate) helper_prompt: Option<Arc<str>>,
+    pub(crate) sub_agent_prompt: Option<Arc<str>>,
 }
 
 /// A bot session's names.
@@ -156,7 +157,7 @@ impl SessionState {
             title: None,
             archived: false,
             bot: None,
-            helper_prompt: None,
+            sub_agent_prompt: None,
         }
     }
 
@@ -250,8 +251,13 @@ pub(crate) struct Session {
     pub(crate) locks: Arc<PathLocks>,
     /// The sub-agents of a main session. `None` for a sub-agent, which cannot start any.
     pub(crate) agents: Option<Arc<AgentTree>>,
-    /// A sub-agent's session: nobody can answer its approval requests.
+    /// A sub-agent's session.
     pub(crate) sub_agent: bool,
+    /// A sub-agent's main session, which holds the permissions the whole tree follows.
+    pub(crate) main: Option<Weak<Session>>,
+    /// Shared with the sub-agents: whoever holds it may ask the user, so that the tree asks one
+    /// question at a time. Fair: they ask in the order they came.
+    pub(crate) approval_line: Arc<tokio::sync::Mutex<()>>,
     /// What the kernel's tools keep for this session: its sub-agents, its browser.
     pub(crate) tool_state: Arc<finx_tools::SessionState>,
     /// Bumped whenever input is queued during a task; tools waiting for a sub-agent watch it.
@@ -565,6 +571,14 @@ impl Session {
         }
     }
 
+    /// `agent_approval`: the user's answer to what a sub-agent asks.
+    pub(crate) fn answer_agent(&self, agent: &str, call_id: &str, decision: ApprovalDecision) {
+        let sent = self.agents.as_ref().is_some_and(|tree| tree.answer(agent, call_id, decision));
+        if !sent {
+            self.warn(format!("no sub-agent \"{agent}\" to answer"));
+        }
+    }
+
     pub(crate) fn resolve_approval(&self, call_id: &str, decision: ApprovalDecision) {
         let sender = self.state.lock().pending_approvals.remove(call_id);
         match sender {
@@ -700,14 +714,29 @@ impl Session {
         }
     }
 
+    fn permissions(&self) -> (PermissionMode, Vec<CommandRule>, Vec<SiteGrant>) {
+        let state = self.state.lock();
+        (state.permission_mode, state.session_rules.clone(), state.site_grants.clone())
+    }
+
     /// Sub-agents always judge tool calls by the main session's current permissions.
     fn share_permissions(&self) {
         if let Some(tree) = &self.agents {
-            let (mode, rules, grants) = {
-                let state = self.state.lock();
-                (state.permission_mode, state.session_rules.clone(), state.site_grants.clone())
-            };
+            let (mode, rules, grants) = self.permissions();
             tree.share_permissions(mode, rules, grants);
+        }
+    }
+
+    /// A sub-agent's main session, while it runs.
+    pub(crate) fn main_session(&self) -> Option<Arc<Session>> {
+        self.main.as_ref().and_then(Weak::upgrade)
+    }
+
+    /// A sub-agent takes over the main session's permissions now, not when they arrive.
+    pub(crate) fn follow_main(&self) {
+        if let Some(main) = self.main_session() {
+            let (mode, rules, grants) = main.permissions();
+            self.apply_permissions(mode, rules, grants);
         }
     }
 

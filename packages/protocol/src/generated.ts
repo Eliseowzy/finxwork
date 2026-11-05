@@ -182,6 +182,8 @@ export type BotResult = {
 };
 
 export type BotSummary = {
+  /** Sub-agents at work. */
+  agents_working?: number;
   avatar: Avatar;
   /** RFC 3339. */
   created_at: string;
@@ -189,8 +191,6 @@ export type BotSummary = {
   default?: boolean;
   /** Its last task failed, so no message may be coming. Only while its conversation is loaded. */
   failed?: boolean;
-  /** Background helpers (sub-agents) at work. */
-  helpers?: number;
   id: string;
   last?: LastMessage | null;
   /** The owner asked not to be alerted about this bot, on any device. */
@@ -1561,6 +1561,12 @@ export type Op = {
   call_id: string;
   decision: ApprovalDecision;
   type: "approval";
+} | {
+  /** The agent's id. */
+  agent: string;
+  call_id: string;
+  decision: ApprovalDecision;
+  type: "agent_approval";
 } | {
   model: string;
   thinking?: ThinkingLevel | null;

@@ -97,8 +97,8 @@ function RowLine({ b }: { b: BotSummary }) {
           <span className="btag">{t("line.waiting")}</span> {line.text}
         </span>
       );
-    case "helpers":
-      return <span className="bprev"><span className="shimmer">{t("line.helpers", { things: thingsText(line.count) })}</span></span>;
+    case "agents":
+      return <span className="bprev"><span className="shimmer">{t("line.agents", { things: thingsText(line.count) })}</span></span>;
     case "typing":
       return <span className="bprev"><span className="shimmer">{t("line.typing")}</span></span>;
     case "empty":

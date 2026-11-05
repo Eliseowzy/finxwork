@@ -22,10 +22,10 @@ test("pinned bots first, then the latest message; busy ones keep their place", (
   assert.deepEqual(attention([bot("x", { unread: 2 }), bot("y", { waiting: "rm -rf build" })]), { unread: true, waiting: true });
 });
 
-test("a row's second line: an approval, then helpers, then answering, then the last message", () => {
+test("a row's second line: an approval, then sub-agents, then answering, then the last message", () => {
   const last = { from: "user" as const, text: "看看这个\nAttached files:\n/Users/me/报告.pdf\n/Users/me/data.xlsx", ts: at(1) };
-  assert.deepEqual(botLine(bot("a", { waiting: "重启 nginx", helpers: 2, typing: true, last })), { kind: "waiting", text: "重启 nginx" });
-  assert.deepEqual(botLine(bot("a", { helpers: 2, typing: true, last })), { kind: "helpers", count: 2 });
+  assert.deepEqual(botLine(bot("a", { waiting: "重启 nginx", agents_working: 2, typing: true, last })), { kind: "waiting", text: "重启 nginx" });
+  assert.deepEqual(botLine(bot("a", { agents_working: 2, typing: true, last })), { kind: "agents", count: 2 });
   assert.deepEqual(botLine(bot("a", { typing: true, last })), { kind: "typing" });
   assert.deepEqual(botLine(bot("a", { last })), { kind: "last", from: "user", text: "看看这个", images: 0, files: ["报告.pdf", "data.xlsx"] });
   assert.deepEqual(botLine(bot("a")), { kind: "empty" });
@@ -103,7 +103,7 @@ test("a message sent while the bot answered keeps its place, whether queued or i
     { type: "queue_changed", queued: [{ id: "u2", mode: "steer", message: { content: [{ type: "text", text: "再写一首夏天的" }], ts: 10_500 } }] },
   ]);
   assert.deepEqual(botChat(live).map((i) => i.kind === "user" && `${i.text}${i.queued ? " (queued)" : ""}`), ["写一首春天的诗", "再写一首夏天的 (queued)"]);
-  assert.deepEqual(busyBubble(live), { typing: true, helpers: [] });
+  assert.deepEqual(busyBubble(live), { typing: true, agents: [] });
   const later = applyEvents(live, [
     { seq: 10, ts: 0, ...assistant("a1", [send("c1", "春天的诗。", true)], 11_000, 2000) } as Event,
     { seq: 11, ts: 0, ...started("c1") } as Event,
@@ -145,7 +145,7 @@ test("a failed, refused or cancelled send shows nothing; an approval is no part 
   assert.ok(failure.kind === "failure" && failure.last && failure.error.kind === "rate_limited");
 });
 
-test("helpers at work make the bot busy, each with what it was asked to do", () => {
+test("sub-agents at work make the bot busy, each with what it was asked to do", () => {
   const v = play([
     { type: "task_started", task_id: "t1" },
     user("u1", "调研一下", 10_000),
@@ -161,7 +161,7 @@ test("helpers at work make the bot busy, each with what it was asked to do", () 
   ]);
   const busy = busyBubble(v);
   assert.equal(busy?.typing, false);
-  assert.deepEqual(busy?.helpers.map((h) => [h.label, h.step]), [["调研更新方案", "curl releases"]]);
+  assert.deepEqual(busy?.agents.map((h) => [h.label, h.step]), [["调研更新方案", "curl releases"]]);
   // The launch is part of the first message's process.
   const bubble = botChat(v).find((i) => i.kind === "bot");
   assert.ok(bubble?.kind === "bot" && bubble.process.some((s) => s.kind === "agents"));

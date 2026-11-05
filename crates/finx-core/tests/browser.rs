@@ -672,6 +672,42 @@ async fn a_sub_agents_tabs_close_when_it_reports_and_the_main_sessions_stay() {
     h.kernel.shutdown().await;
 }
 
+#[tokio::test]
+async fn a_sub_agent_asks_for_a_site_and_the_grant_holds_for_the_tree() {
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "spawn_agent", json!({ "description": "open the page", "task": "open the page", "name": "web", "wait": true })));
+    h.api.push(Script::tool_call("k1", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("opened it"));
+    // The site is allowed now: the main session opens it without asking.
+    h.api.push(Script::tool_call("c2", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("done"));
+    h.kernel.submit(Op::prompt("go")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::AgentEvent { event, .. } if matches!(event.msg, EventMsg::ApprovalRequested { .. }))).await;
+    let EventMsg::AgentEvent { agent_id, event } = &events.last().unwrap().msg else {
+        unreachable!()
+    };
+    let EventMsg::ApprovalRequested { call_id, proposed_grants, .. } = &event.msg else {
+        unreachable!()
+    };
+    assert_eq!(proposed_grants[0].origin, h.origin);
+    h.kernel
+        .submit(Op::AgentApproval {
+            agent: agent_id.clone(),
+            call_id: call_id.clone(),
+            decision: ApprovalDecision::ApproveForSession { grant: Some(0), persist: false },
+        })
+        .await
+        .unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert!(!asked(&events), "the main session was not asked");
+    let page = last_results(&h.api).pop().unwrap();
+    assert!(page.contains("Sign in"), "{page}");
+    h.kernel.shutdown().await;
+}
+
 /// The browser settings as the user configuration file has them now, as the service hands them
 /// to an open session when the file changes (connectors-entry-design §9.4).
 fn settings_from(file: &Path) -> finx_core::SystemSettings {

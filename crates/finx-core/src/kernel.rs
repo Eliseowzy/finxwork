@@ -185,6 +185,8 @@ struct Launch {
     state: SessionState,
     agents: Option<Arc<AgentTree>>,
     sub_agent: bool,
+    main: Option<Weak<Session>>,
+    approval_line: Arc<tokio::sync::Mutex<()>>,
     locks: Arc<PathLocks>,
     mcp: Option<Arc<McpManager>>,
     /// The tree's browser and desktop settings (connectors-entry-design §9.4).
@@ -278,6 +280,8 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         locks: launch.locks,
         agents: launch.agents,
         sub_agent: launch.sub_agent,
+        main: launch.main,
+        approval_line: launch.approval_line,
         tool_state,
         input_seq: watch::channel(0).0,
         config: launch.config,
@@ -388,13 +392,17 @@ pub(crate) struct ChildLaunch {
     pub(crate) home: FinxHome,
     pub(crate) config: Arc<Config>,
     pub(crate) trusted: bool,
+    /// The main session's own: where its questions go, or that nobody answers them.
+    pub(crate) interactive_approvals: bool,
+    pub(crate) main: Weak<Session>,
+    pub(crate) approval_line: Arc<tokio::sync::Mutex<()>>,
     pub(crate) locks: Arc<PathLocks>,
     /// The main session's browser and desktop settings, which the sub-agent follows.
     pub(crate) system: Arc<SystemCell>,
 }
 
-/// Starts a sub-agent's session: an ordinary session with its own log, which never asks for
-/// approval.
+/// Starts a sub-agent's session: an ordinary session with its own log, whose questions go to
+/// the main session's user.
 pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
     let created = child.deps.store.create(&child.header)?;
     let model_ref = child.model.reference();
@@ -419,12 +427,14 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
         writer: created.writer,
         home: child.home,
         trusted: child.trusted,
-        interactive_approvals: false,
+        interactive_approvals: child.interactive_approvals,
         config: child.config,
         deps: child.deps,
         state,
         agents: None,
         sub_agent: true,
+        main: Some(child.main),
+        approval_line: child.approval_line,
         locks: child.locks,
         mcp: child.mcp,
         system: child.system,
@@ -483,7 +493,7 @@ fn mcp_manager(deps: &KernelDeps, config: &Config, project_root: Option<PathBuf>
 struct BuiltPrompt {
     text: String,
     /// A bot's session: its sub-agents' prompt, a session's built from the same inputs.
-    helper: Option<String>,
+    sub_agent: Option<String>,
     skills: Vec<SkillRef>,
     warnings: Vec<String>,
 }
@@ -538,13 +548,13 @@ fn build_prompt(
         .map_err(|e| KernelError::Other(format!("cannot build the system prompt: {e}")))
     };
     let text = build(profile)?;
-    let helper = match profile {
+    let sub_agent = match profile {
         PromptProfile::Bot { .. } => Some(build(&PromptProfile::Session)?),
         PromptProfile::Session => None,
     };
     Ok(BuiltPrompt {
         text,
-        helper,
+        sub_agent,
         skills: scan.set.references(),
         warnings,
     })
@@ -577,7 +587,7 @@ impl Kernel {
         let context_window = u64::from(resolved.model.context_window);
         let BuiltPrompt {
             text: system_prompt,
-            helper,
+            sub_agent,
             skills,
             warnings: prompt_warnings,
         } = build_prompt(&opts.home, &opts.config, &deps, &starting, opts.project_root.as_deref(), context_window, &profile)?;
@@ -609,7 +619,7 @@ impl Kernel {
         state.base_prompt = system_prompt.into();
         state.mcp_section = mcp_section;
         state.skills = Arc::from(skills);
-        state.helper_prompt = helper.map(Arc::from);
+        state.sub_agent_prompt = sub_agent.map(Arc::from);
         state.bot = opts.bot.map(|bot| BotNames {
             given: bot.name.clone(),
             current: bot.name,
@@ -627,6 +637,8 @@ impl Kernel {
             state,
             agents: agents.clone(),
             sub_agent: false,
+            main: None,
+            approval_line: Arc::default(),
             locks: Arc::new(PathLocks::new()),
             mcp: mcp.clone(),
             system,
@@ -756,19 +768,19 @@ impl Kernel {
             Some(bot) => PromptProfile::Bot { name: bot.name.clone() },
             None => PromptProfile::Session,
         };
-        let mut helper = None;
+        let mut sub_agent = None;
         let system_prompt = match system_prompt {
             Some(text) => text,
             None => {
                 let built = build_prompt(&opts.home, &opts.config, &deps, &starting, project_root, context_window, &profile)?;
                 warnings.extend(built.warnings);
                 skills = built.skills;
-                helper = built.helper;
+                sub_agent = built.sub_agent;
                 built.text.into()
             }
         };
-        // A bot's helpers are new sessions: their prompt is built as things are now.
-        if bot_ref.is_some() && helper.is_none() {
+        // A bot's sub-agents are new sessions: their prompt is built as things are now.
+        if bot_ref.is_some() && sub_agent.is_none() {
             let built = build_prompt(
                 &opts.home,
                 &opts.config,
@@ -778,7 +790,7 @@ impl Kernel {
                 context_window,
                 &PromptProfile::Session,
             )?;
-            helper = Some(built.text);
+            sub_agent = Some(built.text);
         }
         let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
         let mut state = SessionState::new(
@@ -795,7 +807,7 @@ impl Kernel {
         state.next_task_no = max_task;
         state.title = title;
         state.archived = archived;
-        state.helper_prompt = helper.map(Arc::from);
+        state.sub_agent_prompt = sub_agent.map(Arc::from);
         state.bot = bot_ref.map(|bot| BotNames {
             current: opts.bot_name.clone().unwrap_or_else(|| bot.name.clone()),
             given: bot.name,
@@ -815,6 +827,8 @@ impl Kernel {
             state,
             agents: agents.clone(),
             sub_agent: false,
+            main: None,
+            approval_line: Arc::default(),
             locks: Arc::new(PathLocks::new()),
             mcp: mcp.clone(),
             system,
@@ -1042,6 +1056,7 @@ async fn submission_loop(
                     Op::SteerNow => session.steer_now(),
                     Op::AgentInterrupt { agent } => session.interrupt_agent(&agent),
                     Op::Approval { call_id, decision } => session.resolve_approval(&call_id, decision),
+                    Op::AgentApproval { agent, call_id, decision } => session.answer_agent(&agent, &call_id, decision),
                     Op::SetModel { model, thinking } => session.set_model(&model, thinking),
                     Op::SetPermissionMode { mode } => session.set_permission_mode(mode),
                     Op::SetTitle { title } => session.set_title(&title),

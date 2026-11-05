@@ -489,7 +489,7 @@ fn unanswered_sends(messages: &[Value]) -> Vec<String> {
     if texts.is_empty() { vec!["send done".to_string()] } else { texts }
 }
 
-/// The text of the latest user message: a report, after a bot's helper finished.
+/// The text of the latest user message: a report, after a bot's sub-agent finished.
 fn last_user_text(messages: &[Value]) -> String {
     messages
         .iter()
@@ -633,6 +633,24 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 ))
             }
             _ => done("send"),
+        },
+        // Commands for sub-agents, one each, which the user may have to approve.
+        "delegate" => match step {
+            0 => Plan::Step(Step::calls(delegated(arg))),
+            1 => Plan::Step(Step::text("交给子智能体了。".to_string())),
+            _ => done("delegate"),
+        },
+        // The same for a bot.
+        "relay_run" => match step {
+            0 => {
+                let mut calls = delegated(arg);
+                calls.push(("send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })));
+                Plan::Step(Step::calls(calls))
+            }
+            _ => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({ "text": format!("做完了：{}", last_user_text(messages)), "end_turn": true }),
+            )])),
         },
         "relay" => match step {
             0 => Plan::Step(Step::calls(vec![
@@ -868,6 +886,18 @@ fn skill_actions(body: &str, dir: &str) -> Vec<(&'static str, Value)> {
 /// (`notes/LABEL.md`, so that tasks sharing a workspace do not collide) written, read back and
 /// edited, a command with about 9 KB of output, and a 3000-character
 /// summary. The workspace needs `src/lib.rs` and `README.md`.
+/// `spawn_agent` calls for the `|`-separated commands: each runs one and reports.
+fn delegated(commands: &str) -> Vec<(&'static str, Value)> {
+    commands
+        .split('|')
+        .enumerate()
+        .map(|(i, command)| {
+            let task = format!("[[mock:bash:{command}]] Run it and report.");
+            ("spawn_agent", json!({ "description": format!("运行 {command}"), "task": task, "name": format!("runner-{i}") }))
+        })
+        .collect()
+}
+
 fn agent_step(label: &str, step: usize) -> Plan {
     let call = |name: &str, args: Value| Part::Call {
         name: name.to_string(),

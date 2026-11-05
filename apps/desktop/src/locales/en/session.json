@@ -77,7 +77,8 @@
       "completed": "Done",
       "failed": "Failed",
       "interrupted": "Stopped",
-      "closed": "Closed"
+      "closed": "Closed",
+      "awaiting_approval": "Waiting for you"
     },
     "open": "Show its work in the background panel",
     "report": "Report from <b>{{name}}</b>",
@@ -122,6 +123,7 @@
   },
   "approval": {
     "label": "Waiting for your approval",
+    "agent": "Sub-agent · {{name}}",
     "queue": "{{n}} of {{total}}",
     "runCommand": "Run this command?",
     "useTool": "{{verb}} {{object}}?",
