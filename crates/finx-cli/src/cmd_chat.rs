@@ -185,7 +185,7 @@ async fn stream_once(
                 }
                 return message;
             }
-            StreamEvent::ToolCallStart { .. } | StreamEvent::ToolCallArgs { .. } => {}
+            StreamEvent::ToolCallStart { .. } | StreamEvent::ToolCallArgs { .. } | StreamEvent::ToolCallData { .. } => {}
         }
     }
     MessageAccumulator::for_model(model).fail(finx_llm::LlmError::new(

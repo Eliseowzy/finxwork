@@ -120,7 +120,7 @@ impl Server {
 
     /// Asks local servers (no key) again when their answer is older than a minute, waiting at
     /// most 300 ms: a stopped Ollama should not stay in the menu.
-    pub(crate) async fn refresh_local_models(&self) {
+    pub async fn refresh_local_models(&self) {
         let llm = self.0.llm.clone();
         let local: Vec<String> = llm
             .providers()

@@ -65,6 +65,19 @@ catalog_id = "anthropic"
 [[providers.anthropic.models]]
 id = "claude-sonnet-5-5"
 
+# Gemini through its OpenAI-compatible endpoint. Its tool calls carry a signature that later turns
+# send back (`extra_content`, kept as ToolCall::provider_data).
+[providers.google]
+name = "Google Gemini"
+api = "openai-chat"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+api_key_env = "GEMINI_API_KEY"
+catalog_id = "google"
+compat = { thinking_format = "openai" }
+
+[[providers.google.models]]
+id = "gemini-3.8-flash"
+
 [providers.qwen]
 name = "Qwen (Alibaba Cloud Model Studio)"
 api = "openai-chat"

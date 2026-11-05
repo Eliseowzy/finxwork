@@ -78,41 +78,6 @@ pub fn models(
     action: Option<crate::ModelsAction>,
 ) -> anyhow::Result<u8> {
     let rt = setup::init_local(std::env::current_dir()?, overrides)?;
-    if let Some(action @ (crate::ModelsAction::Login { .. } | crate::ModelsAction::Logout { .. } | crate::ModelsAction::Status { .. } | crate::ModelsAction::Forget { .. })) = &action {
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-        let status = runtime.block_on(async {
-            let chatgpt = &rt.connections.chatgpt;
-            match action {
-                crate::ModelsAction::Status { .. } => Ok(chatgpt.status()?),
-                crate::ModelsAction::Logout { .. } => Ok(chatgpt.logout().await?),
-                crate::ModelsAction::Forget { .. } => { chatgpt.forget().await?; Ok(chatgpt.status()?) },
-                _ => {
-                    let started = chatgpt.start().await?;
-                    if let Some(url) = &started.authorize_url {
-                        // Print a URL for browser-less terminals; never launch a shell with it.
-                        writeln!(std::io::stderr(), "Open this URL to connect ChatGPT API:\n{url}")?;
-                    }
-                    loop {
-                        tokio::select! {
-                            _ = tokio::signal::ctrl_c() => {
-                                if let Some(id) = &started.login_id { let _ = chatgpt.cancel(id); }
-                                anyhow::bail!("ChatGPT sign-in cancelled");
-                            }
-                            _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => {}
-                        }
-                        let status = chatgpt.status()?;
-                        match status.state {
-                            finx_protocol::api::ChatGptLoginState::Pending => continue,
-                            finx_protocol::api::ChatGptLoginState::Connected => break Ok(status),
-                            _ => anyhow::bail!("{}", status.message.unwrap_or_else(|| "ChatGPT sign-in did not complete".into())),
-                        }
-                    }
-                }
-            }
-        })?;
-        print_json(&serde_json::to_value(status)?)?;
-        return Ok(0);
-    }
     anyhow::ensure!(
         provider.is_none_or(|wanted| rt.llm.provider(wanted).is_some()),
         "unknown provider '{}'",
@@ -127,7 +92,7 @@ pub fn models(
         let (reference, shown) = match &action {
             crate::ModelsAction::Unhide { model } => (model, true),
             crate::ModelsAction::Hide { model } => (model, false),
-            _ => unreachable!("connection actions handled above"),
+            _ => unreachable!("handled in main"),
         };
         finx_core::models::set_shown(&rt.llm, defaults.model.as_deref(), reference, shown).map_err(anyhow::Error::msg)?;
         let file = rt.home.models_dir().join("selection.json");
@@ -461,7 +426,22 @@ struct Check {
     detail: String,
 }
 
-pub fn doctor(overrides: &[String], as_json: bool, strict: bool) -> anyhow::Result<u8> {
+/// One real request to the default model, for `finx doctor --online`.
+pub async fn online_check(overrides: &[String]) -> (bool, String) {
+    let attempt = async {
+        let rt = setup::init(std::env::current_dir()?, overrides)?;
+        let reference = setup::session_model(&rt, None)?;
+        setup::check_credentials(&rt, &reference)?;
+        let model = rt.llm.resolve(&reference)?.model;
+        crate::cmd_check::answers(&rt.llm, &model).await.map_err(anyhow::Error::msg)
+    };
+    match attempt.await {
+        Ok(detail) => (true, detail),
+        Err(err) => (false, format!("{err:#}").lines().next().unwrap_or_default().to_string()),
+    }
+}
+
+pub fn doctor(overrides: &[String], as_json: bool, strict: bool, online: Option<(bool, String)>) -> anyhow::Result<u8> {
     let mut checks = Vec::new();
     let mut warnings = Vec::new();
     let mut check =
@@ -523,6 +503,9 @@ pub fn doctor(overrides: &[String], as_json: bool, strict: bool) -> anyhow::Resu
                 Some((_, Err(err))) => check("default model", false, err.to_string()),
             }
             let shell = if PathBuf::from("/bin/bash").exists() { "/bin/bash" } else { "/bin/sh" };
+            if let Some((ok, detail)) = online {
+                check("model answers", ok, detail);
+            }
             check("shell", true, rt.config.bash_shell.clone().unwrap_or_else(|| shell.to_string()));
             // Broken skills are reported, but they do not make the setup fail.
             let report = scan_skills(rt);

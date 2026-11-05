@@ -561,6 +561,7 @@ mod tests {
                     name: "bash".into(),
                     arguments: serde_json::json!({}).into(),
                     arguments_error: None,
+                    provider_data: None,
                 })],
                 provider: "p".into(),
                 api: "a".into(),

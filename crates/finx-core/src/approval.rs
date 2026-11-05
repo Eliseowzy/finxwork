@@ -457,6 +457,7 @@ mod tests {
             name: "bash".into(),
             arguments: json!({ "command": command }).into(),
             arguments_error: None,
+            provider_data: None,
         }
     }
 
@@ -466,6 +467,7 @@ mod tests {
             name: "write".into(),
             arguments: json!({ "path": path, "content": "x" }).into(),
             arguments_error: None,
+            provider_data: None,
         }
     }
 
@@ -474,7 +476,7 @@ mod tests {
     }
 
     fn doc_call(name: &str, args: serde_json::Value) -> ToolCall {
-        ToolCall { id: "c".into(), name: name.into(), arguments: args.into(), arguments_error: None }
+        ToolCall { id: "c".into(), name: name.into(), arguments: args.into(), arguments_error: None, provider_data: None }
     }
 
     #[test]
@@ -792,6 +794,7 @@ mod tests {
             name: "read".into(),
             arguments: json!({"path": "/etc/hosts"}).into(),
             arguments_error: None,
+            provider_data: None,
         };
         assert_eq!(evaluate(&read, ToolKind::ReadOnly, &manual), Gate::Allow);
     }

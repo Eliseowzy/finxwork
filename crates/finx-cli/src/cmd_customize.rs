@@ -217,7 +217,7 @@ fn print_step(step: &finx_protocol::customize::McpProbeStep) {
 }
 
 /// Opens `url` in the system browser, unless `FINX_NO_BROWSER` is set.
-fn open_browser(url: &str) {
+pub(crate) fn open_browser(url: &str) {
     if std::env::var_os("FINX_NO_BROWSER").is_some() {
         return;
     }

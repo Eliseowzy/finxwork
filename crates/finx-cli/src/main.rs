@@ -5,9 +5,11 @@ mod approval_prompt;
 mod cli_shape;
 mod cmd_browser;
 mod cmd_chat;
+mod cmd_check;
 mod cmd_customize;
 mod cmd_exec;
 mod cmd_info;
+mod cmd_login;
 mod cmd_mcp;
 mod cmd_serve;
 mod render;
@@ -34,6 +36,8 @@ Run tasks:
   sessions    List recent sessions of this project
 
 Models:
+  login       Connect a model: a key, a subscription, a service
+  logout      Remove a saved key, or sign out of ChatGPT
   models      List the models in the model menu
 
 Tools and extensions:
@@ -141,6 +145,36 @@ enum Command {
         #[command(flatten)]
         run: RunArgs,
     },
+    /// Connect a model: a key, a subscription, a service
+    ///
+    /// Without arguments it asks. In a script, pipe the key:
+    /// printf %s "$KEY" | finx login deepseek --key-stdin --model deepseek/deepseek-flash
+    Login {
+        /// A provider (`finx models` lists them), `chatgpt`, or a name for your own service
+        provider: Option<String>,
+        /// Read the key from standard input
+        #[arg(long)]
+        key_stdin: bool,
+        /// The model new sessions start on: writes `model` to your configuration
+        #[arg(short, long)]
+        model: Option<String>,
+        /// The address of a compatible service of your own: writes it to models.toml
+        #[arg(long, value_name = "URL")]
+        base_url: Option<String>,
+        /// What the service speaks (default: openai-chat)
+        #[arg(long, value_name = "API", requires = "base_url")]
+        api: Option<String>,
+        /// The service takes no key
+        #[arg(long, requires = "base_url")]
+        no_key: bool,
+    },
+    /// Remove a saved key, or sign out of ChatGPT
+    Logout {
+        provider: String,
+        /// For chatgpt: also forget this registration, so another account can sign in
+        #[arg(long)]
+        forget: bool,
+    },
     /// List recent sessions of this project
     #[command(args_conflicts_with_subcommands = true)]
     Sessions {
@@ -175,6 +209,9 @@ enum Command {
         /// Warnings count as failures: for CI
         #[arg(long)]
         strict: bool,
+        /// Also make one real request to the default model
+        #[arg(long)]
+        online: bool,
     },
     /// Print a shell completion script
     ///
@@ -470,14 +507,14 @@ enum SkillsAction {
 pub(crate) enum ModelsAction {
     /// List the models in the model menu
     List(ModelsArgs),
-    /// Sign in with ChatGPT to use subscription models (no API key)
-    Login { #[arg(value_parser = ["chatgpt-api"])] connection: String },
-    /// Disconnect and revoke the ChatGPT subscription connection
-    Logout { #[arg(value_parser = ["chatgpt-api"])] connection: String },
-    /// Forget a signed-out ChatGPT registration so another account can be connected
-    Forget { #[arg(value_parser = ["chatgpt-api"])] connection: String },
-    /// Show ChatGPT connection status, without credentials
-    Status { #[arg(value_parser = ["chatgpt-api"])] connection: String },
+    /// Try a model with real requests: text, tools, levels, images, cache, cancel
+    Check {
+        /// provider/model-id (default: the default model)
+        model: Option<String>,
+        /// Print JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Put a model back in the model menu
     Unhide {
         /// provider/model-id
@@ -614,6 +651,15 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
             Some(session) => cmd_exec::resume(overrides, &session, &prompt, &run).await,
             None => cmd_exec::exec(overrides, &prompt, cwd, !no_save, &run).await,
         },
+        Command::Login { provider, key_stdin, model, base_url, api, no_key } => {
+            cmd_login::login(overrides, cmd_login::LoginArgs { provider, key_stdin, model, base_url, api, no_key }).await
+        }
+        Command::Logout { provider, forget } => cmd_login::logout(overrides, &provider, forget).await,
+        Command::Models { action: Some(ModelsAction::Check { model, json }), .. } => cmd_check::check(overrides, model, json).await,
+        Command::Doctor { json, strict, online: true } => {
+            let online = cmd_info::online_check(overrides).await;
+            cmd_info::doctor(overrides, json, strict, Some(online))
+        }
         Command::Serve { listen, idle_exit, .. } => cmd_serve::serve(overrides, listen, idle_exit).await,
         Command::Acp => cmd_serve::acp(overrides).await,
         Command::Browser {
@@ -654,7 +700,7 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         Command::Sessions { .. }
         | Command::Models { .. }
         | Command::Status { .. }
-        | Command::Doctor { .. }
+        | Command::Doctor { online: false, .. }
         | Command::Completion { .. }
         | Command::Skills { .. }
         | Command::Trust { .. }
@@ -762,6 +808,9 @@ fn pointer(args: &[std::ffi::OsString]) -> Option<&'static str> {
     if has(&["-p", "--print"]) {
         return Some("To run one task: finx exec \"PROMPT\"");
     }
+    if words.starts_with(&["models", "login"]) || words.starts_with(&["models", "logout"]) {
+        return Some("Accounts have their own commands: finx login chatgpt, finx logout chatgpt");
+    }
     if words.starts_with(&["models", "show"]) {
         return Some("`finx models unhide MODEL` puts a model back in the menu; `finx models` lists them");
     }
@@ -815,9 +864,10 @@ fn main() -> ExitCode {
         Command::Models { list, action: None } | Command::Models { action: Some(ModelsAction::List(list)), .. } => {
             cmd_info::models(&overrides, list.provider.as_deref(), list.all, list.refresh, list.json, None)
         }
+        Command::Models { action: Some(ModelsAction::Check { .. }), .. } => run_async(&overrides, command),
         Command::Models { action, .. } => cmd_info::models(&overrides, None, false, false, false, action),
         Command::Status { json } => cmd_info::status(&overrides, json),
-        Command::Doctor { json, strict } => cmd_info::doctor(&overrides, json, strict),
+        Command::Doctor { json, strict, online: false } => cmd_info::doctor(&overrides, json, strict, None),
         Command::Completion { shell } => {
             let shell = match shell.as_str() {
                 "bash" => clap_complete::Shell::Bash,
@@ -868,6 +918,8 @@ fn main() -> ExitCode {
             if wants_json(&args) {
                 if let Some(no_model) = err.downcast_ref::<setup::NoModel>() {
                     print_failure("no_model", "no model is set up", Some(&no_model.help));
+                } else if let Some(rejected) = err.downcast_ref::<cmd_login::KeyRejected>() {
+                    print_failure("key_rejected", &rejected.0, None);
                 } else if let Some(missing) = err.downcast_ref::<setup::NoCredentials>() {
                     print_failure("no_credentials", &format!("no credentials for {}", missing.model), Some(&missing.help));
                 } else {

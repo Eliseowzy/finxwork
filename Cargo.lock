@@ -1076,6 +1076,7 @@ dependencies = [
  "strsim",
  "tempfile",
  "tokio",
+ "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

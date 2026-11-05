@@ -825,6 +825,9 @@
             "name": {
               "type": "string"
             },
+            "provider_data": {
+              "description": "What the provider attached to the call and wants back with it on later turns, untouched: Gemini's signature of its reasoning, for one."
+            },
             "type": {
               "enum": [
                 "tool_call"

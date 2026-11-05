@@ -114,6 +114,20 @@ fn starting_model<'a>(provider: &ProviderConfig, shown: &[&'a DirectoryModel]) -
         .copied()
 }
 
+/// The model a provider starts on, as a first choice to offer.
+pub fn provider_start(llm: &ModelRegistry, provider: &ProviderConfig) -> Option<String> {
+    let directory = llm.directory();
+    let selection = directory.selection();
+    let merged = directory.models(provider);
+    let by_default = merged.default_shown(provider.listing.from.is_some());
+    let shown: Vec<&DirectoryModel> = merged
+        .models
+        .iter()
+        .filter(|m| m.meta.chat && selection.is_shown(&m.model.reference(), by_default.contains(&m.model.id)))
+        .collect();
+    starting_model(provider, &shown).map(|m| m.model.reference())
+}
+
 /// What a new session runs on when nobody names a model: the configured `model`, else the model
 /// the first usable provider starts on, in the order of `models/list`. `None` when nothing is set
 /// up: no model is assumed for the person, and clients tell them to connect one. May read saved

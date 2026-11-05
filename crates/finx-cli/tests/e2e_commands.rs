@@ -74,6 +74,7 @@ async fn spellings_from_elsewhere_say_what_to_write() {
         (&["resume", "last", "-p", "next"], "finx exec --resume"),
         (&["exec", "hi", "--continue"], "finx exec --resume"),
         (&["models", "show", "a/b"], "finx models unhide"),
+        (&["models", "login", "chatgpt-api"], "finx login chatgpt"),
     ] {
         let (code, stdout, stderr) = run(&env, args).await;
         assert_eq!(code, 2, "{args:?}: {stderr}");

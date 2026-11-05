@@ -202,10 +202,10 @@ pub fn no_model_help(rt: &Runtime) -> String {
     keys.sort();
     keys.dedup();
     format!(
-        "To set up a model, any one of these will do:\n  \
-         an API key in the environment   {}\n  \
-         a ChatGPT subscription          finx models login chatgpt-api\n  \
-         a local Ollama                  pass -m ollama/<model>\n\n\
+        "To set up a model, run: finx login\n\n\
+         It also takes: finx login chatgpt, finx login deepseek --key-stdin, finx login NAME --base-url URL\n\
+         A key in the environment works too: {}\n\
+         A local Ollama: pass -m ollama/<model>\n\n\
          `finx models` lists every provider and what it needs. To choose the default model, set\n\
          model = \"provider/model-id\" in {}",
         keys.join(", "),

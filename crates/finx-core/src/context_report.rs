@@ -335,6 +335,7 @@ mod tests {
             name: name.into(),
             arguments: args.into(),
             arguments_error: None,
+            provider_data: None,
         });
         let result = |id: &str, body: &str, is_error: bool| {
             Message::from(ToolResultMessage {

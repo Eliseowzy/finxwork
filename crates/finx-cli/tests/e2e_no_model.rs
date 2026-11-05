@@ -62,7 +62,7 @@ async fn the_command_line_says_how_to_set_a_model_up() {
         assert_eq!(code, 2, "{args:?}: {stderr}");
         assert_eq!(stdout, "", "{args:?}");
         assert!(stderr.contains("no model is set up"), "{stderr}");
-        for way in ["ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "finx models login chatgpt-api", "-m ollama/<model>", "config.toml"] {
+        for way in ["finx login", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "finx login chatgpt", "-m ollama/<model>", "config.toml"] {
             assert!(stderr.contains(way), "{way} is missing: {stderr}");
         }
         assert!(!stderr.contains("deepseek/"), "no model is named for the person: {stderr}");

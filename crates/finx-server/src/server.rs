@@ -223,6 +223,10 @@ impl Server {
         &self.0.acp
     }
 
+    pub fn connections(&self) -> &Arc<finx_connections::Manager> {
+        &self.0.connections
+    }
+
     pub fn models(&self) -> &Arc<ModelRegistry> {
         &self.0.llm
     }

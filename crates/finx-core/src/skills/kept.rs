@@ -223,6 +223,7 @@ mod tests {
                             name: name.to_string(),
                             arguments: args.clone().into(),
                             arguments_error: None,
+                            provider_data: None,
                         })
                     })
                     .collect(),

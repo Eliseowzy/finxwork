@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crate::setup;
 
-fn start(overrides: &[String]) -> anyhow::Result<(Server, Option<tracing_appender::non_blocking::WorkerGuard>)> {
+pub(crate) fn start(overrides: &[String]) -> anyhow::Result<(Server, Option<tracing_appender::non_blocking::WorkerGuard>)> {
     let home = setup::home()?;
     let guard = setup::init_logging(&home);
     match finx_server::limits::raise_open_file_limit() {

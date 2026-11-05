@@ -9,7 +9,6 @@
   },
   "verbs": ["list", "get", "add", "remove", "enable", "disable", "set", "unset", "hide", "unhide", "login", "logout", "install", "uninstall", "check", "status"],
   "verb_exceptions": {
-    "models forget": "Goes with the ChatGPT sign-in commands, which become finx login (D-509).",
     "browser extension": "A group, not an action.",
     "protocol schema": "A noun with a single job: printing the schema."
   },
@@ -21,6 +20,7 @@
       "sessions list",
       "models",
       "models list",
+      "models check",
       "status",
       "doctor",
       "skills",
@@ -31,13 +31,11 @@
       "browser extension status"
     ],
     "always_json": {
-      "models status": "Goes with the ChatGPT sign-in commands, which become finx login (D-509).",
       "protocol schema": "The schema is JSON."
     },
     "no_data": [
-      "models login",
-      "models logout",
-      "models forget",
+      "login",
+      "logout",
       "models hide",
       "models unhide",
       "skills add",

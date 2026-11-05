@@ -93,6 +93,8 @@ export type AssistantContent = {
   arguments_error?: string | null;
   id: string;
   name: string;
+  /** What the provider attached to the call and wants back with it on later turns, untouched: Gemini's signature of its reasoning, for one. */
+  provider_data?: unknown;
   type: "tool_call";
 };
 
