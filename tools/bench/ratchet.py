@@ -3,16 +3,26 @@
 
 Runs base and candidate interleaved on the same machine and prints medians with a two-sided
 Mann-Whitney U p-value. A change counts as a regression when it is worse by more than 2% and
-p < 0.05. Start-up metrics drift by about 2% between rebuilds: repeat before calling one.
+p < 0.05.
+
+Start-up metrics run each build from several fresh copies, because one file is a sample of one:
+byte-identical copies differ by several percent for as long as they stay in the page cache, whatever
+the number of runs. So a metric is first reduced to one median per copy, and both the change and the
+p-value compare those medians. With 6 copies a side, p cannot go below about 0.005.
+
+Chance still flags a small metric in about one start-up comparison out of ten, even between two copies
+of one binary: repeat before calling one, the next run draws new copies. Fewer runs per copy flag more
+and catch less (docs/kernel/benchmarks/1105-local-command-gate-report.md, section 6).
 
   cargo build --release -p finx-cli -p finx-bench
   python3 tools/bench/ratchet.py --repo . --base /path/to/finx-before --cand target/release/finx \
       --out target/ratchet [--linux-host HOST --linux-base LB --linux-cand LC]
 
 The Linux part copies the binaries, bench_startup.py and bench_protocol_startup.py to
-~/finx-ratchet on HOST over ssh; a `startup-launcher` built from startup_launcher.c must be there.
+~/finx-ratchet on HOST over ssh and makes the fresh copies there; a `startup-launcher` built from
+startup_launcher.c must be there.
 """
-import argparse, json, math, pathlib, statistics, subprocess, sys, time
+import argparse, json, math, pathlib, shutil, statistics, subprocess, sys, tempfile, time
 
 
 def mann_whitney_p(a, b):
@@ -67,30 +77,60 @@ def run(cmd, **kw):
     return subprocess.run(cmd, check=True, **kw)
 
 
-def startup_mac(args, out):
-    j = out / "mac-cli.json"
-    run([sys.executable, args.repo / "tools/bench/bench_startup.py", "--finx", f"base={args.base}", "--finx",
-         f"cand={args.cand}", "--runs", str(args.startup_runs), "--warmup", "10", "--json", j],
-        stdout=subprocess.DEVNULL)
-    d = json.loads(j.read_text())
-    s = d["samples"]
+PROTOCOLS = ("acp", "socket")
+# Rounds per copy. A new file's first run is slow, about 40 times on macOS, which validates it,
+# and there the next few still show it.
+STARTUP_WARMUP = 5
+
+
+def copy_labels(copies):
+    """(build, label) of every copy, equally long and in the order they run: base and candidate
+    alternate, because a process runs faster right after one from the same file."""
+    width = len(str(copies - 1))
+    return [(build, f"{build}-{i:0{width}}") for i in range(copies) for build in ("base", "cand")]
+
+
+def finx_args(root, copies):
+    return [arg for _, label in copy_labels(copies) for arg in ("--finx", f"{label}={root}/{label}/finx")]
+
+
+def compare_copies(group, key, samples, copies, suffix=""):
+    """Compares one median per copy, not the runs: however many runs it gets, a file is a sample of one."""
+    def medians(wanted):
+        return [statistics.median(r[key] for r in samples[label + suffix])
+                for build, label in copy_labels(copies) if build == wanted]
+    compare(group, key, medians("base"), medians("cand"))
+
+
+def startup_rows(prefix, stem, copies):
+    samples = json.loads(pathlib.Path(f"{stem}-cli.json").read_text())["samples"]
     for key in ("first_request", "exit"):
-        compare("mac cli", key, [r[key] for r in s["base"]], [r[key] for r in s["cand"]])
-    j = out / "mac-protocol.json"
-    run([sys.executable, args.repo / "tools/bench/bench_protocol_startup.py", "--finx", f"base={args.base}",
-         "--finx", f"cand={args.cand}", "--runs", str(args.startup_runs), "--warmup", "10", "--json", j],
-        stdout=subprocess.DEVNULL)
-    protocol_rows(json.loads(j.read_text()), "mac")
+        compare_copies(f"{prefix} cli", key, samples, copies)
+    for proto in PROTOCOLS:
+        protocol_rows(json.loads(pathlib.Path(f"{stem}-{proto}.json").read_text()), prefix, proto, copies)
 
 
-def protocol_rows(d, prefix):
-    s = d["samples"]
-    for proto in ("acp", "socket"):
-        for key in ("initialize", "session_ready", "first_request", "session_new", "prompt_to_request",
-                    "reuse_new_to_request", "reuse_prompt_to_request"):
-            b = [r.get(key) for r in s.get(f"base/{proto}", [])]
-            c = [r.get(key) for r in s.get(f"cand/{proto}", [])]
-            compare(f"{prefix} {proto}", key, b, c)
+def protocol_rows(d, prefix, proto, copies):
+    for key in ("initialize", "session_ready", "first_request", "session_new", "prompt_to_request",
+                "reuse_new_to_request", "reuse_prompt_to_request"):
+        compare_copies(f"{prefix} {proto}", key, d["samples"], copies, f"/{proto}")
+
+
+def startup_mac(args, out):
+    with tempfile.TemporaryDirectory(prefix="finx-ratchet-") as root:
+        for build, label in copy_labels(args.copies):
+            clone = pathlib.Path(root) / label / "finx"
+            clone.parent.mkdir()
+            shutil.copy2(args.base if build == "base" else args.cand, clone)
+        common = [*finx_args(root, args.copies), "--runs", str(args.startup_runs), "--warmup", str(STARTUP_WARMUP)]
+        tools = args.repo / "tools/bench"
+        run([sys.executable, tools / "bench_startup.py", *common, "--json", out / "mac-cli.json"],
+            stdout=subprocess.DEVNULL)
+        # One protocol at a time: run together, each socket run would follow an ACP run of the same file.
+        for proto in PROTOCOLS:
+            run([sys.executable, tools / "bench_protocol_startup.py", *common, "--protocol", proto,
+                 "--json", out / f"mac-{proto}.json"], stdout=subprocess.DEVNULL)
+    startup_rows("mac", out / "mac", args.copies)
 
 
 def startup_linux(args, out):
@@ -99,18 +139,21 @@ def startup_linux(args, out):
     run(["scp", "-q", "-o", "BatchMode=yes", args.linux_cand, f"{host}:{rdir}/finx-rb-cand"])
     run(["scp", "-q", "-o", "BatchMode=yes", args.repo / "tools/bench/bench_startup.py",
          args.repo / "tools/bench/bench_protocol_startup.py", f"{host}:{rdir}/"])
-    remote = (f"cd ~/{rdir} && chmod +x finx-rb-* && "
-              f"python3 bench_startup.py --finx base=./finx-rb-base --finx cand=./finx-rb-cand --launcher ./startup-launcher "
-              f"--runs {args.linux_runs} --warmup 10 --json results/rb-cli.json >/dev/null && "
-              f"python3 bench_protocol_startup.py --finx base=./finx-rb-base --finx cand=./finx-rb-cand --launcher ./startup-launcher "
-              f"--runs {args.linux_runs} --warmup 10 --json results/rb-protocol.json >/dev/null")
+    clones = " && ".join(f"mkdir copies/{label} && cp finx-rb-{build} copies/{label}/finx"
+                         for build, label in copy_labels(args.copies))
+    common = (f"{' '.join(finx_args('copies', args.copies))} --launcher ./startup-launcher "
+              f"--runs {args.linux_runs} --warmup {STARTUP_WARMUP}")
+    protocols = " && ".join(f"python3 bench_protocol_startup.py {common} --protocol {proto} "
+                            f"--json results/rb-{proto}.json >/dev/null" for proto in PROTOCOLS)
+    # sync keeps the writeback of the new files out of the measurements on a small host.
+    remote = (f"cd ~/{rdir} && chmod +x finx-rb-* && rm -rf copies && mkdir copies && {clones} && sync && "
+              f"python3 bench_startup.py {common} --json results/rb-cli.json >/dev/null && "
+              f"{protocols} && rm -rf copies")
     run(["ssh", "-o", "BatchMode=yes", host, remote])
-    for name in ("rb-cli.json", "rb-protocol.json"):
-        run(["scp", "-q", "-o", "BatchMode=yes", f"{host}:{rdir}/results/{name}", out / f"linux-{name}"])
-    d = json.loads((out / "linux-rb-cli.json").read_text())
-    for key in ("first_request", "exit"):
-        compare("linux cli", key, [r[key] for r in d["samples"]["base"]], [r[key] for r in d["samples"]["cand"]])
-    protocol_rows(json.loads((out / "linux-rb-protocol.json").read_text()), "linux")
+    for name in ("cli", *PROTOCOLS):
+        run(["scp", "-q", "-o", "BatchMode=yes", f"{host}:{rdir}/results/rb-{name}.json",
+             out / f"linux-rb-{name}.json"])
+    startup_rows("linux", out / "linux-rb", args.copies)
 
 
 LOAD_MODES = {
@@ -174,11 +217,14 @@ def main():
     ap.add_argument("--linux-cand", type=pathlib.Path)
     ap.add_argument("--linux-host", help="ssh destination for the Linux start-up comparison")
     ap.add_argument("--out", type=pathlib.Path, required=True)
-    ap.add_argument("--startup-runs", type=int, default=100)
-    ap.add_argument("--linux-runs", type=int, default=200)
+    ap.add_argument("--copies", type=int, default=6, help="fresh copies of each build for the start-up metrics")
+    ap.add_argument("--startup-runs", type=int, default=100, help="start-up runs on each copy")
+    ap.add_argument("--linux-runs", type=int, default=100, help="Linux start-up runs on each copy")
     ap.add_argument("--load-runs", type=int, default=6)
     ap.add_argument("--only", nargs="*", default=["mac", "linux", "load", "suite"])
     args = ap.parse_args()
+    if args.copies < 4:
+        ap.error("--copies must be at least 4: with fewer, p cannot reach 0.05 and nothing could count as a regression")
     args.sim = args.sim or args.repo / "target/release/finx-sim"
     args.out.mkdir(parents=True, exist_ok=True)
     started = time.time()
