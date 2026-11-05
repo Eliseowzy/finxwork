@@ -11,16 +11,20 @@ import { Icon } from "../icons";
  * text. On hover a row's time gives way to what can be done with it: a
  * queued message can interject instead, an interjection can go in now (the
  * step under way ends), and either can be edited (it comes back to the
- * composer) or deleted. Its buttons keep the focus in the composer.
+ * composer) or deleted. Its buttons keep the focus in the composer. Its last
+ * row says which sent message the composer now holds, while one is being
+ * written again: the row finds it in the conversation, × goes back to the draft.
  */
-export function Queue({ items, approving, onNow, onInterject, onEdit, onDelete }: {
+export function Queue({ items, approving, onNow, onInterject, onEdit, onDelete, again }: {
   items: QueuedInput[];
   /** An approval waits: it is answered first, so nothing goes in now. */
   approving: boolean;
   onNow: () => void;
   onInterject: (q: QueuedInput) => void;
-  onEdit: (q: QueuedInput) => void;
+  /** None while a sent message is being written again: the composer is taken. */
+  onEdit?: (q: QueuedInput) => void;
   onDelete: (q: QueuedInput) => void;
+  again?: { label: string; why: string; onFind: () => void; onCancel: () => void };
 }) {
   const { t } = useTranslation("session");
   const keep = (e: React.MouseEvent) => e.preventDefault();
@@ -48,9 +52,11 @@ export function Queue({ items, approving, onNow, onInterject, onEdit, onDelete }
                   {t("queued.interject")}
                 </button>
               )}
-              <button className="cq-ib" title={t("queued.edit")} aria-label={t("queued.edit")} onMouseDown={keep} onClick={() => onEdit(q)}>
-                <Icon name="edit" />
-              </button>
+              {onEdit && (
+                <button className="cq-ib" title={t("queued.edit")} aria-label={t("queued.edit")} onMouseDown={keep} onClick={() => onEdit(q)}>
+                  <Icon name="edit" />
+                </button>
+              )}
               <button className="cq-ib" title={t("queued.delete")} aria-label={t("queued.delete")} onMouseDown={keep} onClick={() => onDelete(q)}>
                 <Icon name="x" />
               </button>
@@ -58,6 +64,22 @@ export function Queue({ items, approving, onNow, onInterject, onEdit, onDelete }
           </div>
         );
       })}
+      {again && (
+        <div className="cq-again" role="listitem">
+          <div className="cq-row">
+            <span className="cq-i">
+              <Icon name="edit" />
+            </span>
+            <button className="cq-t cq-find" title={t("resend.find")} onMouseDown={keep} onClick={again.onFind}>
+              {t("resend.from", { text: again.label })}
+            </button>
+            <button className="cq-ib cq-x" title={t("resend.cancel")} aria-label={t("resend.cancel")} onMouseDown={keep} onClick={again.onCancel}>
+              <Icon name="x" />
+            </button>
+          </div>
+          <p className="cq-why">{again.why}</p>
+        </div>
+      )}
     </div>
   );
 }

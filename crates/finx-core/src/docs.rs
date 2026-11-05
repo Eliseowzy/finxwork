@@ -12,15 +12,18 @@ use finx_llm::UserContent;
 use finx_protocol::doc::Anchor;
 use finx_protocol::doc::BlockKind;
 use finx_protocol::doc::Capability;
+use finx_protocol::doc::CellValue;
 use finx_protocol::doc::DocInfo;
 use finx_protocol::doc::OutlineItem;
 use finx_protocol::doc::Rect;
+use finx_protocol::doc::SheetOp;
 use finx_tools::Environment;
 use finx_tools::Tool;
 use finx_tools::ToolCategory;
 use finx_tools::ToolCtx;
 use finx_tools::ToolDescription;
 use finx_tools::ToolError;
+use finx_tools::ToolKind;
 use finx_tools::ToolOutput;
 use finx_tools::Typed;
 use finx_tools::TypedTool;
@@ -31,13 +34,24 @@ use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Once per process: deriving these schemas takes about 0.3 ms, and every session asks for the list
+/// three times (D-99). The tools hold no state: a session's documents come through its context.
 pub(crate) fn doc_tools() -> Vec<Arc<dyn Tool>> {
-    vec![
-        Arc::new(Typed::new(DocOpen)),
-        Arc::new(Typed::new(DocRead)),
-        Arc::new(Typed::new(DocFind)),
-        Arc::new(Typed::new(DocView)),
-    ]
+    static TOOLS: std::sync::OnceLock<Vec<Arc<dyn Tool>>> = std::sync::OnceLock::new();
+    TOOLS
+        .get_or_init(|| {
+            vec![
+                Arc::new(Typed::new(DocOpen)),
+                Arc::new(Typed::new(DocRead)),
+                Arc::new(Typed::new(DocFind)),
+                Arc::new(Typed::new(DocView)),
+                Arc::new(Typed::new(DocEdit)),
+                Arc::new(Typed::new(SheetCalc)),
+                Arc::new(Typed::new(SheetTrace)),
+                Arc::new(Typed::new(DocSave)),
+            ]
+        })
+        .clone()
 }
 
 /// What a session's document tools need.
@@ -58,6 +72,14 @@ fn failed(e: DocError) -> ToolError {
         DocError::Password => ToolError::Failed(
             "the document is encrypted: ask the user for its password and open it with doc_open's `password`, or ask them to open it beside the conversation".into(),
         ),
+        DocError::Refused(m) => ToolError::Failed(format!(
+            "refused, the file is unchanged: {m}. Do not work around it with a different cell or a different form of the \
+             same change: tell the user, who can make this change in their spreadsheet app (Excel, WPS…)."
+        )),
+        DocError::Stale { .. } => ToolError::Failed(format!("{e}: read the cells again before editing them")),
+        DocError::Conflict(_) => ToolError::Failed(format!(
+            "{e}. Tell the user: the file was changed outside (in their spreadsheet app, probably). They choose whether to overwrite it (doc_save with force) or save as another file."
+        )),
         e => ToolError::Failed(e.to_string()),
     }
 }
@@ -73,6 +95,10 @@ const GUIDELINES: &[&str] = &[
     "Documents: when your answer quotes a document — above all its numbers — cite where it is with a Markdown link \
      whose target is finxdoc:<doc_id>#<block id>, like [p. 12](finxdoc:3f2a9c0d1e2b4a5c#p12.b3), using the block ids \
      doc_read (format blocks) and doc_find return, or #p12 for a whole page. The user clicks it to check the source.",
+    "Workbooks (xlsx, xlsm): doc_open gives the structure first (inputs, outputs, cycles); read ranges with doc_read \
+     `range` (\"Sheet!A1:H40\"), follow formulas with sheet_trace. Cite cells as [估值!D15](finxdoc:<doc_id>#估值!D15).",
+    "Workbooks: before changing an assumption, try it with sheet_calc and tell the user what the outputs do; put \
+     related changes into one doc_edit with a `note`. Edits stay in a working copy until doc_save writes the file.",
 ];
 
 /// A document a call names: an open document's id, or a path, opened for the call.
@@ -133,6 +159,16 @@ fn outline_lines(items: &[OutlineItem], depth: usize, out: &mut Vec<String>) {
 }
 
 fn describe_info(info: &DocInfo) -> String {
+    if !info.sheets.is_empty() {
+        let names: Vec<String> = info.sheets.iter().map(|s| if s.hidden { format!("{} (hidden)", s.name) } else { s.name.clone() }).collect();
+        return format!(
+            "Opened {} (doc_id {}), a workbook: {}.{}",
+            info.path,
+            info.doc_id,
+            names.join(", "),
+            if info.dirty { " It has unsaved edits." } else { "" }
+        );
+    }
     let mut text = format!(
         "Opened {} (doc_id {}), {} pages.",
         info.path,
@@ -170,7 +206,7 @@ fn doc_location(args: &Value, env: &dyn Environment, verb: &str) -> ToolDescript
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct OpenArgs {
-    /// Path of the document (PDF).
+    /// Path of the document: a PDF, or an Excel workbook (xlsx, xlsm).
     path: String,
     /// Password of an encrypted document, when the user gave one.
     #[serde(default)]
@@ -183,8 +219,9 @@ struct DocOpen;
 impl TypedTool for DocOpen {
     type Args = OpenArgs;
     const NAME: &'static str = "doc_open";
-    const DESCRIPTION: &'static str = "Open a document (PDF) beside the conversation, where the user sees it, and get \
-        its id, page count and outline. The other doc tools take the id it returns, or the path.";
+    const DESCRIPTION: &'static str = "Open a document beside the conversation, where the user sees it: a PDF (its id, \
+        page count and outline) or an Excel workbook (its id, sheets, inputs, outputs and circular references). The \
+        other doc tools take the id it returns, or the path.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -200,7 +237,12 @@ impl TypedTool for DocOpen {
         let (doc, _) = docs.store.open(&path, args.password, &docs.view_session).await.map_err(failed)?;
         let info = doc.info();
         (docs.opened)(info.clone());
-        Ok(ToolOutput::text(describe_info(&info)).with_details(json!({ "doc_id": info.doc_id, "path": info.path, "pages": info.pages })))
+        let mut text = describe_info(&info);
+        if doc.is_sheet() {
+            text.push('\n');
+            text.push_str(&docs.store.summary(&doc).await.map_err(failed)?);
+        }
+        Ok(ToolOutput::text(text).with_details(json!({ "doc_id": info.doc_id, "path": info.path, "pages": info.pages })))
     }
 }
 
@@ -225,6 +267,10 @@ pub(crate) struct ReadArgs {
     /// `markdown` (default) or `blocks`.
     #[serde(default)]
     format: Option<ReadFormat>,
+    /// Workbooks: the range to read, `Sheet!A1:H40` (at most 2,000 cells). Default: the start of
+    /// the first sheet.
+    #[serde(default)]
+    range: Option<String>,
 }
 
 struct DocRead;
@@ -234,7 +280,8 @@ impl TypedTool for DocRead {
     type Args = ReadArgs;
     const NAME: &'static str = "doc_read";
     const DESCRIPTION: &'static str = "Read the text of a document's pages, as Markdown or as blocks with ids for \
-        citing. Text in the margins (running heads, page numbers) comes last on each page.";
+        citing (text in the margins comes last on each page); or a range of a workbook, as a table of the values \
+        Excel shows, with the formulas listed after it.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -248,6 +295,9 @@ impl TypedTool for DocRead {
         let docs = handle(&ctx)?;
         let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
         let info = doc.info();
+        if doc.is_sheet() {
+            return read_range(&docs, &doc, &info, args.range.as_deref()).await;
+        }
         if !info.capabilities.contains(&Capability::Text) {
             return Ok(ToolOutput::text(format!(
                 "{} has no text layer: probably a scan. Look at its pages with doc_view.",
@@ -334,6 +384,20 @@ impl TypedTool for DocFind {
         let docs = handle(&ctx)?;
         let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
         let limit = args.limit.unwrap_or(20).clamp(1, 200);
+        if doc.is_sheet() {
+            let found = docs.store.find_cells(&doc, &args.query, limit + 1).await.map_err(failed)?;
+            if found.is_empty() {
+                return Ok(ToolOutput::text(format!("\"{}\" is in no cell of {}.", args.query, file_name(&doc.path.display().to_string()))));
+            }
+            let mut out = format!("{} cell{} with \"{}\":\n", found.len().min(limit), if found.len() == 1 { "" } else { "s" }, args.query);
+            for f in found.iter().take(limit) {
+                out.push_str(&found_line(f));
+            }
+            if found.len() > limit {
+                out.push_str("(More: raise `limit` or search for something narrower.)\n");
+            }
+            return Ok(ToolOutput::text(out).with_details(json!({ "doc_id": doc.id, "hits": found.len().min(limit) })));
+        }
         let hits = docs.store.find(&doc, &args.query, limit + 1).await.map_err(failed)?;
         if hits.is_empty() {
             return Ok(ToolOutput::text(format!("\"{}\" is not in {}.", args.query, file_name(&doc.path.display().to_string()))));
@@ -423,9 +487,352 @@ impl TypedTool for DocView {
     }
 }
 
+// ---- workbooks (spreadsheet-design §9) ----
+
+/// Cells read at most in one call.
+const MAX_READ_CELLS: u64 = 2_000;
+
+fn found_line(f: &finx_docs::sheet::Found) -> String {
+    let label = f.label.as_ref().map(|l| format!(" ({l})")).unwrap_or_default();
+    let formula = f.formula.as_ref().map(|x| format!(" {x}")).unwrap_or_default();
+    format!("{}!{}{label} = {}{formula}\n", f.sheet, f.cell, if f.text.is_empty() { "(empty)" } else { &f.text })
+}
+
+/// `Sheet!A1:H40`, `'My sheet'!B3` or `A1:H40` (on the first sheet).
+fn split_range<'a>(range: &'a str, info: &'a DocInfo) -> Result<(String, &'a str), ToolError> {
+    let (sheet, cells) = match range.rsplit_once('!') {
+        Some((s, c)) => (s.trim().trim_matches('\'').replace("''", "'"), c.trim()),
+        None => (info.sheets.iter().find(|s| !s.hidden && !s.chart).map(|s| s.name.clone()).unwrap_or_default(), range.trim()),
+    };
+    if !info.sheets.iter().any(|s| s.name == sheet) {
+        let names: Vec<&str> = info.sheets.iter().map(|s| s.name.as_str()).collect();
+        return Err(ToolError::InvalidArgs(format!("no sheet named \"{sheet}\"; the sheets are {}", names.join(", "))));
+    }
+    Ok((sheet, cells))
+}
+
+async fn read_range(docs: &DocsHandle, doc: &Doc, info: &DocInfo, range: Option<&str>) -> Result<ToolOutput, ToolError> {
+    use finx_sheet::cellref::CellRef;
+    use finx_sheet::cellref::Rect;
+    use finx_sheet::cellref::col_name;
+    let range = match range {
+        Some(r) => r.to_string(),
+        None => {
+            let first = info.sheets.iter().find(|s| !s.hidden && !s.chart).ok_or_else(|| ToolError::Failed("the workbook has no worksheet".into()))?;
+            let used = first.used.as_deref().and_then(Rect::parse).unwrap_or(Rect::single(CellRef::new(1, 1)));
+            let last = CellRef::new(used.last.row.min(used.first.row + 59), used.last.col.min(used.first.col + 25));
+            format!("'{}'!{}", first.name.replace('\'', "''"), Rect { first: used.first, last })
+        }
+    };
+    let (sheet, cells) = split_range(&range, info)?;
+    let rect = Rect::parse(cells).ok_or_else(|| ToolError::InvalidArgs(format!("\"{cells}\" is not a range like A1:H40")))?;
+    let size = (rect.last.row - rect.first.row + 1) as u64 * (rect.last.col - rect.first.col + 1) as u64;
+    if size > MAX_READ_CELLS {
+        return Err(ToolError::InvalidArgs(format!("{range} has {size} cells; read at most {MAX_READ_CELLS} at a time")));
+    }
+    let got = docs.store.cells(doc, &sheet, &rect.to_string()).await.map_err(failed)?;
+    let by_cell: std::collections::HashMap<&str, &finx_protocol::doc::CellData> = got.cells.iter().map(|c| (c.cell.as_str(), c)).collect();
+    let mut out = format!("{} (doc_id {}), {sheet}!{rect}{}:\n\n|   |", file_name(&info.path), info.doc_id, if info.dirty { ", with unsaved edits" } else { "" });
+    for c in rect.first.col..=rect.last.col {
+        out.push_str(&format!(" {} |", col_name(c)));
+    }
+    out.push_str("\n|---|");
+    out.push_str(&"---|".repeat((rect.last.col - rect.first.col + 1) as usize));
+    out.push('\n');
+    let mut formulas = Vec::new();
+    for r in rect.first.row..=rect.last.row {
+        out.push_str(&format!("| {r} |"));
+        for c in rect.first.col..=rect.last.col {
+            let at = CellRef::new(r, c).to_string();
+            let text = by_cell.get(at.as_str()).map(|d| {
+                if let Some(f) = &d.formula {
+                    formulas.push(format!("{at} {f}"));
+                }
+                d.text.replace('|', "\\|").replace('\n', " ")
+            });
+            out.push_str(&format!(" {} |", text.unwrap_or_default()));
+        }
+        out.push('\n');
+    }
+    if !formulas.is_empty() {
+        out.push_str("\nFormulas:\n");
+        for f in &formulas {
+            out.push_str(f);
+            out.push('\n');
+        }
+    }
+    if !got.merges.is_empty() {
+        out.push_str(&format!("\nMerged: {}\n", got.merges.join(", ")));
+    }
+    Ok(ToolOutput::text(out).with_details(json!({ "doc_id": info.doc_id, "path": info.path, "range": format!("{sheet}!{rect}") })))
+}
+
+fn impact_text(impact: &finx_protocol::doc::Impact) -> String {
+    let mut out = String::new();
+    for c in &impact.edited {
+        out.push_str(&format!("Changed {}!{}: {} → {}\n", c.sheet, c.cell, or_empty(&c.before_text), or_empty(&c.after_text)));
+    }
+    if let Some(why) = &impact.calc_unavailable {
+        out.push_str(&format!("No impact worked out: {why}. their spreadsheet app (Excel, WPS…) recalculates the rest when it opens the file.\n"));
+        return out;
+    }
+    if !impact.key_outputs.is_empty() {
+        out.push_str("Outputs:\n");
+        for c in &impact.key_outputs {
+            let pct = match (&c.before, &c.after) {
+                (Some(CellValue::Number(a)), Some(CellValue::Number(b))) if *a != 0.0 => format!(" ({:+.1}%)", (b - a) / a.abs() * 100.0),
+                _ => String::new(),
+            };
+            let label = c.label.as_ref().map(|l| format!(" {l}")).unwrap_or_default();
+            out.push_str(&format!("  {}!{}{label}: {} → {}{pct}\n", c.sheet, c.cell, or_empty(&c.before_text), or_empty(&c.after_text)));
+        }
+    }
+    out.push_str(&format!("{} formula cell{} changed in all.\n", impact.affected_count, if impact.affected_count == 1 { "" } else { "s" }));
+    if let Some(n) = impact.iterations {
+        out.push_str(&format!("Circular references: {n} rounds of iteration{}.\n", if impact.converged { "" } else { ", NOT settled: the spreadsheet app's result may differ" }));
+    }
+    if !impact.needs_excel.is_empty() {
+        out.push_str(&format!(
+            "{} downstream cell{} could not be calculated here (add-in functions, links, structured references…): the spreadsheet app (Excel, WPS…) recalculates {} when it opens the file, e.g. {}.\n",
+            impact.needs_excel.len(),
+            if impact.needs_excel.len() == 1 { "" } else { "s" },
+            if impact.needs_excel.len() == 1 { "it" } else { "them" },
+            impact.needs_excel.iter().take(5).cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    out
+}
+
+fn or_empty(s: &str) -> &str {
+    if s.is_empty() { "(empty)" } else { s }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct EditArgs {
+    /// The workbook: its doc_id, or its path.
+    doc: String,
+    /// The changes, applied together as one revision the user can undo.
+    ops: Vec<SheetOp>,
+    /// Why, in a few words the user will see in the revision list ("按研报下调 2025 年增速").
+    #[serde(default)]
+    note: Option<String>,
+}
+
+struct DocEdit;
+
+#[async_trait]
+impl TypedTool for DocEdit {
+    type Args = EditArgs;
+    const NAME: &'static str = "doc_edit";
+    const DESCRIPTION: &'static str = "Change cells of a workbook: values (`set_value`, kept as given: text stays text), \
+        formulas (`set_formula`, \"=SUM(B3:B9)\") or emptied ranges (`clear`). The changes go into a working copy as one \
+        revision, and come back with their impact: the outputs that moved and how much. The file itself changes only \
+        with doc_save. Changes that would risk the file (a cell inside a merged range, a table header, an array \
+        formula, a protected sheet) are refused, with the reason.";
+
+    fn guidelines(&self) -> &[&'static str] {
+        GUIDELINES
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mutating
+    }
+
+    fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {
+        let mut d = doc_location(args, env, "edit");
+        d.category = ToolCategory::Edit;
+        let n = args.get("ops").and_then(Value::as_array).map_or(0, Vec::len);
+        d.title = format!("{} ({n} change{})", d.title, if n == 1 { "" } else { "s" });
+        d
+    }
+
+    async fn run(&self, args: EditArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let docs = handle(&ctx)?;
+        let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
+        let (revision, impact, _) = docs.store.apply(&doc, &docs.view_session, args.ops, None, false).await.map_err(failed)?;
+        (docs.opened)(doc.info());
+        let mut out = format!("Revision {revision} of {}, not saved yet (doc_save writes the file).\n", file_name(&doc.path.display().to_string()));
+        if let Some(note) = &args.note {
+            out.push_str(&format!("Note: {note}\n"));
+        }
+        out.push_str(&impact_text(&impact));
+        Ok(ToolOutput::text(out).with_details(json!({ "doc_id": doc.id, "revision": revision, "impact": impact })))
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct CalcArgs {
+    /// The workbook: its doc_id, or its path.
+    doc: String,
+    /// The changes to try, as for doc_edit.
+    ops: Vec<SheetOp>,
+}
+
+struct SheetCalc;
+
+#[async_trait]
+impl TypedTool for SheetCalc {
+    type Args = CalcArgs;
+    const NAME: &'static str = "sheet_calc";
+    const DESCRIPTION: &'static str = "Try changes on a workbook without making them: what the outputs would become, \
+        circular references iterated as Excel does. For what-if and sensitivity questions, and before doc_edit.";
+
+    fn guidelines(&self) -> &[&'static str] {
+        GUIDELINES
+    }
+
+    fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {
+        doc_location(args, env, "try changes in")
+    }
+
+    async fn run(&self, args: CalcArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let docs = handle(&ctx)?;
+        let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
+        let (_, impact, _) = docs.store.apply(&doc, &docs.view_session, args.ops, None, true).await.map_err(failed)?;
+        let out = format!("Tried, nothing was changed:\n{}", impact_text(&impact));
+        Ok(ToolOutput::text(out).with_details(json!({ "doc_id": doc.id, "impact": impact })))
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct TraceArgs {
+    /// The workbook: its doc_id, or its path.
+    doc: String,
+    /// The cell, `Sheet!B6`.
+    cell: String,
+    /// `up`: what the cell reads (its precedents). `down`: what reads it (its dependents).
+    direction: finx_docs::sheet::Direction,
+    /// How many steps out; default 1, at most 10.
+    #[serde(default)]
+    depth: Option<u32>,
+}
+
+struct SheetTrace;
+
+#[async_trait]
+impl TypedTool for SheetTrace {
+    type Args = TraceArgs;
+    const NAME: &'static str = "sheet_trace";
+    const DESCRIPTION: &'static str = "Follow a workbook's formulas from a cell: the cells it reads (up) or the \
+        formulas that read it (down), each with its label, value and formula.";
+
+    fn guidelines(&self) -> &[&'static str] {
+        GUIDELINES
+    }
+
+    fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {
+        let mut d = doc_location(args, env, "trace in");
+        if let Some(c) = args.get("cell").and_then(Value::as_str) {
+            d.title = format!("{} {c}", d.title);
+        }
+        d
+    }
+
+    async fn run(&self, args: TraceArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let docs = handle(&ctx)?;
+        let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
+        let info = doc.info();
+        let (sheet, cell) = split_range(&args.cell, &info)?;
+        let found = docs.store.trace(&doc, &sheet, cell, args.direction, args.depth.unwrap_or(1)).await.map_err(failed)?;
+        let what = match args.direction {
+            finx_docs::sheet::Direction::Up => "reads",
+            finx_docs::sheet::Direction::Down => "is read by",
+        };
+        if found.is_empty() {
+            return Ok(ToolOutput::text(format!("{sheet}!{cell} {what} no cell.")));
+        }
+        let mut out = format!("{sheet}!{cell} {what}:\n");
+        for f in &found {
+            out.push_str(&"  ".repeat(f.depth as usize));
+            out.push_str(&found_line(f));
+        }
+        Ok(ToolOutput::text(out).with_details(json!({ "doc_id": doc.id, "cells": found.len() })))
+    }
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub(crate) struct SaveArgs {
+    /// The workbook: its doc_id, or its path.
+    doc: String,
+    /// Save as another file instead (absolute, or relative to the working directory).
+    #[serde(default)]
+    path: Option<String>,
+    /// Write over the file although it changed on disk since it was opened. Only when the user said so.
+    #[serde(default)]
+    force: bool,
+}
+
+struct DocSave;
+
+#[async_trait]
+impl TypedTool for DocSave {
+    type Args = SaveArgs;
+    const NAME: &'static str = "doc_save";
+    const DESCRIPTION: &'static str = "Write a workbook's edits to its file (or, with `path`, to another file). Only \
+        the edited cells and their results change in the file; everything else stays byte for byte. The file gets \
+        exactly the working copy doc_read shows (formulas as formulas, with their results), so there is no need to \
+        check the saved file another way.";
+
+    fn guidelines(&self) -> &[&'static str] {
+        GUIDELINES
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mutating
+    }
+
+    fn describe(&self, args: &Value, env: &dyn Environment) -> ToolDescription {
+        let mut d = doc_location(args, env, "save");
+        d.category = ToolCategory::Edit;
+        if let Some(p) = args.get("path").and_then(Value::as_str) {
+            d.title = format!("{} as {p}", d.title);
+            d.locations = vec![(env.resolve(p), None)];
+        }
+        d
+    }
+
+    async fn run(&self, args: SaveArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
+        let docs = handle(&ctx)?;
+        let doc = resolve_doc(&args.doc, &ctx, &docs).await?;
+        let to = args.path.as_deref().map(|p| ctx.env.resolve(p));
+        let (info, written) = docs.store.save(&doc, to.as_deref(), args.force).await.map_err(failed)?;
+        let target = to.map(|p| p.display().to_string()).unwrap_or_else(|| info.path.clone());
+        (docs.opened)(info.clone());
+        let details = json!({ "doc_id": info.doc_id, "path": target, "formulas": written.formulas, "values": written.values, "cleared": written.cleared });
+        Ok(ToolOutput::text(saved_text(&target, &written)).with_details(details))
+    }
+}
+
+/// "Saved X: 1 formula with its result, 2 values." — what went into the file, as doc_read shows it.
+fn saved_text(target: &str, w: &finx_docs::store::Written) -> String {
+    let n = |k: usize, one: &str, many: &str| format!("{k} {}", if k == 1 { one } else { many });
+    let mut parts = Vec::new();
+    if w.formulas > 0 {
+        parts.push(n(w.formulas, "formula with its result", "formulas with their results"));
+    }
+    if w.values > 0 {
+        parts.push(n(w.values, "value", "values"));
+    }
+    if w.cleared > 0 {
+        parts.push(n(w.cleared, "range cleared", "ranges cleared"));
+    }
+    if parts.is_empty() {
+        return format!("Saved {target}: no cell differs from what the file held.");
+    }
+    format!("Saved {target}: {}, as doc_read shows them.", parts.join(", "))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_says_what_went_in() {
+        use finx_docs::store::Written;
+        let w = Written { formulas: 1, values: 2, cleared: 0 };
+        assert_eq!(saved_text("/a.xlsx", &w), "Saved /a.xlsx: 1 formula with its result, 2 values, as doc_read shows them.");
+        assert_eq!(saved_text("/a.xlsx", &Written::default()), "Saved /a.xlsx: no cell differs from what the file held.");
+    }
 
     #[test]
     fn pages_parse() {

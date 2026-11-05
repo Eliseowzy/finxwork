@@ -32,6 +32,7 @@
 //! | `churn:N[:SEED]` | N tool turns in one task, each picked at random: read, write or edit `notes/state.txt`, append to `notes/log.txt`, search with grep, find or rg, read part of a file; then `churn done` (see [`churn_step`]) |
 //! | `mcp:SERVER:PROJECT` | `tool_search` for the vault tool, `call_tool` on `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
+//! | `sheet:PATH` | a workbook session through `call_tool`: `doc_open` PATH, `doc_read` the inputs, `sheet_calc` WACC at 9%, `doc_edit` it, `sheet_trace` what reads it, `doc_save`; then `sheet done` |
 //! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
 //! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
 //! | `attach:PATH[,PATH…]` | a bot's `send_to_user` of those files with `end_turn` |
@@ -45,6 +46,8 @@
 //! | `relay_note:SECONDS` | as `relay_slow`, with a sub-agent that runs `note:SECONDS:3 月的数据整月缺失。` |
 //! | `note_session:SECONDS` | the same in a session: `spawn_agent`, `交给子智能体了。`, then `回复：<the latest message>` for whatever comes next |
 //! | `note:SECONDS:TEXT` | half a second later, a sub-agent's `send_message` of TEXT to `main`, then a bash call running `sleep SECONDS`, then `写完了。` |
+//! | `routine:NAME\|SCHEDULE\|RUN` | a bot's `manage_routine` create, with RUN as the routine's prompt in brackets (`[[mock:RUN]]`); then, for its result and for each report that wakes it, `转告：<the text>` sent with `end_turn` |
+//! | `say:TEXT` | TEXT, as it is |
 //!
 //! [`MockOptions`] adds a gateway's latency: a pause before the first chunk of every reply
 //! and between chunks.
@@ -620,6 +623,19 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("mcp done: {}", last_tool_result(messages)))),
             }
         }
+        "sheet" => {
+            let call = |name: &str, arguments: Value| Plan::Step(Step::calls(vec![("call_tool", json!({ "name": name, "arguments": arguments }))]));
+            let wacc = json!([{ "op": "set_value", "sheet": "假设", "cell": "B6", "value": 0.09 }]);
+            match step {
+                0 => call("doc_open", json!({ "path": arg })),
+                1 => call("doc_read", json!({ "doc": arg, "range": "假设!A1:C9" })),
+                2 => call("sheet_calc", json!({ "doc": arg, "ops": wacc })),
+                3 => call("doc_edit", json!({ "doc": arg, "ops": wacc, "note": "WACC 上调到 9%" })),
+                4 => call("sheet_trace", json!({ "doc": arg, "cell": "假设!B6", "direction": "down", "depth": 2 })),
+                5 => call("doc_save", json!({ "doc": arg })),
+                _ => done("sheet"),
+            }
+        }
         "mcp_env" => {
             let (server, var) = arg.split_once(':').unwrap_or((arg, "PATH"));
             match step {
@@ -769,6 +785,23 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => done("quiet"),
             }
         }
+        "say" => Plan::Step(Step::text(arg.to_string())),
+        // A bot that makes a routine, then passes on what comes back (routine-design §2.3).
+        "routine" => match step {
+            0 => {
+                let mut parts = arg.splitn(3, '|');
+                let (name, schedule, run) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+                Plan::Step(Step::calls(vec![(
+                    "manage_routine",
+                    json!({ "action": "create", "name": name, "prompt": format!("[[mock:{run}]]"), "schedule": schedule, "when": "说好的时间" }),
+                )]))
+            }
+            _ => {
+                // What came last, but for what the kernel adds to keep the model up to date.
+                let text = messages.iter().rev().map(content_text).find(|text| !text.starts_with("<environment_update>")).unwrap_or_default();
+                Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": format!("转告：{text}"), "end_turn": true }))]))
+            }
+        },
         // A bot that never sends, reminded or not (bot-design §3.11).
         "mute" => Plan::Step(Step::text("写了字，没有发。".to_string())),
         "confirm" => match step {

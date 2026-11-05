@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.46 |
+| 版本 | v1.50 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -91,8 +91,12 @@
 | v1.42 | 2026-11-04 | 子智能体要确认的调用改由主用户批准（subagent-design v2.3）：Op `agent_approval`；"审批请求同一时刻只发一个"的范围扩大到整棵智能体树（§6.6） |
 | v1.43 | 2026-11-05 | 联网搜索（web-search-design.md，已实现）：内置工具 `web_search` 放进渐进式的 `web` 组，默认开启，所以每个会话都有 `tool_search`、`call_tool`；`SystemSettings` 增加 `web_search`，顺序和开关下一步生效且没有缓存失效；配置 `[web_search]`，项目文件只能关掉；密钥存钥匙串，名字前缀 `web-search.` |
 | v1.44 | 2026-11-05 | 本地命令的 CI 门槛改用缺页预算（§1.4，D-98）：原来的“GitHub runner 上均值 ≤ 2 ms”时红时绿，主要是 runner 的波动，真实的变慢反而看不出来；2 ms 仍是产品目标，改在固定机器上交替测量。`status`、`doctor` 两天内慢了约 12%，这次收回约三分之二：命令行没有全局选项时，解析器不带它们的副本（§1.4）；本地命令的运行时不析构；模型目录直接移动字段。新增 `tools/bench/local_ab.py` |
-| v1.45 | 2026-11-05 | Bot 的回合和插话（[bot-turn-design.md](bot-turn-design.md)）：日志加 `undelivered`、`reply_nudge` 条目，`system_prompt` 条目加 `template`（§7.2、§9.2）；所有主会话的目录多一组 `agents`：`check_agents`、`stop_agents`（subagent-design §6.6） |
-| v1.46 | 2026-11-05 | 智能体之间能互发消息（[agent-messaging-design.md](agent-messaging-design.md)）：子智能体有 `send_message`，事件的 `mail.kind` 多一个 `message`，日志加 `agent_message` 条目（§9.2、subagent-design §9.2）；`check_agents` 改名 `list_agents`，子智能体也有 |
+| v1.45 | 2026-11-05 | 撤回重发（[message-resend-design.md](message-resend-design.md)，D-370–D-385），取代原计划的 `Rewind`：新 Op `resend`（§8.1），任务在跑就先停，对话回到这条用户消息之前，再发新消息，回退和发送是一个动作；新事件 `session_rewound`（§8.2）；`branch` 条目开始写入，带 `before_first`（§9.2、§9.5）；恢复时设置、标题、归档、累计用量和任务号按全文件读，不再只看当前分支（§9.4，D-374）。被撤回段启动的子智能体关闭摘除，保留段的继续跑，它在被撤回段送达的汇报重新投递。一期只回退对话，磁盘文件不动 |
+| v1.46 | 2026-11-05 | 定时任务（routine-design.md，已实现）：`finx serve` 调度，数据在 `~/.finx/finx.db`，是第一个本地数据库；依赖 `rusqlite`（带内置 SQLite）和 `jiff`，只在 `finx-server`。命令行和 `finx exec` 不碰它（§9.1） |
+| v1.47 | 2026-11-05 | 表格引擎的时区表只留 UTC，文档工具的定义每个进程只生成一次（§1.4，D-99）：Excel 合入后每条命令多约 310 次缺页，`session/new` 慢约 0.6 ms。本地命令的缺页预算开始拦截（D-98） |
+| v1.48 | 2026-11-05 | 修正本地命令的数字（§1.4、§18）：Linux 上原来写的 1.0–1.7 ms 是 `cargo-zigbuild` 的非 PIE 版本，而且测在 Excel 合入之前。和 CI 同样的静态 PIE 在固定机器上是 1.7–2.7 ms，`status`、`doctor`、`sessions` 没有达到 2 ms 的目标 |
+| v1.49 | 2026-11-05 | Bot 的回合和插话（[bot-turn-design.md](bot-turn-design.md)）：日志加 `undelivered`、`reply_nudge` 条目，`system_prompt` 条目加 `template`（§7.2、§9.2）；所有主会话的目录多一组 `agents`：`check_agents`、`stop_agents`（subagent-design §6.6） |
+| v1.50 | 2026-11-05 | 智能体之间能互发消息（[agent-messaging-design.md](agent-messaging-design.md)）：子智能体有 `send_message`，事件的 `mail.kind` 多一个 `message`，日志加 `agent_message` 条目（§9.2、subagent-design §9.2）；`check_agents` 改名 `list_agents`，子智能体也有 |
 
 ## 1. 目标与范围
 
@@ -138,7 +142,7 @@
 | 指标 | 目标 |
 |---|---|
 | 冷启动：`finx exec` 从启动到发出第一个模型请求（不含网络与外部鉴权命令） | < 100 ms |
-| 本地命令（`--version`、`models`、`doctor`、`sessions`）从启动到退出，按 `hyperfine -N` 的均值计 | Linux 上 < 2 ms，在固定机器上交替测量；CI 守的是缺页预算（D-98） |
+| 本地命令（`--version`、`models`、`doctor`、`sessions`）从启动到退出，按 `hyperfine -N` 的均值计 | Linux 上 < 2 ms，在固定机器上交替测量；CI 守的是缺页预算（D-98）。目前 `status`、`doctor`、`sessions` 没有达到，见下 |
 | 内核处理并转发每个流式增量的开销 | < 0.1 ms；事件只携带增量，不复制整条消息 |
 | 空闲会话的常驻内存 | < 30 MB |
 | 单次工具调用的输出在内存中的占用 | ≤ 1 MB，超出部分写入磁盘 |
@@ -201,20 +205,24 @@
   - 其余来自约 10 MB 的可执行文件和参数解析。
 - **Linux 的情况**：Linux 上没有框架这一项，创建进程本身也更便宜。
 
-**Linux 上的本地命令**（2026-11-05，1 vCPU 的 x86_64 机器，静态 musl 的 dist 构建，`tools/bench/local_ab.py`：每个版本 6 份拷贝、各 100 次，取各份中位数的中位数）：
+**Linux 上的本地命令**（2026-11-05，和 CI 同样的静态 PIE 加 musl 的 malloc，取中位数。固定机器是 1 vCPU 的 x86_64，`tools/bench/local_ab.py`：每个版本 6 份拷贝、各 100 次；CI 是 `2eaa7ed` 那次运行）：
 
-| 命令 | 耗时 | 缺页 | 同机上 `/usr/bin/true` |
-|---|---:|---:|---:|
-| `--help` | 1.00 ms | 87 | 0.70 ms，57 次缺页 |
-| `status --json` | 1.73 ms | 190 | |
-| `doctor --json` | 1.71 ms | 190 | |
-| `sessions --json`（8 个 8 MiB 的会话） | 1.26 ms | 114 | |
+| 命令 | 固定机器 | CI（EPYC 9V74） | CI 上的缺页 | 缺页预算 |
+|---|---:|---:|---:|---:|
+| `--help` | 1.7 ms | 1.36 ms | 241 | 253 |
+| `status --json` | 2.7 ms | 1.71 ms | 365 | 383 |
+| `doctor --json` | 2.7 ms | 1.74 ms | 363 | 382 |
+| `sessions --json`（8 个 8 MiB 的会话） | 2.3 ms | 1.49 ms | 302 | 317 |
 
+- **2 ms 的目标没有全部达到**：固定机器上只有 `--help` 在 2 ms 以内。这台机器偏慢，`/usr/bin/true` 约 0.70 ms，上面那次 CI 是 0.48 ms；但慢的 runner（EPYC 7763）上，`status` 最快一次也有 2.05 ms。放弃 PIE 能省约 0.55 ms，代价是可执行文件的地址固定，不采用（D-99）。
+- **`cargo-zigbuild` 的数字更小，不是正式成绩**：它编出的是非 PIE，malloc 是 zig 自己的，同样的代码每条命令少约 150 次缺页，快 0.7～0.9 ms（D-99）。1105 报告 §1～§7 的绝对数字是这个版本，比较的结论不受影响。
+- **macOS 上现在约 5.2–5.9 ms**（1105 报告 §8.3），前面 macOS 那张表是 10-28 的数字。
 - **耗时主要花在缺页上**：不同版本之间的耗时差异，96% 可以由缺页数解释，约 6.4 µs 一次。其中约三分之一是堆和数据段的新页，其余是第一次碰到的代码页，每次还顺带映射相邻的页。
 - **CI 守缺页，不守耗时**（D-98）：同一个二进制的缺页数只差 1% 左右，耗时在 GitHub runner 上却能差 18%～60%。
 - **全局选项的副本**：clap 构建解析器时，把 `-c`、`--mcp-config` 复制进每个子命令，约 41 KB 新内存，每次启动都要付。命令行上没有这些选项时（`parse_plain`），用不带副本的解析器，理解结果相同；帮助和报错仍由完整的解析器给出，因为它们要列出全局选项。
 - **本地命令不析构**（`setup::init_local`）：这些命令不写日志文件，运行时里没有要清理的东西，直接活到进程结束。
 - **省下的页会被后面用掉**：常驻进程的 `initialize` 少 19 次缺页，第一次 `session/new` 多 10 次：早期的临时分配少了，分配器可复用的空闲块也少了。短命令省得最实在，长驻进程只有峰值下降才算真省。
+- **带指针的静态表每条命令都要付钱**（D-99）：静态 PIE 启动时重定位，macOS 启动时 rebase，写到的每一页都是一次缺页和一页私有内存，不管这条命令用不用这张表。IronCalc 的时区表因此只留 UTC。
 
 **内存实测**（同一台机器，macOS）：
 - 测量方法：用 `tools/bench/bench_memory.py` 对接本地 mock 模型。mock 每一轮都让 finx 读取一个每轮都变的文件，直到最后一轮给出结束语；整段历史随每次请求重发，与真实接口一致。
@@ -2115,6 +2123,8 @@ pub enum Op {
     /// 用户输入：会话空闲时开始新任务；任务进行中按 mode 排队。commands 为 true（默认）时，
     /// 开头的 `/compact` 与任意位置的 `/skill:名字` 由内核的命令表解析；智能体之间的消息设为 false（skill-design §6.3）
     Prompt { input: Vec<UserContent>, #[serde(default)] mode: PromptMode, #[serde(default = "yes")] commands: bool },
+    /// 从一条已发出的用户消息重新开始：任务在跑就先停，对话回到它之前，再发 input（message-resend-design）
+    Resend { message_id: String, input: Vec<UserContent>, #[serde(default = "yes")] commands: bool },
     /// 从当前历史继续，用于失败后重试
     Continue,
     Interrupt,
@@ -2137,7 +2147,7 @@ pub enum PermissionMode { Manual /* 默认 */, AcceptEdits, BypassPermissions }
 
 `PermissionMode` 反序列化时也接受旧取值：`ask`、`read-only` 对应 manual，`auto-edit` 对应 accept-edits，`full-auto` 对应 bypass-permissions。`plan` 和 `auto` 会报"尚未提供"（Q-29）。
 
-M2 增加 `Rewind { to: EntryId }`（§9.5）。
+回退没有单独的 Op：回退的时刻就是发送的时刻，由 `Resend` 一步完成（§9.5，D-370）。
 
 ### 8.2 Event
 
@@ -2174,6 +2184,8 @@ pub enum EventMsg {
     TaskCompleted { task_id: String, usage: UsageTotals, last_message: Option<String> },
     TaskFailed { task_id: String, error: ErrorInfo, usage: UsageTotals },
     TaskInterrupted { task_id: String, returned_input: Vec<UserMessage>, usage: UsageTotals },
+    // resend：对话回到 message_id 之前。removed_agents：随被撤回段关闭的子智能体；returned_input：交还的排队输入
+    SessionRewound { message_id: String, removed_agents: Vec<String>, returned_input: Vec<UserMessage> },
     SettingsChanged { model: String, thinking: ThinkingLevel, permission_mode: PermissionMode },
     Warning { message: String, code: Option<WarningCode> },   // code：客户端可自己措辞的提醒，现有 BypassPermissions
     AgentStarted { agent_id: String, name: String, session_file: PathBuf, call_id: String },
@@ -2264,6 +2276,9 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 ├── sessions/2026/10/28/20261028T090000-<session_id>/
 │   └── tool-output/<call_id>.txt        被裁切的工具结果的完整内容（§5.7）
 ├── chats/<uuid>/                         无项目会话的工作目录，一个会话一个
+├── bots/<id>/                            Bot 的身份（bot.json）和它的文件夹（files/）
+├── finx.db                               定时任务和运行记录（routine-design.md §3.6），第一个任务创建时才有
+├── finx.db.lock                          持有它的服务负责调度
 └── logs/finx.<日期>.log                   运行日志，按天滚动
 ```
 
@@ -2322,7 +2337,7 @@ pub enum EntryKind {
         dropped_messages: u32,     // 压缩请求超限、没有进入摘要的消息数，通常为 0（为 0 时不写）
     },
     Task { task_id: String, status: TaskStatus, error: Option<ErrorInfo> },
-    Branch,                        // M2：回退标记，parent 指向回退点
+    Branch { before_first: bool }, // 回退标记，parent 指向回退点；before_first：回到了第一条用户消息之前，会话列表据此重置预览
     Title { title: String },       // M2
     Date { date: String },         // YYYY-MM-DD：告诉模型日期变了（§7.2）
     BotName { name: String },      // Bot 会话：告诉模型它的新名字（bot-design §2.4）
@@ -2359,8 +2374,9 @@ pub enum EntryKind {
 2. **找当前叶子**：建立 id 到条目的索引，当前叶子就是文件中的最后一个条目。分支操作也只追加新条目，所以这条规则始终成立。
 3. **恢复状态**：沿 parent 链得到当前分支，然后：
    - 取最后一个 system_prompt 作为系统提示词；
+   - 设置、标题、归档、累计用量和任务编号属于会话，不属于某条分支，按全文件的顺序读（D-374）：回退拿不走它们，回退点之后收紧的权限模式依然收紧；
    - 依次叠加 settings 条目，得到当前设置；
-   - 逐条累计 usage：assistant 消息的 usage 加上 compaction 条目的 usage（摘要请求也计费）。
+   - 逐条累计 usage：assistant 消息的 usage 加上 compaction 条目的 usage（摘要请求也计费）；被撤回段的钱已经花了，照算。
    - 上下文用量与任务内用同一个函数计算（§7.5），基准取自日志里 assistant 消息自带的 usage，超限标记也从日志恢复；不需要额外的用量记录。
 4. **补记中断**：如果最后一个 task 条目只有 started 而没有结束状态（说明进程崩溃过），补写一条 interrupted。
 5. **规范化**：按 §7.1 规范化，补齐悬空的工具调用。
@@ -2376,9 +2392,9 @@ pub enum EntryKind {
 
 ### 9.5 分支、派生与列表（M2）
 
-- **回退**：发送 `Op::Rewind { to }`，只能回退到某条 user 消息之前。
-  - 内核写入一条 `branch` 条目，它的 parent 指向回退点，之后的新条目都接在它后面；
-  - 这样同一个文件里形成了分支，"最后一个条目即当前叶子"的规则依然成立。
+- **回退**：发送 `Op::Resend { message_id, input }`，只能回退到当前分支上某条 user 消息之前，回退和发送新消息是一个动作（[message-resend-design.md](message-resend-design.md)）。
+  - 内核写入一条 `branch` 条目，它的 parent 指向回退点，也就是那条消息的 parent，之后的新条目都接在它后面；
+  - 这样同一个文件里形成了分支，"最后一个条目即当前叶子"的规则依然成立。被撤回的内容留在文件里，不再属于对话。
 - **派生**：把当前分支复制为一个新的会话文件，头部记录 `forked_from {session_id, entry_id}`。
 - **列表**：`finx sessions` 按从新到旧的顺序扫描目录，读取每个文件的头部、第一条用户消息和标题。
   - 默认只列出本项目的会话（按头部的 cwd 判断）；`--all` 列出全部。
@@ -2967,7 +2983,7 @@ finxwork/
 
 **启动耗时**：已达到 §1.4 的冷启动目标。从进程启动到发出第一个模型请求，实测约 5 ms，各阶段耗时见 §1.4。
 
-**本地命令**：macOS 上实测 4.1–5.0 ms（含 1.5 ms 的空进程开销），Linux 上 1.0–1.7 ms，见 §1.4。
+**本地命令**：macOS 上约 5.2–5.9 ms，Linux 上固定机器 1.7–2.7 ms，其中 `status`、`doctor`、`sessions` 没有达到 2 ms 的目标，见 §1.4。
 
 **服务并发**：200 个会话同时新建，单个 session/new 的 p50 为 9–12 ms；服务空闲时新建一个会话 0.22–0.25 ms；每个空闲会话的活跃堆约 32 KiB；200 个会话同时跑任务，进程峰值占用约 79 MiB。以 256 的打开文件数软上限启动，1000 个会话同时跑任务也没有失败。见 §1.4。
 
@@ -3089,6 +3105,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | D-96 | HTTP 连接池不限制每个 host 保留的空闲连接数，空闲连接仍在 30 秒后关闭 | 1103 批次加过每个 host 32 个的上限，用来减少突发之后留下的连接。200 个会话并发时，超出上限的连接一放回池里就被关掉，下一次请求只能重新建连，任务 p95 升高约 13%。去掉上限后任务延迟和服务端 CPU 回落，也不再出现高并发时连接被重置、工具调用失败（§1.4）；HTTP/2 的服务商所有请求本来就共用一个连接，不受影响。代价是突发之后的空闲连接和读缓冲留到超时，突发中的峰值占用高 1%–6% | §4.14 §1.4 |
 | D-97 | macOS 上会话日志落盘时，各自 fsync 之后共用一次 F_FULLFSYNC：一次冲刷覆盖在它开始之前已经 fsync 完成的所有请求，冲刷进行中到来的等下一次，按设备分开 | F_FULLFSYNC 让硬盘把缓存全部写入永久存储，每次约 4 ms，硬盘一次只做一个。200 个会话差不多同时结束时，各自的冲刷排成长队，任务结束事件又要等落盘（Q-95）：满载时任务 p95 534 ms，其中大半是排队。fsync 已把文件的数据和属性交给硬盘，随后任何一次冲刷都会把它们写入，所以落盘保证与每个文件各做一次 F_FULLFSYNC 相同。改后任务 p95 降到 267 ms、吞吐翻倍，与改用普通 fsync（Q-19 的另一选项，断电可能丢最后几条）的结果相同 | §9.3 §1.4 |
 | D-98 | 本地命令的 CI 门槛是每条命令一个缺页预算（`tools/bench/local-command-budget.json`，提高要写明原因），外加“最快一次 ≤ 3 ms”防止不碰新页的变慢；2 ms 均值仍是产品目标，在固定机器上用多份拷贝交替测量 | 原来的门槛是 GitHub runner 上的原始均值 ≤ 2 ms。同一个二进制在 runner 上的耗时相差 18%～60%，14 次运行里慢的一种 runner 全部失败；门槛红了不代表变慢，12% 的真实变慢也没有被它指出来。同一台机器上，版本之间的耗时差异 96% 可以由缺页数解释，同一个二进制的缺页数只差 1% 左右。耗时的粗门槛用最快一次，因为噪声能把一轮的中位数抬高 34%，而同一个二进制在同一种 runner 上，最快一次只差约 6% | §1.4 |
+| D-99 | 表格引擎的时区表只留 UTC（`.cargo/config.toml` 的 `CHRONO_TZ_TIMEZONE_FILTER`）；文档工具的定义每个进程只生成一次；CI 继续测静态 PIE，预算按它填 | IronCalc 带进来的 `chrono-tz` 有约 3 万个字符串指针。静态 PIE 每次启动都要重定位，macOS 每次启动都要 rebase，所以每条命令多约 260 次缺页、约 1 MiB 私有内存，不管用不用表格。引擎跑在 UTC，Excel 的 `NOW()` 不带时区，受影响的只有 IronCalc 自己扩展的 `NOW("Asia/Shanghai")`。这种代价在非 PIE 上看不到，而 macOS 同样要付，所以 CI 保持静态 PIE。放弃 PIE 还能再省约 137 次缺页、0.55 ms，但可执行文件的地址固定，内核又在解析网页、文件和模型输出，不采用。文档工具的 schema 由派生生成，约 0.3 ms，每个会话要用 3 次（首个提示词的目录、会话启动、第一轮） | §1.4 |
 | D-100 | 内核在一切之前调用工具的 prepare_arguments 整理参数，会话历史保留模型的原始输出 | 常见的格式错误不必多一轮往返；事件、审批和执行看到的是同一份参数 | §5.2 §6.6 |
 | D-101 | 需要询问用户的调用先由工具预检；同一批调用中前面已有放行的调用时不预检 | 不让用户批准注定失败的调用；预检只能拒绝执行时必然失败的调用，不能拿执行前的旧状态误判 | §5.2 §6.6 |
 | D-102 | 任务取消后工具最多再等 3 秒，之后内核不再等待这次执行 | 任何工具都不能拖住中断；3 秒足够 bash 终止并回收进程组 | §6.8 |
@@ -3124,7 +3141,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | Q-07 | 会话日志中的图片是否改为外部存储 | 以 base64 内嵌 | §9.2 |
 | Q-08 | 内置模型目录如何维护 | 已定：模型列表问服务商，参数来自公开维护的模型目录加内置修正与用户配置（model-catalog-design.md，D-130–D-144） | §4.8 |
 | Q-09 | 非本地 Environment 中 grep、find、ls 如何实现 | 通过 exec 调用 rg 和 find | §5.5 |
-| Q-10 | 是否需要会话索引（如 SQLite） | 先直接扫描目录 | §9.5 |
+| Q-10 | 是否需要会话索引（如 SQLite） | 先直接扫描目录。定时任务方案（routine-design.md §3.6）要引入本地 SQLite，有了这个基础以后，等会话多到列表明显变慢再做索引，放单独的可重建文件 | §9.5 |
 | Q-11 | 是否在模型流式输出的过程中提前执行工具 | 否（D-12） | §6.6 |
 | Q-12 | 交互界面的形态 | 自研桌面端：前端页面加 macOS 原生外壳，外壳技术待定；通过原生协议使用内核（protocol-design §6） | §12 |
 | Q-13 | 是否提供后台进程工具（启动长驻服务、读取其输出） | v1 不提供 | §5.8 |

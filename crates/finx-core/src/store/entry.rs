@@ -65,6 +65,10 @@ pub struct AgentOrigin {
     pub call_id: String,
     /// The parent's task at that time.
     pub parent_task: String,
+    /// A routine's run (routine-design §2.1): the routine. No `spawn_agent` call started it, and
+    /// the parent's log has no mention of it unless it reports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine: Option<String>,
 }
 
 impl SessionHeader {
@@ -156,7 +160,12 @@ pub enum EntryKind {
         message: Message,
     },
     /// Marks a rewind: the parent is the point the branch continues from.
-    Branch,
+    Branch {
+        /// It went back before the first user message: the next one is the session's first.
+        /// Session lists go by this, without following parents.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        before_first: bool,
+    },
     Title {
         title: String,
     },
@@ -175,9 +184,18 @@ pub enum EntryKind {
     BotName {
         name: String,
     },
+    /// A bot's session: its routines changed since the context last gave them; the model is told
+    /// the new list (routine-design §4.4).
+    Routines {
+        text: String,
+    },
     /// A bot's session: its task was about to end with the owner's message unanswered, and the
     /// model is reminded to reply, once per task (bot-design §3.11).
-    Unanswered,
+    Unanswered {
+        /// What waits is a routine's report rather than the owner's message (routine-design §2.4).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        routine: bool,
+    },
     /// A bot's session: its task was about to end with what came of its work unsent, and the
     /// model is reminded of it, once per task (bot-turn-design §6).
     Undelivered,
@@ -315,7 +333,7 @@ mod tests {
         let back: Entry = serde_json::from_str(&json).unwrap();
         assert_eq!(back, entry);
         let branch: Entry = serde_json::from_str(r#"{"id":"x","parent":"y","ts":1,"type":"branch"}"#).unwrap();
-        assert_eq!(branch.kind, EntryKind::Branch);
+        assert_eq!(branch.kind, EntryKind::Branch { before_first: false });
     }
 
     #[test]

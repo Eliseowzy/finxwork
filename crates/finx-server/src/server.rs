@@ -140,12 +140,16 @@ pub(crate) struct Inner {
     pub(crate) customize: crate::customize::State,
     /// What the file panel watches (crate::files).
     pub(crate) files: crate::files::Watches,
+    /// Connections that opened a document: they hear `doc/changed` (crate::docs).
+    pub(crate) doc_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
     /// The browsers of every session here, one per profile (browser-design §6.1).
     pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
     /// The documents every session here shares (document-editor-design §5.2).
     pub(crate) docs: Arc<finx_docs::DocStore>,
     /// Every bot and who follows their list (crate::bots).
     pub(crate) bots: Arc<crate::bots::Registry>,
+    /// Their routines (crate::routines).
+    pub(crate) routines: Arc<crate::routines::Routines>,
 }
 
 impl Server {
@@ -164,6 +168,8 @@ impl Server {
         // A person may watch: show a window where there is a display.
         let browser_pool = Arc::new(finx_core::BrowserPool::new(options.home.browser_dir(), true));
         let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
+        let bots = Arc::new(crate::bots::Registry::new(options.home.clone()));
+        let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
@@ -172,7 +178,8 @@ impl Server {
             host_refused: Mutex::new(None),
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
-            bots: Arc::new(crate::bots::Registry::new(options.home.clone())),
+            bots,
+            routines,
             defaults,
             store: Arc::new(JsonlStore::new(options.home.sessions_dir())),
             home: options.home,
@@ -189,14 +196,17 @@ impl Server {
             closed_sessions: AtomicU64::new(0),
             customize: Default::default(),
             files: Default::default(),
+            doc_watchers: Mutex::default(),
             // A person may watch: show a window where there is a display.
             browser_pool,
             docs,
         }));
+        server.0.routines.bind(Arc::downgrade(&server.0));
         let weak = Arc::downgrade(&server.0);
         connections.on_change(Arc::new(move || {
             if let Some(inner) = weak.upgrade() { Server(inner).models_changed(); }
         }));
+        server.follow_doc_changes();
         server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
         Ok(server)
@@ -246,6 +256,7 @@ impl Server {
         self.forget_customize(conn.id);
         self.forget_files(conn.id);
         self.forget_browser_watcher(conn.id);
+        self.forget_doc_watcher(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -270,11 +281,15 @@ impl Server {
         self.0.sessions.lock().contains_key(id)
     }
 
-    /// Whether any loaded session is running a task.
+    /// Whether any loaded session is running a task, or a routine's run.
     pub fn busy(&self) -> bool {
         self.hubs()
             .iter()
-            .any(|h| h.shared.busy.load(Ordering::Relaxed))
+            .any(|h| h.shared.busy.load(Ordering::Relaxed) || h.shared.routine_runs.load(Ordering::Relaxed) > 0)
+    }
+
+    pub(crate) fn is_closing(&self) -> bool {
+        self.0.closing.load(Ordering::Relaxed)
     }
 
     pub fn loaded_sessions(&self) -> usize {
@@ -291,6 +306,7 @@ impl Server {
         for hub in &hubs {
             hub.shared.wait_closed().await;
         }
+        self.0.routines.close().await;
     }
 
     /// Makes room for one more session. A full server unloads the session that has gone
@@ -341,7 +357,7 @@ impl Server {
         &self,
         kernel: Kernel,
         transcript: Vec<TranscriptItem>,
-        attach: AttachRequest,
+        attach: Option<AttachRequest>,
         base: SummaryBase,
         bot: Option<String>,
     ) -> String {
@@ -363,6 +379,7 @@ impl Server {
             Some(id) => hub::Listing::Bot {
                 id,
                 bots: self.0.bots.clone(),
+                routines: self.0.routines.clone(),
             },
             None => hub::Listing::Sessions(self.0.feed.clone()),
         };
@@ -372,7 +389,7 @@ impl Server {
             kernel,
             transcript,
             self.idle_after(),
-            Some(attach),
+            attach,
             listing,
             base,
             on_exit,
@@ -441,7 +458,7 @@ impl Server {
             updated_at: now,
             no_project,
         };
-        Ok(self.register(kernel, Vec::new(), attach, base, None))
+        Ok(self.register(kernel, Vec::new(), Some(attach), base, None))
     }
 
     /// Loads a session from disk, or attaches when it is already loaded here.
@@ -451,17 +468,32 @@ impl Server {
         overrides: ResumeOverrides,
         attach: AttachRequest,
     ) -> Result<(), RpcError> {
+        self.load_session(id, overrides, Some(attach)).await
+    }
+
+    /// Loads a session from disk unless it is loaded here, and attaches `attach`. Without one the
+    /// session is there for what the service itself does, until nothing uses it.
+    pub(crate) async fn load_session(
+        &self,
+        id: &str,
+        overrides: ResumeOverrides,
+        attach: Option<AttachRequest>,
+    ) -> Result<(), RpcError> {
+        let attached = async |hub: HubHandle, attach: Option<AttachRequest>| match attach {
+            Some(attach) => hub.send(HubCmd::Attach(attach)).await,
+            None => Ok(()),
+        };
         if let Some(hub) = self.hub(id) {
             if !overrides.is_empty() {
                 return Err(RpcError::invalid_params(
                     "the session is already loaded; change settings with session/op instead",
                 ));
             }
-            return hub.send(HubCmd::Attach(attach)).await;
+            return attached(hub, attach).await;
         }
         let _loading = self.0.loading.lock().await;
         if let Some(hub) = self.hub(id) {
-            return hub.send(HubCmd::Attach(attach)).await;
+            return attached(hub, attach).await;
         }
         self.make_room().await?;
         let (header, location) = self
@@ -482,6 +514,7 @@ impl Server {
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &overrides.mcp_servers);
+        deps.routines = header.bot.is_some().then(|| self.0.routines.clone() as Arc<dyn finx_core::routine::RoutineHost>);
         let base = match self.0.store.summary(&SessionRef::Path(location.clone())) {
             Ok(found) => SummaryBase {
                 updated_at: last_active(&found),
@@ -513,6 +546,9 @@ impl Server {
             .await
             .map_err(|e| errors::from_kernel(e, id))?;
         let transcript = kernel.transcript();
+        if let Some(text) = header.bot.as_ref().and_then(|bot| self.0.routines.listing_of(&bot.id)) {
+            kernel.set_routines(text);
+        }
         self.register(kernel, transcript, attach, base, header.bot.map(|bot| bot.id));
         Ok(())
     }

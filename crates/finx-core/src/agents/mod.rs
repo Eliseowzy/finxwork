@@ -10,8 +10,10 @@
 mod driver;
 mod mail;
 mod restore;
+mod run;
 mod tools;
 
+use finx_llm::Message;
 use finx_llm::ModelRegistry;
 use finx_llm::UsageTotals;
 use finx_llm::UserContent;
@@ -146,6 +148,11 @@ struct TreeState {
     /// Agents of an earlier run of the session, whose sessions are not loaded: their names
     /// stay taken, and they take no messages.
     restored: Vec<(String, String)>,
+    /// Routines' runs under way (routine-design §2.1): apart from `agents`, as no message, name
+    /// or idle check concerns them.
+    runs: Vec<run::ActiveRun>,
+    /// The drivers of agents that `retire` took off the tree, until their sessions have closed.
+    retiring: Vec<JoinHandle<()>>,
     /// Reports and messages handed over but not yet in the main session's inbox, or in a
     /// waiting call.
     in_flight: usize,
@@ -204,11 +211,6 @@ impl Progress {
         self.said = None;
     }
 
-    /// It wrote this.
-    pub(super) fn said(&mut self, text: &str) {
-        self.said = Some(said_line(text));
-    }
-
     /// An event of its session.
     pub(super) fn saw(&mut self, msg: &EventMsg) {
         self.last = Instant::now();
@@ -221,6 +223,15 @@ impl Progress {
             }
             EventMsg::ApprovalRequested { summary, .. } => self.asking = Some(step_line(summary)),
             EventMsg::ApprovalResolved { .. } => self.asking = None,
+            EventMsg::MessageCompleted {
+                message: Message::Assistant(reply),
+                ..
+            } => {
+                let text = reply.text();
+                if !text.trim().is_empty() {
+                    self.said = Some(said_line(&text));
+                }
+            }
             _ => {}
         }
     }
@@ -322,6 +333,36 @@ impl AgentTree {
                 grants: grants.clone(),
             }));
         }
+        for internal in state.runs.iter().filter_map(|run| run.internal.as_ref()) {
+            let _ = internal.send(Box::new(Internal::Permissions {
+                mode,
+                rules: rules.clone(),
+                grants: grants.clone(),
+            }));
+        }
+    }
+
+    /// The agents started in the part of the conversation a `resend` took back: they stop, their
+    /// sessions close, and they leave the tree, so that their names are free again and whatever
+    /// they were about to report is dropped.
+    pub(crate) fn retire(&self, ids: &[String]) {
+        if ids.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock();
+        state.restored.retain(|(id, _)| !ids.contains(id));
+        state.retiring.retain(|driver| !driver.is_finished());
+        let (gone, stay): (Vec<Agent>, Vec<Agent>) = std::mem::take(&mut state.agents).into_iter().partition(|a| ids.contains(&a.id));
+        state.agents = stay;
+        for mut agent in gone {
+            send_now(&agent.ops, Op::Shutdown);
+            state.retiring.extend(agent.driver.take());
+        }
+    }
+
+    /// Whether this agent is on the tree: not when a `resend` took it off.
+    pub(crate) fn has(&self, id: &str) -> bool {
+        self.state.lock().agents.iter().any(|a| a.id == id)
     }
 
     /// Stops what every sub-agent is doing. Their sessions stay; a message continues them.
@@ -510,18 +551,62 @@ impl AgentTree {
         }
     }
 
-    /// Closes every sub-agent's session and waits until their logs are closed.
+    /// Closes every sub-agent's session and every run's, and waits until their logs are closed.
     pub(crate) async fn shutdown(&self) {
-        let agents: Vec<(mpsc::Sender<Op>, Option<JoinHandle<()>>)> = {
+        let (agents, runs, retiring) = {
             let mut state = self.state.lock();
             state.closing = true;
-            state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect()
+            let runs: Vec<JoinHandle<()>> = state.runs.iter_mut().filter_map(run::ActiveRun::close).collect();
+            let agents: Vec<_> = state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect();
+            (agents, runs, std::mem::take(&mut state.retiring))
         };
         for (ops, _) in &agents {
             let _ = ops.send(Op::Shutdown).await;
         }
-        let drivers = agents.into_iter().filter_map(|(_, driver)| driver);
+        let drivers = agents.into_iter().filter_map(|(_, driver)| driver).chain(runs).chain(retiring);
         let _ = tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(drivers)).await;
+    }
+
+    /// What a new session of the tree starts from: the main session's current settings. A bot's
+    /// start from a session's prompt, not the bot's (bot-design §2.3).
+    fn child_launch(&self, root: &Arc<Session>, header: SessionHeader, interactive_approvals: bool) -> ChildLaunch {
+        let state = root.state.lock();
+        let (system_prompt, base_prompt) = match &state.sub_agent_prompt {
+            Some(prompt) => (crate::mcp::compose(prompt, state.mcp_section.as_deref()).into(), prompt.clone()),
+            None => (state.system_prompt.clone(), state.base_prompt.clone()),
+        };
+        ChildLaunch {
+            header,
+            system_prompt,
+            base_prompt,
+            mcp_section: state.mcp_section.clone(),
+            mcp: self.deps.mcp.clone(),
+            skills: state.skills.clone(),
+            model: state.model.clone(),
+            thinking: state.thinking,
+            permission_mode: state.permission_mode,
+            session_rules: state.session_rules.clone(),
+            site_grants: state.site_grants.clone(),
+            deps: KernelDeps {
+                llm: self.deps.llm.clone(),
+                tools: self.deps.tools.clone(),
+                env: self.deps.env.clone(),
+                store: self.deps.store.clone(),
+                hooks: self.deps.hooks.clone(),
+                mcp_servers: Vec::new(),
+                browser_pool: self.deps.browser_pool.clone(),
+                docs: self.deps.docs.clone(),
+                routines: None,
+            },
+            home: self.deps.home.clone(),
+            config: self.deps.config.clone(),
+            system: root.system.clone(),
+            trusted: self.deps.trusted,
+            interactive_approvals,
+            main: Arc::downgrade(root),
+            approval_line: root.approval_line.clone(),
+            locks: root.locks.clone(),
+        }
     }
 
     pub(crate) async fn spawn(
@@ -535,26 +620,7 @@ impl AgentTree {
             return Err(ToolError::InvalidArgs("task must not be empty".into()));
         }
         let root = self.root()?;
-        let (system_prompt, base_prompt, mcp_section, skills, model, thinking, permission_mode, session_rules, site_grants, parent_task) = {
-            let state = root.state.lock();
-            // A bot's sub-agents start from a session's prompt, not the bot's (bot-design §2.3).
-            let (system_prompt, base_prompt) = match &state.sub_agent_prompt {
-                Some(prompt) => (crate::mcp::compose(prompt, state.mcp_section.as_deref()).into(), prompt.clone()),
-                None => (state.system_prompt.clone(), state.base_prompt.clone()),
-            };
-            (
-                system_prompt,
-                base_prompt,
-                state.mcp_section.clone(),
-                state.skills.clone(),
-                state.model.clone(),
-                state.thinking,
-                state.permission_mode,
-                state.session_rules.clone(),
-                state.site_grants.clone(),
-                state.active_task.as_ref().map(|t| t.id.clone()).unwrap_or_default(),
-            )
-        };
+        let parent_task = root.state.lock().active_task.as_ref().map(|t| t.id.clone()).unwrap_or_default();
         let name = self.unique_name(args.name.as_deref())?;
         let id = uuid::Uuid::now_v7().to_string();
         let mut header = SessionHeader::new(id.clone(), root.env.cwd().to_path_buf());
@@ -565,39 +631,10 @@ impl AgentTree {
             depth: 1,
             call_id: call_id.to_string(),
             parent_task,
+            routine: None,
         });
-        let kernel = kernel::start_child(ChildLaunch {
-            header,
-            system_prompt,
-            base_prompt,
-            mcp_section,
-            mcp: self.deps.mcp.clone(),
-            skills,
-            model,
-            thinking,
-            permission_mode,
-            session_rules,
-            site_grants,
-            deps: KernelDeps {
-                llm: self.deps.llm.clone(),
-                tools: self.deps.tools.clone(),
-                env: self.deps.env.clone(),
-                store: self.deps.store.clone(),
-                hooks: self.deps.hooks.clone(),
-                mcp_servers: Vec::new(),
-                browser_pool: self.deps.browser_pool.clone(),
-                docs: self.deps.docs.clone(),
-            },
-            home: self.deps.home.clone(),
-            config: self.deps.config.clone(),
-            system: root.system.clone(),
-            trusted: self.deps.trusted,
-            interactive_approvals: root.interactive_approvals,
-            main: Arc::downgrade(&root),
-            approval_line: root.approval_line.clone(),
-            locks: root.locks.clone(),
-        })
-        .map_err(|err| ToolError::Failed(format!("cannot start the agent: {err}")))?;
+        let kernel = kernel::start_child(self.child_launch(&root, header, root.interactive_approvals))
+            .map_err(|err| ToolError::Failed(format!("cannot start the agent: {err}")))?;
         let session_file: PathBuf = kernel.session_file().to_path_buf();
         let ops = kernel.op_sender();
         let (route, waiter) = route(args.wait);

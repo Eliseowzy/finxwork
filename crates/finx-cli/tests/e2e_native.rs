@@ -549,6 +549,203 @@ async fn changes_until(incoming: &mut finx_rpc::IncomingRx, session: &str, done:
     }
 }
 
+/// The id of the user's message in a task's events.
+fn sent_id(events: &[Value]) -> String {
+    events
+        .iter()
+        .find(|e| e["type"] == "message_completed" && e["message"]["role"] == "user")
+        .and_then(|e| e["message_id"].as_str())
+        .expect("the task has the user's message")
+        .to_string()
+}
+
+/// A session's events up to and including the end of a task.
+async fn to_task_end(events: &mut tokio::sync::mpsc::UnboundedReceiver<finx_rpc::Incoming>) -> Vec<Value> {
+    let mut seen = Vec::new();
+    loop {
+        let incoming = recv(events).await;
+        if incoming.method() != "session/event" {
+            continue;
+        }
+        let event = incoming.params()["event"].clone();
+        let end = matches!(event["type"].as_str(), Some("task_completed" | "task_failed"));
+        seen.push(event);
+        if end {
+            return seen;
+        }
+    }
+}
+
+/// A transcript as what identifies each item, for comparing where it came from.
+fn items_of(snapshot: &Value) -> Vec<String> {
+    snapshot["transcript"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| match item["type"].as_str().unwrap() {
+            "message" => format!("message {}", item["message_id"]),
+            "tool_result" => format!("result {}", item["call_id"]),
+            other => format!("{other} {}", item["task_id"]),
+        })
+        .collect()
+}
+
+fn texts_of(snapshot: &Value) -> Vec<String> {
+    snapshot["transcript"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|item| item["type"] == "message")
+        .flat_map(|item| item["message"]["content"].as_array().cloned().unwrap_or_default())
+        .filter_map(|c| c["text"].as_str().map(str::to_string))
+        .collect()
+}
+
+/// Going back is one op on the service: every client sees it the same way, a client attaching
+/// later and the session list agree with them, and so does the log once the session is reopened.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn every_client_and_every_list_go_back_with_a_resend() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    let schema = SchemaCheck::new(&["Event", "InitializeResult", "SnapshotResult", "SessionsChangedParams"]);
+    let socket = env.home.path().join("run").join("r.sock");
+    let url = format!("unix://{}", socket.display());
+    let mut service = env.finx(&["serve", "--listen", &url, "--idle-exit", "600"]).spawn().unwrap();
+    wait_for_socket(&socket).await;
+
+    // The service says it can.
+    let stream = UnixStream::connect(&socket).await.unwrap();
+    let (read, write) = stream.into_split();
+    let (asked, _asked_in) = Client::connect(read, write);
+    let init = asked
+        .request("initialize", json!({"protocol_version": 2, "client_info": {"name": "e2e"}}))
+        .await
+        .unwrap();
+    schema.check("InitializeResult", &init);
+    assert_eq!(init["capabilities"]["message_resend"], true);
+
+    let (watch, mut watch_in) = connect(&socket).await;
+    watch.request("sessions/subscribe", json!({})).await.unwrap();
+    let (a, a_in) = connect(&socket).await;
+    let a_demux = Demux::spawn(a_in);
+    let cwd = env.workspace("back");
+    let (session, _) = new_session(&a, &cwd).await;
+    let mut a_events = a_demux.subscribe(&session);
+    let first = native_prompt(&a, &mut a_events, &session, "[[mock:echo]] first", true).await;
+    let first_id = sent_id(&first.events);
+    let second = native_prompt(&a, &mut a_events, &session, "[[mock:echo]] second", true).await;
+    let second_id = sent_id(&second.events);
+    changes_until(&mut watch_in, &session, |s| s["state"] == "idle" && s["preview"] == "[[mock:echo]] first").await;
+
+    let (b, b_in) = connect(&socket).await;
+    let b_demux = Demux::spawn(b_in);
+    b.request("session/attach", json!({"session_id": session})).await.unwrap();
+    let mut b_events = b_demux.subscribe(&session);
+
+    // The second message: the first stays, and the list still shows it.
+    a.request("session/op", json!({"session_id": session, "op": {"type": "resend", "message_id": second_id,
+        "input": [{"type": "text", "text": "[[mock:echo]] SECOND"}]}}))
+        .await
+        .unwrap();
+    for events in [&mut a_events, &mut b_events] {
+        let seen = to_task_end(events).await;
+        for event in &seen {
+            schema.check("Event", event);
+        }
+        // After the `idle` of the last task, on the connection that saw it.
+        let first = seen.iter().find(|e| e["type"] != "idle").unwrap();
+        assert_eq!(first["type"], "session_rewound", "{seen:#?}");
+        assert_eq!(first["message_id"], json!(second_id));
+        assert!(seen.iter().any(|e| e["type"] == "task_started"));
+        assert_eq!(seen.iter().filter(|e| e["type"] == "session_rewound").count(), 1);
+    }
+    let after = a.request("session/attach", json!({"session_id": session})).await.unwrap();
+    schema.check("SnapshotResult", &after);
+    assert_eq!(
+        texts_of(&after["snapshot"]),
+        ["[[mock:echo]] first", "echo: first", "[[mock:echo]] SECOND", "echo: SECOND"]
+    );
+    let rows = changes_until(&mut watch_in, &session, |s| s["state"] == "idle").await;
+    assert_eq!(rows.last().unwrap()["preview"], "[[mock:echo]] first");
+
+    // A message that is gone: refused, and nothing changes.
+    a.request("session/op", json!({"session_id": session, "op": {"type": "resend", "message_id": second_id,
+        "input": [{"type": "text", "text": "too late"}]}}))
+        .await
+        .unwrap();
+    for events in [&mut a_events, &mut b_events] {
+        loop {
+            let incoming = recv(events).await;
+            let event = &incoming.params()["event"];
+            if event["type"] == "warning" {
+                assert_eq!(event["code"], "resend_rejected", "{event:#}");
+                break;
+            }
+            assert_ne!(event["type"], "session_rewound");
+        }
+    }
+
+    // While a command runs: it stops first, and soon.
+    a.request("session/op", json!({"session_id": session, "op": {"type": "prompt",
+        "input": [{"type": "text", "text": "[[mock:bash:sleep 30]] wait"}]}}))
+        .await
+        .unwrap();
+    let mut running = None;
+    while running.is_none() {
+        let incoming = recv(&mut a_events).await;
+        let event = &incoming.params()["event"];
+        if event["type"] == "message_completed" && event["message"]["role"] == "user" {
+            running = event["message_id"].as_str().map(str::to_string);
+        }
+    }
+    loop {
+        let incoming = recv(&mut a_events).await;
+        if incoming.params()["event"]["type"] == "tool_running" {
+            break;
+        }
+    }
+    let started = std::time::Instant::now();
+    a.request("session/op", json!({"session_id": session, "op": {"type": "resend", "message_id": running,
+        "input": [{"type": "text", "text": "[[mock:echo]] no need"}]}}))
+        .await
+        .unwrap();
+    let seen = to_task_end(&mut a_events).await;
+    assert!(started.elapsed() < Duration::from_secs(5));
+    let order: Vec<&str> = seen.iter().filter_map(|e| e["type"].as_str()).filter(|t| matches!(*t, "task_interrupted" | "session_rewound" | "task_started")).collect();
+    assert_eq!(order, ["task_interrupted", "session_rewound", "task_started"]);
+
+    // The first message: the list follows, and a client attaching now agrees.
+    a.request("session/op", json!({"session_id": session, "op": {"type": "resend", "message_id": first_id,
+        "input": [{"type": "text", "text": "[[mock:echo]] FIRST"}]}}))
+        .await
+        .unwrap();
+    to_task_end(&mut a_events).await;
+    changes_until(&mut watch_in, &session, |s| s["state"] == "idle" && s["preview"] == "[[mock:echo]] FIRST").await;
+    let (c, _c_in) = connect(&socket).await;
+    let live = c.request("session/attach", json!({"session_id": session})).await.unwrap();
+    assert_eq!(texts_of(&live["snapshot"]), ["[[mock:echo]] FIRST", "echo: FIRST"]);
+    let spent = live["snapshot"]["usage"].clone();
+
+    // Reopened from its log, it is the same session: the list, the conversation, what was spent.
+    for client in [&a, &b, &c] {
+        let _ = client.request("session/detach", json!({"session_id": session})).await;
+    }
+    a.request("session/close", json!({"session_id": session})).await.unwrap();
+    let list = a.request("session/list", json!({"cwd": cwd})).await.unwrap();
+    assert_eq!(list["sessions"][0]["loaded"], false);
+    assert_eq!(list["sessions"][0]["preview"], "[[mock:echo]] FIRST");
+    let reopened = a.request("session/resume", json!({"session_id": session})).await.unwrap();
+    schema.check("SnapshotResult", &reopened);
+    assert_eq!(items_of(&reopened["snapshot"]), items_of(&live["snapshot"]));
+    assert_eq!(texts_of(&reopened["snapshot"]), ["[[mock:echo]] FIRST", "echo: FIRST"]);
+    // The opener's snapshot comes before `session_started`, which carries the totals.
+    let settled = c.request("session/attach", json!({"session_id": session})).await.unwrap();
+    assert_eq!(settled["snapshot"]["usage"]["per_model"]["mock/mock-1"]["input"], spent["per_model"]["mock/mock-1"]["input"], "what the parts taken back cost was paid");
+    assert!(spent["per_model"]["mock/mock-1"]["input"].as_u64().unwrap() > 0);
+
+    a.request("server/shutdown", json!({})).await.unwrap();
+    assert_eq!(common::exit_code(&mut service).await, 0);
+}
+
 /// What the desktop app does with the service (desktop-kernel-integration.md): find it by its
 /// record, follow the session list, run a task, rename, archive, resume, save a key, delete.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -24,6 +24,47 @@ pub enum Request {
     /// A page, or the part of it in `clip`, as PNG, at `dpi`; never more than `max_side` pixels
     /// on its longer side.
     Render { handle: u64, page: u32, clip: Option<Rect>, dpi: u32, max_side: u32 },
+    /// A workbook (spreadsheet-design §5.7); `name`: the file's own name without its extension,
+    /// a CSV's one sheet (the working copy is named `current`).
+    SheetOpen {
+        handle: u64,
+        path: PathBuf,
+        #[serde(default)]
+        name: Option<String>,
+    },
+    /// A range's cells, as the grid shows them.
+    SheetCells { handle: u64, sheet: String, range: String },
+    /// Edits: written to the working copy (or only tried, `preview`), with their impact.
+    SheetApply { handle: u64, ops: Vec<finx_protocol::doc::SheetOp>, preview: bool },
+    /// What the agent reads first about a workbook.
+    SheetRecalc { handle: u64, circular_only: bool },
+    SheetSummary { handle: u64 },
+    SheetFind { handle: u64, query: String, limit: usize },
+    SheetTrace { handle: u64, sheet: String, cell: String, direction: crate::sheet::Direction, depth: u32 },
+    /// The edits a fill down or right makes, not applied.
+    SheetFill { handle: u64, sheet: String, range: String, direction: crate::sheet::FillDirection },
+    /// The edits the fill handle makes, not applied.
+    SheetAutofill { handle: u64, sheet: String, source: String, target: String, switch: bool },
+}
+
+impl Request {
+    /// The document a request is about, once it is open.
+    pub fn handle(&self) -> Option<u64> {
+        match self {
+            Request::Close { handle }
+            | Request::Chars { handle, .. }
+            | Request::Render { handle, .. }
+            | Request::SheetCells { handle, .. }
+            | Request::SheetApply { handle, .. }
+            | Request::SheetRecalc { handle, .. }
+            | Request::SheetSummary { handle }
+            | Request::SheetFind { handle, .. }
+            | Request::SheetTrace { handle, .. }
+            | Request::SheetFill { handle, .. }
+            | Request::SheetAutofill { handle, .. } => Some(*handle),
+            Request::Open { .. } | Request::SheetOpen { .. } => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -99,6 +140,7 @@ impl Engine {
             }
             Request::Chars { handle, page } => serde_json::to_value(self.chars(handle, page)?),
             Request::Render { handle, page, clip, dpi, max_side } => serde_json::to_value(self.render(handle, page, clip, dpi, max_side)?),
+            _ => return Err("not a PDF request".into()),
         };
         value.map_err(|e| e.to_string())
     }
@@ -261,23 +303,45 @@ fn outline(parent: &PdfBookmark<'_>, depth: usize) -> Vec<OutlineItem> {
 /// The worker's loop: one JSON request a line in, one JSON reply a line out, until the input
 /// ends. Replies are `{"ok": …}` or `{"err": "…"}`.
 pub fn serve(input: impl std::io::BufRead, mut output: impl std::io::Write) -> std::io::Result<()> {
-    let mut engine = Engine::new();
+    // PDFium is loaded on the first PDF request: workbooks do not need it.
+    let mut pdf: Option<Result<Engine, String>> = None;
+    let mut sheets = crate::sheet::Sheets::default();
     for line in input.lines() {
         let line = line?;
         if line.trim().is_empty() {
             continue;
         }
-        let reply = match (&mut engine, serde_json::from_str::<Request>(&line)) {
-            (Err(e), _) => serde_json::json!({ "err": e }),
-            (_, Err(e)) => serde_json::json!({ "err": format!("bad request: {e}") }),
-            (Ok(engine), Ok(request)) => match engine.handle(request) {
-                Ok(value) => serde_json::json!({ "ok": value }),
-                Err(e) => serde_json::json!({ "err": e }),
-            },
+        let result = match serde_json::from_str::<Request>(&line) {
+            Err(e) => Err(format!("bad request: {e}")),
+            Ok(request) => handle(&mut pdf, &mut sheets, request),
+        };
+        let reply = match result {
+            Ok(value) => serde_json::json!({ "ok": value }),
+            Err(e) => serde_json::json!({ "err": e }),
         };
         serde_json::to_writer(&mut output, &reply)?;
         output.write_all(b"\n")?;
         output.flush()?;
     }
     Ok(())
+}
+
+fn handle(pdf: &mut Option<Result<Engine, String>>, sheets: &mut crate::sheet::Sheets, request: Request) -> Result<serde_json::Value, String> {
+    let json = |v: Result<serde_json::Value, serde_json::Error>| v.map_err(|e| e.to_string());
+    match request {
+        Request::SheetOpen { handle, path, name } => json(serde_json::to_value(sheets.open(handle, &path, name.as_deref())?)),
+        Request::SheetCells { handle, sheet, range } => json(serde_json::to_value(sheets.cells(handle, &sheet, &range)?)),
+        Request::SheetApply { handle, ops, preview } => json(serde_json::to_value(sheets.apply(handle, &ops, preview)?)),
+        Request::SheetRecalc { handle, circular_only } => json(serde_json::to_value(sheets.recalc(handle, circular_only)?)),
+        Request::SheetSummary { handle } => json(serde_json::to_value(sheets.summary(handle)?)),
+        Request::SheetFind { handle, query, limit } => json(serde_json::to_value(sheets.find(handle, &query, limit)?)),
+        Request::SheetTrace { handle, sheet, cell, direction, depth } => json(serde_json::to_value(sheets.trace(handle, &sheet, &cell, direction, depth)?)),
+        Request::SheetFill { handle, sheet, range, direction } => json(serde_json::to_value(sheets.fill(handle, &sheet, &range, direction)?)),
+        Request::SheetAutofill { handle, sheet, source, target, switch } => json(serde_json::to_value(sheets.autofill(handle, &sheet, &source, &target, switch)?)),
+        Request::Close { handle } if sheets.close(handle) => Ok(serde_json::Value::Null),
+        request => match pdf.get_or_insert_with(Engine::new) {
+            Ok(engine) => engine.handle(request),
+            Err(e) => Err(e.clone()),
+        },
+    }
 }

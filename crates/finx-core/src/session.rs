@@ -62,6 +62,14 @@ pub(crate) struct Input {
     pub(crate) skills: Vec<SkillText>,
 }
 
+/// A `resend` waiting for the running task to stop.
+pub(crate) struct Resend {
+    /// The user message the conversation goes back to just before.
+    pub(crate) target: String,
+    /// What takes its place.
+    pub(crate) input: Input,
+}
+
 pub(crate) struct ActiveTask {
     pub(crate) id: String,
     pub(crate) cancel: CancellationToken,
@@ -92,6 +100,8 @@ pub(crate) struct SessionState {
     pub(crate) active_task: Option<ActiveTask>,
     pub(crate) steer: VecDeque<Input>,
     pub(crate) follow_up: VecDeque<Input>,
+    /// Goes ahead when the running task has ended.
+    pub(crate) pending_resend: Option<Resend>,
     pub(crate) pending_approvals: HashMap<String, oneshot::Sender<ApprovalDecision>>,
     pub(crate) pending_model: Option<(Arc<Model>, ThinkingLevel)>,
     pub(crate) usage: UsageTotals,
@@ -111,6 +121,9 @@ pub(crate) struct SessionState {
     pub(crate) archived: bool,
     /// A bot's session: its names (bot-design §2.4).
     pub(crate) bot: Option<BotNames>,
+    /// A bot's session: what the model is to know of its routines, once the service said
+    /// (routine-design §4.4).
+    pub(crate) routines: Option<String>,
     /// A bot's session: what its sub-agents' prompts start from instead of `base_prompt`,
     /// built like a session's (bot-design §2.3).
     pub(crate) sub_agent_prompt: Option<Arc<str>>,
@@ -148,6 +161,7 @@ impl SessionState {
             active_task: None,
             steer: VecDeque::new(),
             follow_up: VecDeque::new(),
+            pending_resend: None,
             pending_approvals: HashMap::new(),
             pending_model: None,
             usage: UsageTotals::default(),
@@ -160,14 +174,22 @@ impl SessionState {
             title: None,
             archived: false,
             bot: None,
+            routines: None,
             sub_agent_prompt: None,
             prompt_template: None,
         }
     }
 
-    /// A waiting report would start a task now.
+    /// A waiting report would start a task now. Stopping the bot's work holds back the reports
+    /// of that work; a routine's is a new thing the owner asked for, and it would be lost with
+    /// the session if it waited (routine-design §2.4).
     pub(crate) fn has_waking_mail(&self) -> bool {
-        !self.hold && self.inbox.iter().any(|mail| mail.wake)
+        self.inbox.iter().any(|mail| mail.wake && (!self.hold || mail.info.kind == MailKind::Routine))
+    }
+
+    /// Whether `id` is a message of the user's on the current branch, which `resend` may name.
+    pub(crate) fn has_user_message(&self, id: &str) -> bool {
+        self.history.branch_back().any(|entry| entry.id == id && is_user_message(entry))
     }
 
     /// The id of input that arrives now: free in the history and among the input that waits.
@@ -179,6 +201,11 @@ impl SessionState {
             }
         }
     }
+}
+
+/// A message the user wrote: reports (`mail`) and what the kernel adds are other kinds of entry.
+fn is_user_message(entry: &Entry) -> bool {
+    matches!(&entry.kind, EntryKind::Message { message: Message::User(_), .. })
 }
 
 /// Messages from inside the process, handled by the submission loop in order with the ops.
@@ -257,6 +284,8 @@ pub(crate) struct Session {
     pub(crate) agents: Option<Arc<AgentTree>>,
     /// A sub-agent's session.
     pub(crate) sub_agent: bool,
+    /// What it can do about other agents.
+    pub(crate) agent_role: crate::deferred::AgentRole,
     /// A sub-agent's main session, which holds the permissions the whole tree follows.
     pub(crate) main: Option<Weak<Session>>,
     /// Shared with the sub-agents: whoever holds it may ask the user, so that the tree asks one
@@ -390,14 +419,35 @@ impl Session {
         }
     }
 
-    /// Writes the waiting reports and messages into the history, oldest first.
-    pub(crate) fn deliver_mail(&self) {
+    /// Gives a bot's routines as they are now, when the context last gave another list. A bot
+    /// that never had any hears nothing of them (routine-design §4.4).
+    pub(crate) fn note_routines(&self) {
+        let changed = {
+            let state = self.state.lock();
+            let Some(text) = &state.routines else {
+                return;
+            };
+            match crate::context::routines_in_context(&state.history) {
+                Some(given) => given != text,
+                None => text != crate::routine::NO_ROUTINES,
+            }
+            .then(|| text.clone())
+        };
+        if let Some(text) = changed {
+            self.record(EntryKind::Routines { text });
+        }
+    }
+
+    /// Writes the waiting reports and messages into the history, oldest first. True when a
+    /// routine's is among them.
+    pub(crate) fn deliver_mail(&self) -> bool {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();
+        let routine = mails.iter().any(|mail| mail.info.kind == MailKind::Routine);
         for mail in mails {
             let message = Message::from(mail.message);
             let info = Box::new(mail.info.clone());
             let entry = self.record(match mail.info.kind {
-                MailKind::Report => EntryKind::Mail { mail: info, message: message.clone() },
+                MailKind::Report | MailKind::Routine => EntryKind::Mail { mail: info, message: message.clone() },
                 MailKind::Message => EntryKind::AgentMessage { mail: info, message: message.clone() },
             });
             self.emit(EventMsg::MessageCompleted {
@@ -407,6 +457,7 @@ impl Session {
                 skills: Vec::new(),
             });
         }
+        routine
     }
 
     /// Sends `Idle` once nothing is left to do: no task, no queued input, no report that
@@ -435,7 +486,8 @@ impl Session {
 
     pub(crate) fn take_steer(&self) -> Vec<Input> {
         let mut state = self.state.lock();
-        if state.steer.is_empty() {
+        // Going back: what waits is handed back rather than joining what is taken back.
+        if state.steer.is_empty() || state.pending_resend.is_some() {
             return Vec::new();
         }
         let taken = state.steer.drain(..).collect();
@@ -455,6 +507,9 @@ impl Session {
 
     pub(crate) fn take_follow_up(&self) -> Option<Input> {
         let mut state = self.state.lock();
+        if state.pending_resend.is_some() {
+            return None;
+        }
         let taken = state.follow_up.pop_front();
         if taken.is_some() {
             self.emit_queue(&state);
@@ -494,6 +549,70 @@ impl Session {
             self.emit(EventMsg::InputWithdrawn { id: id.to_string() });
             self.emit_queue(state);
         }
+    }
+
+    /// A `resend` that cannot go ahead: nothing changes, and its input stays with the client.
+    pub(crate) fn reject_resend(&self, why: &str) {
+        self.emit(EventMsg::Warning {
+            message: format!("cannot resend: {why}"),
+            code: Some(WarningCode::ResendRejected),
+        });
+    }
+
+    /// `resend`: the conversation goes back to just before `target`, a user message on the branch.
+    /// The log keeps what is taken back; what the session holds because of it goes
+    /// (docs/kernel/message-resend-design.md §3.4, §3.5).
+    pub(crate) fn rewind(&self, state: &mut SessionState, target: &str, returned_input: Vec<UserMessage>) {
+        let (parent, before_first, removed, again) = {
+            let branch = state.history.branch();
+            // It was on the branch when accepted, and only this takes an entry off the branch.
+            let Some(at) = branch.iter().position(|entry| entry.id == target) else {
+                return;
+            };
+            let taken_back = &branch[at..];
+            let removed: Vec<String> = taken_back
+                .iter()
+                .filter_map(|entry| match &entry.kind {
+                    EntryKind::AgentSpawned(spawned) => Some(spawned.agent_id.clone()),
+                    _ => None,
+                })
+                .collect();
+            // An agent started before keeps its place, and the model, back where it was still
+            // waiting for this report or message, gets it again.
+            let again: Vec<Mail> = taken_back
+                .iter()
+                .filter_map(|entry| match &entry.kind {
+                    EntryKind::Mail { mail, message: Message::User(user) } | EntryKind::AgentMessage { mail, message: Message::User(user) } if !removed.contains(&mail.from.id) => Some(Mail {
+                        info: (**mail).clone(),
+                        message: (**user).clone(),
+                        wake: false,
+                    }),
+                    _ => None,
+                })
+                .collect();
+            let before_first = !branch[..at].iter().any(|entry| is_user_message(entry));
+            (branch[at].parent.clone(), before_first, removed, again)
+        };
+        let id = state.history.new_id();
+        let marker = state.history.rewind(id, parent, before_first, now_ms());
+        self.writer.append(marker);
+        state.inbox.retain(|mail| !removed.contains(&mail.info.from.id));
+        for mail in again.into_iter().rev() {
+            state.inbox.push_front(mail);
+        }
+        // New input ends the hold after an interruption.
+        state.hold = false;
+        // The context no longer holds what the model read or the tools a search showed it.
+        self.files.clear();
+        self.mcp_shown.lock().clear();
+        if let Some(tree) = &self.agents {
+            tree.retire(&removed);
+        }
+        self.emit(EventMsg::SessionRewound {
+            message_id: target.to_string(),
+            removed_agents: removed,
+            returned_input,
+        });
     }
 
     /// `requeue`: moves waiting input to the end of the other mode.

@@ -93,6 +93,8 @@ export interface AgentView {
 
 export interface SessionView {
   info: SessionInfo;
+  /** A new object with each snapshot: what the events between two of them said is not known. */
+  attached: object;
   lastSeq: number;
   entries: Entry[];
   /** Cursor to earlier history (session/history); absent at the beginning. */
@@ -112,6 +114,12 @@ export interface SessionView {
   queued: QueuedInput[];
   /** The last input `withdraw` took out of the queue: the window that asked puts it back in the composer. */
   withdrawn?: string;
+  /** The last time the conversation went back (`session_rewound`): to before which message, and the user's messages that went with it. */
+  rewound?: { message_id: string; gone: string[] };
+  /** When the kernel last refused a `resend` (ms): the window that sent it still holds its words. */
+  refused?: number;
+  /** It went back past all this view holds: only a new snapshot can say what is left. */
+  stale?: boolean;
   /** Warnings with a code, oldest first. */
   notices: Notice[];
   /** Sub-agents started since the session was loaded, in the order they started. */
@@ -147,12 +155,9 @@ export function pendingApproval(v: SessionView): { approval: PendingApproval; ag
 export function fromSnapshot(s: SessionSnapshot): SessionView {
   const entries: Entry[] = s.transcript.items;
   const descriptions: Record<string, ToolDescription> = {};
-  let context = 0;
   let lastUser = 0;
   for (const e of entries) {
-    if (e.type !== "message") continue;
-    if (e.message.role === "assistant") context = usageTokens(e.message.usage);
-    if (e.message.role === "user") lastUser = e.message.ts;
+    if (e.type === "message" && e.message.role === "user") lastUser = e.message.ts;
   }
   const a = s.active_task;
   let live: LiveTask | null = null;
@@ -178,12 +183,13 @@ export function fromSnapshot(s: SessionSnapshot): SessionView {
   const last = entries.at(-1);
   return {
     info: s.session,
+    attached: {},
     lastSeq: s.last_seq,
     entries,
     before: s.transcript.before ?? undefined,
     live,
     usage: s.usage,
-    context,
+    context: contextAfter(entries),
     failure: !live && last?.type === "task_end" && last.outcome === "failed" ? (last.error ?? undefined) : undefined,
     descriptions,
     queued: s.queued ?? [],
@@ -191,6 +197,15 @@ export function fromSnapshot(s: SessionSnapshot): SessionView {
     agents: (s.agents ?? []).map((a) => agentFrom(s.session, a)),
     closed: false,
   };
+}
+
+/** Tokens in the context after the last response among these entries. */
+function contextAfter(entries: Entry[]): number {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const e = entries[i];
+    if (e.type === "message" && e.message.role === "assistant") return usageTokens(e.message.usage);
+  }
+  return 0;
 }
 
 /** Earlier history (session/history) put before what the view has, with the cursor to what came before it. */
@@ -277,7 +292,6 @@ function step(v: SessionView, e: Event): SessionView {
       return {
         ...v,
         failure: undefined,
-        returned: undefined,
         live: { task_id: e.task_id, turn: 0, started: e.ts, tools: [], approvals: [], usage: { per_model: {} } },
       };
     case "turn_started":
@@ -300,6 +314,24 @@ function step(v: SessionView, e: Event): SessionView {
       return { ...v, queued: e.queued };
     case "input_withdrawn":
       return { ...v, withdrawn: e.id };
+    case "session_rewound": {
+      const at = v.entries.findIndex((x) => x.type === "message" && x.message_id === e.message_id);
+      // Not among what the view holds: everything it holds went, and the cursor to earlier
+      // history no longer fits.
+      const entries = at < 0 ? [] : v.entries.slice(0, at);
+      const gone = v.entries.slice(Math.max(at, 0)).flatMap((x) => (x.type === "message" && x.message.role === "user" ? [x.message_id] : []));
+      const removed = e.removed_agents ?? [];
+      const next: SessionView = {
+        ...v,
+        entries,
+        context: contextAfter(entries),
+        failure: undefined,
+        agents: removed.length ? v.agents.filter((a) => !removed.includes(a.id)) : v.agents,
+        rewound: { message_id: e.message_id, gone },
+        ...(at < 0 && { stale: true }),
+      };
+      return e.returned_input?.length ? { ...next, returned: e.returned_input } : next;
+    }
     case "stream_retry":
       // The reply streamed so far belonged to the failed attempt.
       return withLive(v, (live) => ({ ...live, streaming: undefined, retry: { attempt: e.attempt, delay_ms: e.delay_ms, error: e.error, at: e.ts } }));
@@ -354,6 +386,7 @@ function step(v: SessionView, e: Event): SessionView {
       return { ...v, entries: [...v.entries, note], asked: { report: e.report, at: e.ts } };
     }
     case "warning":
+      if (e.code === "resend_rejected") return { ...v, refused: e.ts };
       if (e.code) {
         const notice = { code: e.code, message: e.message, ts: e.ts };
         return { ...v, notices: [...v.notices.filter((n) => n.code !== e.code), notice] };

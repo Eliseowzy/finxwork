@@ -58,7 +58,7 @@ const YOURS_DEFAULT: &str = "; new pages open in the user's own browser, with th
 const CUA: &str = "cua";
 const CUA_SUMMARY: &str = "Computer use: see and operate the other apps on this computer";
 const DOC: &str = "doc";
-const DOC_SUMMARY: &str = "Documents (PDF): open one beside the conversation for the user, read, search and look at its pages";
+const DOC_SUMMARY: &str = "Documents and workbooks (PDF, XLSX, XLSM): open them beside the conversation; read or search pages and cell ranges, trace or calculate formulas, and edit or save workbooks";
 const AGENTS: &str = "agents";
 const AGENTS_SUMMARY: &str = "See how your agents stand, or stop them";
 const SUB_AGENT_AGENTS_SUMMARY: &str = "See the other agents in this session";
@@ -140,5 +140,23 @@ impl Deferred {
         self.groups
             .iter()
             .find_map(|g| g.tools.iter().find(|t| t.spec().name == name).map(|t| (g, t)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Deferred;
+    use crate::config::Config;
+    use crate::system::SystemSettings;
+
+    #[test]
+    fn document_catalog_advertises_workbook_support() {
+        let deferred = Deferred::of(&SystemSettings::of(&Config::default()), false, false, true, super::AgentRole::None);
+        let doc = deferred.group("doc").expect("document group");
+        assert!(doc.summary.contains("XLSX"));
+        assert!(doc.summary.contains("cell ranges"));
+        assert!(doc.summary.contains("formulas"));
+        assert!(deferred.find("doc_open").is_some());
+        assert!(deferred.find("doc_read").is_some());
     }
 }

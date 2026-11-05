@@ -36,7 +36,7 @@ export function runBotAction(st: Store, b: BotSummary, id: NonNullable<BotAction
           run: async () => {
             await st.call("bots/delete", { bot_id: b.id });
             // Its settings go with it, not over to the bot shown next.
-            st.set({ botPanel: false });
+            st.set({ botPanel: false, botRoutines: null });
           },
           done: t("delete.done", { name: b.name }),
         },

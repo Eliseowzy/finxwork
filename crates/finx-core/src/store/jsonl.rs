@@ -575,7 +575,7 @@ fn entry_type(line: &str) -> Option<&str> {
 fn summarize_line(summary: &mut SessionSummary, line: &str) {
     let wanted = match entry_type(line) {
         Some("message") => summary.first_message.is_none() && line.contains(r#""role":"user""#),
-        Some("title" | "settings" | "task" | "archived") => true,
+        Some("title" | "settings" | "task" | "archived" | "branch") => true,
         _ => false,
     };
     if !wanted {
@@ -598,6 +598,8 @@ fn summarize_line(summary: &mut SessionSummary, line: &str) {
             summary.last_task_at = Some(entry.ts);
         }
         EntryKind::Archived { archived } => summary.archived = archived,
+        // The session went back before its first message: the next one is the first.
+        EntryKind::Branch { before_first: true } => summary.first_message = None,
         _ => {}
     }
 }
@@ -761,6 +763,41 @@ mod tests {
         let store = JsonlStore::new(&sessions);
         assert_eq!(store.list(10, None).unwrap()[0].title.as_deref(), Some("Short"));
         assert!(store.scanned.lock().is_empty());
+    }
+
+    /// Going back before the first message: the list shows the message that took its place, on
+    /// a full read and on one that goes on from a kept summary. Going back to a later message
+    /// leaves the first one alone.
+    #[test]
+    fn the_first_message_follows_a_rewind_before_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(format!("20261105T000000-{OLDER}.jsonl"));
+        let header = serde_json::to_string(&SessionHeader::new(OLDER.into(), dir.path().into())).unwrap();
+        let line = |kind: EntryKind| {
+            let entry = Entry { id: format!("{:08x}", rand::random::<u32>()), parent: None, ts: 1, kind };
+            serde_json::to_string(&entry).unwrap() + "\n"
+        };
+        let message = |text: &str| line(EntryKind::message(finx_llm::UserMessage::text(text).into()));
+        let append = |text: &str| OpenOptions::new().append(true).open(&log).unwrap().write_all(text.as_bytes()).unwrap();
+        let mut kept = JsonlStore::new(dir.path());
+        kept.keep_from = 0;
+        let first = || {
+            let reference = SessionRef::Path(log.clone());
+            let fresh = JsonlStore::new(dir.path()).summary(&reference).unwrap().first_message;
+            assert_eq!(kept.summary(&reference).unwrap().first_message, fresh, "kept and fresh agree");
+            fresh
+        };
+        std::fs::write(&log, format!("{header}\n{}", message("the old first"))).unwrap();
+        assert_eq!(first().as_deref(), Some("the old first"));
+        append(&message("a second one"));
+        append(&line(EntryKind::Branch { before_first: false }));
+        assert_eq!(first().as_deref(), Some("the old first"), "back to a later message");
+        append(&line(EntryKind::Branch { before_first: true }));
+        assert_eq!(first(), None, "nothing has taken its place yet");
+        append(&message("the new first"));
+        assert_eq!(first().as_deref(), Some("the new first"));
+        append(&message("then another"));
+        assert_eq!(first().as_deref(), Some("the new first"));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { approvalPreview, argsOf, callTarget, describe, pendingApproval, toolObject, type ApprovalPreview, type SessionView } from "@finx/client";
-import type { ApprovalDecision, SiteGrant } from "@finx/protocol";
+import type { ApprovalDecision, CellChange, Impact, SheetOp, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
 import { toolDo } from "../format";
@@ -40,10 +40,40 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
   const [busy, setBusy] = useState(false);
   // "Always": the chosen app grant also goes into ~/.finx/config.toml.
   const [remember, setRemember] = useState(false);
+  const [sheetImpact, setSheetImpact] = useState<Impact | "loading" | null>(null);
+  // The workbook's file name: the agent may name it by its id.
+  const [sheetFile, setSheetFile] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
   // A page handed to the person (browser_wait with user): they went to it, and may say they are done.
   const [went, setWent] = useState(false);
   const yourBrowser = useYourBrowser();
+  const sheetArgs = target.name === "doc_edit" ? target.args as { doc?: unknown; ops?: unknown } : null;
+
+  useEffect(() => {
+    if (!sheetArgs || !st.rpc || typeof sheetArgs.doc !== "string" || !Array.isArray(sheetArgs.ops)) return;
+    let live = true;
+    setSheetImpact("loading");
+    void (async () => {
+      try {
+        const ref = /^[0-9a-f]{16}$/.test(sheetArgs.doc as string) ? { doc_id: sheetArgs.doc as string } : { path: sheetArgs.doc as string };
+        const opened = await st.rpc!.request("doc/open", { session_id: sessionId, ...ref });
+        const result = await st.rpc!.request("doc/apply", {
+          session_id: sessionId,
+          doc_id: opened.info.doc_id,
+          ops: sheetArgs.ops as SheetOp[],
+          base_revision: opened.info.revision,
+          preview: true,
+        });
+        if (live) {
+          setSheetImpact(result.impact);
+          setSheetFile(opened.info.path.split(/[\\/]/).pop() ?? null);
+        }
+      } catch {
+        if (live) setSheetImpact(null);
+      }
+    })();
+    return () => { live = false; };
+  }, [a.call_id, sessionId, st.rpc]);
 
   const give = async (decision: ApprovalDecision) => {
     if (busy) return;
@@ -89,7 +119,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
     if (denying) field.current?.focus();
   }, [denying]);
 
-  const question = tool.category === "execute" ? t("approval.runCommand") : t("approval.useTool", { verb: toolDo(tool.category), object: toolObject(tool) });
+  const question = sheetArgs ? t("approval.editWorkbook", { name: sheetFile ?? String(sheetArgs.doc ?? "") }) : tool.category === "execute" ? t("approval.runCommand") : t("approval.useTool", { verb: toolDo(tool.category), object: toolObject(tool) });
   const rule = a.proposed_rule?.prefix.join(" ");
   const denyField = (
     <>
@@ -221,7 +251,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
         {who}
         {queue}
       </div>
-      <Preview p={preview} />
+      {sheetArgs ? <SheetApproval impact={sheetImpact} ops={Array.isArray(sheetArgs.ops) ? sheetArgs.ops as SheetOp[] : []} /> : <Preview p={preview} />}
       {missing && (
         <div className="appr-warn" role="alert">
           <span>{t(permission === "screen" ? "approval.desktopNoScreen" : "approval.desktopNoAccessibility")}</span>
@@ -274,6 +304,52 @@ function grantLabel(g: SiteGrant, t: T, appName?: string): string {
 function hostOf(origin: string): string {
   return origin.replace(/^https:\/\//, "");
 }
+
+function SheetApproval({ impact, ops }: { impact: Impact | "loading" | null; ops: SheetOp[] }) {
+  const { t } = useTranslation("session");
+  const changes: CellChange[] = impact && impact !== "loading" ? impact.edited : ops.map((op) => ({
+    sheet: op.sheet,
+    cell: "cell" in op ? op.cell : op.range,
+    before_text: "",
+    after_text: op.op === "set_formula" ? op.formula : op.op === "set_value" ? String(op.value) : t("approval.cleared"),
+    before: null,
+    after: null,
+  }));
+  const outputs = impact && impact !== "loading" ? impact.key_outputs ?? [] : [];
+  const pct = (row: Impact["edited"][number]) => {
+    const a = row.before?.type === "number" ? row.before.value : null;
+    const b = row.after?.type === "number" ? row.after.value : null;
+    return typeof a === "number" && typeof b === "number" && a !== 0 ? ` (${((b - a) / Math.abs(a) * 100).toFixed(1)}%)` : "";
+  };
+  const table = (title: string, rows: CellChange[], showPercent = false) => (
+    <div className="appr-sheet-table">
+      <b>{title}</b>
+      {rows.slice(0, 5).map((row, i) => (
+        <div key={`${row.sheet}!${row.cell}:${i}`}>
+          <code>{row.sheet}!{row.cell}</code>
+          <span>{row.label ?? ""}</span>
+          <span>{row.before_text ? `${row.before_text} → ` : ""}{row.after_text}{showPercent ? pct(row) : ""}</span>
+        </div>
+      ))}
+      {rows.length > 5 && <small>{t("approval.more", { count: rows.length - 5 })}</small>}
+    </div>
+  );
+  return (
+    <div className="appr-sheet">
+      {table(t("sheet.changes"), changes)}
+      {sheetImpactState(impact, outputs.length) && table(t("sheet.outputs"), outputs, true)}
+      {impact === "loading" && <div className="appr-sheet-loading"><span className="mini-spin" />{t("approval.calculatingImpact")}</div>}
+      {impact && impact !== "loading" && (
+        <div className="appr-sheet-meta">
+          <span>{t("sheet.affected", { count: impact.affected_count })}</span>
+          {(impact.needs_excel?.length ?? 0) > 0 && <span>{t("sheet.needsExcel", { count: impact.needs_excel!.length })}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const sheetImpactState = (impact: Impact | "loading" | null, outputs: number) => impact !== "loading" && !!impact && outputs > 0;
 
 /** The call itself: a command coloured as shell, a change as removed and added lines, or what it writes. */
 function Preview({ p }: { p: ApprovalPreview }) {

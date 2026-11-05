@@ -369,6 +369,7 @@ button.insp-row:active{background:var(--fill2)}
 .um{position:relative;align-self:flex-end;max-width:78%;margin-top:var(--sp-1)}
 .um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}
 /* What the message carried, above its bubble: images as thumbnails, files and folders as chips. */
+.um.again .bub,.um.again .um-att{outline:1.5px solid var(--accent);outline-offset:2px;border-radius:var(--r-xl)}
 .um-att{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-bottom:8px}
 .am{position:relative;font-size:15px;line-height:21px;color:var(--msg)}
 /* A message with time and Copy keeps room below it for them, shown on hover under the bubble's right edge or the
@@ -622,6 +623,11 @@ button.insp-row:active{background:var(--fill2)}
 .ntp-rescan:hover:not(:disabled){background:var(--fill);color:var(--l1)}
 .ntp-rescan:disabled{opacity:.5}
 .ntp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.ntp-item{position:relative;min-width:0;display:flex}
+.ntp-item>.ntp-card{flex:1}
+.ntp-stop{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:none;color:var(--l3);cursor:default;opacity:0}
+.ntp-item:hover .ntp-stop,.ntp-stop:focus-visible{opacity:1}
+.ntp-stop:hover{background:var(--fill2);color:var(--red)}
 .ntp-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;height:76px;padding:10px 12px;border:1px solid var(--sep);border-radius:var(--r-lg);background:var(--fill);color:var(--l1);text-align:left;cursor:default}
 .ntp-card:hover{background:var(--fill2)}
 .ntp-card:focus-visible{outline:2px solid var(--accent);outline-offset:1px}

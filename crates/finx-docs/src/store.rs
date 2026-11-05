@@ -1,17 +1,19 @@
 //! DocStore (design §5.2): one per service, one entry per file, shared by every session that
-//! opened it. A document's directory is `<docs>/<doc_id>/`: `base.pdf` (the file as opened),
-//! `current.pdf` (the working copy) and `meta.json`. Sessions only keep what they look at.
+//! opened it. A document's directory is `<docs>/<doc_id>/`: `base.<ext>` (the file as opened or
+//! last saved), `current.<ext>` (the working copy), `meta.json`, and for a workbook
+//! `revisions.jsonl` (its edits, spreadsheet-design §6). Sessions only keep what they look at.
 //!
-//! Phase one only reads: the working copy is the file as last opened, and opening a file that
-//! changed on disk takes the new contents.
+//! PDFs are read only: opening a file that changed on disk takes the new contents. Workbooks
+//! are edited in the working copy and saved back on request; a workbook with unsaved edits is
+//! kept even when its file changes on disk, and saving over that change needs `force`.
 
 use finx_protocol::doc::Anchor;
 use finx_protocol::doc::Capability;
-use finx_protocol::doc::DocFormat;
 use finx_protocol::doc::DocInfo;
-use finx_protocol::doc::DocLayout;
 use finx_protocol::doc::DocViewing;
+use finx_protocol::doc::Impact;
 use finx_protocol::doc::Rect;
+use finx_protocol::doc::SheetOp;
 use finx_protocol::doc::TextBlock;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -24,8 +26,17 @@ use std::sync::Arc;
 use crate::engine::Opened;
 use crate::engine::Rendered;
 use crate::engine::Request;
+use crate::atomic;
+use crate::kind::DocKind;
+use crate::kind::Unopenable;
 use crate::layout;
 use crate::layout::PageChars;
+use crate::sheet::Applied;
+use crate::sheet::Cells;
+use crate::sheet::Direction;
+use crate::sheet::Found;
+use crate::sheet::REFUSED;
+use crate::sheet::SheetOpened;
 use crate::worker::Launcher;
 use crate::worker::Worker;
 use crate::worker::WorkerError;
@@ -39,18 +50,27 @@ pub const MAX_RENDER_SIDE: u32 = 2000;
 pub enum DocError {
     #[error("{0}: no such file")]
     NotFound(String),
-    #[error("{0} is not a PDF")]
-    NotPdf(String),
+    #[error("{0} is not a document finx opens: PDF, xlsx, xlsm, xls, csv or tsv")]
+    Unsupported(String),
     #[error("{0} is larger than 1 GB")]
     TooLarge(String),
     #[error("the document is encrypted: the password is missing or wrong")]
     Password,
-    #[error("{0}: cannot open it as a PDF: {1}")]
+    #[error("{0}: cannot open this document: {1}")]
     Unreadable(String, String),
     #[error("no open document {0}: open it first")]
     NotOpen(String),
     #[error("no page {page}: the document has {pages}")]
     NoPage { page: u32, pages: u32 },
+    /// A workbook edit that would risk the file (spreadsheet-design §5.3.3).
+    #[error("{0}")]
+    Refused(String),
+    #[error("the document changed: it is at revision {now}, the edit was made against {base}")]
+    Stale { base: u64, now: u64 },
+    #[error("{0} changed on disk since it was opened; save again with force to write over it")]
+    Conflict(String),
+    #[error("{0}")]
+    NotEditable(String),
     #[error("{0}")]
     Io(#[from] std::io::Error),
     #[error("{0}")]
@@ -79,10 +99,73 @@ struct View {
     token: String,
 }
 
+/// One edit of a workbook, as kept in `revisions.jsonl`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct Revision {
+    ops: Vec<SheetOp>,
+    undo: Vec<SheetOp>,
+    session: String,
+    at_ms: u128,
+}
+
+/// A workbook's edits: the first `applied` are in the working copy, the rest can be redone;
+/// `saved` is how many were applied when it was last saved, if that state is still reachable.
+#[derive(Debug, Default)]
+struct History {
+    revisions: Vec<Revision>,
+    applied: usize,
+    saved: Option<usize>,
+}
+
+impl History {
+    fn dirty(&self) -> bool {
+        self.saved != Some(self.applied)
+    }
+}
+
+/// What a save put into the file that it did not hold before: the cells the edits since
+/// then leave set, as formulas or values, and the ranges they leave cleared.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Written {
+    pub formulas: usize,
+    pub values: usize,
+    pub cleared: usize,
+}
+
+impl Written {
+    fn of<'a>(ops: impl Iterator<Item = &'a SheetOp>) -> Self {
+        use finx_sheet::cellref::{CellRef, Rect};
+        // The last op on a cell wins; a clear takes back the sets inside it.
+        let mut set: HashMap<(String, String), bool> = HashMap::new();
+        let mut cleared: Vec<(String, String)> = Vec::new();
+        for op in ops {
+            match op {
+                SheetOp::SetValue { sheet, cell, .. } => {
+                    set.insert((sheet.clone(), cell.to_ascii_uppercase()), false);
+                }
+                SheetOp::SetFormula { sheet, cell, .. } => {
+                    set.insert((sheet.clone(), cell.to_ascii_uppercase()), true);
+                }
+                SheetOp::Clear { sheet, range } => {
+                    if let Some(r) = Rect::parse(range) {
+                        set.retain(|(s, c), _| s != sheet || !CellRef::parse(c).is_some_and(|c| r.contains(c)));
+                    }
+                    cleared.push((sheet.clone(), range.to_ascii_uppercase()));
+                }
+            }
+        }
+        cleared.sort();
+        cleared.dedup();
+        let formulas = set.values().filter(|f| **f).count();
+        Self { formulas, values: set.len() - formulas, cleared: cleared.len() }
+    }
+}
+
 pub struct Doc {
     pub id: String,
     pub path: PathBuf,
     dir: PathBuf,
+    kind: DocKind,
     handle: u64,
     /// The password it was opened with, in memory only: the pages of every session need it.
     password: Option<String>,
@@ -90,6 +173,9 @@ pub struct Doc {
     pages: Mutex<HashMap<u32, Arc<PageText>>>,
     /// The sessions that have it open, and what each shows.
     views: Mutex<HashMap<String, View>>,
+    history: Mutex<History>,
+    /// One edit at a time: revisions stay in order.
+    editing: tokio::sync::Mutex<()>,
 }
 
 impl Doc {
@@ -107,7 +193,15 @@ impl Doc {
 
     /// The working copy.
     pub fn current(&self) -> PathBuf {
-        self.dir.join("current.pdf")
+        self.dir.join(format!("current.{}", self.kind.ext()))
+    }
+
+    pub fn is_sheet(&self) -> bool {
+        self.kind.is_sheet()
+    }
+
+    fn dirty(&self) -> bool {
+        self.is_sheet() && self.history.lock().dirty()
     }
 
     fn check_page(&self, page: u32) -> Result<(), DocError> {
@@ -126,7 +220,11 @@ struct Meta {
     modified_ms: u128,
 }
 
+/// Told what a document is after it changed.
+type Listener = Box<dyn Fn(&DocInfo) + Send + Sync>;
+
 pub struct DocStore {
+    listeners: Mutex<Vec<Listener>>,
     root: PathBuf,
     worker: Worker,
     docs: Mutex<HashMap<String, Arc<Doc>>>,
@@ -145,7 +243,19 @@ impl DocStore {
     /// dropped: no page holds them any more.
     pub fn new(root: PathBuf, launcher: Launcher) -> Self {
         let _ = std::fs::remove_dir_all(root.join(".tokens"));
-        Self { root, worker: Worker::new(launcher), docs: Mutex::default(), opening: tokio::sync::Mutex::new(()) }
+        Self { listeners: Mutex::default(), root, worker: Worker::new(launcher), docs: Mutex::default(), opening: tokio::sync::Mutex::new(()) }
+    }
+
+    /// Called after every change to a document, from any session or tool.
+    pub fn on_change(&self, f: impl Fn(&DocInfo) + Send + Sync + 'static) {
+        self.listeners.lock().push(Box::new(f));
+    }
+
+    fn changed(&self, doc: &Doc) {
+        let info = doc.info();
+        for f in self.listeners.lock().iter() {
+            f(&info);
+        }
     }
 
     pub fn root(&self) -> &Path {
@@ -191,7 +301,8 @@ impl DocStore {
         let stamp = Meta { path: canonical.clone(), size: meta.len(), modified_ms: modified_ms(&meta) };
         let existing = self.docs.lock().get(&id).cloned();
         let doc = match existing {
-            Some(doc) if self.unchanged(&doc.dir, &stamp) => doc,
+            // Unsaved edits are not dropped because the file changed: saving says so (`Conflict`).
+            Some(doc) if doc.dirty() || self.unchanged(&doc.dir, doc.kind, &stamp) => doc,
             stale => {
                 if let Some(doc) = stale {
                     self.worker.close(doc.handle).await;
@@ -205,67 +316,103 @@ impl DocStore {
         Ok((doc, token))
     }
 
-    fn unchanged(&self, dir: &Path, stamp: &Meta) -> bool {
+    fn unchanged(&self, dir: &Path, kind: DocKind, stamp: &Meta) -> bool {
         let Ok(text) = std::fs::read_to_string(dir.join("meta.json")) else { return false };
         let Ok(meta) = serde_json::from_str::<Meta>(&text) else { return false };
-        meta.size == stamp.size && meta.modified_ms == stamp.modified_ms && dir.join("current.pdf").is_file()
+        meta.size == stamp.size && meta.modified_ms == stamp.modified_ms && dir.join(format!("current.{}", kind.ext())).is_file()
     }
 
     async fn load(&self, canonical: &Path, id: &str, stamp: Meta, password: Option<String>) -> Result<Doc, DocError> {
-        let dir = self.root.join(id);
-        std::fs::create_dir_all(&dir)?;
+        let shown = || canonical.display().to_string();
         let mut head = [0u8; 1024];
         let n = std::io::Read::read(&mut std::fs::File::open(canonical)?, &mut head)?;
-        if !head[..n].windows(5).any(|w| w == b"%PDF-") {
-            return Err(DocError::NotPdf(canonical.display().to_string()));
-        }
-        if !self.unchanged(&dir, &stamp) {
-            // Written beside, then renamed: a half copy is never taken for the file.
-            let partial = dir.join("current.pdf.partial");
-            std::fs::copy(canonical, &partial)?;
-            std::fs::copy(&partial, dir.join("base.pdf"))?;
-            std::fs::rename(&partial, dir.join("current.pdf"))?;
-            std::fs::write(dir.join("meta.json"), serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
-        }
-        let (handle, opened): (u64, Opened) = self.worker.open(dir.join("current.pdf"), password.clone()).await.map_err(|e| match e {
-            WorkerError::Failed(m) if m.starts_with("password") => DocError::Password,
-            WorkerError::Failed(m) => DocError::Unreadable(canonical.display().to_string(), m),
-            e => DocError::Worker(e),
+        let kind = DocKind::detect(&head[..n], canonical.extension().and_then(|e| e.to_str())).map_err(|e| match e {
+            Unopenable::Unsupported => DocError::Unsupported(shown()),
+            Unopenable::EncryptedWorkbook => DocError::Unreadable(shown(), "the workbook is encrypted: remove its password in Excel to open it here".into()),
         })?;
-        // A password that opened it means it is encrypted, whatever PDFium makes of its security
-        // handler (it may not tell an AES-256 one's revision): pdf.js needs it to show the pages.
-        let encrypted = opened.encrypted || password.is_some();
-        let mut capabilities = vec![Capability::View];
-        if opened.has_text {
-            capabilities.extend([Capability::Text, Capability::Search]);
+        let ext = kind.ext();
+        let dir = self.root.join(id);
+        std::fs::create_dir_all(&dir)?;
+        let kept = self.unchanged(&dir, kind, &stamp);
+        if !kept {
+            atomic::copy(canonical, &dir.join(format!("base.{ext}")))?;
+            atomic::copy(canonical, &dir.join(format!("current.{ext}")))?;
+            atomic::write(&dir.join("meta.json"), &serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
+            let _ = std::fs::remove_file(dir.join("revisions.jsonl"));
         }
-        if !opened.outline.is_empty() {
-            capabilities.push(Capability::Outline);
-        }
-        let read_only = std::fs::metadata(canonical).map(|m| m.permissions().readonly()).unwrap_or(true);
-        let info = DocInfo {
+        let current = dir.join(format!("current.{ext}"));
+        let read_only = kind.read_only() || std::fs::metadata(canonical).map(|m| m.permissions().readonly()).unwrap_or(true);
+        let mut info = DocInfo {
             doc_id: id.to_string(),
-            path: canonical.display().to_string(),
-            format: DocFormat::Pdf,
-            layout: DocLayout::Paged,
-            pages: Some(opened.pages),
-            outline: opened.outline,
-            capabilities,
+            path: shown(),
+            format: kind.format(),
+            layout: kind.layout(),
+            pages: None,
+            outline: Vec::new(),
+            capabilities: Vec::new(),
             revision: 0,
             dirty: false,
             save_in_place: !read_only,
-            scanned: !opened.has_text && opened.pages > 0,
-            encrypted,
+            scanned: false,
+            encrypted: false,
+            sheets: Vec::new(),
+        };
+        let mut history = History::default();
+        let (handle, password) = if kind.is_sheet() {
+            let (handle, opened): (u64, SheetOpened) = self.worker.open_sheet(current, canonical.file_stem().map(|s| s.to_string_lossy().into_owned())).await.map_err(|e| match e {
+                WorkerError::Failed(m) => DocError::Unreadable(shown(), m),
+                e => DocError::Worker(e),
+            })?;
+            // A working copy kept from an earlier run keeps its edits, to undo or save.
+            history.saved = Some(0);
+            if kept && let Ok(text) = std::fs::read_to_string(dir.join("revisions.jsonl")) {
+                history.revisions = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+                history.applied = history.revisions.len();
+                let same = std::fs::read(dir.join(format!("base.{ext}"))).ok() == std::fs::read(dir.join(format!("current.{ext}"))).ok();
+                history.saved = if same { Some(history.applied) } else { None };
+            }
+            info.capabilities = kind.sheet_capabilities();
+            if opened.calc_unavailable.is_none() {
+                info.capabilities.push(Capability::Calc);
+            }
+            info.revision = history.applied as u64;
+            info.dirty = history.dirty();
+            info.sheets = opened.sheets;
+            (handle, None)
+        } else {
+            let (handle, opened): (u64, Opened) = self.worker.open(current, password.clone()).await.map_err(|e| match e {
+                WorkerError::Failed(m) if m.starts_with("password") => DocError::Password,
+                WorkerError::Failed(m) => DocError::Unreadable(shown(), m),
+                e => DocError::Worker(e),
+            })?;
+            // A password that opened it means it is encrypted, whatever PDFium makes of its security
+            // handler (it may not tell an AES-256 one's revision): pdf.js needs it to show the pages.
+            let encrypted = opened.encrypted || password.is_some();
+            info.capabilities = vec![Capability::View];
+            if opened.has_text {
+                info.capabilities.extend([Capability::Text, Capability::Search]);
+            }
+            if !opened.outline.is_empty() {
+                info.capabilities.push(Capability::Outline);
+            }
+            info.pages = Some(opened.pages);
+            info.scanned = !opened.has_text && opened.pages > 0;
+            info.outline = opened.outline;
+            info.encrypted = encrypted;
+            (handle, if encrypted { password } else { None })
         };
         Ok(Doc {
             id: id.to_string(),
             path: canonical.to_path_buf(),
             dir,
+            kind,
             handle,
-            password: if encrypted { password } else { None },
+            password,
             info: Mutex::new(info),
             pages: Mutex::default(),
             views: Mutex::default(),
+            history: Mutex::new(history),
+            editing: tokio::sync::Mutex::new(()),
         })
     }
 
@@ -410,6 +557,218 @@ impl DocStore {
     }
 }
 
+/// Workbooks (spreadsheet-design §6, §7).
+impl DocStore {
+    fn sheet(doc: &Doc) -> Result<(), DocError> {
+        if doc.is_sheet() { Ok(()) } else { Err(DocError::NotEditable(format!("{} is not a workbook", doc.path.display()))) }
+    }
+
+    /// A range's cells, as the grid shows them.
+    pub async fn cells(&self, doc: &Doc, sheet: &str, range: &str) -> Result<Cells, DocError> {
+        Self::sheet(doc)?;
+        self.worker.request(crate::engine::Request::SheetCells { handle: doc.handle, sheet: sheet.into(), range: range.into() }).await.map_err(worker_error)
+    }
+
+    /// What the agent reads first (spreadsheet-design §9.1).
+    pub async fn summary(&self, doc: &Doc) -> Result<String, DocError> {
+        Self::sheet(doc)?;
+        self.worker.request(Request::SheetSummary { handle: doc.handle }).await.map_err(worker_error)
+    }
+
+    pub async fn find_cells(&self, doc: &Doc, query: &str, limit: usize) -> Result<Vec<Found>, DocError> {
+        Self::sheet(doc)?;
+        self.worker.request(Request::SheetFind { handle: doc.handle, query: query.into(), limit }).await.map_err(worker_error)
+    }
+
+    pub async fn trace(&self, doc: &Doc, sheet: &str, cell: &str, direction: Direction, depth: u32) -> Result<Vec<Found>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetTrace { handle: doc.handle, sheet: sheet.into(), cell: cell.into(), direction, depth })
+            .await
+            .map_err(worker_error)
+    }
+
+    /// The edits that fill `range` down or right (Excel's ⌘D, ⌘R), to apply as one revision.
+    pub async fn fill_ops(&self, doc: &Doc, sheet: &str, range: &str, direction: crate::sheet::FillDirection) -> Result<Vec<SheetOp>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetFill { handle: doc.handle, sheet: sheet.into(), range: range.into(), direction })
+            .await
+            .map_err(worker_error)
+    }
+
+    /// The edits the fill handle makes dragged from `source` to `target`, to apply as one revision.
+    pub async fn autofill_ops(&self, doc: &Doc, sheet: &str, source: &str, target: &str, switch: bool) -> Result<Vec<SheetOp>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetAutofill { handle: doc.handle, sheet: sheet.into(), source: source.into(), target: target.into(), switch })
+            .await
+            .map_err(worker_error)
+    }
+
+    async fn send(&self, doc: &Doc, ops: Vec<SheetOp>, preview: bool) -> Result<Applied, DocError> {
+        self.worker.request(Request::SheetApply { handle: doc.handle, ops, preview }).await.map_err(worker_error)
+    }
+
+    fn record(&self, doc: &Doc) -> Result<(u64, bool), DocError> {
+        let h = doc.history.lock();
+        let mut lines = String::new();
+        for r in &h.revisions[..h.applied] {
+            lines.push_str(&serde_json::to_string(r).map_err(std::io::Error::other)?);
+            lines.push('\n');
+        }
+        // The redo tail is kept in memory only: a restart starts from what is applied.
+        atomic::write(&doc.dir.join("revisions.jsonl"), lines.as_bytes())?;
+        let mut info = doc.info.lock();
+        info.revision += 1;
+        info.dirty = h.dirty();
+        Ok((info.revision, info.dirty))
+    }
+
+    /// Edits a workbook (`preview`: only works out the impact). One revision per call.
+    pub async fn apply(&self, doc: &Doc, session: &str, ops: Vec<SheetOp>, base: Option<u64>, preview: bool) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let now = doc.info.lock().revision;
+        if let Some(base) = base
+            && base != now
+        {
+            return Err(DocError::Stale { base, now });
+        }
+        let applied = self.send(doc, ops.clone(), preview).await?;
+        if preview {
+            return Ok((now, applied.impact, doc.dirty()));
+        }
+        {
+            let mut h = doc.history.lock();
+            let n = h.applied;
+            h.revisions.truncate(n);
+            if h.saved.is_some_and(|s| s > n) {
+                h.saved = None;
+            }
+            h.revisions.push(Revision { ops, undo: applied.undo, session: session.to_string(), at_ms: now_ms() });
+            h.applied += 1;
+        }
+        let (revision, dirty) = self.record(doc)?;
+        self.changed(doc);
+        Ok((revision, applied.impact, dirty))
+    }
+
+    /// Takes back the last edit, whoever made it, in whichever session.
+    pub async fn undo(&self, doc: &Doc) -> Result<(u64, Impact, bool), DocError> {
+        self.step(doc, Step::Undo).await
+    }
+
+    pub async fn redo(&self, doc: &Doc) -> Result<(u64, Impact, bool), DocError> {
+        self.step(doc, Step::Redo).await
+    }
+
+    /// One step back or forward through the history: its ops sent, and the history moved.
+    async fn step(&self, doc: &Doc, step: Step) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let ops = {
+            let h = doc.history.lock();
+            let found = match step {
+                Step::Undo => h.applied.checked_sub(1).map(|i| h.revisions[i].undo.clone()),
+                Step::Redo => h.revisions.get(h.applied).map(|r| r.ops.clone()),
+            };
+            found.ok_or_else(|| DocError::NotEditable(format!("nothing to {}", step.name())))?
+        };
+        let applied = self.send(doc, ops, false).await?;
+        {
+            let mut h = doc.history.lock();
+            match step {
+                Step::Undo => h.applied -= 1,
+                Step::Redo => h.applied += 1,
+            }
+        }
+        let (revision, dirty) = self.record(doc)?;
+        self.changed(doc);
+        Ok((revision, applied.impact, dirty))
+    }
+
+    /// Reports discrepancies without changing the working copy, history or trust policy.
+    pub async fn recalc(&self, doc: &Doc, circular_only: bool) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        let _one = doc.editing.lock().await;
+        let impact = self.worker.request(Request::SheetRecalc { handle: doc.handle, circular_only }).await.map_err(worker_error)?;
+        Ok((doc.info().revision, impact, doc.dirty()))
+    }
+
+    /// Writes the working copy to its file, or to `to` (save as). Over a file that changed on
+    /// disk since it was opened only with `force`.
+    pub async fn save(&self, doc: &Doc, to: Option<&Path>, force: bool) -> Result<(DocInfo, Written), DocError> {
+        Self::sheet(doc)?;
+        if doc.kind.read_only() {
+            return Err(DocError::Refused("a legacy .xls is read only here: save it as .xlsx in your spreadsheet app".into()));
+        }
+        let _one = doc.editing.lock().await;
+        let target = to.map(Path::to_path_buf).unwrap_or_else(|| doc.path.clone());
+        let ext = doc.kind.ext();
+        if target.extension().and_then(|e| e.to_str()).is_none_or(|e| !e.eq_ignore_ascii_case(ext)) {
+            return Err(DocError::Refused(format!("save as .{ext}; converting spreadsheet formats is not supported")));
+        }
+        let in_place = target == doc.path;
+        if in_place && !force {
+            let text = std::fs::read_to_string(doc.dir.join("meta.json"))?;
+            let meta: Meta = serde_json::from_str(&text).map_err(std::io::Error::other)?;
+            let disk = std::fs::metadata(&doc.path);
+            let same = disk.as_ref().is_ok_and(|d| d.len() == meta.size && modified_ms(d) == meta.modified_ms);
+            if !same {
+                return Err(DocError::Conflict(doc.path.display().to_string()));
+            }
+        }
+        // In place, the file already holds the state last saved, when that is still in the
+        // history; anywhere else (or if not), it holds the file as opened.
+        let written = {
+            let h = doc.history.lock();
+            let from = if in_place { h.saved.filter(|&n| n <= h.applied).unwrap_or(0) } else { 0 };
+            Written::of(h.revisions[from..h.applied].iter().flat_map(|r| r.ops.iter()))
+        };
+        // Never half written; the original's permissions carry over to the new file.
+        atomic::copy(&doc.current(), &target)?;
+        if in_place {
+            atomic::copy(&doc.current(), &doc.dir.join(format!("base.{ext}")))?;
+            let m = std::fs::metadata(&doc.path)?;
+            let stamp = Meta { path: doc.path.clone(), size: m.len(), modified_ms: modified_ms(&m) };
+            atomic::write(&doc.dir.join("meta.json"), &serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
+            let mut h = doc.history.lock();
+            h.saved = Some(h.applied);
+            doc.info.lock().dirty = false;
+        }
+        self.changed(doc);
+        Ok((doc.info(), written))
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Step {
+    Undo,
+    Redo,
+}
+
+impl Step {
+    fn name(self) -> &'static str {
+        match self {
+            Step::Undo => "undo",
+            Step::Redo => "redo",
+        }
+    }
+}
+
+fn worker_error(e: WorkerError) -> DocError {
+    match e {
+        WorkerError::Failed(m) if m.starts_with(REFUSED) => DocError::Refused(m[REFUSED.len()..].to_string()),
+        WorkerError::Failed(m) => DocError::NotEditable(m),
+        e => DocError::Worker(e),
+    }
+}
+
+fn now_ms() -> u128 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0)
+}
+
 fn modified_ms(meta: &std::fs::Metadata) -> u128 {
     meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis()).unwrap_or(0)
 }
@@ -436,4 +795,26 @@ fn context(text: &str, query: &str) -> String {
         out.push('…');
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use finx_protocol::doc::CellInput;
+
+    #[test]
+    fn written_counts_what_the_edits_leave() {
+        let value = |c: &str| SheetOp::SetValue { sheet: "S".into(), cell: c.into(), value: CellInput::Number(1.0) };
+        let formula = |c: &str| SheetOp::SetFormula { sheet: "S".into(), cell: c.into(), formula: "=A1".into() };
+        let ops = [
+            value("B1"),
+            formula("b1"), // the same cell, now a formula
+            formula("C1"),
+            value("D5"),
+            SheetOp::Clear { sheet: "S".into(), range: "D1:D9".into() }, // takes D5 back
+            value("E1"),
+        ];
+        assert_eq!(Written::of(ops.iter()), Written { formulas: 2, values: 1, cleared: 1 });
+        assert_eq!(Written::of([].iter()), Written::default());
+    }
 }

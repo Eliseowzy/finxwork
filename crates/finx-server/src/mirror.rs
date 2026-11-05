@@ -64,10 +64,7 @@ struct AgentMirror {
 
 impl SessionMirror {
     pub fn new(info: SessionInfo, transcript: Vec<TranscriptItem>) -> Self {
-        let failed = transcript.iter().rev().find_map(|item| match item {
-            TranscriptItem::TaskEnd { outcome, .. } => Some(*outcome == TaskOutcome::Failed),
-            _ => None,
-        });
+        let failed = last_task_failed(&transcript);
         Self {
             info,
             last_seq: 0,
@@ -75,7 +72,7 @@ impl SessionMirror {
             active: None,
             usage: UsageTotals::default(),
             task_started: None,
-            failed: failed.unwrap_or(false),
+            failed,
             mcp_servers: std::collections::BTreeMap::new(),
             agents: Vec::new(),
             queued: Vec::new(),
@@ -142,6 +139,20 @@ impl SessionMirror {
 
     pub fn transcript(&self) -> &[TranscriptItem] {
         &self.transcript
+    }
+
+    /// Whether the conversation holds a message of the user's: reports (`mail`) do not count.
+    pub fn has_user_message(&self) -> bool {
+        self.transcript.iter().any(|item| {
+            matches!(
+                item,
+                TranscriptItem::Message {
+                    message: finx_llm::Message::User(_),
+                    mail: None,
+                    ..
+                }
+            )
+        })
     }
 
     pub fn apply(&mut self, event: &Event) {
@@ -325,6 +336,20 @@ impl SessionMirror {
                 task_id, usage, reason, ..
             } => self.end_task(event.ts, task_id, TaskOutcome::Completed, Some(*reason), None, usage),
             EventMsg::QueueChanged { queued } => self.queued = queued.clone(),
+            // What was spent stays in `usage`; the rest is as the new branch has it.
+            EventMsg::SessionRewound {
+                message_id, removed_agents, ..
+            } => {
+                let at = self
+                    .transcript
+                    .iter()
+                    .position(|item| matches!(item, TranscriptItem::Message { message_id: id, .. } if id == message_id));
+                if let Some(at) = at {
+                    self.transcript.truncate(at);
+                }
+                self.agents.retain(|a| !removed_agents.contains(&a.agent_id));
+                self.failed = last_task_failed(&self.transcript);
+            }
             EventMsg::TaskFailed { task_id, error, usage, .. } => {
                 self.end_task(event.ts, task_id, TaskOutcome::Failed, None, Some(error.clone()), usage)
             }
@@ -497,6 +522,18 @@ impl AgentMirror {
     }
 }
 
+/// Whether the last task of these items failed.
+fn last_task_failed(transcript: &[TranscriptItem]) -> bool {
+    transcript
+        .iter()
+        .rev()
+        .find_map(|item| match item {
+            TranscriptItem::TaskEnd { outcome, .. } => Some(*outcome == TaskOutcome::Failed),
+            _ => None,
+        })
+        .unwrap_or(false)
+}
+
 fn apply_delta(partial: &mut PartialMessage, delta: &Delta) {
     match delta {
         Delta::Text { index, text } => match block_mut(partial, *index) {
@@ -650,6 +687,7 @@ mod tests {
                     kind: finx_protocol::MailKind::Report,
                     status: AgentStatus::Completed,
                     no_reply: false,
+                    routine_id: None,
                 }),
                 skills: Vec::new(),
             },
@@ -744,6 +782,88 @@ mod tests {
             },
         ));
         assert!(m.snapshot(None).queued.is_empty());
+    }
+
+    #[test]
+    fn a_rewind_cuts_the_conversation_at_the_message_and_keeps_what_was_spent() {
+        let mut m = SessionMirror::new(info(), Vec::new());
+        let say = |id: &str, text: &str| EventMsg::MessageCompleted {
+            message_id: id.into(),
+            message: UserMessage::text(text).into(),
+            mail: None,
+            skills: Vec::new(),
+        };
+        let spent = |tokens: u64| {
+            let mut usage = UsageTotals::default();
+            usage.add(
+                "p/m",
+                &finx_llm::Usage {
+                    input: tokens,
+                    ..Default::default()
+                },
+            );
+            usage
+        };
+        let started = |agent: &str| EventMsg::AgentStarted {
+            agent_id: agent.into(),
+            name: agent.into(),
+            description: String::new(),
+            session_file: PathBuf::from("/a"),
+            call_id: format!("call-{agent}"),
+        };
+        let fail = EventMsg::TaskFailed {
+            task_id: "t2".into(),
+            error: finx_protocol::ErrorInfo::new("network", "down"),
+            usage: spent(3),
+            returned_input: Vec::new(),
+        };
+        let events = [
+            EventMsg::TaskStarted { task_id: "t1".into(), trigger: Default::default() },
+            say("u1", "first"),
+            started("a1"),
+            EventMsg::TaskCompleted {
+                task_id: "t1".into(),
+                usage: spent(2),
+                last_message: None,
+                reason: CompletionReason::Done,
+            },
+            EventMsg::TaskStarted { task_id: "t2".into(), trigger: Default::default() },
+            say("u2", "second"),
+            started("a2"),
+            fail,
+        ];
+        for (i, msg) in events.into_iter().enumerate() {
+            m.apply(&ev(i as u64 + 1, msg));
+        }
+        assert_eq!(m.state(), SessionState::Failed);
+        assert_eq!(m.snapshot(None).transcript.items.len(), 4);
+        m.apply(&ev(
+            9,
+            EventMsg::SessionRewound {
+                message_id: "u2".into(),
+                removed_agents: vec!["a2".into()],
+                returned_input: Vec::new(),
+            },
+        ));
+        let snap = m.snapshot(None);
+        assert_eq!(snap.last_seq, 9);
+        assert!(matches!(snap.transcript.items.last(), Some(TranscriptItem::TaskEnd { task_id, .. }) if task_id == "t1"));
+        assert_eq!(snap.transcript.items.len(), 2, "the first message and where its task ended");
+        assert_eq!(snap.agents.iter().map(|a| a.agent_id.as_str()).collect::<Vec<_>>(), ["a1"]);
+        assert_eq!(m.state(), SessionState::Idle, "the failure was in what went");
+        assert_eq!(snap.usage, spent(5), "what was spent stays");
+        assert!(m.has_user_message());
+        // Back before the first message.
+        m.apply(&ev(
+            10,
+            EventMsg::SessionRewound {
+                message_id: "u1".into(),
+                removed_agents: vec!["a1".into()],
+                returned_input: Vec::new(),
+            },
+        ));
+        assert!(m.snapshot(None).transcript.items.is_empty());
+        assert!(!m.has_user_message());
     }
 
     #[test]
