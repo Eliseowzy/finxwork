@@ -161,7 +161,7 @@ test("sub-agents at work make the bot busy, each with what it was asked to do", 
   ]);
   const busy = busyBubble(v);
   assert.equal(busy?.typing, false);
-  assert.deepEqual(busy?.agents.map((h) => [h.label, h.step]), [["调研更新方案", "curl releases"]]);
+  assert.deepEqual(busy?.agents.map((h) => h.label), ["调研更新方案"]);
   // The launch is part of the first message's process.
   const bubble = botChat(v).find((i) => i.kind === "bot");
   assert.ok(bubble?.kind === "bot" && bubble.process.some((s) => s.kind === "agents"));

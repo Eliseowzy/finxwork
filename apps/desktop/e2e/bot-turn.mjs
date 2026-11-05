@@ -172,7 +172,9 @@ try {
   await page.until("the first message", has("好，这个要一会儿，写好发你。"), 5000);
   console.log(`  · first message after ${Date.now() - t0} ms`);
   await page.until("its page says it works", working, 5000);
-  check((await page.run(workingText)).includes("写长文"), `what it says it does: ${await page.run(workingText)}`);
+  // What the bot called the work, and no more.
+  check((await page.run(workingText)).trim() === "写长文", `what it says it does: ${await page.run(workingText)}`);
+  check(!(await page.run(`!!document.querySelector(".tr.bots .bm.working button")`)), "one agent: nothing to open");
   await page.until("its row says so", `(${rowSays}).includes("正在处理一件事")`, 5000);
   await page.shot("1-working");
 
@@ -213,6 +215,18 @@ try {
   await sleep(1500);
   check((await page.run(bubbles)).length === before, "a stopped agent's report wakes no one");
   await page.shot("5-stopped");
+
+  step("several at once: a count, opening to their names and nothing else");
+  await write("[[mock:relay_run:sleep 7|sleep 8]] 两件事一起做");
+  await page.until("the count", `(${workingText}).includes("正在处理两件事")`, 5000);
+  await page.run(`document.querySelector(".tr.bots .bm.working button.wb-h").click()`);
+  await page.until("their names", `document.querySelectorAll(".tr.bots .bm.working .wb-r").length === 2`, 3000);
+  const names = await page.run(`[...document.querySelectorAll(".tr.bots .bm.working .wb-l > *")].map((r) => r.innerText)`);
+  check(JSON.stringify(names) === JSON.stringify(["运行 sleep 7", "运行 sleep 8"]), `what it lists: ${JSON.stringify(names)}`);
+  // Opened at the end of the conversation, it does not grow under the composer and its note.
+  await page.until("the last name in view", `[...document.querySelectorAll(".tr.bots .bm.working .wb-r")].at(-1).getBoundingClientRect().bottom <= document.querySelector(".cmp-zone.bot").getBoundingClientRect().top`, 3000);
+  await page.shot("6-two-names");
+  await page.until("both reported", `${bubbles}.filter((t) => t.includes("做完了：")).length === 2`, 20000);
 
   page.close();
   console.log("\n✔ a bot's long work runs in the background, and the owner can talk, ask and stop");

@@ -47,7 +47,7 @@
     "processLine_other": "用时 {{time}} · {{count}} 步",
     "processTime": "用时 {{time}}",
     "processFold": "收起过程",
-    "busyOpen": "看看它在做什么",
+    "busyOpen": "看看是哪几件事",
     "busyClose": "收起",
     "retrying": "连接不稳，正在重试",
     "earlier": "更早的消息",

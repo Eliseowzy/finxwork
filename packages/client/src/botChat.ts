@@ -1,5 +1,5 @@
 import type { ErrorInfo } from "@finx/protocol";
-import { runningAgents, type AgentView, type SessionView } from "./session.ts";
+import { runningAgents, type SessionView } from "./session.ts";
 import { conversation, userText, type Step, type WorkItem } from "./steps.ts";
 
 // A bot's conversation as Bot mode shows it (docs/kernel/bot-design.md §3.4):
@@ -102,16 +102,11 @@ export interface WorkingAgent {
   id: string;
   /** What the bot called the work. */
   label: string;
-  /** The step it is on, if it runs a tool. */
-  step?: string;
-  /** When its round of work began (ms). */
-  since: number;
-  agent: AgentView;
 }
 
 /** What the busy bubble shows, or null when the bot is not busy: waiting for an approval alone is not busy. */
 export function busyBubble(v: SessionView): { typing: boolean; agents: WorkingAgent[] } | null {
-  const agents = runningAgents(v).map((a) => ({ id: a.id, label: a.description || a.name, step: a.view.live?.tools.at(-1)?.title, since: a.since, agent: a }));
+  const agents = runningAgents(v).map((a) => ({ id: a.id, label: a.description || a.name }));
   const typing = !!v.live && v.live.approvals.length === 0;
   return typing || agents.length > 0 ? { typing, agents } : null;
 }

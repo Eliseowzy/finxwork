@@ -48,7 +48,7 @@
     "processLine_other": "Took {{time}} · {{count}} steps",
     "processTime": "Took {{time}}",
     "processFold": "Hide steps",
-    "busyOpen": "See what it is doing",
+    "busyOpen": "See which ones",
     "busyClose": "Hide",
     "retrying": "Connection unstable, retrying",
     "earlier": "Earlier messages",
