@@ -455,7 +455,7 @@ try {
   const kept = fs.existsSync(icons) ? fs.readdirSync(icons).map((f) => fs.readFileSync(path.join(icons, f), "utf8")) : [];
   check(!kept.some((k) => k.includes("electronjs")), "the linked site was asked for its icon");
 
-  step("an HTML file opens as its page in the session's browser, once, as it is now; its source is a menu away (DD-156)");
+  step("an HTML file opens as its page in the session's browser, once, as it is now; its source is a menu away (DD-157)");
   const pageURL = pathToFileURL(path.join(proj, "report/季度 报告.html")).href;
   const pageTabs = `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(pageURL)}))`;
   await page.run(`${chip("季度报告")}.click()`);

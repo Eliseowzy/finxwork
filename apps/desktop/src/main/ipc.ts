@@ -280,7 +280,7 @@ export function registerIPC() {
     if (typeof session !== "string" || !session || session === "finxwork:home-browser" || !web(url)) throw new Error("Invalid page to open");
     openURL(session, url);
   });
-  // An HTML file from a conversation, as the page it is (content-actions-design DD-156): false when it is not there.
+  // An HTML file from a conversation, as the page it is (content-actions-design DD-157): false when it is not there.
   ipcMain.handle("browser-open-file", async (e, session: unknown, file: unknown) => {
     if (!trusted(e) || !revealable(file)) return false;
     if (typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid page to open");

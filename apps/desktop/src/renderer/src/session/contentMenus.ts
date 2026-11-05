@@ -61,7 +61,7 @@ export async function openRef(st: Store, info: PathInfo, line?: number, app?: st
 /** Whether a file opens as a page here: an HTML file, with a browser to show it in (none in the web preview). */
 export const opensAsPage = (path: string) => !!window.finx && isPageFile(path);
 
-/** An HTML file as the page it is, in the session's browser (DD-156), brought to the front. */
+/** An HTML file as the page it is, in the session's browser (DD-157), brought to the front. */
 export function showPage(st: Store, session: string, path: string) {
   void st.run(async () => {
     if (await window.finx?.openPageFile(session, path)) return st.set({ browser: true, background: false, files: false, filesMax: false });

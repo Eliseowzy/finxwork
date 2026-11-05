@@ -34,7 +34,7 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const lines = target.line === undefined ? "" : target.endLine ? t("content.lines", { line: target.line, end: target.endLine }) : t("content.line", { line: target.line });
   // A reference to lines is to the source, even in an HTML file.
   const page = !!info && target.line === undefined && opensAsPage(info.path);
-  // In the session's file panel (file-panel-design DD-91), an HTML file in its browser (DD-156); a folder outside the session's, in the file manager.
+  // In the session's file panel (file-panel-design DD-91), an HTML file in its browser (DD-157); a folder outside the session's, in the file manager.
   const open = () => {
     if (!info) return;
     if (info.kind === null) return void openRef(st, info, target.line);
