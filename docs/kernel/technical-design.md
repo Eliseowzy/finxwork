@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.44 |
+| 版本 | v1.45 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -91,6 +91,7 @@
 | v1.42 | 2026-11-04 | 子智能体要确认的调用改由主用户批准（subagent-design v2.3）：Op `agent_approval`；"审批请求同一时刻只发一个"的范围扩大到整棵智能体树（§6.6） |
 | v1.43 | 2026-11-05 | 联网搜索（web-search-design.md，已实现）：内置工具 `web_search` 放进渐进式的 `web` 组，默认开启，所以每个会话都有 `tool_search`、`call_tool`；`SystemSettings` 增加 `web_search`，顺序和开关下一步生效且没有缓存失效；配置 `[web_search]`，项目文件只能关掉；密钥存钥匙串，名字前缀 `web-search.` |
 | v1.44 | 2026-11-05 | 本地命令的 CI 门槛改用缺页预算（§1.4，D-98）：原来的“GitHub runner 上均值 ≤ 2 ms”时红时绿，主要是 runner 的波动，真实的变慢反而看不出来；2 ms 仍是产品目标，改在固定机器上交替测量。`status`、`doctor` 两天内慢了约 12%，这次收回约三分之二：命令行没有全局选项时，解析器不带它们的副本（§1.4）；本地命令的运行时不析构；模型目录直接移动字段。新增 `tools/bench/local_ab.py` |
+| v1.45 | 2026-11-05 | 定时任务（routine-design.md，已实现）：`finx serve` 调度，数据在 `~/.finx/finx.db`，是第一个本地数据库；依赖 `rusqlite`（带内置 SQLite）和 `jiff`，只在 `finx-server`。命令行和 `finx exec` 不碰它（§9.1） |
 
 ## 1. 目标与范围
 
@@ -2262,6 +2263,9 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 ├── sessions/2026/10/28/20261028T090000-<session_id>/
 │   └── tool-output/<call_id>.txt        被裁切的工具结果的完整内容（§5.7）
 ├── chats/<uuid>/                         无项目会话的工作目录，一个会话一个
+├── bots/<id>/                            Bot 的身份（bot.json）和它的文件夹（files/）
+├── finx.db                               定时任务和运行记录（routine-design.md §3.6），第一个任务创建时才有
+├── finx.db.lock                          持有它的服务负责调度
 └── logs/finx.<日期>.log                   运行日志，按天滚动
 ```
 

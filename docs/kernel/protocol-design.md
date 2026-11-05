@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.23 |
+| 版本 | v0.24 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.24 | 2026-11-05 | 定时任务（routine-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `routines` 声明：方法 `bots/routine`、`bots/routine_runs`、`bots/routine_run`、`bots/routine_set_enabled`、`bots/routine_run_now`、`bots/routine_stop`、`bots/routine_delete`；`BotSummary` 增加 `routines`、`routines_error`；`MailKind` 增加 `routine`，`MailInfo` 增加 `routine_id`；错误码 −32043 `routine_not_found`、−32044 `routine_busy`、−32045 `routines_unavailable`。新建和修改只走对话，没有方法 |
 | v0.23 | 2026-11-05 | 联网搜索（web-search-design.md §6.4，已实现），都在版本 2 之内：方法 `web_search/status`（调用过的连接也会收到 `config/changed`）、`web_search/test`、`web_search/set_key`；`credentials/*` 接受 `web-search.` 前缀；`web_search` 工具结果的 `details` 见该文 §5.6 |
 | v0.22 | 2026-11-04 | 子智能体的确认转给用户（subagent-design v2.3），版本 2 之内：`agent_event` 也转 `approval_requested`、`approval_resolved`；新 Op `agent_approval`；快照 `agents[].active_task.approvals`；列表的 `awaiting_approval` 和 Bot 的 `waiting` 算上子智能体的问题；ACP 转成 `session/request_permission`。`BotSummary.helpers` 改名 `agents_working` |
 | v0.21 | 2026-11-04 | 通知（notification-design.md），都在版本 2 之内：`BotSummary` 增加 `failed`、`muted`，`bots/update` 增加 `muted`。没有新方法 |
@@ -788,6 +789,9 @@ pub struct ResourceReadResult {
 | -32040 | bot_not_found | 没有这个 Bot（v0.20） |
 | -32041 | bot_default | 默认 Bot 不能删除；品牌标志只给默认 Bot 用作头像 |
 | -32042 | bot_invalid | 名字为空或超过 20 字，头像取值不合规，或上传的不是 PNG |
+| -32043 | routine_not_found | 这个 Bot 没有这个定时任务，或没有这次运行（v0.24） |
+| -32044 | routine_busy | `bots/routine_run_now`：它已经在运行 |
+| -32045 | routines_unavailable | 定时任务的数据库打不开；消息写明原因。服务和聊天不受影响 |
 
 ### 6.8 示例
 

@@ -10,6 +10,7 @@
 //
 //   DEEPSEEK_API_KEY=… node tools/bench/routine_turns.mjs [runs] [scenario…]
 //   FINX_MODEL=<provider/model>   another model
+//   FINX_MODELS_TOML=<file>       a models.toml for it, when it is not a built-in one
 //
 // It uses a home of its own, so the person's ~/.finx is not touched.
 import { spawn } from "node:child_process";
@@ -25,6 +26,7 @@ const only = process.argv.slice(3);
 const home = fs.mkdtempSync(path.join(os.tmpdir(), "fxr-"));
 fs.mkdirSync(path.join(home, "user"), { recursive: true });
 fs.writeFileSync(path.join(home, "config.toml"), `model = "${process.env.FINX_MODEL ?? "deepseek/deepseek-flash"}"\npermission_mode = "bypass-permissions"\n`);
+if (process.env.FINX_MODELS_TOML) fs.copyFileSync(process.env.FINX_MODELS_TOML, path.join(home, "models.toml"));
 
 const server = spawn(finx, ["serve", "--stdio"], { env: { ...process.env, FINX_HOME: home, HOME: path.join(home, "user") }, stdio: ["pipe", "pipe", "inherit"] });
 let next = 1;
@@ -233,3 +235,5 @@ console.log("\n" + JSON.stringify(totals, null, 1));
 console.log(`\ntokens per run, mean: quiet ${mean(costs.quiet)}, with something to say ${mean(costs.reported)}, the bot passing it on ${mean(costs.relay)}`);
 server.kill();
 fs.rmSync(home, { recursive: true, force: true });
+// A quiet run's wait for the bot's session has nothing to end it.
+process.exit(0);
