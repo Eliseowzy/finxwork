@@ -19,7 +19,10 @@
 //                 said so, stopped at all, it said so, it started the work again;
 //   - checked:    `progress` and `session`, check_agents ran after the question;
 //   - lastAutumn, spring: `change`, the last message is the poem asked for last; the first one
-//                 went out too, which is acceptable.
+//                 went out too, which is acceptable;
+//   - agents:     `fan`, `apart`, `whole`, `follow`, how many runs started how many sub-agents:
+//                 separate requests get one each, one job or a correction to it gets one;
+//   - redirected: `follow`, the correction went to the agent at work.
 // Messages are printed, to read for the rest: does an acknowledgement name its first step, does
 // what it says of the progress match.
 //
@@ -117,6 +120,8 @@ const isCall = (e, name) => e.type === "tool_started" && toolOf(e) === name;
 const firstAfter = (w, at, test) => w.events.find((e) => e.at >= at && test(e));
 const long = "写一篇一万字的小作文，主题随便，写好整理成文件告诉我。";
 const atWork = (w) => w.events.some((e) => e.type === "agent_started");
+/** Long enough past the first agent for the others to have started. */
+const agentsSettled = (w) => w.events.some((e) => e.type === "agent_started" && Date.now() - e.at > 15_000);
 
 /** `say`: [ms after the one before, text], or [ms, text, when]: `when` is awaited first.
  * `oneByOne`: each after the one before is answered.
@@ -140,6 +145,19 @@ const scenarios = {
   // A moment past the handing over, to see what else it says.
   ack: { ms: 60_000, say: () => [[0, long]], until: (w) => w.events.some((e) => e.type === "agent_started" && Date.now() - e.at > 8000) },
   // The timeline of bot-turn-design §3.
+  // Who gets what (bot-turn-design §7.2): alike but separate, unrelated, one job in parts, a
+  // correction. No need to wait for the writing.
+  fan: { ms: 90_000, say: () => ["春", "夏", "秋", "冬"].map((s) => [400, `写一首一万字的诗，关于${s}天`]), until: agentsSettled },
+  apart: { ms: 90_000, say: () => [[0, long], [400, "再调研一下 macOS 上常见的三种自动更新方案，写一份两千字的比较"]], until: agentsSettled },
+  whole: { ms: 90_000, say: () => [[0, "写一篇一万字的小作文，分成春夏秋冬四章，写好整理成文件告诉我。"]], until: agentsSettled },
+  follow: {
+    ms: 90_000,
+    say: () => [[0, long], [3000, "写短一点，三千字就够。", atWork]],
+    until: (w, at) => at.length === 2 && Date.now() - at[1] > 15_000,
+    check(t, w, at) {
+      t.redirected += firstAfter(w, at[1], (e) => e.type === "tool_started" && e.name === "send_message") ? 1 : 0;
+    },
+  },
   // Two thousand characters: the timeline is the same as for ten thousand, at a fraction of the cost.
   long: { ms: 600_000, say: () => [[0, long.replace("一万字", "两千字")], [2000, "刚才给你发啥了你知道么", atWork], [3000, "为什么你在写的时候我还能给你发消息"]] },
   stop: {
@@ -266,6 +284,8 @@ async function oneRun(name, s, run, t) {
 
   const delegated = events.some((e) => e.type === "agent_started");
   t.delegated += delegated ? 1 : 0;
+  const started = events.filter((e) => e.type === "agent_started").length;
+  t.agents[started] = (t.agents[started] ?? 0) + 1;
   // Reports: did anything reach the owner after the last one?
   const reports = events.filter((e) => e.type === "message_completed" && e.mail);
   if (reports.length && !s.plain) {
@@ -308,7 +328,7 @@ for (const [name, s] of Object.entries(scenarios)) {
   if (only.length && !only.includes(name)) continue;
   const t = (totals[name] = {
     runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
-    delegated: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
+    delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
     ordered: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
   });
   for (let run = 0; run < runs; run += parallel) {
