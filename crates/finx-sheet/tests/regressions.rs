@@ -62,6 +62,44 @@ fn sheet_with_byte_order_mark() {
     check("missing_r_attributes.xlsx", edits);
 }
 
+/// Row 61 is `<c r="E61"/>` followed by cells with no address, which take their column from the
+/// cell before them. Clearing E61, which has no style, dropped its element: F61..H61 slid to
+/// A61..C61, the 939 in G61 with them. The fuzz test found it with these edits.
+#[test]
+fn clearing_a_cell_keeps_the_column_of_the_cells_after_it() {
+    let sheet = "Some Sheet";
+    let out = check(
+        "missing_r_attributes.xlsx",
+        vec![
+            edit(
+                sheet,
+                "F20",
+                NewValue::Text {
+                    value: "#REF!".into(),
+                },
+            ),
+            edit(sheet, "E61", NewValue::Empty),
+            edit(sheet, "D30", NewValue::Empty),
+            edit(
+                sheet,
+                "B51",
+                NewValue::Formula {
+                    text: "=SUM(F:J)".into(),
+                    cached: Some(Cached::Text("是".into())),
+                },
+            ),
+        ],
+    );
+    let (_, ix) = first_sheet(&out.bytes);
+    let at = |cell: &str| ix.cell(finx_sheet::cellref::CellRef::parse(cell).unwrap());
+    assert!(at("A61").is_none());
+    let e = at("E61").unwrap();
+    assert!(e.v.is_none() && e.t.is_none() && e.s.is_none());
+    assert_eq!(at("F61").unwrap().s.as_deref(), Some("28"));
+    assert_eq!(at("G61").unwrap().v.as_deref(), Some("939"));
+    assert_eq!(at("H61").unwrap().s.as_deref(), Some("49"));
+}
+
 /// `<dimension ref=".."></dimension>` written as a pair: replacing only the
 /// start tag left a stray `</dimension>`.
 #[test]
