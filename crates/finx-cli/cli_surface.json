@@ -111,6 +111,8 @@
     "_about": "Every FINX_* name in crates/. job: setting-override (same name and values as the setting; only when CI or a wrapper needs it for a whole process tree), location, environment, diagnostics, tool-child (set for the commands a tool runs), test, build. stability: stable (documented for users), deprecated (needs remove_in), internal. A test variable starts with FINX_TEST_, unless it is marked legacy.",
     "FINX_HOME": { "job": "location", "stability": "stable" },
     "FINX_PDFIUM": { "job": "location", "stability": "stable" },
+    "FINX_INSTALL_DIR": { "job": "location", "stability": "stable" },
+    "FINX_RELEASES_URL": { "job": "environment", "stability": "stable" },
     "FINX_MODEL": { "job": "setting-override", "stability": "stable" },
     "FINX_PERMISSION_MODE": { "job": "setting-override", "stability": "stable" },
     "FINX_APPROVAL": { "job": "setting-override", "stability": "deprecated", "remove_in": "0.3.0" },

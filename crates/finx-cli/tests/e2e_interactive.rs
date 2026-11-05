@@ -261,6 +261,42 @@ async fn commands_do_their_own_work_and_other_slashes_are_messages() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("a good name"));
 }
 
+/// A command the kernel answers without a task leaves the mode ready for the next message.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_kernels_own_commands_end_with_the_mode_idle() {
+    let env = TestEnv::new("manual", QUIET).await;
+    let mut pty = Pty::start(&env, &["say hi"]);
+    pty.wait_for("tokens:");
+    let at = pty.seen().len();
+    pty.type_text("/context\r");
+    pty.wait_for_after(at, "Free");
+    std::thread::sleep(Duration::from_millis(400));
+    let at = pty.seen().len();
+    std::thread::sleep(Duration::from_millis(400));
+    let after = pty.seen();
+    assert!(!after[at..].contains("replying") && !after[at..].contains("thinking"), "no spinner left behind: {:?}", &after[at..]);
+    pty.type_text("/compact\r");
+    pty.wait_for_after(at, "context compacted");
+    pty.type_text("/quit\r");
+    assert_eq!(pty.wait_exit(), 0);
+}
+
+/// Text in the input box stays while a question is answered, and a resize does not lose it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pasted_block_stays_one_message() {
+    let env = TestEnv::new("manual", QUIET).await;
+    let mut pty = Pty::start(&env, &[]);
+    pty.wait_for("› ");
+    pty.type_text("\x1b[200~first line\nsecond line\x1b[201~");
+    pty.wait_for("second line");
+    assert!(!pty.seen().contains("Hello from mock."), "a paste does not send");
+    pty.type_text("\r");
+    pty.wait_for("Hello from mock.");
+    pty.wait_for("tokens:");
+    pty.type_text("/quit\r");
+    assert_eq!(pty.wait_exit(), 0);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_session_continues_with_resume() {
     let env = TestEnv::new("manual", QUIET).await;

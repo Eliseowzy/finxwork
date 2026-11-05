@@ -197,7 +197,7 @@ pub fn models(
         }
     }
     if default_model.is_none() {
-        writeln!(out, "\n{}", setup::no_model_help(&rt))?;
+        writeln!(out, "\n{}", setup::no_model_help(rt))?;
     }
     out.flush()?;
     Ok(0)
@@ -409,7 +409,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         "model": model,
         "credentials": provider.as_ref().map(|p| {
             let mut auth = auth_json(&p.auth.status(&p.id));
-            if let Some(key) = masked_key(&p) {
+            if let Some(key) = masked_key(p) {
                 auth["key"] = json!(key);
             }
             auth

@@ -143,7 +143,8 @@ function pack(name, files) {
     fs.chmodSync(path.join(dir, as), mode);
   }
   const archive = path.join(out, `${name}.tar.gz`);
-  sh("tar", ["-czf", archive, "-C", dir, ...fs.readdirSync(dir)], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
+  // No macOS attributes in the archive: GNU tar on Linux warns about each.
+  sh("tar", ["--no-xattrs", "--no-mac-metadata", "-czf", archive, "-C", dir, ...fs.readdirSync(dir)], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
   return archive;
 }
 

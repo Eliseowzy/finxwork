@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.4 |
+| 版本 | v0.5 |
 | 日期 | 2026-11-05 |
-| 状态 | 待评审。默认模型（§7.2）和现有命令的规则与改名（§4，已做到哪见 §4.9）已实现，其余未实现。§18 的几件事等拍板，文中先按建议写 |
+| 状态 | 一期 A–F 包已实现，在分支上，未合入、未发布。§18 的决定都先按文中的建议做，可以再改。还差什么见 §21 |
 | 关系 | 把总方案 technical-design.md §12 的"交互界面"（Q-12）从桌面端扩到命令行；扩展 protocol-design.md §6–§8、model-catalog-design.md、mcp-design.md §9；发布沿用 desktop-release.md 的原则 |
 | 编号 | 决策从 D-500 起，待定问题从 Q-300 起，避开并行分支正在使用的编号 |
 
@@ -79,6 +79,7 @@
 | v0.2 | 2026-11-05 | 默认模型改定并实现（§7.2）：去掉写死的 DeepSeek；没配 `model` 时用第一个能用的服务商的首个模型；什么都没配时没有默认模型，命令行、JSON-RPC、ACP、桌面端都提醒去设置（D-506 改写，D-534–D-537，Q-313） |
 | v0.3 | 2026-11-05 | 命令规则写进 §4（D-538–D-544）：控制方式和命名规则；运行选项表；继续会话只留两种写法；`--json` 总是一个 JSON 值；打错字给提示；改名：`models show` 改 `unhide`、`sessions rm` 改 `remove`、`web-search test` 改 `check`、`--here` 改 `--local`、`/title` 改 `/rename`；`finx completion`、`exec --image`；`finx chat` 隐藏；测试把关。除 §7.2 外都未实现 |
 | v0.4 | 2026-11-05 | 现有命令的改名、`--json`、错误、帮助和规则测试已实现（§4.9）；`finx resume` 先去掉，交互模式做好时加回来；规则测试放在 `finx-cli/src/cli_shape.rs`，登记表是 `finx-cli/cli_surface.json` |
+| v0.5 | 2026-11-05 | 一期 A–F 包实现：`finx login`、`models check`、Gemini；`finx tools`、MCP 审批、`config`、组件、`upgrade`；交互模式；分档、示例、ACP 登录；发布脚本、安装脚本、用户文档。D-545–D-553，现状见 §21 |
 
 ## 1. 目标与范围
 
@@ -192,11 +193,11 @@
 |---|---|---|---|
 | `finx ["PROMPT"]` | 交互模式；接受运行参数（§4.3） | 新 | 一 |
 | `finx exec "PROMPT"` | 跑一个任务；`--resume <last\|ID>` 接着一个会话跑 | 改：预检、退出码、`--tools`、`--add-dir`、`--image`（§6）；`--json` 改成一个结果对象（§4.6）；去掉 `--continue`（§4.4） | 一 |
-| `finx resume [last\|ID] ["PROMPT"]` | 在终端里继续会话，默认 `last`。现在已经去掉，敲了会提示用 `finx exec --resume`；交互模式做好时加回来，只进交互模式 | 新 | 一 |
+| `finx resume [last\|ID] ["PROMPT"]` | 在终端里继续会话，默认 `last`，只进交互模式；没有终端时退出 2，提示用 `finx exec --resume` | 新 | 一 |
 | `finx login [PROVIDER]`、`finx logout PROVIDER` | 接入模型（§7.3） | 新 | 一 |
 | `finx models`、`hide`、`unhide` | 模型菜单 | 改：`show` 改名 `unhide`（§4.4） | 一 |
 | `finx models check [MODEL]` | 真实请求检查一个模型（§7.6） | 新 | 一 |
-| `finx connections …` | 本机账号连接（§7.7） | 新，看 §18.3 | 一 |
+| ~~`finx connections …`~~ | 本机账号连接不进公开版，也就不加这组命令（§7.7、§18.3） | 不做 | — |
 | `finx tools [NAME] [--all] [--json]` | 工具清单和定义（§8.3） | 新 | 一 |
 | `finx install <pdf\|browser\|computer>`、`finx uninstall …` | 组件（§8.4）；`finx browser install` 继续可用 | 新 | 一 |
 | `finx config [list]`、`get`、`set`、`unset`、`path` | 配置，调 `config/read`、`config/write`；`--show-origin` 写明每个值来自哪一层 | 新 | 一 |
@@ -381,7 +382,7 @@ thinking set to low in ~/.finx/config.toml
 
 规则只有一份，改命令的人和评审的人都看 §4.2–§4.6。
 
-### 4.8 新增的配置项（未实现）
+### 4.8 新增的配置项
 
 | 配置项 | 默认 | 说明 |
 |---|---|---|
@@ -389,34 +390,17 @@ thinking set to low in ~/.finx/config.toml
 | `history.enabled` | `true` | 是否保存输入历史（§5.4） |
 | `update.check` | `true` | 交互模式是否检查更新（§13.9） |
 | `mcp_servers.<name>.approval` | 不设 | `never`：信任这个服务器，只能写在用户层（§8.5） |
-| `[[hooks]]` | 无 | 外部钩子，二期（§8.6） |
+| `[[hooks]]` | 无 | 外部钩子，二期，未实现（§8.6） |
 
 ### 4.9 已经做到哪（2026-11-05）
 
-**已实现：**
+§4.1 的命令全部实现，规则测试（§4.7）管着全部命令。和前面写的不同的地方：
 
-- `exec --json` 是一个结果对象，事件流走 `--output stream-json`；
-- 参数里有 `--json` 或 `--output json`、`stream-json` 时，失败也是 JSON，写到 stdout；
-- 去掉 `exec --continue`、`finx resume`；`finx -p`、`--print`、`--continue`、`-r`、`finx resume`、`finx models show` 给指引；
-- `models show` 改 `unhide`；`--here` 改 `--local`，并加上 `--global`；`finx chat` 隐藏；
-- `finx mcp` 不带动词是列表；`finx models list`、`sessions list`、`skills list` 都能用；
-- 重复或冲突的参数以最后一个为准；`-v` 和 `-V` 都是版本；
-- `NO_COLOR` 为空时不算，`TERM=dumb` 关颜色；
-- 设置命令打印一行写明值和文件（`models hide`、`unhide`、`trust`、`skills enable`、`disable`，其余本来就有）；
-- `browser extension status --json`；
-- 顶层帮助分组，带例子；
-- 规则测试和登记表（§4.7）；文档里去掉 `FINX_DEBUG_HTTP`、`FINX_DEBUG_RPC`（Q-310）。
-
-**还没做，随对应的包实现：**
-
-| 内容 | 包 |
-|---|---|
-| 第一个词的语法（§4.5）：要等交互模式。在那之前，打错的命令由 clap 给提示 | D |
-| `finx resume`、`/rename`、`/exit`（§5.6） | D |
-| `finx config` 及其 `--show-origin`、安全项（§4.2）；`sessions remove`、`rename`；`web-search`；`finx upgrade` 和 `update` | C、F |
-| `exec --image`、`--tools`、`--add-dir`（§6.3）。后两个做好时加进运行选项表 | A |
-| `finx completion`（新依赖，要记录体积和缺页） | A |
-| README 的"给编程智能体"一节、`llms.txt`（§14） | F |
+- `finx connections` 不做（§7.7）；
+- `config path`、`web-search set-key`、`sessions rename` 是动词表之外的例外，原因写在 `cli_surface.json`；
+- 第一个词的判断（§4.5）在 `main.rs` 的 `first_word`，用一张写死的命令名单，不建解析器；`cli_shape` 检查名单和命令树一致；
+- `RunArgs` 只留运行参数，`finx exec` 自己的输出和输入参数在 `ExecArgs`；
+- `finx --help` 第一行改成 "finx: an AI agent for your terminal, your editor and your programs"（Q-308）。
 
 ## 5. 交互模式
 
@@ -496,7 +480,7 @@ finx 0.2.0 · deepseek/deepseek-flash · 逐项确认 · ~/code/app
 | `bash` | 完整命令，加上判定的原因 |
 | 其他 | `summary` 和 `reason` |
 
-超过一屏时折叠，按 `v` 展开。选项和 `approval_prompt.rs` 一样：`y`、`a`（有规则或模式可记时才出现）、`n`（可附一句说明）、`q`，网站权限用数字。这部分代码共用，`exec` 也跟着得到 diff。子智能体的审批同样一次问一个，开头带它的名字。
+超过一屏时折叠，输入 `v` 展开。回答和 `exec` 一样是一行字加回车（D-551）。选项和 `approval_prompt.rs` 一样：`y`、`a`（有规则或模式可记时才出现）、`n`（可附一句说明）、`q`，网站权限用数字。这部分代码共用，`exec` 也跟着得到 diff。子智能体的审批同样一次问一个，开头带它的名字。
 
 等待审批时键盘归审批，输入框里的字保留。
 
@@ -530,7 +514,7 @@ finx 0.2.0 · deepseek/deepseek-flash · 逐项确认 · ~/code/app
 
 ### 5.8 启动、退出和异常
 
-- **启动**：立刻显示输入框，内核在后台启动，MCP 慢不挡打字。会话文件沿用现有逻辑，第一次有内容才创建。
+- **启动**：`Kernel::start` 走完才显示输入框。它不等 MCP（服务器在后台连接），所以慢的服务器不挡打字，不需要把内核也放到后台（D-550）。会话文件沿用现有逻辑，第一次有内容才创建。
 - **要求终端**：stdin 或 stdout 不是终端，或者 `TERM=dumb`，退出 2，提示改用 `finx exec`。
 - **没有可用模型**：进入登录流程（§7.3）。
 - **退出**：打印用量和 `finx resume`。
@@ -680,7 +664,7 @@ error: no model is set up
 
 To set up a model, any one of these will do:
   an API key in the environment   ANTHROPIC_API_KEY, DASHSCOPE_API_KEY, DEEPSEEK_API_KEY, MOONSHOT_API_KEY, OPENAI_API_KEY, OPENROUTER_API_KEY, ZHIPUAI_API_KEY
-  a ChatGPT subscription          finx models login chatgpt-api
+  a ChatGPT subscription          finx login chatgpt
   a local Ollama                  pass -m ollama/<model>
 
 `finx models` lists every provider and what it needs. To choose the default model, set
@@ -752,7 +736,7 @@ printf %s "$KEY" | finx login mygateway --base-url https://llm.example.com/v1 --
 - `builtin.toml` 加 `[providers.google]`，公共目录已有 `google.json`。
 - 用 `finx models check` 验多轮工具调用。这条路走不通，或者需要 Google 专有能力时，再写原生适配器。
 
-**OpenAI：`openai` 服务商改走 `openai-responses`。** 适配器已经随 ChatGPT 订阅实现（`openai_responses.rs`）。总方案 §4.8 早就计划这样改；OpenAI 的加密推理内容要走这个接口才能回传。需要真实密钥验证。
+**OpenAI：先留在 `openai-chat`（D-545）。** 原计划改走 `openai-responses`，但 `openai_responses.rs` 是照 ChatGPT 订阅的路线写的（工具包成 `{"type":"namespace"}`、`store:false`），没有真实密钥就把 api.openai.com 切过去，可能把能用的改坏。等有密钥，加一个变体并跑 `finx models check` 再切。
 
 **其他：** 不再加内置渠道。OpenAI 兼容的长尾走 OpenRouter 或 `--base-url`，文档给配方。
 
@@ -783,7 +767,9 @@ printf %s "$KEY" | finx login mygateway --base-url https://llm.example.com/v1 --
 
 ### 7.7 本机账号连接
 
-`rt.connections` 已经装配好，`finx connections list|discover|connect|retry|disconnect|remove` 只是调 `Manager` 的方法。进不进公开版见 §18.3。不进的话，用 cargo feature 把两个适配器排除在公开构建之外，桌面端不受影响；代码本来就隔离在 `finx-connections`。
+公开版不带（D-546，§18.3）。`finx-connections` 有一个 cargo feature `local-accounts`，默认开，桌面端的构建带它；发布脚本用 `--no-default-features` 构建，`Manager::new` 不注册这两家的环境，发现不到也连不上。ChatGPT 订阅不受影响。不加 `finx connections` 这组命令，协议方法仍在实验档。
+
+代码还在二进制里，只是走不到。真要把代码也去掉，要拆开 `lib.rs` 对 `QwenWork` 的直接依赖，源码公开之前再决定。
 
 ## 8. 工具
 
@@ -854,11 +840,11 @@ mcp__exa__*   mcp    （连接后才知道，加 --mcp）
 - **你自己的 Chrome：** `finx browser extension install` 能注册本地宿主，但扩展本身还没上架（browser-design D-219），文件只在 FinxWork 包里。上架之前，公开版的浏览器工具只承诺内置浏览器。
 - **电脑操控的系统授权：** 辅助功能和屏幕录制的授权在桌面端给的是 FinxWork，命令行里预计是给运行 `finx` 的那个终端程序，要实测并写进文档。
 
-### 8.5 MCP 工具的审批（D-514，待拍板）
+### 8.5 MCP 工具的审批（D-514，已实现）
 
-**现在：** `approval.rs` 里 MCP 工具在所有权限模式下直接放行（mcp-design D-107）。当时是"先把注册与调用做好"。用户选了"逐项确认"，MCP 工具照样不问就发邮件、删数据。公开之后这是说不过去的。
+**原来：** `approval.rs` 里 MCP 工具在所有权限模式下直接放行（mcp-design D-107）。用户选了"逐项确认"，MCP 工具照样不问就发邮件、删数据。公开之后这是说不过去的。
 
-**建议：**
+**现在：**
 
 | 权限模式 | 标了 `readOnlyHint` | 其他 |
 |---|---|---|
@@ -869,6 +855,10 @@ mcp__exa__*   mcp    （连接后才知道，加 --mcp）
 - `readOnlyHint` 是服务器的自我声明（Q-110 担心的就是这个），所以只信用户自己配置的服务器；项目 `.mcp.json` 里的服务器标了也要问。
 - `mcp_servers.<name>.approval = "never"` 是用户明确信任某个服务器的办法，只能写在用户层配置里，不受项目配置影响。
 - 桌面端的连接器也走同一个判定。Bot 默认完全访问不受影响；普通会话在手动模式下会多一些询问。这是产品层面的变化，见 §18.4。
+- **实现（D-547）：** `Tool` 多一个 `runs_unasked(args)`，默认否；`McpTool` 和 `call_tool` 由 `McpServerConfig::runs_unasked` 回答。`tool_search` 只查已有的定义，总是不问。`call_tool` 点了一个没有服务器认领的名字时不问（什么也不会运行），但还有服务器在连接时要问，因为它连上之后这个调用可能真的运行。
+- **规则：** `[[rules]]` 按完整工具名匹配，如 `prefix = ["mcp__mail__send"]`，`allow`、`ask`、`deny` 都有效；"本会话不再问"就是加一条这样的规则。
+- **谁算项目带来的：** 定义来自 `.mcp.json` 或项目层配置的服务器，在 `Workspace::open` 里标 `project_defined`。这个字段不进文件，别处写不了。`approval` 出现在项目层或个人项目层时被去掉并警告。
+
 
 ### 8.6 扩展方式
 
@@ -922,15 +912,14 @@ timeout_secs = 10
 
 通知同样分档：`session/event`、`session/detached`、`sessions/changed`、`models/changed`、`config/changed`、`skills/changed`、`mcp/changed`、`mcp/probe_progress`、`files/changed` 和 `$/cancel_request` 稳定，`doc/changed`、`bots/changed`、`browser/changed` 实验。
 
-- 档写在 `crates/finx-protocol/src/schema.rs`，导出到 Schema 的 `x-stability`。测试要求每个方法都有档。
-- 现有 101 个方法：稳定 52 个，实验 48 个，内部 1 个。
+- 档写在 `crates/finx-protocol/src/schema.rs` 的 `stability`，导出到 Schema 的 `x-stability`（已实现）。按前缀判断，新方法默认算稳定，要放进实验档得明说，这样不会有方法没档。
 
 ### 9.3 兼容规则（D-517）
 
 1. **稳定档在同一协议版本内只增不改**：可以加方法、可选字段、事件类型、错误码。客户端必须忽略不认识的字段和事件（§6.2 已有这条）。
 2. **不兼容的修改升协议版本。** 升级后旧版本至少再支持两个次版本。现在服务端只接受版本 2，届时改成接受一个范围。
 3. **`Event` 和 `Op` 是稳定档的一部分。** `finx exec --output stream-json` 的事件流和 `--json` 的结果对象也按这条走（§4.6）。
-4. **CI 把关：** 拿上一个发布版的 `schema.json` 比较，稳定档出现删除或类型变化就失败。
+4. **测试把关（已实现，D-552）：** 发版时把 `schema.json` 拷成 `crates/finx-protocol/schema-released.json`。`what_the_last_release_promised_still_holds` 在协议版本相同时拿它比较：稳定档的方法和通知、`Event`、`Op` 以及它们用到的类型，字段和枚举值不能少，类型不能变，不能多出必填字段。第一个版本发布之前这个文件不存在，测试跳过。
 5. **错误码只增不改。** 客户端按 `data.kind` 判断。
 
 ### 9.4 新增和调整
@@ -988,7 +977,7 @@ ssh -L /tmp/finx.sock:/home/me/.finx/run/finx.sock host
 
 ## 10. ACP
 
-### 10.1 登录（D-519）
+### 10.1 登录（D-519，已实现）
 
 **场景：** 用户在编辑器里配上 `finx acp`，没有密钥，发第一句话。现在的表现：`session/new` 成功，配置项里只有一个 DeepSeek 模型，`session/prompt` 返回 -32020，文字是 `set DEEPSEEK_API_KEY`（实测）。而图形界面启动的编辑器通常拿不到 shell 里的环境变量，所以这句提示还经常没用。
 
@@ -1022,7 +1011,7 @@ ssh -L /tmp/finx.sock:/home/me/.finx/run/finx.sock host
 
 `--login` 放在 `acp` 子命令上，因为客户端是在配置好的启动命令（`finx acp`）后面追加参数，不能换命令。
 
-### 10.2 文案（D-520）
+### 10.2 文案（D-520，已实现）
 
 `crates/finx-acp/src/out.rs` 里配置项名称和审批按钮是写死的中文（"模型""推理等级""允许"）。Zed 的英文用户看到的也是中文（实测）。改成跟 §5 同一份文案表，按环境变量取语言，默认英文。
 
@@ -1297,7 +1286,7 @@ ditto -c -k --keepParent finx finx.zip && xcrun notarytool submit finx.zip --key
 ```
 
 - 地址：`releases/latest/download/finx-manifest.json` 看最新版，`releases/download/v<版本>/…` 取固定版本。不调 GitHub API，没有频率限制。
-- 清单用 ed25519 签名，`finx upgrade`、`finx install` 用编译进程序的公钥验证。`ring` 已经是依赖，不增加依赖。私钥和证书一样只在这台 Mac 上，要有离线备份。
+- 清单用 ed25519 签名，`finx upgrade`、`finx install` 用编译进程序的公钥验证（`crates/finx-core/src/release_public_key.txt`）。`ring` 已经是依赖，不增加依赖。私钥 2026-11-05 已生成，放在这台 Mac 的钥匙串，`security find-generic-password -a finx -s finx-release-signing -w`，**还没有离线备份（Q-309）**。签名工具是 `crates/finx-core/examples/release_sign.rs`，不进 `finx`（D-549）。开发构建可以用 `FINX_TEST_RELEASES`、`FINX_TEST_RELEASE_KEY` 换地址和公钥，发布构建读不到这两个变量。
 - macOS 额外用 `codesign --verify -R` 验证新文件的 Team ID，和桌面端 RG3 是同一层保护。
 - `install.sh` 只验证 SHA256：脚本本身来自同一个地方，再验签名不增加保护。公开文档给出手动校验的步骤。
 
@@ -1513,6 +1502,8 @@ AGENT.md 的要求不变：只有单元测试不算验收。
 
 ## 18. 需要拍板的事
 
+2026-11-05 按负责人的要求全部实施：下面每一项都先照文中的建议做了，可以再改。其中 §18.5 的许可证没有替你选，发布脚本在没有 `LICENSE` 时拒绝发布。
+
 每一项都先按"现在按这个写"的方案写进了文档。前五项有实际影响，后面的可以直接按建议走。
 
 ### 18.1 交互界面做成什么样
@@ -1654,6 +1645,15 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 | D-541 | 继续会话只留 `finx resume` 和 `finx exec --resume` 两种写法；动词和范围词统一；公开之前改名不留别名 | 写法放出去就收不回来；`show` 改东西、`--here` 自造词都是迟早的坑 | §4.4 |
 | D-542 | 一个不是命令的参数才算提示词；多个裸词报错；接近命令名的词给提示 | 手误不该开一个会话、花一次模型请求 | §4.5 |
 | D-543 | `--json` 总是一个 JSON 值，错误也是；`exec --json` 改义；没有终端不提问 | 一个参数一种意思；脚本不用分情况解析 | §4.6 |
+| D-545 | OpenAI 先留在 `openai-chat`，有真实密钥再切 Responses | `openai_responses.rs` 是 ChatGPT 路线的适配器，没验证就切可能把能用的改坏 |
+| D-546 | 公开版用 `--no-default-features` 构建，不带本机账号连接；不加 `finx connections` | §18.3 的建议；不带之后再加容易，带了再撤难 |
+| D-547 | MCP 审批的判定放在 `Tool::runs_unasked`，规则按完整工具名匹配 | 复用现有的规则和"本会话不再问"，不多一种机制 |
+| D-548 | `finx --help` 第一行："an AI agent for your terminal, your editor and your programs" | 面向用户，也符合基础提示词的能力范围（Q-308） |
+| D-549 | 签名工具是 `finx-core` 的 example，不进 `finx` | 公开程序里不需要会签名的代码 |
+| D-550 | 交互模式等 `Kernel::start` 走完再显示输入框 | 它不等 MCP，够快，放后台只会多状态 |
+| D-551 | 交互模式的审批回答是一行字加回车 | 和 `exec` 共用判定，`1!` 这种答案也能打 |
+| D-552 | Schema 兼容比较做成测试，基线是仓库里的 `schema-released.json` | 不依赖 CI 取上一版的文件，本地也能跑 |
+| D-553 | `finx tools` 的清单来自会话实际运行的工具对象，只有"需要什么"是写的 | 清单不会和工具走样 |
 | D-544 | 控制项分四档，废弃有期限且由测试执行；`cli_shape.rs` 检查命令树、环境变量和运行选项表 | 规则靠人记会走样（`FINX_DEBUG_HTTP` 就是例子）；旧写法不会被忘掉 | §4.7 |
 
 ### 待定问题
@@ -1668,10 +1668,10 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 | Q-305 | 一级服务商名单和密钥 | §7.6 | §18.6 |
 | Q-306 | 发布仓库名 | `finxwork/finx-releases` | §13.5 |
 | Q-307 | ChatGPT 订阅登录在公开分发时是否要申请 | 首发前查清 | §18.3 |
-| Q-308 | `finx --help` 第一行的产品描述 | 待定 | §14 |
-| Q-309 | 清单私钥怎么备份 | 离线备份一份，方式待定 | §13.6 |
+| Q-308 | `finx --help` 第一行的产品描述 | 暂定 D-548，负责人可改 | §14 |
+| Q-309 | 清单私钥怎么备份 | 已生成在钥匙串；离线备份由负责人做，方式待定 | §13.6 |
 | Q-310 | `FINX_DEBUG_HTTP`、`FINX_DEBUG_RPC` 做不做 | 文档写了但没实现。不在一期，已从总方案和协议方案去掉；真要做时诊断类变量统一放在 `FINX_LOG` 这一组 | §6.4 |
-| Q-311 | 文案表覆盖到哪一层：服务层的中文错误（`customize.rs` 等）是否也改 | 改，桌面端设 `FINX_LANG=zh` | §10.2 |
+| Q-311 | 文案表覆盖到哪一层：服务层的中文错误（`customize.rs` 等）是否也改 | 不改：这些是连接器流程，只有桌面端走得到。命令行开放连接器时再改 | §10.2 |
 | Q-312 | 没有密钥时联网搜索默认把搜索词发给 Exa、Parallel，公开版是否改成默认关闭 | 保持开启，写进隐私说明 | §12.5 |
 | Q-313 | 后接入的服务商排在前面时，没写 `model` 的默认模型会变。是否在第一次接入时把模型固定下来 | 不固定：模型按钮和 `finx status` 看得见，要固定就写 `model`。真有人因此多花钱或搞混时，再看第一次接入时写进配置，或者记住上次用的模型 | §7.2 |
 
@@ -1703,3 +1703,43 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 | `exec` 的 `--quiet`、`--system`、每条命令的超时 | 用户要求，且 `-c` 不够用 | 加参数，按 §4.2 的顺序判断 |
 | 交互模式的会话选择器 | `/resume` 的列表不够用 | `finx resume` 不带参数时选，`last` 仍然是最近一个 |
 | 应用里"安装命令行工具" | FinxWork 用户想直接用 `finx` | 链到应用里的 `finx`；和 `finx upgrade` 的判断一致 |
+
+## 21. 实施现状（2026-11-05）
+
+分支 `claude/cli-standalone-capabilities-bbc7da`，未合入 main，未推送。
+
+### 21.1 自动测试
+
+`cargo test --workspace`（带 PDFium）全过。新增的端到端测试：`e2e_login.rs`、`e2e_commands.rs`、`e2e_components.rs`（本地起一个 GitHub 形状的发布，走安装、升级、签名错误、摘要错误、`install.sh`）、`e2e_interactive.rs`（真实伪终端：发送、审批的回答、`/` 命令、恢复、取回排队、第一次运行登录、信任提问、非终端拒绝）、`e2e_examples.rs`（两个示例真跑）、`e2e_docs.rs`（文档里标了 `doc-test: run` 的命令真跑，链接不断）、`finx-core/tests/mcp.rs` 的审批表。
+
+### 21.2 真实模型验收
+
+`tools/acceptance/cli_acceptance.py`，干净的 `HOME`，百炼 Token Plan 的 `deepseek-v4.1-flash`，24 项全过：
+
+| 场景 | 验过什么 |
+|---|---|
+| S2 | 没有模型时退出 2 并给出 `finx login`；真实密钥登录；错误密钥被拒且不保存；任务跑在保存的密钥上。交互式的选择流程在 pty 测试里用模拟模型走 |
+| S3 | 真实模型改文件：问题里能看到改动，答 `y` 后文件改了；中文消息；`/rename`；退出提示；`finx resume` 显示之前的内容并接着聊 |
+| S4 | 被拒退出 3 且 `refused` 有内容，设权限模式后退出 0；事件流；`exec --resume` |
+| S5 | 只用 ACP 协议本身：三种登录方式、英文选项、跑任务、审批后写文件。**不是真实编辑器** |
+| S6 | `minimal.py`、`minimal.mjs` 都跑通 |
+| S8 | 这一个模型通过 `finx models check`；`doctor --online`；Parallel 真实搜索通过，Exa 这次被限流 |
+| S9 | 没装 PDF 组件时，模型读到错误并告诉用户 |
+
+打断、运行中插话、跟进、取回只用模拟模型测过，没有在真实模型上走。
+
+### 21.3 没做或做不到的
+
+| 内容 | 卡在哪 |
+|---|---|
+| 真正发布；S1 从 GitHub 安装 | 发布仓库没建，这是对外动作，等负责人。`install.sh` 和 `finx upgrade` 用本地发布测过 |
+| `LICENSE` | §18.5 负责人决定。没有它发布脚本不放行 |
+| 公证 | `FINXWORK_NOTARY_PROFILE` 没设。签名做了，公证和 Gatekeeper 的表现（§13.4）都没验 |
+| 私钥备份 | Q-309 |
+| S5 真实编辑器（§10.4） | 这台机器没装 Zed |
+| S7 和真实的 FinxWork 共存 | 没走；配置的新旧兼容有单元和端到端测试，但"上一个发布版"还不存在 |
+| S8 其他服务商：OpenAI、Anthropic、Gemini、DeepSeek、OpenRouter、Ollama 等 | 没有可用的密钥；DeepSeek 的测试密钥余额不足。文档 `models.md` 如实标了未验证 |
+| 多种终端、中文输入法（§16.2） | 只在伪终端里测过，没有在 Terminal.app、iTerm2、tmux、SSH 上看过 |
+| `docs/cli` 的中文版 | 只写了英文 |
+| 静态构建的容器矩阵（§16.1） | 只在一台 Debian 上跑过；Alpine、老 glibc、arm64 没跑 |
+| 二期（§17.2） | 按计划不在这次 |

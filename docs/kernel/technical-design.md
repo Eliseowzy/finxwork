@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.54 |
+| 版本 | v1.55 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -101,6 +101,7 @@
 | v1.52 | 2026-11-05 | 新增命令行独立发布方案 [standalone-cli-design.md](standalone-cli-design.md)（待评审，D-500–D-544，Q-300–Q-313）：CLI、ACP、JSON-RPC 三个入口对外，命令行增加带工具的交互模式。本文只加指向，它要改的 §1.3、§10.1、§12 等在实现时同步（该文 §17.3） |
 | v1.53 | 2026-11-05 | 去掉写死的默认模型（该文 §7.2，已实现）：没写 `model` 时用第一个能用的服务商声明的第一个模型；一家都没有时没有默认模型，各入口提醒去设置（§10.2） |
 | v1.54 | 2026-11-05 | 现有命令按该文 §4 统一（已实现）：`exec --json` 改成一个结果对象，事件流用 `--output stream-json`；去掉 `finx resume` 和 `exec --continue`，继续会话用 `exec --resume`；`models show` 改名 `unhide`；`--here` 改名 `--local`；`finx chat` 隐藏；重复或冲突的参数以最后一个为准；`--json` 下的失败也是 JSON（§12）。去掉没有实现的 HTTP 转储环境变量（§10.4、§13） |
+| v1.55 | 2026-11-05 | 命令行一期实现（standalone-cli-design v0.5）：交互模式、`login`、`logout`、`tools`、`config`、`install`、`upgrade`、`completion`、`models check`、`web-search`、`resume`；配置里不认识的键只警告（§10.1 的严格校验只留给写入和 `-c`）；退出码 3；MCP 工具审批；版本 0.2.0 |
 
 ## 1. 目标与范围
 
@@ -2700,7 +2701,10 @@ pub enum RuleDecision { Allow, Ask, Deny }
 | `finx exec PROMPT` | 以无头方式执行一个任务；PROMPT 为 `-` 时从 stdin 读取。`--resume` 接着一个会话跑 | M1 | 已实现 |
 | `finx protocol schema` | 导出协议的 JSON Schema，包括原生协议的方法参数与结果、通知与错误码（protocol-design §6.9） | M1 | 已实现 |
 | `finx sessions [--all] [--limit N] [--json]` | 列出本项目的会话；`--all` 列出所有项目的 | M2 | 已提前实现 |
-| `finx trust [DIR]` | 把目录标记为受信任项目 | M2 | 已提前实现 |
+| `finx trust [DIR] [--remove]` | 把目录标记为受信任项目，或取消 | M2 | 已提前实现 |
+| `finx ["PROMPT"]`、`finx resume [last\|ID] ["PROMPT"]` | 交互模式（standalone-cli-design §5） | 独立发布 | 已实现 |
+| `finx login [PROVIDER]`、`finx logout PROVIDER`、`finx models check [MODEL]` | 接入模型和验证（§7.3、§7.6） | 独立发布 | 已实现 |
+| `finx tools [NAME] [--all] [--json]`、`finx config …`、`finx web-search …`、`finx install`、`finx uninstall`、`finx upgrade`、`finx completion` | 见 standalone-cli-design §4.1 | 独立发布 | 已实现 |
 | `finx skills [DIR] [--all] [--json]` | 列出在 DIR 新开会话时会用到的 Skill 与清单的 token 数；`--all` 同时列出被遮蔽、被停用、加载失败的 Skill 及原因（skill-design.md §11.1） | Skill 一期 | 已实现 |
 | `finx serve [--stdio \| --listen unix://[PATH]]` | 原生协议服务：stdio 上的单个连接，或 Unix socket 上的常驻服务（protocol-design §8） | 协议扩展 | 已实现 |
 | `finx acp` | ACP 服务，供编辑器以子进程方式启动（protocol-design §7） | 协议扩展 | 已实现 |

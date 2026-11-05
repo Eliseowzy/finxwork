@@ -29,7 +29,7 @@ fn inline_code(style: &Style, line: &str) -> String {
     let mut out = parts.next().unwrap_or_default().to_string();
     let rest: Vec<&str> = parts.collect();
     // An odd number of backticks: the last one opens nothing.
-    let pairs = rest.len() % 2 == 0;
+    let pairs = rest.len().is_multiple_of(2);
     for (index, part) in rest.iter().enumerate() {
         let code = index % 2 == 0 && (pairs || index + 1 < rest.len());
         if code {

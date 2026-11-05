@@ -113,10 +113,10 @@ pub async fn upgrade(check: bool, version: Option<String>, as_json: bool) -> any
         return Ok(0);
     }
     // In tests a development build stands for an installed copy.
-    if !cfg!(debug_assertions) || std::env::var_os("FINX_TEST_RELEASES").is_none() {
-        if let Some(how) = managed_by(&exe) {
-            bail!("{how}");
-        }
+    if (!cfg!(debug_assertions) || std::env::var_os("FINX_TEST_RELEASES").is_none())
+        && let Some(how) = managed_by(&exe)
+    {
+        bail!("{how}");
     }
     if version.is_none() && !newer {
         println!("finx {} is up to date", release::VERSION);
