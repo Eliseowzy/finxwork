@@ -65,7 +65,10 @@ export const opensAsPage = (path: string) => !!window.finx && isPageFile(path);
 /** An HTML file as the page it is, in the session's browser (DD-157), brought to the front. */
 export function showPage(st: Store, session: string, path: string) {
   void st.run(async () => {
-    if (await window.finx?.openPageFile(session, path)) return st.set({ browser: true, background: false, files: false, filesMax: false });
+    if (await window.finx?.openPageFile(session, path)) {
+      bringBrowserBack(session);
+      return st.set({ browser: true, background: false, files: false, filesMax: false });
+    }
     recheckFiles();
     st.show(t("content.missing", { name: baseName(path) }), undefined, true);
   });

@@ -295,6 +295,9 @@ try {
   // the agent's tabs do not take the panel. (Not the agent's click: a mouse event of its own.)
   await say("select");
   await say("input");
+  // A real click makes the window key before anything else; this stand-in for one needs it done first.
+  await mrun(`__e.app.focus({ steal: true }); __win().focus()`);
+  for (let i = 0; i < 40 && !(await mrun(`__win().isFocused()`)); i++) await sleep(25);
   await mrun(`(() => { const wc = __e.webContents.getAllWebContents().find((w) => __win().contentView.children.some((v) => v.webContents === w)); wc.sendInputEvent({ type: "mouseDown", x: 300, y: 300, button: "left", clickCount: 1 }); wc.sendInputEvent({ type: "mouseUp", x: 300, y: 300, button: "left", clickCount: 1 }); })()`);
   await sleep(300);
   const clicked = await shownTab();
