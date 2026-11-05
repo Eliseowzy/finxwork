@@ -706,9 +706,11 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     };
     h.api.push(Script::text("no browser yet"));
     run(&mut h.kernel, "hello").await;
-    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_") || n == "call_tool"), "{:?}", tool_names(&h.api));
-    let frozen = h.api.requests().last().unwrap().system.clone();
-    assert!(!frozen.contains("- browser:"), "no browser group yet");
+    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
+    let system = h.api.requests().last().unwrap().system.clone();
+    assert!(!system.contains("- browser:"), "no browser group yet");
+    // The catalog comes after what is frozen; web search, on by default, is in it already.
+    let frozen = system.split("<deferred_tools>").next().unwrap().to_string();
 
     rewrite(&h.config, "enabled = false", "enabled = true");
     assert!(h.kernel.set_system_connectors(settings_from(&h.config)), "the settings changed");

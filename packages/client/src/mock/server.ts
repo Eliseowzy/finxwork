@@ -916,6 +916,14 @@ export class MockServer {
         const q = p as P<"config/write">;
         return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;
       }
+      case "web_search/status":
+        return this.customize.webSearchStatus() satisfies R<"web_search/status">;
+      case "web_search/test":
+        return this.customize.webSearchTest() satisfies R<"web_search/test">;
+      case "web_search/set_key": {
+        const q = p as P<"web_search/set_key">;
+        return this.customize.webSearchSetKey(q.source, q.key) satisfies R<"web_search/set_key">;
+      }
       case "credentials/set":
         return this.customize.credentialsSet((p as P<"credentials/set">).name) satisfies R<"credentials/set">;
       case "credentials/delete":

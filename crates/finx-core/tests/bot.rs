@@ -176,7 +176,7 @@ async fn a_bot_talks_through_send_to_user_and_ends_its_turn() {
     assert!(!system.contains("{{"), "every mark is filled in");
     assert!(system.contains("Numbers and data:") && system.contains("Acting with care:"));
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user"]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user", "tool_search", "call_tool"]);
 
     // The header names the bot; lists leave the session out.
     let store = JsonlStore::new(h.home.sessions_dir());

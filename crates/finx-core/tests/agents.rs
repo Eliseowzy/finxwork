@@ -261,7 +261,7 @@ async fn a_background_agent_reports_and_wakes_the_main_agent() {
     assert!(task.contains("Markdown report"), "{task}");
     assert_eq!(child[0].system, root[0].system, "same system prompt");
     let child_tools: Vec<&str> = child[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(child_tools, ["read", "write", "edit", "bash"], "no agent tools for a sub-agent");
+    assert_eq!(child_tools, ["read", "write", "edit", "bash", "tool_search", "call_tool"], "no agent tools for a sub-agent");
 
     // The label the user sees comes with its start and stays in the main session's log.
     let label = events.iter().find_map(|e| match &e.msg {
@@ -774,5 +774,5 @@ async fn sub_agents_can_be_turned_off() {
     .unwrap();
     kernel.run(vec![finx_llm::UserContent::Text { text: "hi".into() }]).await.unwrap();
     let names: Vec<String> = api.requests()[0].tools.iter().map(|t| t.name.clone()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash"]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "tool_search", "call_tool"]);
 }
