@@ -75,11 +75,70 @@ try {
   await run('window.keptCode = document.querySelector(".cblock"); window.keptTable = document.querySelector("table"); document.querySelector("details").open = true');
   await run('window.setMarkdown(window.fixtureText, false)'); await sleep(100);
   assert.ok(await run('window.keptCode === document.querySelector(".cblock") && window.keptTable === document.querySelector("table") && document.querySelector("details").open'));
+  await call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false });
+  // Formulas: the stylesheet matches the renderer, so a subscript is smaller than its base.
+  await run(`window.setMarkdown('\\\\(x_i\\\\)', false)`);
+  await until('document.querySelector(".katex .msupsub")');
+  const subscript = await run(`(() => { const k = document.querySelector('.katex'); return [parseFloat(getComputedStyle(k.querySelector('.msupsub .sizing .mord, .msupsub .mord')).fontSize), parseFloat(getComputedStyle(k).fontSize)]; })()`);
+  assert.ok(subscript[0] < subscript[1] * .8, `subscript ${subscript[0]}px on ${subscript[1]}px`);
+  await run('window.setMarkdown(window.fixtureText, false)');
+  await until('document.querySelector(".md-table")');
+  // A short table is as wide as its content, on the prose's left edge; its tools wait for the pointer.
+  const small = await run(`(() => { const box = document.querySelector('.md-table-box').getBoundingClientRect(); const prose = document.querySelector('.md p').getBoundingClientRect(); const tools = document.querySelector('.md-table-tools'); return { width: box.width, left: box.left, proseLeft: prose.left, proseWidth: prose.width, opacity: getComputedStyle(tools).opacity, x: box.left + box.width / 2, y: box.top + 40 }; })()`);
+  assert.ok(small.width < small.proseWidth, `short table is ${small.width}px`);
+  assert.equal(Math.round(small.left), Math.round(small.proseLeft));
+  assert.equal(small.opacity, '0');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: small.x, y: small.y });
+  await until('getComputedStyle(document.querySelector(".md-table-tools")).opacity === "1"');
+  await call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 2, y: 2 });
+  // Copy gives a sheet tabs and a document a table.
+  assert.deepEqual(await run(`(async () => {
+    let item; navigator.clipboard.write = async ([i]) => { item = i; };
+    document.querySelector('.md-table-tools button').click();
+    for (let n = 0; n < 50 && !item; n++) await new Promise(r => setTimeout(r, 20));
+    const plain = await (await item.getType('text/plain')).text();
+    const html = await (await item.getType('text/html')).text();
+    return [plain.split('\\n')[0], html.startsWith('<table')];
+  })()`), ['指标\t本期\t上期', true]);
   // Table expansion closes with Escape and returns focus.
   await run('document.querySelector(".md-table .md-tools button:last-of-type").click()');
   await until('document.querySelector("dialog[open]")');
   await call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape' });
   await until('!document.querySelector("dialog[open]")');
+  // Written cell by cell: columns never shrink, the left edge stays, finishing moves nothing.
+  const written = await run(`(async () => {
+    const rows = [['收入', '123,456.78', '+3.2%', '主营业务'], ['成本', '98,765,432.10', '-12.45%', '原材料和人工上涨导致成本结构变化较大'], ['研发费用', '1,234,567,890.12', '+128.33%', '本期新增两个大型项目，投入明显增加，需要后续继续观察'], ['净利润', '-5,432.10', '-1.1%', '短']];
+    const source = '| 项目 | 本期金额 | 环比 | 说明 |\\n|:--|--:|--:|:--|\\n' + rows.map(r => '| ' + r.join(' | ') + ' |').join('\\n') + '\\n';
+    const read = () => [...document.querySelectorAll('th')].map(c => Math.round(c.getBoundingClientRect().width));
+    window.setMarkdown('', true); await new Promise(r => setTimeout(r, 100));
+    let last = null, shrunk = 0, left = null, slid = 0;
+    for (let n = 8; n < source.length; n += 8) {
+      window.setMarkdown(source.slice(0, n), true); await new Promise(r => setTimeout(r, 48));
+      const now = read(); if (!now.length) continue;
+      if (last?.length === now.length && now.some((w, i) => w < last[i])) shrunk++;
+      const x = document.querySelector('table').getBoundingClientRect().left;
+      if (left !== null && Math.abs(x - left) > 1) slid++;
+      last = now; left = x;
+    }
+    window.setMarkdown(source, true); await new Promise(r => setTimeout(r, 100));
+    const end = read(); const height = document.querySelector('table').getBoundingClientRect().height;
+    window.setMarkdown(source, false); await new Promise(r => setTimeout(r, 200));
+    return { shrunk, slid, end, done: read(), heightEnd: height, heightDone: document.querySelector('table').getBoundingClientRect().height };
+  })()`);
+  assert.equal(written.shrunk, 0, 'a column shrank while being written');
+  assert.equal(written.slid, 0, 'the table slid while being written');
+  assert.deepEqual(written.done, written.end, 'finishing moved the columns');
+  assert.equal(written.heightDone, written.heightEnd, 'finishing changed the height');
+  console.log('Table written:', written.done.join(','));
+  // A bracket in passing rebuilds nothing, and links stay links.
+  const bracket = await run(`(async () => {
+    const head = '# 标题\\n\\n[链接](https://example.com)\\n\\n\`\`\`ts\\nconst a = 1;\\n\`\`\`\\n\\n| A | B |\\n|---|---|\\n| 1 | 2 |\\n\\n';
+    window.setMarkdown(head + '继续写', true); await new Promise(r => setTimeout(r, 200));
+    const code = document.querySelector('.cblock'), table = document.querySelector('table');
+    window.setMarkdown(head + '继续写，看 \`arr[0]\` 和 [备注] 的值\\n\\n再写一段', true); await new Promise(r => setTimeout(r, 200));
+    return { code: code === document.querySelector('.cblock'), table: table === document.querySelector('table'), links: document.querySelectorAll('.md a[href]').length };
+  })()`);
+  assert.deepEqual(bracket, { code: true, table: true, links: 1 });
   // Scoped footnote links/backreferences work; anchors are not file links.
   await run('window.setMarkdown("# Footnotes\\n\\nA[^1].\\n\\n[^1]: source", false)');
   await until('document.querySelector("[data-footnote-ref]")');

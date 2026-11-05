@@ -40,16 +40,29 @@
 .md .footnotes .sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 .md sup{line-height:0}
 .md-table{overflow:visible;min-width:0;max-width:100%}
+.md-table-box{position:relative;width:fit-content;max-width:100%}
 .md-table-scroll{overflow:auto;max-height:520px;border:1px solid var(--sep);border-radius:var(--r-sm);overscroll-behavior-x:contain}
-.md table{width:100%;font-size:14px;line-height:1.6;font-variant-numeric:tabular-nums}
-.md :is(th,td){padding:8px 12px;min-width:80px;border-bottom:1px solid var(--sep);vertical-align:top}
+.md table{font-size:14px;line-height:1.6;font-variant-numeric:tabular-nums}
+.md :is(th,td){box-sizing:border-box;padding:8px 12px;min-width:104px;border-bottom:1px solid var(--sep);vertical-align:top}
 .md th{position:sticky;top:0;background:var(--win2);z-index:1;font-weight:600}
 .md tbody tr:last-child td{border-bottom:0}
 .md td[align=right],.md td[style*="right"]{white-space:nowrap}
+/* A number's width is its own; only text that wraps needs a floor. */
+.md :is(th,td):is([align=right],[style*="right"]){min-width:64px}
 .md-tools{display:flex;align-items:center;flex-wrap:wrap;gap:4px;padding:5px 0;color:var(--md-muted);font:12px/1.5 var(--font)}
 .md-tools button,.md-table-return{font:inherit;color:var(--md-link);border:0;border-radius:var(--r-xs);background:none;padding:4px 7px;cursor:pointer}
 .md-tools button:hover{background:var(--fill)}
 .md-tools>span[role=status]{margin-inline-start:auto}
+/* Shown when wanted: the table itself stays a plain table. Over the header's far end
+   where nothing else is free (a bot's bubble, a narrow window); beside the table in a
+   conversation, so looking at a table never covers it. */
+.md-table-box>.md-table-tools{position:absolute;z-index:2;top:7px;inset-inline-end:7px;flex-wrap:nowrap;gap:2px;padding:0;border-radius:var(--r-xs);background:var(--win2);opacity:0;transition:opacity .15s}
+.md-table-box:hover>.md-table-tools,.md-table-tools:focus-within{opacity:1}
+.md-table-tools button{display:grid;place-items:center;width:24px;height:24px;padding:0;color:var(--l3)}
+.md-table-tools button:hover{color:var(--l1)}
+.md-table-tools .ic{width:14px;height:14px}
+.md-expanded .md-table-tools{justify-content:flex-end;padding-bottom:8px}
+.md-expanded table{width:100%}
 .md-diagram{border:1px solid var(--sep);border-radius:var(--r-md);padding:8px 12px;background:var(--win);min-width:0}
 .md-diagram .cblock{margin-top:8px}
 .md-diagram-svg{overflow:auto;min-height:80px;padding:12px 0}
@@ -72,8 +85,18 @@
 .markdown-chat .tr>:not(.am){max-width:var(--md-prose-width);width:100%;align-self:center}
 .markdown-chat .tr>.um{width:auto;align-self:flex-end;max-width:min(78%,var(--md-prose-width))}
 .markdown-chat .am>.md>.md-wide{width:100%;max-width:var(--md-rich-width)}
-@container(max-width:600px){.markdown-chat .am>.md>.md-wide{width:100%;max-width:100%;margin-inline-start:0}}
-/* Keep offscreen completed rows out of layout/paint, while preserving DOM search,
-   anchors and selections. Measured sizes replace the initial estimate. */
-.tr>.am:not(:last-child){content-visibility:auto;contain-intrinsic-block-size:auto 180px}
+/* A table keeps the prose's left edge and grows to the right, so writing it never slides it.
+   The end margin is its tools' place: a finished row's containment would clip them past the row. */
+.markdown-chat .am>.md>.md-table{width:auto;max-width:none;margin-inline:max(0px,calc((100% - var(--md-prose-width))/2)) 28px}
+.markdown-chat .md-table-box>.md-table-tools{top:0;inset-inline:100% auto;flex-direction:column;padding-inline-start:4px;background:none}
+@container(max-width:600px){
+  .markdown-chat .am>.md>.md-wide{width:100%;max-width:100%;margin-inline-start:0}
+  .markdown-chat .am>.md>.md-table{margin-inline-end:0}
+  .markdown-chat .md-table-box>.md-table-tools{top:7px;inset-inline:auto 7px;flex-direction:row;padding-inline-start:0;background:var(--win2)}
+}
+/* Keep offscreen replies out of layout/paint, while preserving DOM search, anchors and selections.
+   Every reply, the one being written too: one that gets this only when it stops being last has no size
+   remembered, so it drops to the estimate and comes back, which moves the whole conversation. Containment
+   also clips what hangs below a reply: the margin is for its bar (.msg-act). */
+.tr>.am{content-visibility:auto;contain-intrinsic-block-size:auto 180px;overflow-clip-margin:32px}
 @media print{.md-tools{display:none}.md-table-scroll{overflow:visible;max-height:none}.tr>.am{content-visibility:visible;contain:none}.md-wide{width:100%!important;margin:0!important}}

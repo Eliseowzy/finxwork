@@ -10,26 +10,22 @@ import { texMath } from "./tex.ts";
 const parser = unified().use(remarkParse).use(remarkGfm, { singleTilde: false }).use(remarkMath, { singleDollarTextMath: false }).use(remarkDirective).use(texMath);
 export type MarkdownSlice = { id: number; text: string; pending: boolean };
 
-// References are document scoped, including references whose definitions arrive
-// later. Parse those documents together instead of freezing unresolved links.
-const references = /\[[^\]\n]+\](?!\(|$)/;
-function hasReferences(text: string) {
+// A definition, not a use, is what ties blocks together: `[a]` or `arr[0]` means
+// nothing across blocks until `[a]: url` or `[^a]: note` exists. Every finished block
+// is then parsed again together, however far above the definition it sits. A line
+// that only looks like one costs that parse, so containers may lead and code may match.
+const definition = /^[\s>]*(?:(?:[-+*]|\d+[.)])\s+)?\[[^\]\n]+\]:/;
+function hasDefinitions(text: string) {
+  if (!text.includes("]:")) return false;
   let fence = "";
-  const lines = text.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+  for (const line of text.split("\n")) {
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (marker && !fence && !(marker[1][0] === "`" && marker[2].includes("`"))) { fence = marker[1]; continue; }
     if (fence) {
       if (marker && marker[1][0] === fence[0] && marker[1].length >= fence.length && !marker[2].trim()) fence = "";
       continue;
     }
-    // Be conservative about inline code: unmatched backticks are ordinary text,
-    // and must not hide a later reference definition from the document parser.
-    const prose = line.replace(/\\./g, " ")
-      .replace(/^(\s*>\s*)\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/, "$1")
-      .replace(/^(\s*(?:[-+*]|\d+[.)])\s+)\[[ xX]\]/, "$1");
-    if (references.test(prose + (i < lines.length - 1 ? "\n" : ""))) return true;
+    if (definition.test(line)) return true;
   }
   return false;
 }
@@ -41,7 +37,7 @@ export function createMarkdownSlices() {
   return (text: string, streaming: boolean): MarkdownSlice[] => {
     if (!text.startsWith(previous)) { prefix = []; offset = 0; }
     previous = text;
-    if (hasReferences(text)) {
+    if (hasDefinitions(text)) {
       prefix = []; offset = 0;
       return [{ id: 0, text, pending: streaming }];
     }
