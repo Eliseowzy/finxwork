@@ -57,6 +57,7 @@ tar = "0.4"
 libc = "0.2"
 md-5 = "0.10"
 memchr = "2"
+jiff = "0.2"
 parking_lot = "0.12"
 png = "0.18"
 rand = "0.9"
@@ -77,6 +78,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 similar = "2"
 encoding_rs = "0.8"
 thiserror = "2"
+rusqlite = { version = "0.41", features = ["bundled"] }
 tokio = { version = "1", features = [
     "fs",
     "io-util",
