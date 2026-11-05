@@ -25,3 +25,4 @@ pub use message::RawMessage;
 pub use message::RpcError;
 pub use message::code;
 pub use message::params;
+pub use message::peek_request_id;

@@ -640,7 +640,8 @@ impl Config {
             llm_idle_timeout: Duration::from_secs(llm.idle_timeout_secs.unwrap_or(300).max(5)),
             rules: file.rules.unwrap_or_default(),
             server: ServerSettings {
-                max_frame_bytes: server.max_frame_bytes.unwrap_or(32 << 20).max(64 << 10) as usize,
+                // What clients legitimately send, and what the figure rests on: protocol-design §4.4.
+                max_frame_bytes: server.max_frame_bytes.unwrap_or(128 << 20).max(64 << 10) as usize,
                 queue_hard_bytes: server.queue_hard_bytes.unwrap_or(16 << 20).max(64 << 10) as usize,
                 max_sessions: server.max_sessions.unwrap_or(1000).max(1),
                 idle_session_secs: server.idle_session_secs.unwrap_or(900),

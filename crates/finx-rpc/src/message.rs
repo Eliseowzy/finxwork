@@ -1,5 +1,9 @@
 use serde::Deserialize;
+use serde::Deserializer as _;
 use serde::Serialize;
+use serde::de::IgnoredAny;
+use serde::de::MapAccess;
+use serde::de::Visitor;
 use serde_json::Value;
 use serde_json::value::RawValue;
 use std::borrow::Cow;
@@ -163,6 +167,44 @@ impl<'a> RawMessage<'a> {
     }
 }
 
+/// The `id` of a request of which only the start is known, one too long to read. Found when `id`
+/// and `method` come before what made it long, as they do in what JSON-RPC libraries write. Not
+/// for a response: its id is the other side's, and the answer must not look like one to its own
+/// request of the same number.
+pub fn peek_request_id(head: &[u8]) -> Option<Id> {
+    // The parser reports an error for an object left unfinished, so the answer goes out on the side.
+    struct Fields<'a>(&'a mut Option<Id>);
+    impl<'de> Visitor<'de> for Fields<'_> {
+        type Value = ();
+
+        fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str("a JSON object")
+        }
+
+        fn visit_map<A: MapAccess<'de>>(self, mut fields: A) -> Result<(), A::Error> {
+            let mut id = None;
+            let mut method = false;
+            while let Some(key) = fields.next_key::<String>()? {
+                match key.as_str() {
+                    "id" => id = fields.next_value::<Option<Id>>()?,
+                    other => {
+                        fields.next_value::<IgnoredAny>()?;
+                        method |= other == "method";
+                    }
+                }
+                if method && id.is_some() {
+                    *self.0 = id;
+                    break;
+                }
+            }
+            Ok(())
+        }
+    }
+    let mut found = None;
+    let _ = serde_json::Deserializer::from_slice(head).deserialize_map(Fields(&mut found));
+    found
+}
+
 /// Deserializes request parameters; absent parameters read as `null`.
 pub fn params<'a, T: Deserialize<'a>>(params: Option<&'a RawValue>) -> Result<T, RpcError> {
     let raw = params.map(RawValue::get).unwrap_or("null");
@@ -193,6 +235,40 @@ mod tests {
         let err = RawMessage::parse(br#"{"jsonrpc":"2.0","id":3,"error":{"code":-32601,"message":"no"}}"#).unwrap();
         assert!(matches!(err.kind(), Kind::Response { result: Err(e), .. } if e.code == -32601));
         assert_eq!(RawMessage::parse(b"{nope").unwrap_err().code, code::PARSE_ERROR);
+    }
+
+    #[test]
+    fn finds_the_id_of_a_request_from_its_start() {
+        let int = Some(Id::Int(7));
+        for head in [
+            &br#"{"jsonrpc":"2.0","id":7,"method":"session/op","params":{"text":"cut he"#[..],
+            br#"{"jsonrpc":"2.0","method":"session/op","id":7,"params":{"text":"cut he"#,
+            br#"{"id":7,"method":"session/op","#,
+            br#" { "id" : 7 , "method" : "x" }"#,
+        ] {
+            assert_eq!(peek_request_id(head), int, "{}", String::from_utf8_lossy(head));
+        }
+        assert_eq!(peek_request_id(br#"{"id":"a-b","method":"x","params":"#), Some(Id::Str("a-b".into())));
+        for head in [
+            // Nothing to tell: not JSON, or the id is not reached.
+            &b"xxxxxxxxxxxx"[..],
+            b"",
+            b"[1,2,3]",
+            br#"{"jsonrpc":"2.0","method":"session/op","params":{"text":"cut he"#,
+            br#"{"jsonrpc":"2.0","id":7,"params":{"text":"cut he"#,
+            br#"{"method":"x","id":"cut he"#,
+            // A notification has no id, and a response's is not ours to answer.
+            br#"{"jsonrpc":"2.0","method":"browser/cdp"}"#,
+            br#"{"jsonrpc":"2.0","method":"browser/cdp","params":{"data":"cut he"#,
+            br#"{"jsonrpc":"2.0","id":7,"result":{"text":"cut he"#,
+            br#"{"jsonrpc":"2.0","id":7,"result":{}}"#,
+            // Not an id.
+            br#"{"id":null,"method":"x","params":"#,
+            br#"{"id":1.5,"method":"x","params":"#,
+            br#"{"id":{"a":1},"method":"x","params":"#,
+        ] {
+            assert_eq!(peek_request_id(head), None, "{}", String::from_utf8_lossy(head));
+        }
     }
 
     #[test]
