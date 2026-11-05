@@ -66,6 +66,7 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
         "doc_save" => evaluate_doc_save(arg("doc"), arg("path"), view),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
+            (ToolKind::Mutating, _) if call.name == crate::routine::MANAGE_ROUTINE => ask(crate::routine::approval_summary(&args), None),
             (ToolKind::Mutating, _) => ask(format!("{} {}", call.name, call.arguments), None),
         },
     }

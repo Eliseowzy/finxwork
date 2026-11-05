@@ -162,6 +162,15 @@ pub mod method {
     pub const BOTS_DELETE: &str = "bots/delete";
     /// Server notification to `bots/subscribe`rs.
     pub const BOTS_CHANGED: &str = "bots/changed";
+    // A bot's routines (docs/kernel/routine-design.md §8). New ones and edits come from the chat.
+    pub const BOTS_ROUTINE: &str = "bots/routine";
+    pub const BOTS_ROUTINE_RUNS: &str = "bots/routine_runs";
+    pub const BOTS_ROUTINE_RUN: &str = "bots/routine_run";
+    pub const BOTS_ROUTINE_SET_ENABLED: &str = "bots/routine_set_enabled";
+    /// Runs a routine now, even a paused one. It does the real thing.
+    pub const BOTS_ROUTINE_RUN_NOW: &str = "bots/routine_run_now";
+    pub const BOTS_ROUTINE_STOP: &str = "bots/routine_stop";
+    pub const BOTS_ROUTINE_DELETE: &str = "bots/routine_delete";
     /// Brings a session's tab in the user's own browser to the front (browser-design §8.4.7).
     pub const BROWSER_REVEAL: &str = "browser/reveal";
     /// Closes a session's tabs in the user's own browser, or one of them.
@@ -239,6 +248,12 @@ pub mod error_code {
     pub const BOT_DEFAULT: i64 = -32041;
     /// `bots/create`, `bots/update`: an empty or long name, or an unusable avatar.
     pub const BOT_INVALID: i64 = -32042;
+    /// `bots/routine*`: the bot has no routine with that id, or no run.
+    pub const ROUTINE_NOT_FOUND: i64 = -32043;
+    /// `bots/routine_run_now`: it is running already.
+    pub const ROUTINE_BUSY: i64 = -32044;
+    /// `bots/routine*`: the database cannot be opened.
+    pub const ROUTINES_UNAVAILABLE: i64 = -32045;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -279,6 +294,9 @@ pub mod error_code {
         (BOT_NOT_FOUND, "bot_not_found"),
         (BOT_DEFAULT, "bot_default"),
         (BOT_INVALID, "bot_invalid"),
+        (ROUTINE_NOT_FOUND, "routine_not_found"),
+        (ROUTINE_BUSY, "routine_busy"),
+        (ROUTINES_UNAVAILABLE, "routines_unavailable"),
     ];
 }
 
@@ -648,6 +666,10 @@ pub struct ServerCapabilities {
     /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
     #[serde(default)]
     pub input_queue: bool,
+    /// Starting again from an earlier message: the `resend` op and `session_rewound`
+    /// (docs/kernel/message-resend-design.md).
+    #[serde(default)]
+    pub message_resend: bool,
     /// `doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the
     /// workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it
     /// refuses a workbook as "not a PDF".
@@ -656,6 +678,10 @@ pub struct ServerCapabilities {
     /// Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).
     #[serde(default)]
     pub bots: bool,
+    /// A bot's routines: the `bots/routine*` methods and `routines` on `BotSummary`
+    /// (docs/kernel/routine-design.md §8).
+    #[serde(default)]
+    pub routines: bool,
 }
 
 // ---- Sessions ----

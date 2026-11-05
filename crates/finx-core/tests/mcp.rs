@@ -84,6 +84,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpSe
         mcp_servers: servers,
         browser_pool: None,
         docs: None,
+        routines: None,
     }
 }
 
@@ -162,6 +163,50 @@ impl Harness {
         .unwrap();
         (result.end, result.events.into_iter().map(|e| e.msg).collect())
     }
+}
+
+/// Going back takes the definitions a search showed out of the context, so the next search
+/// gives them whole again, as after a compaction.
+#[tokio::test]
+async fn going_back_forgets_what_searches_showed() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::text("found it"),
+            Script::tool_call("t2", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::text("found it again"),
+        ],
+    )
+    .await;
+    let (_, events) = h.run("find add").await;
+    let sent = events
+        .iter()
+        .find_map(|m| match m {
+            EventMsg::MessageCompleted {
+                message_id,
+                message: Message::User(_),
+                ..
+            } => Some(message_id.clone()),
+            _ => None,
+        })
+        .unwrap();
+    h.kernel
+        .submit(Op::Resend {
+            message_id: sent,
+            input: vec![UserContent::Text { text: "find it again".into() }],
+            commands: true,
+        })
+        .await
+        .unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let requests = h.api.requests();
+    let results = tool_results(requests.last().unwrap());
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert!(results[0].contains("- mcp__test__add: Add two numbers.\n  {"), "{}", results[0]);
 }
 
 /// The kernel's events up to and including the first one `done` accepts.
@@ -418,10 +463,9 @@ async fn direct_servers_put_their_tools_in_the_list() {
     let requests = h.api.requests();
     let names = tool_names(&requests[0]);
     assert!(names.contains(&"mcp__tools__echo".to_string()), "{names:?}");
-    assert!(!names.contains(&"tool_search".to_string()), "no deferred server, no search tool");
     assert!(!names.iter().any(|n| n.contains("bad_schema") || n.contains("ui_panel")), "{names:?}");
     assert!(requests[0].system.contains("<mcp_instructions server=\"tools\">\nTest server for finx."));
-    assert!(!requests[0].system.contains("<deferred_tools>"));
+    assert!(!requests[0].system.contains("- tools"), "a direct server is not in the catalog");
     assert_eq!(tool_results(&requests[1])[0], "echo: direct");
     assert!(events.iter().any(|e| matches!(e, EventMsg::Warning { message, .. } if message.contains("bad_schema"))));
     // Start without tools, then the first request has them: one more entry, before any request.
@@ -488,6 +532,8 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let push = |lane: &str, script: Script| lanes.0.lock().entry(lane.to_string()).or_default().push_back(script);
     push("root", Script::tool_call("r1", "spawn_agent", json!({ "description": "say hello", "task": "echo hello", "name": "worker", "wait": true })));
     push("worker", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the worker" } })));
+    // The way to deferred tools does not lead to the ones only the main session has.
+    push("worker", Script::tool_call("h2", "tool_search", json!({ "query": "stop_agents agents" })).then_tool_call("h3", "call_tool", json!({ "name": "stop_agents", "arguments": { "all": true } })));
     push("worker", Script::text("worker done"));
     push("root", Script::text("root done"));
     let routed = lanes.clone();
@@ -503,7 +549,12 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     assert!(names.contains(&"call_tool".to_string()) && names.contains(&"tool_search".to_string()), "{names:?}");
     assert!(!names.contains(&"spawn_agent".to_string()), "{names:?}");
     assert!(worker[0].system.contains("<deferred_tools>"));
+    assert!(worker[0].system.contains("- agents: See the other agents in this session"), "{}", worker[0].system);
     assert_eq!(tool_results(worker[1])[0], "echo: from the worker");
+    let refused = tool_results(worker[2]);
+    let (found, stopped) = (&refused[refused.len() - 2], &refused[refused.len() - 1]);
+    assert!(!found.contains("Stop running agents"), "{found}");
+    assert!(stopped.starts_with("Unknown tool 'stop_agents'"), "{stopped}");
     assert_eq!(h.server.as_ref().unwrap().calls(), 1, "one call on the shared connection");
 }
 

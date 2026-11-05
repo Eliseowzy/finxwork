@@ -1,13 +1,19 @@
-import { attachedBlock, baseName, docQuoteBlock, userText, webCommentBlock, type DocQuote, type WebComment } from "@finx/client";
+import { attachedBlock, baseName, docQuoteBlock, userText, webCommentBlock, type DocQuote, type HandedTabs, type WebComment } from "@finx/client";
 import type { UserContent } from "@finx/protocol";
 import type { PickedFile } from "../../../shared/bridge";
-import { i18n } from "../../../shared/i18n";
+import { i18n } from "../../../shared/i18n.ts";
 
 // What the composer's "+" adds to a message: images, which go as the
 // protocol's image content; files, which go by path; folders, which go by
 // path too, or as more workspace roots of a new session (extra_roots).
 
-export type Attachment = PickedFile | { kind: "folder"; path: string; name: string } | WebAttachment | DocAttachment;
+export type Attachment = PickedFile | { kind: "folder"; path: string; name: string } | WebAttachment | DocAttachment | TabsAttachment;
+
+/** Browser tabs a message handed over, back in the composer: the block goes along as it was. */
+export type TabsAttachment = { kind: "tabs"; path: string; name: string; block: string };
+
+/** What a tile of handed-over tabs is called: the tab's title, or how many. */
+export const tabsName = (tabs: HandedTabs) => (tabs.titles.length === 1 && tabs.titles[0] ? tabs.titles[0] : i18n.t("session:composer.tabs", { count: tabs.titles.length }));
 
 /** A part of a document quoted from the document column; its path only tells it apart from the others. image: a region's picture (PNG, base64), which goes along as an image. */
 export type DocAttachment = { kind: "doc"; path: string; name: string; quote: DocQuote; image?: string };
@@ -118,14 +124,15 @@ export function toInput(text: string, atts: Attachment[]): UserContent[] {
   if (web.length) out.push(webCommentBlock(web));
   const quotes = atts.flatMap((a) => (a.kind === "doc" ? [numbered(a, a.quote)] : []));
   if (quotes.length) out.push(docQuoteBlock(quotes));
+  for (const a of atts) if (a.kind === "tabs") out.push({ type: "text", text: a.block });
   return out;
 }
 
 let returnedCount = 0;
 
-/** A message's content back as the composer had it (toInput the other way): for what a stopped task hands back, or a waiting message taken back to edit. */
+/** A message's content back as the composer had it (toInput the other way): for what a stopped task hands back, a waiting message taken back to edit, or a sent one written again. */
 export function fromInput(content: UserContent[]): { text: string; attachments: Attachment[] } {
-  const { text, files, comments, quotes } = userText(content);
+  const { text, files, comments, quotes, tabs } = userText(content);
   const { pictures, rest } = pairImages([...comments, ...quotes], content.flatMap((c) => (c.type === "image" ? [c] : [])));
   const images = rest.map((c): Attachment => {
     const name = i18n.t("session:queued.image", { n: ++returnedCount });
@@ -136,5 +143,5 @@ export function fromInput(content: UserContent[]): { text: string; attachments: 
     const path = folder ? p.slice(0, -1) : p;
     return { kind: folder ? "folder" : "file", path, name: baseName(path) };
   });
-  return { text, attachments: [...images, ...paths, ...comments.map((c, i) => webAttachment(c, pictures[i]?.data)), ...quotes.map((q, i) => docAttachment(q, pictures[comments.length + i]?.data))] };
+  return { text, attachments: [...images, ...paths, ...comments.map((c, i) => webAttachment(c, pictures[i]?.data)), ...quotes.map((q, i) => docAttachment(q, pictures[comments.length + i]?.data)), ...tabs.map((b): Attachment => ({ kind: "tabs", path: `tabs:${b.text}`, name: tabsName(b), block: b.text }))] };
 }

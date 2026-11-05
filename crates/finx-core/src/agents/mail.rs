@@ -1,5 +1,6 @@
 //! Reports: what a sub-agent's round of work comes to, as mail for the main session or as the
-//! result of a call that waited for it.
+//! result of a call that waited for it. Messages: what it sends while it works, as mail for the
+//! main session or another sub-agent.
 
 use finx_llm::UserContent;
 use finx_llm::UserMessage;
@@ -11,6 +12,7 @@ use finx_tools::cap_result;
 use std::time::Duration;
 
 use super::Report;
+use crate::routine::RoutineRun;
 use crate::session::Session;
 
 const TASK_TEMPLATE: &str = include_str!("prompts/child_task.md");
@@ -22,12 +24,20 @@ const SUMMARY_CHARS: usize = 200;
 /// and start new agents on the same work when asked to continue.
 const RESUMABLE: &str = "It keeps its work and context: send_message lets it continue where it stopped.";
 
+/// Follow a routine's report: the bot writes what the owner reads (routine-design §2.3). Here
+/// rather than in the bot's prompt, which is frozen when a conversation starts.
+const ROUTINE_REPORTED: &str = "This routine is the user's own request: pass on what it found with send_to_user, in your own \
+    words and without talking about runs or reports. If it holds nothing they asked to hear, send nothing and write only \
+    NOTHING_TO_REPORT. If the job is finished, delete the routine.";
+const ROUTINE_FAILED: &str = "This routine failed. Tell the user what failed and what would fix it with send_to_user. You will \
+    not hear about later failures until it works again.";
+
 /// The first message of a sub-agent: who it is, how to report, and the task.
 pub(crate) fn task_message(name: &str, task: &str) -> String {
     TASK_TEMPLATE.trim_end().replace("{name}", name).replace("{task}", task)
 }
 
-/// A report waiting in a session's inbox. The text is final: rendered and cut once.
+/// A report or a message waiting in a session's inbox. The text is final: rendered and cut once.
 pub(crate) struct Mail {
     pub(crate) info: MailInfo,
     pub(crate) message: UserMessage,
@@ -37,7 +47,7 @@ pub(crate) struct Mail {
 
 impl Mail {
     pub(crate) fn report(root: &Session, from: AgentRef, report: &Report, seq: u64) -> Mail {
-        let body = cut(root, &from.name, seq, body(report));
+        let body = cut(root, &format!("agent-{}-{seq}", from.name), body(report));
         let mut text = format!(
             "<agent_report agent=\"{}\" status=\"{}\">\n{}\n</agent_report>",
             from.name,
@@ -55,10 +65,57 @@ impl Mail {
                 kind: MailKind::Report,
                 status: report.status,
                 no_reply: no_reply(report),
+                routine_id: None,
             },
             message: UserMessage::text(text),
             // Work that was stopped waits until someone asks for more.
             wake: matches!(report.status, AgentStatus::Completed | AgentStatus::Failed),
+        }
+    }
+
+    /// What a working sub-agent sends with `send_message` (agent-messaging-design §5.1). Cut like
+    /// a report, and saved in the main session's data as its reports are.
+    pub(crate) fn message(root: &Session, from: AgentRef, text: &str, seq: u64, wake: bool) -> Mail {
+        let body = cut(root, &format!("agent-{}-{seq}", from.name), text.to_string());
+        let text = format!("<agent_message from=\"{}\">\n{}\n</agent_message>", from.name, body.trim_end());
+        Mail {
+            info: MailInfo {
+                id: format!("m{seq}"),
+                from,
+                kind: MailKind::Message,
+                status: AgentStatus::Running,
+                no_reply: false,
+                routine_id: None,
+            },
+            message: UserMessage::text(text),
+            wake,
+        }
+    }
+
+    /// What a routine's run says to its bot. `from` is the run and the routine's name.
+    pub(crate) fn routine_report(run: &RoutineRun, from: AgentRef, status: AgentStatus, body: &str, seq: u64) -> Mail {
+        let failed = status == AgentStatus::Failed;
+        let text = format!(
+            "<routine_report routine=\"{}\" id=\"{}\"{} scheduled=\"{}\" ran=\"{}\">\n{}\n</routine_report>\n{}",
+            run.name.replace('"', "'"),
+            run.routine_id,
+            if failed { " status=\"failed\"" } else { "" },
+            run.scheduled,
+            run.now,
+            body.trim_end(),
+            if failed { ROUTINE_FAILED } else { ROUTINE_REPORTED },
+        );
+        Mail {
+            info: MailInfo {
+                id: format!("m{seq}"),
+                from,
+                kind: MailKind::Routine,
+                status,
+                no_reply: false,
+                routine_id: Some(run.routine_id.clone()),
+            },
+            message: UserMessage::text(text),
+            wake: true,
         }
     }
 }
@@ -121,15 +178,15 @@ pub(crate) fn waited(name: &str, report: &Report) -> String {
     text
 }
 
-/// Cuts a long report like a tool result: head and tail stay, the full text is saved.
-fn cut(root: &Session, name: &str, seq: u64, body: String) -> String {
+/// Cuts a long report like a tool result: head and tail stay, the full text is saved as `label`.
+pub(crate) fn cut(root: &Session, label: &str, body: String) -> String {
     let limits = root.tool_limits();
     let mut content = vec![UserContent::Text { text: body }];
     cap_result(
         &mut content,
         limits.max_tokens,
         Some(&root.output_dir),
-        &format!("agent-{name}-{seq}"),
+        label,
         limits.max_saved_bytes,
     );
     content
@@ -141,7 +198,7 @@ fn cut(root: &Session, name: &str, seq: u64, body: String) -> String {
         .unwrap_or_default()
 }
 
-fn duration(elapsed: Duration) -> String {
+pub(super) fn duration(elapsed: Duration) -> String {
     let secs = elapsed.as_secs();
     if secs < 60 {
         format!("{secs}s")

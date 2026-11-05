@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, processSteps, type BotItem, type WorkingAgent, type SessionView, type Step } from "@finx/client";
+import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, processSteps, routineDot, type BotItem, type WorkingAgent, type SessionView } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
@@ -8,31 +8,45 @@ import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
 import { Tile } from "../composer/Tile";
-import { durationText, timeLine } from "../format";
+import { durationText, momentText, timeLine } from "../format";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { DocContext } from "../docs/state";
 import { viewingBlock } from "../files/state";
-import { AgentCard, ReportCard } from "../session/Agents";
 import { Approval } from "../session/Approval";
 import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
 import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
 import { ContentScope, LocalImages } from "../session/scope";
-import { Work } from "../session/Steps";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
 import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
 import { Question, SentFiles } from "./Messages";
+import { Process } from "./Process";
+import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
 
 /** Bot mode's pause before a time line (bot-mode-design §6.6). */
 const PAUSE = 10 * 60_000;
 /** A bot's settings out, in the one place beside the conversation. */
-const OPEN_SETTINGS = { botPanel: true, files: false, filesMax: false, browser: false, browserMax: false };
+const OPEN_SETTINGS = { botPanel: true, botRoutines: null, files: false, filesMax: false, browser: false, browserMax: false };
+/** Its routines, in the same place. */
+const OPEN_ROUTINES = { botPanel: false, files: false, filesMax: false, browser: false, browserMax: false };
+
+/** The text that goes in a bot's composer from beside it, for the composer on screen. */
+const composerText = new Map<string, (text: string) => void>();
+
+/** Brings a run's message into view and makes it stand out for a moment. */
+function showBubble(run: string) {
+  const bubble = document.querySelector<HTMLElement>(`.bot [data-run="${CSS.escape(run)}"]`);
+  if (!bubble) return;
+  bubble.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  bubble.classList.add("rtn-flash");
+  setTimeout(() => bubble.classList.remove("rtn-flash"), 1500);
+}
 
 /**
  * A bot's page (bot-mode-design §6.5–§6.17): its avatar and name in the
@@ -53,12 +67,14 @@ export function BotPage({ bot }: { bot: BotSummary }) {
   // One panel at a time: the file panel or the browser coming out puts the settings away.
   const taken = panels.files || panels.browser;
   useEffect(() => {
-    if (taken && st.botPanel) st.set({ botPanel: false });
+    if (taken && (st.botPanel || st.botRoutines)) st.set({ botPanel: false, botRoutines: null });
   }, [taken]);
   const settings = st.botPanel && !taken;
+  const routines = taken ? null : st.botRoutines;
+  const dot = routineDot(bot.routines);
   return (
     <DocContext.Provider value={panels.opener}>
-    <div className={`spage bot ${panels.browser || panels.files || settings ? "bgopen" : ""} ${panels.max ? "brmax" : ""}`}>
+    <div className={`spage bot ${panels.browser || panels.files || settings || routines ? "bgopen" : ""} ${panels.max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
           <SidebarToggle />
@@ -73,6 +89,16 @@ export function BotPage({ bot }: { bot: BotSummary }) {
             <Icon name="chevR" className="bhead-go" />
           </button>
           <span className="bhead-gap" />
+          <button
+            className="tb rtn-btn"
+            title={t("routines.title")}
+            aria-label={t("routines.title")}
+            aria-pressed={!!routines}
+            onClick={() => st.set({ ...OPEN_ROUTINES, botRoutines: routines ? null : {} })}
+          >
+            <Icon name="clock" />
+            {dot && <i className={`rtn-dot ${dot === "running" ? "run" : ""}`} />}
+          </button>
           {session && <SidePanelButtons panels={panels} />}
         </GlassBar>
         <ContentScope value={scope}>
@@ -93,6 +119,21 @@ export function BotPage({ bot }: { bot: BotSummary }) {
       </div>
       {session && <SidePanelViews panels={panels} view={view} />}
       {settings && <BotPanel bot={bot} view={view} session={session} onClose={() => st.set({ botPanel: false })} />}
+      {routines && (
+        <ContentScope value={scope}>
+          <RoutinesPanel
+            bot={bot}
+            view={view}
+            route={routines}
+            onDraft={(text) => {
+              st.set({ botRoutines: null });
+              composerText.get(bot.id)?.(text);
+            }}
+            onShowBubble={showBubble}
+            onClose={() => st.set({ botRoutines: null })}
+          />
+        </ContentScope>
+      )}
     </div>
     </DocContext.Provider>
   );
@@ -195,6 +236,11 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     fromEnd.current = null;
     if (el && el.scrollTop < el.clientHeight * 1.5) earlier();
   }, [items, busy?.typing, busy?.agents.length, dock]);
+  // What grows at the end without changing the items.
+  const follow = () => {
+    const el = scroll.current;
+    if (el && atEnd.current) el.scrollTop = el.scrollHeight;
+  };
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
@@ -259,6 +305,8 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                 switch (item.kind) {
                   case "user":
                     return <UserBubble key={item.key} item={item} fresh={fresh} line={line} />;
+                  case "routine":
+                    return <RoutineChange key={item.key} item={item} line={line} />;
                   case "bot":
                     return message(
                       <div className="bbub">
@@ -283,7 +331,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
                 }
               })}
-              {busy && <BusyBubble busy={busy} retry={view.live?.retry} />}
+              {busy && <BusyBubble busy={busy} retry={view.live?.retry} onOpen={follow} />}
             </div>
           )}
         </div>
@@ -331,6 +379,27 @@ function UserBubble({ item, fresh, line }: { item: Extract<BotItem, { kind: "use
   );
 }
 
+/** What the bot did to a routine, as a line in the chat that opens it (bot-mode-design §6.21). */
+function RoutineChange({ item, line }: { item: Extract<BotItem, { kind: "routine" }>; line: React.ReactNode }) {
+  const { t } = useTranslation("bots");
+  const st = useStore();
+  const now = useNow(60_000);
+  const time = item.next_run ? momentText(new Date(item.next_run), now) : item.when;
+  const gone = item.action === "delete";
+  return (
+    <>
+      {line}
+      <button
+        className="rtn-line"
+        onClick={() => st.set({ ...OPEN_ROUTINES, botRoutines: gone ? {} : { routine: item.routine_id } })}
+      >
+        <Icon name="clock" />
+        <span>{t(`routines.line.${item.action}`, { name: item.name, time })}</span>
+      </button>
+    </>
+  );
+}
+
 function CopyButton({ text }: { text: string }) {
   const { t } = useTranslation("bots");
   const [done, setDone] = useState(false);
@@ -348,6 +417,8 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
   item: SentItem; fresh: boolean; line: React.ReactNode; copy?: string; open: boolean; onProcess: () => void; children: React.ReactNode;
 }) {
   const { t } = useTranslation("bots");
+  const st = useStore();
+  const source = item.source;
   // Thinking and private text only: no steps to count.
   const steps = processSteps(item.process);
   const time = durationText(item.took);
@@ -355,7 +426,7 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
   return (
     <>
       {line}
-      <div className={`bm ${fresh ? "add-anim" : ""}`}>
+      <div className={`bm ${fresh ? "add-anim" : ""}`} data-run={source?.run_id}>
         <div className="bm-b">
           <div className="bline">
             {children}
@@ -364,6 +435,16 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
                 <MessageTime at={new Date(item.ts)} />
               </span>
               {copy !== undefined && <CopyButton text={copy} />}
+              {source && (
+                <button
+                  className="tb"
+                  aria-label={t("routines.fromRoutine", { name: source.name })}
+                  title={t("routines.fromRoutine", { name: source.name })}
+                  onClick={() => st.set({ ...OPEN_ROUTINES, botRoutines: { routine: source.routine_id, run: source.run_id } })}
+                >
+                  <Icon name="clock" className="sm" />
+                </button>
+              )}
               {item.process.length > 0 && (
                 <button className={`tb ${open ? "on" : ""}`} aria-label={t("chat.process")} title={open ? t("chat.processFold") : `${t("chat.process")}：${summary}`} aria-expanded={open} onClick={onProcess}>
                   <Icon name="list" className="sm" />
@@ -378,38 +459,11 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
   );
 }
 
-/** A message's process: the session page's steps, as one card under the bubble. */
-function Process({ steps, summary }: { steps: Step[]; summary: string }) {
-  return (
-    <div className="tg-b bproc">
-      <div className="bproc-h">{summary}</div>
-      {steps.map((s) => {
-        switch (s.kind) {
-          case "work":
-            return <Work key={s.key} items={s.items} live={s.live} flat />;
-          case "text":
-            return (
-              <div key={s.key} className="am">
-                <Markdown text={s.text} />
-              </div>
-            );
-          case "agents":
-            return <AgentCard key={s.key} launches={s.launches} />;
-          case "report":
-            return <ReportCard key={s.key} step={s} />;
-          default:
-            return null;
-        }
-      })}
-    </div>
-  );
-}
-
 /**
  * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with sub-agents at work,
- * what they do, opening to one's steps or a line for each.
+ * what the bot called the work, and no more. Several show as a count that opens to their names.
  */
-function BusyBubble({ busy, retry }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number } }) {
+function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number }; onOpen: () => void }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
@@ -423,70 +477,43 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; agents: WorkingA
   );
   // Retrying the model for more than ten seconds says so (bot-mode-design §7).
   const unstable = retry && now - retry.at > 10_000;
-  const shown = open && agents.length > 0;
+  const several = agents.length > 1;
+  const shown = open && several;
+  useLayoutEffect(() => {
+    if (shown) onOpen();
+    // Only when it opens: a new list of the same length needs nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
   return (
     <div className="bm working">
       <div className="bm-b">
         <div className="bline">
           <div className={`bbub wbub ${shown ? "open" : ""}`}>
-            {agents.length > 0 ? (
+            {several ? (
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
-                <span className="wb-t">{agents.length > 1 ? t("line.agents", { things: thingsText(agents.length) }) : agents[0].label}</span>
+                <span className="wb-t">{t("line.agents", { things: thingsText(agents.length) })}</span>
                 <Icon name="chevD" className="chev" />
               </button>
             ) : (
-              <div className="wb-h" title={t("line.typing")}>
+              <div className="wb-h" title={agents.length === 0 ? t("line.typing") : undefined}>
                 {dots}
-                {unstable && <span className="wb-t">{t("chat.retrying")}</span>}
+                {agents.length === 1 ? <span className="wb-t">{agents[0].label}</span> : unstable && <span className="wb-t">{t("chat.retrying")}</span>}
               </div>
             )}
             {shown && (
               <div className="wb-l">
-                {agents.length > 1 ? agents.map((h) => <AgentRow key={h.id} h={h} now={now} />) : <AgentSteps h={agents[0]} now={now} />}
+                {agents.map((a) => (
+                  <div key={a.id} className="wb-r">
+                    {a.label}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function AgentRow({ h, now }: { h: WorkingAgent; now: number }) {
-  return (
-    <div className="wb-r">
-      <span className="wb-rl">{h.label}</span>
-      <span className="wb-ra">{h.step && <span className="shimmer">{h.step}</span>}</span>
-      <span className="wb-rt">{durationText(now - h.since)}</span>
-    </div>
-  );
-}
-
-/** One sub-agent's steps: those done in grey, the one it is on shimmering, with how long it has worked. */
-function AgentSteps({ h, now }: { h: WorkingAgent; now: number }) {
-  const tools = conversation(h.agent.view).flatMap((s) => (s.kind === "work" ? s.items.flatMap((i) => (i.kind === "tool" ? [i.tool] : [])) : []));
-  const shown = tools.slice(-8);
-  return (
-    <>
-      {shown.map((tool, i) => {
-        const current = i === shown.length - 1 && tool.state !== "done";
-        return (
-          <div key={tool.call_id} className={`wb-s ${current ? "now" : ""}`}>
-            <span>{current ? <span className="shimmer">{tool.title}</span> : tool.title}</span>
-            {current && <span className="wb-rt">{durationText(now - h.since)}</span>}
-          </div>
-        );
-      })}
-      {shown.length === 0 && (
-        <div className="wb-s now">
-          <span>
-            <span className="shimmer">{h.label}</span>
-          </span>
-          <span className="wb-rt">{durationText(now - h.since)}</span>
-        </div>
-      )}
-    </>
   );
 }
 
@@ -517,6 +544,18 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       attachments: back.reduce<Attachment[]>((list, b) => addAttachments(list, b.attachments), d.attachments),
     });
   }, [view.returned]);
+  // What the routines panel writes for the owner to finish: ready to type on.
+  useEffect(() => {
+    const put = (text: string) => {
+      const d = drafts.get(bot.id) ?? { text: "", attachments: [] };
+      change({ ...d, text: d.text.trim() ? `${d.text.trim()}\n${text}` : text });
+      requestAnimationFrame(() => document.querySelector<HTMLElement>(".spage.bot .cmp [contenteditable=true]")?.focus());
+    };
+    composerText.set(bot.id, put);
+    return () => {
+      if (composerText.get(bot.id) === put) composerText.delete(bot.id);
+    };
+  }, [bot.id]);
   // Parts of pages from the browser panel, quotes from the document column.
   useComposerInbox(session, (more) => {
     const d = drafts.get(bot.id) ?? { text: "", attachments: [] };

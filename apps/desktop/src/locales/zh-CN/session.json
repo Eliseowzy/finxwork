@@ -47,7 +47,8 @@
     "retryIn": "{{seconds}} 秒后第 {{attempt}} 次重试",
     "retrying": "正在第 {{attempt}} 次重试",
     "stopRetry": "停止",
-    "context": "上下文已用 {{percent}}% · {{used}} / {{size}} tokens"
+    "context": "上下文已用 {{percent}}% · {{used}} / {{size}} tokens",
+    "resend": "撤回重发"
   },
   "fail": {
     "theProvider": "服务商",
@@ -79,6 +80,7 @@
     },
     "open": "在后台面板中查看执行过程",
     "report": "<b>{{name}}</b> 的汇报",
+    "message": "<b>{{name}}</b> 发来消息",
     "noReply": {
       "interrupted": "停下时还没有回复",
       "completed": "做完了，但没有回复"
@@ -90,7 +92,8 @@
     "stopped_other": "{{count}} 条后台任务已中断，回复 finx 就能接着做",
     "sent": "已发消息给",
     "sending": "正在发消息给",
-    "messageObject": "{{to}}：{{message}}"
+    "messageObject": "{{to}}：{{message}}",
+    "mainAgent": "主智能体"
   },
   "background": {
     "title": "后台任务",
@@ -220,6 +223,8 @@
     "browseSkills": "浏览技能",
     "manageSkills": "管理技能",
     "noSkills": "还没有可用的技能",
+    "tabKind": "浏览器标签页",
+    "tabs_other": "{{count}} 个标签页",
     "prevImage": "上一张",
     "nextImage": "下一张"
   },
@@ -651,6 +656,18 @@
     },
     "offer": "交给这个对话：{{title}}",
     "offerRemove": "不交了"
+  },
+  "resend": {
+    "from": "重发：{{text}}",
+    "find": "在对话里找到这条",
+    "cancel": "不重发了，回到草稿",
+    "placeholder": "写下要重发的内容…",
+    "hint": "这条之后的内容会被撤回",
+    "hintFiles": "，模型改过的文件不会恢复",
+    "hintRunning": "，正在进行的任务会停止",
+    "sending": "正在撤回…",
+    "refused": "没能重发，内容还在输入框里",
+    "gone": "这条消息已在别处被撤回，内容留在了输入框里"
   },
   "webSearch": {
     "only": " · 仅 {{sites}}",

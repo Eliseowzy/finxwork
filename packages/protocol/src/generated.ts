@@ -181,6 +181,47 @@ export type BotResult = {
   bot: BotSummary;
 };
 
+/** Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`. */
+export type BotRoutineParams = {
+  bot_id: string;
+  routine_id: string;
+};
+
+export type BotRoutineResult = {
+  routine: RoutineDetail;
+};
+
+export type BotRoutineRunParams = {
+  bot_id: string;
+  routine_id: string;
+  run_id: string;
+};
+
+export type BotRoutineRunResult = {
+  run: RoutineRunInfo;
+  /** Its steps. Empty once its log has been cleaned up, or when it never started. */
+  transcript: TranscriptItem[];
+};
+
+export type BotRoutineRunsParams = {
+  /** A run's id: only runs older than it. */
+  before?: string | null;
+  bot_id: string;
+  limit?: number | null;
+  routine_id: string;
+};
+
+export type BotRoutineRunsResult = {
+  /** Newest first. */
+  runs: RoutineRunInfo[];
+};
+
+export type BotRoutineSetEnabledParams = {
+  bot_id: string;
+  enabled: boolean;
+  routine_id: string;
+};
+
 export type BotSummary = {
   /** Sub-agents at work. */
   agents_working?: number;
@@ -197,6 +238,10 @@ export type BotSummary = {
   muted?: boolean;
   name: string;
   pinned?: boolean;
+  /** Its routines, oldest first (docs/kernel/routine-design.md §8). */
+  routines?: RoutineSummary[];
+  /** Why routines cannot be used now: their database cannot be opened. `routines` is then empty. */
+  routines_error?: string | null;
   /** Its conversation, once there is one. */
   session_id?: string | null;
   /** It is answering: its conversation runs a task. */
@@ -1061,6 +1106,13 @@ export type Event = {
   id: string;
   type: "input_withdrawn";
 } | {
+  message_id: string;
+  /** The sub-agents started in the part taken back: they are gone. */
+  removed_agents?: string[];
+  /** What still waited for the running task, handed back as with an interruption. */
+  returned_input?: UserMessage[];
+  type: "session_rewound";
+} | {
   context_window: number;
   model: string;
   permission_mode: PermissionMode;
@@ -1368,10 +1420,12 @@ export type MailInfo = {
   kind: MailKind;
   /** The agent had not replied: the report only says so, in words for the model. Clients show their own words for it. */
   no_reply?: boolean;
+  /** The routine, when a run of it sent this. */
+  routine_id?: string | null;
   status: AgentStatus;
 };
 
-export type MailKind = "report";
+export type MailKind = "report" | "message" | "routine";
 
 export type McpAuthKind = "none" | "oauth" | "credential";
 
@@ -1741,6 +1795,13 @@ export type Op = {
   mode?: PromptMode;
   type: "prompt";
 } | {
+  /** As for `Prompt`. */
+  commands?: boolean;
+  input: UserContent[];
+  /** The `message_id` of a user message on the current branch. */
+  message_id: string;
+  type: "resend";
+} | {
   type: "continue";
 } | {
   type: "interrupt";
@@ -1914,6 +1975,72 @@ export type ResourceReadResult = {
 
 export type Role = "user" | "assistant";
 
+/** All about a routine. */
+export type RoutineDetail = {
+  /** RFC 3339. */
+  created_at: string;
+  /** What each run is told to do. */
+  prompt: string;
+  /** The schedule as written. */
+  schedule: string;
+  summary: RoutineSummary;
+  /** The next runs, RFC 3339. Empty when it is paused or finished. */
+  upcoming: string[];
+};
+
+/** How a run of a routine ended. */
+export type RoutineOutcome = "failed" | "reported" | "quiet" | "interrupted" | "skipped";
+
+/** A routine's latest run, for its row. */
+export type RoutineRunBrief = {
+  /** RFC 3339: when the bot next messaged the user, after a report. */
+  delivered?: string | null;
+  /** `None` while it runs. */
+  outcome?: RoutineOutcome | null;
+  /** RFC 3339: when it started, or when it was due if it was skipped. */
+  started: string;
+};
+
+/** One run of a routine. */
+export type RoutineRunInfo = {
+  /** RFC 3339: when the bot next messaged the user, after a report. */
+  delivered?: string | null;
+  /** RFC 3339. None while it runs. */
+  ended?: string | null;
+  /** Its steps are still kept: `bots/routine_run` returns them. */
+  has_log?: boolean;
+  id: string;
+  /** It started well after it was due: the computer was off or asleep. */
+  late?: boolean;
+  /** What a quiet run says it checked; why a run was skipped. */
+  note?: string | null;
+  /** `None` while it runs. */
+  outcome?: RoutineOutcome | null;
+  /** What it reported, or the error it failed with. */
+  report?: string | null;
+  /** RFC 3339: when it was due. */
+  scheduled: string;
+  /** RFC 3339. None when it was skipped. */
+  started?: string | null;
+  usage?: UsageTotals | null;
+};
+
+/** Where a routine stands. */
+export type RoutineState = "active" | "paused" | "finished";
+
+/** A routine as a list shows it. */
+export type RoutineSummary = {
+  id: string;
+  last_run?: RoutineRunBrief | null;
+  name: string;
+  /** RFC 3339. None when it is paused or finished. */
+  next_run?: string | null;
+  running?: boolean;
+  state: RoutineState;
+  /** The schedule in the user's words, as the bot wrote it. */
+  when: string;
+};
+
 /** A row whose height is not the default, in pixels, or hidden. */
 export type RowHeight = {
   height: number;
@@ -1938,10 +2065,14 @@ export type ServerCapabilities = {
   /** Input that waits for the running task, as a client shows and changes it: `queue_changed`, `input_withdrawn`, the `withdraw`, `requeue` and `steer_now` ops, and `returned_input` on `task_failed` (docs/kernel/input-queue-design.md). */
   input_queue: boolean;
   max_frame_bytes: number;
+  /** Starting again from an earlier message: the `resend` op and `session_rewound` (docs/kernel/message-resend-design.md). */
+  message_resend: boolean;
   model_connections: boolean;
   /** Model lists asked from providers (docs/kernel/model-catalog-design.md §8): `shown`, `known`, `deprecated` on models, `listing` on providers, `models/refresh`, `models/show`, and a checked `auth/set`. */
   model_discovery: boolean;
   resource_read: boolean;
+  /** A bot's routines: the `bots/routine*` methods and `routines` on `BotSummary` (docs/kernel/routine-design.md §8). */
+  routines: boolean;
   session_delete: boolean;
   /** `session/rename`, `session/archive`, `session/unarchive`. */
   session_metadata: boolean;
@@ -2424,7 +2555,7 @@ export type UserMessage = {
 };
 
 /** Warnings a client may recognise. A client meeting a code it does not know shows `message`. */
-export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready";
+export type WarningCode = "bypass_permissions" | "mcp_servers_not_ready" | "resend_rejected";
 
 /** Why a search with a service failed. */
 export type WebSearchErrorKind = "auth_failed" | "quota_exhausted" | "rate_limited" | "unreachable" | "bad_response";
@@ -2510,6 +2641,13 @@ export interface Methods {
   "bots/delete": [BotIdParams, Empty];
   "bots/open": [BotOpenParams, SessionNewResult];
   "bots/read": [BotIdParams, Empty];
+  "bots/routine": [BotRoutineParams, BotRoutineResult];
+  "bots/routine_delete": [BotRoutineParams, Empty];
+  "bots/routine_run": [BotRoutineRunParams, BotRoutineRunResult];
+  "bots/routine_run_now": [BotRoutineParams, Empty];
+  "bots/routine_runs": [BotRoutineRunsParams, BotRoutineRunsResult];
+  "bots/routine_set_enabled": [BotRoutineSetEnabledParams, Empty];
+  "bots/routine_stop": [BotRoutineParams, Empty];
   "bots/subscribe": [Record<string, never>, BotsResult];
   "bots/unread": [BotIdParams, Empty];
   "bots/unsubscribe": [Record<string, never>, Empty];
@@ -2657,6 +2795,9 @@ export const RPC_ERROR_KINDS = {
   "-32040": "bot_not_found",
   "-32041": "bot_default",
   "-32042": "bot_invalid",
+  "-32043": "routine_not_found",
+  "-32044": "routine_busy",
+  "-32045": "routines_unavailable",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

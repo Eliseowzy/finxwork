@@ -65,6 +65,8 @@ base64 = "0.22"
 bytes = "1"
 calamine = "0.38"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# IronCalc's time zones. Named here only for `filter-by-regex`: `.cargo/config.toml` keeps UTC out of ~600 zones.
+chrono-tz = { version = "0.10", default-features = false, features = ["filter-by-regex"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "6"
 eventsource-stream = "0.2"
@@ -75,6 +77,8 @@ tar = "0.4"
 libc = "0.2"
 md-5 = "0.10"
 memchr = "2"
+# Time zones for schedules. No `perf-inline` or `tz-fat`: a schedule is worked out a few times a minute.
+jiff = { version = "0.2", default-features = false, features = ["std", "tz-system", "tzdb-bundle-platform", "tzdb-zoneinfo", "tzdb-concatenated"] }
 parking_lot = "0.12"
 png = "0.18"
 quick-xml = "0.42"
@@ -96,6 +100,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 similar = "2"
 encoding_rs = "0.8"
 thiserror = "2"
+rusqlite = { version = "0.41", features = ["bundled"] }
 tokio = { version = "1", features = [
     "fs",
     "io-util",

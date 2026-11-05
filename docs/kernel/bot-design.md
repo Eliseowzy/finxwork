@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.15 |
+| 版本 | v1.22 |
 | 日期 | 2026-11-05 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -32,6 +32,13 @@
 | v1.13 | 2026-11-04 | 子智能体要确认的调用弹同一个授权窗口，由主人批准（子智能体方案 v2.3，§3.6、§3.8）；文档和代码里统一叫子智能体，`BotSummary.helpers` 改名 `agents_working` |
 | v1.14 | 2026-11-05 | `send_to_user` 加 `type`：`text`、`attachment`（一次发一个或多个文件和图片，可以带文字）、`question`（提问，答案列得出来时带选项）（§3.12），依据真实模型统计定的（D-328）。列表摘要 `LastMessage` 加 `file`；两个截图工具的结果写上保存路径。§11 里的"附件与卡片"做了 |
 | v1.15 | 2026-11-05 | 连发时第一句的回答写成私有文字就丢了：模型要结束时先查没回话，再看排队的话，提醒的那次请求不带排队的话，提醒按主人的每句话算（§3.11、D-400）。统计脚本的"按顺序"改成看每条消息的意象，统计结果和变差的原因见 §8 |
+| v1.16 | 2026-11-05 | 主人的下一句什么时候到都有人回：按到的时机列成表（§3.11）。逐个时机查出一处问题：提醒过还是没发、任务正要失败时到的那句会退回输入框，现在和晚一点到的一样开新任务回（D-440） |
+| v1.17 | 2026-11-05 | 定时任务另写方案 [routine-design.md](routine-design.md)，§9、§16 指过去。本文的机制没有变；实现时 `bot::unanswered` 和 `bot::tools` 按那份方案改 |
+| v1.18 | 2026-11-05 | `send_to_user` 拒绝发 `NOTHING_TO_REPORT`；`bot::unanswered` 认 Bot 对定时任务汇报的这个回复（routine-design.md D-441） |
+| v1.19 | 2026-11-05 | 回合和插话定稿（[Bot 回合方案](bot-turn-design.md)）：长活都在后台，Bot 的 `spawn_agent`、`send_message` 没有 `wait`（§3.6、D-350）；主人的话不打断任何东西，"顶掉"不做了（§3.1、D-351）；任务结束前查一次结果发出去了没有（§3.13、D-352）；内置的 bot.md 变了，已有的 Bot 恢复时拿到新的（§3.10、D-353）；`bot.md` 的回合规则重写（附录 A.1）；能查进度、能叫停（§3.6，子智能体方案 §6.6） |
+| v1.20 | 2026-11-05 | 试用后改：不相关的事各开一个子智能体（§3.6、D-357）；"它在忙"的气泡只写子智能体的名字（§3.7、D-358）。只改 bot.md 和桌面端 |
+| v1.21 | 2026-11-05 | 子智能体运行中能发消息，唤醒 Bot（§3.6，[智能体通信方案](agent-messaging-design.md)）；`check_agents` 改名 `list_agents`；bot.md 跟着改（附录 A.1），回合规则第 3 条的最后一句按统计改了（智能体通信方案 §16.2） |
+| v1.22 | 2026-11-05 | 合并主干：定时任务的 `bot::unanswered` 和回合方案的 `bot::owed` 合成一个 `owed`，分四种：没欠、主人的话没回、定时任务的汇报没转告、做事的结果没说。前两种没回要提醒，还不发就失败；最后一种提醒一次。Bot 回复说没什么可告诉的（D-441）时不算欠 |
 
 ## 方案摘要
 
@@ -40,13 +47,15 @@
 - **一期只加一个工具：`send_to_user`**。它是 Bot 唯一对主人可见的输出：一次成功的调用就是一个气泡；普通的助手文字是私有的，永远不送到主人那里；`end_turn` 表示这一轮说完了。其余工具与无项目会话完全相同，包括现有的子智能体工具。
 - **一轮怎么过**（写在 Bot 的系统提示词 bot.md 里）：主人一开口，第一个动作是发一条消息，能马上答就答，否则说一句先做什么；做长活时在关键节点发简短的进展；做完把结果都发出去，最后一条带 `end_turn`。
 - **连着发几句**：用现有的插话队列。Bot 正在回时新的一句排进队列，这一步做完就送达，Bot 接着回它。连发四首诗，回来四个气泡。
-- **长活**：用现有的子智能体。`spawn_agent` 默认在后台跑，Bot 接着聊；汇报回来唤醒 Bot，由 Bot 转告。
+- **长活**：用现有的子智能体，都在后台：Bot 的 `spawn_agent` 没有 `wait`，它接着聊，汇报回来唤醒它，由它转告。主人的话不打断任何东西，在下一个边界进上下文。
 - **不流式**：桌面端接入 Bot 会话时排除增量事件，气泡整条出现。协议和内核不为此改动。
-- **内核改七处**：头部的 `bot` 与列表排除；私有文件夹；`send_to_user` 与结束任务的标记；没回话时提醒一次；提示词配置（Bot 会话用 bot.md，子智能体用会话的）；改名的环境更新；数据目录写保护对会话自己的文件夹放行。
+- **内核改九处**：头部的 `bot` 与列表排除；私有文件夹；`send_to_user` 与结束任务的标记；没回话和结果没发出去时各提醒一次；提示词配置（Bot 会话用 bot.md，子智能体用会话的）；改名的环境更新；数据目录写保护对会话自己的文件夹放行；Bot 版的智能体工具；内置提示词变了时恢复换新。
 - **服务层**：Bot 的登记、`bots/*` 方法、`bots/changed` 推送；最近一句、未读、在忙都从会话已有的事件得出。
 - **二期**：Bot 调度会话模式（§10），Bot 自己的工具从这里开始出现。
+- **主人的每句话后面跟一句提示**（§3.14）：只靠系统提示词，模型的第一条回复多半写成普通文字；紧跟一句 `Reply with send_to_user.` 以后，第一个调用是发消息的比例从三成到九成多。
 - **没回话时提醒一次**（§3.11）：模型要结束时主人的最新一句还没收到回复，内核追加一条只给模型看的提醒，再请求一次，后面排队的话等它回完再进。验收时证明需要，从"按需再加"提进一期。
-- **按需再加**（§11）：顶掉、表情回应、引用等，一期不做，等真实使用暴露问题再做。
+- **结果一定送达**（§3.13）：先发一句"在弄了"不算交付；干了活或收到汇报却只写成普通文字，同样提醒一次，还不发就正常结束。
+- **按需再加**（§11）：表情回应、引用等，一期不做，等真实使用暴露问题再做。"顶掉"不做了（D-351）。
 - **工作量**：一期约 12 人天（§9）。
 
 ## 目录
@@ -242,7 +251,7 @@ pub enum PromptProfile {
 
 ## 3. 对话怎么跑
 
-除了 `send_to_user`、它结束任务的那一处判断和没回话时的提醒（§3.11），下面每一条都是现有的行为，只是桌面端换一种方式显示。
+除了 `send_to_user`、它结束任务的那一处判断和两种提醒（§3.11、§3.13），下面每一条都是现有的行为，只是桌面端换一种方式显示。Bot 的回合和插话为什么这样设计，见 [Bot 回合方案](bot-turn-design.md)。
 
 ### 3.1 主人的话怎么进来
 
@@ -251,6 +260,7 @@ pub enum PromptProfile {
 - Bot 正在回：这句进插话队列，这一步结束时送达；这一步回完，任务看到还有插话，接着回它（`task.rs` 里 `has_steer` 的那个判断）。
 - **连发四首诗**：第一句开始任务；后面三句在 Bot 写第一首时进队列，这一步做完时送达。Bot 按约定一首发一条，四个气泡按顺序回来。几句恰好在同一步里送达，也是分几条发（附录 A.1）。
 - 正在执行工具时来的话，同样等这一步做完。长活本来就该交给子智能体（§3.6），所以 Bot 自己这一步通常很快。
+- **不打断任何东西**（D-351）：主会话不取消生成，也不取消工具。已经开始的 `send_to_user` 完整发出；模型正在写的回答如果已经过时，照样发出，下一步读到新消息再回应。`steer_now` 留给会话页的"立即送达"按钮，Bot 不用。
 - 排队中的消息照样显示成气泡（`queue_changed` 里的项）。写进历史时 id 不变（输入队列方案），不会重复。
 
 ### 3.2 `send_to_user`：Bot 唯一的出口
@@ -291,7 +301,7 @@ pub enum PromptProfile {
 | 其他工具调用和结果 | 同上 |
 | 子智能体的汇报（`mail`） | 不进对话；在"过程"里是一步 |
 | 中断留下的半截消息（stop_reason 为 aborted） | 不显示。Bot 模式没有停止键，只有命令行、ACP 才会产生 |
-| 日期、改名、提醒条目 | 不显示 |
+| 日期、改名、提醒和提示条目 | 不显示 |
 | 等确认的调用 | 不进对话；输入框上方的授权窗口（§3.8） |
 | 任务失败 | 失败卡，带"重试"（§3.9） |
 
@@ -308,17 +318,22 @@ pub enum PromptProfile {
 
 ### 3.6 长活：子智能体
 
-- Bot 用现有的 `spawn_agent` 把长活交给子智能体。默认异步：调用立即返回，Bot 这一轮很快结束，主人可以接着聊（子智能体方案 §6.2）。`spawn_agent` 的描述已经写了什么活该交出去、汇报怎么回来、要转告主人，bot.md 不重复。
-- 汇报：Bot 空闲时唤醒它开一个任务，Bot 正在回时在下一个轮次边界送达（子智能体方案 §7）。Bot 用 `send_to_user` 转告；不值得说的可以不发。
+- Bot 用现有的 `spawn_agent` 把长活交给子智能体。调用立即返回，Bot 这一轮很快结束，主人可以接着聊。
+- **没有 `wait`**（D-350）：Bot 的 `spawn_agent`、`send_message` 不提供这个参数，模型照旧传了也被忽略，子智能体永远在后台。`wait` 的说明写着"只有下一步需要汇报时才用"，但"做完告诉我结果"正好让模型觉得下一步需要：真实统计里 Bot 16 遍有 16 遍都在干等，主人的话进不来。
+- **什么该交出去**写在 bot.md 里（附录 A.1）：超过大约两轮工具调用的活都交。以前不写，是因为子智能体不能要确认，交出去多半做不成。
+- **一件事一个子智能体**（D-357）：不相关的事各开一个，看起来相似也一样，这样每件事能各自做完、各自汇报、单独叫停。只有紧接着同一件工作的后续和修正才用 `send_message` 发给原来那个。主人试用时连发四首诗，模型把四首都交给了一个子智能体，一轮做完才有汇报。
+- 汇报：Bot 空闲时唤醒它开一个任务，Bot 正在回时在下一个轮次边界送达（子智能体方案 §7）。Bot 用 `send_to_user` 转告；过时、重复的可以不发。
 - 子智能体要确认的调用由主人批准（子智能体方案 §10）：弹同一个授权窗口，写明是哪个子智能体，Bot 不能替主人答。等答复时 Bot 照常回话；被拒绝的话，子智能体接着做，写进汇报，由 Bot 转告。
-- 主人说"那个不用查了"，Bot 用现有的 `send_message`（带 interrupt）停下那个子智能体。
+- **中途的消息**：子智能体遇到等不到汇报的事，用 `send_message` 发给 Bot，`<agent_message>` 唤醒它，由它转告主人；子智能体接着做，汇报照旧。能拆开的事不走这条路，各开一个子智能体（[智能体通信方案](agent-messaging-design.md) §3）。Bot 被它唤醒后只写文字时，和汇报一样提醒一次，还不发就正常结束（§3.13）。
+- **查进度和叫停**：`list_agents`、`stop_agents`，所有主会话共用，按需加载（子智能体方案 §6.6）。Bot 页没有停止键，说话是唯一的办法，bot.md 写明什么时候查、停下优先。要改方向用 `send_message`（带 interrupt）。
+- **只有主 Bot 跟主人说话**：子智能体的工具列表在加上 `send_to_user` 之前就定了，它没有这个工具，也没有 `stop_agents`。汇报和它发的消息只有 Bot 看得到，转告是它的责任（§3.13）。
 
 ### 3.7 在忙
 
 | 状态 | 从哪来 | 显示 |
 |---|---|---|
 | 在回话 | Bot 会话有任务在跑（task_started 到任务终止）。发了先回的那句之后、做完之前，仍算在忙 | "它在忙"的气泡；列表和顶栏写"正在输入…" |
-| 有子智能体 | 有子智能体在跑（agent_started、agent_status，子智能体方案 §11） | 气泡写子智能体的说明（`spawn_agent` 的 `description`），几件时写"正在处理两件事"；点开看每件当前的步骤（`agent_event` 里的 tool_started） |
+| 有子智能体 | 有子智能体在跑（agent_started、agent_status，子智能体方案 §11） | 气泡写子智能体的说明（`spawn_agent` 的 `description`），几件时写"正在处理两件事"，点开是它们的说明，不显示命令和步骤（D-358） |
 | 在等确认 | 待审批项 | 列表"[待确认]"，顶栏"等你确认" |
 
 都是现有的事件，桌面端和服务层直接用。
@@ -344,7 +359,7 @@ pub enum PromptProfile {
 
 - 靠现有的阈值压缩（总方案 §7.6）。界面上的聊天记录一直完整，日志只追加。
 - 两个已知的缺口，一期先接受：
-  - 系统提示词冻结，新装的技能、改了的全局指令进不了已有的对话（Q-200）；桌面端没有清空，所以一直进不来；
+  - 系统提示词冻结，新装的技能、改了的全局指令进不了已有的对话（Q-200）；桌面端没有清空，所以一直进不来。一种情况除外：内置的 bot.md 变了（D-353）。`system_prompt` 条目记下模板的哈希，恢复时不同就重新生成，写一条新条目，缓存失效一次；老日志没有哈希，算作不同。技能和全局指令也在这一刻刷新；
   - 日志一直变长，几个月后加载会慢一些（Q-203）。
 
 ### 3.11 没回话时提醒一次
@@ -354,6 +369,17 @@ pub enum PromptProfile {
 - **先提醒，再进新消息**（D-400）：模型写这一步时，主人的下一句可能已经在排队。以前队列里有话就直接接着回，不做这个判断；那句写成文字的回答就丢了，因为后面发出的消息会让往回找时算作"回过了"。现在不管有没有排队都先判断。没回话就提醒，这次请求不带排队的话，提醒是模型最后读到的一条，它回完再进。
 - **补救**：记一条 `unanswered` 条目，再请求一次模型。这条条目在上下文里是一条用户消息（附录 A.6）；不进对话、不发事件，日志里留着，恢复或重新打开后上下文和当时一样（只追加，缓存照样命中）。
 - **每句话一次**：主人的新消息写进历史时重新计算。提醒过还是没发时，队列里还有话就接着回它们，这句的回答就丢了（§11 的"再兜一次"）；队列空了，任务以 `no_reply` 失败，主人看到失败卡，可以重试（D-321）。
+- **下一句什么时候到都有人回**（D-440）。2026-11-05 在真实的 `finx serve` 上把第二句到达的时机从 0 扫到 400 毫秒，八百多次都跑到了空闲。按到的时机：
+
+  | 下一句到的时机 | 内核怎么做 | 前一句的回答 |
+  |---|---|---|
+  | 第一次请求发出之前（平时一两毫秒，等 MCP 服务或压缩时更久） | 一起进这次请求（输入队列方案 D-206） | 模型一起读到。发过一条就算回过：内核分不出它回了一句还是两句，这里靠 bot.md 的"几个请求分开回" |
+  | 模型写第一步时 | 排队；这一步没发就先提醒，回完再进（D-400） | 提醒救回 |
+  | 模型写提醒的回复时 | 排队，回完再进 | 提醒救回；又只写了文字就丢了，也没有失败卡（§11 的"再兜一次"） |
+  | 任务最后看过队列之后、真正结束之前（要等日志落盘，几到十几毫秒） | 任务结束时取一条，开新任务（输入队列方案 D-207）。提醒过还是没发时，任务照样失败，但不退回（D-440） | 已经发出；或者丢了，主人看到失败卡 |
+  | 任务结束以后 | 开新任务 | 已经发出；或者丢了，主人看到失败卡 |
+
+  测试：`finx-core/tests/bot.rs` 每个时机一个（用 `TurnStarted`、`TurnCompleted` 卡住时机，日志落盘的那个用落盘慢的日志卡住）；`finx-cli/tests/e2e_bots.rs` 走真实服务。
 - **代价**：只在漏发时多一次请求，前面的内容都在缓存里，排队的话晚一次请求进上下文。
 - **效果**：同样的测试，漏发从 16/36 降到 0 或 1/36：加提醒以后的三组短问题共 108 个任务，漏 2 个，都是模型被提醒后又只写了文字（§8、§11）。连发四首诗，第一首丢失从 13/36 降到 2/36（§8）。
 
@@ -422,6 +448,34 @@ pub enum PromptProfile {
 
 - **写在文字里的图**：主人试用时，一个模型（qwen3.8-flash）要发图时 7 条消息都写成 `![说明](路径)`。回复里的图片原来只显示说明文字，图等于没发。所以 Bot 的对话里，本机的图直接显示在气泡里，点开看大图；不存在的和网上的还是只显示说明文字（D-329）。会话页不变。
 - **以后的类型**：`session`（会话卡，随二期，PRD §6.18）；`secret`（密钥输入，等 Bot 真向主人要 token 时再做，要先有模型看不到、命令用得到的存储）。
+
+### 3.13 结果没发出去时也提醒一次
+
+- **为什么加**：§3.11 碰到成功的 `send_to_user` 就算回过话。开场那句"在弄了"之后，结果写成普通文字就结束，主人收不到。真实模型统计里，询问权限下交给子智能体，允许时 2/8、拒绝时 7/8 丢了结果。
+- **判断**（D-352）：任务要正常结束时从历史末尾往回找，看先碰到什么：
+
+| 先碰到 | 判断 | 处理 |
+|---|---|---|
+| 成功的 `send_to_user` | 该发的发了 | 正常结束 |
+| 主人的话 | 没回话 | §3.11：提醒一次，还不发就是 `no_reply` 失败 |
+| 汇报信（停下的除外） | 汇报还没转告 | 提醒一次，还不发就正常结束 |
+| 别的工具结果（`spawn_agent`、`send_message` 不算） | 干了活没交代 | 提醒一次，还不发就正常结束 |
+
+- 交出去以后结束这一轮不会被提醒：往回找时跳过 `spawn_agent`，先碰到开场那句。被 `stop_agents` 停下的汇报也不算：它不唤醒 Bot，也没有结果要转告。
+- 后两种可能真的没什么要说（过时的结果），所以还不发也不算失败。
+- 这条提醒和没回话的提醒分开记（`undelivered` 条目），文字不同（附录 A.7）。
+- 每个任务最多提醒一次，主人的新消息写进历史时重新计算。
+- **代价**：只在漏发或者确实没话说时多一次请求，前面的内容都在缓存里。
+
+### 3.14 主人的每句话后面跟一句提示
+
+- **为什么加**（D-356）：提醒是补救，气泡要晚一次请求。逐段拆开统计才看清（DeepSeek flash，每个 Bot 只问一个短问题，这样每遍互不影响）：
+  - 整份提示词下，新 Bot 的第一条回复只有 15% 到 30% 调用 `send_to_user`，其余写成普通文字；被提醒以后还有两三成仍不发，任务以 `no_reply` 失败。
+  - 只留规则的小提示词能到 75%，再加回"怎么说话"一节掉到 31%，加回能力清单掉到 50%：提示词里每段讲"怎么回答"的文字都在把模型推向直接写字。规则放到最前、说三遍、举例子，最多到五成。
+- **做法**：Bot 会话里，主人的每句话写进历史后，紧接着记一条 `reply_nudge` 条目。它在上下文里是一条用户消息（附录 A.8），不进对话、不发事件。汇报信后面没有，它不一定要回；子智能体也没有。
+- **只追加**：条目在日志里，之后的每次请求都带着它，前缀不变，缓存照样命中。旧版本读到它跳过。
+- **效果**：第一个调用是发消息到九成多，漏发和提醒都接近没有，第一个气泡从约 2 秒降到约 1 秒（§8）。
+- **代价**：每句话多十来个 token。
 
 ## 4. 协议
 
@@ -565,21 +619,22 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 
 | 文件 | 改什么 |
 |---|---|
-| `src/store/entry.rs` | `SessionHeader.bot: Option<BotRef { id, name }>`；`SessionHeader::listed()`；`EntryKind::BotName { name }`、`EntryKind::Unanswered` |
+| `src/store/entry.rs` | `SessionHeader.bot: Option<BotRef { id, name }>`；`SessionHeader::listed()`；`EntryKind::BotName { name }`、`EntryKind::Unanswered`、`EntryKind::Undelivered`、`EntryKind::ReplyNudge`；`SystemPromptEntry.template` |
 | `src/store/jsonl.rs`、`src/store/memory.rs` | 判断 `agent.is_none()` 的各处改用 `listed()`；扫描缓存里"是不是子智能体"的标记改为"列不列出" |
 | `src/paths.rs` | `bots_dir`、`bot_dir`、`bot_files_dir`；`has_no_project(cwd)`；`private_folder(cwd)`（§2.2） |
 | `src/runtime.rs` | `Workspace::open` 用 `has_no_project` |
 | `src/hooks.rs`、`src/protected.rs` | `SessionView.own_folder`；数据目录规则跳过它（§2.5） |
-| `src/prompt.rs` | `PromptProfile`；`PromptInputs.profile`；`BOT_PROMPT`；`{{…}}` 片段和名字的替换（§2.3） |
+| `src/prompt.rs` | `PromptProfile`；`PromptInputs.profile`；`BOT_PROMPT`；`{{…}}` 片段和名字的替换（§2.3）；`bot_template()`：模板的哈希（§3.10） |
 | `src/prompts/base.md`、`src/prompts/bot.md`（新）、`src/prompts/shared/numbers_and_data.md`（新）、`src/prompts/shared/acting_with_care.md`（新） | 附录 A |
 | `src/config.rs` | `bot_prompt_file` |
-| `src/bot.rs`（新） | `BotIdentity { id, name }`；`SendToUser` 工具；`tools()`；`unanswered()`：主人最近的一句话有没有回过（§3.11） |
-| `src/kernel.rs` | `StartOptions.bot`、`ResumeOptions.bot_name`；按头部挂 `send_to_user`；按配置拼提示词，Bot 会话多拼一份 `sub_agent_prompt`；`set_bot_name()` |
-| `src/session.rs` | `SessionState` 记 Bot 的名字（头部的和当前的）与 `sub_agent_prompt`；`note_bot_name()`；`unanswered()`；填 `own_folder` |
-| `src/context.rs` | `BotName` 条目变成环境更新的消息；`name_in_context()`；`Unanswered` 条目变成提醒（附录 A.6） |
+| `src/bot.rs`（新） | `BotIdentity { id, name }`；`SendToUser` 工具；`tools()`；`owed()`：往回找，还欠主人什么（§3.11、§3.13） |
+| `src/kernel.rs` | `StartOptions.bot`、`ResumeOptions.bot_name`；按头部挂 `send_to_user`，Bot 用自己那组智能体工具（§3.6）；按配置拼提示词，Bot 会话多拼一份 `sub_agent_prompt`；`set_bot_name()`；恢复时比较模板哈希（§3.10） |
+| `src/session.rs` | `SessionState` 记 Bot 的名字（头部的和当前的）、`sub_agent_prompt` 与 `prompt_template`；`note_bot_name()`；`owed()`；主人的话后面记 `ReplyNudge`（§3.14）；填 `own_folder` |
+| `src/context.rs` | `BotName` 条目变成环境更新的消息；`name_in_context()`；`Unanswered`、`Undelivered`、`ReplyNudge` 条目变成给模型的话（附录 A.6–A.8） |
 | `src/agents/mod.rs` | `spawn` 有 `sub_agent_prompt` 时用它（§2.3） |
+| `src/agents/tools.rs` | Bot 版的 `spawn_agent`、`send_message`，没有 `wait`（§3.6） |
 | `src/tool_exec.rs` | 成功的 `ends_task` 结果记到 `TaskCtx` |
-| `src/task.rs` | 这一批之后检查结束标记（§3.3）；轮次边界调 `note_bot_name`；模型要结束时没回话就提醒一次，先于排队的话（§3.11） |
+| `src/task.rs` | 这一批之后检查结束标记（§3.3）；轮次边界调 `note_bot_name`；模型要结束时按 `owed()` 提醒：没回话的先于排队的话（§3.11），结果没发的等排队的话都回完（§3.13）；主人的新消息进来时重新计算 |
 | `tests/bot.rs`（新） | §8 的内核测试 |
 
 **finx-protocol**
@@ -605,7 +660,7 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 
 | 文件 | 改什么 |
 |---|---|
-| `finx-mock/src/lib.rs` | Bot 场景：`send`（每句一条，最后一条结束这一轮）、`relay`（交给子智能体再转告）、`delegate`、`relay_run`（子智能体跑命令，要主人确认）、`confirm`（先说一句再要确认）、`quiet`（先只写私有文字，提醒后才发） |
+| `finx-mock/src/lib.rs` | Bot 场景：`send`（每句一条，最后一条结束这一轮）、`relay`（交给子智能体再转告）、`delegate`、`relay_run`（子智能体跑命令，要主人确认）、`confirm`（先说一句再要确认）、`quiet`（先只写私有文字，提醒后才发）、`relay_slow`（先回一句、交出去、接着回话）、`check`、`stop_all`（查进度和叫停） |
 | `finx-cli/tests/e2e_bots.rs`（新） | §8 的端到端测试 |
 
 **packages**
@@ -635,6 +690,7 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 | `renderer/src/session/Failure.tsx` | 失败卡可由页面给出会话的模型：Bot 的会话不在会话列表里 |
 | `e2e/bot-mode.mjs`（新） | PRD §11 的走查，用真实模型 |
 | `e2e/bot-failure.mjs`（新） | PRD §11 第 12 条：失败与重试，用本机的脚本化模型服务 |
+| `e2e/bot-turn.mjs`（新） | 长活的一整条时序：马上回、后台做、接着聊、汇报回来、查进度、叫停，用 finx-mock；也能跑在打好的包上 |
 
 **工具**
 
@@ -728,7 +784,8 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 | 你好、你能做什么、谢谢（`hello`） | 23/36，13，0 | 26/36，10，0 |
 | 一快两慢（`mixed`） | 8/12，0，0 | 7/12，0，0 |
 
-- 桌面端：`apps/desktop/e2e/bot-mode.mjs` 用真实模型走查 PRD §11 的各条；第 12 条（失败与重试）真实模型没法按需失败，由 `apps/desktop/e2e/bot-failure.mjs` 用本机的脚本化模型服务走查。走查结果和过程中修掉的问题见 docs/desktop/bot-mode-decisions.md。
+- 回合和插话（2026-11-05，定稿提示词加每句话后面的提示）：短问题 34/36、寒暄 35/36 第一个调用是发消息，提醒 0 次和 1 次；叫停 12/12 先停再说、没有重新开工；询问权限下交出去结果丢失 0/24（之前 2/8、7/8）；问进度 9/12 查了再说。全表和没解决的问题见 [Bot 回合方案](bot-turn-design.md) §13。
+- 桌面端：`apps/desktop/e2e/bot-turn.mjs` 用 finx-mock 走查长活的整条时序。`apps/desktop/e2e/bot-mode.mjs` 用真实模型走查 PRD §11 的各条；第 12 条（失败与重试）真实模型没法按需失败，由 `apps/desktop/e2e/bot-failure.mjs` 用本机的脚本化模型服务走查。走查结果和过程中修掉的问题见 docs/desktop/bot-mode-decisions.md。
 
 ## 9. 分期与工作量
 
@@ -739,7 +796,7 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 | | 客户端库与模拟服务：`bots.ts`、`botChat.ts`、四个场景；约 1.5 天 | |
 | | 桌面端：模式切换、列表、新建与编辑、头像、对话页、输入框、未读与提醒点；约 3.5 天 | |
 | | 测试与真实模型验收：约 1.5 天 | |
-| 二期 | 调度会话（§10）、定时与提醒、记忆、系统通知、搜索，以及 §11 里被证明需要的改进 | 另行估算 |
+| 二期 | 调度会话（§10）、定时任务（[routine-design.md](routine-design.md)，约 12 人天）、记忆、系统通知、搜索，以及 §11 里被证明需要的改进 | 另行估算 |
 | 三期 | 群聊、Bot 之间转交 | 另行估算 |
 
 建议的顺序：内核（带单元测试）→ 协议与服务层 → 客户端库与模拟服务 → 桌面端 → 端到端与真实模型验收。桌面端可以在模拟服务就绪后与服务层并行。
@@ -796,9 +853,7 @@ pub trait SessionHost: Send + Sync + 'static {
 
 | 改进 | 要解决的问题 | 什么情况下做 | 做法 |
 |---|---|---|---|
-| 没回话时再兜一次 | 提醒过一次，模型还是只写了文字（验收时三组短问题共 108 个任务里有 2 个；2026-11-05 的统计里 140 次提醒有 8 次，思考里写着要发，输出的还是文字）。排队的话后面还有时，这句的回答就丢了，也没有失败卡 | 真实使用里还常遇到 | 再提醒一次；或提醒的那次请求强制调用 `send_to_user`（`ToolChoice` 要加一种，三个适配器都改，有的提供方在思考模式下不允许）；或把提醒后写的文字当成气泡发出 |
-| 顶掉还没发出的回复 | 主人改了主意（"算了，不要春天的"），Bot 仍发出按旧意思写完的回答 | 真实使用里经常遇到 | Bot 会话里主人的消息在模型生成时自动 `steer_now`，被结束的半截不进上下文 |
-| bot.md 补一句"长活交给子智能体" | Bot 自己做长活，挡住了后面的话 | 验收时长活没交出去的比例不可忽略 | 在"一轮怎么过"里加一句，指向 `spawn_agent`。验收时中等的活 12 遍都是 Bot 自己做的，期间来的话在工具调用的间隙照常回了；子智能体要确认的调用现在由主人批准（子智能体方案 §10），交出去也做得成；要不要补这一句，看真实使用 |
+| 没回话时再兜一次 | 提醒过一次，模型还是只写了文字（验收时三组短问题共 108 个任务里有 2 个；2026-11-05 的统计里 140 次提醒有 8 次，思考里写着要发，输出的还是文字）；加了每句话后面的提示（§3.14）以后，短问题 72 个任务里 0 个，改主意 13 个任务里 1 个。排队的话后面还有时，这句的回答就丢了，也没有失败卡 | 真实使用里还常遇到 | 再提醒一次；或提醒的那次请求强制调用 `send_to_user`（`ToolChoice` 要加一种，三个适配器都改，有的提供方在思考模式下不允许）；或把提醒后写的文字当成气泡发出（要改 D-302、D-321） |
 | 表情回应 `react_to_message`（眼睛和对勾） | 回一句"在查了"有时显得小题大做；看不出哪句在处理 | 主人要，或者先回的那句显得啰嗦 | 一个工具：对主人的某条消息放一个回应，可以代替先回的那句；做完换成对勾 |
 | Bot 的引用 | 结果回的是哪句说不清 | 主人要 | `send_to_user` 加可选的 `reply_to`；桌面端按 PRD 的规则显示 |
 | 发送时复制文件 | 文件被覆盖后，旧消息打开的是新内容；迭代一张图时看不到旧版 | 真实使用里遇到 | 发送时复制到会话的输出目录，消息指向副本 |
@@ -806,7 +861,12 @@ pub trait SessionHost: Send + Sync + 'static {
 | 主人引用 Bot 的话 | 主人想指着某句回复 | 主人要 | 消息带被引用的那句的 id 和原文 |
 | 子智能体带对话做前缀 | 子智能体不知道"那份周报"指什么，Bot 得在任务说明里写全 | 发现任务说明经常写不全 | 子会话头部记 `forked_from`，引用 Bot 日志里的位置，不复制 |
 | 子智能体的结果直接发给主人 | 转述多一次模型调用，可能丢信息 | 发现转述常丢东西 | 子智能体的最后回复作为 Bot 的气泡发出，Bot 历史里追加一封不唤醒的信 |
-| 结果写成私有文字时也提醒 | 先发过"交给子智能体了"以后，结果写成普通文字就结束：提醒以为回过话了，主人收不到（§3.11） | 真实模型统计里询问权限下允许 2/8、拒绝 7/8，待主人定 | 任务靠一段文字结束、没走 `end_turn` 时提醒一次；提醒后仍不发，只有主人的话一句没回才算失败 |
+| `send_to_user` 一写完就发 | 开场那句和 `spawn_agent` 在同一步时，气泡要等任务说明写完才出现 | 统计里第一个气泡明显慢 | 流式解析到第一个调用写完就发出，不等这一步结束 |
+| 第一步用低思考强度 | 思考长的模型第一个气泡慢，提示词管不住 | 统计里第一个气泡明显慢 | 一轮的第一次请求降低思考强度 |
+| 主会话的长命令转后台 | 主会话自己跑长命令时，主人的话要等它结束 | 统计里这种情况常见 | 长命令超过一定时间转到后台 |
+| 主会话连续调用工具时提醒交出去 | 模型不听"交出去"那句 | 统计里交出去的比例还是低 | 工具调用超过两轮时追加一条提醒 |
+| 新消息算作没答复主会话的确认 | 主人不答窗口直接说话时，这句话要等 | 真实使用里遇到 | 新消息到达时，主会话的确认按没答复处理 |
+| 待办队列 | 有请求被忘掉 | 统计或使用中发现 | 模型维护一份待办，每次收到消息或汇报时核对 |
 | 等主人停下再回 | 第一句刚开始回，第二句就到了，第一句的回答没看到第二句 | 发现回答因此不自然 | 空闲时等 1.5 秒没有新消息再开始 |
 | 压缩时换新提示词 | 新技能、新指令进不了已有的对话（Q-200） | 主人装了技能，Bot 却不会用 | 压缩时重新生成系统提示词和工具列表 |
 | 日志分段 | 长日志加载慢（Q-203） | 实测加载明显变慢 | 压缩时开新的日志段 |
@@ -814,23 +874,27 @@ pub trait SessionHost: Send + Sync + 'static {
 
 ## 12. 持久化与兼容
 
-- 会话头部加一个字段 `bot: Option<BotRef>`；日志加两种条目 `bot_name`、`unanswered`。
+- 会话头部加一个字段 `bot: Option<BotRef>`；日志加四种条目 `bot_name`、`unanswered`、`undelivered`、`reply_nudge`；`system_prompt` 条目加 `template`，没有时算作模板不同（§3.10）。
 - bot.json 带 `version: 1`；以后加字段都有默认值。
 - 二期调度会话时，Bot 开的会话头部加 `origin`，Bot 发进会话的消息加 `from`（§10.3）。
 
 | 读者 | 结果 |
 |---|---|
 | 新版本读旧日志 | 没有 `bot`，按普通会话 |
-| 旧版本读 Bot 的日志 | `bot` 被忽略，`bot_name`、`unanswered` 读成 Unknown 跳过；Bot 会话会出现在旧版本的列表里，显示成一个普通会话（Q-202） |
+| 旧版本读 Bot 的日志 | `bot` 被忽略，`bot_name`、`unanswered`、`undelivered`、`reply_nudge` 读成 Unknown 跳过；Bot 会话会出现在旧版本的列表里，显示成一个普通会话（Q-202） |
 
 ## 13. 设计取舍
 
 | 问题 | 一期选了 | 没选 | 理由 |
 |---|---|---|---|
 | Bot 怎么实现 | 一种会话 | 新的运行时 | 日志、恢复、工具、审批、压缩、镜像全部复用 |
-| 连发几句 | 现有的插话队列 | 顶掉；等主人停下 | 插话队列已经能一句一个气泡地回；另外两种是优化，等真实使用暴露问题再做（§11） |
-| 长活 | 现有的子智能体 | 新的"差事" | 子智能体已经在后台跑、做完会唤醒 Bot；差事的那些增强都还没有证据 |
+| 连发几句 | 现有的插话队列 | 等主人停下 | 插话队列已经能一句一个气泡地回；等主人停下是优化，等真实使用暴露问题再做（§11） |
+| 插话 | 不打断，下一个边界进上下文 | 顶掉：模型生成时作废半截 | 活在后台以后主会话的生成都很短，作废省不了什么；分不清改主意和顺便问，一句"顺便问一下"也会让回答重来；不打断时 `send_to_user` 要么没开始要么完整发出，上下文只追加（[Bot 回合方案](bot-turn-design.md) §4.4） |
+| 长活 | 现有的子智能体，没有 `wait` | 新的"差事"；留着 `wait` 再加一句提示词 | 子智能体已经在后台跑、做完会唤醒 Bot；差事的那些增强都还没有证据。提示词管不住 `wait`（16/16），拿掉最确定 |
 | Bot 说的话 | `send_to_user` 工具，其他文字私有 | 有文字的助手消息就是气泡 | 一次调用一个气泡，正好对应整条出现的交互；能分几条发；边做边想的字不会漏给主人；何时说完由模型明说 |
+| 结果写成了普通文字 | 提醒一次，还不发就正常结束 | 算失败；把文字当气泡发出 | 可能真的没话说（过时的结果），不能算失败；"只有 send_to_user 可见"不能破 |
+| 查进度和叫停 | 所有主会话共用的工具，按需加载 | Bot 专有；常驻工具列表；只靠 `send_message` 的 interrupt | 两种模式都需要；平时用不到，不占定义；`send_message` 让子智能体还要处理这条消息再交一份汇报，也说不清停干净没有 |
+| 让模型用 `send_to_user` 回 | 主人的每句话后面跟一句提示 | 只靠系统提示词；强制工具调用 | 系统提示词实测到不了（最多五成）；DeepSeek 在思考模式下不支持指定工具（`Thinking mode does not support this tool_choice`），别的提供方也有类似限制，而且第一步强制发消息就不能先停子智能体 |
 | 没回话 | 提醒一次，再请求一次模型 | 只改提示词；把最后的私有文字当成气泡；每一步都强制调用工具 | 改提示词实测无效（17/36）；私有文字当气泡打破"只有 send_to_user 可见"，也可能把边做边想的话发出去；有的提供方在思考模式下不允许强制调用工具 |
 | 结束这一轮 | 工具结果的通用标记 | 钩子的 `TurnDecision::End`；在任务循环里认工具名 | 信号来自工具结果，放在工具结果里；钩子留给用户；以后别的工具也能用 |
 | 不流式 | 桌面端排除增量事件 | 内核不发增量 | 协议不改；会话模式照旧流式 |
@@ -875,13 +939,21 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-327 | 两个截图工具的结果文字写上保存路径 | 模型不知道路径就发不出自己的截图 | §3.12 |
 | D-328 | `attachment` 可以带 `text`（显示在文件上面），`question` 可以没有 `options`，不写 `type` 时看带了什么 | 真实模型统计：第一版里模型几乎每次都想把文字和文件放在一个调用里，12 遍被拒绝 19 次，每次白白多一轮请求；是接口形状和模型习惯不合，不是提示词能解决的。放开后拒绝降到 0，调用少四成，主人看到的样子不变 | §3.12 |
 | D-329 | Bot 的对话里，文字中写的本机图片 `![说明](路径)` 直接显示，网上的和不存在的只显示说明文字；会话页不变 | 真实对话里模型 7 条都这样写，有 `attachment` 也可能继续写；读的是本机文件，不碰网络，不违反"回复不从网络加载东西" | §3.12 |
+| D-350 | Bot 的主会话没有 `wait`（子智能体方案 §18） | 16/16 走了同步等待 | §3.6 |
+| D-351 | 主人的话不打断任何东西，在下一个边界进上下文；取消 PRD 里的"顶掉" | 活在后台以后作废省不了什么，还会误伤"顺便问一下"；主人的决定 | §3.1 |
+| D-352 | 任务结束前查一次结果发出去了没有：先碰到汇报信或干活的工具结果，就提醒一次（`undelivered`），还不发就正常结束 | 先发一句"在弄了"不算交付，结果丢失 2/8、7/8；过时的结果可以不发，所以不算失败 | §3.13 |
+| D-353 | `system_prompt` 条目记内置模板的哈希，恢复时不同就重新生成 | 不然默认的 FinxBot 永远用旧规则；升级要重启服务，缓存本来也快过期了 | §3.10 |
+| D-356 | 主人的每句话后面记一条 `reply_nudge`，上下文里是 `<reminder>Reply with send_to_user.</reminder>` | 第一个调用是发消息从三成到九成多，提示词本身到不了；只追加，缓存不受影响 | §3.14 |
+| D-357 | 不相关的事各开一个子智能体；只有紧接着同一件工作的后续和修正才发给原来那个 | 合在一个子智能体里，一轮做完才有汇报，不能单独叫停，一件出问题连累别的；主人的决定 | §3.6 |
+| D-358 | "它在忙"的气泡只写哪些子智能体在跑、叫什么 | 命令和步骤对主人没有意义；主人的决定 | §3.7 |
 | D-400 | 模型要结束时先查没回话，再看排队的话；提醒的那次请求不带排队的话；提醒按主人的每句话算 | 连发时写成私有文字的第一句回答会丢（13/36）：后面发出的消息让提醒以为回过了。不加提示词，第一首丢失降到 2/36。排队的话只在漏发时晚一次请求进上下文 | §3.11、§8 |
+| D-440 | 提醒过还是没发的任务（`no_reply`）结束时，队列里的话不退回，取一条开新任务回；失败照样报 | 任务最后看过队列之后还要等日志落盘，这时到的话会退回输入框、没人回，晚几毫秒到的却正常回。模型没坏，结果不该差在这几毫秒。其他失败照旧交还（输入队列方案 D-204）：那时模型或连接出了问题，下一句多半也回不了 | §3.11；输入队列方案 §3.4 |
 
 ## 15. 待定问题
 
 | 编号 | 问题 | 倾向 |
 |---|---|---|
-| Q-200 | 系统提示词冻结，新技能、新指令进不了已有的对话，桌面端又没有清空，一期能否接受？ | 待主人定；要解决就做"压缩时换新"（§11） |
+| Q-200 | 系统提示词冻结，新技能、新指令进不了已有的对话，桌面端又没有清空，一期能否接受？ | 待主人定；要解决就做"压缩时换新"（§11）。内置 bot.md 变了时已经会换（D-353）；主会话变短以后压缩更少，这件事要另外考虑 |
 | Q-201 | 模型没调用 `send_to_user` 就结束一轮时，一期什么也不补。能否接受？ | 已定：不能。验收时短问题漏发 16/36，加没回话时提醒一次（§3.11、D-316），三组短问题共 108 个任务里还漏 2 个；再兜一次列在 §11 |
 | Q-202 | 旧版本 finx 会把 Bot 会话列成普通会话，要不要处理？ | 接受；桌面端和内核总是一起升级 |
 | Q-203 | 日志一直变长 | 二期按实测决定要不要分段 |
@@ -897,11 +969,11 @@ pub trait SessionHost: Send + Sync + 'static {
 |---|---|---|
 | 工具怎么组织 | 常驻的工具只有十来个，其余几十个（子智能体、待办、改名换头像、搜索等）用到时再按名字取 | finx 已有延迟加载工具的机制；Bot 的工具变多以后照此，常驻部分保持很短 |
 | 发给主人的扩展 | 同一个发送工具加一个类型字段：文字、附件、带选项的提问卡、密钥输入卡；文字里可以带图片。`reply_to` 用来开分支话题，只收纳大段的次要内容，默认不用 | 文字、附件、提问已做（§3.12）；密钥卡等需要时再加；`reply_to` 与 PRD 里的"引用"不是一回事，做引用时再想清楚 |
-| 一轮的规矩 | 超过大约两轮工具调用的活必须交给子智能体；带 `end_turn` 的最后一条不和还要做的事放在同一步；只有确认做完才说做完，最后一条带结果本身，不能只指向前面的消息 | 验收时如果发现长活挡住了回话、或者 `end_turn` 和别的调用并发，先补这几句（§11） |
+| 一轮的规矩 | 超过大约两轮工具调用的活必须交给子智能体；带 `end_turn` 的最后一条不和还要做的事放在同一步；只有确认做完才说做完，最后一条带结果本身，不能只指向前面的消息 | 已写进 bot.md（附录 A.1，[Bot 回合方案](bot-turn-design.md) §7） |
 | 表情回应 | 社交性的回应：赞同、感谢、好消息、好笑，小事做完放一个对勾。代替不了需要的回复，也代替不了长活开始前的那句话；一条消息最多一个 | 原型里用"眼睛"表示处理中，定位不同，做表情回应时重新考虑 |
-| 子智能体 | 默认接着 Bot 的对话往下做；同一条线索的后续和修改交给同一个子智能体；用待办列表记下每件交代的事，每次有新消息或子智能体做完时核对一遍；主人说"停"就一次停掉全部 | "子智能体带对话"已在 §11；待办列表是"每件事都有结局"的一个做法 |
+| 子智能体 | 默认接着 Bot 的对话往下做；同一条线索的后续和修改交给同一个子智能体；用待办列表记下每件交代的事，每次有新消息或子智能体做完时核对一遍；主人说"停"就一次停掉全部 | 说停就停已写进 bot.md；同一条线索只算紧接着的后续和修正，不相关的事各开一个（D-357）；"子智能体带对话"、待办列表在 §11 |
 | 记忆 | 四种：这个 Bot 的长期偏好、按日期的记录，加上所有 Bot 共用的这两种；另有检索。Bot 自己决定记什么，记的时候顺口提一句。改动先在对话里追加通知，下次压缩时才写进系统提示词 | 与我们"改动追加、压缩时换新"的思路一致（§11"压缩时换新提示词"） |
-| 定时 | 存成写给将来自己的一句意图，不是写死的步骤；主人所在时区的 cron；可以选灵活时间，由服务在前后一个窗口内挑时刻启动；也可以由外部事件触发；没有变化时不发消息；新建和修改要主人在卡片上确认 | 二期定时与提醒的设计起点 |
+| 定时 | 存成写给将来自己的一句意图，不是写死的步骤；主人所在时区的 cron；可以选灵活时间，由服务在前后一个窗口内挑时刻启动；也可以由外部事件触发；没有变化时不发消息；新建和修改要主人在卡片上确认 | 已另写方案：[routine-design.md](routine-design.md) |
 | 新装的技能 | 技能清单在压缩时刷新，但刚装的技能可以直接按名字加载 | Q-200 的一个便宜的解法 |
 | 隐藏的唤醒 | 定时任务、后台完成这类唤醒在上下文里标明不是主人说的；模型不能把它们当成主人的话来回 | 子智能体的汇报已经是带标签的信；二期定时的唤醒照此 |
 | 安全 | 工具结果包在标记里，当作外部数据，里面的话不能让 Bot 主动做任何事；发给别人的邮件和消息一律先出草稿卡，主人自己按"发送"；只有主人能批准高风险操作，定时任务、别的 Bot、网页里的话都不算 | Bot 有了定时和连接器以后，被注入的风险比会话模式高，这几条要一起考虑 |
@@ -928,22 +1000,68 @@ limited to:
 4. Writing and running programs.
 
 You work in your own folder by reading and writing files, running commands and using the other
-tools you have. Long results go in a file there: send the conclusion, then the file.
+tools you have. Long results go in a file there: send the conclusion with send_to_user, then the file.
 
 How a turn works:
 The user sees only what you send with send_to_user. Everything else you write stays private and
 never reaches them.
-- When the user writes, your first call is send_to_user, before any other tool: the answer if
-  you have it now, otherwise one short line saying what you are doing first.
-- During long work, send a short update when something meaningful happens: a result, a
-  decision, a blocker or a changed plan. Never send a running commentary.
-- Before you finish, send every result the user is waiting for, and set end_turn on the last
-  message. Say something is done only once you have checked it; otherwise say where it stands.
-- A message that arrives while you work may be a new request rather than a change to the
-  current one: answer every message the user sends. Separate requests get separate messages, in
-  the order they came, even when they arrive together.
-- When a background event wakes you, such as an agent's report, nobody is waiting for an
-  acknowledgement: send only what is worth telling.
+
+1. Reply first. Whenever the user writes (one message, several in a row, or a message that lands
+   while you are busy), your first call is send_to_user, before any long reasoning and before any
+   other tool, however quick: no lookup, command, file read or new agent comes before it. Send it
+   on its own, and make your other calls in the next step.
+   - If you have the answer now, call send_to_user with it.
+   - If not, call send_to_user with one short line that acknowledges the request and names your
+     first step. Say what you are doing ("Pulling the March figures."), not what you don't know
+     ("I'm not sure yet."), and never fill the gap with a guess.
+   - Something the user can see of your work, such as an agent's status or a file, is not this
+     reply.
+   Once you have the answer, lead with it.
+
+2. While you work. Send a short update only at a real turning point: a result, a decision, a
+   blocker or a changed plan. No command-by-command commentary and no word about retries. Keep the
+   machinery out of your messages: tool names, message ids, reminders, wake-ups, and whether you
+   are deciding to send something.
+
+3. Hand back. Before you end the turn, send every result someone is waiting for. "On it" delivers
+   nothing, and neither does a draft in your private text. When your reply is complete, set
+   end_turn on the last send_to_user: that send closes the turn, and nothing more is needed after
+   it. Leave end_turn off acknowledgements and updates while you still have work to do, and don't
+   make the last send alongside calls whose results you still need. Work you handed to an agent is not
+   yours to wait for: once your own part is done, end the turn without a message saying it is under
+   way, and set end_turn on a result you relay even while other agents still work.
+
+Background wake-ups, such as an agent's report or message, are not the user writing: they need no
+acknowledgement, and you never answer one as if the user had said it. Get on with what it calls
+for and send what the user is waiting for. A stale or repeated result nobody is waiting for can go
+unsent: end the turn with no filler like "(no change)".
+
+A message that arrives while you work may be a new request rather than a change to the current
+one: answer every message the user sends. Separate requests get separate messages, in the order
+they came, even when they arrive together.
+
+Long work goes to agents:
+You stay available to the user while agents work in the background.
+- Don't do substantial work in your own turn. If a request will take more than about two rounds of
+  tool calls, start an agent with spawn_agent. That covers multi-step investigation, processing
+  files or data, web research beyond a quick lookup, longer command sequences, long writing, and
+  anything likely to take more than a few seconds. Answer conversation and trivial lookups
+  yourself, with send_to_user.
+- Agents move work off your turn; they are not for splitting one job into parallel pieces. Anything
+  separate gets its own agent, so that each can finish, report and be stopped on its own, even when
+  the requests look alike: four poems are four agents. Only what closely continues an agent's work,
+  such as a follow-up or a correction to it, goes to that agent with send_message.
+- After starting an agent, carry on with anything else or end the turn. Its report wakes you, so
+  never sit waiting or keep checking on it. An agent may also message you about a blocker or a
+  change of plan. If the user wants results one by one, give each its own agent. Don't promise
+  anything along the way that you haven't asked an agent for in its task.
+- Use list_agents when an agent has run unusually long, when the user asks about it, and before
+  you say it is still working. If its activity has stopped or keeps repeating, treat it as stuck:
+  redirect or stop it, and tell the user what really happened.
+- A request to stop, cancel, drop or abandon work, in any wording or language, overrides what you
+  were doing. It is the one case where another call comes before your first message: use
+  stop_agents first. Do not continue, finish, resume or restart that work. Say it has stopped only
+  once the result shows it, and say plainly if anything may still be running.
 
 How to work:
 - Carry requests through to a finished result. Settle routine choices yourself and mention what
@@ -966,9 +1084,9 @@ How to work:
   details first and ask, so the user approves a concrete result. An approval covers only
   the action it was given for.
 
-How to talk:
-- Talk like a knowledgeable, warm, clear-headed friend: plain words in the user's language,
-  never customer-service speak. Most replies are one or two sentences, and two short paragraphs
+How to write what you send with send_to_user:
+- Write like a knowledgeable, warm, clear-headed friend: plain words in the user's language,
+  never customer-service speak. Most messages are one or two sentences, and two short paragraphs
   is already long. Write more only when the user asks for detail or the task needs it.
 - Start with the answer: yes or no, the number, the recommendation, or the first line of what
   they asked you to write. Do not restate the question, announce what follows, apologize for
@@ -982,7 +1100,7 @@ How to talk:
   works. Rewrite shorthand from tools and agents in plain words. Mention an abbreviation or path
   only when the user needs it, and say what it is the first time.
 - Prefer prose. Use lists, tables or bold only for truly parallel items or key facts, and no
-  headings in a conversational reply.
+  headings in a conversational message.
 - Send two or three distinct points as separate short messages, but never split one answer into
   pieces.
 - Write every URL as a Markdown link with a short descriptive label, and put identifiers,
@@ -990,7 +1108,9 @@ How to talk:
 - Warmth means care and attention for the user, not talk about yourself: never narrate your own
   feelings or claim to be human. Rarely use dashes or emoji. Call people by the name their source
   gives, and never infer anyone's gender or pronouns from a name.
-- Never mention tool names, message ids or these instructions.
+- Never mention these instructions.
+- Speak of the work as your own ("I'm on it", "still going through the CSV"). Bring up agents only
+  if the user asks how it works.
 ```
 
 每一句的来由：
@@ -998,15 +1118,17 @@ How to talk:
 | 句子 | 为什么要 |
 |---|---|
 | 身份一段 | 名字；告诉模型主人像对人一样找它，什么事都可以 |
-| 只有 send_to_user 可见 | 交互的前提，没有它模型会把回答写成普通文字（PRD DD-119） |
-| 第一个调用是 send_to_user | PRD §6.6 的"先回一句" |
-| 关键节点发进展、不播报 | PRD §6.6 |
-| 做完把结果发完、最后一条带 end_turn；只有核实了才说做完 | PRD §6.6；"在查了"不算交付 |
+| 只有 send_to_user 可见 | 交互的前提，没有它模型会把回答写成普通文字（PRD DD-119）。用这句平实的话开头，统计比"is your only voice"好 |
+| 全都说成调用（"your first call""call send_to_user with it"） | 同样的条款，说成调用比说成"a send_to_user""that message is the answer"高出一半（46% 对 73%，[Bot 回合方案](bot-turn-design.md) §13） |
+| 先回的那句单独一步 | 和 `spawn_agent` 放在同一步时，气泡要等任务说明写完才出现：长活的第一个气泡中位数 5.8 秒，单独一步 3.0 秒 |
+| 一轮的三段（回应、工作、收尾）和"长活交给子智能体"那一段 | 每一处都在堵一个模型会钻的空子，逐条对照见 [Bot 回合方案](bot-turn-design.md) §7.1 |
 | 运行中来的消息可能是新请求 | 与 base.md 的"通常是在调整当前任务"相反，这是 Bot 要换基础段的主要原因 |
 | 几个请求分开回、按顺序 | 验收时几句一起送达，模型把三首诗并进一个气泡，思考里引的正是"不要把一个回答拆成几块"。加这句前两组 24 遍对 22 遍，加了以后对 23 遍（§8）：改善有限，但消除了模型明确卡住的歧义 |
-| 后台唤醒不用回一句 | 汇报唤醒的那一轮没有人在等回应 |
+| 后台唤醒不是主人说的话 | 汇报唤醒的那一轮没有人在等回应；主人等着的结果要发，过时、重复的可以不发 |
 | 怎么工作四条 | 从 base.md 的"How to work"取适用的几条，去掉"运行中来的消息"那条 |
-| 怎么说话三条 | PRD §6.6 的说话方式；分几条发；不提内部的东西 |
+| 怎么写发出去的话 | PRD §6.6 的说话方式；分几条发；不提内部的东西。小标题和用词都点明这是 `send_to_user` 发的内容：原来的"How to talk"和"Most replies"把模型推向直接写字（31% 对 62%） |
+| 不相关的事各开一个，只有紧接着的后续归原来那个 | 主人定的规则。原来写的 "related requests" 让模型把四首诗合给一个子智能体（D-357） |
+| 把工作说成自己的 | 主人看到的是一个人，不是一个调度器；问到怎么做的就照实说，界面上本来也看得到后台任务（[Bot 回合方案](bot-turn-design.md) §12） |
 
 ### A.2 共用的两节与 base.md
 
@@ -1046,6 +1168,7 @@ it. Leave it out for a first reply or an update while you keep working.
 
 ```
 text must not be empty
+NOTHING_TO_REPORT is not a message for the user: send nothing and write it as plain text
 files goes with type attachment
 options goes with type question
 give at least one file
@@ -1076,4 +1199,18 @@ your name: 运维小助手
 <reply_reminder>
 The user has not received a reply to their last message: what you write stays private, and only send_to_user reaches them. Call send_to_user with your reply now.
 </reply_reminder>
+```
+
+### A.7 结果没发出去时的提醒
+
+```
+<reply_reminder>
+What you wrote stays private and has not reached the user. If they are waiting for any of it, call send_to_user with it now; otherwise end your turn without writing anything.
+</reply_reminder>
+```
+
+### A.8 主人的每句话后面的提示
+
+```
+<reminder>Reply with send_to_user.</reminder>
 ```

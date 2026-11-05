@@ -1,16 +1,16 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { addTotals, baseName, conversation, costText, openChain, runningAgents, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
-import { pairImages } from "../composer/attachments";
+import { pairImages, tabsName } from "../composer/attachments";
 import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon, MarkMotion } from "../icons";
 import { useNow, useStore } from "../store";
-import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
-import { Dock } from "./Dock";
+import { AgentCard, AgentMessageCard, BackgroundLine, ReportCard } from "./Agents";
+import { Dock, writingAgain } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { DraftMarkdown, Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
@@ -77,6 +77,12 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
+  // A sent message being written again: the composer (Dock) holds it, its row shows which it is.
+  const [again, setAgain] = useState(() => writingAgain(s.session_id));
+  const takeBack = useRef<(messageId: string) => void>(() => {});
+  const onResend = useCallback((messageId: string) => takeBack.current(messageId), []);
+  const find = (messageId: string) => scroll.current?.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+
   // The session's current failure is told once, at the end, with Retry; earlier ones in one quiet line.
   const lastEnd = [...steps].reverse().find((x) => x.kind === "end");
   const working = runningAgents(view).length;
@@ -98,7 +104,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
           )}
           <div className="tr" role="log" aria-label={t("chat.log")}>
             {steps.map((step, i) => (
-              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} working={step === lastEnd ? working : 0} sessionId={s.session_id} />
+              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} working={step === lastEnd ? working : 0} sessionId={s.session_id} again={step.key === again} onResend={s.archived ? undefined : onResend} />
             ))}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <Working view={view} steps={steps} />
@@ -109,7 +115,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
       <button className={`tobottom ${away ? "on" : ""}`} style={{ "--dock": `${dock}px` } as CSSProperties} aria-label={t("chat.toBottom")} title={t("chat.toBottom")} tabIndex={away ? 0 : -1} aria-hidden={!away} onClick={toEnd}>
         <Icon name="arrowDown" />
       </button>
-      <Dock s={s} view={view} onHeight={setDock} />
+      <Dock s={s} view={view} onHeight={setDock} takeBack={takeBack} onAgain={setAgain} onFind={find} onResent={toEnd} />
     </>
   );
 }
@@ -242,7 +248,7 @@ function isMerged(steps: Step[], i: number): boolean {
 }
 
 /** `working`: the background tasks still working, for the last task end. */
-type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string };
+type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string; again: boolean; onResend?: (messageId: string) => void };
 
 /**
  * A row renders again only when what it shows changed: the steps are made
@@ -257,6 +263,8 @@ const Row = memo(
     a.current === b.current &&
     a.working === b.working &&
     a.sessionId === b.sessionId &&
+    a.again === b.again &&
+    a.onResend === b.onResend &&
     sameStep(a.step, b.step),
 );
 
@@ -264,7 +272,7 @@ function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
   switch (a.kind) {
     case "user":
-      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.skills.join() === (b as typeof a).skills.join();
+      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.tabs.length === (b as typeof a).tabs.length && a.skills.join() === (b as typeof a).skills.join();
     case "text":
       return a.text === (b as typeof a).text && a.live === (b as typeof a).live;
     case "work": {
@@ -286,6 +294,8 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;
+    case "agent_message":
+      return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent;
     case "end": {
       const c = (b as typeof a).chain;
       return a.end === (b as typeof a).end && a.chain?.usage === c?.usage && a.chain?.agents === c?.agents && a.chain?.started === c?.started;
@@ -295,7 +305,7 @@ function sameStep(a: Step, b: Step): boolean {
   }
 }
 
-function RowView({ step, previous, final, merged, current, working, sessionId }: RowProps) {
+function RowView({ step, previous, final, merged, current, working, sessionId, again, onResend }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
     case "user": {
@@ -304,8 +314,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
       return (
         <>
           <TimeLine at={step.ts} previous={previous} />
-          <div className="um">
-            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0) && (
+          <div className={`um ${again ? "again" : ""}`} data-mid={step.key}>
+            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.tabs.length > 0) && (
               <div className="um-att">
                 {rest.map((im, i) => (
                   <Tile key={i} kind="image" src={`data:${im.mime_type};base64,${im.data}`} />
@@ -319,6 +329,9 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
                 {step.quotes.map((q, i) => (
                   <Tile key={`doc${i}`} kind="doc" quote={q} shot={picture(step.comments.length + i)} />
                 ))}
+                {step.tabs.map((tabs, i) => (
+                  <Tile key={`tabs${i}`} kind="tabs" name={tabsName(tabs)} />
+                ))}
               </div>
             )}
             {step.text !== "" && (
@@ -326,7 +339,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
                 <Words text={step.text} skills={step.skills} />
               </div>
             )}
-            <MessageBar text={step.text} at={step.ts} mine />
+            <MessageBar text={step.text} at={step.ts} mine onResend={onResend && (() => onResend(step.key))} />
           </div>
         </>
       );
@@ -345,6 +358,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
       return <AgentCard launches={step.launches} />;
     case "report":
       return <ReportCard step={step} />;
+    case "agent_message":
+      return <AgentMessageCard step={step} />;
     case "end":
       if (merged) return null;
       return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;
@@ -372,9 +387,10 @@ function TimeLine({ at, previous }: { at: number; previous: number | undefined }
  * Under a message on hover (the model's only once its task ended): Copy, on
  * the edge the message keeps to, and beside it, quieter, how long ago it was
  * written (the full time on hover) and, under the model's last words, what
- * its task took. The owner's messages keep to the right, so Copy comes last.
+ * its task took. The owner's messages keep to the right, so Copy comes last,
+ * after writing the message again, which only brings it back to the composer.
  */
-function MessageBar({ text, at, task, mine }: { text: string; at: number; task?: ReactNode; mine?: boolean }) {
+function MessageBar({ text, at, task, mine, onResend }: { text: string; at: number; task?: ReactNode; mine?: boolean; onResend?: () => void }) {
   const { t } = useTranslation("session");
   const [done, setDone] = useState(false);
   const copy = (
@@ -393,7 +409,12 @@ function MessageBar({ text, at, task, mine }: { text: string; at: number; task?:
       {task}
     </span>
   );
-  return <div className="msg-act">{mine ? <>{meta}{copy}</> : <>{copy}{meta}</>}</div>;
+  const again = onResend && (
+    <button className="tb" aria-label={t("chat.resend")} title={t("chat.resend")} onClick={onResend}>
+      <Icon name="edit" className="sm" />
+    </button>
+  );
+  return <div className="msg-act">{mine ? <>{meta}{again}{copy}</> : <>{copy}{meta}</>}</div>;
 }
 
 /** What a task took, after the time under its last words: how long, its sub-agents, tokens and cost. */

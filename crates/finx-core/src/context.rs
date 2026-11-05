@@ -68,14 +68,51 @@ pub fn bot_name_message(name: &str, ts: Timestamp) -> UserMessage {
     }
 }
 
-/// The user message that reminds a bot its owner has had no reply (bot-design §3.11).
-pub fn unanswered_message(ts: Timestamp) -> UserMessage {
+/// The user message that gives a bot the list of its routines (routine-design §4.4).
+pub fn routines_message(text: &str, ts: Timestamp) -> UserMessage {
     UserMessage {
         content: vec![UserContent::Text {
-            text: "<reply_reminder>\nThe user has not received a reply to their last message: what you write \
-                   stays private, and only send_to_user reaches them. Call send_to_user with your reply now.\n</reply_reminder>"
+            text: format!("<environment_update>\n{text}\n</environment_update>"),
+        }],
+        ts,
+    }
+}
+
+/// The user message that reminds a bot of what came of its work (bot-turn-design §6).
+pub fn undelivered_message(ts: Timestamp) -> UserMessage {
+    UserMessage {
+        content: vec![UserContent::Text {
+            text: "<reply_reminder>\nWhat you wrote stays private and has not reached the user. If they are waiting \
+                   for any of it, call send_to_user with it now; otherwise end your turn without writing anything.\n</reply_reminder>"
                 .into(),
         }],
+        ts,
+    }
+}
+
+/// The user message right after each of a bot's owner's messages (bot-design §3.14).
+pub fn reply_nudge_message(ts: Timestamp) -> UserMessage {
+    UserMessage {
+        content: vec![UserContent::Text {
+            text: "<reminder>Reply with send_to_user.</reminder>".into(),
+        }],
+        ts,
+    }
+}
+
+/// The user message that reminds a bot its owner has had no reply (bot-design §3.11), or that a
+/// routine's report has not reached them (routine-design §2.4).
+pub fn unanswered_message(routine: bool, ts: Timestamp) -> UserMessage {
+    let text = if routine {
+        "<reply_reminder>\nThe routine report above has not reached the user: what you write stays private, and only \
+         send_to_user reaches them. Pass on what it says now. If it holds nothing they asked to hear, send nothing and write \
+         only NOTHING_TO_REPORT. If the user no longer wants these, pause the routine and tell them you did.\n</reply_reminder>"
+    } else {
+        "<reply_reminder>\nThe user has not received a reply to their last message: what you write \
+         stays private, and only send_to_user reaches them. Call send_to_user with your reply now.\n</reply_reminder>"
+    };
+    UserMessage {
+        content: vec![UserContent::Text { text: text.into() }],
         ts,
     }
 }
@@ -86,6 +123,19 @@ pub fn name_in_context(history: &History) -> Option<&str> {
     for entry in history.branch_back() {
         match &entry.kind {
             EntryKind::BotName { name } => return Some(name),
+            EntryKind::Compaction(_) => break,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The list of routines the current context last gave: the newest such entry since the last
+/// compaction.
+pub fn routines_in_context(history: &History) -> Option<&str> {
+    for entry in history.branch_back() {
+        match &entry.kind {
+            EntryKind::Routines { text } => return Some(text),
             EntryKind::Compaction(_) => break,
             _ => {}
         }
@@ -165,15 +215,18 @@ pub fn branch_messages(branch: &[&Entry]) -> Vec<Message> {
 }
 
 /// The message an entry adds to the context; `ts` is the entry's. A delivered report, a new
-/// date, a bot's new name and its reply reminder are user messages; a user message that mentions
+/// date, a bot's new name, its routines and its reply reminders are user messages; a user message that mentions
 /// skills carries their instructions first (docs/kernel/skill-design.md §6.3.4).
 pub fn entry_message(kind: &EntryKind, ts: Timestamp) -> Option<Cow<'_, Message>> {
     match kind {
         EntryKind::Message { message, skills, .. } if !skills.is_empty() => Some(Cow::Owned(with_skills(message, skills))),
-        EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } => Some(Cow::Borrowed(message)),
+        EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } | EntryKind::AgentMessage { message, .. } => Some(Cow::Borrowed(message)),
         EntryKind::Date { date } => Some(Cow::Owned(Message::from(date_message(date, ts)))),
         EntryKind::BotName { name } => Some(Cow::Owned(Message::from(bot_name_message(name, ts)))),
-        EntryKind::Unanswered => Some(Cow::Owned(Message::from(unanswered_message(ts)))),
+        EntryKind::Routines { text } => Some(Cow::Owned(Message::from(routines_message(text, ts)))),
+        EntryKind::Unanswered { routine } => Some(Cow::Owned(Message::from(unanswered_message(*routine, ts)))),
+        EntryKind::Undelivered => Some(Cow::Owned(Message::from(undelivered_message(ts)))),
+        EntryKind::ReplyNudge => Some(Cow::Owned(Message::from(reply_nudge_message(ts)))),
         _ => None,
     }
 }

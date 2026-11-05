@@ -8,16 +8,18 @@ use finx_protocol::ErrorInfo;
 use finx_protocol::EventMsg;
 use finx_protocol::Op;
 use finx_protocol::PromptMode;
+use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
 
 use super::AgentTree;
+use super::Progress;
 use super::Report;
 use crate::kernel::Kernel;
 
 /// The current round of work: from the first task after being idle until idle again.
-struct Round {
+pub(super) struct Round {
     started: Option<Instant>,
     status: AgentStatus,
     reply: Option<String>,
@@ -29,7 +31,7 @@ struct Round {
 }
 
 impl Round {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             started: None,
             status: AgentStatus::Completed,
@@ -41,7 +43,43 @@ impl Round {
         }
     }
 
-    fn finish(&mut self) -> Report {
+    /// What an event says about the round.
+    pub(super) fn note(&mut self, msg: &EventMsg) {
+        match msg {
+            EventMsg::TaskStarted { .. } => {
+                self.started.get_or_insert_with(Instant::now);
+            }
+            EventMsg::MessageCompleted {
+                message: Message::Assistant(reply),
+                ..
+            } => {
+                let text = reply.text();
+                if !text.trim().is_empty() {
+                    self.reply = Some(text);
+                }
+            }
+            EventMsg::TaskCompleted { usage, last_message, .. } => {
+                self.usage.merge(usage);
+                self.status = AgentStatus::Completed;
+                self.error = None;
+                if last_message.is_some() {
+                    self.reply.clone_from(last_message);
+                }
+            }
+            EventMsg::TaskFailed { error, usage, .. } => {
+                self.usage.merge(usage);
+                self.status = AgentStatus::Failed;
+                self.error = Some(error.clone());
+            }
+            EventMsg::TaskInterrupted { usage, .. } => {
+                self.usage.merge(usage);
+                self.status = AgentStatus::Interrupted;
+            }
+            _ => {}
+        }
+    }
+
+    pub(super) fn finish(&mut self) -> Report {
         let round = std::mem::replace(self, Round::new());
         Report {
             status: round.status,
@@ -54,42 +92,22 @@ impl Round {
     }
 }
 
-pub(super) async fn drive(tree: Arc<AgentTree>, id: String, mut kernel: Kernel) {
+pub(super) async fn drive(tree: Arc<AgentTree>, id: String, mut kernel: Kernel, progress: Arc<Mutex<Progress>>) {
     let mut round = Round::new();
     let mut closed = false;
     while let Some(event) = kernel.next_event().await {
         tree.forward(&id, &event);
+        if matches!(event.msg, EventMsg::TaskStarted { .. }) && round.started.is_none() {
+            progress.lock().begin();
+        }
+        progress.lock().saw(&event.msg);
+        round.note(&event.msg);
         match event.msg {
             EventMsg::TaskStarted { .. } => {
                 round.restarting = false;
-                round.started.get_or_insert_with(Instant::now);
                 tree.running(&id);
             }
-            EventMsg::MessageCompleted {
-                message: Message::Assistant(reply),
-                ..
-            } => {
-                let text = reply.text();
-                if !text.trim().is_empty() {
-                    round.reply = Some(text);
-                }
-            }
-            EventMsg::TaskCompleted { usage, last_message, .. } => {
-                round.usage.merge(&usage);
-                round.status = AgentStatus::Completed;
-                round.error = None;
-                if last_message.is_some() {
-                    round.reply = last_message;
-                }
-            }
-            EventMsg::TaskFailed { error, usage, .. } => {
-                round.usage.merge(&usage);
-                round.status = AgentStatus::Failed;
-                round.error = Some(error);
-            }
-            EventMsg::TaskInterrupted { returned_input, usage, .. } => {
-                round.usage.merge(&usage);
-                round.status = AgentStatus::Interrupted;
+            EventMsg::TaskInterrupted { returned_input, .. } => {
                 if tree.take_redirect(&id) {
                     // The new message and anything queued before it start the next task.
                     round.restarting = true;

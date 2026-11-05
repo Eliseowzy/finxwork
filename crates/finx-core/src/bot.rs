@@ -4,6 +4,7 @@
 
 use async_trait::async_trait;
 use finx_llm::Message;
+use finx_protocol::AgentStatus;
 use finx_tools::Environment;
 use finx_tools::Tool;
 use finx_tools::ToolCategory;
@@ -27,6 +28,7 @@ use std::sync::Arc;
 use crate::files::MAX_IMAGE;
 use crate::history::History;
 use crate::store::EntryKind;
+use finx_protocol::MailKind;
 
 /// The bot a session is started for: its id, and its name now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,26 +42,81 @@ pub const SEND_TO_USER: &str = "send_to_user";
 /// The tools a bot's session gets on top of a session's. Its sub-agents do not get them: their
 /// replies are reports to the bot.
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
-    vec![Arc::new(Typed::new(SendToUser))]
+    vec![Arc::new(Typed::new(SendToUser)), crate::routine::tool()]
 }
 
-/// Whether nothing reached the owner since their latest message: no `send_to_user` after it
-/// succeeded (bot-design §3.11). The message may be an earlier task's, as when a failed task is
-/// retried; a report that woke the bot after its reply leaves nobody waiting.
-pub(crate) fn unanswered(history: &History) -> bool {
+/// What a bot about to end its turn still owes its owner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Owed {
+    Nothing,
+    /// Nothing reached them since their latest message (bot-design §3.11). The message may be an
+    /// earlier task's, as when a failed task is retried.
+    Reply,
+    /// Nothing reached them since a routine's report, which they asked for, unless the bot's reply
+    /// says it holds nothing to tell (routine-design §2.4, D-441).
+    RoutineReport,
+    /// Something came of its work since its last message: a sub-agent's report or message, or the
+    /// results of its tools (bot-turn-design §6). It may have nothing worth telling.
+    Delivery,
+}
+
+impl Owed {
+    /// The reminder for what must not go unanswered.
+    pub(crate) fn reminder(self) -> Option<EntryKind> {
+        match self {
+            Owed::Reply => Some(EntryKind::Unanswered { routine: false }),
+            Owed::RoutineReport => Some(EntryKind::Unanswered { routine: true }),
+            Owed::Nothing | Owed::Delivery => None,
+        }
+    }
+}
+
+/// Looks back from the end of the history to the last message that reached the owner.
+pub(crate) fn owed(history: &History) -> Owed {
+    let mut worked = false;
+    let mut last_reply = None;
     for entry in history.branch_back() {
         match &entry.kind {
             EntryKind::Message {
                 message: Message::ToolResult(result),
                 ..
-            } if result.tool_name == SEND_TO_USER && !result.is_error => return false,
+            } => {
+                if result.tool_name == SEND_TO_USER && !result.is_error {
+                    break;
+                }
+                // Starting an agent or telling it something gives the owner nothing to hear, and a
+                // message the tool refused is nothing that came of the work.
+                worked |= !matches!(result.tool_name.as_str(), "spawn_agent" | "send_message" | SEND_TO_USER);
+            }
             EntryKind::Message {
                 message: Message::User(_), ..
-            } => return true,
+            } => return Owed::Reply,
+            EntryKind::Message {
+                message: Message::Assistant(reply),
+                ..
+            } if last_reply.is_none() => last_reply = Some(reply),
+            EntryKind::Mail { mail, .. } if mail.kind == MailKind::Routine => {
+                if !last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some()) {
+                    return Owed::RoutineReport;
+                }
+            }
+            // A stopped agent's report wakes nobody, and nobody waits for it.
+            EntryKind::Mail { mail, .. } => worked |= mail.status != AgentStatus::Interrupted,
+            EntryKind::AgentMessage { .. } => worked = true,
             _ => {}
         }
     }
-    false
+    // Its reply can say there is nothing to tell (routine-design D-441).
+    let settled = last_reply.is_some_and(|reply| crate::routine::quiet_note(&reply.text()).is_some());
+    if worked && !settled { Owed::Delivery } else { Owed::Nothing }
+}
+
+/// The words a call sends the owner: no blank ones, and not the phrase that is between the kernel
+/// and the model, which the tool refuses (routine-design D-441).
+pub fn words_of(args: &Value) -> Option<&str> {
+    args.get("text")
+        .and_then(Value::as_str)
+        .filter(|text| !text.trim().is_empty() && crate::routine::quiet_note(text).is_none())
 }
 
 /// Whether a call sends files: by its type, or without one by what it carries (bot-design §3.12).
@@ -205,6 +262,10 @@ impl TypedTool for SendToUser {
     async fn run(&self, args: SendArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         // An empty value is no value: some models fill in every optional parameter.
         let text = args.text.as_deref().filter(|text| !text.trim().is_empty());
+        // Between the kernel and the model: the owner never reads it (routine-design D-441).
+        if text.is_some_and(|text| crate::routine::quiet_note(text).is_some()) {
+            return Err(invalid("NOTHING_TO_REPORT is not a message for the user: send nothing and write it as plain text"));
+        }
         let files = args.files.unwrap_or_default();
         let options = args.options.unwrap_or_default();
         let sent = ToolOutput::text("Sent.");

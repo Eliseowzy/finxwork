@@ -3,12 +3,17 @@
 //! session's user, and it cannot start agents of its own. When one has nothing left to do, its
 //! report goes back to the main session: as the result of a call that waits for it, or as mail
 //! that joins the main session's history at its next turn boundary and wakes it when it is idle.
+//! While it works, a sub-agent can use `send_message` too: to the main agent, which wakes it, or
+//! to another working sub-agent. Only the main agent sets an idle agent to work
+//! (agent-messaging-design §3).
 
 mod driver;
 mod mail;
 mod restore;
+mod run;
 mod tools;
 
+use finx_llm::Message;
 use finx_llm::ModelRegistry;
 use finx_llm::UsageTotals;
 use finx_llm::UserContent;
@@ -27,13 +32,16 @@ use finx_tools::ToolOutput;
 use finx_tools::ToolRegistry;
 use parking_lot::Mutex;
 use serde_json::json;
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::Weak;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
@@ -41,6 +49,10 @@ pub(crate) use mail::Mail;
 pub use restore::RestoredAgent;
 pub(crate) use restore::restore;
 pub(crate) use tools::agent_tools;
+pub(crate) use tools::bot_agent_tools;
+pub(crate) use tools::deferred_agent_tools;
+pub(crate) use tools::deferred_sub_agent_tools;
+pub(crate) use tools::sub_agent_tools;
 
 use crate::config::Config;
 use crate::emitter::Emitter;
@@ -65,6 +77,22 @@ use crate::store::SessionStore;
 const REPORT_LATER: &str = "To wait for its report, end your turn: that is not your final answer. The report \
     comes to you as a new message when the agent finishes, and you continue your work from there.";
 
+/// How long `stop_agents` waits for what it stopped: past the time a cancelled tool has to stop.
+const STOP_WAIT: Duration = Duration::from_secs(10);
+/// The steps `list_agents` shows of an agent.
+const RECENT_STEPS: usize = 5;
+
+/// Characters of a step that `list_agents` shows.
+const STEP_CHARS: usize = 120;
+
+/// Characters of what an agent last said that `list_agents` shows.
+const SAID_CHARS: usize = 200;
+
+/// What a sub-agent calls the main agent. Taken: no sub-agent gets one of these names.
+const MAIN: &str = "main";
+/// Its task calls the main agent its parent, so it may well write this.
+const PARENT: &str = "parent";
+
 /// What a sub-agent's session is built from: the main session's dependencies.
 pub(crate) struct ChildDeps {
     pub(crate) llm: Arc<ModelRegistry>,
@@ -84,6 +112,18 @@ pub(crate) struct ChildDeps {
     pub(crate) docs: Option<Arc<finx_docs::DocStore>>,
 }
 
+/// How a sub-agent's tools find the tree and who is calling. Weak: the tree owns its agents.
+pub(crate) struct AgentLink {
+    tree: Weak<AgentTree>,
+    id: String,
+}
+
+impl AgentLink {
+    fn tree(&self) -> Result<Arc<AgentTree>, ToolError> {
+        self.tree.upgrade().ok_or_else(|| ToolError::Failed("the session is closing".into()))
+    }
+}
+
 /// The main session, once it runs. Weak: the session owns the tree, not the other way round.
 struct Root {
     session: Weak<Session>,
@@ -98,6 +138,8 @@ pub(crate) struct AgentTree {
     root: OnceLock<Root>,
     /// Never held across an await.
     state: Mutex<TreeState>,
+    /// Bumped whenever an agent stops working.
+    settled: watch::Sender<u64>,
 }
 
 #[derive(Default)]
@@ -106,7 +148,13 @@ struct TreeState {
     /// Agents of an earlier run of the session, whose sessions are not loaded: their names
     /// stay taken, and they take no messages.
     restored: Vec<(String, String)>,
-    /// Reports handed over but not yet in the main session's inbox, or in a waiting call.
+    /// Routines' runs under way (routine-design §2.1): apart from `agents`, as no message, name
+    /// or idle check concerns them.
+    runs: Vec<run::ActiveRun>,
+    /// The drivers of agents that `retire` took off the tree, until their sessions have closed.
+    retiring: Vec<JoinHandle<()>>,
+    /// Reports and messages handed over but not yet in the main session's inbox, or in a
+    /// waiting call.
     in_flight: usize,
     mails: u64,
     closing: bool,
@@ -115,7 +163,11 @@ struct TreeState {
 struct Agent {
     id: String,
     name: String,
+    /// What the user sees for it.
+    description: String,
     status: AgentStatus,
+    /// Kept by its driver.
+    progress: Arc<Mutex<Progress>>,
     ops: mpsc::Sender<Op>,
     internal: mpsc::UnboundedSender<Box<Internal>>,
     route: Route,
@@ -124,6 +176,84 @@ struct Agent {
     driver: Option<JoinHandle<()>>,
     /// What the kernel's tools keep for the agent's session: its browser.
     tool_state: Option<Arc<finx_tools::SessionState>>,
+}
+
+/// What `list_agents` tells of an agent's work.
+pub(super) struct Progress {
+    /// When its current or last round of work began.
+    since: Instant,
+    /// When its session last did anything.
+    last: Instant,
+    /// Its latest tool calls, oldest first.
+    steps: VecDeque<String>,
+    /// What it waits for the user to approve.
+    asking: Option<String>,
+    /// The start of what it last wrote in this round of work, which nobody sees until it reports.
+    said: Option<String>,
+}
+
+impl Progress {
+    fn new() -> Self {
+        let now = Instant::now();
+        Self {
+            since: now,
+            last: now,
+            steps: VecDeque::new(),
+            asking: None,
+            said: None,
+        }
+    }
+
+    /// A new round of work.
+    pub(super) fn begin(&mut self) {
+        self.since = Instant::now();
+        self.steps.clear();
+        self.said = None;
+    }
+
+    /// An event of its session.
+    pub(super) fn saw(&mut self, msg: &EventMsg) {
+        self.last = Instant::now();
+        match msg {
+            EventMsg::ToolStarted { title, .. } => {
+                if self.steps.len() == RECENT_STEPS {
+                    self.steps.pop_front();
+                }
+                self.steps.push_back(step_line(title));
+            }
+            EventMsg::ApprovalRequested { summary, .. } => self.asking = Some(step_line(summary)),
+            EventMsg::ApprovalResolved { .. } => self.asking = None,
+            EventMsg::MessageCompleted {
+                message: Message::Assistant(reply),
+                ..
+            } => {
+                let text = reply.text();
+                if !text.trim().is_empty() {
+                    self.said = Some(said_line(&text));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// What an agent said, as `list_agents` shows it: the start of it, on one line.
+fn said_line(text: &str) -> String {
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    match line.char_indices().nth(SAID_CHARS) {
+        Some((end, _)) => format!("{}…", &line[..end]),
+        None => line,
+    }
+}
+
+/// A step as `list_agents` shows it: a command can run to pages.
+fn step_line(title: &str) -> String {
+    let line = title.lines().next().unwrap_or_default();
+    match line.char_indices().nth(STEP_CHARS) {
+        Some((end, _)) => format!("{}…", &line[..end]),
+        None if line.len() < title.trim_end().len() => format!("{line}…"),
+        None => line.to_string(),
+    }
 }
 
 /// Where the report of the current round of work goes.
@@ -151,6 +281,7 @@ impl AgentTree {
             deps,
             root: OnceLock::new(),
             state: Mutex::new(TreeState::default()),
+            settled: watch::channel(0).0,
         })
     }
 
@@ -202,6 +333,36 @@ impl AgentTree {
                 grants: grants.clone(),
             }));
         }
+        for internal in state.runs.iter().filter_map(|run| run.internal.as_ref()) {
+            let _ = internal.send(Box::new(Internal::Permissions {
+                mode,
+                rules: rules.clone(),
+                grants: grants.clone(),
+            }));
+        }
+    }
+
+    /// The agents started in the part of the conversation a `resend` took back: they stop, their
+    /// sessions close, and they leave the tree, so that their names are free again and whatever
+    /// they were about to report is dropped.
+    pub(crate) fn retire(&self, ids: &[String]) {
+        if ids.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock();
+        state.restored.retain(|(id, _)| !ids.contains(id));
+        state.retiring.retain(|driver| !driver.is_finished());
+        let (gone, stay): (Vec<Agent>, Vec<Agent>) = std::mem::take(&mut state.agents).into_iter().partition(|a| ids.contains(&a.id));
+        state.agents = stay;
+        for mut agent in gone {
+            send_now(&agent.ops, Op::Shutdown);
+            state.retiring.extend(agent.driver.take());
+        }
+    }
+
+    /// Whether this agent is on the tree: not when a `resend` took it off.
+    pub(crate) fn has(&self, id: &str) -> bool {
+        self.state.lock().agents.iter().any(|a| a.id == id)
     }
 
     /// Stops what every sub-agent is doing. Their sessions stay; a message continues them.
@@ -237,6 +398,149 @@ impl AgentTree {
         true
     }
 
+    /// How the agents stand, the ones named or all of them (`list_agents`). `caller` is the
+    /// sub-agent asking, which is also told about the main agent and which of them it is.
+    pub(crate) fn list(&self, names: Option<&[String]>, caller: Option<&str>) -> String {
+        // Before the tree's lock: nothing holds both.
+        let main_line = caller.map(|_| {
+            let working = self.root().is_ok_and(|root| root.is_busy());
+            format!("{MAIN}: {}", if working { "working" } else { "idle" })
+        });
+        let state = self.state.lock();
+        let mut lines = Vec::new();
+        let agent_line = |agent: &Agent| {
+            let mut label = if agent.description.is_empty() { agent.name.clone() } else { format!("{} ({})", agent.name, agent.description) };
+            if caller == Some(agent.id.as_str()) {
+                label.push_str(" (you)");
+            }
+            let progress = agent.progress.lock();
+            let mut line = if agent.status == AgentStatus::Running {
+                let mut line = format!("{label}: running for {}", mail::duration(progress.since.elapsed()));
+                match &progress.asking {
+                    Some(what) => line.push_str(&format!(", waiting for the user to approve: {what}")),
+                    None => line.push_str(&format!(", last activity {} ago", mail::duration(progress.last.elapsed()))),
+                }
+                line
+            } else {
+                format!("{label}: {}, {} ago", agent.status.as_str(), mail::duration(progress.last.elapsed()))
+            };
+            if !progress.steps.is_empty() {
+                let steps: Vec<&str> = progress.steps.iter().map(String::as_str).collect();
+                line.push_str(&format!("\n  recent steps: {}", steps.join("; ")));
+            }
+            // Once it is idle, its report has said it.
+            if agent.status == AgentStatus::Running
+                && let Some(said) = &progress.said
+            {
+                line.push_str(&format!("\n  last said: {said}"));
+            }
+            line
+        };
+        match names {
+            Some(names) => {
+                for name in names {
+                    let name = name.trim();
+                    if let Some(agent) = state.agents.iter().find(|a| a.name == name || a.id == name) {
+                        lines.push(agent_line(agent));
+                    } else if let Some(main) = main_line.as_ref().filter(|_| is_main(name)) {
+                        lines.push(main.clone());
+                    } else if state.restored.iter().any(|(id, n)| n == name || id == name) {
+                        lines.push(format!("{name}: closed, from an earlier run"));
+                    } else {
+                        lines.push(format!("{name}: no such agent"));
+                    }
+                }
+            }
+            None => {
+                lines.extend(main_line.clone());
+                lines.extend(state.restored.iter().map(|(_, name)| format!("{name}: closed, from an earlier run")));
+                lines.extend(state.agents.iter().map(agent_line));
+            }
+        }
+        if lines.is_empty() {
+            return "You have no agents.".to_string();
+        }
+        lines.join("\n")
+    }
+
+    /// Stops the agents named, or all that run, and waits until they did (`stop_agents`). They
+    /// keep their sessions, and their reports do not wake the main session.
+    pub(crate) async fn stop(&self, names: Option<&[String]>, cancel: &CancellationToken) -> Result<String, ToolError> {
+        let mut settled = self.settled.subscribe();
+        settled.borrow_and_update();
+        let mut stopping: Vec<String> = Vec::new();
+        let mut finished: Vec<String> = Vec::new();
+        let mut unknown: Vec<String> = Vec::new();
+        {
+            let state = self.state.lock();
+            let targets: Vec<&Agent> = match names {
+                Some(names) => names
+                    .iter()
+                    .filter_map(|name| {
+                        let name = name.trim();
+                        let agent = state.agents.iter().find(|a| a.name == name || a.id == name);
+                        if agent.is_none() {
+                            if state.restored.iter().any(|(id, n)| n == name || id == name) {
+                                finished.push(name.to_string());
+                            } else {
+                                unknown.push(name.to_string());
+                            }
+                        }
+                        agent
+                    })
+                    .collect(),
+                None => state.agents.iter().filter(|a| a.status == AgentStatus::Running).collect(),
+            };
+            for agent in targets {
+                if agent.status == AgentStatus::Running {
+                    send_now(&agent.ops, Op::Interrupt);
+                    stopping.push(agent.id.clone());
+                } else {
+                    finished.push(agent.name.clone());
+                }
+            }
+        }
+        let deadline = tokio::time::sleep(STOP_WAIT);
+        tokio::pin!(deadline);
+        loop {
+            let working = {
+                let state = self.state.lock();
+                state.agents.iter().any(|a| stopping.contains(&a.id) && a.status == AgentStatus::Running)
+            };
+            if !working {
+                break;
+            }
+            tokio::select! {
+                _ = settled.changed() => {}
+                _ = &mut deadline => break,
+                _ = cancel.cancelled() => return Err(ToolError::Cancelled),
+            }
+        }
+        let mut stopped: Vec<String> = Vec::new();
+        let mut still: Vec<String> = Vec::new();
+        {
+            let state = self.state.lock();
+            for agent in state.agents.iter().filter(|a| stopping.contains(&a.id)) {
+                match agent.status {
+                    AgentStatus::Running => still.push(agent.name.clone()),
+                    AgentStatus::Interrupted => stopped.push(agent.name.clone()),
+                    // It got there first.
+                    _ => finished.push(agent.name.clone()),
+                }
+            }
+        }
+        let mut parts = Vec::new();
+        for (what, who) in [("Stopped", &stopped), ("Already finished", &finished), ("Still stopping", &still), ("No such agent", &unknown)] {
+            if !who.is_empty() {
+                parts.push(format!("{what}: {}.", who.join(", ")));
+            }
+        }
+        if parts.is_empty() {
+            return Ok("No agents are running.".to_string());
+        }
+        Ok(parts.join(" "))
+    }
+
     /// Passes an event of agent `id`'s session on to the main session's clients (`agent_event`).
     fn forward(&self, id: &str, event: &Event) {
         if followed(&event.msg) {
@@ -247,18 +551,62 @@ impl AgentTree {
         }
     }
 
-    /// Closes every sub-agent's session and waits until their logs are closed.
+    /// Closes every sub-agent's session and every run's, and waits until their logs are closed.
     pub(crate) async fn shutdown(&self) {
-        let agents: Vec<(mpsc::Sender<Op>, Option<JoinHandle<()>>)> = {
+        let (agents, runs, retiring) = {
             let mut state = self.state.lock();
             state.closing = true;
-            state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect()
+            let runs: Vec<JoinHandle<()>> = state.runs.iter_mut().filter_map(run::ActiveRun::close).collect();
+            let agents: Vec<_> = state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect();
+            (agents, runs, std::mem::take(&mut state.retiring))
         };
         for (ops, _) in &agents {
             let _ = ops.send(Op::Shutdown).await;
         }
-        let drivers = agents.into_iter().filter_map(|(_, driver)| driver);
+        let drivers = agents.into_iter().filter_map(|(_, driver)| driver).chain(runs).chain(retiring);
         let _ = tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(drivers)).await;
+    }
+
+    /// What a new session of the tree starts from: the main session's current settings. A bot's
+    /// start from a session's prompt, not the bot's (bot-design §2.3).
+    fn child_launch(&self, root: &Arc<Session>, header: SessionHeader, interactive_approvals: bool) -> ChildLaunch {
+        let state = root.state.lock();
+        let (system_prompt, base_prompt) = match &state.sub_agent_prompt {
+            Some(prompt) => (crate::mcp::compose(prompt, state.mcp_section.as_deref()).into(), prompt.clone()),
+            None => (state.system_prompt.clone(), state.base_prompt.clone()),
+        };
+        ChildLaunch {
+            header,
+            system_prompt,
+            base_prompt,
+            mcp_section: state.mcp_section.clone(),
+            mcp: self.deps.mcp.clone(),
+            skills: state.skills.clone(),
+            model: state.model.clone(),
+            thinking: state.thinking,
+            permission_mode: state.permission_mode,
+            session_rules: state.session_rules.clone(),
+            site_grants: state.site_grants.clone(),
+            deps: KernelDeps {
+                llm: self.deps.llm.clone(),
+                tools: self.deps.tools.clone(),
+                env: self.deps.env.clone(),
+                store: self.deps.store.clone(),
+                hooks: self.deps.hooks.clone(),
+                mcp_servers: Vec::new(),
+                browser_pool: self.deps.browser_pool.clone(),
+                docs: self.deps.docs.clone(),
+                routines: None,
+            },
+            home: self.deps.home.clone(),
+            config: self.deps.config.clone(),
+            system: root.system.clone(),
+            trusted: self.deps.trusted,
+            interactive_approvals,
+            main: Arc::downgrade(root),
+            approval_line: root.approval_line.clone(),
+            locks: root.locks.clone(),
+        }
     }
 
     pub(crate) async fn spawn(
@@ -272,26 +620,7 @@ impl AgentTree {
             return Err(ToolError::InvalidArgs("task must not be empty".into()));
         }
         let root = self.root()?;
-        let (system_prompt, base_prompt, mcp_section, skills, model, thinking, permission_mode, session_rules, site_grants, parent_task) = {
-            let state = root.state.lock();
-            // A bot's sub-agents start from a session's prompt, not the bot's (bot-design §2.3).
-            let (system_prompt, base_prompt) = match &state.sub_agent_prompt {
-                Some(prompt) => (crate::mcp::compose(prompt, state.mcp_section.as_deref()).into(), prompt.clone()),
-                None => (state.system_prompt.clone(), state.base_prompt.clone()),
-            };
-            (
-                system_prompt,
-                base_prompt,
-                state.mcp_section.clone(),
-                state.skills.clone(),
-                state.model.clone(),
-                state.thinking,
-                state.permission_mode,
-                state.session_rules.clone(),
-                state.site_grants.clone(),
-                state.active_task.as_ref().map(|t| t.id.clone()).unwrap_or_default(),
-            )
-        };
+        let parent_task = root.state.lock().active_task.as_ref().map(|t| t.id.clone()).unwrap_or_default();
         let name = self.unique_name(args.name.as_deref())?;
         let id = uuid::Uuid::now_v7().to_string();
         let mut header = SessionHeader::new(id.clone(), root.env.cwd().to_path_buf());
@@ -302,54 +631,35 @@ impl AgentTree {
             depth: 1,
             call_id: call_id.to_string(),
             parent_task,
+            routine: None,
         });
-        let kernel = kernel::start_child(ChildLaunch {
-            header,
-            system_prompt,
-            base_prompt,
-            mcp_section,
-            mcp: self.deps.mcp.clone(),
-            skills,
-            model,
-            thinking,
-            permission_mode,
-            session_rules,
-            site_grants,
-            deps: KernelDeps {
-                llm: self.deps.llm.clone(),
-                tools: self.deps.tools.clone(),
-                env: self.deps.env.clone(),
-                store: self.deps.store.clone(),
-                hooks: self.deps.hooks.clone(),
-                mcp_servers: Vec::new(),
-                browser_pool: self.deps.browser_pool.clone(),
-                docs: self.deps.docs.clone(),
-            },
-            home: self.deps.home.clone(),
-            config: self.deps.config.clone(),
-            system: root.system.clone(),
-            trusted: self.deps.trusted,
-            interactive_approvals: root.interactive_approvals,
-            main: Arc::downgrade(&root),
-            approval_line: root.approval_line.clone(),
-            locks: root.locks.clone(),
-        })
-        .map_err(|err| ToolError::Failed(format!("cannot start the agent: {err}")))?;
+        let kernel = kernel::start_child(self.child_launch(&root, header, root.interactive_approvals))
+            .map_err(|err| ToolError::Failed(format!("cannot start the agent: {err}")))?;
         let session_file: PathBuf = kernel.session_file().to_path_buf();
         let ops = kernel.op_sender();
         let (route, waiter) = route(args.wait);
+        let description = args.description.trim().to_string();
+        let progress = Arc::new(Mutex::new(Progress::new()));
+        let tool_state = kernel.tool_state();
+        if let Some(tool_state) = &tool_state {
+            tool_state.insert(Arc::new(AgentLink {
+                tree: Arc::downgrade(self),
+                id: id.clone(),
+            }));
+        }
         self.state.lock().agents.push(Agent {
             id: id.clone(),
             name: name.clone(),
+            description: description.clone(),
             status: AgentStatus::Running,
+            progress: progress.clone(),
             ops: ops.clone(),
             internal: kernel.internal.clone(),
             route,
             redirect: false,
             driver: None,
-            tool_state: kernel.tool_state(),
+            tool_state,
         });
-        let description = args.description.trim().to_string();
         root.record(EntryKind::AgentSpawned(Box::new(AgentSpawnedEntry {
             agent_id: id.clone(),
             name: name.clone(),
@@ -364,7 +674,7 @@ impl AgentTree {
             session_file: session_file.clone(),
             call_id: call_id.to_string(),
         });
-        let driver = tokio::spawn(driver::drive(self.clone(), id.clone(), kernel));
+        let driver = tokio::spawn(driver::drive(self.clone(), id.clone(), kernel, progress));
         if let Some(agent) = self.state.lock().agents.iter_mut().find(|a| a.id == id) {
             agent.driver = Some(driver);
         }
@@ -408,6 +718,9 @@ impl AgentTree {
                 return Err(ToolError::Failed(format!("Agent \"{name}\" is closed. Start a new one with spawn_agent.")));
             }
             let Some(agent) = state.agents.iter_mut().find(|a| a.name == to || a.id == to) else {
+                if is_main(to) {
+                    return Err(ToolError::Failed("That is you.".into()));
+                }
                 return Err(ToolError::Failed(if names.is_empty() {
                     format!("No agent named \"{to}\". Start one with spawn_agent.")
                 } else {
@@ -475,6 +788,80 @@ impl AgentTree {
         }
     }
 
+    /// A message from sub-agent `from` (agent-messaging-design §4.2): `main` hears at its next
+    /// boundary, woken if it is idle; another agent at work at its next step, and an idle one is
+    /// not sent anything, as only the main agent sets agents to work. It never stops the sender.
+    pub(crate) fn message_from(&self, from: &str, to: &str, message: &str) -> Result<ToolOutput, ToolError> {
+        let message = message.trim();
+        if message.is_empty() {
+            return Err(ToolError::InvalidArgs("message must not be empty".into()));
+        }
+        let root = self.root()?;
+        let to = to.trim();
+        let closed = |name: &str| ToolError::Failed(format!("Agent \"{name}\" is closed."));
+        let (sender, seq, peer) = {
+            let mut state = self.state.lock();
+            let Some(sender) = state.agents.iter().find(|a| a.id == from).filter(|_| !state.closing) else {
+                return Err(ToolError::Failed("the session is closing".into()));
+            };
+            let sender = AgentRef {
+                id: sender.id.clone(),
+                name: sender.name.clone(),
+            };
+            let peer = if is_main(to) {
+                None
+            } else {
+                if let Some((_, name)) = state.restored.iter().find(|(id, name)| name == to || id == to) {
+                    return Err(closed(name));
+                }
+                let Some(agent) = state.agents.iter().find(|a| a.name == to || a.id == to) else {
+                    let names: Vec<&str> = std::iter::once(MAIN)
+                        .chain(state.restored.iter().map(|(_, name)| name.as_str()))
+                        .chain(state.agents.iter().map(|a| a.name.as_str()))
+                        .collect();
+                    return Err(ToolError::Failed(format!("No agent named \"{to}\". Agents: {}.", names.join(", "))));
+                };
+                if agent.id == from {
+                    return Err(ToolError::Failed("That is you.".into()));
+                }
+                match agent.status {
+                    AgentStatus::Running => Some((agent.internal.clone(), agent.name.clone())),
+                    AgentStatus::Closed => return Err(closed(&agent.name)),
+                    _ => {
+                        return Err(ToolError::Failed(format!(
+                            "\"{}\" is not working now, and its report went to {MAIN}. Only {MAIN} can give it more work: tell {MAIN} if it should.",
+                            agent.name
+                        )));
+                    }
+                }
+            };
+            if peer.is_none() {
+                // Counted until it arrives, like a report.
+                state.in_flight += 1;
+            }
+            state.mails += 1;
+            (sender, state.mails, peer)
+        };
+        match peer {
+            Some((internal, name)) => {
+                let mail = Mail::message(&root, sender, message, seq, false);
+                if internal.send(Box::new(Internal::Mail(mail))).is_err() {
+                    return Err(closed(&name));
+                }
+                Ok(ToolOutput::text(format!("Sent to \"{name}\"; it reads the message at its next step.")))
+            }
+            None => {
+                let mail = Mail::message(&root, sender, message, seq, true);
+                let sent = self.root.get().is_some_and(|link| link.internal.send(Box::new(Internal::Mail(mail))).is_ok());
+                if !sent {
+                    self.mail_received();
+                    return Err(ToolError::Failed("the session is closing".into()));
+                }
+                Ok(ToolOutput::text(format!("Sent to {MAIN}. Keep working: your final report still follows.")))
+            }
+        }
+    }
+
     /// Waits for the report of `id`'s current round of work. New input from the user ends the
     /// wait early; the report then arrives as mail. True with the output when it is the report.
     async fn wait(
@@ -487,6 +874,13 @@ impl AgentTree {
     ) -> Result<(ToolOutput, bool), ToolError> {
         let mut input = root.input_seq.subscribe();
         input.borrow_and_update();
+        // Input that came before the wait began ends it too: the model has not read it yet.
+        let queued = root.has_queued_input();
+        let new_input = async {
+            if !queued {
+                let _ = input.changed().await;
+            }
+        };
         let report = tokio::select! {
             report = &mut rx => match report {
                 Ok(report) => report,
@@ -496,7 +890,7 @@ impl AgentTree {
                 Some(report) => report,
                 None => return Err(ToolError::Cancelled),
             },
-            _ = input.changed() => match self.stop_waiting(id, &mut rx) {
+            _ = new_input => match self.stop_waiting(id, &mut rx) {
                 Some(report) => report,
                 None => return Ok((ToolOutput::text(format!(
                     "Stopped waiting because the user sent a new message. Agent \"{name}\" keeps running. {REPORT_LATER}"
@@ -525,7 +919,7 @@ impl AgentTree {
         if state.closing {
             return Err(ToolError::Failed("the session is closing".into()));
         }
-        let taken = |name: &str| state.agents.iter().any(|a| a.name == name) || state.restored.iter().any(|(_, n)| n == name);
+        let taken = |name: &str| is_main(name) || state.agents.iter().any(|a| a.name == name) || state.restored.iter().any(|(_, n)| n == name);
         let requested = requested.map(sanitize).filter(|name| !name.is_empty());
         if let Some(name) = &requested
             && !taken(name)
@@ -602,6 +996,7 @@ impl AgentTree {
         }
         self.emit(event);
         self.hand_over(id, &name, route, report);
+        self.settled.send_modify(|n| *n += 1);
     }
 
     /// The agent's session ended. Unless the tree is closing, that was unexpected.
@@ -613,6 +1008,7 @@ impl AgentTree {
                 return;
             };
             agent.status = AgentStatus::Closed;
+            self.settled.send_modify(|n| *n += 1);
             let route = std::mem::replace(&mut agent.route, Route::Mail);
             let name = agent.name.clone();
             if closing || !unexpected {
@@ -667,6 +1063,11 @@ impl AgentTree {
             self.mail_received();
         }
     }
+}
+
+/// Whether a sub-agent addressing `name` means the main agent.
+fn is_main(name: &str) -> bool {
+    name == MAIN || name == PARENT
 }
 
 /// `agent_status`; an idle status also carries the start of the report and its cost.
@@ -745,6 +1146,14 @@ fn sanitize(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_an_agent_said_is_cut_to_one_line() {
+        assert_eq!(said_line("  First the logs.\n\n  Then the  rest. "), "First the logs. Then the rest.");
+        let long = said_line(&"说".repeat(500));
+        assert_eq!(long.chars().count(), SAID_CHARS + 1);
+        assert!(long.ends_with('…'));
+    }
 
     #[test]
     fn names_are_made_typeable() {

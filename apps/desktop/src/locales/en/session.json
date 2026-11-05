@@ -48,7 +48,8 @@
     "retryIn": "Retry {{attempt}} in {{seconds}}s",
     "retrying": "Retry {{attempt}} in progress",
     "stopRetry": "Stop",
-    "context": "Context {{percent}}% used · {{used}} / {{size}} tokens"
+    "context": "Context {{percent}}% used · {{used}} / {{size}} tokens",
+    "resend": "Take back and resend"
   },
   "fail": {
     "theProvider": "the provider",
@@ -82,6 +83,7 @@
     },
     "open": "Show its work in the background panel",
     "report": "Report from <b>{{name}}</b>",
+    "message": "Message from <b>{{name}}</b>",
     "noReply": {
       "interrupted": "Stopped before it replied",
       "completed": "Finished without a reply"
@@ -95,7 +97,8 @@
     "stopped_other": "{{count}} background tasks stopped; reply to let finx continue them",
     "sent": "Sent to",
     "sending": "Sending to",
-    "messageObject": "{{to}}: {{message}}"
+    "messageObject": "{{to}}: {{message}}",
+    "mainAgent": "the main agent"
   },
   "background": {
     "title": "Background tasks",
@@ -230,6 +233,9 @@
     "browseSkills": "Browse skills",
     "manageSkills": "Manage skills",
     "noSkills": "No skills available",
+    "tabKind": "Browser tab",
+    "tabs_one": "{{count}} tab",
+    "tabs_other": "{{count}} tabs",
     "prevImage": "Previous image",
     "nextImage": "Next image"
   },
@@ -673,6 +679,18 @@
     },
     "offer": "For this conversation: {{title}}",
     "offerRemove": "Don't hand it over"
+  },
+  "resend": {
+    "from": "Resending: {{text}}",
+    "find": "Find it in the conversation",
+    "cancel": "Don't resend, back to your draft",
+    "placeholder": "Write what to send instead…",
+    "hint": "Everything after it will be taken back",
+    "hintFiles": ", and files the model changed stay as they are",
+    "hintRunning": ", and the running task stops",
+    "sending": "Taking it back…",
+    "refused": "Couldn't resend. Your words are still in the composer",
+    "gone": "That message was taken back elsewhere. Your words are in the composer"
   },
   "webSearch": {
     "only": " · only {{sites}}",

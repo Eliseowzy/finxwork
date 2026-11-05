@@ -60,6 +60,7 @@ pub async fn serve(overrides: &[String], listen: Option<String>, idle_exit: Opti
     let (server, _guard) = start(overrides)?;
     // The resident service keeps model lists and the public catalog fresh in the background.
     server.start_model_upkeep();
+    server.start_routines();
     match listen {
         None => finx_server::serve_stdio(server.clone(), NativeProtocol::new(server)).await,
         Some(url) => {

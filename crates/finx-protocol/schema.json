@@ -26,6 +26,27 @@
       "$ref": "#/definitions/BotResult"
     },
     {
+      "$ref": "#/definitions/BotRoutineParams"
+    },
+    {
+      "$ref": "#/definitions/BotRoutineResult"
+    },
+    {
+      "$ref": "#/definitions/BotRoutineRunParams"
+    },
+    {
+      "$ref": "#/definitions/BotRoutineRunResult"
+    },
+    {
+      "$ref": "#/definitions/BotRoutineRunsParams"
+    },
+    {
+      "$ref": "#/definitions/BotRoutineRunsResult"
+    },
+    {
+      "$ref": "#/definitions/BotRoutineSetEnabledParams"
+    },
+    {
       "$ref": "#/definitions/BotUpdateParams"
     },
     {
@@ -1159,6 +1180,135 @@
       ],
       "type": "object"
     },
+    "BotRoutineParams": {
+      "description": "Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`.",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "routine_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bot_id",
+        "routine_id"
+      ],
+      "type": "object"
+    },
+    "BotRoutineResult": {
+      "properties": {
+        "routine": {
+          "$ref": "#/definitions/RoutineDetail"
+        }
+      },
+      "required": [
+        "routine"
+      ],
+      "type": "object"
+    },
+    "BotRoutineRunParams": {
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "routine_id": {
+          "type": "string"
+        },
+        "run_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bot_id",
+        "routine_id",
+        "run_id"
+      ],
+      "type": "object"
+    },
+    "BotRoutineRunResult": {
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/RoutineRunInfo"
+        },
+        "transcript": {
+          "description": "Its steps. Empty once its log has been cleaned up, or when it never started.",
+          "items": {
+            "$ref": "#/definitions/TranscriptItem"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "run",
+        "transcript"
+      ],
+      "type": "object"
+    },
+    "BotRoutineRunsParams": {
+      "properties": {
+        "before": {
+          "description": "A run's id: only runs older than it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bot_id": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "routine_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bot_id",
+        "routine_id"
+      ],
+      "type": "object"
+    },
+    "BotRoutineRunsResult": {
+      "properties": {
+        "runs": {
+          "description": "Newest first.",
+          "items": {
+            "$ref": "#/definitions/RoutineRunInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "runs"
+      ],
+      "type": "object"
+    },
+    "BotRoutineSetEnabledParams": {
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "routine_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "bot_id",
+        "enabled",
+        "routine_id"
+      ],
+      "type": "object"
+    },
     "BotSummary": {
       "properties": {
         "agents_working": {
@@ -1204,6 +1354,20 @@
         },
         "pinned": {
           "type": "boolean"
+        },
+        "routines": {
+          "description": "Its routines, oldest first (docs/kernel/routine-design.md §8).",
+          "items": {
+            "$ref": "#/definitions/RoutineSummary"
+          },
+          "type": "array"
+        },
+        "routines_error": {
+          "description": "Why routines cannot be used now: their database cannot be opened. `routines` is then empty.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "session_id": {
           "description": "Its conversation, once there is one.",
@@ -4695,6 +4859,39 @@
           "type": "object"
         },
         {
+          "description": "`resend`: the conversation went back to just before `message_id`. That message and all after it are no longer part of it, and the input that replaces it follows.",
+          "properties": {
+            "message_id": {
+              "type": "string"
+            },
+            "removed_agents": {
+              "description": "The sub-agents started in the part taken back: they are gone.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "returned_input": {
+              "description": "What still waited for the running task, handed back as with an interruption.",
+              "items": {
+                "$ref": "#/definitions/UserMessage"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "session_rewound"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "context_window": {
               "default": 0,
@@ -5959,6 +6156,13 @@
           "description": "The agent had not replied: the report only says so, in words for the model. Clients show their own words for it.",
           "type": "boolean"
         },
+        "routine_id": {
+          "description": "The routine, when a run of it sent this.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "status": {
           "$ref": "#/definitions/AgentStatus"
         }
@@ -5977,6 +6181,20 @@
           "description": "What a sub-agent reports when it has finished a round of work.",
           "enum": [
             "report"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "What a sub-agent sends with `send_message` while it works: its round goes on.",
+          "enum": [
+            "message"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "What a run of a routine has to say, or that it failed: `from` is the run and the routine's name (docs/kernel/routine-design.md §2.3).",
+          "enum": [
+            "routine"
           ],
           "type": "string"
         }
@@ -7519,6 +7737,37 @@
           "type": "object"
         },
         {
+          "description": "Starts again from a message the user sent earlier: the running task stops, the conversation goes back to just before that message, and `input` takes its place. Nothing changes until this op: `session_rewound` says it happened, a `warning` with the code `resend_rejected` that it did not (docs/kernel/message-resend-design.md).",
+          "properties": {
+            "commands": {
+              "description": "As for `Prompt`.",
+              "type": "boolean"
+            },
+            "input": {
+              "items": {
+                "$ref": "#/definitions/UserContent"
+              },
+              "type": "array"
+            },
+            "message_id": {
+              "description": "The `message_id` of a user message on the current branch.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "resend"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Continue from the current history (retry after a failure).",
           "properties": {
             "type": {
@@ -8303,6 +8552,256 @@
       ],
       "type": "string"
     },
+    "RoutineDetail": {
+      "description": "All about a routine.",
+      "properties": {
+        "created_at": {
+          "description": "RFC 3339.",
+          "type": "string"
+        },
+        "prompt": {
+          "description": "What each run is told to do.",
+          "type": "string"
+        },
+        "schedule": {
+          "description": "The schedule as written.",
+          "type": "string"
+        },
+        "summary": {
+          "$ref": "#/definitions/RoutineSummary"
+        },
+        "upcoming": {
+          "description": "The next runs, RFC 3339. Empty when it is paused or finished.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "created_at",
+        "prompt",
+        "schedule",
+        "summary",
+        "upcoming"
+      ],
+      "type": "object"
+    },
+    "RoutineOutcome": {
+      "description": "How a run of a routine ended.",
+      "oneOf": [
+        {
+          "enum": [
+            "failed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "It had something to say, which went to the bot.",
+          "enum": [
+            "reported"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "It found nothing to report.",
+          "enum": [
+            "quiet"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Someone stopped it, or the service closed or crashed while it ran.",
+          "enum": [
+            "interrupted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The run before it had not finished.",
+          "enum": [
+            "skipped"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "RoutineRunBrief": {
+      "description": "A routine's latest run, for its row.",
+      "properties": {
+        "delivered": {
+          "description": "RFC 3339: when the bot next messaged the user, after a report.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RoutineOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`None` while it runs."
+        },
+        "started": {
+          "description": "RFC 3339: when it started, or when it was due if it was skipped.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "started"
+      ],
+      "type": "object"
+    },
+    "RoutineRunInfo": {
+      "description": "One run of a routine.",
+      "properties": {
+        "delivered": {
+          "description": "RFC 3339: when the bot next messaged the user, after a report.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ended": {
+          "description": "RFC 3339. None while it runs.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "has_log": {
+          "description": "Its steps are still kept: `bots/routine_run` returns them.",
+          "type": "boolean"
+        },
+        "id": {
+          "type": "string"
+        },
+        "late": {
+          "description": "It started well after it was due: the computer was off or asleep.",
+          "type": "boolean"
+        },
+        "note": {
+          "description": "What a quiet run says it checked; why a run was skipped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RoutineOutcome"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`None` while it runs."
+        },
+        "report": {
+          "description": "What it reported, or the error it failed with.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scheduled": {
+          "description": "RFC 3339: when it was due.",
+          "type": "string"
+        },
+        "started": {
+          "description": "RFC 3339. None when it was skipped.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "usage": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UsageTotals"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "scheduled"
+      ],
+      "type": "object"
+    },
+    "RoutineState": {
+      "description": "Where a routine stands.",
+      "oneOf": [
+        {
+          "enum": [
+            "active",
+            "paused"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A one-off that has run.",
+          "enum": [
+            "finished"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "RoutineSummary": {
+      "description": "A routine as a list shows it.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "last_run": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RoutineRunBrief"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "next_run": {
+          "description": "RFC 3339. None when it is paused or finished.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "state": {
+          "$ref": "#/definitions/RoutineState"
+        },
+        "when": {
+          "description": "The schedule in the user's words, as the bot wrote it.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "state",
+        "when"
+      ],
+      "type": "object"
+    },
     "RowHeight": {
       "description": "A row whose height is not the default, in pixels, or hidden.",
       "properties": {
@@ -8373,6 +8872,11 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "message_resend": {
+          "default": false,
+          "description": "Starting again from an earlier message: the `resend` op and `session_rewound` (docs/kernel/message-resend-design.md).",
+          "type": "boolean"
+        },
         "model_connections": {
           "default": false,
           "type": "boolean"
@@ -8383,6 +8887,11 @@
           "type": "boolean"
         },
         "resource_read": {
+          "type": "boolean"
+        },
+        "routines": {
+          "default": false,
+          "description": "A bot's routines: the `bots/routine*` methods and `routines` on `BotSummary` (docs/kernel/routine-design.md §8).",
           "type": "boolean"
         },
         "session_delete": {
@@ -10188,6 +10697,13 @@
             "mcp_servers_not_ready"
           ],
           "type": "string"
+        },
+        {
+          "description": "A `resend` was refused and nothing changed: its input is still the client's.",
+          "enum": [
+            "resend_rejected"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -10503,6 +11019,9 @@
     "-32040": "bot_not_found",
     "-32041": "bot_default",
     "-32042": "bot_invalid",
+    "-32043": "routine_not_found",
+    "-32044": "routine_busy",
+    "-32045": "routines_unavailable",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -10541,6 +11060,34 @@
     },
     "bots/read": {
       "params": "BotIdParams",
+      "result": "Empty"
+    },
+    "bots/routine": {
+      "params": "BotRoutineParams",
+      "result": "BotRoutineResult"
+    },
+    "bots/routine_delete": {
+      "params": "BotRoutineParams",
+      "result": "Empty"
+    },
+    "bots/routine_run": {
+      "params": "BotRoutineRunParams",
+      "result": "BotRoutineRunResult"
+    },
+    "bots/routine_run_now": {
+      "params": "BotRoutineParams",
+      "result": "Empty"
+    },
+    "bots/routine_runs": {
+      "params": "BotRoutineRunsParams",
+      "result": "BotRoutineRunsResult"
+    },
+    "bots/routine_set_enabled": {
+      "params": "BotRoutineSetEnabledParams",
+      "result": "Empty"
+    },
+    "bots/routine_stop": {
+      "params": "BotRoutineParams",
       "result": "Empty"
     },
     "bots/subscribe": {

@@ -514,6 +514,13 @@ fn is_formula_cell(c: Option<&CellInfo>) -> bool {
     c.is_some_and(|c| c.formula.is_some())
 }
 
+fn next_has_no_address(ix: &SheetIndex, at: CellRef) -> bool {
+    ix.row(at.row).is_some_and(|row| {
+        let mut after = row.cells.iter().skip_while(|c| c.at != at).skip(1);
+        after.next().is_some_and(|c| !c.has_r)
+    })
+}
+
 fn edit_sheet(
     pkg: &Package,
     sheet_part: &str,
@@ -695,7 +702,12 @@ fn edit_sheet(
                 });
             }
             Some(old) => {
-                let xml = ctx.cell_xml(at, old.s.as_deref(), value, f)?;
+                let mut xml = ctx.cell_xml(at, old.s.as_deref(), value, f)?;
+                // The next cell, if it has no `r`, takes its column from this element: cleared,
+                // it stays as an empty cell so that one and those after it do not slide left.
+                if xml.is_empty() && next_has_no_address(&ix, at) {
+                    xml = format!("<{p}c r=\"{at}\"/>");
+                }
                 splices.push(Splice {
                     range: old.span.clone(),
                     text: xml,

@@ -33,12 +33,14 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
 use crate::agents;
 use crate::agents::AgentTree;
 use crate::agents::ChildDeps;
+use crate::deferred::AgentRole;
 use crate::approval::ApprovalPolicy;
 use crate::bot;
 use crate::bot::BotIdentity;
@@ -57,6 +59,10 @@ use crate::paths::FinxHome;
 use crate::prompt;
 use crate::prompt::PromptInputs;
 use crate::prompt::PromptProfile;
+use crate::routine::RoutineHost;
+use crate::routine::RoutineLink;
+use crate::routine::RoutineRun;
+use crate::routine::RunOutcome;
 use crate::session::Internal;
 use crate::session::BotNames;
 use crate::session::Session;
@@ -96,6 +102,9 @@ pub struct KernelDeps {
     /// The service's documents, shared by its sessions (document-editor-design §5.2). `None`
     /// leaves the document tools out.
     pub docs: Option<Arc<finx_docs::DocStore>>,
+    /// The service's routines (routine-design §4.3), for a bot's session. Without it the bot's
+    /// `manage_routine` says they are not available.
+    pub routines: Option<Arc<dyn RoutineHost>>,
 }
 
 pub struct StartOptions {
@@ -185,6 +194,7 @@ struct Launch {
     state: SessionState,
     agents: Option<Arc<AgentTree>>,
     sub_agent: bool,
+    role: AgentRole,
     main: Option<Weak<Session>>,
     approval_line: Arc<tokio::sync::Mutex<()>>,
     locks: Arc<PathLocks>,
@@ -205,8 +215,9 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let settings = launch.system.get();
     let pool = launch.deps.browser_pool.clone();
     let embedded = pool.as_ref().is_some_and(|p| p.has_host());
+    let role = launch.role;
     let deferred: crate::deferred::DeferredCell =
-        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some()))));
+        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some(), role))));
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &deferred, &shown);
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
@@ -280,6 +291,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         locks: launch.locks,
         agents: launch.agents,
         sub_agent: launch.sub_agent,
+        agent_role: role,
         main: launch.main,
         approval_line: launch.approval_line,
         tool_state,
@@ -315,14 +327,22 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     (kernel, session)
 }
 
+/// What a main session is among agents: it has a tree of sub-agents, or they are turned off.
+fn main_role(tree: bool) -> AgentRole {
+    if tree { AgentRole::Main } else { AgentRole::None }
+}
+
 /// The sub-agents of a main session: adds `spawn_agent` and `send_message` to its tools.
-/// Sub-agents get the tools as they were before, without these two, and share the MCP servers.
+/// Sub-agents start from the tools as they were before, without these two (`start_child` gives
+/// them their own `send_message`), and share the MCP servers.
+/// A bot's main session has the two without `wait` (bot-turn-design §5.1).
 fn agent_tree(
     deps: &mut KernelDeps,
     home: &FinxHome,
     config: &Arc<Config>,
     trusted: bool,
     mcp: Option<Arc<McpManager>>,
+    bot: bool,
 ) -> Option<Arc<AgentTree>> {
     if !config.agents_enabled {
         return None;
@@ -340,7 +360,7 @@ fn agent_tree(
         browser_pool: deps.browser_pool.clone(),
         docs: deps.docs.clone(),
     });
-    deps.tools = with_agent_tools(&deps.tools);
+    deps.tools = if bot { extended(&deps.tools, "bot-agents", agents::bot_agent_tools) } else { with_agent_tools(&deps.tools) };
     Some(tree)
 }
 
@@ -403,7 +423,12 @@ pub(crate) struct ChildLaunch {
 
 /// Starts a sub-agent's session: an ordinary session with its own log, whose questions go to
 /// the main session's user.
-pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
+pub(crate) fn start_child(mut child: ChildLaunch) -> Result<Kernel, KernelError> {
+    // A routine's run is on its own: no other agent to talk to, nor one that knows of it.
+    let run = child.header.agent.as_ref().is_some_and(|agent| agent.routine.is_some());
+    if !run {
+        child.deps.tools = extended(&child.deps.tools, "sub-agent", agents::sub_agent_tools);
+    }
     let created = child.deps.store.create(&child.header)?;
     let model_ref = child.model.reference();
     let context_window = u64::from(child.model.context_window);
@@ -433,6 +458,7 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
         state,
         agents: None,
         sub_agent: true,
+        role: if run { AgentRole::None } else { AgentRole::SubAgent },
         main: Some(child.main),
         approval_line: child.approval_line,
         locks: child.locks,
@@ -464,6 +490,13 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
         context: Some(session.budget().usage),
     });
     Ok(kernel)
+}
+
+/// A bot's session reaches its routines through the service (routine-design §4.3).
+fn link_routines(session: &Session, host: Option<Arc<dyn RoutineHost>>, bot: Option<String>) {
+    if let (Some(host), Some(bot)) = (host, bot) {
+        session.tool_state.insert(Arc::new(RoutineLink { host, bot }));
+    }
 }
 
 /// The MCP servers of a main session, or `None` without any. Not started yet: status
@@ -500,9 +533,9 @@ struct BuiltPrompt {
 
 /// `context_window` sizes the skill catalog.
 /// The deferred built-in tools a session starts with, for the catalog in its first prompt.
-fn starting_deferred(deps: &KernelDeps, system: &SystemCell) -> crate::deferred::Deferred {
+fn starting_deferred(deps: &KernelDeps, system: &SystemCell, tree: bool) -> crate::deferred::Deferred {
     let embedded = deps.browser_pool.as_ref().is_some_and(|p| p.has_host());
-    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded, deps.docs.is_some())
+    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded, deps.docs.is_some(), main_role(tree))
 }
 
 /// The tools a session starts with, before MCP: what its prompt describes. The browsers' and
@@ -569,7 +602,7 @@ impl Kernel {
     pub async fn start(opts: StartOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
-        let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
+        let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), opts.bot.is_some());
         // After the sub-agents took their tools: they never send to the user.
         if opts.bot.is_some() {
             deps.tools = extended(&deps.tools, "bot", bot::tools);
@@ -600,7 +633,7 @@ impl Kernel {
         });
         let created = deps.store.create(&header)?;
         let model_ref = resolved.model.reference();
-        let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
+        let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system, agents.is_some()));
         // The level asked for, when the model offers it; else the provider decides. A level
         // asked for is remembered for the model, as one chosen in a session is (§18).
         let thinking = resolved.model.resolve_thinking(opts.thinking);
@@ -620,10 +653,13 @@ impl Kernel {
         state.mcp_section = mcp_section;
         state.skills = Arc::from(skills);
         state.sub_agent_prompt = sub_agent.map(Arc::from);
+        state.prompt_template = opts.bot.as_ref().and_then(|_| crate::prompt::bot_template(&opts.config).ok());
+        let bot_id = opts.bot.as_ref().map(|bot| bot.id.clone());
         state.bot = opts.bot.map(|bot| BotNames {
             given: bot.name.clone(),
             current: bot.name,
         });
+        let routines = deps.routines.clone();
         let (kernel, session) = launch(Launch {
             id: id.clone(),
             root_id: id.clone(),
@@ -637,6 +673,7 @@ impl Kernel {
             state,
             agents: agents.clone(),
             sub_agent: false,
+            role: main_role(agents.is_some()),
             main: None,
             approval_line: Arc::default(),
             locks: Arc::new(PathLocks::new()),
@@ -646,6 +683,7 @@ impl Kernel {
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
         }
+        link_routines(&session, routines, bot_id);
         session.record_system_prompt();
         session.record(EntryKind::Settings {
             model: Some(model_ref.clone()),
@@ -682,8 +720,8 @@ impl Kernel {
     pub async fn resume(opts: ResumeOptions, mut deps: KernelDeps) -> Result<Kernel, KernelError> {
         let loaded = deps.store.open(&opts.session)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
-        let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone());
         let bot_ref = loaded.header.bot.clone();
+        let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), bot_ref.is_some());
         if bot_ref.is_some() {
             deps.tools = extended(&deps.tools, "bot", bot::tools);
         }
@@ -692,28 +730,24 @@ impl Kernel {
         let history = History::from_entries(loaded.entries);
         let mut system_prompt = None;
         let mut last_prompt: Option<(Vec<String>, Option<String>)> = None;
+        let mut last_template = None;
         let mut model_ref = None;
         let mut thinking = None;
         let mut permission_mode = None;
-        let usage = usage_of(history.branch());
+        // What was spent, and all that belongs to the session rather than to the conversation,
+        // comes from the whole log: going back takes none of it back, and a permission mode
+        // tightened after the point gone back to stays tightened.
+        let usage = usage_of(history.in_order());
         let restored_agents = agents::restore(&history.branch(), deps.store.as_ref());
         let mut max_task = 0u32;
         let mut open_task: Option<String> = None;
         let mut title = None;
         let mut archived = false;
         let mut skills = Vec::new();
-        for entry in history.branch() {
+        for entry in history.in_order() {
             match &entry.kind {
                 EntryKind::Title { title: t } => title = Some(t.clone()),
                 EntryKind::Archived { archived: a } => archived = *a,
-                EntryKind::SystemPrompt(prompt) => {
-                    system_prompt = Some(prompt.text.clone());
-                    last_prompt = Some((prompt.tools.clone(), prompt.mcp.clone()));
-                    // Entries written again later (a new tool set) may leave the skills out.
-                    if !prompt.skills.is_empty() {
-                        skills = prompt.skills.clone();
-                    }
-                }
                 EntryKind::Settings {
                     model,
                     thinking: t,
@@ -723,10 +757,26 @@ impl Kernel {
                     thinking = t.or(thinking);
                     permission_mode = a.or(permission_mode);
                 }
-                EntryKind::Task { task_id, status, .. } => {
+                EntryKind::Task { task_id, .. } => {
                     if let Some(n) = task_id.strip_prefix('t').and_then(|n| n.parse::<u32>().ok()) {
                         max_task = max_task.max(n);
                     }
+                }
+                _ => {}
+            }
+        }
+        for entry in history.branch() {
+            match &entry.kind {
+                EntryKind::SystemPrompt(prompt) => {
+                    system_prompt = Some(prompt.text.clone());
+                    last_prompt = Some((prompt.tools.clone(), prompt.mcp.clone()));
+                    last_template = prompt.template.clone();
+                    // Entries written again later (a new tool set) may leave the skills out.
+                    if !prompt.skills.is_empty() {
+                        skills = prompt.skills.clone();
+                    }
+                }
+                EntryKind::Task { task_id, status, .. } => {
                     open_task = (*status == TaskStatus::Started).then(|| task_id.clone());
                 }
                 _ => {}
@@ -768,6 +818,13 @@ impl Kernel {
             Some(bot) => PromptProfile::Bot { name: bot.name.clone() },
             None => PromptProfile::Session,
         };
+        // A bot's conversation never ends, so its prompt follows a new `bot.md`, at the cost of one
+        // prompt-cache miss (bot-turn-design §8). Logs from before this have none on record.
+        let template = bot_ref.as_ref().and_then(|_| crate::prompt::bot_template(&opts.config).ok());
+        let new_template = template.is_some() && template != last_template;
+        if new_template {
+            system_prompt = None;
+        }
         let mut sub_agent = None;
         let system_prompt = match system_prompt {
             Some(text) => text,
@@ -792,7 +849,7 @@ impl Kernel {
             )?;
             sub_agent = Some(built.text);
         }
-        let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system));
+        let mcp_section = mcp::prompt_section(mcp.as_ref(), &starting_deferred(&deps, &system, agents.is_some()));
         let mut state = SessionState::new(
             history,
             mcp::compose(&system_prompt, mcp_section.as_deref()).into(),
@@ -808,10 +865,13 @@ impl Kernel {
         state.title = title;
         state.archived = archived;
         state.sub_agent_prompt = sub_agent.map(Arc::from);
+        state.prompt_template = template;
+        let bot_id = bot_ref.as_ref().map(|bot| bot.id.clone());
         state.bot = bot_ref.map(|bot| BotNames {
             current: opts.bot_name.clone().unwrap_or_else(|| bot.name.clone()),
             given: bot.name,
         });
+        let routines = deps.routines.clone();
         let model_ref = state.model.reference();
         let overridden = opts.model.is_some() || opts.thinking.is_some() || opts.permission_mode.is_some();
         let (mut kernel, session) = launch(Launch {
@@ -827,6 +887,7 @@ impl Kernel {
             state,
             agents: agents.clone(),
             sub_agent: false,
+            role: main_role(agents.is_some()),
             main: None,
             approval_line: Arc::default(),
             locks: Arc::new(PathLocks::new()),
@@ -837,10 +898,11 @@ impl Kernel {
             tree.bind_root(&session, kernel.internal.clone());
             tree.restore(&restored_agents);
         }
+        link_routines(&session, routines, bot_id);
         kernel.restored_agents = restored_agents;
-        // A new entry only when the tools or the MCP part differ from what the log has.
+        // A new entry only when the prompt, the tools or the MCP part differ from what the log has.
         let current = (session.tools().names(), mcp_section);
-        if last_prompt.as_ref() != Some(&current) {
+        if new_template || last_prompt.as_ref() != Some(&current) {
             session.record_system_prompt();
         }
         if let Some(task_id) = open_task {
@@ -900,6 +962,27 @@ impl Kernel {
         {
             bot.current = name;
         }
+    }
+
+    /// What the model is to know of a bot's routines (`routine::listing`), which it is told when
+    /// that differs from what its context last gave (routine-design §4.4).
+    pub fn set_routines(&self, text: String) {
+        if let Some(session) = self.session.upgrade() {
+            session.state.lock().routines = Some(text);
+        }
+    }
+
+    /// Starts a routine's run in the background (routine-design §2.1): the receiver gets how it
+    /// went. It needs sub-agents to be on, as it is built like one.
+    pub fn start_run(&self, run: RoutineRun) -> Result<oneshot::Receiver<RunOutcome>, String> {
+        let session = self.session.upgrade().ok_or("the session is closed")?;
+        let tree = session.agents.as_ref().ok_or("sub-agents are turned off in the configuration, and a routine runs as one")?;
+        tree.start_run(run)
+    }
+
+    /// Stops a routine's run. False when none of that id is under way.
+    pub fn stop_run(&self, run_id: &str) -> bool {
+        self.session.upgrade().is_some_and(|session| session.agents.as_ref().is_some_and(|tree| tree.stop_run(run_id)))
     }
 
     pub fn session_id(&self) -> &str {
@@ -1049,6 +1132,7 @@ async fn submission_loop(
                 let Some(op) = op else { break };
                 match op {
                     Op::Prompt { input, mode, commands } => task::on_prompt(&session, input, mode, commands),
+                    Op::Resend { message_id, input, commands } => task::on_resend(&session, message_id, input, commands),
                     Op::Continue => task::on_continue(&session),
                     Op::Interrupt => session.interrupt(),
                     Op::Withdraw { id } => session.withdraw(&id),
@@ -1073,6 +1157,8 @@ async fn submission_loop(
     }
     let handle = {
         let mut state = session.state.lock();
+        // A resend still waiting does not go ahead: no new task starts as the session closes.
+        state.pending_resend = None;
         state.active_task.as_mut().and_then(|task| {
             task.cancel.cancel();
             task.handle.take()
@@ -1134,7 +1220,7 @@ pub(crate) fn transcript_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> 
                 skills: context::skill_uses(skills, skill.as_deref()),
                 mail: None,
             }),
-            EntryKind::Mail { mail, message } => Some(TranscriptItem::Message {
+            EntryKind::Mail { mail, message } | EntryKind::AgentMessage { mail, message } => Some(TranscriptItem::Message {
                 message_id: entry.id.clone(),
                 message: message.clone(),
                 skills: Vec::new(),
@@ -1190,7 +1276,7 @@ mod tests {
     #[test]
     fn computer_use_is_on_with_the_desktop_app_unless_turned_off() {
         let mut settings = SystemSettings::of(&Config::default());
-        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app, false).find("cua_snapshot").is_some();
+        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app, false, crate::deferred::AgentRole::None).find("cua_snapshot").is_some();
         assert!(has(&settings, true), "the desktop app connected");
         assert!(!has(&settings, false), "the command line");
         settings.desktop.enabled = Some(false);

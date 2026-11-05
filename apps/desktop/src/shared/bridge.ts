@@ -73,6 +73,10 @@ export type Preferences = {
   /** The search engines the person added, beside the built-in ones. */
   searchEngines: SearchEngine[];
   notifications: NotificationSettings;
+  /** False: routines do not make the app start at login (routine-design §7.4). */
+  routinesAtLogin?: boolean;
+  /** Keep the Mac from idle sleep while a routine is enabled and it is on power (routine-design §7.5). */
+  routinesKeepAwake?: boolean;
 };
 
 /** The app's system notifications on this device (notification-design §5.5). Muting a bot is the bot's own. */

@@ -230,8 +230,10 @@ impl NativeProtocol {
                             customize: true,
                             embedded_browser: true,
                             input_queue: true,
+                            message_resend: true,
                             workbooks: true,
                             bots: true,
+                            routines: true,
                         },
                     })
                 });
@@ -708,6 +710,52 @@ impl NativeProtocol {
                     let (conn, id, clear) = (conn.clone(), id.clone(), method_name == method::BOTS_CLEAR);
                     tokio::spawn(async move {
                         let result = if clear { server.bots_clear(&p.bot_id).await } else { server.bots_delete(&p.bot_id).await };
+                        conn.send(reply(&id, result.map(|()| json!({}))));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_ROUTINE | method::BOTS_ROUTINE_RUN_NOW | method::BOTS_ROUTINE_STOP | method::BOTS_ROUTINE_DELETE => {
+                match finx_rpc::params::<finx_protocol::bot::BotRoutineParams>(params) {
+                    Ok(p) => {
+                        let (conn, id, name) = (conn.clone(), id.clone(), method_name.to_string());
+                        tokio::spawn(async move {
+                            let (bot, routine) = (p.bot_id.as_str(), p.routine_id.as_str());
+                            let result = match name.as_str() {
+                                method::BOTS_ROUTINE => server.bots_routine(bot, routine).await.map(|r| json!(r)),
+                                method::BOTS_ROUTINE_RUN_NOW => server.bots_routine_run_now(bot, routine).await.map(|()| json!({})),
+                                method::BOTS_ROUTINE_STOP => server.bots_routine_stop(bot, routine).await.map(|()| json!({})),
+                                _ => server.bots_routine_delete(bot, routine).await.map(|()| json!({})),
+                            };
+                            conn.send(reply(&id, result));
+                        });
+                    }
+                    Err(err) => conn.send_error(Some(id), &err),
+                }
+            }
+            method::BOTS_ROUTINE_RUNS => match finx_rpc::params::<finx_protocol::bot::BotRoutineRunsParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        conn.send(reply(&id, server.bots_routine_runs(&p.bot_id, &p.routine_id, p.limit, p.before).await));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_ROUTINE_RUN => match finx_rpc::params::<finx_protocol::bot::BotRoutineRunParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        conn.send(reply(&id, server.bots_routine_run(&p.bot_id, &p.routine_id, p.run_id).await));
+                    });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::BOTS_ROUTINE_SET_ENABLED => match finx_rpc::params::<finx_protocol::bot::BotRoutineSetEnabledParams>(params) {
+                Ok(p) => {
+                    let (conn, id) = (conn.clone(), id.clone());
+                    tokio::spawn(async move {
+                        let result = server.bots_routine_set_enabled(&p.bot_id, &p.routine_id, p.enabled).await;
                         conn.send(reply(&id, result.map(|()| json!({}))));
                     });
                 }

@@ -171,6 +171,30 @@ function General() {
             ))}
           </select>
         </SRow>
+        {window.finx && (
+          <>
+            <SRow title={t("routines.atLogin")} desc={t("routines.atLoginNote")}>
+              <button
+                className={`sw ${prefs?.routinesAtLogin !== false ? "on" : ""}`}
+                role="switch"
+                aria-checked={prefs?.routinesAtLogin !== false}
+                aria-label={t("routines.atLogin")}
+                disabled={!prefs}
+                onClick={() => void set({ routinesAtLogin: prefs?.routinesAtLogin === false })}
+              />
+            </SRow>
+            <SRow title={t("routines.keepAwake")} desc={t("routines.keepAwakeNote")}>
+              <button
+                className={`sw ${prefs?.routinesKeepAwake ? "on" : ""}`}
+                role="switch"
+                aria-checked={!!prefs?.routinesKeepAwake}
+                aria-label={t("routines.keepAwake")}
+                disabled={!prefs}
+                onClick={() => void set({ routinesKeepAwake: !prefs?.routinesKeepAwake })}
+              />
+            </SRow>
+          </>
+        )}
       </div>
       {!window.finx && <p className="set-note">{t("browserNote")}</p>}
     </div>

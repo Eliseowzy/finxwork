@@ -199,6 +199,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         mcp_servers: Vec::new(),
         browser_pool: Some(Arc::new(BrowserPool::new(home.browser_dir(), false))),
         docs: None,
+        routines: None,
     };
     let options = StartOptions {
         model: "test/scripted".into(),
@@ -745,7 +746,7 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
     let system = h.api.requests().last().unwrap().system.clone();
     assert!(!system.contains("- browser:"), "no browser group yet");
-    // The catalog comes after what is frozen; web search, on by default, is in it already.
+    // The catalog comes after what is frozen; the agents' group and web search are in it already.
     let frozen = system.split("<deferred_tools>").next().unwrap().to_string();
 
     rewrite(&h.config, "enabled = false", "enabled = true");
@@ -760,8 +761,9 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     let names: Vec<&str> = first.tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"tool_search") && names.contains(&"call_tool"), "{names:?}");
     assert!(!names.iter().any(|n| n.starts_with("browser_")), "deferred, not in the list: {names:?}");
-    assert!(first.system.starts_with(frozen.trim_end()), "the frozen part stays as it was");
+    assert!(first.system.starts_with(&frozen), "the frozen part stays as it was");
     assert!(first.system.contains("- browser:"), "the catalog lists the group");
+    assert!(first.system.contains("- agents:"), "the sub-agents' group stays through the rebuild");
     let search = &h.api.requests()[2];
     let found = search
         .messages
@@ -783,6 +785,7 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     h.api.push(Script::text("closed"));
     run(&mut h.kernel, "and now").await;
     assert!(!h.api.requests().last().unwrap().system.contains("- browser:"), "the group is gone");
+    assert!(h.api.requests().last().unwrap().system.contains("- agents:"));
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(!beating(&origin, "on-off", Duration::from_millis(1500)).await, "its tab closed");
     h.kernel.shutdown().await;

@@ -79,6 +79,7 @@ fn deps(api: &Arc<ScriptedApi>, env: &Env, tools: &[&str]) -> KernelDeps {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        routines: None,
     }
 }
 
@@ -193,7 +194,7 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
 
     // The log keeps the session's skills, those only the user may invoke included.
     let logged = logged_system_prompt(kernel.session_file());
-    assert_eq!(logged["text"], system.as_str());
+    assert!(system.starts_with(logged["text"].as_str().unwrap()), "the catalog of deferred tools follows it");
     let skills: Vec<(String, String, bool)> = logged["skills"]
         .as_array()
         .unwrap()
