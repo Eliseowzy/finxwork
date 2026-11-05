@@ -77,6 +77,7 @@ pub(super) async fn drive(tree: Arc<AgentTree>, id: String, mut kernel: Kernel, 
             } => {
                 let text = reply.text();
                 if !text.trim().is_empty() {
+                    progress.lock().said(&text);
                     round.reply = Some(text);
                 }
             }

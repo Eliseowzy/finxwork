@@ -12,6 +12,7 @@ use finx_llm::now_ms;
 use finx_protocol::ApprovalDecision;
 use finx_protocol::CommandRule;
 use finx_protocol::EventMsg;
+use finx_protocol::MailKind;
 use finx_protocol::PermissionMode;
 use finx_protocol::PromptMode;
 use finx_protocol::QueuedInput;
@@ -99,7 +100,7 @@ pub(crate) struct SessionState {
     pub(crate) estimate_ratio: f64,
     /// Where measuring the largest turn stopped; see `budget`.
     pub(crate) turn_scan: crate::budget::TurnScan,
-    /// Sub-agents' reports not yet in the history, oldest first.
+    /// Sub-agents' reports and messages not yet in the history, oldest first.
     pub(crate) inbox: VecDeque<Mail>,
     /// The last task was interrupted: reports wait for new input instead of starting a task.
     pub(crate) hold: bool,
@@ -389,14 +390,15 @@ impl Session {
         }
     }
 
-    /// Writes the waiting reports into the history, oldest first.
+    /// Writes the waiting reports and messages into the history, oldest first.
     pub(crate) fn deliver_mail(&self) {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();
         for mail in mails {
             let message = Message::from(mail.message);
-            let entry = self.record(EntryKind::Mail {
-                mail: Box::new(mail.info.clone()),
-                message: message.clone(),
+            let info = Box::new(mail.info.clone());
+            let entry = self.record(match mail.info.kind {
+                MailKind::Report => EntryKind::Mail { mail: info, message: message.clone() },
+                MailKind::Message => EntryKind::AgentMessage { mail: info, message: message.clone() },
             });
             self.emit(EventMsg::MessageCompleted {
                 message_id: entry.id,

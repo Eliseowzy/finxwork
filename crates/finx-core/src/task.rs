@@ -139,8 +139,8 @@ pub(crate) fn on_prompt(session: &Arc<Session>, input: Vec<UserContent>, mode: P
     start_task(session, Some(message));
 }
 
-/// A sub-agent's report arrived. It joins the history at the next turn boundary, or starts a
-/// task when nothing runs.
+/// A sub-agent's report or message arrived. It joins the history at the next turn boundary, or
+/// starts a task when nothing runs and it is the kind that does.
 pub(crate) fn on_mail(session: &Arc<Session>, mail: Mail) {
     let wake = {
         let mut state = session.state.lock();

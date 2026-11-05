@@ -1,5 +1,6 @@
 //! Reports: what a sub-agent's round of work comes to, as mail for the main session or as the
-//! result of a call that waited for it.
+//! result of a call that waited for it. Messages: what it sends while it works, as mail for the
+//! main session or another sub-agent.
 
 use finx_llm::UserContent;
 use finx_llm::UserMessage;
@@ -27,7 +28,7 @@ pub(crate) fn task_message(name: &str, task: &str) -> String {
     TASK_TEMPLATE.trim_end().replace("{name}", name).replace("{task}", task)
 }
 
-/// A report waiting in a session's inbox. The text is final: rendered and cut once.
+/// A report or a message waiting in a session's inbox. The text is final: rendered and cut once.
 pub(crate) struct Mail {
     pub(crate) info: MailInfo,
     pub(crate) message: UserMessage,
@@ -59,6 +60,24 @@ impl Mail {
             message: UserMessage::text(text),
             // Work that was stopped waits until someone asks for more.
             wake: matches!(report.status, AgentStatus::Completed | AgentStatus::Failed),
+        }
+    }
+
+    /// What a working sub-agent sends with `send_message` (agent-messaging-design §5.1). Cut like
+    /// a report, and saved in the main session's data as its reports are.
+    pub(crate) fn message(root: &Session, from: AgentRef, text: &str, seq: u64, wake: bool) -> Mail {
+        let body = cut(root, &from.name, seq, text.to_string());
+        let text = format!("<agent_message from=\"{}\">\n{}\n</agent_message>", from.name, body.trim_end());
+        Mail {
+            info: MailInfo {
+                id: format!("m{seq}"),
+                from,
+                kind: MailKind::Message,
+                status: AgentStatus::Running,
+                no_reply: false,
+            },
+            message: UserMessage::text(text),
+            wake,
         }
     }
 }

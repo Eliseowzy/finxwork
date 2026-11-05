@@ -1173,7 +1173,7 @@ export type MailInfo = {
   status: AgentStatus;
 };
 
-export type MailKind = "report";
+export type MailKind = "report" | "message";
 
 export type McpAuthKind = "none" | "oauth" | "credential";
 

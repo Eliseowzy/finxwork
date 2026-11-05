@@ -329,6 +329,45 @@ async fn a_long_job_goes_to_the_background_and_the_bot_keeps_talking() {
     assert_eq!(log.matches("\"type\":\"unanswered\"").count() + log.matches("\"type\":\"undelivered\"").count(), 0, "no reminder was needed");
 }
 
+/// A sub-agent speaks up on the way (agent-messaging-design §3.1): the bot is woken and tells the
+/// owner, the work goes on, and its report still follows.
+#[tokio::test]
+async fn a_working_agent_speaks_up_and_the_bot_tells_the_owner() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+
+    say(&client, &session, "[[mock:relay_note:2]] 把 sales.csv 按月汇总").await;
+    let first = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&first), ["好，我先把数据汇总出来。"]);
+
+    // The message wakes the bot, and the agent is still at work when the owner hears.
+    let spoke = until_event(&mut wire, ended).await;
+    let said = sent(&spoke);
+    assert_eq!(said, ["回复：<agent_message from=\"sales\">\n3 月的数据整月缺失。\n</agent_message>"]);
+    assert!(spoke.iter().any(|e| e["type"] == "task_started" && e["trigger"] == "mail"));
+    let told = spoke.iter().find(|e| e["type"] == "message_completed" && e.get("mail").is_some()).unwrap();
+    assert_eq!((told["mail"]["kind"].as_str(), told["mail"]["status"].as_str()), (Some("message"), Some("running")));
+    assert!(!spoke.iter().any(|e| e["type"] == "agent_status" && e["status"] == "completed"), "{spoke:?}");
+    until_row(&mut wire, &bot, |b| b["agents_working"] == 1).await;
+
+    // Then its report, as ever.
+    let rest = until_event(&mut wire, |e| e["type"] == "idle").await;
+    let results = sent(&rest);
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert!(results[0].starts_with("回复：<agent_report agent=\"sales\" status=\"completed\">"), "{results:?}");
+
+    // The bot's own log, not its agent's, which names the bot's session too.
+    let header = format!("\"id\":\"{session}\"");
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.lines().next().is_some_and(|l| l.contains(&header))).unwrap();
+    assert_eq!(log.matches("\"type\":\"agent_message\"").count(), 1, "{log}");
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count() + log.matches("\"type\":\"undelivered\"").count(), 0, "no reminder was needed");
+}
+
 /// The owner asks how it is going and then drops it: the bot finds the deferred tools, says what
 /// they show, and the stopped work stays quiet (bot-turn-design §5.3).
 #[tokio::test]

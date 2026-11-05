@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// How a real model keeps a bot's turn rules (docs/kernel/bot-design.md §8, bot-turn-design §11):
+// How a real model keeps a bot's turn rules (docs/kernel/bot-design.md §8, bot-turn-design §11,
+// agent-messaging-design §13):
 // each scenario runs N times in a fresh bot over `finx serve`, and counts
 //   - first:      the first call after the owner's message is send_to_user (not the aim in `stop`:
 //                 there the stop comes first);
@@ -24,12 +25,20 @@
 //                 sees nothing;
 //   - stopFirst, stopped, told, restarted: `stop` and `session`, the agents stopped before the bot
 //                 said so, stopped at all, it said so, it started the work again;
-//   - checked:    `progress` and `session`, check_agents ran after the question;
+//   - checked:    `progress` and `session`, list_agents ran after the question;
 //   - lastAutumn, spring: `change`, the last message is the poem asked for last; the first one
 //                 went out too, which is acceptable;
 //   - agents:     `fan`, `apart`, `whole`, `follow`, how many runs started how many sub-agents:
 //                 separate requests get one each, one job or a correction to it gets one;
-//   - redirected: `follow`, the correction went to the agent at work.
+//   - redirected: `follow`, the correction went to the agent at work;
+//   - notes:      what sub-agents sent the main agent on the way, each printed; a job that can be
+//                 split should need none;
+//   - wokenByNote: tasks those messages started: what they cost;
+//   - answered:   the main agent's send_message after a note, to see that nobody goes back and forth;
+//   - peerNotes:  what sub-agents sent one another;
+//   - covered:    `ten`, runs in which the owner heard of all ten companies;
+//   - early:      `blocker`, `milestone`: the owner heard before the last report;
+//   - inTask:     `milestone`, the bot asked for the step in the agent's task.
 // Messages are printed, to read for the rest: does an acknowledgement name its first step, does
 // what it says of the progress match.
 //
@@ -171,6 +180,38 @@ const scenarios = {
       t.redirected += firstAfter(w, at[1], (e) => e.type === "tool_started" && e.name === "send_message") ? 1 : 0;
     },
   },
+  // When to speak up (agent-messaging-design §13). Ten separate pieces: ten agents, each with its
+  // report, and no messages on the way.
+  ten: {
+    ms: 600_000,
+    say: () => [[0, `查一下这十家公司的主营业务和最新一年的营收，每查完一家就告诉我：${companies.join("、")}。`]],
+    check(t, w) {
+      const said = w.events.filter(isSend).map((e) => String(e.args?.text ?? "")).join("\n");
+      t.covered += companies.every((c) => said.includes(c)) ? 1 : 0;
+    },
+  },
+  // Steps that can't be split, with one the owner wants to hear about.
+  milestone: {
+    ms: 300_000,
+    say: () => [[0, "请交给子智能体去做：先在你的文件夹里造一份 data.csv（1000 行随机数据），备份到 backup/，备份好了先告诉我一声，再把它转成 JSON 存到 migrated/，全部做完再告诉我。"]],
+    check(t, w) {
+      const task = w.events.filter((e) => isCall(e, "spawn_agent")).map((e) => String(e.args?.task ?? "")).join("\n");
+      t.inTask += /send_message|告诉|通知|tell|notify/i.test(task) ? 1 : 0;
+      t.early += beforeLastReport(w, /备份/) ? 1 : 0;
+    },
+  },
+  // Long work with nothing asked along the way: the messages are the noise.
+  quiet: { ms: 600_000, say: () => [[0, long.replace("一万字", "两千字")]] },
+  // A wrong premise: the owner should not wait for the whole job to learn of it.
+  blocker: {
+    ms: 300_000,
+    say: () => [[0, "请交给子智能体去做：先在你的文件夹里造一份 sales.csv，只有 month 和 revenue 两列，12 行。然后按它的 profit 列算每月利润率，写一份两千字的分析报告。"]],
+    check(t, w) {
+      t.early += beforeLastReport(w, /profit|利润|没有|不存在|缺/i) ? 1 : 0;
+    },
+  },
+  // One agent needs what the other finds.
+  peer: { ms: 300_000, say: () => [[0, "开两个子智能体同时做：一个写 api.py，放一个加法函数和一个减法函数，函数名由它定；另一个写 client.py 调用这两个函数。第一个定好函数名要告诉第二个。"]] },
   // Two thousand characters: the timeline is the same as for ten thousand, at a fraction of the cost.
   long: { ms: 600_000, say: () => [[0, long.replace("一万字", "两千字")], [2000, "刚才给你发啥了你知道么", atWork], [3000, "为什么你在写的时候我还能给你发消息"]] },
   stop: {
@@ -192,7 +233,7 @@ const scenarios = {
     // Answered: there is no need to wait for the essay.
     until: (w, at) => at.length === 2 && !!firstAfter(w, at[1] + 1, (e) => isSend(e) && !isAck(e)),
     check(t, w, at) {
-      t.checked += firstAfter(w, at[1], (e) => isCall(e, "check_agents")) ? 1 : 0;
+      t.checked += firstAfter(w, at[1], (e) => isCall(e, "list_agents")) ? 1 : 0;
     },
   },
   change: {
@@ -212,15 +253,21 @@ const scenarios = {
     ms: 240_000,
     say: () => [[0, `请交给子智能体去做：${long}`], [15_000, "进展如何？", atWork], [20_000, "算了，停下吧。"]],
     check(t, w, at) {
-      t.checked += firstAfter(w, at[1], (e) => isCall(e, "check_agents")) ? 1 : 0;
+      t.checked += firstAfter(w, at[1], (e) => isCall(e, "list_agents")) ? 1 : 0;
       t.stopped += firstAfter(w, at[2], (e) => e.type === "agent_status" && e.status === "interrupted") ? 1 : 0;
       t.stopFirst += firstAfter(w, at[2], (e) => isCall(e, "stop_agents")) ? 1 : 0;
     },
   },
 };
+const companies = ["苹果", "微软", "谷歌", "亚马逊", "特斯拉", "英伟达", "阿里巴巴", "腾讯", "比亚迪", "台积电"];
+/** A message that says this reached the owner before the last report came. */
+function beforeLastReport(w, words) {
+  const last = w.events.filter((e) => e.type === "message_completed" && e.mail?.kind === "report").at(-1);
+  return w.events.some((e) => isSend(e) && (!last || e.at < last.at) && words.test(String(e.args?.text ?? "")));
+}
 const isAck = (e) => /我看|我查|我去|稍等|看一下|查一下|let me|checking/i.test(String(e.args?.text ?? "")) && String(e.args?.text ?? "").length < 30;
-const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|check_agents|stop_agents|tool_search|call_tool|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
-const internal = /子智能体|sub-?agent|agent_report|汇报/i;
+const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|list_agents|stop_agents|tool_search|call_tool|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
+const internal = /子智能体|sub-?agent|agent_report|agent_message|汇报/i;
 const aside = /^\s*[（(][^（()）]*[）)]\s*$/;
 // What each poem has to mention, in order. A poem often names no season, or names another in
 // passing, so its images count too; a lost or merged poem leaves too few messages to get through.
@@ -321,12 +368,24 @@ async function oneRun(name, s, run, t) {
   const started = events.filter((e) => e.type === "agent_started").length;
   t.agents[started] = (t.agents[started] ?? 0) + 1;
   // Reports: did anything reach the owner after the last one?
-  const reports = events.filter((e) => e.type === "message_completed" && e.mail);
+  const reports = events.filter((e) => e.type === "message_completed" && e.mail?.kind === "report");
   if (reports.length && !s.plain) {
     t.reported++;
     if (firstAfter(w, reports.at(-1).at, isSend)) t.delivered++;
     else console.log("   (nothing sent after the last report)");
   }
+
+  // What agents said on the way, and what it cost.
+  const notes = events.filter((e) => e.type === "message_completed" && e.mail?.kind === "message");
+  t.notes += notes.length;
+  for (const e of notes) console.log(`   (from ${e.mail.from.name}: ${e.message.content.map((c) => c.text ?? "").join("").replace(/<\/?agent_message[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 100)})`);
+  if (notes.length) t.answered += events.filter((e) => e.at > notes[0].at && e.type === "tool_started" && e.name === "send_message").length;
+  events.forEach((e, i) => {
+    if (e.type !== "task_started" || e.trigger !== "mail") return;
+    const mail = events.slice(i + 1).find((x) => x.type === "message_completed" && x.mail);
+    if (mail?.mail.kind === "message") t.wokenByNote++;
+  });
+  t.peerNotes += events.filter((e) => e.type === "agent_event" && e.event.type === "message_completed" && e.event.mail?.kind === "message").length;
 
   // How long the owner waits for a bubble, and whether the work went on meanwhile.
   at.forEach((time, i) => {
@@ -364,6 +423,7 @@ for (const [name, s] of Object.entries(scenarios)) {
     runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, failed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
     ordered: 0, attached: 0, linked: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
+    notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0,
   });
   for (let run = 0; run < runs; run += parallel) {
     const batch = Array.from({ length: Math.min(parallel, runs - run) }, (_, k) => oneRun(name, s, run + k, t).catch((e) => console.log(`${name} #${run + k + 1}: ${e.message}`)));

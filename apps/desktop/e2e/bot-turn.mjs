@@ -3,7 +3,8 @@
 // the work goes to the background and its page says so, messages sent meanwhile get their answers
 // while it goes on, its report comes back as a message. Asked how it is going, the bot finds the
 // deferred tool and says what it shows; told to drop it, it stops the work before saying so, and
-// nothing comes of it afterwards.
+// nothing comes of it afterwards. An agent can speak up on the way (agent-messaging-design §3.1):
+// the owner hears it from the bot, a session shows it as a card, and the work goes on.
 //
 // Runs the development build against the repository's target/debug/finx in a temporary FINX_HOME
 // and profile, with finx-mock as the model, scripted by the prompt. Takes under a minute once built.
@@ -227,6 +228,36 @@ try {
   await page.until("the last name in view", `[...document.querySelectorAll(".tr.bots .bm.working .wb-r")].at(-1).getBoundingClientRect().bottom <= document.querySelector(".cmp-zone.bot").getBoundingClientRect().top`, 3000);
   await page.shot("6-two-names");
   await page.until("both reported", `${bubbles}.filter((t) => t.includes("做完了：")).length === 2`, 20000);
+
+  step("an agent speaks up on the way: the owner hears it from the bot, and the work goes on");
+  await write("[[mock:relay_note:6]] 把 sales.csv 按月汇总");
+  await page.until("the first message", has("好，我先把数据汇总出来。"), 5000);
+  await page.until("what it sent, through the bot", has("3 月的数据整月缺失"), 10000);
+  check(await page.run(working), "the work goes on");
+  check((await page.run(workingText)).trim() === "汇总销售数据", `what it says it does: ${await page.run(workingText)}`);
+  // The bot's message shows where it came from in its process.
+  await page.run(`(() => { const b = [...document.querySelectorAll(".tr.bots .bm:not(.working)")].find((m) => m.querySelector(".bbub")?.innerText.includes("3 月的数据整月缺失")); b.querySelector("button.tb[aria-label='过程']").click(); })()`);
+  await page.until("the message in its process", `[...document.querySelectorAll(".bproc .rpc")].some((c) => c.innerText.includes("发来消息") && c.innerText.includes("3 月的数据整月缺失"))`, 3000);
+  await page.shot("7-spoke-up");
+  await page.until("then its report", has('agent_report agent="sales"'), 20000);
+  await page.until("the work over", `!${working}`, 5000);
+
+  step("in a session: a card for what it sent, and the agent still at work");
+  await page.run(`document.querySelector('.seg.mode [data-mode=sessions]').click()`);
+  await page.until("the session page", `!!document.querySelector(".cmp-in") && !document.querySelector(".tr.bots")`, 10000);
+  await write("[[mock:note_session:6]] 把 sales.csv 按月汇总");
+  const cards = `[...document.querySelectorAll(".rpc")].map((c) => c.innerText)`;
+  await page.until("the card", `${cards}.some((c) => c.includes("发来消息") && c.includes("3 月的数据整月缺失"))`, 15000);
+  check(!(await page.run(`${cards}.some((c) => c.includes("的汇报"))`)), "no report yet");
+  await page.until("the answer to it", `document.body.innerText.includes("回复：<agent_message")`, 5000);
+  check(await page.run(`!!document.querySelector(".bgind")`), "the agent still shows as working");
+  await page.shot("8-session-card");
+  // A session asks before a command; a message waits for nobody.
+  await page.until("its command to approve", `!!document.querySelector(".appr .btn.primary")`, 5000);
+  await page.run(`document.querySelector(".appr .btn.primary").click()`);
+  await page.until("then its report", `${cards}.some((c) => c.includes("的汇报") && c.includes("写完了"))`, 20000);
+  await page.until("the background line gone", `!document.querySelector(".bgind")`, 5000);
+  await page.shot("9-session-report");
 
   page.close();
   console.log("\n✔ a bot's long work runs in the background, and the owner can talk, ask and stop");

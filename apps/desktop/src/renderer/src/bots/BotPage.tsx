@@ -13,7 +13,7 @@ import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { DocContext } from "../docs/state";
 import { viewingDoc } from "../files/state";
-import { AgentCard, ReportCard } from "../session/Agents";
+import { AgentCard, AgentMessageCard, ReportCard } from "../session/Agents";
 import { Approval } from "../session/Approval";
 import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
@@ -402,6 +402,8 @@ function Process({ steps, summary }: { steps: Step[]; summary: string }) {
             return <AgentCard key={s.key} launches={s.launches} />;
           case "report":
             return <ReportCard key={s.key} step={s} />;
+          case "agent_message":
+            return <AgentMessageCard key={s.key} step={s} />;
           default:
             return null;
         }

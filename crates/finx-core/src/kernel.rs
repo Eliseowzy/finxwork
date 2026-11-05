@@ -205,8 +205,9 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     let settings = launch.system.get();
     let pool = launch.deps.browser_pool.clone();
     let embedded = pool.as_ref().is_some_and(|p| p.has_host());
+    let role = agent_role(launch.agents.is_some(), launch.sub_agent);
     let deferred: crate::deferred::DeferredCell =
-        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some(), launch.agents.is_some()))));
+        Arc::new(Mutex::new(Arc::new(crate::deferred::Deferred::of(&settings, pool.is_some(), embedded, launch.deps.docs.is_some(), role))));
     let base_tools = mcp::base_tools(&launch.deps.tools, launch.mcp.as_ref(), &deferred, &shown);
     let skill_roots =
         crate::protected::skill_locations(&launch.config.skills, &launch.home, launch.deps.env.cwd());
@@ -315,8 +316,18 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     (kernel, session)
 }
 
+/// What a session is among agents: it has a tree of sub-agents, or is one of them.
+pub(crate) fn agent_role(tree: bool, sub_agent: bool) -> crate::deferred::AgentRole {
+    match (tree, sub_agent) {
+        (true, _) => crate::deferred::AgentRole::Main,
+        (false, true) => crate::deferred::AgentRole::SubAgent,
+        (false, false) => crate::deferred::AgentRole::None,
+    }
+}
+
 /// The sub-agents of a main session: adds `spawn_agent` and `send_message` to its tools.
-/// Sub-agents get the tools as they were before, without these two, and share the MCP servers.
+/// Sub-agents start from the tools as they were before, without these two (`start_child` gives
+/// them their own `send_message`), and share the MCP servers.
 /// A bot's main session has the two without `wait` (bot-turn-design §5.1).
 fn agent_tree(
     deps: &mut KernelDeps,
@@ -405,7 +416,8 @@ pub(crate) struct ChildLaunch {
 
 /// Starts a sub-agent's session: an ordinary session with its own log, whose questions go to
 /// the main session's user.
-pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
+pub(crate) fn start_child(mut child: ChildLaunch) -> Result<Kernel, KernelError> {
+    child.deps.tools = extended(&child.deps.tools, "sub-agent", agents::sub_agent_tools);
     let created = child.deps.store.create(&child.header)?;
     let model_ref = child.model.reference();
     let context_window = u64::from(child.model.context_window);
@@ -502,9 +514,9 @@ struct BuiltPrompt {
 
 /// `context_window` sizes the skill catalog.
 /// The deferred built-in tools a session starts with, for the catalog in its first prompt.
-fn starting_deferred(deps: &KernelDeps, system: &SystemCell, agents: bool) -> crate::deferred::Deferred {
+fn starting_deferred(deps: &KernelDeps, system: &SystemCell, tree: bool) -> crate::deferred::Deferred {
     let embedded = deps.browser_pool.as_ref().is_some_and(|p| p.has_host());
-    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded, deps.docs.is_some(), agents)
+    crate::deferred::Deferred::of(&system.get(), deps.browser_pool.is_some(), embedded, deps.docs.is_some(), agent_role(tree, false))
 }
 
 /// The tools a session starts with, before MCP: what its prompt describes. The browsers' and
@@ -1147,7 +1159,7 @@ pub(crate) fn transcript_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> 
                 skills: context::skill_uses(skills, skill.as_deref()),
                 mail: None,
             }),
-            EntryKind::Mail { mail, message } => Some(TranscriptItem::Message {
+            EntryKind::Mail { mail, message } | EntryKind::AgentMessage { mail, message } => Some(TranscriptItem::Message {
                 message_id: entry.id.clone(),
                 message: message.clone(),
                 skills: Vec::new(),
@@ -1203,7 +1215,7 @@ mod tests {
     #[test]
     fn computer_use_is_on_with_the_desktop_app_unless_turned_off() {
         let mut settings = SystemSettings::of(&Config::default());
-        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app, false, false).find("cua_snapshot").is_some();
+        let has = |settings: &SystemSettings, app: bool| crate::deferred::Deferred::of(settings, false, app, false, crate::deferred::AgentRole::None).find("cua_snapshot").is_some();
         assert!(has(&settings, true), "the desktop app connected");
         assert!(!has(&settings, false), "the command line");
         settings.desktop.enabled = Some(false);

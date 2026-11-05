@@ -82,6 +82,7 @@
     },
     "open": "Show its work in the background panel",
     "report": "Report from <b>{{name}}</b>",
+    "message": "Message from <b>{{name}}</b>",
     "noReply": {
       "interrupted": "Stopped before it replied",
       "completed": "Finished without a reply"
@@ -95,7 +96,8 @@
     "stopped_other": "{{count}} background tasks stopped; reply to let finx continue them",
     "sent": "Sent to",
     "sending": "Sending to",
-    "messageObject": "{{to}}: {{message}}"
+    "messageObject": "{{to}}: {{message}}",
+    "mainAgent": "the main agent"
   },
   "background": {
     "title": "Background tasks",

@@ -40,8 +40,11 @@
 //! | `web_search:QUERY[\|allowed=A,B][\|blocked=C][\|recency=week]` | `tool_search` for the search tool, `call_tool` on `web_search`, then `search done: <its result>` |
 //! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
 //! | `relay_slow:SECONDS` | a bot's opening line and a `spawn_agent` (named `writer`) that runs `sleep SECONDS`, a private line that ends the turn, then `回复：<the latest message>` sent with `end_turn` for whatever comes next, its report too |
-//! | `check` | `tool_search`, `call_tool` on `check_agents`, its result sent with `end_turn`, then as `relay_slow` |
+//! | `check` | `tool_search`, `call_tool` on `list_agents`, its result sent with `end_turn`, then as `relay_slow` |
 //! | `stop_all` | the same with `stop_agents` and `all`, ahead of any message |
+//! | `relay_note:SECONDS` | as `relay_slow`, with a sub-agent that runs `note:SECONDS:3 月的数据整月缺失。` |
+//! | `note_session:SECONDS` | the same in a session: `spawn_agent`, `交给子智能体了。`, then `回复：<the latest message>` for whatever comes next |
+//! | `note:SECONDS:TEXT` | half a second later, a sub-agent's `send_message` of TEXT to `main`, then a bash call running `sleep SECONDS`, then `写完了。` |
 //!
 //! [`MockOptions`] adds a gateway's latency: a pause before the first chunk of every reply
 //! and between chunks.
@@ -709,9 +712,41 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
             _ => Plan::Step(answer_latest(messages)),
         },
+        // The same with a sub-agent that speaks up on the way (agent-messaging-design §3.1).
+        "relay_note" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，我先把数据汇总出来。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "汇总销售数据", "task": format!("[[mock:note:{arg}:3 月的数据整月缺失。]] Sum it and report."), "name": "sales" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
+        "note_session" => match step {
+            0 => Plan::Step(Step::calls(vec![(
+                "spawn_agent",
+                json!({ "description": "汇总销售数据", "task": format!("[[mock:note:{arg}:3 月的数据整月缺失。]] Sum it and report."), "name": "sales" }),
+            )])),
+            1 => Plan::Step(Step::text("交给子智能体了。".to_string())),
+            _ => Plan::Step(Step::text(format!("回复：{}", last_user_text(messages)))),
+        },
+        "note" => {
+            let (seconds, text) = arg.split_once(':').unwrap_or((arg, "something came up"));
+            match step {
+                // By then the bot has ended its turn.
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(500),
+                    ..Step::calls(vec![("send_message", json!({ "to": "main", "message": text }))])
+                }),
+                1 => Plan::Step(Step::calls(vec![("bash", json!({ "command": format!("sleep {seconds}") }))])),
+                _ => Plan::Step(Step::text("写完了。".to_string())),
+            }
+        }
         // Asked how the agents stand, or to stop them: the tools are deferred (bot-turn-design §5.3).
         "check" | "stop_all" => {
-            let (tool, arguments) = if name == "check" { ("check_agents", json!({})) } else { ("stop_agents", json!({ "all": true })) };
+            let (tool, arguments) = if name == "check" { ("list_agents", json!({})) } else { ("stop_agents", json!({ "all": true })) };
             match step {
                 0 => Plan::Step(Step::calls(vec![("tool_search", json!({ "query": tool }))])),
                 1 => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": tool, "arguments": arguments }))])),

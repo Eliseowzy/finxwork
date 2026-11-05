@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.17 |
+| 版本 | v1.18 |
 | 日期 | 2026-11-05 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -34,6 +34,7 @@
 | v1.15 | 2026-11-05 | 连发时第一句的回答写成私有文字就丢了：模型要结束时先查没回话，再看排队的话，提醒的那次请求不带排队的话，提醒按主人的每句话算（§3.11、D-400）。统计脚本的"按顺序"改成看每条消息的意象，统计结果和变差的原因见 §8 |
 | v1.16 | 2026-11-05 | 回合和插话定稿（[Bot 回合方案](bot-turn-design.md)）：长活都在后台，Bot 的 `spawn_agent`、`send_message` 没有 `wait`（§3.6、D-350）；主人的话不打断任何东西，"顶掉"不做了（§3.1、D-351）；任务结束前查一次结果发出去了没有（§3.13、D-352）；内置的 bot.md 变了，已有的 Bot 恢复时拿到新的（§3.10、D-353）；`bot.md` 的回合规则重写（附录 A.1）；能查进度、能叫停（§3.6，子智能体方案 §6.6） |
 | v1.17 | 2026-11-05 | 试用后改：不相关的事各开一个子智能体（§3.6、D-357）；"它在忙"的气泡只写子智能体的名字（§3.7、D-358）。只改 bot.md 和桌面端 |
+| v1.18 | 2026-11-05 | 子智能体运行中能发消息，唤醒 Bot（§3.6，[智能体通信方案](agent-messaging-design.md)）；`check_agents` 改名 `list_agents`；bot.md 跟着改（附录 A.1） |
 
 ## 方案摘要
 
@@ -319,8 +320,9 @@ pub enum PromptProfile {
 - **一件事一个子智能体**（D-357）：不相关的事各开一个，看起来相似也一样，这样每件事能各自做完、各自汇报、单独叫停。只有紧接着同一件工作的后续和修正才用 `send_message` 发给原来那个。主人试用时连发四首诗，模型把四首都交给了一个子智能体，一轮做完才有汇报。
 - 汇报：Bot 空闲时唤醒它开一个任务，Bot 正在回时在下一个轮次边界送达（子智能体方案 §7）。Bot 用 `send_to_user` 转告；过时、重复的可以不发。
 - 子智能体要确认的调用由主人批准（子智能体方案 §10）：弹同一个授权窗口，写明是哪个子智能体，Bot 不能替主人答。等答复时 Bot 照常回话；被拒绝的话，子智能体接着做，写进汇报，由 Bot 转告。
-- **查进度和叫停**：`check_agents`、`stop_agents`，所有主会话共用，按需加载（子智能体方案 §6.6）。Bot 页没有停止键，说话是唯一的办法，bot.md 写明什么时候查、停下优先。要改方向用 `send_message`（带 interrupt）。
-- **只有主 Bot 跟主人说话**：子智能体的工具列表在加上 `send_to_user` 之前就定了，它没有这个工具，也没有 `check_agents`、`stop_agents`。汇报只有 Bot 看得到，转告是它的责任（§3.13）。
+- **中途的消息**：子智能体遇到等不到汇报的事，用 `send_message` 发给 Bot，`<agent_message>` 唤醒它，由它转告主人；子智能体接着做，汇报照旧。能拆开的事不走这条路，各开一个子智能体（[智能体通信方案](agent-messaging-design.md) §3）。Bot 被它唤醒后只写文字时，和汇报一样提醒一次，还不发就正常结束（§3.13）。
+- **查进度和叫停**：`list_agents`、`stop_agents`，所有主会话共用，按需加载（子智能体方案 §6.6）。Bot 页没有停止键，说话是唯一的办法，bot.md 写明什么时候查、停下优先。要改方向用 `send_message`（带 interrupt）。
+- **只有主 Bot 跟主人说话**：子智能体的工具列表在加上 `send_to_user` 之前就定了，它没有这个工具，也没有 `stop_agents`。汇报和它发的消息只有 Bot 看得到，转告是它的责任（§3.13）。
 
 ### 3.7 在忙
 
@@ -1012,7 +1014,7 @@ never reaches them.
    make the last send alongside calls whose results you still need. Once your own part is done,
    you can end the turn while agents keep working.
 
-Background wake-ups, such as an agent's report, are not the user writing: they need no
+Background wake-ups, such as an agent's report or message, are not the user writing: they need no
 acknowledgement, and you never answer one as if the user had said it. Get on with what it calls
 for and send what the user is waiting for. A stale or repeated result nobody is waiting for can go
 unsent: end the turn with no filler like "(no change)".
@@ -1033,8 +1035,10 @@ You stay available to the user while agents work in the background.
   the requests look alike: four poems are four agents. Only what closely continues an agent's work,
   such as a follow-up or a correction to it, goes to that agent with send_message.
 - After starting an agent, carry on with anything else or end the turn. Its report wakes you, so
-  never sit waiting or keep checking on it.
-- Use check_agents when an agent has run unusually long, when the user asks about it, and before
+  never sit waiting or keep checking on it. An agent may also message you about a blocker or a
+  change of plan. If the user wants results one by one, give each its own agent. Don't promise
+  anything along the way that you haven't asked an agent for in its task.
+- Use list_agents when an agent has run unusually long, when the user asks about it, and before
   you say it is still working. If its activity has stopped or keeps repeating, treat it as stuck:
   redirect or stop it, and tell the user what really happened.
 - A request to stop, cancel, drop or abandon work, in any wording or language, overrides what you

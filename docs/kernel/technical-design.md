@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.45 |
+| 版本 | v1.46 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -92,6 +92,7 @@
 | v1.43 | 2026-11-05 | 联网搜索（web-search-design.md，已实现）：内置工具 `web_search` 放进渐进式的 `web` 组，默认开启，所以每个会话都有 `tool_search`、`call_tool`；`SystemSettings` 增加 `web_search`，顺序和开关下一步生效且没有缓存失效；配置 `[web_search]`，项目文件只能关掉；密钥存钥匙串，名字前缀 `web-search.` |
 | v1.44 | 2026-11-05 | 本地命令的 CI 门槛改用缺页预算（§1.4，D-98）：原来的“GitHub runner 上均值 ≤ 2 ms”时红时绿，主要是 runner 的波动，真实的变慢反而看不出来；2 ms 仍是产品目标，改在固定机器上交替测量。`status`、`doctor` 两天内慢了约 12%，这次收回约三分之二：命令行没有全局选项时，解析器不带它们的副本（§1.4）；本地命令的运行时不析构；模型目录直接移动字段。新增 `tools/bench/local_ab.py` |
 | v1.45 | 2026-11-05 | Bot 的回合和插话（[bot-turn-design.md](bot-turn-design.md)）：日志加 `undelivered`、`reply_nudge` 条目，`system_prompt` 条目加 `template`（§7.2、§9.2）；所有主会话的目录多一组 `agents`：`check_agents`、`stop_agents`（subagent-design §6.6） |
+| v1.46 | 2026-11-05 | 智能体之间能互发消息（[agent-messaging-design.md](agent-messaging-design.md)）：子智能体有 `send_message`，事件的 `mail.kind` 多一个 `message`，日志加 `agent_message` 条目（§9.2、subagent-design §9.2）；`check_agents` 改名 `list_agents`，子智能体也有 |
 
 ## 1. 目标与范围
 

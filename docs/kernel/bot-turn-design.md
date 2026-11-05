@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.8 |
+| 版本 | v0.9 |
 | 日期 | 2026-11-05 |
 | 状态 | 已实现（分支 `feat/bot-turn`）；实施结果和与原方案的出入见 §13，主人已确认这些出入 |
 | 关系 | 确认后改 [bot-design.md](bot-design.md) 的 §3、§11、附录 A，[PRD](../desktop/bot-mode-design.md) 的 §6.7、§6.9，以及 [子智能体方案](subagent-design.md) 的工具部分（§5.3 的两个工具是所有主会话共用的内核能力）。依赖子智能体方案 v2.3（子智能体的确认由主用户批准，在分支 `feat/subagent-approvals`） |
@@ -16,7 +16,7 @@
   2. 重写 `bot.md` 的回合规则（§7）。现在每条规则只有一句话，范围、例外、措辞都没写死，模型有很多空子可钻：逐条对照见 §7.1。
   3. 任务结束前查一次"结果发出去了没有"。现在先发一句"在弄了"就算回过话，后面写成普通文字的结果主人收不到。
   4. 让已有的 Bot 拿到新提示词。系统提示词是冻结的，不处理的话，默认的 FinxBot 永远用旧规则。
-  5. 内核给所有主会话（会话模式和 Bot）加两个按需加载的工具：`check_agents` 查子智能体的状态和近期操作，`stop_agents` 中止正在运行的子智能体（§5.3）。
+  5. 内核给所有主会话（会话模式和 Bot）加两个按需加载的工具：`list_agents` 查子智能体的状态和近期操作，`stop_agents` 中止正在运行的子智能体（§5.3）。
   6. 主人的每句话后面跟一句很短的提示（bot-design §3.14）。只靠系统提示词，模型的第一条回复多半写成普通文字。
 - **复用**：子智能体、汇报唤醒、插话队列、授权窗口、按需加载都是现成的。不加新的协议，桌面端基本不用改。
 
@@ -134,7 +134,7 @@ Bot   send_to_user("写好了，一共一万零二百字：[作文](…)", end_t
 
 - **按需加载**：不进工具列表，和浏览器、电脑操控走同一条路。系统提示词的目录 `<deferred_tools>` 里多一组 `agents`，模型用 `tool_search` 取定义，用 `call_tool` 调用。
 - **谁有这一组**：有子智能体树的会话，也就是主会话，并且没有关掉子智能体。子智能体没有树，自然没有这一组。设置变化重建目录时（`prepare_system`）同样判断。
-- **`check_agents`**：可以点名，不点名就是全部。返回每个子智能体的标签、状态、跑了多久、近期操作、上次有动静是多久以前。数据来自智能体树已经转发的事件，不用问模型。用来诊断，不是用来轮询的。
+- **`list_agents`**：可以点名，不点名就是全部。返回每个子智能体的标签、状态、跑了多久、近期操作、上次有动静是多久以前。数据来自智能体树已经转发的事件，不用问模型。用来诊断，不是用来轮询的。
 - **`stop_agents`**：要么点名，要么明确写 `all: true`，不给默认值，免得一个空调用停掉全部。就是现有的 `agent_interrupt`：子智能体当场停在这一步，保留会话，之后可以用 `send_message` 继续，汇报不唤醒主会话。结果写明停了哪些、哪些早已结束。
 - **不需要确认**：和 `spawn_agent`、`send_message` 一样，只管自己派出去的子智能体。
 - **名字**：不叫 `agent_status`，协议里已经有同名的事件。
@@ -275,7 +275,7 @@ never reaches them.
    make the last send alongside calls whose results you still need. Once your own part is done,
    you can end the turn while agents keep working.
 
-Background wake-ups, such as an agent's report, are not the user writing: they need no
+Background wake-ups, such as an agent's report or message, are not the user writing: they need no
 acknowledgement, and you never answer one as if the user had said it. Get on with what it calls
 for and send what the user is waiting for. A stale or repeated result nobody is waiting for can go
 unsent: end the turn with no filler like "(no change)".
@@ -296,8 +296,10 @@ You stay available to the user while agents work in the background.
   the requests look alike: four poems are four agents. Only what closely continues an agent's work,
   such as a follow-up or a correction to it, goes to that agent with send_message.
 - After starting an agent, carry on with anything else or end the turn. Its report wakes you, so
-  never sit waiting or keep checking on it.
-- Use check_agents when an agent has run unusually long, when the user asks about it, and before
+  never sit waiting or keep checking on it. An agent may also message you about a blocker or a
+  change of plan. If the user wants results one by one, give each its own agent. Don't promise
+  anything along the way that you haven't asked an agent for in its task.
+- Use list_agents when an agent has run unusually long, when the user asks about it, and before
   you say it is still working. If its activity has stopped or keeps repeating, treat it as stuck:
   redirect or stop it, and tell the user what really happened.
 - A request to stop, cancel, drop or abandon work, in any wording or language, overrides what you
@@ -318,7 +320,7 @@ You stay available to the user while agents work in the background.
 `spawn_agent` 描述的最后一段，会话模式和 Bot 共用，不再让模型直接说"还在做"：
 
 ```
-Leave delegated work to the agent: do not redo it or guess its result; check_agents shows how it
+Leave delegated work to the agent: do not redo it or guess its result; list_agents shows how it
 stands. Only you see the reports; the user sees each agent's status, so relay what matters.
 ```
 
@@ -335,7 +337,7 @@ after you end your turn. So end your turn rather than wait for it: that is not y
 - agents: Check on your running agents, or stop them
 ```
 
-`check_agents` 的描述：
+`list_agents` 的描述（这是当时的文字，现在的见子智能体方案附录 A.1）：
 
 ```
 See how your agents stand: each one's label, status, how long it has run, its recent steps and how
@@ -396,7 +398,7 @@ send_message lets it continue later. The result lists what stopped and what had 
 
 | 文件 | 改动 |
 |---|---|
-| `crates/finx-core/src/agents/tools.rs` | Bot 版的 `spawn_agent`、`send_message`（没有 `wait`）；所有主会话共用的 `check_agents`、`stop_agents` |
+| `crates/finx-core/src/agents/tools.rs` | Bot 版的 `spawn_agent`、`send_message`（没有 `wait`）；所有主会话共用的 `list_agents`、`stop_agents` |
 | `crates/finx-core/src/agents/mod.rs`、`driver.rs` | 开始等待时队列里已有插话就不等（§4.3）；记下每个子智能体最近几步和上次动静；停全部时列出结果 |
 | `crates/finx-core/src/deferred.rs`、`kernel.rs`、`system.rs` | 有子智能体树的会话多一组 `agents`；启动、恢复和设置变化时都这样判断 |
 | `crates/finx-core/src/kernel.rs` | Bot 用它自己那组智能体工具；恢复时比较模板哈希（§8） |
@@ -421,9 +423,9 @@ send_message lets it continue later. The result lists what stopped and what had 
 - 提醒的四种情况（§6.2），交出去以后结束不提醒，每个任务一次，主人新消息后重新计算。
 - 恢复时模板哈希不同就换提示词，相同就不写新条目。
 - `stop_agents`：点名和 `all`，两个都没有时报错；结果写明停了什么、早已结束的；汇报不唤醒主会话；停下后 `send_message` 能接着做。
-- `check_agents`：状态、近期操作、上次动静；经 `tool_search` 取定义、`call_tool` 调用。
+- `list_agents`：状态、近期操作、上次动静；经 `tool_search` 取定义、`call_tool` 调用。
 - 会话模式和 Bot 的主会话目录里都有 `agents` 这一组；子智能体、关掉子智能体的会话没有；设置变化重建目录后还在。
-- 子智能体的工具里没有 `send_to_user`，也调不到 `check_agents`、`stop_agents`，新建和恢复后都一样。
+- 子智能体的工具里没有 `send_to_user`，也调不到 `list_agents`、`stop_agents`，新建和恢复后都一样。
 
 **真实模型统计**（`bot_turns.mjs`，每个场景 12 遍）：
 
@@ -432,7 +434,7 @@ send_message lets it continue later. The result lists what stopped and what had 
 | 一万字：写一万字，2 秒和 5 秒后各问一句 | 第一个气泡的时间；两句追问的回答时间；交给子智能体；结果送达 | 没测过 | 第一个气泡不随任务变慢；追问的回答和平时一样快；12/12 交出去；12/12 送达 |
 | 一快两慢（已有） | 交给子智能体；期间的回答 | 0/36 交出去 | 明显上升，短问题照常直接回 |
 | 停下：写一万字，5 秒后"算了不用了"，再换说法"这个先别弄了"和英文 | 有没有先停再说，包括取定义这一步；停了没有；说了没有 | 没测过 | 12/12 先停再说，没有继续 |
-| 问进度：写一万字，10 秒后"写到哪了" | 有没有先取定义再查 `check_agents`；说的和实际一致吗 | 没测过 | 12/12 查了再说，没有编造 |
+| 问进度：写一万字，10 秒后"写到哪了" | 有没有先取定义再查 `list_agents`；说的和实际一致吗 | 没测过 | 12/12 查了再说，没有编造 |
 | 改主意：写春天的诗，1 秒后"算了写秋天的" | 最后交付的是什么 | 没测过 | 最后一条是秋天的；中间多出的春天的诗算可以接受 |
 | 询问权限下交出去，允许和拒绝各一组 | 结果丢失 | 2/8、7/8 | 0 |
 | 短问题、寒暄（已有） | 第一个调用是发消息；提醒后才发；第一个气泡的时间；不交出去 | 24/36、30/36；提醒 5、6 次 | 明显上升，提醒减少 |
@@ -555,3 +557,7 @@ send_message lets it continue later. The result lists what stopped and what had 
 | `follow` | 一篇作文，开工后说"写短一点" | 一个子智能体，修正用 `send_message` 发给它 |
 
 **接下来讨论**：子智能体要不要、怎么在中途往外通知。任务开独立以后，这件事的急迫性小了，但长期可能还是需要。这次日志里，子智能体被告知"每完成一首就用报告通知我"，于是去连接器里搜 "message parent agent"，Bot 也跟主人说了"每完成一首就先发给你"：现在的机制做不到，子智能体只有一轮做完才汇报。
+
+### 13.7 接着做的：智能体之间的通信
+
+§13.6 最后留下的中途通知，做成了 [智能体通信方案](agent-messaging-design.md)。`check_agents` 因此改名 `list_agents`，本方案里的名字都跟着改了；子智能体现在也有这个工具和 `send_message`，§5.3 里"子智能体调不到"的部分以那份方案为准。

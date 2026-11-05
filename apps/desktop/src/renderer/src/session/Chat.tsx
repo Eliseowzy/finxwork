@@ -9,7 +9,7 @@ import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon, MarkMotion } from "../icons";
 import { useNow, useStore } from "../store";
-import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
+import { AgentCard, AgentMessageCard, BackgroundLine, ReportCard } from "./Agents";
 import { Dock } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
 import { DraftMarkdown, Markdown } from "./Markdown";
@@ -286,6 +286,8 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;
+    case "agent_message":
+      return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent;
     case "end": {
       const c = (b as typeof a).chain;
       return a.end === (b as typeof a).end && a.chain?.usage === c?.usage && a.chain?.agents === c?.agents && a.chain?.started === c?.started;
@@ -345,6 +347,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
       return <AgentCard launches={step.launches} />;
     case "report":
       return <ReportCard step={step} />;
+    case "agent_message":
+      return <AgentMessageCard step={step} />;
     case "end":
       if (merged) return null;
       return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;

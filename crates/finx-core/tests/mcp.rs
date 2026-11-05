@@ -504,7 +504,7 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     assert!(names.contains(&"call_tool".to_string()) && names.contains(&"tool_search".to_string()), "{names:?}");
     assert!(!names.contains(&"spawn_agent".to_string()), "{names:?}");
     assert!(worker[0].system.contains("<deferred_tools>"));
-    assert!(!worker[0].system.contains("- agents"), "{}", worker[0].system);
+    assert!(worker[0].system.contains("- agents: See the other agents in this session"), "{}", worker[0].system);
     assert_eq!(tool_results(worker[1])[0], "echo: from the worker");
     let refused = tool_results(worker[2]);
     let (found, stopped) = (&refused[refused.len() - 2], &refused[refused.len() - 1]);

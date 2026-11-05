@@ -76,6 +76,7 @@ pub(crate) fn owed(history: &History) -> Owed {
             } => return Owed::Reply,
             // A stopped agent's report wakes nobody, and nobody waits for it.
             EntryKind::Mail { mail, .. } => worked |= mail.status != AgentStatus::Interrupted,
+            EntryKind::AgentMessage { .. } => worked = true,
             _ => {}
         }
     }

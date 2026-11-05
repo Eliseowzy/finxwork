@@ -494,6 +494,8 @@ pub struct AgentRef {
 pub enum MailKind {
     /// What a sub-agent reports when it has finished a round of work.
     Report,
+    /// What a sub-agent sends with `send_message` while it works: its round goes on.
+    Message,
 }
 
 /// Where a delivered message came from.

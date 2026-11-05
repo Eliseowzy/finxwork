@@ -24,6 +24,7 @@ use finx_protocol::AgentStatus;
 use finx_protocol::ApprovalDecision;
 use finx_protocol::Event;
 use finx_protocol::EventMsg;
+use finx_protocol::MailKind;
 use finx_protocol::Op;
 use finx_protocol::PermissionMode;
 use finx_protocol::TaskTrigger;
@@ -260,12 +261,13 @@ async fn a_background_agent_reports_and_wakes_the_main_agent() {
     let task = &user_texts(&child[0])[0];
     assert!(task.contains("Count the files."), "{task}");
     assert!(task.contains("Markdown report"), "{task}");
-    // The same prompt, up to the catalog: it lists a group only the main session has.
+    // The same prompt, up to the catalog: the main session can also stop agents.
     let prompt = |system: &str| system.split("<deferred_tools>").next().unwrap().to_string();
     assert_eq!(prompt(&child[0].system), prompt(&root[0].system), "same system prompt");
-    assert!(root[0].system.contains("- agents:") && !child[0].system.contains("- agents:"));
+    assert!(root[0].system.contains("- agents: See how your agents stand, or stop them"), "{}", root[0].system);
+    assert!(child[0].system.contains("- agents: See the other agents in this session"), "{}", child[0].system);
     let child_tools: Vec<&str> = child[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(child_tools, ["read", "write", "edit", "bash", "tool_search", "call_tool"], "no agent tools for a sub-agent");
+    assert_eq!(child_tools, ["read", "write", "edit", "bash", "send_message", "tool_search", "call_tool"], "it starts no agents");
 
     // The label the user sees comes with its start and stays in the main session's log.
     let label = events.iter().find_map(|e| match &e.msg {
@@ -690,34 +692,38 @@ fn call_tool(id: &str, name: &str, arguments: serde_json::Value) -> Script {
 }
 
 #[tokio::test]
-async fn check_agents_tells_how_they_stand() {
+async fn list_agents_tells_how_they_stand() {
     let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
     h.script(ROOT, spawn("c1", "slow", "Take your time.", false));
-    // Later than the agent's first step.
-    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(500)).then_tool_call("s1", "tool_search", json!({ "query": "check_agents" })));
-    h.script(ROOT, call_tool("c2", "check_agents", json!({})));
-    h.script(ROOT, call_tool("c3", "check_agents", json!({ "agents": ["nobody"] })));
+    // After the agent's first step, and while it is on its next.
+    h.script(ROOT, wait_for("w1", "stepped"));
+    h.script(ROOT, Script::tool_call("s1", "tool_search", json!({ "query": "list_agents" })));
+    h.script(ROOT, call_tool("c2", "list_agents", json!({})));
+    h.script(ROOT, call_tool("c3", "list_agents", json!({ "agents": ["nobody"] })));
+    h.script(ROOT, give("w2", "listed"));
     h.script(ROOT, Script::text("it is still at it"));
     h.script(ROOT, Script::text("it is done"));
-    h.script("slow", Script::tool_call("k1", "bash", json!({ "command": "echo hi\necho there" })));
-    h.script("slow", Script::default().then_sleep(Duration::from_secs(1)).then_text("all done"));
+    h.script("slow", Script::text("Looking into it now.\nFirst the logs.").then_tool_call("k1", "bash", json!({ "command": "echo hi\ntouch stepped" })));
+    h.script("slow", wait_for("k2", "listed"));
+    h.script("slow", Script::text("all done"));
     h.prompt("how is it going?").await;
     h.until_idle().await;
-    let last = h.requests(ROOT).into_iter().nth(4).unwrap();
+    let last = h.requests(ROOT).into_iter().nth(5).unwrap();
     let results = tool_results(&last);
-    let found = &results[1];
-    assert!(found.contains("check_agents") && found.contains("stop_agents"), "the group comes whole: {found}");
-    let status = &results[2];
+    let found = &results[2];
+    assert!(found.contains("list_agents") && found.contains("stop_agents"), "the group comes whole: {found}");
+    let status = &results[3];
     assert!(status.contains("slow (slow work): running for"), "{status}");
-    assert!(status.contains("last activity") && status.ends_with("recent steps: echo hi…"), "{status}");
-    assert_eq!(results[3], "nobody: no such agent");
+    assert!(status.contains("last activity") && status.contains("recent steps: echo hi…"), "{status}");
+    assert!(status.ends_with("last said: Looking into it now. First the logs."), "on one line: {status}");
+    assert_eq!(results[4], "nobody: no such agent");
 }
 
 #[tokio::test]
-async fn check_agents_says_when_an_agent_waits_for_the_user() {
+async fn list_agents_says_when_an_agent_waits_for_the_user() {
     let mut h = Harness::start(PermissionMode::Manual, true).await;
     h.script(ROOT, spawn("c1", "writer", "Write x.txt.", false));
-    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(500)).then_tool_call("c2", "check_agents", json!({})));
+    h.script(ROOT, Script::default().then_sleep(Duration::from_millis(500)).then_tool_call("c2", "list_agents", json!({})));
     h.script(ROOT, Script::text("it needs you"));
     h.script(ROOT, Script::text("it is written"));
     h.script("writer", Script::tool_call("w1", "write", json!({ "path": "x.txt", "content": "hi" })));
@@ -782,22 +788,319 @@ async fn a_stopped_agent_can_go_on() {
     assert!(user_texts(&h.requests("slow").pop().unwrap()).iter().any(|t| t.contains("Go on.")));
 }
 
+/// A sub-agent sees the agents, and stopping them stays the main agent's decision
+/// (agent-messaging-design §6.2).
 #[tokio::test]
-async fn a_sub_agent_cannot_reach_the_tools_for_checking_and_stopping() {
+async fn a_sub_agent_can_list_the_agents_but_not_stop_them() {
     let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
-    h.script(ROOT, spawn("c1", "curious", "Look around.", true));
+    h.script(ROOT, spawn("c1", "slow", "Take your time.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "looking around", "task": "Look around.", "name": "curious", "wait": true })));
+    // Still at work now: the other agent's try did nothing.
+    h.script(ROOT, Script::tool_call("c3", "stop_agents", json!({ "all": true })));
     h.script(ROOT, Script::text("done"));
-    h.script("curious", Script::tool_call("k1", "check_agents", json!({})).then_tool_call("k2", "call_tool", json!({ "name": "stop_agents", "arguments": { "all": true } })));
-    h.script("curious", Script::text("I could not."));
+    h.script("slow", Script::tool_call("s1", "bash", json!({ "command": "sleep 30" })));
+    h.script("curious", Script::tool_call("k1", "tool_search", json!({ "query": "agents" })));
+    h.script(
+        "curious",
+        call_tool("k2", "list_agents", json!({}))
+            .then_tool_call("k3", "call_tool", json!({ "name": "list_agents", "arguments": { "agents": ["main"] } }))
+            .then_tool_call("k4", "call_tool", json!({ "name": "stop_agents", "arguments": { "all": true } })),
+    );
+    h.script("curious", Script::text("I could not stop them."));
     h.prompt("look").await;
     h.until_idle().await;
     let requests = h.requests("curious");
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash", "tool_search", "call_tool"], "for web search");
-    assert!(!requests[0].system.contains("- agents:"), "{}", requests[0].system);
-    let results = tool_results(&requests[1]);
-    assert!(results[0].contains("Unknown tool 'check_agents'"), "{}", results[0]);
-    assert!(results[1].contains("Unknown tool 'stop_agents'"), "{}", results[1]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "send_message", "tool_search", "call_tool"], "it starts no agents");
+    let send = requests[0].tools.iter().find(|t| t.name == "send_message").unwrap();
+    let properties: Vec<&String> = send.parameters["properties"].as_object().unwrap().keys().collect();
+    assert_eq!(properties, ["message", "to"], "neither waits nor interrupts");
+    assert!(requests[0].system.contains("- agents: See the other agents in this session"), "{}", requests[0].system);
+    let found = tool_results(&requests[1]).pop().unwrap();
+    assert!(found.contains("list_agents") && !found.contains("stop_agents"), "{found}");
+    let results = tool_results(&requests[2]);
+    let list = &results[1];
+    assert!(list.starts_with("main: working\n"), "the main agent waits for it: {list}");
+    assert!(list.contains("slow (slow work): running for"), "{list}");
+    assert!(list.contains("curious (looking around) (you): running for"), "{list}");
+    assert_eq!(results[2], "main: working");
+    assert!(results[3].contains("stop_agents") && !results[3].contains("Stopped"), "{}", results[3]);
+    assert_eq!(tool_results(h.requests(ROOT).last().unwrap()).pop().unwrap(), "Stopped: slow.");
+}
+
+/// A step that runs until its cue: sessions run side by side, and these tests must not lean on how
+/// fast the machine is.
+fn wait_for(id: &str, cue: &str) -> Script {
+    Script::tool_call(id, "bash", json!({ "command": format!("while [ ! -f {cue} ]; do sleep 0.02; done") }))
+}
+
+/// A step that gives a cue.
+fn give(id: &str, cue: &str) -> Script {
+    Script::tool_call(id, "bash", json!({ "command": format!("touch {cue}") }))
+}
+
+impl Harness {
+    /// The test gives a cue.
+    fn cue(&self, cue: &str) {
+        std::fs::write(self.work.join(cue), "").unwrap();
+    }
+
+    /// Until a session has given this cue.
+    async fn until_cue(&self, cue: &str) {
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !self.work.join(cue).exists() {
+            assert!(Instant::now() < deadline, "timed out waiting for the cue {cue}");
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+}
+
+fn send_to(id: &str, to: &str, message: &str) -> Script {
+    Script::tool_call(id, "send_message", json!({ "to": to, "message": message }))
+}
+
+fn kinds(events: &[Event]) -> Vec<(MailKind, String)> {
+    events
+        .iter()
+        .filter_map(|e| match &e.msg {
+            EventMsg::MessageCompleted { mail: Some(mail), .. } => Some((mail.kind, mail.from.name.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
+fn mail_tasks(events: &[Event]) -> usize {
+    events.iter().filter(|e| matches!(e.msg, EventMsg::TaskStarted { trigger: TaskTrigger::Mail, .. })).count()
+}
+
+fn task_done(msg: &EventMsg) -> bool {
+    matches!(msg, EventMsg::TaskCompleted { .. })
+}
+
+/// The way a sub-agent speaks up: the idle main agent is woken, the sub-agent goes on, and its
+/// report still follows (agent-messaging-design §3.1).
+#[tokio::test]
+async fn a_message_wakes_the_idle_main_agent_and_the_report_still_follows() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "sales", "Sum sales.csv by month.", false));
+    h.script(ROOT, Script::text("handed over"));
+    h.script(ROOT, Script::text("heard"));
+    h.script(ROOT, Script::text("reported"));
+    h.script("sales", wait_for("k0", "handed-over"));
+    // A sub-agent's call has only these two; the others are ignored.
+    h.script("sales", Script::tool_call("k1", "send_message", json!({ "to": "main", "message": " March is missing; going on with the other months. ", "wait": true, "interrupt": true })));
+    h.script("sales", wait_for("k2", "heard"));
+    h.script("sales", Script::text("Summed eleven months."));
+    h.prompt("sum the sales").await;
+    let mut events = h.until(task_done).await;
+    h.cue("handed-over");
+    events.extend(h.until(task_done).await);
+    h.cue("heard");
+    events.extend(h.until_idle().await);
+
+    assert_eq!(kinds(&events), [(MailKind::Message, "sales".to_string()), (MailKind::Report, "sales".to_string())]);
+    assert_eq!(mail_tasks(&events), 2, "each woke it");
+    let agent = h.requests("sales");
+    assert_eq!(tool_results(&agent[2]).pop().unwrap(), "Sent to main. Keep working: your final report still follows.");
+    let root = h.requests(ROOT);
+    assert_eq!(root.len(), 4);
+    let heard = user_texts(&root[2]).pop().unwrap();
+    assert_eq!(heard, "<agent_message from=\"sales\">\nMarch is missing; going on with the other months.\n</agent_message>");
+    let reported = user_texts(&root[3]);
+    assert_eq!(reported.len(), 3, "{reported:?}");
+    assert_eq!(reported[1], heard, "it stays in the history");
+    assert!(reported[2].starts_with("<agent_report agent=\"sales\" status=\"completed\">"), "{reported:?}");
+
+    // It stays in the log as an entry of its own, and comes back with a resume.
+    let log = std::fs::read_to_string(h.kernel.session_file()).unwrap();
+    assert!(log.lines().any(|l| l.contains("\"type\":\"agent_message\"") && l.contains("March is missing")), "{log}");
+    let session = h.kernel.session_id().to_string();
+    let Harness { kernel, api, lanes, work, home, _dir } = h;
+    kernel.shutdown().await;
+    // While other tests here start commands on a very busy machine, the log can stay locked for a
+    // moment after the shutdown. That is not what this test is about, so it waits it out.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let kernel = loop {
+        let options = finx_core::ResumeOptions {
+            session: SessionRef::Id(session.clone()),
+            model: None,
+            thinking: None,
+            permission_mode: None,
+            home: home.clone(),
+            config: Arc::new(Config::default()),
+            project_root: None,
+            trusted: false,
+            interactive_approvals: false,
+            bot_name: None,
+        };
+        match Kernel::resume(options, deps(&api, &work, &home)).await {
+            Ok(kernel) => break kernel,
+            Err(err) if format!("{err:?}").contains("Locked") && Instant::now() < deadline => tokio::time::sleep(Duration::from_millis(50)).await,
+            Err(err) => panic!("{err:?}"),
+        }
+    };
+    let mut h = Harness { kernel, api, lanes, work, home, _dir };
+    assert_eq!(h.kernel.take_restored_agents()[0].status, AgentStatus::Completed, "a message says nothing of how it ended");
+    h.script(ROOT, Script::text("I remember"));
+    h.prompt("what did it say?").await;
+    h.until_idle().await;
+    let told = user_texts(h.requests(ROOT).last().unwrap());
+    assert!(told.contains(&heard), "{told:?}");
+}
+
+/// Nothing interrupts the main agent: whatever comes while it works goes in together at its next
+/// boundary, for one more request at most (agent-messaging-design §5.3).
+#[tokio::test]
+async fn messages_wait_for_the_boundary_of_a_busy_main_agent() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "a", "Work.", false));
+    h.script(ROOT, Script::tool_call("r1", "bash", json!({ "command": "touch busy; while [ ! -f sent ]; do sleep 0.02; done" })));
+    h.script(ROOT, Script::text("both heard"));
+    h.script(ROOT, Script::text("reported"));
+    h.script("a", wait_for("k0", "busy"));
+    h.script("a", send_to("k1", "main", "one").then_tool_call("k2", "send_message", json!({ "to": "main", "message": "two" })));
+    h.script("a", give("k3", "sent"));
+    h.script("a", wait_for("k4", "heard"));
+    h.script("a", Script::text("a done"));
+    h.prompt("go").await;
+    let mut events = h.until(task_done).await;
+    h.cue("heard");
+    events.extend(h.until_idle().await);
+
+    let root = h.requests(ROOT);
+    assert_eq!(root.len(), 4, "only the report's request came on top");
+    let told = user_texts(&root[2]);
+    assert!(told.iter().any(|t| t.contains("\none\n")) && told.iter().any(|t| t.contains("\ntwo\n")), "{told:?}");
+    assert!(!user_texts(&root[1]).iter().any(|t| t.contains("agent_message")));
+    assert_eq!(mail_tasks(&events), 1, "the report's");
+}
+
+/// A call that waits for an agent waits for its report, not for what it sends along the way
+/// (agent-messaging-design §5.6).
+#[tokio::test]
+async fn a_message_does_not_end_a_wait() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "a", "Work.", true));
+    h.script(ROOT, Script::text("done"));
+    h.script("a", send_to("k1", "main", "halfway"));
+    h.script("a", Script::default().then_sleep(Duration::from_millis(300)).then_text("a done"));
+    h.prompt("go").await;
+    let events = h.until_idle().await;
+
+    assert_eq!(mail_tasks(&events), 0);
+    assert_eq!(kinds(&events), [(MailKind::Message, "a".to_string())], "the report is the call's result");
+    let last = h.requests(ROOT).pop().unwrap();
+    assert!(tool_results(&last)[0].starts_with("Agent \"a\" completed after"), "{:?}", tool_results(&last));
+    assert!(user_texts(&last).pop().unwrap().contains("halfway"));
+}
+
+/// Work stopped on purpose stays stopped: what waits does not start it again until there is new
+/// input, as for reports (subagent-design D-46).
+#[tokio::test]
+async fn a_message_does_not_wake_a_stopped_main_agent() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "a", "Work.", false));
+    h.script(ROOT, Script::tool_call("r1", "bash", json!({ "command": "touch busy; sleep 30" })));
+    h.script(ROOT, Script::text("I see what it said"));
+    h.script("a", wait_for("k0", "busy"));
+    h.script("a", send_to("k1", "main", "something came up"));
+    h.script("a", Script::tool_call("k2", "bash", json!({ "command": "touch sent; sleep 30" })));
+    h.prompt("go").await;
+    h.until_cue("sent").await;
+    h.kernel.submit(Op::Interrupt).await.unwrap();
+    let events = h.until_idle().await;
+    assert_eq!(mail_tasks(&events), 0);
+    assert_eq!(h.requests(ROOT).len(), 2);
+
+    h.prompt("what did it say?").await;
+    h.until_idle().await;
+    let told = user_texts(&h.requests(ROOT)[2]);
+    assert!(told.iter().any(|t| t.contains("something came up")), "{told:?}");
+    assert_eq!(told.last().unwrap(), "what did it say?", "the user has the last word");
+}
+
+/// Two agents at work can talk: neither stops, and nobody else is woken.
+#[tokio::test]
+async fn a_working_agent_reads_a_peers_message_at_its_next_step() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "api", "Write the API.", false).then_tool_call("c2", "spawn_agent", json!({ "description": "caller", "task": "Write the caller.", "name": "caller", "wait": false })));
+    h.script(ROOT, Script::text("started"));
+    h.script(ROOT, Script::text("a report"));
+    h.script(ROOT, Script::text("another report"));
+    h.script("api", wait_for("a0", "both-started"));
+    h.script("api", send_to("a1", "caller", "The API is in api.rs."));
+    h.script("api", give("a2", "told"));
+    h.script("api", Script::text("api done"));
+    h.script("caller", wait_for("k1", "told"));
+    h.script("caller", Script::text("caller done"));
+    h.prompt("go").await;
+    let mut events = h.until(task_done).await;
+    h.cue("both-started");
+    events.extend(h.until_idle().await);
+
+    let api = h.requests("api");
+    assert_eq!(tool_results(&api[2]).pop().unwrap(), "Sent to \"caller\"; it reads the message at its next step.");
+    let caller = h.requests("caller");
+    assert_eq!(user_texts(&caller[1]).pop().unwrap(), "<agent_message from=\"api\">\nThe API is in api.rs.\n</agent_message>");
+    let mut seen = kinds(&events);
+    seen.sort_by(|a, b| a.1.cmp(&b.1));
+    assert_eq!(seen, [(MailKind::Report, "api".to_string()), (MailKind::Report, "caller".to_string())], "the main agent hears only reports");
+}
+
+/// Only the main agent sets an idle agent to work: what it stopped stays stopped, however its
+/// peers feel about it (agent-messaging-design §3).
+#[tokio::test]
+async fn an_idle_agent_takes_no_message_from_a_peer_but_does_from_the_main_agent() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    h.script(ROOT, spawn("c1", "quick", "Be quick.", true).then_tool_call("c2", "spawn_agent", json!({ "description": "slow", "task": "Take your time.", "name": "slow", "wait": false })));
+    h.script(ROOT, wait_for("c3", "slow-started"));
+    h.script(ROOT, Script::tool_call("c4", "stop_agents", json!({ "agents": ["slow"] })));
+    h.script(ROOT, spawn("c5", "peer", "Wake them.", true));
+    h.script(ROOT, Script::tool_call("c6", "send_message", json!({ "to": "slow", "message": "Go on.", "wait": true })));
+    h.script(ROOT, Script::text("done"));
+    h.script("quick", Script::text("quick done"));
+    h.script("slow", Script::tool_call("k1", "bash", json!({ "command": "touch slow-started; sleep 30" })));
+    h.script("slow", Script::text("went on"));
+    h.script("peer", send_to("p1", "quick", "More!").then_tool_call("p2", "send_message", json!({ "to": "slow", "message": "Wake up!" })));
+    h.script("peer", Script::text("they would not"));
+    h.prompt("go").await;
+    h.until_idle().await;
+
+    let results = tool_results(&h.requests("peer")[1]);
+    for (result, name) in results.iter().zip(["quick", "slow"]) {
+        assert_eq!(*result, format!("\"{name}\" is not working now, and its report went to main. Only main can give it more work: tell main if it should."));
+    }
+    assert_eq!(h.requests("quick").len(), 1, "it never started again");
+    let slow = h.requests("slow");
+    assert_eq!(slow.len(), 2, "only the main agent's message moved it");
+    let told = user_texts(&slow[1]);
+    assert!(told.iter().any(|t| t == "Go on."), "{told:?}");
+    assert!(!told.iter().any(|t| t.contains("Wake up!")), "{told:?}");
+}
+
+#[tokio::test]
+async fn messages_say_what_is_wrong_with_where_they_went() {
+    let mut h = Harness::start(PermissionMode::BypassPermissions, false).await;
+    // `main` is taken: nobody can be mistaken for the main agent.
+    h.script(ROOT, spawn("c1", "main", "Work.", true).then_tool_call("c2", "send_message", json!({ "to": "main", "message": "hello" })));
+    h.script(ROOT, Script::text("done"));
+    h.script(
+        "main-2",
+        send_to("k1", "parent", "by the other word")
+            .then_tool_call("k2", "send_message", json!({ "to": "nobody", "message": "hi" }))
+            .then_tool_call("k3", "send_message", json!({ "to": "main-2", "message": "hi" }))
+            .then_tool_call("k4", "send_message", json!({ "to": "main", "message": "  " })),
+    );
+    h.script("main-2", Script::text("done"));
+    h.prompt("go").await;
+    h.until_idle().await;
+
+    let results = tool_results(&h.requests("main-2")[1]);
+    assert_eq!(results[0], "Sent to main. Keep working: your final report still follows.");
+    assert_eq!(results[1], "No agent named \"nobody\". Agents: main, main-2.");
+    assert_eq!(results[2], "That is you.");
+    assert!(results[3].contains("message must not be empty"), "{}", results[3]);
+    let root = tool_results(&h.requests(ROOT)[1]);
+    assert_eq!(root[1], "That is you.");
 }
 
 /// Input that came before a wait began ends it too: the model has not read it yet, and would not
@@ -1161,10 +1464,10 @@ async fn a_resumed_session_knows_its_earlier_agents_as_their_logs_left_them() {
     let results = tool_results(root.last().unwrap());
     assert_eq!(results[results.len() - 2], "Agent \"counter\" is closed. Start a new one with spawn_agent.");
     assert!(results[results.len() - 1].starts_with("Agent \"counter-2\" completed after"), "{results:?}");
-    // Resumed, the main session has the group for checking and stopping, and its agents still don't.
+    // Resumed, the main session has the group for looking and stopping, and its agents the part for looking.
     assert!(root.last().unwrap().system.contains("- agents:"));
     let new = &h.requests("counter-2")[0];
-    assert!(!new.system.contains("- agents:"), "{}", new.system);
+    assert!(new.system.contains("- agents: See the other agents in this session"), "{}", new.system);
 }
 
 #[tokio::test]

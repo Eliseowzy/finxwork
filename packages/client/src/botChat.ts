@@ -127,6 +127,7 @@ export function botChat(v: SessionView): BotItem[] {
       case "text":
       case "agents":
       case "report":
+      case "agent_message":
         keep(s);
         break;
       case "end":
@@ -190,5 +191,5 @@ export function busyBubble(v: SessionView): { typing: boolean; agents: WorkingAg
 
 /** The steps of a bot message's process, counted as the process line shows them ("6 步"). */
 export function processSteps(process: Step[]): number {
-  return process.reduce((n, s) => n + (s.kind === "work" ? s.items.filter((i) => i.kind === "tool").length : s.kind === "agents" ? s.launches.length : s.kind === "report" ? 1 : 0), 0);
+  return process.reduce((n, s) => n + (s.kind === "work" ? s.items.filter((i) => i.kind === "tool").length : s.kind === "agents" ? s.launches.length : s.kind === "report" || s.kind === "agent_message" ? 1 : 0), 0);
 }
