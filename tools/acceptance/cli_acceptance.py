@@ -173,8 +173,9 @@ def s3_interactive():
     try:
         term.wait_for("› ", 30)
         report("S3 resume shows the conversation", "calc.py has a bug" in term.seen)
+        at = len(term.seen)
         term.type("Which file did we just fix? Reply with only its name.\r")
-        term.wait_for("calc.py", 120, term.seen.rfind("Which file"))
+        term.wait_for("calc.py", 120, at)
         report("S3 the conversation goes on", True)
         term.type("/quit\r")
         term.wait_exit()
