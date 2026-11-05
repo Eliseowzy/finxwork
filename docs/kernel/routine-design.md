@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | v1.4 |
 | 日期 | 2026-11-05 |
-| 状态 | 已实现（分支 feat/routines），脚本模型和桌面端走查都过了，真实模型统计做完（§12.1）；手动验证（§13）还没做。界面见 PRD §6.21，原型 [routine-demo.html](../desktop/routine-demo.html) |
+| 状态 | 已实现，在 main 上。脚本模型和桌面端走查都过了，真实模型统计做完（§12.1）；手动验证（§13）还没做。界面见 PRD §6.21，原型 [routine-demo.html](../desktop/routine-demo.html) |
 | 关系 | 落实 Bot PRD 的 F18（[docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md) §6.21，下称 PRD）。扩展 [bot-design.md](bot-design.md)（下称 Bot 方案）和 [subagent-design.md](subagent-design.md)（下称子智能体方案）；常驻部分接 [desktop-kernel-integration.md](../desktop/desktop-kernel-integration.md) 的 DQ-09 |
 
 变更记录：
