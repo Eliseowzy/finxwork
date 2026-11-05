@@ -97,7 +97,7 @@ CREATE INDEX runs_by_routine ON routine_runs(routine_id, id DESC);
 ";
 
 /// The longest the clock goes unread. Timers stand still while macOS sleeps, so waiting for the
-/// next run alone would be late by however long the computer slept (routine-design D-381).
+/// next run alone would be late by however long the computer slept (routine-design D-421).
 const CHECK_EVERY: Duration = Duration::from_secs(30);
 /// How far past its time a run counts as late, which it is told.
 const LATE_AFTER: SignedDuration = SignedDuration::from_mins(2);
@@ -165,7 +165,7 @@ struct Routine {
     /// Dealt with up to here: nothing at or before it comes due. Moved on to now when the
     /// schedule changes or the routine resumes, so that what passed meanwhile is not made up.
     last_slot: Timestamp,
-    /// Failures in a row (routine-design D-383).
+    /// Failures in a row (routine-design D-423).
     failures: u32,
     finished: bool,
     /// A run under way: what stops it.
@@ -253,12 +253,16 @@ pub(crate) struct Routines {
     home: FinxHome,
     bots: Arc<Registry>,
     server: OnceLock<Weak<Inner>>,
+    /// This, for what starts from a shared reference.
+    this: Weak<Routines>,
     /// Never held across an await.
     state: Mutex<State>,
     /// One change at a time, its database part included, so that the memory and the file agree.
     changing: Arc<tokio::sync::Mutex<()>>,
     /// Something the scheduler waits for changed.
     wake: Notify,
+    /// What ends the scheduler; set by `start`, and it starts when there is a database.
+    stop: OnceLock<CancellationToken>,
     closing: AtomicBool,
     /// Runs whose ends are not saved yet.
     open_runs: AtomicUsize,
@@ -538,10 +542,11 @@ fn read_runs(conn: &Connection, routine: &str, before: Option<&str>, limit: u32)
 
 impl Routines {
     pub(crate) fn new(home: FinxHome, bots: Arc<Registry>) -> Arc<Self> {
-        Arc::new(Self {
+        Arc::new_cyclic(|this| Self {
             home,
             bots,
             server: OnceLock::new(),
+            this: this.clone(),
             state: Mutex::new(State {
                 store: Store::Off,
                 routines: Vec::new(),
@@ -550,6 +555,7 @@ impl Routines {
             }),
             changing: Arc::default(),
             wake: Notify::new(),
+            stop: OnceLock::new(),
             closing: AtomicBool::new(false),
             open_runs: AtomicUsize::new(0),
             runs_saved: Notify::new(),
@@ -591,9 +597,15 @@ impl Routines {
         Ok((db, lock))
     }
 
-    /// Starts keeping routines, in the service that stays up. Reads the database when there is
-    /// one, off the caller's way: nothing waits for it to start serving.
+    /// Starts keeping routines, in the service that stays up. Without a database there are none,
+    /// and a service that never has any does nothing for them: not a task, not a thread. With one
+    /// it is read off the caller's way, as nothing waits for it to start serving.
     pub(crate) fn start(self: &Arc<Self>, stop: CancellationToken) {
+        let _ = self.stop.set(stop);
+        if !self.db_path().exists() {
+            self.state.lock().store = Store::Empty;
+            return;
+        }
         let Ok(changing) = self.changing.clone().try_lock_owned() else {
             return;
         };
@@ -601,33 +613,24 @@ impl Routines {
         tokio::spawn(async move {
             routines.load().await;
             drop(changing);
-            routines.schedule(stop).await;
+            routines.schedule().await;
         });
     }
 
+    /// Reads a database that is there.
     async fn load(&self) {
         let path = self.db_path();
         let bots = self.bots.clone();
         let opened = tokio::task::spawn_blocking(move || {
-            path.exists().then(|| {
-                // The list reads from disk the first time; from now on the scheduler can ask
-                // without waiting. Without routines the service leaves it for when it is asked.
-                bots.load();
-                Routines::open(path)
-            })
+            // The list reads from disk the first time; from now on the scheduler can ask
+            // without waiting.
+            bots.load();
+            Routines::open(path)
         })
         .await;
-        let opened = match opened {
+        let (db, lock) = match opened.map_err(|err| err.to_string()).and_then(|opened| opened) {
             Ok(opened) => opened,
-            Err(err) => Some(Err(err.to_string())),
-        };
-        let (db, lock) = match opened {
-            None => {
-                self.state.lock().store = Store::Empty;
-                return;
-            }
-            Some(Err(why)) => return self.failed(why),
-            Some(Ok(opened)) => opened,
+            Err(why) => return self.failed(why),
         };
         let now = Timestamp::now();
         let local = TimeZone::system();
@@ -681,9 +684,15 @@ impl Routines {
             .and_then(|opened| opened);
         match opened {
             Ok((db, lock)) => {
-                let mut state = self.state.lock();
-                state.store = Store::Open(db.clone());
-                state._lock = Some(lock);
+                {
+                    let mut state = self.state.lock();
+                    state.store = Store::Open(db.clone());
+                    state._lock = Some(lock);
+                }
+                // The first routine: from now on there is something to schedule.
+                if let Some(routines) = self.this.upgrade() {
+                    tokio::spawn(routines.schedule());
+                }
                 Ok(db)
             }
             Err(why) => {
@@ -693,7 +702,8 @@ impl Routines {
         }
     }
 
-    async fn schedule(self: Arc<Self>, stop: CancellationToken) {
+    async fn schedule(self: Arc<Self>) {
+        let stop = self.stop.get().cloned().unwrap_or_default();
         loop {
             let now = Timestamp::now();
             let (fires, next) = self.check(now).await;
@@ -832,7 +842,7 @@ impl Routines {
     }
 
     /// Saves what a run came to, and what that changes in its routine. `told`: the bot heard if
-    /// it failed, so the next failure need not be told (routine-design D-383).
+    /// it failed, so the next failure need not be told (routine-design D-423).
     async fn finish(&self, fire: &Fire, ended: RunOutcome, told: bool, now: Timestamp) {
         let routine_id = fire.run.routine_id.clone();
         let reported = ended.outcome == RoutineOutcome::Reported;
@@ -909,9 +919,15 @@ impl Routines {
         self.state.lock().routines.iter().find(|routine| routine.id == id).cloned()
     }
 
-    /// A routine of `bot` by its id.
+    /// A routine of `bot` by its id. Without a database there is no telling: that is what to say.
     fn find(&self, bot: &str, id: &str) -> Result<Routine, RoutineError> {
-        self.find_any(id).filter(|routine| routine.bot == bot).ok_or_else(|| RoutineError::NotFound(id.to_string()))
+        if let Some(routine) = self.find_any(id).filter(|routine| routine.bot == bot) {
+            return Ok(routine);
+        }
+        match self.db() {
+            Err(RoutineError::Unavailable(why)) if !matches!(self.state.lock().store, Store::Empty) => Err(RoutineError::Unavailable(why)),
+            _ => Err(RoutineError::NotFound(id.to_string())),
+        }
     }
 
     fn update(&self, id: &str, change: impl FnOnce(&mut Routine)) {
@@ -1385,7 +1401,11 @@ mod tests {
         let bots = Arc::new(Registry::new(home.clone()));
         bots.add_for_test("b1");
         let routines = Routines::new(home, bots);
-        routines.load().await;
+        if routines.db_path().exists() {
+            routines.load().await;
+        } else {
+            routines.state.lock().store = Store::Empty;
+        }
         routines
     }
 
@@ -1468,6 +1488,26 @@ mod tests {
         assert_eq!(open, 1);
         routines.finish(&fires[0], ended(RoutineOutcome::Quiet), true, at("2026-11-05T00:01:10Z")).await;
         assert!(check(&routines, "2026-11-05T00:01:20Z").await.is_empty());
+    }
+
+    /// Nothing runs on what was not written down, and the time is not lost: the next look tries
+    /// again (routine-design §5.2).
+    #[tokio::test]
+    async fn a_run_that_cannot_be_written_down_does_not_start() {
+        let dir = tempfile::tempdir().unwrap();
+        let routines = routines(&dir).await;
+        let saved = routines.create_at("b1", new("每小时", "0 * * * *"), at("2026-11-05T00:30:00Z")).await.unwrap();
+        let db = routines.db().unwrap();
+        db.call(|conn| conn.execute_batch("ALTER TABLE routine_runs RENAME TO hidden")).await.unwrap();
+        assert!(check(&routines, "2026-11-05T01:00:00Z").await.is_empty());
+        let routine = routines.find("b1", &saved.id).unwrap();
+        assert!(routine.running.is_none());
+        assert_eq!(routine.last_slot, at("2026-11-05T00:30:00Z"), "the time stays to deal with");
+        // The whole of it failed, the time in the file too.
+        let slot: String = db.call(|conn| conn.query_row("SELECT last_slot FROM routines", [], |row| row.get(0))).await.unwrap();
+        assert_eq!(slot, "2026-11-05T00:30:00Z");
+        db.call(|conn| conn.execute_batch("ALTER TABLE hidden RENAME TO routine_runs")).await.unwrap();
+        assert_eq!(check(&routines, "2026-11-05T01:00:10Z").await.len(), 1);
     }
 
     /// Asleep overnight: one run, for the latest time, told that it is late (routine-design §5.3).
@@ -1572,7 +1612,7 @@ mod tests {
         assert_eq!(routines.find("b1", &saved.id).unwrap().failures, 1);
     }
 
-    /// The first failure is told; those after it are not, until one works (routine-design D-383).
+    /// The first failure is told; those after it are not, until one works (routine-design D-423).
     #[tokio::test]
     async fn only_the_first_failure_of_a_streak_is_told() {
         let dir = tempfile::tempdir().unwrap();

@@ -1,5 +1,6 @@
 import { app, powerMonitor, powerSaveBlocker } from "electron";
 import type { BotSummary } from "@finx/protocol";
+import { isolatedRun } from "./build";
 import { preferences } from "./preferences";
 
 // What a bot's routines ask of the app (routine-design §7.4, §7.5). Started at login, it brings the
@@ -10,19 +11,22 @@ import { preferences } from "./preferences";
 const enabled = new Set<string>();
 let blocker: number | null = null;
 
+/** A build that is not packaged cannot be a login item, and one run for tests must not be. */
+const canBeLoginItem = () => app.isPackaged && !isolatedRun();
+
 /** Started at login by us: no window comes up with it. */
 export function openedAtLogin(): boolean {
-  return app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin;
+  return canBeLoginItem() && app.getLoginItemSettings().wasOpenedAtLogin;
 }
 
-/** The app is an item to start at login while a routine needs it, unless the person said no. A build that is not packaged cannot be one. */
+/** The app is an item to start at login while a routine needs it, unless the person said no. */
 function applyLoginItem() {
-  if (!app.isPackaged) return;
+  if (!canBeLoginItem()) return;
   const open = enabled.size > 0 && preferences().routinesAtLogin !== false;
   if (app.getLoginItemSettings().openAtLogin !== open) app.setLoginItemSettings({ openAtLogin: open });
 }
 
-/** Asleep the Mac runs nothing, but on its battery it is not ours to keep awake (D-387). */
+/** Asleep the Mac runs nothing, but on its battery it is not ours to keep awake (D-427). */
 function applyKeepAwake() {
   const want = enabled.size > 0 && preferences().routinesKeepAwake === true && !powerMonitor.isOnBatteryPower();
   if (want && blocker === null) blocker = powerSaveBlocker.start("prevent-app-suspension");

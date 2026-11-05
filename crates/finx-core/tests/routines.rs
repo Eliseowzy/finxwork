@@ -305,7 +305,7 @@ async fn a_report_may_mention_the_phrase() {
 }
 
 /// The first failure of a streak goes to the bot, with its kind; the next ones are only kept
-/// (routine-design D-383).
+/// (routine-design D-423).
 #[tokio::test]
 async fn only_the_first_failure_of_a_streak_reaches_the_bot() {
     let mut h = bot(vec![
@@ -429,7 +429,7 @@ fn routine_reminders(h: &Harness) -> usize {
 }
 
 /// A bot that only writes privately after a report is reminded once, in other words than for a
-/// message; the report does not vanish (routine-design D-374).
+/// message; the report does not vanish (routine-design D-414).
 #[tokio::test]
 async fn a_bot_is_reminded_to_pass_a_report_on() {
     let mut h = bot(vec![Script::text("跌到 290。"), Script::text("Passed on."), send_last("c1", "跌到 290 了。")]).await;

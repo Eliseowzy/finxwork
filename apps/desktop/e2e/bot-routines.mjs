@@ -107,19 +107,10 @@ function finxCall(method, params = {}) {
 }
 
 let app = null;
-async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
-  app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
-    stdio: ["ignore", "ignore", "inherit"],
-  });
-  let target;
-  for (let i = 0; i < 150 && !target; i++) {
-    await sleep(200);
-    const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
-    target = list.find((t) => t.type === "page" && !t.url.includes("#settings") && !t.url.startsWith("devtools"));
-  }
-  check(target, "the main window never showed up");
+const port = 9400 + Math.floor(Math.random() * 400);
+
+/** Drives a page of the app over the DevTools protocol. */
+async function attach(target) {
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((r, j) => ((ws.onopen = r), (ws.onerror = j)));
   const waiting = new Map();
@@ -156,8 +147,29 @@ async function launch() {
     const { data } = await cdp("Page.captureScreenshot", { format: "png" });
     fs.writeFileSync(path.join(shots, `${name}.png`), Buffer.from(data, "base64"));
   };
-  await cdp("Emulation.setDeviceMetricsOverride", { width: 1280, height: 820, deviceScaleFactor: 0, mobile: false });
   return { cdp, run, until, shot, close: () => ws.close() };
+}
+
+/** The app's page whose address `want` accepts, once it is there. */
+async function pageOf(want, what) {
+  let target;
+  for (let i = 0; i < 150 && !target; i++) {
+    await sleep(200);
+    const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
+    target = list.find((t) => t.type === "page" && want(t.url));
+  }
+  check(target, `${what} never showed up`);
+  return attach(target);
+}
+
+async function launch() {
+  app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
+    env: { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  const page = await pageOf((u) => !u.includes("#settings") && !u.startsWith("devtools"), "the main window");
+  await page.cdp("Emulation.setDeviceMetricsOverride", { width: 1280, height: 820, deviceScaleFactor: 0, mobile: false });
+  return page;
 }
 
 async function quit() {
@@ -338,10 +350,26 @@ try {
   await page.until("finished in the list", `[...${panel}.querySelectorAll("section")].some((s) => s.textContent.startsWith("已结束") && s.textContent.includes("一会儿"))`);
   await page.shot("r10-finished");
 
+  step("the settings: at login, and keeping the Mac awake");
+  await page.run(`window.finx.openSettings()`);
+  const settings = await pageOf((u) => u.includes("#settings"), "the settings window");
+  const row = (text) => `[...document.querySelectorAll(".frow")].find((r) => r.textContent.includes(${JSON.stringify(text)}))`;
+  await settings.until("the rows", `!!${row("保持唤醒")} && !!${row("登录时启动")}`);
+  check(await settings.run(`${row("登录时启动")}.querySelector(".sw").getAttribute("aria-checked") === "true"`), "at login is on until the person says no");
+  check(await settings.run(`${row("保持唤醒")}.querySelector(".sw").getAttribute("aria-checked") === "false"`), "keeping awake is off until asked");
+  await settings.run(`${row("保持唤醒")}.querySelector(".sw").click()`);
+  await settings.until("it on", `${row("保持唤醒")}.querySelector(".sw").getAttribute("aria-checked") === "true"`);
+  await settings.run(`${row("登录时启动")}.querySelector(".sw").click()`);
+  await settings.until("it off", `${row("登录时启动")}.querySelector(".sw").getAttribute("aria-checked") === "false"`);
+  await settings.shot("r11-settings");
+  const kept = JSON.parse(fs.readFileSync(path.join(profile, "preferences.json"), "utf8"));
+  check(kept.routinesKeepAwake === true && kept.routinesAtLogin === false, `what was kept: ${JSON.stringify(kept)}`);
+  settings.close();
+
   step("what the service keeps");
   const listed = await finxCall("bots/subscribe");
-  const row = listed.result.bots.find((b) => b.name === "FinxBot");
-  const names = row.routines.map((r) => `${r.name}:${r.state}`);
+  const bot = listed.result.bots.find((b) => b.name === "FinxBot");
+  const names = bot.routines.map((r) => `${r.name}:${r.state}`);
   console.log(`  · ${names.join(", ")}`);
   check(names.includes("喝水提醒:active") && names.includes("一会儿:finished") && names.includes("慢任务:active"), `routines: ${names}`);
   check(!names.some((n) => n.startsWith("查价格")), "the deleted one is gone");

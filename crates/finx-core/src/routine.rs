@@ -137,7 +137,7 @@ pub struct RoutineRun {
     pub now: String,
     /// It starts well after it was due.
     pub late: bool,
-    /// A failure goes to the bot: the first of a streak does (routine-design D-383).
+    /// A failure goes to the bot: the first of a streak does (routine-design D-423).
     pub report_failure: bool,
 }
 

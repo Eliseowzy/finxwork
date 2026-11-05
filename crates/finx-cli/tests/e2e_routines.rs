@@ -429,7 +429,7 @@ async fn a_damaged_database_costs_only_the_routines() {
     let told = sent(&until_event(&mut wire, ended).await);
     assert!(told[0].contains("Routines cannot be used right now"), "{told:?}");
     let err = client.request("bots/routine_runs", json!({"bot_id": bot, "routine_id": "r_any"})).await.unwrap_err();
-    assert_eq!(kind(&err), "routine_not_found");
+    assert_eq!(kind(&err), "routines_unavailable");
     assert_eq!(std::fs::read(&path).unwrap(), junk);
 }
 
