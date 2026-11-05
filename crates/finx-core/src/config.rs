@@ -765,7 +765,6 @@ pub fn load_layers_with(
 ) -> Result<LoadedConfig, ConfigError> {
     let mut substitute = substitute;
     let mut warnings = Vec::new();
-    let mut unknown_warnings = Vec::new();
     let mut layer_table = |layer: ConfigLayer, path: Option<&Path>| -> Result<Option<toml::Table>, ConfigError> {
         if let Some((replaced, _)) = &substitute
             && *replaced == layer
@@ -773,7 +772,7 @@ pub fn load_layers_with(
             return Ok(substitute.take().map(|(_, table)| table));
         }
         match path {
-            Some(path) if path.exists() => read_table(path, &mut unknown_warnings).map(Some),
+            Some(path) if path.exists() => read_table(path).map(Some),
             _ => Ok(None),
         }
     };
@@ -861,7 +860,6 @@ pub fn load_layers_with(
         note_origins(&table, "", ConfigLayer::Flag, &mut origins);
         merge_tables(&mut merged, table, "");
     }
-    warnings.append(&mut unknown_warnings);
     let kept = merged.clone();
     let mut unknown = Vec::new();
     let file: ConfigFile = serde_ignored::deserialize(toml::Value::Table(merged), |path| unknown.push(dotted(&path)))
@@ -872,6 +870,20 @@ pub fn load_layers_with(
     // Typed on this command line, not found in a file another version may have written.
     if let Some(key) = unknown.iter().find(|key| origins.get(*key) == Some(&ConfigLayer::Flag)) {
         return Err(ConfigError::Invalid(unknown_key_message(key)));
+    }
+    // Rare, so the files are read again for the line numbers only now.
+    for key in &unknown {
+        let file = match origins.get(key) {
+            Some(ConfigLayer::User) => Some(files.user),
+            Some(ConfigLayer::Project) => files.project,
+            Some(ConfigLayer::UserProject) => files.user_project,
+            _ => None,
+        };
+        let place = file.map_or(String::new(), |file| {
+            let line = std::fs::read_to_string(file).map_or(String::new(), |text| line_of(&text, key));
+            format!(" in {}{line}", file.display())
+        });
+        warnings.push(format!("ignored {}{place}", unknown_key_message(key)));
     }
     Ok(LoadedConfig {
         config: Config::from_file(file)?,
@@ -947,19 +959,15 @@ pub fn check_file(text: &str, path: &Path) -> Result<toml::Table, ConfigError> {
 /// finx or FinxWork may have written it, and every command, `finx doctor` included, should still
 /// run. A value it cannot read stays an error, and so does anything unknown in `rules`: a safety
 /// rule must not quietly go missing.
-fn read_table(path: &Path, warnings: &mut Vec<String>) -> Result<toml::Table, ConfigError> {
+fn read_table(path: &Path) -> Result<toml::Table, ConfigError> {
     let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    let parse_error = |e: toml::de::Error| ConfigError::Parse {
+    toml::from_str::<toml::Table>(&text).map_err(|e| ConfigError::Parse {
         path: path.display().to_string(),
         message: e.to_string(),
-    };
-    for key in unknown_keys(&text).map_err(parse_error)? {
-        warnings.push(format!("ignored {} in {}{}", unknown_key_message(&key), path.display(), line_of(&text, &key)));
-    }
-    toml::from_str::<toml::Table>(&text).map_err(parse_error)
+    })
 }
 
 /// `:12` when the key's line can be found.

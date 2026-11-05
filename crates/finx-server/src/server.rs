@@ -460,8 +460,8 @@ impl Server {
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
         let model = self.session_model(args.model, workspace.config.model.clone()).await?;
         if args.require_credentials
-            && let Ok(resolved) = self.0.llm.resolve(&model)
-            && let Some(provider) = self.0.llm.provider(&resolved.model.provider)
+            && let Some((provider, _)) = model.split_once('/')
+            && let Some(provider) = self.0.llm.provider(provider)
             && matches!(provider.auth.status(&provider.id), finx_llm::AuthStatus::Missing(_))
         {
             return Err(errors::no_credentials(&model, &provider.id));
