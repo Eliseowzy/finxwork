@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { handedTabBlock, handedTabsBlock, docViewingBlock, type DocQuote, type WebComment } from "@finx/client";
+import { handedTabBlock, handedTabsBlock, docViewingBlock, sheetViewingBlock, type DocQuote, type WebComment } from "@finx/client";
 import { docAttachment, fromInput, toInput, webAttachment, type Attachment } from "./attachments.ts";
 
 // A message taken back comes to the composer as it was, and sent again it says the same
@@ -72,10 +72,12 @@ test("all kinds at once: grouped as the bubble shows them, and each picture stil
 
 test("what the app adds by itself is not the owner's words", () => {
   const words = { type: "text" as const, text: "这一页说的对吗" };
-  // The document in view is said again when it is sent, as it is then.
-  const viewing = fromInput([words, docViewingBlock("/work/a.pdf", "d1", 3, 10)]);
-  assert.equal(viewing.text, words.text);
-  assert.deepEqual(viewing.attachments, []);
+  // What the panel shows is said again when it is sent, as it is then.
+  for (const block of [docViewingBlock("/work/a.pdf", "d1", 3, 10), sheetViewingBlock("/work/a.xlsx", "d2", "Sheet1", "A1", "12")]) {
+    const viewing = fromInput([words, block]);
+    assert.equal(viewing.text, words.text);
+    assert.deepEqual(viewing.attachments, []);
+  }
   // Handed-over tabs stay the session's: their block goes along, as it was.
   for (const block of [handedTabBlock("Inbox", "https://mail.a.io/"), handedTabsBlock([{ url: "https://a.io", title: "A", current: true }])]) {
     const sent = [words, block];

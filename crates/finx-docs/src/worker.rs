@@ -80,14 +80,25 @@ impl Worker {
         Self { launcher, state: Arc::default() }
     }
 
-    /// Opens a document; its handle is used in the other requests.
+    /// Opens a PDF; its handle is used in the other requests.
     pub async fn open<T: DeserializeOwned + Send + 'static>(&self, path: PathBuf, password: Option<String>) -> Result<(u64, T), WorkerError> {
+        self.open_with(|handle| Request::Open { handle, path, password }).await
+    }
+
+    /// Opens a workbook (spreadsheet-design §5.7); after a crash it is opened again from its
+    /// working copy, which holds every edit written so far.
+    pub async fn open_sheet<T: DeserializeOwned + Send + 'static>(&self, path: PathBuf, name: Option<String>) -> Result<(u64, T), WorkerError> {
+        self.open_with(|handle| Request::SheetOpen { handle, path, name }).await
+    }
+
+    /// Opens under a new handle, kept to open it again in a new process after a crash.
+    async fn open_with<T: DeserializeOwned + Send + 'static>(&self, request: impl FnOnce(u64) -> Request) -> Result<(u64, T), WorkerError> {
         let handle = {
             let mut state = self.state.lock();
             state.next += 1;
             state.next
         };
-        let request = Request::Open { handle, path, password };
+        let request = request(handle);
         let opened = self.request(request.clone()).await?;
         self.state.lock().documents.insert(handle, request);
         Ok((handle, opened))
@@ -117,10 +128,7 @@ impl Worker {
             state.running = Some(self.start()?);
         }
         // The document a request names, opened in this process first.
-        let handle = match request {
-            Request::Close { handle } | Request::Chars { handle, .. } | Request::Render { handle, .. } => Some(*handle),
-            Request::Open { .. } => None,
-        };
+        let handle = request.handle();
         if let Some(handle) = handle
             && !state.running.as_ref().is_some_and(|r| r.open.contains(&handle))
             && let Some(open) = state.documents.get(&handle).cloned()
@@ -136,7 +144,7 @@ impl Worker {
         match &reply {
             Err(WorkerError::Died(_)) => state.running = None,
             Ok(_) => {
-                if let (Request::Open { handle, .. }, Some(running)) = (request, state.running.as_mut()) {
+                if let (Request::Open { handle, .. } | Request::SheetOpen { handle, .. }, Some(running)) = (request, state.running.as_mut()) {
                     running.open.insert(*handle);
                 }
             }

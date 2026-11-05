@@ -175,7 +175,7 @@ async fn a_changed_file_is_taken_again_and_bad_files_are_refused() {
 
     let text = tmp.path().join("notes.pdf");
     std::fs::write(&text, "not a pdf").unwrap();
-    assert!(matches!(store.open(&text, None, "s").await, Err(finx_docs::DocError::NotPdf(_))));
+    assert!(matches!(store.open(&text, None, "s").await, Err(finx_docs::DocError::Unsupported(_))));
     assert!(matches!(store.open(&tmp.path().join("missing.pdf"), None, "s").await, Err(finx_docs::DocError::NotFound(_))));
 }
 

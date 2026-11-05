@@ -7,7 +7,7 @@ import { addAttachments, fromInput, toInput } from "../composer/attachments";
 import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
 import { useCommands } from "../composer/skills";
-import { viewingDoc } from "../files/state";
+import { viewingBlock } from "../files/state";
 import { useStore } from "../store";
 import { Approval } from "./Approval";
 import { Notice } from "./Notice";
@@ -201,9 +201,9 @@ export function Dock({ s, view, onHeight, takeBack: askAgain, onAgain, onFind, o
     const writing = agains.get(id);
     if (!writing) change({ text: "", attachments: [] });
     const input = toInput(sent.text, sent.attachments);
-    // The PDF the file panel shows goes along, so "this page" means something (§7.4).
-    const tab = st.files ? viewingDoc(id) : undefined;
-    if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
+    // What the file panel shows goes along, so "this page" or "these cells" means something (§7.4).
+    const viewing = viewingBlock(id, st.files);
+    if (viewing && input.length) input.push(viewing);
     await st.giveOffered(id, input);
     if (writing) {
       // The words stay here until finx answers: `session_rewound`, or a refusal.

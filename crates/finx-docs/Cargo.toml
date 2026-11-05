@@ -1,6 +1,6 @@
 [package]
 name = "finx-docs"
-description = "Documents opened beside a conversation (docs/desktop/document-editor-design.md): the shared model, DocStore and the PDF backend on PDFium, run in a worker process."
+description = "Documents opened beside a conversation (docs/desktop/document-editor-design.md, spreadsheet-design.md): the shared model, DocStore, the PDF backend on PDFium and the spreadsheet backend on finx-sheet, run in a worker process."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,8 +10,10 @@ publish.workspace = true
 pdfium-render = { version = "0.9.5", default-features = false, features = ["pdfium_7881", "thread_safe"] }
 base64.workspace = true
 finx-protocol.workspace = true
+finx-sheet.workspace = true
 parking_lot.workspace = true
 png.workspace = true
+schemars.workspace = true
 ring.workspace = true
 serde.workspace = true
 serde_json.workspace = true

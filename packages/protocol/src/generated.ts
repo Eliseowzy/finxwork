@@ -369,7 +369,7 @@ export type CancelRequestParams = {
 };
 
 /** What a document supports (§4.5); toolbars and tool descriptions follow it. */
-export type Capability = "view" | "text" | "search" | "outline";
+export type Capability = "view" | "text" | "search" | "outline" | "edit_values" | "edit_formulas" | "cells" | "calc";
 
 /** The skill catalog in the system prompt. */
 export type CatalogInfo = {
@@ -381,6 +381,57 @@ export type CatalogInfo = {
   shortened_to?: number | null;
   /** Estimated size of the catalog. */
   tokens: number;
+};
+
+/** A cell an edit changed: before and after, as values and as shown. */
+export type CellChange = {
+  after?: CellValue | null;
+  after_text: string;
+  before?: CellValue | null;
+  before_text: string;
+  cell: string;
+  /** The nearest text to the left or above, as a person would name the cell ("企业价值"). */
+  label?: string | null;
+  sheet: string;
+};
+
+export type CellData = {
+  /** `B3`. */
+  cell: string;
+  /** As typed, with `=`, without storage prefixes such as `_xlfn.`. */
+  formula?: string | null;
+  look?: CellLook;
+  /** As Excel shows it, in the cell's number format. */
+  text: string;
+  value?: CellValue | null;
+};
+
+/** What a person or an agent types into a cell. */
+export type CellInput = number | boolean | string;
+
+/** How a cell looks, beyond its text. */
+export type CellLook = {
+  align?: string | null;
+  bold?: boolean;
+  /** Text colour, `RRGGBB`; a number format's colour (`[Red]`) wins over the font's. */
+  color?: string | null;
+  fill?: string | null;
+  italic?: boolean;
+};
+
+/** A cell's value: what it holds, or what its formula gave. */
+export type CellValue = {
+  type: "number";
+  value: number;
+} | {
+  type: "text";
+  value: string;
+} | {
+  type: "bool";
+  value: boolean;
+} | {
+  type: "error";
+  value: string;
 };
 
 export type ChatGptCancelParams = {
@@ -402,6 +453,14 @@ export type ChatGptStatus = {
 export type ClientCapabilities = {
   /** Adjacent deltas may be merged while the connection is backlogged. */
   coalesce?: boolean;
+};
+
+/** Columns `first..=last` (1-based) are `width` pixels wide, or hidden. */
+export type ColumnWidth = {
+  first: number;
+  hidden?: boolean;
+  last: number;
+  width: number;
 };
 
 /** Something the user can type as `/name` at the start of a message. */
@@ -653,7 +712,85 @@ export type Delta = {
 
 export type DetachReason = "overflow" | "closed" | "unloaded";
 
-export type DocFormat = "pdf";
+export type DocApplyParams = {
+  /** The revision the edit was made against; behind, the edit is refused (`doc_stale`). */
+  base_revision?: number | null;
+  doc_id: string;
+  ops: SheetOp[];
+  /** Only work out the impact; change nothing (`doc/calc`). */
+  preview?: boolean;
+  session_id: string;
+};
+
+export type DocApplyResult = {
+  dirty: boolean;
+  impact: Impact;
+  revision: number;
+};
+
+/** `doc/autofill`: Excel's fill handle dragged from `source` to `target` (the source with the rows or columns the drag added on one side), as one edit. Numbers, dates, text ending in a number and the built-in lists (周一, 一月, Jan…) carry on as a series; anything else, and formulas moved as Excel moves them, repeats. */
+export type DocAutofillParams = {
+  base_revision?: number | null;
+  doc_id: string;
+  /** Only work it out, for what the drag shows as it goes: nothing is written. */
+  preview?: boolean;
+  session_id: string;
+  sheet: string;
+  source: string;
+  /** The key Excel holds to switch (⌥ on a Mac, Ctrl elsewhere): a single number counts up, a series is copied instead. */
+  switch?: boolean;
+  target: string;
+};
+
+/** A range of a sheet, as the grid shows it (spreadsheet-design §7 `doc/cells`). */
+export type DocCellsParams = {
+  doc_id: string;
+  /** `A1:Z60`; at most 10,000 cells. */
+  range: string;
+  session_id: string;
+  sheet: string;
+};
+
+export type DocCellsResult = {
+  /** Cells that hold something or have a look, row by row. */
+  cells: CellData[];
+  /** Merged ranges that meet the range. */
+  merges?: string[];
+  revision: number;
+  /** Rows of the range whose height is their own. */
+  rows?: RowHeight[];
+};
+
+/** `doc/changed`: what the document is now. */
+export type DocChangedParams = {
+  info: DocInfo;
+};
+
+/** `doc/fill`: one edit that copies the range's first row (or column) across it, formulas moved as Excel moves them (relative references shift, `$` ones stay). */
+export type DocFillParams = {
+  base_revision?: number | null;
+  direction: FillDirection;
+  doc_id: string;
+  range: string;
+  session_id: string;
+  sheet: string;
+};
+
+/** `doc/find`: cells whose shown text or formula contains `query`, case folded. */
+export type DocFindParams = {
+  doc_id: string;
+  limit?: number | null;
+  query: string;
+  session_id: string;
+};
+
+export type DocFormat = "pdf" | "xlsx" | "xlsm" | "csv" | "xls";
+
+export type DocFoundResult = {
+  /** At most 500 for a trace, `limit` for a search; `more` when there were others. */
+  cells: FoundCell[];
+  more?: boolean;
+};
 
 export type DocIdParams = {
   doc_id: string;
@@ -678,9 +815,11 @@ export type DocInfo = {
   save_in_place: boolean;
   /** No text could be read: probably a scan. */
   scanned?: boolean;
+  /** A spreadsheet's sheets, in workbook order. */
+  sheets?: SheetInfo[];
 };
 
-export type DocLayout = "paged" | "flow";
+export type DocLayout = "paged" | "flow" | "grid";
 
 /** A citation's target in an open document: `p12.b3` (a block) or `p12` (a page). */
 export type DocLocateParams = {
@@ -710,6 +849,13 @@ export type DocOpenResult = {
   token: string;
 };
 
+export type DocRecalcParams = {
+  /** Restart circular references at zero; otherwise recalculate everything. */
+  circular_only?: boolean;
+  doc_id: string;
+  session_id: string;
+};
+
 /** A selection or a region on a page, to be read by the kernel (§9.4.1). */
 export type DocResolveParams = {
   doc_id: string;
@@ -731,6 +877,25 @@ export type DocResolveResult = {
   more?: ResolvedPart[];
   /** The text the kernel read there: a selection's, or what lies in a region. */
   text: string;
+};
+
+export type DocSaveParams = {
+  doc_id: string;
+  /** Write over the file even though it changed on disk since it was opened. */
+  force?: boolean;
+  /** Save as: another file. Without it, the file the document came from. */
+  path?: string | null;
+  session_id: string;
+};
+
+/** `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10). */
+export type DocTraceParams = {
+  cell: string;
+  depth?: number;
+  direction: TraceDirection;
+  doc_id: string;
+  session_id: string;
+  sheet: string;
 };
 
 /** What a session's document column shows: the page, and what is selected. */
@@ -1119,7 +1284,40 @@ export type FilesWriteResult = {
   status: FileWriteStatus;
 };
 
+export type FillDirection = "down" | "right";
+
+/** A cell found or traced, as the grid lists it and the agent reads it. */
+export type FoundCell = {
+  cell: string;
+  /** For a trace: how many steps from the cell asked about. */
+  depth: number;
+  formula?: string | null;
+  label?: string | null;
+  sheet: string;
+  text: string;
+  /** For a trace: the cell it was reached from (`Sheet!B3`), for the grid's arrows. */
+  via?: string | null;
+};
+
 export type GrantAuthority = "navigate" | "act";
+
+/** What an edit changed (spreadsheet-design §5.5, §7). */
+export type Impact = {
+  /** Every formula cell whose value changed, `Sheet!A1`, at most 5,000. */
+  affected?: string[];
+  affected_count: number;
+  /** Why there is no impact beyond the edited cells: the workbook cannot be calculated here. */
+  calc_unavailable?: string | null;
+  /** False when iteration stopped at its limit without settling. */
+  converged: boolean;
+  edited: CellChange[];
+  /** Rounds of iterative calculation, when circular references were involved. */
+  iterations?: number | null;
+  /** Formula cells no other formula reads whose value changed: the model's outputs. */
+  key_outputs?: CellChange[];
+  /** Downstream cells whose new value we cannot vouch for: Excel recalculates them. */
+  needs_excel?: string[];
+};
 
 export type InitializeParams = {
   capabilities?: ClientCapabilities;
@@ -1730,6 +1928,13 @@ export type ResourceReadResult = {
 
 export type Role = "user" | "assistant";
 
+/** A row whose height is not the default, in pixels, or hidden. */
+export type RowHeight = {
+  height: number;
+  hidden?: boolean;
+  row: number;
+};
+
 export type RuleDecision = "allow" | "ask" | "deny";
 
 export type ServerCapabilities = {
@@ -1760,6 +1965,8 @@ export type ServerCapabilities = {
   sessions_subscribe: boolean;
   /** Transcripts carry `task_end` items. */
   transcript_task_end: boolean;
+  /** `doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it refuses a workbook as "not a PDF". */
+  workbooks: boolean;
 };
 
 export type SessionAttachParams = {
@@ -1915,6 +2122,41 @@ export type SessionsChangedParams = {
   deleted?: string[];
   /** Whole summaries of the sessions that changed or appeared. */
   sessions: SessionSummary[];
+};
+
+export type SheetInfo = {
+  /** A chart sheet has no cells: the grid shows a placeholder. */
+  chart?: boolean;
+  /** Column widths in pixels where they are not the default. */
+  columns?: ColumnWidth[];
+  default_height: number;
+  /** Pixels. */
+  default_width: number;
+  /** Frozen panes: rows above and columns left of the split. */
+  frozen?: unknown[] | null;
+  hidden?: boolean;
+  name: string;
+  /** Protected in Excel: no edits here. */
+  protected?: boolean;
+  /** The used range, `A1:K120`; none for an empty sheet. */
+  used?: string | null;
+};
+
+/** One change to a spreadsheet (spreadsheet-design §4.3). */
+export type SheetOp = {
+  cell: string;
+  op: "set_value";
+  sheet: string;
+  value: CellInput;
+} | {
+  cell: string;
+  formula: string;
+  op: "set_formula";
+  sheet: string;
+} | {
+  op: "clear";
+  range: string;
+  sheet: string;
 };
 
 /** Permission for the browser tools on one origin, for the rest of the session (docs/kernel/browser-design.md §7.3). */
@@ -2137,6 +2379,8 @@ export type ToolState = {
   title: string;
 };
 
+export type TraceDirection = "up" | "down";
+
 export type TranscriptItem = {
   mail?: MailInfo | null;
   message: Message;
@@ -2311,10 +2555,20 @@ export interface Methods {
   "connectors/install": [ConnectorInstallParams, ConnectorInstallResult];
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
+  "doc/apply": [DocApplyParams, DocApplyResult];
+  "doc/autofill": [DocAutofillParams, DocApplyResult];
+  "doc/cells": [DocCellsParams, DocCellsResult];
   "doc/close": [DocIdParams, Empty];
+  "doc/fill": [DocFillParams, DocApplyResult];
+  "doc/find": [DocFindParams, DocFoundResult];
   "doc/locate": [DocLocateParams, DocLocateResult];
   "doc/open": [DocOpenParams, DocOpenResult];
+  "doc/recalc": [DocRecalcParams, DocApplyResult];
+  "doc/redo": [DocIdParams, DocApplyResult];
   "doc/resolve": [DocResolveParams, DocResolveResult];
+  "doc/save": [DocSaveParams, DocInfo];
+  "doc/trace": [DocTraceParams, DocFoundResult];
+  "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
   "files/list": [FilesListParams, FilesListResult];
   "files/read": [FilesReadParams, FilesReadResult];
@@ -2368,6 +2622,7 @@ export interface ServerNotifications {
   "browser/control": BrowserControl;
   "browser/request": BrowserRequest;
   "config/changed": ConfigChangedParams;
+  "doc/changed": DocChangedParams;
   "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
@@ -2412,6 +2667,9 @@ export const RPC_ERROR_KINDS = {
   "-32031": "mcp_login_failed",
   "-32032": "doc_unavailable",
   "-32033": "doc_password",
+  "-32034": "doc_refused",
+  "-32035": "doc_stale",
+  "-32036": "doc_conflict",
   "-32040": "bot_not_found",
   "-32041": "bot_default",
   "-32042": "bot_invalid",

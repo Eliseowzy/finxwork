@@ -70,7 +70,7 @@ export function startKernel(lists?: ListFollower) {
     log: path.join(finxHome, "logs", "serve.out.log"),
     idleExitSecs: 600,
     client: { name: "finxwork-supervisor", version: app.getVersion() },
-    required: ["sessions_subscribe", "session_metadata", "transcript_task_end", "auth", "model_connections", "input_queue", "message_resend"],
+    required: ["sessions_subscribe", "session_metadata", "transcript_task_end", "auth", "model_connections", "input_queue", "message_resend", "workbooks"],
     starts: path.join(app.getPath("userData"), "kernel-starts.json"),
     trace,
     lists,

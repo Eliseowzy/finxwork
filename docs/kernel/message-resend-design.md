@@ -403,7 +403,7 @@ case "warning": // code 为 resend_rejected 时只记 refused，不进提醒
 
 | 块 | 现在 | 处理 |
 |---|---|---|
-| 正在看的文档（`docViewingBlock`，文件面板发送时自动附加） | `userText` 跳过，不退回 | 不变。发送时按面板当前的状态重新附加，它说的本来就是"现在"看的那一页 |
+| 面板里正在看的文档或表格选区（`viewingBlock`，发送时自动附加） | `userText` 跳过，不退回 | 不变。发送时按面板当前的状态重新附加，它说的本来就是"现在"看的那一页或那几格 |
 | 交给会话的浏览器标签页（`giveOffered`、`store.start` 追加的两种文字块） | `userText` 当成原话：气泡里会露出这段英文，退回时也会进输入框 | 实现时一并修：`userText` 认出它们，不算原话；退回时变成一个附件 Tile，可以 × 去掉，重发时原样带上。不能直接丢：标签页不回退，它还归这个会话，而模型刚刚忘了这件事 |
 
 ## 6. 磁盘文件回退（二期）
@@ -551,7 +551,7 @@ case "warning": // code 为 resend_rejected 时只记 refused，不进提醒
 | 桌面端端到端 | `apps/desktop/e2e/resend.mjs`：真实 finx 和 Electron，14 段用户流程 | 通过 |
 | 打包应用 | 同一个脚本跑打包后的 FinxWork.app 和它自带的 finx（`FINXWORK_E2E_APP`，临时签名） | 通过 |
 | 输入 | 点铅笔后真实按键和中文输入法的组字、提交，包括覆盖选区 | 正常；脚本的 `Input.insertText` 紧跟全选或清空会丢字，是脚本节奏的问题 |
-| 回归（合入最新 main 后） | Rust 全工作区（981 个通过）、`apps/desktop/e2e/send-modes.mjs`、全部 JS 测试（108、104 个） | 通过。另有 7 个失败，都与本次无关：6 个 PDF 测试在这个没装 PDFium 的工作树里跑不了（`libpdfium was not found`）；`a_private_answer_goes_out_before_the_next_message_is_answered` 时好时坏，在干净的 `origin/main` 88ad109 上 8 次里也失败 5 次 |
+| 回归（合入最新 main 后） | Rust 全工作区（1033 个通过）、`apps/desktop/e2e/send-modes.mjs`、全部 JS 测试（110、119 个） | 通过。另有 8 个失败，都与本次无关：6 个 PDF 测试在这个没装 PDFium 的工作树里跑不了（`libpdfium was not found`）；`a_private_answer_goes_out_before_the_next_message_is_answered` 时好时坏，在干净的 `origin/main` 88ad109 上 8 次里也失败 5 次；`random_edits_never_break_a_file` 的随机序列取决于检出路径的长度，把干净的 `origin/main` dfce667 放到同样长度的路径下，同一个夹具也同样失败 |
 
 **真实模型验收**：DeepSeek 直连当时余额不足，改用 Bailian Token Plan 的 `deepseek-v4.1-flash`，私有目录，顺序运行。
 

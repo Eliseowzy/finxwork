@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, callTarget, fromSnapshot, type SessionView } from "./session.ts";
-import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
+import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
 const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
@@ -104,6 +104,23 @@ test("a message's attached files go to the model as a block of paths and come ba
   assert.deepEqual(u.files, ["/w/a.rs", "/w/docs/"]);
 });
 
+test("an attached workbook tells the model to use Finx document tools and remains a file chip", () => {
+  const workbook = attachedBlock(["/w/model.XLSX"]);
+  assert.equal(workbook.type, "text");
+  assert.match(workbook.text, /doc_open, then doc_read/);
+  assert.match(workbook.text, /instead of .*shell\/Python/);
+  assert.deepEqual(userText([workbook]), { text: "", files: ["/w/model.XLSX"], comments: [], quotes: [], tabs: [] });
+
+  // Messages written before the workbook hint was added still render as file chips.
+  assert.deepEqual(userText([{ type: "text", text: "Attached files:\n/w/old.xlsx" }]), {
+    text: "",
+    files: ["/w/old.xlsx"],
+    comments: [],
+    quotes: [],
+    tabs: [],
+  });
+});
+
 test("numbers as the window shows them", () => {
   assert.equal(clockText(252), "4:12");
   assert.equal(clockText(3723), "1:02:03");
@@ -138,4 +155,10 @@ test("quoted parts of documents come back as quotes, and what the column shows i
   const content = [{ type: "text" as const, text: "这条合理吗" }, docQuoteBlock([quote]), docViewingBlock("/w/合同.pdf", "0123456789abcdef", 3, 12)];
   assert.deepEqual(userText(content), { text: "这条合理吗", files: [], comments: [], quotes: [quote], tabs: [] });
   assert.match((content[2] as { text: string }).text, /page 3 of 12/);
+});
+
+test("a workbook range comes back as a quote, and its live selection is not shown", () => {
+  const quote = { path: "/w/model.xlsx", doc_id: "fedcba9876543210", sheet: "利润表", range: "B3:D6", text: "| | B | C | D |" };
+  const content = [{ type: "text" as const, text: "分析这个区域" }, docQuoteBlock([quote]), sheetViewingBlock(quote.path, quote.doc_id, quote.sheet, quote.range, "1,344.00")];
+  assert.deepEqual(userText(content), { text: "分析这个区域", files: [], comments: [], quotes: [quote], tabs: [] });
 });

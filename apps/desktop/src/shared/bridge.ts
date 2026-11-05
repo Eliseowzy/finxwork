@@ -13,7 +13,8 @@ import type { SearchEngine } from "./search";
 export type PlatformId = "mac" | "win" | "linux";
 
 /** A native menu's item: `icon` a PNG data URL drawn before the label, `submenu` items it opens to (its own id unused). */
-export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; submenu?: MenuItem[] } | { separator: true };
+/** A native menu item; `accel` is the shortcut it shows on its right (an Electron accelerator, shown only: the page handles the keys). */
+export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; accel?: string; submenu?: MenuItem[] } | { separator: true };
 
 /** A path a reply wrote, looked up under its session's folder: absolute, relative when it is under the folder, and what it is (null: nothing there). */
 export type PathInfo = { path: string; rel: string | null; kind: "file" | "folder" | null };
@@ -121,7 +122,7 @@ export type BrowserMenuAction =
   | { action: "cookies"; cookies: "always" | "untilQuit" };
 
 /** A web server running on this machine, for the new tab to offer; `framework` when its page shows it. */
-export type DevServer = { port: number; url: string; title: string; framework?: string; process: string };
+export type DevServer = { port: number; url: string; title: string; framework?: string; process: string; pid: number };
 
 /** What the person does to a tab in the panel. "new" opens a tab beside it, for its session. */
 export type BrowserTabCommand =
@@ -212,6 +213,8 @@ export type Bridge = {
   openPrivacySettings(): void;
   /** The web servers running on this machine now, for a new tab. */
   localServers(): Promise<DevServer[]>;
+  /** Stops the one on `port`, if `pid` still listens there: "gone" when it no longer does, "denied" when it isn't ours to stop. */
+  stopLocalServer(port: number, pid: number): Promise<"stopped" | "gone" | "denied">;
   openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */
   sourceAppIcon(adapter?: "qwenwork" | "qoder"): Promise<string | null>;
@@ -275,6 +278,8 @@ export type Bridge = {
   onCommand(cb: (c: Command) => void): () => void;
   setMenuState(state: MenuState): void;
   pickDirectory(): Promise<string | null>;
+  /** A destination chosen for Save As. */
+  pickSaveFile(defaultPath: string): Promise<string | null>;
   /** A skill to upload, from the system's dialog: a folder, or a .zip, .skill or .md file. */
   pickSkillSource(): Promise<string | null>;
   /** The path of a file or folder dropped on the page. */
