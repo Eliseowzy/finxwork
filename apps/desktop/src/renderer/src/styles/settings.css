@@ -152,3 +152,49 @@
 
 /* Settings › Browser › 网站权限: an origin as written. */
 .site-row .fn.mono{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* Settings › 联网搜索: the order is the setting, so a grip on every row; what cannot be used yet stays in its place, greyed. */
+.search-set .mrow{min-height:52px;position:relative}
+.search-set .mrow .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
+.search-set .mrow .provider-brand{width:28px;height:28px}
+.search-set .fgroup .frow:first-child{border-radius:var(--r-lg) var(--r-lg) 0 0}
+.search-set .fgroup .frow:last-child{border-radius:0 0 var(--r-lg) var(--r-lg)}
+.search-set .fgroup .frow:only-child{border-radius:var(--r-lg)}
+.search-set .fdesc.warn{color:var(--orange)}
+.search-set .tb{flex:none;color:var(--l2)}
+.search-set .tb:hover{background:var(--fill2);color:var(--l1)}
+.ws-dim{opacity:.5;pointer-events:none}
+/* A service's mark: a tile of one size, whatever the mark's shape. */
+.ws-mark{width:28px;height:28px;flex:none;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ws-mark img{display:block;width:100%;height:100%;object-fit:contain}
+.ws-mark.inset{background:#fff;box-shadow:inset 0 0 0 .5px var(--sep)}
+.ws-mark.inset img{width:20px;height:20px}
+.search-set .mrow.ws-row{padding-left:6px;gap:8px}
+.ws-row .ws-mark,.ws-row .provider-brand{margin-right:4px}
+.ws-grip{width:20px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;padding:0;border:0;background:none;border-radius:var(--r-xs);color:var(--l3);cursor:grab;touch-action:none}
+.ws-grip:hover{color:var(--l1)}
+.ws-grip:focus-visible{outline:none;color:var(--l1);box-shadow:0 0 0 2px var(--accent-bg)}
+.ws-grip .ic{width:14px;height:14px}
+.ws-row.ws-off .ws-mark,.ws-row.ws-off .provider-brand,.ws-row.ws-off .fn{opacity:.5}
+.ws-row .fn .badge{margin-left:6px;vertical-align:1px}
+.search-set .fgroup .frow.ws-row.dragging{z-index:5;background:var(--win2);border-radius:var(--r-md);box-shadow:0 0 0 .5px var(--menu-bd),0 8px 24px rgba(0,0,0,.18)}
+.ws-row.dragging,.ws-row.dragging .ws-grip{cursor:grabbing}
+.ws-moving,.ws-moving *{cursor:grabbing!important;user-select:none}
+.ws-intro{margin:0 4px 8px;color:var(--l2);font-size:12px;line-height:1.55}
+/* Set up: a switch at the row's end. Not set up: the column stays, so the buttons line up. */
+.ws-row .sw,.ws-slot{margin-left:5px}
+.ws-slot{width:34px;flex:none}
+.ws-none{color:var(--orange)}
+/* Adding a key. */
+.ws-sheet-head{display:flex;gap:13px;align-items:center;margin-bottom:13px}
+.ws-sheet-head h3{margin:0 0 2px}
+.ws-sheet-head p{margin:0;color:var(--l2);font-size:12.5px;line-height:1.5}
+.ws-key{display:flex;flex-direction:column;gap:6px;font-size:12.5px;color:var(--l2)}
+.ws-key-h{display:flex;justify-content:space-between;align-items:center}
+.ws-key-h .link{display:inline-flex;align-items:center;gap:3px}
+.ws-key-h .link:hover{text-decoration:underline;text-underline-offset:2px}
+.ws-key-h .link .ic{width:12px;height:12px}
+.ws-key .field{height:30px;width:100%;box-sizing:border-box}
+.ws-err{margin:8px 0 0;font-size:12.5px;color:var(--red)}
+.ws-lock{display:inline-flex;align-items:center;gap:4px;color:var(--l3);font-size:12px}
+.ws-lock .ic{width:12px;height:12px}

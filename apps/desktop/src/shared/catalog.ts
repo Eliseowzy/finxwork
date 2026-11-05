@@ -71,25 +71,6 @@ export const catalogConnectors: CatalogConnector[] = [
     docs: "https://github.com/WecomTeam/wecom-cli", verifiedAt: "2026-11-03",
     install: { command: "wecom-cli", args: [], auth: [{ kind: "oauth" }] },
   },
-  // Keyless: search and fetch at a free rate limit. Signing in (at ?login, as Exa's
-  // documentation has it) or a key also turns on the research agent.
-  {
-    id: "exa",
-    name: "Exa",
-    mono: "Ex",
-    logo: "exa.svg",
-    by: "Exa",
-    docs: "https://exa.ai/docs/get-started/exa-mcp",
-    verifiedAt: "2026-11-02",
-    install: {
-      url: "https://mcp.exa.ai/mcp",
-      auth: [
-        { kind: "none" },
-        { kind: "oauth", url: "https://mcp.exa.ai/mcp?login" },
-        { kind: "token", header: "x-api-key", prefix: "", placeholder: "Exa API key", createURL: "https://dashboard.exa.ai/api-keys" },
-      ],
-    },
-  },
 ];
 
 /** Whether the entry needs nothing from the person, so it can be added with one click. */
