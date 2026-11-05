@@ -78,6 +78,9 @@ pub struct LastMessage {
     /// The images it carried.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub images: u32,
+    /// A bot's message of files: the name of the first that is not an image.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
     /// RFC 3339.
     pub ts: String,
 }

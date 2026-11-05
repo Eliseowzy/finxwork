@@ -207,8 +207,18 @@ impl Registry {
             match &event.msg {
                 // A message to the user is a bubble from the call's start, as the client shows it.
                 EventMsg::ToolStarted { name, args, .. } if name == finx_core::bot::SEND_TO_USER => {
-                    if let Some(text) = args.get("text").and_then(|t| t.as_str()).filter(|t| !t.trim().is_empty()) {
-                        bot.file.summary.last = Some(last(Speaker::Bot, text, 0, event.ts));
+                    if !finx_core::bot::sends_files(args)
+                        && let Some(text) = args.get("text").and_then(|t| t.as_str()).filter(|t| !t.trim().is_empty())
+                    {
+                        bot.file.summary.last = Some(last(Speaker::Bot, text, 0, None, event.ts));
+                        bot.file.summary.unread += 1;
+                        kept = true;
+                    }
+                }
+                // Files count once they were found to be there (bot-design §3.12).
+                EventMsg::ToolCompleted { result, .. } if result.tool_name == finx_core::bot::SEND_TO_USER && !result.is_error => {
+                    if let Some((text, images, file)) = result.details.as_ref().and_then(|d| finx_core::bot::attachment_summary(d.as_str())) {
+                        bot.file.summary.last = Some(last(Speaker::Bot, &text, images, file, event.ts));
                         bot.file.summary.unread += 1;
                         kept = true;
                     }
@@ -219,7 +229,7 @@ impl Registry {
                     ..
                 } => {
                     let images = user.content.iter().filter(|c| matches!(c, finx_llm::UserContent::Image { .. })).count();
-                    bot.file.summary.last = Some(last(Speaker::User, &user.text_content(), images as u32, event.ts));
+                    bot.file.summary.last = Some(last(Speaker::User, &user.text_content(), images as u32, None, event.ts));
                     kept = true;
                 }
                 EventMsg::ApprovalRequested { .. } => {
@@ -257,11 +267,12 @@ impl Registry {
     }
 }
 
-fn last(from: Speaker, text: &str, images: u32, ts: finx_llm::Timestamp) -> LastMessage {
+fn last(from: Speaker, text: &str, images: u32, file: Option<String>, ts: finx_llm::Timestamp) -> LastMessage {
     LastMessage {
         from,
         text: text.chars().take(TEXT_MAX).collect(),
         images,
+        file,
         ts: list::rfc3339(ts),
     }
 }
