@@ -98,7 +98,8 @@ const SCRIPT = {
 let lastRequest = null;
 let toldWrong = false;
 const textOf = (m) => (typeof m?.content === "string" ? m.content : (m?.content ?? []).map((c) => c.text ?? "").join(""));
-const said = (request) => textOf(request.messages.filter((m) => m.role === "user").at(-1));
+// Past the word that follows each of the owner's messages (bot-design §3.14).
+const said = (request) => textOf(request.messages.filter((m) => m.role === "user" && !JSON.stringify(m.content).includes("<reminder>")).at(-1));
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 10, completion_tokens: 1, total_tokens: 11 } })}\n\ndata: [DONE]\n\n`;
 let calls = 0;
@@ -110,7 +111,7 @@ const provider = http.createServer((req, res) => {
     const request = JSON.parse(body);
     lastRequest = request;
     const owner = said(request);
-    const last = request.messages.at(-1);
+    const last = request.messages.filter((m) => !JSON.stringify(m.content ?? "").includes("<reminder>")).at(-1);
     res.writeHead(200, { "content-type": "text/event-stream" });
     if (!request.tools?.some((t) => t.function?.name === "send_to_user")) return res.end(sse({ role: "assistant", content: "ok" }, "stop"));
     let args;

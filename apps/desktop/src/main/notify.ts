@@ -125,6 +125,9 @@ export function startNotifications() {
   if (recordTo) {
     // A click, for a test: what it opens is the file's first line.
     const clicks = `${recordTo}.click`;
-    fs.watchFile(clicks, { interval: 100, persistent: false }, () => opened(fs.readFileSync(clicks, "utf8").split("\n")[0]!));
+    // Called once at the start too, with the file not there yet: reading it then would be an uncaught error, and a dialog.
+    fs.watchFile(clicks, { interval: 100, persistent: false }, (now) => {
+      if (now.mtimeMs) opened(fs.readFileSync(clicks, "utf8").split("\n")[0]!);
+    });
   }
 }

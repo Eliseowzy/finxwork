@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.27 |
+| 版本 | v0.29 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,8 +47,10 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
-| v0.27 | 2026-11-05 | 命令行改名（standalone-cli-design §4）：逐行输出事件的写法从 `finx exec --json` 改成 `finx exec --output stream-json`，内容不变；`--json` 现在是一个结果对象。协议本身没有变化。去掉没有实现的调试日志环境变量（§9） |
-| v0.26 | 2026-11-05 | 没有模型时不再假设一个（standalone-cli-design §7.2，已实现），都在版本 2 之内：`SessionDefaults.model` 改为可选，什么都没设置时不出现；`session/new`（没点名模型）、`bots/open`（要新开对话）这时返回新错误码 −32046 `no_model`，ACP 的 `session/new` 返回 `auth_required`（−32000）；`models/list` 不再列没人配置的默认模型 |
+| v0.29 | 2026-11-05 | 命令行改名（standalone-cli-design §4）：逐行输出事件的写法从 `finx exec --json` 改成 `finx exec --output stream-json`，内容不变；`--json` 现在是一个结果对象。协议本身没有变化。去掉没有实现的调试日志环境变量（§9） |
+| v0.28 | 2026-11-05 | 没有模型时不再假设一个（standalone-cli-design §7.2，已实现），都在版本 2 之内：`SessionDefaults.model` 改为可选，什么都没设置时不出现；`session/new`（没点名模型）、`bots/open`（要新开对话）这时返回新错误码 −32046 `no_model`，ACP 的 `session/new` 返回 `auth_required`（−32000）；`models/list` 不再列没人配置的默认模型 |
+| v0.27 | 2026-11-05 | 超长消息（§4.4、§4.8，technical-design D-445）：一超过上限就报错，不再等这一行结束；错误带上请求的 `id`（认得出时）；`server.max_frame_bytes` 默认值由 32 MiB 提到 128 MiB，依据见 §4.4。长行的读缓冲不再靠 `realloc` 增长 |
+| v0.26 | 2026-11-05 | 子智能体运行中能发消息（agent-messaging-design.md），版本 2 之内：`MailInfo.kind` 多一个 `message`；客户端不认识这个值时当汇报显示不合适，所以和内核一起升级 |
 | v0.25 | 2026-11-05 | 定时任务（routine-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `routines` 声明：方法 `bots/routine`、`bots/routine_runs`、`bots/routine_run`、`bots/routine_set_enabled`、`bots/routine_run_now`、`bots/routine_stop`、`bots/routine_delete`；`BotSummary` 增加 `routines`、`routines_error`；`MailKind` 增加 `routine`，`MailInfo` 增加 `routine_id`；错误码 −32043 `routine_not_found`、−32044 `routine_busy`、−32045 `routines_unavailable`。新建和修改只走对话，没有方法 |
 | v0.24 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |
 | v0.23 | 2026-11-05 | 联网搜索（web-search-design.md §6.4，已实现），都在版本 2 之内：方法 `web_search/status`（调用过的连接也会收到 `config/changed`）、`web_search/test`、`web_search/set_key`；`credentials/*` 接受 `web-search.` 前缀；`web_search` 工具结果的 `details` 见该文 §5.6 |
@@ -380,8 +382,24 @@ pub struct EventFrame {
 
 - **两步解析**：先把一行解析成借用形式的信封 `RawMessage<'a> { id, method: Option<&'a str>, params: Option<&'a RawValue>, result, error }`，按 method 分发，再把 params 反序列化成具体类型。params 在分发之前不分配内存。
 - 读缓冲按连接复用。
-- 单条消息超过 `server.max_frame_bytes`（默认 32 MiB）时，返回 -32600 并丢弃这一行，连接继续可用。
+- 单条消息不能超过 `server.max_frame_bytes`（默认 128 MiB）。stdio 和 Unix socket、两种协议读的是同一段代码（`finx_rpc::FrameReader`），超过时：
+  - 一过上限就返回 -32600，不等这一行结束。不写换行、一直写下去的客户端也能马上收到错误。
+  - 这一行已读入的部分当即释放，后面到达的内容边读边丢，不占内存，也不再报错。读到换行后照常读下一行，连接继续可用。
+  - 超限的消息不解析，也不会被截断后当成一条消息。错误的 `id` 取自行首 1 KiB：里面已经有 `id` 和 `method` 时（常见的 JSON-RPC 库都写在 `params` 前面）就是这条请求的 id，否则客户端只能一直等它的回复。认不出时为 null；通知和响应也是 null。
 - 无法解析的行返回 -32700（id 为 null），连接继续可用。
+
+**上限为什么是 128 MiB**（2026-11-05 查证）。入站消息里能变大的只有下面这些，其余都在 1 KiB 上下。恢复长会话的请求只带会话 id，大的是回复，这个上限只管入站。
+
+| 消息 | 最大的合法大小 | 依据 |
+|---|---|---|
+| 带图片的提示词 | 每张图 6.67 MiB，张数不限 | 桌面端每张图原始大小不超过 5 MiB，base64 之后 6.67 MiB；其他文件只传路径。5 张满尺寸的图就是 33.3 MiB，原来的 32 MiB 放不下 |
+| 同上，服务商的限制 | Claude API 128 MB，OpenAI 512 MB，Gemini 内联 20 MB | 各家文档（[Claude](https://platform.claude.com/docs/en/build-with-claude/vision)、[OpenAI](https://developers.openai.com/docs/guides/images-vision)、[Gemini](https://firebase.google.com/docs/ai-logic/input-file-requirements)）说的是一次请求的总量，历史也算在内 |
+| `browser/cdp`：全页截图 | 文字页几 MiB；图片为主的长页约 50～130 MiB（估算） | PNG，区域限制在 4000×16000 CSS 像素（`finx-browser` 的 `screenshot`）。最坏 256 MiB 只出现在满屏噪点、宽 4000 的页面上 |
+| `browser/extension` | 64 MiB | 本机程序收扩展消息的上限（`cmd_browser.rs` 的 `MAX_INBOUND`） |
+| `files/write` | 30 MiB，一般 5 MiB 出头 | 文件面板只打开 5 MiB 以内的文本（`MAX_TEXT`）；JSON 转义最坏 6 倍（全是控制字符） |
+| Bot 头像 | 1.4 MiB | PNG 不超过 1 MiB（`PNG_MAX`），base64 之后 |
+
+128 MiB 放得下 Claude API 接受的最大请求（128 MB，即 122 MiB），约 19 张满尺寸的图，也放得下本表其余各项的常见情况。OpenAI 接受的更大的提示词和最坏情况的截图放不下，它们会收到明确的错误（截图是工具调用超时失败），需要时可调大这个配置。提高上限的代价只在真有这么长的内容时才付：内存按实际到达的数据占用。异常客户端最多占一个上限（约 138 MiB，macOS）；真实的 126.7 MiB 提示词能走完全程，3.7 秒，进程占到 646 MiB（行本身、解析出的字符串、日志、请求体各一份）。
 
 ### 4.5 写出
 
@@ -416,6 +434,7 @@ pub struct EventFrame {
 - 镜像中正在生成的消息和工具进度都有长度上限。
 - 事件和会话中枢的命令在通道里装箱传递。通道按块分配槽位并一直保留，装箱后空闲会话的每个槽位只有指针大小（technical-design §3.3）。
 - 连接的读缓冲从 4 KiB 起：读满就翻倍，最多 64 KiB；读不满就减半，空闲的连接缩回最小。写出批次的缓冲按需增长。
+- 一行比读缓冲长时，缓冲跟着增长，到 4 MiB 为止用 `realloc`。再长就搬到一块新内存，只搬一次：默认上限下这块留够 128 MiB 加一次读取，页面用到才占。这一行取走后，后面的数据移回这块的开头，下一行接着用，所以碰过的页不超过最长的一行；缓冲读空时这块释放。4 MiB 以上不能用 `realloc`（D-445）：macOS 的分配器留着大块 `realloc` 换下来的脏块，有间隔地发 40 行 7 MiB 就留下 292 MiB，持续发 31 MiB 的行能到 3.1 GiB 以上。Linux 上没有这个问题。释放后的这一块仍可能留在分配器里等复用（macOS 上 `malloc_zone_pressure_relief` 对它无效），所以一行超长的内容之后，进程可能还占着约一行的内存，但不会再涨。
 - 服务由忙转闲或会话变少时，请分配器把空闲内存还给系统（macOS 的 xzone 分配器不响应，见 technical-design Q-90）。
 - 100–200 个会话的实测见 technical-design §1.4。
 
@@ -549,7 +568,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | 方法 | 参数 | 结果 | 说明 |
 |---|---|---|---|
 | `initialize` | protocol_version、client_info、capabilities | protocol_version、server_info、capabilities | §6.3 |
-| `session/new` | cwd?、extra_roots?、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | session_id、snapshot | 新建会话，发起的连接自动接入。省略 model 且没有默认模型时返回 `no_model`（v0.26）。省略 cwd 时会话没有项目：内核在 `~/.finx/chats/` 下新建一个空文件夹作为它的工作目录，列表里标为 `no_project`（v0.17）。mcp_servers 是客户端带来的 MCP 服务器，同名时替换配置里的（mcp-design §4.1） |
+| `session/new` | cwd?、extra_roots?、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | session_id、snapshot | 新建会话，发起的连接自动接入。省略 model 且没有默认模型时返回 `no_model`（v0.28）。省略 cwd 时会话没有项目：内核在 `~/.finx/chats/` 下新建一个空文件夹作为它的工作目录，列表里标为 `no_project`（v0.17）。mcp_servers 是客户端带来的 MCP 服务器，同名时替换配置里的（mcp-design §4.1） |
 | `session/resume` | session_id、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | snapshot | 未加载时从磁盘恢复；已加载时等同于接入，此时不能带覆盖参数（包括 mcp_servers） |
 | `session/attach` | session_id、events?、history_limit? | snapshot | 接入已加载的会话，不会触发加载 |
 | `session/detach` | session_id | `{}` | 停止接收该会话的事件 |
@@ -560,7 +579,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `session/close` | session_id | `{}` | 关闭会话：中断任务、日志落盘、释放锁 |
 | `session/delete` | session_id | `{}` | 会话日志移入回收目录。会话已加载时先关闭（中断任务），再移入 |
 | `resource/read` | uri、offset?、limit? | text、offset、eof、total_bytes | 分段读取工具的完整输出等大内容 |
-| `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式；模型由内核按实际接入的服务商算出，什么都没设置时不出现（v0.26）。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
+| `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式；模型由内核按实际接入的服务商算出，什么都没设置时不出现（v0.28）。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
 | `models/refresh` | provider?、catalog? | providers | 立即刷新服务商的模型列表，`catalog: true` 时同时刷新公共目录（model-catalog-design §8.2） |
 | `models/show` | model、shown | `{}` | 在模型菜单里显示或隐藏一个模型（model-catalog-design §6.3） |
 | `server/shutdown` | — | `{}` | 只用于常驻服务，优雅退出（§3.8） |
@@ -795,7 +814,7 @@ pub struct ResourceReadResult {
 | -32043 | routine_not_found | 这个 Bot 没有这个定时任务，或没有这次运行（v0.24） |
 | -32044 | routine_busy | `bots/routine_run_now`：它已经在运行 |
 | -32045 | routines_unavailable | 定时任务的数据库打不开；消息写明原因。服务和聊天不受影响 |
-| -32046 | no_model | 没点名模型、没配置，也没有能用的服务商（v0.26）。客户端把人带到模型设置；接入后不用重启 |
+| -32046 | no_model | 没点名模型、没配置，也没有能用的服务商（v0.28）。客户端把人带到模型设置；接入后不用重启 |
 
 ### 6.8 示例
 
@@ -803,7 +822,7 @@ pub struct ResourceReadResult {
 
 ```jsonl
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":2,"client_info":{"name":"demo","version":"0.1.0"}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"server_info":{"name":"finx","version":"0.2.0"},"capabilities":{"max_frame_bytes":33554432,"session_delete":true,"resource_read":true,"event_filter":true}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"server_info":{"name":"finx","version":"0.2.0"},"capabilities":{"max_frame_bytes":134217728,"session_delete":true,"resource_read":true,"event_filter":true}}}
 → {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/work/demo"}}
 ← {"jsonrpc":"2.0","id":2,"result":{"session_id":"0193f0c2-…","snapshot":{"session":{…},"last_seq":0,"transcript":{"items":[]},"usage":{…}}}}
 ← {"jsonrpc":"2.0","method":"session/event","params":{"session_id":"0193f0c2-…","event":{"seq":1,"type":"session_started",…}}}
@@ -843,7 +862,7 @@ capabilities 的 `agents` 为 true 的服务提供以下内容，都是增量：
 | 事件 `agent_event` | `{agent_id, event}`：子智能体自己会话里的一个事件，seq 是子会话自己的。只转改变它对话的事件：task_started、turn_started、message_completed、stream_retry、tool_started、tool_running、tool_completed、approval_requested、approval_resolved、compaction_*、turn_completed、task_completed、task_failed、task_interrupted、warning；增量、工具进度、设置不转 |
 | `agent_status.elapsed_ms` | 空闲状态带上这一轮工作的用时 |
 | 快照的 `agents` | AgentSnapshot 数组，按启动顺序：agent_id、name、call_id、session_file、status、since（状态最近一次变化的时间，运行中即这一轮的开始）、summary、usage、error、elapsed_ms，以及它自己的 transcript 与 active_task（与 `history_limit` 一样截取）。只含这个服务加载会话之后启动的子智能体 |
-| TranscriptItem 的 `mail` | 子智能体的汇报以 user 消息进入历史，带 MailInfo，客户端据此显示成汇报 |
+| TranscriptItem 的 `mail` | 子智能体的汇报和运行中发的消息以 user 消息进入历史，带 MailInfo，客户端按 `kind` 显示：`report` 是汇报，这一轮到此结束；`message` 是中途的消息（agent-messaging-design §8），它还在做 |
 | MailInfo 的 `no_reply`（v0.12） | 子智能体这一轮既没有回复也没有出错时为 true，比如还没回复就被停下；为 false 时省略。这时汇报正文只是写给模型的一句说明，客户端应显示自己的文字；`agent_status` 也不带 summary |
 | Op `agent_interrupt` | `{agent}`（id 或名字）：只停这个子智能体当前的任务，它保留会话、之后仍可接收消息；不是运行中的子智能体时，会话发一条 warning |
 | Op `agent_approval` | `{agent, call_id, decision}`：答复这个子智能体的 `approval_requested`，`agent` 是它的 id。已答复过或没有在等，返回 `approval_not_pending` |
@@ -904,7 +923,7 @@ capabilities 的 `message_resend` 为 true 的服务提供以下内容，都是�
 
 | ACP 方法 | finx 的处理 |
 |---|---|
-| `session/new` | 新建会话，additionalDirectories 作为额外的工作区根目录。回复 sessionId 与配置项。什么模型都没设置时返回 `auth_required`（−32000，v0.26）。mcpServers 里的 stdio 与 http 服务器交给会话，名字整理成合法且不重复的形式；其他传输跳过，并在客户端支持时各发一条 notice（mcp-design §11.3） |
+| `session/new` | 新建会话，additionalDirectories 作为额外的工作区根目录。回复 sessionId 与配置项。什么模型都没设置时返回 `auth_required`（−32000，v0.28）。mcpServers 里的 stdio 与 http 服务器交给会话，名字整理成合法且不重复的形式；其他传输跳过，并在客户端支持时各发一条 notice（mcp-design §11.3） |
 | `session/load` | 恢复会话，把完整历史按顺序回放成 session/update，再回复配置项。回放规则见下。会话还没加载时使用带来的 mcpServers，已经加载时忽略 |
 | `session/resume` | 恢复会话，不回放，回复配置项。mcpServers 的处理同 session/load |
 | `session/list` | 列出磁盘上的会话和本服务中还没写出日志的新会话，支持 cwd 过滤与游标分页。title 取第一条用户消息的开头，updatedAt 取最后修改时间 |
@@ -1104,7 +1123,7 @@ ACP 允许 agent 通过客户端读写文件（`fs/*`）、运行命令（`termi
 ## 9. 安全
 
 - **本机访问控制**：只监听 Unix socket，靠文件权限和对端 uid 检查限定为同一用户。不监听 TCP。
-- **输入限制**：单条消息有上限（`server.max_frame_bytes`）；JSON 嵌套深度沿用 serde_json 的默认限制（128 层）。
+- **输入限制**：单条消息有上限（`server.max_frame_bytes`，§4.4），超过上限的内容不保留；JSON 嵌套深度沿用 serde_json 的默认限制（128 层）。
 - **资源读取**：`resource/read` 只能读取该会话数据目录下 `tool-output/` 里的文件，不能借此读取任意路径。
 - **审批不可绕过**：两种协议都只能通过 Op 答复内核发起的审批。审批策略、受保护路径、项目信任（technical-design §11）对协议客户端一视同仁。
 - **不传密钥**：事件与协议消息中不包含模型密钥；工具子进程的环境照常清理密钥变量。
@@ -1119,7 +1138,7 @@ ACP 允许 agent 通过客户端读写文件（`fs/*`）、运行命令（`termi
 
 ```toml
 [server]
-max_frame_bytes = 33554432      # 单条消息上限，32 MiB
+max_frame_bytes = 134217728     # 单条消息上限，128 MiB（依据见 §4.4）
 queue_hard_bytes = 16777216     # 每个连接、每个会话的待发上限，16 MiB；超过则断开该接入
 max_sessions = 1000             # 同时加载的会话数上限；满了先卸载最久没用的会话
 idle_session_secs = 900         # 无人接入且空闲的会话，多少秒后卸载

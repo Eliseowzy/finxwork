@@ -196,6 +196,14 @@ async fn a_bot_talks_through_send_to_user_and_ends_its_turn() {
     assert!(system.contains("Numbers and data:") && system.contains("Acting with care:"));
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user", "manage_routine", "tool_search", "call_tool"]);
+    // Its sub-agents always work in the background: there is no waiting to choose
+    // (bot-turn-design §5.1).
+    for tool in requests[0].tools.iter().filter(|t| t.name == "spawn_agent" || t.name == "send_message") {
+        assert!(tool.parameters["properties"].get("wait").is_none(), "{}", tool.name);
+    }
+    let spawn = requests[0].tools.iter().find(|t| t.name == "spawn_agent").unwrap();
+    assert!(!spawn.description.contains("wait="), "{}", spawn.description);
+    assert!(system.contains("- agents: See how your agents stand, or stop them"));
 
     // The header names the bot; lists leave the session out.
     let store = JsonlStore::new(h.home.sessions_dir());
@@ -227,6 +235,40 @@ async fn an_empty_message_is_an_error_and_ends_nothing() {
     assert!(result.text_content().contains("text must not be empty"));
 }
 
+/// The latest of the owner's messages in a request.
+fn owners_last(request: &finx_llm::Context) -> String {
+    let said = request.messages.iter().rev().filter(|m| matches!(m, Message::User(_))).map(texts);
+    said.into_iter().find(|text| !text.starts_with("<reminder>")).unwrap()
+}
+
+/// Right after each of the owner's messages comes a word on how to reply, for the model alone
+/// (bot-design §3.14). A report brings none: it may not call for a reply.
+#[tokio::test]
+async fn a_word_follows_each_of_the_owners_messages() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            send("c1", "好。").then_tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." })),
+            Script::text("Waiting for its report."),
+            Script::text("Found: 42."),
+            send_last("c3", "查到了：42。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    let requests = h.api.requests();
+    let word = "<reminder>Reply with send_to_user.</reminder>";
+    assert_eq!(texts(requests[0].messages.last().unwrap()), word);
+    assert_eq!(texts(&requests[0].messages[requests[0].messages.len() - 2]), "帮我查一下");
+    // The sub-agent's message and the report have none.
+    assert!(requests[2].messages.iter().all(|m| texts(m) != word), "{:?}", requests[2].messages);
+    assert!(texts(requests[3].messages.last().unwrap()).starts_with("<agent_report"));
+    // Nor does it show.
+    assert!(!events.iter().any(|e| matches!(&e.msg, EventMsg::MessageCompleted { message, .. } if texts(message) == word)));
+}
+
 /// A message that came while the bot worked is answered before the task ends, even when the
 /// bot said its last word (bot-design §3.3).
 #[tokio::test]
@@ -247,16 +289,52 @@ async fn end_turn_waits_for_input_that_came_meanwhile() {
     assert_eq!(sent(&events), ["春天的诗。", "夏天的诗。"]);
     let requests = h.api.requests();
     assert_eq!(requests.len(), 2);
-    let last_user = requests[1].messages.iter().rev().find(|m| matches!(m, Message::User(_))).unwrap();
-    assert_eq!(texts(last_user), "再写一首夏天的");
+    assert_eq!(owners_last(&requests[1]), "再写一首夏天的");
+}
+
+/// A message during a tool stops nothing: the command finishes, and the message goes in at the
+/// boundary (bot-turn-design §4.1).
+#[tokio::test]
+async fn a_message_while_a_tool_runs_interrupts_nothing() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            Script::tool_call("c1", "send_to_user", json!({ "text": "我跑一下。" })).then_tool_call("c2", "bash", json!({ "command": "sleep 1 && echo finished" })),
+            send_last("c3", "跑完了，1 公里是 0.62 英里。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("跑一下")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::ToolStarted { name, .. } if name == "bash")).await;
+    h.kernel.submit(Op::prompt("1 公里是多少英里")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["跑完了，1 公里是 0.62 英里。"]);
+    let requests = h.api.requests();
+    let last = requests.last().unwrap();
+    let result = last.messages.iter().find_map(|m| match m {
+        Message::ToolResult(r) if r.tool_name == "bash" => Some(r.text_content()),
+        _ => None,
+    });
+    assert!(result.unwrap().contains("finished"), "the command ran to its end");
+    assert_eq!(owners_last(last), "1 公里是多少英里");
 }
 
 const REMINDER: &str = "<reply_reminder>";
 
-fn reminders(h: &Harness) -> usize {
+fn entries(h: &Harness) -> Vec<finx_core::store::Entry> {
     let store = JsonlStore::new(h.home.sessions_dir());
-    let (_, entries) = store.read(&SessionRef::Id(h.kernel.session_id().to_string())).unwrap();
-    entries.iter().filter(|e| matches!(e.kind, EntryKind::Unanswered { .. })).count()
+    store.read(&SessionRef::Id(h.kernel.session_id().to_string())).unwrap().1
+}
+
+fn reminders(h: &Harness) -> usize {
+    entries(h).iter().filter(|e| matches!(e.kind, EntryKind::Unanswered { .. })).count()
+}
+
+/// Reminders of what came of its work (bot-turn-design §6).
+fn undelivered(h: &Harness) -> usize {
+    entries(h).iter().filter(|e| matches!(e.kind, EntryKind::Undelivered)).count()
 }
 
 /// A bot that writes its answer as plain text, which the user never sees, is reminded once and
@@ -330,11 +408,12 @@ async fn only_an_unanswered_message_brings_a_reminder() {
             // Answered, then a private last word.
             send("c1", "好的。"),
             Script::text("Done."),
-            // A report wakes the bot, which has nothing to tell.
+            // A report wakes the bot, which has nothing to tell: asked once, it stays quiet.
             Script::tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." }))
                 .then_tool_call("c3", "send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })),
             Script::text("Found: 42."),
             Script::text("Nothing to add."),
+            Script::text(""),
         ],
     )
     .await;
@@ -342,8 +421,9 @@ async fn only_an_unanswered_message_brings_a_reminder() {
     until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
     h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
     until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
-    assert_eq!(h.api.requests().len(), 5);
+    assert_eq!(h.api.requests().len(), 6);
     assert_eq!(reminders(&h), 0);
+    assert_eq!(undelivered(&h), 1);
 
     // A message that comes while the bot works, then a private last word: reminded.
     let mut h = bot(
@@ -389,7 +469,7 @@ async fn a_private_answer_is_reminded_before_the_next_message_joins() {
     assert_eq!(requests.len(), 3);
     assert!(texts(requests[1].messages.last().unwrap()).starts_with(REMINDER));
     assert!(requests[1].messages.iter().all(|m| texts(m) != "再写一首夏天的"));
-    assert_eq!(texts(requests[2].messages.last().unwrap()), "再写一首夏天的");
+    assert_eq!(owners_last(&requests[2]), "再写一首夏天的");
 }
 
 /// A message that lands before the first request joins it: the model reads both at once, and the
@@ -414,7 +494,7 @@ async fn a_message_before_the_first_request_joins_it() {
     assert_eq!(reminders(&h), 1);
     let requests = h.api.requests();
     assert_eq!(requests.len(), 2);
-    let asked: Vec<String> = requests[0].messages.iter().filter(|m| matches!(m, Message::User(_))).map(texts).collect();
+    let asked: Vec<String> = requests[0].messages.iter().filter(|m| matches!(m, Message::User(_))).map(texts).filter(|t| !t.starts_with("<reminder>")).collect();
     assert_eq!(asked, ["写一首春天的诗", "写一首夏天的诗"]);
 }
 
@@ -441,7 +521,7 @@ async fn a_message_during_the_reminders_reply_joins_after_it() {
     let requests = h.api.requests();
     assert_eq!(requests.len(), 3);
     assert!(requests[1].messages.iter().all(|m| texts(m) != "再写一首夏天的"));
-    assert_eq!(texts(requests[2].messages.last().unwrap()), "再写一首夏天的");
+    assert_eq!(owners_last(&requests[2]), "再写一首夏天的");
 }
 
 /// A log whose sync takes a while, the only wait between a task's last look at the queue and its
@@ -604,7 +684,8 @@ async fn a_bots_sub_agents_get_a_sessions_prompt_and_no_send_to_user() {
     let agent = &requests[1];
     assert!(agent.system.starts_with("You are FinxWork"), "{}", agent.system);
     let names: Vec<&str> = agent.tools.iter().map(|t| t.name.as_str()).collect();
-    assert!(!names.contains(&"send_to_user") && !names.contains(&"spawn_agent"), "{names:?}");
+    assert_eq!(names, ["read", "write", "edit", "bash", "send_message", "tool_search", "call_tool"]);
+    assert!(agent.system.contains("- agents: See the other agents in this session"), "{}", agent.system);
     // The sub-agent works in the bot's folder too.
     assert!(agent.system.contains(&format!("cwd: {}", h.folder.display())));
     assert!(requests[2].system.starts_with("You are 研究员"));
@@ -639,6 +720,246 @@ async fn a_new_name_is_told_once() {
         })
         .collect();
     assert_eq!(names, ["研究员"]);
+}
+
+/// "On it", then the result in plain text: the first message must not count as delivering it
+/// (bot-turn-design §6).
+#[tokio::test]
+async fn a_result_written_after_the_first_message_is_reminded_and_sent() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            send("c1", "在查了。"),
+            Script::tool_call("c2", "bash", json!({ "command": "echo 42" })),
+            Script::text("结果是 42。"),
+            send_last("c3", "结果是 42。"),
+        ],
+    )
+    .await;
+    let result = h.kernel.run(prompt("算一下")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(sent(&result.events), ["在查了。", "结果是 42。"]);
+    assert_eq!((reminders(&h), undelivered(&h)), (0, 1));
+    let requests = h.api.requests();
+    let reminder = requests.last().unwrap().messages.iter().map(texts).rfind(|t| t.contains(REMINDER)).unwrap();
+    assert!(reminder.contains("has not reached the user"), "{reminder}");
+}
+
+/// A report that wakes the bot, written up only in plain text.
+#[tokio::test]
+async fn a_report_written_up_in_plain_text_is_reminded_and_sent() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            Script::tool_call("c1", "send_to_user", json!({ "text": "好，我查一下。" })).then_tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." })),
+            // Ending the turn after handing the work over owes nothing: no reminder here.
+            Script::text("Waiting for its report."),
+            Script::text("Found: 42."),
+            Script::text("查到了：42。"),
+            send_last("c3", "查到了：42。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    assert_eq!(sent(&events), ["好，我查一下。", "查到了：42。"]);
+    assert_eq!((reminders(&h), undelivered(&h)), (0, 1));
+}
+
+/// Reminded of what came of its work and still silent: that may be right, so the task just ends.
+#[tokio::test]
+async fn silence_after_a_reminder_of_its_work_is_no_failure() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            send("c1", "在查了。"),
+            Script::tool_call("c2", "bash", json!({ "command": "echo 42" })),
+            Script::text("Nothing worth saying."),
+            Script::text("Still nothing."),
+        ],
+    )
+    .await;
+    let result = h.kernel.run(prompt("看一下")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }), "{:?}", result.end);
+    assert_eq!(undelivered(&h), 1);
+}
+
+/// A new message from the owner counts anew: the reminder before it does not use up the next.
+#[tokio::test]
+async fn a_new_message_counts_anew_after_a_reminder() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            // Written only, reminded, and a new message comes while it is reminded.
+            Script::text("Only written."),
+            Script::default().then_sleep(Duration::from_millis(500)).then_text("Written again."),
+            // The new message is unanswered too: a second reminder, not a failure.
+            Script::text("Written a third time."),
+            send_last("c1", "都回了。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("第一句")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { turn: 1, .. })).await;
+    h.kernel.submit(Op::prompt("第二句")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["都回了。"]);
+    assert_eq!(reminders(&h), 2);
+}
+
+/// `wait` is gone from a bot's tools; a model that sends it anyway still works in the background.
+#[tokio::test]
+async fn a_bots_agents_work_in_the_background_whatever_the_model_sends() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            Script::tool_call("c1", "send_to_user", json!({ "text": "好。" })).then_tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it.", "wait": true })),
+            Script::text("Waiting for its report."),
+            Script::text("Found: 42."),
+            send_last("c3", "查到了：42。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    assert_eq!(sent(&events), ["好。", "查到了：42。"]);
+    // The call returned at once, and the report came as mail.
+    let started = h.api.requests().iter().flat_map(|r| r.messages.clone()).find_map(|m| match m {
+        Message::ToolResult(r) if r.tool_name == "spawn_agent" => Some(r.text_content()),
+        _ => None,
+    });
+    assert!(started.unwrap().contains("started in the background"));
+    assert!(events.iter().any(|e| matches!(&e.msg, EventMsg::MessageCompleted { mail: Some(_), .. })));
+}
+
+/// A bot's requests and its sub-agent's run side by side: each takes from its own list.
+fn scripted_apart(h: &Harness, bot: Vec<Script>, agent: Vec<Script>) {
+    let lists = parking_lot::Mutex::new((std::collections::VecDeque::from(bot), std::collections::VecDeque::from(agent)));
+    h.api.respond_with(move |context| {
+        let first = context.messages.iter().find_map(|m| match m {
+            Message::User(user) => Some(user.text_content()),
+            _ => None,
+        });
+        let mut lists = lists.lock();
+        if first.is_some_and(|text| text.starts_with("You are a sub-agent")) { lists.1.pop_front() } else { lists.0.pop_front() }
+    });
+}
+
+fn handing_over() -> Script {
+    send("c1", "好，我来。").then_tool_call("c2", "spawn_agent", json!({ "description": "汇总", "task": "Sum it.", "name": "sales" }))
+}
+
+/// A sub-agent that speaks up when the test says so, and finishes when it says so: the bot must have
+/// ended its turn by then, however fast the machine is.
+fn speaking_up() -> Vec<Script> {
+    let wait_for = |id: &str, cue: &str| Script::tool_call(id, "bash", json!({ "command": format!("while [ ! -f {cue} ]; do sleep 0.02; done") }));
+    vec![
+        wait_for("k0", "speak"),
+        Script::tool_call("k1", "send_message", json!({ "to": "main", "message": "3 月的数据整月缺失。" })),
+        wait_for("k2", "finish"),
+        Script::text("汇总好了。"),
+    ]
+}
+
+/// Until the bot has heard the agent speak and then report.
+async fn through_both(h: &mut Harness) -> Vec<Event> {
+    let done = |m: &EventMsg| matches!(m, EventMsg::TaskCompleted { .. });
+    let mut events = until(&mut h.kernel, done).await;
+    std::fs::write(h.folder.join("speak"), "").unwrap();
+    events.extend(until(&mut h.kernel, done).await);
+    std::fs::write(h.folder.join("finish"), "").unwrap();
+    events.extend(until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await);
+    events
+}
+
+/// What a sub-agent sends wakes the bot, and the owner hears it from the bot while the work goes
+/// on (agent-messaging-design §3.1).
+#[tokio::test]
+async fn a_bot_relays_what_a_working_agent_sends() {
+    let mut h = bot("FinxBot", PermissionMode::BypassPermissions, vec![]).await;
+    let bot_scripts = vec![handing_over(), Script::text("It is at work."), send_last("c3", "3 月的数据缺了，我先按其余 11 个月做。"), send_last("c4", "做好了。")];
+    scripted_apart(&h, bot_scripts, speaking_up());
+    h.kernel.submit(Op::prompt("把销售额按月汇总")).await.unwrap();
+    let events = through_both(&mut h).await;
+    assert_eq!(sent(&events), ["好，我来。", "3 月的数据缺了，我先按其余 11 个月做。", "做好了。"]);
+    assert_eq!((reminders(&h), undelivered(&h)), (0, 0), "each came with what it owed");
+}
+
+/// It may have nothing the owner needs: one word about it, like after any work, and no failure.
+#[tokio::test]
+async fn a_bot_that_keeps_a_message_to_itself_is_reminded_once() {
+    let mut h = bot("FinxBot", PermissionMode::BypassPermissions, vec![]).await;
+    let bot_scripts = vec![handing_over(), Script::text("It is at work."), Script::text("Nothing for them yet."), Script::text("Really nothing."), send_last("c4", "做好了。")];
+    scripted_apart(&h, bot_scripts, speaking_up());
+    h.kernel.submit(Op::prompt("把销售额按月汇总")).await.unwrap();
+    let events = through_both(&mut h).await;
+    assert_eq!(sent(&events), ["好，我来。", "做好了。"]);
+    assert_eq!((reminders(&h), undelivered(&h)), (0, 1));
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::TaskFailed { .. })));
+}
+
+/// A new `bot.md` reaches a bot that already has a conversation, once; it costs a new
+/// `system_prompt` entry (bot-turn-design §8).
+#[tokio::test]
+async fn a_new_bot_prompt_reaches_a_resumed_bot_once() {
+    let h = bot("FinxBot", PermissionMode::Manual, vec![send_last("c1", "在。")]).await;
+    let mut kernel = h.kernel;
+    kernel.run(prompt("在吗")).await.unwrap();
+    let id = kernel.session_id().to_string();
+    kernel.shutdown().await;
+    let file = h.folder.join("bot-prompt.md");
+    std::fs::write(&file, "You are {{name}}, with new rules.\n").unwrap();
+    let resume = |config: Config| ResumeOptions {
+        session: SessionRef::Id(id.clone()),
+        model: None,
+        thinking: None,
+        permission_mode: None,
+        home: h.home.clone(),
+        config: Arc::new(config),
+        project_root: None,
+        trusted: false,
+        interactive_approvals: false,
+        bot_name: None,
+    };
+    let prompts = || {
+        let store = JsonlStore::new(h.home.sessions_dir());
+        let (_, entries) = store.read(&SessionRef::Id(id.clone())).unwrap();
+        entries.iter().filter(|e| matches!(e.kind, EntryKind::SystemPrompt(_))).count()
+    };
+    assert_eq!(prompts(), 1);
+
+    // The same `bot.md`: nothing changes.
+    h.api.push(send_last("c2", "还在。"));
+    let mut kernel = Kernel::resume(resume(Config::default()), deps(&h.api, &h.folder, &h.home)).await.unwrap();
+    kernel.run(prompt("还在吗")).await.unwrap();
+    kernel.shutdown().await;
+    assert_eq!(prompts(), 1);
+    assert!(h.api.requests().last().unwrap().system.starts_with("You are FinxBot, one of the user's bots"));
+
+    // A new one: the next request uses it, under the name in the header.
+    let config = || Config {
+        bot_prompt_file: Some(file.clone()),
+        ..Config::default()
+    };
+    h.api.push(send_last("c3", "新规则。"));
+    let mut kernel = Kernel::resume(resume(config()), deps(&h.api, &h.folder, &h.home)).await.unwrap();
+    kernel.run(prompt("有什么变化")).await.unwrap();
+    kernel.shutdown().await;
+    assert_eq!(prompts(), 2);
+    assert!(h.api.requests().last().unwrap().system.starts_with("You are FinxBot, with new rules."));
+
+    // And only once.
+    h.api.push(send_last("c4", "好。"));
+    let mut kernel = Kernel::resume(resume(config()), deps(&h.api, &h.folder, &h.home)).await.unwrap();
+    kernel.run(prompt("好")).await.unwrap();
+    kernel.shutdown().await;
+    assert_eq!(prompts(), 2);
 }
 
 /// A resumed bot session keeps its tool and prompt; a name changed meanwhile is told.
@@ -889,10 +1210,7 @@ async fn a_question_ends_the_turn_and_its_answer_is_an_ordinary_message() {
     let result = h.kernel.run(prompt("财务组")).await.unwrap();
     assert_eq!(sent(&result.events), ["发好了。"]);
     let requests = h.api.requests();
-    let Some(Message::User(answer)) = requests[1].messages.last() else {
-        panic!("the answer is the owner's message")
-    };
-    assert_eq!(answer.text_content(), "财务组");
+    assert_eq!(owners_last(&requests[1]), "财务组", "the answer is the owner's message");
     assert!(!requests[1].messages.iter().any(|m| texts(m).contains("<reply_reminder>")), "a question is a reply");
 }
 

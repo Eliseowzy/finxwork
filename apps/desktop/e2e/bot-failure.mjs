@@ -51,7 +51,8 @@ const provider = http.createServer((req, res) => {
   req.on("end", () => {
     if (!req.url?.endsWith("/chat/completions")) return res.writeHead(404).end();
     const request = JSON.parse(body);
-    const last = request.messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
+    // Past the word that follows each of the owner's messages (bot-design §3.14).
+    const last = request.messages.filter((m) => m.role === "user" && !JSON.stringify(m.content).includes("<reminder>")).at(-1)?.content ?? "";
     const said = typeof last === "string" ? last : last.map((c) => c.text ?? "").join("");
     const times = (asked.get(said) ?? 0) + 1;
     asked.set(said, times);

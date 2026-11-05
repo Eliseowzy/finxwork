@@ -40,7 +40,8 @@ case "$mode" in
       --json "$results/startup.json"
     ;;
   cli-startup|protocol-startup)
-    # Static Linux distribution avoids dynamic-loader relocations on each command.
+    # On Linux a static PIE, as rustc links musl by default: no dynamic loader, but it still relocates
+    # itself on each command, so a new table of pointers shows up in the page faults (D-99).
     build_args=(--profile dist)
     binary="${CARGO_TARGET_DIR:-target}/dist/finx"
     if [[ "$(uname -s)" == Linux ]]; then

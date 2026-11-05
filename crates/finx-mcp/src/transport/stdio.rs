@@ -124,7 +124,7 @@ pub(crate) fn spawn(spec: StdioSpec, inbound: mpsc::UnboundedSender<Inbound>) ->
                         }
                         Err(_) => tracing::debug!(server = %server, "ignored a stdout line that is not JSON"),
                     },
-                    Ok(Some(Frame::Oversize)) => tracing::warn!(server = %server, "ignored a stdout line over 16 MB"),
+                    Ok(Some(Frame::Oversize { .. })) => tracing::warn!(server = %server, "ignored a stdout line over 16 MB"),
                     Ok(None) | Err(_) => break,
                 }
             }

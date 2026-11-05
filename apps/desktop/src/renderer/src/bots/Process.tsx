@@ -2,7 +2,7 @@ import { useTranslation } from "react-i18next";
 import type { Step } from "@finx/client";
 import { momentText } from "../format";
 import { Icon } from "../icons";
-import { AgentCard, ReportCard } from "../session/Agents";
+import { AgentCard, AgentMessageCard, ReportCard } from "../session/Agents";
 import { Markdown } from "../session/Markdown";
 import { Work } from "../session/Steps";
 import { useNow, useStore } from "../store";
@@ -26,6 +26,8 @@ export function Process({ steps, summary }: { steps: Step[]; summary?: string })
             return <AgentCard key={s.key} launches={s.launches} />;
           case "report":
             return s.routine ? <RoutineStep key={s.key} step={s} /> : <ReportCard key={s.key} step={s} />;
+          case "agent_message":
+            return <AgentMessageCard key={s.key} step={s} />;
           default:
             return null;
         }

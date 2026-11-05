@@ -9,10 +9,10 @@ import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon, MarkMotion } from "../icons";
 import { useNow, useStore } from "../store";
-import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
+import { AgentCard, AgentMessageCard, BackgroundLine, ReportCard } from "./Agents";
 import { Dock, writingAgain } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
-import { DraftMarkdown, Markdown } from "./Markdown";
+import { Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 import { useBrowserStatus } from "./Yours";
 
@@ -62,12 +62,42 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     fromEnd.current = null;
     if (el && nearTop(el)) earlier();
   }, [steps, dock, retry]);
+  // Images, fonts, formulas and diagrams can resize without a new session event.
+  // Preserve a visible row while reading above the end, or follow the bottom.
+  const anchor = useRef<{ key: string; top: number } | null>(null);
+  const rememberAnchor = () => {
+    const el = scroll.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    const row = [...el.querySelectorAll<HTMLElement>("[data-step-key]")].find((node) => node.getBoundingClientRect().bottom > top);
+    anchor.current = row ? { key: row.dataset.stepKey!, top: row.getBoundingClientRect().top - top } : null;
+  };
+  useEffect(() => {
+    const el = scroll.current;
+    const body = el?.firstElementChild;
+    if (!el || !body) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (atEnd.current) el.scrollTop = el.scrollHeight;
+        else if (anchor.current) {
+          const row = el.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(anchor.current.key)}"]`);
+          if (row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.current.top;
+        }
+        rememberAnchor();
+      });
+    });
+    observer.observe(body);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
     atEnd.current = below < 80;
     setAway(below > 240);
+    rememberAnchor();
     if (nearTop(el)) earlier();
   };
   const toEnd = () => {
@@ -88,7 +118,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   const working = runningAgents(view).length;
   return (
     <>
-      <div className="cscroll" ref={scroll} onScroll={onScroll}>
+      <div className="cscroll markdown-chat" ref={scroll} onScroll={onScroll}>
         <div className="dbody" style={{ paddingBottom: dock + 40 }}>
           {s.archived && (
             <div className="anote">
@@ -294,6 +324,8 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;
+    case "agent_message":
+      return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent;
     case "end": {
       const c = (b as typeof a).chain;
       return a.end === (b as typeof a).end && a.chain?.usage === c?.usage && a.chain?.agents === c?.agents && a.chain?.started === c?.started;
@@ -312,7 +344,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
       return (
         <>
           <TimeLine at={step.ts} previous={previous} />
-          <div className={`um ${again ? "again" : ""}`} data-mid={step.key}>
+          <div className={`um ${again ? "again" : ""}`} data-mid={step.key} data-step-key={step.key}>
             {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.tabs.length > 0) && (
               <div className="um-att">
                 {rest.map((im, i) => (
@@ -344,8 +376,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
     }
     case "text":
       return (
-        <div className={`am ${final ? "act" : ""}`}>
-          {step.live ? <DraftMarkdown text={step.text} /> : <Markdown text={step.text} />}
+        <div className={`am ${final ? "act" : ""}`} data-step-key={step.key}>
+          <Markdown text={step.text} streaming={step.live} />
           {final && <MessageBar text={step.text} at={step.ts} task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined} />}
         </div>
       );
@@ -356,6 +388,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
       return <AgentCard launches={step.launches} />;
     case "report":
       return <ReportCard step={step} />;
+    case "agent_message":
+      return <AgentMessageCard step={step} />;
     case "end":
       if (merged) return null;
       return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;

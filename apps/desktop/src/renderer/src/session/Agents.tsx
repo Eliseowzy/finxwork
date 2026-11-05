@@ -122,6 +122,39 @@ export function ReportCard({ step }: { step: Extract<Step, { kind: "report" }> }
   );
 }
 
+/** What a sub-agent sent while it worked, where it reached the conversation: drawn like a report, but its work goes on. */
+export function AgentMessageCard({ step }: { step: Extract<Step, { kind: "agent_message" }> }) {
+  const { t } = useTranslation("session");
+  const [open, setOpen] = useState(false);
+  const show = useShowAgent();
+  const a = step.agent;
+  const long = step.text.split("\n").length > 2 || step.text.length > 140;
+  return (
+    <div className="rpc">
+      <div className="rpc-h">
+        <Icon name="bot" className="sm" />
+        <span>
+          <Trans t={t} i18nKey="agents.message" values={{ name: a?.description || step.name }} components={{ b: <b className={a?.description ? "who label" : "who"} /> }} />
+        </span>
+      </div>
+      <div className={`rpc-b ${long && !open ? "clamp" : ""}`}>
+        <Markdown text={step.text} />
+      </div>
+      <div className="rpc-f">
+        {long && (
+          <button className="link quiet" onClick={() => setOpen(!open)}>
+            {open ? t("agents.collapse") : t("agents.expand")}
+          </button>
+        )}
+        <button className="link" onClick={() => show(step.agent_id)}>
+          {t("agents.process")}
+          <Icon name="chevR" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** At the conversation's end, under the working line: how many background tasks still work (or wait after a stop); opens the panel. */
 export function BackgroundLine({ view }: { view: SessionView }) {
   const { t } = useTranslation("session");

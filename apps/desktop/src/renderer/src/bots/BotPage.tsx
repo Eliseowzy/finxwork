@@ -240,6 +240,11 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     fromEnd.current = null;
     if (el && el.scrollTop < el.clientHeight * 1.5) earlier();
   }, [items, busy?.typing, busy?.agents.length, dock]);
+  // What grows at the end without changing the items.
+  const follow = () => {
+    const el = scroll.current;
+    if (el && atEnd.current) el.scrollTop = el.scrollHeight;
+  };
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
@@ -330,7 +335,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
                 }
               })}
-              {busy && <BusyBubble busy={busy} retry={view.live?.retry} />}
+              {busy && <BusyBubble busy={busy} retry={view.live?.retry} onOpen={follow} />}
             </div>
           )}
         </div>
@@ -460,9 +465,9 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
 
 /**
  * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with sub-agents at work,
- * what they do, opening to one's steps or a line for each.
+ * what the bot called the work, and no more. Several show as a count that opens to their names.
  */
-function BusyBubble({ busy, retry }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number } }) {
+function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number }; onOpen: () => void }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
@@ -476,70 +481,43 @@ function BusyBubble({ busy, retry }: { busy: { typing: boolean; agents: WorkingA
   );
   // Retrying the model for more than ten seconds says so (bot-mode-design §7).
   const unstable = retry && now - retry.at > 10_000;
-  const shown = open && agents.length > 0;
+  const several = agents.length > 1;
+  const shown = open && several;
+  useLayoutEffect(() => {
+    if (shown) onOpen();
+    // Only when it opens: a new list of the same length needs nothing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
   return (
     <div className="bm working">
       <div className="bm-b">
         <div className="bline">
           <div className={`bbub wbub ${shown ? "open" : ""}`}>
-            {agents.length > 0 ? (
+            {several ? (
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
-                <span className="wb-t">{agents.length > 1 ? t("line.agents", { things: thingsText(agents.length) }) : agents[0].label}</span>
+                <span className="wb-t">{t("line.agents", { things: thingsText(agents.length) })}</span>
                 <Icon name="chevD" className="chev" />
               </button>
             ) : (
-              <div className="wb-h" title={t("line.typing")}>
+              <div className="wb-h" title={agents.length === 0 ? t("line.typing") : undefined}>
                 {dots}
-                {unstable && <span className="wb-t">{t("chat.retrying")}</span>}
+                {agents.length === 1 ? <span className="wb-t">{agents[0].label}</span> : unstable && <span className="wb-t">{t("chat.retrying")}</span>}
               </div>
             )}
             {shown && (
               <div className="wb-l">
-                {agents.length > 1 ? agents.map((h) => <AgentRow key={h.id} h={h} now={now} />) : <AgentSteps h={agents[0]} now={now} />}
+                {agents.map((a) => (
+                  <div key={a.id} className="wb-r">
+                    {a.label}
+                  </div>
+                ))}
               </div>
             )}
           </div>
         </div>
       </div>
     </div>
-  );
-}
-
-function AgentRow({ h, now }: { h: WorkingAgent; now: number }) {
-  return (
-    <div className="wb-r">
-      <span className="wb-rl">{h.label}</span>
-      <span className="wb-ra">{h.step && <span className="shimmer">{h.step}</span>}</span>
-      <span className="wb-rt">{durationText(now - h.since)}</span>
-    </div>
-  );
-}
-
-/** One sub-agent's steps: those done in grey, the one it is on shimmering, with how long it has worked. */
-function AgentSteps({ h, now }: { h: WorkingAgent; now: number }) {
-  const tools = conversation(h.agent.view).flatMap((s) => (s.kind === "work" ? s.items.flatMap((i) => (i.kind === "tool" ? [i.tool] : [])) : []));
-  const shown = tools.slice(-8);
-  return (
-    <>
-      {shown.map((tool, i) => {
-        const current = i === shown.length - 1 && tool.state !== "done";
-        return (
-          <div key={tool.call_id} className={`wb-s ${current ? "now" : ""}`}>
-            <span>{current ? <span className="shimmer">{tool.title}</span> : tool.title}</span>
-            {current && <span className="wb-rt">{durationText(now - h.since)}</span>}
-          </div>
-        );
-      })}
-      {shown.length === 0 && (
-        <div className="wb-s now">
-          <span>
-            <span className="shimmer">{h.label}</span>
-          </span>
-          <span className="wb-rt">{durationText(now - h.since)}</span>
-        </div>
-      )}
-    </>
   );
 }
 

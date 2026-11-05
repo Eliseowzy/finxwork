@@ -139,8 +139,9 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const images = (tool.result?.content ?? []).flatMap((c) => (c.type === "image" ? [c] : []));
   const spinning = tool.state === "running" || tool.state === "pending" || tool.state === "streaming";
   const unknown = tool.state === "streaming" && tool.title === tool.name;
-  // A message to a sub-agent reads as one: "Sent to name: the message".
+  // A message to an agent reads as one: "Sent to name: the message".
   const toAgent = tool.name === "send_message";
+  const address = String(tool.args.to ?? "");
   // A page handed to the user says what they were asked.
   const handoff = handoffOf({ name: tool.name, args: tool.args });
   // A web search reads as the words searched for, and opens to the pages found.
@@ -148,7 +149,7 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const found = search && searchDetails(tool);
   const named = search
     ? search.query + (search.sites.length ? t("webSearch.only", { sites: search.sites.join(t("webSearch.siteSeparator")) }) : "")
-    : toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
+    : toAgent ? t("agents.messageObject", { to: address === "main" || address === "parent" ? t("agents.mainAgent") : address, message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
   // The kernel's title for a page opened in the user's own browser.
   const object = named.replace(/ in your browser$/, t("yours.inYourBrowser"));
   const verb = search && tool.state === "failed" ? t("webSearch.failed") : toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : handoff !== null && tool.state === "done" ? t("yours.handoff.handled") : toolVerb(tool);

@@ -311,6 +311,44 @@ try {
   if (!sawTwo) note("(never two sub-agents at once)");
   await page.shot("07-mixed");
 
+  step("8b. a long job in the background, talking meanwhile (bot-turn-design §3)");
+  const n8 = (await page.run(bubbles)).length;
+  const t8 = Date.now();
+  await say(page, "写一篇两千字的小作文，主题随便，写好整理成文件告诉我。");
+  const allowing = async () => {
+    if (await page.run(asking)) await page.run(`document.querySelector(".appr .btn.primary").click()`);
+  };
+  const atWork = `(document.querySelector(".tr.bots .bm.working .wb-t")?.textContent ?? "") !== ""`;
+  for (const until8 = Date.now() + 120000; (await page.run(bubbles)).length === n8; await sleep(200)) {
+    await allowing();
+    if (Date.now() > until8) fail("timed out waiting for the first message");
+  }
+  note(`first message after ${((Date.now() - t8) / 1000).toFixed(1)} s: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+  for (const until8 = Date.now() + 120000; !(await page.run(atWork)); await sleep(300)) {
+    await allowing();
+    if (Date.now() > until8) fail("timed out waiting for a sub-agent at work");
+  }
+  for (const question of ["刚才给你发啥了你知道么", "为什么你在写的时候我还能给你发消息"]) {
+    const n = (await page.run(bubbles)).length;
+    const t = Date.now();
+    await say(page, question);
+    for (const until = Date.now() + 90000; (await page.run(bubbles)).length === n; await sleep(200)) {
+      await allowing();
+      if (Date.now() > until) fail(`timed out waiting for an answer to: ${question}`);
+    }
+    note(`answered after ${((Date.now() - t) / 1000).toFixed(1)} s: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+    check(await page.run(atWork), "the work goes on while it answers");
+  }
+  await page.shot("07a-talking-on");
+  const n8b = (await page.run(bubbles)).length;
+  for (const until8 = Date.now() + 900000, quiet8 = { n: 0 }; quiet8.n < 6; await sleep(500)) {
+    await allowing();
+    quiet8.n = (await page.run(bubbles)).length > n8b && !(await page.run(busy)) && !(await page.run(asking)) ? quiet8.n + 1 : 0;
+    if (Date.now() > until8) fail("timed out waiting for the essay");
+  }
+  note(`delivered: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 120)}`);
+  await page.shot("07a-delivered");
+
   step("10. 'no need any more': the sub-agent stops, the bot says so");
   await say(page, "请交给子智能体去做：写一篇 3000 字左右的短篇小说，主题是秋天的银杏，写完告诉我。");
   // It may ask first (say, to look at its folder): allowed.
