@@ -17,6 +17,7 @@ import { connectKernel, kernelBinary, kernelStatus, restartKernel, retryKernel }
 import { clipboardContent } from "./clipboard";
 import { platform } from "./platform";
 import { preferences, setPreferences } from "./preferences";
+import { applyRoutinePreferences } from "./routines";
 import { check, download, install, setAutoDownload, snooze, updateInfo } from "./updater";
 import { mainWindow, ours, settingsVisible, showMain, showSettings } from "./windows";
 
@@ -470,6 +471,7 @@ export function registerIPC() {
     if (!trusted(e) || typeof p !== "object" || p === null) return null;
     const next = setPreferences(p);
     notifier.refresh();
+    applyRoutinePreferences();
     return next;
   });
   ipcMain.handle("update-info", (e) => (trusted(e) ? updateInfo() : null));

@@ -101,7 +101,9 @@
     "hours_other": "{{count}} 小时",
     "days_other": "{{count}} 天",
     "pair": "{{big}} {{small}}",
-    "daysAgo_other": "{{count}} 天前"
+    "daysAgo_other": "{{count}} 天前",
+    "tonight": "今晚",
+    "tomorrow": "明天"
   },
   "steps": {
     "read": {

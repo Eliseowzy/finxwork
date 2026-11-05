@@ -444,5 +444,11 @@
     "granted": "Granted",
     "notGranted": "Not granted",
     "openSettings": "Open System Settings"
+  },
+  "routines": {
+    "atLogin": "Start FinxWork at login when there are scheduled tasks",
+    "atLoginNote": "So they run after a restart too. No window opens. macOS says a background item was added.",
+    "keepAwake": "Keep the Mac awake when there are scheduled tasks",
+    "keepAwakeNote": "On power, the Mac does not go to sleep from being idle. Closing the lid still does, and on battery this has no effect."
   }
 }

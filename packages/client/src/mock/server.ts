@@ -1,8 +1,8 @@
 import type {
-  ActiveTask, AgentStatus, Avatar, AvatarInput, BotSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
+  ActiveTask, AgentStatus, Avatar, AvatarInput, BotSummary, RoutineOutcome, RoutineRunInfo, RoutineSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage,
 } from "@finx/protocol";
-import { botScript, demoBots, relayScript, type DemoBot } from "./bots.ts";
+import { botScript, demoBots, relayScript, type DemoBot, type DemoRoutine } from "./bots.ts";
 import { applyEvent, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
@@ -47,6 +47,16 @@ interface Conn {
 interface MockBot {
   summary: BotSummary;
   png?: string;
+  routines: MockRoutine[];
+}
+
+/** A routine in the mock: what the row shows, and what only its detail does. */
+interface MockRoutine {
+  summary: RoutineSummary;
+  prompt: string;
+  schedule: string;
+  created_at: string;
+  runs: RoutineRunInfo[];
 }
 
 interface Run {
@@ -228,7 +238,9 @@ export class MockServer {
     const id = crypto.randomUUID();
     const start = Date.now() - d.ago;
     const avatar: Avatar = d.avatar;
-    this.bots.set(id, { summary: { id, name: d.name, avatar, default: d.default, pinned: d.pinned, created_at: iso(start - 3 * 86_400_000) } });
+    this.bots.set(id, { routines: (d.routines ?? []).map((r) => this.demoRoutine(r, start)), summary: { id, name: d.name, avatar, default: d.default, pinned: d.pinned, created_at: iso(start - 3 * 86_400_000) } });
+    const made = this.bots.get(id)!;
+    if (made.routines.length) made.summary = { ...made.summary, routines: made.routines.map((r) => r.summary) };
     if (d.history.length === 0 && !d.live) return;
     const s = this.botSession(id, start);
     this.clock = start;
@@ -249,6 +261,91 @@ export class MockServer {
     const bot = this.bots.get(id)!;
     bot.summary = { ...bot.summary, session_id: s.id };
     return s;
+  }
+
+  /** A demo routine with how its runs went. */
+  private demoRoutine(d: DemoRoutine, at: number): MockRoutine {
+    const runs: RoutineRunInfo[] = d.runs.map((r, i) => {
+      const when = iso(Date.now() - r.hoursAgo * 3_600_000);
+      const skipped = r.outcome === "skipped";
+      return {
+        id: `run_demo_${i}_${crypto.randomUUID()}`,
+        scheduled: when,
+        started: skipped ? undefined : when,
+        ended: when,
+        outcome: r.outcome,
+        note: r.outcome === "quiet" || skipped ? (r.text ?? "the run before it had not finished") : undefined,
+        report: r.outcome === "reported" || r.outcome === "failed" ? r.text : undefined,
+        delivered: r.delivered ? when : undefined,
+      };
+    });
+    const started = runs.find((r) => r.started);
+    return {
+      summary: {
+        id: `r_${crypto.randomUUID().slice(0, 6)}`,
+        name: d.name,
+        when: d.when,
+        state: d.paused ? "paused" : "active",
+        next_run: d.paused ? undefined : iso(Date.now() + 8 * 3_600_000),
+        last_run: started ? { started: started.started!, outcome: started.outcome, delivered: started.delivered } : undefined,
+      },
+      prompt: d.prompt,
+      schedule: d.schedule,
+      created_at: iso(at),
+      runs,
+    };
+  }
+
+  /** The bot's manage_routine create: its row shows the routine, and the chat a line for it. */
+  private makeRoutine(s: Session, r: NonNullable<ToolScript["routine"]>): Record<string, unknown> {
+    const bot = this.bots.get(s.bot ?? "");
+    const next = iso(Date.now() + 24 * 3_600_000);
+    const made: MockRoutine = {
+      summary: { id: `r_${crypto.randomUUID().slice(0, 6)}`, name: r.name, when: r.when, state: "active", next_run: next },
+      prompt: r.prompt,
+      schedule: r.schedule,
+      created_at: iso(Date.now()),
+      runs: [],
+    };
+    if (bot) {
+      bot.routines.push(made);
+      this.routinesChanged(bot);
+    }
+    return { action: "create", routine_id: made.summary.id, name: r.name, when: r.when, next_run: next };
+  }
+
+  private routinesChanged(bot: MockBot) {
+    bot.summary = { ...bot.summary, routines: bot.routines.map((r) => r.summary) };
+    this.botsChanged([bot.summary]);
+  }
+
+  private routine(botId: unknown, id: unknown): { bot: MockBot; routine: MockRoutine } {
+    const bot = this.bot(botId);
+    const routine = bot.routines.find((r) => r.summary.id === id);
+    if (!routine) throw new Failure(-32043, "routine_not_found", `routine ${String(id)} not found`);
+    return { bot, routine };
+  }
+
+  /** A run from the panel: under way for a moment, then nothing to report. */
+  private runNow(bot: MockBot, routine: MockRoutine) {
+    if (routine.summary.running) throw new Failure(-32044, "routine_busy", "the routine is running now");
+    const started = iso(Date.now());
+    const info: RoutineRunInfo = { id: `run_demo_${crypto.randomUUID()}`, scheduled: started, started };
+    routine.runs.unshift(info);
+    routine.summary = { ...routine.summary, running: true, last_run: { started } };
+    this.routinesChanged(bot);
+    setTimeout(() => {
+      if (!routine.summary.running) return;
+      this.endRun(bot, routine, info, "quiet", "没有变化。");
+    }, 1500 / this.speed);
+  }
+
+  private endRun(bot: MockBot, routine: MockRoutine, info: RoutineRunInfo, outcome: RoutineOutcome, note?: string) {
+    info.ended = iso(Date.now());
+    info.outcome = outcome;
+    info.note = note;
+    routine.summary = { ...routine.summary, running: undefined, last_run: { started: info.started!, outcome } };
+    this.routinesChanged(bot);
   }
 
   /** A bot's row after an event of its conversation, as finx keeps it (bot-design §5.2). */
@@ -566,7 +663,7 @@ export class MockServer {
   private toolCompleted(s: Session, call_id: string, t: ToolScript, denied?: string) {
     const text = denied ?? t.output;
     // As in finx, a sub-agent starts when its spawn_agent call completes.
-    const details = t.name === "spawn_agent" && denied === undefined && !s.parent ? this.spawnAgent(s, call_id, t) : undefined;
+    const details = t.name === "spawn_agent" && denied === undefined && !s.parent ? this.spawnAgent(s, call_id, t) : t.routine && denied === undefined ? this.makeRoutine(s, t.routine) : undefined;
     this.emit(s, {
       type: "tool_completed",
       call_id,
@@ -795,7 +892,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, bots: true };
+        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, bots: true, routines: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -816,7 +913,7 @@ export class MockServer {
         const q = p as P<"bots/create">;
         const id = crypto.randomUUID();
         const name = this.botName(q.name);
-        const bot: MockBot = { summary: { id, name, avatar: { kind: "mono", hue: "slate" }, created_at: iso(Date.now()) } };
+        const bot: MockBot = { routines: [], summary: { id, name, avatar: { kind: "mono", hue: "slate" }, created_at: iso(Date.now()) } };
         bot.summary = { ...bot.summary, avatar: this.avatarOf(bot, q.avatar, false) };
         this.bots.set(id, bot);
         this.botsChanged([bot.summary]);
@@ -844,6 +941,59 @@ export class MockServer {
         this.botsChanged([bot.summary]);
         c.attached.add(s.id);
         return { session_id: s.id, snapshot: snapshotOf(s.view, q.history_limit ?? undefined) } satisfies R<"bots/open">;
+      }
+      case "bots/routine": {
+        const q = p as P<"bots/routine">;
+        const { routine } = this.routine(q.bot_id, q.routine_id);
+        const upcoming = routine.summary.next_run ? [0, 1, 2].map((i) => iso(Date.parse(routine.summary.next_run!) + i * 86_400_000)) : [];
+        return { routine: { summary: routine.summary, prompt: routine.prompt, schedule: routine.schedule, upcoming, created_at: routine.created_at } } satisfies R<"bots/routine">;
+      }
+      case "bots/routine_runs": {
+        const q = p as P<"bots/routine_runs">;
+        const { routine } = this.routine(q.bot_id, q.routine_id);
+        const from = q.before ? routine.runs.findIndex((r) => r.id === q.before) + 1 : 0;
+        return { runs: routine.runs.slice(from, from + (q.limit ?? 20)) } satisfies R<"bots/routine_runs">;
+      }
+      case "bots/routine_run": {
+        const q = p as P<"bots/routine_run">;
+        const { routine } = this.routine(q.bot_id, q.routine_id);
+        const run = routine.runs.find((r) => r.id === q.run_id);
+        if (!run) throw new Failure(-32043, "routine_not_found", `run ${q.run_id} not found`);
+        const ts = Date.parse(run.started ?? run.scheduled);
+        const call = { type: "tool_call", id: "c1", name: "bash", arguments: { command: "curl -s https://example.com/quote" } };
+        const transcript = run.started
+          ? [
+              { type: "message", message_id: "a1", message: { role: "assistant", content: [call], provider: "mock", model: "mock", usage: { input: 0, output: 0 }, stop_reason: "tool_use", ts } },
+              { type: "tool_result", call_id: "c1", result: { call_id: "c1", tool_name: "bash", content: [{ type: "text", text: "Exit code: 0" }], is_error: false, ts } },
+            ]
+          : [];
+        return { run, transcript: transcript as TranscriptItem[] } satisfies R<"bots/routine_run">;
+      }
+      case "bots/routine_set_enabled": {
+        const q = p as P<"bots/routine_set_enabled">;
+        const { bot, routine } = this.routine(q.bot_id, q.routine_id);
+        routine.summary = { ...routine.summary, state: q.enabled ? "active" : "paused", next_run: q.enabled ? iso(Date.now() + 3_600_000) : undefined };
+        this.routinesChanged(bot);
+        return {};
+      }
+      case "bots/routine_run_now": {
+        const q = p as P<"bots/routine_run_now">;
+        const { bot, routine } = this.routine(q.bot_id, q.routine_id);
+        this.runNow(bot, routine);
+        return {};
+      }
+      case "bots/routine_stop": {
+        const q = p as P<"bots/routine_stop">;
+        const { bot, routine } = this.routine(q.bot_id, q.routine_id);
+        if (routine.summary.running) this.endRun(bot, routine, routine.runs[0], "interrupted");
+        return {};
+      }
+      case "bots/routine_delete": {
+        const q = p as P<"bots/routine_delete">;
+        const { bot } = this.routine(q.bot_id, q.routine_id);
+        bot.routines = bot.routines.filter((r) => r.summary.id !== q.routine_id);
+        this.routinesChanged(bot);
+        return {};
       }
       case "bots/read":
       case "bots/unread": {

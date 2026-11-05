@@ -443,5 +443,11 @@
     "granted": "已授权",
     "notGranted": "未授权",
     "openSettings": "打开系统设置"
+  },
+  "routines": {
+    "atLogin": "有定时任务时，登录时启动 FinxWork",
+    "atLoginNote": "重启后定时任务也能跑。启动时不开窗口，macOS 会提示\"已添加后台项目\"。",
+    "keepAwake": "有定时任务时保持唤醒",
+    "keepAwakeNote": "接着电源时，Mac 不会因为空闲睡着。合盖还是会睡，用电池时不生效。"
   }
 }

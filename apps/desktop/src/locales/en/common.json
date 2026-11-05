@@ -108,7 +108,9 @@
     "days_other": "{{count}} d",
     "pair": "{{big}} {{small}}",
     "daysAgo_one": "{{count}} day ago",
-    "daysAgo_other": "{{count}} days ago"
+    "daysAgo_other": "{{count}} days ago",
+    "tonight": "Tonight",
+    "tomorrow": "Tomorrow"
   },
   "steps": {
     "read": {

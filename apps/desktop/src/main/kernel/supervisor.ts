@@ -379,7 +379,8 @@ export class Supervisor {
   private trackBot(b: BotSummary) {
     const key = `bot:${b.id}`;
     if (b.waiting) this.busy.set(key, "awaiting_approval");
-    else if (b.typing || (b.agents_working ?? 0) > 0) this.busy.set(key, "running");
+    // A routine's run shows nowhere in the row's work, and the service's replacement waits for it (routine-design §7.3).
+    else if (b.typing || (b.agents_working ?? 0) > 0 || b.routines?.some((r) => r.running)) this.busy.set(key, "running");
     else this.busy.delete(key);
   }
 

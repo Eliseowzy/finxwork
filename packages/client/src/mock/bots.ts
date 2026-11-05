@@ -22,6 +22,18 @@ export interface DemoBot {
   /** A task under way when the demo starts, up to its first turn (an approval, say). */
   live?: { prompt: string; script: TaskScript };
   unread?: number;
+  routines?: DemoRoutine[];
+}
+
+/** A routine in the demo, and how its runs went. */
+export interface DemoRoutine {
+  name: string;
+  when: string;
+  schedule: string;
+  prompt: string;
+  paused?: boolean;
+  /** What each run did, newest first; hours before now. */
+  runs: { hoursAgo: number; outcome: "reported" | "quiet" | "failed" | "skipped"; text?: string; delivered?: boolean }[];
 }
 
 const hour = 3_600_000;
@@ -49,6 +61,32 @@ export function demoBots(): DemoBot[] {
               { tools: [send(research("自动更新方案").told, true)] },
             ],
           },
+        },
+      ],
+      routines: [
+        {
+          name: "每日盘前简报",
+          when: "工作日早上 8 点",
+          schedule: "0 8 * * 1-5",
+          prompt: "看隔夜的美股和新闻，挑三件今天开盘前值得知道的事，每件一句话。没有值得说的就不用打扰。",
+          runs: [
+            { hoursAgo: 3, outcome: "reported", text: "隔夜美股小幅收高；半导体领涨；今晚有非农数据。", delivered: true },
+            { hoursAgo: 27, outcome: "quiet", text: "隔夜没有大消息。" },
+            { hoursAgo: 51, outcome: "failed", text: "Error (network): 读不到新闻站点。" },
+          ],
+        },
+        {
+          name: "特斯拉跌破 300 提醒",
+          when: "工作日每小时（美股交易时段）",
+          schedule: "CRON_TZ=America/New_York 0 10-16 * * 1-5",
+          prompt: "查特斯拉现在的股价。低于 300 美元就告诉我，并说这个提醒结束了；否则不用说。查不到就说查不到。",
+          paused: true,
+          runs: [
+            { hoursAgo: 12, outcome: "quiet", text: "TSLA 412.5 美元，没有跌破。" },
+            { hoursAgo: 13, outcome: "quiet", text: "TSLA 410.2 美元，没有跌破。" },
+            { hoursAgo: 14, outcome: "quiet", text: "TSLA 408.9 美元，没有跌破。" },
+            { hoursAgo: 15, outcome: "skipped" },
+          ],
         },
       ],
     },
@@ -109,6 +147,20 @@ function restartScript(): TaskScript {
   };
 }
 
+/** A reminder asked for in the chat: the bot makes the routine, and says when it first runs. */
+function routineScript(asked: string): TaskScript {
+  const when = "明天早上 9 点";
+  const name = asked.replace(/^(帮我|请|麻烦)?(定时)?(提醒我?)?/, "").slice(0, 12) || "提醒";
+  const save: ToolScript = {
+    name: "manage_routine",
+    args: { action: "create", name, prompt: `提醒用户：${asked}`, schedule: "in 1d", when },
+    output: `Saved routine "${name}" (id r_mock).`,
+    ms: 80,
+    routine: { name, when, schedule: "in 1d", prompt: `提醒用户：${asked}` },
+  };
+  return { turns: [{ tools: [save] }, { tools: [send(`记下了，${when}提醒你。到时候 Mac 要醒着。`, true)] }] };
+}
+
 /** What a bot answers to one message. */
 export function botScript(text: string): TaskScript {
   const t = text.trim();
@@ -116,7 +168,7 @@ export function botScript(text: string): TaskScript {
     const season = t.match(/[春夏秋冬]/)?.[0] ?? "春";
     return { turns: [{ tools: [send(poem(season), true)] }] };
   }
-  if (/提醒|闹钟|定时/.test(t)) return { turns: [{ tools: [send("定时提醒我现在还做不到，等之后的版本。到时候你直接跟我说就行。", true)] }] };
+  if (/提醒|闹钟|定时/.test(t)) return routineScript(t);
   if (/nginx|重启|restart/i.test(t)) return restartScript();
   if (/查|调研|对比|整理|统计|列出|分析|找|研究|汇总/.test(t)) {
     const topic = t.replace(/^(帮我|请|麻烦)?/, "").slice(0, 24);
