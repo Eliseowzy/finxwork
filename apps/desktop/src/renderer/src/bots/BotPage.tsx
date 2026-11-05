@@ -19,7 +19,7 @@ import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
 import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
-import { ContentScope } from "../session/scope";
+import { ContentScope, LocalImages } from "../session/scope";
 import { Work } from "../session/Steps";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
@@ -78,7 +78,15 @@ export function BotPage({ bot }: { bot: BotSummary }) {
         <ContentScope value={scope}>
           <div className="dwrap" onContextMenu={() => selectionMenu(st)}>
             <div className="dmain">
-              {view && session ? <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}
+              {view && session ? (
+                <LocalImages.Provider value={true}>
+                  <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} />
+                </LocalImages.Provider>
+              ) : (
+                <div className="empty">
+                  <span className="mini-spin" />
+                </div>
+              )}
             </div>
           </div>
         </ContentScope>
@@ -195,6 +203,16 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     setAway(below > 240);
     if (el.scrollTop < el.clientHeight * 1.5) earlier();
   };
+  // What grows on its own, a picture read after its message showed, stays in view at the end.
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!body.current) return;
+    const follow = new ResizeObserver(() => {
+      if (atEnd.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+    });
+    follow.observe(body.current);
+    return () => follow.disconnect();
+  }, []);
   const toEnd = () => {
     const el = scroll.current;
     if (!el) return;
@@ -207,7 +225,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   return (
     <>
       <div className="cscroll" ref={scroll} onScroll={onScroll}>
-        <div className="dbody" style={{ paddingBottom: dock + 40 }}>
+        <div className="dbody" ref={body} style={{ paddingBottom: dock + 40 }}>
           {view.before && (
             <div className="tdiv earlier">
               {paging ? <span className="mini-spin" aria-label={t("chat.loadingEarlier")} /> : <button className="link" onClick={earlier}>{t("chat.earlier")}</button>}

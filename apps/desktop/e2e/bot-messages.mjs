@@ -90,6 +90,7 @@ const SCRIPT = {
   发文件: attach(["report.pdf"]),
   带字的文件: { text: "**报告**做好了。", files: [{ path: at("notes.md") }, { path: at("c.png") }], end_turn: true },
   问名字: { type: "question", text: "发给谁？" },
+  图写在文字里: { text: `指数走势：\n\n![指数走势](${at("c.png")})\n\n![不存在的图](${at("nothing.png")})\n\n![网上的图](https://example.com/a.png)\n\n说明在这里。`, end_turn: true },
   会删的: attach(["gone.png", "stays.png", "gone.pdf"]),
   提问: { type: "question", text: "报告要发给谁？", options: [{ label: "先留给我看" }, { label: "发给财务组" }, { label: "发给全部门" }] },
 };
@@ -339,6 +340,20 @@ try {
   same(await page.run(`[...${lastMessage}.querySelector(".batt").children].map((c) => c.className.split(" ")[0])`), ["bbub", "bims", "bfiles"], "the order");
   same(await page.run(rowLine), "报告做好了。", "the list's line");
   await page.shot("05b-words-and-files");
+
+  step("19. an image on this computer written in the words shows; a missing or remote one is its alt text");
+  await ask(page, "图写在文字里");
+  await page.until("the picture", `(() => { const i = ${lastMessage}.querySelector(".bbub .md-img img"); return i?.complete && i.naturalWidth === 960; })()`);
+  same(await page.run(`${lastMessage}.querySelectorAll(".md-img").length`), 1, "only the one that exists");
+  await page.until("the page following to the end", `(() => { const s = document.querySelector(".cscroll"); return s.scrollHeight - s.scrollTop - s.clientHeight < 2; })()`, 3000);
+  check(await page.run(`(() => { const t = ${lastMessage}.innerText; return t.includes("不存在的图") && t.includes("网上的图") && t.includes("说明在这里"); })()`), "the others are their alt text");
+  same(await page.run(size(`${lastMessage}.querySelector(".md-img")`)), [480, 300], "as wide as one sent as a file");
+  await page.shot("05c-image-in-words");
+  await page.click(`.tr.bots > .bm:last-of-type .md-img`);
+  await page.until("the large view", `!!document.querySelector(".lightbox")`);
+  same(await page.run(`document.querySelector(".lb-cap").textContent`), "指数走势", "its caption");
+  await page.key("Escape");
+  await page.until("closed", `!document.querySelector(".lightbox")`);
 
   step("20. a wrong path: the model is told, sends again, and nothing extra shows");
   const before = await page.run(`${messages}.length`);

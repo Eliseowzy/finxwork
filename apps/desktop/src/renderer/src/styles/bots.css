@@ -142,6 +142,11 @@
 .bfiles .tile.gone .tile-name{color:var(--l2)}
 .bfiles .tile.gone .tile-kind{color:var(--l3)}
 
+/* An image on this computer written in a bot's words: as wide as one sent as a file, inside the bubble. */
+.md-img{display:block;max-width:min(480px,100%);padding:0;border:0;background:none;border-radius:var(--r-md);overflow:hidden;box-shadow:0 0 0 .5px var(--sep);cursor:zoom-in}
+.md-img img{display:block;max-width:100%;height:auto;max-height:420px;object-fit:contain}
+.md-img:hover img{opacity:.88}
+
 /* A question (bot-mode-design §6.6.2): the answers as rows in the same bubble. Once the owner said anything, the rows
    fold away and it reads as an ordinary exchange. As wide as a message of files, so a run lines up. */
 .bbub.bq{min-width:320px;padding:0;overflow:hidden;transition:min-width .22s var(--ease-out)}
