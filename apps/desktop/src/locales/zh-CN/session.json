@@ -496,7 +496,6 @@
     "tree": "项目文件",
     "toggleTree": "显示或隐藏目录树",
     "showInTree": "在文件面板中显示",
-    "empty": "从左边选一个文件打开",
     "loading": "正在读取…",
     "saved": "已保存",
     "unsaved": "未保存",

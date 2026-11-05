@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "../components";
 import { PdfView, Unlock } from "../docs/PdfView";
@@ -41,6 +41,16 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
   const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened));
   const docOf = (x: Tab) => docs.tabs.find((d) => d.info.doc_id === x.opened?.docId);
+  // No file open: the panel is only the folder tree to pick one from, not an empty editor's width.
+  const bare = s.tabs.length === 0;
+  const wide = max && !bare;
+
+  // The last file closed: the panel goes with it, as the browser's does with its last tab.
+  const hadTabs = useRef(!bare);
+  useEffect(() => {
+    if (bare && hadTabs.current) onClose();
+    hadTabs.current = !bare;
+  }, [bare]);
 
   // The tree, the first time: beside the code when there is room for both.
   useLayoutEffect(() => {
@@ -62,12 +72,12 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   return (
     <aside
       ref={panel}
-      className={`bgp brp fpn ${max ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
-      style={style(max)}
+      className={`bgp brp fpn ${bare ? "bare" : wide ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
+      style={bare ? undefined : style(wide)}
       aria-label={t("files.title")}
     >
       <div className="brp-strip drag">
-        {max && <SidebarToggle />}
+        {wide && <SidebarToggle />}
         <div className="brp-tabs" role="tablist">
           {s.tabs.map((x) => {
             const on = x.path === s.active;
@@ -97,11 +107,15 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
             );
           })}
         </div>
-        <Tools s={s} tab={tab} />
-        <span className="fpn-strip-sep" />
-        <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
-          <Icon name={max ? "shrink" : "expand"} />
-        </button>
+        {!bare && (
+          <>
+            <Tools s={s} tab={tab} />
+            <span className="fpn-strip-sep" />
+            <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
+              <Icon name={max ? "shrink" : "expand"} />
+            </button>
+          </>
+        )}
         {/* The conversation bar's Files button, moved here while the panel is open: it puts the panel away. */}
         <button className="tb on" aria-label={t("files.hide")} title={t("files.hide")} aria-pressed onClick={onClose}>
           <Icon name="folder" />
@@ -109,7 +123,7 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
       </div>
       {/* The file on the left, the tree on the right. */}
       <div className="fpn-body">
-        <div className="fpn-main">
+        {!bare && <div className="fpn-main">
           {/* PDFs stay laid out while another tab shows: pdf.js would load and lay them out again. */}
           {st.rpc &&
             s.tabs.map((x) => {
@@ -124,12 +138,12 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
                 </div>
               );
             })}
-          {tab ? !tab.opened?.docId && <Body s={s} tab={tab} /> : <div className="fpn-empty">{t("files.empty")}</div>}
-        </div>
-        {s.tree === true && <Tree s={s} />}
+          {tab && !tab.opened?.docId && <Body s={s} tab={tab} />}
+        </div>}
+        {(bare || s.tree === true) && <Tree s={s} />}
       </div>
       {tab && <Note s={s} tab={tab} />}
-      {!max && (
+      {!wide && !bare && (
         <div
           className="brp-grip no-drag"
           role="separator"

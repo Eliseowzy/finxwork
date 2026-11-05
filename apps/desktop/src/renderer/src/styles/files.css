@@ -60,6 +60,8 @@
 
 /* The tree, on the right of the file: rows laid where the virtual list puts them. */
 .fpt{width:200px;flex:none;position:relative;overflow:auto;padding:4px 0;border-left:.5px solid var(--sep);outline:none}
+.bgp.brp.fpn.bare:not(.sized):not(.max){width:260px}
+.fpn.bare .fpt{flex:1;width:auto;border-left:0}
 .fpt-note{padding:8px 12px;font-size:12px;color:var(--l3)}
 .fpt-row{position:absolute;top:0;left:4px;right:4px;height:26px;display:flex;align-items:center;gap:5px;padding-right:8px;border-radius:var(--r-sm);font-size:13px;color:var(--l1);white-space:nowrap;cursor:default;user-select:none}
 .fpt-row:hover{background:var(--fill)}
