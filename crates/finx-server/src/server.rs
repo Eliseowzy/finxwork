@@ -461,10 +461,9 @@ impl Server {
         let model = self.session_model(args.model, workspace.config.model.clone()).await?;
         if args.require_credentials
             && let Some((provider, _)) = model.split_once('/')
-            && let Some(provider) = self.0.llm.provider(provider)
-            && matches!(provider.auth.status(&provider.id), finx_llm::AuthStatus::Missing(_))
+            && matches!(self.0.llm.auth_status(provider), Some(finx_llm::AuthStatus::Missing(_)))
         {
-            return Err(errors::no_credentials(&model, &provider.id));
+            return Err(errors::no_credentials(&model, provider));
         }
         let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {

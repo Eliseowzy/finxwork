@@ -199,6 +199,14 @@ impl ModelRegistry {
         result.into_iter()
     }
 
+    /// How a provider's credentials stand, without copying its configuration.
+    pub fn auth_status(&self, id: &str) -> Option<crate::AuthStatus> {
+        if let Some(provider) = self.providers.get(id) {
+            return Some(provider.auth.status(id));
+        }
+        self.sources.read().values().flatten().find(|p| p.id == id).map(|p| p.auth.status(id))
+    }
+
     pub fn provider(&self, id: &str) -> Option<ProviderConfig> {
         self.providers.get(id).cloned().or_else(|| {
             self.sources
