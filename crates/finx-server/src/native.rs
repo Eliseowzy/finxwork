@@ -465,6 +465,14 @@ impl NativeProtocol {
             method::CREDENTIALS_DELETE => {
                 self.call(id, params, conn, |server, p: CredentialsDeleteParams| async move { server.credentials_delete(p).await })
             }
+            method::WEB_SEARCH_STATUS => {
+                let reply_id = id.clone();
+                let server = self.server.clone();
+                let conn2 = conn.clone();
+                self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.web_search_status(&conn2).await)) });
+            }
+            method::WEB_SEARCH_TEST => self.call(id, params, conn, |server, p: finx_protocol::web_search::WebSearchTestParams| async move { server.web_search_test(p).await }),
+            method::WEB_SEARCH_SET_KEY => self.call(id, params, conn, |server, p: finx_protocol::web_search::WebSearchSetKeyParams| async move { server.web_search_set_key(p).await }),
             method::SKILLS_INSTALL => self.call(id, params, conn, |server, p: SkillsInstallParams| async move { server.skills_install(p).await }),
             method::SKILLS_REMOVE => self.call(id, params, conn, |server, p: SkillsRemoveParams| async move { server.skills_remove(p).await }),
             method::SKILLS_SET_ENABLED => {

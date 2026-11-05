@@ -55,6 +55,13 @@ impl Deferred {
     /// whether the desktop app is connected, `docs` whether it keeps documents.
     pub(crate) fn of(settings: &SystemSettings, pool: bool, app: bool, docs: bool) -> Self {
         let mut groups = Vec::new();
+        if settings.web_search.enabled {
+            groups.push(Group {
+                name: crate::web_search::GROUP,
+                summary: crate::web_search::GROUP_SUMMARY.into(),
+                tools: crate::web_search::tools(&settings.web_search),
+            });
+        }
         let builtin = settings.browser.builtin_on(app);
         let yours = settings.browser.yours_on(app);
         if pool && (builtin || yours) {
