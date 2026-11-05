@@ -28,13 +28,20 @@ class RangeTransport extends pdfjs.PDFDataRangeTransport {
   }
 
   requestDataRange(begin: number, end: number) {
-    fetch(this.url, { headers: { range: `bytes=${begin}-${end - 1}` } })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.arrayBuffer();
-      })
-      .then((b) => this.onDataRange(begin, new Uint8Array(b)))
-      .catch(() => {});
+    void this.fetchRange(begin, end, 0);
+  }
+
+  /** pdf.js waits for every range it asks for: a failed one is asked for again, a few times, before giving up. */
+  private async fetchRange(begin: number, end: number, tries: number): Promise<void> {
+    try {
+      const r = await fetch(this.url, { headers: { range: `bytes=${begin}-${end - 1}` } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      this.onDataRange(begin, new Uint8Array(await r.arrayBuffer()));
+    } catch (e) {
+      if (tries >= 3) return console.error(`pdf: cannot read bytes ${begin}-${end - 1}`, e);
+      await new Promise((r) => setTimeout(r, 200 * 2 ** tries));
+      return this.fetchRange(begin, end, tries + 1);
+    }
   }
 }
 

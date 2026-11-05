@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionState } from "@finx/protocol";
 import { Icon } from "./icons";
@@ -60,13 +60,25 @@ export function SidebarToggle() {
   );
 }
 
+/**
+ * With a panel open beside the conversation (files, browser), the toast centres over the
+ * conversation: centred over all of the content it would sit on the panel's own tools.
+ */
+function overConversation(): CSSProperties | undefined {
+  const col = document.querySelector(".spage.bgopen:not(.brmax) > .scol");
+  const content = col?.closest(".content");
+  if (!col || !content) return undefined;
+  const c = col.getBoundingClientRect(), box = content.getBoundingClientRect();
+  return { left: c.left - box.left + c.width / 2, maxWidth: Math.max(240, c.width - 32) };
+}
+
 export function ToastView() {
   const st = useStore();
   const { t } = useTranslation("common");
   if (!st.toast) return null;
   const toast = st.toast;
   return (
-    <div className={`toast ${toast.bad ? "bad" : ""}`} role="status">
+    <div className={`toast ${toast.bad ? "bad" : ""}`} role="status" style={overConversation()}>
       <Icon name={toast.bad ? "warn" : "check"} />
       <span>{toast.text}</span>
       {toast.undo && (

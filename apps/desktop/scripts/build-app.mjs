@@ -253,6 +253,27 @@ if (arch === nativeArch) {
     input: JSON.stringify({ op: "open", handle: 1, path: pdf }) + "\n", env: { ...env, HOME: docHome }, cwd: docHome, encoding: "utf8",
   }).trim().split("\n")[0]);
   if (reply.ok?.pages !== 1) throw new Error(`the embedded finx cannot open a PDF: ${JSON.stringify(reply)}`);
+  // Workbooks (spreadsheet-design): an xlsx with its calculation engine (IronCalc from our fork, compiled in),
+  // TEXTJOIN being one of our patches to it; a CSV, written back as it came; a legacy .xls, read with calamine.
+  const fixtures = path.join(root, "crates/finx-sheet/tests/fixtures");
+  fs.copyFileSync(path.join(fixtures, "gen/dcf_model.xlsx"), path.join(docHome, "check.xlsx"));
+  fs.copyFileSync(path.join(fixtures, "legacy.xls"), path.join(docHome, "check.xls"));
+  fs.writeFileSync(path.join(docHome, "check.csv"), "a,b\r\n1,2\r\n");
+  const textjoin = { op: "set_formula", sheet: "假设", cell: "Z99", formula: '=TEXTJOIN("-",TRUE,"a","","b")' };
+  const sheets = execFileSync(embedded, ["doc-worker"], {
+    input: [
+      { op: "sheet_open", handle: 1, path: path.join(docHome, "check.xlsx") },
+      { op: "sheet_apply", handle: 1, preview: true, ops: [textjoin] },
+      { op: "sheet_open", handle: 2, path: path.join(docHome, "check.csv"), name: "check" },
+      { op: "sheet_open", handle: 3, path: path.join(docHome, "check.xls") },
+    ].map((r) => JSON.stringify(r) + "\n").join(""),
+    env: { ...env, HOME: docHome }, cwd: docHome, encoding: "utf8",
+  }).trim().split("\n").map((l) => JSON.parse(l));
+  const [xlsx, joined, csv, xls] = sheets;
+  if (!xlsx.ok?.sheets?.length || xlsx.ok.calc_unavailable !== null) throw new Error(`the embedded finx cannot calculate a workbook: ${JSON.stringify(xlsx)}`);
+  if (joined.ok?.impact?.edited?.[0]?.after_text !== "a-b") throw new Error(`the embedded finx lacks the patched IronCalc (TEXTJOIN): ${JSON.stringify(joined)}`);
+  if (csv.ok?.sheets?.[0]?.used !== "A1:B2") throw new Error(`the embedded finx cannot open a CSV: ${JSON.stringify(csv)}`);
+  if (!xls.ok?.sheets?.length) throw new Error(`the embedded finx cannot open a legacy .xls: ${JSON.stringify(xls)}`);
 }
 
 if (notaryAuth) {

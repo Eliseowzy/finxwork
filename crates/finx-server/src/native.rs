@@ -230,6 +230,7 @@ impl NativeProtocol {
                             customize: true,
                             embedded_browser: true,
                             input_queue: true,
+                            workbooks: true,
                             bots: true,
                         },
                     })
@@ -714,6 +715,7 @@ impl NativeProtocol {
             },
             method::DOC_OPEN => match finx_rpc::params::<finx_protocol::doc::DocOpenParams>(params) {
                 Ok(p) => {
+                    server.watch_docs(conn);
                     let reply_id = id.clone();
                     self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_open(p).await)) });
                 }
@@ -734,6 +736,76 @@ impl NativeProtocol {
                 Ok(p) => {
                     let reply_id = id.clone();
                     self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_locate(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_CELLS => match finx_rpc::params::<finx_protocol::doc::DocCellsParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_cells(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_APPLY => match finx_rpc::params::<finx_protocol::doc::DocApplyParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_apply(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_UNDO => match finx_rpc::params::<finx_protocol::doc::DocIdParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_undo(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_REDO => match finx_rpc::params::<finx_protocol::doc::DocIdParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_redo(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_RECALC => match finx_rpc::params::<finx_protocol::doc::DocRecalcParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_recalc(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_TRACE => match finx_rpc::params::<finx_protocol::doc::DocTraceParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_trace(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_FIND => match finx_rpc::params::<finx_protocol::doc::DocFindParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_find(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_FILL => match finx_rpc::params::<finx_protocol::doc::DocFillParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_fill(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_AUTOFILL => match finx_rpc::params::<finx_protocol::doc::DocAutofillParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_autofill(p).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DOC_SAVE => match finx_rpc::params::<finx_protocol::doc::DocSaveParams>(params) {
+                Ok(p) => {
+                    let reply_id = id.clone();
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_save(p).await)) });
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },

@@ -67,6 +67,20 @@ pub mod method {
     pub const DOC_VIEW: &str = "doc/view";
     pub const DOC_RESOLVE: &str = "doc/resolve";
     pub const DOC_LOCATE: &str = "doc/locate";
+    /// Spreadsheets (spreadsheet-design §7).
+    pub const DOC_CELLS: &str = "doc/cells";
+    pub const DOC_APPLY: &str = "doc/apply";
+    pub const DOC_UNDO: &str = "doc/undo";
+    pub const DOC_REDO: &str = "doc/redo";
+    pub const DOC_RECALC: &str = "doc/recalc";
+    pub const DOC_TRACE: &str = "doc/trace";
+    pub const DOC_FIND: &str = "doc/find";
+    pub const DOC_FILL: &str = "doc/fill";
+    pub const DOC_AUTOFILL: &str = "doc/autofill";
+    pub const DOC_SAVE: &str = "doc/save";
+    /// Notification: a document changed (an edit, undo, redo or save, from any session); to
+    /// every connection that opened a document (spreadsheet-design §7).
+    pub const DOC_CHANGED: &str = "doc/changed";
     pub const SESSION_ARCHIVE: &str = "session/archive";
     pub const SESSION_UNARCHIVE: &str = "session/unarchive";
     /// A loaded session's skills and `/` commands, or the skills a directory would give a session.
@@ -212,6 +226,13 @@ pub mod error_code {
     pub const DOC_UNAVAILABLE: i64 = -32032;
     /// `doc/open`: the document is encrypted and the password is missing or wrong.
     pub const DOC_PASSWORD: i64 = -32033;
+    /// `doc/apply`: doing it would risk the file (a merged cell, a table header…); the message
+    /// says why and what to do instead (spreadsheet-design §5.3.3).
+    pub const DOC_REFUSED: i64 = -32034;
+    /// `doc/apply`: `base_revision` is behind: someone else changed the document first.
+    pub const DOC_STALE: i64 = -32035;
+    /// `doc/save`: the file changed on disk since it was opened; `force` writes over it.
+    pub const DOC_CONFLICT: i64 = -32036;
     /// `bots/*`: no bot has that id.
     pub const BOT_NOT_FOUND: i64 = -32040;
     /// `bots/delete` of the default bot, or the mark as another bot's avatar.
@@ -252,6 +273,9 @@ pub mod error_code {
         (MCP_LOGIN_FAILED, "mcp_login_failed"),
         (DOC_UNAVAILABLE, "doc_unavailable"),
         (DOC_PASSWORD, "doc_password"),
+        (DOC_REFUSED, "doc_refused"),
+        (DOC_STALE, "doc_stale"),
+        (DOC_CONFLICT, "doc_conflict"),
         (BOT_NOT_FOUND, "bot_not_found"),
         (BOT_DEFAULT, "bot_default"),
         (BOT_INVALID, "bot_invalid"),
@@ -624,6 +648,11 @@ pub struct ServerCapabilities {
     /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
     #[serde(default)]
     pub input_queue: bool,
+    /// `doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the
+    /// workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it
+    /// refuses a workbook as "not a PDF".
+    #[serde(default)]
+    pub workbooks: bool,
     /// Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).
     #[serde(default)]
     pub bots: bool,

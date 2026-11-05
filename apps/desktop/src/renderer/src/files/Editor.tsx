@@ -9,6 +9,7 @@ import { crosshairCursor, Decoration, drawSelection, dropCursor, EditorView, hig
 import { tags } from "@lezer/highlight";
 import { i18n } from "../../../shared/i18n";
 import type { Tab } from "./state";
+import { wraps } from "./kind";
 
 // The file panel's editor (file-panel-design §5): CodeMirror 6, loaded only when a file is
 // first opened. One view for the panel; each tab keeps its own state (text, undo history,
@@ -107,8 +108,6 @@ const language = new Compartment();
 const writable = new Compartment();
 const wrapping = new Compartment();
 
-/** Long lines wrap in prose (Markdown, plain text), not in code. */
-const wraps = (name: string) => /\.(md|markdown|txt|text|log|csv|tsv)$/i.test(name) || !/\./.test(name);
 
 function stateOf(tab: Tab, save: () => void, editable: boolean): EditorState {
   const text = tab.doc?.text ?? tab.read?.text ?? "";
@@ -134,6 +133,7 @@ function stateOf(tab: Tab, save: () => void, editable: boolean): EditorState {
     text.includes("\r\n") ? EditorState.lineSeparator.of("\r\n") : [],
     language.of([]),
     writable.of(EditorState.readOnly.of(!editable)),
+    // Long lines wrap in prose (Markdown, plain text), not in code.
     wrapping.of(wraps(tab.name) ? EditorView.lineWrapping : []),
     marked,
     look,

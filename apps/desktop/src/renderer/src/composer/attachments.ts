@@ -13,7 +13,7 @@ export type Attachment = PickedFile | { kind: "folder"; path: string; name: stri
 export type DocAttachment = { kind: "doc"; path: string; name: string; quote: DocQuote; image?: string };
 
 /** What a quote's tile is called: what was said about it, else its text, else its document. */
-export const quoteName = (q: DocQuote) => q.comment || q.text || baseName(q.path);
+export const quoteName = (q: DocQuote) => q.comment || (q.sheet && q.range ? `${q.sheet}!${q.range}` : q.text) || baseName(q.path);
 /** What a part of a page's tile is called: what was said about it, else its text, else its tag. */
 export const webName = (c: WebComment) => c.comment || c.text || `<${c.tag}>`;
 
@@ -21,7 +21,7 @@ let docCount = 0;
 export function docAttachment(quote: DocQuote, image?: string): DocAttachment {
   // The image's place in a message is the message's to say (toInput), not the quote's.
   const { image: _, ...q } = quote;
-  return { kind: "doc", path: `doc:${++docCount}:${q.doc_id}:${q.page}`, name: quoteName(q), quote: q, ...(image && { image }) };
+  return { kind: "doc", path: `doc:${++docCount}:${q.doc_id}:${q.page ?? `${q.sheet}!${q.range}`}`, name: quoteName(q), quote: q, ...(image && { image }) };
 }
 
 /** A message's images paired with the parts of pages and documents they show (their `image`, from 1); the rest show on their own. */

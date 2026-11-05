@@ -1,34 +1,31 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "../components";
 import { PdfView, Unlock } from "../docs/PdfView";
+import { SheetView } from "../docs/SheetView";
 import { useSessionDocs } from "../docs/state";
 import { Icon } from "../icons";
 import { useStore } from "../store";
 import { fileMenu, openRef } from "../session/contentMenus";
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
+import { usePanelWidth } from "../panelWidth";
 import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { ImageView } from "./ImageView";
+import { isGrid, isMarkdown, isSvg, previewable } from "./kind";
 import { Tree } from "./Tree";
 import { sizeText } from "../format";
 
 // The file panel (file-panel-design §3): the session's open files as tabs, with the file's tools
 // (how its edits stand, preview or source, its menu, the tree) at the strip's end; the editor or
 // the preview with the folder tree on its right, and a note under them when there is a choice to
-// make. The browser panel's column and strip. A PDF shows in pdf.js with a bar of its own tools
-// under the strip (document-editor-design §7.2).
+// make. The browser panel's column and strip. A PDF shows in pdf.js, a workbook in the grid, each with a
+// bar of its own tools under the strip (document-editor-design §7.2, spreadsheet-design §8).
 
 const Editor = lazy(() => import("./Editor"));
 
-const widthKey = "finxwork.filePanelWidth";
-const minWidth = 360;
-/** What the conversation keeps beside the panel at least, as with the browser; more beside a PDF, which is read beside it. */
-const conversationRoom = (pdf: boolean) => (pdf ? 360 : 160);
-
-function savedWidth(): number | null {
-  const n = Number(localStorage.getItem(widthKey));
-  return Number.isFinite(n) && n >= minWidth ? n : null;
-}
+/** What the conversation keeps beside the panel at least, as with the browser; more beside a document, which is read beside it. */
+const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
 
 /** An encoding as people know it. */
 const encodingName = (e: string) => (e === "gb18030" ? "GBK" : e.startsWith("utf-16") ? "UTF-16" : e.toUpperCase());
@@ -40,11 +37,20 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const { t } = useTranslation("session");
   const st = useStore();
   const s = useFiles(session, cwd);
-  const panel = useRef<HTMLElement>(null);
-  const [width, setWidth] = useState<number | null>(savedWidth);
-  const [resizing, setResizing] = useState(false);
   const docs = useSessionDocs(session);
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
+  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened));
+  const docOf = (x: Tab) => docs.tabs.find((d) => d.info.doc_id === x.opened?.docId);
+  // No file open: the panel is only the folder tree to pick one from, not an empty editor's width.
+  const bare = s.tabs.length === 0;
+  const wide = max && !bare;
+
+  // The last file closed: the panel goes with it, as the browser's does with its last tab.
+  const hadTabs = useRef(!bare);
+  useEffect(() => {
+    if (bare && hadTabs.current) onClose();
+    hadTabs.current = !bare;
+  }, [bare]);
 
   // The tree, the first time: beside the code when there is room for both.
   useLayoutEffect(() => {
@@ -63,53 +69,27 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
     };
   }, [s]);
 
-  const maxWidth = () => {
-    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
-    const left = panel.current?.parentElement?.getBoundingClientRect().left ?? 0;
-    return Math.max(minWidth, right - left - conversationRoom(!!tab?.pdf));
-  };
-  const keep = (w: number) => {
-    const next = Math.round(Math.min(maxWidth(), Math.max(minWidth, w)));
-    setWidth(next);
-    localStorage.setItem(widthKey, String(next));
-  };
-  const startResize = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const right = panel.current?.getBoundingClientRect().right ?? window.innerWidth;
-    const most = maxWidth();
-    setResizing(true);
-    const move = (ev: PointerEvent) => setWidth(Math.round(Math.min(most, Math.max(minWidth, right - ev.clientX))));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      setResizing(false);
-      setWidth((w) => {
-        if (w !== null) localStorage.setItem(widthKey, String(w));
-        return w;
-      });
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
-
   return (
     <aside
       ref={panel}
-      className={`bgp brp fpn ${max ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
-      style={width !== null && !max ? ({ "--brp-w": `${width}px` } as CSSProperties) : undefined}
+      className={`bgp brp fpn ${bare ? "bare" : wide ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
+      style={bare ? undefined : style(wide)}
       aria-label={t("files.title")}
     >
       <div className="brp-strip drag">
-        {max && <SidebarToggle />}
+        {wide && <SidebarToggle />}
         <div className="brp-tabs" role="tablist">
           {s.tabs.map((x) => {
             const on = x.path === s.active;
-            const dirty = !!x.doc?.dirty;
+            const opened = docOf(x);
+            const dirty = !!x.doc?.dirty || !!opened?.info.dirty;
             const locked = x.read?.kind === "text" && !x.read.writable;
+            // A workbook (xlsx, xlsm, xls, csv, tsv) shows as a grid; until it opens, its name says so.
+            const grid = opened ? opened.info.layout === "grid" : isGrid(x.path);
             return (
               <div key={x.path} role="tab" aria-selected={on} className={`brp-tab fpn-tab no-drag ${on ? "on" : ""} ${dirty ? "dirty" : ""}`} title={x.rel ?? x.path} onClick={() => activate(s, x.path)}>
                 <span className="brp-tab-ic">
-                  <Icon name={locked ? "lock" : x.pdf ? "doc" : "file"} />
+                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : "file"} />
                 </span>
                 <span className="brp-tab-t">{x.name}</span>
                 <button
@@ -127,11 +107,15 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
             );
           })}
         </div>
-        <Tools s={s} tab={tab} />
-        <span className="fpn-strip-sep" />
-        <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
-          <Icon name={max ? "shrink" : "expand"} />
-        </button>
+        {!bare && (
+          <>
+            <Tools s={s} tab={tab} />
+            <span className="fpn-strip-sep" />
+            <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
+              <Icon name={max ? "shrink" : "expand"} />
+            </button>
+          </>
+        )}
         {/* The conversation bar's Files button, moved here while the panel is open: it puts the panel away. */}
         <button className="tb on" aria-label={t("files.hide")} title={t("files.hide")} aria-pressed onClick={onClose}>
           <Icon name="folder" />
@@ -139,38 +123,34 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
       </div>
       {/* The file on the left, the tree on the right. */}
       <div className="fpn-body">
-        <div className="fpn-main">
+        {!bare && <div className="fpn-main">
           {/* PDFs stay laid out while another tab shows: pdf.js would load and lay them out again. */}
           {st.rpc &&
             s.tabs.map((x) => {
-              const doc = docs.tabs.find((d) => d.info.doc_id === x.pdf?.docId);
+              const doc = docOf(x);
               return doc && (
-                <div key={doc.token} className="dcp-viewer" hidden={x !== tab}>
-                  <PdfView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                <div key={doc.info.doc_id} className="dcp-viewer" hidden={x !== tab}>
+                  {doc.info.layout === "grid" ? (
+                    <SheetView rpc={st.rpc!} session={session} tab={doc} activeView={x === tab} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                  ) : (
+                    <PdfView rpc={st.rpc!} session={session} tab={doc} jump={docs.jump?.doc_id === doc.info.doc_id ? docs.jump : null} />
+                  )}
                 </div>
               );
             })}
-          {tab ? !tab.pdf?.docId && <Body s={s} tab={tab} /> : <div className="fpn-empty">{t("files.empty")}</div>}
-        </div>
-        {s.tree === true && <Tree s={s} />}
+          {tab && !tab.opened?.docId && <Body s={s} tab={tab} />}
+        </div>}
+        {(bare || s.tree === true) && <Tree s={s} />}
       </div>
       {tab && <Note s={s} tab={tab} />}
-      {!max && (
+      {!wide && !bare && (
         <div
           className="brp-grip no-drag"
           role="separator"
           aria-orientation="vertical"
           aria-label={t("files.resize")}
-          aria-valuenow={width ?? undefined}
           tabIndex={0}
-          onPointerDown={startResize}
-          onKeyDown={(e) => {
-            const now = panel.current?.getBoundingClientRect().width ?? minWidth;
-            if (e.key === "ArrowLeft") keep(now + 24);
-            else if (e.key === "ArrowRight") keep(now - 24);
-            else return;
-            e.preventDefault();
-          }}
+          {...grip}
         />
       )}
     </aside>
@@ -191,11 +171,11 @@ function Tools({ s, tab }: { s: SessionFiles; tab: Tab | null }) {
       : doc?.state === "saving" ? t("files.saving")
       : doc?.state === "clean" && doc.savedAt ? t("files.saved")
       : "";
-  const previewable = tab && read?.kind === "text" && /\.(md|markdown|svg)$/i.test(tab.name);
+  const canPreview = tab && read?.kind === "text" && previewable(tab.name);
   return (
     <div className="fpn-tools no-drag">
       {status && <span className={`fpn-state ${doc?.state ?? ""}`}>{status}</span>}
-      {previewable && tab && (
+      {canPreview && tab && (
         <button
           className={`tb ${tab.preview ? "" : "on"}`}
           aria-label={t("files.source")}
@@ -229,26 +209,22 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   const st = useStore();
   const read = tab.read;
   if (tab.error && !tab.doc) return <Card tab={tab} text={tab.error} />;
-  if (tab.pdf) return tab.pdf.locked ? <Unlock s={s} tab={tab} /> : <div className="fpn-empty"><span className="mini-spin" aria-label={t("files.loading")} /></div>;
-  if (!read) return <div className="fpn-empty"><span className="mini-spin" aria-label={t("files.loading")} /></div>;
+  if (tab.opened) return tab.opened.locked ? <Unlock s={s} tab={tab} /> : <Loading />;
+  if (!read) return <Loading />;
   if (read.kind === "image" && read.image) {
     return (
-      <div className="fpn-img">
-        <img src={`data:${read.image.mime_type};base64,${read.image.data}`} alt={tab.name} />
-      </div>
+      <ImageView key={tab.path} src={`data:${read.image.mime_type};base64,${read.image.data}`} alt={tab.name} />
     );
   }
   if (read.kind === "binary") return <Card tab={tab} text={t("files.binary")} />;
   if (read.kind === "too_large") return <Card tab={tab} text={t("files.tooLarge", { size: sizeText(read.size) })} />;
   const text = tab.doc?.text ?? read.text ?? "";
-  if (tab.preview && /\.svg$/i.test(tab.name)) {
+  if (tab.preview && isSvg(tab.name)) {
     return (
-      <div className="fpn-img">
-        <img src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} alt={tab.name} />
-      </div>
+      <ImageView key={tab.path} src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`} alt={tab.name} />
     );
   }
-  if (tab.preview && /\.(md|markdown)$/i.test(tab.name)) {
+  if (tab.preview && isMarkdown(tab.name)) {
     // Its links and paths are the file's own: relative to its folder.
     return (
       <ContentScope value={{ session: s.session, cwd: dirOf(tab.path) }}>
@@ -260,9 +236,18 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   }
   const editable = !!read.writable && tab.doc?.state !== "refused";
   return (
-    <Suspense fallback={<div className="fpn-empty"><span className="mini-spin" /></div>}>
+    <Suspense fallback={<Loading />}>
       <Editor tab={tab} editable={editable} onSave={(x) => void x.doc?.flush().then(() => x.doc?.state === "failed" && st.show(t("files.failed", { message: x.doc.message ?? "" }), undefined, true))} />
     </Suspense>
+  );
+}
+
+function Loading() {
+  const { t } = useTranslation("session");
+  return (
+    <div className="fpn-empty">
+      <span className="mini-spin" aria-label={t("files.loading")} />
+    </div>
   );
 }
 
@@ -276,7 +261,8 @@ function Card({ tab, text }: { tab: Tab; text: string }) {
     <div className="fpn-card">
       <Icon name="file" />
       <b>{tab.name}</b>
-      <p>{text}</p>
+      {/* The name is above; an error that starts with the path need not say it again. */}
+      <p>{text.startsWith(`${tab.path}: `) ? text.slice(tab.path.length + 2) : text}</p>
       {!tab.error && (
         <div className="fpn-card-b">
           <button className="btn" onClick={() => void openRef(st, info, undefined, "system")}>{t("files.openDefault")}</button>

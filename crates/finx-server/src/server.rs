@@ -140,6 +140,8 @@ pub(crate) struct Inner {
     pub(crate) customize: crate::customize::State,
     /// What the file panel watches (crate::files).
     pub(crate) files: crate::files::Watches,
+    /// Connections that opened a document: they hear `doc/changed` (crate::docs).
+    pub(crate) doc_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
     /// The browsers of every session here, one per profile (browser-design §6.1).
     pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
     /// The documents every session here shares (document-editor-design §5.2).
@@ -189,6 +191,7 @@ impl Server {
             closed_sessions: AtomicU64::new(0),
             customize: Default::default(),
             files: Default::default(),
+            doc_watchers: Mutex::default(),
             // A person may watch: show a window where there is a display.
             browser_pool,
             docs,
@@ -197,6 +200,7 @@ impl Server {
         connections.on_change(Arc::new(move || {
             if let Some(inner) = weak.upgrade() { Server(inner).models_changed(); }
         }));
+        server.follow_doc_changes();
         server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
         Ok(server)
@@ -246,6 +250,7 @@ impl Server {
         self.forget_customize(conn.id);
         self.forget_files(conn.id);
         self.forget_browser_watcher(conn.id);
+        self.forget_doc_watcher(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
