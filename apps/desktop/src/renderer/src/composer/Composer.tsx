@@ -265,6 +265,7 @@ export function MenuButton({ className, title, label, align = "left", below, dis
     <>
       <button
         ref={btn}
+        type="button"
         className={className}
         title={title}
         aria-label={title}
@@ -279,7 +280,7 @@ export function MenuButton({ className, title, label, align = "left", below, dis
       >
         {label}
       </button>
-      {/* On the page itself: a card with a backdrop filter around the button would hold a fixed menu inside it. */}
+      {/* On the page itself: a card with a backdrop filter around the button would hold a fixed menu inside it. In a dialog, in the dialog: all else lies under it, out of reach. */}
       {at &&
         createPortal(
           <div
@@ -294,7 +295,7 @@ export function MenuButton({ className, title, label, align = "left", below, dis
           >
             {children(close)}
           </div>,
-          document.body,
+          btn.current?.closest("dialog") ?? document.body,
         )}
     </>
   );
@@ -532,11 +533,16 @@ export function ThinkingItems({ thinking, levels, onThinking, close }: { thinkin
   );
 }
 
+/** The model chosen, else the one finx would start with. */
+export function shownModel(model: string | null, models: Settings["models"]): string | null {
+  return model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
+}
+
 /** The model shown, the levels it offers, and switching to another: wherever a model is chosen. */
 export function useModelSwitch({ model, thinking, models, onModel }: Pick<Settings, "model" | "thinking" | "models" | "onModel">) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const current = model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
+  const current = shownModel(model, models);
   const entry = models.models.find((m) => m.id === current);
   const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
   // A name another provider's model in the menu has too says whose it is.

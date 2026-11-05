@@ -3,14 +3,14 @@ import { useTranslation } from "react-i18next";
 import type { AvatarHue, AvatarInput, BotSummary } from "@finx/protocol";
 import type { SessionView } from "@finx/client";
 import { RenameField } from "../components";
-import { MenuButton, PermissionItems, ThinkingItems, useModelSwitch } from "../composer/Composer";
-import { ModelList } from "../composer/ModelList";
-import { permissionDesc, permissionTitle, thinkingTitle } from "../format";
+import { MenuButton, PermissionItems } from "../composer/Composer";
+import { permissionDesc, permissionTitle } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
 import { runBotAction } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { AvatarChoices, NAME_MAX, pickPicture } from "./BotSheet";
+import { ModelRows } from "./ModelRows";
 
 /**
  * A bot's settings (bot-mode-design §6.5.1), opened from its name at the top of its page: its
@@ -134,34 +134,12 @@ function BotName({ bot }: { bot: BotSummary }) {
 /** The model this bot answers with and how hard it thinks: its conversation's own, as a session's are. */
 function ModelSection({ view, session }: { view: SessionView; session: string }) {
   const { t } = useTranslation("bots");
-  const { t: ts } = useTranslation("session");
   const st = useStore();
   const { model, thinking } = view.info;
-  const onThinking = (l: typeof thinking) => void st.op(session, { type: "set_model", model, thinking: l });
-  const { current, levels, title, choose } = useModelSwitch({ model, thinking, models: st.models, onModel: (ref) => void st.op(session, { type: "set_model", model: ref }) });
   return (
     <section>
       <h3 className="fhead">{t("panel.model")}</h3>
-      <div className="fgroup">
-        <div className="frow">
-          <span className="fl">{ts("composer.model")}</span>
-          <div className="fv">
-            <MenuButton className="mb" align="right" below title={ts("composer.model")} label={<><span className="lbl strong">{title}</span><Icon name="chevD" /></>}>
-              {(close) => <ModelList models={st.models} current={current} search onPick={(m) => (close(), choose(m.id, m.provider, m.available))} />}
-            </MenuButton>
-          </div>
-        </div>
-        {levels.length > 0 && (
-          <div className="frow">
-            <span className="fl">{ts("composer.thinking")}</span>
-            <div className="fv">
-              <MenuButton className="mb" align="right" below title={ts("composer.thinking")} label={<><span className="lbl strong">{thinkingTitle(thinking)}</span><Icon name="chevD" /></>}>
-                {(close) => <ThinkingItems thinking={thinking} levels={levels} onThinking={onThinking} close={close} />}
-              </MenuButton>
-            </div>
-          </div>
-        )}
-      </div>
+      <ModelRows below model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l) => void st.op(session, { type: "set_model", model, thinking: l })} />
       <p className="set-note">{t("panel.modelNote")}</p>
     </section>
   );

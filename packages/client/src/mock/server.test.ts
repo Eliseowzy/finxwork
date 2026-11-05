@@ -213,4 +213,8 @@ test("bots: the demo's, a new one, and a conversation in messages that stays out
   await assert.rejects(rpc.request("bots/delete", { bot_id: bots[0].id }), /default bot/);
   await rpc.request("bots/delete", { bot_id: bot.id });
   await assert.rejects(rpc.request("bots/open", { bot_id: bot.id }), /not found/);
+  const made = await rpc.request("bots/create", { name: "选过", avatar: { kind: "mono", hue: "teal" }, model: "deepseek/deepseek-flash", thinking: "low" });
+  const opened = await rpc.request("bots/open", { bot_id: made.bot.id });
+  assert.equal(opened.snapshot.session.model, "deepseek/deepseek-flash");
+  assert.equal(opened.snapshot.session.thinking, "low");
 });

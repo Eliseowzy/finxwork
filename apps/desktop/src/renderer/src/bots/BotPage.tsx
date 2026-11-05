@@ -25,6 +25,7 @@ import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
 import { Question, SentFiles } from "./Messages";
+import { ModelBlocked, ModelRows } from "./ModelRows";
 import { Process } from "./Process";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
@@ -170,6 +171,32 @@ function FullAccessNote({ onSettings, onClose }: { onSettings: () => void; onClo
         <span className="appr-sp" />
         <button className="btn" onClick={onSettings}>{t("fullAccess.settings")}</button>
         <button className="btn primary" onClick={onClose}>{t("fullAccess.ok")}</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The default bot was made for the owner, so nobody has chosen its model yet: the first time, before
+ * anything is sent (bot-mode-design §6.4). Bots the owner makes chose theirs in the form.
+ */
+function ModelSetup({ bot, view, session, onDone }: { bot: BotSummary; view: SessionView; session: string; onDone: () => void }) {
+  const { t } = useTranslation("bots");
+  const st = useStore();
+  const { model, thinking } = view.info;
+  const usable = st.models.models.some((m) => m.id === model && m.available);
+  return (
+    <div className="knote bsetup" role="status">
+      <div className="knote-h">
+        <Icon name="bot" className="knote-i" />
+        <b>{t("setup.title", { name: bot.name })}</b>
+      </div>
+      <p className="knote-b">{t("setup.body")}</p>
+      <ModelRows model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l) => void st.op(session, { type: "set_model", model, thinking: l })} />
+      <ModelBlocked model={model} />
+      <div className="appr-f">
+        <span className="appr-sp" />
+        <button className="btn primary" disabled={!usable} onClick={onDone}>{t("setup.ok")}</button>
       </div>
     </div>
   );
@@ -562,6 +589,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
     change({ ...d, attachments: addAttachments(d.attachments, more) });
   });
   const commands = useCommands({ session_id: session });
+  const setup = bot.default && !bot.last && !st.botSetupDone;
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
@@ -580,6 +608,8 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
         above: asking
           ? <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />
+          : setup
+          ? <ModelSetup bot={bot} view={view} session={session} onDone={() => st.set({ botSetupDone: true })} />
           : !st.botAccessSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessNote onSettings={() => st.set(OPEN_SETTINGS)} onClose={() => st.set({ botAccessSeen: true })} />,
         onHeight,
       }}
@@ -588,6 +618,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       attachments={draft.attachments}
       onAttachments={(attachments) => change({ ...draft, attachments })}
       onSend={() => void send()}
+      canSend={!setup}
       commands={commands}
       placeholder={t("chat.placeholder", { name: bot.name })}
     />

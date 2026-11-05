@@ -63,9 +63,19 @@
     "settings": "Open Settings",
     "ok": "Got it"
   },
+  "setup": {
+    "title": "Choose a model for {{name}}",
+    "body": "It answers with this model and thinking level. You can change them later in the bot's settings. You can send messages once you've chosen.",
+    "ok": "Get Started"
+  },
+  "model": {
+    "noKey": "This model has no key yet. Add one to use it.",
+    "addKey": "Add Key",
+    "none": "Choose a model to continue."
+  },
   "sheet": {
     "newTitle": "New Bot",
-    "sub": "Give it a name and pick an avatar. Tell it what to do in the conversation.",
+    "sub": "Give it a name, pick an avatar and choose a model. Tell it what to do in the conversation.",
     "name": "Name",
     "placeholder": "For example: Researcher",
     "avatar": "Avatar",

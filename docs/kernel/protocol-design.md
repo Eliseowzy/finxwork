@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.26 |
+| 版本 | v0.27 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.27 | 2026-11-05 | `bots/create` 加可选的 `model`、`thinking`（bot-design.md D-459），版本 2 之内，老客户端不带时行为不变 |
 | v0.26 | 2026-11-05 | 子智能体运行中能发消息（agent-messaging-design.md），版本 2 之内：`MailInfo.kind` 多一个 `message`；客户端不认识这个值时当汇报显示不合适，所以和内核一起升级 |
 | v0.25 | 2026-11-05 | 定时任务（routine-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `routines` 声明：方法 `bots/routine`、`bots/routine_runs`、`bots/routine_run`、`bots/routine_set_enabled`、`bots/routine_run_now`、`bots/routine_stop`、`bots/routine_delete`；`BotSummary` 增加 `routines`、`routines_error`；`MailKind` 增加 `routine`，`MailInfo` 增加 `routine_id`；错误码 −32043 `routine_not_found`、−32044 `routine_busy`、−32045 `routines_unavailable`。新建和修改只走对话，没有方法 |
 | v0.24 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |

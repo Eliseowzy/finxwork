@@ -1121,9 +1121,27 @@
         "avatar": {
           "$ref": "#/definitions/AvatarInput"
         },
+        "model": {
+          "description": "The model its conversation starts with; the configured one without it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "description": "1 to 20 characters once trimmed.",
           "type": "string"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How hard its conversation starts out thinking; the configured level without it."
         }
       },
       "required": [
