@@ -240,6 +240,28 @@ async fn a_bot_that_forgets_to_send_is_reminded_and_the_user_sees_one_message() 
     assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
 }
 
+/// The first answer of a burst only written as plain text still goes out, ahead of the next one:
+/// a reply to the next message must not count as answering it too (bot-design §3.11).
+#[tokio::test]
+async fn a_private_answer_goes_out_before_the_next_message_is_answered() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:quiet:春天的诗]] 写一首春天的诗").await;
+    say(&client, &session, "[[mock:send:夏天的诗]] 写一首夏天的诗").await;
+    let mut seen = Vec::new();
+    while sent(&seen).len() < 2 {
+        seen.extend(until_event(&mut wire, ended).await);
+    }
+    assert_eq!(sent(&seen), ["春天的诗", "夏天的诗"]);
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).expect("the log");
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
+}
+
 #[tokio::test]
 async fn a_sub_agent_works_in_the_background_and_the_bot_relays_its_report() {
     let env = TestEnv::new("manual", "").await;

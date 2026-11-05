@@ -8,7 +8,7 @@
 //              reply had no call at all;
 //   - leaked:  a message names a tool or carries an id;
 //   - delegated: long work went to a sub-agent (spawn_agent);
-//   - ordered: the four poems came back in the order asked;
+//   - ordered: the four poems came back in the order asked, one message each;
 //   - attached: a file went out as an attachment message; linked: only as a link in words;
 //   - asked: a choice went out as a question with options; prose: only as words ending in a question;
 //   - rejected: a send the kernel refused (printed with why): it costs a round trip, the owner sees nothing.
@@ -98,6 +98,9 @@ const scenarios = {
   ],
 };
 const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
+// What each poem has to mention, in order. A poem often names no season, or names another in
+// passing, so its images count too; a lost or merged poem leaves too few messages to get through.
+const seasons = ["春|柳|桃|杏|燕|芽|草|绿|花|融|东风|风筝", "夏|蝉|荷|瓜|槐|暑|雷|午|烈日|树影", "秋|枫|雁|稻|桂|柿|菊|叶|梧桐|西风", "冬|雪|寒|霜|炉|梅|冰|朔|北风"].map((s) => new RegExp(s));
 
 const totals = {};
 await call("initialize", { protocol_version: 2, client_info: { name: "bot-turns" } });
@@ -172,10 +175,10 @@ for (const [name, prompts] of Object.entries(scenarios)) {
     }
     if (c.events.some((e) => e.type === "agent_started")) t.delegated++;
     if (name === "poems") {
-      // The season a poem is about is the first one it names (its title); others may come up in its lines.
-      const firsts = sent.map((x) => x.match(/[春夏秋冬]/)?.[0]).filter(Boolean).join("");
-      if (firsts.startsWith("春夏秋冬")) t.ordered++;
-      else console.log(`   (order: ${firsts})`);
+      let next = 0;
+      for (const poem of sent) if (next < 4 && seasons[next].test(poem)) next++;
+      if (next === 4) t.ordered++;
+      else console.log(`   (order: got through ${next} of the 4 poems)`);
     }
     console.log(`${name} #${run + 1}: ${sent.length} messages${quiet ? "" : " (timed out)"}${c.events.some((e) => e.type === "agent_started") ? ", delegated" : ""}`);
     for (const s of sent) console.log("   ·", s.replace(/\s+/g, " ").slice(0, 90));
