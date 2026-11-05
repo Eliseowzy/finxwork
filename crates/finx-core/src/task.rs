@@ -49,6 +49,9 @@ use crate::tool_exec;
 /// After this many compactions in one task, the user hears that detail may be getting lost.
 const MANY_COMPACTIONS: u32 = 3;
 
+/// The failure of a bot's task that sent nothing, even reminded.
+const NO_REPLY: &str = "no_reply";
+
 pub(crate) struct TaskCtx {
     pub(crate) id: String,
     pub(crate) cancel: CancellationToken,
@@ -329,22 +332,20 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
                     last_message,
                     reason,
                 });
-                // Input that arrived after the last turn boundary starts the next task.
-                let next = state.steer.pop_front().or_else(|| state.follow_up.pop_front());
-                if next.is_some() {
-                    session.emit_queue(state);
-                }
-                next
+                take_next(session, state)
             }
             TaskOutcome::Failed(error) => {
-                let returned_input = hand_back(session, state);
+                // A bot's silence says nothing against the model: input that came after the task's
+                // last look at the queue is answered, as it is a moment later (bot-design §3.11).
+                let silent = error.kind == NO_REPLY;
+                let returned_input = if silent { Vec::new() } else { hand_back(session, state) };
                 session.emit(EventMsg::TaskFailed {
                     task_id: task.id.clone(),
                     error,
                     usage,
                     returned_input,
                 });
-                None
+                if silent { take_next(session, state) } else { None }
             }
             TaskOutcome::Interrupted => {
                 let returned_input = hand_back(session, state);
@@ -374,6 +375,15 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
             session.check_idle();
         }
     }
+}
+
+/// Input that arrived after the last turn boundary starts the next task.
+fn take_next(session: &Session, state: &mut SessionState) -> Option<Input> {
+    let next = state.steer.pop_front().or_else(|| state.follow_up.pop_front());
+    if next.is_some() {
+        session.emit_queue(state);
+    }
+    next
 }
 
 /// A task that ends early hands what still waits back to the front end, in the order it would
@@ -596,7 +606,7 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // Reminded and still silent, with nothing else to answer: the owner is told rather than
         // left waiting (D-321).
         if silent {
-            let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
+            let mut error = ErrorInfo::new(NO_REPLY, "the model ended its turn without sending a reply");
             error.retryable = true;
             return TaskOutcome::Failed(error);
         }
