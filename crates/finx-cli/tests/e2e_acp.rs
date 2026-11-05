@@ -136,6 +136,31 @@ fn handle(client: &Client, incoming: &Incoming, turn: &mut Turn, option: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_prompt_at_the_size_limit_goes_through_and_one_over_it_gets_its_answer() {
+    let env = TestEnv::new("manual", "[server]\nmax_frame_bytes = 65536\n").await;
+    let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
+    init(&client).await;
+    let cwd = env.workspace("acp");
+    let (session, _, _) = new_session(&client, &mut rx, &cwd).await;
+
+    let (turn, result) = prompt(&client, &mut rx, &session, &"x".repeat(65_000), "approve").await;
+    assert_eq!(result.unwrap()["stopReason"], "end_turn");
+    assert!(!turn.text.is_empty());
+
+    let params = json!({"sessionId": session, "prompt": [{"type": "text", "text": "x".repeat(66_000)}]});
+    let answer = tokio::time::timeout(common::WAIT, client.request("session/prompt", params));
+    let err = answer.await.expect("no answer").unwrap_err();
+    assert_eq!(err.code, finx_rpc::code::INVALID_REQUEST);
+    assert!(err.message.contains("65536"), "{}", err.message);
+
+    // The session goes on.
+    let (_, result) = prompt(&client, &mut rx, &session, "again", "approve").await;
+    assert_eq!(result.unwrap()["stopReason"], "end_turn");
+    drop(client);
+    assert_eq!(common::exit_code(&mut child).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn acp_runs_tools_with_permissions() {
     let env = TestEnv::new("manual", "").await;
     let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);

@@ -13,7 +13,15 @@ use finx_rpc::Client;
 use serde_json::Value;
 use serde_json::json;
 use std::path::Path;
+use std::process::Stdio;
 use std::time::Duration;
+use tokio::io::AsyncBufRead;
+use tokio::io::AsyncBufReadExt;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncWrite;
+use tokio::io::AsyncWriteExt;
+use tokio::io::BufReader;
+use tokio::io::Lines;
 use tokio::net::UnixStream;
 
 async fn new_session(client: &Client, cwd: &Path) -> (String, Value) {
@@ -273,6 +281,122 @@ async fn stdio_rejects_bad_input_and_keeps_going() {
     assert!(list["sessions"].as_array().unwrap().is_empty());
     drop(client);
     assert_eq!(common::exit_code(&mut child).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_request_over_the_limit_gets_its_answer() {
+    let env = TestEnv::new("manual", "[server]\nmax_frame_bytes = 65536\n").await;
+    let (mut child, client, _incoming) = env.spawn_rpc(&["serve"]);
+    native_init(&client).await;
+    let padded = |bytes: usize| json!({"padding": "x".repeat(bytes)});
+
+    // Just under the limit, handled as usual.
+    let list = client.request("session/list", padded(65_000)).await.unwrap();
+    assert!(list["sessions"].as_array().unwrap().is_empty());
+
+    // Over it, the client learns which of its requests failed, or it would wait for ever.
+    for bytes in [65_600, 1 << 20] {
+        let reply = tokio::time::timeout(common::WAIT, client.request("session/list", padded(bytes)));
+        let err = reply.await.expect("no answer").unwrap_err();
+        assert_eq!(err.code, finx_rpc::code::INVALID_REQUEST);
+        assert_eq!(err.kind(), Some("invalid_request"));
+        assert!(err.message.contains("65536"), "{}", err.message);
+    }
+
+    // The connection goes on.
+    let list = client.request("session/list", json!({})).await.unwrap();
+    assert!(list["sessions"].as_array().unwrap().is_empty());
+    drop(client);
+    assert_eq!(common::exit_code(&mut child).await, 0);
+}
+
+/// The next line from the other side, as it is: `Client` drops an answer with no id.
+async fn answer<R: AsyncBufRead + Unpin>(lines: &mut Lines<R>) -> Value {
+    let line = tokio::time::timeout(common::WAIT, lines.next_line())
+        .await
+        .expect("no answer")
+        .unwrap()
+        .expect("the connection closed");
+    serde_json::from_str(&line).unwrap()
+}
+
+/// A line is answered when it passes the limit, without waiting for an end that may never come.
+/// Its end says nothing more, and what follows it is read as usual.
+async fn answers_a_line_without_end<R, W>(read: R, mut write: W, initialize: Value)
+where
+    R: AsyncRead + Unpin,
+    W: AsyncWrite + Unpin,
+{
+    let mut lines = BufReader::new(read).lines();
+    write.write_all(&vec![b'x'; 70_000]).await.unwrap();
+    write.flush().await.unwrap();
+    let err = answer(&mut lines).await;
+    assert_eq!(err["id"], Value::Null);
+    assert_eq!(err["error"]["code"], finx_rpc::code::INVALID_REQUEST);
+    assert!(err["error"]["message"].as_str().unwrap().contains("65536"), "{err}");
+
+    write.write_all(&vec![b'x'; 200_000]).await.unwrap();
+    write.write_all(b"\n").await.unwrap();
+    let request = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": initialize});
+    write.write_all(format!("{request}\n").as_bytes()).await.unwrap();
+    write.flush().await.unwrap();
+    let reply = answer(&mut lines).await;
+    assert_eq!(reply["id"], 1, "{reply}");
+    assert!(reply.get("result").is_some(), "{reply}");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_line_without_end_is_answered_on_every_transport() {
+    let env = TestEnv::new("manual", "[server]\nmax_frame_bytes = 65536\n").await;
+    let native = json!({"protocol_version": 2, "client_info": {"name": "e2e"}});
+    let acp = json!({"protocolVersion": 1, "clientCapabilities": {}});
+    for (args, initialize) in [(["serve"], native.clone()), (["acp"], acp)] {
+        let mut child = env.finx(&args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let (read, write) = (child.stdout.take().unwrap(), child.stdin.take().unwrap());
+        answers_a_line_without_end(read, write, initialize).await;
+        assert_eq!(common::exit_code(&mut child).await, 0, "{args:?}");
+    }
+
+    let socket = env.home.path().join("run").join("t.sock");
+    let url = format!("unix://{}", socket.display());
+    let mut service = env.finx(&["serve", "--listen", &url]).spawn().unwrap();
+    wait_for_socket(&socket).await;
+    let (read, write) = UnixStream::connect(&socket).await.unwrap().into_split();
+    answers_a_line_without_end(read, write, native).await;
+    service.kill().await.unwrap();
+}
+
+/// What `ps` says the process holds, in MiB.
+async fn resident_mib(pid: u32) -> u64 {
+    let output = tokio::process::Command::new("ps").args(["-o", "rss=", "-p", &pid.to_string()]).output().await.unwrap();
+    String::from_utf8_lossy(&output.stdout).trim().parse::<u64>().unwrap() / 1024
+}
+
+/// The report: `finx acp < /dev/zero` held 2.1 GB and said nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn endless_input_is_answered_and_stays_bounded() {
+    let env = TestEnv::new("manual", "").await;
+    for args in [["acp"], ["serve"]] {
+        let zero = std::fs::File::open("/dev/zero").unwrap();
+        let mut child = env.finx(&args).stdin(Stdio::from(zero)).stdout(Stdio::piped()).stderr(Stdio::null()).spawn().unwrap();
+        let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+        let err = answer(&mut lines).await;
+        assert_eq!(err["error"]["code"], finx_rpc::code::INVALID_REQUEST, "{args:?}");
+        assert!(err["error"]["message"].as_str().unwrap().contains(&(128u64 << 20).to_string()), "{err}");
+
+        // It keeps reading what comes, without holding it. The limit once, and a debug build's
+        // pages; the fault was over 2,000 MiB, and it took less than this to get there.
+        let pid = child.id().unwrap();
+        for _ in 0..12 {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            let held = resident_mib(pid).await;
+            assert!(held < 128 + 300, "{args:?} holds {held} MiB");
+        }
+
+        // Nothing more was said about the line.
+        child.kill().await.unwrap();
+        assert_eq!(lines.next_line().await.unwrap(), None, "{args:?}");
+    }
 }
 
 fn write_file(path: &Path, text: &str) {
