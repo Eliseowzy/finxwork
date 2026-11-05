@@ -1,6 +1,6 @@
 # finx-slide
 
-PowerPoint 文稿：渲染幻灯片、导出 Markdown、查找和替换文字、外科式保存（只改被编辑的部件，保存后自检）。引擎是 BetterOffice 的 fork（根 `Cargo.toml` 里的 `betteroffice-pptx`，按 rev 锁定），中文字体取自本机，见 `src/fonts.rs`。
+PowerPoint 文稿：渲染幻灯片、导出 Markdown、查找和替换文字、外科式保存（只改被编辑的部件，保存后自检）。引擎是 BetterOffice 的 fork（根 `Cargo.toml` 里的 `betteroffice-pptx`，按 rev 锁定），字体全部取自本机（不内置任何字体），见 `src/fonts.rs`。
 
 ## 对着本地的 fork 联调
 
