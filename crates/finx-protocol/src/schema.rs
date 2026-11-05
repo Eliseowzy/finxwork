@@ -63,6 +63,56 @@ pub fn document() -> Value {
             name::<crate::doc::DocResolveResult>(g),
         ),
         (
+            method::DOC_CELLS,
+            Some(name::<crate::doc::DocCellsParams>(g)),
+            name::<crate::doc::DocCellsResult>(g),
+        ),
+        (
+            method::DOC_APPLY,
+            Some(name::<crate::doc::DocApplyParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_UNDO,
+            Some(name::<crate::doc::DocIdParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_REDO,
+            Some(name::<crate::doc::DocIdParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_RECALC,
+            Some(name::<crate::doc::DocRecalcParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_TRACE,
+            Some(name::<crate::doc::DocTraceParams>(g)),
+            name::<crate::doc::DocFoundResult>(g),
+        ),
+        (
+            method::DOC_FIND,
+            Some(name::<crate::doc::DocFindParams>(g)),
+            name::<crate::doc::DocFoundResult>(g),
+        ),
+        (
+            method::DOC_FILL,
+            Some(name::<crate::doc::DocFillParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_AUTOFILL,
+            Some(name::<crate::doc::DocAutofillParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_SAVE,
+            Some(name::<crate::doc::DocSaveParams>(g)),
+            name::<crate::doc::DocInfo>(g),
+        ),
+        (
             method::SESSION_NEW,
             Some(name::<api::SessionNewParams>(g)),
             name::<api::SessionNewResult>(g),
@@ -239,6 +289,7 @@ pub fn document() -> Value {
         (method::MCP_CHANGED, name::<customize::McpChangedParams>(g)),
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::FILES_CHANGED, name::<files::FilesChangedParams>(g)),
+        (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
         (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
         (method::BROWSER_CDP, name::<api::BrowserCdpParams>(g)),

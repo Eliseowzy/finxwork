@@ -73,6 +73,24 @@ impl History {
         entry
     }
 
+    /// Goes back to `parent`, an earlier entry of the branch, with a branch entry that continues
+    /// from it: the leaf is still the last entry, and what came after `parent` stays in the log,
+    /// off the branch.
+    pub fn rewind(&mut self, id: String, parent: Option<String>, before_first: bool, ts: Timestamp) -> Entry {
+        let entry = Entry {
+            id: id.clone(),
+            parent,
+            ts,
+            kind: EntryKind::Branch { before_first },
+        };
+        self.index.insert(id.clone(), self.entries.len());
+        self.entries.push(entry.clone());
+        self.leaf = Some(id);
+        (self.branch, self.cyclic) = self.walk();
+        self.generation += 1;
+        entry
+    }
+
     pub fn leaf(&self) -> Option<&str> {
         self.leaf.as_deref()
     }
@@ -139,8 +157,8 @@ mod tests {
     #[test]
     fn branch_follows_parents_from_the_last_entry() {
         let mut history = History::default();
-        let a = history.append("a".into(), EntryKind::Branch, 1);
-        history.append("b".into(), EntryKind::Branch, 2);
+        let a = history.append("a".into(), EntryKind::Branch { before_first: false }, 1);
+        history.append("b".into(), EntryKind::Branch { before_first: false }, 2);
         // Simulate a rewind: a new entry whose parent is `a`.
         let mut rewound = History::from_entries(vec![
             a.clone(),
@@ -148,22 +166,47 @@ mod tests {
                 id: "b".into(),
                 parent: Some("a".into()),
                 ts: 2,
-                kind: EntryKind::Branch,
+                kind: EntryKind::Branch { before_first: false },
             },
             Entry {
                 id: "c".into(),
                 parent: Some("a".into()),
                 ts: 3,
-                kind: EntryKind::Branch,
+                kind: EntryKind::Branch { before_first: false },
             },
         ]);
         let ids: Vec<&str> = rewound.branch().iter().map(|e| e.id.as_str()).collect();
         assert_eq!(ids, vec!["a", "c"]);
-        let d = rewound.append("d".into(), EntryKind::Branch, 4);
+        let d = rewound.append("d".into(), EntryKind::Branch { before_first: false }, 4);
         assert_eq!(d.parent.as_deref(), Some("c"));
         assert_eq!(history.branch().len(), 2);
         let back: Vec<&str> = rewound.branch_back().map(|e| e.id.as_str()).collect();
         assert_eq!(back, vec!["d", "c", "a"]);
+    }
+
+    #[test]
+    fn a_rewind_continues_from_the_entry_it_names_and_keeps_the_rest_in_the_log() {
+        let filler = || EntryKind::Branch { before_first: false };
+        let mut history = History::default();
+        for (ts, id) in ["a", "b", "c"].into_iter().enumerate() {
+            history.append(id.into(), filler(), ts as i64);
+        }
+        let (_, before) = history.branch_positions();
+        let marker = history.rewind("r".into(), Some("a".into()), true, 9);
+        assert_eq!((marker.parent.as_deref(), marker.kind), (Some("a"), EntryKind::Branch { before_first: true }));
+        assert_eq!(history.leaf(), Some("r"));
+        let (_, after) = history.branch_positions();
+        assert_ne!(before, after, "what measures the branch starts over");
+        let ids = |h: &History| h.branch().iter().map(|e| e.id.clone()).collect::<Vec<_>>();
+        assert_eq!(ids(&history), ["a", "r"]);
+        // New entries continue the new branch.
+        let next = history.append("d".into(), filler(), 10);
+        assert_eq!(next.parent.as_deref(), Some("r"));
+        assert_eq!(ids(&history), ["a", "r", "d"]);
+        // The log has everything, and reads back the same.
+        let order: Vec<Entry> = history.in_order().cloned().collect();
+        assert_eq!(order.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(), ["a", "b", "c", "r", "d"]);
+        assert_eq!(ids(&History::from_entries(order)), ["a", "r", "d"]);
     }
 
     #[test]
@@ -225,7 +268,7 @@ mod tests {
                     id,
                     parent,
                     ts: i as i64,
-                    kind: EntryKind::Branch,
+                    kind: EntryKind::Branch { before_first: false },
                 });
             }
             let mut history = History::from_entries(list.clone());
@@ -233,7 +276,7 @@ mod tests {
             assert_eq!(ids(history.branch()), ids(walked(&list, history.leaf())));
             for j in 0..5 {
                 let id = if next(3) == 0 { format!("e{}", next(len as u64 + 3)) } else { format!("n{j}") };
-                list.push(history.append(id, EntryKind::Branch, 100 + j as i64));
+                list.push(history.append(id, EntryKind::Branch { before_first: false }, 100 + j as i64));
                 assert_eq!(ids(history.branch()), ids(walked(&list, history.leaf())));
             }
         }
@@ -245,7 +288,7 @@ mod tests {
             id: id.into(),
             parent: parent.map(Into::into),
             ts,
-            kind: EntryKind::Branch,
+            kind: EntryKind::Branch { before_first: false },
         };
         let history = History::from_entries(vec![entry("a", None, 1), entry("b", Some("a"), 2), entry("a", None, 3)]);
         let order: Vec<_> = history.in_order().map(|e| (e.id.as_str(), e.ts)).collect();

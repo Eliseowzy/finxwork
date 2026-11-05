@@ -146,7 +146,37 @@
       "$ref": "#/definitions/CredentialsSetParams"
     },
     {
+      "$ref": "#/definitions/DocApplyParams"
+    },
+    {
+      "$ref": "#/definitions/DocApplyResult"
+    },
+    {
+      "$ref": "#/definitions/DocAutofillParams"
+    },
+    {
+      "$ref": "#/definitions/DocCellsParams"
+    },
+    {
+      "$ref": "#/definitions/DocCellsResult"
+    },
+    {
+      "$ref": "#/definitions/DocChangedParams"
+    },
+    {
+      "$ref": "#/definitions/DocFillParams"
+    },
+    {
+      "$ref": "#/definitions/DocFindParams"
+    },
+    {
+      "$ref": "#/definitions/DocFoundResult"
+    },
+    {
       "$ref": "#/definitions/DocIdParams"
+    },
+    {
+      "$ref": "#/definitions/DocInfo"
     },
     {
       "$ref": "#/definitions/DocLocateParams"
@@ -161,10 +191,19 @@
       "$ref": "#/definitions/DocOpenResult"
     },
     {
+      "$ref": "#/definitions/DocRecalcParams"
+    },
+    {
       "$ref": "#/definitions/DocResolveParams"
     },
     {
       "$ref": "#/definitions/DocResolveResult"
+    },
+    {
+      "$ref": "#/definitions/DocSaveParams"
+    },
+    {
+      "$ref": "#/definitions/DocTraceParams"
     },
     {
       "$ref": "#/definitions/DocViewParams"
@@ -1945,13 +1984,33 @@
     },
     "Capability": {
       "description": "What a document supports (§4.5); toolbars and tool descriptions follow it.",
-      "enum": [
-        "view",
-        "text",
-        "search",
-        "outline"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "view",
+            "text",
+            "search",
+            "outline",
+            "edit_values",
+            "edit_formulas"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Spreadsheets (spreadsheet-design §4.4): cells read by range.",
+          "enum": [
+            "cells"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Edits come back with their impact; edits can be tried without keeping them.",
+          "enum": [
+            "calc"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "CatalogInfo": {
       "description": "The skill catalog in the system prompt.",
@@ -1995,6 +2054,219 @@
         "tokens"
       ],
       "type": "object"
+    },
+    "CellChange": {
+      "description": "A cell an edit changed: before and after, as values and as shown.",
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CellValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after_text": {
+          "type": "string"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CellValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "before_text": {
+          "type": "string"
+        },
+        "cell": {
+          "type": "string"
+        },
+        "label": {
+          "description": "The nearest text to the left or above, as a person would name the cell (\"企业价值\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "after_text",
+        "before_text",
+        "cell",
+        "sheet"
+      ],
+      "type": "object"
+    },
+    "CellData": {
+      "properties": {
+        "cell": {
+          "description": "`B3`.",
+          "type": "string"
+        },
+        "formula": {
+          "description": "As typed, with `=`, without storage prefixes such as `_xlfn.`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "look": {
+          "$ref": "#/definitions/CellLook"
+        },
+        "text": {
+          "description": "As Excel shows it, in the cell's number format.",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CellValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cell",
+        "text"
+      ],
+      "type": "object"
+    },
+    "CellInput": {
+      "anyOf": [
+        {
+          "format": "double",
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "What a person or an agent types into a cell."
+    },
+    "CellLook": {
+      "description": "How a cell looks, beyond its text.",
+      "properties": {
+        "align": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bold": {
+          "type": "boolean"
+        },
+        "color": {
+          "description": "Text colour, `RRGGBB`; a number format's colour (`[Red]`) wins over the font's.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fill": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "italic": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "CellValue": {
+      "description": "A cell's value: what it holds, or what its formula gave.",
+      "oneOf": [
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "number"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "enum": [
+                "bool"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`#N/A`, `#REF!`…",
+          "properties": {
+            "type": {
+              "enum": [
+                "error"
+              ],
+              "type": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "ChatGptCancelParams": {
       "additionalProperties": false,
@@ -2072,6 +2344,34 @@
           "type": "boolean"
         }
       },
+      "type": "object"
+    },
+    "ColumnWidth": {
+      "description": "Columns `first..=last` (1-based) are `width` pixels wide, or hidden.",
+      "properties": {
+        "first": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "last": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "width": {
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "first",
+        "last",
+        "width"
+      ],
       "type": "object"
     },
     "CommandInfo": {
@@ -3127,11 +3427,285 @@
         }
       ]
     },
-    "DocFormat": {
-      "enum": [
-        "pdf"
+    "DocApplyParams": {
+      "properties": {
+        "base_revision": {
+          "description": "The revision the edit was made against; behind, the edit is refused (`doc_stale`).",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/definitions/SheetOp"
+          },
+          "type": "array"
+        },
+        "preview": {
+          "description": "Only work out the impact; change nothing (`doc/calc`).",
+          "type": "boolean"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "ops",
+        "session_id"
       ],
-      "type": "string"
+      "type": "object"
+    },
+    "DocApplyResult": {
+      "properties": {
+        "dirty": {
+          "type": "boolean"
+        },
+        "impact": {
+          "$ref": "#/definitions/Impact"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "dirty",
+        "impact",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "DocAutofillParams": {
+      "description": "`doc/autofill`: Excel's fill handle dragged from `source` to `target` (the source with the rows or columns the drag added on one side), as one edit. Numbers, dates, text ending in a number and the built-in lists (周一, 一月, Jan…) carry on as a series; anything else, and formulas moved as Excel moves them, repeats.",
+      "properties": {
+        "base_revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "preview": {
+          "description": "Only work it out, for what the drag shows as it goes: nothing is written.",
+          "type": "boolean"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "switch": {
+          "description": "The key Excel holds to switch (⌥ on a Mac, Ctrl elsewhere): a single number counts up, a series is copied instead.",
+          "type": "boolean"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id",
+        "sheet",
+        "source",
+        "target"
+      ],
+      "type": "object"
+    },
+    "DocCellsParams": {
+      "description": "A range of a sheet, as the grid shows it (spreadsheet-design §7 `doc/cells`).",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "range": {
+          "description": "`A1:Z60`; at most 10,000 cells.",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "range",
+        "session_id",
+        "sheet"
+      ],
+      "type": "object"
+    },
+    "DocCellsResult": {
+      "properties": {
+        "cells": {
+          "description": "Cells that hold something or have a look, row by row.",
+          "items": {
+            "$ref": "#/definitions/CellData"
+          },
+          "type": "array"
+        },
+        "merges": {
+          "description": "Merged ranges that meet the range.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "rows": {
+          "description": "Rows of the range whose height is their own.",
+          "items": {
+            "$ref": "#/definitions/RowHeight"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "cells",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "DocChangedParams": {
+      "description": "`doc/changed`: what the document is now.",
+      "properties": {
+        "info": {
+          "$ref": "#/definitions/DocInfo"
+        }
+      },
+      "required": [
+        "info"
+      ],
+      "type": "object"
+    },
+    "DocFillParams": {
+      "description": "`doc/fill`: one edit that copies the range's first row (or column) across it, formulas moved as Excel moves them (relative references shift, `$` ones stay).",
+      "properties": {
+        "base_revision": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "direction": {
+          "$ref": "#/definitions/FillDirection"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "range": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "direction",
+        "doc_id",
+        "range",
+        "session_id",
+        "sheet"
+      ],
+      "type": "object"
+    },
+    "DocFindParams": {
+      "description": "`doc/find`: cells whose shown text or formula contains `query`, case folded.",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "limit": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "query": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "query",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocFormat": {
+      "oneOf": [
+        {
+          "enum": [
+            "pdf",
+            "xlsx",
+            "xlsm"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "CSV and TSV: values only (spreadsheet-design §10.1).",
+          "enum": [
+            "csv"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Excel 97–2003, read only (§10.2).",
+          "enum": [
+            "xls"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DocFoundResult": {
+      "properties": {
+        "cells": {
+          "description": "At most 500 for a trace, `limit` for a search; `more` when there were others.",
+          "items": {
+            "$ref": "#/definitions/FoundCell"
+          },
+          "type": "array"
+        },
+        "more": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cells"
+      ],
+      "type": "object"
     },
     "DocIdParams": {
       "properties": {
@@ -3203,6 +3777,13 @@
         "scanned": {
           "description": "No text could be read: probably a scan.",
           "type": "boolean"
+        },
+        "sheets": {
+          "description": "A spreadsheet's sheets, in workbook order.",
+          "items": {
+            "$ref": "#/definitions/SheetInfo"
+          },
+          "type": "array"
         }
       },
       "required": [
@@ -3218,11 +3799,22 @@
       "type": "object"
     },
     "DocLayout": {
-      "enum": [
-        "paged",
-        "flow"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "paged",
+            "flow"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A spreadsheet (spreadsheet-design §4.1).",
+          "enum": [
+            "grid"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "DocLocateParams": {
       "description": "A citation's target in an open document: `p12.b3` (a block) or `p12` (a page).",
@@ -3309,6 +3901,26 @@
       ],
       "type": "object"
     },
+    "DocRecalcParams": {
+      "properties": {
+        "circular_only": {
+          "default": false,
+          "description": "Restart circular references at zero; otherwise recalculate everything.",
+          "type": "boolean"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
     "DocResolveParams": {
       "description": "A selection or a region on a page, to be read by the kernel (§9.4.1).",
       "properties": {
@@ -3384,6 +3996,66 @@
         "anchor",
         "boxes",
         "text"
+      ],
+      "type": "object"
+    },
+    "DocSaveParams": {
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "force": {
+          "description": "Write over the file even though it changed on disk since it was opened.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Save as: another file. Without it, the file the document came from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DocTraceParams": {
+      "description": "`doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10).",
+      "properties": {
+        "cell": {
+          "type": "string"
+        },
+        "depth": {
+          "default": 1,
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "direction": {
+          "$ref": "#/definitions/TraceDirection"
+        },
+        "doc_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cell",
+        "direction",
+        "doc_id",
+        "session_id",
+        "sheet"
       ],
       "type": "object"
     },
@@ -4182,6 +4854,39 @@
           },
           "required": [
             "id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`resend`: the conversation went back to just before `message_id`. That message and all after it are no longer part of it, and the input that replaces it follows.",
+          "properties": {
+            "message_id": {
+              "type": "string"
+            },
+            "removed_agents": {
+              "description": "The sub-agents started in the part taken back: they are gone.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "returned_input": {
+              "description": "What still waited for the running task, handed back as with an interruption.",
+              "items": {
+                "$ref": "#/definitions/UserMessage"
+              },
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "session_rewound"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "message_id",
             "type"
           ],
           "type": "object"
@@ -5098,6 +5803,70 @@
       ],
       "type": "object"
     },
+    "FillDirection": {
+      "oneOf": [
+        {
+          "description": "Excel's ⌘D: the range's first row into the rows under it.",
+          "enum": [
+            "down"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Excel's ⌘R: the range's first column into the columns to its right.",
+          "enum": [
+            "right"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "FoundCell": {
+      "description": "A cell found or traced, as the grid lists it and the agent reads it.",
+      "properties": {
+        "cell": {
+          "type": "string"
+        },
+        "depth": {
+          "default": 0,
+          "description": "For a trace: how many steps from the cell asked about.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "formula": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sheet": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "via": {
+          "description": "For a trace: the cell it was reached from (`Sheet!B3`), for the grid's arrows.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "cell",
+        "sheet",
+        "text"
+      ],
+      "type": "object"
+    },
     "GrantAuthority": {
       "oneOf": [
         {
@@ -5115,6 +5884,69 @@
           "type": "string"
         }
       ]
+    },
+    "Impact": {
+      "description": "What an edit changed (spreadsheet-design §5.5, §7).",
+      "properties": {
+        "affected": {
+          "description": "Every formula cell whose value changed, `Sheet!A1`, at most 5,000.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "affected_count": {
+          "format": "uint",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "calc_unavailable": {
+          "description": "Why there is no impact beyond the edited cells: the workbook cannot be calculated here.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "converged": {
+          "description": "False when iteration stopped at its limit without settling.",
+          "type": "boolean"
+        },
+        "edited": {
+          "items": {
+            "$ref": "#/definitions/CellChange"
+          },
+          "type": "array"
+        },
+        "iterations": {
+          "description": "Rounds of iterative calculation, when circular references were involved.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "key_outputs": {
+          "description": "Formula cells no other formula reads whose value changed: the model's outputs.",
+          "items": {
+            "$ref": "#/definitions/CellChange"
+          },
+          "type": "array"
+        },
+        "needs_excel": {
+          "description": "Downstream cells whose new value we cannot vouch for: Excel recalculates them.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "affected_count",
+        "converged",
+        "edited"
+      ],
+      "type": "object"
     },
     "InitializeParams": {
       "properties": {
@@ -6898,6 +7730,37 @@
           "type": "object"
         },
         {
+          "description": "Starts again from a message the user sent earlier: the running task stops, the conversation goes back to just before that message, and `input` takes its place. Nothing changes until this op: `session_rewound` says it happened, a `warning` with the code `resend_rejected` that it did not (docs/kernel/message-resend-design.md).",
+          "properties": {
+            "commands": {
+              "description": "As for `Prompt`.",
+              "type": "boolean"
+            },
+            "input": {
+              "items": {
+                "$ref": "#/definitions/UserContent"
+              },
+              "type": "array"
+            },
+            "message_id": {
+              "description": "The `message_id` of a user message on the current branch.",
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "resend"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "input",
+            "message_id",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Continue from the current history (retry after a failure).",
           "properties": {
             "type": {
@@ -7932,6 +8795,28 @@
       ],
       "type": "object"
     },
+    "RowHeight": {
+      "description": "A row whose height is not the default, in pixels, or hidden.",
+      "properties": {
+        "height": {
+          "format": "float",
+          "type": "number"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "height",
+        "row"
+      ],
+      "type": "object"
+    },
     "RuleDecision": {
       "enum": [
         "allow",
@@ -7980,6 +8865,11 @@
           "minimum": 0.0,
           "type": "integer"
         },
+        "message_resend": {
+          "default": false,
+          "description": "Starting again from an earlier message: the `resend` op and `session_rewound` (docs/kernel/message-resend-design.md).",
+          "type": "boolean"
+        },
         "model_connections": {
           "default": false,
           "type": "boolean"
@@ -8013,6 +8903,11 @@
         "transcript_task_end": {
           "default": false,
           "description": "Transcripts carry `task_end` items.",
+          "type": "boolean"
+        },
+        "workbooks": {
+          "default": false,
+          "description": "`doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it refuses a workbook as \"not a PDF\".",
           "type": "boolean"
         }
       },
@@ -8586,6 +9481,156 @@
         "sessions"
       ],
       "type": "object"
+    },
+    "SheetInfo": {
+      "properties": {
+        "chart": {
+          "description": "A chart sheet has no cells: the grid shows a placeholder.",
+          "type": "boolean"
+        },
+        "columns": {
+          "description": "Column widths in pixels where they are not the default.",
+          "items": {
+            "$ref": "#/definitions/ColumnWidth"
+          },
+          "type": "array"
+        },
+        "default_height": {
+          "format": "float",
+          "type": "number"
+        },
+        "default_width": {
+          "description": "Pixels.",
+          "format": "float",
+          "type": "number"
+        },
+        "frozen": {
+          "description": "Frozen panes: rows above and columns left of the split.",
+          "items": [
+            {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          ],
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "protected": {
+          "description": "Protected in Excel: no edits here.",
+          "type": "boolean"
+        },
+        "used": {
+          "description": "The used range, `A1:K120`; none for an empty sheet.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "default_height",
+        "default_width",
+        "name"
+      ],
+      "type": "object"
+    },
+    "SheetOp": {
+      "description": "One change to a spreadsheet (spreadsheet-design §4.3).",
+      "oneOf": [
+        {
+          "description": "A value, kept as given: text stays text (`\"000001\"`, `\"=abc\"`).",
+          "properties": {
+            "cell": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "set_value"
+              ],
+              "type": "string"
+            },
+            "sheet": {
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/definitions/CellInput"
+            }
+          },
+          "required": [
+            "cell",
+            "op",
+            "sheet",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "`=SUM(B3:B9)`.",
+          "properties": {
+            "cell": {
+              "type": "string"
+            },
+            "formula": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "set_formula"
+              ],
+              "type": "string"
+            },
+            "sheet": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cell",
+            "formula",
+            "op",
+            "sheet"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Empties the cells of a range, keeping their format.",
+          "properties": {
+            "op": {
+              "enum": [
+                "clear"
+              ],
+              "type": "string"
+            },
+            "range": {
+              "type": "string"
+            },
+            "sheet": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "range",
+            "sheet"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "SiteGrant": {
       "description": "Permission for the browser tools on one origin, for the rest of the session (docs/kernel/browser-design.md §7.3).",
@@ -9338,6 +10383,24 @@
       ],
       "type": "object"
     },
+    "TraceDirection": {
+      "oneOf": [
+        {
+          "description": "What the cell reads (Excel's precedents).",
+          "enum": [
+            "up"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "What reads the cell (Excel's dependents).",
+          "enum": [
+            "down"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "TranscriptItem": {
       "oneOf": [
         {
@@ -9625,6 +10688,13 @@
           "description": "MCP servers that were not ready for the session's first request. A client that shows `mcp_server_status` already has this.",
           "enum": [
             "mcp_servers_not_ready"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A `resend` was refused and nothing changed: its input is still the client's.",
+          "enum": [
+            "resend_rejected"
           ],
           "type": "string"
         }
@@ -9936,6 +11006,9 @@
     "-32031": "mcp_login_failed",
     "-32032": "doc_unavailable",
     "-32033": "doc_password",
+    "-32034": "doc_refused",
+    "-32035": "doc_stale",
+    "-32036": "doc_conflict",
     "-32040": "bot_not_found",
     "-32041": "bot_default",
     "-32042": "bot_invalid",
@@ -10118,9 +11191,29 @@
       "params": "CredentialsSetParams",
       "result": "Empty"
     },
+    "doc/apply": {
+      "params": "DocApplyParams",
+      "result": "DocApplyResult"
+    },
+    "doc/autofill": {
+      "params": "DocAutofillParams",
+      "result": "DocApplyResult"
+    },
+    "doc/cells": {
+      "params": "DocCellsParams",
+      "result": "DocCellsResult"
+    },
     "doc/close": {
       "params": "DocIdParams",
       "result": "Empty"
+    },
+    "doc/fill": {
+      "params": "DocFillParams",
+      "result": "DocApplyResult"
+    },
+    "doc/find": {
+      "params": "DocFindParams",
+      "result": "DocFoundResult"
     },
     "doc/locate": {
       "params": "DocLocateParams",
@@ -10130,9 +11223,29 @@
       "params": "DocOpenParams",
       "result": "DocOpenResult"
     },
+    "doc/recalc": {
+      "params": "DocRecalcParams",
+      "result": "DocApplyResult"
+    },
+    "doc/redo": {
+      "params": "DocIdParams",
+      "result": "DocApplyResult"
+    },
     "doc/resolve": {
       "params": "DocResolveParams",
       "result": "DocResolveResult"
+    },
+    "doc/save": {
+      "params": "DocSaveParams",
+      "result": "DocInfo"
+    },
+    "doc/trace": {
+      "params": "DocTraceParams",
+      "result": "DocFoundResult"
+    },
+    "doc/undo": {
+      "params": "DocIdParams",
+      "result": "DocApplyResult"
     },
     "doc/view": {
       "params": "DocViewParams",
@@ -10311,6 +11424,7 @@
     "browser/control": "BrowserControl",
     "browser/request": "BrowserRequest",
     "config/changed": "ConfigChangedParams",
+    "doc/changed": "DocChangedParams",
     "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",

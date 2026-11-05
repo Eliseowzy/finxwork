@@ -110,6 +110,8 @@ struct TreeState {
     /// Routines' runs under way (routine-design §2.1): apart from `agents`, as no message, name
     /// or idle check concerns them.
     runs: Vec<run::ActiveRun>,
+    /// The drivers of agents that `retire` took off the tree, until their sessions have closed.
+    retiring: Vec<JoinHandle<()>>,
     /// Reports handed over but not yet in the main session's inbox, or in a waiting call.
     in_flight: usize,
     mails: u64,
@@ -215,6 +217,29 @@ impl AgentTree {
         }
     }
 
+    /// The agents started in the part of the conversation a `resend` took back: they stop, their
+    /// sessions close, and they leave the tree, so that their names are free again and whatever
+    /// they were about to report is dropped.
+    pub(crate) fn retire(&self, ids: &[String]) {
+        if ids.is_empty() {
+            return;
+        }
+        let mut state = self.state.lock();
+        state.restored.retain(|(id, _)| !ids.contains(id));
+        state.retiring.retain(|driver| !driver.is_finished());
+        let (gone, stay): (Vec<Agent>, Vec<Agent>) = std::mem::take(&mut state.agents).into_iter().partition(|a| ids.contains(&a.id));
+        state.agents = stay;
+        for mut agent in gone {
+            send_now(&agent.ops, Op::Shutdown);
+            state.retiring.extend(agent.driver.take());
+        }
+    }
+
+    /// Whether this agent is on the tree: not when a `resend` took it off.
+    pub(crate) fn has(&self, id: &str) -> bool {
+        self.state.lock().agents.iter().any(|a| a.id == id)
+    }
+
     /// Stops what every sub-agent is doing. Their sessions stay; a message continues them.
     pub(crate) fn interrupt_all(&self) {
         let state = self.state.lock();
@@ -260,17 +285,17 @@ impl AgentTree {
 
     /// Closes every sub-agent's session and every run's, and waits until their logs are closed.
     pub(crate) async fn shutdown(&self) {
-        let (agents, runs) = {
+        let (agents, runs, retiring) = {
             let mut state = self.state.lock();
             state.closing = true;
             let runs: Vec<JoinHandle<()>> = state.runs.iter_mut().filter_map(run::ActiveRun::close).collect();
             let agents: Vec<_> = state.agents.iter_mut().map(|a| (a.ops.clone(), a.driver.take())).collect();
-            (agents, runs)
+            (agents, runs, std::mem::take(&mut state.retiring))
         };
         for (ops, _) in &agents {
             let _ = ops.send(Op::Shutdown).await;
         }
-        let drivers = agents.into_iter().filter_map(|(_, driver)| driver).chain(runs);
+        let drivers = agents.into_iter().filter_map(|(_, driver)| driver).chain(runs).chain(retiring);
         let _ = tokio::time::timeout(Duration::from_secs(5), futures::future::join_all(drivers)).await;
     }
 

@@ -5,7 +5,7 @@ import path from "node:path";
 import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
-import { devServers } from "./browser/devservers";
+import { devServers, stopDevServer } from "./browser/devservers";
 import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testNotification } from "./notify";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
@@ -179,7 +179,7 @@ function menuIcon(icon: unknown) {
 const menuTests = process.env.FINXWORK_E2E_MENU;
 function testMenu(items: MenuItem[]): string | null {
   const dir = menuTests!;
-  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
+  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.accel && { accel: it.accel }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
   fs.appendFileSync(path.join(dir, "shown.jsonl"), JSON.stringify(plain(items)) + "\n");
   const pick = path.join(dir, "pick");
   if (!fs.existsSync(pick)) return null;
@@ -295,6 +295,10 @@ export function registerIPC() {
   ipcMain.on("browser-menu-action", (e, targetId: unknown, a: unknown) =>
     trusted(e) && (targetId === null || typeof targetId === "string") && menuActionOk(a) && tabMenuAction(e.sender, targetId, a));
   ipcMain.handle("browser-local-servers", (e) => (trusted(e) ? devServers(new Set(app.getAppMetrics().map((m) => m.pid))) : []));
+  ipcMain.handle("browser-stop-local-server", (e, port: unknown, pid: unknown) => {
+    if (!trusted(e) || !Number.isInteger(port) || !Number.isInteger(pid)) throw new Error("Invalid server");
+    return stopDevServer(port as number, pid as number, new Set([process.pid, ...app.getAppMetrics().map((m) => m.pid)]));
+  });
   ipcMain.handle("kernel-status", (e) => (trusted(e) ? kernelStatus() : null));
   ipcMain.handle("system-browsers", (e) => (trusted(e) ? systemBrowsers() : []));
   ipcMain.handle("system-browser-set-up", (e) => (trusted(e) ? setUpSystemBrowser() : null));
@@ -390,6 +394,17 @@ export function registerIPC() {
     const r = await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
     return r.canceled ? null : (r.filePaths[0] ?? null);
   });
+  ipcMain.handle("pick-save-file", async (e, defaultPath: unknown) => {
+    if (!trusted(e) || typeof defaultPath !== "string") return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const ext = path.extname(defaultPath).toLowerCase();
+    const options = {
+      defaultPath,
+      filters: [{ name: ext === ".csv" || ext === ".tsv" ? "Delimited text" : "Spreadsheet", extensions: [ext.slice(1) || "xlsx"] }],
+    };
+    const r = await (win ? dialog.showSaveDialog(win, options) : dialog.showSaveDialog(options));
+    return r.canceled ? null : (r.filePath ?? null);
+  });
   // A skill to upload (自定义 › 上传技能): its folder, or an archive or a SKILL.md; finx reads it.
   ipcMain.handle("pick-skill-source", async (e) => {
     if (!trusted(e)) return null;
@@ -458,7 +473,7 @@ export function registerIPC() {
         list.map((it) => {
           if ("separator" in it) return { type: "separator" as const };
           const icon = menuIcon(it.icon);
-          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }) };
+          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }), ...(typeof it.accel === "string" && { accelerator: it.accel, registerAccelerator: false }) };
           if (Array.isArray(it.submenu)) return { ...common, submenu: build(it.submenu) };
           return { ...common, type: it.checked === undefined ? ("normal" as const) : ("checkbox" as const), checked: it.checked, click: () => (chosen = it.id) };
         });

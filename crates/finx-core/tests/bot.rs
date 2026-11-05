@@ -10,8 +10,16 @@ use finx_core::ResumeOptions;
 use finx_core::SessionRef;
 use finx_core::StartOptions;
 use finx_core::TaskEnd;
+use finx_core::store::CreatedSession;
+use finx_core::store::Entry;
 use finx_core::store::EntryKind;
+use finx_core::store::LoadedSession;
+use finx_core::store::SessionHeader;
 use finx_core::store::SessionStore;
+use finx_core::store::SessionSummary;
+use finx_core::store::SessionWriter;
+use finx_core::store::StoreError;
+use finx_core::store::writer::LineSink;
 use finx_llm::Catalog;
 use finx_llm::ErrorKind;
 use finx_llm::Message;
@@ -29,6 +37,7 @@ use finx_tools::BashTool;
 use finx_tools::LocalEnvironment;
 use finx_tools::builtin_registry;
 use serde_json::json;
+use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -63,6 +72,11 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
 
 /// A bot named `name` in its own folder, as the server starts one.
 async fn bot(name: &str, mode: PermissionMode, scripts: Vec<Script>) -> Harness {
+    bot_on(None, name, mode, scripts).await
+}
+
+/// The same, with its log in `store` instead of the usual file.
+async fn bot_on(store: Option<Arc<dyn SessionStore>>, name: &str, mode: PermissionMode, scripts: Vec<Script>) -> Harness {
     let dir = tempfile::tempdir().unwrap();
     let home = FinxHome::new(dir.path().canonicalize().unwrap().join("home"));
     home.ensure().unwrap();
@@ -88,7 +102,11 @@ async fn bot(name: &str, mode: PermissionMode, scripts: Vec<Script>) -> Harness 
             name: name.into(),
         }),
     };
-    let kernel = Kernel::start(options, deps(&api, &folder, &home)).await.unwrap();
+    let mut deps = deps(&api, &folder, &home);
+    if let Some(store) = store {
+        deps.store = store;
+    }
+    let kernel = Kernel::start(options, deps).await.unwrap();
     Harness {
         kernel,
         api,
@@ -372,6 +390,146 @@ async fn a_private_answer_is_reminded_before_the_next_message_joins() {
     assert!(texts(requests[1].messages.last().unwrap()).starts_with(REMINDER));
     assert!(requests[1].messages.iter().all(|m| texts(m) != "再写一首夏天的"));
     assert_eq!(texts(requests[2].messages.last().unwrap()), "再写一首夏天的");
+}
+
+/// A message that lands before the first request joins it: the model reads both at once, and the
+/// reminder still stands if it answers neither.
+#[tokio::test]
+async fn a_message_before_the_first_request_joins_it() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春。夏。"),
+            send("c1", "春。").then_tool_call("c2", "send_to_user", json!({ "text": "夏。", "end_turn": true })),
+        ],
+    )
+    .await;
+    // Nothing else runs between these two, so the task starts with both already in.
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["春。", "夏。"]);
+    assert_eq!(reminders(&h), 1);
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 2);
+    let asked: Vec<String> = requests[0].messages.iter().filter(|m| matches!(m, Message::User(_))).map(texts).collect();
+    assert_eq!(asked, ["写一首春天的诗", "写一首夏天的诗"]);
+}
+
+/// A message that lands while the reminder's reply is written joins after it, like one that lands
+/// before: the reply it brings answers the first message.
+#[tokio::test]
+async fn a_message_during_the_reminders_reply_joins_after_it() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春天的诗。"),
+            send_last("c1", "春天的诗。").then_sleep(Duration::from_millis(400)),
+            send_last("c2", "夏天的诗。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { turn: 1, .. })).await;
+    h.kernel.submit(Op::prompt("再写一首夏天的")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert_eq!(sent(&events), ["春天的诗。", "夏天的诗。"]);
+    assert_eq!(reminders(&h), 1);
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[1].messages.iter().all(|m| texts(m) != "再写一首夏天的"));
+    assert_eq!(texts(requests[2].messages.last().unwrap()), "再写一首夏天的");
+}
+
+/// A log whose sync takes a while, the only wait between a task's last look at the queue and its
+/// end. Nothing is read back.
+struct SlowSyncStore;
+
+struct SlowSyncLog;
+
+impl LineSink for SlowSyncLog {
+    fn write_line(&mut self, _line: &str) -> io::Result<()> {
+        Ok(())
+    }
+
+    fn sync(&mut self) -> io::Result<()> {
+        std::thread::sleep(Duration::from_millis(200));
+        Ok(())
+    }
+}
+
+impl SessionStore for SlowSyncStore {
+    fn create(&self, _header: &SessionHeader) -> Result<CreatedSession, StoreError> {
+        Ok(CreatedSession {
+            location: PathBuf::from("memory://slow"),
+            writer: SessionWriter::spawn(SlowSyncLog).unwrap(),
+        })
+    }
+
+    fn header(&self, reference: &SessionRef) -> Result<(SessionHeader, PathBuf), StoreError> {
+        Err(StoreError::NotFound(format!("{reference:?}")))
+    }
+
+    fn open(&self, reference: &SessionRef) -> Result<LoadedSession, StoreError> {
+        Err(StoreError::NotFound(format!("{reference:?}")))
+    }
+
+    fn read(&self, reference: &SessionRef) -> Result<(SessionHeader, Vec<Entry>), StoreError> {
+        Err(StoreError::NotFound(format!("{reference:?}")))
+    }
+
+    fn list(&self, _limit: usize, _within: Option<&Path>) -> Result<Vec<SessionSummary>, StoreError> {
+        Ok(Vec::new())
+    }
+}
+
+/// A message that lands as an answered task ends, past its last look at the queue, starts the next.
+#[tokio::test]
+async fn a_message_that_lands_as_a_task_ends_starts_the_next() {
+    let mut h = bot_on(
+        Some(Arc::new(SlowSyncStore)),
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![send_last("c1", "春。"), send_last("c2", "夏。")],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    // The task goes straight on from this event to the sync: this test runs again only then.
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnCompleted { turn: 0, .. })).await;
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let first = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(first.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", first.last().unwrap().msg);
+    let second = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(second.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", second.last().unwrap().msg);
+    assert_eq!(sent(&second), ["夏。"]);
+}
+
+/// A message that lands as a silent bot's task ends, past its last look at the queue: the owner
+/// hears the task failed and the message is answered, as when it lands a moment later. It does
+/// not go back to the composer: the model works, and nobody would have answered it.
+#[tokio::test]
+async fn a_message_that_lands_as_a_silent_task_ends_is_answered() {
+    let mut h = bot_on(
+        Some(Arc::new(SlowSyncStore)),
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::text("春。"), Script::text("还是春。"), send_last("c1", "夏。")],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    // The task goes straight on from this event to the sync: this test runs again only then.
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnCompleted { turn: 1, .. })).await;
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let failure = events.iter().find_map(|e| match &e.msg {
+        EventMsg::TaskFailed { error, returned_input, .. } => Some((error.kind.as_str(), returned_input.len())),
+        _ => None,
+    });
+    assert_eq!(failure, Some(("no_reply", 0)));
+    assert_eq!(sent(&events), ["夏。"]);
 }
 
 /// Each message in a row counts anew: the first one's reminder does not use up the next one's,

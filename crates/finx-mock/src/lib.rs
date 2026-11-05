@@ -32,6 +32,7 @@
 //! | `churn:N[:SEED]` | N tool turns in one task, each picked at random: read, write or edit `notes/state.txt`, append to `notes/log.txt`, search with grep, find or rg, read part of a file; then `churn done` (see [`churn_step`]) |
 //! | `mcp:SERVER:PROJECT` | `tool_search` for the vault tool, `call_tool` on `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
+//! | `sheet:PATH` | a workbook session through `call_tool`: `doc_open` PATH, `doc_read` the inputs, `sheet_calc` WACC at 9%, `doc_edit` it, `sheet_trace` what reads it, `doc_save`; then `sheet done` |
 //! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
 //! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
 //! | `attach:PATH[,PATH…]` | a bot's `send_to_user` of those files with `end_turn` |
@@ -607,6 +608,19 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 ("mcp", 1) => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": tool, "arguments": arguments }))])),
                 ("mcp_direct", 0) => Plan::Step(Step::calls(vec![(tool.as_str(), arguments)])),
                 _ => Plan::Step(Step::text(format!("mcp done: {}", last_tool_result(messages)))),
+            }
+        }
+        "sheet" => {
+            let call = |name: &str, arguments: Value| Plan::Step(Step::calls(vec![("call_tool", json!({ "name": name, "arguments": arguments }))]));
+            let wacc = json!([{ "op": "set_value", "sheet": "假设", "cell": "B6", "value": 0.09 }]);
+            match step {
+                0 => call("doc_open", json!({ "path": arg })),
+                1 => call("doc_read", json!({ "doc": arg, "range": "假设!A1:C9" })),
+                2 => call("sheet_calc", json!({ "doc": arg, "ops": wacc })),
+                3 => call("doc_edit", json!({ "doc": arg, "ops": wacc, "note": "WACC 上调到 9%" })),
+                4 => call("sheet_trace", json!({ "doc": arg, "cell": "假设!B6", "direction": "down", "depth": 2 })),
+                5 => call("doc_save", json!({ "doc": arg })),
+                _ => done("sheet"),
             }
         }
         "mcp_env" => {

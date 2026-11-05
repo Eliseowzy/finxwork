@@ -713,25 +713,20 @@ impl Kernel {
         let mut model_ref = None;
         let mut thinking = None;
         let mut permission_mode = None;
-        let usage = usage_of(history.branch());
+        // What was spent, and all that belongs to the session rather than to the conversation,
+        // comes from the whole log: going back takes none of it back, and a permission mode
+        // tightened after the point gone back to stays tightened.
+        let usage = usage_of(history.in_order());
         let restored_agents = agents::restore(&history.branch(), deps.store.as_ref());
         let mut max_task = 0u32;
         let mut open_task: Option<String> = None;
         let mut title = None;
         let mut archived = false;
         let mut skills = Vec::new();
-        for entry in history.branch() {
+        for entry in history.in_order() {
             match &entry.kind {
                 EntryKind::Title { title: t } => title = Some(t.clone()),
                 EntryKind::Archived { archived: a } => archived = *a,
-                EntryKind::SystemPrompt(prompt) => {
-                    system_prompt = Some(prompt.text.clone());
-                    last_prompt = Some((prompt.tools.clone(), prompt.mcp.clone()));
-                    // Entries written again later (a new tool set) may leave the skills out.
-                    if !prompt.skills.is_empty() {
-                        skills = prompt.skills.clone();
-                    }
-                }
                 EntryKind::Settings {
                     model,
                     thinking: t,
@@ -741,10 +736,25 @@ impl Kernel {
                     thinking = t.or(thinking);
                     permission_mode = a.or(permission_mode);
                 }
-                EntryKind::Task { task_id, status, .. } => {
+                EntryKind::Task { task_id, .. } => {
                     if let Some(n) = task_id.strip_prefix('t').and_then(|n| n.parse::<u32>().ok()) {
                         max_task = max_task.max(n);
                     }
+                }
+                _ => {}
+            }
+        }
+        for entry in history.branch() {
+            match &entry.kind {
+                EntryKind::SystemPrompt(prompt) => {
+                    system_prompt = Some(prompt.text.clone());
+                    last_prompt = Some((prompt.tools.clone(), prompt.mcp.clone()));
+                    // Entries written again later (a new tool set) may leave the skills out.
+                    if !prompt.skills.is_empty() {
+                        skills = prompt.skills.clone();
+                    }
+                }
+                EntryKind::Task { task_id, status, .. } => {
                     open_task = (*status == TaskStatus::Started).then(|| task_id.clone());
                 }
                 _ => {}
@@ -1091,6 +1101,7 @@ async fn submission_loop(
                 let Some(op) = op else { break };
                 match op {
                     Op::Prompt { input, mode, commands } => task::on_prompt(&session, input, mode, commands),
+                    Op::Resend { message_id, input, commands } => task::on_resend(&session, message_id, input, commands),
                     Op::Continue => task::on_continue(&session),
                     Op::Interrupt => session.interrupt(),
                     Op::Withdraw { id } => session.withdraw(&id),
@@ -1115,6 +1126,8 @@ async fn submission_loop(
     }
     let handle = {
         let mut state = session.state.lock();
+        // A resend still waiting does not go ahead: no new task starts as the session closes.
+        state.pending_resend = None;
         state.active_task.as_mut().and_then(|task| {
             task.cancel.cancel();
             task.handle.take()

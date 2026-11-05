@@ -165,6 +165,50 @@ impl Harness {
     }
 }
 
+/// Going back takes the definitions a search showed out of the context, so the next search
+/// gives them whole again, as after a compaction.
+#[tokio::test]
+async fn going_back_forgets_what_searches_showed() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::text("found it"),
+            Script::tool_call("t2", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::text("found it again"),
+        ],
+    )
+    .await;
+    let (_, events) = h.run("find add").await;
+    let sent = events
+        .iter()
+        .find_map(|m| match m {
+            EventMsg::MessageCompleted {
+                message_id,
+                message: Message::User(_),
+                ..
+            } => Some(message_id.clone()),
+            _ => None,
+        })
+        .unwrap();
+    h.kernel
+        .submit(Op::Resend {
+            message_id: sent,
+            input: vec![UserContent::Text { text: "find it again".into() }],
+            commands: true,
+        })
+        .await
+        .unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let requests = h.api.requests();
+    let results = tool_results(requests.last().unwrap());
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert!(results[0].contains("- mcp__test__add: Add two numbers.\n  {"), "{}", results[0]);
+}
+
 /// The kernel's events up to and including the first one `done` accepts.
 async fn until(kernel: &mut Kernel, done: impl Fn(&EventMsg) -> bool) -> Vec<EventMsg> {
     let mut seen = Vec::new();

@@ -562,6 +562,42 @@ export class MockServer {
     this.settle(s);
   }
 
+  /** `resend`, as finx does it: a running task stops, what waits goes back with the rewind, and the new message starts a task. */
+  private resend(s: Session, messageId: string, input: UserContent[]) {
+    const refuse = (why: string) => this.emit(s, { type: "warning", message: `cannot resend: ${why}`, code: "resend_rejected" });
+    if (s.bot) return refuse("a bot's conversation does not go back");
+    const at = s.view.entries.findIndex((e) => e.type === "message" && e.message_id === messageId && e.message.role === "user" && !e.mail);
+    if (at < 0) return refuse("that message is not in the conversation");
+    if (input.every((c) => c.type === "text" && c.text.trim() === "")) return refuse("there is nothing to send");
+    const live = s.view.live;
+    const run = s.run;
+    if (live && run) {
+      run.cancelled = true;
+      for (const resolve of run.approvals.values()) resolve({ type: "abort" });
+      if (run.writing) {
+        this.complete(s, run.writing.message_id, run.writing.content, "aborted");
+        run.writing = undefined;
+      }
+      this.emit(s, { type: "task_interrupted", task_id: live.task_id, returned_input: [], usage: live.usage });
+      s.run = undefined;
+    }
+    // Sub-agents started in what is taken back stop and leave; the reports of the others come again.
+    const taken = s.view.entries.slice(at);
+    const calls = new Set(taken.flatMap((e) => (e.type === "message" && e.message.role === "assistant" ? e.message.content.flatMap((c) => (c.type === "tool_call" ? [c.id] : [])) : [])));
+    const removed = s.view.agents.filter((a) => calls.has(a.call_id)).map((a) => a.id);
+    for (const child of s.children.filter((c) => removed.includes(c.id))) {
+      if (child.run) child.run.cancelled = true;
+      child.run = undefined;
+    }
+    s.children = s.children.filter((c) => !removed.includes(c.id));
+    const again = taken.flatMap((e) => (e.type === "message" && e.mail && !removed.includes(e.mail.from.id) ? [{ text: textOf(e.message.content), mail: e.mail, wake: false }] : []));
+    s.mails = [...again, ...s.mails.filter((m) => !removed.includes(m.mail.from.id))];
+    const returned_input = this.handBack(s);
+    this.emit(s, { type: "session_rewound", message_id: messageId, removed_agents: removed, returned_input });
+    if (!s.view.entries.some((e) => e.type === "message" && e.message.role === "user" && !e.mail)) s.summary = { ...s.summary, preview: undefined };
+    this.prompt(s, input);
+  }
+
   // ---- sub-agents ----
 
   /** spawn_agent's call completed: the agent starts, in the background. Its result's details. */
@@ -896,7 +932,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, bots: true, routines: true };
+        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, routines: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -1216,6 +1252,8 @@ export class MockServer {
         s.queue.push({ id: newId("u"), mode: op.mode ?? "steer", input: op.input, ts: this.now() });
         return this.queueChanged(s);
       }
+      case "resend":
+        return this.resend(s, op.message_id, op.input);
       case "withdraw": {
         const x = s.queue.find((y) => y.id === op.id);
         if (!x) return;

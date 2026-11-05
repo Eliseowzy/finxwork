@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { SessionView } from "@finx/client";
-import { docsOf, lockedPath, type DocOpener } from "../docs/state";
+import { cellTarget, docsOf, lockedPath, type DocOpener } from "../docs/state";
 import { FilePanel } from "../files/FilePanel";
 import { filesChanged, isPasswordError, lockedOut, setFilesConnection, showDoc, useDocEvents } from "../files/state";
 import { Icon } from "../icons";
@@ -33,9 +33,10 @@ export function useSidePanels(session: string, view: SessionView | null, held = 
       session: id,
       open: (what, anchor, target) =>
         void st.run(async () => {
-          const shown = await showDoc(st, id, cwd, what, anchor);
+          const cells = target ? cellTarget(target) : null;
+          const shown = await showDoc(st, id, cwd, what, cells ?? anchor);
           // A citation's block or page, once its document is open in the session (not while it asks for its password).
-          if (shown && target && "doc_id" in what) {
+          if (shown && target && !cells && "doc_id" in what) {
             try {
               const r = await rpc.request("doc/locate", { session_id: id, doc_id: what.doc_id, target });
               await showDoc(st, id, cwd, what, r.anchor);
@@ -50,6 +51,12 @@ export function useSidePanels(session: string, view: SessionView | null, held = 
         try {
           // A hover must not bring the column out: finx opens the document, the column stays as it is.
           const path = known ?? (await rpc.request("doc/open", { session_id: id, doc_id: docId })).info.path;
+          const cells = cellTarget(target);
+          if (cells) {
+            const got = await rpc.request("doc/cells", { session_id: id, doc_id: docId, sheet: cells.sheet, range: cells.range });
+            const text = got.cells.slice(0, 6).map((c) => `${c.cell} = ${c.text || "(empty)"}`).join("\n");
+            return { anchor: { ...cells, text }, path };
+          }
           const r = await rpc.request("doc/locate", { session_id: id, doc_id: docId, target });
           return { anchor: r.anchor, path };
         } catch (e) {
