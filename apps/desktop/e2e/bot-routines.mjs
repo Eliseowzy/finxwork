@@ -289,9 +289,18 @@ try {
   await page.until("the clock's blue dot", `!!document.querySelector(".rtn-btn .rtn-dot.run")`);
   await page.until("Stop in place of Run now", `!!${button("停止")}`);
   check(await page.run(`!document.querySelector(".tr.bots .wbub")`), "a run is no work of the bot's: no busy bubble");
+  const ranFor = `[...${panel}.querySelectorAll(".frow")].find((r) => r.querySelector(".fl")?.textContent === "已运行")?.querySelector(".fv").textContent`;
+  await page.until("how long it has run", `/ 秒$/.test(${ranFor} ?? "")`);
+  const ranBefore = await page.run(ranFor);
+  await page.until("that counting up", `${ranFor} !== ${JSON.stringify(ranBefore)}`);
   await page.shot("r6-running");
+  await press(page, `.bgp.rtn .rtn-top .tb[aria-label="返回"]`);
+  await page.until("the row saying so too", `[...document.querySelectorAll(".rtn-row")].find((r) => r.textContent.includes("慢任务"))?.querySelector(".rtn-d").textContent.startsWith("正在运行 · ")`);
+  await page.shot("r6-running-list");
+  await page.run(openRoutine("慢任务"));
+  await page.until("that routine again", `${title} === "慢任务"`);
   await page.run(clickIn("停止"));
-  await page.until("the record", `[...${panel}.querySelectorAll(".rtn-runrow")].some((r) => r.textContent.includes("已停止"))`);
+  await page.until("the record", `[...${panel}.querySelectorAll(".rtn-runrow")].some((r) => r.textContent.includes("已停止") && r.textContent.includes("运行 "))`);
   check(await page.run(`!document.querySelector(".rtn-btn .rtn-dot")`), "the dot goes with it");
   check((await page.run(`${bubbles}.length`)) === said, "a stopped run says nothing");
 

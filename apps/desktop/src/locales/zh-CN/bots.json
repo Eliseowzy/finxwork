@@ -157,8 +157,11 @@
     "noRuns": "还没有运行过。",
     "earlier": "更早的运行",
     "running": "正在运行…",
+    "runningLine": "正在运行 · {{time}}",
+    "runningFor": "已运行",
+    "ranFor": "运行 {{time}}",
     "lastFailed": "上次没做成 · {{time}}",
-    "whenNext": "{{when}} · 下次 {{time}}",
+    "whenNext": "下次 {{time}} · {{when}}",
     "note": "定时任务在这台 Mac 上运行。合盖或关机时不跑，下次开机后补最近一次。退出应用后照跑，但不弹通知。",
     "unavailable": "定时任务现在用不了",
     "empty": {

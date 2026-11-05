@@ -223,21 +223,32 @@ button.wb-h{cursor:pointer}
 .tb.rtn-btn{position:relative}
 .tb .rtn-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--orange)}
 .tb .rtn-dot.run{background:var(--accent)}
-.bgp.bpn.rtn{width:400px}
 .rtn-top{justify-content:flex-start;gap:4px;padding-left:16px}
 .rtn-tt{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--l1)}
 .rtn-sub .rtn-tt{font-weight:500}
 .rtn .bpn-body .form{padding-bottom:21px}
+.rtn .fhead{margin-left:0}
+.rtn .form>.set-note{margin:-5px 0 0;color:var(--l3)}
 .fgroup.rtn-g{overflow:hidden}
-.frow.rtn-row,.frow.rtn-runrow{gap:13px;cursor:pointer;padding-top:8px;padding-bottom:8px}
-.frow.rtn-row:hover,.frow.rtn-runrow:hover{background:var(--fill)}
-.frow.rtn-runrow.still{cursor:default}
-.frow.rtn-runrow.still:hover{background:none}
+/* The routines and a routine's runs: the rows of 我的 on the customize page. No panels, a hairline between rows, the
+   text flush with the title; the row under the pointer lights up reaching 12 past it, and the lines beside it give way. */
+.rtn-rows{display:flex;flex-direction:column}
+.rtn-row,.rtn-runrow{position:relative;display:flex;align-items:center;gap:13px;margin:0 -12px;padding:9px 12px;border-radius:var(--r-lg);cursor:pointer;transition:background .12s}
+.rtn-row{min-height:58px}
+.rtn-runrow{min-height:38px}
+.rtn-row+.rtn-row::before,.rtn-runrow+.rtn-runrow::before{content:"";position:absolute;top:0;left:12px;right:12px;height:.5px;background:var(--sep);transition:opacity .12s}
+.rtn-row:hover,.rtn-runrow:hover{background:var(--fill)}
+.rtn-row:hover::before,.rtn-row:hover+.rtn-row::before,.rtn-runrow:hover::before,.rtn-runrow:hover+.rtn-runrow::before{opacity:0}
+.rtn-runrow.still{cursor:default}
+.rtn-runrow.still:hover{background:none}
+.rtn-runrow.still:hover::before,.rtn-runrow.still:hover+.rtn-runrow::before{opacity:1}
 .rtn-t{flex:1;min-width:0}
 .rtn-n{font-size:13px;line-height:18px;font-weight:500;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rtn-d{margin-top:1px;font-size:12px;line-height:16px;color:var(--l3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rtn-d{margin-top:2px;font-size:12px;line-height:17px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .rtn-d.warn{color:var(--orange)}
-.rtn-row.dim .rtn-n{color:var(--l3)}
+.rtn-num{font-variant-numeric:tabular-nums}
+.rtn-at{white-space:nowrap}
+.rtn-row.off .rtn-t{opacity:.5}
 .rtn-empty{margin:55px 13px 0;text-align:center;color:var(--l2);font-size:13px;line-height:1.6}
 .rtn-empty b{display:block;margin-bottom:8px;font-size:14px;font-weight:600;color:var(--l1)}
 .rtn-empty .btn{margin-top:13px}

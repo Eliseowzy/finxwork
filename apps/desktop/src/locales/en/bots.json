@@ -158,8 +158,11 @@
     "noRuns": "It has not run yet.",
     "earlier": "Earlier runs",
     "running": "Running…",
+    "runningLine": "Running · {{time}}",
+    "runningFor": "Running for",
+    "ranFor": "Run time {{time}}",
     "lastFailed": "Last run failed · {{time}}",
-    "whenNext": "{{when}} · next {{time}}",
+    "whenNext": "Next {{time}} · {{when}}",
     "note": "Scheduled tasks run on this Mac. They do not run with the lid closed or the Mac off, and catch up once, with the latest, the next time it starts. They keep running after you quit the app, without notifications.",
     "unavailable": "Scheduled tasks are not available",
     "empty": {

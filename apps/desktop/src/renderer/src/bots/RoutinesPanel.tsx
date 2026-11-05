@@ -118,7 +118,7 @@ function ListPage({ bot, routines, onOpen, onCreate }: { bot: BotSummary; routin
     rows.length > 0 && (
       <section>
         {title && <h3 className="fhead">{title}</h3>}
-        <div className="fgroup rtn-g">
+        <div className="rtn-rows">
           {rows.map((r) => (
             <RoutineRow key={r.id} bot={bot} routine={r} onOpen={() => onOpen(r.id)} />
           ))}
@@ -137,7 +137,7 @@ function ListPage({ bot, routines, onOpen, onCreate }: { bot: BotSummary; routin
 
 function RoutineRow({ bot, routine, onOpen }: { bot: BotSummary; routine: RoutineSummary; onOpen: () => void }) {
   return (
-    <div className={`frow rtn-row ${routine.state !== "active" ? "dim" : ""}`} role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && onOpen()}>
+    <div className={`rtn-row ${routine.state !== "active" ? "off" : ""}`} role="button" tabIndex={0} onClick={onOpen} onKeyDown={(e) => e.key === "Enter" && onOpen()}>
       <div className="rtn-t">
         <div className="rtn-n">{routine.name}</div>
         <SecondLine routine={routine} />
@@ -149,13 +149,13 @@ function RoutineRow({ bot, routine, onOpen }: { bot: BotSummary; routine: Routin
 
 function SecondLine({ routine }: { routine: RoutineSummary }) {
   const { t } = useTranslation("bots");
-  const now = useNow(60_000);
   const line = routineLine(routine);
+  const now = useNow(line.kind === "running" ? 1000 : 60_000);
   switch (line.kind) {
     case "running":
       return (
         <div className="rtn-d">
-          <span className="shimmer">{t("routines.running")}</span>
+          <span className="shimmer">{line.since ? t("routines.runningLine", { time: durationText(now.getTime() - line.since.getTime()) }) : t("routines.running")}</span>
         </div>
       );
     case "failed":
@@ -190,7 +190,7 @@ function EnabledSwitch({ bot, routine }: { bot: BotSummary; routine: RoutineSumm
 function RoutinePage({ bot, routine, onOpenRun, onDraft }: { bot: BotSummary; routine: RoutineSummary; onOpenRun: (run: string) => void; onDraft: (text: string) => void }) {
   const { t } = useTranslation("bots");
   const st = useStore();
-  const now = useNow(60_000);
+  const now = useNow(routine.running ? 1000 : 60_000);
   const [detail, setDetail] = useState<RoutineDetail | null>(null);
   const [runs, setRuns] = useState<RoutineRunInfo[] | null>(null);
   const [more, setMore] = useState(false);
@@ -230,6 +230,7 @@ function RoutinePage({ bot, routine, onOpenRun, onDraft }: { bot: BotSummary; ro
       },
     });
   const upcoming = detail?.upcoming ?? [];
+  const line = routineLine(routine);
   return (
     <div className="form">
       <section>
@@ -242,6 +243,12 @@ function RoutinePage({ bot, routine, onOpenRun, onDraft }: { bot: BotSummary; ro
               </div>
             </div>
           )}
+          {line.kind === "running" && line.since && (
+            <div className="frow">
+              <span className="fl">{t("routines.runningFor")}</span>
+              <div className="fv rtn-num">{durationText(now.getTime() - line.since.getTime())}</div>
+            </div>
+          )}
           <div className="frow">
             <span className="fl">{t("routines.when")}</span>
             <div className="fv">{routine.when}</div>
@@ -249,7 +256,16 @@ function RoutinePage({ bot, routine, onOpenRun, onDraft }: { bot: BotSummary; ro
           {upcoming.length > 0 && (
             <div className="frow">
               <span className="fl">{t("routines.upcoming")}</span>
-              <div className="fv">{upcoming.map((at) => momentText(new Date(at), now)).join(t("routines.listSeparator"))}</div>
+              <div className="fv">
+                <span>
+                  {upcoming.map((at, i) => (
+                    <span className="rtn-at" key={at}>
+                      {momentText(new Date(at), now)}
+                      {i < upcoming.length - 1 && t("routines.listSeparator")}
+                    </span>
+                  ))}
+                </span>
+              </div>
             </div>
           )}
         </div>
@@ -281,7 +297,7 @@ function RoutinePage({ bot, routine, onOpenRun, onDraft }: { bot: BotSummary; ro
       <section>
         <h3 className="fhead">{t("routines.runs")}</h3>
         {runs && runs.length > 0 ? (
-          <div className="fgroup rtn-g">
+          <div className="rtn-rows">
             {runRows(runs, unfolded).map((row) => (
               <RunRowView key={row.kind === "run" ? row.run.id : row.key} row={row} bot={bot} newest={row.kind === "run" && row.run.id === runs[0].id} onOpen={onOpenRun} onUnfold={(key) => setUnfolded(new Set([...unfolded, key]))} />
             ))}
@@ -326,7 +342,7 @@ function RunRowView({ row, bot, newest, onOpen, onUnfold }: { row: RunRow; bot: 
     const last = row.runs[0];
     const first = row.runs.at(-1)!;
     return (
-      <div className="frow rtn-runrow" role="button" tabIndex={0} onClick={() => onUnfold(row.key)} onKeyDown={(e) => e.key === "Enter" && onUnfold(row.key)}>
+      <div className="rtn-runrow" role="button" tabIndex={0} onClick={() => onUnfold(row.key)} onKeyDown={(e) => e.key === "Enter" && onUnfold(row.key)}>
         <div className="rtn-t">
           <div className="rtn-rt">{t("routines.result.quietRange", { from: momentText(runTime(first), now), to: momentText(runTime(last), now) })}</div>
           <div className="rtn-d">{t("routines.result.quietCount", { count: row.runs.length })}</div>
@@ -340,16 +356,17 @@ function RunRowView({ row, bot, newest, onOpen, onUnfold }: { row: RunRow; bot: 
 
 function OneRun({ run, relaying, onOpen }: { run: RoutineRunInfo; relaying: boolean; onOpen: (run: string) => void }) {
   const { t } = useTranslation("bots");
-  const now = useNow(60_000);
+  const now = useNow(run.outcome ? 60_000 : 1000);
   const result = useResult(run, relaying);
+  const took = runTook(run, now);
   const late = runLate(run);
   const skipped = run.outcome === "skipped";
   const said = run.outcome === "failed" ? run.report : skipped ? t("routines.result.skippedWhy") : run.note;
-  const second = [late !== null ? t("routines.late", { time: durationText(late) }) : "", said ?? ""].filter(Boolean).join(" · ");
+  const second = [took !== null ? t("routines.ranFor", { time: durationText(took) }) : "", late !== null ? t("routines.late", { time: durationText(late) }) : "", said ?? ""].filter(Boolean).join(" · ");
   // A skipped run did nothing, so there is nothing to open.
   const open = skipped ? undefined : () => onOpen(run.id);
   return (
-    <div className={`frow rtn-runrow ${skipped ? "still" : ""}`} role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open} onKeyDown={(e) => e.key === "Enter" && open?.()}>
+    <div className={`rtn-runrow ${skipped ? "still" : ""}`} role={open ? "button" : undefined} tabIndex={open ? 0 : undefined} onClick={open} onKeyDown={(e) => e.key === "Enter" && open?.()}>
       <div className="rtn-t">
         <div className="rtn-rt">{momentText(runTime(run), now)}</div>
         {second && <div className="rtn-d">{second}</div>}
@@ -363,8 +380,8 @@ function OneRun({ run, relaying, onOpen }: { run: RoutineRunInfo; relaying: bool
 function RunPage({ bot, routine, id, info, onShowBubble }: { bot: BotSummary; routine: RoutineSummary; id: string; info: SessionInfo | undefined; onShowBubble: (run: string) => void }) {
   const { t } = useTranslation("bots");
   const st = useStore();
-  const now = useNow(60_000);
   const [found, setFound] = useState<BotRoutineRunResult | null>(null);
+  const now = useNow(found && !found.run.outcome ? 1000 : 60_000);
   const changed = JSON.stringify(routine.last_run);
   useEffect(() => {
     let gone = false;
@@ -384,7 +401,7 @@ function RunPage({ bot, routine, id, info, onShowBubble }: { bot: BotSummary; ro
   if (!found) return <div className="empty"><span className="mini-spin" /></div>;
   const run = found.run;
   const late = runLate(run);
-  const took = runTook(run);
+  const took = runTook(run, now);
   const tokens = run.usage ? totals(run.usage).tokens : 0;
   return (
     <div className="form">
