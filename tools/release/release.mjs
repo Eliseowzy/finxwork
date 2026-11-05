@@ -64,7 +64,7 @@ const fail = (message) => {
 const ready = (ok, message) => ok || (dry ? console.warn(`release ${tag}: ${message} (ignored in a dry run)`) : fail(message));
 const has = (cmd, args = ["--version"]) => {
   try {
-    run(cmd, args, { stdio: "ignore" });
+    execFileSync(cmd, args, { stdio: "ignore" });
     return true;
   } catch {
     return false;
