@@ -345,6 +345,81 @@ async fn only_an_unanswered_message_brings_a_reminder() {
     assert_eq!(reminders(&h), 1);
 }
 
+/// An answer only written as plain text while another message waits: the reply to that one would
+/// count as answering both, and the owner would never see this answer. It is reminded first, with
+/// the reminder the last thing the model reads; the message joins after (bot-design §3.11).
+#[tokio::test]
+async fn a_private_answer_is_reminded_before_the_next_message_joins() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春天的诗。").then_sleep(Duration::from_millis(400)),
+            send("c1", "春天的诗。"),
+            send_last("c2", "夏天的诗。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("再写一首夏天的")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert_eq!(sent(&events), ["春天的诗。", "夏天的诗。"]);
+    assert_eq!(reminders(&h), 1);
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(texts(requests[1].messages.last().unwrap()).starts_with(REMINDER));
+    assert!(requests[1].messages.iter().all(|m| texts(m) != "再写一首夏天的"));
+    assert_eq!(texts(requests[2].messages.last().unwrap()), "再写一首夏天的");
+}
+
+/// Each message in a row counts anew: the first one's reminder does not use up the next one's,
+/// which would fail the task with both already answered.
+#[tokio::test]
+async fn each_message_in_a_row_gets_its_own_reminder() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春。").then_sleep(Duration::from_millis(400)),
+            send("c1", "春。"),
+            Script::text("夏。"),
+            send_last("c2", "夏。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["春。", "夏。"]);
+    assert_eq!(reminders(&h), 2);
+}
+
+/// Reminded and still silent with another message waiting: that message gets its turn. Failing
+/// here would hand it back to the owner unread.
+#[tokio::test]
+async fn silence_after_a_reminder_gives_way_to_the_next_message() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春。").then_sleep(Duration::from_millis(400)),
+            Script::text("还是春。"),
+            send_last("c1", "夏。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["夏。"]);
+    assert_eq!(reminders(&h), 1);
+}
+
 /// A bot's sub-agents write reports, not chat: a session's prompt, and no send_to_user
 /// (bot-design §2.3, D-311).
 #[tokio::test]
