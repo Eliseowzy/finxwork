@@ -267,7 +267,6 @@ name = "betteroffice-fonts"
 version = "0.5.1"
 source = "git+https://github.com/Eliseowzy/betteroffice?rev=b4ce3852c40a63698d2a94ba33746891a3868367#b4ce3852c40a63698d2a94ba33746891a3868367"
 dependencies = [
- "betteroffice-fonts-latin",
  "cc",
  "quick-xml",
  "ruzstd",
@@ -275,11 +274,6 @@ dependencies = [
  "serde_json",
  "wuff",
 ]
-
-[[package]]
-name = "betteroffice-fonts-latin"
-version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b4ce3852c40a63698d2a94ba33746891a3868367#b4ce3852c40a63698d2a94ba33746891a3868367"
 
 [[package]]
 name = "betteroffice-metafile"
