@@ -33,7 +33,7 @@
 | v1.14 | 2026-11-05 | `send_to_user` 加 `type`：`text`、`attachment`（一次发一个或多个文件和图片，可以带文字）、`question`（提问，答案列得出来时带选项）（§3.12），依据真实模型统计定的（D-328）。列表摘要 `LastMessage` 加 `file`；两个截图工具的结果写上保存路径。§11 里的"附件与卡片"做了 |
 | v1.15 | 2026-11-05 | 连发时第一句的回答写成私有文字就丢了：模型要结束时先查没回话，再看排队的话，提醒的那次请求不带排队的话，提醒按主人的每句话算（§3.11、D-400）。统计脚本的"按顺序"改成看每条消息的意象，统计结果和变差的原因见 §8 |
 | v1.16 | 2026-11-05 | 定时任务另写方案 [routine-design.md](routine-design.md)，§9、§16 指过去。本文的机制没有变；实现时 `bot::unanswered` 和 `bot::tools` 按那份方案改 |
-| v1.17 | 2026-11-05 | `send_to_user` 拒绝发 `NOTHING_TO_REPORT`；`bot::unanswered` 认 Bot 对定时任务汇报的这个回复（routine-design.md D-440） |
+| v1.17 | 2026-11-05 | `send_to_user` 拒绝发 `NOTHING_TO_REPORT`；`bot::unanswered` 认 Bot 对定时任务汇报的这个回复（routine-design.md D-441） |
 
 ## 方案摘要
 

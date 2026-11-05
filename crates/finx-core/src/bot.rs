@@ -56,7 +56,7 @@ pub(crate) enum Waiting {
 /// What has reached the owner of nothing since: no `send_to_user` after it succeeded
 /// (bot-design §3.11). The message may be an earlier task's, as when a failed task is retried; a
 /// sub-agent's report that woke the bot after its reply leaves nobody waiting, and so does a
-/// routine's report when its reply says it holds nothing to tell (routine-design D-440).
+/// routine's report when its reply says it holds nothing to tell (routine-design D-441).
 pub(crate) fn unanswered(history: &History) -> Option<Waiting> {
     let mut last_reply = None;
     for entry in history.branch_back() {
@@ -84,7 +84,7 @@ pub(crate) fn unanswered(history: &History) -> Option<Waiting> {
 }
 
 /// The words a call sends the owner: no blank ones, and not the phrase that is between the kernel
-/// and the model, which the tool refuses (routine-design D-440).
+/// and the model, which the tool refuses (routine-design D-441).
 pub fn words_of(args: &Value) -> Option<&str> {
     args.get("text")
         .and_then(Value::as_str)
@@ -234,7 +234,7 @@ impl TypedTool for SendToUser {
     async fn run(&self, args: SendArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
         // An empty value is no value: some models fill in every optional parameter.
         let text = args.text.as_deref().filter(|text| !text.trim().is_empty());
-        // Between the kernel and the model: the owner never reads it (routine-design D-440).
+        // Between the kernel and the model: the owner never reads it (routine-design D-441).
         if text.is_some_and(|text| crate::routine::quiet_note(text).is_some()) {
             return Err(invalid("NOTHING_TO_REPORT is not a message for the user: send nothing and write it as plain text"));
         }
