@@ -126,3 +126,15 @@ test("a group opens its bot or session; anything else opens nothing", () => {
   assert.equal(targetOf("test"), null);
   assert.equal(targetOf("bot:"), null);
 });
+
+test("files alone say what they are, and a second one in the same second is still news", () => {
+  const files = { from: "bot" as const, text: "", file: "报告.pdf", ts: "2026-11-04T10:00:00Z" };
+  const first = botAlerts(bot({}), bot({ last: files, unread: 1 })).alerts[0];
+  assert.ok(first?.kind === "bot_message");
+  assert.equal(first.text, "");
+  assert.equal(first.file, "报告.pdf");
+  const images = botAlerts(bot({ last: files }), bot({ last: { ...files, file: undefined, images: 2 }, unread: 2 })).alerts[0];
+  assert.ok(images?.kind === "bot_message");
+  assert.equal(images.images, 2);
+  assert.notEqual(images.id, first.id);
+});
