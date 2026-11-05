@@ -202,9 +202,12 @@ struct App {
     trusted: bool,
 }
 
+/// Some terminals report no size at all (a bare pty, some CI runners): the usual one then.
 fn terminal_size() -> (usize, usize) {
-    let (columns, rows) = crossterm::terminal::size().unwrap_or((80, 24));
-    (usize::from(columns.max(1)), usize::from(rows.max(1)))
+    match crossterm::terminal::size() {
+        Ok((columns, rows)) if columns > 0 && rows > 0 => (usize::from(columns), usize::from(rows)),
+        _ => (80, 24),
+    }
 }
 
 /// Keys, on a thread of their own. It lets go of stdin while something else reads it.

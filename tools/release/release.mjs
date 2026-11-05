@@ -191,7 +191,7 @@ for (const target of targets) {
     fs.mkdirSync(dir, { recursive: true });
     const signed = agentDesktopFiles.map((name) => {
       const copy = path.join(dir, name);
-      fs.copyFileSync(path.join(binaries, name), copy);
+      fs.copyFileSync(binaries[name], copy);
       fs.chmodSync(copy, 0o755);
       codesign(copy, name);
       return [copy, name, 0o755];
