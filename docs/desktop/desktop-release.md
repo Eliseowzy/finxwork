@@ -231,6 +231,10 @@ pnpm release --dry-run       # 构建、公证、检查，但不上传
 3. **创建草稿 Release，上传所有文件，然后一次性发布并设为 latest。** 草稿不会成为最新发布，所以在全部文件就位之前，已安装的应用读到的一直是上一版。上传或发布中途失败时，草稿留在仓库里，脚本会提示去网页上补完，或者删掉草稿后重跑。
 4. **预发布版本**（版本号带 `-`，比如 `0.2.0-beta.1`）发布成 GitHub 的预发布，不会成为 latest，已安装的应用收不到。
 
+脚本管不到、要人判断的事：
+
+- **定时任务的无人值守权力**（[routine-design.md](../kernel/routine-design.md) §10、D-393）：定时任务实现后，第一次发布给别人用之前必须重新决定。现在定时运行的权力和 Bot 相同，可以不经确认用连接器发信。
+
 ### 6.3 版本号
 
 - 唯一来源是 `apps/desktop/package.json` 的 `version`。它写进应用的 `CFBundleShortVersionString`；`CFBundleVersion` 是构建时间戳；标签是 `v<版本>`。

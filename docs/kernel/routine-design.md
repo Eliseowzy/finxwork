@@ -1,0 +1,904 @@
+# finx 定时任务技术方案
+
+| 项 | 内容 |
+|---|---|
+| 版本 | v1.1 |
+| 日期 | 2026-11-05 |
+| 状态 | 定稿：机制、存储、权限和管理入口主人都已确认，正在实现（分支 feat/routines）。界面见 PRD §6.21，原型 [routine-demo.html](../desktop/routine-demo.html) |
+| 关系 | 落实 Bot PRD 的 F18（[docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md) §6.21，下称 PRD）。扩展 [bot-design.md](bot-design.md)（下称 Bot 方案）和 [subagent-design.md](subagent-design.md)（下称子智能体方案）；常驻部分接 [desktop-kernel-integration.md](../desktop/desktop-kernel-integration.md) 的 DQ-09 |
+
+变更记录：
+
+| 版本 | 日期 | 说明 |
+|---|---|---|
+| v0.1 | 2026-11-05 | 初稿 |
+| v0.2 | 2026-11-05 | 主人的决定：定时任务和运行记录放进本地 SQLite，不用文件（§3、D-391、D-392）。v0.1 把运行记录写成只追加的 JSONL，但结束时间和送达都要改已有的行，是个错误。明确调度放在服务层，时间和到点判断写成不认识 Bot 的模块（§5、D-390）。工作量多 1 天 |
+| v0.3 | 2026-11-05 | 主人定下四件事：一期接受定时运行的权力和 Bot 相同，发布给别人用之前重新决定（§10、D-393）；自动登记登录项（D-386）；Cmd-Q 后不弹通知；夜里的任务讲清限制并加保持唤醒，云端运行暂缓设计（D-394） |
+| v1.0 | 2026-11-05 | 定稿。管理入口和运行记录的界面另外讨论，已做原型；如果运行详情要显示步骤，协议加读运行日志的方法，§15"查看运行的过程"提前（PRD DQ-71） |
+| v1.1 | 2026-11-05 | 管理入口定为顶栏图标加右侧面板，运行详情显示步骤（D-395）：协议加 `bots/routine_run`，桌面端是新文件 `bots/RoutinesPanel.tsx`，不改 Bot 设置 |
+
+## 方案摘要
+
+- **只有 Bot 有定时任务**：普通会话没有。任务属于某一个 Bot，删 Bot 时一起删。
+- **一次到点分两步**：先在后台跑一次"定时运行"，它看不到聊天记录，只有保存的说明。有话要说才把结果交给 Bot，由 Bot 读着聊天记录，用自己的话发给主人。没话说的运行不碰 Bot 的对话，也不花读整段对话的钱。
+- **默认交给 Bot，明说没话才不交**：运行最后的回复默认就是汇报；以固定开头 `NOTHING_TO_REPORT` 开始才算没话说。模型没守规矩，最多多唤醒 Bot 一次，不会丢结果。
+- **转告不能丢**：现在的没回话提醒不管汇报。改成定时任务的汇报也算在等回复：Bot 只写了私有文字就要结束时提醒一次，还不发就出失败卡。
+- **一个工具 `manage_routine`**：只在 Bot 的主会话里有，常驻。创建、读取、修改、暂停、恢复、删除。任务列表不用工具查，定义变化时追加一条环境更新，和日期、改名一样。
+- **时间**：五段式 cron，默认本机时区，可以加 `CRON_TZ=` 前缀（比如美股交易时段）；一次性任务写 `2026-11-10 09:00` 或 `in 20m`。工具结果返回内核算出的接下来几次运行时间，由模型转告主人。
+- **调度在服务层**：不放桌面端，也不放单个会话的内核。最多隔 30 秒看一次墙上时钟。睡眠和关机错过的只补最近一次；上一次还没跑完就跳过这次，并记下原因。时间解析和到点判断不认识 Bot，以后别的功能也能用。
+- **数据放进本地 SQLite**：定时任务和运行记录在 `~/.finx/finx.db`，是 finx 的第一个数据库。只有 `finx serve` 打开，用到才建。会话日志仍是 JSONL，配置仍是文件。
+- **常驻**：服务里有启用的定时任务就不空闲退出；应用登记成登录项，重启后也能跑。Mac 合盖或关机时不跑，这一点改变不了，创建时要说清。
+- **权限跟随 Bot**：手动模式下建任务要确认；完全访问不问，对话里留一行"已创建"。运行没有人能答确认，要询问的调用直接拒绝，写进汇报。
+- **工作量**：约 12 人天（§14）。
+
+## 目录
+
+- 方案摘要
+- 0. 阅读说明
+- 1. 目标与原则
+- 2. 一次到点怎么跑
+- 3. 定义与存储
+- 4. `manage_routine` 工具
+- 5. 调度器
+- 6. 内核的改动
+- 7. 服务层与常驻
+- 8. 协议
+- 9. 客户端库与桌面端
+- 10. 安全
+- 11. 实现清单
+- 12. 测试与验收
+- 13. 实现时要先试的
+- 14. 分期与工作量
+- 15. 按需再加
+- 16. 持久化与兼容
+- 17. 设计取舍
+- 18. 决策
+- 19. 待定问题
+- 附录 A：给模型的文本
+
+## 0. 阅读说明
+
+- **章节引用**：§x 指本文；"Bot 方案 §x""子智能体方案 §x""总方案 §x""协议方案 §x""MCP 方案 §x"分别指 bot-design.md、subagent-design.md、technical-design.md、protocol-design.md、mcp-design.md；"集成方案""通知方案"指 desktop-kernel-integration.md、notification-design.md；"PRD §x"指 bot-mode-design.md。
+- **术语**：
+
+| 术语 | 定义 |
+|---|---|
+| 定时任务（routine） | 一段保存下来的说明加一个时间。代码和协议里叫 routine，因为内核里"任务"（task）已经指一次模型循环 |
+| 定时运行（run） | 定时任务到点时跑的一次：一个隐藏的子智能体会话 |
+| 说明 | 保存下来的 `prompt`：每次运行要做什么 |
+| 汇报 | 运行最后的回复，交给 Bot |
+| 计划时间、实际时间 | 这次运行本该开始的时刻和真正开始的时刻。睡眠后补跑时两者相差很远 |
+| 主人、Bot、气泡、私有文字 | 同 Bot 方案 §0 |
+
+- **编号**：决策从 D-370 起，待定问题从 Q-220 起。
+- **给模型的文本**：按 D-16 用英文，全文见附录 A。
+
+## 1. 目标与原则
+
+| 编号 | 目标 | 来自 |
+|---|---|---|
+| RG1 | 说一句就建好："明早 9 点提醒我""每天早上整理邮件""跌破 300 告诉我" | PRD F18 |
+| RG2 | 到点时不需要主人在场，应用的窗口关着、应用退出都能跑 | PRD §6.21 |
+| RG3 | 没话说的运行便宜又安静：不读 Bot 的对话，不出气泡，不显示在忙 | 费用和打扰都来自唤醒 Bot |
+| RG4 | 结果不丢：有话说的运行一定到主人那里；跑没跑、到没到都查得到 | D-321 的同一条原则 |
+| RG5 | 主人看得到、关得掉：建了什么、下次什么时候、上次怎么样 | 无人值守的前提 |
+
+原则：
+
+- **最小可用**：现有内核能做到的不另做。没有证据的优化列进 §15，写明什么情况下才做。
+- **说实话**：定时检查是轮询，不是监听；两次检查之间发生又恢复的事看不到。Mac 睡着就不跑。工具描述、运行说明和界面都这样说。
+- **不设没有证据的限制**：不限个数和频率，没有最小间隔，没有浮动时间窗。这些是共享服务器要防的问题，本机没有共享队列（D-376）。
+- **在拥有它的那一层改**：时间和调度在服务层，运行和汇报在内核，显示在客户端。
+
+一期不做（§15）：事件触发（Webhook、邮件、Slack 等）、运行直接给主人发消息、无人值守时转主人批准、每个任务单独的模型和权限、免打扰时段。云端运行暂缓设计（D-394）。
+
+## 2. 一次到点怎么跑
+
+```
+调度器（finx-server）            Bot 会话（没加载就先加载）         定时运行（隐藏的子智能体）
+  │ 到点                                │                                │
+  ├─ 提交：last_slot 和一行运行记录       │                                │
+  ├─ start_run ────────────────────────▶├─ 起子会话 ─────────────────────▶│ 基础提示词、工具、连接器、
+  │                                     │                                │ 运行说明（附录 A.3）
+  │                                     │                                │ 做事……
+  │                                     │                                │
+  │                     有话说，或失败   │◀── 一封信（附录 A.4）───────────┤
+  │                                     │ 唤醒：读着对话 → send_to_user   │
+  │                                     │ 气泡、未读、系统通知            │
+  │                             没话说   │ Bot 的对话不动                  │
+  │◀── 结果：状态、回复、用量 ───────────────────────────────────────────┤
+  └─ 提交：这一行的结果；更新 BotSummary，推送 bots/changed
+```
+
+### 2.1 定时运行是什么
+
+它用现有的子会话（`kernel::start_child`），只是不进智能体树的登记。
+
+| | 子智能体 | 定时运行 |
+|---|---|---|
+| 谁起 | Bot 调 `spawn_agent` | 调度器 |
+| 上下文 | 任务说明 | 运行说明：保存的说明、计划时间、实际时间（附录 A.3） |
+| 系统提示词、工具、连接器、技能 | 会话配置的提示词；父的工具，不含智能体工具和 `send_to_user` | 相同，所以也没有 `manage_routine` |
+| 模型、思考强度、权限模式 | 根会话当前的 | 相同 |
+| 工作目录 | Bot 的文件夹 | 相同。跨次要记的东西放这里 |
+| 要询问的调用 | 转给主人批准（子智能体方案 §10） | 直接拒绝，写进汇报（§10，D-378） |
+| Bot 的日志里 | `agent_spawned` 和汇报 | 只有交给 Bot 的汇报 |
+| 事件 | `agent_started`、`agent_event`、`agent_status` | 不发，客户端看不到，不算在忙 |
+| 做完以后 | 会话留着，可以 `send_message` | 会话关闭，日志留着 |
+
+不走 `spawn_agent` 的路径，原因是它按"偶尔起几个"设计（D-372）：
+
+- 每个子智能体在 Bot 日志里记一条 `agent_spawned`，恢复时 `agents::restore` 逐个读它们的日志（`agents/restore.rs:42`）。每小时一次的任务一年有 8760 条。
+- 名字永远占着，事件和快照里都有它，列表和"它在忙"的气泡都要显示。
+
+### 2.2 运行的结果
+
+| 结果 | 怎么判断 | Bot 的对话 | 运行记录 |
+|---|---|---|---|
+| 有话说 | 任务完成，最后的回复不以 `NOTHING_TO_REPORT` 开头 | 一封信，唤醒 Bot | `reported` 和汇报全文 |
+| 没话说 | 任务完成，回复去掉首尾空白后以 `NOTHING_TO_REPORT` 开头 | 不动 | `quiet` 和那一行说明 |
+| 没有回复 | 任务完成，没有任何文字 | 一封信，写明没有回复 | `reported` |
+| 失败 | 任务失败（重试用完等） | 连续失败的第一次发信，之后只记录，直到再成功一次（D-383） | `failed` 和错误 |
+| 中断 | 服务关闭、主人在面板上停止 | 不动 | `interrupted` |
+| 跳过 | 上一次还在跑 | 不动 | `skipped` 和原因 |
+
+**为什么默认交给 Bot（D-373）**：另一种做法是默认不交，运行要主动调一个工具才算有话说。但模型会漏调：Bot 的短问题实测漏发 16/36，改提示词改不动（Bot 方案 §3.11）。默认不交时，漏掉就是提醒没了；默认交时，模型忘了写 `NOTHING_TO_REPORT` 只是多唤醒 Bot 一次，Bot 再决定说不说。费用错一点可以接受，消息丢了不行。
+
+**为什么用固定开头，不用工具**：运行的工具列表和子智能体相同，不用加工具，也不用改缓存前缀；判断只在内核收尾时做一次字符串比较。开头后面的一行说明进运行记录，主人和 Bot 都能看到"上次查到了什么"。
+
+### 2.3 Bot 怎么转告
+
+- 信的格式见附录 A.4。它走现有的路径：`Internal::Mail`，Bot 空闲时开一个任务（`TaskTrigger::Mail`），正在回时在下一个轮次边界送达。
+- Bot 读着整段对话写气泡：它能把汇报翻成自然的话，也能结合主人后来说的（"这周别提醒我这个"）。主人接着追问时，汇报在 Bot 的上下文里，答得上来。
+- 代价：有话说的运行多一次读整段对话的请求。一天一次的简报可以接受；真的成了问题，§15 有"运行直接发"的做法和触发条件。
+- **文字放在信里，不放进 bot.md**：系统提示词在会话开始时冻结（Bot 方案 Q-200），已有的 Bot 看不到 bot.md 的新句子，而桌面端没有清空，每个用户的默认 Bot 都是已有的。工具列表和信是活的。所以"这是主人要的，要转告"写在工具描述和信的结尾（附录 A.1、A.4）。
+
+### 2.4 转告不能丢（D-374）
+
+`bot::unanswered`（`bot.rs:41`）从历史末尾往回找，只认主人的话和成功的 `send_to_user`；信不算。结果是：Bot 被汇报唤醒，只写了私有文字就结束，既不提醒也不算失败，主人什么也不知道。定时提醒就这样丢了，而且偏偏发生在最容易漏发的模型上。
+
+改法：
+
+- `unanswered` 往回找时，定时任务的信（`MailKind::Routine`）和主人的话一样，返回"在等回复"。子智能体的信不变。
+- 提醒条目 `unanswered` 加一个字段 `routine: bool`，换一段文字（附录 A.6）。旧日志没有这个字段，读成 `false`。
+- 提醒过还是没发：和主人的话相同，任务以 `no_reply` 失败，主人看到失败卡，有系统通知，可以重试（D-321）。
+- Bot 真的不该转告时（主人说过这周别提醒），应该暂停任务并说一句，而不是沉默。附录 A.6 这样写。
+
+### 2.5 任务什么时候结束
+
+- **一次性任务**：跑过一次，内核标记为已结束，不用模型做任何事（D-380）。它留在列表里，主人可以删除。
+- **"X 发生时告诉我"**：说明写清什么算结束。运行不能改任务，所以汇报里说"这件事结束了"，Bot 转告并调 `delete`。
+
+## 3. 定义与存储
+
+### 3.1 数据放在哪
+
+定时任务和运行记录放进本地 SQLite：`~/.finx/finx.db`（D-391）。
+
+运行记录不是日志：运行的结束时间、结果、是否送达都要改已有的行；`last_slot` 和这次运行要一起提交；面板要按任务翻页；旧日志要清理。路线图上的记忆、调度会话的关注列表、设备登记、用量统计也是这种数据，不该每个功能各写一套索引文件。
+
+| 数据 | 放哪 | 原因 |
+|---|---|---|
+| 会话日志 | JSONL，不变 | 只追加、可恢复、可审计（总方案 D-14）；上下文缓存和写入性能都建立在它上面 |
+| Bot 的文件、工具输出 | 文件，不变 | 大对象，用户要直接看 |
+| 配置、模型、MCP、信任列表 | TOML 和 JSON，不变 | 人手可改，很少变 |
+| 凭据 | 不进库 | 敏感 |
+| **定时任务、运行记录** | **`finx.db`** | 可变、要查询、要一起提交 |
+| `bot.json` 的身份和摘要 | 先不动 | 没有证据说明要搬（§15） |
+| 搜索、会话列表索引 | 以后，放另一个文件（§15） | 能重建，坏了可以整个删掉重来 |
+
+运行的完整步骤仍在它自己的会话日志里（和子智能体的日志一样在 `sessions/` 下，头部带 `agent`，不进会话列表）。库里只存路径，不复制内容。
+
+### 3.2 定时任务表
+
+```sql
+CREATE TABLE routines (
+  id          TEXT PRIMARY KEY,   -- r_7k3m2p
+  bot_id      TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  prompt      TEXT NOT NULL,
+  schedule    TEXT NOT NULL,      -- CRON_TZ=America/New_York 0 10-16 * * 1-5
+  when_text   TEXT NOT NULL,      -- 工作日每小时（美股交易时段）
+  enabled     INTEGER NOT NULL,
+  created_at  TEXT NOT NULL,      -- 时间都是带时区的 RFC 3339
+  updated_at  TEXT NOT NULL,
+  last_slot   TEXT,
+  failures    INTEGER NOT NULL DEFAULT 0,
+  finished_at TEXT,
+  deleted_at  TEXT
+) STRICT;
+CREATE INDEX routines_by_bot ON routines(bot_id) WHERE deleted_at IS NULL;
+```
+
+- `id`：内核生成，`r_` 加 6 位小写字母和数字，撞了就换一个。不从名字来：中文名字转不成简短的标识，转完还可能撞车（D-379）。
+- `schedule`：模型写的原文。每次读取时解析，解析结果不存。一次性任务的相对时间（`in 20m`）在保存时换算成绝对时间再存。
+- `when_text`：模型写的白话，界面和环境更新用它（§4.1）。
+- `last_slot`：已经处理到的计划时间（§5.2）。
+- `failures`：连续失败的次数（D-383）。
+- `deleted_at`：删除是软删除，任务不再调度，也不再出现在任何地方，运行记录留着。删除 Bot 时，它的任务一起标记删除；Bot 的目录照旧进回收站。
+
+### 3.3 运行记录表
+
+```sql
+CREATE TABLE routine_runs (
+  id         TEXT PRIMARY KEY,   -- run_<UUID v7>，按时间有序，翻页用它
+  routine_id TEXT NOT NULL REFERENCES routines(id),
+  bot_id     TEXT NOT NULL,
+  scheduled  TEXT NOT NULL,
+  started    TEXT,               -- 跳过时为空
+  ended      TEXT,               -- 还在跑时为空
+  outcome    TEXT,               -- 还在跑时为空
+  note       TEXT,
+  report     TEXT,
+  delivered  TEXT,
+  log        TEXT,
+  usage      TEXT                -- JSON
+) STRICT;
+CREATE INDEX runs_by_routine ON routine_runs(routine_id, id DESC);
+```
+
+- `outcome`：`reported`、`quiet`、`failed`、`interrupted`、`skipped`（§2.2）。
+- `note`：没话说时运行写的那一行；跳过时的原因。
+- `report`：`reported` 时的汇报，`failed` 时的错误。超过工具结果的长度时按现有的办法截断（`cap_result`），全文存进 `tool-output`。
+- `delivered`：Bot 收到这封信之后第一次成功的 `send_to_user` 的时间。运行成功和主人收到是两件事，这里分开记（§5.8）。
+
+什么时候写，每一行都是一个事务：
+
+| 时机 | 写什么 |
+|---|---|
+| 到点 | `routines.last_slot`；插入一行运行记录，`outcome` 为空 |
+| 跳过 | `routines.last_slot`；插入一行 `skipped` |
+| 运行结束 | 这一行的 `ended`、`outcome`、`note`、`report`、`usage`、`log`；`routines.failures`；一次性任务的 `finished_at` 和 `enabled` |
+| 服务启动 | `outcome` 还空着的行改成 `interrupted`：上次崩溃时开着的运行 |
+| Bot 发出消息 | 这个 Bot 还没送达的 `reported` 行记上 `delivered`（§5.8） |
+
+**日志清理**：每个任务只留最近 50 次运行的日志文件，更旧的删掉，`log` 置空，记录留着。依据是算术：每 10 分钟跑一次的任务一年有 5 万个文件。50 这个数没有实测依据，只是够排查最近的问题。运行记录本身不清理（§15）。
+
+### 3.4 时间的写法
+
+| 写法 | 含义 |
+|---|---|
+| `0 8 * * *` | 五段式 cron：分、时、日、月、星期。本机时区 |
+| `CRON_TZ=America/New_York 0 10-16 * * 1-5` | 带前缀：按那个时区算 |
+| `2026-11-10 09:00` | 一次：本机时区的这个时刻 |
+| `CRON_TZ=America/New_York 2026-11-10 09:30` | 一次：那个时区的这个时刻 |
+| `in 20m`、`in 2h`、`in 1h30m`、`in 3d` | 一次：从现在算起 |
+
+cron 的规则：
+
+- 支持 `*`、列表（`1,15`）、范围（`1-5`）、步长（`*/15`）。不支持名字（`MON`）和 `L`、`W`、`?`，报错时说明。
+- 星期 0 和 7 都是周日。日和星期都限定时，满足其一就算（标准 cron 的规则）。
+- `0 9 10 11 *` 是每年 11 月 10 日，不是一次。**一次性任务不用定死日期的 cron 表达**：那样没有年份，也分不出"只这一次"和"每年"（D-375）。
+
+报错都写清原因和当前时间，模型能自己改：
+
+| 情况 | 结果 |
+|---|---|
+| 写不对 | `schedule "…" cannot be read: …` |
+| 一次性时间已过 | `That time has already passed: it is now Thu 2026-11-05 22:14.` |
+| 时区不认识 | `Unknown time zone "…": use an IANA name such as Asia/Shanghai.` |
+| 永远不会运行（2 月 30 日） | `This schedule never runs.` |
+
+**模型不用知道现在几点**：模型只有日期，没有时钟（`prompt.rs:140`）。"20 分钟后"写 `in 20m`，由内核算；"今晚 9 点"用日期就够，万一已经过了，报错里有当前时间。不给模型加时钟，也就不用每轮多一段会变的文字。
+
+### 3.5 下次运行怎么算
+
+- 时区用 `jiff`（新依赖，MIT 或 Unlicense）：macOS 和 Linux 读系统的时区库，Windows 用它自带的。现在的 chrono 配置没有时区库。`Cargo.lock` 里虽然有 `jiff`，但当前的构建用不到它（`cargo tree -i jiff` 是空的），所以它是真正新增的依赖。
+- cron 的解析和计算自己写，约 150 行加测试：只用五段式，语义要和本节完全一致，现成的库在星期编号和夏令时上各有约定。
+- 从锚点往后，在该时区的本地时间上找下一个匹配的分钟，再换算成绝对时刻。最多找 5 年，找不到就是"永远不会运行"。
+- **夏令时**：跳过的时刻（`30 2 * * *` 碰上春季拨快）在跳过之后的第一个有效时刻运行一次；重复的时刻（秋季拨回）只运行一次，用第一次。
+- **没写前缀的任务跟着系统时区走**：主人出差改了 Mac 的时区，"早上 8 点"还是当地的早上 8 点。带前缀的不变。一次性任务存的是绝对时刻，不变。
+
+### 3.6 数据库的规则（D-392）
+
+`finx.db` 是 finx 第一个数据库，这些规则以后的表也照用。
+
+- **只有 `finx serve` 打开**：命令行和 `finx exec` 不碰它，启动目标不受影响。依赖只加在 `finx-server`。
+- **用到才建**：文件不存在就说明没有定时任务，不创建；第一个任务创建时才建。文件存在时，服务在开始监听之后、在专用线程上打开，不挡启动。
+- **一个连接，一个专用线程**：其他地方经通道发请求。Hub 从不阻塞，服务层的异步任务也不直接碰连接。调度器常驻内存的是任务定义和状态，库是它的持久化；面板要的详情和运行记录再去查。
+- **写得少，所以写得稳**：`journal_mode=WAL`，`synchronous=FULL`，`fullfsync=ON`（macOS 上普通的 fsync 不保证数据到盘）。`foreign_keys=ON`。这张表一小时也写不了几次，不用为速度放松。`synchronous=NORMAL` 断电可能丢最后一次提交，那样 `last_slot` 回退，同一个计划时间会再跑一次。
+- **权限**：文件 0600（`-wal`、`-shm` 跟着主文件），目录本来就是 0700。数据目录的写保护照旧，完全访问下不拦（总方案 D-31）。工具描述不提这个文件，模型改任务只走工具。
+- **迁移只增不减**：版本记在 `PRAGMA user_version`，迁移是代码里按顺序的一组 SQL，每步一个事务。旧库升级前先用 `VACUUM INTO` 备份成 `finx.db.bak-v<旧版本>`。新版本不改旧表的含义，只加表、加可空的列。
+- **打不开时只影响定时任务**：遇到比自己新的版本（开发时切到旧分支会遇到）、文件损坏或磁盘满，服务和聊天照常；调度器不读不写，工具和面板返回 `routines_unavailable`，写明原因。不自动修复，文件原样留着。
+- **事务放在 SQL 所属的模块里**：`db.rs` 只管连接、线程和迁移，不认识业务；SQL 写在 `routines.rs`。
+
+实测（2026-11-05，这台 Apple 芯片的 Mac，临时程序，配置接近 `dist`，`rusqlite` 带内置 SQLite）：
+
+| 项 | 结果 |
+|---|---|
+| 可执行文件 | 多约 1.7 MB，finx 现在约 25 MB |
+| 从零编译 | 约 25 秒；构建本来就要编译 C（`ring`） |
+| 打开并切到 WAL | 1.2 毫秒 |
+| 内存 | 打开后多约 1.7 MB |
+| 100 万行里取某任务最近 20 条 | 80 微秒 |
+
+真实的 finx 要在实现后跑一次性能棘轮确认。Linux musl 的交叉编译没有测（§13）。
+
+## 4. `manage_routine` 工具
+
+### 4.1 动作
+
+| 动作 | 参数 | 结果 |
+|---|---|---|
+| `create` | `name`、`prompt`、`schedule`、`when` | 保存结果（下面） |
+| `get` | `id` | 保存的说明和时间、接下来几次、最近 5 次运行（结果和汇报开头） |
+| `update` | `id`，加要改的字段 | 保存结果。改 `schedule` 时也要给 `when` |
+| `pause`、`resume` | `id` | 保存结果。恢复已过期的一次性任务报错，要给新时间 |
+| `delete` | `id` | `Deleted.` |
+
+保存结果由内核算出，模型照着告诉主人：
+
+```
+Saved routine "特斯拉跌破 300 提醒" (id r_7k3m2p). Next runs in local time: Thu Nov 5 00:00, 01:00, 02:00.
+```
+
+- **接下来三次，本机时间**（一次性任务只有一次）。不做 cron 转白话：三个时刻已经能看出规律，也不用模型换算时区。模型写错 cron，这里最容易发现（D-377）。
+- **`when`**：模型写的白话，比如"工作日每小时（美股交易时段）"，给人看。这样不用写 cron 转中文和英文的代码。它可能和 cron 对不上，所以界面上它旁边总有下次运行的时刻。
+- **不做 `list`**：列表由环境更新给出（§4.4）。
+- **不做 `run`**：主人要现在跑一次，Bot 在对话里直接做；要测任务，面板上有"立即运行"。模型不需要这个动作。
+- **参数说明和描述**见附录 A.1。
+
+### 4.2 权限
+
+- `kind_for`：`get` 是只读，其余是修改类。所以手动和接受编辑模式下写操作弹授权窗口，完全访问下不问，和别的修改类工具一样（`approval.rs:66`）。
+- `approval.rs` 给这个工具加一个分支，把摘要写成人读得懂的（`create routine "名字": 工作日每小时`），不显示原始 JSON。
+- **不做"不管权限模式都确认"**（D-378）：完全访问下模型本来就能写 crontab，只拦这一个工具挡不住什么，反而多一个弹窗。用户靠对话里那一行和工具结果里的时间看到任务。等有了沙箱或自动审查再收紧（§10）。
+
+### 4.3 接到服务层
+
+任务表在服务层，内核碰不到。接法和文档、浏览器相同：finx-core 定义接口，finx-server 实现，经 `KernelDeps` 注入。
+
+```rust
+#[async_trait]
+pub trait RoutineHost: Send + Sync + 'static {
+    async fn create(&self, bot: &str, new: NewRoutine) -> Result<RoutineSaved, String>;
+    async fn get(&self, bot: &str, id: &str) -> Result<RoutineDetail, String>;
+    async fn update(&self, bot: &str, id: &str, change: RoutineChange) -> Result<RoutineSaved, String>;
+    async fn set_enabled(&self, bot: &str, id: &str, enabled: bool) -> Result<RoutineSaved, String>;
+    async fn delete(&self, bot: &str, id: &str) -> Result<(), String>;
+}
+```
+
+- 工具挂在 `bot::tools()` 里，和 `send_to_user` 一起。子智能体的工具在这之前就取走了，所以运行和子智能体都没有它：运行不能给自己续命或新建任务（`kernel.rs` 里 "After the sub-agents took their tools"）。
+- 工具从 `ctx.session_state` 取 `RoutineHost`，没有就报错。Bot 会话总是由服务层起，不会遇到。
+- 错误是给模型看的一句话，走 `ToolError::Failed`。
+- 工具结果的 `details` 带 `{ action, routine_id, name, when, next_run }`，客户端用它显示对话里的那一行（§9）。
+
+### 4.4 任务列表：环境更新
+
+模型要知道已有哪些任务，才不会重复建，也才答得上"我有哪些定时任务"。做法和改名完全相同（`session.rs:362`、`context.rs:62`）：
+
+```
+<environment_update>
+your routines:
+- r_7k3m2p 提醒交报告: 11 月 10 日早上 9 点
+- r_8a2c1d 特斯拉跌破 300 提醒: 工作日每小时 (paused)
+</environment_update>
+```
+
+- **新条目** `routines { text }`：`SessionState.bot` 记当前的文字。每次请求前（`task.rs` 的 `note_bot_name` 旁边）和"当前上下文最后给出的"比较，不同就记一条。追加，不动系统提示词，缓存不受影响。
+- **压缩后重新补**：往回找停在压缩条目，所以压缩后自动再给一次。
+- **内容只有定义**：id、名字、`when`、暂停与否。不放说明（省 token，也逼模型改之前先 `get`）。不放下次运行和上次结果，否则每次到点都多一条。已结束的一次性任务不列。
+- **没有任务的 Bot 一条都没有**，不多花 token。全删了时写 `your routines: none`。
+- **改动来源**：调度器在任务变化时给 Hub 发 `HubCmd::Routines { text }`（同 `HubCmd::BotName`）；会话加载时从 `ResumeOptions` 带入。所以主人在面板上暂停、删除，Bot 下一次请求就知道。
+
+## 5. 调度器
+
+调度放在服务层（D-390）：
+
+| 层 | 放什么 | 原因 |
+|---|---|---|
+| 桌面端 | 登录启动、保持唤醒、系统通知、界面（§7.4、§7.5） | 这些只有它能做。应用可能被 Cmd-Q 退出，以后还有 iPhone，也有没装桌面端的 Linux 主机，所以调度不能依赖它 |
+| 服务层 `finx serve` | 到点判断、任务存储、加载 Bot 会话 | 只有它长期活着，Bot 的登记表也在这里 |
+| 会话内核 `finx-core` | 跑一次运行、发信、提醒（§6） | 它管单个会话。`finx exec` 这类进程跑完就退出，没有全局视角，也撑不到下次到点 |
+
+服务层里再分两个模块：
+
+- **`schedule.rs`**：解析时间写法、算下次运行、判断到点（§3.4、§3.5、§5.2）。纯函数，时钟由调用方传入，不认识 Bot。
+- **`routines.rs`**：Bot 的定时任务，是它的第一个使用者。一个 tokio 任务，随服务启动。
+
+以后记忆整理、日志清理、Bot 调度会话要定时，直接用 `schedule.rs`。等有了第二个使用者再考虑拆成单独的 crate。
+
+### 5.1 时钟
+
+- **看墙上时钟，不睡长定时器**（D-381）：tokio 的定时器基于单调时钟，macOS 上它在系统睡眠时不走。睡 8 小时的定时器，机器中途睡了 6 小时，就晚 6 小时。
+- 每次检查后，睡到"下一个到点"和"30 秒"中较早的那个。到点通常不超过几秒就开始；唤醒后最多 30 秒就发现。没有启用的任务时不醒。
+- 不加随机偏移，不提前也不故意推迟：本机没有共享队列要错开（D-376）。
+
+### 5.2 什么时候算到点
+
+```
+now = 墙上时钟
+对每个启用的定时任务：
+    slot = 锚点之后的第一个计划时间      // 锚点：last_slot；没跑过或刚改过时间时是 updated_at
+    if slot > now: 跳过
+    latest = now 之前（含）最后一个计划时间   // 中间错过的都不补
+    if 这个任务上一次运行还没结束:
+        提交：last_slot = latest，插入一行 skipped（note: 上一次还在运行）
+        continue
+    提交：last_slot = latest，插入一行运行记录（outcome 为空）
+    起一次运行（计划时间 = latest，实际时间 = now）
+```
+
+- **先提交再起运行**：宁可因为崩溃少跑一次，也不重复做（比如重复发一封邮件）。崩溃时开着的运行，下次启动时改成 `interrupted`，不自动重跑（§3.3）。提交失败就不起运行，记日志，下一次检查再试。
+- 改 `schedule` 和恢复时，锚点设为现在：暂停期间错过的不补。
+
+### 5.3 错过的只补一次
+
+- 睡眠、关机、服务没在跑时错过的，只在最近的那个计划时间跑一次，更早的丢掉（D-382）。没有回溯窗口的限制：离开三个月，回来也只跑一次。
+- 一次性任务错过了也跑，不丢：提醒晚了也比没有好。
+- 运行说明里有计划时间和实际时间，相差超过 2 分钟时多一句（附录 A.3），由模型判断还有没有意义：9 点的"开盘前简报"晚上 11 点才跑，它应该说清楚。运行记录也标 `late`。
+
+### 5.4 上一次还没跑完
+
+跳过这一次，记一条 `skipped`（D-382）。不排队：排起来只会连着跑几次一样的事。一个任务卡住时，面板上看得到它运行了多久，有"停止"。运行本身不设超时，理由同子智能体方案 §10.1：没有证据说明需要，工具各有自己的超时。
+
+### 5.5 加载 Bot 的会话
+
+运行要用 Bot 的连接器、模型、权限和提示词，这些都在根会话上（`AgentTree`、`McpManager`、`sub_agent_prompt`），所以先把 Bot 的会话加载起来：
+
+- `Server` 加 `load_bot_session(bot_id)`：已加载就用；否则和 `bots/open` 同样的路径恢复或新建（在 `registry.opening` 锁内），只是不附着客户端（`hub::spawn` 的 `first` 本来就是 `Option`）。加载不写日志条目，不唤醒模型。
+- 恢复时连接器在后台启动。`start_child` 假设根会话已经等过它们，运行起得太早就看不到连接器的工具，所以起运行前要等，和根会话第一次请求一样。
+- 空闲卸载照旧：`idle_session_secs`（默认 900 秒）后没人用就卸载，下次到点再加载。每小时的任务不会让会话一直占着内存。
+- 加载失败（比如 `server_full`）：记 `failed`，这次跑不成；Bot 也没法转告，只在面板上看得到。
+
+代价：长日志的 Bot 每次要读整个日志到内存（Bot 方案 Q-203）。这是 CPU，不是模型的 token。实测明显慢时，§15 有办法。
+
+### 5.6 启动与更新
+
+- 启动时从库里读任务（`finx.db` 不存在就没有任务），把上次崩溃留下的运行改成 `interrupted`，重新计算下次运行，马上检查一次，所以重启后错过的立刻补。`bot_id` 不在 Bot 登记表里的任务不调度，记一条警告。
+- 应用更新替换服务时：监管等运行结束再换（§7.3）；换的间隙错过的由新服务补。
+
+### 5.7 立即运行与停止
+
+面板的"立即运行"走同一条路，计划时间就是现在。任务暂停时也能跑（用来测试），已在跑时报 `routine_busy`。**它做真实的事**，界面上写明。"停止"给运行发 `Op::Interrupt`，记 `interrupted`。
+
+### 5.8 记录是否送达
+
+运行成功不等于主人收到（D-384）：
+
+- 运行结束时记 `reported`，`delivered` 为空。
+- 服务层在 `Registry::on_event` 看到 Bot 的 `send_to_user`（Bot 方案 §5.2 已有的那个分支）时，给这个 Bot 尚未送达的运行记上时间。内存里记着每个 Bot 有没有在等送达的运行：没有就不碰库，所以平时的聊天不多写一次。有也只是发给数据库线程，Hub 不等。
+- 面板显示"发给你了 09:02"或"没有送达"。这只是"Bot 这次回话发了消息"，不证明内容就是那份汇报，但足以发现"跑了却没到"。
+
+## 6. 内核的改动
+
+| 位置 | 改动 |
+|---|---|
+| `agents/run.rs`（新） | `AgentTree::start_run(RoutineRun) -> oneshot::Receiver<RunOutcome>`：用 `start_child` 起子会话，`interactive_approvals: false`，头部 `agent` 带 `routine: Some(id)`；单独的驱动循环复用 `driver.rs` 的 `Round`，不转发事件；任务结束后判断结果（§2.2）、需要时发信、关闭会话、交回结果。`TreeState` 加 `runs`，不放进 `agents`：`send_message`、`settled`、`interrupt_all`、名字都不用改；`share_permissions` 和 `shutdown` 也遍历它 |
+| `agents/mail.rs` | `Mail::routine_report`：信的格式（附录 A.4），`wake: true`。信的 `from` 是运行的 id 和任务名字 |
+| `agents/prompts/routine_run.md`（新） | 运行说明（附录 A.3） |
+| `kernel.rs` | `Kernel::start_run`、`stop_run`、`set_routines`；`ResumeOptions`、`StartOptions` 带任务列表的文字；`KernelDeps.routines: Option<Arc<dyn RoutineHost>>` |
+| `bot.rs` | `manage_routine`（新工具，§4）；`unanswered` 认定时任务的信（§2.4） |
+| `session.rs`、`task.rs` | `note_routines`，放在 `note_bot_name` 旁边；`SessionState.bot` 记文字 |
+| `context.rs` | `routines_message`、`routines_in_context`；`unanswered_message` 按字段选文字 |
+| `store/entry.rs` | `EntryKind::Routines { text }`；`Unanswered` 加 `routine`；`AgentOrigin` 加可选的 `routine` |
+| `approval.rs` | `manage_routine` 的分支，只为可读的摘要（§4.2） |
+| `finx-protocol` | `MailKind::Routine`（§8） |
+
+运行结束时不给根会话发任何东西，除非要发信。根会话的 `Idle`、`settled` 都不受影响：运行和它互不相干。
+
+## 7. 服务层与常驻
+
+### 7.1 不空闲退出
+
+现在：`--idle-exit 600`，没有连接也没有任务时 10 分钟后退出（`transport.rs:146`）。到点时服务不在，就什么都不会发生。
+
+改法（D-385）：`transport.rs` 的判断加一条，有启用的定时任务就不算空闲。删掉最后一个任务后，照常 10 分钟退出。服务常驻的内存在性能工作里压得很小，这里不再优化。
+
+### 7.2 Hub
+
+- `HubShared` 加 `routine_runs: AtomicUsize`，`Hub::working()` 和 `Server::busy()` 都算上它：运行没跑完，会话不卸载，服务不退出。
+- `HubCmd::StartRun { run, reply }`：Hub 调 `kernel.start_run`，计数加一，结束时减一。
+- `HubCmd::Routines { text }`：转给 `kernel.set_routines`（§4.4）。
+
+### 7.3 监管
+
+`BotSummary` 加 `routines`（§8），监管的 `trackBot` 把"有运行在跑"也算有任务在跑，等它结束才替换服务。运行不计入 `agents_working`，所以列表和气泡不显示在忙。
+
+### 7.4 登录时启动（桌面端，D-386）
+
+重启或注销后，服务不在。只起服务不够：系统通知由应用的主进程发（通知方案 §5），所以要把应用带起来，不开窗口。
+
+- 用 `app.setLoginItemSettings({ openAtLogin: true })`（Electron 44 默认 `mainAppService`，即 SMAppService）。第一个启用的定时任务出现时登记，最后一个没了时撤销。主人在设置里关掉后不再自动登记。
+- 这时系统会提示"已添加后台项目"。集成方案担心初装用户困惑（§2.2），这里是主人刚要了定时任务，说得通。
+- 登录启动时不开窗口：`app.getLoginItemSettings().wasOpenedAtLogin` 为真就不调 `showMain()`。
+- 这改了集成方案 DQ-09（原来是三期、默认关闭）。未签名的开发构建登记不上，跳过。
+- 这几点没有实测（§13）。
+
+### 7.5 什么时候跑得了
+
+| 情况 | 到点会怎样 |
+|---|---|
+| 应用开着，窗口关着也算 | 准时跑；气泡和系统通知 |
+| Cmd-Q 退出应用 | 服务还在，准时跑；结果在对话里，没有系统通知（通知方案 DQ-63），下次打开时看未读 |
+| 重启、注销后 | 登录项把应用带起来，错过的补一次，之后准时 |
+| Mac 空闲睡眠 | 不跑，唤醒后补最近一次。开了"保持唤醒"并接着电源时不会空闲睡眠 |
+| 合盖、关机 | 不跑，下次开机后补最近一次 |
+| 服务崩溃 | 应用开着时监管重启，错过的补一次；否则等下次打开应用 |
+
+美股交易时段在北京是 23:00 到次日 05:00，正好是 Mac 多半睡着的时候。这是本机方案最弱的地方，工具描述要求模型创建时说清（附录 A.1）。彻底解决要靠云端运行，主人决定暂缓设计（D-394）。
+
+**保持唤醒**（桌面端，D-387）：设置里一个开关，默认关。开着、有启用的定时任务、接着电源时，主进程持有 `powerSaveBlocker.start('prevent-app-suspension')`。它挡不住合盖。用电池时不持有，免得主人回来电量见底。
+
+## 8. 协议
+
+`initialize` 的 capabilities 加 `routines: true`。都是增量。
+
+`BotSummary` 加一个字段，任务变化、运行开始和结束时随 `bots/changed` 推送：
+
+```rust
+pub routines: Vec<RoutineSummary>,
+/// 库打不开时的原因（§3.6）；这时 routines 是空的，面板显示这句话。
+pub routines_error: Option<String>,
+
+pub struct RoutineSummary {
+    pub id: String,
+    pub name: String,
+    pub when: String,
+    pub state: RoutineState,              // active | paused | finished
+    pub running: bool,
+    /// RFC 3339；暂停、已结束时没有。
+    pub next_run: Option<String>,
+    pub last_run: Option<RoutineRunBrief>, // started、outcome、delivered
+}
+```
+
+放进摘要而不开新的订阅：一个 Bot 的任务很少，变化也少；列表、面板、监管用同一份，不用另外同步（一个真相来源）。
+
+| 方法 | 参数 | 结果 | 说明 |
+|---|---|---|---|
+| `bots/routine` | bot_id、routine_id | `{ routine }` | 详情：说明全文、`schedule`、接下来三次 |
+| `bots/routine_runs` | bot_id、routine_id、limit?、before? | `{ runs }` | 运行记录，新的在前 |
+| `bots/routine_run` | bot_id、routine_id、run_id | `{ run, transcript }` | 一次运行：记录加这次运行的步骤（从 `log` 读，用 `kernel::transcript_of`，和恢复子智能体同一个办法）。日志已清理时 `transcript` 为空 |
+| `bots/routine_set_enabled` | bot_id、routine_id、enabled | `{}` | 面板的开关 |
+| `bots/routine_run_now` | bot_id、routine_id | `{}` | 立即运行 |
+| `bots/routine_stop` | bot_id、routine_id | `{}` | 停止正在跑的运行 |
+| `bots/routine_delete` | bot_id、routine_id | `{}` | 删除（§3.2 的软删除）；正在跑就先停下 |
+
+- **新建和修改只有对话这一条路**，协议没有这两个方法：说明要模型写才写得全，界面上的"修改"只是往输入框里放一句话（PRD §6.21）。
+- **错误码**：−32043 `routine_not_found`，−32044 `routine_busy`（已在运行），−32045 `routines_unavailable`（库打不开，§3.6）。
+- `MailKind` 加 `Routine`。旧客户端不认这个值，但它们和服务总是一起升级（Bot 方案 Q-202）。
+- **类型生成**：同 Bot 方案 §4。
+
+## 9. 客户端库与桌面端
+
+界面的需求见 PRD §6.21。这里只记实现上的依据：
+
+- **`botChat.ts`**：`manage_routine` 的写操作结果（`details`）产出一种新的项 `{ kind: "routine", action, routine_id, name, when, next_run, ts }`，显示成对话里的一行。这个工具调用本身仍在"过程"里。`get` 不产出。
+- **信**：`steps.ts` 已经把带 `mail` 的消息当"汇报"放进过程，不用改；`kind` 是 `routine` 时显示任务名字。
+- **`bots.ts`**：摘要里已有 `routines`，面板直接读。
+- **`bots/RoutinesPanel.tsx`（新）**：顶栏时钟图标打开的右侧面板，列表、任务详情、一次运行三层。和文件面板、浏览器、Bot 设置共用一个位置（`st.botPanel`）。`BotPanel.tsx` 不放定时任务。
+- **气泡**：`botChat.ts` 给由定时任务的信唤醒的气泡带上来源（信的 `routine_id` 和运行 id），`BotPage.tsx` 悬停时显示时钟图标，"过程"里的那一行也能点。
+- **`supervisor.ts`**：`trackBot` 算上 `running`（§7.3）；主进程根据摘要登记登录项、持有保持唤醒。
+- **`alerts.ts`**：不用改。转告就是一条新消息，走现有的通知。
+- **模拟服务**：加一个带两个定时任务的 Bot。
+
+## 10. 安全
+
+要说清楚哪些有保护、哪些没有：
+
+| 情况 | 现在的表现 |
+|---|---|
+| 运行调了要询问的工具 | 没有人能答：直接拒绝，模型把它写进汇报（`Approval::NoApprover`，子智能体方案 §10.1 的"无人能答"）。Bot 转告时问主人，主人同意后 Bot 自己做，这时的窗口来自 Bot 会话 |
+| 运行在完全访问下（Bot 的默认） | 全部放行。和 Bot 自己一样，只是没人看着 |
+| 运行用连接器发信、发消息 | **任何模式都不问**：MCP 调用一期不审批（`approval.rs:46`，MCP 方案 D-107）。只有运行说明里的一句话约束：说明写明的才做，别的写进汇报（附录 A.3）。这不是硬限制 |
+| 网页或邮件里的恶意指令 | 只有提示词层面的防护（"Acting with care"）。运行读外部内容又能发信，这是最大的风险（D-393） |
+| 恶意内容让 Bot 建任务 | 手动模式会弹窗；完全访问不问，但对话里有一行。完全访问下模型同样能写 crontab，所以这个工具不单独设防（D-378） |
+| 运行再建运行 | 不能：运行没有 `manage_routine`，也没有 `spawn_agent` |
+
+**主人要知道的**：定时任务让"完全访问"从"我看着它做"变成"它自己做"。这是产品层面要讲清的事。PRD 在 Bot 设置的权限说明里加一句。
+
+**一期的决定（D-393）**：定时运行的权力和 Bot 相同，不另加限制。现在只有主人自己用，连接器里也没有邮箱。
+
+- **发布给别人用之前必须重新决定**，这一条记在发布文档里（desktop-release.md）。
+- **连接器审批不能单独解决问题**：审批跟随权限模式的话，完全访问下照样不问；强制询问的话，完全访问下模型还能用命令行把东西发出去。而且只读与否靠连接器自己声明（MCP 方案 Q-110），没声明的读取也会被拒。真正挡住要靠沙箱加网络限制（总方案 §11.8）。
+- **定时运行里拒绝连接器的非只读工具**是一个折中，估计半天：周报这类任务变成写好草稿、Bot 问主人、主人同意后再发。重新决定时先考虑它。
+- **连上邮箱这类连接器时**，可以先用 `disabled_tools` 关掉发信工具，这个设置已经有了（MCP 方案 §9.1）。
+
+## 11. 实现清单
+
+| crate / 目录 | 文件 | 改动 |
+|---|---|---|
+| finx-core | `agents/run.rs`（新）、`agents/prompts/routine_run.md`（新）、`agents/mail.rs`、`agents/mod.rs` | §6 |
+| | `routine.rs`（新） | `RoutineHost`、`NewRoutine` 等类型 |
+| | `bot.rs`、`kernel.rs`、`session.rs`、`task.rs`、`context.rs`、`approval.rs`、`store/entry.rs` | §6 |
+| finx-protocol | `bot.rs`、`event.rs`、`api.rs` | §8 |
+| finx-server | `db.rs`（新），依赖 `rusqlite`（带内置 SQLite） | 连接、专用线程、迁移（§3.6） |
+| | `schedule.rs`（新），依赖 `jiff` | 时间写法、下次运行、到点判断，不认识 Bot（§3.4、§3.5、§5.2） |
+| | `routines.rs`（新） | 调度循环、`RoutineHost` 的实现、两张表的 SQL |
+| | `bots.rs`、`hub.rs`、`server.rs`、`transport.rs`、`native.rs`、`errors.rs` | §5.5、§7、§8 |
+| packages/client | `botChat.ts`、`bots.ts`、模拟服务 | §9 |
+| apps/desktop | `bots/RoutinesPanel.tsx`（新）、`bots/BotPage.tsx`、`store.tsx`、设置页、`main/kernel/supervisor.ts`、`main/index.ts`、样式、文案 | PRD §6.21、§7.4 |
+| docs | technical-design.md（§9.1 的目录加 `finx.db`；D-233 那句，实现后把定时任务写进能力说明）、protocol-design.md §错误码、desktop-kernel-integration.md DQ-09 | 实现时同步 |
+
+## 12. 测试与验收
+
+**单元测试**：
+
+- cron：字段解析与报错、日和星期的"或"、闰年、2 月 30 日永不运行；纽约时区跨春秋两次夏令时切换；`CRON_TZ` 和本机时区。
+- 时间写法：`in 1h30m`、带前缀的一次性时间、时间已过。
+- 调度（注入时钟）：准点、补最近一次、一次性错过也跑、跳过、暂停期间不补、改时间不补、先提交再起运行、提交失败不起运行、重启后接着算。
+- 数据库：从无到有；从旧版本迁移并留备份；遇到更新的版本和损坏的文件时不读不写，聊天不受影响；`last_slot` 和运行记录在同一个事务；启动时把空的 `outcome` 改成 `interrupted`；软删除后不再调度；只留 50 次日志；文件权限 0600。
+- `unanswered`：定时任务的信算在等回复，子智能体的信不算；发过之后不算。
+- 环境更新：变化时追加一条，不变不追加；压缩后重新给；全删后写 none；运行状态变化不追加。
+- 运行结果：`NOTHING_TO_REPORT` 的判断，写在回复中间的不算；连续失败只发第一封。
+
+**脚本模型（finx-mock）**：
+
+- 到点起运行：看不到 Bot 的历史；工具里没有 `send_to_user`、`manage_routine`、`spawn_agent`。
+- 没话说：Bot 日志一条都不多，没有请求发给 Bot 的模型，没有 `agent_*` 事件。
+- 有话说：Bot 被唤醒，出一个气泡，未读加一，`delivered` 记上。
+- Bot 只写私有文字：提醒一次；还不发：`no_reply` 失败。
+- 运行跑的时候会话不卸载，服务不退出；关闭服务时记 `interrupted`。
+- 会话没加载时到点：加载、跑、空闲后卸载。
+
+**真实模型（`tools/bench/bot_turns.mjs` 加场景，默认 DeepSeek，统计数字写进文档）**：
+
+| 测什么 | 怎么测 | 判断线（第一版） |
+|---|---|---|
+| 会不会建 | 明说的（"每天 8 点提醒我喝水"）、盯着的（"跌破 300 告诉我"）、隐含的（"我每周一都要看这个表"）各 12 遍 | 明说和盯着的漏建不超过 1/12；隐含的只提议，不直接建 |
+| 不用 crontab | 上面的结果里有没有碰 `crontab`、`launchctl`、`sleep` | 0 |
+| 时间写对 | 比对 cron 和说的时间；美股类是否用 `CRON_TZ`；是否把时间告诉主人 | 全对 |
+| 说明写得全 | 人工看保存的说明：查什么、什么值得说、什么时候不说、查不到怎么办、什么时候结束 | 记录，不设线；不好就改参数说明 |
+| 没话说 | 运行查到"没变化"时是否写 `NOTHING_TO_REPORT` | 漏写不超过 1/12（漏写的代价只是多唤醒一次） |
+| 转告 | 有话说的运行，Bot 是否发出气泡 | 不超过 1/36 失败（同 D-316 的统计方式） |
+| 说话自然 | 气泡里有没有"运行""汇报"这类词 | 人工看 |
+| 费用 | 记下没话说和有话说两种运行的 token，和一次普通回话比较 | 记录 |
+
+提示词的增减按这些数字定，不先写长段落（§15 第一行）。
+
+**性能**：用 `tools/bench/ratchet.py` 跑启动和内存棘轮，确认命令行和 `finx exec` 的启动不变（它们不打开库）、服务常驻内存的增量和 §3.6 的实测相符、`dist` 的体积增量在预期之内。
+
+**桌面端走查**（`e2e/bot-routines.mjs`）：对话里建任务并出现那一行；点开到面板详情；开关、立即运行、停止、删除；在对话里修改；到点气泡和通知；替换服务时等运行结束。
+
+**手动验证**（自动化做不到）：`pmset sleepnow` 睡过一个计划时间，唤醒后 30 秒内补一次，运行说明写着晚了；登录项重启后不开窗口；真实的系统提示"已添加后台项目"。
+
+## 13. 实现时要先试的
+
+| 事项 | 不确定什么 | 不行的话 |
+|---|---|---|
+| `wasOpenedAtLogin` | macOS 13 以后 `mainAppService` 登记的登录项，它还准不准。类型文件里只写了含义 | 用 `agentService`，由应用包里的 plist 带参数启动应用本身；再不行就接受登录时开窗口 |
+| 登录项在已签名未公证的包上 | 通知方案测过这类包能发通知，登录项没测过 | 随正式包验证 |
+| `jiff` 的体积 | 只用时区和本地时间，进 `dist` 配置后增加多少 | 换 `chrono-tz`（带时区库，更大）或读系统时区文件 |
+| Linux musl 交叉编译 | 内置 SQLite 是 C 代码，经 `cargo-zigbuild` 编译没有试过。这台机器现在没有 zig | `ring` 已经这样编译过 C，预计能过；不行就看链接参数 |
+| Windows | 内置 SQLite 和文件权限的行为没有试过 | 桌面端发 Windows 版之前再验证 |
+| 恢复时等连接器 | 根会话没有任务时怎么等连接器就绪，现有的等待在任务循环里 | 把那段等待抽出来给 `start_run` 用 |
+| `powerSaveBlocker` 过夜 | `prevent-app-suspension` 在应用隐藏时能不能撑过一夜 | 换成服务里直接持有 IOKit 的断言 |
+
+## 14. 分期与工作量
+
+| 部分 | 内容 | 预估 |
+|---|---|---|
+| 内核 | 运行、信、提醒、工具、环境更新 | 2.5 天 |
+| 服务层 | 时间解析、数据库、调度器、加载、不退出、协议 | 4 天 |
+| 客户端库 | 对话里的一行、模拟服务 | 0.5 天 |
+| 桌面端 | 面板和详情子页、设置、登录项、保持唤醒、监管 | 2.5 天 |
+| 测试与真实模型验收 | §12 | 2.5 天 |
+| 合计 | | 约 12 人天 |
+
+建议的顺序：`schedule.rs` 和 `db.rs` → 内核的运行和信 → 调度器 → 工具和环境更新 → 真实模型统计 → 桌面端。真实模型统计放在桌面端之前，因为提示词和参数说明可能要改。
+
+## 15. 按需再加
+
+| 改进 | 要解决的问题 | 什么情况下做 | 做法 |
+|---|---|---|---|
+| 更强的"要主动建"段落 | 模型该建任务时不建 | §12 的统计里明说的漏建超过判断线 | 写进工具描述；不进 bot.md（§2.3）。要进系统提示词得先解决 Q-200 |
+| 运行直接发消息 | 有话说的运行多读一次整段对话 | 实测转告的费用明显偏高（长对话、频繁提醒） | 运行带 `send_to_user`，气泡由运行发，Bot 日志追加一封不唤醒的信。代价：运行不知道聊天内容，Bot 把不了关；要做一条新的气泡来源 |
+| 提醒不开运行 | 单纯的提醒也要一次小运行，多一次请求和几秒 | 提醒显得慢或文字生硬 | 一次性任务加"直接唤醒 Bot"的方式，到点把说明作为信送进主会话 |
+| 事件触发 | "来邮件时"只能轮询 | 主人要；连接器支持推送后 | `trigger` 字段和本机的事件入口 |
+| Webhook | 外部系统叫醒 Bot | 主人要 | 需要能从外面访问这台 Mac，或者经中继 |
+| 每个任务单独的模型 | 简单检查用便宜模型 | 费用成为问题 | `routines` 表加 `model` 列 |
+| 每个任务单独的权限 | 定时任务只给窄权限 | 沙箱做好后 | 运行用任务自己的权限，高于默认时要主人确认 |
+| 转主人批准 | 手动模式下要跑命令的任务总被拒 | 手动模式的用户反馈 | 运行也走子智能体的确认路径，要加超时和跳过的规则 |
+| 长期没人看时自动暂停 | 主人不用了，任务还在花 API 费用 | 有人反馈费用 | 连续 N 周 Bot 没等到主人说话时问一次，再不理就暂停 |
+| 被挡住时自动暂停 | 连接器掉线，任务每次都失败 | 失败的任务常见 | 现在连续失败只报第一次；可以再加"失败 N 次暂停" |
+| 所有 Bot 的全局页面 | 任务分散在各个 Bot 的面板里 | 主人常有三个以上的 Bot 带任务 | 侧栏加一项，任务行和详情复用面板的；原型里有样子 |
+| Cmd-Q 后也通知 | 主人退出了应用，提醒不弹 | 真实使用里常遇到 | 通知方案 §6：服务在后台隐藏启动应用 |
+| 定时运行拒绝连接器的非只读工具 | 没人看着时发错信、发错消息 | 发布给别人用之前重新决定（D-393），或者主人连上了能发信的连接器 | 运行的审批策略里加一条；周报这类任务变成草稿加确认 |
+| 免打扰时段 | 凌晨弹通知 | 主人要 | 系统的专注模式先顶着；要做就在 `alerts.ts` 判断 |
+| `@every 2h` | cron 写不出"每 90 分钟" | 模型常写错 | 时间写法加一种 |
+| 运行记录清理 | `routine_runs` 一直变长 | 实测占地方。查询不是问题：100 万行里取最近 20 条是 80 微秒（§3.6） | 按时间删旧行 |
+| `bot.json` 进库 | 每条消息都重写一次文件 | 实测写入成了问题，或者要按摘要做跨 Bot 查询 | 身份和摘要搬进 `bots` 表，迁移时读旧文件 |
+| 会话列表索引 | 现在扫描目录（总方案 §9.5、Q-10） | 会话多到列表明显变慢。现在本机 75 个日志、50 MB，不需要 | 放另一个可重建的文件 `index.db`，日志仍是事实来源 |
+| 搜索聊天记录 | F22 还没做 | 做 F22 时 | 同样放 `index.db`。**中文要单独设计分词**：实测 20 万条，默认分词器搜"周报""特斯拉"都是 0 条；`trigram` 能搜三个字，搜两个字的"周报"是 0 条；对 `trigram` 表用 `LIKE` 能搜到，要 30 毫秒，等于全表扫描 |
+| 长日志加载 | 每次到点要读 Bot 的整个日志（§5.5） | 实测明显变慢 | 同 Bot 方案的"日志分段"；或者把运行要的设置单独存，不加载根会话 |
+
+## 16. 持久化与兼容
+
+- 日志新增条目 `routines`，`unanswered` 加字段，会话头部的 `agent` 加可选字段 `routine`。
+- `finx.db` 的版本记在 `user_version`，迁移规则见 §3.6。
+
+| 读者 | 结果 |
+|---|---|
+| 新版本读旧日志 | 没有这些内容，照常；旧的 `unanswered` 读成 `routine: false` |
+| 新版本读旧库 | 先备份，再迁移 |
+| 旧版本读新库 | 定时任务不可用，写明原因；服务和聊天照常（§3.6） |
+| 旧版本读新日志 | `routines` 读成 Unknown 跳过。`MailKind::Routine` 旧版本不认识；桌面端和内核总是一起升级，不为降级处理（Bot 方案 Q-202） |
+| 已有的 Bot | 工具列表是活的：恢复时工具集变了会重写 `system_prompt` 条目（`kernel.rs` 恢复路径），模型就有了 `manage_routine`。这一次缓存前缀变化，之后不再变 |
+
+## 17. 设计取舍
+
+| 问题 | 选了 | 没选 | 理由 |
+|---|---|---|---|
+| 调度放哪 | 服务层 | 桌面端；单个会话的内核 | 桌面端可能退出，以后还有 iPhone 和 Linux 主机；单个会话的进程撑不到下次到点 |
+| 业务数据 | 本地 SQLite | 每个任务一个文件 | 运行记录要改已有的行、要和 `last_slot` 一起提交、要翻页和清理；路线图上还有一批同样的数据。代价实测很小（§3.6）。损失是不能直接打开看，但任务本来就只通过对话改 |
+| SQLite 的范围 | 只放定时任务和运行记录，以后按需加 | 把会话日志或 `bot.json` 一起搬进去 | 会话日志只追加，上下文缓存和写入性能都建立在它上面；`bot.json` 没有证据说明要搬，不做一次性大迁移 |
+| 库的绑定 | `rusqlite` 带内置 SQLite | 系统自带的 SQLite；纯 Rust 的键值库 | 版本和功能不随系统变；以后的查询和全文索引要 SQL |
+| 库打不开时 | 只有定时任务不可用 | 服务拒绝启动 | 开发时切到旧分支、磁盘满都可能遇到，不能因此连聊天都用不了 |
+| 到点在哪跑 | 看不到聊天的运行，有话说才交给 Bot | 直接唤醒 Bot 的主会话 | 每小时一次的检查不该每次读整段对话；安静的运行不该进聊天记录 |
+| 谁发气泡 | Bot 转告 | 运行直接发 | 几乎是现成的；Bot 知道聊天内容，能把关；同一个人说话。费用问题等实测（§15） |
+| 默认值 | 汇报默认交给 Bot，明说才不交 | 默认不交，要主动发才交 | 模型会漏，漏掉就丢结果；另一边漏掉只是多花一点 |
+| 运行怎么起 | 新的轻量路径，不进树的登记 | 复用 `spawn_agent` | 恢复开销随次数增长，事件和界面都要过滤 |
+| 要询问的调用 | 直接拒绝，写进汇报 | 转主人批准 | 凌晨弹窗没人答；一直等又会让后面的运行全被跳过。结果和"过期"一样，少一套超时规则 |
+| 任务列表 | 环境更新 | `list` 动作 | 已有同样的机制；少一轮工具调用；不会忘了查就重复建 |
+| 一次性时间 | 带年份的写法和 `in 20m` | 定死日期的 cron | 没有年份，分不出一次和每年 |
+| 时区 | `CRON_TZ=` 前缀 | 只用本机时区 | 美股这类需求换算到本机时间，夏令时一变就差一小时 |
+| 浮动时间窗、最小间隔、数量上限 | 都不要 | 前后浮动若干分钟；至少隔 5 分钟；每个 Bot 最多若干个 | 这些保护共享服务器，本机没有这个问题；没有证据不设限制 |
+| 时间的白话 | 模型写 `when` | 写一个 cron 转中英文的函数 | 模型擅长；有下次运行时刻对照，写错也看得出 |
+| 确认 | 跟随权限模式，对话里留一行 | 不管模式都确认 | 完全访问下模型本来就能写 crontab，拦这一个工具没有实际作用 |
+| 错过的 | 只补最近一次 | 全补；全不补 | 全补是重复劳动；全不补则睡一晚就丢掉早上的简报 |
+| 时钟 | 墙上时钟，最多隔 30 秒 | 按下次运行睡一个长定时器 | macOS 上单调时钟在睡眠时不走 |
+| 常驻 | 服务不退出，加应用的登录项 | launchd 管服务 | 通知要主进程；launchd 管服务要改拉起方式（集成方案 §2.2），一期用不上 |
+| 面板上新建 | 只能在对话里说 | 表单 | 说明要模型写才写得全；少一套表单 |
+
+## 18. 决策
+
+| 编号 | 决策 | 理由 | 位置 |
+|---|---|---|---|
+| D-370 | 定时任务只属于 Bot，普通会话没有 | 主人的决定 | §1 |
+| D-371 | 到点先跑一次看不到聊天的运行，有话说才交给 Bot，由 Bot 读着聊天转告 | 安静的运行便宜、不进聊天记录；消息仍然是 Bot 说的 | §2 |
+| D-372 | 运行用 `start_child` 起，不进智能体树的登记，不写 `agent_spawned`，不发事件，做完就关 | `spawn_agent` 的路径开销随次数增长，事件和界面都要过滤 | §2.1 |
+| D-373 | 运行的回复默认交给 Bot；以 `NOTHING_TO_REPORT` 开头才不交，不加工具 | 模型会漏调工具（16/36）；这样漏了只多唤醒一次 | §2.2 |
+| D-374 | 定时任务的信算在等回复：没发就提醒一次，还不发就失败（D-316、D-321 的扩展） | 否则提醒可能无声消失；已查代码确认现在不提醒 | §2.4 |
+| D-375 | 时间写法：五段式 cron，可带 `CRON_TZ=`；一次性写带年份的时刻或 `in 20m`；不用定死日期的 cron | 美股类需求要时区；定死日期的 cron 分不出一次和每年 | §3.4 |
+| D-376 | 不设最小间隔、数量上限和浮动时间窗，不加随机偏移 | 这些保护共享服务器；本机没有共享队列；没有证据不设限制 | §1、§5.1 |
+| D-377 | 工具结果返回内核算出的接下来三次运行时间，模型转告；`when` 由模型写，给人看 | 不靠模型换算时区；最容易发现 cron 写错；不用写 cron 转白话的代码 | §4.1 |
+| D-378 | 写操作跟随权限模式，对话里留一行；运行的询问直接拒绝并写进汇报 | 完全访问下模型能写 crontab，单独拦这个工具没有实际作用；凌晨没人答 | §4.2、§10 |
+| D-379 | id 由内核生成，不从名字来；删除是软删除，运行记录留着 | 中文名字转不成简短的标识；误删时还能从库里找回 | §3.2 |
+| D-380 | 一次性任务跑过后由内核标记结束，留在列表里 | 不靠模型记得收尾 | §2.5 |
+| D-381 | 调度看墙上时钟，最多隔 30 秒 | macOS 上单调时钟在睡眠时不走 | §5.1 |
+| D-382 | 错过的只补最近一次，没有回溯窗口；上一次没跑完就跳过并记录 | 全补是重复劳动，不补就丢结果；排队没有意义 | §5.3、§5.4 |
+| D-383 | 连续失败只把第一次告诉 Bot，之后只记录，成功后重新计 | 没有这条，模型服务宕机时每次到点都唤醒 Bot 再失败一次 | §2.2 |
+| D-384 | 运行成功和送达分开记 | 看不出"跑了却没到"，就和没跑一样 | §5.8 |
+| D-385 | 服务里有启用的定时任务就不空闲退出；运行计入 busy | 不然到点时没有东西能跑 | §7.1 |
+| D-386 | 第一个启用的任务出现时登记登录项，启动时不开窗口；可以在设置里关 | 重启后也要跑，通知要主进程。改了集成方案 DQ-09，主人已确认 | §7.4 |
+| D-387 | 保持唤醒是设置里的开关，默认关，只在接着电源时生效 | 过夜的任务需要；用电池时不该默默耗电 | §7.5 |
+| D-388 | 新建和修改只走对话，协议没有这两个方法 | 说明要模型写才写得全 | §8 |
+| D-389 | "要转告"写在工具描述和信的结尾，不写进 bot.md | 已有 Bot 的系统提示词冻结，看不到 bot.md 的改动（Q-200） | §2.3 |
+| D-390 | 调度放在服务层，不放桌面端，也不放单个会话的内核；时间解析和到点判断写成不认识 Bot 的模块，Bot 的定时任务是第一个使用者 | 桌面端可能退出，单个会话的进程撑不到下次到点；以后别的功能要定时不用再写一遍。主人提出的问题 | §5 |
+| D-391 | 定时任务和运行记录放进本地 SQLite `~/.finx/finx.db`。会话日志仍是 JSONL，配置和文件不变，`bot.json` 先不动，索引以后放另一个文件 | 运行记录是可变的业务记录，不是日志；路线图上还有一批同样的数据；实测代价小。主人的决定 | §3.1 |
+| D-392 | 数据库的规则：只有 `finx serve` 打开，用到才建；一个连接一个专用线程；`synchronous=FULL` 和 `fullfsync`；迁移只增不减，升级前备份；打不开时只影响定时任务 | 不碰启动目标，不阻塞 Hub；断电不重复运行；开发时切分支不至于连聊天都用不了 | §3.6 |
+| D-393 | 一期定时运行的权力和 Bot 相同，不另加限制；发布给别人用之前必须重新决定 | 现在只有主人自己用，也没连邮箱；连接器审批在完全访问下挡不住命令行，真正的办法是沙箱。主人的决定 | §10 |
+| D-394 | 云端运行暂缓设计；一期讲清限制，加保持唤醒的开关 | 主人的决定 | §7.5 |
+| D-395 | 管理入口是 Bot 页顶栏的时钟图标加右侧面板，只管当前这个 Bot；气泡旁的时钟图标和"过程"能打开这次运行；运行详情显示步骤，协议加 `bots/routine_run` | 一点就到，聊天还看得见，也和设定分开；回答"这次为什么没提醒"要看步骤。主人的决定 | §8、§9、PRD §6.21 |
+
+## 19. 待定问题
+
+| 编号 | 问题 | 倾向 |
+|---|---|---|
+| Q-220 | 运行可以不经确认用连接器发信，只有一句提示词约束。一期能否接受？ | 已定：一期接受，发布给别人用之前重新决定（§10、D-393） |
+| Q-221 | 第一个定时任务出现时自动登记登录项，还是让主人在设置里开？ | 已定：自动（D-386）。"启动时不开窗口"还要实测（§13） |
+| Q-222 | Cmd-Q 后到点不弹通知，一期能否接受？ | 已定：接受，面板说明写清；常遇到再做通知方案 §6 |
+| Q-223 | 一次性任务跑完留在列表里，要不要过一段时间自动删？ | 先不删，主人手动删；多了再说 |
+| Q-224 | 运行日志只留最近 50 次，这个数合适吗？ | 先这样，没有实测依据 |
+| Q-225 | 模型只给 `when` 不给 `schedule` 时怎么办？ | 报错。`when` 只是给人看的，内核不解析它 |
+
+## 附录 A：给模型的文本
+
+按 D-16 使用英文。
+
+### A.1 `manage_routine` 的描述
+
+```
+Read, create or change your routines: saved instructions that run in the background on a
+schedule, even while the user is away. Each run reports back to you, and you pass on what
+the user asked for.
+
+When the user asks for something recurring, at a later time, or "tell me when X", create a
+routine instead of doing it once, waiting, or using crontab or launchd, which cannot reach
+this chat. If it would only be useful and they did not ask, offer it in one sentence and wait
+for their yes.
+
+Your routines are in the latest <environment_update>, without their instructions; with none
+listed, you have none.
+- create: name, prompt, schedule, when. get: id; returns the saved text and recent runs.
+  update: id and only the fields to change. pause, resume, delete: id.
+
+Before you change a routine or describe what it does, get it and work from the saved text.
+When the user changes how they want it done, update it: runs do not see this conversation.
+Scheduled checks poll: never promise to notice something the moment it happens.
+
+Routines run only while this computer is awake. Tell the user the next run time from the
+result, and when it falls at night, that the computer has to be awake then.
+```
+
+### A.2 参数说明
+
+```
+action: What to do.
+id: The routine's id. Required except on create.
+name: A short name the user sees, in their language. Required on create.
+prompt: What to do on each run, written as an intent rather than fixed tool steps. A run cannot
+  see this conversation, message the user or change routines: its report comes back to you, and
+  you do those. Say what to check, what is worth reporting, when to report nothing, what to do
+  if the check fails, when the job is finished, and where to keep anything the next run needs.
+schedule: 5-field cron in the user's local time, using the time they said ("8am" is
+  "0 8 * * *"). Prefix CRON_TZ=<IANA zone> when the time belongs elsewhere, such as a market's
+  hours. Or one moment, which runs once and finishes by itself: "in 20m" or
+  "2026-11-10 09:00". Work that must be ready by a time starts early enough to finish.
+when: The schedule as the user would say it, in their language. The user sees this. Required on
+  create and whenever schedule changes.
+```
+
+结果：见 §4.1。`pause` 返回 `Paused.`，`delete` 返回 `Deleted.`，`resume` 返回和保存相同的一行。
+
+### A.3 运行说明（运行的第一条消息）
+
+```
+You are carrying out a routine for {bot}, the user's bot, while nobody is watching. Routine:
+"{name}". Scheduled for {scheduled}; it is now {now}, local time.{late}
+
+You see none of their conversation and cannot ask anyone anything: when something is unclear,
+make a reasonable choice and say so. You cannot message the user or change routines: your final
+reply goes to {bot}, who tells the user what matters and does those things. So when the
+instructions say to tell the user something or to remove this routine, put that in your reply.
+Your folder stays between runs: keep there anything the next run needs.
+
+The instructions below are the user's request for exactly what they name. Do not do anything
+else that reaches other people, spends money or cannot be undone: say in your reply what you
+would do, and {bot} will ask the user. If a tool call is refused, nobody is here to approve it:
+do not retry it or work around it, say so in your reply.
+
+If there is nothing the instructions ask to report, reply with NOTHING_TO_REPORT and one line on
+what you checked and found. If you could not check, that is worth reporting: say what failed in
+a normal reply.
+
+<instructions>
+{prompt}
+</instructions>
+```
+
+`{late}`：实际时间比计划时间晚 2 分钟以上时，是这一句：
+
+```
+ This run is late because the computer was not running at the scheduled time: judge what still makes sense.
+```
+
+### A.4 给 Bot 的信
+
+有话说：
+
+```
+<routine_report routine="{name}" id="{id}" scheduled="{scheduled}" ran="{started}">
+{reply}
+</routine_report>
+This routine is the user's own request: pass on what it found with send_to_user, in your own
+words and without talking about runs or reports. If the job is finished, delete the routine.
+```
+
+失败：
+
+```
+<routine_report routine="{name}" id="{id}" status="failed" scheduled="{scheduled}" ran="{started}">
+Error ({kind}): {message}
+
+{reply}
+</routine_report>
+This routine failed. Tell the user what failed and what would fix it with send_to_user. You will
+not hear about later failures until it works again.
+```
+
+### A.5 环境更新
+
+见 §4.4。
+
+### A.6 没转告时的提醒
+
+```
+<reply_reminder>
+The routine report above has not reached the user: what you write stays private, and only
+send_to_user reaches them. Pass on what it says now. If the user no longer wants these, pause the
+routine and tell them you did.
+</reply_reminder>
+```
