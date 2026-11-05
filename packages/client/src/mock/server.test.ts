@@ -193,7 +193,7 @@ test("bots: the demo's, a new one, and a conversation in messages that stays out
   assert.equal(bots.find((b) => b.name === "写作助手")?.unread, 2);
   const changed: string[] = [];
   rpc.on("bots/changed", ({ bots: rows }) => rows.forEach((b) => b.last && changed.push(`${b.last.from}:${b.last.text}`)));
-  const { bot } = await rpc.request("bots/create", { name: " 诗人 ", avatar: { kind: "char", shape: "cat", hue: "teal" } });
+  const { bot } = await rpc.request("bots/create", { name: " 诗人 ", avatar: { kind: "char", shape: "wink", hue: "teal" } });
   assert.equal(bot.name, "诗人");
   const { session_id, snapshot } = await rpc.request("bots/open", { bot_id: bot.id });
   let view = fromSnapshot(snapshot);

@@ -86,24 +86,24 @@
     "tooLarge": "图片太大了：最大 10 MB",
     "unreadable": "读不了这张图片",
     "shapes": {
-      "round": "圆圆",
-      "box": "方块",
-      "ghost": "小幽灵",
-      "cloud": "云朵",
-      "dome": "圆顶",
-      "cat": "小猫",
-      "egg": "蛋",
-      "gem": "宝石"
+      "tall": "平静",
+      "dot": "好奇",
+      "smile": "开心",
+      "wink": "眨眼",
+      "lid": "淡定",
+      "bar": "发呆",
+      "side": "张望",
+      "odd": "挑眉"
     },
     "hues": {
-      "slate": "石板蓝",
-      "sage": "鼠尾草绿",
-      "clay": "陶土红",
-      "ochre": "赭黄",
-      "plum": "梅紫",
+      "slate": "天蓝",
+      "sage": "青草绿",
+      "clay": "珊瑚橙",
+      "ochre": "奶黄",
+      "plum": "丁香紫",
       "teal": "青",
-      "rose": "玫瑰",
-      "stone": "石灰"
+      "rose": "玫瑰粉",
+      "stone": "烟灰"
     }
   },
   "menu": {

@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.24 |
+| 版本 | v1.25 |
 | 日期 | 2026-11-05 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
@@ -41,6 +41,7 @@
 | v1.22 | 2026-11-05 | 合并主干：定时任务的 `bot::unanswered` 和回合方案的 `bot::owed` 合成一个 `owed`，分四种：没欠、主人的话没回、定时任务的汇报没转告、做事的结果没说。前两种没回要提醒，还不发就失败；最后一种提醒一次。Bot 回复说没什么可告诉的（D-441）时不算欠 |
 | v1.23 | 2026-11-05 | `bots/create` 可以带 `model`、`thinking`，存在 `bot.json`，第一段对话用它们启动；不带时用配置的（§2.1、§4、D-459） |
 | v1.24 | 2026-11-05 | 模型回了一条空回复不再算连接错误，交给 §3.11 判断要不要提醒；读不出来的内容才算失败（D-464）；D-321 里没查明的"回复全是空"有了原因 |
+| v1.25 | 2026-11-05 | 头像的小角色换成 8 种眼神（§4，PRD DD-158）；旧名字仍能读出来 |
 
 ## 方案摘要
 
@@ -140,7 +141,7 @@
   "version": 1,
   "id": "0193…",
   "name": "研究员",
-  "avatar": { "kind": "char", "shape": "round", "hue": "slate" },
+  "avatar": { "kind": "char", "shape": "tall", "hue": "slate" },
   "default": false,
   "pinned": false,
   "created_at": "2026-11-03T14:05:00Z",
@@ -155,7 +156,7 @@
 - `id` 是 UUID v7。目录 0700，文件 0600，写入走原子替换（总方案 §9.1）。
 - `avatar.kind`：
   - `mark`：品牌 α，只有默认 Bot 能用；
-  - `char`：小角色，`shape` 取 round、box、ghost、cloud、dome、cat、egg、gem，`hue` 取 slate、sage、clay、ochre、plum、teal、rose、stone；
+  - `char`：小角色，靠眼神区分，`shape` 取 tall、dot、smile、wink、lid、bar、side、odd，`hue` 取 slate、sage、clay、ochre、plum、teal、rose、stone。之前的名字（box、round、cloud、cat、ghost、dome、gem、egg，依次对应）仍然读得出来，下次写回时换成新名字，否则读不出来的 `bot.json` 会让这个 Bot 从列表里消失；
   - `mono`：名字的第一个字，只存 `hue`，字随名字变；
   - `image`：avatar.png，`rev` 每换一次图加一。
 - `summary` 是列表用的缓存：最近一句和未读数，变化时写回（§5.2）。在忙、子智能体数、在等的确认是瞬时状态，不写。
