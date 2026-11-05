@@ -156,6 +156,7 @@ fs.renameSync(path.join(built, "FinxWork.app"), app);
 
 const contents = path.join(app, "Contents");
 fs.cpSync(path.join(root, "crates/finx-connections/licenses"), path.join(contents, "Resources/model-connection-licenses"), { recursive: true });
+fs.cpSync(path.join(root, "crates/finx-slide/licenses"), path.join(contents, "Resources/third-party-licenses"), { recursive: true });
 // Electron brings a folder for each language Chromium speaks; macOS takes
 // them for the app's languages, so only the app's own stay.
 for (const f of fs.readdirSync(path.join(contents, "Resources"))) {
