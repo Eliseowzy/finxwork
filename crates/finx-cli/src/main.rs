@@ -30,26 +30,27 @@ const TOP_LEVEL_HELP: &str = "\
 {usage-heading} {usage}
 
 Run tasks:
-  exec      Run a task without an interactive interface
-  sessions  List recent sessions of this project
+  exec        Run a task without an interactive interface
+  sessions    List recent sessions of this project
 
 Models:
-  models    List the models in the model menu
+  models      List the models in the model menu
 
 Tools and extensions:
-  mcp       List, add and remove MCP servers
-  skills    List the skills a session here would offer
-  browser   Set up the browser the agent uses
+  mcp         List, add and remove MCP servers
+  skills      List the skills a session here would offer
+  browser     Set up the browser the agent uses
 
 Setup:
-  status    Show the effective configuration
-  doctor    Check configuration, credentials and directories
-  trust     Trust a project's own configuration
+  status      Show the effective configuration
+  doctor      Check configuration, credentials and directories
+  trust       Trust a project's own configuration
+  completion  Print a shell completion script
 
 For other programs:
-  serve     Serve JSON-RPC on stdio or a Unix socket
-  acp       Serve ACP on stdio, for editors such as Zed
-  protocol  Describe the native protocol
+  serve       Serve JSON-RPC on stdio or a Unix socket
+  acp         Serve ACP on stdio, for editors such as Zed
+  protocol    Describe the native protocol
 
 Options:
 {options}
@@ -171,6 +172,17 @@ enum Command {
         /// Print JSON
         #[arg(long)]
         json: bool,
+        /// Warnings count as failures: for CI
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Print a shell completion script
+    ///
+    /// bash: eval "$(finx completion bash)". zsh: source <(finx completion zsh).
+    /// fish: finx completion fish | source.
+    Completion {
+        #[arg(value_parser = ["bash", "zsh", "fish"])]
+        shell: String,
     },
     /// List the skills a session here would offer
     ///
@@ -515,6 +527,15 @@ pub struct RunArgs {
     /// Stop a task after this many turns
     #[arg(long)]
     pub max_turns: Option<u32>,
+    /// Use only these built-in tools, e.g. --tools read,bash
+    #[arg(long, value_delimiter = ',', value_name = "NAMES")]
+    pub tools: Option<Vec<String>>,
+    /// Another directory the task may write to (repeatable)
+    #[arg(long = "add-dir", value_name = "DIR")]
+    pub add_dir: Vec<PathBuf>,
+    /// Attach an image: png, jpeg, gif or webp (repeatable)
+    #[arg(long, value_name = "PATH")]
+    pub image: Vec<PathBuf>,
     /// Write the last assistant message to this file
     #[arg(long, value_name = "FILE")]
     pub output_last_message: Option<PathBuf>,
@@ -634,6 +655,7 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         | Command::Models { .. }
         | Command::Status { .. }
         | Command::Doctor { .. }
+        | Command::Completion { .. }
         | Command::Skills { .. }
         | Command::Trust { .. }
         | Command::Mcp { .. }
@@ -795,7 +817,16 @@ fn main() -> ExitCode {
         }
         Command::Models { action, .. } => cmd_info::models(&overrides, None, false, false, false, action),
         Command::Status { json } => cmd_info::status(&overrides, json),
-        Command::Doctor { json } => cmd_info::doctor(&overrides, json),
+        Command::Doctor { json, strict } => cmd_info::doctor(&overrides, json, strict),
+        Command::Completion { shell } => {
+            let shell = match shell.as_str() {
+                "bash" => clap_complete::Shell::Bash,
+                "zsh" => clap_complete::Shell::Zsh,
+                _ => clap_complete::Shell::Fish,
+            };
+            clap_complete::generate(shell, &mut Cli::command(), "finx", &mut std::io::stdout());
+            Ok(0)
+        }
         Command::Skills { list, action: None } | Command::Skills { action: Some(SkillsAction::List(list)), .. } => {
             cmd_info::skills(&overrides, list.dir, list.all, list.json)
         }
@@ -835,9 +866,12 @@ fn main() -> ExitCode {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
             if wants_json(&args) {
-                match err.downcast_ref::<setup::NoModel>() {
-                    Some(no_model) => print_failure("no_model", "no model is set up", Some(&no_model.help)),
-                    None => print_failure("error", &format!("{err:#}"), None),
+                if let Some(no_model) = err.downcast_ref::<setup::NoModel>() {
+                    print_failure("no_model", "no model is set up", Some(&no_model.help));
+                } else if let Some(missing) = err.downcast_ref::<setup::NoCredentials>() {
+                    print_failure("no_credentials", &format!("no credentials for {}", missing.model), Some(&missing.help));
+                } else {
+                    print_failure("error", &format!("{err:#}"), None);
                 }
             } else {
                 eprintln!("error: {err:#}");

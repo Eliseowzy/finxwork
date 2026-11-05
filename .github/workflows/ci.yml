@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The same PDFium release the app ships (apps/desktop/scripts/pdfium.mjs).
+  PDFIUM_TAG: chromium/8076
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS runners cost ten times as much in a private repository: on main only.
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-24.04"]') || fromJSON('["ubuntu-24.04", "macos-15"]') }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: PDFium for the document tests
+        run: |
+          case "$RUNNER_OS" in
+            Linux) archive=pdfium-linux-x64.tgz; lib=libpdfium.so ;;
+            macOS) archive=pdfium-mac-arm64.tgz; lib=libpdfium.dylib ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/pdfium"
+          curl -fsSL "https://github.com/bblanchon/pdfium-binaries/releases/download/$PDFIUM_TAG/$archive" | tar xz -C "$RUNNER_TEMP/pdfium"
+          echo "FINX_PDFIUM=$RUNNER_TEMP/pdfium/lib/$lib" >> "$GITHUB_ENV"
+      - name: Rust tests, every crate
+        run: cargo test --workspace --no-fail-fast
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Client and desktop tests
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir packages/protocol test
+          pnpm --dir packages/client test
+          pnpm --dir apps/desktop typecheck
+          pnpm --dir apps/desktop test

@@ -58,7 +58,8 @@
       "mcp disable",
       "serve",
       "acp",
-      "protocol"
+      "protocol",
+      "completion"
     ]
   },
   "run_options": {
@@ -67,7 +68,9 @@
     "thinking": { "flag": "--thinking", "config": "thinking", "sample": "low", "rpc": "thinking", "acp": "thinking" },
     "permission_mode": { "flag": "--permission-mode", "config": "permission_mode", "sample": "manual", "env": "FINX_PERMISSION_MODE", "rpc": "permission_mode", "acp": "permission_mode" },
     "cwd": { "flag": "--cwd", "rpc": "cwd" },
-    "max_turns": { "flag": "--max-turns", "config": "max_turns", "sample": "3" }
+    "max_turns": { "flag": "--max-turns", "config": "max_turns", "sample": "3" },
+    "tools": { "flag": "--tools", "config": "tools.enabled", "sample": "[\"read\"]" },
+    "add_dir": { "flag": "--add-dir", "config": "extra_writable_roots", "sample": "[\"/tmp\"]", "rpc": "extra_roots" }
   },
   "exec_flags": {
     "_about": "The other flags of finx exec: they are about this one command, not a run's settings.",
@@ -80,7 +83,8 @@
     "--output": "What to print.",
     "--json": "Same as --output json, as on every command that prints data.",
     "--ops-stdin": "Read operations from stdin.",
-    "--output-last-message": "Where to write the last message."
+    "--output-last-message": "Where to write the last message.",
+    "--image": "Part of this task's input."
   },
   "deprecated_flags": {
     "--approval": { "replacement": "--permission-mode", "remove_in": "0.3.0" }
@@ -95,6 +99,7 @@
     "FINX_CREDENTIAL_STORE": { "job": "environment", "stability": "stable" },
     "FINX_NO_BROWSER": { "job": "environment", "stability": "stable" },
     "FINX_MODEL_CATALOG_URL": { "job": "environment", "stability": "stable" },
+    "FINX_LANG": { "job": "environment", "stability": "stable" },
     "FINX_LOG": { "job": "diagnostics", "stability": "stable" },
     "FINX_QODER_ROUTE": { "job": "diagnostics", "stability": "internal" },
     "FINX_CALL_ID": { "job": "tool-child", "stability": "stable" },

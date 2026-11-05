@@ -485,6 +485,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1039,8 +1048,10 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
+ "clap_complete",
  "encoding_rs",
  "finx-acp",
  "finx-browser",
@@ -1062,6 +1073,7 @@ dependencies = [
  "parking_lot",
  "serde",
  "serde_json",
+ "strsim",
  "tempfile",
  "tokio",
  "tracing",
@@ -1134,7 +1146,9 @@ dependencies = [
  "ring",
  "schemars 0.8.22",
  "serde",
+ "serde_ignored",
  "serde_json",
+ "strsim",
  "tar",
  "tempfile",
  "thiserror",
@@ -1215,6 +1229,7 @@ dependencies = [
  "rustls-platform-verifier",
  "schemars 0.8.22",
  "serde",
+ "serde_ignored",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -3282,6 +3297,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
 ]
 
 [[package]]

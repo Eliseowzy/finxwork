@@ -102,7 +102,8 @@ async fn the_command_line_says_how_to_set_a_model_up() {
 
     // A model named by hand is taken at its word: what is missing is its own key.
     let (code, _, stderr) = output(&env, &["exec", "hello", "-m", "anthropic/claude-sonnet-5-5", "--no-save"]).await;
-    assert_eq!(code, 1, "{stderr}");
+    assert_eq!(code, 2, "a model that cannot run is a setup problem, not a failed task: {stderr}");
+    assert!(stderr.contains("no credentials for anthropic/claude-sonnet-5-5"), "{stderr}");
     assert!(stderr.contains("ANTHROPIC_API_KEY"), "{stderr}");
 }
 

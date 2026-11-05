@@ -10,6 +10,7 @@ use finx_core::SessionRef;
 use finx_core::SessionStore;
 use finx_core::StartOptions;
 use finx_llm::UsageTotals;
+use finx_llm::UserContent;
 use finx_protocol::AgentStatus;
 use finx_protocol::ErrorInfo;
 use finx_protocol::EventMsg;
@@ -44,9 +45,10 @@ pub async fn exec(
     let mut rt = setup::init(cwd, &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
     let model = setup::session_model(&rt, run.model.clone())?;
-    let prompt = setup::read_prompt(prompt)?;
+    setup::check_credentials(&rt, &model)?;
+    let prompt = input_of(setup::read_prompt(prompt)?, &run.image)?;
     let interactive = interactive(run);
-    let deps = rt.kernel_deps(save)?;
+    let deps = rt.kernel_deps(save, &run.add_dir)?;
     let options = StartOptions {
         model,
         thinking: run.thinking.unwrap_or(rt.config.thinking),
@@ -80,11 +82,11 @@ pub async fn resume(
         }
         id => store.header(&SessionRef::Id(id.to_string()))?,
     };
-    let prompt = setup::read_prompt(prompt)?;
+    let prompt = input_of(setup::read_prompt(prompt)?, &run.image)?;
     let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
     let interactive = interactive(run);
-    let deps = rt.kernel_deps(true)?;
+    let deps = rt.kernel_deps(true, &run.add_dir)?;
     let options = ResumeOptions {
         session: SessionRef::Path(path),
         model: run.model.clone(),
@@ -98,6 +100,7 @@ pub async fn resume(
         bot_name: None,
     };
     let kernel = Kernel::resume(options, deps).await?;
+    setup::check_credentials(&rt, &kernel.info().model)?;
     drive(kernel, prompt, run, interactive, true, &rt.warnings).await
 }
 
@@ -111,13 +114,43 @@ fn with_run_overrides(overrides: &[String], run: &RunArgs) -> Vec<String> {
     if let Some(max_turns) = run.max_turns {
         all.push(format!("max_turns={max_turns}"));
     }
+    if let Some(tools) = &run.tools {
+        all.push(format!("tools.enabled={}", toml_list(tools)));
+    }
     all
 }
 
-/// Runs one task to its end. Exit codes: 0 completed, 1 failed, 130 interrupted.
+fn toml_list(items: &[String]) -> String {
+    let items: Vec<String> = items.iter().map(|item| format!("{item:?}")).collect();
+    format!("[{}]", items.join(", "))
+}
+
+/// The task's text and the images given with `--image`.
+fn input_of(text: String, images: &[PathBuf]) -> anyhow::Result<Vec<UserContent>> {
+    use base64::Engine as _;
+    let mut input = vec![UserContent::Text { text }];
+    for path in images {
+        let mime_type = match path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
+            Some("png") => "image/png",
+            Some("jpg" | "jpeg") => "image/jpeg",
+            Some("gif") => "image/gif",
+            Some("webp") => "image/webp",
+            _ => anyhow::bail!("--image {}: expected a png, jpeg, gif or webp file", path.display()),
+        };
+        let bytes = std::fs::read(path).with_context(|| format!("cannot read --image {}", path.display()))?;
+        input.push(UserContent::Image {
+            mime_type: mime_type.to_string(),
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        });
+    }
+    Ok(input)
+}
+
+/// Runs one task to its end. Exit codes: 0 completed, 1 failed, 3 completed but something it tried
+/// was refused because nothing here can approve it, 130 interrupted.
 async fn drive(
     mut kernel: Kernel,
-    prompt: String,
+    input: Vec<UserContent>,
     run: &RunArgs,
     interactive: bool,
     saved: bool,
@@ -138,7 +171,9 @@ async fn drive(
     if run.ops_stdin {
         spawn_stdin_ops(ops.clone());
     }
-    ops.send(Op::prompt(prompt)).await.context("the session closed unexpectedly")?;
+    ops.send(Op::Prompt { input, mode: Default::default(), commands: true })
+        .await
+        .context("the session closed unexpectedly")?;
 
     let mut outcome = Outcome::default();
     let mut exit_code = 1;
@@ -206,6 +241,18 @@ async fn drive(
             renderer.render(&event);
         }
     }
+    if exit_code == 0 && !outcome.refused.is_empty() {
+        exit_code = 3;
+        if format != OutputFormat::StreamJson {
+            let count = outcome.refused.len();
+            eprintln!(
+                "{}",
+                renderer.style().yellow(&format!(
+                    "{count} action(s) were refused because nothing here can approve them; set --permission-mode, add a rule, or answer with --ops-stdin"
+                ))
+            );
+        }
+    }
     if let Some(path) = &run.output_last_message {
         std::fs::write(path, outcome.final_output.clone().unwrap_or_default())
             .with_context(|| format!("cannot write {}", path.display()))?;
@@ -238,6 +285,8 @@ struct Outcome {
     agents: Vec<AgentOutcome>,
     /// The last `/context` report.
     context: Option<finx_protocol::ContextReport>,
+    /// What was refused because nothing could approve it, a sub-agent's as well.
+    refused: Vec<Value>,
 }
 
 impl Outcome {
@@ -249,6 +298,12 @@ impl Outcome {
 
     fn observe(&mut self, msg: &EventMsg) {
         match msg {
+            EventMsg::ApprovalRefused { name, summary, .. } => self.refused.push(json!({ "name": name, "summary": summary })),
+            EventMsg::AgentEvent { event, .. } => {
+                if let EventMsg::ApprovalRefused { name, summary, .. } = &event.msg {
+                    self.refused.push(json!({ "name": name, "summary": summary }));
+                }
+            }
             EventMsg::SessionStarted { model, .. } | EventMsg::SettingsChanged { model, .. } => {
                 self.model = model.clone();
             }
@@ -322,6 +377,7 @@ impl Outcome {
                 "cost": self.usage.cost_by_currency(),
             },
             "tool_calls": self.tool_calls,
+            "refused": self.refused,
             "context": self.context,
             "agents": self.agents.iter().map(|a| {
                 let tokens = a.usage.tokens();

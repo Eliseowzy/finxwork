@@ -40,6 +40,7 @@ pub async fn chat(overrides: &[String], options: ChatOptions) -> anyhow::Result<
         eprintln!("{}", style.yellow(&format!("warning: {warning}")));
     }
     let reference = setup::session_model(&rt, options.model.clone())?;
+    setup::check_credentials(&rt, &reference)?;
     let resolved = rt.llm.resolve(&reference)?;
     if resolved.ad_hoc {
         eprintln!("{}", style.yellow(&format!("warning: '{reference}' is not in the catalog; default limits apply")));

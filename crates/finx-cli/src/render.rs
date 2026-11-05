@@ -186,6 +186,9 @@ impl Renderer {
                 code: Some(WarningCode::McpServersNotReady),
                 ..
             } => {}
+            EventMsg::ApprovalRefused { name, summary, .. } => {
+                self.status_line(self.style.yellow(&format!("refused {name}: {summary} (nothing here can approve it)")));
+            }
             EventMsg::Warning { message, .. } => {
                 self.end_line();
                 eprintln!("{}", self.style.yellow(&format!("warning: {message}")));

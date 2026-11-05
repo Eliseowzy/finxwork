@@ -1125,6 +1125,12 @@ export type Event = {
   archived: boolean;
   type: "archived_changed";
 } | {
+  call_id: string;
+  name: string;
+  reason?: string | null;
+  summary: string;
+  type: "approval_refused";
+} | {
   /** What the warning is about, for a client that words or places it itself. Absent for one-off warnings, which are only shown as `message`. */
   code?: WarningCode | null;
   message: string;

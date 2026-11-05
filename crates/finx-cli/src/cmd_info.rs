@@ -461,7 +461,7 @@ struct Check {
     detail: String,
 }
 
-pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
+pub fn doctor(overrides: &[String], as_json: bool, strict: bool) -> anyhow::Result<u8> {
     let mut checks = Vec::new();
     let mut warnings = Vec::new();
     let mut check =
@@ -544,7 +544,7 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
             .iter()
             .map(|c| json!({ "name": c.name, "ok": c.ok, "detail": c.detail }))
             .collect();
-        print_json(&json!({ "ok": ok, "checks": checks, "warnings": warnings }))?;
+        print_json(&json!({ "ok": ok && !(strict && !warnings.is_empty()), "checks": checks, "warnings": warnings }))?;
     } else {
         let style = Style::detect();
         for c in &checks {
@@ -559,7 +559,7 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
             println!("{} {warning}", style.yellow("!"));
         }
     }
-    Ok(if ok { 0 } else { 1 })
+    Ok(if ok && !(strict && !warnings.is_empty()) { 0 } else { 1 })
 }
 
 /// The skills of a session that would start in `rt.cwd`, and its catalog. Without a model,

@@ -15,7 +15,6 @@ use std::path::PathBuf;
 /// String values may contain `${VAR}` and `${VAR:-default}`; they are expanded from finx's
 /// environment when the server connects, so a missing variable fails only this server.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct McpServerConfig {
     /// A curated CLI connector managed by finx. Its command is the internal MCP adapter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -140,7 +139,6 @@ pub enum McpAuthMode {
 
 /// An OAuth client the user registered with the provider.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct McpOAuthClient {
     pub client_id: String,
     /// Only for providers that require one; best written as a `${credential:…}` reference.
@@ -307,6 +305,5 @@ mod tests {
         assert_eq!(config.exposure, Some(McpExposure::Direct));
         assert!(config.parallel_tools);
         assert_eq!(serde_json::to_value(&config).unwrap(), json);
-        assert!(serde_json::from_value::<McpServerConfig>(serde_json::json!({"name": "x", "comand": "y"})).is_err());
     }
 }

@@ -25,6 +25,7 @@ pub mod history;
 pub mod hooks;
 pub mod instructions;
 pub mod kernel;
+pub mod lang;
 pub mod mcp;
 pub mod models;
 pub mod paths;

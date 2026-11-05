@@ -81,6 +81,7 @@ pub fn home() -> anyhow::Result<FinxHome> {
     // to configure them; `auth/set` adds to it).
     if let Some(store) = finx_llm::credentials::default_store(home.root().join("credentials.toml")) {
         finx_llm::credentials::install(store);
+        finx_llm::credentials::watch(home.root().join("credentials.stamp"));
     }
     Ok(home)
 }
@@ -116,6 +117,7 @@ fn load(home: FinxHome, log_guard: Option<WorkerGuard>, cwd: PathBuf, overrides:
         mcp_sources.insert(name.clone(), vec![source.clone()]);
     }
     let llm = Arc::new(runtime::model_registry(&home, &workspace.config)?);
+    warnings.extend(llm.warnings().iter().cloned());
     let connections = finx_connections::Manager::new(home.root().to_path_buf(), &llm);
     tracing::info!(cwd = %workspace.cwd.display(), project_root = ?workspace.project_root, trusted = workspace.trusted, "finx started");
     Ok(Runtime {
@@ -153,6 +155,40 @@ impl std::error::Error for NoModel {}
 pub fn session_model(rt: &Runtime, asked: Option<String>) -> anyhow::Result<String> {
     finx_core::models::session_model(&rt.llm, asked, rt.config.model.as_deref())
         .map_err(|_| NoModel { help: no_model_help(rt) }.into())
+}
+
+/// A model whose provider has no credentials: nothing can run on it.
+#[derive(Debug)]
+pub struct NoCredentials {
+    pub model: String,
+    pub help: String,
+}
+
+impl std::fmt::Display for NoCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no credentials for {}\n  {}", self.model, self.help)
+    }
+}
+
+impl std::error::Error for NoCredentials {}
+
+/// Fails before anything starts when the model cannot run: this is a mistake in the setup, not a
+/// failed task, and it should not leave a session behind (standalone-cli-design §6.2).
+pub fn check_credentials(rt: &Runtime, reference: &str) -> anyhow::Result<()> {
+    let Ok(resolved) = rt.llm.resolve(reference) else {
+        return Ok(()); // The kernel words a bad reference.
+    };
+    let Some(provider) = rt.llm.provider(&resolved.model.provider) else {
+        return Ok(());
+    };
+    if !matches!(provider.auth.status(&provider.id), finx_llm::AuthStatus::Missing(_)) {
+        return Ok(());
+    }
+    let help = match provider.auth.env_vars().first() {
+        Some(variable) => format!("run `finx login {}`, or set {variable}", provider.id),
+        None => format!("run `finx login {}`", provider.id),
+    };
+    Err(NoCredentials { model: reference.to_string(), help }.into())
 }
 
 /// What to do while no model is set up, in the ways that work from a terminal.
@@ -214,13 +250,13 @@ pub fn workspace(dir: &Path) -> PathBuf {
 
 impl Runtime {
     /// `save: false` keeps the session log in memory only.
-    pub fn kernel_deps(&self, save: bool) -> anyhow::Result<KernelDeps> {
+    pub fn kernel_deps(&self, save: bool, extra_roots: &[PathBuf]) -> anyhow::Result<KernelDeps> {
         let store: Arc<dyn SessionStore> = if save {
             Arc::new(JsonlStore::new(self.home.sessions_dir()))
         } else {
             Arc::new(MemoryStore::new())
         };
-        let mut deps = runtime::kernel_deps(&self.config, &self.cwd, self.project_root.as_deref(), self.llm.clone(), store, &[])?;
+        let mut deps = runtime::kernel_deps(&self.config, &self.cwd, self.project_root.as_deref(), self.llm.clone(), store, extra_roots)?;
         deps.mcp_servers = self.mcp_servers.clone();
         // `finx exec` runs one session: its own pool, without a window unless configured.
         if self.config.browser.configured_on() {

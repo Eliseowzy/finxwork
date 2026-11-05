@@ -151,6 +151,7 @@ pub struct ResolvedModel {
 
 pub struct ModelRegistry {
     providers: BTreeMap<String, ProviderConfig>,
+    warnings: Vec<String>,
     sources: RwLock<BTreeMap<String, Vec<ProviderConfig>>>,
     authorizer: OnceLock<Arc<dyn crate::connection::ConnectionAuthorizer>>,
     apis: HashMap<String, Arc<dyn WireApi>>,
@@ -164,6 +165,7 @@ impl ModelRegistry {
     pub fn new(catalog: Catalog, options: RegistryOptions) -> Self {
         let mut registry = Self {
             providers: catalog.providers,
+            warnings: catalog.warnings,
             sources: RwLock::new(BTreeMap::new()),
             authorizer: OnceLock::new(),
             apis: HashMap::new(),
@@ -175,6 +177,11 @@ impl ModelRegistry {
         registry.register_api(Arc::new(crate::api::openai_responses::OpenAiResponsesApi));
         registry.register_api(Arc::new(AnthropicApi));
         registry
+    }
+
+    /// What reading the catalog left to say: settings it did not know.
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 
     pub fn register_api(&mut self, api: Arc<dyn WireApi>) {

@@ -165,3 +165,160 @@ async fn scopes_for_mcp_have_git_s_words() {
     let (_, _, stderr) = run(&env, &["mcp", "disable", "nothing", "--global"]).await;
     assert!(!stderr.contains("unexpected argument"), "{stderr}");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_action_nobody_could_approve_is_exit_3() {
+    let env = TestEnv::new("manual", "").await;
+    let cwd = env.workspace("refused");
+    let out = env
+        .finx_in(&cwd, &["exec", "--json", "[[mock:bash:touch made.txt]] go"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3), "{}", String::from_utf8_lossy(&out.stderr));
+    let result = parsed(&String::from_utf8_lossy(&out.stdout));
+    assert_eq!(result["exit_code"], 3);
+    assert_eq!(result["refused"][0]["name"], "bash", "{result:#}");
+    assert!(result["refused"][0]["summary"].as_str().unwrap().contains("touch made.txt"), "{result:#}");
+    assert!(!cwd.join("made.txt").exists());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("--permission-mode"), "stderr says what to do");
+
+    // With a mode that lets it through: 0, and nothing refused.
+    let out = env
+        .finx_in(&cwd, &["exec", "--json", "--permission-mode", "bypass-permissions", "[[mock:bash:touch made.txt]] go"])
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(parsed(&String::from_utf8_lossy(&out.stdout))["refused"], serde_json::json!([]));
+    assert!(cwd.join("made.txt").exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn tools_add_dir_and_image_reach_the_run() {
+    let env = TestEnv::new("bypass-permissions", "").await;
+    // A tool name that does not exist is a usage problem.
+    let (code, _, stderr) = run(&env, &["exec", "--tools", "read,nonsense", "hi"]).await;
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stderr.contains("nonsense"), "{stderr}");
+    let (code, stdout, stderr) = run(&env, &["exec", "--tools", "read,bash", "--json", "say hi"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(parsed(&stdout)["final_output"], "Hello from mock.");
+
+    // An image that is not one, and one that is.
+    let (code, _, stderr) = run(&env, &["exec", "--image", "notes.txt", "hi"]).await;
+    assert_eq!(code, 2);
+    assert!(stderr.contains("--image notes.txt"), "{stderr}");
+    let picture = env.work().join("p.png");
+    std::fs::write(&picture, [0x89, b'P', b'N', b'G']).unwrap();
+    let (code, stdout, stderr) = run(&env, &["exec", "--json", "--image", picture.to_str().unwrap(), "hi"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    let log = std::fs::read_to_string(parsed(&stdout)["session_file"].as_str().unwrap()).unwrap();
+    assert!(log.contains("image/png"), "the image is part of the message: {log}");
+
+    // Writing outside the workspace with --add-dir, in a mode that keeps to the workspace.
+    let elsewhere = env.workspace("elsewhere");
+    let cwd = env.workspace("here");
+    let target = elsewhere.join("made.txt");
+    let prompt = format!("[[mock:bash:touch {}]] go", target.display());
+    let out = env
+        .finx_in(&cwd, &["exec", "--add-dir", elsewhere.to_str().unwrap(), "--permission-mode", "accept-edits", &prompt])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .await
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(target.exists());
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_completion_script_knows_the_commands() {
+    let env = TestEnv::new("manual", "").await;
+    for shell in ["bash", "zsh", "fish"] {
+        let (code, stdout, stderr) = run(&env, &["completion", shell]).await;
+        assert_eq!(code, 0, "{shell}: {stderr}");
+        for word in ["exec", "models", "unhide", "--permission-mode"] {
+            assert!(stdout.contains(word), "{shell}: {word}");
+        }
+    }
+    let (code, _, _) = run(&env, &["completion", "tcsh"]).await;
+    assert_eq!(code, 2);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_setting_from_a_newer_version_stops_nothing() {
+    let env = TestEnv::new("manual", "").await;
+    let config = env.home.path().join("config.toml");
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text.push_str("\n[from_the_future]\nanswer = 42\n");
+    std::fs::write(&config, text).unwrap();
+    let models = env.home.path().join("models.toml");
+    let mut text = std::fs::read_to_string(&models).unwrap();
+    text.push_str("\n[providers.deepseek.from_the_future]\nanswer = 42\n");
+    std::fs::write(&models, text).unwrap();
+
+    for args in [&["status", "--json"][..], &["models", "--json"], &["sessions", "--json"]] {
+        let (code, stdout, stderr) = run(&env, args).await;
+        assert_eq!(code, 0, "{args:?}: {stderr}");
+        parsed(&stdout);
+    }
+    let (code, stdout, _) = run(&env, &["doctor", "--json"]).await;
+    assert_eq!(code, 0);
+    let doctor = parsed(&stdout);
+    let warnings = doctor["warnings"].to_string();
+    assert!(warnings.contains("from_the_future"), "{doctor:#}");
+    let (code, stdout, _) = run(&env, &["doctor", "--json", "--strict"]).await;
+    assert_eq!(code, 1, "--strict counts warnings as failures");
+    assert_eq!(parsed(&stdout)["ok"], false);
+    let (code, _, stderr) = run(&env, &["exec", "say hi"]).await;
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stderr.contains("from_the_future"), "the warning is shown: {stderr}");
+
+    // The editors' way in works too.
+    let (mut child, client, _incoming) = env.spawn_rpc(&["acp"]);
+    client
+        .request("initialize", serde_json::json!({"protocolVersion": 1, "clientCapabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}))
+        .await
+        .unwrap();
+    drop(client);
+    assert_eq!(common::exit_code(&mut child).await, 0);
+
+    // A value this version cannot read still stops it: it must not guess.
+    let mut text = std::fs::read_to_string(&config).unwrap();
+    text = text.replace("permission_mode = \"manual\"", "permission_mode = \"plan\"");
+    std::fs::write(&config, text).unwrap();
+    let (code, _, stderr) = run(&env, &["status"]).await;
+    assert_eq!(code, 2, "{stderr}");
+}
+
+/// A key saved by another process reaches a running service: its clients hear, and see it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_key_saved_elsewhere_reaches_a_running_service() {
+    let env = TestEnv::new("manual", "").await;
+    let (_service, service, mut incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    common::native_init(&service).await;
+    let credential = |models: &Value| {
+        models["providers"].as_array().unwrap().iter().find(|p| p["id"] == "deepseek").unwrap()["credential"].as_str().unwrap().to_string()
+    };
+    let before = service.request("models/list", serde_json::json!({})).await.unwrap();
+    assert_eq!(credential(&before), "missing");
+
+    let (_other, other, _other_incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    common::native_init(&other).await;
+    other.request("auth/set", serde_json::json!({"provider": "deepseek", "api_key": "sk-from-elsewhere"})).await.unwrap();
+
+    let after = service.request("models/list", serde_json::json!({})).await.unwrap();
+    assert_eq!(credential(&after), "stored", "seen at the next look");
+    // And without looking: within the watcher's tick.
+    let heard = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let message = common::next(&mut incoming).await;
+            if message.method() == "models/changed" {
+                return;
+            }
+        }
+    })
+    .await;
+    assert!(heard.is_ok(), "models/changed never came");
+}

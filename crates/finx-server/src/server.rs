@@ -159,6 +159,9 @@ impl Server {
             tracing::warn!("{warning}");
         }
         let llm = Arc::new(runtime::model_registry(&options.home, &workspace.config)?);
+        for warning in llm.warnings() {
+            tracing::warn!("{warning}");
+        }
         let defaults = SessionDefaults {
             model: workspace.config.model.clone(),
             thinking: workspace.config.thinking,

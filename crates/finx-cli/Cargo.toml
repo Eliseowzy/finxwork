@@ -11,6 +11,9 @@ name = "finx"
 path = "src/main.rs"
 
 [dependencies]
+base64.workspace = true
+strsim.workspace = true
+clap_complete.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
