@@ -36,6 +36,8 @@
 //! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
 //! | `relay[:LABEL]` | a bot's `spawn_agent` (described LABEL) with "在查了。" sent and `end_turn`; when the report wakes it, `查到了：<the report>` sent with `end_turn` |
 //! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
+//! | `routine:NAME\|SCHEDULE\|RUN` | a bot's `manage_routine` create, with RUN as the routine's prompt in brackets (`[[mock:RUN]]`); then, for its result and for each report that wakes it, `转告：<the text>` sent with `end_turn` |
+//! | `say:TEXT` | TEXT, as it is |
 //!
 //! [`MockOptions`] adds a gateway's latency: a pause before the first chunk of every reply
 //! and between chunks.
@@ -644,6 +646,23 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => done("quiet"),
             }
         }
+        "say" => Plan::Step(Step::text(arg.to_string())),
+        // A bot that makes a routine, then passes on what comes back (routine-design §2.3).
+        "routine" => match step {
+            0 => {
+                let mut parts = arg.splitn(3, '|');
+                let (name, schedule, run) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+                Plan::Step(Step::calls(vec![(
+                    "manage_routine",
+                    json!({ "action": "create", "name": name, "prompt": format!("[[mock:{run}]]"), "schedule": schedule, "when": "说好的时间" }),
+                )]))
+            }
+            _ => {
+                // What came last, but for what the kernel adds to keep the model up to date.
+                let text = messages.iter().rev().map(content_text).find(|text| !text.starts_with("<environment_update>")).unwrap_or_default();
+                Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": format!("转告：{text}"), "end_turn": true }))]))
+            }
+        },
         // A bot that never sends, reminded or not (bot-design §3.11).
         "mute" => Plan::Step(Step::text("写了字，没有发。".to_string())),
         "confirm" => match step {

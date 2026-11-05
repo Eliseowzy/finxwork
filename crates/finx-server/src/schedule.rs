@@ -337,7 +337,7 @@ fn field(text: &str, name: &str, low: u8, high: u8) -> Result<u64, String> {
     Ok(bits)
 }
 
-/// `20m`, `2h`, `1h30m`, `3d`.
+/// `30s`, `20m`, `2h`, `1h30m`, `3d`.
 fn duration(text: &str) -> Result<jiff::SignedDuration, String> {
     let bad = || format!("\"in {text}\" is not a length of time such as 20m, 2h, 1h30m or 3d");
     let mut seconds: i64 = 0;
@@ -348,6 +348,7 @@ fn duration(text: &str) -> Result<jiff::SignedDuration, String> {
             continue;
         }
         let unit: i64 = match c {
+            's' => 1,
             'm' => 60,
             'h' => 3600,
             'd' => 86_400,

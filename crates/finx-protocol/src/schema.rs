@@ -212,6 +212,13 @@ pub fn document() -> Value {
         (method::BOTS_UNREAD, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_CLEAR, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_DELETE, Some(name::<bot::BotIdParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_ROUTINE, Some(name::<bot::BotRoutineParams>(g)), name::<bot::BotRoutineResult>(g)),
+        (method::BOTS_ROUTINE_RUNS, Some(name::<bot::BotRoutineRunsParams>(g)), name::<bot::BotRoutineRunsResult>(g)),
+        (method::BOTS_ROUTINE_RUN, Some(name::<bot::BotRoutineRunParams>(g)), name::<bot::BotRoutineRunResult>(g)),
+        (method::BOTS_ROUTINE_SET_ENABLED, Some(name::<bot::BotRoutineSetEnabledParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_ROUTINE_RUN_NOW, Some(name::<bot::BotRoutineParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_ROUTINE_STOP, Some(name::<bot::BotRoutineParams>(g)), name::<api::Empty>(g)),
+        (method::BOTS_ROUTINE_DELETE, Some(name::<bot::BotRoutineParams>(g)), name::<api::Empty>(g)),
     ];
     let client_notifications = [
         (method::CANCEL_REQUEST, name::<api::CancelRequestParams>(g)),

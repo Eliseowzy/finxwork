@@ -33,6 +33,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
@@ -57,6 +58,10 @@ use crate::paths::FinxHome;
 use crate::prompt;
 use crate::prompt::PromptInputs;
 use crate::prompt::PromptProfile;
+use crate::routine::RoutineHost;
+use crate::routine::RoutineLink;
+use crate::routine::RoutineRun;
+use crate::routine::RunOutcome;
 use crate::session::Internal;
 use crate::session::BotNames;
 use crate::session::Session;
@@ -96,6 +101,9 @@ pub struct KernelDeps {
     /// The service's documents, shared by its sessions (document-editor-design §5.2). `None`
     /// leaves the document tools out.
     pub docs: Option<Arc<finx_docs::DocStore>>,
+    /// The service's routines (routine-design §4.3), for a bot's session. Without it the bot's
+    /// `manage_routine` says they are not available.
+    pub routines: Option<Arc<dyn RoutineHost>>,
 }
 
 pub struct StartOptions {
@@ -465,6 +473,13 @@ pub(crate) fn start_child(child: ChildLaunch) -> Result<Kernel, KernelError> {
     Ok(kernel)
 }
 
+/// A bot's session reaches its routines through the service (routine-design §4.3).
+fn link_routines(session: &Session, host: Option<Arc<dyn RoutineHost>>, bot: Option<String>) {
+    if let (Some(host), Some(bot)) = (host, bot) {
+        session.tool_state.insert(Arc::new(RoutineLink { host, bot }));
+    }
+}
+
 /// The MCP servers of a main session, or `None` without any. Not started yet: status
 /// events need the session's emitter.
 fn mcp_manager(deps: &KernelDeps, config: &Config, project_root: Option<PathBuf>) -> Option<Arc<McpManager>> {
@@ -619,10 +634,12 @@ impl Kernel {
         state.mcp_section = mcp_section;
         state.skills = Arc::from(skills);
         state.sub_agent_prompt = sub_agent.map(Arc::from);
+        let bot_id = opts.bot.as_ref().map(|bot| bot.id.clone());
         state.bot = opts.bot.map(|bot| BotNames {
             given: bot.name.clone(),
             current: bot.name,
         });
+        let routines = deps.routines.clone();
         let (kernel, session) = launch(Launch {
             id: id.clone(),
             root_id: id.clone(),
@@ -645,6 +662,7 @@ impl Kernel {
         if let Some(tree) = &agents {
             tree.bind_root(&session, kernel.internal.clone());
         }
+        link_routines(&session, routines, bot_id);
         session.record_system_prompt();
         session.record(EntryKind::Settings {
             model: Some(model_ref.clone()),
@@ -807,10 +825,12 @@ impl Kernel {
         state.title = title;
         state.archived = archived;
         state.sub_agent_prompt = sub_agent.map(Arc::from);
+        let bot_id = bot_ref.as_ref().map(|bot| bot.id.clone());
         state.bot = bot_ref.map(|bot| BotNames {
             current: opts.bot_name.clone().unwrap_or_else(|| bot.name.clone()),
             given: bot.name,
         });
+        let routines = deps.routines.clone();
         let model_ref = state.model.reference();
         let overridden = opts.model.is_some() || opts.thinking.is_some() || opts.permission_mode.is_some();
         let (mut kernel, session) = launch(Launch {
@@ -836,6 +856,7 @@ impl Kernel {
             tree.bind_root(&session, kernel.internal.clone());
             tree.restore(&restored_agents);
         }
+        link_routines(&session, routines, bot_id);
         kernel.restored_agents = restored_agents;
         // A new entry only when the tools or the MCP part differ from what the log has.
         let current = (session.tools().names(), mcp_section);
@@ -899,6 +920,27 @@ impl Kernel {
         {
             bot.current = name;
         }
+    }
+
+    /// What the model is to know of a bot's routines (`routine::listing`), which it is told when
+    /// that differs from what its context last gave (routine-design §4.4).
+    pub fn set_routines(&self, text: String) {
+        if let Some(session) = self.session.upgrade() {
+            session.state.lock().routines = Some(text);
+        }
+    }
+
+    /// Starts a routine's run in the background (routine-design §2.1): the receiver gets how it
+    /// went. It needs sub-agents to be on, as it is built like one.
+    pub fn start_run(&self, run: RoutineRun) -> Result<oneshot::Receiver<RunOutcome>, String> {
+        let session = self.session.upgrade().ok_or("the session is closed")?;
+        let tree = session.agents.as_ref().ok_or("sub-agents are turned off in the configuration, and a routine runs as one")?;
+        tree.start_run(run)
+    }
+
+    /// Stops a routine's run. False when none of that id is under way.
+    pub fn stop_run(&self, run_id: &str) -> bool {
+        self.session.upgrade().is_some_and(|session| session.agents.as_ref().is_some_and(|tree| tree.stop_run(run_id)))
     }
 
     pub fn session_id(&self) -> &str {

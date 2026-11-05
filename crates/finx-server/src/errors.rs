@@ -24,6 +24,18 @@ pub fn bot_invalid(message: impl Into<String>) -> RpcError {
     RpcError::with_kind(error_code::BOT_INVALID, "bot_invalid", message)
 }
 
+pub fn routine_not_found(id: &str) -> RpcError {
+    RpcError::with_kind(error_code::ROUTINE_NOT_FOUND, "routine_not_found", format!("routine or run {id} not found"))
+}
+
+pub fn routine_busy() -> RpcError {
+    RpcError::with_kind(error_code::ROUTINE_BUSY, "routine_busy", "the routine is running now")
+}
+
+pub fn routines_unavailable(why: impl Into<String>) -> RpcError {
+    RpcError::with_kind(error_code::ROUTINES_UNAVAILABLE, "routines_unavailable", why)
+}
+
 pub fn not_initialized() -> RpcError {
     RpcError::with_kind(error_code::NOT_INITIALIZED, "not_initialized", "send initialize first")
 }

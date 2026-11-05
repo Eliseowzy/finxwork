@@ -164,11 +164,13 @@ pub(crate) fn on_continue(session: &Arc<Session>) {
     match session.build_context().messages.last() {
         Some(Message::User(_)) | Some(Message::ToolResult(_)) => start_task(session, None),
         // A bot that ended up silent: retrying asks it again (bot-design §3.11).
-        _ if session.unanswered() => {
-            session.record(EntryKind::Unanswered);
-            start_task(session, None);
-        }
-        _ => session.warn("nothing to continue: the conversation already ends with a complete reply"),
+        _ => match session.unanswered() {
+            Some(reminder) => {
+                session.record(reminder);
+                start_task(session, None);
+            }
+            None => session.warn("nothing to continue: the conversation already ends with a complete reply"),
+        },
     }
 }
 
@@ -451,6 +453,7 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // bot's name.
         session.note_date();
         session.note_bot_name();
+        session.note_routines();
         // The turn starts: `steer_now` ends it alone. Steering input that came while the MCP
         // servers or a compaction were awaited makes this request too.
         task.next_turn();
@@ -569,14 +572,16 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         }
         // A bot about to stop without answering its owner is reminded once; reminded and still
         // silent, the owner is told rather than left waiting (bot-design §3.11).
-        if message.stop_reason != StopReason::Length && session.unanswered() {
+        if message.stop_reason != StopReason::Length
+            && let Some(reminder) = session.unanswered()
+        {
             if reminded {
                 let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
                 error.retryable = true;
                 return TaskOutcome::Failed(error);
             }
             reminded = true;
-            session.record(EntryKind::Unanswered);
+            session.record(reminder);
             turn += 1;
             continue;
         }

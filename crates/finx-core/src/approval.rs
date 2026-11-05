@@ -64,6 +64,7 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
         "write" | "edit" => evaluate_file_change(call, &args, arg("path"), view),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
+            (ToolKind::Mutating, _) if call.name == crate::routine::MANAGE_ROUTINE => ask(crate::routine::approval_summary(&args), None),
             (ToolKind::Mutating, _) => ask(format!("{} {}", call.name, call.arguments), None),
         },
     }

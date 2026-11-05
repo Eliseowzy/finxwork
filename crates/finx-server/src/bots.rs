@@ -24,6 +24,7 @@ use finx_protocol::bot::BotUpdateParams;
 use finx_protocol::bot::BotsChangedParams;
 use finx_protocol::bot::BotsResult;
 use finx_protocol::bot::LastMessage;
+use finx_protocol::bot::RoutineSummary;
 use finx_protocol::bot::Speaker;
 use finx_rpc::RpcError;
 use parking_lot::Mutex;
@@ -37,6 +38,7 @@ use crate::conn::ConnHandle;
 use crate::errors;
 use crate::hub::AttachRequest;
 use crate::hub::HubCmd;
+use crate::hub::HubHandle;
 use crate::hub::SummaryBase;
 use crate::list;
 use crate::list::ListFeed;
@@ -90,6 +92,8 @@ struct Bot {
     agents_working: u32,
     waiting: Option<String>,
     failed: bool,
+    /// Its routines as its row shows them: the routines' side says when they change.
+    routines: Vec<RoutineSummary>,
 }
 
 impl Bot {
@@ -100,10 +104,11 @@ impl Bot {
             agents_working: 0,
             waiting: None,
             failed: false,
+            routines: Vec::new(),
         }
     }
 
-    fn summary(&self) -> BotSummary {
+    fn summary(&self, routines_error: Option<&str>) -> BotSummary {
         let f = &self.file;
         BotSummary {
             id: f.id.clone(),
@@ -120,6 +125,8 @@ impl Bot {
             failed: self.failed,
             muted: f.muted,
             created_at: f.created_at.clone(),
+            routines: self.routines.clone(),
+            routines_error: routines_error.map(str::to_string),
         }
     }
 }
@@ -135,6 +142,8 @@ pub(crate) struct Registry {
     writing: Mutex<()>,
     /// One `bots/open` at a time, so a bot never gets two conversations.
     opening: tokio::sync::Mutex<()>,
+    /// Why routines cannot be used here, which every row says.
+    routines_error: Mutex<Option<String>>,
 }
 
 impl Registry {
@@ -145,6 +154,7 @@ impl Registry {
             feed: ListFeed::default(),
             writing: Mutex::new(()),
             opening: tokio::sync::Mutex::new(()),
+            routines_error: Mutex::new(None),
         }
     }
 
@@ -182,8 +192,18 @@ impl Registry {
         });
     }
 
+    /// Every bot's row, or those that `keep` says.
+    fn rows(&self, keep: impl Fn(&str) -> bool) -> Vec<BotSummary> {
+        let error = self.routines_error.lock().clone();
+        self.with(|bots| bots.values().filter(|bot| keep(&bot.file.id)).map(|bot| bot.summary(error.as_deref())).collect())
+    }
+
+    fn row(&self, id: &str) -> Result<BotSummary, RpcError> {
+        self.rows(|bot| bot == id).pop().ok_or_else(|| errors::bot_not_found(id))
+    }
+
     fn announce(&self, ids: &[&str], deleted: Vec<String>) {
-        let bots = self.with(|bots| ids.iter().filter_map(|id| bots.get(*id).map(Bot::summary)).collect());
+        let bots = self.rows(|bot| ids.contains(&bot));
         self.feed.send(Bytes::from(finx_rpc::notification(
             method::BOTS_CHANGED,
             &BotsChangedParams { bots, deleted },
@@ -193,6 +213,48 @@ impl Registry {
     /// The bot's name now, for a conversation being loaded.
     pub(crate) fn name(&self, id: &str) -> Option<String> {
         self.with(|bots| bots.get(id).map(|b| b.file.name.clone()))
+    }
+
+    /// Reads the list now, if it was not read yet. Blocking I/O.
+    pub(crate) fn load(&self) {
+        self.with(|_| ());
+    }
+
+    pub(crate) fn exists(&self, id: &str) -> bool {
+        self.with(|bots| bots.contains_key(id))
+    }
+
+    /// The bot's routines changed; its row shows them.
+    pub(crate) fn set_routines(&self, id: &str, routines: Vec<RoutineSummary>) {
+        let changed = self.with(|bots| {
+            bots.get_mut(id).is_some_and(|bot| {
+                let changed = bot.routines != routines;
+                bot.routines = routines;
+                changed
+            })
+        });
+        if changed {
+            self.announce(&[id], Vec::new());
+        }
+    }
+
+    /// Why routines cannot be used here, which every row says from now on.
+    pub(crate) fn set_routines_error(&self, why: Option<String>) {
+        *self.routines_error.lock() = why;
+        let ids: Vec<String> = self.with(|bots| bots.keys().cloned().collect());
+        self.announce(&ids.iter().map(String::as_str).collect::<Vec<_>>(), Vec::new());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn routines_error(&self) -> Option<String> {
+        self.routines_error.lock().clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn add_for_test(&self, id: &str) {
+        let mut file = new_file("测试".into(), Avatar::Mark, false);
+        file.id = id.to_string();
+        self.with(|bots| bots.insert(id.to_string(), Bot::new(file)));
     }
 
     /// An event of a bot's loaded conversation: the row may change (bot-design §5.2).
@@ -323,9 +385,7 @@ impl Server {
     pub fn bots_subscribe(&self, conn: &ConnHandle, respond: impl FnOnce(Result<BotsResult, RpcError>) -> Vec<u8>) {
         let registry = self.bots();
         registry.feed.watch(conn);
-        let result = self.make_default_bot().map(|()| BotsResult {
-            bots: registry.with(|bots| bots.values().map(Bot::summary).collect()),
-        });
+        let result = self.make_default_bot().map(|()| BotsResult { bots: registry.rows(|_| true) });
         let failed = result.is_err();
         registry.feed.start(conn, respond(result));
         if failed {
@@ -377,9 +437,7 @@ impl Server {
             return Err(err);
         }
         registry.announce(&[&id], Vec::new());
-        Ok(BotResult {
-            bot: registry.with_bot(&id, |b| b.summary())?,
-        })
+        Ok(BotResult { bot: registry.row(&id)? })
     }
 
     /// The avatar to keep for `input`; an image is written to the bot's folder. Blocking I/O.
@@ -447,9 +505,7 @@ impl Server {
             let _ = hub.tx.try_send(Box::new(HubCmd::BotName { name }));
         }
         registry.announce(&[&params.bot_id], Vec::new());
-        Ok(BotResult {
-            bot: registry.with_bot(&params.bot_id, |b| b.summary())?,
-        })
+        Ok(BotResult { bot: registry.row(&params.bot_id)? })
     }
 
     /// `bots/avatar`. Blocking I/O.
@@ -476,6 +532,28 @@ impl Server {
     /// `bots/open`: attaches the bot's conversation, loading it, or starting it when there is
     /// none (bot-design §5.4).
     pub async fn bots_open(&self, id: &str, attach: AttachRequest) -> Result<(), RpcError> {
+        self.open_bot(id, Some(attach)).await.map(|_| ())
+    }
+
+    /// The bot's conversation loaded for what the service itself does with it: nothing
+    /// attaches, nothing is written, and it unloads again when nothing uses it (routine-design §5.5).
+    pub(crate) async fn load_bot_session(&self, id: &str) -> Result<HubHandle, RpcError> {
+        let session = self.open_bot(id, None).await?;
+        self.hub(&session).ok_or_else(|| errors::session_closed(&session))
+    }
+
+    /// The bot's conversation if it is loaded.
+    pub(crate) fn bot_hub(&self, id: &str) -> Option<HubHandle> {
+        let session = self.bots().with_bot(id, |bot| bot.file.session_id.clone()).ok()??;
+        self.hub(&session)
+    }
+
+    pub(crate) fn bot_exists(&self, id: &str) -> Result<(), RpcError> {
+        if self.bots().exists(id) { Ok(()) } else { Err(errors::bot_not_found(id)) }
+    }
+
+    /// Loads or starts the bot's conversation; returns its session.
+    async fn open_bot(&self, id: &str, attach: Option<AttachRequest>) -> Result<String, RpcError> {
         let registry = self.bots().clone();
         let _opening = registry.opening.lock().await;
         let (session, name) = {
@@ -487,21 +565,22 @@ impl Server {
         if let Some(session) = session {
             let on_disk = self.is_loaded(&session) || self.store().header(&SessionRef::Id(session.clone())).is_ok_and(|(h, _)| h.id == session);
             if on_disk {
-                return self.resume_session(&session, ResumeOverrides::default(), attach).await;
+                self.load_session(&session, ResumeOverrides::default(), attach).await?;
+                return Ok(session);
             }
         }
         let session = self.start_bot_session(id, name, attach).await?;
-        registry.with_bot(id, |bot| bot.file.session_id = Some(session))?;
+        registry.with_bot(id, |bot| bot.file.session_id = Some(session.clone()))?;
         let saved = {
             let (registry, id) = (registry.clone(), id.to_string());
             tokio::task::spawn_blocking(move || registry.save(&id)).await.map_err(|e| RpcError::internal(e.to_string()))?
         };
         registry.announce(&[id], Vec::new());
-        saved
+        saved.map(|()| session)
     }
 
     /// Starts a bot's conversation in its folder.
-    async fn start_bot_session(&self, id: &str, name: String, attach: AttachRequest) -> Result<String, RpcError> {
+    async fn start_bot_session(&self, id: &str, name: String, attach: Option<AttachRequest>) -> Result<String, RpcError> {
         self.make_room().await?;
         let folder = self.0.home.bot_files_dir(id);
         std::fs::create_dir_all(&folder).map_err(|e| RpcError::internal(format!("cannot create {}: {e}", folder.display())))?;
@@ -511,6 +590,7 @@ impl Server {
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &[]);
+        deps.routines = Some(self.0.routines.clone());
         let options = StartOptions {
             model: workspace.config.model.clone(),
             thinking: workspace.config.thinking,
@@ -524,6 +604,9 @@ impl Server {
             bot: Some(BotIdentity { id: id.to_string(), name }),
         };
         let kernel = finx_core::Kernel::start(options, deps).await.map_err(|e| errors::from_kernel(e, "new"))?;
+        if let Some(text) = self.0.routines.listing_of(id) {
+            kernel.set_routines(text);
+        }
         let now = list::now();
         let base = SummaryBase {
             created_at: now.clone(),
@@ -557,6 +640,7 @@ impl Server {
             return Err(errors::bot_default("the default bot cannot be deleted"));
         }
         let session = registry.with_bot(id, |bot| bot.file.session_id.take())?;
+        self.0.routines.bot_deleted(id).await;
         self.drop_conversation(session).await?;
         let (home, dir_id) = (self.0.home.clone(), id.to_string());
         tokio::task::spawn_blocking(move || {

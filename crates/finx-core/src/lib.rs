@@ -30,6 +30,7 @@ pub mod models;
 pub mod paths;
 pub mod prompt;
 mod protected;
+pub mod routine;
 pub mod rules;
 pub mod runtime;
 mod session;

@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.1 |
+| 版本 | v1.2 |
 | 日期 | 2026-11-05 |
 | 状态 | 定稿：机制、存储、权限和管理入口主人都已确认，正在实现（分支 feat/routines）。界面见 PRD §6.21，原型 [routine-demo.html](../desktop/routine-demo.html) |
 | 关系 | 落实 Bot PRD 的 F18（[docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md) §6.21，下称 PRD）。扩展 [bot-design.md](bot-design.md)（下称 Bot 方案）和 [subagent-design.md](subagent-design.md)（下称子智能体方案）；常驻部分接 [desktop-kernel-integration.md](../desktop/desktop-kernel-integration.md) 的 DQ-09 |
@@ -16,6 +16,7 @@
 | v0.3 | 2026-11-05 | 主人定下四件事：一期接受定时运行的权力和 Bot 相同，发布给别人用之前重新决定（§10、D-393）；自动登记登录项（D-386）；Cmd-Q 后不弹通知；夜里的任务讲清限制并加保持唤醒，云端运行暂缓设计（D-394） |
 | v1.0 | 2026-11-05 | 定稿。管理入口和运行记录的界面另外讨论，已做原型；如果运行详情要显示步骤，协议加读运行日志的方法，§15"查看运行的过程"提前（PRD DQ-71） |
 | v1.1 | 2026-11-05 | 管理入口定为顶栏图标加右侧面板，运行详情显示步骤（D-395）：协议加 `bots/routine_run`，桌面端是新文件 `bots/RoutinesPanel.tsx`，不改 Bot 设置 |
+| v1.2 | 2026-11-05 | 内核和服务层实现后回写：Bot 被主人中断后，定时任务的信照样唤醒它（§2.4、D-396）；一个数据目录只有一个服务调度（§3.6、D-397）；`finx serve` 才调度，`finx acp` 不调度（§5）；锚点的写法（§5.2）；立即运行不改下次到点（§5.7）；任务列表的文字加载后再设，不进启动选项（§6）；时间写法多一个 `in 30s` |
 
 ## 方案摘要
 
@@ -162,6 +163,7 @@
 - `unanswered` 往回找时，定时任务的信（`MailKind::Routine`）和主人的话一样，返回"在等回复"。子智能体的信不变。
 - 提醒条目 `unanswered` 加一个字段 `routine: bool`，换一段文字（附录 A.6）。旧日志没有这个字段，读成 `false`。
 - 提醒过还是没发：和主人的话相同，任务以 `no_reply` 失败，主人看到失败卡，有系统通知，可以重试（D-321）。
+- **主人中断过 Bot，信照样唤醒它（D-396）**：中断后子智能体的汇报要等主人下一句话，这是对的，主人刚说了停。定时任务不一样：主人昨晚停掉一段回复，不等于今早 9 点的提醒不要了。而且收件箱只在内存里，信等在那里，会话空闲卸载时就丢了。所以 `has_waking_mail` 对定时任务的信不看这个状态。
 - Bot 真的不该转告时（主人说过这周别提醒），应该暂停任务并说一句，而不是沉默。附录 A.6 这样写。
 
 ### 2.5 任务什么时候结束
@@ -262,7 +264,7 @@ CREATE INDEX runs_by_routine ON routine_runs(routine_id, id DESC);
 | `CRON_TZ=America/New_York 0 10-16 * * 1-5` | 带前缀：按那个时区算 |
 | `2026-11-10 09:00` | 一次：本机时区的这个时刻 |
 | `CRON_TZ=America/New_York 2026-11-10 09:30` | 一次：那个时区的这个时刻 |
-| `in 20m`、`in 2h`、`in 1h30m`、`in 3d` | 一次：从现在算起 |
+| `in 30s`、`in 20m`、`in 2h`、`in 1h30m`、`in 3d` | 一次：从现在算起 |
 
 cron 的规则：
 
@@ -286,14 +288,15 @@ cron 的规则：
 - 时区用 `jiff`（新依赖，MIT 或 Unlicense）：macOS 和 Linux 读系统的时区库，Windows 用它自带的。现在的 chrono 配置没有时区库。`Cargo.lock` 里虽然有 `jiff`，但当前的构建用不到它（`cargo tree -i jiff` 是空的），所以它是真正新增的依赖。
 - cron 的解析和计算自己写，约 150 行加测试：只用五段式，语义要和本节完全一致，现成的库在星期编号和夏令时上各有约定。
 - 从锚点往后，在该时区的本地时间上找下一个匹配的分钟，再换算成绝对时刻。最多找 5 年，找不到就是"永远不会运行"。
-- **夏令时**：跳过的时刻（`30 2 * * *` 碰上春季拨快）在跳过之后的第一个有效时刻运行一次；重复的时刻（秋季拨回）只运行一次，用第一次。
+- **夏令时**：跳过的时刻（`30 2 * * *` 碰上春季拨快）顺延同样的时长运行一次，这里是 03:30；重复的时刻（秋季拨回）只运行一次，用第一次。
 - **没写前缀的任务跟着系统时区走**：主人出差改了 Mac 的时区，"早上 8 点"还是当地的早上 8 点。带前缀的不变。一次性任务存的是绝对时刻，不变。
 
 ### 3.6 数据库的规则（D-392）
 
 `finx.db` 是 finx 第一个数据库，这些规则以后的表也照用。
 
-- **只有 `finx serve` 打开**：命令行和 `finx exec` 不碰它，启动目标不受影响。依赖只加在 `finx-server`。
+- **只有 `finx serve` 打开**：命令行、`finx exec` 和 `finx acp` 不碰它，启动目标不受影响。依赖只加在 `finx-server`。
+- **一个数据目录只有一个服务调度（D-397）**：打开库时持有 `finx.db.lock`。同一个目录上再起一个服务（比如另一个 socket），它的定时任务不可用，写明原因。否则同一个任务会到点跑两次，发两封信。
 - **用到才建**：文件不存在就说明没有定时任务，不创建；第一个任务创建时才建。文件存在时，服务在开始监听之后、在专用线程上打开，不挡启动。
 - **一个连接，一个专用线程**：其他地方经通道发请求。Hub 从不阻塞，服务层的异步任务也不直接碰连接。调度器常驻内存的是任务定义和状态，库是它的持久化；面板要的详情和运行记录再去查。
 - **写得少，所以写得稳**：`journal_mode=WAL`，`synchronous=FULL`，`fullfsync=ON`（macOS 上普通的 fsync 不保证数据到盘）。`foreign_keys=ON`。这张表一小时也写不了几次，不用为速度放松。`synchronous=NORMAL` 断电可能丢最后一次提交，那样 `last_slot` 回退，同一个计划时间会再跑一次。
@@ -410,7 +413,7 @@ your routines:
 ```
 now = 墙上时钟
 对每个启用的定时任务：
-    slot = 锚点之后的第一个计划时间      // 锚点：last_slot；没跑过或刚改过时间时是 updated_at
+    slot = last_slot 之后的第一个计划时间
     if slot > now: 跳过
     latest = now 之前（含）最后一个计划时间   // 中间错过的都不补
     if 这个任务上一次运行还没结束:
@@ -421,7 +424,7 @@ now = 墙上时钟
 ```
 
 - **先提交再起运行**：宁可因为崩溃少跑一次，也不重复做（比如重复发一封邮件）。崩溃时开着的运行，下次启动时改成 `interrupted`，不自动重跑（§3.3）。提交失败就不起运行，记日志，下一次检查再试。
-- 改 `schedule` 和恢复时，锚点设为现在：暂停期间错过的不补。
+- 新建、改 `schedule` 和恢复时，`last_slot` 设为现在：暂停期间错过的不补。只改名字或说明不动它。
 
 ### 5.3 错过的只补一次
 
@@ -438,7 +441,8 @@ now = 墙上时钟
 运行要用 Bot 的连接器、模型、权限和提示词，这些都在根会话上（`AgentTree`、`McpManager`、`sub_agent_prompt`），所以先把 Bot 的会话加载起来：
 
 - `Server` 加 `load_bot_session(bot_id)`：已加载就用；否则和 `bots/open` 同样的路径恢复或新建（在 `registry.opening` 锁内），只是不附着客户端（`hub::spawn` 的 `first` 本来就是 `Option`）。加载不写日志条目，不唤醒模型。
-- 恢复时连接器在后台启动。`start_child` 假设根会话已经等过它们，运行起得太早就看不到连接器的工具，所以起运行前要等，和根会话第一次请求一样。
+- 恢复时连接器在后台启动。`start_child` 假设根会话已经等过它们，运行起得太早就看不到连接器的工具，所以起运行前调 `McpManager::settle`，和根会话第一次请求等的是同一件事。必需的连接器起不来，这次运行就算失败。
+- 会话正好在卸载时，运行起不来；等它关完，重新加载再试一次。
 - 空闲卸载照旧：`idle_session_secs`（默认 900 秒）后没人用就卸载，下次到点再加载。每小时的任务不会让会话一直占着内存。
 - 加载失败（比如 `server_full`）：记 `failed`，这次跑不成；Bot 也没法转告，只在面板上看得到。
 
@@ -451,7 +455,7 @@ now = 墙上时钟
 
 ### 5.7 立即运行与停止
 
-面板的"立即运行"走同一条路，计划时间就是现在。任务暂停时也能跑（用来测试），已在跑时报 `routine_busy`。**它做真实的事**，界面上写明。"停止"给运行发 `Op::Interrupt`，记 `interrupted`。
+面板的"立即运行"走同一条路，计划时间就是现在。任务暂停时也能跑（用来测试），已在跑时报 `routine_busy`。**它做真实的事**，界面上写明。它不改 `last_slot`，一次性任务也不因此结束；一次性任务到点时如果立即运行还在跑，等它跑完再跑，不算跳过。"停止"给运行发 `Op::Interrupt`，记 `interrupted`。
 
 ### 5.8 记录是否送达
 
@@ -468,7 +472,7 @@ now = 墙上时钟
 | `agents/run.rs`（新） | `AgentTree::start_run(RoutineRun) -> oneshot::Receiver<RunOutcome>`：用 `start_child` 起子会话，`interactive_approvals: false`，头部 `agent` 带 `routine: Some(id)`；单独的驱动循环复用 `driver.rs` 的 `Round`，不转发事件；任务结束后判断结果（§2.2）、需要时发信、关闭会话、交回结果。`TreeState` 加 `runs`，不放进 `agents`：`send_message`、`settled`、`interrupt_all`、名字都不用改；`share_permissions` 和 `shutdown` 也遍历它 |
 | `agents/mail.rs` | `Mail::routine_report`：信的格式（附录 A.4），`wake: true`。信的 `from` 是运行的 id 和任务名字 |
 | `agents/prompts/routine_run.md`（新） | 运行说明（附录 A.3） |
-| `kernel.rs` | `Kernel::start_run`、`stop_run`、`set_routines`；`ResumeOptions`、`StartOptions` 带任务列表的文字；`KernelDeps.routines: Option<Arc<dyn RoutineHost>>` |
+| `kernel.rs` | `Kernel::start_run`、`stop_run`、`set_routines`；`KernelDeps.routines: Option<Arc<dyn RoutineHost>>`。任务列表的文字在会话起来后、进入 Hub 之前用 `set_routines` 设，第一次请求之前就有了，启动选项不用改 |
 | `bot.rs` | `manage_routine`（新工具，§4）；`unanswered` 认定时任务的信（§2.4） |
 | `session.rs`、`task.rs` | `note_routines`，放在 `note_bot_name` 旁边；`SessionState.bot` 记文字 |
 | `context.rs` | `routines_message`、`routines_in_context`；`unanswered_message` 按字段选文字 |
@@ -477,6 +481,8 @@ now = 墙上时钟
 | `finx-protocol` | `MailKind::Routine`（§8） |
 
 运行结束时不给根会话发任何东西，除非要发信。根会话的 `Idle`、`settled` 都不受影响：运行和它互不相干。
+
+配置里关了子智能体（`agents_enabled = false`）时没有智能体树，运行起不来，记 `failed`，写明原因。
 
 ## 7. 服务层与常驻
 
@@ -558,7 +564,8 @@ pub struct RoutineSummary {
 
 - **新建和修改只有对话这一条路**，协议没有这两个方法：说明要模型写才写得全，界面上的"修改"只是往输入框里放一句话（PRD §6.21）。
 - **错误码**：−32043 `routine_not_found`，−32044 `routine_busy`（已在运行），−32045 `routines_unavailable`（库打不开，§3.6）。
-- `MailKind` 加 `Routine`。旧客户端不认这个值，但它们和服务总是一起升级（Bot 方案 Q-202）。
+- `MailKind` 加 `Routine`，`MailInfo` 加 `routine_id`。旧客户端不认这个值，但它们和服务总是一起升级（Bot 方案 Q-202）。
+- `last_run` 是最近一次真正开始的运行。跳过的只在运行记录里，不然任务行上看不到那次跑完的结果。
 - **类型生成**：同 Bot 方案 §4。
 
 ## 9. 客户端库与桌面端
@@ -663,7 +670,6 @@ pub struct RoutineSummary {
 | `jiff` 的体积 | 只用时区和本地时间，进 `dist` 配置后增加多少 | 换 `chrono-tz`（带时区库，更大）或读系统时区文件 |
 | Linux musl 交叉编译 | 内置 SQLite 是 C 代码，经 `cargo-zigbuild` 编译没有试过。这台机器现在没有 zig | `ring` 已经这样编译过 C，预计能过；不行就看链接参数 |
 | Windows | 内置 SQLite 和文件权限的行为没有试过 | 桌面端发 Windows 版之前再验证 |
-| 恢复时等连接器 | 根会话没有任务时怎么等连接器就绪，现有的等待在任务循环里 | 把那段等待抽出来给 `start_run` 用 |
 | `powerSaveBlocker` 过夜 | `prevent-app-suspension` 在应用隐藏时能不能撑过一夜 | 换成服务里直接持有 IOKit 的断言 |
 
 ## 14. 分期与工作量
@@ -772,6 +778,8 @@ pub struct RoutineSummary {
 | D-393 | 一期定时运行的权力和 Bot 相同，不另加限制；发布给别人用之前必须重新决定 | 现在只有主人自己用，也没连邮箱；连接器审批在完全访问下挡不住命令行，真正的办法是沙箱。主人的决定 | §10 |
 | D-394 | 云端运行暂缓设计；一期讲清限制，加保持唤醒的开关 | 主人的决定 | §7.5 |
 | D-395 | 管理入口是 Bot 页顶栏的时钟图标加右侧面板，只管当前这个 Bot；气泡旁的时钟图标和"过程"能打开这次运行；运行详情显示步骤，协议加 `bots/routine_run` | 一点就到，聊天还看得见，也和设定分开；回答"这次为什么没提醒"要看步骤。主人的决定 | §8、§9、PRD §6.21 |
+| D-396 | Bot 被中断后，定时任务的信照样唤醒它 | 中断停的是那段工作，不是主人早就要的提醒；信等在内存里，会话卸载就丢了 | §2.4 |
+| D-397 | 一个数据目录只有一个服务调度，靠 `finx.db.lock`；`finx acp` 不调度 | 否则同一个任务会到点跑两次 | §3.6 |
 
 ## 19. 待定问题
 

@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::api::EventFilter;
+use crate::api::TranscriptItem;
 
 /// The characters an avatar can show, drawn by the client.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -121,6 +122,12 @@ pub struct BotSummary {
     pub muted: bool,
     /// RFC 3339.
     pub created_at: String,
+    /// Its routines, oldest first (docs/kernel/routine-design.md §8).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub routines: Vec<RoutineSummary>,
+    /// Why routines cannot be used now: their database cannot be opened. `routines` is then empty.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routines_error: Option<String>,
 }
 
 /// Result of `bots/subscribe`.
@@ -183,4 +190,159 @@ pub struct BotsChangedParams {
     pub bots: Vec<BotSummary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub deleted: Vec<String>,
+}
+
+// ---- Routines (docs/kernel/routine-design.md §8) ----
+
+/// Where a routine stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineState {
+    Active,
+    Paused,
+    /// A one-off that has run.
+    Finished,
+}
+
+/// How a run of a routine ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineOutcome {
+    /// It had something to say, which went to the bot.
+    Reported,
+    /// It found nothing to report.
+    Quiet,
+    Failed,
+    /// Someone stopped it, or the service closed or crashed while it ran.
+    Interrupted,
+    /// The run before it had not finished.
+    Skipped,
+}
+
+/// A routine's latest run, for its row.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RoutineRunBrief {
+    /// RFC 3339: when it started, or when it was due if it was skipped.
+    pub started: String,
+    /// `None` while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<RoutineOutcome>,
+    /// RFC 3339: when the bot next messaged the user, after a report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered: Option<String>,
+}
+
+/// A routine as a list shows it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RoutineSummary {
+    pub id: String,
+    pub name: String,
+    /// The schedule in the user's words, as the bot wrote it.
+    pub when: String,
+    pub state: RoutineState,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub running: bool,
+    /// RFC 3339. None when it is paused or finished.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_run: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_run: Option<RoutineRunBrief>,
+}
+
+/// All about a routine.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RoutineDetail {
+    pub summary: RoutineSummary,
+    /// What each run is told to do.
+    pub prompt: String,
+    /// The schedule as written.
+    pub schedule: String,
+    /// The next runs, RFC 3339. Empty when it is paused or finished.
+    pub upcoming: Vec<String>,
+    /// RFC 3339.
+    pub created_at: String,
+}
+
+/// One run of a routine.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RoutineRunInfo {
+    pub id: String,
+    /// RFC 3339: when it was due.
+    pub scheduled: String,
+    /// RFC 3339. None when it was skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started: Option<String>,
+    /// RFC 3339. None while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ended: Option<String>,
+    /// `None` while it runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<RoutineOutcome>,
+    /// What a quiet run says it checked; why a run was skipped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// What it reported, or the error it failed with.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report: Option<String>,
+    /// RFC 3339: when the bot next messaged the user, after a report.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivered: Option<String>,
+    /// It started well after it was due: the computer was off or asleep.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub late: bool,
+    /// Its steps are still kept: `bots/routine_run` returns them.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub has_log: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub usage: Option<finx_llm::UsageTotals>,
+}
+
+/// Parameters of `bots/routine`, `bots/routine_run_now`, `bots/routine_stop` and `bots/routine_delete`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineParams {
+    pub bot_id: String,
+    pub routine_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineResult {
+    pub routine: RoutineDetail,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineRunsParams {
+    pub bot_id: String,
+    pub routine_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+    /// A run's id: only runs older than it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineRunsResult {
+    /// Newest first.
+    pub runs: Vec<RoutineRunInfo>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineRunParams {
+    pub bot_id: String,
+    pub routine_id: String,
+    pub run_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineRunResult {
+    pub run: RoutineRunInfo,
+    /// Its steps. Empty once its log has been cleaned up, or when it never started.
+    pub transcript: Vec<TranscriptItem>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BotRoutineSetEnabledParams {
+    pub bot_id: String,
+    pub routine_id: String,
+    pub enabled: bool,
 }

@@ -494,6 +494,9 @@ pub struct AgentRef {
 pub enum MailKind {
     /// What a sub-agent reports when it has finished a round of work.
     Report,
+    /// What a run of a routine has to say, or that it failed: `from` is the run and the
+    /// routine's name (docs/kernel/routine-design.md §2.3).
+    Routine,
 }
 
 /// Where a delivered message came from.
@@ -507,6 +510,9 @@ pub struct MailInfo {
     /// show their own words for it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_reply: bool,
+    /// The routine, when a run of it sent this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine_id: Option<String>,
 }
 
 /// A skill the user mentioned with `/skill:name`; its instructions went to the model with the

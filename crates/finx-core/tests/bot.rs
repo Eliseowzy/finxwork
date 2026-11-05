@@ -57,6 +57,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        routines: None,
     }
 }
 
@@ -176,7 +177,7 @@ async fn a_bot_talks_through_send_to_user_and_ends_its_turn() {
     assert!(!system.contains("{{"), "every mark is filled in");
     assert!(system.contains("Numbers and data:") && system.contains("Acting with care:"));
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user"]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "send_to_user", "manage_routine"]);
 
     // The header names the bot; lists leave the session out.
     let store = JsonlStore::new(h.home.sessions_dir());
@@ -237,7 +238,7 @@ const REMINDER: &str = "<reply_reminder>";
 fn reminders(h: &Harness) -> usize {
     let store = JsonlStore::new(h.home.sessions_dir());
     let (_, entries) = store.read(&SessionRef::Id(h.kernel.session_id().to_string())).unwrap();
-    entries.iter().filter(|e| matches!(e.kind, EntryKind::Unanswered)).count()
+    entries.iter().filter(|e| matches!(e.kind, EntryKind::Unanswered { .. })).count()
 }
 
 /// A bot that writes its answer as plain text, which the user never sees, is reminded once and

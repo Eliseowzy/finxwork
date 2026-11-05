@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use crate::history::History;
 use crate::store::EntryKind;
+use finx_protocol::MailKind;
 
 /// The bot a session is started for: its id, and its name now.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -32,26 +33,36 @@ pub const SEND_TO_USER: &str = "send_to_user";
 /// The tools a bot's session gets on top of a session's. Its sub-agents do not get them: their
 /// replies are reports to the bot.
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
-    vec![Arc::new(Typed::new(SendToUser))]
+    vec![Arc::new(Typed::new(SendToUser)), crate::routine::tool()]
 }
 
-/// Whether nothing reached the owner since their latest message: no `send_to_user` after it
-/// succeeded (bot-design §3.11). The message may be an earlier task's, as when a failed task is
-/// retried; a report that woke the bot after its reply leaves nobody waiting.
-pub(crate) fn unanswered(history: &History) -> bool {
+/// What a bot has not answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Waiting {
+    /// The owner's latest message.
+    Owner,
+    /// A routine's report, which the owner asked for (routine-design §2.4).
+    RoutineReport,
+}
+
+/// What has reached the owner of nothing since: no `send_to_user` after it succeeded
+/// (bot-design §3.11). The message may be an earlier task's, as when a failed task is retried; a
+/// sub-agent's report that woke the bot after its reply leaves nobody waiting.
+pub(crate) fn unanswered(history: &History) -> Option<Waiting> {
     for entry in history.branch_back() {
         match &entry.kind {
             EntryKind::Message {
                 message: Message::ToolResult(result),
                 ..
-            } if result.tool_name == SEND_TO_USER && !result.is_error => return false,
+            } if result.tool_name == SEND_TO_USER && !result.is_error => return None,
             EntryKind::Message {
                 message: Message::User(_), ..
-            } => return true,
+            } => return Some(Waiting::Owner),
+            EntryKind::Mail { mail, .. } if mail.kind == MailKind::Routine => return Some(Waiting::RoutineReport),
             _ => {}
         }
     }
-    false
+    None
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
