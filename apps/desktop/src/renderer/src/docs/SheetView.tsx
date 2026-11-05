@@ -28,6 +28,13 @@ type Sel = { anchor: Pos; focus: Pos; at?: Pos };
 const BLOCK = 100;
 const HEAD_W = 44;
 const HEAD_H = 22;
+/**
+ * Stacking inside the grid, bottom up: cells that scroll; each frozen pane's backing (so nothing that
+ * scrolls under it shows through its empty cells) and then its cells: frozen columns, frozen rows (a
+ * merge in a frozen column scrolls up under them), the corner; selection boxes, each cut to its own
+ * pane; the freeze divider; headers.
+ */
+const Z = { cell: 1, colsPane: 2, frozenCols: 3, rowsPane: 4, frozenRows: 5, cornerPane: 6, corner: 7, over: 8, divider: 9, edit: 10, head: 11, headFrozen: 12, grip: 14 } as const;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 const clampZoom = (z: number) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z));
@@ -814,8 +821,15 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       top: (fr ? view.top : 0) + HEAD_H + rowY(r),
       width: w,
       height: h,
-      zIndex: fr && fc ? 4 : fr || fc ? 3 : 1,
+      zIndex: fr && fc ? Z.corner : fr ? Z.frozenRows : fc ? Z.frozenCols : Z.cell,
     };
+  };
+  /** A selection-like box over cells: above every cell, but cut where its pane goes under the frozen rows or columns. */
+  const overlay = (r: number, c: number, w: number, h: number, z: number = Z.over): CSSProperties => {
+    const p = place(r, c, w, h);
+    const cutTop = r > frozen.rows && frozen.rows ? Math.max(0, view.top + HEAD_H + frozenH - (p.top as number)) : 0;
+    const cutLeft = c > frozen.cols && frozen.cols ? Math.max(0, view.left + HEAD_W + frozenW - (p.left as number)) : 0;
+    return { ...p, zIndex: z, clipPath: cutTop || cutLeft ? `inset(${cutTop}px 0 0 ${cutLeft}px)` : undefined };
   };
 
   // Once per drawing, not per cell.
@@ -848,10 +862,11 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       const num = d?.value?.type === "number" && !asFormula;
       const hard = isHardcoded(cellAt, a.r, a.c);
       const align = asFormula ? "left" : (d?.look?.align ?? (num ? "right" : d?.value?.type === "bool" || d?.value?.type === "error" ? "center" : "left"));
-      // Text runs on over empty cells to its right, as in Excel.
+      // Text runs on over empty cells to its right, as in Excel; in a frozen column it stops at the
+      // freeze line, else it would sit over whatever has scrolled under there.
       let span = w;
       if (!m && text && align === "left" && !num) {
-        for (let k = c + 1; k <= Math.min(nCols, c + 12) && !cache.current.cells.get(addr({ r, c: k }))?.text && !mergeAt(r, k); k++) span += widths[k];
+        for (let k = c + 1; k <= Math.min(c <= frozen.cols ? frozen.cols : nCols, c + 12) && !cache.current.cells.get(addr({ r, c: k }))?.text && !mergeAt(r, k); k++) span += widths[k];
       }
       const style: CSSProperties = {
         ...place(a.r, a.c, w, h),
@@ -881,7 +896,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     if (!widths[c]) continue;
     const fc = c <= frozen.cols;
     const on = c >= g.c1 && c <= g.c2;
-    heads.push(<div key={`h${c}`} className={`sht-h col ${on ? "on" : ""}`} style={{ left: (fc ? view.left : 0) + HEAD_W + colLeft[c], top: view.top, width: widths[c], height: HEAD_H, zIndex: fc ? 7 : 6 }} onMouseDown={(e) => {
+    heads.push(<div key={`h${c}`} className={`sht-h col ${on ? "on" : ""}`} style={{ left: (fc ? view.left : 0) + HEAD_W + colLeft[c], top: view.top, width: widths[c], height: HEAD_H, zIndex: fc ? Z.headFrozen : Z.head }} onMouseDown={(e) => {
       e.stopPropagation();
       setSel({ anchor: { r: 1, c }, focus: { r: Math.max(used.r2, 1), c } });
       grid.current?.focus();
@@ -912,20 +927,20 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   for (const c of colsShown) {
     if (!widths[c]) continue;
     const fc = c <= frozen.cols;
-    heads.push(<div key={`hg${c}`} className="sht-grip col" style={{ left: (fc ? view.left : 0) + HEAD_W + colLeft[c + 1] - 3, top: view.top, height: HEAD_H, zIndex: 9 }} onMouseDown={(e) => resize("cols", c, widths[c], e.clientX)(e)} />);
+    heads.push(<div key={`hg${c}`} className="sht-grip col" style={{ left: (fc ? view.left : 0) + HEAD_W + colLeft[c + 1] - 3, top: view.top, height: HEAD_H, zIndex: Z.grip }} onMouseDown={(e) => resize("cols", c, widths[c], e.clientX)(e)} />);
   }
   for (const r of rowsShown) {
     const h = rowY(r + 1) - rowY(r);
     if (!h) continue;
     const frg = r <= frozen.rows;
-    heads.push(<div key={`rg${r}`} className="sht-grip row" style={{ left: view.left, top: (frg ? view.top : 0) + HEAD_H + rowY(r + 1) - 3, width: HEAD_W, zIndex: 9 }} onMouseDown={(e) => resize("rows", r, h, e.clientY)(e)} />);
+    heads.push(<div key={`rg${r}`} className="sht-grip row" style={{ left: view.left, top: (frg ? view.top : 0) + HEAD_H + rowY(r + 1) - 3, width: HEAD_W, zIndex: Z.grip }} onMouseDown={(e) => resize("rows", r, h, e.clientY)(e)} />);
   }
   for (const r of rowsShown) {
     const h = rowY(r + 1) - rowY(r);
     if (!h) continue;
     const fr = r <= frozen.rows;
     const on = r >= g.r1 && r <= g.r2;
-    heads.push(<div key={`r${r}`} className={`sht-h row ${on ? "on" : ""}`} style={{ left: view.left, top: (fr ? view.top : 0) + HEAD_H + rowY(r), width: HEAD_W, height: h, zIndex: fr ? 7 : 6 }} onMouseDown={(e) => {
+    heads.push(<div key={`r${r}`} className={`sht-h row ${on ? "on" : ""}`} style={{ left: view.left, top: (fr ? view.top : 0) + HEAD_H + rowY(r), width: HEAD_W, height: h, zIndex: fr ? Z.headFrozen : Z.head }} onMouseDown={(e) => {
       e.stopPropagation();
       setSel({ anchor: { r, c: 1 }, focus: { r, c: Math.max(used.c2, 1) } });
       grid.current?.focus();
@@ -938,17 +953,23 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     const box = m && g.r1 === g.r2 && g.c1 === g.c2 ? m : g;
     const w = colLeft[box.c2 + 1] - colLeft[box.c1];
     const h = rowY(box.r2 + 1) - rowY(box.r1);
-    const p = place(box.r1, box.c1, w, h);
-    if (!multi) return { ...p, zIndex: 5 };
+    const p = overlay(box.r1, box.c1, w, h);
+    if (!multi) return p;
     // Multi-cell range: leave the active cell untinted (like Excel) instead of drawing a second box over it.
     const x1 = colLeft[active.c] - colLeft[box.c1];
     const y1 = rowY(active.r) - rowY(box.r1);
     const x2 = x1 + widths[active.c];
     const y2 = y1 + rowY(active.r + 1) - rowY(active.r);
     const hole = `polygon(evenodd, 0 0, ${w}px 0, ${w}px ${h}px, 0 ${h}px, 0 0, ${x1}px ${y1}px, ${x2}px ${y1}px, ${x2}px ${y2}px, ${x1}px ${y2}px, ${x1}px ${y1}px)`;
-    return { ...p, zIndex: 5, "--sht-hole": hole } as CSSProperties;
+    return { ...p, "--sht-hole": hole } as CSSProperties;
   })();
-  const activeBox = place(active.r, active.c, widths[active.c], rowY(active.r + 1) - rowY(active.r));
+  // The fill handle sits on the selection's corner; when that corner has slid under a frozen pane, so has the handle.
+  const handleHidden = (() => {
+    const x = (selBox.left as number) + (selBox.width as number);
+    const y = (selBox.top as number) + (selBox.height as number);
+    return (g.c2 > frozen.cols && frozen.cols > 0 && x < view.left + HEAD_W + frozenW) || (g.r2 > frozen.rows && frozen.rows > 0 && y < view.top + HEAD_H + frozenH);
+  })();
+  const activeBox = overlay(active.r, active.c, widths[active.c], rowY(active.r + 1) - rowY(active.r));
 
   // Trace arrows, as Excel draws them: from the cell read to the formula reading it, a dot at
   // its start; an end on another sheet is a dashed stub to a sheet mark.
@@ -1159,6 +1180,11 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               grid.current?.focus();
             }} />
             {heads}
+            {frozen.rows > 0 && <div className="sht-pane" style={{ left: view.left + HEAD_W, top: view.top + HEAD_H, width: Math.max(0, view.w - HEAD_W), height: frozenH, zIndex: Z.rowsPane }} />}
+            {frozen.cols > 0 && <div className="sht-pane" style={{ left: view.left + HEAD_W, top: view.top + HEAD_H, width: frozenW, height: Math.max(0, view.h - HEAD_H), zIndex: Z.colsPane }} />}
+            {frozen.rows > 0 && frozen.cols > 0 && <div className="sht-pane" style={{ left: view.left + HEAD_W, top: view.top + HEAD_H, width: frozenW, height: frozenH, zIndex: Z.cornerPane }} />}
+            {frozen.rows > 0 && <div className={`sht-freeze row ${view.top > 0 ? "lifted" : ""}`} style={{ left: view.left + HEAD_W, top: view.top + HEAD_H + frozenH - 1, width: Math.max(0, view.w - HEAD_W), zIndex: Z.divider }} />}
+            {frozen.cols > 0 && <div className={`sht-freeze col ${view.left > 0 ? "lifted" : ""}`} style={{ left: view.left + HEAD_W + frozenW - 1, top: view.top + HEAD_H, height: Math.max(0, view.h - HEAD_H), zIndex: Z.divider }} />}
             {cells}
             {arrows.length > 0 && (
               <svg className="sht-arrows" style={{ width: HEAD_W + colLeft[nCols + 1], height: HEAD_H + rowY(nRows + 1) }} aria-hidden="true">
@@ -1167,18 +1193,18 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               </svg>
             )}
             <div className={`sht-sel ${multi ? "multi" : ""}`} style={selBox} />
-            {!multi && <div className="sht-active" style={{ ...activeBox, zIndex: 5 }} />}
+            {!multi && <div className="sht-active" style={activeBox} />}
             {filling && (() => {
               const to = filling.to;
-              const box = place(to.r1, to.c1, colLeft[to.c2 + 1] - colLeft[to.c1], rowY(to.r2 + 1) - rowY(to.r1));
+              const box = overlay(to.r1, to.c1, colLeft[to.c2 + 1] - colLeft[to.c1], rowY(to.r2 + 1) - rowY(to.r1));
               return (
                 <>
-                  <div className="sht-fill-to" style={{ ...box, zIndex: 6 }} />
+                  <div className="sht-fill-to" style={box} />
                   {filling.tip && <div className="sht-fill-tip" style={{ left: Math.min((box.left as number) + (box.width as number) + 6 / zoom, view.left + view.w - 80 / zoom), top: Math.min((box.top as number) + (box.height as number) + 6 / zoom, view.top + view.h - 30 / zoom), transform: `scale(${1 / zoom})`, transformOrigin: "top left" }}>{filling.tip}</div>}
                 </>
               );
             })()}
-            {editable && !editing && !filling && (
+            {editable && !editing && !filling && !handleHidden && (
               <div className="sht-fill-handle" aria-label={t("sheet.fillHandle")} title={t("sheet.fillHandle")} onMouseDown={dragFill}
                 style={{ left: (selBox.left as number) + (selBox.width as number) - 4, top: (selBox.top as number) + (selBox.height as number) - 4 }} />
             )}
@@ -1186,7 +1212,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               <input
                 autoFocus
                 className="sht-edit"
-                style={{ ...activeBox, minWidth: activeBox.width as number, zIndex: 8 }}
+                style={{ ...activeBox, clipPath: undefined, minWidth: activeBox.width as number, zIndex: Z.edit }}
                 value={editing.text}
                 onChange={(e) => setEditing({ text: e.target.value, inBar: false })}
                 onBlur={() => editing && commit(editing.text)}
