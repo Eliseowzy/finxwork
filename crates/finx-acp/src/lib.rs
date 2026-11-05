@@ -76,6 +76,15 @@ struct CancelRequest {
     request_id: Id,
 }
 
+/// A session cannot start until the person sets something up: in ACP, `auth_required`.
+fn auth_required_for_no_model(err: RpcError) -> RpcError {
+    const AUTH_REQUIRED: i64 = -32000;
+    if err.kind() == Some("no_model") {
+        return RpcError::with_kind(AUTH_REQUIRED, "auth_required", err.message);
+    }
+    err
+}
+
 fn reply(id: &Id, result: Result<Value, RpcError>) -> Vec<u8> {
     match result {
         Ok(value) => finx_rpc::response(id, &value),
@@ -227,7 +236,7 @@ impl AcpProtocol {
                                 announce_commands(&server, &conn_out, &session).await;
                                 None
                             }
-                            Err(err) => Some(finx_rpc::error_response(Some(&reply_id), &err)),
+                            Err(err) => Some(finx_rpc::error_response(Some(&reply_id), &auth_required_for_no_model(err))),
                         }
                     });
                 }

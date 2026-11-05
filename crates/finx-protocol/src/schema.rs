@@ -302,7 +302,7 @@ pub fn document() -> Value {
             name::<api::SessionsChangedParams>(g),
         ),
     ];
-    // Also used on their own: `finx exec --json` lines and `--ops-stdin` lines.
+    // Also used on their own: `finx exec --output stream-json` lines and `--ops-stdin` lines.
     let standalone = [name::<Event>(g), name::<Op>(g)];
 
     let reference = |name: &str| json!({ "$ref": format!("#/definitions/{name}") });

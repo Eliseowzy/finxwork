@@ -35,9 +35,9 @@ export async function saveKey(st: ReturnType<typeof useStore>, provider: string,
   }
 }
 
-/** No model can run: every provider that needs a key lacks one. */
-export function needsKey(st: { models: { models: { available: boolean }[] }; loaded: boolean }): boolean {
-  return st.loaded && st.models.models.length > 0 && !st.models.models.some((m) => m.available);
+/** No model can run: the list has come (it always names providers), and nothing on it can be used. */
+export function needsKey(st: { models: { models: { available: boolean }[]; providers: unknown[] }; loaded: boolean }): boolean {
+  return st.loaded && st.models.providers.length > 0 && !st.models.models.some((m) => m.available);
 }
 
 /** The form: provider, key, save. `onDone` runs once finx has the key and the model list is fresh. */
@@ -45,7 +45,7 @@ export function KeyForm({ provider: initial, onDone, onCancel }: { provider?: st
   const { t } = useTranslation("session");
   const st = useStore();
   const providers = keyProviders(st.models.providers);
-  const preferred = initial ?? st.models.defaults?.model.split("/")[0];
+  const preferred = initial ?? st.models.defaults?.model?.split("/")[0];
   const [provider, setProvider] = useState(() => providers.find((p) => p.id === preferred)?.id ?? providers[0]?.id ?? "");
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);

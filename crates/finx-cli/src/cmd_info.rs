@@ -125,11 +125,13 @@ pub fn models(
     };
     if let Some(action) = action {
         let (reference, shown) = match &action {
-            crate::ModelsAction::Show { model } => (model, true),
+            crate::ModelsAction::Unhide { model } => (model, true),
             crate::ModelsAction::Hide { model } => (model, false),
             _ => unreachable!("connection actions handled above"),
         };
-        finx_core::models::set_shown(&rt.llm, &defaults.model, reference, shown).map_err(anyhow::Error::msg)?;
+        finx_core::models::set_shown(&rt.llm, defaults.model.as_deref(), reference, shown).map_err(anyhow::Error::msg)?;
+        let file = rt.home.models_dir().join("selection.json");
+        println!("{} {reference} in {}", if shown { "unhid" } else { "hid" }, crate::cmd_customize::shorten(&rt.home, &file));
         return Ok(0);
     }
     let mut problems = Vec::new();
@@ -164,6 +166,7 @@ pub fn models(
         return Ok(0);
     }
     let style = Style::detect();
+    let default_model = listing.defaults.as_ref().and_then(|d| d.model.as_deref());
     // One write for the whole listing instead of one per line.
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     for problem in &problems {
@@ -212,7 +215,7 @@ pub fn models(
             if !m.available {
                 traits.push("no key");
             }
-            let marker = if m.id == defaults.model { " (default)" } else { "" };
+            let marker = if default_model == Some(m.id.as_str()) { " (default)" } else { "" };
             writeln!(
                 out,
                 "    {}{marker}  {}  context {}{}",
@@ -222,6 +225,9 @@ pub fn models(
                 if traits.is_empty() { String::new() } else { format!("  {}", traits.join(", ")) }
             )?;
         }
+    }
+    if default_model.is_none() {
+        writeln!(out, "\n{}", setup::no_model_help(&rt))?;
     }
     out.flush()?;
     Ok(0)
@@ -285,19 +291,23 @@ fn file_entry(path: &Path) -> Value {
 pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
     let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     let project_dir = rt.project_root.clone().unwrap_or_else(|| rt.cwd.clone());
-    let resolved = rt.llm.resolve(&rt.config.model);
-    let provider = resolved
-        .as_ref()
-        .ok()
-        .and_then(|r| rt.llm.provider(&r.model.provider));
+    let default_model = finx_core::models::default_model(&rt.llm, rt.config.model.as_deref());
+    let resolved = default_model.as_deref().map(|reference| rt.llm.resolve(reference));
+    let provider = match &resolved {
+        Some(Ok(r)) => rt.llm.provider(&r.model.provider),
+        _ => None,
+    };
+    let chosen = if rt.config.model.is_some() { "configured" } else { "first usable provider" };
     let model = match &resolved {
-        Ok(r) => json!({
+        Some(Ok(r)) => json!({
             "ref": r.model.reference(),
+            "chosen": chosen,
             "in_catalog": !r.ad_hoc,
             "api": r.model.api,
             "endpoint": r.model.base_url,
         }),
-        Err(err) => json!({ "ref": rt.config.model, "error": err.to_string() }),
+        Some(Err(err)) => json!({ "ref": default_model, "error": err.to_string() }),
+        None => json!({ "ref": null, "error": "no model is set up" }),
     };
     let skill_report = scan_skills(rt);
     let skills_line = if rt.config.skills.enabled {
@@ -361,18 +371,20 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         other => other.to_string(),
     };
     let model_line = match &resolved {
-        Ok(r) => format!(
-            "{}{} · {} · {}",
+        Some(Ok(r)) => format!(
+            "{}{}{} · {} · {}",
             r.model.reference(),
             if r.ad_hoc {
                 " (not in the catalog)"
             } else {
                 ""
             },
+            if rt.config.model.is_some() { "" } else { " (first usable provider; set `model` to choose)" },
             r.model.api,
             r.model.base_url
         ),
-        Err(err) => format!("{} ({err})", rt.config.model),
+        Some(Err(err)) => format!("{} ({err})", default_model.as_deref().unwrap_or_default()),
+        None => "none is set up: `finx models` lists the providers and what each needs".to_string(),
     };
     let credentials = match provider {
         Some(p) => format!(
@@ -490,9 +502,11 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
                 })
                 .unwrap_or_else(|| "none (no .git found)".into());
             check("project", true, project);
-            match rt.llm.resolve(&rt.config.model) {
-                Ok(resolved) => {
-                    check("default model", true, rt.config.model.clone());
+            let default_model = finx_core::models::default_model(&rt.llm, rt.config.model.as_deref());
+            match default_model.as_deref().map(|reference| (reference, rt.llm.resolve(reference))) {
+                None => check("default model", false, "none is set up: `finx models` lists the providers and what each needs".to_string()),
+                Some((reference, Ok(resolved))) => {
+                    check("default model", true, reference.to_string());
                     if let Some(provider) = rt.llm.provider(&resolved.model.provider) {
                         let status = provider.auth.status(&provider.id);
                         let missing = matches!(status, AuthStatus::Missing(_));
@@ -506,7 +520,7 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
                         );
                     }
                 }
-                Err(err) => check("default model", false, err.to_string()),
+                Some((_, Err(err))) => check("default model", false, err.to_string()),
             }
             let shell = if PathBuf::from("/bin/bash").exists() { "/bin/bash" } else { "/bin/sh" };
             check("shell", true, rt.config.bash_shell.clone().unwrap_or_else(|| shell.to_string()));
@@ -551,9 +565,8 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
 /// The skills of a session that would start in `rt.cwd`, and its catalog. Without a model,
 /// the budget is the largest default.
 fn scan_skills(rt: &setup::Runtime) -> skills::Scan {
-    let window = rt
-        .llm
-        .resolve(&rt.config.model)
+    let window = finx_core::models::default_model(&rt.llm, rt.config.model.as_deref())
+        .and_then(|model| rt.llm.resolve(&model).ok())
         .map_or(u64::MAX, |resolved| u64::from(resolved.model.context_window));
     let sources = skills::Sources::new(&rt.home, &rt.cwd, rt.project_root.as_deref(), &rt.config.skills);
     skills::Scan::new(&sources, &rt.config.enabled_tools, window)
@@ -702,7 +715,8 @@ pub fn trust(dir: Option<PathBuf>) -> anyhow::Result<u8> {
     let dir = std::fs::canonicalize(&dir)?;
     let root = instructions::find_project_root(&dir, &[".git".to_string()]).unwrap_or(dir);
     if instructions::trust(&home, &root)? {
-        println!("trusted {}", root.display());
+        let file = crate::cmd_customize::shorten(&home, &home.trusted_file());
+        println!("trusted {} in {file}", root.display());
     } else {
         println!("{} was already trusted", root.display());
     }

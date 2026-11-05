@@ -15,8 +15,6 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const DEFAULT_MODEL: &str = "deepseek/deepseek-flash";
-
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConfigFile {
@@ -506,7 +504,9 @@ pub struct McpSettings {
 /// Resolved configuration with every default applied.
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub model: String,
+    /// The `model` the configuration names. Without one, `models::default_model` decides, and no
+    /// model is assumed when nothing is set up.
+    pub model: Option<String>,
     pub thinking: ThinkingLevel,
     pub permission_mode: PermissionMode,
     pub max_turns: u32,
@@ -606,7 +606,7 @@ impl Config {
         }
         let bash_max = Duration::from_secs(bash.max_timeout_secs.unwrap_or(600).max(1));
         Ok(Self {
-            model: file.model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            model: file.model,
             thinking: file.thinking.unwrap_or_default(),
             permission_mode: file.permission_mode.unwrap_or_default(),
             max_turns: file.max_turns.unwrap_or(0),
@@ -1164,7 +1164,7 @@ mod tests {
     #[test]
     fn defaults_are_sensible() {
         let config = Config::default();
-        assert_eq!(config.model, DEFAULT_MODEL);
+        assert_eq!(config.model, None, "no model is assumed");
         assert_eq!(config.permission_mode, PermissionMode::Manual);
         assert_eq!(config.enabled_tools, vec!["read", "write", "edit", "bash"]);
         assert_eq!(config.bash_default_timeout, Duration::from_secs(120));
@@ -1188,7 +1188,7 @@ mod tests {
         .unwrap();
         let loaded = load(&user, Some(&project), false, &["max_turns=7".into(), "tools.enabled=[\"read\"]".into()]).unwrap();
         let config = loaded.config;
-        assert_eq!(config.model, "deepseek/deepseek-v4-pro");
+        assert_eq!(config.model.as_deref(), Some("deepseek/deepseek-v4-pro"));
         assert_eq!(config.thinking, ThinkingLevel::Low);
         assert_eq!(config.permission_mode, PermissionMode::Manual, "untrusted project cannot loosen approvals");
         assert_eq!(config.bash_shell, None);
@@ -1493,6 +1493,6 @@ mod tests {
     #[test]
     fn string_overrides_need_no_quotes() {
         let loaded = load(Path::new("/nonexistent"), None, false, &["model=deepseek/deepseek-flash".into()]).unwrap();
-        assert_eq!(loaded.config.model, "deepseek/deepseek-flash");
+        assert_eq!(loaded.config.model.as_deref(), Some("deepseek/deepseek-flash"));
     }
 }

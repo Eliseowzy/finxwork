@@ -1150,7 +1150,7 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
     other.id = "other".into();
     registry.insert_provider(other);
     deps.llm = Arc::new(registry);
-    let config = Config { model: "other/scripted".into(), ..Config::default() };
+    let config = Config { model: Some("other/scripted".into()), ..Config::default() };
     let options = ResumeOptions {
         session: SessionRef::Id(finx_core::short_id(&session_id).to_string()),
         model: None,

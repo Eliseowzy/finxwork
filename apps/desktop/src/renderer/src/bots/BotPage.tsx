@@ -6,6 +6,8 @@ import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
 import { useComposerInbox } from "../composer/inbox";
 import { Composer } from "../composer/Composer";
+import { needsKey } from "../composer/KeySetup";
+import { NoModel } from "../composer/NoModel";
 import { useCommands } from "../composer/skills";
 import { Tile } from "../composer/Tile";
 import { durationText, momentText, timeLine } from "../format";
@@ -108,6 +110,8 @@ export function BotPage({ bot }: { bot: BotSummary }) {
                 <LocalImages.Provider value={true}>
                   <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} />
                 </LocalImages.Provider>
+              ) : needsKey(st) ? (
+                <NoModel />
               ) : (
                 <div className="empty">
                   <span className="mini-spin" />

@@ -1,5 +1,6 @@
-//! `finx exec` and `finx resume`: run a task headless. The output is the reply as text, one
-//! JSON result object (`--output json`), or the event stream as JSONL (`--output stream-json`).
+//! `finx exec`: run a task headless, in a new session or one it continues. The output is the
+//! reply as text, one JSON result object (`--json`), or the event stream as JSONL
+//! (`--output stream-json`).
 
 use anyhow::Context as _;
 use finx_core::JsonlStore;
@@ -42,11 +43,12 @@ pub async fn exec(
     };
     let mut rt = setup::init(cwd, &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
+    let model = setup::session_model(&rt, run.model.clone())?;
     let prompt = setup::read_prompt(prompt)?;
     let interactive = interactive(run);
     let deps = rt.kernel_deps(save)?;
     let options = StartOptions {
-        model: run.model.clone().unwrap_or_else(|| rt.config.model.clone()),
+        model,
         thinking: run.thinking.unwrap_or(rt.config.thinking),
         permission_mode: run.permission_mode().unwrap_or(rt.config.permission_mode),
         cwd: rt.cwd.clone(),
@@ -63,22 +65,21 @@ pub async fn exec(
 
 pub async fn resume(
     overrides: &[String],
-    session: Option<String>,
-    prompt: Option<&str>,
+    session: &str,
+    prompt: &str,
     run: &RunArgs,
 ) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let store = JsonlStore::new(home.sessions_dir());
-    let (header, path) = match session.as_deref() {
-        None | Some("last") => {
+    let (header, path) = match session {
+        "last" => {
             let workspace = setup::workspace(&std::env::current_dir()?);
             store
                 .header(&SessionRef::LastIn(workspace))
                 .context("nothing to continue in this project (`finx sessions --all` lists every project)")?
         }
-        Some(id) => store.header(&SessionRef::Id(id.to_string()))?,
+        id => store.header(&SessionRef::Id(id.to_string()))?,
     };
-    let prompt = prompt.context("nothing to do: pass the next instruction with -p/--prompt")?;
     let prompt = setup::read_prompt(prompt)?;
     let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
@@ -215,10 +216,8 @@ async fn drive(
             println!("{}", outcome.to_json(exit_code, session, started.elapsed()));
         }
         OutputFormat::Text if saved => {
-            let hint = format!(
-                "session {} · continue with: finx exec --continue \"…\"",
-                finx_core::short_id(&session_id)
-            );
+            let short = finx_core::short_id(&session_id);
+            let hint = format!("session {short} · continue with: finx exec --resume {short} \"…\"");
             eprintln!("{}", renderer.style().dim(&hint));
         }
         _ => {}

@@ -408,6 +408,18 @@ impl Server {
         servers
     }
 
+    /// The model a new session runs on. May read saved keys (the keychain) when nobody named one.
+    pub(crate) async fn session_model(&self, asked: Option<String>, configured: Option<String>) -> Result<String, RpcError> {
+        if let Some(model) = asked.or(configured) {
+            return Ok(model);
+        }
+        let llm = self.0.llm.clone();
+        tokio::task::spawn_blocking(move || finx_core::models::session_model(&llm, None, None))
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))?
+            .map_err(|e| errors::from_kernel(e, "new"))
+    }
+
     /// Starts a session; `attach` receives its snapshot before any event. Returns the id.
     pub async fn create_session(&self, args: NewSession, attach: AttachRequest) -> Result<String, RpcError> {
         if args.cwd.as_ref().is_some_and(|cwd| !cwd.is_absolute()) {
@@ -416,13 +428,19 @@ impl Server {
         self.make_room().await?;
         let cwd = match args.cwd {
             Some(cwd) => cwd,
-            None => self
-                .0
-                .home
-                .new_chat_dir()
-                .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?,
+            None => {
+                // Before a folder is made for it: only the user's own configuration applies here.
+                if args.model.is_none() {
+                    self.session_model(None, self.0.defaults.model.clone()).await?;
+                }
+                self.0
+                    .home
+                    .new_chat_dir()
+                    .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?
+            }
         };
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
+        let model = self.session_model(args.model, workspace.config.model.clone()).await?;
         let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
@@ -435,7 +453,7 @@ impl Server {
         deps.docs = Some(self.0.docs.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &args.mcp_servers);
         let options = StartOptions {
-            model: args.model.unwrap_or_else(|| workspace.config.model.clone()),
+            model,
             thinking: args.thinking.unwrap_or(workspace.config.thinking),
             permission_mode: args
                 .permission_mode
@@ -758,10 +776,8 @@ impl Server {
     /// Blocking I/O.
     fn scan_skills(&self, cwd: &Path) -> Result<SkillsListResult, RpcError> {
         let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).map_err(errors::from_runtime)?;
-        let window = self
-            .0
-            .llm
-            .resolve(&workspace.config.model)
+        let window = finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
+            .and_then(|model| self.0.llm.resolve(&model).ok())
             .map_or(u64::MAX, |resolved| u64::from(resolved.model.context_window));
         let config = &workspace.config;
         let sources = skills::Sources::new(&self.0.home, &workspace.cwd, workspace.project_root.as_deref(), &config.skills);

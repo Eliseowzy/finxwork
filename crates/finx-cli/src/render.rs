@@ -16,10 +16,15 @@ pub struct Style {
     color: bool,
 }
 
+/// `NO_COLOR` counts when it is not empty (no-color.org); a dumb terminal has no colors at all.
+fn color_allowed(no_color: Option<std::ffi::OsString>, term: Option<std::ffi::OsString>) -> bool {
+    no_color.is_none_or(|value| value.is_empty()) && term.is_none_or(|value| value != "dumb")
+}
+
 impl Style {
     pub fn detect() -> Self {
         Self {
-            color: std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
+            color: std::io::stderr().is_terminal() && color_allowed(std::env::var_os("NO_COLOR"), std::env::var_os("TERM")),
         }
     }
 
@@ -389,5 +394,20 @@ mod tests {
         assert_eq!(group_digits(12), "12");
         assert_eq!(result_line("bash", "Exit code: 2\nDuration: 0.1s\nOutput:\nx", Some(1500)), "exit 2 · 1.5s");
         assert_eq!(truncate("one\ntwo", 10), "one…");
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::color_allowed;
+
+    #[test]
+    fn no_color_and_a_dumb_terminal_turn_colors_off() {
+        let some = |text: &str| Some(std::ffi::OsString::from(text));
+        assert!(color_allowed(None, None));
+        assert!(color_allowed(None, some("xterm-256color")));
+        assert!(!color_allowed(None, some("dumb")));
+        assert!(!color_allowed(some("1"), None));
+        assert!(color_allowed(some(""), None), "an empty NO_COLOR does not count");
     }
 }

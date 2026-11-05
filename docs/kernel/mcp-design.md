@@ -329,7 +329,7 @@ oauth = { client_id = "Iv23li…", client_secret = "${credential:mcp.github.oaut
 - **受信任的项目**：项目配置照常加载，不再逐个确认；`.mcp.json` 在打开 `mcp.project_json` 时加载。信任本身就是用户对这个项目的明确授权，与现有的信任语义一致。
 - **模型不能悄悄加服务器**：`.mcp.json` 和 `.finx/config.toml` 都是受保护文件（总方案 §11.5），修改要经过审批。
 - **客户端带来的服务器**：来自用户自己的编辑器或桌面端，连接本身已经受本机权限保护（stdio、权限为 0600 的 Unix socket），不另做检查。
-- **密钥**：不写进会话日志、事件和快照。客户端带来的服务器也不写进会话日志，所以 `finx resume` 不会恢复它们（Q-106）。
+- **密钥**：不写进会话日志、事件和快照。客户端带来的服务器也不写进会话日志，所以 `finx exec --resume` 不会恢复它们（Q-106）。
 
 ### 4.5 `.mcp.json`
 
@@ -866,7 +866,7 @@ EventMsg::McpServerStatus {
 | `--mcp-config <file>` | 全局参数，所有命令都接受（§4.1）；`chat` 不带工具，忽略它 |
 | `finx status` | 增加一行：会话会启动的服务器个数和名字 |
 
-- `finx exec` 和 `finx resume` 在终端显示服务器状态，例如 `mcp: github ready (12 tools, 640 ms)`、`mcp: docs failed: connection refused`；回复正在输出一行时，状态行等这一行结束再显示，不把回复拆开；`--output stream-json` 时作为事件输出。
+- `finx exec` 在终端显示服务器状态，例如 `mcp: github ready (12 tools, 640 ms)`、`mcp: docs failed: connection refused`；回复正在输出一行时，状态行等这一行结束再显示，不把回复拆开；`--output stream-json` 时作为事件输出。
 - `finx mcp add/remove` 放到二期：要在保留注释和格式的前提下修改 config.toml，需要引入 toml_edit。
 - **二期**：
   - `finx mcp add` 先探测（§13.6），通过了才写配置；失败时退出码为 1，不写任何文件，加 `--force` 才在失败时照样写入。远程服务器探测到要 OAuth 时，写入前先登录（同 `finx mcp login`）；`--no-login` 只写配置、以后再登录。
@@ -1380,7 +1380,7 @@ impl McpClient {
 | Q-103 | 是否提供手动重连 | 二期提供 `Op::McpReconnect { server }`，桌面端的"重新连接"按钮用它；一期靠下一次调用时的自动重连（D-115） | §5.5 |
 | Q-104 | elicitation 怎么交给用户 | 二期；复用审批通道，事件带上表单的 schema | §16 |
 | Q-105 | resources、prompts 是否提供给模型 | 二期提供列出和读取资源的两个工具，只在有服务器声明 resources 时出现；prompts 作为界面命令，三期 | §16 |
-| Q-106 | 客户端带来的服务器是否写进会话日志，让 `finx resume` 也能恢复 | 否：可能带有密钥。ACP 的 `session/load` 会再次带来，原生协议的 `session/resume` 也可以带 | §4.4 |
+| Q-106 | 客户端带来的服务器是否写进会话日志，让 `finx exec --resume` 也能恢复 | 否：可能带有密钥。ACP 的 `session/load` 会再次带来，原生协议的 `session/resume` 也可以带 | §4.4 |
 | Q-107 | 桌面端如何管理服务器（增删改、启停、查看工具） | 随桌面端设计；一期桌面端可以按会话带来服务器，或者直接编辑配置文件 | §11.4 |
 | Q-108 | 用户能否在自己的配置里关掉某个项目的服务器 | 暂不；可以用 `-c mcp_servers.<name>.enabled=false`，或者不信任这个项目 | §4.1 |
 | Q-109 | 客户端能否经已有的连接提供 MCP 服务器（不另起进程） | 以后。ACP 已有一个不稳定的 `acp` 传输，MCP 消息走 ACP 连接本身；桌面端要把界面能力（例如在编辑器里打开文件）交给模型时，可以照此在原生协议上做，作为 finx-mcp 的第三种传输 | §11.3 |

@@ -27,7 +27,7 @@ use serde_json::json;
 use crate::setup;
 
 /// `~/x` for paths in the user's home.
-fn shorten(home: &FinxHome, path: &Path) -> String {
+pub(crate) fn shorten(home: &FinxHome, path: &Path) -> String {
     match home.user_home().and_then(|user| path.strip_prefix(user).ok()) {
         Some(rest) => format!("~/{}", rest.display()),
         None => path.display().to_string(),
@@ -98,21 +98,17 @@ pub fn skills_remove(name_or_path: &str) -> anyhow::Result<u8> {
 pub fn skills_switch(name_or_path: &str, enabled: bool) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let verb = if enabled { "enabled" } else { "disabled" };
-    let result = match as_path(name_or_path) {
+    let (what, result) = match as_path(name_or_path) {
         Some(path) => {
             let dir = std::fs::canonicalize(&path).with_context(|| format!("cannot read {name_or_path}"))?;
-            let result = install::set_enabled(&home, &dir, enabled)?;
-            println!("{verb} {}", shorten(&home, &dir));
-            result
+            (shorten(&home, &dir), install::set_enabled(&home, &dir, enabled)?)
         }
         None => {
             let dirs = skills_named(&home, name_or_path)?;
-            let result = install::set_name_enabled(&home, name_or_path, &dirs, enabled)?;
-            println!("{verb} every skill named {name_or_path}");
-            result
+            (format!("every skill named {name_or_path}"), install::set_name_enabled(&home, name_or_path, &dirs, enabled)?)
         }
     };
-    println!("in {}", shorten(&home, &result.file));
+    println!("{verb} {what} in {}", shorten(&home, &result.file));
     Ok(0)
 }
 
@@ -129,7 +125,7 @@ fn write(home: &FinxHome, ws: &Workspace, layer: ConfigLayer, edits: &[ConfigEdi
     let project = dir.join(".finx").join("config.toml");
     let user = home.config_file();
     if layer == ConfigLayer::UserProject && ws.user_project_file.is_none() {
-        bail!("--here needs a project: run it inside a repository");
+        bail!("--local needs a project: run it inside a repository");
     }
     if layer == ConfigLayer::Project && ws.project_root.is_none() {
         bail!("--project needs a project: run it inside a repository");
@@ -172,7 +168,7 @@ pub struct AddArgs {
     pub env: Vec<String>,
     pub secret_env: Vec<String>,
     pub token: bool,
-    pub here: bool,
+    pub local: bool,
     pub project: bool,
     pub command: Vec<String>,
     /// Write it even when the check fails.
@@ -281,7 +277,7 @@ async fn sign_in(home: &FinxHome, ws: &Workspace, name: &str, config: &finx_prot
 }
 
 pub async fn mcp_add(args: AddArgs) -> anyhow::Result<u8> {
-    let AddArgs { name, url, headers, env, secret_env, token, here: personal, project, command, force, no_login } = args;
+    let AddArgs { name, url, headers, env, secret_env, token, local: personal, project, command, force, no_login } = args;
     if !finx_protocol::mcp::valid_server_name(&name) {
         bail!("a server name is 1-32 letters, digits, '_' or '-'");
     }
@@ -531,10 +527,10 @@ pub async fn mcp_remove(name: &str, project: bool) -> anyhow::Result<u8> {
         Some(ConfigLayer::Project) if project => ConfigLayer::Project,
         Some(ConfigLayer::Project) => bail!(
             "{name} is in the project's .finx/config.toml; add --project to remove it there, \
-             or turn it off for you with `finx mcp disable {name} --here`"
+             or turn it off for you with `finx mcp disable {name} --local`"
         ),
         Some(ConfigLayer::ProjectJson) => {
-            bail!("{name} is in the project's .mcp.json; edit that file, or turn it off for you with `finx mcp disable {name} --here`")
+            bail!("{name} is in the project's .mcp.json; edit that file, or turn it off for you with `finx mcp disable {name} --local`")
         }
         Some(layer) if layer.writable() => layer,
         _ => bail!("no server named {name} in a configuration file here"),

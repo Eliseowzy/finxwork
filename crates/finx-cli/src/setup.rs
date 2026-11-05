@@ -134,6 +134,49 @@ fn load(home: FinxHome, log_guard: Option<WorkerGuard>, cwd: PathBuf, overrides:
     })
 }
 
+/// No model to run on, with what to do about it.
+#[derive(Debug)]
+pub struct NoModel {
+    pub help: String,
+}
+
+impl std::fmt::Display for NoModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no model is set up\n\n{}", self.help)
+    }
+}
+
+impl std::error::Error for NoModel {}
+
+/// The model of a new session: the one asked for, the configured one, or the one the first usable
+/// provider starts on. No model is assumed: with none, the error says how to set one up.
+pub fn session_model(rt: &Runtime, asked: Option<String>) -> anyhow::Result<String> {
+    finx_core::models::session_model(&rt.llm, asked, rt.config.model.as_deref())
+        .map_err(|_| NoModel { help: no_model_help(rt) }.into())
+}
+
+/// What to do while no model is set up, in the ways that work from a terminal.
+pub fn no_model_help(rt: &Runtime) -> String {
+    let mut keys: Vec<String> = rt
+        .llm
+        .providers()
+        .filter(|p| p.plan.is_none() && matches!(p.auth, finx_llm::AuthConfig::ApiKey { .. }))
+        .flat_map(|p| p.auth.env_vars().to_vec())
+        .collect();
+    keys.sort();
+    keys.dedup();
+    format!(
+        "To set up a model, any one of these will do:\n  \
+         an API key in the environment   {}\n  \
+         a ChatGPT subscription          finx models login chatgpt-api\n  \
+         a local Ollama                  pass -m ollama/<model>\n\n\
+         `finx models` lists every provider and what it needs. To choose the default model, set\n\
+         model = \"provider/model-id\" in {}",
+        keys.join(", "),
+        rt.home.config_file().display(),
+    )
+}
+
 /// FINX_MODEL and FINX_PERMISSION_MODE as `key=value` overrides. FINX_APPROVAL is the old
 /// name of FINX_PERMISSION_MODE.
 pub fn env_overrides(warnings: &mut Vec<String>) -> anyhow::Result<Vec<String>> {

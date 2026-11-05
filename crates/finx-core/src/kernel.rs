@@ -139,6 +139,9 @@ pub struct ResumeOptions {
 
 #[derive(Debug, thiserror::Error)]
 pub enum KernelError {
+    /// Nobody named a model and no provider is connected.
+    #[error("no model is set up")]
+    NoModel,
     #[error(transparent)]
     Model(#[from] ResolveError),
     #[error(transparent)]
@@ -760,24 +763,33 @@ impl Kernel {
                 _ => {}
             }
         }
-        let reference = opts
-            .model
-            .clone()
-            .or(model_ref)
-            .unwrap_or_else(|| opts.config.model.clone());
+        let configured = opts.config.model.as_deref();
+        let reference = crate::models::session_model(&deps.llm, opts.model.clone().or(model_ref), configured)?;
         // The model the session last used may belong to a provider that is gone (a disconnected
-        // or removed connection): the session still opens, on the configured model, and says so.
-        // The log keeps the old model, so the session goes back to it once the provider is back.
-        // A model asked for by name is not replaced.
+        // or removed connection): the session still opens, on the default model when there is
+        // one, and says so. The log keeps the old model, so the session goes back to it once the
+        // provider is back. A model asked for by name is not replaced.
         let mut replaced = None;
         let resolved = match deps.llm.resolve(&reference) {
             Ok(resolved) => resolved,
-            Err(ResolveError::UnknownProvider { .. }) if opts.model.is_none() && reference != opts.config.model => {
-                replaced = Some(format!(
-                    "model '{reference}' is not available (its provider is disconnected or removed); this session uses '{}' until it is back",
-                    opts.config.model
-                ));
-                deps.llm.resolve(&opts.config.model)?
+            Err(ResolveError::UnknownProvider { .. }) if opts.model.is_none() => {
+                let default = crate::models::default_model(&deps.llm, configured).filter(|model| *model != reference);
+                let default = default.and_then(|model| deps.llm.resolve(&model).ok().map(|resolved| (model, resolved)));
+                match default {
+                    Some((default, resolved)) => {
+                        replaced = Some(format!(
+                            "model '{reference}' is not available (its provider is disconnected or removed); this session uses '{default}' until it is back"
+                        ));
+                        resolved
+                    }
+                    // Nothing to run on, but its history can still be read.
+                    None => {
+                        replaced = Some(format!(
+                            "model '{reference}' is not available (its provider is disconnected or removed); connect a model to go on with this session"
+                        ));
+                        deps.llm.unavailable(&reference)?
+                    }
+                }
             }
             Err(error) => return Err(error.into()),
         };

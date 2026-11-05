@@ -47,7 +47,6 @@ pub use agents::RestoredAgent;
 pub use bot::BotIdentity;
 pub use config::Config;
 pub use config::ConfigError;
-pub use config::DEFAULT_MODEL;
 pub use config::LoadedConfig;
 pub use hooks::Gate;
 pub use hooks::Hooks;

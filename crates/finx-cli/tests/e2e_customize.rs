@@ -128,7 +128,7 @@ async fn the_command_line_adds_switches_and_removes_skills_and_servers() {
     assert!(out.contains("mcp done: sk-test-1"), "{out}");
 
     // Off for this project only, then on again.
-    assert_eq!(run(&env, &work, &["mcp", "disable", "vault", "--here"]).await.0, 0);
+    assert_eq!(run(&env, &work, &["mcp", "disable", "vault", "--local"]).await.0, 0);
     let personal = std::fs::read_dir(env.home.path().join("projects")).unwrap().flatten().next().unwrap().path().join("config.toml");
     assert!(std::fs::read_to_string(&personal).unwrap().contains("enabled = false"));
     let (_, listed) = run(&env, &work, &["mcp", "list"]).await;

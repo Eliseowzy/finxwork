@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.46 |
+| 版本 | v1.49 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -93,6 +93,9 @@
 | v1.44 | 2026-11-05 | 本地命令的 CI 门槛改用缺页预算（§1.4，D-98）：原来的“GitHub runner 上均值 ≤ 2 ms”时红时绿，主要是 runner 的波动，真实的变慢反而看不出来；2 ms 仍是产品目标，改在固定机器上交替测量。`status`、`doctor` 两天内慢了约 12%，这次收回约三分之二：命令行没有全局选项时，解析器不带它们的副本（§1.4）；本地命令的运行时不析构；模型目录直接移动字段。新增 `tools/bench/local_ab.py` |
 | v1.45 | 2026-11-05 | 撤回重发（[message-resend-design.md](message-resend-design.md)，D-370–D-385），取代原计划的 `Rewind`：新 Op `resend`（§8.1），任务在跑就先停，对话回到这条用户消息之前，再发新消息，回退和发送是一个动作；新事件 `session_rewound`（§8.2）；`branch` 条目开始写入，带 `before_first`（§9.2、§9.5）；恢复时设置、标题、归档、累计用量和任务号按全文件读，不再只看当前分支（§9.4，D-374）。被撤回段启动的子智能体关闭摘除，保留段的继续跑，它在被撤回段送达的汇报重新投递。一期只回退对话，磁盘文件不动 |
 | v1.46 | 2026-11-05 | 定时任务（routine-design.md，已实现）：`finx serve` 调度，数据在 `~/.finx/finx.db`，是第一个本地数据库；依赖 `rusqlite`（带内置 SQLite）和 `jiff`，只在 `finx-server`。命令行和 `finx exec` 不碰它（§9.1） |
+| v1.47 | 2026-11-05 | 新增命令行独立发布方案 [standalone-cli-design.md](standalone-cli-design.md)（待评审，D-500–D-544，Q-300–Q-313）：CLI、ACP、JSON-RPC 三个入口对外，命令行增加带工具的交互模式。本文只加指向，它要改的 §1.3、§10.1、§12 等在实现时同步（该文 §17.3） |
+| v1.48 | 2026-11-05 | 去掉写死的默认模型（该文 §7.2，已实现）：没写 `model` 时用第一个能用的服务商声明的第一个模型；一家都没有时没有默认模型，各入口提醒去设置（§10.2） |
+| v1.49 | 2026-11-05 | 现有命令按该文 §4 统一（已实现）：`exec --json` 改成一个结果对象，事件流用 `--output stream-json`；去掉 `finx resume` 和 `exec --continue`，继续会话用 `exec --resume`；`models show` 改名 `unhide`；`--here` 改名 `--local`；`finx chat` 隐藏；重复或冲突的参数以最后一个为准；`--json` 下的失败也是 JSON（§12）。去掉没有实现的 HTTP 转储环境变量（§10.4、§13） |
 
 ## 1. 目标与范围
 
@@ -2246,7 +2249,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 | 方式 | 说明 | 里程碑 |
 |---|---|---|
 | 进程内 | Rust API：`Kernel::submit` 和 `next_event` | M1 |
-| JSONL | `finx exec --json` 把事件逐行写到 stdout；加上 `--ops-stdin` 后，从 stdin 逐行读取 Op | M1 |
+| JSONL | `finx exec --output stream-json` 把事件逐行写到 stdout；加上 `--ops-stdin` 后，从 stdin 逐行读取 Op | M1 |
 | 原生协议（JSON-RPC 2.0） | `finx serve --stdio` 或 `finx serve --listen unix://`：一个进程承载多个会话和多个客户端；`session/op` 承载 Op，`session/event` 承载 Event | 协议扩展（已实现） |
 | ACP | `finx acp`：编辑器以子进程方式启动，通过 stdio 交互 | 协议扩展（已实现） |
 
@@ -2277,7 +2280,7 @@ pub struct ContextUsage { tokens: u64, estimated: u64, soft_limit: u64, hard_lim
 - 目录权限为 0700，文件权限为 0600。
 - 会话 id 使用 UUID v7，按时间有序。
 - **短 id**：界面上显示会话 id 的后 8 位。UUID v7 的开头是时间戳，同一时段创建的会话前缀相同；后 8 位取自随机部分，更容易区分。
-- **按 id 查找**：`finx resume` 接受完整 id、唯一前缀或唯一后缀；匹配到多个会话时报错，提示多输入几位。
+- **按 id 查找**：`finx exec --resume` 接受完整 id、唯一前缀或唯一后缀；匹配到多个会话时报错，提示多输入几位。
 - **会话数据目录**：与日志同名、放在日志旁边的目录，存放属于这个会话的文件（目前是工具结果的完整内容，§5.7），生命周期与日志相同：恢复会话后路径依然有效，以后删除会话时一并删除。会话列表扫描时跳过这些目录。不保存日志的会话（`--no-save`）用系统临时目录，会话关闭时删除。
 - **无项目会话**：`session/new` 不带 cwd 时（protocol-design v0.17），内核在 `chats/` 下新建一个空文件夹作为会话的工作目录。工作目录在 `chats/` 里的会话没有项目：不向上查找项目根，所以不会把恰好是 Git 仓库的用户主目录当成项目；项目配置与项目指令都不读，只用用户自己的配置、指令和 Skill。会话列表据此给出 `no_project`，不另外记在日志里。这个文件夹里是模型为用户写的文件，删除会话时不动它。
 
@@ -2390,7 +2393,7 @@ pub enum EntryKind {
 - **派生**：把当前分支复制为一个新的会话文件，头部记录 `forked_from {session_id, entry_id}`。
 - **列表**：`finx sessions` 按从新到旧的顺序扫描目录，读取每个文件的头部、第一条用户消息和标题。
   - 默认只列出本项目的会话（按头部的 cwd 判断）；`--all` 列出全部。
-  - 子智能体的会话（头部带 `agent`）不列出，`resume last` 和 `--continue` 也跳过它们；按 id 或路径仍能打开。
+  - 子智能体的会话（头部带 `agent`）不列出，`--resume last` 也跳过它们；按 id 或路径仍能打开。
   - 先用子串筛出含用户消息或标题的行，只对这些行做 JSON 解析。长会话里的模型输出和工具结果不再整条反序列化。
   - 常驻服务记住读过的长日志（64 KiB 以上）的摘要，以及读到了哪里。日志只会追加，下次列表只读新追加的部分；文件换了、变短了，或者没变长却改过，就从头读（D-94）。短日志重读的代价和记住它差不多（约 1 KiB），不记。
   - 长日志的摘要另存一份磁盘投影（会话数据目录下的 `summary-cache.json`，最多 64 KiB，权限 0600，原子替换），新起的进程也不必从头读。设备号、inode、大小、修改时间和 ctime 任何一项不符就作废，退回完整扫描；打开和恢复会话从不使用它。
@@ -2415,7 +2418,7 @@ pub enum EntryKind {
 ### 10.2 config.toml
 
 ```toml
-model = "deepseek/deepseek-flash"
+model = "deepseek/deepseek-flash"   # 不写：第一个能用的服务商的模型；一家都没有时提醒去设置（standalone-cli-design §7.2）
 thinking = "default"                # default（服务商决定）| off | on | minimal | low | medium | high | xhigh | max
 permission_mode = "manual"          # manual | accept-edits | bypass-permissions（§11.2）
 max_turns = 0                       # 每个任务最多几轮，0 表示不限
@@ -2483,7 +2486,6 @@ reason = "Confirm before pushing"
 | FINX_MODEL | 默认模型。优先级高于配置文件，低于 `-c` 和命令行参数 |
 | FINX_PERMISSION_MODE | 权限模式，优先级同上。旧名 `FINX_APPROVAL` 仍然可用，会给出 warning |
 | FINX_LOG | 日志过滤规则，例如 `info,finx_core=debug` |
-| FINX_DEBUG_HTTP | 设为 1 时转储 HTTP 请求和原始流（§13，尚未实现） |
 | 各厂商的密钥变量 | 见 §4.8 |
 
 ## 11. 安全
@@ -2682,21 +2684,20 @@ pub enum RuleDecision { Allow, Ask, Deny }
 
 | 命令 | 说明 | 里程碑 | 状态 |
 |---|---|---|---|
-| `finx chat [PROMPT]` | 只用模型层对话，不带工具，用于验证模型接入。不给 PROMPT 时进入简单的 REPL；`--tool-test` 附带一个示例工具，用来验证工具调用；`--record DIR` 录制原始流 | M0 | 已实现，`--record` 除外 |
-| `finx models [--provider P] [--all] [--refresh] [--json]`、`finx models show <provider/model-id>`、`finx models hide <provider/model-id>` | 按服务商列出模型菜单里的模型；`--all` 连同隐藏的，`--refresh` 先向服务商和公共目录刷新，`--json` 与 `models/list` 相同；`show`、`hide` 改模型菜单（model-catalog-design §9） | M0 | 已实现 |
+| `finx chat [PROMPT]`（隐藏） | 只用模型层对话，不带工具，用于验证模型接入。不给 PROMPT 时进入简单的 REPL；`--tool-test` 附带一个示例工具，用来验证工具调用；`--record DIR` 录制原始流 | M0 | 已实现，`--record` 除外 |
+| `finx models [--provider P] [--all] [--refresh] [--json]`、`finx models hide <provider/model-id>`、`finx models unhide <provider/model-id>` | 按服务商列出模型菜单里的模型；`--all` 连同隐藏的，`--refresh` 先向服务商和公共目录刷新，`--json` 与 `models/list` 相同；`show`、`hide` 改模型菜单（model-catalog-design §9） | M0 | 已实现 |
 | `finx doctor [--json]` | 检查配置、密钥（脱敏显示）、网络和目录权限；有失败项时退出码为 1 | M0 | 已实现，网络检查除外 |
 | `finx status [--json]` | 显示生效的配置：模型、接口与服务地址、密钥来源（脱敏）、推理等级、权限模式、启用的工具、来自环境变量的设置、项目与信任状态、各配置文件、数据目录 | M1 | 已实现 |
-| `finx exec [PROMPT]` | 以无头方式执行一个任务；PROMPT 为 `-` 时从 stdin 读取 | M1 | 已实现 |
-| `finx resume [last\|ID] -p PROMPT` | 继续一个会话。`last`（默认）是本项目最近的会话；ID 可以是完整 id、唯一前缀或唯一后缀，可以跨项目 | M1 | 已实现 |
+| `finx exec PROMPT` | 以无头方式执行一个任务；PROMPT 为 `-` 时从 stdin 读取。`--resume` 接着一个会话跑 | M1 | 已实现 |
 | `finx protocol schema` | 导出协议的 JSON Schema，包括原生协议的方法参数与结果、通知与错误码（protocol-design §6.9） | M1 | 已实现 |
 | `finx sessions [--all] [--limit N] [--json]` | 列出本项目的会话；`--all` 列出所有项目的 | M2 | 已提前实现 |
 | `finx trust [DIR]` | 把目录标记为受信任项目 | M2 | 已提前实现 |
 | `finx skills [DIR] [--all] [--json]` | 列出在 DIR 新开会话时会用到的 Skill 与清单的 token 数；`--all` 同时列出被遮蔽、被停用、加载失败的 Skill 及原因（skill-design.md §11.1） | Skill 一期 | 已实现 |
 | `finx serve [--stdio \| --listen unix://[PATH]]` | 原生协议服务：stdio 上的单个连接，或 Unix socket 上的常驻服务（protocol-design §8） | 协议扩展 | 已实现 |
 | `finx acp` | ACP 服务，供编辑器以子进程方式启动（protocol-design §7） | 协议扩展 | 已实现 |
-| `finx` | 交互界面，形态待定（Q-12） | M3 | — |
+| `finx` | 交互界面，方案见 standalone-cli-design.md §5（待评审，Q-12） | M3 | — |
 
-在会话里输入 `/context`（例如 `finx resume -p /context`、`finx exec --continue /context`）打印当前上下文的明细（§7.5.8），不请求模型。`--output json` 的结果带 `context`，`stream-json` 里是 `context_reported` 事件。
+在会话里输入 `/context`（例如 `finx exec --resume last /context`）打印当前上下文的明细（§7.5.8），不请求模型。`--output json` 的结果带 `context`，`stream-json` 里是 `context_reported` 事件。
 
 `finx exec` 的参数：
 
@@ -2705,13 +2706,12 @@ pub enum RuleDecision { Allow, Ask, Deny }
 | `-m, --model` | 模型 |
 | `--thinking` | 推理等级 |
 | `--permission-mode MODE` | 权限模式：manual、accept-edits、bypass-permissions（§11.2）。旧写法 `--approval` 仍然可用 |
-| `--dangerously-skip-permissions` | 等同 `--permission-mode bypass-permissions`，不能与 `--permission-mode` 同时使用 |
+| `--dangerously-skip-permissions` | 等同 `--permission-mode bypass-permissions`。和 `--permission-mode` 都给时，以后写的为准 |
 | `--cwd` | 工作目录 |
-| `--continue` | 在本项目最近的会话里继续，等同 `--resume last` |
-| `--resume last\|ID` | 在指定会话里继续 |
+| `--resume last\|ID` | 在指定会话里继续。`last` 是本项目最近的会话；ID 可以是完整 id、唯一前缀或唯一后缀，可以跨项目 |
 | `--no-save` | 不留会话日志（日志只存在内存里） |
 | `--output text\|json\|stream-json` | 输出格式，见下文；默认 `text` |
-| `--json` | 等同 `--output stream-json` |
+| `--json` | 等同 `--output json`，和其他打印数据的命令一样是一个 JSON 值 |
 | `--ops-stdin` | 从 stdin 读取 Op（JSONL），由程序来应答审批、发送中断 |
 | `--max-turns N` | 最大轮数 |
 | `--output-last-message FILE` | 把最后一条助手消息写入文件 |
@@ -2727,7 +2727,7 @@ pub enum RuleDecision { Allow, Ask, Deny }
 
 **输出**：
 - `text`：助手的回复以流式写到 stdout；工具活动、推理内容和最终用量写到 stderr。子智能体的开始和结束各显示一行。
-  - 会话保存了的话，结束时在 stderr 提示短 id 和继续的命令（`finx exec --continue "…"`）。
+  - 会话保存了的话，结束时在 stderr 提示短 id 和继续的命令（`finx exec --resume <短 id> "…"`）。
 - `json`：结束时向 stdout 输出一个结果对象，供脚本读取，例如 `jq -r .final_output`。不在终端询问审批；内核发出的 warning（例如 bypass-permissions 的提示）写到 stderr。字段如下：
   - `final_output`：最后一条助手消息，没有时为 `""`。
   - `exit_code`：与进程退出码相同。
@@ -2768,7 +2768,7 @@ pub enum RuleDecision { Allow, Ask, Deny }
   - 过滤规则用 `FINX_LOG` 设置；
   - 日志不输出到 stdout。
 - **指标**：包括首个 token 的延迟、输出速率（token/s）、各工具的耗时、重试次数。它们随 `turn_completed` 和 `task_completed` 事件下发，同时写入日志（尚未实现）。
-- **HTTP 转储**：设置 `FINX_DEBUG_HTTP=1` 后，请求体和原始流会写入 `~/.finx/logs/http/<session_id>/`，其中的鉴权信息已脱敏（尚未实现）。
+- **HTTP 转储**：还没有做。做的时候把请求体和原始流写入 `~/.finx/logs/http/<session_id>/`，鉴权信息要脱敏（standalone-cli-design Q-310）。
 - **自检**：`finx doctor` 用于诊断运行环境。
 
 ## 14. 测试策略
@@ -2935,7 +2935,7 @@ finxwork/
 |---|---|---|
 | M0 | finx-llm 全部类型；openai-chat 和 anthropic-messages 两个适配器，DeepSeek 的两种端点都已实测；Compat；内置目录与 models.toml；鉴权（环境变量、配置值、命令、免鉴权）；重试与超时；用量与费用换算；ScriptedApi；`finx chat`、`finx models`、`finx doctor` | `finx chat --record`；`finx models --check`；`finx doctor` 的网络检查；内置目录没有填写价格，费用显示为"未知"；SSE 回放素材的 fixtures 目录（请求体快照已实现，§4.15） |
 | M1 | finx-protocol；read、write、edit、bash 四个工具，以及 LocalEnvironment、截断、FileTracker；会话 actor、提交循环、agent 循环、工具批次并发、中断；会话日志与 resume；`finx exec` 的文本模式、`--json` 和 `--ops-stdin` | 验收第 2 项（用真实模型修复示例仓库中的失败测试）还没有做 |
-| M2 | 提前实现：三档权限模式、命令规则、内置只读命令、工作区边界与受保护路径、关键路径删除检查、项目信任；插话与追加；指令文件；`finx sessions`、`finx trust`；上下文管理（用量校准、交接摘要压缩、工具结果裁切与完整内容保存，§7.5–7.7）；上下文明细与 `/context`（§7.5.8） | grep、find、ls；openai-responses 和 gemini 适配器；回退与派生；凭据文件与 `finx auth set`；环境变量 FINX_DEBUG_HTTP；首 token 延迟等指标；CLI 测试与性能基准 |
+| M2 | 提前实现：三档权限模式、命令规则、内置只读命令、工作区边界与受保护路径、关键路径删除检查、项目信任；插话与追加；指令文件；`finx sessions`、`finx trust`；上下文管理（用量校准、交接摘要压缩、工具结果裁切与完整内容保存，§7.5–7.7）；上下文明细与 `/context`（§7.5.8） | grep、find、ls；openai-responses 和 gemini 适配器；回退与派生；凭据文件与 `finx auth set`；首 token 延迟等指标；CLI 测试与性能基准 |
 | 协议扩展 | 服务层与会话中枢、原生协议（stdio 与 Unix socket 常驻服务）、ACP、`finx protocol schema`；finx-mock 驱动的端到端测试与多场景压测，实测数据见 protocol-design §11.1、§12.2 | 在 Zed 中实测 `finx acp` |
 | 子智能体（一期） | 智能体树、`spawn_agent` 与 `send_message`（同步、异步、`interrupt`）、Mailbox（汇报、轮次边界投递、空闲唤醒、最终回复闸门、中断保持、只交付一次、截断与完整内容保存）、子会话无审批并跟随根会话的权限、插话打断同步等待、整树停止与关闭、按路径的写锁、子会话日志头与 `agent_spawned` / `mail` 条目、列表过滤、新事件、`finx exec` 与 ACP 以 `idle` 结束；已用真实模型通过验收（subagent-design §15） | 二期、三期 |
 | Skill（skill-design.md） | 一期：三层发现与优先级、头部解析、系统提示词里的清单与预算、`[skills]` 配置、受保护路径、system_prompt 条目的 `skills`、`finx skills`，以及 `status`、`doctor` 里的 Skill 信息。二期：内核命令表（`/compact`、显式调用 Skill，只解析用户的输入）、压缩时保留在用的 Skill、原生协议 `skills/list`、ACP 的 `available_commands_update`。2d：任意位置的 `/skill:名字`（可以有多个，内核与桌面端共用识别规则和测试用例），用户的话原样记录，桌面端的 Lexical 输入框（`/` 菜单与 Skill 标签）。finx-mock 扮演按清单读 Skill、按消息里的 Skill 块行事的模型，端到端测试覆盖 exec、原生协议和 ACP；DeepSeek `deepseek-flash` 真实模型验收通过（`tools/acceptance/accept_skills.py`、`tools/acceptance/accept_skills_phase2.py`，skill-design §13.1–§13.3） | 在 Zed 中实测命令菜单；桌面端输入法组字的实际试用；三期 |
@@ -3043,7 +3043,7 @@ finxwork/
 
 ## 19. 决策记录
 
-Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md §16。
+Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md §16。命令行独立发布的决策 D-500–D-544 和待定问题 Q-300–Q-313 记在 standalone-cli-design.md §19。
 
 | 编号 | 决策 | 理由 | 章节 |
 |---|---|---|---|
@@ -3134,7 +3134,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | Q-09 | 非本地 Environment 中 grep、find、ls 如何实现 | 通过 exec 调用 rg 和 find | §5.5 |
 | Q-10 | 是否需要会话索引（如 SQLite） | 先直接扫描目录。定时任务方案（routine-design.md §3.6）要引入本地 SQLite，有了这个基础以后，等会话多到列表明显变慢再做索引，放单独的可重建文件 | §9.5 |
 | Q-11 | 是否在模型流式输出的过程中提前执行工具 | 否（D-12） | §6.6 |
-| Q-12 | 交互界面的形态 | 自研桌面端：前端页面加 macOS 原生外壳，外壳技术待定；通过原生协议使用内核（protocol-design §6） | §12 |
+| Q-12 | 交互界面的形态 | 自研桌面端：前端页面加 macOS 原生外壳，外壳技术待定；通过原生协议使用内核（protocol-design §6）。命令行也要有交互界面，方案见 standalone-cli-design.md §5（待评审，Q-300） | §12 |
 | Q-13 | 是否提供后台进程工具（启动长驻服务、读取其输出） | v1 不提供 | §5.8 |
 | Q-14 | Token 估算是否引入分词器 | 否。以响应报告的用量为基准，估算部分用本会话实测的系数校准（§7.5.4） | §7.5 |
 | Q-15 | 界面文案的语言与国际化 | 优先中文 | §12 |

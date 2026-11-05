@@ -256,7 +256,7 @@ export class MockServer {
 
   /** A bot's conversation: a session in its folder, out of session lists. */
   private botSession(id: string, at: number): Session {
-    const s = this.create(crypto.randomUUID(), `~/.finx/bots/${id}/files`, demoModels().defaults!.model, "medium", "manual", at, true);
+    const s = this.create(crypto.randomUUID(), `~/.finx/bots/${id}/files`, demoModels().defaults!.model!, "medium", "manual", at, true);
     s.bot = id;
     const bot = this.bots.get(id)!;
     bot.summary = { ...bot.summary, session_id: s.id };
@@ -1166,7 +1166,7 @@ export class MockServer {
       }
       case "session/new": {
         const q = p as P<"session/new">;
-        const model = q.model ?? demoModels().defaults!.model;
+        const model = q.model ?? demoModels().defaults!.model!;
         // As finx: a model whose provider is gone (a connection removed) is not there to start on.
         if (!demoModels().providers.some((d) => d.id === providerOf(model))) {
           throw new Failure(-32022, "model_unavailable", `unknown provider '${providerOf(model)}'`);

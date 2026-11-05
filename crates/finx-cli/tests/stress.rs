@@ -290,7 +290,7 @@ async fn phase_acp(env: Arc<TestEnv>, metrics: Arc<Metrics>) {
     }
 }
 
-/// `finx exec --json`: many short-lived processes in parallel.
+/// `finx exec --output stream-json`: many short-lived processes in parallel.
 async fn phase_exec(env: Arc<TestEnv>, metrics: Arc<Metrics>) {
     let runs = 12 * scale();
     let mut tasks = Vec::new();
@@ -300,7 +300,7 @@ async fn phase_exec(env: Arc<TestEnv>, metrics: Arc<Metrics>) {
             let cwd = env.workspace(&format!("exec-{r}"));
             let (text, expected) = scenario(&format!("e{r}"), r);
             let started = Instant::now();
-            let output = env.finx_in(&cwd, &["exec", "--json", &text]).output().await.unwrap();
+            let output = env.finx_in(&cwd, &["exec", "--output", "stream-json", &text]).output().await.unwrap();
             assert_eq!(output.status.code(), Some(0), "{}", String::from_utf8_lossy(&output.stderr));
             let events: Vec<Value> = String::from_utf8_lossy(&output.stdout)
                 .lines()
@@ -426,7 +426,7 @@ async fn stress_every_path_under_load() {
         ("native / unix socket", |e, m| Box::pin(phase_unix(e, m))),
         ("native / stdio mux", |e, m| Box::pin(phase_stdio(e, m))),
         ("acp / stdio", |e, m| Box::pin(phase_acp(e, m))),
-        ("exec --json", |e, m| Box::pin(phase_exec(e, m))),
+        ("exec stream-json", |e, m| Box::pin(phase_exec(e, m))),
     ];
     // FINX_STRESS_ONLY=slow runs just the slow-consumer phase (for debugging).
     if std::env::var("FINX_STRESS_ONLY").as_deref() == Ok("slow") {

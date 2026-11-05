@@ -2091,8 +2091,8 @@ export type SessionAttachParams = {
 };
 
 export type SessionDefaults = {
-  /** `provider/model-id` */
-  model: string;
+  /** `provider/model-id`. Absent while no model is set up: `session/new` without a model then fails with `no_model`, and the person has to connect one. */
+  model?: string | null;
   permission_mode: PermissionMode;
   thinking: ThinkingLevel;
 };
@@ -2798,6 +2798,7 @@ export const RPC_ERROR_KINDS = {
   "-32043": "routine_not_found",
   "-32044": "routine_busy",
   "-32045": "routines_unavailable",
+  "-32046": "no_model",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

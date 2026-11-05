@@ -72,7 +72,7 @@ async fn session_file(env: &TestEnv) -> PathBuf {
 async fn exec_finds_and_runs_a_deferred_tool() {
     // `manual` asks before changes, but MCP calls run without asking.
     let env = TestEnv::new("manual", &server_toml("vault", 120)).await;
-    let output = env.finx(&["exec", "--json", "[[mock:mcp:vault:Apollo]] get the code"]).output().await.unwrap();
+    let output = env.finx(&["exec", "--output", "stream-json", "[[mock:mcp:vault:Apollo]] get the code"]).output().await.unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_eq!(output.status.code(), Some(0), "stderr: {stderr}");
     let events: Vec<Value> = String::from_utf8_lossy(&output.stdout)

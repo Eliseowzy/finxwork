@@ -263,7 +263,7 @@ impl Server {
 
     /// `models/show`: puts a model in the menu or takes it out. Blocking I/O.
     pub fn show_model(&self, reference: &str, shown: bool) -> Result<(), RpcError> {
-        finx_core::models::set_shown(&self.0.llm, &self.0.defaults.model, reference, shown)
+        finx_core::models::set_shown(&self.0.llm, self.0.defaults.model.as_deref(), reference, shown)
             .map_err(RpcError::invalid_params)?;
         self.models_changed();
         Ok(())

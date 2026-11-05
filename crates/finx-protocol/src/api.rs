@@ -254,6 +254,9 @@ pub mod error_code {
     pub const ROUTINE_BUSY: i64 = -32044;
     /// `bots/routine*`: the database cannot be opened.
     pub const ROUTINES_UNAVAILABLE: i64 = -32045;
+    /// `session/new`, `bots/open`: no model was asked for, none is configured and no provider is
+    /// connected.
+    pub const NO_MODEL: i64 = -32046;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -297,6 +300,7 @@ pub mod error_code {
         (ROUTINE_NOT_FOUND, "routine_not_found"),
         (ROUTINE_BUSY, "routine_busy"),
         (ROUTINES_UNAVAILABLE, "routines_unavailable"),
+        (NO_MODEL, "no_model"),
     ];
 }
 
@@ -1134,8 +1138,10 @@ pub struct ModelsListResult {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionDefaults {
-    /// `provider/model-id`
-    pub model: String,
+    /// `provider/model-id`. Absent while no model is set up: `session/new` without a model then
+    /// fails with `no_model`, and the person has to connect one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub thinking: ThinkingLevel,
     pub permission_mode: PermissionMode,
 }

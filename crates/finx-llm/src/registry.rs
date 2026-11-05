@@ -385,6 +385,28 @@ impl ModelRegistry {
         })
     }
 
+    /// A model whose provider is gone, for a session that has nothing else to run on: it opens
+    /// and its history can be read. A request with it fails, as no provider answers to it.
+    pub fn unavailable(&self, reference: &str) -> Result<ResolvedModel, ResolveError> {
+        let (provider, id) = reference
+            .split_once('/')
+            .filter(|(p, m)| !p.is_empty() && !m.is_empty())
+            .ok_or_else(|| ResolveError::BadReference(reference.to_string()))?;
+        let gone = ProviderConfig {
+            id: provider.to_string(),
+            name: provider.to_string(),
+            api: "openai-chat".to_string(),
+            base_url: String::new(),
+            auth: crate::AuthConfig::None,
+            headers: BTreeMap::new(),
+            currency: Default::default(),
+            compat: Default::default(),
+            listing: Default::default(),
+            plan: None,
+        };
+        Ok(ResolvedModel { model: Arc::new(gone.ad_hoc_model(id)), ad_hoc: true })
+    }
+
     /// Streams one response. Never fails synchronously; see the contract on [`StreamEvent`].
     pub fn stream(
         &self,
