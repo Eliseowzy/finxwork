@@ -136,12 +136,20 @@ const isCall = (e, name) => e.type === "tool_started" && toolOf(e) === name;
 const firstAfter = (w, at, test) => w.events.find((e) => e.at >= at && test(e));
 const long = "写一篇一万字的小作文，主题随便，写好整理成文件告诉我。";
 const atWork = (w) => w.events.some((e) => e.type === "agent_started");
-/** Long enough past the first agent for the others to have started. */
-const agentsSettled = (w) => w.events.some((e) => e.type === "agent_started" && Date.now() - e.at > 15_000);
+/** Long enough past the first agent for the others to have started, on a slow model too. */
+const agentsSettled = (w) => w.events.some((e) => e.type === "agent_started" && Date.now() - e.at > 45_000);
 
 /** `say`: [ms after the one before, text], or [ms, text, when]: `when` is awaited first.
  * `oneByOne`: each after the one before is answered.
  * `until`: ends the run early, the work still going. `check`: counts of its own. */
+function dailySales() {
+  const rows = ["date,region,revenue"];
+  for (let d = new Date(Date.UTC(2026, 0, 1)); d.getUTCFullYear() === 2026; d.setUTCDate(d.getUTCDate() + 1)) {
+    if (d.getUTCMonth() === 2) continue;
+    for (const region of ["北区", "南区", "东区", "西区"]) rows.push(`${d.toISOString().slice(0, 10)},${region},${1000 + ((d.getUTCDate() * 37 + region.charCodeAt(0)) % 900)}`);
+  }
+  return rows.join("\n") + "\n";
+}
 const scenarios = {
   poems: { say: () => ["写一首春天的诗", "写一首夏天的诗", "写一首秋天的诗", "写一首冬天的诗"].map((t) => [400, t]) },
   // One at a time, each answered before the next: a short answer is where a bot forgets to send.
@@ -169,13 +177,13 @@ const scenarios = {
   // The timeline of bot-turn-design §3.
   // Who gets what (bot-turn-design §7.2): alike but separate, unrelated, one job in parts, a
   // correction. No need to wait for the writing.
-  fan: { ms: 90_000, say: () => ["春", "夏", "秋", "冬"].map((s) => [400, `写一首一万字的诗，关于${s}天`]), until: agentsSettled },
-  apart: { ms: 90_000, say: () => [[0, long], [400, "再调研一下 macOS 上常见的三种自动更新方案，写一份两千字的比较"]], until: agentsSettled },
-  whole: { ms: 90_000, say: () => [[0, "写一篇一万字的小作文，分成春夏秋冬四章，写好整理成文件告诉我。"]], until: agentsSettled },
+  fan: { ms: 240_000, say: () => ["春", "夏", "秋", "冬"].map((s) => [400, `写一首一万字的诗，关于${s}天`]), until: agentsSettled },
+  apart: { ms: 240_000, say: () => [[0, long], [400, "再调研一下 macOS 上常见的三种自动更新方案，写一份两千字的比较"]], until: agentsSettled },
+  whole: { ms: 240_000, say: () => [[0, "写一篇一万字的小作文，分成春夏秋冬四章，写好整理成文件告诉我。"]], until: agentsSettled },
   follow: {
-    ms: 90_000,
+    ms: 240_000,
     say: () => [[0, long], [3000, "写短一点，三千字就够。", atWork]],
-    until: (w, at) => at.length === 2 && Date.now() - at[1] > 15_000,
+    until: (w, at) => at.length === 2 && Date.now() - at[1] > 45_000,
     check(t, w, at) {
       t.redirected += firstAfter(w, at[1], (e) => e.type === "tool_started" && e.name === "send_message") ? 1 : 0;
     },
@@ -197,17 +205,20 @@ const scenarios = {
     check(t, w) {
       const task = w.events.filter((e) => isCall(e, "spawn_agent")).map((e) => String(e.args?.task ?? "")).join("\n");
       t.inTask += /send_message|告诉|通知|tell|notify/i.test(task) ? 1 : 0;
-      t.early += beforeLastReport(w, /备份/) ? 1 : 0;
+      t.early += beforeLastReport(w, /备份(已经|已)?(好|完|成)|backup.*(done|complete)/i, (e) => e.at > (w.events.find((x) => x.type === "agent_started")?.at ?? Infinity)) ? 1 : 0;
     },
   },
   // Long work with nothing asked along the way: the messages are the noise.
   quiet: { ms: 600_000, say: () => [[0, long.replace("一万字", "两千字")]] },
-  // A wrong premise: the owner should not wait for the whole job to learn of it.
+  // A problem only working through the data shows, the case the plan is for (§3.1): the file has a
+  // row per day and looks fine at a glance, but March is not in it. The owner should not wait for
+  // the whole job to learn of it.
   blocker: {
-    ms: 300_000,
-    say: () => [[0, "请交给子智能体去做：先在你的文件夹里造一份 sales.csv，只有 month 和 revenue 两列，12 行。然后按它的 profit 列算每月利润率，写一份两千字的分析报告。"]],
+    ms: 420_000,
+    files: { "sales.csv": dailySales() },
+    say: () => [[0, "请交给子智能体去做：把我文件夹里的 sales.csv 按月汇总，做成图表和一份两千字的分析报告，存成文件。"]],
     check(t, w) {
-      t.early += beforeLastReport(w, /profit|利润|没有|不存在|缺/i) ? 1 : 0;
+      t.early += beforeLastReport(w, /3 ?月|三月|march/i, (e) => e.at > (w.events.find((x) => x.type === "agent_started")?.at ?? Infinity)) ? 1 : 0;
     },
   },
   // One agent needs what the other finds.
@@ -261,9 +272,9 @@ const scenarios = {
 };
 const companies = ["苹果", "微软", "谷歌", "亚马逊", "特斯拉", "英伟达", "阿里巴巴", "腾讯", "比亚迪", "台积电"];
 /** A message that says this reached the owner before the last report came. */
-function beforeLastReport(w, words) {
+function beforeLastReport(w, words, also = () => true) {
   const last = w.events.filter((e) => e.type === "message_completed" && e.mail?.kind === "report").at(-1);
-  return w.events.some((e) => isSend(e) && (!last || e.at < last.at) && words.test(String(e.args?.text ?? "")));
+  return w.events.some((e) => isSend(e) && also(e) && (!last || e.at < last.at) && words.test(String(e.args?.text ?? "")));
 }
 const isAck = (e) => /我看|我查|我去|稍等|看一下|查一下|let me|checking/i.test(String(e.args?.text ?? "")) && String(e.args?.text ?? "").length < 30;
 const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|list_agents|stop_agents|tool_search|call_tool|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
@@ -289,6 +300,11 @@ async function oneRun(name, s, run, t) {
     session = (await call("session/new", { cwd })).session_id;
   } else {
     bot = (await call("bots/create", { name: `测试${run + 1}`, avatar: { kind: "mono", hue: "slate" } })).bot;
+    for (const [file, text] of Object.entries(s.files ?? {})) {
+      const folder = path.join(home, "bots", bot.id, "files");
+      fs.mkdirSync(folder, { recursive: true });
+      fs.writeFileSync(path.join(folder, file), text);
+    }
     const opened = await call("bots/open", { bot_id: bot.id, events: { exclude: ["text_delta", "thinking_delta", "tool_call_delta", "tool_progress"] } });
     session = opened.session_id;
     if (s.manual) await call("session/op", { session_id: session, op: { type: "set_permission_mode", mode: "manual" } });

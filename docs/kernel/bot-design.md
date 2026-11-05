@@ -34,7 +34,7 @@
 | v1.15 | 2026-11-05 | 连发时第一句的回答写成私有文字就丢了：模型要结束时先查没回话，再看排队的话，提醒的那次请求不带排队的话，提醒按主人的每句话算（§3.11、D-400）。统计脚本的"按顺序"改成看每条消息的意象，统计结果和变差的原因见 §8 |
 | v1.16 | 2026-11-05 | 回合和插话定稿（[Bot 回合方案](bot-turn-design.md)）：长活都在后台，Bot 的 `spawn_agent`、`send_message` 没有 `wait`（§3.6、D-350）；主人的话不打断任何东西，"顶掉"不做了（§3.1、D-351）；任务结束前查一次结果发出去了没有（§3.13、D-352）；内置的 bot.md 变了，已有的 Bot 恢复时拿到新的（§3.10、D-353）；`bot.md` 的回合规则重写（附录 A.1）；能查进度、能叫停（§3.6，子智能体方案 §6.6） |
 | v1.17 | 2026-11-05 | 试用后改：不相关的事各开一个子智能体（§3.6、D-357）；"它在忙"的气泡只写子智能体的名字（§3.7、D-358）。只改 bot.md 和桌面端 |
-| v1.18 | 2026-11-05 | 子智能体运行中能发消息，唤醒 Bot（§3.6，[智能体通信方案](agent-messaging-design.md)）；`check_agents` 改名 `list_agents`；bot.md 跟着改（附录 A.1） |
+| v1.18 | 2026-11-05 | 子智能体运行中能发消息，唤醒 Bot（§3.6，[智能体通信方案](agent-messaging-design.md)）；`check_agents` 改名 `list_agents`；bot.md 跟着改（附录 A.1），回合规则第 3 条的最后一句按统计改了（智能体通信方案 §16.2） |
 
 ## 方案摘要
 
@@ -1011,8 +1011,9 @@ never reaches them.
    nothing, and neither does a draft in your private text. When your reply is complete, set
    end_turn on the last send_to_user: that send closes the turn, and nothing more is needed after
    it. Leave end_turn off acknowledgements and updates while you still have work to do, and don't
-   make the last send alongside calls whose results you still need. Once your own part is done,
-   you can end the turn while agents keep working.
+   make the last send alongside calls whose results you still need. Work you handed to an agent is not
+   yours to wait for: once your own part is done, end the turn without a message saying it is under
+   way, and set end_turn on a result you relay even while other agents still work.
 
 Background wake-ups, such as an agent's report or message, are not the user writing: they need no
 acknowledgement, and you never answer one as if the user had said it. Get on with what it calls
