@@ -21,7 +21,10 @@ use finx_protocol::doc::DocViewParams;
 use finx_protocol::doc::ResolvedPart;
 use finx_rpc::RpcError;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use crate::conn::ConnHandle;
+use crate::conn::ConnId;
 use crate::server::Server;
 
 fn rpc_error(e: DocError) -> RpcError {
@@ -39,6 +42,26 @@ fn rpc_error(e: DocError) -> RpcError {
 }
 
 impl Server {
+    /// A connection that opened a document hears `doc/changed` until it closes.
+    pub(crate) fn watch_docs(&self, conn: &ConnHandle) {
+        self.0.doc_watchers.lock().insert(conn.id, conn.clone());
+    }
+
+    pub(crate) fn forget_doc_watcher(&self, conn: ConnId) {
+        self.0.doc_watchers.lock().remove(&conn);
+    }
+
+    /// Tells the watchers of every change to an open document.
+    pub(crate) fn follow_doc_changes(&self) {
+        let weak = Arc::downgrade(&self.0);
+        self.0.docs.on_change(move |info| {
+            let Some(inner) = weak.upgrade() else { return };
+            let frame = finx_rpc::notification(finx_protocol::api::method::DOC_CHANGED, &finx_protocol::doc::DocChangedParams { info: info.clone() });
+            for conn in inner.doc_watchers.lock().values() {
+                conn.send(frame.clone());
+            }
+        });
+    }
     pub(crate) async fn doc_open(&self, p: DocOpenParams) -> Result<DocOpenResult, RpcError> {
         let path = match (&p.path, &p.doc_id) {
             (Some(path), _) => PathBuf::from(path),

@@ -1,8 +1,8 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { FileDoc, baseName, type RpcClient } from "@finx/client";
+import { FileDoc, baseName, docViewingBlock, sheetViewingBlock, type RpcClient } from "@finx/client";
 import type { FilesListResult, FilesReadResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
-import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, type DocAnchor, type DocTab } from "../docs/state";
+import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, sheetViewingOf, type DocAnchor, type DocTab } from "../docs/state";
 import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
 import { opensAsDoc, previewable } from "./kind";
@@ -185,6 +185,17 @@ export function viewingDoc(session: string): DocTab | undefined {
   const s = sessions.get(session);
   const tab = s?.tabs.find((x) => x.path === s.active);
   return docTab(session, tab?.opened?.docId);
+}
+
+/** What goes along with a message while the file panel shows a document: the PDF's page, or the
+ *  workbook's selected cells (§7.4). Undefined when the panel is closed or shows something else. */
+export function viewingBlock(session: string, panelOpen: boolean) {
+  const tab = panelOpen ? viewingDoc(session) : undefined;
+  if (!tab) return undefined;
+  const sheet = tab.info.layout === "grid" ? sheetViewingOf(session) : undefined;
+  return sheet
+    ? sheetViewingBlock(sheet.path, sheet.doc_id, sheet.sheet, sheet.range, sheet.text)
+    : docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0);
 }
 
 /** Reads a tab's file (again): a document's disk version moves on, or the edits wait for a choice. */

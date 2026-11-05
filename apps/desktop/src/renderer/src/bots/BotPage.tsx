@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
+import { baseName, botChat, botWorking, busyBubble, conversation, processSteps, type BotItem, type Helper, type SessionView, type Step } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
@@ -12,7 +12,7 @@ import { durationText, timeLine } from "../format";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { DocContext } from "../docs/state";
-import { viewingDoc } from "../files/state";
+import { viewingBlock } from "../files/state";
 import { AgentCard, ReportCard } from "../session/Agents";
 import { Approval } from "../session/Approval";
 import { MessageTime } from "../session/Chat";
@@ -483,9 +483,9 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
     const sent = draft;
     change({ text: "", attachments: [] });
     const input = toInput(sent.text, sent.attachments);
-    // The PDF the file panel shows goes along, so "this page" means something (document-editor-design §7.4).
-    const tab = st.files ? viewingDoc(session) : undefined;
-    if (tab && input.length) input.push(docViewingBlock(tab.info.path, tab.info.doc_id, tab.page, tab.info.pages ?? 0));
+    // What the file panel shows goes along, so "this page" or "these cells" means something (document-editor-design §7.4).
+    const viewing = viewingBlock(session, st.files);
+    if (viewing && input.length) input.push(viewing);
     // While it answers, a message waits for the step under way and is answered next (bot-design §3.1).
     const ok = await st.op(session, { type: "prompt", input, mode: view.live ? "steer" : undefined });
     if (!ok) change(sent);

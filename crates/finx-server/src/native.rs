@@ -707,12 +707,7 @@ impl NativeProtocol {
             },
             method::DOC_OPEN => match finx_rpc::params::<finx_protocol::doc::DocOpenParams>(params) {
                 Ok(p) => {
-                    {
-                        let mut conns = server.0.doc_conns.lock();
-                        if !conns.iter().any(|c| c.id == conn.id) {
-                            conns.push(conn.clone());
-                        }
-                    }
+                    server.watch_docs(conn);
                     let reply_id = id.clone();
                     self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.doc_open(p).await)) });
                 }
