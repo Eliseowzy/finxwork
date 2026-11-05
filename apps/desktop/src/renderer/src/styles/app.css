@@ -198,12 +198,16 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 @keyframes stitle-run-back{from{transform:translateX(86%)}to{transform:translateX(-86%)}}
 @media (prefers-reduced-motion:reduce){.stitle.run{color:inherit}.stitle .shine{display:none}}
 /* The same band over anything in progress in the conversation (a step, the working line): there the
-   words may be code with its own colours, so the band is a mask over the element instead of copies of
-   its text, three times its width and sliding so the band enters at its left edge and leaves at its
-   right, in the sidebar's 2.4s, dimming the words to about a third. */
-.shimmer{-webkit-mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);-webkit-mask-size:300% 100%;mask-size:300% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:shimmer 2.4s linear infinite}
-@keyframes shimmer{from{-webkit-mask-position:93% 0;mask-position:93% 0}to{-webkit-mask-position:7% 0;mask-position:7% 0}}
-@media (prefers-reduced-motion:reduce){.shimmer{animation:none;-webkit-mask-image:none;mask-image:none}}
+   words may be code with its own colours, so the band is laid over the element instead of copies of its
+   text, its surface's colour at about two thirds, three times its width and sliding so it enters at its
+   left edge and leaves at its right, in the sidebar's 2.4s. A transform, which the compositor runs: anything
+   that must move on the main thread (a mask's position did) renders the whole page at the display's rate
+   for as long as a task runs, and the page is as heavy as the history that is loaded. */
+.shimmer{position:relative;overflow:clip}
+span.shimmer{display:inline-block;max-width:100%;vertical-align:bottom}
+.shimmer::after{content:"";position:absolute;top:0;bottom:0;left:-100%;width:300%;pointer-events:none;background:linear-gradient(90deg,transparent 38%,color-mix(in srgb,var(--shimmer-on,var(--win)) 64%,transparent) 50%,transparent 62%);animation:shimmer 2.4s linear infinite}
+@keyframes shimmer{from{transform:translateX(-28.6667%)}to{transform:translateX(28.6667%)}}
+@media (prefers-reduced-motion:reduce){.shimmer::after{display:none;animation:none}}
 .smeta{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
 /* Nothing to show takes no gap: the title runs to the row's padding, the same as on its left. */
 .smeta:empty{display:none}
@@ -456,7 +460,7 @@ button.insp-row:active{background:var(--fill2)}
    that run (centred on the first one's line, each with how long it has run) or what the model is at, how
    long the task has run and its tokens. */
 .working{display:flex;align-items:flex-start;gap:8px;font-size:14px;color:var(--l2)}
-.working canvas{margin-top:2px}
+.working .mark-strip{margin-top:2px}
 .wk-now{flex:1;min-width:0;display:flex;flex-direction:column}
 .wk-line{display:flex;align-items:baseline;gap:4px;padding:2px 0;line-height:19px}
 .wk-meta,.wk-time{flex:none;font-size:12.5px;color:var(--l3);font-variant-numeric:tabular-nums}

@@ -157,6 +157,16 @@ export async function codeMenu(st: Store, text: string, shell: boolean, scope: S
   else if (id === "terminal" && scope) terminalWith(st, scope, text);
 }
 
+/** A table's menu: to paste into a sheet or a document, or as the Markdown it was written in. */
+export async function tableMenu(st: Store, copyTable: () => void, markdown: string) {
+  const id = await popup(st, [
+    { id: "table", label: t("markdown.copyTable") },
+    { id: "markdown", label: t("markdown.copyAsMarkdown") },
+  ]);
+  if (id === "table") copyTable();
+  else if (id === "markdown") copy(st, markdown, t("content.copied"));
+}
+
 /**
  * A step's menu (§7.1): a file's for reading and editing, its command's for a command; none for
  * the others (then false, and the conversation's own menu shows).

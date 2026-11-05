@@ -496,7 +496,7 @@ try {
   await say(page, "用一句话说说秋天适合做什么。");
   await page.until("the busy bubble", busy, 30000);
   const moving = await page.run(
-    `[...document.querySelectorAll(".tr.bots .bm.working .dots i, .bav.busy .eyes, .bav.busy.mark > img, .bav.busy .ch, .brow .shimmer")].map((e) => getComputedStyle(e).animationName).filter((n) => n !== "none")`,
+    `[...document.querySelectorAll(".tr.bots .bm.working .dots i, .bav.busy .eyes, .bav.busy.mark > img, .bav.busy .ch")].map((e) => getComputedStyle(e).animationName).concat([...document.querySelectorAll(".brow .shimmer")].map((e) => getComputedStyle(e, "::after").animationName)).filter((n) => n !== "none")`,
   );
   check(moving.length === 0, `something moves with reduced motion: ${moving.join(", ")}`);
   await page.shot("16-reduced-motion");

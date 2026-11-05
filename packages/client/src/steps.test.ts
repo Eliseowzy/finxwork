@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, callTarget, fromSnapshot, type SessionView } from "./session.ts";
-import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
+import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, settledSteps, withStreaming, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
 const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
@@ -57,6 +57,30 @@ test("thinking and tool calls between the model's words become one step; words a
   const ended = applyEvents(v, [{ seq: 100, ts: 9, type: "task_interrupted", task_id: "t1", returned_input: [], usage: { per_model: {} } }]);
   const w = conversation(ended).find((s) => s.kind === "work" && s.items.length === 3);
   assert.ok(w?.kind === "work" && w.items[2].kind === "tool" && w.items[2].tool.state === "cancelled");
+});
+
+test("what is being written goes after the settled steps, which stay the same objects", () => {
+  const before: EventMsg[] = [
+    { type: "task_started", task_id: "t1" },
+    { type: "message_completed", message_id: "u1", message: { role: "user", content: [{ type: "text", text: "hi" }], ts: 1 } },
+    assistant("a1", [{ type: "thinking", text: "first" }]),
+  ];
+  const v = play([...before, { type: "message_started", message_id: "a2", role: "assistant" }, { type: "message_delta", message_id: "a2", delta: { type: "thinking", index: 0, text: "more" } }]);
+  const settled = settledSteps(v);
+  const [, group] = settled;
+  assert.equal(group.kind === "work" && group.items.length, 1);
+  const steps = withStreaming(settled, v);
+  // The thinking joins the group before it, in a copy.
+  assert.equal(steps.length, settled.length);
+  assert.ok(steps[0] === settled[0]);
+  const joined = steps.at(-1)!;
+  assert.deepEqual(joined.kind === "work" && [joined.items.length, joined.live], [2, true]);
+  assert.deepEqual(group.kind === "work" && [group.items.length, group.live], [1, false]);
+  assert.deepEqual(steps, conversation(v));
+  // Nothing being written: the very same list.
+  const quiet = play(before);
+  const still = settledSteps(quiet);
+  assert.equal(withStreaming(still, quiet), still);
 });
 
 test("a group's line counts its calls kind by kind; thinking counts only alone", () => {

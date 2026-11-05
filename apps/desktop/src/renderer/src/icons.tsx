@@ -4,7 +4,7 @@
 import markOnDark from "../../../../../assets/brand/app/finxwork-mark-on-dark-256.png";
 import markOnLight from "../../../../../assets/brand/app/finxwork-mark-on-light-256.png";
 import markSolid from "../../../../../assets/brand/mark/finxwork-mark-solid.svg";
-import { animateMark, type MarkMotionOptions } from "../../../../../assets/brand/motion/finxwork-mark-motion.js";
+import { animateMark, rewriteStrip, type MarkMotionOptions } from "../../../../../assets/brand/motion/finxwork-mark-motion.js";
 import {
   Archive,
   ArrowDown,
@@ -195,8 +195,10 @@ export function Mark({ size = 18 }: { size?: number }) {
 export function MarkMotion({ size, className, theme, look, speed, intro, rewrite }: MarkMotionOptions & { size?: number; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    const motion = animateMark(ref.current!, { theme, look, speed, intro, rewrite });
+    const motion = rewrite ? rewriteStrip(ref.current!, { theme }) : animateMark(ref.current!, { theme, look, speed, intro });
     return () => motion.stop();
   }, [theme, look, speed, intro, rewrite]);
-  return <canvas ref={ref} className={className} aria-hidden="true" style={size ? { display: "block", flex: "none", width: size, height: size } : undefined} />;
+  const box = size ? { display: "block", flex: "none", width: size, height: size } : undefined;
+  if (rewrite) return <span className={`mark-strip ${className ?? ""}`} aria-hidden="true" style={{ ...box, overflow: "hidden" }}><canvas ref={ref} /></span>;
+  return <canvas ref={ref} className={className} aria-hidden="true" style={box} />;
 }

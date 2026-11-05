@@ -86,7 +86,8 @@ const reply = [
   "```python",
   "print(1)",
 ].join("\n");
-const rest = "\n```\n\n就这些。";
+const tableSource = "| 项目 | 数值 |\n|:--|--:|\n| 收入 | 1.5 |";
+const rest = `\n\`\`\`\n\n${tableSource}\n\n就这些。`;
 const systems = [];
 let pausing = false;
 let resumeReply = () => {};
@@ -457,6 +458,16 @@ try {
   await page.run(rightClick(`document.querySelectorAll(".am .cblock")[2]`));
   const pyItems = await nextMenu("the python block", shown);
   check(same(ids(pyItems), ["copy"]) && Object.values(strings).some((s) => s.content.copyCode === pyItems[0].label), `the python block's menu: ${JSON.stringify(pyItems)}`);
+
+  step("tables: Copy for a sheet or a document, the Markdown on the menu");
+  await page.run(`navigator.clipboard.write = async ([item]) => { window.__copiedTable = await (await item.getType("text/plain")).text(); }`);
+  await page.run(`document.querySelector(".am .md-table-tools button").click()`);
+  await page.until("the table copied with tabs", `window.__copiedTable === ${JSON.stringify("项目\t数值\n收入\t1.5")}`);
+  shown = shownNow().length;
+  pick("markdown");
+  await page.run(rightClick(`document.querySelector(".am .md-table")`));
+  check(same(ids(await nextMenu("the table", shown)), ["table", "markdown"]), "the table's menu");
+  await page.until("the table's Markdown copied", `(window.__copied ?? []).at(-1) === ${JSON.stringify(tableSource)}`);
 
   step("steps: a file's menu for the read, a command's for echo");
   await page.run(`[...document.querySelectorAll(".tgroup .tg-h")].forEach((b) => b.getAttribute("aria-expanded") === "false" && b.click())`);
