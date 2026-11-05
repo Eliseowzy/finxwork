@@ -34,7 +34,7 @@
 
 每次 HTTP 请求使用 `store:false`、`stream:true` 和完整 input 历史，不使用 `previous_response_id`。系统指令放在 instructions；finx 工具放在命名空间中，由现有内核执行。工具调用与结果、图片输入和加密 reasoning item 能继续多轮对话。采样参数、输出上限和任意 extra_body 不透传到该受限路线。
 
-只有收到 `response.completed` 才成功。额度错误、中途断流、无效工具参数、`response.failed` 和 `response.incomplete` 均不能触发成功收尾。可用模型和思考等级来自账户模型目录，不硬编码型号、不补入 Codex 的缓存目录。[官方推理要求](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)、[预览限制](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+只有收到 `response.completed` 才成功。它列出的 `output` 是权威内容；`output` 为空时，以已经流式收到的内容为准（真实服务会这样返回，2026-11-04 发现）。额度错误、中途断流、无效工具参数、`response.failed` 和 `response.incomplete` 均不能触发成功收尾。可用模型和思考等级来自账户模型目录，不硬编码型号、不补入 Codex 的缓存目录。[官方推理要求](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)、[预览限制](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
 
 ## 自动验证
 

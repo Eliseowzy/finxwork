@@ -64,7 +64,7 @@ pub const CDP_METHODS: &[&str] = &[
 /// Raise it when finx starts to need something an extension of this version does not do,
 /// such as a command added above; the test below asks for that. The store updates the
 /// extension apart from the app, so each side says the range it speaks and the host picks.
-pub const BRIDGE: u32 = 1;
+pub const BRIDGE: u32 = 2;
 /// The oldest extension finx can still drive. Raising it stops older extensions until the
 /// store updates them; ship an extension that speaks the new version first.
 pub const BRIDGE_MIN: u32 = 1;

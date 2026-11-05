@@ -2,11 +2,36 @@
   "manifest_version": 3,
   "name": "FinxWork",
   "description": "Lets the FinxWork agent use the tabs it opens in your Chrome, with your sign-ins.",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "default_locale": "en",
   "minimum_chrome_version": "125",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6pByNkVTLrtlWVniDHEO6wHVbmQLSdUqLd45UnpoKG878RhKDu8+n4qe83DD7zTS//H6Pj87hkt+UizPTXPsPMpe8Y7top+dR1p/AYmI+rLNO9nAyi1uXY6JsYmCi9cEJoi3+8DXwWK2ooUBn0PiMPvMHHwe1tEdlRMaGq4fJEAnjkncOJOLDvHPYiKtR6W7GzRhevCLSurthnpYw2nCmicyK9rE6c0YbuzR28Bmsj/ZjWFuV5unE/UdBfuEoJJDIIO6JrmZrPA7zn+E81kheEg/awjpKMxKuPAOoLo4VXZsZQWqf7lRA+my0D3WBB3FGf2/tb7CRXbH1tBqZ/ajowIDAQAB",
-  "permissions": ["debugger", "nativeMessaging", "tabs", "tabGroups", "alarms"],
-  "background": { "service_worker": "src/background.js", "type": "module" },
-  "action": { "default_title": "FinxWork", "default_icon": { "16": "icons/16.png", "32": "icons/32.png" } },
-  "icons": { "16": "icons/16.png", "32": "icons/32.png", "48": "icons/48.png", "128": "icons/128.png" }
+  "permissions": [
+    "debugger",
+    "nativeMessaging",
+    "tabs",
+    "tabGroups",
+    "alarms",
+    "storage",
+    "identity",
+    "identity.email"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "FinxWork",
+    "default_popup": "src/popup.html",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png"
+    }
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  }
 }

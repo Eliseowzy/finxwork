@@ -1,6 +1,7 @@
 /** Tabs opened from the new-session page, before a conversation exists. */
 export const homeBrowserSession = "finxwork:home-browser";
 
+import type { AlertTarget } from "@finx/client";
 import type { Language, LanguageChoice } from "./i18n";
 import type { UpdateInfo } from "./update";
 import type { BrowserComment } from "./annotations";
@@ -41,6 +42,8 @@ export type MenuState = {
     archived: boolean;
     inspector: boolean;
   };
+  /** The bot on screen waits for an approval: it has no `session` entry (its session has no such menu). */
+  botApprovable: boolean;
   sidebar: boolean;
   /** The toast offers Undo (⌘Z undoes it rather than typing). */
   undo: boolean;
@@ -69,6 +72,16 @@ export type Preferences = {
   searchEngine: string;
   /** The search engines the person added, beside the built-in ones. */
   searchEngines: SearchEngine[];
+  notifications: NotificationSettings;
+};
+
+/** The app's system notifications on this device (notification-design §5.5). Muting a bot is the bot's own. */
+export type NotificationSettings = {
+  /** Off: no notifications and no number on the app's icon. */
+  enabled: boolean;
+  sound: boolean;
+  /** Also when a session's task ends; waiting and failing always say so. */
+  sessionEnded: boolean;
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
@@ -126,10 +139,24 @@ export type SystemBrowserId = "chrome" | "edge" | "brave" | "chromium";
 export type SystemBrowser = {
   id: SystemBrowserId;
   name: string;
-  /** finx is registered as the extension's host for it. */
+  /** finx is registered as the extension's host for it, by this home. */
   registered: boolean;
+  /** What its host manifest points at: this home's host, one that is gone, or another home's. */
+  manifest: "missing" | "ours" | "dead" | "other";
   /** It is running now. */
   running: boolean;
+};
+
+/** Each link from the browser to finx's service, as this machine has it. */
+export type SystemBrowserDiagnosis = {
+  app: string;
+  service: string | null;
+  launcher: string;
+  program: string | null;
+  programExists: boolean;
+  extensionFolder: string;
+  extensionBuild: string | null;
+  browsers: { name: string; running: boolean; manifest: SystemBrowser["manifest"] }[];
 };
 
 /** Desktop control (finx's desktop tools, through agent-desktop): the program and the app's own permissions. */
@@ -214,6 +241,21 @@ export type Bridge = {
   systemBrowsers(): Promise<SystemBrowser[]>;
   setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; message: string }>;
   openSystemBrowser(id: SystemBrowserId, page?: "extensions"): Promise<boolean>;
+  /** A task waits for the user's own browser: starts it behind what the user is doing. */
+  openSystemBrowserQuietly(): Promise<void>;
+  /** A host was refused: the files follow the service's program again. */
+  repairSystemBrowser(): Promise<void>;
+  diagnoseSystemBrowser(): Promise<SystemBrowserDiagnosis>;
+  /** What a clicked system notification opens, once; the page asks when it starts and when told. */
+  takeOpenTarget(): Promise<AlertTarget | null>;
+  onOpenTarget(cb: () => void): () => void;
+  testNotification(): void;
+  openNotificationSettings(): void;
+  /** A window can keep the focus behind a locked screen: nobody is looking then. */
+  screenLocked(): Promise<boolean>;
+  onScreenUnlocked(cb: () => void): () => void;
+  /** Brings the main window to the front. */
+  showMainWindow(): void;
   revealBrowserExtension(): void;
   systemBrowserIcon(id: SystemBrowserId): Promise<string | null>;
   /** Desktop control's program and the app's permissions for it; `configured` is `desktop.executable`. */
@@ -240,10 +282,14 @@ export type Bridge = {
   pickSkillSource(): Promise<string | null>;
   /** The path of a file or folder dropped on the page. */
   pathForFile(file: File): string;
+  /** Tests of session mode (FINXWORK_DEFAULT_MODE): a new profile starts there instead of in Bot mode. */
+  defaultMode?: "sessions";
   /** The 自定义 page's catalog skills: in the app's resources, or the repository's in development. */
   catalogDir: string;
   /** Files to attach, from the system's dialog; images read (up to 10 MB each), others by path. */
   pickFiles(): Promise<PickedFile[]>;
+  /** A bot's avatar from the system's dialog (bot-mode-design §6.3): a PNG, JPEG or HEIC of up to 10 MB, cropped to a square and scaled to 256 px, as a PNG (base64). */
+  pickAvatar(): Promise<{ png: string } | { error: "too_large" | "unreadable" } | null>;
   /** The files and folders on the clipboard, else its picture (a screenshot); none when it holds neither. */
   pasteFiles(): Promise<PastedItem[]>;
   /** Dropped files and folders, by their paths (pathForFile), as attachments. */

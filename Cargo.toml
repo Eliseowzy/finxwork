@@ -113,6 +113,15 @@ wiremock = "0.6"
 print_stdout = "deny"
 print_stderr = "deny"
 
+# Debug info: line tables for the workspace's own crates (a RUST_BACKTRACE still shows file:line; a
+# debugger loses variables and types) and none for dependencies. The full DWARF default, with the loose
+# object files macOS keeps for it, let one `target` grow past 150 GiB (docs/kernel/technical-design.md §15).
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # memchr scans the lines of read and edit; unoptimized, tests on large files take seconds.
 [profile.dev.package.memchr]
 opt-level = 3

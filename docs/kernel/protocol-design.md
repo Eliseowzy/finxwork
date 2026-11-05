@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.19 |
-| 日期 | 2026-11-02 |
+| 版本 | v0.21 |
+| 日期 | 2026-11-04 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,8 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.21 | 2026-11-04 | 通知（notification-design.md），都在版本 2 之内：`BotSummary` 增加 `failed`、`muted`，`bots/update` 增加 `muted`。没有新方法 |
+| v0.20 | 2026-11-04 | Bot（bot-design.md §4，已实现），都在版本 2 之内、由 capabilities 的 `bots` 声明：方法 `bots/subscribe`、`bots/unsubscribe`、`bots/create`、`bots/update`、`bots/avatar`、`bots/open`、`bots/read`、`bots/unread`、`bots/clear`、`bots/delete`，通知 `bots/changed`；错误码 −32040 `bot_not_found`、−32041 `bot_default`、−32042 `bot_invalid`。Bot 的会话不进 `session/list`、`sessions/subscribe` 和 `sessions/changed` |
 | v0.19 | 2026-11-02 | 两个浏览器并存（desktop/connectors-entry-design §3.4、§9），版本 2 之内：`approval_requested` 和快照里的待审批项（PendingApproval）新增可选的 `own_browser`，为 true 时这次调用落在用户自己的浏览器里（用的是用户的真实登录状态），桌面端据此写"在你的浏览器里"；为 false 时不出现在 JSON 里，旧客户端忽略即可 |
 | v0.18 | 2026-10-30 | 模型不可用（desktop-design §7 P15），都在版本 2 之内：`session/new` 要的模型所属服务商不存在（例如本机连接已断开或删除）时，返回新错误码 −32022 `model_unavailable`，data 带 `provider`，不再是 invalid_params；引用格式不对仍是 invalid_params |
 | v0.17 | 2026-10-30 | 无项目会话，都在版本 2 之内：`session/new` 的 `cwd` 改为可选，省略时会话没有项目，内核在 `~/.finx/chats/` 下为它新建一个空文件夹作为工作目录，不向上查找项目根、不读项目配置；SessionSummary 增加 `no_project`；`skills/list` 两个参数都不给时，返回无项目会话能找到的 Skill（§6.4） |
@@ -558,6 +560,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `server/shutdown` | — | `{}` | 只用于常驻服务，优雅退出（§3.8） |
 | `sessions/subscribe` | 同 `session/list` | 同 `session/list` | 返回第一页，之后这个连接收到 `sessions/changed`。先返回列表、再发变化，客户端不会先看到变化后看到旧列表 |
 | `sessions/unsubscribe` | — | `{}` | 不再接收 `sessions/changed`；连接断开时自动取消 |
+| `bots/*` | 见 bot-design §4 | 见 bot-design §4 | Bot 的登记、对话的打开（`bots/open` 的结果与 `session/new` 相同）、未读、清空与删除（v0.20） |
 | `session/rename` | session_id、title | `{}` | 标题去掉首尾空白、合并成一行，最长 200 字符；空标题返回 invalid_params |
 | `session/archive`、`session/unarchive` | session_id | `{}` | 归档或取消归档 |
 | `auth/set` | provider、api_key | `{}`；v0.14 起 `{ verified, models? }` | 把服务商的 API 密钥存入凭据存储（D-39）。服务商不存在或不用 API 密钥认证时返回 invalid_params。v0.14 起先用列表请求验证密钥，被拒绝时不保存、返回 `key_rejected`（model-catalog-design §3.3） |
@@ -576,6 +579,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 |---|---|---|
 | `session/event` | session_id、event | 会话事件。event 的格式见 technical-design §8.2 与本文 §5.1 |
 | `session/detached` | session_id、reason、last_seq | 服务端结束了这个连接对该会话的接入。reason 为 `overflow`、`closed` 或 `unloaded` |
+| `bots/changed` | bots、deleted? | 发给调用过 `bots/subscribe` 的连接：变了的 Bot 的完整摘要，以及删除的 Bot（v0.20，bot-design §4） |
 | `sessions/changed` | sessions、deleted? | 发给订阅了列表的连接：sessions 是变化了的会话的完整摘要，deleted 是被删除的会话 id |
 
 原生协议没有服务端 → 客户端的请求。
@@ -779,6 +783,9 @@ pub struct ResourceReadResult {
 | -32020 | task_failed | ACP：任务失败，data 中带完整的 ErrorInfo |
 | -32021 | key_rejected | `auth/set`：服务商拒绝了密钥 |
 | -32022 | model_unavailable | 要的模型所属服务商不存在（本机连接已断开或删除），data 带 `provider` |
+| -32040 | bot_not_found | 没有这个 Bot（v0.20） |
+| -32041 | bot_default | 默认 Bot 不能删除；品牌标志只给默认 Bot 用作头像 |
+| -32042 | bot_invalid | 名字为空或超过 20 字，头像取值不合规，或上传的不是 PNG |
 
 ### 6.8 示例
 

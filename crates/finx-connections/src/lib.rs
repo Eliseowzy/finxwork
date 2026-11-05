@@ -44,6 +44,21 @@ pub(crate) fn valid_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
+/// What an account's own catalog declares about a model. It speaks for this channel, so it comes
+/// first; what it leaves out comes from the model's maker in the public catalog, by its id.
+pub(crate) fn declared_model(m: &ConnectionModel) -> finx_llm::catalog::ModelToml {
+    finx_llm::catalog::ModelToml {
+        name: Some(m.name.clone()),
+        context_window: m.context_window.map(|window| window.clamp(1024, 2_000_000)),
+        max_output_tokens: m.max_output_tokens.map(|limit| limit.max(1)),
+        reasoning: Some(m.reasoning),
+        input: Some(if m.images { vec![Modality::Text, Modality::Image] } else { vec![Modality::Text] }),
+        thinking: Some(m.thinking.clone()),
+        default_thinking: Some(m.default_thinking),
+        ..finx_llm::catalog::ModelToml::new(&m.id)
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 struct Record {
     connection_id: String,
@@ -238,7 +253,13 @@ impl Manager {
                 if !record.enabled || !matches!(view.state, ConnectionState::Ready) {
                     return None;
                 }
-                let mut p = ProviderConfig {
+                let entries = view
+                    .models
+                    .iter()
+                    .filter(|m| adapter::supported(&record.adapter_id, &m.id))
+                    .map(declared_model)
+                    .collect();
+                Some(ProviderConfig {
                     plan: None,
                     id: record.provider_id.clone(),
                     name: view.display_name.clone(),
@@ -248,33 +269,8 @@ impl Manager {
                     headers: BTreeMap::new(),
                     currency: Default::default(),
                     compat: Compat { thinking_format: adapter::thinking_format(&record.adapter_id), ..Compat::default() },
-                    models: vec![],
-                    listing: Default::default(),
-                };
-                p.models = view
-                    .models
-                    .iter()
-                    .filter(|m| adapter::supported(&record.adapter_id, &m.id))
-                    .map(|m| {
-                        let mut model = p.ad_hoc_model(&m.id);
-                        model.name = m.name.clone();
-                        model.context_window =
-                            m.context_window.unwrap_or(32768).clamp(1024, 2_000_000);
-                        model.max_output_tokens =
-                            m.max_output_tokens.unwrap_or(8192).clamp(1, 128_000);
-                        model.reasoning = m.reasoning;
-                        if m.images {
-                            model.input = vec![Modality::Text, Modality::Image];
-                        }
-                        // The application's own levels; without a format they could not be sent.
-                        if p.compat.thinking_format.is_some() {
-                            model.thinking = m.thinking.clone();
-                            model.default_thinking = m.default_thinking;
-                        }
-                        Arc::new(model)
-                    })
-                    .collect();
-                Some(p)
+                    listing: finx_llm::catalog::Listing { entries, ..Default::default() },
+                })
             })
             .collect();
         if let Some(registry) = self.registry.upgrade() {

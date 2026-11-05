@@ -348,6 +348,9 @@ async fn run_tool(
     for hook in &session.hooks {
         output = hook.after_tool(&call, output).await;
     }
+    if output.ends_task && !output.is_error {
+        task.request_end();
+    }
     // Safety net on top of each tool's own limits (a fifth over them, room for their notes). The
     // result is cut once, here, and never changes afterwards; the full text stays readable in a
     // file.

@@ -105,6 +105,7 @@ async fn harness(mode: PermissionMode) -> Harness {
         project_root: None,
         trusted: true,
         interactive_approvals: true,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps).await.unwrap();
     Harness {

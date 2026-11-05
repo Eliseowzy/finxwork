@@ -125,7 +125,7 @@ impl SessionStore for MemoryStore {
             .logs
             .lock()
             .values()
-            .filter(|(header, _)| header.agent.is_none() && within.is_none_or(|dir| header.cwd.starts_with(dir)))
+            .filter(|(header, _)| header.listed() && within.is_none_or(|dir| header.cwd.starts_with(dir)))
             .take(limit)
             .map(|(header, _)| SessionSummary {
                 id: header.id.clone(),

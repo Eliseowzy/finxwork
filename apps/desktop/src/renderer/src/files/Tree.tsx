@@ -99,7 +99,7 @@ export function Tree({ s }: { s: SessionFiles }) {
                 menu(r);
               }}
             >
-              {r.dir ? <Icon name="caret" className={`chev ${expanded ? "open" : ""}`} /> : <span className="fpt-sp" />}
+              {r.dir ? <Icon name="chevD" className={`chev ${expanded ? "open" : ""}`} /> : <span className="fpt-sp" />}
               <Icon name={r.dir ? "folder" : "file"} />
               <span className="fpt-name">{r.name}</span>
             </div>

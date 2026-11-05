@@ -25,6 +25,7 @@ use finx_llm::ToolResultMessage;
 use finx_llm::ToolSpec;
 use finx_llm::UserContent;
 use finx_llm::api::scripted::Script;
+use finx_llm::catalog::ModelToml;
 use finx_llm::api::scripted::ScriptedApi;
 use finx_protocol::PermissionMode;
 use finx_protocol::EventMsg;
@@ -48,13 +49,8 @@ const PAGE: u64 = 150;
 const CHUNK: u64 = 1000;
 
 fn provider() -> ProviderConfig {
-    let mut provider = ScriptedApi::provider();
-    let mut model = (*provider.models[0]).clone();
     // Hard limit 18,000: tool results get 7,200 bytes (bash: 1,440 head, 5,760 tail).
-    model.context_window = 20_000;
-    model.max_output_tokens = 2_000;
-    provider.models = vec![Arc::new(model)];
-    provider
+    ScriptedApi::provider_with(vec![ModelToml { context_window: Some(20_000), max_output_tokens: Some(2_000), ..ScriptedApi::entry() }])
 }
 
 /// Prints `big_text()`, so the kernel's safety net (not a tool's own limit) cuts it.
@@ -125,6 +121,7 @@ async fn harness(config: Config) -> Harness {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps(&api, &work, &home)).await.unwrap();
     Harness {
@@ -483,6 +480,7 @@ async fn saved_output_is_still_readable_after_a_compaction_and_a_resume() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &work, &home)).await.unwrap();
     let third = run(&mut kernel, "read it once more").await;

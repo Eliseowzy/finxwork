@@ -135,6 +135,7 @@ Tauri 方案可以把 finx-core 直接链接进应用进程，省掉一个进程
 | 文案 | i18next、react-i18next | 26、17 |
 | Markdown | react-markdown + remark-gfm；流式草稿用 remend 补全未闭合的语法 | 10、4、1.4 |
 | 代码着色 | Shiki（JavaScript 正则引擎，不用 WebAssembly） | 4.5 |
+| 图标 | lucide-react，统一经 `icons.tsx` 的 `Icon` 引用 | 1.67 |
 | 端到端测试 | Playwright | 1.64 |
 | 包管理 | pnpm 工作区 | 10.32 |
 

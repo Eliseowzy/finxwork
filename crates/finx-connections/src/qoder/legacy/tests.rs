@@ -31,7 +31,6 @@ fn model(base: &str) -> Arc<finx_llm::Model> {
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     let mut model = provider.ad_hoc_model("qfmodel");
@@ -412,7 +411,7 @@ async fn live_qoder_legacy() {
     let snapshot = manager.snapshot().unwrap();
     let c = snapshot.connections.iter().find(|c| c.adapter_id == "qoder").expect("a Qoder connection");
     let provider = llm.provider(&c.provider_id).unwrap();
-    let model = provider.model(&std::env::var("FINX_QODER_TEST_MODEL").unwrap_or_else(|_| "qfmodel".into())).unwrap();
+    let model = llm.lookup(&provider, &std::env::var("FINX_QODER_TEST_MODEL").unwrap_or_else(|_| "qfmodel".into())).unwrap();
     // Past the gateway's body limit: about 300 KB of numbered lines.
     let padding: String = (0..6000).map(|n| format!("Line {n}: reference material that the answer does not need.\n")).collect();
     assert!(padding.len() > super::super::route::HTTP_BODY_LIMIT);

@@ -1,6 +1,9 @@
 // Client logic for the finx native protocol, free of any platform or UI
 // framework: a desktop page, a web page or an editor extension can use it.
 
+export * from "./alerts.ts";
+export * from "./bots.ts";
+export * from "./botChat.ts";
 export * from "./calendar.ts";
 export * from "./draft.ts";
 export * from "./files.ts";

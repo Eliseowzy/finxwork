@@ -55,6 +55,7 @@ pub async fn exec(
         project_root: rt.project_root.clone(),
         trusted: rt.trusted,
         interactive_approvals: interactive,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps).await?;
     drive(kernel, prompt, run, interactive, save, &rt.warnings).await
@@ -93,6 +94,7 @@ pub async fn resume(
         project_root: rt.project_root.clone(),
         trusted: rt.trusted,
         interactive_approvals: interactive,
+        bot_name: None,
     };
     let kernel = Kernel::resume(options, deps).await?;
     drive(kernel, prompt, run, interactive, true, &rt.warnings).await

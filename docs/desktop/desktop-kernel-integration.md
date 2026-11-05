@@ -529,7 +529,7 @@ defaults: { model: string; thinking: ThinkingLevel; permission_mode: PermissionM
 |---|---|---|---|
 | manual | 询问权限 | Ask Permissions | 写文件、运行命令前都先问 |
 | accept-edits | 自动接受编辑 | Accept Edits | 工作区内的文件修改直接执行，命令仍然先问 |
-| bypass-permissions | 绕过权限 | Bypass Permissions | 除拒绝规则、询问规则和关键路径删除外，一律直接执行 |
+| bypass-permissions | 完全访问 | Full Access | 除拒绝规则、询问规则和关键路径删除外，一律直接执行 |
 
 ### 9.2 类型生成
 
@@ -676,4 +676,4 @@ desktop-design §7 的 P1–P6 按下表在内核实现（D-38）。都是版本
 | DQ-10 | Intel Mac | 一期只打 arm64；需要时内核用 lipo 合成通用二进制 | §4.2 |
 | DQ-11 | 钥匙串里的密钥优先，还是环境变量优先 | 环境变量优先，界面显示来源；如果用户反馈"填了不生效"，再加一个"优先使用钥匙串"的选项 | §8.1 |
 | DQ-12 | 空闲退出的时间 | 600 秒：关掉应用后再打开，大多数时候内核还在 | §5.3 |
-| DQ-13 | 应用退出时内核里还有任务在跑，是否提示 | 不提示：任务不受影响；以后有系统通知时，任务结束会发通知 | §6.5 |
+| DQ-13 | 应用退出时内核里还有任务在跑，是否提示 | 不提示：任务不受影响。应用开着（窗口可以关）时任务结束会发通知；Cmd-Q 之后不发（notification-design §6） | §6.5 |

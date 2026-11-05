@@ -8,6 +8,7 @@ import { Lightbox } from "../composer/Tile";
 import { Code } from "./Code";
 import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
+import { handoffOf } from "./Yours";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -41,7 +42,7 @@ function Fold({ title, live, after, body }: { title: string; live: boolean; afte
       <button className={`tg-h ${live ? "shimmer" : ""}`} aria-expanded={open} aria-busy={live || undefined} onClick={() => setOpen(!open)}>
         <span>{title}</span>
         {after}
-        <Icon name="caret" className="chev" />
+        <Icon name="chevD" className="chev" />
       </button>
       {open && <div className="tg-b">{body}</div>}
     </div>
@@ -65,7 +66,7 @@ function Thinking({ text, redacted, live }: { text: string; redacted: boolean; l
       <button className={`th ${live ? "shimmer" : ""}`} onClick={() => body && setOpen(!open)} aria-expanded={body ? open : undefined} aria-busy={live || undefined}>
         <span className="vb">{live ? t("chat.thinking") : t("chat.thought")}</span>
         <span className="sm2">{gist}</span>
-        {body && <Icon name="caret" className="chev" />}
+        {body && <Icon name="chevD" className="chev" />}
       </button>
       {body && <div className="out sel-text">{text.trim()}</div>}
     </div>
@@ -103,7 +104,7 @@ export function LiveThinking({ text, children }: { text: string; children: React
         aria-expanded={body ? open : undefined}
       >
         {children}
-        {body && <Icon name="caret" className="chev" />}
+        {body && <Icon name="chevD" className="chev" />}
       </button>
       {body && (
         <div
@@ -139,8 +140,12 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   const unknown = tool.state === "streaming" && tool.title === tool.name;
   // A message to a sub-agent reads as one: "Sent to name: the message".
   const toAgent = tool.name === "send_message";
-  const object = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : toolObject(tool);
-  const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : toolVerb(tool);
+  // A page handed to the user says what they were asked.
+  const handoff = handoffOf({ name: tool.name, args: tool.args });
+  const named = toAgent ? t("agents.messageObject", { to: String(tool.args.to ?? ""), message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
+  // The kernel's title for a page opened in the user's own browser.
+  const object = named.replace(/ in your browser$/, t("yours.inYourBrowser"));
+  const verb = toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : handoff !== null && tool.state === "done" ? t("yours.handoff.handled") : toolVerb(tool);
   return (
     <div
       className={`tool ${tool.state === "failed" ? "err" : ""} ${tool.state === "denied" || tool.state === "awaiting_approval" ? "denied" : ""} ${open && output ? "open" : ""}`}
@@ -161,7 +166,7 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
           <span className="sm2" title={tool.title}>{object}</span>
         )}
         {after}
-        {output && <Icon name="caret" className="chev" />}
+        {output && <Icon name="chevD" className="chev" />}
       </button>
       {images.length > 0 && (
         <div className="tool-shots">

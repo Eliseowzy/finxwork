@@ -35,8 +35,9 @@
 > FinxWork is a desktop AI agent. This extension lets it use your own Chrome for web tasks, so it works with the sites you are already signed in to.
 >
 > - It needs the FinxWork desktop app on the same computer; on its own it does nothing.
-> - The agent's tabs open in a separate window, in a tab group named "FinxWork". It only ever controls the tabs it opened and the tabs those open. Your other tabs are never attached or read.
-> - Chrome shows "FinxWork started debugging this browser" while the agent works. Closing that bar takes control back at once.
+> - The agent's tabs open in a separate window, in a tab group named after the conversation. It only ever controls the tabs it opened, the tabs those open, and a tab you hand to it from the extension's menu. Your other tabs are never attached or read.
+> - Chrome shows "FinxWork started debugging this browser" while the agent works. Closing that bar takes control back at once, until you allow it again in FinxWork. When a task ends the agent lets go of its tabs and they stay open for you.
+> - When a page needs you, such as a sign-in, the task waits, and you tell it when you are done, from the extension's menu or in FinxWork.
 > - Actions on public sites ask for your approval in FinxWork first.
 > - The extension talks only to the FinxWork app on your computer, through Chrome's native messaging. It has no server of its own and loads no remote code.
 
@@ -45,8 +46,9 @@
 > FinxWork 是一个桌面端 AI 智能体。这个扩展让它用你自己的 Chrome 完成网页任务，直接使用你已经登录的网站。
 >
 > - 需要同一台电脑上装有 FinxWork 桌面端，单独安装不起作用。
-> - 智能体的标签页开在单独的窗口里，放在名为"FinxWork"的标签组中。它只控制自己打开的标签页，以及由这些标签页打开的标签页；你自己的标签页从不附加，也不读取。
-> - 智能体工作时，Chrome 顶部会显示"FinxWork 已开始调试此浏览器"，关掉这条提示就立即收回控制。
+> - 智能体的标签页开在单独的窗口里，放在以对话命名的标签组中。它只控制自己打开的标签页、由这些标签页打开的标签页，以及你从扩展菜单交给它的标签页；你自己的其他标签页从不附加，也不读取。
+> - 智能体工作时，Chrome 顶部会显示"FinxWork 已开始调试此浏览器"，关掉这条提示就立即收回控制，直到你在 FinxWork 里重新允许。任务结束后智能体放开标签页，标签页留给你。
+> - 页面需要你处理时（比如登录），任务会等你，你处理好后在扩展菜单或 FinxWork 里说一声就行。
 > - 在公网站点上的操作，会先在 FinxWork 里征求你的同意。
 > - 扩展只通过 Chrome 的 Native Messaging 与本机的 FinxWork 应用通信，没有自己的服务器，也不加载远程代码。
 
@@ -63,8 +65,10 @@
 | `debugger` | Reads and operates the pages of tabs the agent opened (accessibility tree, screenshots, clicks and typing) through the Chrome DevTools Protocol. Attached only to the agent's own tabs; never to tabs the user opened. Chrome shows its debugging bar while attached, and closing it ends control. |
 | `nativeMessaging` | Connects to the FinxWork desktop app on the same computer (host `com.finxwork.browser`), which sends the agent's commands and receives the results. This is the extension's only connection. |
 | `tabs` | Opens, activates and closes the agent's tabs, and notices when one of them opens another tab, so that tab is the agent's too. |
-| `tabGroups` | Puts the agent's tabs in a group named "FinxWork" so the user can tell them apart. |
-| `alarms` | Reconnects to the desktop app once a minute if the connection dropped, and applies a pending update while the agent is not using a tab. |
+| `tabGroups` | Puts the agent's tabs in a group named after the conversation, coloured by whether it is working or waiting for the user, so the user can tell them apart. |
+| `alarms` | Reconnects to the desktop app every 30 seconds if the connection dropped, and applies a pending update while the agent is not using a tab. |
+| `storage` | Remembers which of the agent's tabs belong to which conversation while the browser runs, so the agent finds them again after a restart of the extension or the app, and keeps a random id that tells this browser profile from another. |
+| `identity`, `identity.email` | Reads the email of the signed-in browser profile, which the FinxWork app on the same computer shows so the user can choose between two profiles that both have the extension. It is sent nowhere else. |
 
 **远程代码**：否。所有代码都在扩展包里。
 
@@ -72,7 +76,7 @@
 
 **数据使用声明**（后台勾选项，按实际情况）：
 
-- 处理的数据：**网站内容**（智能体标签页里的文字、无障碍树、截图）、**浏览记录**（智能体标签页的网址和标题）。用户在这些页面上输入的个人信息，也可能出现在页面内容里。
+- 处理的数据：**网站内容**（智能体标签页里的文字、无障碍树、截图）、**浏览记录**（智能体标签页的网址和标题）、**身份信息**（浏览器配置文件的邮箱地址，用来区分配置文件）。用户在这些页面上输入的个人信息，也可能出现在页面内容里。
 - 这些数据只发给同一台电脑上的 FinxWork 应用；扩展本身不向任何服务器发送数据。
 - 声明：不出售数据；不用于与单一用途无关的目的；不用于信用评估或放贷。
 
@@ -82,11 +86,11 @@
 >
 > The FinxWork extension connects your Chrome to the FinxWork desktop app on the same computer, so the app's AI agent can work in tabs it opens.
 >
-> **What the extension handles.** For tabs the agent opened (and tabs those tabs opened), the extension reads page content, such as text, the accessibility tree and screenshots, along with the tabs' addresses and titles, and performs the clicks and typing the agent asks for. It does not read or attach to any other tab.
+> **What the extension handles.** For tabs the agent opened, tabs those tabs opened, and a tab you hand to it, the extension reads page content, such as text, the accessibility tree and screenshots, along with the tabs' addresses and titles, and performs the clicks and typing the agent asks for. It does not read or attach to any other tab. It also reads the email of the signed-in browser profile, so the app can tell two profiles apart.
 >
 > **Where it goes.** The extension sends this data only to the FinxWork app on your computer, through Chrome's native messaging. The extension has no server and sends nothing over the network itself. The FinxWork app may send page content to the AI model provider you configured in it, under that provider's terms, in order to carry out your request.
 >
-> **What is kept.** The extension stores nothing beyond the current browser session. The FinxWork app keeps conversation records, which may include page content, on your computer, where you can delete them.
+> **What is kept.** The extension keeps which of the agent's tabs belong to which conversation while the browser runs, and a random id for this browser profile. The FinxWork app keeps conversation records, which may include page content, on your computer, where you can delete them.
 >
 > **Sharing.** We do not sell this data, use it for advertising, or use it for any purpose other than carrying out your requests in FinxWork.
 >
@@ -99,7 +103,7 @@
 | 素材 | 规格 | 状态 |
 |---|---|---|
 | 图标 | 128×128 PNG | 已有：`icons/128.png` |
-| 截图 | 1280×800 或 640×400，至少 1 张 | 待做：FinxWork 标签组里的标签页 + 桌面端对话；设置 › 浏览器的"使用中" |
+| 截图 | 1280×800 或 640×400，至少 1 张 | 待做：标签组里的标签页 + 桌面端对话；设置 › 浏览器的"使用中" |
 | 小宣传图 | 440×280 | 可选 |
 
 ## 7. 以后每次更新

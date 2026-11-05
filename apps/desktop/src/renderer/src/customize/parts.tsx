@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { agoText } from "../format";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useNow } from "../store";
 import type { CatalogConnector } from "../../../shared/catalog";
@@ -221,7 +221,7 @@ export function Status({ look, onCheck, onLogin, withAction = true }: { look: St
 }
 
 /** An item; `checked` makes it one of a choice, drawn with a check column; `extra` follows its label. */
-export type MenuItem = { id: string; label: string; icon?: string; desc?: string; danger?: boolean; checked?: boolean; disabled?: boolean; extra?: ReactNode; run: () => void } | { header: string } | null;
+export type MenuItem = { id: string; label: string; icon?: IconName; desc?: string; danger?: boolean; checked?: boolean; disabled?: boolean; extra?: ReactNode; run: () => void } | { header: string } | null;
 
 /**
  * A menu under its button, right-aligned, as the sidebar's rows have: the keyboard works as in

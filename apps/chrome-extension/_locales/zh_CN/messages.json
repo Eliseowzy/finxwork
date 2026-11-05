@@ -1,0 +1,98 @@
+{
+  "statusConnected": {
+    "message": "已连接"
+  },
+  "statusStandby": {
+    "message": "没有在用"
+  },
+  "statusConnecting": {
+    "message": "正在连接…"
+  },
+  "statusNotOpen": {
+    "message": "FinxWork 没有打开"
+  },
+  "statusMissing": {
+    "message": "这台电脑还没有设置"
+  },
+  "statusOutdated": {
+    "message": "需要更新"
+  },
+  "hintMissing": {
+    "message": "安装 FinxWork，然后在它的设置里连接你的浏览器。"
+  },
+  "hintStandby": {
+    "message": "智能体正在用另一个浏览器或配置文件。"
+  },
+  "hintOutdated": {
+    "message": "这个扩展和 FinxWork 的版本对不上，更新较旧的那一个。"
+  },
+  "hintNotOpen": {
+    "message": "打开后，智能体才能用这个浏览器。"
+  },
+  "openApp": {
+    "message": "打开 FinxWork"
+  },
+  "useThis": {
+    "message": "改用这个浏览器"
+  },
+  "nothing": {
+    "message": "智能体在这里没有标签页。"
+  },
+  "tabs": {
+    "message": "$1 个标签页"
+  },
+  "oneTab": {
+    "message": "1 个标签页"
+  },
+  "working": {
+    "message": "工作中"
+  },
+  "approval": {
+    "message": "等你在 FinxWork 里批准"
+  },
+  "finished": {
+    "message": "任务已结束"
+  },
+  "handoff": {
+    "message": "在等你：$1"
+  },
+  "back": {
+    "message": "回到对话"
+  },
+  "done": {
+    "message": "我处理好了"
+  },
+  "stop": {
+    "message": "停止"
+  },
+  "offer": {
+    "message": "把这个标签页交给 FinxWork"
+  },
+  "offerNote": {
+    "message": "智能体将能读取和操作这个标签页。"
+  },
+  "groupWaiting": {
+    "message": "等你 · $1"
+  },
+  "titleConnected": {
+    "message": "FinxWork：已连接"
+  },
+  "titleStandby": {
+    "message": "FinxWork：没有在用"
+  },
+  "titleConnecting": {
+    "message": "FinxWork：正在连接"
+  },
+  "titleNotOpen": {
+    "message": "FinxWork 没有打开"
+  },
+  "titleMissing": {
+    "message": "这台电脑还没有设置 FinxWork"
+  },
+  "titleOutdated": {
+    "message": "FinxWork：需要更新"
+  },
+  "titleWaiting": {
+    "message": "FinxWork 在等你"
+  }
+}

@@ -77,8 +77,8 @@ impl Workspace {
             path: cwd.to_path_buf(),
             source,
         })?;
-        // A session without a project has its own folder, whatever lies around it.
-        let is_chat = home.is_chat_dir(&cwd);
+        // A session without a project, or a bot's, has its own folder, whatever lies around it.
+        let is_chat = home.has_no_project(&cwd);
         let project_root = if is_chat {
             None
         } else {

@@ -2,10 +2,25 @@
   "title": "Settings",
   "pages": {
     "general": "General",
+    "notifications": "Notifications",
     "models": "Models",
     "about": "About",
     "browser": "Browser",
     "desktop": "Computer Use"
+  },
+  "notifications": {
+    "enabled": "Allow notifications",
+    "enabledNote": "When the app isn't in front, you hear about bots' replies, things waiting for your approval and failed tasks, and the app's icon shows a number.",
+    "sound": "Sound",
+    "sessionEnded": "When a session's task ends",
+    "sessionEndedNote": "A task waiting for your approval or failing always tells you.",
+    "test": "Try it",
+    "testNote": "The first time, the system asks whether FinxWork may send notifications.",
+    "testButton": "Send one",
+    "system": "System notification settings",
+    "systemNote": "If notifications don't arrive, check here that they're allowed. You can also choose their style.",
+    "systemButton": "Open",
+    "muteNote": "To stop hearing from one bot, turn on Do Not Disturb in its settings."
   },
   "appearance": {
     "title": "Appearance",
@@ -287,7 +302,7 @@
     "off": "Open sites that need your sign-ins with your accounts.",
     "on": "Sites that need your account open here.",
     "ready": "The extension is connected but not in use.",
-    "lost": "The extension isn't connected.",
+    "lost": "The extension is not connected. Check that FinxWork is on, on the extensions page of {{name}}.",
     "closed": "{{name}} isn't open; it connects once you open it.",
     "none": "No Chrome, Edge or Brave found.",
     "outdated": {
@@ -314,7 +329,7 @@
       "install": "Add the FinxWork extension to {{name}}. You only do this once:",
       "howto": {
         "open": "Open the extensions page of {{name}}.",
-        "developer": "Turn on “Developer mode” at the top right of the page.",
+        "developer": "Turn on “Developer mode” at the top right of the page, and leave it on: Chrome may turn the extension off without it.",
         "drag": "Drag the “FinxWork Extension” folder onto the extensions page."
       },
       "openExtensions": "Open Extensions Page",
@@ -386,7 +401,16 @@
     "defaultDesc": "Where new pages open unless the agent names one.",
     "yoursOption": "{{name}} (your browser)",
     "connectTitle": "Connect Your Browser",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "refused": "FinxWork was just updated; the extension is moving to the new version and will connect in a few seconds.",
+    "refusedStuck": "The extension is still running the old program. Click its reload button on the extensions page.",
+    "elsewhere": "This browser is connected to another FinxWork.",
+    "takeOver": "Connect Here…",
+    "useThis": "Use This",
+    "diagnose": "Show Diagnostics",
+    "copyDiagnosis": "Copy",
+    "hideDiagnosis": "Hide",
+    "diagnosisCopied": "Diagnostics copied"
   },
   "desktop": {
     "enable": "Allow FinxWork to control apps on your computer",

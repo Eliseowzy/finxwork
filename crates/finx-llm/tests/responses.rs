@@ -49,6 +49,24 @@ async fn serve(server: &MockServer, events: Vec<Value>) {
         .await;
 }
 #[tokio::test]
+async fn a_completion_listing_no_items_keeps_what_was_streamed() {
+    let server = MockServer::start().await;
+    serve(&server, vec![
+        json!({"type":"response.output_text.delta","output_index":0,"delta":"o"}),
+        json!({"type":"response.output_text.delta","output_index":0,"delta":"k"}),
+        json!({"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[],"usage":{"input_tokens":10,"output_tokens":2}}}),
+    ]).await;
+    let registry = registry(&server);
+    let model = registry.resolve("plan/gpt-test").unwrap().model;
+    let events: Vec<_> = registry.stream(model, context(), RequestOptions::default()).collect().await;
+    let StreamEvent::Done(message) = events.last().unwrap() else {
+        panic!("{events:?}")
+    };
+    assert_eq!(message.text(), "ok", "the reply stays in the history");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+    assert_eq!(message.usage.output, 2);
+}
+#[tokio::test]
 async fn completion_preserves_reasoning_tools_usage_and_stateless_replay() {
     let server = MockServer::start().await;
     let reasoning = json!({"type":"reasoning","id":"rs_1","encrypted_content":"opaque-ciphertext","summary":[{"type":"summary_text","text":"Checking"}]});
@@ -94,6 +112,61 @@ async fn completion_preserves_reasoning_tools_usage_and_stateless_replay() {
         assert!(body.get(key).is_none());
     }
 }
+/// The events of a request for "hello", to the end.
+async fn run(server: &MockServer) -> Vec<StreamEvent> {
+    let registry = registry(server);
+    let model = registry.resolve("plan/gpt-test").unwrap().model;
+    registry.stream(model, context(), RequestOptions::default()).collect().await
+}
+
+#[tokio::test]
+async fn output_finx_cannot_read_is_a_failure_that_names_it() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        vec![json!({"type": "response.completed", "response": {"status": "completed", "id": "r",
+            "output": [{"type": "new_kind", "text": "private"}, {"type": "message", "content": [{"type": "new_part", "x": "private"}]}],
+            "usage": {"input_tokens": 9, "output_tokens": 46}}})],
+    )
+    .await;
+    let events = run(&server).await;
+    let Some(StreamEvent::Failed(message)) = events.last() else { panic!("{events:?}") };
+    let error = message.error.as_ref().unwrap();
+    assert_eq!(error.kind, ErrorKind::Protocol);
+    assert!(error.message.contains("new_kind") && error.message.contains("message/new_part"), "{}", error.message);
+    assert!(!error.message.contains("private"), "{}", error.message);
+}
+
+#[tokio::test]
+async fn an_empty_output_list_keeps_what_was_streamed() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        vec![
+            json!({"type": "response.output_text.delta", "output_index": 0, "delta": "你好"}),
+            json!({"type": "response.completed", "response": {"status": "completed", "id": "r", "output": [],
+                "usage": {"input_tokens": 9, "output_tokens": 2}}}),
+        ],
+    )
+    .await;
+    let events = run(&server).await;
+    let Some(StreamEvent::Done(message)) = events.last() else { panic!("{events:?}") };
+    assert_eq!(message.text(), "你好");
+}
+
+#[tokio::test]
+async fn a_reply_with_only_reasoning_is_still_a_reply() {
+    let server = MockServer::start().await;
+    serve(
+        &server,
+        vec![json!({"type": "response.completed", "response": {"status": "completed", "id": "r",
+            "output": [{"type": "reasoning", "id": "rs", "summary": []}],
+            "usage": {"input_tokens": 9, "output_tokens": 5}}})],
+    )
+    .await;
+    assert!(matches!(run(&server).await.last(), Some(StreamEvent::Done(_))));
+}
+
 #[tokio::test]
 async fn truncated_stream_is_failure_even_after_text() {
     let server = MockServer::start().await;

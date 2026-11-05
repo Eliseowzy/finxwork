@@ -4,14 +4,17 @@
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Weak;
+use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
+use tokio::sync::Notify;
 use tokio::sync::watch;
 
 use crate::BrowserError;
@@ -26,6 +29,11 @@ use crate::router::Router;
 const CLOSE_GRACE: Duration = Duration::from_secs(5);
 /// How long `acquire` waits for the previous browser on a profile to exit.
 const CLOSE_WAIT: Duration = Duration::from_secs(15);
+/// How long a session waits for the extension to come back when no client can tell the user
+/// that it waits: at most an alarm's period, 30 seconds, plus the time to reconnect.
+const RECONNECT_WAIT: Duration = Duration::from_secs(35);
+/// The file that keeps which extension the user chose, in the pool's root.
+const IN_USE_FILE: &str = "extension-in-use";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Headless {
@@ -78,14 +86,34 @@ pub trait EmbeddedHost: Send + Sync + 'static {
     /// Tells hosts apart: a host that replaced another gets its own browser.
     fn id(&self) -> u64;
     fn connect(&self) -> Result<Stream, BrowserError>;
+    /// The tabs are the user's and outlive the agent's use of them (§8.4.7): a session that ends
+    /// lets them go instead of closing them, and finds them again by its label.
+    fn keeps_tabs(&self) -> bool {
+        false
+    }
+}
+
+/// How waiting for the extension ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ExtensionWait {
+    Connected,
+    /// The user chose not to use their browser this time.
+    Declined,
+    /// It is not there, and nobody can be told so.
+    NoOne,
+}
+
+struct ExtensionLink {
+    host: Arc<dyn EmbeddedHost>,
+    instance: Option<String>,
 }
 
 const NO_HOST: &str = "No desktop app is connected to show the embedded browser. Open FinxWork, \
     or set browser.backend = \"managed\" in ~/.finx/config.toml to use a separate browser window.";
 
 /// Said in the first result of every session on the user's Chrome.
-const EXTENSION_NOTE: &str = "This browser is the user's own Chrome: the tabs you open appear in their window, \
-    in a tab group named FinxWork, and their sign-ins are real. Act as carefully as with their accounts.";
+const EXTENSION_NOTE: &str = "This is the user's own browser: they can see the tabs you open, and their sign-ins \
+    are real. Act as carefully as with their accounts.";
 
 const NO_EXTENSION: &str = "The FinxWork extension is not connected, so the user's own browser cannot be used. \
     Ask the user to open their browser with the FinxWork extension, or to connect it again in FinxWork; \
@@ -99,8 +127,26 @@ pub struct BrowserPool {
     launcher: Arc<dyn Launcher>,
     /// The desktop app connected to this process, if any.
     host: Mutex<Option<Arc<dyn EmbeddedHost>>>,
-    /// The finx extension in the user's Chrome, if connected.
-    extension: Mutex<Option<Arc<dyn EmbeddedHost>>>,
+    /// The finx extensions connected, oldest first: one per browser and profile.
+    extensions: Mutex<Vec<ExtensionLink>>,
+    /// The one the user chose; none: the oldest connected.
+    chosen: Mutex<Option<String>>,
+    /// An extension connected at some point, so it may well come back.
+    ever_connected: AtomicBool,
+    /// A client follows the browsers' status, and can tell the user what is awaited.
+    watched: AtomicBool,
+    /// Sessions waiting for the extension, and how many calls of each.
+    waiting: Mutex<HashMap<String, usize>>,
+    /// Sessions whose wait the user called off.
+    declined: Mutex<HashSet<String>>,
+    /// Sessions the user took their browser back from.
+    revoked: Mutex<HashSet<String>>,
+    /// How many tabs each session has in the user's browser, as the extension last said.
+    session_tabs: Mutex<HashMap<String, usize>>,
+    /// Woken when any of the above changes.
+    changed: Notify,
+    /// Told when something the status shows changes.
+    on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
     inner: Arc<PoolInner>,
 }
 
@@ -121,12 +167,22 @@ impl BrowserPool {
     }
 
     pub fn with_launcher(root: PathBuf, auto_headless_off: bool, launcher: Arc<dyn Launcher>) -> Self {
+        let chosen = std::fs::read_to_string(root.join(IN_USE_FILE)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
         Self {
             root,
             auto_headless: !auto_headless_off,
             launcher,
             host: Mutex::new(None),
-            extension: Mutex::new(None),
+            extensions: Mutex::new(Vec::new()),
+            chosen: Mutex::new(chosen),
+            ever_connected: AtomicBool::new(false),
+            watched: AtomicBool::new(false),
+            waiting: Mutex::new(HashMap::new()),
+            declined: Mutex::new(HashSet::new()),
+            revoked: Mutex::new(HashSet::new()),
+            session_tabs: Mutex::new(HashMap::new()),
+            changed: Notify::new(),
+            on_change: Mutex::new(None),
             inner: Arc::default(),
         }
     }
@@ -149,22 +205,133 @@ impl BrowserPool {
         self.host.lock().is_some()
     }
 
-    /// The finx extension that lends the user's Chrome from now on (§8.4); `None` when it
-    /// left. Like the desktop app, a later one replaces the one before.
-    pub fn set_extension(&self, host: Option<Arc<dyn EmbeddedHost>>) {
-        *self.extension.lock() = host;
+    /// A finx extension connected (§8.4). Several may be, one per browser and profile: the
+    /// agent stays with the one it uses, so a later one never moves it to another account
+    /// (§8.4.7).
+    pub fn add_extension(&self, host: Arc<dyn EmbeddedHost>, instance: Option<String>) {
+        self.extensions.lock().push(ExtensionLink { host, instance });
+        self.ever_connected.store(true, Ordering::Relaxed);
+        self.changed.notify_waiters();
     }
 
-    /// Clears the extension only if it is still `id`.
     pub fn remove_extension(&self, id: u64) {
-        let mut host = self.extension.lock();
-        if host.as_ref().is_some_and(|h| h.id() == id) {
-            *host = None;
+        self.extensions.lock().retain(|link| link.host.id() != id);
+    }
+
+    /// The extension the agent uses: the one chosen, else the oldest connected. The one chosen
+    /// being away moves nobody to another: the user's accounts differ.
+    fn picked(&self) -> Option<Arc<dyn EmbeddedHost>> {
+        let links = self.extensions.lock();
+        match &*self.chosen.lock() {
+            Some(chosen) => links.iter().find(|l| l.instance.as_ref() == Some(chosen)).map(|l| l.host.clone()),
+            None => links.first().map(|l| l.host.clone()),
         }
     }
 
+    /// An extension the agent can use is connected.
     pub fn has_extension(&self) -> bool {
-        self.extension.lock().is_some()
+        self.picked().is_some()
+    }
+
+    /// Which host the agent uses.
+    pub fn extension_in_use(&self) -> Option<u64> {
+        self.picked().map(|host| host.id())
+    }
+
+    /// The extension the user chose, from now on and after a restart.
+    pub fn choose_extension(&self, instance: &str) {
+        *self.chosen.lock() = Some(instance.to_string());
+        let _ = std::fs::create_dir_all(&self.root);
+        if let Err(err) = std::fs::write(self.root.join(IN_USE_FILE), instance) {
+            tracing::warn!(%err, "cannot keep which extension is in use");
+        }
+        self.changed.notify_waiters();
+    }
+
+    /// `f` hears of what the status shows changing here: who waits.
+    pub fn on_change(&self, f: Arc<dyn Fn() + Send + Sync>) {
+        *self.on_change.lock() = Some(f);
+    }
+
+    fn fire(&self) {
+        let f = self.on_change.lock().clone();
+        if let Some(f) = f {
+            f();
+        }
+    }
+
+    /// Whether a client follows the status.
+    pub fn set_watched(&self, watched: bool) {
+        self.watched.store(watched, Ordering::Relaxed);
+    }
+
+    /// Waits for an extension the agent can use, for as long as a client can tell the user;
+    /// else for as long as one may come back by itself.
+    pub async fn wait_for_extension(&self, label: &str) -> ExtensionWait {
+        if self.has_extension() {
+            return ExtensionWait::Connected;
+        }
+        let _waiting = Waiting::new(self, label);
+        let started = tokio::time::Instant::now();
+        loop {
+            let changed = self.changed.notified();
+            if self.has_extension() {
+                return ExtensionWait::Connected;
+            }
+            // For all of the session's calls that wait; the last one to end clears it.
+            if self.declined.lock().contains(label) {
+                return ExtensionWait::Declined;
+            }
+            if !self.watched.load(Ordering::Relaxed)
+                && (!self.ever_connected.load(Ordering::Relaxed) || started.elapsed() >= RECONNECT_WAIT)
+            {
+                return ExtensionWait::NoOne;
+            }
+            let _ = tokio::time::timeout(Duration::from_millis(200), changed).await;
+        }
+    }
+
+    /// The sessions waiting for the extension.
+    pub fn waiting(&self) -> Vec<String> {
+        let mut labels: Vec<String> = self.waiting.lock().keys().cloned().collect();
+        labels.sort();
+        labels
+    }
+
+    /// The user chose not to use their browser this time: the session's calls stop waiting.
+    pub fn decline(&self, label: &str) {
+        if self.waiting.lock().contains_key(label) {
+            self.declined.lock().insert(label.to_string());
+            self.changed.notify_waiters();
+        }
+    }
+
+    /// The user took their browser back from these sessions (they closed Chrome's bar).
+    pub fn revoke(&self, labels: &[String]) {
+        self.revoked.lock().extend(labels.iter().cloned());
+    }
+
+    pub fn allow(&self, label: &str) {
+        self.revoked.lock().remove(label);
+    }
+
+    pub fn is_revoked(&self, label: &str) -> bool {
+        self.revoked.lock().contains(label)
+    }
+
+    pub fn revoked(&self) -> Vec<String> {
+        let mut labels: Vec<String> = self.revoked.lock().iter().cloned().collect();
+        labels.sort();
+        labels
+    }
+
+    /// How many tabs each session has in the user's browser, as the extension says.
+    pub fn set_session_tabs(&self, counts: HashMap<String, usize>) {
+        *self.session_tabs.lock() = counts;
+    }
+
+    pub fn tabs_of(&self, label: &str) -> usize {
+        self.session_tabs.lock().get(label).copied().unwrap_or(0)
     }
 
     /// The browser for `config`: the embedded one or the managed one for `config.profile`,
@@ -173,7 +340,7 @@ impl BrowserPool {
         let host = match config.backend {
             Backend::Managed => None,
             Backend::Auto | Backend::Embedded => self.host.lock().clone(),
-            Backend::Extension => self.extension.lock().clone(),
+            Backend::Extension => self.picked(),
         };
         if host.is_none() {
             match config.backend {
@@ -217,7 +384,7 @@ impl BrowserPool {
         let (reader, writer) = host.connect()?;
         let (conn, events) = Conn::start(reader, writer, crate::launch::COMMAND_TIMEOUT);
         let downloads = self.root.join("downloads").join(format!("{}-{}", std::process::id(), key.replace('#', "-")));
-        let router = Router::start(conn.clone(), events, downloads.clone(), true);
+        let router = Router::start(conn.clone(), events, downloads.clone(), true, host.keeps_tabs());
         router.init().await?;
         let (done_tx, _) = watch::channel(false);
         Ok(Arc::new(Browser {
@@ -287,7 +454,7 @@ impl BrowserPool {
             }
         };
         let downloads = self.root.join("downloads").join(format!("{}-{}", std::process::id(), short_key(&user_data_dir)));
-        let router = Router::start(launched.conn.clone(), launched.events, downloads.clone(), false);
+        let router = Router::start(launched.conn.clone(), launched.events, downloads.clone(), false, false);
         router.init().await?;
         let (done_tx, _) = watch::channel(false);
         Ok(Arc::new(Browser {
@@ -306,6 +473,36 @@ impl BrowserPool {
             })),
             runtime: tokio::runtime::Handle::current(),
         }))
+    }
+}
+
+/// A session's call waiting for the extension, while it does.
+struct Waiting<'a> {
+    pool: &'a BrowserPool,
+    label: &'a str,
+}
+
+impl<'a> Waiting<'a> {
+    fn new(pool: &'a BrowserPool, label: &'a str) -> Self {
+        *pool.waiting.lock().entry(label.to_string()).or_default() += 1;
+        pool.fire();
+        Self { pool, label }
+    }
+}
+
+impl Drop for Waiting<'_> {
+    fn drop(&mut self) {
+        {
+            let mut waiting = self.pool.waiting.lock();
+            if let Some(calls) = waiting.get_mut(self.label) {
+                *calls -= 1;
+                if *calls == 0 {
+                    waiting.remove(self.label);
+                    self.pool.declined.lock().remove(self.label);
+                }
+            }
+        }
+        self.pool.fire();
     }
 }
 

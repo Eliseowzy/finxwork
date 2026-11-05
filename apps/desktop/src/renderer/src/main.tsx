@@ -8,6 +8,7 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/composer.css";
 import "./styles/files.css";
+import "./styles/bots.css";
 
 // A scroller shows its scrollbar while it moves and for a moment after, as macOS overlays do (app.css).
 const settle = new WeakMap<Element, number>();

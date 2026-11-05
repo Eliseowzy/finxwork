@@ -1,0 +1,132 @@
+{
+  "mode": {
+    "label": "Mode",
+    "sessions": "Sessions",
+    "bots": "Bots",
+    "sessionsTip": "Session mode",
+    "botsTip": "Bot mode"
+  },
+  "nav": {
+    "newBot": "New Bot"
+  },
+  "list": {
+    "title": "Bots",
+    "label": "Bot list",
+    "loading": "Loading…"
+  },
+  "line": {
+    "waiting": "[Needs you]",
+    "helpers": "Working on {{things}}",
+    "typing": "Typing…",
+    "empty": "No messages yet",
+    "image": "[Image]",
+    "file": "[File] {{name}}"
+  },
+  "head": {
+    "settings": "Bot settings"
+  },
+  "things": {
+    "1": "1 thing",
+    "2": "2 things",
+    "3": "3 things",
+    "4": "4 things",
+    "5": "5 things",
+    "6": "6 things",
+    "7": "7 things",
+    "8": "8 things",
+    "9": "9 things",
+    "10": "10 things",
+    "many": "{{count}} things"
+  },
+  "chat": {
+    "log": "Conversation",
+    "placeholder": "Message {{name}}",
+    "empty": "Tell it what to help with in your first message. Write any time after that, several things at once if you like.",
+    "copy": "Copy",
+    "process": "Steps",
+    "processLine_one": "Took {{time}} · {{count}} step",
+    "processLine_other": "Took {{time}} · {{count}} steps",
+    "processTime": "Took {{time}}",
+    "processFold": "Hide steps",
+    "busyOpen": "See what it is doing",
+    "busyClose": "Hide",
+    "retrying": "Connection unstable, retrying",
+    "earlier": "Earlier messages",
+    "loadingEarlier": "Loading earlier messages",
+    "toBottom": "Back to the bottom",
+    "queued": "Delivered once it finishes this reply"
+  },
+  "fullAccess": {
+    "title": "Bots use Full Access by default",
+    "body": "System actions no longer ask for your approval, and the same goes for the agents and tasks it creates. Each bot has its own setting, which you can change at any time: click its name at the top.",
+    "settings": "Open Settings",
+    "ok": "Got it"
+  },
+  "sheet": {
+    "newTitle": "New Bot",
+    "sub": "Give it a name and pick an avatar. Tell it what to do in the conversation.",
+    "name": "Name",
+    "placeholder": "For example: Researcher",
+    "avatar": "Avatar",
+    "upload": "Upload image…",
+    "cancel": "Cancel",
+    "create": "Create",
+    "mono": "First letter of the name",
+    "mark": "FinxWork mark",
+    "tooLarge": "The image is too large: 10 MB at most",
+    "unreadable": "This image cannot be read",
+    "shapes": {
+      "round": "Round",
+      "box": "Box",
+      "ghost": "Ghost",
+      "cloud": "Cloud",
+      "dome": "Dome",
+      "cat": "Cat",
+      "egg": "Egg",
+      "gem": "Gem"
+    },
+    "hues": {
+      "slate": "Slate",
+      "sage": "Sage",
+      "clay": "Clay",
+      "ochre": "Ochre",
+      "plum": "Plum",
+      "teal": "Teal",
+      "rose": "Rose",
+      "stone": "Stone"
+    }
+  },
+  "menu": {
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "delete": "Delete Bot",
+    "rename": "Rename"
+  },
+  "delete": {
+    "title": "Delete “{{name}}”?",
+    "message": "Its chat history, the files it made and the work it is doing go with it.",
+    "button": "Delete",
+    "done": "Deleted “{{name}}”"
+  },
+  "pinned": "Pinned",
+  "search": {
+    "placeholder": "Search bots",
+    "found": "{{n}} bots",
+    "none": "No bots found",
+    "noneHint": "Search by name or by what was last said"
+  },
+  "panel": {
+    "avatar": "Change avatar",
+    "nameHint": "Double-click to rename",
+    "model": "Model settings",
+    "modelNote": "Applies to this bot only.",
+    "permission": "Permissions",
+    "permissionMode": "Permission mode",
+    "permissionNote": "{{desc}}. Applies to this bot only. The agents and tasks it creates run with this mode too, and follow any change at once.",
+    "bypassNote": "The agents and tasks this bot creates will do the same.",
+    "close": "Close",
+    "notifications": "Notifications",
+    "muted": "Do Not Disturb",
+    "mutedNote": "No system notifications, and it doesn't count in the number on the app's icon. Unread still shows in the list."
+  }
+}

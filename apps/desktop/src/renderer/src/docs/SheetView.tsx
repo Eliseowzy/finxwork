@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useTranslation } from "react-i18next";
 import { baseName, type RpcClient } from "@finx/client";
 import type { CellData, DocApplyResult, FoundCell, Impact, SheetInfo, SheetOp } from "@finx/protocol";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { isRpcKind } from "../rpcError";
 import { errorText, useStore } from "../store";
 import { openRef } from "../session/contentMenus";
@@ -1271,7 +1271,7 @@ function Stat({ label, value, copy, className = "" }: { label: string; value: st
 }
 
 /** A toolbar button with its name beside the icon, as Excel's ribbon has them; a narrow panel keeps the icon. */
-function Tool({ icon, label, tip, on, onClick }: { icon: string; label: string; tip?: string; on?: boolean; onClick: () => void }) {
+function Tool({ icon, label, tip, on, onClick }: { icon: IconName; label: string; tip?: string; on?: boolean; onClick: () => void }) {
   return (
     <button className={`tb sht-btn ${on ? "on" : ""}`} title={tip ?? label} aria-label={label} aria-pressed={on} onClick={onClick}>
       <Icon name={icon} />

@@ -233,6 +233,8 @@ pub enum Authority {
     Upload { origin: String, paths: Vec<PathBuf>, target: PageTarget, own: bool },
     /// Runs a script on a page: it can read and change anything there.
     Script { origin: String, target: PageTarget, own: bool },
+    /// Hands a page to the user for what only they can do: a sign-in, a CAPTCHA.
+    UserStep { what: String, own: bool },
     /// Reads a desktop app's window. `app` is its bundle id, or its name when it has none.
     AppObserve { app: String },
     /// Acts on a desktop app. `action` says what, for the user.
@@ -245,6 +247,9 @@ pub struct ToolOutput {
     pub content: Vec<UserContent>,
     pub details: Option<Value>,
     pub is_error: bool,
+    /// The task ends once this batch of calls is done, unless new input waits: the model said
+    /// its last word (bot-design §3.3).
+    pub ends_task: bool,
 }
 
 impl ToolOutput {
@@ -253,6 +258,7 @@ impl ToolOutput {
             content: vec![UserContent::Text { text: text.into() }],
             details: None,
             is_error: false,
+            ends_task: false,
         }
     }
 
@@ -265,6 +271,11 @@ impl ToolOutput {
 
     pub fn with_details(mut self, details: Value) -> Self {
         self.details = Some(details);
+        self
+    }
+
+    pub fn ending_task(mut self) -> Self {
+        self.ends_task = true;
         self
     }
 }

@@ -131,7 +131,7 @@ function StopButton({ s, a, className }: { s: ListSession; a: AgentView; classNa
         st.op(s.session_id, { type: "agent_interrupt", agent: a.id });
       }}
     >
-      <Icon name="stopFill" />
+      <Icon name="stop" className="fill" />
     </button>
   );
 }

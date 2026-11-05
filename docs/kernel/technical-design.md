@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.36 |
-| 日期 | 2026-11-03 |
+| 版本 | v1.41 |
+| 日期 | 2026-11-04 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -83,6 +83,11 @@
 | v1.34 | 2026-11-03 | 同时结束的会话共用一次硬盘冲刷（§9.3，D-97）：各自先 fsync 自己的日志，再由一次 F_FULLFSYNC 让硬盘把缓存全部写入，落盘保证不变。200 个会话同时跑满时任务 p95 降约一半、吞吐翻倍；首包 100 ms 时 p95 降约两成（§1.4）。没有设置 `FINX_LOG` 时日志用固定级别，不再解析过滤表达式 |
 | v1.35 | 2026-11-03 | 单次任务的固定内存（§1.4）：日志通道预留 256 行（原 4096 行，144 KiB）；`finx acp` 最多 4 个工作线程（D-91）；除 `finx serve` 外，I/O 驱动预留 256 个事件；TLS 会话缓存 32 个主机。macOS 上一次真实任务的 ACP 峰值占用 4.82 → 4.43 MiB，Linux 任务后的匿名内存 1.43 → 1.29 MiB。Q-20 补上系统框架的内存代价（约 1.2 MiB） |
 | v1.36 | 2026-11-03 | 工具结果的裁切改按 token 计（§5.5、§5.7、§7.5.5、§10.2，D-239）：按 4 字节 1 个 token 换算，不调用分词器；工具自身的预算默认 10,000 token（read 每页，bash 头 2,000 + 尾 8,000，子智能体汇报，Skill 正文），内核兜底为预算的 1.2 倍，即 12,000 token；单个结果仍不超过可用窗口的 10%。原来的上限是 50 KB（约 12,800 token），兜底多 4 KB。省略说明和 read 的分页提示改报 token 数；配置 `[tools.limits] max_bytes` 改为 `max_tokens`，旧写法按 4 字节 1 个 token 换算并给出 warning |
+| v1.37 | 2026-11-04 | 模型接入重构（model-catalog-design.md v1.3，D-330–D-340）：API、Token Plan、账号连接共用一次合并，模型的参数按渠道的声明、公共目录里这个渠道的行、模型厂商的行依次取。档位由目录写明的控制方式和渠道能发的参数决定：有档位发 `reasoning_effort`，只有预算才发预算，开关只发给有开关的模型（§4.13）。输出上限未知时不再猜 8,192：OpenAI 兼容请求不带上限，Anthropic 接口按必填给 8,192，预留 32,000（§4.8）。Anthropic 接口对新模型改用 adaptive 和 `output_config.effort` |
+| v1.38 | 2026-11-04 | Bot（bot-design.md）：会话头部加 `bot`，日志加 `bot_name`、`unanswered` 两种条目（§9.2）；配置加 `bot_prompt_file`（§10.2）。Bot 会话的基础提示词换成 bot.md，其余各段不变 |
+| v1.39 | 2026-11-04 | 基础提示词的开头改为能力清单（附录 D）：每项写明交付物和质量要求（全面的文档或演示文稿、有洞察的图表或表格、基于可靠来源的多章节文章和深度报告），并用"包括但不限于"放开范围；定时任务等内核还没有的能力不写（D-233）。删去发消息、提交、付款、转账、交易前先确认的那段 |
+| v1.40 | 2026-11-04 | 基础提示词补六点（附录 D）：解释、审查、诊断类请求只调查和回答，要求动手才动手；被质疑时复查并拿证据回答，不为附和而改结论；分清查到的和推断的，不虚构执行结果；比较口径一致，分清报告期与发布日、实际与预测；优先用连接的工具或官方接口取数，外部事实就近附链接；默认在回复里作答，临时脚本放临时目录。后三点中的数字规矩在共用片段里，Bot 同样生效 |
+| v1.41 | 2026-11-04 | 调试构建的配置（§15.1，D-342）：`dev` 只给工作区自己的 crate 行号表，依赖不带调试信息。三种 `-p` 组合各构建一次后 target 由 12.96 小到 9.36 GiB，冷编译快约一成，改一个函数后的重编译不变，工作区代码的 `RUST_BACKTRACE` 仍有 file:line。体积的另一半是增量缓存和测试可执行文件，不随调试信息变化；新增 `tools/clean_target.py`，持有 cargo 的构建锁后清理增量缓存和散放的目标文件 |
 
 ## 1. 目标与范围
 
@@ -447,7 +452,7 @@
 
   - 普通 fsync 一列来自另一组交替对照，那组的基线与本组相差不到 3%。它断电时可能丢最后几条记录（Q-19），只作对照，没有采用。
   - session/new、峰值占用和关闭后的占用没有可测的差异。
-- **本轮汇总与损益**：各项指标对 50% 目标的达成情况、未达成项的瓶颈与可选做法的代价，见 [1103 第二轮报告](benchmarks/1103-round2-performance-report.md)。
+- **本轮汇总与损益**：各项指标对 50% 目标的达成情况、未达成项的瓶颈与可选做法的代价，见 [1103 第二轮报告](benchmarks/1103-round2-performance-report.md)。测量陷阱、走不通的路和定位方法见[性能工作手册](benchmarks/performance-playbook.md)。
 
 **单次任务的内存**（2026-11-03，同一驱动交替运行，取中位数）：
 - **测量方法**：连真实的 DeepSeek 服务跑一次任务（`deepseek-flash`，回答一个词），与另一个同类原生 CLI 的正式版用同一模型、同一提示、同一项目目录交替运行。macOS 取峰值物理占用（`/usr/bin/time -l`，与活动监视器的"内存"一致）；Linux 取峰值 RSS，ACP 模式下另读任务后进程的匿名内存（`/proc/<pid>/smaps_rollup`）。
@@ -810,7 +815,7 @@ pub struct WireRequest {
 | ToolResult | `{role: "tool", tool_call_id, content}`。`compat.tool_result_name` 开启时带上 `name`；接口不支持图片时，把图片挪到紧随其后的一条 user 消息里 |
 | tools | `tools: [{type: "function", function: {name, description, parameters}}]` |
 | 推理等级 | 由 `compat.thinking_format` 决定（§4.13） |
-| 输出上限 | 字段名由 `compat.max_tokens_field` 决定：`max_completion_tokens`（默认）或 `max_tokens` |
+| 输出上限 | 字段名由 `compat.max_tokens_field` 决定：`max_completion_tokens`（默认）或 `max_tokens`；模型的上限未知时不带（§4.8） |
 | 流式 | `stream: true`；`compat.stream_usage` 开启时加上 `stream_options: {include_usage: true}` |
 | 缓存键 | `compat.prompt_cache_key` 开启时发送 `prompt_cache_key` |
 
@@ -936,7 +941,7 @@ v1 内置的厂商：
 
 - 不少厂商同时提供 Anthropic 兼容端点（例如 DeepSeek 的 `https://api.deepseek.com/anthropic`）。需要使用时，新增一个 `api = "anthropic-messages"` 的厂商条目即可。
 - 内置目录中的模型列表和价格会过时，用户配置可以覆盖它们；维护方式已定（Q-08），见 model-catalog-design.md。完整示例见附录 C。
-- 目录中没有列出的模型 id 也可以直接使用：只要厂商存在，就按默认参数（上下文窗口 128,000，输出上限 8,192，不支持推理和图片）生成模型，并发出 warning。
+- 目录中没有列出的模型 id 也可以直接使用：只要厂商存在，就按默认参数（上下文窗口 128,000，不支持推理和图片）生成模型，并发出 warning。输出上限不知道就不设：OpenAI 兼容请求不带这个字段，由服务商决定；Anthropic 接口必须带，用 8,192；提示词给回复预留 32,000（model-catalog-design §4.8）。
 - 单价未配置（为 0）时，界面显示"费用未知"，而不是 0 元。
 
 ### 4.9 鉴权
@@ -1034,31 +1039,36 @@ pub enum ErrorKind {
 推理等级用服务商自己的档位，不再是 finx 统一的六档（v1.25 起，完整规则见 model-catalog-design §18）：`default | off | on | minimal | low | medium | high | xhigh | max`。
 
 - `default`：不发送任何推理参数，由服务商决定；任何模型都可以选。
-- 其余档位：每个模型只提供它支持、且请求格式发得出去的那几个（`ModelSummary.thinking_levels`）；不支持推理或请求格式不能指定推理的模型没有档位，界面隐藏这项设置。
+- 其余档位：每个模型只提供它目录里写明、且这个渠道发得出去的那几个（`ModelSummary.thinking_levels`）；不支持推理或控制方式不明的模型没有档位，界面隐藏这项设置。
 - 请求里出现的档位一定是模型提供的：不提供的档位按 `default` 处理，不再"降到最近的低一档"。
 
-各 `thinking_format` 发送的参数：
+OpenAI 兼容接口上，发什么由模型的控制方式决定，参数名由渠道的 `thinking_format` 决定：
 
-| thinking_format | off | on | 档位（minimal … max） | 推理内容字段 |
+| 模型 | 选一个档位时发送 |
+|---|---|
+| 有档位 | `reasoning_effort: <值>`；模型有开关时同时打开开关 |
+| 只有预算（`qwen` 格式） | 打开开关，加 `thinking_budget`（按下表） |
+
+| thinking_format | off | on | 预算 | 推理内容字段 |
 |---|---|---|---|---|
-| openai | `reasoning_effort: "none"` | 不发送 | `reasoning_effort: <档位>` | chat 接口不返回推理文本 |
-| deepseek | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 开启，并附带 `reasoning_effort: <档位>` | `reasoning_content` |
-| qwen | `enable_thinking: false` | `enable_thinking: true` | 开启，并附带 `thinking_budget`（按下表） | `reasoning_content` |
-| zai | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 同 on | `reasoning_content` |
-| openrouter | `reasoning: {effort: "none"}` | `reasoning: {enabled: true}` | `reasoning: {effort: <档位>}` | `reasoning` |
-| none | — | — | —（这类模型没有档位） | — |
+| 不写 | 只有 `none` 是模型的档位时才有：`reasoning_effort: "none"` | 无 | 无 | `reasoning_content` |
+| openai | `reasoning_effort: "none"` | 不发送 | 无 | chat 接口不返回推理文本 |
+| deepseek、zai | `thinking: {type: "disabled"}` | `thinking: {type: "enabled"}` | 无 | `reasoning_content` |
+| qwen | `enable_thinking: false` | `enable_thinking: true` | `thinking_budget` | `reasoning_content` |
+| openrouter | `reasoning: {effort: "none"}` | `reasoning: {enabled: true}` | 全部用 `reasoning: {effort: <档位>}`，它替每个模型翻译 | `reasoning` |
+| none | —（这类模型没有档位） | — | — | — |
 
-- anthropic-messages：`default` 和 `off` 不发送 thinking 块（Claude 不发就不推理），`on` 和各档位按下表的预算开启。
+- anthropic-messages：`default` 不发送；`off` 发 `thinking: {type: "disabled"}`。只有档位的模型发 `thinking: {type: "adaptive", display: "summarized"}` 和 `output_config: {effort: <档位>}`（新模型收到 `budget_tokens` 会返回 400）；只有预算的模型发 `thinking: {type: "enabled", budget_tokens: <下表>}`；两者都有的发预算并带上档位。
 - 档位发送的值默认就是档位名，模型可以用 `thinking_levels = { high = "<服务商的值>" }` 改写。
 
-预算型推理（anthropic，以及 qwen 的 `thinking_budget`）的默认预算如下，模型可以用 `thinking_budgets` 覆盖：
+预算型推理（anthropic，以及 qwen 的 `thinking_budget`）的默认预算如下，限制在模型的范围之内，模型也可以用 `thinking_budgets` 覆盖。目录写了模型的最大预算时，`max` 就是这个最大值：
 
 | 等级 | minimal | low | medium（以及 on） | high | xhigh | max |
 |---|---|---|---|---|---|---|
 | 预算 token | 1,024 | 4,096 | 10,240 | 24,576 | 28,672 | 32,768 |
 
-- **预算上限**：实际预算不超过 `max_output_tokens − 4,096`，给回复正文留出空间。
-- **请求的 max_tokens**：取 `min(max_output_tokens, 预算 + 16,384)`。
+- **预算上限**：实际预算不超过 `max_output_tokens − 4,096`，给回复正文留出空间；上限未知时不限。
+- **请求的 max_tokens**：取 `min(max_output_tokens, 预算 + 16,384)`；上限未知时取 `预算 + 16,384`。
 
 ### 4.14 HTTP 客户端
 
@@ -2258,6 +2268,7 @@ pub struct SessionHeader {
     pub finx_version: String,
     pub forked_from: Option<ForkRef>,   // M2：派生来源
     pub agent: Option<AgentOrigin>,     // 子智能体的会话才有：根、父、名字、深度、创建它的调用
+    pub bot: Option<BotRef>,            // Bot 的会话才有：Bot 的 id 和建会话时的名字（bot-design §2.1）
 }
 
 pub struct Entry {
@@ -2293,6 +2304,8 @@ pub enum EntryKind {
     Branch,                        // M2：回退标记，parent 指向回退点
     Title { title: String },       // M2
     Date { date: String },         // YYYY-MM-DD：告诉模型日期变了（§7.2）
+    BotName { name: String },      // Bot 会话：告诉模型它的新名字（bot-design §2.4）
+    Unanswered,                    // Bot 会话：任务要结束时主人还没收到回复，提醒模型一次（bot-design §3.11）
     Unknown,                       // 只读不写：以后的版本才有的条目类型
 }
 ```
@@ -2379,6 +2392,7 @@ permission_mode = "manual"          # manual | accept-edits | bypass-permissions
 max_turns = 0                       # 每个任务最多几轮，0 表示不限
 extra_writable_roots = []           # 工作区之外允许写入的目录
 system_prompt_file = ""             # 用该文件整体替换基础提示词
+bot_prompt_file = ""                # 用该文件替换 Bot 会话的基础提示词（bot-design §2.3）
 
 [instructions]
 files = ["AGENTS.md"]
@@ -2768,7 +2782,35 @@ pub enum RuleDecision { Allow, Ask, Deny }
 - **构建配置**：
   - 日常开发用 `release`（thin LTO）。
   - 发布用 `cargo build --profile dist`（fat LTO、codegen-units=1）。可执行文件小约 25%，构建时间约为两倍；启动耗时与 release 的差异在测量误差范围内。
+  - 调试构建（`cargo build`、`cargo test` 用的 `dev` 配置）：工作区自己的 crate 只带行号表（`debug = "line-tables-only"`），依赖不带调试信息（`[profile.dev.package."*"] debug = false`）。取舍和测量见 §15.1。
+  - `target` 占磁盘太多时运行 `python3 tools/clean_target.py [目标目录]`：先取得 cargo 的构建锁，再删 `target/debug/incremental` 和 `target/debug/deps/*.rcgu.o`，别的会话正在编译也不受影响；之后没有重编译的 crate，栈帧里暂时没有 file:line。
 - **CI**：运行 fmt、clippy、test（Linux 和 macOS）、cargo-deny 和性能基准。
+
+### 15.1 调试构建的体积与耗时（D-342）
+
+**问题**：macOS 上 `dev` 的默认是完整调试信息（`debug = 2`）加 `split-debuginfo = "unpacked"`：每个 crate 的目标文件散放在 `target/debug/deps/*.rcgu.o`，同时是 `target/debug/incremental/` 里文件的硬链接。`-p` 的组合不同，依赖的 feature 统一的结果就不同，同一个 crate 每换一种组合就编出新的一份（哈希不同），旧的不再用，cargo 也不清理。2026-11-04 主仓库的 `target` 有 153.6 GiB，其中 `finx_core` 118 份、`finx_server` 101 份，增量缓存加散放的目标文件占 107 GiB；磁盘只剩 213 MB，端到端测试写不下文件。
+
+**测量**：在工作区的副本里，每个方案用单独的 `CARGO_TARGET_DIR`，依次做三次 `cargo test --no-run`：`-p finx-core`、`-p finx-core -p finx-cli`、`--workspace`，三种 feature 统一的结果各留一份；每次之后用 `du -sk` 量整个 target（硬链接只算一次）。耗时在 CPU 空闲至少 75% 时测，取三次的中位数（带 † 的只测了一次）：冷编译是空 target 的第一次构建；改函数是改 `finx-core` 里一个函数后重编译，分 `-p finx-core` 和 `-p finx-core -p finx-cli` 两种。另放三处 panic（测试文件、`finx-core`、依赖 tokio），看 `RUST_BACKTRACE=1` 的栈帧有没有 file:line。机器是 M2 Max，12 核。
+
+| 方案 | 三次构建后的 target（GiB） | 冷编译 墙钟 / CPU（秒） | 改一个函数后重编译（秒）<br>`-p core` / `-p core -p cli` | 栈帧的 file:line |
+|---|---|---|---|---|
+| 原来：`debug = 2`，`unpacked` | 12.96 | 36 / 196 | 3.0 / 6.7 | 都有 |
+| `line-tables-only` | 9.99 | 36 / 171 | 3.0 / 6.5 | 都有；函数名不带模块路径 |
+| `line-tables-only` + `split-debuginfo = "off"` | 9.70 | 42 / 175 † | 3.2 / 6.0 † | 测试 crate 自己的栈帧没有 |
+| `line-tables-only` + `split-debuginfo = "packed"` | 14.53 | 42 / 202 † | 5.4 / 15.2 † | 都有 |
+| **`line-tables-only` + 依赖不带调试信息（采用）** | **9.36** | **33 / 167** | **3.0 / 6.5** | 工作区代码有；依赖的栈帧没有 |
+| 原来 + 关增量缓存 | 7.86 | 33 / 179 | 12.3 / 19.9 | 都有 |
+| 采用 + 关增量缓存 | 5.59 | 31 / 155 † | 11.1 / 15.1 † | 同采用 |
+
+**采用**：`line-tables-only` 加依赖不带调试信息，三种组合共小 28%，冷编译的 CPU 时间少约 15%（墙钟快约 9%），改一个函数后的重编译不变。取舍：
+- 工作区代码的栈帧仍有 file:line，函数名不带模块路径（只有 `foo`，没有 `finx_core::module::foo`）；依赖的栈帧只有函数名。panic 消息里的 `panicked at 文件:行:列` 来自调用位置，任何配置下都有。
+- 调试器能按行下断点、看调用栈，看不到变量和类型。需要完整信息时临时加 `--config 'profile.dev.debug="full"' --config 'profile.dev.package."*".debug="full"'`，不改仓库设置（会多出一份构建组合）。
+- 没有选 `split-debuginfo = "off"`：链接之后目标文件被删，测试 crate 自己的栈帧（出错时最先要看的那几帧）没有 file:line。没有选 `"packed"`：每个可执行文件旁多一个 `.dSYM`（97 个，共 4.7 GiB），比原来还大，重编译慢一倍以上。
+
+**采用之后还剩什么**：调试信息只是体积的一部分。采用后三次构建共 9.36 GiB：增量缓存加散放的目标文件 4.8 GiB（52%）、测试可执行文件 2.8 GiB（29%）、rlib 和 rmeta 1.4 GiB（15%），后两者不随调试信息变化。每多一种 `-p` 组合，target 约增加 3.2–4.2 GiB（原来 4.6–5.6 GiB）。所以这一项让增长慢了约三成，并没有给 `target` 设上限：
+- 旧的组合要定期清，用 `tools/clean_target.py`。
+- 关增量缓存（`CARGO_INCREMENTAL=0`，或 `[profile.dev] incremental = false`）再小约四成，改一个函数后重编译却由 3 秒变成 11–12 秒（`-p core -p cli` 由 6.5 秒变成 15–20 秒），所以没有设为默认；只跑测试、很少改代码的会话可以临时使用。
+- 组合的份数：第二次构建编了 149 个 crate，其中 43 个（含 10 个工作区 crate）第一次已经编过，因为自己或下层依赖的 feature 变了而重编；第三次编了 26 个，其中 19 个是重编。变的只是 `log`、`serde`、`hashbrown`、`hyper` 等少数几个依赖的 feature。如果每种 `-p` 组合解析出同样的 feature，每个 crate 就只留一份：在 nightly 上用 `-Zfeature-unification` 量过上限，采用的配置再加统一，三次构建共 5.14 GiB（9.36 GiB），每多一种组合只增加约 1.6 GiB（3.2–4.2 GiB），第二次构建只编 106 个 crate。stable 的 cargo 1.99.1 没有这个开关，见 Q-149。
 
 ## 16. 技术栈
 
@@ -3039,12 +3081,13 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | D-230 | 模型请求的重试按时长而不是次数：从第一次失败算起最多 10 分钟，退避 30 秒封顶，次数默认不限 | 断网、限流、过载多数在一两分钟内恢复，留一倍余量；更长的服务商事故（中位数约 1 小时）多等十几分钟也救不回来，却让人和父智能体干等。界面一直显示倒计时，可以随时停止 | §4.11 |
 | D-231 | 已经开始输出的回复中途断开也重发，前一次的半截丢弃 | 失败的回复本来就不发回给模型，重发对模型一侧是干净的；推理模型思考几分钟后断网，不该让整个任务失败、等人来点重试 | §4.11、§6.5 |
 | D-232 | 经由连接的请求每次尝试各取一个租约，取授权的网络错误也重试 | 等待重试时不占着连接，断开连接不用陪着等；换发凭据失败多是一时连不上来源应用的服务 | §4.11 |
-| D-233 | 基础提示词只写工具守则和各段落说不到的东西：身份与领域、做事的分寸、数字与数据的规矩、对外和不可逆操作、回复的写法；不写客户端或内核没有的能力 | 工具、Skill、子智能体、延迟工具各自的段落已有说明，重复只占上下文；提示词描述不存在的能力会误导模型 | 附录 D |
+| D-233 | 基础提示词只写工具守则和各段落说不到的东西：身份与领域、做事的分寸、数字与数据的规矩、不可逆操作、回复的写法；不写客户端或内核没有的能力 | 工具、Skill、子智能体、延迟工具各自的段落已有说明，重复只占上下文；提示词描述不存在的能力会误导模型 | 附录 D |
 | D-234 | 日期变了不改系统提示词，而是在当前上下文最后给出的日期与今天不同时追加一条 `<environment_update>`；判断以上下文为准，压缩、resume、子智能体都按同一条规则 | 只追加，缓存不受影响；模型能看出前面的对话发生在另一天，相对日期不会算错；按上下文判断不用另记状态，回退和压缩后自然正确 | §7.2 |
 | D-235 | 不认识的条目类型读作 `Unknown`，留在分支上但不参与任何处理，也不写出 | 分支靠 `parent` 串起来，跳过一行会断开；以后新增条目类型时，旧版本读到也不会只看到半段会话 | §9.2 |
 | D-236 | 增量的估算用本窗口的系数：当前模型连续响应的真实输入增长 ÷ 这之间新增内容的估算；不足两次响应、累计太小或系数越界时退回整次请求的系数 | 用量的增长全来自新增消息，整次系数被系统提示词和工具定义主导，测不准数据密集的工具结果；按窗口累计、按数据量加权，大小轮次交替时也测得准；从日志里算出，任务内和恢复后一致 | §7.5.4 |
 | D-237 | 提示词只补模型在做决定时用得上、各段落没说的：用户的话优先于说明文件和 Skill；摘要后的目标说明放在摘要的包装里；外来文件的提醒放在 bash 守则里，只要求不在它们的目录里运行、脚本不放进去，不要求 `python -I`。不写压缩提示、`rg` 优先、输出分隔符，Skill 目录的引导语也不改 | 放在模型做决定的位置；`-I` 会让用户目录下装的包导入失败；模型看不到用量，没有观察到提前收尾；普通电脑上多半没有 `rg`；Skill 的引导语经真实模型验收过，改要先测触发率 | 附录 D、附录 E、§5 |
 | D-239 | 工具结果的预算按 token 计，4 字节 1 个 token，不调用分词器；工具自身的预算默认 10,000 token，内核兜底为它的 1.2 倍；单个结果仍不超过可用窗口的 10% | 与上下文窗口、压缩阈值同一个单位，配置和给模型的说明都按 token 说；按字节换算不增加开销，在 Qwen3.8-Flash 上实测，中文为主的文本偏差 −5% 到 +3%，英文 +10%；兜底的余量按比例给，工具附加的说明不会让结果被裁第二次；裁掉的部分可以读回，预算比原来的 50 KB（约 12,800 token）小一些也不丢信息 | §5.7 §10.2 |
+| D-342 | 调试构建只给工作区自己的 crate 行号表（`debug = "line-tables-only"`），依赖不带调试信息；保留 `split-debuginfo` 的默认值和增量缓存 | 三种 `-p` 组合各构建一次后 target 由 12.96 小到 9.36 GiB（小 28%），冷编译快约一成，改一个函数后的重编译不变；工作区代码的 `RUST_BACKTRACE` 仍有 file:line，panic 消息里的位置在任何配置下都有。`split-debuginfo = "off"` 让测试 crate 自己的栈帧没有 file:line；`"packed"` 更大（14.53 GiB）且重编译慢一倍以上；关增量缓存可再小约四成，重编译却慢 4 倍。体积的大头（增量缓存约一半、测试可执行文件约三成）不随调试信息变化，所以还需要清理旧的构建组合 | §15.1 |
 
 ## 20. 待定问题
 
@@ -3090,6 +3133,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | Q-95 | 任务的终止事件要不要等日志落盘之后再发 | 等。终止事件在任务条目 fsync 之后才发出，所以中断到 `task_interrupted` 约 5 ms，其中约 4 ms 是 F_FULLFSYNC。先发事件再落盘可以省掉这段等待，代价是客户端看到任务结束时，结束记录可能还没落盘；与 Q-19 一起决定 | §9.3 §1.4 |
 | Q-96 | 要不要缓存上一次请求体、只序列化新增的消息 | 暂不。上下文只追加，相邻两次请求的请求体前缀相同；长任务里序列化请求体占每轮用户态 CPU 的约两成。缓存的代价是每个运行中的会话多占一份上下文大小的内存（0.3–0.8 MB），压缩后作废 | §1.4 §4.6 |
 | Q-97 | 要不要把 skill 的扫描结果缓存到磁盘 | 暂不。有 76 个用户级 skill 时，每次启动扫描约 1.8 ms，主要是打开和读取 SKILL.md。可以按目录和文件的修改时间缓存，代价是缓存与文件不一致时的风险，以及多一个需要维护的文件 | §1.4 skill-design |
+| Q-149 | 让每种 `-p` 组合解析出同样的 feature，使每个 crate 只编一份 | 值得做，尚未做。stable 的 cargo 1.99.1 没有现成的开关（`resolver.feature-unification = "workspace"` 要 nightly 的 `-Zfeature-unification`），可行的做法是 workspace-hack crate，或在一个必依赖的 crate 里写明那十几个 feature；要先量对发布构建的影响（二进制大小、启动耗时） | §15.1 |
 
 ## 21. 风险与对策
 
@@ -3216,13 +3260,25 @@ cost = { input = 0.0, output = 0.0 }
 原文在 `crates/finx-core/src/prompts/base.md`（D-233）。会话开始时，内核在它后面依次拼上工具守则、说明文件、Skill 目录和环境信息（§7.2），子智能体沿用同一份。
 
 ```
-You are FinxWork, an agent for professional finance and office work: you write documents,
-run calculations, analyze data and program. You work in the user's workspace by reading
-and writing files, running commands and using the other tools you have.
+You are FinxWork, an agent for professional finance and office work, skilled at using your
+tools to help the user with a wide range of tasks. You excel at tasks including, but not
+limited to:
+1. Gathering information, checking facts and producing comprehensive documents or
+   presentations.
+2. Processing and analyzing data, and creating insightful charts or spreadsheets.
+3. Writing multi-chapter articles and in-depth research reports based on reliable sources.
+4. Writing and running programs.
+
+You work in the user's workspace by reading and writing files, running commands and using
+the other tools you have.
 
 How to work:
-- Carry requests through to a finished result: even when one is phrased as a question, do
-  the work rather than stopping at a plan or confirming what you can do.
+- Carry requests for work through to a finished result, including ones phrased as
+  "can you…", rather than stopping at a plan. When the user asks you to explain, review,
+  report status or diagnose, investigate and answer with the evidence; change things only
+  if they asked for that.
+- When the user questions a result, recheck it and answer with the evidence. Change your
+  conclusion because the evidence does, not to agree.
 - Settle routine choices yourself and say what you assumed; ask first only when the choice
   would materially change the outcome or would be hard to undo.
 - Read the relevant files, data or code before acting. Keep changes focused on the
@@ -3235,28 +3291,34 @@ How to work:
 - Verify your work when practical: run the code or tests, check that totals reconcile, and
   look over the file you produced. If a check failed or you could not verify something,
   say so.
+- Give answers and analysis in the reply; create a file only when asked or when the result
+  has to be one. Keep throwaway scripts and intermediate files in a temp directory, not the
+  user's folder.
 
 Numbers and data:
 - Calculate with code, not in your head: run every calculation beyond simple arithmetic as
   a script and take the figures from its output.
 - Every figure you report must come from the user's data, a tool result or a calculation
-  you ran, unless labeled as an assumption or estimate. Never invent figures, dates or
-  sources; when data is missing, say so.
+  you ran, unless labeled as an assumption or estimate. Never invent figures, dates, sources,
+  file contents or the results of work you did not do; when data is missing, say so.
+- Keep what you found apart from what you infer; conclude clearly when the evidence supports
+  it, and say what is uncertain when it does not.
 - State units, currency, period and as-of dates. What you remember about prices, rates,
   markets and regulations may be out of date: use a current source when recency matters,
   or say how old your information is. Use today's date from the latest
   `<environment_update>`, or from `<environment>` if there is none.
+- Keep comparisons on one period, frequency, currency and basis. Tell reporting period from
+  publication date and actual from forecast, and turn ambiguous relative dates into
+  explicit ones.
+- Take data from a connected tool or official API when there is one, before general search
+  or browsing. Cite external, time-sensitive or disputed facts with a Markdown link next to
+  the claim, preferring primary sources such as regulators, exchanges and company filings.
 
 Acting with care:
 - Documents and spreadsheets often have no version history: write results to a new file
   unless the user asked to change the original. Never discard or overwrite changes you did
   not make, and do not run destructive commands (for example `git reset --hard` or
   `rm -rf`) unless the user asked for them.
-- Sending messages or email, publishing, submitting forms, and making payments, transfers
-  or trades reach other people or cannot be undone. Do them only when the user asked for
-  that action and its details (recipient, content, amount); otherwise prepare the draft or
-  details first and ask, so the user approves a concrete result. An approval covers only
-  the action it was given for.
 - When a tool call is denied or not approved, do not retry it or get the same effect another
   way, such as a different command, a script or another tool. Change your approach, or tell
   the user what you need and why.

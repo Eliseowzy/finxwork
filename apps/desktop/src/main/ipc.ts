@@ -6,7 +6,8 @@ import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, Deskt
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
 import { devServers } from "./browser/devservers";
-import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testNotification } from "./notify";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { editors, opensFolders } from "./editors";
@@ -25,7 +26,7 @@ function trusted(e: IpcMainEvent | IpcMainInvokeEvent): boolean {
   return !!e.senderFrame && ours(e.senderFrame.url);
 }
 
-const noMenuState: MenuState = { main: false, session: null, sidebar: true, undo: false };
+const noMenuState: MenuState = { main: false, session: null, botApprovable: false, sidebar: true, undo: false };
 let menuState = noMenuState;
 export const currentMenuState = () => menuState;
 export const menuStateListeners = new Set<() => void>();
@@ -315,6 +316,14 @@ export function registerIPC() {
     return key ? desktopApp(key) : null;
   });
   ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
+  ipcMain.handle("system-browser-open-quietly", (e) => (trusted(e) ? openSystemBrowserQuietly() : undefined));
+  ipcMain.handle("system-browser-repair", (e) => (trusted(e) ? refreshSystemBrowser() : undefined));
+  ipcMain.handle("system-browser-diagnose", (e) => (trusted(e) ? diagnoseSystemBrowser() : null));
+  ipcMain.handle("take-open-target", (e) => (trusted(e) ? takeOpenTarget() : null));
+  ipcMain.handle("screen-locked", (e) => (trusted(e) ? screenLocked() : false));
+  ipcMain.on("test-notification", (e) => trusted(e) && testNotification());
+  ipcMain.on("open-notification-settings", (e) => trusted(e) && openNotificationSettings());
+  ipcMain.on("show-main-window", (e) => trusted(e) && void showMain());
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
@@ -411,6 +420,28 @@ export function registerIPC() {
     if (r.canceled) return [];
     return attachFiles(r.filePaths);
   });
+  // A bot's avatar (bot-mode-design §6.3): the system reads the picture, HEIC too; the page gets
+  // a square 256 px PNG, which is all finx keeps.
+  ipcMain.handle("pick-avatar", async (e) => {
+    if (!trusted(e)) return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      properties: ["openFile"] as "openFile"[],
+      filters: [{ name: i18n.t("main:dialog.images"), extensions: ["png", "jpg", "jpeg", "heic"] }],
+    };
+    // End-to-end tests: the system's dialog cannot be driven, so a file stands for what was picked.
+    const r = menuTests ? { canceled: false, filePaths: [path.join(menuTests, "avatar.png")] } : await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+    const file = r.canceled ? undefined : r.filePaths[0];
+    if (!file) return null;
+    const size = await fs.promises.stat(file).then((s) => s.size, () => 0);
+    if (size > 10 * 1024 * 1024) return { error: "too_large" };
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return { error: "unreadable" };
+    const { width, height } = img.getSize();
+    const side = Math.min(width, height);
+    const square = img.crop({ x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), width: side, height: side });
+    return { png: square.resize({ width: 256, height: 256, quality: "best" }).toPNG().toString("base64") };
+  });
   // What is pasted into the composer: the files and folders copied (in Finder, Explorer), else
   // a picture with no file (a screenshot). Read only when the person pastes.
   ipcMain.handle("paste-files", async (e): Promise<PastedItem[]> => {
@@ -446,7 +477,12 @@ export function registerIPC() {
     });
   });
   ipcMain.handle("preferences", (e) => (trusted(e) ? preferences() : null));
-  ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => (trusted(e) && typeof p === "object" && p !== null ? setPreferences(p) : null));
+  ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => {
+    if (!trusted(e) || typeof p !== "object" || p === null) return null;
+    const next = setPreferences(p);
+    notifier.refresh();
+    return next;
+  });
   ipcMain.handle("update-info", (e) => (trusted(e) ? updateInfo() : null));
   ipcMain.on("check-updates", (e) => trusted(e) && void check());
   ipcMain.on("download-update", (e) => trusted(e) && download());

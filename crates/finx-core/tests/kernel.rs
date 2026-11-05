@@ -103,6 +103,7 @@ async fn start(
         project_root: None,
         trusted: false,
         interactive_approvals: interactive,
+        bot: None,
     };
     let mut deps = deps(&api, &work, &home);
     if !extra.is_empty() {
@@ -534,6 +535,7 @@ async fn interrupting_a_running_tool_keeps_history_valid_and_resumes() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &h.work, &h.home)).await.unwrap();
     let started = until(&mut kernel, |m| matches!(m, EventMsg::SessionStarted { .. })).await;
@@ -1145,11 +1147,6 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
     registry.register_api(api.clone());
     let mut other = ScriptedApi::provider();
     other.id = "other".into();
-    other.models = other
-        .models
-        .iter()
-        .map(|m| Arc::new(finx_llm::Model { provider: "other".into(), ..(**m).clone() }))
-        .collect();
     registry.insert_provider(other);
     deps.llm = Arc::new(registry);
     let config = Config { model: "other/scripted".into(), ..Config::default() };
@@ -1163,6 +1160,7 @@ async fn a_session_whose_provider_was_removed_resumes_on_the_configured_model() 
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps).await.unwrap();
     let events = until(&mut kernel, |m| matches!(m, EventMsg::SessionStarted { .. })).await;
@@ -1219,6 +1217,7 @@ async fn resumed(home: &FinxHome, work: &Path, session_id: &str, api: &Arc<Scrip
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     Kernel::resume(options, deps(api, work, home)).await.unwrap()
 }

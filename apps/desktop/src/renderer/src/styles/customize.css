@@ -40,9 +40,9 @@
 .cz-wait{display:flex;align-items:center;gap:8px;color:var(--l2);font-size:12.5px;padding:var(--sp-3) 4px}
 
 .cz-tile{width:32px;height:32px;border-radius:var(--r-md);background:var(--fill2);color:var(--l2);display:flex;align-items:center;justify-content:center;flex:none;font-weight:650;font-size:12.5px;letter-spacing:-.02em}
-.cz-tile .ic{width:17px;height:17px;stroke-width:1.35}
+.cz-tile .ic{width:17px;height:17px;stroke-width:2.025}
 .cz-tile.xl{width:52px;height:52px;border-radius:var(--r-lg);font-size:17px}
-.cz-tile.xl .ic{width:26px;height:26px;stroke-width:1.25}
+.cz-tile.xl .ic{width:26px;height:26px;stroke-width:1.875}
 /* A logo (customize-design §10.10). One that is a tile fills the shape, nothing around it, under
    a hairline that keeps a white icon's edge on a light page and a black one's on a dark page;
    one with its own rounded corners keeps them, unlined. A mark sits on the plain plate, which
@@ -100,13 +100,13 @@
 /* Add: a round + that turns into a spinner, then a check. */
 .cz-inst{width:26px;height:26px;border-radius:50%;border:0;padding:0;background:var(--btn);box-shadow:var(--btn-sh);display:flex;align-items:center;justify-content:center;color:var(--l1);transition:background .15s,color .15s}
 .cz-inst:hover{background:var(--accent);color:#fff;box-shadow:none}
-.cz-inst .ic{width:14px;height:14px;stroke-width:1.6}
+.cz-inst .ic{width:14px;height:14px;stroke-width:2.4}
 .cz-inst.busy{pointer-events:none;background:var(--fill);box-shadow:none}
 .cz-inst.done{background:var(--fill);color:var(--l2);box-shadow:none;pointer-events:none}
-.cz-inst.done .ic{stroke-width:2}
+.cz-inst.done .ic{stroke-width:3}
 
 .cz-empty{display:flex;flex-direction:column;align-items:center;text-align:center;padding:var(--sp-5) var(--sp-3);border-radius:var(--r-lg);background:var(--win2);color:var(--l2);gap:6px;font-size:12.5px}
-.cz-empty>.ic{width:26px;height:26px;color:var(--l3);stroke-width:1.1;margin-bottom:4px}
+.cz-empty>.ic{width:26px;height:26px;color:var(--l3);stroke-width:1.65;margin-bottom:4px}
 .cz-empty b{color:var(--l1);font-weight:500;font-size:13px}
 .cz-empty .acts{display:flex;gap:8px;margin-top:var(--sp-1)}
 
@@ -303,7 +303,7 @@
 .cz-addrow .ic{width:12px;height:12px}
 .cz-drop{border:1.5px dashed var(--fill3);border-radius:var(--r-lg);padding:34px 21px;display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--l2);text-align:center;transition:background .15s,border-color .15s}
 .cz-drop.over{border-color:var(--accent);background:var(--accent-bg)}
-.cz-drop>.ic{width:30px;height:30px;color:var(--l3);stroke-width:1.1}
+.cz-drop>.ic{width:30px;height:30px;color:var(--l3);stroke-width:1.65}
 .cz-drop b{color:var(--l1);font-weight:500;font-size:14px}
 .cz-drop small{font-size:12px;color:var(--l3)}
 .btn.cz-pick{margin-top:6px}
@@ -312,7 +312,7 @@
 .cz-parsed b{font-weight:500}
 .cz-parsed p{margin:3px 0 0;font-size:12.5px;color:var(--l2);line-height:1.5}
 .cz-parsed .badge{display:inline-flex;align-items:center;gap:4px;flex:none}
-.cz-parsed .badge .ic{width:11px;height:11px;stroke-width:2}
+.cz-parsed .badge .ic{width:11px;height:11px;stroke-width:3}
 .cz-dlabel{font-size:12px;color:var(--l2);margin:var(--sp-3) 0 var(--sp-1)}
 .cz-target{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--l2);background:var(--win2);border-radius:var(--r-md);padding:9px 13px}
 .cz-target .ic{color:var(--l3)}
@@ -352,7 +352,7 @@ code.cz-code{font-family:var(--mono);font-size:11px;color:var(--l2);background:v
 .cz-pop .lbl{overflow:hidden;text-overflow:ellipsis}
 .cz-pop .chev{width:13px;height:13px;color:var(--l2)}
 .cz-pop .badge{height:17px;padding:0 5px;font-size:10.5px;gap:2px}
-.cz-pop .badge .ic{width:10px;height:10px;stroke-width:2.2}
+.cz-pop .badge .ic{width:10px;height:10px;stroke-width:3.3}
 .cz-pop.open{box-shadow:var(--btn-sh),0 0 0 3px var(--accent-bg)}
 .cz-menu .mi.tall>.ck{margin-top:8px}
 .cz-menu .mi .badge{height:16px;padding:0 5px;font-size:10px}
@@ -377,7 +377,7 @@ textarea.field.cz-grow{height:auto;min-height:30px;padding:6px 9px;line-height:1
 .cz-steps .done{background:var(--green);color:#fff}
 .cz-steps .fail{background:var(--red);color:#fff}
 .cz-steps .skip{background:var(--fill2);color:var(--l3)}
-.cz-steps .si .ic{width:11px;height:11px;stroke-width:2.4}
+.cz-steps .si .ic{width:11px;height:11px;stroke-width:3.6}
 .cz-steps .st{flex:1;min-width:0}
 .cz-steps .st b{font-weight:400;display:block}
 .cz-steps .st small{display:block;font-size:11.5px;color:var(--l2);margin-top:2px;overflow-wrap:anywhere}
@@ -394,7 +394,7 @@ textarea.field.cz-grow{height:auto;min-height:30px;padding:6px 9px;line-height:1
 .cz-center{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:var(--sp-4) var(--sp-3) var(--sp-2)}
 .cz-center .big{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-bottom:6px}
 .cz-center .big.ok{background:var(--green);color:#fff}
-.cz-center .big.ok .ic{width:22px;height:22px;stroke-width:2.2}
+.cz-center .big.ok .ic{width:22px;height:22px;stroke-width:3.3}
 .cz-center .big .mini-spin{width:30px;height:30px;border-width:2.5px}
 .cz-center b{font-size:15px;font-weight:600}
 .cz-center p{margin:0;color:var(--l2);font-size:12.5px;line-height:1.55;max-width:420px}

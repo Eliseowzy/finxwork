@@ -138,13 +138,6 @@ pub fn list(llm: &ModelRegistry, defaults: &SessionDefaults, refreshing: &dyn Fn
             providers.push(summary);
             continue;
         }
-        if matches!(provider.auth, AuthConfig::Managed) {
-            let meta = ModelMeta { known: true, configured: true, chat: true, ..Default::default() };
-            // An account connection's models are all shown unless the user hid some.
-            models.extend(provider.models.iter().map(|m| summary_of(llm, m, &meta, true, selection.is_shown(&m.reference(), true))));
-            providers.push(summary);
-            continue;
-        }
         let merged = directory.models(&provider);
         let list = merged.list.as_ref();
         if !unreachable(&provider, list) {
@@ -207,7 +200,6 @@ pub fn set_shown(llm: &ModelRegistry, default_model: &str, reference: &str, show
     let provider =
         llm.provider(provider_id).ok_or_else(|| format!("unknown provider '{provider_id}'"))?;
     let by_default = reference == default_model
-        || matches!(provider.auth, AuthConfig::Managed)
         || llm.directory().models(&provider).default_shown(provider.listing.from.is_some()).contains(model_id);
     llm.directory().set_shown(reference, shown, by_default).map_err(|e| e.message)
 }
@@ -234,7 +226,7 @@ mod tests {
             .unwrap();
         provider.id = "qwenwork-a".into();
         provider.auth = AuthConfig::Managed;
-        provider.models = ["flash", "pro"].map(|id| std::sync::Arc::new(provider.ad_hoc_model(id))).to_vec();
+        provider.listing.entries = ["flash", "pro"].map(finx_llm::catalog::ModelToml::new).to_vec();
         llm.replace_source("model-connections", vec![provider]).unwrap();
         let defaults = SessionDefaults { model: "deepseek/deepseek-flash".into(), thinking: ThinkingLevel::Medium, permission_mode: PermissionMode::Manual };
         let shown = |llm: &ModelRegistry| -> Vec<(String, bool)> {
