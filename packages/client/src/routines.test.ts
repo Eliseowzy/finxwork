@@ -24,7 +24,8 @@ test("the list's groups keep their order within", () => {
 });
 
 test("a row's second line says what matters most", () => {
-  assert.equal(routineLine(routine({ running: true, last_run: { started: "2026-11-05T01:00:00Z", outcome: "failed" } })).kind, "running");
+  assert.deepEqual(routineLine(routine({ running: true, last_run: { started: "2026-11-05T01:00:00Z" } })), { kind: "running", since: new Date("2026-11-05T01:00:00Z") });
+  assert.deepEqual(routineLine(routine({ running: true })), { kind: "running", since: null });
   assert.equal(routineLine(routine({ next_run: "2026-11-05T08:00:00Z", last_run: { started: "2026-11-05T01:00:00Z", outcome: "failed" } })).kind, "failed");
   assert.deepEqual(routineLine(routine({ next_run: "2026-11-05T08:00:00Z" })), { kind: "next", when: "每天 8 点", at: new Date("2026-11-05T08:00:00Z") });
   assert.deepEqual(routineLine(routine({ state: "paused" })), { kind: "when", when: "每天 8 点" });
@@ -44,6 +45,10 @@ test("three or more quiet runs in a row fold into one row, which can be opened",
 test("how long a run took and how late it was", () => {
   assert.equal(runTook(run("1", "quiet", { ended: "2026-11-05T01:00:11Z" })), 10_000);
   assert.equal(runTook(run("1", null)), null);
+  assert.equal(runTook(run("1", null), new Date("2026-11-05T01:03:01Z")), 180_000, "one still running counts up to now");
+  assert.equal(runTook(run("1", "quiet", { ended: "2026-11-05T01:00:11Z" }), new Date("2026-11-05T01:03:01Z")), 10_000, "one that ended stays as it was");
+  assert.equal(runTook(run("1", "interrupted"), new Date("2026-11-05T01:03:01Z")), null, "an end nobody wrote down is not still running");
+  assert.equal(runTook(run("1", "skipped", { started: undefined }), new Date("2026-11-05T01:03:01Z")), null);
   assert.equal(runLate(run("1", "quiet")), null);
   assert.equal(runLate(run("1", "quiet", { late: true, started: "2026-11-05T03:00:00Z" })), 2 * 3_600_000);
 });

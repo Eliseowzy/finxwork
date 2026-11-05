@@ -7,6 +7,7 @@ import { filesChanged, isPasswordError, lockedOut, setFilesConnection, showDoc, 
 import { Icon } from "../icons";
 import { useStore } from "../store";
 import { BrowserPanel, useBrowserTabs } from "./Browser";
+import { bringBrowserBack, browserPutAway, putBrowserAway } from "./browserPanel";
 import { recheckFiles } from "./scope";
 
 // The file panel, PDFs included, and the browser beside a conversation: what a session's page and
@@ -67,11 +68,16 @@ export function useSidePanels(session: string, view: SessionView | null, held = 
       },
     };
   }, [rpc, session, cwd]);
-  // The first page the conversation opens brings the browser panel out.
+  // The first page the conversation opens brings the browser panel out, unless the person put it away here.
   const hasTabs = tabs.length > 0;
   useEffect(() => {
-    // Not over the file panel, which the person opened.
-    if (hasTabs && !st.files) st.set({ browser: true, background: false });
+    if (!hasTabs) return;
+    if (browserPutAway(session)) {
+      if (st.browser) st.set({ browser: false, browserMax: false });
+      return;
+    }
+    // Not over the panels the person opened.
+    if (!st.files && !st.background) st.set({ browser: true });
   }, [hasTabs, session]);
   // What finx says changed on disk reaches the file panel's files, whichever session they are in.
   useEffect(() => {
@@ -99,6 +105,7 @@ export function SidePanelButtons({ panels }: { panels: SidePanels }) {
           aria-label={t("browser.builtIn")}
           aria-pressed={false}
           onClick={() => {
+            bringBrowserBack(session);
             if (tabs.length > 0) st.set({ browser: true, background: false, files: false, filesMax: false });
             else void st.run(async () => {
               await window.finx?.openBrowser(session);
@@ -148,7 +155,10 @@ export function SidePanelViews({ panels, view }: { panels: SidePanels; view: Ses
           tabs={tabs}
           max={max}
           onMax={(m) => st.set({ browserMax: m })}
-          onClose={() => st.set({ browser: false, browserMax: false })}
+          onClose={() => {
+            putBrowserAway(session);
+            st.set({ browser: false, browserMax: false });
+          }}
         />
       )}
     </>

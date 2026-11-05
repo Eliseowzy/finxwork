@@ -1,8 +1,10 @@
 import { baseName, toolOutput, type ToolView } from "@finx/client";
 import type { EditorInfo, MenuItem, PathInfo } from "../../../shared/bridge";
 import { i18n } from "../../../shared/i18n";
+import { isPageFile } from "../../../shared/pageFile";
 import type { Store } from "../store";
 import { showFile } from "../files/state";
+import { bringBrowserBack } from "./browserPanel";
 import { recheckFiles, type Scope } from "./scope";
 
 // What a reply's files, links, code blocks and steps do, from a click or their native menus
@@ -57,12 +59,38 @@ export async function openRef(st: Store, info: PathInfo, line?: number, app?: st
   } else if (r.how === "revealed") st.show(t(mac() ? "content.revealed" : "content.revealedOther", { name }));
 }
 
+/** Whether a file opens as a page here: an HTML file, with a browser to show it in (none in the web preview). */
+export const opensAsPage = (path: string) => !!window.finx && isPageFile(path);
+
+/** An HTML file as the page it is, in the session's browser (DD-157), brought to the front. */
+export function showPage(st: Store, session: string, path: string) {
+  void st.run(async () => {
+    if (await window.finx?.openPageFile(session, path)) {
+      bringBrowserBack(session);
+      return st.set({ browser: true, background: false, files: false, filesMax: false });
+    }
+    recheckFiles();
+    st.show(t("content.missing", { name: baseName(path) }), undefined, true);
+  });
+}
+
+/** One more way to see a file in the app, in its menu right after Open. */
+export type FileView = { label: string; run: () => void };
+
+/** An HTML file's other view, given the one a click takes: its source beside the page, the page beside its source. */
+export function otherView(st: Store, session: string, cwd: string, path: string, clickShows: "page" | "source"): FileView | undefined {
+  if (!opensAsPage(path)) return undefined;
+  return clickShows === "page"
+    ? { label: t("content.viewSource"), run: () => showFile(st, session, cwd, path) }
+    : { label: t("content.previewInBrowser"), run: () => showPage(st, session, path) };
+}
+
 /**
- * A file's or folder's menu (§4.5). `open` opens it in the session's file panel (file-panel-design
- * DD-91): the first item when given (not in the panel itself). "Open With" is this once: the
- * default app or an editor, at the line where the editor takes one.
+ * A file's or folder's menu (§4.5). `open` opens it in the app: the first item when given (not in
+ * the panel itself), with `view` after it. "Open With" is this once: the default app or an
+ * editor, at the line where the editor takes one.
  */
-export async function fileMenu(st: Store, info: PathInfo, line: number | undefined, open?: () => void) {
+export async function fileMenu(st: Store, info: PathInfo, line: number | undefined, open?: () => void, view?: FileView) {
   const copies: MenuItem[] = [{ id: "copyPath", label: t("content.copyPath") }, ...(info.rel ? [{ id: "copyRel", label: t("content.copyRelative") }] : [])];
   let items: MenuItem[];
   if (info.kind === null) items = copies;
@@ -81,6 +109,7 @@ export async function fileMenu(st: Store, info: PathInfo, line: number | undefin
     } else {
       items = [
         ...(open ? [{ id: "open", label: t("content.open") }] : []),
+        ...(view ? [{ id: "view", label: view.label }] : []),
         {
           id: "with",
           label: t("content.openWith"),
@@ -100,6 +129,8 @@ export async function fileMenu(st: Store, info: PathInfo, line: number | undefin
   switch (id) {
     case "open":
       return open?.();
+    case "view":
+      return view?.run();
     case "openFolder":
       return window.finx?.openFolder(info.path);
     case "terminal":
@@ -121,6 +152,7 @@ export function openLink(st: Store, url: string, scope: Scope, external: boolean
   if (external || !scope) return finx.openExternal(url);
   void st.run(async () => {
     await finx.openURL(scope.session, url);
+    bringBrowserBack(scope.session);
     st.set({ browser: true, background: false, files: false, filesMax: false });
   });
 }
@@ -169,7 +201,7 @@ export function stepMenu(st: Store, tool: ToolView, scope: Scope): boolean {
     const line = tool.category === "read" && offset >= 1 ? offset : undefined;
     void window.finx
       ?.pathInfo(scope.cwd, [path])
-      .then(([info]) => info && fileMenu(st, info, line, () => showFile(st, scope.session, scope.cwd, info.path, { line })));
+      .then(([info]) => info && fileMenu(st, info, line, () => showFile(st, scope.session, scope.cwd, info.path, { line }), otherView(st, scope.session, scope.cwd, info.path, "source")));
     return true;
   }
   if (tool.category !== "execute") return false;

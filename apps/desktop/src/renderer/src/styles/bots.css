@@ -168,22 +168,32 @@
 .bproc-h{padding:var(--sp-1) var(--sp-2) 2px;font-size:12px;color:var(--l3)}
 .tg-b.bproc>.am{padding:var(--sp-1) var(--sp-2)}
 
-/* Busy: the last bubble. Three dots while it answers; with sub-agents at work, what they do, opening to each one's
-   steps and how long it has worked. */
+/* Busy: the last bubble. Three dots while it answers; with sub-agents at work, the dots quieten and what they do opens
+   out after them, shimmering like the list. Several open to each one's name. */
 .wbub{display:flex;flex-direction:column;padding:0}
-.wb-h{display:flex;align-items:center;gap:9px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}
+.wb-h{display:flex;align-items:center;gap:7px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}
 button.wb-h{cursor:pointer}
 .dots{display:inline-flex;align-items:center;gap:4px;height:21px;flex:none}
-.dots i{width:6px;height:6px;border-radius:50%;background:var(--l3);animation:dot 1.3s ease-in-out infinite}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--l3);animation:dot 1.3s ease-in-out infinite;transition:width .2s var(--ease-out),height .2s var(--ease-out)}
 .dots i:nth-child(2){animation-delay:.16s}
 .dots i:nth-child(3){animation-delay:.32s}
 @keyframes dot{0%,60%,100%{transform:none;opacity:.4}30%{transform:translateY(-3px);opacity:.95}}
+/* Beside words the dots are smaller and only glow in turn, left to right, twice for each pass of the words' shimmer. */
+.dots.quiet{gap:3px}
+.dots.quiet i{width:4px;height:4px;background:var(--l2);animation:dot-quiet 1.2s ease-in-out infinite}
+.dots.quiet i:nth-child(2){animation-delay:.2s}
+.dots.quiet i:nth-child(3){animation-delay:.4s}
+@keyframes dot-quiet{0%,60%,100%{opacity:.35}30%{opacity:1}}
+/* The words open out from behind the dots, cut rather than ellipsised on the way; the shimmer stays on the words themselves. */
+.wb-w{display:flex;min-width:0;overflow:hidden;text-overflow:ellipsis;interpolate-size:allow-keywords;animation:wb-open .24s var(--ease-out)}
+.wb-w .wb-t{text-overflow:inherit}
+@keyframes wb-open{from{width:0;opacity:0;text-overflow:clip}to{width:auto;opacity:1;text-overflow:clip}}
 .wb-t{min-width:0;font-size:14px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.wb-h .chev{width:14px;height:14px;margin-left:-5px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s var(--ease-out)}
+.wb-h .chev{width:14px;height:14px;margin-left:-3px;color:var(--l3);transform:rotate(-90deg);transition:transform .15s var(--ease-out)}
 .wb-h[aria-expanded="true"] .chev{transform:none}
 .wb-l{display:flex;flex-direction:column;gap:2px;padding:0 15px 10px}
 .wb-r{min-width:0;font-size:14px;line-height:21px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-@media (prefers-reduced-motion:reduce){.dots i{animation:none;opacity:.6}}
+@media (prefers-reduced-motion:reduce){.dots i,.dots.quiet i{animation:none;opacity:.6;transition:none}.wb-w{animation:none}}
 
 /* A new bot's empty page: its avatar, its name, one line on how to start. */
 .bempty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--sp-1);padding-top:14vh}
@@ -202,6 +212,15 @@ button.wb-h{cursor:pointer}
 .bs-hues{display:flex;gap:10px;padding:2px}
 .bs-hue{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:var(--h)}
 .bs-hue.on{box-shadow:0 0 0 2px var(--win),0 0 0 3.5px var(--l1)}
+.bs-k.bs-model{margin-top:var(--sp-3)}
+.bmodel .frow>.fl{width:auto}
+.bmodel .frow>.fv{flex-wrap:nowrap}
+.bmodel .mb{margin-right:-7px}
+.bmodel .mb .lbl{max-width:200px}
+.bmodel-why{margin:var(--sp-1) 0 0}
+.bsetup .knote-i{color:var(--l2)}
+.bsetup .bmodel{margin:0 0 4px 24px;background:var(--fill)}
+.bsetup .bmodel-why{margin:0 0 4px 24px}
 
 /* A bot's routines (bot-mode-design §6.21): their line in the chat, the clock's dot, and the panel. */
 .rtn-line{align-self:center;display:inline-flex;align-items:center;gap:6px;max-width:100%;margin:13px 0;padding:0 8px;height:22px;border:0;border-radius:var(--r-sm);background:none;font-size:12px;line-height:16px;color:var(--l3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
@@ -214,21 +233,32 @@ button.wb-h{cursor:pointer}
 .tb.rtn-btn{position:relative}
 .tb .rtn-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--orange)}
 .tb .rtn-dot.run{background:var(--accent)}
-.bgp.bpn.rtn{width:400px}
 .rtn-top{justify-content:flex-start;gap:4px;padding-left:16px}
 .rtn-tt{flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--l1)}
 .rtn-sub .rtn-tt{font-weight:500}
 .rtn .bpn-body .form{padding-bottom:21px}
+.rtn .fhead{margin-left:0}
+.rtn .form>.set-note{margin:-5px 0 0;color:var(--l3)}
 .fgroup.rtn-g{overflow:hidden}
-.frow.rtn-row,.frow.rtn-runrow{gap:13px;cursor:pointer;padding-top:8px;padding-bottom:8px}
-.frow.rtn-row:hover,.frow.rtn-runrow:hover{background:var(--fill)}
-.frow.rtn-runrow.still{cursor:default}
-.frow.rtn-runrow.still:hover{background:none}
+/* The routines and a routine's runs: the rows of 我的 on the customize page. No panels, a hairline between rows, the
+   text flush with the title; the row under the pointer lights up reaching 12 past it, and the lines beside it give way. */
+.rtn-rows{display:flex;flex-direction:column}
+.rtn-row,.rtn-runrow{position:relative;display:flex;align-items:center;gap:13px;margin:0 -12px;padding:9px 12px;border-radius:var(--r-lg);cursor:pointer;transition:background .12s}
+.rtn-row{min-height:58px}
+.rtn-runrow{min-height:38px}
+.rtn-row+.rtn-row::before,.rtn-runrow+.rtn-runrow::before{content:"";position:absolute;top:0;left:12px;right:12px;height:.5px;background:var(--sep);transition:opacity .12s}
+.rtn-row:hover,.rtn-runrow:hover{background:var(--fill)}
+.rtn-row:hover::before,.rtn-row:hover+.rtn-row::before,.rtn-runrow:hover::before,.rtn-runrow:hover+.rtn-runrow::before{opacity:0}
+.rtn-runrow.still{cursor:default}
+.rtn-runrow.still:hover{background:none}
+.rtn-runrow.still:hover::before,.rtn-runrow.still:hover+.rtn-runrow::before{opacity:1}
 .rtn-t{flex:1;min-width:0}
 .rtn-n{font-size:13px;line-height:18px;font-weight:500;color:var(--l1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rtn-d{margin-top:1px;font-size:12px;line-height:16px;color:var(--l3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rtn-d{margin-top:2px;font-size:12px;line-height:17px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .rtn-d.warn{color:var(--orange)}
-.rtn-row.dim .rtn-n{color:var(--l3)}
+.rtn-num{font-variant-numeric:tabular-nums}
+.rtn-at{white-space:nowrap}
+.rtn-row.off .rtn-t{opacity:.5}
 .rtn-empty{margin:55px 13px 0;text-align:center;color:var(--l2);font-size:13px;line-height:1.6}
 .rtn-empty b{display:block;margin-bottom:8px;font-size:14px;font-weight:600;color:var(--l1)}
 .rtn-empty .btn{margin-top:13px}

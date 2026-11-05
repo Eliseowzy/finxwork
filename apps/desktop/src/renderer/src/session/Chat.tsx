@@ -91,11 +91,15 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     observer.observe(body);
     return () => { observer.disconnect(); cancelAnimationFrame(frame); };
   }, []);
+  const lastTop = useRef(0);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atEnd.current = below < 80;
+    // Only scrolling up leaves the end: not a picture that grew the page just as a scroll to the end landed.
+    if (below < 80) atEnd.current = true;
+    else if (el.scrollTop < lastTop.current) atEnd.current = false;
+    lastTop.current = el.scrollTop;
     setAway(below > 240);
     rememberAnchor();
     if (nearTop(el)) earlier();

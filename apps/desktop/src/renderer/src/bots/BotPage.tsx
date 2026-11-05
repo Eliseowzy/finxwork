@@ -27,6 +27,7 @@ import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
 import { Question, SentFiles } from "./Messages";
+import { ModelBlocked, ModelRows } from "./ModelRows";
 import { Process } from "./Process";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
@@ -180,6 +181,32 @@ function FullAccessNote({ onSettings, onClose }: { onSettings: () => void; onClo
 }
 
 /**
+ * The default bot was made for the owner, so nobody has chosen its model yet: the first time, before
+ * anything is sent (bot-mode-design §6.4). Bots the owner makes chose theirs in the form.
+ */
+function ModelSetup({ bot, view, session, onDone }: { bot: BotSummary; view: SessionView; session: string; onDone: () => void }) {
+  const { t } = useTranslation("bots");
+  const st = useStore();
+  const { model, thinking } = view.info;
+  const usable = st.models.models.some((m) => m.id === model && m.available);
+  return (
+    <div className="knote bsetup" role="status">
+      <div className="knote-h">
+        <Icon name="bot" className="knote-i" />
+        <b>{t("setup.title", { name: bot.name })}</b>
+      </div>
+      <p className="knote-b">{t("setup.body")}</p>
+      <ModelRows model={model} thinking={thinking} onModel={(ref) => void st.op(session, { type: "set_model", model: ref })} onThinking={(l) => void st.op(session, { type: "set_model", model, thinking: l })} />
+      <ModelBlocked model={model} />
+      <div className="appr-f">
+        <span className="appr-sp" />
+        <button className="btn primary" disabled={!usable} onClick={onDone}>{t("setup.ok")}</button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * Nothing is unread while the owner looks: the bot is on screen, the window in front and the
  * screen not locked (bot-design §5.3). What comes meanwhile is unread until they are back.
  */
@@ -245,11 +272,15 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     const el = scroll.current;
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
   };
+  const lastTop = useRef(0);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atEnd.current = below < 80;
+    // Only scrolling up leaves the end: not a picture that grew the page just as a scroll to the end landed.
+    if (below < 80) atEnd.current = true;
+    else if (el.scrollTop < lastTop.current) atEnd.current = false;
+    lastTop.current = el.scrollTop;
     setAway(below > 240);
     if (el.scrollTop < el.clientHeight * 1.5) earlier();
   };
@@ -465,23 +496,25 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
 
 /**
  * The last bubble while the bot is busy (bot-mode-design §6.7): three dots; with sub-agents at work,
- * what the bot called the work, and no more. Several show as a count that opens to their names.
+ * they quieten and what the bot called the work opens out after them, shimmering, and no more.
+ * Several show as a count that opens to their names.
  */
 function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: WorkingAgent[] }; retry?: { at: number }; onOpen: () => void }) {
   const { t } = useTranslation("bots");
   const now = useNow(1000).getTime();
   const [open, setOpen] = useState(false);
   const agents = busy.agents;
+  // Retrying the model for more than ten seconds says so (bot-mode-design §7).
+  const unstable = retry && now - retry.at > 10_000;
+  const label = agents.length === 1 ? agents[0].label : unstable ? t("chat.retrying") : undefined;
+  const several = agents.length > 1;
   const dots = (
-    <span className="dots" aria-hidden="true">
+    <span className={`dots ${several || label ? "quiet" : ""}`} aria-hidden="true">
       <i />
       <i />
       <i />
     </span>
   );
-  // Retrying the model for more than ten seconds says so (bot-mode-design §7).
-  const unstable = retry && now - retry.at > 10_000;
-  const several = agents.length > 1;
   const shown = open && several;
   useLayoutEffect(() => {
     if (shown) onOpen();
@@ -496,19 +529,25 @@ function BusyBubble({ busy, retry, onOpen }: { busy: { typing: boolean; agents: 
             {several ? (
               <button className="wb-h" aria-expanded={shown} title={shown ? t("chat.busyClose") : t("chat.busyOpen")} onClick={() => setOpen(!open)}>
                 {dots}
-                <span className="wb-t">{t("line.agents", { things: thingsText(agents.length) })}</span>
+                <span className="wb-w">
+                  <span className="wb-t shimmer">{t("line.agents", { things: thingsText(agents.length) })}</span>
+                </span>
                 <Icon name="chevD" className="chev" />
               </button>
             ) : (
-              <div className="wb-h" title={agents.length === 0 ? t("line.typing") : undefined}>
+              <div className="wb-h" title={label ?? t("line.typing")}>
                 {dots}
-                {agents.length === 1 ? <span className="wb-t">{agents[0].label}</span> : unstable && <span className="wb-t">{t("chat.retrying")}</span>}
+                {label && (
+                  <span className="wb-w">
+                    <span className="wb-t shimmer">{label}</span>
+                  </span>
+                )}
               </div>
             )}
             {shown && (
               <div className="wb-l">
                 {agents.map((a) => (
-                  <div key={a.id} className="wb-r">
+                  <div key={a.id} className="wb-r shimmer">
                     {a.label}
                   </div>
                 ))}
@@ -566,6 +605,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
     change({ ...d, attachments: addAttachments(d.attachments, more) });
   });
   const commands = useCommands({ session_id: session });
+  const setup = bot.default && !bot.last && !st.botSetupDone;
   const send = async () => {
     const sent = draft;
     change({ text: "", attachments: [] });
@@ -584,6 +624,8 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
         // An approval is no part of the conversation: the session page's prompt, above the composer (bot-mode-design §6.13).
         above: asking
           ? <Approval key={`${asking.agent?.id ?? ""}/${asking.approval.call_id}`} sessionId={session} view={view} />
+          : setup
+          ? <ModelSetup bot={bot} view={view} session={session} onDone={() => st.set({ botSetupDone: true })} />
           : !st.botAccessSeen && view.info.permission_mode === "bypass-permissions" && <FullAccessNote onSettings={() => st.set(OPEN_SETTINGS)} onClose={() => st.set({ botAccessSeen: true })} />,
         onHeight,
       }}
@@ -592,6 +634,7 @@ function BotDock({ bot, view, session, onHeight }: { bot: BotSummary; view: Sess
       attachments={draft.attachments}
       onAttachments={(attachments) => change({ ...draft, attachments })}
       onSend={() => void send()}
+      canSend={!setup}
       commands={commands}
       placeholder={t("chat.placeholder", { name: bot.name })}
     />

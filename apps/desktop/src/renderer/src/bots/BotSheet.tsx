@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Avatar as AvatarSpec, AvatarHue, AvatarInput, AvatarShape } from "@finx/protocol";
+import type { Avatar as AvatarSpec, AvatarHue, AvatarInput, AvatarShape, ThinkingLevel } from "@finx/protocol";
 import { Dialog } from "../components";
+import { shownModel } from "../composer/Composer";
+import { draftThinking, offersThinking } from "../format";
 import { useStore } from "../store";
 import { Avatar, hues, shapes } from "./Avatar";
+import { ModelBlocked, ModelRows } from "./ModelRows";
 
 const hueNames = Object.keys(hues) as AvatarHue[];
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
@@ -12,9 +15,10 @@ const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
 export const NAME_MAX = 20;
 
 /**
- * Making a bot (bot-mode-design §6.3): a name and an avatar, nothing else. A new bot comes with a
- * character and a colour picked at random, so a name and ↩ make one. Afterwards they are changed in
- * its settings (BotPanel).
+ * Making a bot (bot-mode-design §6.3): a name, an avatar, and the model it answers with and how hard
+ * it thinks. A new bot comes with a character and a colour picked at random and the default model on
+ * show, so a name and ↩ make one when that model can answer. Afterwards all of it is changed in its
+ * settings (BotPanel).
  */
 export function BotSheet() {
   const st = useStore();
@@ -25,10 +29,15 @@ export function BotSheet() {
   // A picture picked here and not saved yet: its PNG (base64).
   const [png, setPng] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [chosenModel, setChosenModel] = useState<string | null>(null);
+  const [chosenLevel, setChosenLevel] = useState<ThinkingLevel | null>(null);
+  const model = shownModel(chosenModel, st.models);
+  const entry = st.models.models.find((m) => m.id === model);
+  const thinking = draftThinking(entry, chosenLevel);
   const close = () => st.set({ botSheet: null });
   const hue = avatar.kind === "char" || avatar.kind === "mono" ? avatar.hue : (initial.kind === "char" ? initial.hue : "slate");
   const trimmed = name.trim();
-  const ready = trimmed !== "" && Array.from(trimmed).length <= NAME_MAX && !busy;
+  const ready = trimmed !== "" && Array.from(trimmed).length <= NAME_MAX && !!entry?.available && !busy;
   const upload = async () => {
     const got = await pickPicture();
     if (!got) return;
@@ -41,7 +50,7 @@ export function BotSheet() {
     setBusy(true);
     const given: AvatarInput = png ? { kind: "image", png } : avatar.kind === "image" ? { kind: "char", shape: pick(shapes), hue } : avatar;
     const ok = await st.run(async () => {
-      const r = await st.call("bots/create", { name: trimmed, avatar: given });
+      const r = await st.call("bots/create", { name: trimmed, avatar: given, model, thinking });
       st.selectBot(r.bot.id);
     });
     setBusy(false);
@@ -83,6 +92,21 @@ export function BotSheet() {
             setPng(null);
           }}
         />
+        <div className="bs-k bs-model">{t("panel.model")}</div>
+        <ModelRows
+          model={model}
+          thinking={thinking}
+          // As a new session's: the level goes along when the new model offers it, else that model's own.
+          onModel={(ref) => {
+            const next = st.models.models.find((m) => m.id === ref);
+            const kept = thinking !== "default" && offersThinking(next, thinking) ? thinking : null;
+            setChosenModel(ref);
+            setChosenLevel(kept);
+            return draftThinking(next, kept);
+          }}
+          onThinking={setChosenLevel}
+        />
+        <ModelBlocked model={model} />
         <div className="sheet-foot">
           <button type="button" className="link left" onClick={() => void upload()}>
             {t("sheet.upload")}

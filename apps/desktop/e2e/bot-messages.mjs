@@ -77,6 +77,7 @@ fs.writeFileSync(at("stays.png"), png(960, 600, [90, 90, 90]));
 fs.writeFileSync(at("report.pdf"), Buffer.alloc(2_400_000, 0x20));
 fs.writeFileSync(at("gone.pdf"), "%PDF-1.7");
 fs.writeFileSync(at("notes.md"), "# 笔记\n\n正文。\n");
+fs.writeFileSync(at("page.html"), "<!doctype html><title>Bot 的页面</title><h1>页面</h1>");
 const long = "三季度毛利率分析_给管理层汇报用_修订第三版_2026年11月_再改一次.md";
 fs.writeFileSync(at(long), "# 很长的名字\n");
 
@@ -88,6 +89,7 @@ const SCRIPT = {
   小图: attach(["icon.png"]),
   混发: attach(["a.png", "notes.md", "b.png", long]),
   发文件: attach(["report.pdf"]),
+  发网页: attach(["page.html"]),
   带字的文件: { text: "**报告**做好了。", files: [{ path: at("notes.md") }, { path: at("c.png") }], end_turn: true },
   问名字: { type: "question", text: "发给谁？" },
   图写在文字里: { text: `指数走势：\n\n![指数走势](${at("c.png")})\n\n![不存在的图](${at("nothing.png")})\n\n![网上的图](https://example.com/a.png)\n\n说明在这里。`, end_turn: true },
@@ -258,6 +260,13 @@ async function ask(page, text, count = 1) {
   await sleep(250);
 }
 
+/** The default bot asks for its model the first time (bot-setup.mjs): what it starts with will do here. */
+async function pastSetup(page) {
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+}
+
 let failed = false;
 try {
   if (!process.env.FINXWORK_E2E_NO_BUILD && !packaged) {
@@ -271,6 +280,7 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("FinxBot's page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`, 30000);
+  await pastSetup(page);
   // The first-time note sits over the conversation's end until it is closed.
   await page.until("the first-time note", `!!document.querySelector(".knote .btn.primary")`);
   await page.run(`document.querySelector(".knote .btn.primary").click()`);
@@ -326,6 +336,15 @@ try {
   await page.until("the file panel", `document.querySelector(".bgp")?.innerText.includes("notes.md")`);
   await page.shot("05-file-panel");
   // Its own button, at the panel's end while it is open.
+  await page.run(`[...document.querySelectorAll('.bgp button.tb.on[aria-pressed="true"]')].at(-1).click()`);
+  await page.until("the panel closed", `!document.querySelector(".bgp")`);
+
+  step("19. an HTML file opens as its page in the conversation's browser, not as its source");
+  await ask(page, "发网页");
+  await page.click(`.tr.bots > .bm:last-of-type .bfiles .tile-open`);
+  await page.until("its page in a tab of this conversation", `window.finx.browserTabs().then((t) => t.some((x) => x.session && x.title === "Bot 的页面" && x.url.endsWith("/page.html")))`);
+  await page.until("the browser panel, not the file panel", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.shot("05a-html-page");
   await page.run(`[...document.querySelectorAll('.bgp button.tb.on[aria-pressed="true"]')].at(-1).click()`);
   await page.until("the panel closed", `!document.querySelector(".bgp")`);
 
@@ -397,6 +416,10 @@ try {
   await page.click(".bq-opt", 0);
   await page.until("the options gone", `document.querySelectorAll(".bq-opt").length === 0`);
   await page.until("not busy", `!${busy}`);
+
+  // The tab has stayed through the pictures above; a page reloaded below would bring its panel out.
+  for (const tab of await page.run(`window.finx.browserTabs()`)) await page.run(`window.finx.browserTabCommand(${JSON.stringify(tab.targetId)}, { command: "close" })`);
+  await page.until("the page's tab closed", `window.finx.browserTabs().then((t) => t.length === 0)`);
 
   step("19. files gone afterwards: a grey row, no hole");
   await ask(page, "会删的");

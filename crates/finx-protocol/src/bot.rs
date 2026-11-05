@@ -2,6 +2,7 @@
 //! session the server keeps for it. The `bots/*` methods manage bots; the conversation uses
 //! the session methods once `bots/open` has attached it.
 
+use finx_llm::ThinkingLevel;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -144,6 +145,12 @@ pub struct BotCreateParams {
     /// 1 to 20 characters once trimmed.
     pub name: String,
     pub avatar: AvatarInput,
+    /// The model its conversation starts with; the configured one without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// How hard its conversation starts out thinking; the configured level without it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ThinkingLevel>,
 }
 
 /// Result of `bots/create` and `bots/update`.

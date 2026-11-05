@@ -198,6 +198,13 @@ async function replies(page, count, ms = 180000) {
 
 const select = (name) => `[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === ${JSON.stringify(name)})?.click()`;
 
+/** The default bot asks for its model the first time (bot-setup.mjs): what it starts with will do here. */
+async function pastSetup(page) {
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+}
+
 let failed = false;
 try {
   if (!process.env.FINXWORK_E2E_NO_BUILD) {
@@ -214,6 +221,7 @@ try {
   await page.until("FinxBot in the list", `${rows}.some((r) => r.name === "FinxBot")`, 30000);
   await page.until("its empty page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
   check(await page.run(`document.querySelector(".bav.mark") !== null`), "FinxBot has the mark");
+  await pastSetup(page);
   // Full Access by default (e2e/bot-permission.mjs); this walk has approvals to answer.
   check(await page.run(`!document.querySelector(".cmp-zone.bot .cmp-meta")`), "nothing of a session's settings under a bot's composer");
   await page.run(`document.querySelector(".bhead").click()`);
@@ -488,7 +496,7 @@ try {
   await say(page, "用一句话说说秋天适合做什么。");
   await page.until("the busy bubble", busy, 30000);
   const moving = await page.run(
-    `[...document.querySelectorAll(".tr.bots .bm.working .dots i, .bav.busy .eyes, .bav.busy.mark > img, .bav.busy .ch, .brow .shimmer")].map((e) => getComputedStyle(e).animationName).filter((n) => n !== "none")`,
+    `[...document.querySelectorAll(".tr.bots .bm.working .dots i, .tr.bots .bm.working .shimmer, .bav.busy .eyes, .bav.busy.mark > img, .bav.busy .ch, .brow .shimmer")].map((e) => getComputedStyle(e).animationName).filter((n) => n !== "none")`,
   );
   check(moving.length === 0, `something moves with reduced motion: ${moving.join(", ")}`);
   await page.shot("16-reduced-motion");
