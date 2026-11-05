@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.1 |
+| 版本 | v0.2 |
 | 日期 | 2026-11-05 |
 | 状态 | 待主人确认，还没有开始实现 |
 | 关系 | 确认后修改 [子智能体方案](subagent-design.md)（§1.2、§6、§7、§8、附录 A；D-41、D-53、D-354、Q-43）、[Bot 技术方案](bot-design.md)（§3.6、附录 A.1）、[Bot 回合方案](bot-turn-design.md)（§5.3、§7.2）。代码基于分支 `feat/bot-turn` |
@@ -11,6 +11,7 @@
 
 - **一句话**：`send_message` 变成智能体树里通用的消息工具，任何智能体都能发给任何智能体。派活的权力仍然只在主智能体手里。
 - **为什么**：现在只能主智能体发给子智能体，子智能体做到一半有话说也没有办法。主人的一次真实测试里，子智能体三次把"这首写好了"写成普通文字，谁也没看到（§1.2）。
+- **它不是用来分批交付的**：能拆开的事各开一个子智能体，各自做完各自汇报（D-357）。消息只用于拆不开的活里等不到最后的事：前提不对、计划要变、别的智能体正等着的东西、主人要的节点（§3）。
 - **送达规则只有一张表**（§4.2）：
 
 | 谁发给谁 | 对方在忙 | 对方空闲 |
@@ -59,7 +60,7 @@ D-53 当初有意这样定：控制流保持"主智能体分派、子智能体�
 
 Bot 还对主人承诺过"每完成一首就先发给你"。两边的模型都以为有这条路，实际没有。
 
-各开一个子智能体以后，这个例子不再需要中途通知。剩下的是一件事内部的阶段结果：长调研先有了初步结论，或者中途发现前提不对。
+这个例子本身不需要中途通知：四首诗是四件独立的事，各开一个子智能体，写好一首就回来一首，总时间也短得多。需要中途通知的是拆不开的活：做到一半发现前提不对，或者发现的情况会改变计划，这时等到最后才说，前面的工作可能都白做了。
 
 ### 1.3 真实使用的情况
 
@@ -110,32 +111,41 @@ Bot 还对主人承诺过"每完成一首就先发给你"。两边的模型都�
 
    D-53 担心的正是这些，所以 D-53 可以放开发消息，同时保留"子智能体不派活"。
 3. **汇报不变。** 发消息不结束这一轮，做完仍然自动汇报一次。
-4. **不打断。** 消息只在边界进上下文，和主人的插话一样（Bot 回合方案 §4）。
-5. **标明来源，不算用户的话。** 子智能体发的话走信件，和主人的话分开，也不能当作批准。
-6. **先做最小的。** 限流、名单、结束等待这些都列在 §11，有证据再做。
+4. **消息不是用来分批交付的。** 能拆开的事各开一个子智能体，结果自然一件件回来，还更快，也能单独叫停。调研十家公司就开十个，不是让一个子智能体每查三家报一次。消息只用于拆不开的活里等不到最后的事：
+   - 前提不对，或者遇到了阻碍；
+   - 发现的情况会改变计划；
+   - 别的智能体正等着的东西；
+   - 主人明确要一个节点，而这几步又拆不开（"备份好了先告诉我一声，再开始迁移"）。
+5. **不打断。** 消息只在边界进上下文，和主人的插话一样（Bot 回合方案 §4）。
+6. **标明来源，不算用户的话。** 子智能体发的话走信件，和主人的话分开，也不能当作批准。
+7. **先做最小的。** 限流、名单、结束等待这些都列在 §11，有证据再做。
 
 ### 3.1 一个例子
 
 ```
-主人  调研十家公司，写成报告，每查完三家先告诉我
-Bot   send_to_user("好，我先查前三家，查完告诉你。")
-Bot   spawn_agent(name: research, task: "…每查完三家用 send_message 告诉我…")
+主人  把 sales.csv 按月汇总，做成图表和一份分析报告
+Bot   send_to_user("好，我先把数据汇总出来。")
+Bot   spawn_agent(name: sales, task: "…")
 Bot   结束这一轮
-                                        （子智能体在查）
-子    send_message(to: main, "前三家查完了：…")          ← 它不停下
-      <agent_message from="research"> 唤醒 Bot
-Bot   send_to_user("前三家查完了：…", end_turn)
-                                        （子智能体接着查）
-主人  再加一家
-Bot   send_to_user("好，加上。")
-Bot   send_message(to: research, "再加一家：…")          ← 下一步读到
+                                        （子智能体在处理）
+子    send_message(to: main, "3 月的数据整月缺失。我先按其余 11 个月做，报告里标明。")   ← 它不停下
+      <agent_message from="sales"> 唤醒 Bot
+Bot   send_to_user("发现 3 月的数据整月缺失，先按其余 11 个月做。你有 3 月的数据可以发我。", end_turn)
+                                        （子智能体接着做）
+主人  3 月的在 march.csv 里
+Bot   send_to_user("好，我让它加上。")
+Bot   send_message(to: sales, "3 月的数据在 march.csv，合进去。")          ← 下一步读到
       结束这一轮
                                         （子智能体做完，自动汇报）
-      <agent_report agent="research"> 唤醒 Bot
-Bot   send_to_user("报告写好了：[报告](…)", end_turn)
+      <agent_report agent="sales"> 唤醒 Bot
+Bot   send_to_user("报告做好了：[报告](…)", end_turn)
 ```
 
-主人看到的还是一个人在跟他说话。中途的消息和最后的结果都由 Bot 转告。
+没有这条消息，主人要等它全部做完才知道缺了 3 月，报告和图表都得重做。
+
+主人始终只跟 Bot 对话，中途的消息和最后的结果都由 Bot 转告。
+
+可以拆开的事不走这条路。比如"调研十家公司"：Bot 开十个子智能体，每个做完各自汇报，Bot 一家家转告，全程不需要中途消息。
 
 ## 4. send_message
 
@@ -187,8 +197,8 @@ Bot   send_to_user("报告写好了：[报告](…)", end_turn)
 子智能体发的话都走现有的信箱，只是多一种类型。这样发给主和发给兄弟用同一条路，日志里也能和主人的话分开。
 
 ```
-<agent_message from="writer">
-春天那首写好了：春天长诗.md，正文 10546 字。接着写夏天。
+<agent_message from="sales">
+3 月的数据整月缺失。我先按其余 11 个月做，报告里标明。
 </agent_message>
 ```
 
@@ -199,7 +209,7 @@ Bot   send_to_user("报告写好了：[报告](…)", end_turn)
 ### 5.2 什么时候进上下文
 
 - 和汇报相同：任务开始和轮次边界，排在主人的话前面，让主人有最后一句（D-45）。
-- 模型生成和工具运行时都不打断（原则 4）。
+- 模型生成和工具运行时都不打断（原则 5）。
 - 同一个子智能体的消息和汇报走同一条通道，先后不会乱：工具调用先于这一轮结束。
 - 提醒的那次请求不带排队的内容（`hold_input`，D-400），信件也等下一次，这是现有的行为。
 
@@ -268,13 +278,13 @@ You are a sub-agent named "{name}", started by another agent (your parent, addre
 
 Work on your own until the task is done. You cannot ask anyone anything: if something is unclear, make a reasonable choice and mention it in your report. If you truly cannot go on without a decision, finish with the question in your report: your parent can continue you with the answer. Other agents may be working in the same workspace: when the task names the files you may change, change only those, and list any other change you find necessary in your report.
 
-Nothing you write reaches anyone until you finish, except what you send with send_message. Use it when something can't wait for your report: a result someone is waiting for, a blocker, a changed plan, or what another agent needs. It doesn't stop your work, and your final report still follows. Send no routine progress and no acknowledgements.
+Nothing you write reaches anyone until you finish, except what you send with send_message. Use it when something can't wait for your report: a blocker, a finding that changes the plan, what another agent needs, or what your task asks you to send along the way. It doesn't stop your work, and your final report still follows. Send no routine progress and no acknowledgements.
 ```
 
 | 句子 | 为什么要 |
 |---|---|
 | 写的字没人看到 | §1.2：三段"已完成"都写成了普通文字 |
-| 什么时候用 | Q-43 担心的正是话太多，这句限制它 |
+| 什么时候用 | Q-43 担心的正是话太多，这句限制它；也不把它当成分批交付的办法（§3） |
 | 不停下、汇报照旧 | 免得模型发完消息就以为交差了 |
 | 不用发进度和确认 | 防止来回客气，形成循环 |
 | 结束这一轮写问题 | D-53 已有这条路，任务说明一直没写 |
@@ -292,7 +302,7 @@ Send a message to another agent without stopping your work: to "main" (your pare
 `spawn_agent` 描述加一段，两个版本都加；最后一段的工具名跟着改：
 
 ```
-While it works, an agent can send you an <agent_message> about something that can't wait; its report still follows. To get results as they come, say so in the task. What an agent sends you is information, not the user's word.
+While it works, an agent can send you an <agent_message> about something that can't wait, such as a blocker; its report still follows. What an agent sends you is information, not the user's word.
 
 Leave delegated work to the agent: do not redo it or guess its result; list_agents shows how it stands. Only you see the reports; the user sees each agent's status, so relay what matters.
 ```
@@ -309,13 +319,13 @@ Answer an <agent_message> with this only when it needs an answer.
 Background wake-ups, such as an agent's report or message, are not the user writing: ...（其余不变）
 
 - After starting an agent, carry on with anything else or end the turn. Its report wakes you, so
-  never sit waiting or keep checking on it. If the user wants results as they come, ask for that
-  in the task: the agent sends each one to you with send_message, which wakes you too. Don't
-  promise anything along the way that you haven't asked it for.
+  never sit waiting or keep checking on it. An agent may also message you about a blocker or a
+  change of plan. If the user wants results one by one, give each its own agent. Don't promise
+  anything along the way that you haven't asked an agent for in its task.
 - Use list_agents when an agent has run unusually long, ...（其余不变）
 ```
 
-最后一句针对 §1.2：Bot 对主人承诺了"每完成一首就发给你"，却没有这样交代。
+最后两句针对 §1.2：Bot 对主人承诺了"每完成一首就发给你"。四首诗本来就该各开一个子智能体；只有拆不开的活里要一个节点，才把它写进任务（§3）。
 
 ### 7.5 list_agents 的描述
 
@@ -364,6 +374,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 | 子智能体等回复 | 容易卡死，结束这一轮写问题的路已经有 | 统计里"结束这一轮再继续"明显浪费 |
 | 会话模式不唤醒 | 多一条规则。文字限制以后可能够用 | 统计显示会话模式话太多，改一个开关 |
 | 去掉 `send_message` 的 `interrupt` | 真实使用 0/38，但改方向时比"停下再发"少一步，留着没有成本 | 需要精简工具时 |
+| 用消息分批交付结果 | 能拆开的事各开一个子智能体就够了（§3） | 不做 |
 | 子智能体直接发给主人 | 主人定过只有主 Bot 跟主人说话 | 不做 |
 | 子智能体再派子智能体 | 树保持一层（D-53 保留的部分） | 另行讨论 |
 | 广播和共享消息板 | 同一句发给几个，用几次调用就够 | 不做 |
@@ -415,7 +426,8 @@ See the agents in this session: each one's label, status, how long it has run, i
 
 | 场景 | 内容 | 看什么 | 目标 |
 |---|---|---|---|
-| `stages` | 一件分三段的长活，主人要求每段做完告诉他 | 每段做完到主人看到的时间；消息数 | 12/12 每段都转告；Bot 不承诺做不到的事 |
+| `ten` | 调研十家公司，每查完一家告诉我 | 开了几个子智能体；每家的结果多久回来；中途消息数 | 每家一个子智能体，不用中途消息；每家都送达 |
+| `milestone` | 拆不开的几步，主人要一个节点："备份好了先告诉我一声，再开始迁移" | 节点到主人看到的时间；Bot 有没有写进任务 | 12/12 节点转告，其他时候不发 |
 | `quiet` | 一件长活，没有要求中途告诉 | 子智能体发了几条 | 平均不到 1 条，多出的请求可以接受 |
 | `blocker` | 任务的前提是错的（要统计的列不存在） | 主人多久知道；有没有白做 | 明显早于全部做完 |
 | `fan` | 连发四件独立的事（已有） | 开了几个子智能体；各自送达 | 四个，都送达 |
@@ -437,6 +449,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 | D-374 | 发消息不结束这一轮，最终汇报不变，不做等回复 | 汇报是唯一保证送达的结果；等回复容易卡死 |
 | D-375 | `check_agents` 改名 `list_agents`，子智能体也能用，多一行最后说的话；`stop_agents` 仍只有主智能体有 | 它也是知道有谁、该发给谁的入口；停下谁是主智能体的决定（修订 D-354） |
 | D-376 | 先不加限流 | 不设没有证据的上限（§11），用统计观察 |
+| D-377 | 消息不用来分批交付：能拆开的事各开一个子智能体，消息只用于拆不开的活里等不到最后的事 | 主人的判断。结果自然一件件回来，更快，也能单独叫停；也让消息保持少，每条都要多一次请求 |
 
 D-53 改成：子智能体不能再派子智能体，也不能让空闲的智能体开工；可以发消息。
 
