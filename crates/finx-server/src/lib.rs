@@ -46,3 +46,4 @@ mod models;
 mod peer;
 mod routines;
 mod schedule;
+mod web_search;

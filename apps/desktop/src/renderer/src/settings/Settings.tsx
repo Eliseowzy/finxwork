@@ -10,6 +10,7 @@ import { Icon, Mark } from "../icons";
 import { BrowserSettings } from "./BrowserSettings";
 import { DesktopSettings } from "./DesktopSettings";
 import { ModelConnections } from "./ModelConnections";
+import { SearchSettings } from "./SearchSettings";
 import { useStore } from "../store";
 import "../styles/settings.css";
 
@@ -17,6 +18,7 @@ const pages = [
   { id: "general", icon: "gear" },
   { id: "notifications", icon: "bell" },
   { id: "models", icon: "cube" },
+  { id: "search", icon: "search" },
   { id: "browser", icon: "globe" },
   { id: "desktop", icon: "laptop" },
   { id: "about", icon: "info" },
@@ -65,6 +67,7 @@ export function SettingsWindow() {
           {page === "general" && <General />}
           {page === "notifications" && <Notifications />}
           {page === "models" && <ModelConnections />}
+          {page === "search" && <SearchSettings />}
           {page === "browser" && <BrowserSettings />}
           {page === "desktop" && <DesktopSettings />}
           {page === "about" && <About />}

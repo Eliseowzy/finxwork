@@ -430,11 +430,20 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
     let mut last_message: Option<String> = None;
     let mut compactions = Compactions::default();
     let mut reminded = false;
+    // The next request is a reminder's: what came meanwhile joins after it.
+    let mut hold_input = false;
     loop {
         // Turn boundary: reports first, then queued steering input, so the user has the last word.
-        session.deliver_mail();
-        for message in session.take_steer() {
-            session.record_user(message);
+        if !hold_input {
+            // A routine's report is new, as the owner's next words are.
+            if session.deliver_mail() {
+                reminded = false;
+            }
+            for message in session.take_steer() {
+                session.record_user(message);
+                // The owner's next words count anew.
+                reminded = false;
+            }
         }
         session.apply_pending_model();
         // System connectors' and MCP tools join or change only here, between requests.
@@ -457,9 +466,13 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
         // The turn starts: `steer_now` ends it alone. Steering input that came while the MCP
         // servers or a compaction were awaited makes this request too.
         task.next_turn();
-        for message in session.take_steer() {
-            session.record_user(message);
+        if !hold_input {
+            for message in session.take_steer() {
+                session.record_user(message);
+                reminded = false;
+            }
         }
+        hold_input = false;
         let (model, thinking) = session.current_model();
         let ctx = session.build_context();
         let estimated = session.estimate_request(&ctx);
@@ -561,29 +574,37 @@ async fn run_task(session: &Arc<Session>, task: &TaskCtx, input: Option<Input>) 
                 reason: CompletionReason::MaxTurns,
             };
         }
-        if !calls.is_empty() || session.has_steer() {
+        if !calls.is_empty() {
+            turn += 1;
+            continue;
+        }
+        // No calls: the model means to stop. A bot that has not answered its owner's latest
+        // message is reminded once, before anything that came meanwhile joins: a reply to the
+        // next message would count as answering this one too (bot-design §3.11).
+        let silent = if message.stop_reason == StopReason::Length { None } else { session.unanswered() };
+        if !reminded && let Some(reminder) = &silent {
+            reminded = true;
+            hold_input = true;
+            session.record(reminder.clone());
+            turn += 1;
+            continue;
+        }
+        if session.has_steer() {
             turn += 1;
             continue;
         }
         if let Some(message) = session.take_follow_up() {
             session.record_user(message);
+            reminded = false;
             turn += 1;
             continue;
         }
-        // A bot about to stop without answering its owner is reminded once; reminded and still
-        // silent, the owner is told rather than left waiting (bot-design §3.11).
-        if message.stop_reason != StopReason::Length
-            && let Some(reminder) = session.unanswered()
-        {
-            if reminded {
-                let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
-                error.retryable = true;
-                return TaskOutcome::Failed(error);
-            }
-            reminded = true;
-            session.record(reminder);
-            turn += 1;
-            continue;
+        // Reminded and still silent, with nothing else to answer: the owner is told rather than
+        // left waiting (D-321).
+        if silent.is_some() {
+            let mut error = ErrorInfo::new("no_reply", "the model ended its turn without sending a reply");
+            error.retryable = true;
+            return TaskOutcome::Failed(error);
         }
         let reason = if message.stop_reason == StopReason::Length {
             session.warn("the reply was cut off by the output token limit");

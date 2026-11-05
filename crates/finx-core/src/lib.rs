@@ -39,6 +39,7 @@ pub mod skills;
 pub mod system;
 pub mod store;
 pub mod trash;
+pub mod web_search;
 mod task;
 mod tool_exec;
 

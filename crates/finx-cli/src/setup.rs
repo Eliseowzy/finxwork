@@ -85,16 +85,22 @@ pub fn home() -> anyhow::Result<FinxHome> {
     Ok(home)
 }
 
-/// Whether a command writes the log file. Commands that only show local information skip it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Logging {
-    On,
-    Off,
+/// Start-up of a command that calls a model or a server: it writes the log file.
+pub fn init(cwd: PathBuf, overrides: &[String]) -> anyhow::Result<Runtime> {
+    let home = home()?;
+    let log_guard = init_logging(&home);
+    load(home, log_guard, cwd, overrides)
 }
 
-pub fn init(cwd: PathBuf, overrides: &[String], logging: Logging) -> anyhow::Result<Runtime> {
+/// Start-up of a command that only shows local information: no log file, and the result lasts
+/// until the process exits. Nothing in it has to be cleaned up without a log file, and freeing
+/// it on the way out would be most of what such a command does after printing.
+pub fn init_local(cwd: PathBuf, overrides: &[String]) -> anyhow::Result<&'static Runtime> {
     let home = home()?;
-    let log_guard = if logging == Logging::On { init_logging(&home) } else { None };
+    Ok(Box::leak(Box::new(load(home, None, cwd, overrides)?)))
+}
+
+fn load(home: FinxHome, log_guard: Option<WorkerGuard>, cwd: PathBuf, overrides: &[String]) -> anyhow::Result<Runtime> {
     // Environment variables beat the config files; `-c` beats them.
     let mut warnings = Vec::new();
     let env_overrides = env_overrides(&mut warnings)?;

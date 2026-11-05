@@ -13,6 +13,8 @@ mod setup;
 
 use anyhow::Context as _;
 use clap::Args;
+use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap::Subcommand;
 use finx_llm::ThinkingLevel;
@@ -566,6 +568,31 @@ fn run_async(overrides: &[String], command: Command) -> anyhow::Result<u8> {
     result
 }
 
+/// Parses a command line that names no global option, or returns None for `Cli::parse` to do it.
+///
+/// When its parser is built, clap copies each global option into every subcommand: about 40 KiB
+/// of fresh memory on each launch. A command line that names none has no use for the copies, and
+/// a parser without them reads it the same way. The help and the errors come from the full
+/// parser, because they list the global options.
+fn parse_plain(args: &[std::ffi::OsString]) -> Option<Cli> {
+    let plain = args.iter().skip(1).all(|arg| {
+        let arg = arg.as_encoded_bytes();
+        !(arg.starts_with(b"-c") || arg.starts_with(b"--config") || arg.starts_with(b"--mcp-config"))
+            && ![&b"-h"[..], b"--help", b"help", b"-V", b"--version"].contains(&arg)
+    });
+    if !plain {
+        return None;
+    }
+    let mut matches = parser_without_global_options().try_get_matches_from(args).ok()?;
+    Cli::from_arg_matches_mut(&mut matches).ok()
+}
+
+fn parser_without_global_options() -> clap::Command {
+    Cli::command()
+        .mut_arg("overrides", |arg| arg.global(false))
+        .mut_arg("mcp_config", |arg| arg.global(false))
+}
+
 fn main() -> ExitCode {
     // When the reader goes away (`finx sessions | head`), stop quietly like other Unix tools
     // instead of panicking on the failed write.
@@ -574,11 +601,12 @@ fn main() -> ExitCode {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_DFL);
     }
+    let args: Vec<_> = std::env::args_os().collect();
     let Cli {
         overrides,
         mcp_config,
         command,
-    } = Cli::parse();
+    } = parse_plain(&args).unwrap_or_else(Cli::parse);
     let result = setup::load_mcp_config(&mcp_config).and_then(|()| match command {
         // Local commands skip the async runtime: starting it costs more than they do.
         Command::Sessions { all, limit, json } => cmd_info::sessions(all, limit, json),
@@ -628,8 +656,88 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod parsing_tests {
     use super::*;
-    use clap::CommandFactory;
     use clap::error::ErrorKind;
+
+    fn os(args: &[&str]) -> Vec<std::ffi::OsString> {
+        args.iter().map(Into::into).collect()
+    }
+
+    /// What a parser made of a command line, level by level, apart from the global options
+    /// (the full parser leaves its copies of them behind).
+    fn understood(mut matches: &clap::ArgMatches) -> String {
+        let mut out = String::new();
+        loop {
+            let mut ids: Vec<_> = matches.ids().map(|id| id.as_str()).filter(|id| !["overrides", "mcp_config"].contains(id)).collect();
+            ids.sort_unstable();
+            for id in ids {
+                out.push_str(&format!("{id}={:?} ", matches.get_raw(id).map(Iterator::collect::<Vec<_>>)));
+            }
+            let Some((name, sub)) = matches.subcommand() else { return out };
+            out.push_str(&format!("[{name}] "));
+            matches = sub;
+        }
+    }
+
+    #[test]
+    fn a_command_line_without_global_options_parses_the_same_without_them() {
+        let lines: &[&[&str]] = &[
+            &["finx", "status"],
+            &["finx", "status", "--json"],
+            &["finx", "doctor", "--json"],
+            &["finx", "sessions", "--all", "--limit", "3", "--json"],
+            &["finx", "models", "--provider", "deepseek", "--json"],
+            &["finx", "models", "show", "deepseek/deepseek-flash"],
+            &["finx", "skills", "--all"],
+            &["finx", "skills", "disable", "pdf"],
+            &["finx", "trust", "/tmp/project"],
+            &["finx", "exec", "hello"],
+            &["finx", "exec", "hello", "-m", "mock/bench", "--permission-mode", "manual", "--no-save"],
+            &["finx", "exec", "--resume", "last", "next"],
+            &["finx", "resume", "last", "-p", "next"],
+            &["finx", "chat", "hello", "--thinking", "low"],
+            &["finx", "serve", "--listen", "unix://", "--idle-exit", "30"],
+            &["finx", "acp"],
+            &["finx", "doc-worker"],
+            &["finx", "mcp", "list", "--json"],
+            &["finx", "mcp", "add", "tools", "--", "npx", "--yes", "tools"],
+            &["finx", "browser", "native-host", "chrome-extension://abc/", "--parent-window=0"],
+        ];
+        for line in lines {
+            assert!(parse_plain(&os(line)).is_some(), "{line:?}");
+            let full = Cli::command().try_get_matches_from(*line).unwrap();
+            let plain = parser_without_global_options().try_get_matches_from(*line).unwrap();
+            assert_eq!(understood(&plain), understood(&full), "{line:?}");
+        }
+    }
+
+    #[test]
+    fn everything_else_goes_to_the_full_parser() {
+        let lines: &[&[&str]] = &[
+            // Global options, wherever they stand and however they are spelled.
+            &["finx", "-c", "thinking=low", "status"],
+            &["finx", "status", "-c", "thinking=low"],
+            &["finx", "status", "-cthinking=low"],
+            &["finx", "status", "--config=thinking=low"],
+            &["finx", "exec", "hello", "--mcp-config", "tools.json"],
+            // A word that only looks like one: the full parser sorts it out, as it always did.
+            &["finx", "mcp", "add", "tools", "--", "sh", "-c", "serve"],
+            // Help and version.
+            &["finx", "--help"],
+            &["finx", "-h"],
+            &["finx", "status", "--help"],
+            &["finx", "help", "status"],
+            &["finx", "--version"],
+            // Mistakes: their messages list the global options.
+            &["finx"],
+            &["finx", "no-such-command"],
+            &["finx", "status", "--no-such-option"],
+            &["finx", "exec"],
+            &["finx", "exec", "hello", "--no-save", "--continue"],
+        ];
+        for line in lines {
+            assert!(parse_plain(&os(line)).is_none(), "{line:?}");
+        }
+    }
 
     #[test]
     fn help_expands_every_deferred_command() {

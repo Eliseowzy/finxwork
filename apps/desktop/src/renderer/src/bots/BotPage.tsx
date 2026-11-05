@@ -18,12 +18,13 @@ import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
 import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
-import { ContentScope } from "../session/scope";
+import { ContentScope, LocalImages } from "../session/scope";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
 import { thingsText } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
+import { Question, SentFiles } from "./Messages";
 import { Process } from "./Process";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
@@ -103,7 +104,15 @@ export function BotPage({ bot }: { bot: BotSummary }) {
         <ContentScope value={scope}>
           <div className="dwrap" onContextMenu={() => selectionMenu(st)}>
             <div className="dmain">
-              {view && session ? <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}
+              {view && session ? (
+                <LocalImages.Provider value={true}>
+                  <BotChat bot={bot} view={view} session={session} loadEarlier={loadEarlier} />
+                </LocalImages.Provider>
+              ) : (
+                <div className="empty">
+                  <span className="mini-spin" />
+                </div>
+              )}
             </div>
           </div>
         </ContentScope>
@@ -190,6 +199,7 @@ function useMarkRead(bot: BotSummary) {
 
 function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: SessionView; session: string; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("bots");
+  const st = useStore();
   const items = useMemo(() => botChat(view), [view]);
   const busy = busyBubble(view);
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -234,6 +244,16 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
     setAway(below > 240);
     if (el.scrollTop < el.clientHeight * 1.5) earlier();
   };
+  // What grows on its own, a picture read after its message showed, stays in view at the end.
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!body.current) return;
+    const follow = new ResizeObserver(() => {
+      if (atEnd.current && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
+    });
+    follow.observe(body.current);
+    return () => follow.disconnect();
+  }, []);
   const toEnd = () => {
     const el = scroll.current;
     if (!el) return;
@@ -246,7 +266,7 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   return (
     <>
       <div className="cscroll" ref={scroll} onScroll={onScroll}>
-        <div className="dbody" style={{ paddingBottom: dock + 40 }}>
+        <div className="dbody" ref={body} style={{ paddingBottom: dock + 40 }}>
           {view.before && (
             <div className="tdiv earlier">
               {paging ? <span className="mini-spin" aria-label={t("chat.loadingEarlier")} /> : <button className="link" onClick={earlier}>{t("chat.earlier")}</button>}
@@ -264,21 +284,43 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                 const prev = items[i - 1];
                 const fresh = !seen.current!.has(item.key);
                 const line = <TimeSince at={item.ts} previous={prev?.ts} />;
+                const message = (shown: React.ReactNode, copy?: string) => (
+                  <BotMessage
+                    key={item.key}
+                    item={item as SentItem}
+                    fresh={fresh}
+                    line={line}
+                    copy={copy}
+                    open={open.has(item.key)}
+                    onProcess={() => setOpen((o) => (o.has(item.key) ? new Set([...o].filter((k) => k !== item.key)) : new Set([...o, item.key])))}
+                  >
+                    {shown}
+                  </BotMessage>
+                );
                 switch (item.kind) {
                   case "user":
                     return <UserBubble key={item.key} item={item} fresh={fresh} line={line} />;
                   case "routine":
                     return <RoutineChange key={item.key} item={item} line={line} />;
                   case "bot":
-                    return (
-                      <BotBubble
-                        key={item.key}
-                        item={item}
-                        fresh={fresh}
-                        line={line}
-                        open={open.has(item.key)}
-                        onProcess={() => setOpen((o) => (o.has(item.key) ? new Set([...o].filter((k) => k !== item.key)) : new Set([...o, item.key])))}
-                      />
+                    return message(
+                      <div className="bbub">
+                        <Markdown text={item.text} />
+                      </div>,
+                      item.text,
+                    );
+                  case "attachment":
+                    return message(<SentFiles files={item.files} text={item.text} />, item.text);
+                  case "question":
+                    return message(
+                      <Question
+                        text={item.text}
+                        options={item.options}
+                        open={item.open}
+                        // A tapped answer is the owner's message: while the bot works, it waits for the step under way (bot-design §3.1).
+                        onAnswer={(label) => st.op(session, { type: "prompt", input: [{ type: "text", text: label }], mode: view.live ? "steer" : undefined })}
+                      />,
+                      item.text,
                     );
                   case "failure":
                     return item.last ? <FailureCard key={item.key} error={item.error} working={working} sessionId={session} model={view.info.model} /> : <PastFailure key={item.key} error={item.error} />;
@@ -363,8 +405,11 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function BotBubble({ item, fresh, line, open, onProcess }: {
-  item: Extract<BotItem, { kind: "bot" }>; fresh: boolean; line: React.ReactNode; open: boolean; onProcess: () => void;
+type SentItem = Extract<BotItem, { kind: "bot" | "attachment" | "question" }>;
+
+/** A message from the bot: what it sent, its time and buttons beside it on hover, and its process under it. */
+function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
+  item: SentItem; fresh: boolean; line: React.ReactNode; copy?: string; open: boolean; onProcess: () => void; children: React.ReactNode;
 }) {
   const { t } = useTranslation("bots");
   const st = useStore();
@@ -379,14 +424,12 @@ function BotBubble({ item, fresh, line, open, onProcess }: {
       <div className={`bm ${fresh ? "add-anim" : ""}`} data-run={source?.run_id}>
         <div className="bm-b">
           <div className="bline">
-            <div className="bbub">
-              <Markdown text={item.text} />
-            </div>
+            {children}
             <div className="msg-act">
               <span className="msg-meta">
                 <MessageTime at={new Date(item.ts)} />
               </span>
-              <CopyButton text={item.text} />
+              {copy !== undefined && <CopyButton text={copy} />}
               {source && (
                 <button
                   className="tb"

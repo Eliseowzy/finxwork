@@ -345,6 +345,8 @@ export function describe(name: string, args: Record<string, unknown>, cwd: strin
     case "find":
     case "ls":
       return { category: "search", title: `${name} ${rel(str("path") || str("pattern"))}`.trim() };
+    case "web_search":
+      return { category: "search", title: str("query") || name };
     case "call_tool": {
       const target = callTarget(name, args);
       return target.name === name ? { category: "other", title: name } : describe(target.name, target.args, cwd);

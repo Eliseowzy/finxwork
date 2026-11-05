@@ -410,9 +410,11 @@ impl Session {
         })
     }
 
-    /// Writes the waiting reports into the history, oldest first.
-    pub(crate) fn deliver_mail(&self) {
+    /// Writes the waiting reports into the history, oldest first. True when a routine's is among
+    /// them.
+    pub(crate) fn deliver_mail(&self) -> bool {
         let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();
+        let routine = mails.iter().any(|mail| mail.info.kind == MailKind::Routine);
         for mail in mails {
             let message = Message::from(mail.message);
             let entry = self.record(EntryKind::Mail {
@@ -426,6 +428,7 @@ impl Session {
                 skills: Vec::new(),
             });
         }
+        routine
     }
 
     /// Sends `Idle` once nothing is left to do: no task, no queued input, no report that

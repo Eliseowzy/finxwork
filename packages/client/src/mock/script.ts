@@ -9,6 +9,8 @@ export interface ToolScript {
   /** The result's text (what the model would be sent). */
   output: string;
   error?: boolean;
+  /** The result's details, for user interfaces. */
+  details?: unknown;
   /** Printed while it runs, line by line. */
   progress?: string[];
   /** How long it runs (ms, before the speed factor). */
