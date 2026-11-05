@@ -16,6 +16,7 @@ members = [
     "crates/finx-desktop",
     "crates/finx-bench",
     "crates/finx-eval",
+    "crates/finx-slide",
 ]
 
 [workspace.package]
@@ -38,11 +39,21 @@ finx-mcp = { path = "crates/finx-mcp" }
 finx-browser = { path = "crates/finx-browser" }
 finx-desktop = { path = "crates/finx-desktop" }
 finx-eval = { path = "crates/finx-eval" }
+finx-slide = { path = "crates/finx-slide" }
 
 agent-client-protocol-schema = { version = "1.13", default-features = false }
 anyhow = "1"
 async-stream = "0.3"
 async-trait = "0.1"
+# PPT engine: our fork of BetterOffice (openooxml/betteroffice), branch finx/0.5. On top of
+# upstream a45ba76 the fork carries three fixes upstream does not have yet:
+#   77a1364 pptx-render: wrap preset-shape text to the preset's text rect
+#   169980a pptx-raster: synthesize bold for faces with no bold weight
+#   b9b1102 pptx: draw East Asian text in its a:ea face
+# Back to upstream once all three are merged there and a release carries them. No fonts-cjk or
+# fonts-intl: CJK comes from the system (finx-slide's SystemFonts). Local work against a checkout
+# of the fork: crates/finx-slide/README.md.
+betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "b9b1102a19b1d9c5ec98a9d9ec7f42b3cfa2d9fe", default-features = false, features = ["raster", "fonts", "fonts-latin"] }
 base64 = "0.22"
 bytes = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
