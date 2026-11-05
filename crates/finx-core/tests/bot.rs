@@ -223,7 +223,7 @@ fn owners_last(request: &finx_llm::Context) -> String {
 }
 
 /// Right after each of the owner's messages comes a word on how to reply, for the model alone
-/// (bot-design §3.13). A report brings none: it may not call for a reply.
+/// (bot-design §3.14). A report brings none: it may not call for a reply.
 #[tokio::test]
 async fn a_word_follows_each_of_the_owners_messages() {
     let mut h = bot(
@@ -425,6 +425,81 @@ async fn only_an_unanswered_message_brings_a_reminder() {
     assert_eq!(reminders(&h), 1);
 }
 
+/// An answer only written as plain text while another message waits: the reply to that one would
+/// count as answering both, and the owner would never see this answer. It is reminded first, with
+/// the reminder the last thing the model reads; the message joins after (bot-design §3.11).
+#[tokio::test]
+async fn a_private_answer_is_reminded_before_the_next_message_joins() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春天的诗。").then_sleep(Duration::from_millis(400)),
+            send("c1", "春天的诗。"),
+            send_last("c2", "夏天的诗。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("再写一首夏天的")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert_eq!(sent(&events), ["春天的诗。", "夏天的诗。"]);
+    assert_eq!(reminders(&h), 1);
+    let requests = h.api.requests();
+    assert_eq!(requests.len(), 3);
+    assert!(texts(requests[1].messages.last().unwrap()).starts_with(REMINDER));
+    assert!(requests[1].messages.iter().all(|m| texts(m) != "再写一首夏天的"));
+    assert_eq!(owners_last(&requests[2]), "再写一首夏天的");
+}
+
+/// Each message in a row counts anew: the first one's reminder does not use up the next one's,
+/// which would fail the task with both already answered.
+#[tokio::test]
+async fn each_message_in_a_row_gets_its_own_reminder() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春。").then_sleep(Duration::from_millis(400)),
+            send("c1", "春。"),
+            Script::text("夏。"),
+            send_last("c2", "夏。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["春。", "夏。"]);
+    assert_eq!(reminders(&h), 2);
+}
+
+/// Reminded and still silent with another message waiting: that message gets its turn. Failing
+/// here would hand it back to the owner unread.
+#[tokio::test]
+async fn silence_after_a_reminder_gives_way_to_the_next_message() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::text("春。").then_sleep(Duration::from_millis(400)),
+            Script::text("还是春。"),
+            send_last("c1", "夏。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("写一首春天的诗")).await.unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TurnStarted { .. })).await;
+    h.kernel.submit(Op::prompt("写一首夏天的诗")).await.unwrap();
+    let events = until(&mut h.kernel, |m| m.is_task_end()).await;
+    assert!(matches!(events.last().unwrap().msg, EventMsg::TaskCompleted { .. }), "{:?}", events.last().unwrap().msg);
+    assert_eq!(sent(&events), ["夏。"]);
+    assert_eq!(reminders(&h), 1);
+}
+
 /// A bot's sub-agents write reports, not chat: a session's prompt, and no send_to_user
 /// (bot-design §2.3, D-311).
 #[tokio::test]
@@ -450,8 +525,8 @@ async fn a_bots_sub_agents_get_a_sessions_prompt_and_no_send_to_user() {
     let agent = &requests[1];
     assert!(agent.system.starts_with("You are FinxWork"), "{}", agent.system);
     let names: Vec<&str> = agent.tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash"]);
-    assert!(!agent.system.contains("<deferred_tools>"), "{}", agent.system);
+    assert_eq!(names, ["read", "write", "edit", "bash", "tool_search", "call_tool"], "for web search");
+    assert!(!agent.system.contains("- agents:"), "{}", agent.system);
     // The sub-agent works in the bot's folder too.
     assert!(agent.system.contains(&format!("cwd: {}", h.folder.display())));
     assert!(requests[2].system.starts_with("You are 研究员"));
@@ -723,4 +798,253 @@ async fn a_bot_writes_in_its_own_folder_without_asking() {
         .collect();
     assert!(results[0].starts_with("Wrote"), "{results:?}");
     assert!(!results[1].starts_with("Wrote"), "{results:?}");
+}
+
+// ---- Message types (bot-design §3.12) ----
+
+fn attach(id: &str, files: &[&str]) -> Script {
+    let files: Vec<_> = files.iter().map(|path| json!({ "path": path })).collect();
+    Script::tool_call(id, "send_to_user", json!({ "type": "attachment", "files": files, "end_turn": true }))
+}
+
+/// The head of a PNG of that size: enough to tell what it is.
+fn png(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    bytes.extend(width.to_be_bytes());
+    bytes.extend(height.to_be_bytes());
+    bytes.extend([8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
+/// What the `send_to_user` results told user interfaces.
+fn details(events: &[Event]) -> Vec<serde_json::Value> {
+    events
+        .iter()
+        .filter_map(|e| match &e.msg {
+            EventMsg::ToolCompleted { result, .. } if result.tool_name == "send_to_user" => {
+                result.details.as_ref().map(|d| serde_json::from_str(d.as_str()).unwrap())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// The result text of each call the model was told about, in the last request.
+fn results(h: &Harness) -> Vec<(bool, String)> {
+    h.api
+        .requests()
+        .last()
+        .unwrap()
+        .messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::ToolResult(r) => Some((r.is_error, r.text_content())),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn an_attachment_is_one_message_of_files_and_says_what_they_are() {
+    let mut h = bot("FinxBot", PermissionMode::Manual, vec![attach("c1", &["毛利率.png", "./报告.pdf"])]).await;
+    std::fs::write(h.folder.join("毛利率.png"), png(960, 600)).unwrap();
+    std::fs::write(h.folder.join("报告.pdf"), b"%PDF-1.7").unwrap();
+    let result = h.kernel.run(prompt("发我")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(h.api.requests().len(), 1, "end_turn ends it");
+    let image = h.folder.join("毛利率.png");
+    let file = h.folder.join("报告.pdf");
+    assert_eq!(
+        details(&result.events),
+        [json!({ "files": [
+            { "path": image, "size": png(960, 600).len(), "image": true, "width": 960, "height": 600 },
+            { "path": file, "size": 8 },
+        ] })]
+    );
+}
+
+#[tokio::test]
+async fn an_image_is_told_by_its_contents_and_only_up_to_the_panels_limit() {
+    let mut h = bot("FinxBot", PermissionMode::Manual, vec![attach("c1", &["photo.pdf", "chart.png", "huge.png"])]).await;
+    std::fs::write(h.folder.join("photo.pdf"), png(10, 20)).unwrap();
+    std::fs::write(h.folder.join("chart.png"), b"not a picture").unwrap();
+    let mut huge = png(4000, 3000);
+    huge.resize(finx_core::files::MAX_IMAGE as usize + 1, 0);
+    std::fs::write(h.folder.join("huge.png"), huge).unwrap();
+    let result = h.kernel.run(prompt("发我")).await.unwrap();
+    let sent = details(&result.events);
+    let files = sent[0]["files"].as_array().unwrap();
+    assert_eq!(files[0]["image"], true, "a picture under another name");
+    assert_eq!((files[0]["width"].as_u64(), files[0]["height"].as_u64()), (Some(10), Some(20)));
+    assert!(files[1].get("image").is_none(), "only named like one");
+    assert!(files[2].get("image").is_none(), "too large to show");
+}
+
+#[tokio::test]
+async fn a_file_made_in_the_same_step_can_be_sent() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::AcceptEdits,
+        vec![Script::tool_call("c1", "write", json!({ "path": "report.md", "content": "# 周报" })).then_tool_call(
+            "c2",
+            "send_to_user",
+            json!({ "type": "attachment", "files": [{ "path": "report.md" }], "end_turn": true }),
+        )],
+    )
+    .await;
+    let result = h.kernel.run(prompt("写一份周报发我")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(details(&result.events)[0]["files"][0]["size"], 8);
+}
+
+#[tokio::test]
+async fn a_wrong_path_sends_nothing_and_names_each_one() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            attach("c1", &["there.txt", "gone.pdf", ".", "https://example.com/a.png"]),
+            attach("c2", &["there.txt"]),
+        ],
+    )
+    .await;
+    std::fs::write(h.folder.join("there.txt"), "x").unwrap();
+    let result = h.kernel.run(prompt("发我")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    let told = results(&h);
+    assert!(told[0].0, "{told:?}");
+    for part in ["gone.pdf: no such file", ".: not a file", "https://example.com/a.png: a web address, save it to a file first"] {
+        assert!(told[0].1.contains(part), "{told:?}");
+    }
+    assert!(!told[0].1.contains("there.txt"), "{told:?}");
+    assert_eq!(details(&result.events).len(), 1, "only the second call went out");
+}
+
+/// What a real model does on its own: words and files in one call, often with no type
+/// (19 of 59 calls were refused before this was allowed, bot-design §3.12).
+#[tokio::test]
+async fn files_may_come_with_words_and_need_no_type() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![
+            Script::tool_call("c1", "send_to_user", json!({ "type": "attachment", "text": "在这里。", "files": [{ "path": "a.txt" }] })),
+            Script::tool_call("c2", "send_to_user", json!({ "text": "还有这个。", "files": [{ "path": "a.txt" }], "end_turn": true })),
+        ],
+    )
+    .await;
+    std::fs::write(h.folder.join("a.txt"), "x").unwrap();
+    let result = h.kernel.run(prompt("发我")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    let told = details(&result.events);
+    assert_eq!(told.len(), 2, "both went out: {told:?}");
+    assert_eq!((told[0]["text"].as_str(), told[1]["text"].as_str()), (Some("在这里。"), Some("还有这个。")));
+    assert_eq!(h.api.requests().len(), 2, "no request wasted on a refusal");
+}
+
+/// A question whose answers cannot be listed is still a question (2 of 12 were refused before).
+#[tokio::test]
+async fn a_question_may_have_no_options_and_still_ends_the_turn() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::tool_call("c1", "send_to_user", json!({ "type": "question", "text": "发给谁？" }))],
+    )
+    .await;
+    let result = h.kernel.run(prompt("发出去")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(sent(&result.events), ["发给谁？"]);
+    assert_eq!(h.api.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn options_without_a_type_make_a_question() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::tool_call("c1", "send_to_user", json!({ "text": "发给谁？", "options": [{ "label": "财务组" }] }))],
+    )
+    .await;
+    h.kernel.run(prompt("发出去")).await.unwrap();
+    assert_eq!(h.api.requests().len(), 1, "a question ends the turn");
+}
+
+#[tokio::test]
+async fn a_question_ends_the_turn_and_its_answer_is_an_ordinary_message() {
+    let question = json!({ "type": "question", "text": "发给谁？", "options": [{ "label": "财务组" }, { "label": "全部门" }] });
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::tool_call("c1", "send_to_user", question), send_last("c2", "发好了。")],
+    )
+    .await;
+    let result = h.kernel.run(prompt("整理好发出去")).await.unwrap();
+    assert!(matches!(result.end, TaskEnd::Completed { .. }));
+    assert_eq!(sent(&result.events), ["发给谁？"]);
+    assert_eq!(h.api.requests().len(), 1, "no end_turn needed: it waits for the answer");
+    let result = h.kernel.run(prompt("财务组")).await.unwrap();
+    assert_eq!(sent(&result.events), ["发好了。"]);
+    let requests = h.api.requests();
+    assert_eq!(owners_last(&requests[1]), "财务组", "the answer is the owner's message");
+    assert!(!requests[1].messages.iter().any(|m| texts(m).contains("<reply_reminder>")), "a question is a reply");
+}
+
+#[tokio::test]
+async fn a_type_takes_its_own_parameters_and_says_what_is_wrong() {
+    let cases = [
+        (json!({ "type": "attachment" }), "give at least one file"),
+        (json!({ "type": "text", "text": "你好", "files": [{ "path": "a" }] }), "files goes with type attachment"),
+        (json!({ "type": "text", "text": "你好", "options": [{ "label": "好" }] }), "options goes with type question"),
+        (json!({ "text": "你好", "files": [{ "path": "a" }], "options": [{ "label": "好" }] }), "options goes with type question"),
+        (json!({ "type": "question", "options": [{ "label": "好" }] }), "text must not be empty"),
+        (json!({ "type": "question", "text": "好吗", "options": [{ "label": " " }] }), "label must not be empty"),
+        (json!({ "type": "question", "text": "好吗", "options": [{ "label": "好" }, { "label": "好" }] }), "the same label: 好"),
+        (json!({ "type": "image", "text": "你好" }), "unknown variant"),
+    ];
+    for (args, expected) in cases {
+        let mut h = bot(
+            "FinxBot",
+            PermissionMode::Manual,
+            vec![Script::tool_call("c1", "send_to_user", args.clone()), send_last("c2", "好的。")],
+        )
+        .await;
+        let result = h.kernel.run(prompt("hi")).await.unwrap();
+        assert!(matches!(result.end, TaskEnd::Completed { .. }));
+        let told = results(&h);
+        assert!(told[0].0 && told[0].1.contains(expected), "{args}: {told:?}");
+    }
+}
+
+#[tokio::test]
+async fn an_empty_value_counts_as_left_out() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::Manual,
+        vec![Script::tool_call(
+            "c1",
+            "send_to_user",
+            json!({ "type": "text", "text": "你好", "files": [], "options": [], "end_turn": true }),
+        )],
+    )
+    .await;
+    let result = h.kernel.run(prompt("hi")).await.unwrap();
+    assert_eq!(sent(&result.events), ["你好"]);
+    assert_eq!(h.api.requests().len(), 1);
+}
+
+/// What every request carries: plain enough for any provider (bot-design §3.12).
+#[tokio::test]
+async fn the_tools_parameters_are_flat_with_a_plain_enum() {
+    let mut h = bot("FinxBot", PermissionMode::Manual, vec![send_last("c1", "好的。")]).await;
+    h.kernel.run(prompt("hi")).await.unwrap();
+    let requests = h.api.requests();
+    let tool = requests[0].tools.iter().find(|t| t.name == "send_to_user").unwrap();
+    let schema = &tool.parameters;
+    assert_eq!(schema["properties"]["type"]["type"], "string");
+    assert_eq!(schema["properties"]["type"]["enum"], json!(["text", "attachment", "question"]));
+    assert!(schema.get("required").is_none_or(|r| r.as_array().unwrap().is_empty()), "{schema}");
+    assert_eq!(schema["properties"]["files"]["items"]["required"], json!(["path"]));
+    assert_eq!(schema["properties"]["options"]["items"]["required"], json!(["label"]));
+    let text = schema.to_string();
+    assert!(!text.contains("oneOf") && !text.contains("anyOf") && !text.contains("$ref"), "{text}");
 }

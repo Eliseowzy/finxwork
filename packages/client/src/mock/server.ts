@@ -2,7 +2,7 @@ import type {
   ActiveTask, AgentStatus, Avatar, AvatarInput, BotSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage,
 } from "@finx/protocol";
-import { botScript, demoBots, relayScript, type DemoBot } from "./bots.ts";
+import { botScript, demoBots, demoImage, relayScript, type DemoBot } from "./bots.ts";
 import { applyEvent, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
@@ -257,8 +257,12 @@ export class MockServer {
     if (!bot) return;
     const was = bot.summary;
     let next: BotSummary = { ...was };
-    if (e.type === "tool_started" && e.name === "send_to_user" && typeof (e.args as { text?: unknown })?.text === "string") {
+    if (e.type === "tool_started" && e.name === "send_to_user" && (e.args as { type?: unknown })?.type !== "attachment" && !(e.args as { files?: unknown })?.files && typeof (e.args as { text?: unknown })?.text === "string") {
       next = { ...next, last: { from: "bot", text: (e.args as { text: string }).text.slice(0, 1000), ts: iso(e.ts) }, unread: (next.unread ?? 0) + 1 };
+    } else if (e.type === "tool_completed" && e.result.tool_name === "send_to_user" && !e.result.is_error && (e.result as { details?: { files?: unknown } }).details?.files) {
+      const { files, text } = (e.result as unknown as { details: { files: { path: string; image?: boolean }[]; text?: string } }).details;
+      const other = files.find((f) => !f.image);
+      next = { ...next, last: { from: "bot", text: (text ?? "").slice(0, 1000), images: files.filter((f) => f.image).length, ...(other ? { file: other.path.split("/").at(-1) } : {}), ts: iso(e.ts) }, unread: (next.unread ?? 0) + 1 };
     } else if (e.type === "message_completed" && e.message.role === "user" && !e.mail) {
       const images = e.message.content.filter((c) => c.type === "image").length;
       next = { ...next, last: { from: "user", text: textOf(e.message.content).slice(0, 1000), images, ts: iso(e.message.ts) } };
@@ -566,7 +570,7 @@ export class MockServer {
   private toolCompleted(s: Session, call_id: string, t: ToolScript, denied?: string) {
     const text = denied ?? t.output;
     // As in finx, a sub-agent starts when its spawn_agent call completes.
-    const details = t.name === "spawn_agent" && denied === undefined && !s.parent ? this.spawnAgent(s, call_id, t) : undefined;
+    const details = t.name === "spawn_agent" && denied === undefined && !s.parent ? this.spawnAgent(s, call_id, t) : t.details;
     this.emit(s, {
       type: "tool_completed",
       call_id,
@@ -845,6 +849,12 @@ export class MockServer {
         c.attached.add(s.id);
         return { session_id: s.id, snapshot: snapshotOf(s.view, q.history_limit ?? undefined) } satisfies R<"bots/open">;
       }
+      case "files/read": {
+        const path = (p as P<"files/read">).path;
+        const image = demoImage(path);
+        if (!image) throw new Failure(-32602, "invalid_params", `no such file: ${path}`);
+        return { path, size: image.data.length, kind: "image", image, writable: false } satisfies R<"files/read">;
+      }
       case "bots/read":
       case "bots/unread": {
         const bot = this.bot((p as P<"bots/read">).bot_id);
@@ -915,6 +925,14 @@ export class MockServer {
       case "config/write": {
         const q = p as P<"config/write">;
         return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;
+      }
+      case "web_search/status":
+        return this.customize.webSearchStatus() satisfies R<"web_search/status">;
+      case "web_search/test":
+        return this.customize.webSearchTest() satisfies R<"web_search/test">;
+      case "web_search/set_key": {
+        const q = p as P<"web_search/set_key">;
+        return this.customize.webSearchSetKey(q.source, q.key) satisfies R<"web_search/set_key">;
       }
       case "credentials/set":
         return this.customize.credentialsSet((p as P<"credentials/set">).name) satisfies R<"credentials/set">;

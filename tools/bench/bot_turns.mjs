@@ -4,6 +4,8 @@
 //   - first:      the first call after the owner's message is send_to_user (not the aim in `stop`:
 //                 there the stop comes first);
 //   - missed:     a task the owner started ended without sending anything;
+//   - failed:     a task failed for another reason (a model error, say): the run says nothing
+//                 about its turns;
 //   - late:       a task sent only after the kernel's reminder: its first reply had no call at all;
 //   - unanswered, undelivered: the kernel's reminders, from the session's log;
 //   - leaked:     a message names a tool or carries an id;
@@ -14,7 +16,12 @@
 //   - firstMs:    from the owner's first message to the first bubble, median and worst;
 //   - nextMs:     from each later message to the next bubble, median and worst;
 //   - during:     later messages answered while a sub-agent still worked, of those asked then;
-//   - ordered:    `poems`, the four poems came back in the order asked;
+//   - ordered:    `poems`, the four poems came back in the order asked, one message each;
+//   - attached:   a file went out as an attachment message; linked: only as a link in words;
+//   - asked:      a choice went out as a question with options; prose: only as words ending in a
+//                 question;
+//   - rejected:   a send the kernel refused (printed with why): it costs a round trip, the owner
+//                 sees nothing;
 //   - stopFirst, stopped, told, restarted: `stop` and `session`, the agents stopped before the bot
 //                 said so, stopped at all, it said so, it started the work again;
 //   - checked:    `progress` and `session`, check_agents ran after the question;
@@ -131,6 +138,12 @@ const scenarios = {
   // One at a time, each answered before the next: a short answer is where a bot forgets to send.
   quick: { oneByOne: true, say: () => ["用一句话介绍你自己。", "今天星期几？", "1 加 1 等于几？"].map((t) => [0, t]) },
   hello: { oneByOne: true, say: () => ["你好，你是谁？用一句话回答。", "你能帮我做什么？简单说。", "谢谢！"].map((t) => [0, t]) },
+  // The message types (bot-design §3.12): is a file sent as one, and a choice asked as one?
+  files: { say: () => [[0, "写一份 100 字的周报，存成 report.md，再用 Python 把 1 到 5 的平方写进 squares.csv，都发给我。"]] },
+  // The answers can be listed: a question with options fits.
+  choice: { say: () => [[0, "我有两份周报草稿：A 版详细，B 版简洁。你不知道我要哪版，先问我一下，我选了你再往下写。"]] },
+  // The answers cannot all be listed (a name, a date): words may fit better.
+  open: { say: () => [[0, "帮我写一封请假邮件。收件人和请几天你都不知道，也猜不到，要问我的话一次只问一个。"]] },
   // One short question per bot: runs do not lean on each other, which suits comparing prompts.
   one: { say: (run) => [[0, ["用一句话介绍你自己。", "今天星期几？", "1 加 1 等于几？", "你好，你是谁？用一句话回答。", "你能帮我做什么？简单说。", "谢谢！"][run % 6]]] },
   mixed: {
@@ -209,6 +222,9 @@ const isAck = (e) => /我看|我查|我去|稍等|看一下|查一下|let me|che
 const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|check_agents|stop_agents|tool_search|call_tool|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
 const internal = /子智能体|sub-?agent|agent_report|汇报/i;
 const aside = /^\s*[（(][^（()）]*[）)]\s*$/;
+// What each poem has to mention, in order. A poem often names no season, or names another in
+// passing, so its images count too; a lost or merged poem leaves too few messages to get through.
+const seasons = ["春|柳|桃|杏|燕|芽|草|绿|花|融|东风|风筝", "夏|蝉|荷|瓜|槐|暑|雷|午|烈日|树影", "秋|枫|雁|稻|桂|柿|菊|叶|梧桐|西风", "冬|雪|寒|霜|炉|梅|冰|朔|北风"].map((s) => new RegExp(s));
 
 function logOf(session) {
   const walk = (dir) =>
@@ -250,7 +266,22 @@ async function oneRun(name, s, run, t) {
 
   t.runs++;
   t.idle += quiet ? 1 : 0;
-  const sent = events.filter(isSend).map((e) => String(e.args?.text ?? ""));
+  // What the kernel refused never reached the owner: only the rest count.
+  const refused = new Map(events.filter((e) => e.type === "tool_completed" && e.result.tool_name === "send_to_user" && e.result.is_error).map((e) => [e.call_id, e.result.content.map((x) => x.text ?? "").join("")]));
+  const sends = events.filter(isSend);
+  for (const e of sends) {
+    if (!refused.has(e.call_id)) continue;
+    t.rejected++;
+    console.log(`   (rejected: ${refused.get(e.call_id).slice(0, 110)} | args: ${JSON.stringify(e.args).slice(0, 170)})`);
+  }
+  const calls = sends.filter((e) => !refused.has(e.call_id));
+  const hasFiles = (e) => e.args.type === "attachment" || (!e.args.type && e.args.files?.length > 0);
+  const isQuestion = (e) => e.args.type === "question" || (!e.args.type && e.args.options?.length > 0);
+  const sent = calls.map((e) => (hasFiles(e) ? `[files${e.args.type ? "" : ", no type"}] ${(e.args.files ?? []).map((f) => f.path.split("/").at(-1)).join(", ")}${e.args.text ? ` | ${e.args.text}` : ""}` : isQuestion(e) ? `[question] ${e.args.text} / ${(e.args.options ?? []).map((o) => o.label).join(" / ")}` : String(e.args.text ?? "")));
+  if (calls.some(hasFiles)) t.attached++;
+  else if (calls.some((e) => /\]\([^)h][^)]*\)|\.(md|csv|png|pdf)\b/.test(String(e.args.text ?? "")))) t.linked++;
+  if (calls.some(isQuestion)) t.asked++;
+  else if (calls.some((e) => /[?？]\s*$/.test(String(e.args.text ?? "")))) t.prose++;
   t.sends += sent.length;
   t.leaked += sent.filter((x) => tools.test(x)).length;
   t.asides += sent.filter((x) => aside.test(x)).length;
@@ -274,7 +305,10 @@ async function oneRun(name, s, run, t) {
     if (inTask && isSend(e)) sentInTask = true;
     if (inTask && (e.type === "task_completed" || e.type === "task_failed")) {
       inTask = false;
-      if (!sentInTask) {
+      if (e.type === "task_failed" && e.error?.kind !== "no_reply") {
+        t.failed++;
+        console.log(`   (failed: ${e.error?.kind}: ${String(e.error?.message).slice(0, 120)})`);
+      } else if (!sentInTask) {
         t.missed++;
         // What it wrote instead, reply by reply.
         for (const r of replies) console.log(`   (missed: ${r.replace(/\s+/g, " ").slice(0, 120)})`);
@@ -310,10 +344,10 @@ async function oneRun(name, s, run, t) {
   });
 
   if (name === "poems") {
-    // The season a poem is about is the first one it names (its title); others may come up in its lines.
-    const firsts = sent.map((x) => x.match(/[春夏秋冬]/)?.[0]).filter(Boolean).join("");
-    if (firsts.startsWith("春夏秋冬")) t.ordered++;
-    else console.log(`   (order: ${firsts})`);
+    let next = 0;
+    for (const poem of sent) if (next < 4 && seasons[next].test(poem)) next++;
+    if (next === 4) t.ordered++;
+    else console.log(`   (order: got through ${next} of the 4 poems)`);
   }
   s.check?.(t, w, at);
   console.log(`${name} #${run + 1}: ${sent.length} messages${quiet ? "" : " (timed out)"}${delegated ? ", delegated" : ""}`);
@@ -327,9 +361,9 @@ await call("bots/subscribe", {});
 for (const [name, s] of Object.entries(scenarios)) {
   if (only.length && !only.includes(name)) continue;
   const t = (totals[name] = {
-    runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
+    runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, failed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
-    ordered: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
+    ordered: 0, attached: 0, linked: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
   });
   for (let run = 0; run < runs; run += parallel) {
     const batch = Array.from({ length: Math.min(parallel, runs - run) }, (_, k) => oneRun(name, s, run + k, t).catch((e) => console.log(`${name} #${run + k + 1}: ${e.message}`)));

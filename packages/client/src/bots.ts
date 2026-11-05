@@ -50,7 +50,7 @@ const attached = "Attached files:\n";
  */
 export function lastText(last: LastMessage): { text: string; files: string[] } {
   let text = last.text;
-  let files: string[] = [];
+  let files: string[] = last.file ? [last.file] : [];
   if (last.from === "user") {
     const at = text.indexOf(attached);
     if (at >= 0) {

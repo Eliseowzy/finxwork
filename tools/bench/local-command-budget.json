@@ -1,0 +1,5 @@
+{
+  "definition": "Minor page faults of one fresh process, spawn to exit: the median of 50 runs of the static dist build on the CI's Linux runner (bench_cli.py). A command without a number is only reported. Set a number about 5% above what the command measures, because changes elsewhere move the binary's layout and with it a few faults. Raising a number needs a reason below.",
+  "reason": "No numbers yet: they come from the CI's runners, once the runs show that both kinds of runner agree.",
+  "page_faults": {}
+}

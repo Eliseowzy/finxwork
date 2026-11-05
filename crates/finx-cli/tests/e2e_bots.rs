@@ -240,6 +240,28 @@ async fn a_bot_that_forgets_to_send_is_reminded_and_the_user_sees_one_message() 
     assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
 }
 
+/// The first answer of a burst only written as plain text still goes out, ahead of the next one:
+/// a reply to the next message must not count as answering it too (bot-design §3.11).
+#[tokio::test]
+async fn a_private_answer_goes_out_before_the_next_message_is_answered() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let listed = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let bot = listed["bots"][0]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    say(&client, &session, "[[mock:quiet:春天的诗]] 写一首春天的诗").await;
+    say(&client, &session, "[[mock:send:夏天的诗]] 写一首夏天的诗").await;
+    let mut seen = Vec::new();
+    while sent(&seen).len() < 2 {
+        seen.extend(until_event(&mut wire, ended).await);
+    }
+    assert_eq!(sent(&seen), ["春天的诗", "夏天的诗"]);
+    let (_, log) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&session)).expect("the log");
+    assert_eq!(log.matches("\"type\":\"unanswered\"").count(), 1);
+}
+
 #[tokio::test]
 async fn a_sub_agent_works_in_the_background_and_the_bot_relays_its_report() {
     let env = TestEnv::new("manual", "").await;
@@ -508,4 +530,61 @@ async fn bots_and_their_rows_survive_a_restart() {
     let transcript = opened["snapshot"]["transcript"].to_string();
     assert!(transcript.contains("记下了。"));
     assert!(!transcript.contains("<reminder>"), "what it is told is not shown: {transcript}");
+}
+
+/// The head of a PNG: enough to tell what it is and how large.
+fn png_head(width: u32, height: u32) -> Vec<u8> {
+    let mut bytes = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    bytes.extend(width.to_be_bytes());
+    bytes.extend(height.to_be_bytes());
+    bytes.extend([8, 6, 0, 0, 0, 0, 0, 0, 0]);
+    bytes
+}
+
+#[tokio::test]
+async fn files_and_questions_show_in_the_bots_row_and_count_as_unread() {
+    let env = TestEnv::new("manual", "").await;
+    let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    let schema = SchemaCheck::new(&["BotsChangedParams"]);
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    let created = client.request("bots/create", json!({"name": "\u{7814}\u{7a76}\u{5458}", "avatar": {"kind": "mono", "hue": "teal"}})).await.unwrap();
+    let bot = created["bot"]["id"].as_str().unwrap().to_string();
+    let session = open(&client, &bot).await;
+    let folder = env.home.path().join("bots").join(&bot).join("files");
+    std::fs::write(folder.join("chart.png"), png_head(960, 600)).unwrap();
+    std::fs::write(folder.join("report.pdf"), b"%PDF").unwrap();
+
+    // Files: the row says what was sent; the result says what each one is.
+    say(&client, &session, "[[mock:attach:chart.png,report.pdf]] send them").await;
+    let events = until_event(&mut wire, ended).await;
+    let done = events.iter().find(|e| e["type"] == "tool_completed" && e["result"]["tool_name"] == "send_to_user").expect("the result");
+    assert_eq!(done["result"]["is_error"], false);
+    let files = done["result"]["details"]["files"].as_array().expect("the files");
+    assert_eq!(files[0]["image"], true);
+    assert_eq!((files[0]["width"].as_u64(), files[0]["height"].as_u64()), (Some(960), Some(600)));
+    assert!(files[1].get("image").is_none());
+    let row = until_row(&mut wire, &bot, |b| b["last"]["from"] == "bot").await;
+    schema.check("BotsChangedParams", &json!({"bots": [row.clone()]}));
+    assert_eq!(row["last"]["text"], "");
+    assert_eq!(row["last"]["images"], 1);
+    assert_eq!(row["last"]["file"], "report.pdf");
+    assert_eq!(row["unread"], 1);
+
+    // A question: its words, and the task ends with no reminder.
+    say(&client, &session, "[[mock:ask:send to whom?|finance|everyone]] then?").await;
+    let events = until_event(&mut wire, ended).await;
+    assert_eq!(sent(&events), ["send to whom?"]);
+    let row = until_row(&mut wire, &bot, |b| b["last"]["text"] == "send to whom?").await;
+    assert!(row["last"].get("file").is_none());
+    assert_eq!(row["unread"], 2);
+
+    // A wrong path: nothing to see, nothing unread.
+    say(&client, &session, "[[mock:attach:missing.pdf]] again").await;
+    let events = until_event(&mut wire, |e| e["type"] == "tool_completed").await;
+    assert_eq!(events.last().unwrap()["result"]["is_error"], true);
+    let list = client.request("bots/subscribe", Value::Null).await.unwrap();
+    let row = list["bots"].as_array().unwrap().iter().find(|b| b["id"] == bot.as_str()).unwrap().clone();
+    assert_eq!(row["unread"], 2);
 }

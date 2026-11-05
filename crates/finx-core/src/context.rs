@@ -92,7 +92,7 @@ pub fn undelivered_message(ts: Timestamp) -> UserMessage {
     }
 }
 
-/// The user message right after each of a bot's owner's messages (bot-design §3.13).
+/// The user message right after each of a bot's owner's messages (bot-design §3.14).
 pub fn reply_nudge_message(ts: Timestamp) -> UserMessage {
     UserMessage {
         content: vec![UserContent::Text {

@@ -175,7 +175,7 @@ pub enum EntryKind {
     Undelivered,
     /// A bot's session: follows each message from its owner. Models often answer in plain text
     /// whatever the system prompt says; a word right after the message mostly settles it
-    /// (bot-design §3.13).
+    /// (bot-design §3.14).
     ReplyNudge,
     /// A kind written by a later version. It keeps its place in the branch, so the entries
     /// after it still link up; nothing else reads it.

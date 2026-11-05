@@ -15,7 +15,8 @@ export type Alert = {
   /** What it stacks with, and what a click opens (`targetOf`). */
   group: string;
 } & (
-  | { kind: "bot_message"; text: string; name: string }
+  /** text is empty for files alone: images counts them, file names the first other one. */
+  | { kind: "bot_message"; text: string; name: string; images?: number; file?: string }
   | { kind: "bot_approval"; text: string; name: string }
   | { kind: "bot_failed"; name: string }
   | { kind: "session_approval"; title: string }
@@ -65,10 +66,11 @@ export function botAlerts(before: BotSummary | undefined, after: BotSummary): Al
 
   // By the message itself, not the unread count: a read arriving with it would hide the rise.
   const last = after.last;
-  const fresh = last && (last.ts !== before?.last?.ts || last.text !== before?.last?.text);
+  const said = (l: BotSummary["last"]) => l && `${l.text}${l.file ?? ""}${l.images ? `:${l.images}` : ""}`;
+  const fresh = last && (last.ts !== before?.last?.ts || said(last) !== said(before?.last));
   if (fresh && last.from === "bot") {
     const { text } = lastText(last);
-    alerts.push({ kind: "bot_message", id: `${group}:${last.ts}:${hash(last.text)}`, group, name: after.name, text: text || last.text.trim() });
+    alerts.push({ kind: "bot_message", id: `${group}:${last.ts}:${hash(said(last)!)}`, group, name: after.name, text: text || last.text.trim(), ...(last.images ? { images: last.images } : {}), ...(last.file ? { file: last.file } : {}) });
   }
   if (after.waiting !== before?.waiting) {
     if (before?.waiting) clear.push(approval);

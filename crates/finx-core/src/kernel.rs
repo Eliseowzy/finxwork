@@ -214,6 +214,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     if let Some(tree) = &launch.agents {
         tool_state.insert(tree.clone());
     }
+    tool_state.insert(Arc::new(crate::web_search::SearchHandle { llm: launch.deps.llm.clone() }));
     // A browser handle whenever there is a pool: the browsers may be turned on later (§9.4).
     if let Some(pool) = &pool {
         tool_state.insert(Arc::new(BrowserHandle::new(

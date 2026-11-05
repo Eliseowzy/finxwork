@@ -495,6 +495,40 @@ try {
   await replies(page, n17 + 1, 120000);
   await page.cdp("Emulation.setEmulatedMedia", { features: [] });
 
+  /** Waits for `expr`, allowing what the bot asks for on the way: the point here is what it sends. */
+  const allowUntil = async (what, expr, ms = 180000) => {
+    const end = Date.now() + ms;
+    for (;;) {
+      if (await page.run(asking)) await page.run(`document.querySelector(".appr .btn.primary").click()`);
+      const v = await page.run(expr);
+      if (v) return v;
+      if (Date.now() > end) fail(`timed out waiting for ${what}`);
+      await sleep(400);
+    }
+  };
+
+  step("19. a real model sends a file: a row with its size, and the list says so");
+  await say(page, "写一份 50 字的周报，存成 report.md，发给我。");
+  await allowUntil("the file", `[...document.querySelectorAll(".tr.bots .bfiles .tile-name")].some((n) => n.textContent === "report.md")`);
+  await allowUntil("it is done", `!${busy}`);
+  note(`its row: ${await page.run(`[...document.querySelectorAll(".tr.bots .bfiles .tile")].at(-1).innerText.replace(/\\s+/g, " ")`)}`);
+  check(await page.run(`/\\d+ (KB|MB)/.test([...document.querySelectorAll(".tr.bots .bfiles .tile-kind")].at(-1).textContent)`), "the row says the size");
+  await page.shot("19-file");
+
+  step("21. a real model asks: options to tap, a tap is the owner's message, they fold away");
+  await say(page, "我有两份周报草稿：A 版详细，B 版简洁。你不知道我要哪版，先问我一下，我选了以后你用一句话回我就行。");
+  await allowUntil("the options", `document.querySelectorAll(".bq-opt").length >= 2`);
+  note(`options: ${await page.run(`[...document.querySelectorAll(".bq-opt")].map((b) => b.textContent).join(" / ")`)}`);
+  await page.shot("20-question");
+  const answer = await page.run(`document.querySelector(".bq-opt").textContent`);
+  const n21 = (await page.run(bubbles)).length;
+  await page.run(`document.querySelector(".bq-opt").click()`);
+  await page.until("the tapped answer", `${mine}.at(-1) === ${JSON.stringify(answer)}`);
+  await page.until("the options gone", `document.querySelectorAll(".bq-opt").length === 0`);
+  await allowUntil("its reply", `${bubbles}.length > ${n21} && !${busy}`);
+  note(`then: ${(await page.run(bubbles)).at(-1).replace(/\s+/g, " ").slice(0, 80)}`);
+  await page.shot("21-answered");
+
   step("2. back in session mode: the switch remembers both sides, and the draft");
   await page.run(`document.querySelector(".cmp-in").focus()`);
   await page.cdp("Input.insertText", { text: "还没发的草稿" });

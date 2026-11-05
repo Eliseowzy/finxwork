@@ -179,8 +179,8 @@ async fn writes_a_file_then_answers() {
     let requests = h.api.requests();
     assert_eq!(requests.len(), 2);
     assert!(requests[0].system.contains("You are FinxWork"));
-    // The four built-in tools, then the sub-agent tools (on by default), then the way to the
-    // deferred ones: the sub-agents' other two, at least.
+    // The four built-in tools, then the sub-agent tools (on by default), then the two that reach the
+    // deferred groups: the sub-agents' other two and web search, on by default.
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
     assert_eq!(names, ["read", "write", "edit", "bash", "spawn_agent", "send_message", "tool_search", "call_tool"]);
     assert!(requests[0].system.contains("- agents: Check on your running agents, or stop them"));

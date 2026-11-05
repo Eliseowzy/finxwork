@@ -34,7 +34,10 @@
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
 //! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
+//! | `attach:PATH[,PATH…]` | a bot's `send_to_user` of those files with `end_turn` |
+//! | `ask:QUESTION\|A\|B…` | a bot's `send_to_user` of that question and its answers |
 //! | `relay[:LABEL]` | a bot's `spawn_agent` (described LABEL) with "在查了。" sent and `end_turn`; when the report wakes it, `查到了：<the report>` sent with `end_turn` |
+//! | `web_search:QUERY[\|allowed=A,B][\|blocked=C][\|recency=week]` | `tool_search` for the search tool, `call_tool` on `web_search`, then `search done: <its result>` |
 //! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
 //! | `relay_slow:SECONDS` | a bot's opening line and a `spawn_agent` (named `writer`) that runs `sleep SECONDS`, a private line that ends the turn, then `回复：<the latest message>` sent with `end_turn` for whatever comes next, its report too |
 //! | `check` | `tool_search`, `call_tool` on `check_agents`, its result sent with `end_turn`, then as `relay_slow` |
@@ -45,6 +48,7 @@
 
 pub mod mcp;
 pub mod mcp_auth;
+pub mod search;
 pub mod simulation;
 
 use parking_lot::Mutex;
@@ -143,6 +147,7 @@ struct Shared {
     next_call: AtomicU64,
     /// Prompts of the `retry` scenario that already got their failure.
     retried: Mutex<HashMap<String, u32>>,
+    search: search::SearchState,
 }
 
 pub struct MockServer {
@@ -169,6 +174,7 @@ impl MockServer {
             stats: Stats::default(),
             next_call: AtomicU64::new(1),
             retried: Mutex::new(HashMap::new()),
+            search: search::SearchState::default(),
         });
         let accept_shared = shared.clone();
         let accept = tokio::spawn(async move {
@@ -193,6 +199,22 @@ impl MockServer {
 
     pub fn stats(&self) -> &Stats {
         &self.shared.stats
+    }
+
+    /// `[web_search.endpoints]` pointing every search service but DeepSeek at this server; DeepSeek
+    /// is asked at its model account's address, which a test points here too.
+    pub fn search_endpoints_toml(&self) -> String {
+        search::endpoints_toml(self.addr)
+    }
+
+    /// From now on `service` answers every search with this status; 0 ends that.
+    pub fn fail_search(&self, service: &str, status: u16) {
+        self.shared.search.fail(service, status);
+    }
+
+    /// The searches so far, oldest first.
+    pub fn search_calls(&self) -> Vec<search::SearchCall> {
+        self.shared.search.calls()
     }
 
     /// A public model catalog in the upstream format.
@@ -229,10 +251,13 @@ impl Drop for MockServer {
 }
 
 struct Request {
+    method: String,
     path: String,
     body: Vec<u8>,
     close: bool,
     authorization: Option<String>,
+    /// `X-Subscription-Token` or `X-Api-Key`.
+    token: Option<String>,
 }
 
 async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
@@ -242,7 +267,9 @@ async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
             Ok(Some(request)) => request,
             _ => return,
         };
-        let ok = if request.path.ends_with("/chat/completions") {
+        let ok = if let Some((status, body)) = search::answer(&shared.search, &request) {
+            write_json(&mut stream, status, &body).await
+        } else if request.path.ends_with("/chat/completions") {
             respond_chat(&mut stream, &request.body, &shared).await
         } else if request.path == "/catalog/api.json" {
             shared.stats.catalog_fetches.fetch_add(1, Ordering::Relaxed);
@@ -280,10 +307,12 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
     let head = String::from_utf8_lossy(&buf[..header_end]).into_owned();
     let mut lines = head.split("\r\n");
     let request_line = lines.next().unwrap_or("");
+    let method = request_line.split(' ').next().unwrap_or("GET").to_string();
     let path = request_line.split(' ').nth(1).unwrap_or("/").to_string();
     let mut length = 0usize;
     let mut close = false;
     let mut authorization = None;
+    let mut token = None;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else { continue };
         let value = value.trim();
@@ -291,6 +320,7 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
             "content-length" => length = value.parse().unwrap_or(0),
             "connection" => close = value.eq_ignore_ascii_case("close"),
             "authorization" => authorization = Some(value.to_string()),
+            "x-subscription-token" | "x-api-key" => token = Some(value.to_string()),
             _ => {}
         }
     }
@@ -305,7 +335,7 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
     }
     let body = buf[body_start..body_start + length].to_vec();
     buf.drain(..body_start + length);
-    Ok(Some(Request { path, body, close, authorization }))
+    Ok(Some(Request { method, path, body, close, authorization, token }))
 }
 
 /// The catalog the mock serves: DeepSeek's flash with a window no real catalog has, so a test
@@ -594,6 +624,11 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("mcp done: {}", last_tool_result(messages)))),
             }
         }
+        "web_search" => match step {
+            0 => Plan::Step(Step::calls(vec![("tool_search", json!({ "query": "web search" }))])),
+            1 => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": "web_search", "arguments": search::call_arguments(arg) }))])),
+            _ => Plan::Step(Step::text(format!("search done: {}", last_tool_result(messages)))),
+        },
         "fail" => Plan::Status(400, "mock rejects this request"),
         "send" => match step {
             0 => {
@@ -610,6 +645,26 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 ))
             }
             _ => done("send"),
+        },
+        "attach" => match step {
+            0 => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({
+                    "type": "attachment",
+                    "files": arg.split(',').map(|path| json!({ "path": path })).collect::<Vec<_>>(),
+                    "end_turn": true,
+                }),
+            )])),
+            _ => done("attach"),
+        },
+        "ask" => match step {
+            0 => {
+                let mut parts = arg.split('|');
+                let question = parts.next().unwrap_or_default();
+                let options: Vec<_> = parts.map(|label| json!({ "label": label })).collect();
+                Plan::Step(Step::calls(vec![("send_to_user", json!({ "type": "question", "text": question, "options": options }))]))
+            }
+            _ => done("ask"),
         },
         // Commands for sub-agents, one each, which the user may have to approve.
         "delegate" => match step {
@@ -665,11 +720,14 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             }
         }
         // A bot that answers in plain text, which the user never sees, and sends once reminded
-        // (bot-design §3.11).
+        // (bot-design §3.11). It takes long enough for a next message to come meanwhile.
         "quiet" => {
             let answer = if arg.is_empty() { prompt } else { arg };
             match step {
-                0 => Plan::Step(Step::text(answer.to_string())),
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(200),
+                    ..Step::text(answer.to_string())
+                }),
                 _ if last_user_text(messages).contains("<reply_reminder>") => {
                     Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": answer, "end_turn": true }))]))
                 }

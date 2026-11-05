@@ -260,11 +260,12 @@ async fn a_background_agent_reports_and_wakes_the_main_agent() {
     let task = &user_texts(&child[0])[0];
     assert!(task.contains("Count the files."), "{task}");
     assert!(task.contains("Markdown report"), "{task}");
-    // The main session's prompt, without the catalog that lists the group only it has.
-    assert!(root[0].system.starts_with(child[0].system.trim_end()), "same system prompt");
-    assert!(root[0].system.contains("- agents:") && !child[0].system.contains("<deferred_tools>"));
+    // The same prompt, up to the catalog: it lists a group only the main session has.
+    let prompt = |system: &str| system.split("<deferred_tools>").next().unwrap().to_string();
+    assert_eq!(prompt(&child[0].system), prompt(&root[0].system), "same system prompt");
+    assert!(root[0].system.contains("- agents:") && !child[0].system.contains("- agents:"));
     let child_tools: Vec<&str> = child[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(child_tools, ["read", "write", "edit", "bash"], "no agent tools for a sub-agent");
+    assert_eq!(child_tools, ["read", "write", "edit", "bash", "tool_search", "call_tool"], "no agent tools for a sub-agent");
 
     // The label the user sees comes with its start and stays in the main session's log.
     let label = events.iter().find_map(|e| match &e.msg {
@@ -792,10 +793,11 @@ async fn a_sub_agent_cannot_reach_the_tools_for_checking_and_stopping() {
     h.until_idle().await;
     let requests = h.requests("curious");
     let names: Vec<&str> = requests[0].tools.iter().map(|t| t.name.as_str()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash"]);
+    assert_eq!(names, ["read", "write", "edit", "bash", "tool_search", "call_tool"], "for web search");
+    assert!(!requests[0].system.contains("- agents:"), "{}", requests[0].system);
     let results = tool_results(&requests[1]);
     assert!(results[0].contains("Unknown tool 'check_agents'"), "{}", results[0]);
-    assert!(results[1].contains("Unknown tool 'call_tool'"), "{}", results[1]);
+    assert!(results[1].contains("Unknown tool 'stop_agents'"), "{}", results[1]);
 }
 
 /// Input that came before a wait began ends it too: the model has not read it yet, and would not
@@ -1162,8 +1164,7 @@ async fn a_resumed_session_knows_its_earlier_agents_as_their_logs_left_them() {
     // Resumed, the main session has the group for checking and stopping, and its agents still don't.
     assert!(root.last().unwrap().system.contains("- agents:"));
     let new = &h.requests("counter-2")[0];
-    assert!(!new.system.contains("<deferred_tools>"), "{}", new.system);
-    assert!(!new.tools.iter().any(|t| t.name == "call_tool"));
+    assert!(!new.system.contains("- agents:"), "{}", new.system);
 }
 
 #[tokio::test]
@@ -1208,6 +1209,6 @@ async fn sub_agents_can_be_turned_off() {
     .unwrap();
     kernel.run(vec![finx_llm::UserContent::Text { text: "hi".into() }]).await.unwrap();
     let names: Vec<String> = api.requests()[0].tools.iter().map(|t| t.name.clone()).collect();
-    assert_eq!(names, ["read", "write", "edit", "bash"]);
-    assert!(!api.requests()[0].system.contains("<deferred_tools>"), "no agents, nothing to check on");
+    assert_eq!(names, ["read", "write", "edit", "bash", "tool_search", "call_tool"]);
+    assert!(!api.requests()[0].system.contains("- agents:"), "no agents, nothing to check on");
 }

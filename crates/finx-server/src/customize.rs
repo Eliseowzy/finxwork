@@ -94,7 +94,7 @@ fn own_client(server: &finx_protocol::McpServerConfig) -> Result<Option<finx_pro
 }
 
 #[derive(Clone, Copy)]
-enum Topic {
+pub(crate) enum Topic {
     Config,
     Skills,
     Mcp,
@@ -134,7 +134,7 @@ fn install_error(err: InstallError) -> RpcError {
     }
 }
 
-fn store_error(message: String) -> RpcError {
+pub(crate) fn store_error(message: String) -> RpcError {
     RpcError::with_kind(error_code::CREDENTIAL_STORE_UNAVAILABLE, "credential_store_unavailable", message)
 }
 
@@ -184,7 +184,7 @@ impl Server {
     }
 
     /// The workspace of `cwd`; without one, that of a session without a project.
-    fn workspace(&self, cwd: Option<&Path>) -> Result<Workspace, RpcError> {
+    pub(crate) fn workspace(&self, cwd: Option<&Path>) -> Result<Workspace, RpcError> {
         let dir = match cwd {
             Some(cwd) if !cwd.is_absolute() => return Err(RpcError::invalid_params("cwd must be an absolute path")),
             Some(cwd) => cwd.to_path_buf(),
@@ -208,7 +208,7 @@ impl Server {
 
     // ---- Subscriptions ----
 
-    fn subscribe(&self, topic: Topic, conn: &ConnHandle, cwd: Option<&Path>) {
+    pub(crate) fn subscribe(&self, topic: Topic, conn: &ConnHandle, cwd: Option<&Path>) {
         let state = self.customize();
         let map = match topic {
             Topic::Config => &state.config,
