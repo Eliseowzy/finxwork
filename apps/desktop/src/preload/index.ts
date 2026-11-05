@@ -34,6 +34,7 @@ const bridge: Bridge = {
   browserMenuAction: (targetId, action) => ipcRenderer.send("browser-menu-action", targetId, action),
   openPrivacySettings: () => ipcRenderer.send("open-privacy-settings"),
   localServers: () => ipcRenderer.invoke("browser-local-servers"),
+  stopLocalServer: (port: number, pid: number) => ipcRenderer.invoke("browser-stop-local-server", port, pid),
   openSourceApp: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("open-source-app", adapter),
   sourceAppIcon: (adapter?: "qwenwork" | "qoder") => ipcRenderer.invoke("source-app-icon", adapter),
   platform: arg("platform") as PlatformId,

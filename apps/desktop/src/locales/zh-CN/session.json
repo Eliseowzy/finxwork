@@ -351,6 +351,13 @@
     "typeUrl": "搜索或输入网址",
     "localServers": "本地服务",
     "rescan": "重新检测",
+    "stopServer": "停止服务",
+    "stopServerTitle": "停止 :{{port}} 上的服务？",
+    "stopServerBody": "会结束进程 {{process}}（PID {{pid}}），这个服务上未保存的内容可能会丢失。",
+    "stopServerButton": "停止",
+    "stopServerDone": ":{{port}} 已停止",
+    "stopServerGone": ":{{port}} 上的服务已经不在了",
+    "stopServerDenied": "没有权限停止 {{process}}（PID {{pid}}）",
     "noLocalServers": "本机没有正在运行的网页服务。启动后会显示在这里。",
     "more": "更多",
     "menu": {

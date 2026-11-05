@@ -5,7 +5,7 @@ import path from "node:path";
 import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
-import { devServers } from "./browser/devservers";
+import { devServers, stopDevServer } from "./browser/devservers";
 import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testNotification } from "./notify";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
@@ -294,6 +294,10 @@ export function registerIPC() {
   ipcMain.on("browser-menu-action", (e, targetId: unknown, a: unknown) =>
     trusted(e) && (targetId === null || typeof targetId === "string") && menuActionOk(a) && tabMenuAction(e.sender, targetId, a));
   ipcMain.handle("browser-local-servers", (e) => (trusted(e) ? devServers(new Set(app.getAppMetrics().map((m) => m.pid))) : []));
+  ipcMain.handle("browser-stop-local-server", (e, port: unknown, pid: unknown) => {
+    if (!trusted(e) || !Number.isInteger(port) || !Number.isInteger(pid)) throw new Error("Invalid server");
+    return stopDevServer(port as number, pid as number, new Set([process.pid, ...app.getAppMetrics().map((m) => m.pid)]));
+  });
   ipcMain.handle("kernel-status", (e) => (trusted(e) ? kernelStatus() : null));
   ipcMain.handle("system-browsers", (e) => (trusted(e) ? systemBrowsers() : []));
   ipcMain.handle("system-browser-set-up", (e) => (trusted(e) ? setUpSystemBrowser() : null));

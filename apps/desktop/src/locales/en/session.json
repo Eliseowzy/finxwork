@@ -361,6 +361,13 @@
     "typeUrl": "Search or type a URL",
     "localServers": "Local servers",
     "rescan": "Look again",
+    "stopServer": "Stop server",
+    "stopServerTitle": "Stop the server on :{{port}}?",
+    "stopServerBody": "This ends {{process}} (PID {{pid}}). Anything unsaved in it may be lost.",
+    "stopServerButton": "Stop",
+    "stopServerDone": ":{{port}} stopped",
+    "stopServerGone": "The server on :{{port}} is no longer running",
+    "stopServerDenied": "Not allowed to stop {{process}} (PID {{pid}})",
     "noLocalServers": "No web server is running on this machine. Start one and it shows here.",
     "more": "More",
     "menu": {

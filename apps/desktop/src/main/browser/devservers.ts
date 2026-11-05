@@ -140,7 +140,7 @@ function probe(l: Listener): Promise<DevServer | null> {
       res.setEncoding("utf8");
       const done = () => {
         res.destroy();
-        resolve({ port: l.port, url: `http://localhost:${l.port}/`, title: titleOf(body), framework: frameworkOf(body, res.headers), process: l.process });
+        resolve({ port: l.port, url: `http://localhost:${l.port}/`, title: titleOf(body), framework: frameworkOf(body, res.headers), process: l.process, pid: l.pid });
       };
       res.on("data", (chunk: string) => {
         body += chunk;
@@ -199,4 +199,41 @@ export function devServers(own: Set<number>): Promise<DevServer[]> {
     }
   })();
   return inFlight;
+}
+
+/** Whether a process is still there (EPERM: it is, only not ours to signal). */
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+const stopGrace = 3000;
+
+/**
+ * Stops the server the new tab offered on `port`: only if the process listening there now is still
+ * `pid` (the one the card showed) and one the new tab would offer, so a port taken over meanwhile,
+ * or the app itself, is never hit. Asked to quit first; ended outright when it has not after a while.
+ */
+export async function stopDevServer(port: number, pid: number, own: Set<number>): Promise<"stopped" | "gone" | "denied"> {
+  const here = candidates(await listeners(), own, ownPorts()).find((l) => l.port === port);
+  if (!here || here.pid !== pid || pid <= 0) return "gone";
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "ESRCH" ? "gone" : "denied";
+  }
+  for (const until = Date.now() + stopGrace; Date.now() < until; ) {
+    if (!alive(pid)) return "stopped";
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    // Gone between the last look and now.
+  }
+  return "stopped";
 }
