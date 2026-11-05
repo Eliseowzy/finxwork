@@ -182,6 +182,14 @@ async function settings(page) {
 async function intoBots(page) {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
+  await pastSetup(page);
+}
+
+/** The default bot asks for its model the first time (bot-setup.mjs): what it starts with will do here. */
+async function pastSetup(page) {
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
 }
 
 let failed = false;
@@ -229,6 +237,7 @@ try {
   await page.until("老对话, Full Access", `document.querySelector(".bhead-n")?.textContent === "老对话" && ${mode} === "完全访问"`, 30000);
   await page.run(`[...document.querySelectorAll(".brow")].find((r) => r.querySelector(".bname").textContent === "FinxBot").click()`);
   await page.until("FinxBot", `document.querySelector(".bhead-n")?.textContent === "FinxBot"`);
+  await pastSetup(page);
 
   step("知道了 closed the note for good");
   await page.cdp("Page.reload");

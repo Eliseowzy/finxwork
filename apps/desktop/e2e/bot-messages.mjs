@@ -258,6 +258,13 @@ async function ask(page, text, count = 1) {
   await sleep(250);
 }
 
+/** The default bot asks for its model the first time (bot-setup.mjs): what it starts with will do here. */
+async function pastSetup(page) {
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+}
+
 let failed = false;
 try {
   if (!process.env.FINXWORK_E2E_NO_BUILD && !packaged) {
@@ -271,6 +278,7 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("FinxBot's page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`, 30000);
+  await pastSetup(page);
   // The first-time note sits over the conversation's end until it is closed.
   await page.until("the first-time note", `!!document.querySelector(".knote .btn.primary")`);
   await page.run(`document.querySelector(".knote .btn.primary").click()`);

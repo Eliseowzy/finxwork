@@ -133,6 +133,13 @@ const howMany = `document.querySelectorAll(".appr").length`;
 const allow = `document.querySelector(".appr .btn.primary").click()`;
 const bubbles = `[...document.querySelectorAll(".tr.bots .bm:not(.working) .bbub")].map((b) => b.innerText)`;
 
+/** The default bot asks for its model the first time (bot-setup.mjs): what it starts with will do here. */
+async function pastSetup(page) {
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+}
+
 let failed = false;
 let page = null;
 try {
@@ -272,6 +279,7 @@ try {
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   // Full Access by default: its settings have the mode.
   await page.until("the bot's page", `!!document.querySelector(".bhead")`, 30000);
+  await pastSetup(page);
   await page.run(`document.querySelector(".bhead").click()`);
   await page.until("the permission mode in its settings", `document.querySelector(".bpn-perm .lbl")?.textContent === "完全访问"`, 30000);
   await page.run(`document.querySelector(".bpn-perm .mb").click()`);

@@ -160,8 +160,12 @@ export type BotAvatarResult = {
 
 export type BotCreateParams = {
   avatar: AvatarInput;
+  /** The model its conversation starts with; the configured one without it. */
+  model?: string | null;
   /** 1 to 20 characters once trimmed. */
   name: string;
+  /** How hard its conversation starts out thinking; the configured level without it. */
+  thinking?: ThinkingLevel | null;
 };
 
 /** Parameters of `bots/avatar`, `bots/read`, `bots/unread`, `bots/clear` and `bots/delete`. */

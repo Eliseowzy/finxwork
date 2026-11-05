@@ -499,6 +499,31 @@ async fn what_a_sub_agent_asks_waits_on_the_row_and_the_bot_keeps_talking() {
 }
 
 #[tokio::test]
+async fn a_new_bot_starts_on_the_model_it_was_made_with() {
+    let env = TestEnv::new("manual", "").await;
+    let (child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    drop(incoming);
+    let created = client
+        .request("bots/create", json!({"name": "研究员", "avatar": {"kind": "mono", "hue": "teal"}, "model": "deepseek/deepseek-flash", "thinking": "low"}))
+        .await
+        .unwrap();
+    let chosen = created["bot"]["id"].as_str().unwrap().to_string();
+    let created = client.request("bots/create", json!({"name": "没选过", "avatar": {"kind": "mono", "hue": "sage"}})).await.unwrap();
+    let plain = created["bot"]["id"].as_str().unwrap().to_string();
+    drop((client, child));
+
+    // Not opened yet when finx restarts: the choice is in its file.
+    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let opened = client.request("bots/open", json!({"bot_id": chosen})).await.unwrap();
+    assert_eq!(opened["snapshot"]["session"]["model"], "deepseek/deepseek-flash");
+    assert_eq!(opened["snapshot"]["session"]["thinking"], "low");
+    let opened = client.request("bots/open", json!({"bot_id": plain})).await.unwrap();
+    assert_eq!(opened["snapshot"]["session"]["model"], "mock/mock-1", "without a choice, the configured model");
+}
+
+#[tokio::test]
 async fn renaming_avatars_clearing_and_deleting() {
     let env = TestEnv::new("manual", "").await;
     let (_child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);

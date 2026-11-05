@@ -202,6 +202,15 @@ button.wb-h{cursor:pointer}
 .bs-hues{display:flex;gap:10px;padding:2px}
 .bs-hue{width:18px;height:18px;padding:0;border:0;border-radius:50%;background:var(--h)}
 .bs-hue.on{box-shadow:0 0 0 2px var(--win),0 0 0 3.5px var(--l1)}
+.bs-k.bs-model{margin-top:var(--sp-3)}
+.bmodel .frow>.fl{width:auto}
+.bmodel .frow>.fv{flex-wrap:nowrap}
+.bmodel .mb{margin-right:-7px}
+.bmodel .mb .lbl{max-width:200px}
+.bmodel-why{margin:var(--sp-1) 0 0}
+.bsetup .knote-i{color:var(--l2)}
+.bsetup .bmodel{margin:0 0 4px 24px;background:var(--fill)}
+.bsetup .bmodel-why{margin:0 0 4px 24px}
 
 /* A bot's routines (bot-mode-design §6.21): their line in the chat, the clock's dot, and the panel. */
 .rtn-line{align-self:center;display:inline-flex;align-items:center;gap:6px;max-width:100%;margin:13px 0;padding:0 8px;height:22px;border:0;border-radius:var(--r-sm);background:none;font-size:12px;line-height:16px;color:var(--l3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
