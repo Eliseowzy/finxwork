@@ -34,7 +34,7 @@ pub struct ChatOptions {
 }
 
 pub async fn chat(overrides: &[String], options: ChatOptions) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::On)?;
+    let rt = setup::init(std::env::current_dir()?, overrides)?;
     let style = Style::detect();
     for warning in &rt.warnings {
         eprintln!("{}", style.yellow(&format!("warning: {warning}")));

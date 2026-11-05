@@ -40,7 +40,7 @@ pub async fn exec(
         Some(cwd) => cwd,
         None => std::env::current_dir()?,
     };
-    let mut rt = setup::init(cwd, &with_run_overrides(overrides, run), setup::Logging::On)?;
+    let mut rt = setup::init(cwd, &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
     let prompt = setup::read_prompt(prompt)?;
     let interactive = interactive(run);
@@ -80,7 +80,7 @@ pub async fn resume(
     };
     let prompt = prompt.context("nothing to do: pass the next instruction with -p/--prompt")?;
     let prompt = setup::read_prompt(prompt)?;
-    let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run), setup::Logging::On)?;
+    let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
     let interactive = interactive(run);
     let deps = rt.kernel_deps(true)?;

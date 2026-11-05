@@ -81,7 +81,7 @@ fn print_warnings(rt: &Runtime) {
 }
 
 pub fn list(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::Off)?;
+    let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     if as_json {
         let rows: Vec<Value> = rt
             .mcp_servers
@@ -92,16 +92,16 @@ pub fn list(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
                     "enabled": s.is_enabled(),
                     "transport": transport(s),
                     "target": target(s),
-                    "exposure": exposure_name(exposure(&rt, s)),
+                    "exposure": exposure_name(exposure(rt, s)),
                     "required": s.required,
-                    "sources": sources(&rt, &s.name),
+                    "sources": sources(rt, &s.name),
                 })
             })
             .collect();
         print_json(&json!({ "enabled": rt.config.mcp.enabled, "servers": rows, "warnings": rt.warnings }))?;
         return Ok(0);
     }
-    if mcp_off(&rt) {
+    if mcp_off(rt) {
         return Ok(0);
     }
     let style = Style::detect();
@@ -111,26 +111,26 @@ pub fn list(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
     }
     let width = rt.mcp_servers.iter().map(|s| s.name.len()).max().unwrap_or(0);
     for server in &rt.mcp_servers {
-        let state = if server.is_enabled() { exposure_name(exposure(&rt, server)) } else { "disabled" };
+        let state = if server.is_enabled() { exposure_name(exposure(rt, server)) } else { "disabled" };
         let line = format!(
             "{:<width$}  {:<5}  {:<8}  {}  {}",
             server.name,
             transport(server),
             state,
             truncate(&target(server), 60),
-            style.dim(&format!("({})", sources(&rt, &server.name).join(" + ")))
+            style.dim(&format!("({})", sources(rt, &server.name).join(" + ")))
         );
         writeln!(out, "{line}")?;
     }
     out.flush()?;
-    print_warnings(&rt);
+    print_warnings(rt);
     Ok(0)
 }
 
 /// `finx mcp list --check`: connects to every enabled server at once, then disconnects.
 /// Fails when a server could not connect.
 pub async fn check(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::On)?;
+    let rt = setup::init(std::env::current_dir()?, overrides)?;
     if !as_json && mcp_off(&rt) {
         return Ok(0);
     }
@@ -185,7 +185,7 @@ fn print_checks(checks: &[ServerCheck]) -> anyhow::Result<()> {
 }
 
 pub fn get(overrides: &[String], name: &str, as_json: bool) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::Off)?;
+    let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     let Some(server) = rt.mcp_servers.iter().find(|s| s.name == name) else {
         let names: Vec<&str> = rt.mcp_servers.iter().map(|s| s.name.as_str()).collect();
         anyhow::bail!(
@@ -198,9 +198,9 @@ pub fn get(overrides: &[String], name: &str, as_json: bool) -> anyhow::Result<u8
     shown.headers = hidden_map(&server.headers);
     if as_json {
         let mut value = serde_json::to_value(&shown)?;
-        value["sources"] = json!(sources(&rt, name));
+        value["sources"] = json!(sources(rt, name));
         value["transport"] = json!(transport(server));
-        value["exposure"] = json!(exposure_name(exposure(&rt, server)));
+        value["exposure"] = json!(exposure_name(exposure(rt, server)));
         print_json(&value)?;
         return Ok(0);
     }
@@ -219,7 +219,7 @@ pub fn get(overrides: &[String], name: &str, as_json: bool) -> anyhow::Result<u8
     let yes_no = |flag: bool| if flag { "yes" } else { "no" }.to_string();
     let mut rows = vec![
         ("name", shown.name.clone()),
-        ("sources", list(&sources(&rt, name))),
+        ("sources", list(&sources(rt, name))),
         ("enabled", yes_no(shown.is_enabled())),
         ("transport", transport(server).to_string()),
     ];
@@ -237,7 +237,7 @@ pub fn get(overrides: &[String], name: &str, as_json: bool) -> anyhow::Result<u8
         rows.push(("bearer token", shown.bearer_token_env_var.clone().map_or("-".to_string(), |v| format!("${v}"))));
     }
     rows.extend([
-        ("exposure", exposure_name(exposure(&rt, server)).to_string()),
+        ("exposure", exposure_name(exposure(rt, server)).to_string()),
         ("description", shown.description.clone().unwrap_or_else(|| "-".to_string())),
         ("direct tools", list(&shown.direct_tools)),
         ("enabled tools", shown.enabled_tools.as_deref().map_or("all".to_string(), list)),
@@ -252,6 +252,6 @@ pub fn get(overrides: &[String], name: &str, as_json: bool) -> anyhow::Result<u8
         writeln!(out, "{label:<17}{value}")?;
     }
     out.flush()?;
-    print_warnings(&rt);
+    print_warnings(rt);
     Ok(0)
 }

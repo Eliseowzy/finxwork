@@ -77,7 +77,7 @@ pub fn models(
     as_json: bool,
     action: Option<crate::ModelsAction>,
 ) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::Off)?;
+    let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     if let Some(action @ (crate::ModelsAction::Login { .. } | crate::ModelsAction::Logout { .. } | crate::ModelsAction::Status { .. } | crate::ModelsAction::Forget { .. })) = &action {
         let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
         let status = runtime.block_on(async {
@@ -283,7 +283,7 @@ fn file_entry(path: &Path) -> Value {
 }
 
 pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::Off)?;
+    let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     let project_dir = rt.project_root.clone().unwrap_or_else(|| rt.cwd.clone());
     let resolved = rt.llm.resolve(&rt.config.model);
     let provider = resolved
@@ -299,7 +299,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         }),
         Err(err) => json!({ "ref": rt.config.model, "error": err.to_string() }),
     };
-    let skill_report = scan_skills(&rt);
+    let skill_report = scan_skills(rt);
     let skills_line = if rt.config.skills.enabled {
         format!(
             "{} ({} in the catalog, about {} tokens)",
@@ -406,7 +406,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         ("thinking", text(&info["thinking"])),
         ("permissions", text(&info["permission_mode"])),
         ("tools", text(&info["tools"])),
-        ("mcp servers", mcp_line(&rt)),
+        ("mcp servers", mcp_line(rt)),
         ("skills", skills_line),
         ("from environment", text(&info["env_overrides"])),
         ("project", project),
@@ -454,7 +454,7 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
     let mut warnings = Vec::new();
     let mut check =
         |name: &'static str, ok: bool, detail: String| checks.push(Check { name, ok, detail });
-    match setup::init(std::env::current_dir()?, overrides, setup::Logging::Off) {
+    match setup::init_local(std::env::current_dir()?, overrides) {
         Err(err) => check("configuration", false, format!("{err:#}")),
         Ok(rt) => {
             check("data directory", true, rt.home.root().display().to_string());
@@ -511,7 +511,7 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
             let shell = if PathBuf::from("/bin/bash").exists() { "/bin/bash" } else { "/bin/sh" };
             check("shell", true, rt.config.bash_shell.clone().unwrap_or_else(|| shell.to_string()));
             // Broken skills are reported, but they do not make the setup fail.
-            let report = scan_skills(&rt);
+            let report = scan_skills(rt);
             let active = report.set.active().count();
             let broken = report.set.entries.iter().filter(|e| e.state == SkillState::Invalid).count();
             let detail = match (rt.config.skills.enabled, broken) {
@@ -575,8 +575,8 @@ pub fn skills(overrides: &[String], dir: Option<PathBuf>, all: bool, as_json: bo
         Some(dir) => dir,
         None => std::env::current_dir()?,
     };
-    let rt = setup::init(cwd, overrides, setup::Logging::Off)?;
-    let report = scan_skills(&rt);
+    let rt = setup::init_local(cwd, overrides)?;
+    let report = scan_skills(rt);
     if as_json {
         print_json(&serde_json::to_value(report.report(all))?)?;
         return Ok(0);
