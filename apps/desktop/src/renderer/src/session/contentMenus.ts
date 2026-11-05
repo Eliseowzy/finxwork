@@ -3,6 +3,7 @@ import type { EditorInfo, MenuItem, PathInfo } from "../../../shared/bridge";
 import { i18n } from "../../../shared/i18n";
 import type { Store } from "../store";
 import { showFile } from "../files/state";
+import { bringBrowserBack } from "./browserPanel";
 import { recheckFiles, type Scope } from "./scope";
 
 // What a reply's files, links, code blocks and steps do, from a click or their native menus
@@ -121,6 +122,7 @@ export function openLink(st: Store, url: string, scope: Scope, external: boolean
   if (external || !scope) return finx.openExternal(url);
   void st.run(async () => {
     await finx.openURL(scope.session, url);
+    bringBrowserBack(scope.session);
     st.set({ browser: true, background: false, files: false, filesMax: false });
   });
 }

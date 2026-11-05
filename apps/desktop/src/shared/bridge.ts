@@ -94,6 +94,8 @@ export type BrowserPanel = {
   rect: { x: number; y: number; width: number; height: number } | null;
   /** The tab steps aside for now (a dialog is over the window): the page gets a picture of it to show meanwhile. */
   hold?: boolean;
+  /** The person is typing in the panel's address field: the agent's tabs do not take the panel from them. */
+  editing?: boolean;
 };
 
 /** A picture of a session's shown tab, taken as it stepped aside; `width` in CSS pixels. */
@@ -112,6 +114,8 @@ export type BrowserTab = {
   canGoBack: boolean;
   canGoForward: boolean;
   annotating?: boolean;
+  /** A blank tab the person opened: the panel's address field waits for them. The agent's blank tabs do not take the keyboard. */
+  asksAddress?: boolean;
 };
 
 /** The size a tab lays out at: the panel's, or a phone's or a tablet's. */

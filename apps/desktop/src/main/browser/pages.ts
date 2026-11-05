@@ -17,19 +17,36 @@ import { validBox, webComment, type AnnotationBox, type BrowserComment } from ".
 // session it shows; the tab that session shows goes there. Tabs nobody shows wait in a
 // hidden window, so they keep painting for snapshots and screenshots. Once the app quits
 // nothing waits there any more: tabs close with the windows that show them.
+//
+// The person may watch the agent's tabs, but the agent never interrupts them (browser-design
+// §8.3.6): nothing here moves the keyboard or a window on the agent's or a page's account.
 
 export const partition = "persist:finx-browser";
 
 /** The size of a tab no panel shows. */
 const parkedSize = { width: 1280, height: 800 };
 
-type Tab = { targetId: string; finxSession?: string; view: WebContentsView; events: PageEvents; seq: number; annotating?: boolean; domReady?: boolean; managed?: boolean };
+type Tab = {
+  targetId: string;
+  finxSession?: string;
+  view: WebContentsView;
+  events: PageEvents;
+  seq: number;
+  annotating?: boolean;
+  domReady?: boolean;
+  managed?: boolean;
+  asksAddress?: boolean;
+  /** Mouse events the agent has on the way: the ones the person makes are the rest. */
+  agentMouse: number;
+};
 
 const tabs = new Map<string, Tab>();
 /** The tab each finx session shows: the one it opened or selected last. */
 const shown = new Map<string, string>();
 /** Each window's browser panel, as its page reports it. */
 const panels = new Map<BrowserWindow, BrowserPanel>();
+/** The tab the person gave a window's keyboard to, by clicking in it. Otherwise the keyboard is the app page's. */
+const personTab = new WeakMap<BrowserWindow, Tab>();
 let parking: BrowserWindow | null = null;
 /** The app is quitting: no hidden window is made again, or the app could never finish. */
 let quitting = false;
@@ -139,11 +156,14 @@ function parkingWindow(): BrowserWindow {
 }
 
 export const electronPages: PageHost = {
-  create({ targetId, url, finxSession }, events): Page {
+  create({ targetId, url, finxSession, openerId, byPerson }, events): Page {
     // The session first: a tab takes its user agent when it is made.
     const ses = browserSession();
     const view = new WebContentsView({
       webPreferences: { partition, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, spellcheck: false,
+        // The kernel answers the dialogs of what it drives. Electron would also open its own
+        // on the tab's window, which brings that window forward, the hidden one included.
+        disableDialogs: !byPerson,
         preload: path.join(import.meta.dirname, "../preload/browser.cjs") },
     });
     // A page without a background of its own is white, as in any browser, whatever the app's
@@ -152,7 +172,7 @@ export const electronPages: PageHost = {
     view.setBackgroundColor("#ffffff");
     const wc = view.webContents;
     wc.setUserAgent(ses.getUserAgent());
-    const tab: Tab = { targetId, finxSession, view, events, seq: ++seq };
+    const tab: Tab = { targetId, finxSession, view, events, seq: ++seq, asksAddress: !!byPerson && blankPage(url), agentMouse: 0 };
     tabs.set(targetId, tab);
     wc.debugger.attach("1.3");
     // Sites see the Chrome this is, the same way in headers and in page scripts (identity.ts).
@@ -166,6 +186,8 @@ export const electronPages: PageHost = {
     // A tab acts as if focused even when its window is not (or is hidden): otherwise the
     // first mouse press only focuses it, and a click never reaches the page.
     void wc.debugger.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+    // window.print opens the system's print window and stops the page until someone answers it.
+    if (!byPerson) void wc.debugger.sendCommand("Page.addScriptToEvaluateOnNewDocument", { source: "window.print = function print() {};" }).catch(() => {});
     wc.debugger.on("message", (_e, method: string, params: Record<string, unknown>, sessionId?: string) =>
       tab.events.message(method, params, sessionId || undefined),
     );
@@ -190,7 +212,14 @@ export const electronPages: PageHost = {
       tab.events.open(next);
       return { action: "deny" };
     });
-    if (finxSession) shown.set(finxSession, targetId);
+    wc.on("focus", () => tookKeyboard(tab));
+    wc.on("before-mouse-event", (_e, mouse) => {
+      if (mouse.type === "mouseDown" && tab.agentMouse === 0) personClicked(tab);
+    });
+    // Shown unless the person is at work in the panel, except what they opened themselves, by
+    // a click in the page included.
+    const opener = openerId ? tabs.get(openerId) : undefined;
+    if (finxSession && (byPerson || !personIn(finxSession) || (opener && isPersonTab(opener)))) shown.set(finxSession, targetId);
     void wc.loadURL(url).catch(() => {});
     layout();
     return pageFor(tab);
@@ -209,7 +238,7 @@ export const electronPages: PageHost = {
   },
   activate(targetId) {
     const tab = tabs.get(targetId);
-    if (tab?.finxSession) shown.set(tab.finxSession, targetId);
+    if (tab?.finxSession && !personIn(tab.finxSession)) shown.set(tab.finxSession, targetId);
     layout();
   },
   downloads(dir, report) {
@@ -218,10 +247,58 @@ export const electronPages: PageHost = {
   },
 };
 
+/** The window whose panel shows the tab, if any. */
+function panelWindow(tab: Tab) {
+  return [...panels.keys()].find((w) => !w.isDestroyed() && w.contentView.children.includes(tab.view));
+}
+
+const isPersonTab = (tab: Tab) => {
+  const win = panelWindow(tab);
+  return !!win && personTab.get(win) === tab;
+};
+
+/** The person is at work in a session's panel: typing an address, or in the page it shows. */
+function personIn(finxSession: string) {
+  for (const [win, panel] of panels) {
+    if (panel.session === finxSession && (panel.editing || personTab.get(win)?.finxSession === finxSession)) return true;
+  }
+  return false;
+}
+
+/**
+ * A shown tab takes its window's keyboard each time it navigates, whoever asked: handed back at
+ * once, so not a key goes astray. With the window behind others that would bring it forward, so
+ * it is settled when the window comes back (`settleKeyboard`). Taken while the tab is idle, it
+ * was the person's click.
+ */
+function tookKeyboard(tab: Tab) {
+  const win = panelWindow(tab);
+  if (!win || !win.isFocused() || personTab.get(win) === tab) return;
+  if (tab.view.webContents.isLoading()) win.webContents.focus();
+  else personTab.set(win, tab);
+}
+
+/** The person clicked in the page, also while it loads, which the agent's clicks never are: the keyboard is theirs to give. */
+function personClicked(tab: Tab) {
+  const win = panelWindow(tab);
+  if (!win) return;
+  personTab.set(win, tab);
+  if (!tab.view.webContents.isFocused()) tab.view.webContents.focus();
+}
+
+function settleKeyboard(win: BrowserWindow) {
+  const holder = [...tabs.values()].find((t) => !t.view.webContents.isDestroyed() && t.view.webContents.isFocused() && win.contentView.children.includes(t.view));
+  if (holder && personTab.get(win) !== holder) win.webContents.focus();
+}
+
 function pageFor(tab: Tab): Page {
   const wc = tab.view.webContents;
   return {
-    send: (method, params, sessionId) => wc.debugger.sendCommand(method, params, sessionId),
+    send: (method, params, sessionId) => {
+      if (method !== "Input.dispatchMouseEvent") return wc.debugger.sendCommand(method, params, sessionId);
+      tab.agentMouse++;
+      return wc.debugger.sendCommand(method, params, sessionId).finally(() => void tab.agentMouse--);
+    },
     url: () => wc.isDestroyed() ? "" : wc.getURL(),
     title: () => wc.isDestroyed() ? "" : wc.getTitle(),
     close: () => close(tab.targetId),
@@ -304,7 +381,12 @@ const reports = new WeakMap<BrowserWindow, number>();
 export async function setPanel(wc: WebContents, panel: BrowserPanel) {
   const win = BrowserWindow.fromWebContents(wc);
   if (!win) return;
-  if (!panels.has(win)) win.once("closed", () => (panels.delete(win), layout()));
+  if (!panels.has(win)) {
+    win.once("closed", () => (panels.delete(win), layout()));
+    win.on("focus", () => settleKeyboard(win));
+    // In the app's own page again, so what the person clicked in the tab no longer holds.
+    wc.on("focus", () => void personTab.delete(win));
+  }
   const report = (reports.get(win) ?? 0) + 1;
   reports.set(win, report);
   const before = panels.get(win);
@@ -354,7 +436,12 @@ export function tabCommand(targetId: string, c: BrowserTabCommand) {
     case "go": {
       const p = preferences();
       const url = typedURL(c.url, { engines: allEngines(p.searchEngines), engine: p.searchEngine, keyword: c.engine });
-      if (url) void wc.loadURL(url).catch(() => {});
+      if (url) {
+        // As in any browser, the keyboard follows the person to the page they asked for.
+        const win = panelWindow(tab);
+        if (win) personTab.set(win, tab);
+        void wc.loadURL(url).catch(() => {});
+      }
       break;
     }
     case "close":
@@ -386,7 +473,7 @@ export function openURL(finxSession: string, url: string) {
 
 function createHomeTab(url: string, owner = homeBrowserSession) {
   const targetId = randomUUID();
-  electronPages.create({ targetId, url, finxSession: owner }, {
+  electronPages.create({ targetId, url, finxSession: owner, byPerson: true }, {
     message() {},
     changed() {},
     open: (next) => { createHomeTab(next, tabs.get(targetId)?.finxSession ?? owner); },
@@ -402,7 +489,9 @@ export function tabContents(targetId: string): WebContents | undefined {
 
 /** The person picked a tab in a panel. */
 export function showTab(targetId: string) {
-  electronPages.activate(targetId);
+  const tab = tabs.get(targetId);
+  if (tab?.finxSession) shown.set(tab.finxSession, targetId);
+  layout();
 }
 
 export function currentTabs(): BrowserTab[] {
@@ -420,6 +509,7 @@ export function currentTabs(): BrowserTab[] {
       canGoBack: t.view.webContents.navigationHistory.canGoBack(),
       canGoForward: t.view.webContents.navigationHistory.canGoForward(),
       annotating: !!t.annotating,
+      asksAddress: !!t.asksAddress,
     }));
 }
 

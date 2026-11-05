@@ -70,13 +70,15 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
   // The engine a keyword being typed would pick: shown as a hint, taken with Tab.
   const typed = draft?.trim().toLowerCase() ?? "";
   const hinted = !keyword && typed.length >= 2 && !/\s/.test(typed) ? engines.find((e) => e.keyword.toLowerCase().startsWith(typed)) : undefined;
-  // A new blank tab waits for an address.
+  // A blank tab the person opened waits for an address. One the agent opened leaves the keyboard alone.
   const currentId = current?.targetId;
   const currentBlank = current ? blank(current.url) : false;
   useEffect(() => {
     setDraft(null);
-    if (currentBlank) address.current?.focus();
+    if (currentBlank && current?.asksAddress) address.current?.focus();
   }, [currentId]);
+  /** The person is in the address field: main keeps the agent's new tabs from taking the panel. */
+  const [editing, setEditing] = useState(false);
   // A dialog, the search palette or the settings' dim is over the window: the tab steps aside,
   // a picture of it in its place.
   const covered = useCovered();
@@ -94,7 +96,7 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
     }
     const report = () => {
       const r = el.getBoundingClientRect();
-      finx.setBrowserPanel({ session, rect: { x: r.left, y: r.top, width: r.width, height: r.height } });
+      finx.setBrowserPanel({ session, rect: { x: r.left, y: r.top, width: r.width, height: r.height }, editing });
     };
     report();
     const observer = new ResizeObserver(report);
@@ -104,7 +106,7 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
       observer.disconnect();
       window.removeEventListener("resize", report);
     };
-  }, [session, covered]);
+  }, [session, covered, editing]);
   // Gone (another session, or the panel closed): no room for a tab here.
   useEffect(() => () => window.finx?.setBrowserPanel({ session: null, rect: null }), [session]);
 
@@ -206,10 +208,12 @@ export function BrowserPanel({ session, tabs, max, onMax, onClose }: { session: 
             onChange={(e) => setDraft(e.target.value)}
             onFocus={(e) => {
               e.currentTarget.select();
+              setEditing(true);
               // The person's engines may have changed in the settings meanwhile.
               void window.finx?.getPreferences().then((p) => setEngines(allEngines(p.searchEngines)));
             }}
             onBlur={() => {
+              setEditing(false);
               setDraft(null);
               setKeyword(null);
             }}
