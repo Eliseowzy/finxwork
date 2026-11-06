@@ -3,7 +3,7 @@
 //!
 //! A family resolves to an installed face, including fonts in Office's app bundles, then the
 //! bundled Carlito/Caladea for Calibri/Cambria, then a macOS stand-in for other missing
-//! families, and finally Helvetica Neue.
+//! families, then Helvetica Neue, and finally the bundled Carlito.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -159,14 +159,10 @@ impl FontProvider for SystemFonts {
         LAST_RESORT
             .iter()
             .find_map(|name| installed_face(name, bold, italic))
+            // A machine with none of them (Linux CI, a bare container) still draws: Carlito is compiled in.
             .unwrap_or_else(|| {
-                file_face(
-                    family,
-                    bold,
-                    italic,
-                    PathBuf::from("/System/Library/Fonts/Helvetica.ttc"),
-                    0,
-                )
+                let bytes: &'static [u8] = CARLITO[usize::from(bold) + 2 * usize::from(italic)];
+                FontFaceHandle::new(family, bold, italic, move || Ok(bytes.to_vec()))
             })
     }
 
@@ -280,10 +276,10 @@ fn catalog() -> &'static Catalog {
                     continue;
                 };
                 for (i, (names, bold, italic, size, label)) in faces.into_iter().enumerate() {
-                    if let Some(family) = label.filter(|f| size <= MAX_FACE_BYTES && listable(&f.family)) {
-                        if listed.insert(family.family.to_lowercase()) {
-                            families.push(family);
-                        }
+                    if let Some(family) = label.filter(|f| size <= MAX_FACE_BYTES && listable(&f.family))
+                        && listed.insert(family.family.to_lowercase())
+                    {
+                        families.push(family);
                     }
                     for name in names {
                         let list = index.entry(name).or_default();

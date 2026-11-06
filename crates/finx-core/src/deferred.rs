@@ -111,6 +111,14 @@ impl Deferred {
                 tools: crate::docs::doc_tools(),
             });
         }
+        // Presentations go where documents do: beside the conversation in the app.
+        if docs {
+            groups.push(Group {
+                name: crate::deck::GROUP,
+                summary: crate::deck::GROUP_SUMMARY.into(),
+                tools: crate::deck::tools(),
+            });
+        }
         match agents {
             AgentRole::Main => groups.push(Group {
                 name: AGENTS,
@@ -142,6 +150,7 @@ impl Deferred {
         }
         if docs {
             names.push(DOC);
+            names.push(crate::deck::GROUP);
         }
         if agents != AgentRole::None {
             names.push(AGENTS);
@@ -195,5 +204,6 @@ mod tests {
         assert!(doc.summary.contains("formulas"));
         assert!(deferred.find("doc_open").is_some());
         assert!(deferred.find("doc_read").is_some());
+        assert!(deferred.find("deck_read").is_some());
     }
 }

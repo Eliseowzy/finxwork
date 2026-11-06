@@ -16,6 +16,7 @@ pub mod config_edit;
 pub mod connectors;
 pub mod context;
 pub mod context_report;
+mod deck;
 mod deferred;
 mod desktop;
 mod docs;

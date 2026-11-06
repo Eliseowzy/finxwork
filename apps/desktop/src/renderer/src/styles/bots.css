@@ -105,7 +105,8 @@
 .bbub .md>*+*{margin-top:8px}
 .bbub .md pre{background:var(--win)}
 .bbub .md :is(pre,table,.md-table){max-width:100%;overflow-x:auto}
-.bline .msg-act{position:static;flex:none;padding:0 0 6px}
+.bline .msg-act{position:absolute;top:auto;right:0;bottom:0;padding:2px 4px;background:var(--win2);border-radius:var(--r-md);z-index:1;pointer-events:none}
+.bm:hover .bline .msg-act,.bline .msg-act:focus-within{pointer-events:auto}
 
 /* A message of files (bot-mode-design §6.6.1): its images together, then its files, a run's distance apart. Every
    block has a bubble's corners, so a message of any kind sits in a run with the others. */

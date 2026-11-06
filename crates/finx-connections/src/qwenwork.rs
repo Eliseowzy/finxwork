@@ -3,9 +3,9 @@ use crate::{
     ConnectionError, Result,
     platform::{Environment, Login},
 };
+use finx_llm::ThinkingLevel;
 use finx_llm::{Credentials, connection::Authorization};
 use finx_protocol::api::ConnectionModel;
-use finx_llm::ThinkingLevel;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
@@ -41,10 +41,14 @@ pub struct QwenWork {
 /// catalog gives one keeps thinking (measured 2026-10-30: "pro" still reasons at `none`), so it
 /// is not offered "off". The qwen3.7 models only switch thinking on and off; QwenWork itself
 /// asks qwen3.8-max for `xhigh` and the others for `high` unless the catalog names a level.
-pub(crate) fn thinking_of(id: &str, entry: &serde_json::Value) -> (Vec<ThinkingLevel>, ThinkingLevel) {
+pub(crate) fn thinking_of(
+    id: &str,
+    entry: &serde_json::Value,
+) -> (Vec<ThinkingLevel>, ThinkingLevel) {
     use ThinkingLevel::*;
     let config = &entry["thinking_config"];
-    let reasoning = entry["is_reasoning"].as_bool().unwrap_or(false) || config["enabled"].as_bool() == Some(true);
+    let reasoning = entry["is_reasoning"].as_bool().unwrap_or(false)
+        || config["enabled"].as_bool() == Some(true);
     if !reasoning {
         return (Vec::new(), Default);
     }
@@ -52,8 +56,15 @@ pub(crate) fn thinking_of(id: &str, entry: &serde_json::Value) -> (Vec<ThinkingL
     if id.starts_with("qwen3.7") {
         return (vec![Off, On], On);
     }
-    let named = config["effort"].as_str().and_then(|e| e.parse::<ThinkingLevel>().ok()).filter(|l| l.is_effort() && *l != Minimal);
-    let own = if id.starts_with("qwen3.8-max") { Xhigh } else { High };
+    let named = config["effort"]
+        .as_str()
+        .and_then(|e| e.parse::<ThinkingLevel>().ok())
+        .filter(|l| l.is_effort() && *l != Minimal);
+    let own = if id.starts_with("qwen3.8-max") {
+        Xhigh
+    } else {
+        High
+    };
     let mut levels = vec![Off, Low, Medium, High, Xhigh, Max];
     if config.is_object() {
         levels.retain(|l| *l != Off);
@@ -116,10 +127,14 @@ impl QwenWork {
             .as_array()
             .ok_or_else(|| ConnectionError::format("catalog", "catalog"))?;
         for (index, entry) in entries.iter().enumerate() {
-            if entry["enable"] == true && entry["format"] == "openai/chat-completions"
+            if entry["enable"] == true
+                && entry["format"] == "openai/chat-completions"
                 && !entry["key"].as_str().is_some_and(crate::valid_id)
             {
-                return Err(ConnectionError::format("catalog", &format!("catalog[{index}].key")));
+                return Err(ConnectionError::format(
+                    "catalog",
+                    &format!("catalog[{index}].key"),
+                ));
             }
         }
         let models: Vec<_> = entries
@@ -151,7 +166,11 @@ impl QwenWork {
             return Err(if entries.iter().all(|m| m["enable"] != true) {
                 ConnectionError::new("catalog_empty", "账户当前没有启用的模型").at("catalog")
             } else {
-                ConnectionError::new("unsupported_model_protocol", "模型目录中没有可解析且支持的模型协议").at("catalog")
+                ConnectionError::new(
+                    "unsupported_model_protocol",
+                    "模型目录中没有可解析且支持的模型协议",
+                )
+                .at("catalog")
             });
         }
         Ok(models)
@@ -165,16 +184,14 @@ impl QwenWork {
         let login = self.login().await?;
         let now = self.environment.now();
         if !self.loaded {
-            if let Some(value) = self.environment.get(&self.id).await? {
-                if let Ok(saved) = serde_json::from_str::<Saved>(&value) {
-                    if saved.identity == self.identity
-                        && saved.session.expires > now
-                        && saved.session.ttl > 0
-                        && checked_base(&saved.session.base).is_ok()
-                    {
-                        self.session = Some(saved.session);
-                    }
-                }
+            if let Some(value) = self.environment.get(&self.id).await?
+                && let Ok(saved) = serde_json::from_str::<Saved>(&value)
+                && saved.identity == self.identity
+                && saved.session.expires > now
+                && saved.session.ttl > 0
+                && checked_base(&saved.session.base).is_ok()
+            {
+                self.session = Some(saved.session);
             }
             self.loaded = true;
         }
@@ -199,7 +216,10 @@ impl QwenWork {
             identity: self.identity.clone(),
             session: session.clone(),
         })
-        .map_err(|_| ConnectionError::new("saved_session_invalid", "无法编码连接授权数据").at("credential_store"))?;
+        .map_err(|_| {
+            ConnectionError::new("saved_session_invalid", "无法编码连接授权数据")
+                .at("credential_store")
+        })?;
         self.environment.set(&self.id, &value).await?;
         self.session = Some(session.clone());
         Ok(session)
@@ -243,11 +263,19 @@ impl QwenWork {
                                 })
                                 .await;
                         }
-                        let field = if r["access_token"].as_str().is_none_or(|s| s.is_empty()) { "access_token" } else { "expires_at" };
+                        let field = if r["access_token"].as_str().is_none_or(|s| s.is_empty()) {
+                            "access_token"
+                        } else {
+                            "expires_at"
+                        };
                         return Err(ConnectionError::format("refresh", field));
                     }
                     Err(e) if e.retryable => {
-                        tracing::info!(stage = "refresh", backoff_ms = 30_000, "connection_using_valid_cached_authorization");
+                        tracing::info!(
+                            stage = "refresh",
+                            backoff_ms = 30_000,
+                            "connection_using_valid_cached_authorization"
+                        );
                         self.retry_at = now + 30_000;
                         return Ok(s);
                     }
@@ -282,7 +310,9 @@ impl QwenWork {
             .ok_or_else(|| ConnectionError::format("authorization", "expires_at_ms"))?;
         let ttl = match r.get("ttl_ms") {
             None => expires - now,
-            Some(v) => v.as_i64().ok_or_else(|| ConnectionError::format("authorization", "ttl_ms"))?,
+            Some(v) => v
+                .as_i64()
+                .ok_or_else(|| ConnectionError::format("authorization", "ttl_ms"))?,
         };
         if r["session_id"] != id {
             return Err(ConnectionError::format("authorization", "session_id"));
@@ -306,7 +336,8 @@ impl QwenWork {
     }
 }
 pub(crate) fn checked_base(input: &str) -> Result<String> {
-    let u = reqwest::Url::parse(input).map_err(|_| ConnectionError::format("authorization", "base_url"))?;
+    let u = reqwest::Url::parse(input)
+        .map_err(|_| ConnectionError::format("authorization", "base_url"))?;
     if u.scheme() != "https"
         || !u.username().is_empty()
         || u.password().is_some()
@@ -321,10 +352,11 @@ pub(crate) fn checked_base(input: &str) -> Result<String> {
         .contains(&u.host_str().unwrap_or(""))
         || !["/", "/v1", "/v1/"].contains(&u.path())
     {
-        return Err(ConnectionError::new(
-            "unsupported_origin",
-            "模型服务地址不在允许范围内",
-        ).at("authorization").field("base_url"));
+        return Err(
+            ConnectionError::new("unsupported_origin", "模型服务地址不在允许范围内")
+                .at("authorization")
+                .field("base_url"),
+        );
     }
     Ok(format!("{}/v1", u.origin().ascii_serialization()))
 }

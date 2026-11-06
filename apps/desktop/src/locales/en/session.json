@@ -740,6 +740,9 @@
     "backToReference": "Back to reference"
   },
   "pptx": {
+    "outlineTitle": "Outline",
+    "outlineError": "Could not load the outline.",
+    "outlineUntitled": "Untitled slide",
     "loadingPanel": {
       "title": "Opening presentation",
       "hints": {
@@ -778,7 +781,53 @@
       "fontFailed": "Can't use this font: {{message}}",
       "fontSubstitute": "(substitute)",
       "fontSubstituteHint": "Drawn with {{family}}, which has the same letter widths",
-      "fontsUnavailable": "Can't read this computer's fonts: {{message}}"
+      "fontsUnavailable": "Can't read this computer's fonts: {{message}}",
+      "group": {
+        "clipboard": "Clipboard",
+        "editing": "Editing",
+        "alignObjects": "Align"
+      },
+      "cmd": {
+        "paste": "Paste",
+        "cut": "Cut",
+        "copy": "Copy",
+        "duplicate": "Duplicate",
+        "formatPainter": "Format Painter (double-click to keep)",
+        "deleteSlide": "Delete Slide",
+        "superscript": "Superscript",
+        "subscript": "Subscript",
+        "clearFormat": "Clear Formatting",
+        "align_left": "Align Left",
+        "align_center": "Align Center",
+        "align_right": "Align Right",
+        "align_top": "Align Top",
+        "align_middle": "Align Middle",
+        "align_bottom": "Align Bottom",
+        "distribute_horizontal": "Distribute Horizontally",
+        "distribute_vertical": "Distribute Vertically",
+        "alignToPage": "Align to Slide",
+        "selectAll": "Select All"
+      },
+      "reason": {
+        "engine": "Not supported by the editor yet",
+        "read-only": "The file is read-only",
+        "needs-slide": "Open a slide first",
+        "needs-text": "Select text first",
+        "needs-text-range": "Select some text first",
+        "needs-shape": "Select an object first",
+        "needs-preset": "Select a shape first",
+        "needs-two": "Select two or more objects",
+        "needs-three": "Select three or more objects",
+        "needs-table": "Put the cursor in a table",
+        "needs-format": "Select text or an object to copy its formatting",
+        "needs-clipboard": "Copy or cut an object first",
+        "needs-layout": "Pick a different layout",
+        "last-slide": "A presentation needs at least one slide"
+      },
+      "todo": "Coming soon",
+      "themeColors": "Theme Colors",
+      "standardColors": "Standard Colors",
+      "moreColors": "More Colors…"
     }
   }
 }

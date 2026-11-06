@@ -9,7 +9,9 @@
 //! lapsed sign-in is not that: the kernel's retry waits it out on the same route. Once
 //! unavailable, the legacy chat stays so until the catalog is read again.
 use super::{legacy::Legacy, transport::Http};
-use finx_llm::{ErrorKind, LlmError, LlmStream, StreamEvent, WireApi, WireRequest, api::openai_chat};
+use finx_llm::{
+    ErrorKind, LlmError, LlmStream, StreamEvent, WireApi, WireRequest, api::openai_chat,
+};
 use futures::StreamExt;
 use std::collections::HashSet;
 
@@ -53,7 +55,12 @@ impl Degraded {
         if error.provider_code.as_deref() == Some("qoder_legacy_unknown_model") {
             self.models.lock().insert(model.into());
         } else {
-            *self.all.lock() = Some(error.provider_code.clone().unwrap_or_else(|| error.kind.to_string()));
+            *self.all.lock() = Some(
+                error
+                    .provider_code
+                    .clone()
+                    .unwrap_or_else(|| error.kind.to_string()),
+            );
         }
     }
 
@@ -91,23 +98,32 @@ pub(crate) struct Route {
 /// The gateway's stream, where a server error of a body over its limit is the size, so that
 /// the kernel compacts instead of retrying a request that cannot pass.
 fn gateway(req: WireRequest) -> LlmStream {
-    let oversized = openai_chat::build_body(&req.model, &req.context, &req.options).len() > HTTP_BODY_LIMIT;
+    let oversized =
+        openai_chat::build_body(&req.model, &req.context, &req.options).len() > HTTP_BODY_LIMIT;
     let stream = Http.stream(req);
     if !oversized {
         return stream;
     }
-    Box::pin(stream.map(|event| match event {
-        StreamEvent::Failed(mut message)
-            if message.error.as_ref().is_some_and(|e| e.kind == ErrorKind::Server && e.status == Some(500)) =>
-        {
-            if let Some(error) = message.error.as_mut() {
-                error.kind = ErrorKind::ContextOverflow;
-                error.provider_code = Some("request_too_large".into());
-                error.message = format!("请求体超出 Qoder 模型网关约 256 KiB 的上限：{}", error.message);
+    Box::pin(stream.map(|event| {
+        match event {
+            StreamEvent::Failed(mut message)
+                if message
+                    .error
+                    .as_ref()
+                    .is_some_and(|e| e.kind == ErrorKind::Server && e.status == Some(500)) =>
+            {
+                if let Some(error) = message.error.as_mut() {
+                    error.kind = ErrorKind::ContextOverflow;
+                    error.provider_code = Some("request_too_large".into());
+                    error.message = format!(
+                        "请求体超出 Qoder 模型网关约 256 KiB 的上限：{}",
+                        error.message
+                    );
+                }
+                StreamEvent::Failed(message)
             }
-            StreamEvent::Failed(message)
+            other => other,
         }
-        other => other,
     }))
 }
 

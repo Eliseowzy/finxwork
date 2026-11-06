@@ -715,6 +715,9 @@
     "backToReference": "返回引用位置"
   },
   "pptx": {
+    "outlineTitle": "大纲",
+    "outlineError": "无法加载大纲。",
+    "outlineUntitled": "无标题幻灯片",
     "loadingPanel": {
       "title": "正在打开演示文稿",
       "hints": {
@@ -753,7 +756,53 @@
       "fontFailed": "无法使用该字体：{{message}}",
       "fontSubstitute": "（替代字体）",
       "fontSubstituteHint": "使用 {{family}} 显示，字宽与原字体一致",
-      "fontsUnavailable": "无法读取本机字体：{{message}}"
+      "fontsUnavailable": "无法读取本机字体：{{message}}",
+      "group": {
+        "clipboard": "剪贴板",
+        "editing": "编辑",
+        "alignObjects": "对齐"
+      },
+      "cmd": {
+        "paste": "粘贴",
+        "cut": "剪切",
+        "copy": "复制",
+        "duplicate": "复制对象",
+        "formatPainter": "格式刷（双击可连续使用）",
+        "deleteSlide": "删除幻灯片",
+        "superscript": "上标",
+        "subscript": "下标",
+        "clearFormat": "清除格式",
+        "align_left": "左对齐",
+        "align_center": "水平居中",
+        "align_right": "右对齐",
+        "align_top": "顶端对齐",
+        "align_middle": "垂直居中",
+        "align_bottom": "底端对齐",
+        "distribute_horizontal": "横向分布",
+        "distribute_vertical": "纵向分布",
+        "alignToPage": "对齐幻灯片",
+        "selectAll": "全选"
+      },
+      "reason": {
+        "engine": "编辑器暂不支持",
+        "read-only": "文件为只读",
+        "needs-slide": "请先打开一页幻灯片",
+        "needs-text": "请先选择文字",
+        "needs-text-range": "请先选中一段文字",
+        "needs-shape": "请先选择对象",
+        "needs-preset": "请先选择形状",
+        "needs-two": "请选择两个或更多对象",
+        "needs-three": "请选择三个或更多对象",
+        "needs-table": "请把光标放在表格中",
+        "needs-format": "请先选择要复制格式的文字或对象",
+        "needs-clipboard": "请先复制或剪切对象",
+        "needs-layout": "请选择其他版式",
+        "last-slide": "演示文稿至少要保留一页"
+      },
+      "todo": "即将支持",
+      "themeColors": "主题颜色",
+      "standardColors": "标准色",
+      "moreColors": "其他颜色…"
     }
   }
 }

@@ -3,7 +3,8 @@
 //! Protocol reference: crates/finx-connections/licenses/README.md.
 use base64::{Engine, engine::general_purpose::STANDARD};
 
-const STANDARD_ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const STANDARD_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const ALPHABET: &[u8; 64] = b"_doRTgHZBKcGVjlvpC,@aFSx#DPuNJme&i*MzLOEn)sUrthbf%Y^w.(kIQyXqWA!";
 
 /// The text sent for `plain`: 4/3 of its size.
@@ -12,7 +13,12 @@ pub(crate) fn encode(plain: &str) -> String {
     for b in &mut text {
         *b = match *b {
             b'=' => b'$',
-            standard => ALPHABET[STANDARD_ALPHABET.iter().position(|c| *c == standard).unwrap_or(0)],
+            standard => {
+                ALPHABET[STANDARD_ALPHABET
+                    .iter()
+                    .position(|c| *c == standard)
+                    .unwrap_or(0)]
+            }
         };
     }
     swap_thirds(&mut text);
