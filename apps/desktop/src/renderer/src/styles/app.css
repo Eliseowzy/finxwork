@@ -29,6 +29,8 @@ input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 /* window chrome: the title bar areas drag the window; controls in them don't */
 .drag{-webkit-app-region:drag}
 .drag button,.drag input,.drag select,.drag a,.drag .no-drag{-webkit-app-region:no-drag}
+/* A dialog's backdrop closes it: the bars under it stop taking those clicks to move the window. */
+:root:has(dialog[open]) .drag{-webkit-app-region:no-drag}
 button{font:inherit;color:inherit}
 .ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.875;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
 .ic.sm{width:13px;height:13px}

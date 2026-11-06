@@ -3,8 +3,7 @@
    where its room is. */
 .sheet.fpv{height:min(960px,calc(100vh - 88px));max-height:none;overflow:hidden;animation:fade .15s}
 .fpv .sheet-in{box-sizing:border-box;height:100%;padding:0;display:flex;flex-direction:column}
-/* Under the window's drag bar, which would otherwise take its clicks. */
-.fpv-head{flex:none;height:44px;box-sizing:border-box;padding:0 var(--sp-1) 0 var(--sp-3);display:flex;align-items:center;gap:2px;-webkit-app-region:no-drag}
+.fpv-head{flex:none;height:44px;box-sizing:border-box;padding:0 var(--sp-1) 0 var(--sp-3);display:flex;align-items:center;gap:2px}
 .fpv-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:var(--l1)}
 .fpv-body{flex:1;min-height:0;display:flex;flex-direction:column;outline:none}
 .fpv-read{flex:1;min-height:0;overflow:auto;padding:var(--sp-2) var(--sp-3) var(--sp-4)}

@@ -385,9 +385,12 @@ try {
   await page.run(`${chip("报告草稿")}.click()`);
   await page.until("the report over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "报告 草稿.md" && document.querySelector(".fpv .md h1")?.textContent === "报告"`);
   check((await page.run(activeTab)) === "build.sh", "the report went to the panel too");
+  // Its backdrop closes it, up to the window's top: the bars under it stop moving the window meanwhile.
+  check(await page.run(`[...document.querySelectorAll(".drag")].every((d) => getComputedStyle(d).webkitAppRegion === "no-drag")`), "a bar under the dialog still takes clicks to move the window");
   await page.shot("2a-result-preview");
   await page.run(`document.querySelector(".fpv-close").click()`);
   await page.until("the preview closed", `!document.querySelector(".fpv")`);
+  check(await page.run(`[...document.querySelectorAll(".drag")].every((d) => getComputedStyle(d).webkitAppRegion === "drag")`), "the bars do not move the window again once it closed");
   await page.run(`${chip("assets/logo.png")}.click()`);
   await page.until("the picture over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "logo.png"`);
   await page.run(`document.querySelector(".fpv-panel").click()`);
