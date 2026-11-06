@@ -17,7 +17,7 @@ use betteroffice_pptx::{
 
 pub use betteroffice_pptx::{
     DeckSnapshot, FindMatch, Proposal, ProposalEdit, ProposalError, ProposalRequest,
-    ProposalStripEntry, ProposalStripStatus, ShapeSnapshot, SlideSnapshot, StorySnapshot,
+    ProposalStripEntry, ProposalStripStatus, ShapeKind, ShapeSnapshot, SlideSnapshot, StorySnapshot,
 };
 pub use fonts::SystemFonts;
 

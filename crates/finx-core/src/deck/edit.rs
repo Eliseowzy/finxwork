@@ -82,6 +82,7 @@ pub(crate) enum DeckOp {
         /// `#RRGGBB`.
         #[serde(default)]
         color: Option<String>,
+        /// A font family by name, as installed ("Microsoft YaHei", "Arial").
         #[serde(default)]
         font: Option<String>,
     },
@@ -107,9 +108,14 @@ pub(crate) enum DeckOp {
         size_pt: Option<f64>,
         #[serde(default)]
         bold: Option<bool>,
+        /// `#RRGGBB`.
         #[serde(default)]
         color: Option<String>,
+        /// A font family by name; default the theme's body font.
+        #[serde(default)]
+        font: Option<String>,
     },
+    /// Remove an object from its slide.
     RemoveShape { slide_id: String, shape_id: String },
     /// Move or resize an object.
     SetShapeRect { slide_id: String, shape_id: String, x: f64, y: f64, width: f64, height: f64 },
@@ -138,6 +144,19 @@ pub(crate) enum DeckOp {
     SetSlideLayout { slide_id: String, layout: String },
     /// Replace a slide's speaker notes.
     SetNotes { slide_id: String, text: String },
+    /// Fill a shape (a bar, card or other drawn shape, not a picture or line) with a solid colour.
+    SetFill {
+        slide_id: String,
+        shape_id: String,
+        /// `#RRGGBB`, or `none` for no fill.
+        color: String,
+    },
+    /// Give a slide a solid background colour.
+    SetBackground {
+        slide_id: String,
+        /// `#RRGGBB`, or `layout` to take its layout's background again.
+        color: String,
+    },
 }
 
 /// The engine's edits (JSON) for `ops` on `deck`; an error names the step, from 1. Words are
@@ -209,6 +228,7 @@ fn engine_edit(op: &DeckOp, deck: &DeckSnapshot, texts: &mut Texts) -> Result<Va
         DeckOp::FormatText { slide_id, shape_id, find, bold, italic, underline, size_pt, color, font } => {
             let (story, start, end) = range(shape(deck, slide_id, shape_id)?, find.as_deref())?;
             let (start, end) = texts.place(&story, start, end, find.is_none())?;
+            let color = color.as_deref().map(rgb).transpose()?;
             let patch = json!({
                 "bold": bold, "italic": italic, "fontSizePt": size_pt, "color": color, "fontFamily": font,
                 "underline": underline.map(|u| if u { "sng" } else { "none" }),
@@ -220,9 +240,10 @@ fn engine_edit(op: &DeckOp, deck: &DeckSnapshot, texts: &mut Texts) -> Result<Va
             let (start, end) = texts.place(&story, start, end, find.is_none())?;
             json!({ "type": "setParagraphAlignment", "storyId": story, "start": start, "end": end, "alignment": alignment.engine() })
         }
-        DeckOp::AddTextBox { slide_id, text, x, y, width, height, name, size_pt, bold, color } => {
+        DeckOp::AddTextBox { slide_id, text, x, y, width, height, name, size_pt, bold, color, font } => {
             slide(deck, slide_id)?;
-            let style = json!({ "bold": bold, "italic": null, "fontSizePt": size_pt, "color": color, "fontFamily": null, "underline": null });
+            let color = color.as_deref().map(rgb).transpose()?;
+            let style = json!({ "bold": bold, "italic": null, "fontSizePt": size_pt, "color": color, "fontFamily": font, "underline": null });
             let draft = json!({ "name": name.clone().unwrap_or_else(|| "Text Box".into()), "rect": rect(*x, *y, *width, *height), "text": text, "style": style });
             json!({ "type": "addTextBox", "slideId": slide_id, "draft": draft })
         }
@@ -277,7 +298,33 @@ fn engine_edit(op: &DeckOp, deck: &DeckSnapshot, texts: &mut Texts) -> Result<Va
             slide(deck, slide_id)?;
             json!({ "type": "setSlideNotes", "slideId": slide_id, "text": text })
         }
+        DeckOp::SetFill { slide_id, shape_id, color } => {
+            let target = shape(deck, slide_id, shape_id)?;
+            if target.kind != finx_slide::ShapeKind::Shape {
+                return Err(format!("object {shape_id} is not a shape that takes a fill (Unsupported)"));
+            }
+            let color = if color.eq_ignore_ascii_case("none") { None } else { Some(rgb(color)?) };
+            json!({ "type": "setShapeFill", "slideId": slide_id, "shapeId": shape_id, "color": color })
+        }
+        DeckOp::SetBackground { slide_id, color } => {
+            slide(deck, slide_id)?;
+            let background = if color.eq_ignore_ascii_case("layout") {
+                Value::Null
+            } else {
+                json!({ "type": "solid", "color": { "rgb": rgb(color)?.trim_start_matches('#') } })
+            };
+            json!({ "type": "setSlideBackground", "slideId": slide_id, "background": background })
+        }
     })
+}
+
+/// `#RRGGBB` of a colour given with or without `#`.
+fn rgb(color: &str) -> Result<String, String> {
+    let hex = color.trim().trim_start_matches('#');
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(format!("\"{color}\" is not a colour like #536EAC"));
+    }
+    Ok(format!("#{}", hex.to_ascii_uppercase()))
 }
 
 fn slide<'a>(deck: &'a DeckSnapshot, id: &str) -> Result<&'a SlideSnapshot, String> {
@@ -396,10 +443,13 @@ pub(crate) struct DeckEdit;
 impl TypedTool for DeckEdit {
     type Args = EditArgs;
     const NAME: &'static str = "deck_edit";
-    const DESCRIPTION: &'static str = "Change a presentation (.pptx): replace or format words, set an object's paragraphs or \
-        alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, change a \
-        slide's layout or its speaker notes. All of them are made at once as one change, which the user sees in the deck \
-        and can take back; deck_read shows it from then on. The file is not written until deck_save. If a step cannot be \
+    const DESCRIPTION: &'static str = "Change a presentation (.pptx): replace or format words (size, colour, bold, italic, \
+        underline, font), set an object's paragraphs or alignment, add a text box, move, resize or remove an object, fill a \
+        shape with a colour, set a slide's background colour, insert, duplicate, delete or move slides, change a slide's \
+        layout or its speaker notes. It cannot add pictures, charts, tables or new shapes other than text boxes, change \
+        outlines, gradients or the theme, or edit a table's or chart's contents: say so rather than work around it. All \
+        of them are made at once as one change, already in the deck the user sees, not a proposal; the user can take it \
+        back, and deck_read shows it from then on. The file is not written until deck_save. If a step cannot be \
         done, nothing changes and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, \
         Unsupported). Returns the slides it changed, with any layout problems they have.";
 
@@ -442,7 +492,8 @@ impl TypedTool for DeckEdit {
         let diagnostics = if edited.applied { store.check(&entry.deck_id).await.unwrap_or_default() } else { Vec::new() };
         let (n, s, name) = (changed.len(), if changed.len() == 1 { "" } else { "s" }, file_name(&path));
         let mut text = if edited.applied {
-            format!("Changed {n} slide{s} of {name}. The user can take it back; it is not in the file until deck_save writes it.\n")
+            format!("Changed {n} slide{s} of {name}: the change is already in the deck the user sees, not a proposal, so there is \
+                 nothing for them to accept. They can take it back; it is not in the file until deck_save writes it.\n")
         } else {
             format!("The edits left {name} as it was; nothing changed.\n")
         };
@@ -574,7 +625,9 @@ mod tests {
             json!({ "op": "set_paragraphs", "slide_id": t.id, "shape_id": t.shapes.iter().find(|x| !x.text_stories.is_empty()).unwrap().id, "paragraphs": [{ "text": "One", "alignment": "center" }, { "text": "Two", "bullet": true }] }),
             json!({ "op": "format_text", "slide_id": s.id, "shape_id": shape, "bold": false, "underline": true, "size_pt": 30 }),
             json!({ "op": "set_alignment", "slide_id": s.id, "shape_id": shape, "alignment": "right" }),
-            json!({ "op": "add_text_box", "slide_id": s.id, "text": "Hi", "x": 10, "y": 10, "width": 100, "height": 30 }),
+            json!({ "op": "add_text_box", "slide_id": s.id, "text": "Hi", "x": 10, "y": 10, "width": 100, "height": 30, "color": "a8bedc", "font": "Arial" }),
+            json!({ "op": "set_fill", "slide_id": s.id, "shape_id": shape, "color": "#536EAC" }),
+            json!({ "op": "set_background", "slide_id": t.id, "color": "#EDF1F9" }),
             json!({ "op": "set_shape_rect", "slide_id": s.id, "shape_id": shape, "x": 20, "y": 20, "width": 300, "height": 60 }),
             json!({ "op": "set_notes", "slide_id": s.id, "text": "Say hello" }),
             json!({ "op": "insert_slide", "after_slide_id": s.id }),
@@ -593,12 +646,36 @@ mod tests {
         let (proposal, _) = live.propose(request).unwrap();
         assert!(live.accept_proposal(&proposal.id, false).unwrap().applied);
         assert_eq!(live.find_text("Annual review").unwrap().len(), 1);
+        // deck_read sees the colours the edits gave.
+        let seen = finx_slide::outline::outline(&live.snapshot().unwrap());
+        assert!(seen.slides.iter().flat_map(|s| &s.objects).any(|o| o.fill.as_deref() == Some("#536EAC")));
+        assert!(seen.slides.iter().any(|s| s.background.as_deref() == Some("#EDF1F9")));
+        let hi = seen.slides.iter().flat_map(|s| &s.objects).find(|o| o.text == "Hi").unwrap();
+        assert_eq!((hi.looks[0].color.as_deref(), hi.looks[0].font.as_deref()), (Some("#A8BEDC"), Some("Arial")));
         if let Err(e) = live.save() { panic!("{e}") }
         // The removals, on their own (they would clash with the edits above).
         let ops = [op(json!({ "op": "remove_shape", "slide_id": s.id, "shape_id": shape })), op(json!({ "op": "delete_slide", "slide_id": t.id }))];
         let engine: Vec<finx_slide::ProposalEdit> = serde_json::from_value(Value::Array(engine_edits(&ops, &deck).unwrap())).unwrap();
         finx_slide::Deck::open(fixture).unwrap().propose(finx_slide::ProposalRequest { agent_id: "t".into(), note: None, edits: engine }).unwrap();
         assert!(engine_edits(&[op(json!({ "op": "delete_slide", "slide_id": "nope" }))], &deck).unwrap_err().contains("MissingTarget"));
+    }
+
+    #[test]
+    fn colours_are_checked_and_backgrounds_go_back_to_the_layout() {
+        let deck = deck();
+        let s = &deck.slides[0];
+        let shape = &s.shapes.iter().find(|x| !x.text_stories.is_empty()).unwrap().id;
+        let bad = [op(json!({ "op": "set_fill", "slide_id": s.id, "shape_id": shape, "color": "blue" }))];
+        assert!(engine_edits(&bad, &deck).unwrap_err().contains("not a colour like #536EAC"));
+        let bad = [op(json!({ "op": "format_text", "slide_id": s.id, "shape_id": shape, "color": "#12345" }))];
+        assert!(engine_edits(&bad, &deck).is_err());
+        let ops = [
+            op(json!({ "op": "set_fill", "slide_id": s.id, "shape_id": shape, "color": "none" })),
+            op(json!({ "op": "set_background", "slide_id": s.id, "color": "layout" })),
+        ];
+        let edits = engine_edits(&ops, &deck).unwrap();
+        assert!(edits[0]["color"].is_null() && edits[1]["background"].is_null(), "{edits:?}");
+        let _: Vec<finx_slide::ProposalEdit> = serde_json::from_value(Value::Array(edits)).unwrap();
     }
 
     #[test]

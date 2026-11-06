@@ -193,6 +193,8 @@ fn deck_edit_summary(args: &serde_json::Value, deck: &str) -> String {
             "move_slide" => "move a slide".into(),
             "set_slide_layout" => format!("set a slide's layout to {}", s(e, "layout").unwrap_or_default()),
             "set_notes" => format!("set the speaker notes to \"{}\"", s(e, "text").unwrap_or_default()),
+            "set_fill" => format!("fill an object with {}", s(e, "color").unwrap_or_default()),
+            "set_background" => format!("set a slide's background to {}", s(e, "color").unwrap_or_default()),
             other => other.replace('_', " "),
         };
         out.push_str("\n- ");

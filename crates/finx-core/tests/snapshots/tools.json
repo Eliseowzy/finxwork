@@ -783,7 +783,7 @@
     }
   },
   {
-    "description": "Read slides of a presentation (.pptx): each slide's title, the text of its text boxes, shapes and tables, the alternative text of pictures and charts, and its speaker notes; with detail `objects`, also each object's shape_id, kind and position.",
+    "description": "Read slides of a presentation (.pptx): each slide's title, the text of its text boxes, shapes and tables, the alternative text of pictures and charts, and its speaker notes; with detail `objects`, also the slide's background and each object's shape_id, kind, position, fill and outline colour and the look of its text (size, colour, bold, italic, font; what it inherits from the layout is left out).",
     "group": "deck",
     "kind": "read_only",
     "loaded": false,
@@ -806,7 +806,7 @@
               "type": "string"
             },
             {
-              "description": "Also every object: its shape_id, kind, placeholder and position in points.",
+              "description": "Also the background and every object: its shape_id, kind, placeholder, position in points, colours and the look of its text.",
               "enum": [
                 "objects"
               ],
@@ -871,7 +871,7 @@
         },
         "slide": {
           "description": "The slide, from 1.",
-          "minimum": 0.0,
+          "minimum": 1.0,
           "type": "integer"
         },
         "width": {
@@ -889,7 +889,7 @@
     }
   },
   {
-    "description": "Check a presentation (.pptx) for layout problems: objects off the slide, pictures and charts without alternative text. Lists each problem with its slide and object.",
+    "description": "Check a presentation (.pptx) for two problems only: objects off the slide, pictures and charts without alternative text. Lists each problem with its slide and object. It does not see text that overflows its box or objects that overlap; look at the slide with deck_view for those.",
     "group": "deck",
     "kind": "read_only",
     "loaded": false,
@@ -914,7 +914,7 @@
     }
   },
   {
-    "description": "Change a presentation (.pptx): replace or format words, set an object's paragraphs or alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, change a slide's layout or its speaker notes. All of them are made at once as one change, which the user sees in the deck and can take back; deck_read shows it from then on. The file is not written until deck_save. If a step cannot be done, nothing changes and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, Unsupported). Returns the slides it changed, with any layout problems they have.",
+    "description": "Change a presentation (.pptx): replace or format words (size, colour, bold, italic, underline, font), set an object's paragraphs or alignment, add a text box, move, resize or remove an object, fill a shape with a colour, set a slide's background colour, insert, duplicate, delete or move slides, change a slide's layout or its speaker notes. It cannot add pictures, charts, tables or new shapes other than text boxes, change outlines, gradients or the theme, or edit a table's or chart's contents: say so rather than work around it. All of them are made at once as one change, already in the deck the user sees, not a proposal; the user can take it back, and deck_read shows it from then on. The file is not written until deck_save. If a step cannot be done, nothing changes and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, Unsupported). Returns the slides it changed, with any layout problems they have.",
     "group": "deck",
     "kind": "mutating",
     "loaded": false,
@@ -1035,6 +1035,7 @@
                   },
                   "font": {
                     "default": null,
+                    "description": "A font family by name, as installed (\"Microsoft YaHei\", \"Arial\").",
                     "type": "string"
                   },
                   "italic": {
@@ -1117,6 +1118,12 @@
                   },
                   "color": {
                     "default": null,
+                    "description": "`#RRGGBB`.",
+                    "type": "string"
+                  },
+                  "font": {
+                    "default": null,
+                    "description": "A font family by name; default the theme's body font.",
                     "type": "string"
                   },
                   "height": {
@@ -1165,6 +1172,7 @@
               },
               {
                 "additionalProperties": false,
+                "description": "Remove an object from its slide.",
                 "properties": {
                   "op": {
                     "enum": [
@@ -1362,6 +1370,60 @@
                   "op",
                   "slide_id",
                   "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Fill a shape (a bar, card or other drawn shape, not a picture or line) with a solid colour.",
+                "properties": {
+                  "color": {
+                    "description": "`#RRGGBB`, or `none` for no fill.",
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_fill"
+                    ],
+                    "type": "string"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "color",
+                  "op",
+                  "shape_id",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Give a slide a solid background colour.",
+                "properties": {
+                  "color": {
+                    "description": "`#RRGGBB`, or `layout` to take its layout's background again.",
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_background"
+                    ],
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "color",
+                  "op",
+                  "slide_id"
                 ],
                 "type": "object"
               }

@@ -35,8 +35,8 @@ mod edit;
 use edit::{DeckEdit, DeckSave};
 
 pub(crate) const GROUP: &str = "deck";
-pub(crate) const GROUP_SUMMARY: &str = "Presentations (PPTX): an outline of a deck, its slides' text, notes and objects, search, slide images, a layout check, \
-     and changes (text, text boxes, object positions, slides, notes) and saving";
+pub(crate) const GROUP_SUMMARY: &str = "Presentations (PPTX): an outline of a deck, its slides' text, notes, objects and colours, search, slide images, a \
+     layout check, and changes (text and its formatting, text boxes, object positions, fills, backgrounds, slides, notes) and saving";
 
 /// Largest deck read.
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
@@ -54,8 +54,17 @@ const GUIDELINES: &[&str] = &[
      the conversation, not PowerPoint on the desktop. Start with deck_open for the outline, then deck_read the slides you need, \
      deck_find to locate words or numbers, and deck_view to see a slide's layout, charts and pictures.",
     "Presentations: cite a slide as \"slide N\" (第 N 页). A deck open beside the conversation is read as it is now, unsaved edits included.",
+    "Presentations: everything about a slide is in the deck tools: deck_read with detail objects gives each object's position, \
+     fill and outline colour, the size, colour, weight and font of its text, and the slide's background; deck_view shows how it \
+     looks. Never unzip a .pptx or read or write its XML with the shell, and never look for the app's own deck files; what the \
+     tools cannot show or change, tell the user.",
+    "Presentations, checking a slide: deck_check finds objects off the slide and pictures without alternative text, nothing else. \
+     It does not see text that overflows its box or objects that overlap: after adding, moving or resizing, look with deck_view, \
+     and say only what you saw.",
     "Presentations, changing them: deck_edit makes the change in the deck at once, as one step the user can take back; the file \
-     is written only by deck_save. Before changing a number or phrase, deck_find it. Put a set of related changes in one deck_edit \
+     is written only by deck_save. There are no proposals for the user to accept or reject, whatever an earlier message or task \
+     says; tell them what changed and that they can undo it. deck_save when the user asks for the file to be saved or written, \
+     or the task is to produce a file; otherwise leave the change unsaved and say so in one line. Before changing a number or phrase, deck_find it. Put a set of related changes in one deck_edit \
      with a note in the user's words. After moving or adding objects, look at the slide once with deck_view. If an edit is refused \
      or denied, read the slides again before trying anew; do not work around it. Address slides and objects by the slide_id and \
      shape_id deck_read gives (detail objects), but to the user speak of slides, titles and text boxes, never of ids or ops.",
@@ -265,7 +274,8 @@ pub(crate) enum ReadDetail {
     /// The slides' text and notes.
     #[default]
     Text,
-    /// Also every object: its shape_id, kind, placeholder and position in points.
+    /// Also the background and every object: its shape_id, kind, placeholder, position in points,
+    /// colours and the look of its text.
     Objects,
 }
 
@@ -289,7 +299,8 @@ impl TypedTool for DeckRead {
     const NAME: &'static str = "deck_read";
     const DESCRIPTION: &'static str = "Read slides of a presentation (.pptx): each slide's title, the text of its text \
         boxes, shapes and tables, the alternative text of pictures and charts, and its speaker notes; with detail \
-        `objects`, also each object's shape_id, kind and position.";
+        `objects`, also the slide's background and each object's shape_id, kind, position, fill and outline colour and the \
+        look of its text (size, colour, bold, italic, font; what it inherits from the layout is left out).";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -319,22 +330,35 @@ impl TypedTool for DeckRead {
     }
 }
 
+/// `"01" 18pt #536EAC bold`; what the text inherits is left out.
+fn look(l: &finx_slide::outline::TextLook) -> String {
+    let mut parts = vec![format!("\"{}\"", l.sample)];
+    parts.extend(l.size_pt.map(|s| format!("{s}pt")));
+    parts.extend(l.color.clone());
+    parts.extend(l.bold.then(|| "bold".to_owned()));
+    parts.extend(l.italic.then(|| "italic".to_owned()));
+    parts.extend(l.font.clone());
+    if parts.len() == 1 {
+        parts.push("as inherited".into());
+    }
+    parts.join(" ")
+}
+
 fn read_slide(s: &SlideOutline, objects: bool, out: &mut String) {
     let _ = writeln!(out, "## Slide {}: {}{}", s.index, s.title.as_deref().unwrap_or("(no title)"), if s.hidden { " (hidden)" } else { "" });
-    match &s.layout {
-        Some(layout) => {
-            let _ = writeln!(out, "layout: {layout}, slide_id {}", s.slide_id);
-        }
-        None => {
-            let _ = writeln!(out, "slide_id {}", s.slide_id);
-        }
-    }
+    let layout = s.layout.as_deref().map(|l| format!("layout: {l}, ")).unwrap_or_default();
+    let background = match (&s.background, objects) {
+        (Some(b), true) => format!(", background {b}"),
+        _ => String::new(),
+    };
+    let _ = writeln!(out, "{layout}slide_id {}{background}", s.slide_id);
     for o in &s.objects {
         let indent = "  ".repeat(o.depth);
         if objects {
             let [x, y, w, h] = o.rect;
             let placeholder = o.placeholder.as_deref().map(|p| format!(", placeholder {p}")).unwrap_or_default();
-            let _ = writeln!(out, "{indent}- [{} {} \"{}\"{placeholder}, at {x},{y} size {w}×{h} pt]", o.kind, o.shape_id, o.name);
+            let paint = [("fill", &o.fill), ("line", &o.line)].iter().filter_map(|(k, c)| c.as_ref().map(|c| format!(", {k} {c}"))).collect::<String>();
+            let _ = writeln!(out, "{indent}- [{} {} \"{}\"{placeholder}, at {x},{y} size {w}×{h} pt{paint}]", o.kind, o.shape_id, o.name);
         }
         if o.kind == "title" && !objects {
             continue;
@@ -351,6 +375,10 @@ fn read_slide(s: &SlideOutline, objects: bool, out: &mut String) {
             for line in body.lines() {
                 let _ = writeln!(out, "{indent}{}{line}", if objects { "  " } else { "" });
             }
+        }
+        if objects && !o.looks.is_empty() {
+            let looks: Vec<String> = o.looks.iter().map(look).collect();
+            let _ = writeln!(out, "{indent}  look: {}", looks.join("; "));
         }
         match (&o.alt, o.kind) {
             (Some(alt), _) => {
@@ -460,6 +488,7 @@ pub(crate) struct ViewArgs {
     /// Path of the presentation (.pptx).
     deck: String,
     /// The slide, from 1.
+    #[schemars(range(min = 1))]
     slide: usize,
     /// Width of the image in pixels; default 1280, at most 2000.
     #[serde(default)]
@@ -531,8 +560,9 @@ struct DeckCheck;
 impl TypedTool for DeckCheck {
     type Args = CheckArgs;
     const NAME: &'static str = "deck_check";
-    const DESCRIPTION: &'static str = "Check a presentation (.pptx) for layout problems: objects off the slide, pictures \
-        and charts without alternative text. Lists each problem with its slide and object.";
+    const DESCRIPTION: &'static str = "Check a presentation (.pptx) for two problems only: objects off the slide, pictures \
+        and charts without alternative text. Lists each problem with its slide and object. It does not see text that \
+        overflows its box or objects that overlap; look at the slide with deck_view for those.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -551,7 +581,10 @@ impl TypedTool for DeckCheck {
             .map_err(|e| ToolError::Failed(format!("cannot check the deck: {e}")))?;
         let problems: Vec<_> = all.iter().filter(|d| wanted.contains(&(d.index as usize))).collect();
         let mut text = if problems.is_empty() {
-            format!("No problems found in {} (checked: objects off the slide, missing alternative text).\n", file_name(&path))
+            format!(
+                "Nothing off the slide and no missing alternative text in {}. Overflowing or overlapping text is not checked: look with deck_view.\n",
+                file_name(&path)
+            )
         } else {
             format!("{} problems in {}:\n", problems.len(), file_name(&path))
         };
@@ -608,6 +641,11 @@ mod e2e {
             read_slide(s, false, &mut text);
         }
         assert!(text.lines().filter(|l| l.starts_with("## Slide ")).count() == outline.slides.len(), "{text}");
+        let mut objects = String::new();
+        for s in &outline.slides {
+            read_slide(s, true, &mut objects);
+        }
+        assert!(objects.lines().filter(|l| l.starts_with("## Slide ")).count() == outline.slides.len(), "{objects}");
         deck.check().unwrap();
         assert!(!deck.render_png(0, 640).unwrap().is_empty());
     }
