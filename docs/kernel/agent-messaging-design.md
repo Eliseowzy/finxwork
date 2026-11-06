@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.6 |
+| 版本 | v0.7 |
 | 日期 | 2026-11-06 |
 | 状态 | 主人已确认，已实现；§1–§16 的统计见 §16。§17（Bot 的子智能体直接告诉主人）是主人 2026-11-06 改的决定，推翻了本文原来的"只有主 Bot 跟主人说话" |
 | 关系 | 改了 [子智能体方案](subagent-design.md)（§1.2、§6、§7、§9.2、附录 A；D-41、D-53、D-354、Q-43）、[Bot 技术方案](bot-design.md)（§3.6、附录 A.1）、[Bot 回合方案](bot-turn-design.md)（§5.3、§7.2）。代码基于分支 `feat/bot-turn` |
@@ -631,11 +631,9 @@ Bot   send_to_user("报告做好了：[报告](…)", end_turn)
 ```
 Nothing you write reaches anyone until you finish, except what you send with send_to_user and send_message.
 
-The user asked for this and is waiting. They talk to your parent and can't see your work: all they have is what you tell them, and silence leaves them wondering whether anything is happening. A short word now and then puts them at ease. So from the moment you start, keep them posted as a habit of how you work, not something to remember at the end. On work of more than a few steps, call send_to_user with a brief update:
-- once you have seen what you are working with;
-- at each turning point: a stage done, a finding, a choice you made that affects the outcome, a blocker, a changed plan, or what your task asks you to tell them along the way;
-- and whenever about fifteen tool calls have passed since your last update: what is done and what comes next.
-Make the call alongside your next tool call: it doesn't stop your work, and your final report still follows. No command-by-command commentary, no word about retries, and no acknowledgement: they already know the work has started.
+The user asked for this and is waiting. They talk to your parent and can't see your work: all they have is what you tell them. So on long work, call send_to_user with a brief update whenever you have news they would want: a stage finished and what came of it, a finding, a choice you made that affects the outcome, a blocker, a changed plan, or what your task asks you to tell them along the way. Make the call alongside your next tool call: it doesn't stop your work, and your final report still follows.
+
+Every update has to carry news. Before you send one, ask what the user learns from it that they didn't know; if nothing, don't send it. A message about what you are about to do or are doing ("Let me look at the folder first", "Now writing the chapters") tells them nothing and only interrupts them, and so do commentary on commands, word about retries and acknowledgements. Work that takes only a few steps needs no update: your report comes soon enough.
 
 They read your updates as coming from your parent, who sees them too. Write one or two short sentences in plain words, in the language your task is written in, and speak of the work as your own: "The sales data is in. March is missing, so I'm charting the other 11 months." Keep the machinery out: tool names, your task, your parent, agents and reports. Details and the finished result are not updates: they go in your report, and your parent delivers it.
 
@@ -648,8 +646,8 @@ Use send_message for what another agent has to act on: what it needs from you, o
 |---|---|---|
 | "只在真正的转折点发短消息：结果、决定、卡点、计划变化" | 摘，去掉"只"，多一个"阶段做完" | 子智能体现在的问题是说得太少（§16.3）；"结果"容易被理解成最终结果，所以写明阶段 |
 | "不逐条讲命令，不提重试" | 原样摘 | 进展变多以后更需要 |
-| （`bot.md` 没有）看清材料先说一句；约 15 次工具调用说一句；和下一个调用一起发 | 新加 | 第一版只写转折点，模型一直觉得还没到，有的走了 80 步才想起来（§17.9） |
-| （`bot.md` 没有）用户看不到你的工作，沉默让人不安，把汇报当成工作习惯 | 新加（主人提的） | 讲清原因，模型才不会逐条对照"现在算不算转折点" |
+| （`bot.md` 没有）每条都要有新消息：说不出用户不知道的事就不发；"我先看一下"这类话不算；几步能做完的活不发 | 新加（第四版） | 主人试用第三版时发现话多、发没意义的进展（§17.8） |
+| （`bot.md` 没有）用户看不到你的工作，只知道你告诉他的 | 新加 | 讲清为什么要说；第三版的"隔一阵说句话让人安心""当成习惯"去掉了，它们鼓励没话找话 |
 | "在等的人只看得到你发的" | 摘意思 | 子智能体原来只知道"消息不是人发的"，不知道有人在等 |
 | "别把内部的东西写进去：工具名…" | 摘，加上任务、父智能体、子智能体、汇报 | 现在没有 Bot 替它改写 |
 | "说话用用户的语言""把活说成自己的" | 摘 | 同上；子智能体看不到对话，语言靠任务 |
@@ -672,6 +670,8 @@ While it works, an agent tells the user how the work is going by itself, which y
 ### 17.8 第一版的教训
 
 第一版文字（只写转折点）在真实模型上暴露的问题，读模型的思考才看出来：子智能体的节奏很稳，每步 5–15 秒，但一口气走几十步，思考里基本不提要告诉用户，到第 70、80 步才想起来。提示词在第一条消息里，走远了就淡了。所以第二版加了具体的时点，第三版加了原因。
+
+第三版推上去后，主人试用发现话多，而且疯狂发没有意义的进展。回归里也看得到：`ten` 每遍 26 个气泡，`fan` 里多是"我先定结构"。原因就在第二、三版自己加的话："看清材料先说一句"逼它写开场白，"约 15 次工具调用说一句"让它到点没消息也得说，"隔一阵说句话让人安心"鼓励它多说。第四版去掉这三句，不再规定什么时候必须说，只定一条标准：每条都要有用户不知道的消息。代价可能是第一句变慢，统计见 §17.10。
 
 ### 17.9 没做的
 
@@ -729,3 +729,19 @@ While it works, an agent tells the user how the work is going by itself, which y
 | `milestone` 备份好先说 | 提前告诉 4/4；每遍气泡 5.75 条（以前 3.8） | 节点没丢，话变多 |
 | `ten` 十家公司 | 十家都说到 4/4；每遍气泡 26 条（以前约 20，够用约 11）；进展把结果说一遍、Bot 再交付一遍；开 10 个 2/4，5 个 1/4，1 个 1/4（以前 10 个 6/6）；提醒 6 次 | 明显变吵，分工可能退步，原因没有对照，未查明 |
 
+第四版（每条都要有新消息）和第三版同时跑的对比（同一主干，每个场景 3 遍。"废话"是脚本按开头词粗筛的：说要做什么、正在做什么，又没有数字或发现）：
+
+| 场景 | 看什么 | 第三版 DeepSeek | 第四版 DeepSeek | 第四版 Qwen |
+|---|---|---|---|---|
+| `fan` 四首长诗 | 每遍进展（其中废话，3 遍合计） | 3.7（4） | 2.0（2） | 0.3（0，人工读有 1 条） |
+| `milestone` 备份好先说 | 每遍进展（其中废话，3 遍合计） | 3.0（1） | 1.7（0） | 1.0（0） |
+| `ten` 十家公司 | 每遍进展 / 每遍气泡合计 | 11.7 / 17（2 遍超时没做完） | 7.7 / 16.3 | 没跑 |
+| `ten` | 开了几个子智能体 | 1 个 2 遍，10 个 1 遍 | 1 个 1 遍，10 个 2 遍 | 没跑 |
+| `stages` 分阶段分析 | 有进展的遍数 / 第一条（秒） | 2/3 / 14 | 3/3 / 337 | 1/3 / 290 |
+| `stages` | 最长沉默（中位，秒） | 543 | 335 | 568 |
+| `blocker` 缺 3 月 | 有进展的遍数 / 第一条（秒） | 3/3 / 7 | 2/3 / 184 | 2/3 / 169 |
+| `blocker` | 提前告诉主人缺 3 月 / 最长沉默（秒） | 2/3 / 341 | 2/3 / 305 | 2/3 / 344 |
+
+- **解决的**：开场白和"正在做"基本没了，读下来几乎每条都有内容，进展条数少了三到七成。要紧的事没有被憋住：缺 3 月照样提前说，`milestone` 脚本只数到 1/3，是它的关键词没认出"已备份到"，读原文 3 遍都说了。
+- **代价**：长活的第一条从几秒变成 3–6 分钟，Qwen 在 `stages` 有 2/3 遍全程没有进展。这段时间用户只看到 Bot 开头那句"我先做什么"和"它在忙"的气泡。
+- **还在的**：结果说两遍（子智能体说一遍，Bot 交付一遍）；`ten` 这类活还是吵，子智能体把每家的结果都当进展发。一个子智能体包揽十家在两版都出现，它是不是这个功能带来的，没有功能之前的版本同时跑过，还不知道。
