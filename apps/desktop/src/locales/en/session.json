@@ -830,28 +830,11 @@
       "moreColors": "More Colors…"
     }
   },
-  "deckProposal": {
-    "label": "Proposed changes",
-    "title_one": "Change {{name}}? {{count}} slide changed",
-    "title_other": "Change {{name}}? {{count}} slides changed",
-    "slide": "Slide {{n}} · {{status}}",
-    "status": {
-      "changed": "Changed",
-      "inserted": "Added",
-      "deleted": "Deleted",
-      "moved": "Moved",
-      "unchanged": "Unchanged"
-    },
-    "accept": "Accept",
-    "force": "Accept anyway",
-    "reject": "Reject",
-    "stale": "Some of these slides changed after the proposal was made. Accepting will override them.",
-    "failed": "Could not do it: {{message}}",
-    "done": {
-      "pending": "Waiting",
-      "accepted": "Accepted",
-      "rejected": "Rejected",
-      "handled": "Handled in the editor"
-    }
+  "deckEdit": {
+    "show": "Show slide {{n}}",
+    "open": "Open the presentation",
+    "undo": "Undo",
+    "undone": "Undone",
+    "failed": "Not undone: {{message}}"
   }
 }

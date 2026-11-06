@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use betteroffice_pptx::{EditCtx, FindRequest, Presentation, TextStyle};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
 use finx_docs::deck::{DeckError, DeckEvent, DeckLauncher, DeckStore};
 
 const FIXTURE: &[u8] = include_bytes!("../../finx-slide/tests/fixtures/editor.pptx");
@@ -205,14 +207,18 @@ async fn structural_edits_save_through_the_kernel() {
 
 /// The engine's edit retitling "Quarterly review" on the store's deck, as JSON.
 async fn retitle(store: &DeckStore, id: &str, text: &str) -> serde_json::Value {
+    retitle_from(store, id, "Quarterly review", text).await
+}
+
+/// The engine's edit replacing the title `from` with `text`.
+async fn retitle_from(store: &DeckStore, id: &str, from: &str, text: &str) -> serde_json::Value {
     let snapshot = store.snapshot(id).await.unwrap();
-    let story = snapshot.slides[0].shapes.iter().flat_map(|s| &s.text_stories).find(|s| s.plain_text() == "Quarterly review").unwrap();
-    serde_json::json!({ "type": "replaceText", "storyId": story.id, "start": 0, "end": 16, "text": text })
+    let story = snapshot.slides[0].shapes.iter().flat_map(|s| &s.text_stories).find(|s| s.plain_text() == from).unwrap();
+    serde_json::json!({ "type": "replaceText", "storyId": story.id, "start": 0, "end": from.encode_utf16().count(), "text": text })
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_proposal_reaches_replicas_only_once_accepted() {
-    use finx_protocol::deck::DeckProposalState;
+async fn the_agents_edit_reaches_replicas_at_once_and_undo_takes_it_back() {
     let s = setup();
     let store = store(&s);
     let updates = Arc::new(Mutex::new(Vec::new()));
@@ -225,110 +231,83 @@ async fn a_proposal_reaches_replicas_only_once_accepted() {
     let opened = store.open(&s.file, "a", true).await.unwrap();
     let id = opened.entry.deck_id.clone();
     let r = replica(&opened.state.unwrap(), 42);
-    let edit = retitle(&store, &id, "Annual review").await;
-    let proposed = store.propose(&id, "agent", Some("retitle".into()), serde_json::json!([edit])).await.unwrap();
-    assert_eq!(proposed.changed.revision, 0, "a proposal is not a revision");
-    assert!(proposed.changed.update.is_empty());
-    assert!(updates.lock().unwrap().is_empty());
-    assert!(!store.get(&id).unwrap().info().dirty);
-    assert_eq!(proposed.strip[0].status, "changed");
-    assert_eq!(proposed.proposal["id"], proposed.proposal_id.as_str());
-    let listed = store.proposals(&id).await.unwrap().proposals;
-    assert_eq!((listed[0].id.as_str(), listed[0].status), (proposed.proposal_id.as_str(), DeckProposalState::Pending));
-    let accepted = store.accept(&id, &proposed.proposal_id, false).await.unwrap();
-    assert!(accepted.applied);
-    assert_eq!(accepted.changed.revision, 1);
-    for update in updates.lock().unwrap().iter() {
-        r.apply_update_v1(update).unwrap();
-    }
-    assert_eq!(r.find_text(&FindRequest { text: "Annual review".into(), within: None, limit: None }).unwrap().unwrap().matches.len(), 1);
-    assert_eq!(store.proposals(&id).await.unwrap().proposals[0].status, DeckProposalState::Accepted);
-    assert!(matches!(store.accept(&id, &proposed.proposal_id, false).await, Err(DeckError::NoProposal(_))));
+    let count = |text: &str| r.find_text(&FindRequest { text: text.into(), within: None, limit: None }).unwrap().unwrap().matches.len();
+    let drain = |r: &Presentation| {
+        for update in updates.lock().unwrap().drain(..) {
+            r.apply_update_v1(&update).unwrap();
+        }
+    };
+    let edited = store.apply(&id, "agent", Some("retitle".into()), serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
+    assert!(edited.applied);
+    assert_eq!(edited.changed.revision, 1);
+    assert_eq!(edited.strip[0].status, "changed");
+    assert!(store.get(&id).unwrap().info().dirty);
+    drain(&r);
+    assert_eq!(count("Annual review"), 1);
+
+    // A second edit: only the latest one can be taken back.
+    let second = store.apply(&id, "agent", None, serde_json::json!([retitle_from(&store, &id, "Annual review", "Year in review").await])).await.unwrap();
+    drain(&r);
+    assert!(matches!(store.undo(&id, edited.changed.revision).await, Err(DeckError::NotUndoable(_))));
+    let revision = store.undo(&id, second.changed.revision).await.unwrap();
+    assert_eq!(revision, 3, "the undo is a revision of its own");
+    drain(&r);
+    assert_eq!(count("Annual review"), 1);
+    store.undo(&id, edited.changed.revision).await.unwrap();
+    drain(&r);
+    assert_eq!(count("Quarterly review"), 1);
+    assert!(matches!(store.undo(&id, edited.changed.revision).await, Err(DeckError::NotUndoable(_))));
+    store.save(&id, None, false).await.unwrap();
+    assert!(file_has(&s.file, "Quarterly review"));
+}
+
+/// The person's edits are not the agent's to take back.
+#[tokio::test(flavor = "multi_thread")]
+async fn undo_leaves_the_persons_edits() {
+    let s = setup();
+    let store = store(&s);
+    let opened = store.open(&s.file, "a", true).await.unwrap();
+    let id = opened.entry.deck_id.clone();
+    let r = replica(&opened.state.unwrap(), 42);
+    let edited = store.apply(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
+    r.apply_update_v1(&B64.decode(&edited.changed.update).unwrap()).unwrap();
+    // The person types before the new title; the agent's edit is still the latest of its own.
+    let sv = r.encode_state_vector_v1();
+    let found = r.find_text(&FindRequest { text: "Next steps".into(), within: None, limit: None }).unwrap().unwrap();
+    let range = &found.matches[0].range;
+    r.insert_text(&EditCtx::local("replica"), &range.story_id, range.start, "The ", &TextStyle::default()).unwrap();
+    store.sync(&id, Some("a"), &r.encode_diff_v1(&sv).unwrap(), None).await.unwrap();
+    store.undo(&id, edited.changed.revision).await.unwrap();
+    store.save(&id, None, false).await.unwrap();
+    assert!(file_has(&s.file, "Quarterly review"));
+    assert!(file_has(&s.file, "The Next steps"));
+}
+
+/// The history is the worker's: after a crash the edit is kept, but no longer taken back.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_edit_from_before_a_worker_crash_is_kept_but_not_undone() {
+    let s = setup();
+    let store = store(&s);
+    let id = store.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
+    let edited = store.apply(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
+    store.kill_worker().await;
+    assert!(matches!(store.undo(&id, edited.changed.revision).await, Err(DeckError::NotUndoable(_))));
     store.save(&id, None, false).await.unwrap();
     assert!(file_has(&s.file, "Annual review"));
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn pending_proposals_come_back_after_a_worker_crash() {
-    use finx_protocol::deck::DeckProposalState;
-    let s = setup();
-    let store = store(&s);
-    let opened = store.open(&s.file, "a", false).await.unwrap();
-    let id = opened.entry.deck_id.clone();
-    let first = store.propose(&id, "agent", None, serde_json::json!([retitle(&store, &id, "One").await])).await.unwrap();
-    let second = store.propose(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Two").await])).await.unwrap();
-    assert!(store.reject(&id, &first.proposal_id).await.unwrap().rejected);
-    store.kill_worker().await;
-    let listed = store.proposals(&id).await.unwrap().proposals;
-    let states: Vec<_> = listed.iter().map(|p| (p.id.clone(), p.status)).collect();
-    assert_eq!(states, vec![(second.proposal_id.clone(), DeckProposalState::Pending), (first.proposal_id.clone(), DeckProposalState::Rejected)]);
-    assert!(store.accept(&id, &second.proposal_id, false).await.unwrap().applied);
-    store.save(&id, None, false).await.unwrap();
-    assert!(file_has(&s.file, "Two"));
-}
-
-#[tokio::test(flavor = "multi_thread")]
-async fn a_batch_with_a_bad_step_proposes_nothing() {
+async fn a_batch_with_a_bad_step_changes_nothing() {
     let s = setup();
     let store = store(&s);
     let opened = store.open(&s.file, "a", false).await.unwrap();
     let id = opened.entry.deck_id.clone();
     let edits = serde_json::json!([retitle(&store, &id, "One").await, { "type": "deleteSlide", "slideId": "slide:9:999" }]);
-    match store.propose(&id, "agent", None, edits).await {
+    match store.apply(&id, "agent", None, edits).await {
         Err(DeckError::Refused(m)) => assert!(m.starts_with("edit 1: "), "{m}"),
-        other => panic!("{:?}", other.map(|p| p.proposal_id)),
+        other => panic!("{:?}", other.map(|e| e.changed.revision)),
     }
-    assert!(store.proposals(&id).await.unwrap().proposals.is_empty());
     assert_eq!(store.get(&id).unwrap().info().revision, 0);
-    assert!(store.check(&id, None).await.is_ok());
-}
-
-/// A proposal pending on a deck the editor has open must survive the editor closing, as long as
-/// the agent's session joined the entry (deck_edit does, via `open`): the conversation card's
-/// accept then still finds the deck. Without the join the deck is gone ("not open: <id>").
-#[tokio::test(flavor = "multi_thread")]
-async fn a_pending_proposal_outlives_the_editor_when_the_agent_session_holds_the_deck() {
-    let s = setup();
-    let store = store(&s);
-    let editor = store.open(&s.file, "editor", true).await.unwrap();
-    let id = editor.entry.deck_id.clone();
-    // The agent's session joins the open entry.
-    store.open(&s.file, "agent", false).await.unwrap();
-    let proposed = store.propose(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
-    store.close(&id, "editor").await.unwrap();
-    assert!(store.accept(&id, &proposed.proposal_id, false).await.unwrap().applied);
-
-    // The agent that did not join leaves the deck to the editor alone: its close drops the deck.
-    let other = store.open(&s.file, "editor", false).await.unwrap().entry.deck_id.clone();
-    store.close(&other, "agent").await.unwrap();
-    store.close(&other, "editor").await.unwrap();
-    assert!(matches!(store.accept(&id, &proposed.proposal_id, false).await, Err(DeckError::NotOpen(_))));
-}
-
-/// A card in an old conversation: the kernel restarted (or every holder let go) while a proposal
-/// was pending; deciding it opens the deck again from its directory.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_proposal_pending_over_a_kernel_restart_is_decided_by_reopening() {
-    let s = setup();
-    let first = store(&s);
-    let id = first.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
-    let proposed = first.propose(&id, "agent", None, serde_json::json!([retitle(&first, &id, "Annual review").await])).await.unwrap();
-    drop(first); // the process ends: no close, the directory stays
-    let second = store(&s);
-    assert!(matches!(second.accept(&id, &proposed.proposal_id, false).await, Err(DeckError::NotOpen(_))));
-    second.ensure_open(&id, "b").await.unwrap();
-    assert!(second.accept(&id, &proposed.proposal_id, false).await.unwrap().applied);
-}
-
-/// Every holder let go (the editor closed, the agent's session ended) with a proposal pending:
-/// the directory stays for it, and deciding it opens the deck again.
-#[tokio::test(flavor = "multi_thread")]
-async fn a_proposal_pending_when_every_holder_closes_is_decided_by_reopening() {
-    let s = setup();
-    let store = store(&s);
-    let id = store.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
-    let proposed = store.propose(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
-    store.close(&id, "a").await.unwrap();
-    store.ensure_open(&id, "b").await.unwrap();
-    assert!(store.accept(&id, &proposed.proposal_id, false).await.unwrap().applied);
+    assert!(store.check(&id).await.is_ok());
+    assert!(file_has(&s.file, "Quarterly review"));
 }

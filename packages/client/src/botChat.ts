@@ -1,5 +1,5 @@
 import type { ErrorInfo } from "@finx/protocol";
-import { runningAgents, type AgentView, type SessionView } from "./session.ts";
+import { callTarget, runningAgents, type AgentView, type SessionView } from "./session.ts";
 import { conversation, detailsOf, userText, type ToolView, type WorkItem } from "./steps.ts";
 import { baseName } from "./text.ts";
 
@@ -42,6 +42,8 @@ export type BotItem =
   | { kind: "question"; key: string; text: string; options: string[]; open: boolean; ts: number; source?: RoutineSource }
   /** What the bot did to a routine, as a line in the chat. */
   | ({ kind: "routine"; key: string; ts: number } & RoutineChange)
+  /** A change the bot made to a deck (deck_edit), shown where the owner looks so it can be taken back; `details` is the tool's, validated where it is shown. */
+  | { kind: "deck_edit"; key: string; details: unknown; ts: number }
   /** last: no task ran since, so it can be retried. */
   | { kind: "failure"; key: string; error: ErrorInfo; ts: number; last: boolean };
 
@@ -110,6 +112,13 @@ function delivered(item: WorkItem): Sent | null {
   return text !== null ? { kind: "bot", text } : null;
 }
 
+/** The details of a deck_edit that changed the deck, itself or through call_tool. */
+function deckEdit(item: WorkItem): Record<string, unknown> | null {
+  if (item.kind !== "tool" || item.tool.state !== "done" || callTarget(item.tool.name, item.tool.args).name !== "deck_edit") return null;
+  const d = detailsOf(item.tool.result);
+  return typeof d.deck_id === "string" && typeof d.edit === "number" ? d : null;
+}
+
 /** What a manage_routine call changed; reading a routine changes nothing, and has no details. */
 function routineChange(item: WorkItem): RoutineChange | null {
   if (item.kind !== "tool" || item.tool.name !== MANAGE_ROUTINE || item.tool.state !== "done") return null;
@@ -142,6 +151,8 @@ export function botChat(v: SessionView): BotItem[] {
         for (const item of s.items) {
           const sent = delivered(item);
           if (sent === null) {
+            const details = deckEdit(item);
+            if (details) out.push({ kind: "deck_edit", key: `deck_edit:${item.key}`, details, ts: times.get(item.key) ?? since ?? Date.now() });
             const change = routineChange(item);
             if (change) out.push({ kind: "routine", key: `routine:${item.key}`, ts: times.get(item.key) ?? since ?? Date.now(), ...change });
             continue;
@@ -166,6 +177,22 @@ export function botChat(v: SessionView): BotItem[] {
         since = undefined;
         source = undefined;
         break;
+    }
+  }
+  // A sub-agent's change is the owner's to take back all the same: the bot sent the agent to make it.
+  const editId = (d: unknown) => { const x = d as { deck_id: string; edit: number }; return `${x.deck_id}:${x.edit}`; };
+  const shown = new Set(out.flatMap((i) => (i.kind === "deck_edit" ? [editId(i.details)] : [])));
+  for (const agent of v.agents) {
+    for (const s of conversation(agent.view)) {
+      if (s.kind !== "work") continue;
+      for (const item of s.items) {
+        const details = deckEdit(item);
+        if (!details || item.kind !== "tool") continue;
+        const id = editId(details);
+        if (shown.has(id)) continue;
+        shown.add(id);
+        out.push({ kind: "deck_edit", key: `deck_edit:${agent.id}:${item.key}`, details, ts: item.tool.result?.ts ?? agent.since });
+      }
     }
   }
   const lastFailure = out.findLastIndex((i) => i.kind === "failure");

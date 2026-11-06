@@ -13,7 +13,7 @@ import { presentationImageDecoder } from "./metafile";
 import { PresentationLoading, type FontLoadProgress } from "./PresentationLoading";
 import { SlideOutline } from "./SlideOutline";
 import { installSlideReorder } from "./slideReorder";
-import { KernelProposals, interceptReview } from "./kernelProposals";
+import { onSlideRequest, takeSlide } from "./deckEdit";
 import { Ribbon, type RibbonFonts } from "./Ribbon";
 import { RibbonController } from "./commands/controller";
 import { ControllerContext } from "./ribbon/controls";
@@ -72,20 +72,6 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     onReplica: (replica: AsyncCollaborationReplica | null) => doc.kernel?.attach(replica),
   } : undefined, [doc, doc.kernel]);
   const shell = useRef<HTMLDivElement>(null);
-  // The kernel's proposals, previewed here; their accept and reject go to the kernel.
-  const proposals = useMemo(() => doc.kernel ? new KernelProposals(rpc, session, doc.kernel.deckId) : null, [doc, doc.kernel, rpc, session]);
-  useEffect(() => () => proposals?.close(), [proposals]);
-  useEffect(() => {
-    if (!proposals) return;
-    return interceptReview(() => shell.current, () => {
-      const value = api.current?.commands.getState("proposalSelect")?.value;
-      return typeof value === "string" ? value : null;
-    }, (localId, action, force) => {
-      void proposals.decide(localId, action, force).then((r) => {
-        if (!r.ok) setError(r.stale ? i18n.t("deckProposal.stale", { ns: "session" }) : (r.message ?? null));
-      });
-    });
-  }, [proposals, fonts]);
   useLayoutEffect(() => {
     if (!shell.current) return;
     return installSlideReorder(shell.current, {
@@ -114,12 +100,13 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     setReady(true);
     doc.serialize = () => editor.save();
     doc.prepare = () => editor.flushPendingInput();
-    proposals?.attach({
-      propose: async (agentId, note, edits) => (await editor.handleAsync()).propose(agentId, note, edits),
-      rejectProposal: async (id) => (await editor.handleAsync()).rejectProposal(id),
-      refresh: () => void editor.refreshProposals(),
-    });
-    return () => { detach(); proposals?.attach(null); if (api.current === editor) { api.current = null; doc.serialize = null; doc.prepare = null; } };
+    // A page the conversation asked for: the agent's change it is showing (presentation-deck-edit §6).
+    const go = (index: number) => void editor.goToSlide(index + 1);
+    const deckId = doc.kernel?.deckId;
+    const asked = deckId ? takeSlide(deckId) : null;
+    if (asked !== null) go(asked);
+    const stopAsking = deckId ? onSlideRequest(deckId, go) : () => {};
+    return () => { detach(); stopAsking(); if (api.current === editor) { api.current = null; doc.serialize = null; doc.prepare = null; } };
   };
   if (error && !api.current) return <div className="pptx-message" role="alert">{i18n.t("pptx.loadFailed", { ns: "session", message: error })}</div>;
   const loading = <PresentationLoading name={name} stage={fonts ? "rendering" : "fonts"}
@@ -137,8 +124,6 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     readOnly={!doc.file.writable}
     toolbar={<ControllerContext.Provider value={controller}><Ribbon fonts={ribbonFonts} /></ControllerContext.Provider>}
     plugins={plugins}
-    // The agent's proposals come from the kernel; only its replica can review them.
-    proposals={!!doc.kernel}
     i18n={language.startsWith("zh") ? presentationZhCN : undefined}
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}

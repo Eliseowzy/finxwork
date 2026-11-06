@@ -131,7 +131,8 @@ pub mod method {
     pub const DECK_FOCUS: &str = "deck/focus";
     pub const DECK_EDIT: &str = "deck/edit";
     pub const DECK_COPY: &str = "deck/copy";
-    pub const DECK_PROPOSALS: &str = "deck/proposals";
+    pub const DECK_PROPOSAL_LIST: &str = "deck/proposal/list";
+    pub const DECK_UNDO: &str = "deck/undo";
     pub const DECK_PROPOSAL_ACCEPT: &str = "deck/proposal/accept";
     pub const DECK_PROPOSAL_REJECT: &str = "deck/proposal/reject";
     pub const DECK_PROPOSAL_REVERT: &str = "deck/proposal/revert";

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // The agent edits a presentation (docs/desktop/presentation-deck-edit.md), in the real app: with
-// the kernel holding the deck, a pptx opens in the file panel; the model reads it and proposes a
-// new title with deck_edit. The proposal shows as a card in the conversation and as a preview in
-// the editor, and the file on disk stays as it was. Accepted from the card, the title reaches the
-// editor once (by deck/sync) and the preview goes; a second proposal rejected from the editor's
-// review is rejected in the kernel and on the card. deck_save then writes the accepted title, and
+// the kernel holding the deck, a pptx opens in the file panel; the model reads it and changes the
+// title with deck_edit. Asking for permissions, the standard approval asks first, naming each step,
+// and nothing changes until it is allowed; allowed, the title reaches the editor once (by
+// deck/sync) and the file on disk stays as it was. A second change is taken back with the step's
+// 撤销; with edits accepted, a third is made without asking. deck_save then writes the deck, and
 // only that slide's part of the file changes.
 //
 // A model server on this Mac plays the agent: it reads the ids it needs from the tool results it
@@ -273,18 +273,17 @@ async function ask(page, words) {
   await page.until(`the turn ${words} ended`, `!document.querySelector(".working")`, 60000).catch(async (e) => fail(`${e.message}: ${await page.run(`[...document.querySelectorAll(".working")].map((w) => w.closest("[class]")?.parentElement?.className + " :: " + w.innerText).join(" | ")`)}`));
 }
 
-const cards = `[...document.querySelectorAll("[data-testid=deck-proposal-card]")]`;
-const card = (n) => `${cards}[${n}]`;
-const cardState = (n) => `(${card(n)}?.querySelector(".deck-proposal-done")?.dataset.status ?? (${card(n)} ? "pending" : null))`;
-const previews = `(document.querySelector(".fpn [data-testid=pptx-proposals-count]")?.textContent ?? null)`;
+const edits = `[...document.querySelectorAll("[data-testid=deck-edit]")]`;
+const approval = `document.querySelector(".appr")`;
 const outline = `[...document.querySelectorAll(".fpn .pptx-outline")].map((e) => e.innerText).join("\\n")`;
 const count = (hay, needle) => hay.split(needle).length - 1;
 const deckDirs = () => (fs.existsSync(path.join(home, "decks")) ? fs.readdirSync(path.join(home, "decks")).filter((d) => fs.existsSync(path.join(home, "decks", d, "source.pptx"))) : []);
-async function proposals() {
-  const [deck] = deckDirs();
-  const r = await finxCall("deck/proposals", { session_id: "e2e", deck_id: deck });
-  if (r.error) fail(`deck/proposals: ${JSON.stringify(r.error)}`);
-  return r.result.proposals;
+/** Says something; the turn goes on to wait for an approval. */
+async function say(page, words) {
+  await page.run(`document.querySelector(".cmp-in").focus()`);
+  await page.cdp("Input.insertText", { text: words });
+  await page.until("send enabled", `!document.querySelector("button.send")?.disabled`);
+  await page.run(`document.querySelector("button.send").click()`);
 }
 // A zip's parts by name, read by Python's zipfile (unzip takes "[Content_Types].xml" for a pattern).
 const zipRead = "import base64, json, sys, zipfile\nz = zipfile.ZipFile(sys.argv[1])\nprint(json.dumps({n: base64.b64encode(z.read(n)).decode() for n in z.namelist()}))";
@@ -319,53 +318,49 @@ try {
   await page.until("the outline", `(${outline}).includes("Quarterly review")`);
   await page.shot("01-opened");
 
-  step("the agent proposes a new title: a card, a preview, the file untouched");
-  await ask(page, "改标题");
-  await page.until("the proposal card", `${cards}.length === 1`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(`document.querySelector(".cscroll")?.innerText.slice(-1500)`)}`));
-  const title = await page.run(`${card(0)}.querySelector(".appr-h").textContent`);
-  check(/改了 ?1 ?页/.test(title), `the card says one slide changed: ${title}`);
-  await page.until("the preview in the editor", `${previews} === "1"`, 20000).catch(async (e) => fail(`${e.message}: count ${await page.run(previews)}`));
-  check(sha(fs.readFileSync(pptx)) === sha(original), "the file changed on disk before anything was accepted");
-  const pending = await proposals();
-  check(pending.length === 1 && pending[0].status === "pending", `one pending proposal: ${JSON.stringify(pending)}`);
-  check(!(await page.run(outline)).includes(NEW_TITLE), "the editor shows the proposal as if accepted");
-  await page.shot("02-proposed");
-
   const tabStatus = `document.querySelector(".fpn-tools .fpn-state")?.textContent.trim() ?? ""`;
-  step("accepted on the card: the title reaches the editor once and the preview goes");
-  await page.click(`[data-testid=deck-proposal-card] .btn.primary`);
-  await page.until("the card accepted", `${cardState(0)} === "accepted"`, 20000);
+  step("asking for permissions: the approval names the step, and nothing changes until it is allowed");
+  await say(page, "改标题");
+  await page.until("the approval", `!!${approval}`, 30000).catch(async (e) => fail(`${e.message}: ${await page.run(`document.querySelector(".cscroll")?.innerText.slice(-1500)`)}`));
+  const asked = await page.run(`${approval}.innerText`);
+  check(asked.includes(`replace "Quarterly" with "年度经营"`), `the approval names the step: ${asked}`);
+  check(!(await page.run(outline)).includes(NEW_TITLE), "the deck changed before it was allowed");
+  check(sha(fs.readFileSync(pptx)) === sha(original), "the file changed before anything was allowed");
+  await page.shot("02-asked");
+
+  step("allowed: the title reaches the editor once, the file untouched, the step offers 撤销");
+  await page.click(`.appr .btn.primary`);
+  await page.until("the turn ended", `!document.querySelector(".working") && !${approval}`, 60000);
   await page.until("the new title in the editor", `(${outline}).includes(${JSON.stringify(NEW_TITLE)})`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(outline)}`));
-  await page.until("the preview cleared", `${previews} === "0"`, 20000).catch(async (e) => fail(`${e.message}: count ${await page.run(previews)}`));
-  await sleep(1500);
+  await sleep(1000);
   const after = await page.run(outline);
-  check(count(after, "年度经营") === 1 && !after.includes("年度经营年度经营"), `the title applied once: ${after}`);
-  check((await proposals())[0].status === "accepted", "the kernel has it accepted");
-  check(sha(fs.readFileSync(pptx)) === sha(original), "accepting wrote the file");
+  check(count(after, "年度经营") === 1, `the title applied once: ${after}`);
+  check(sha(fs.readFileSync(pptx)) === sha(original), "the edit wrote the file");
+  await page.until("the step's actions", `${edits}.length === 1`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(`document.querySelector(".cscroll")?.innerText.slice(-1500)`)}`));
+  check((await page.run(`${edits}[0].innerText`)).includes("查看第 1 页"), "the step names the page");
   await page.until("the tab says unsaved", `${tabStatus} === "未保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
-  await page.shot("03-accepted");
+  await page.shot("03-applied");
 
-  step("a second proposal, rejected in the editor's review: rejected in the kernel and on the card");
-  await ask(page, "再改一处");
-  await page.until("the second card", `${cards}.length === 2`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(`document.querySelector(".cscroll")?.innerText.slice(-1500)`)}`));
-  await page.until("its preview", `${previews} === "1"`, 20000);
-  if (!(await page.run(`!!document.querySelector(".fpn [data-testid=pptx-proposal-reject]")`))) await page.click(".fpn [data-testid=pptx-proposals-button]");
-  await page.until("the review panel", `!!document.querySelector("[data-testid=pptx-proposal-reject]")`, 10000);
-  await page.shot("04-review");
-  await page.click("[data-testid=pptx-proposal-reject]");
-  await page.until("the card rejected", `${cardState(1)} === "rejected"`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(cardState(1))} kernel ${JSON.stringify((await proposals()).map((p) => [p.note, p.status]))} alert ${await page.run(`[...document.querySelectorAll(".fpn [role=alert], .fpn .err, .fpn .error")].map((e) => e.innerText).join(" / ")`)} review ${await page.run(`[...document.querySelectorAll("[data-proposal-id]")].map((e) => e.getAttribute("data-proposal-id") + ":" + e.innerText.slice(0, 80)).join(" | ")`)}`));
-  const second = (await proposals()).find((p) => p.note === "再改一处");
-  check(second?.status === "rejected", `the kernel has it rejected: ${JSON.stringify(second)}`);
-  await page.until("no preview", `${previews} === "0"`, 20000);
-  check(!(await page.run(outline)).includes("复盘"), "the rejected words reached the editor");
-  check(await page.run(`${cardState(0)} === "accepted"`), "the first card still says accepted");
-  await page.shot("05-rejected");
+  step("a second change, taken back with the step's 撤销");
+  await say(page, "再改一处");
+  await page.until("the approval", `!!${approval}`, 30000);
+  await page.click(`.appr .btn.primary`);
+  await page.until("the second change in the editor", `(${outline}).includes("复盘")`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(outline)}`));
+  await page.until("its step", `${edits}.length === 2`, 10000);
+  await page.run(`${edits}[1].querySelector(".deck-edit-undo")?.click()`);
+  await page.until("the step says undone", `!!${edits}[1].querySelector(".deck-edit-done")`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(`${edits}[1].innerText`)}`));
+  await page.until("the change gone from the editor", `!(${outline}).includes("复盘") && (${outline}).includes(${JSON.stringify(NEW_TITLE)})`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(outline)}`));
+  await page.shot("04-undone");
 
-  step("deck_save writes the accepted title, and only its slide's part changes");
-  // Saving writes the file: asked like a write unless edits run without asking.
+  step("edits accepted: deck_edit is made without asking");
   await permission("accept-edits");
+  await ask(page, "直接改");
+  check(!(await page.run(`!!${approval}`)), "an approval was asked under accepted edits");
+  await page.until("the change in the editor", `(${outline}).includes("年度经营 总结")`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(outline)}`));
+  await page.shot("05-accept-edits");
+
+  step("deck_save writes the deck, and only its slide's part changes");
   await ask(page, "保存");
-  await page.until("the file written", `${sha(fs.readFileSync(pptx)) !== sha(original)}`, 1).catch(() => {});
   for (let i = 0; i < 100 && sha(fs.readFileSync(pptx)) === sha(original); i++) await sleep(100);
   check(sha(fs.readFileSync(pptx)) !== sha(original), "deck_save did not write the file");
   await page.until("the tab says saved", `${tabStatus} === "已保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
@@ -373,7 +368,7 @@ try {
   fs.writeFileSync(orig, original);
   const before = parts(orig), now = parts(pptx);
   const slide1 = now["ppt/slides/slide1.xml"].toString("utf8");
-  check(slide1.includes("年度经营") && !slide1.includes("复盘"), `the saved slide has the accepted title only: ${slide1.match(/<a:t>[^<]*/g)}`);
+  check(slide1.includes("年度经营 总结") && !slide1.includes("复盘"), `the saved slide has the kept changes only: ${slide1.match(/<a:t>[^<]*/g)}`);
   const changed = [];
   for (const [name, bytes] of Object.entries(before)) {
     if (!now[name]) changed.push(`${name} (gone)`);
@@ -381,26 +376,10 @@ try {
   }
   for (const name of Object.keys(now)) if (!before[name]) changed.push(`${name} (new)`);
   check(JSON.stringify(changed) === JSON.stringify(["ppt/slides/slide1.xml"]), `only the first slide changed: ${JSON.stringify(changed)}`);
-  // Opened again, from a copy of the file (not the deck the kernel holds): the title is the new one.
-  fs.copyFileSync(pptx, path.join(proj, "saved-copy.pptx"));
-  await ask(page, "再读一下");
-  const reread = requests.at(-1).filter((m) => m.role === "tool").map(text).findLast((t) => t.includes("## Slide 1"));
-  check(reread?.includes(NEW_TITLE), `reopened, the deck reads the new title: ${reread}`);
   await page.shot("06-saved");
 
-  step("full access: deck_edit makes the change at once, with no card");
-  await permission("bypass-permissions");
-  await ask(page, "直接改");
-  await page.until("the change in the editor", `(${outline}).includes("年度经营 总结")`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(outline)}`));
-  check((await page.run(`${cards}.length`)) === 2, "full access still showed a card");
-  const direct = (await proposals()).find((p) => p.note === "直接改");
-  check(direct?.status === "accepted", `the kernel made it at once: ${JSON.stringify(direct)}`);
-  check(await page.run(`${previews} === "0" || ${previews} === null`), "a preview is left in the editor");
-  await page.until("the tab says unsaved", `${tabStatus} === "未保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
-  await page.shot("07-full-access");
-
   page.close();
-  console.log("\n✔ the agent's edit is proposed, reviewed in the conversation and the editor, and saved; under full access it is made at once");
+  console.log("\n✔ the agent's edit is asked about, made in the deck, taken back with 撤销, made without asking under accepted edits, and saved");
 } catch (e) {
   failed = true;
   console.error(`\n✘ ${e.message}`);

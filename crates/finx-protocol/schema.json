@@ -212,9 +212,6 @@
       "$ref": "#/definitions/DeckOpenResult"
     },
     {
-      "$ref": "#/definitions/DeckProposalAcceptResult"
-    },
-    {
       "$ref": "#/definitions/DeckProposalDecideParams"
     },
     {
@@ -224,16 +221,13 @@
       "$ref": "#/definitions/DeckProposalIdParams"
     },
     {
-      "$ref": "#/definitions/DeckProposalRejectResult"
+      "$ref": "#/definitions/DeckProposalListParams"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalListResult"
     },
     {
       "$ref": "#/definitions/DeckProposalResult"
-    },
-    {
-      "$ref": "#/definitions/DeckProposalsParams"
-    },
-    {
-      "$ref": "#/definitions/DeckProposalsResult"
     },
     {
       "$ref": "#/definitions/DeckReadParams"
@@ -261,6 +255,12 @@
     },
     {
       "$ref": "#/definitions/DeckTemplateProfileParams"
+    },
+    {
+      "$ref": "#/definitions/DeckUndoParams"
+    },
+    {
+      "$ref": "#/definitions/DeckUndoResult"
     },
     {
       "$ref": "#/definitions/DeckViewParams"
@@ -7344,47 +7344,6 @@
       ],
       "type": "object"
     },
-    "DeckProposalAcceptResult": {
-      "properties": {
-        "acceptance": {
-          "$ref": "#/definitions/DeckProposalAcceptance"
-        },
-        "revision": {
-          "description": "The deck's revision after it.",
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "acceptance",
-        "revision"
-      ],
-      "type": "object"
-    },
-    "DeckProposalAcceptance": {
-      "description": "What `deck/proposal/accept` did (camelCase, as the engine's acceptance).",
-      "properties": {
-        "applied": {
-          "description": "False: nothing changed. With `stale_targets`, its targets changed and it is still pending: accept again with `force`.",
-          "type": "boolean"
-        },
-        "proposalId": {
-          "type": "string"
-        },
-        "staleTargets": {
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "applied",
-        "proposalId"
-      ],
-      "type": "object"
-    },
     "DeckProposalDecideParams": {
       "additionalProperties": false,
       "description": "`deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The rest stays pending as `remaining_id`.",
@@ -7416,58 +7375,6 @@
         "deck_id",
         "proposal_id",
         "session_id"
-      ],
-      "type": "object"
-    },
-    "DeckProposalEntry": {
-      "description": "One proposal of `deck/proposals`: the engine's proposal JSON (camelCase), with its state. `edits` are the engine's `ProposalEdit`s, for a replica to preview with its own engine.",
-      "properties": {
-        "agentId": {
-          "type": "string"
-        },
-        "changes": {
-          "default": [],
-          "items": true,
-          "type": "array"
-        },
-        "edits": {
-          "default": [],
-          "items": true,
-          "type": "array"
-        },
-        "id": {
-          "type": "string"
-        },
-        "note": {
-          "default": null,
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "refs": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "description": "The ids its `ref`s got.",
-          "type": "object"
-        },
-        "staleTargets": {
-          "default": [],
-          "description": "Targets changed since it was made: accepting it needs `force`.",
-          "items": {
-            "type": "string"
-          },
-          "type": "array"
-        },
-        "status": {
-          "$ref": "#/definitions/DeckProposalState"
-        }
-      },
-      "required": [
-        "agentId",
-        "id",
-        "status"
       ],
       "type": "object"
     },
@@ -7594,21 +7501,37 @@
       ],
       "type": "object"
     },
-    "DeckProposalRejectResult": {
+    "DeckProposalListParams": {
+      "additionalProperties": false,
       "properties": {
-        "rejected": {
-          "description": "False when no pending proposal had that id.",
+        "closed": {
+          "description": "Accepted, rejected and reverted ones too: the AI ledger.",
           "type": "boolean"
         },
-        "revision": {
-          "format": "uint64",
-          "minimum": 0.0,
-          "type": "integer"
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
         }
       },
       "required": [
-        "rejected",
-        "revision"
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckProposalListResult": {
+      "properties": {
+        "proposals": {
+          "items": {
+            "$ref": "#/definitions/DeckProposalInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "proposals"
       ],
       "type": "object"
     },
@@ -7631,47 +7554,6 @@
       "required": [
         "proposal",
         "version"
-      ],
-      "type": "object"
-    },
-    "DeckProposalState": {
-      "description": "Where a kernel-held proposal stands.",
-      "enum": [
-        "pending",
-        "accepted",
-        "rejected"
-      ],
-      "type": "string"
-    },
-    "DeckProposalsParams": {
-      "additionalProperties": false,
-      "description": "`deck/proposals` (presentation-deck-edit §4).",
-      "properties": {
-        "deck_id": {
-          "type": "string"
-        },
-        "session_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "deck_id",
-        "session_id"
-      ],
-      "type": "object"
-    },
-    "DeckProposalsResult": {
-      "description": "Pending proposals first, then those decided, newest last.",
-      "properties": {
-        "proposals": {
-          "items": {
-            "$ref": "#/definitions/DeckProposalEntry"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "proposals"
       ],
       "type": "object"
     },
@@ -8168,6 +8050,43 @@
       "required": [
         "shape_id",
         "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckUndoParams": {
+      "additionalProperties": false,
+      "description": "`deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it is the agent's latest one still in the deck (presentation-deck-edit §5).",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "edit": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "edit",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckUndoResult": {
+      "properties": {
+        "revision": {
+          "description": "The deck's revision after it.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision"
       ],
       "type": "object"
     },
@@ -19563,19 +19482,19 @@
     },
     "deck/proposal/accept": {
       "params": "DeckProposalDecideParams",
-      "result": "DeckProposalAcceptResult"
+      "result": "DeckProposalResult"
+    },
+    "deck/proposal/list": {
+      "params": "DeckProposalListParams",
+      "result": "DeckProposalListResult"
     },
     "deck/proposal/reject": {
       "params": "DeckProposalDecideParams",
-      "result": "DeckProposalRejectResult"
+      "result": "DeckProposalResult"
     },
     "deck/proposal/revert": {
       "params": "DeckProposalIdParams",
       "result": "DeckProposalResult"
-    },
-    "deck/proposals": {
-      "params": "DeckProposalsParams",
-      "result": "DeckProposalsResult"
     },
     "deck/read": {
       "params": "DeckReadParams",
@@ -19596,6 +19515,10 @@
     "deck/template_profile": {
       "params": "DeckTemplateProfileParams",
       "result": "TemplateProfile"
+    },
+    "deck/undo": {
+      "params": "DeckUndoParams",
+      "result": "DeckUndoResult"
     },
     "deck/view": {
       "params": "DeckViewParams",
@@ -19923,14 +19846,15 @@
       "deck/links": "stable",
       "deck/open": "stable",
       "deck/proposal/accept": "stable",
+      "deck/proposal/list": "stable",
       "deck/proposal/reject": "stable",
       "deck/proposal/revert": "stable",
-      "deck/proposals": "stable",
       "deck/read": "stable",
       "deck/save": "stable",
       "deck/summary": "stable",
       "deck/sync": "stable",
       "deck/template_profile": "stable",
+      "deck/undo": "stable",
       "deck/view": "stable",
       "doc/apply": "experimental",
       "doc/autofill": "experimental",

@@ -70,6 +70,17 @@ pub struct Accepted {
     pub update: Vec<u8>,
 }
 
+/// What [`Deck::apply`] did.
+#[derive(Debug, Default)]
+pub struct Applied {
+    /// False when the edits left the deck as it was.
+    pub applied: bool,
+    /// What it did to each slide, in the deck's new order.
+    pub strip: Vec<ProposalStripEntry>,
+    /// The Yrs update it made; empty when nothing changed.
+    pub update: Vec<u8>,
+}
+
 pub type Result<T> = std::result::Result<T, SlideError>;
 
 pub struct Deck {
@@ -182,6 +193,37 @@ impl Deck {
             }
             Err(e) => Err(no_proposal(id, e)),
         }
+    }
+
+    /// Makes `request`'s edits at once, as one step of this deck's undo history: proposed and
+    /// accepted in one go, so it fails whole as a proposal would (naming the step). Returns
+    /// what it did to each slide and the update it made (empty when it changed nothing).
+    pub fn apply(&self, request: ProposalRequest) -> Result<Applied> {
+        let (proposal, _) = self.propose(request)?;
+        let strip = self.proposal_strip(&proposal.id);
+        // Its own step: never merged with an edit just before or after it.
+        self.presentation.add_undo_barrier();
+        let accepted = self.accept_proposal(&proposal.id, true);
+        self.presentation.add_undo_barrier();
+        self.presentation.reject_proposal(&proposal.id);
+        let accepted = accepted?;
+        Ok(Applied { strip: strip?, update: accepted.update, applied: accepted.applied })
+    }
+
+    /// Takes back this deck's last own edit (an [`Deck::apply`]); edits merged from replicas
+    /// are not in its history and stay. `None` when there is nothing to take back.
+    pub fn undo(&self) -> Result<Option<Vec<u8>>> {
+        if !self.presentation.can_undo() {
+            return Ok(None);
+        }
+        let sv = self.state_vector();
+        let before = self.presentation.snapshot().ok();
+        if !self.presentation.undo() {
+            return Ok(None);
+        }
+        self.touch(before, &self.presentation.snapshot()?)?;
+        // A deletion alone leaves the state vector as it was: the diff, not `changes_since`.
+        Ok(Some(self.encode_diff(&sv)?))
     }
 
     /// Withdraws a pending proposal; false when there was none of that id. The document is

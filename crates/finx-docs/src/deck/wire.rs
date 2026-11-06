@@ -29,16 +29,12 @@ pub enum Request {
     /// Slide lines and size for `DeckSummary`, from the deck as it is now.
     Summary { deck: String },
     Close { deck: String },
-    /// Makes a proposal of the engine's `ProposalEdit`s (JSON); replies `Proposed`.
-    Propose { deck: String, agent_id: String, note: Option<String>, edits: serde_json::Value },
-    /// Accepts a pending proposal; replies `Accepted`.
-    Accept { deck: String, proposal: String, force: bool },
-    /// Withdraws a pending proposal; replies `Rejected`.
-    Reject { deck: String, proposal: String },
-    /// Pending proposals and those decided; replies `DeckProposalsResult`.
-    Proposals { deck: String },
-    /// The deterministic checks of the deck now, or as `proposal` would leave it.
-    Check { deck: String, proposal: Option<String> },
+    /// Makes the agent's edits, the engine's `ProposalEdit`s (JSON), at once; replies `Edited`.
+    Apply { deck: String, agent_id: String, note: Option<String>, edits: serde_json::Value },
+    /// Takes back the agent's edit that made revision `edit`, its latest one; replies `Changed`.
+    Undo { deck: String, edit: u64 },
+    /// The deterministic checks of the deck now.
+    Check { deck: String },
     /// The engine's snapshot of the deck now (JSON): its ids are the ones edits address.
     Snapshot { deck: String },
     /// Ends the process: after shutdown, and in tests as a crash.
@@ -55,11 +51,9 @@ impl Request {
             | Request::Save { deck, .. }
             | Request::Summary { deck }
             | Request::Close { deck }
-            | Request::Propose { deck, .. }
-            | Request::Accept { deck, .. }
-            | Request::Reject { deck, .. }
-            | Request::Proposals { deck }
-            | Request::Check { deck, .. }
+            | Request::Apply { deck, .. }
+            | Request::Undo { deck, .. }
+            | Request::Check { deck }
             | Request::Snapshot { deck } => Some(deck),
             Request::Exit => None,
         }
@@ -110,15 +104,14 @@ pub struct Changed {
     pub update: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct Proposed {
+/// What `Apply` did. The revision it made is the edit's id for `Undo`; with nothing changed
+/// (`applied` false) there is nothing to take back.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Edited {
     #[serde(flatten)]
     pub changed: Changed,
-    /// Its id, the worker's: stable across a worker restart.
-    pub proposal_id: String,
-    /// The engine's proposal JSON, under that id.
-    pub proposal: serde_json::Value,
-    /// What it does to each slide, in the order the deck would have.
+    pub applied: bool,
+    /// What it did to each slide, in the deck's new order.
     pub strip: Vec<StripEntry>,
 }
 
@@ -127,21 +120,6 @@ pub struct StripEntry {
     pub slide_id: String,
     /// `unchanged`, `changed`, `inserted`, `deleted` or `moved`.
     pub status: String,
-    /// From 0: where it is in the deck as proposed, or for a deleted slide where it was.
+    /// From 0: where it is in the deck now, or for a deleted slide where it was.
     pub index: usize,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Accepted {
-    #[serde(flatten)]
-    pub changed: Changed,
-    pub applied: bool,
-    #[serde(default)]
-    pub stale_targets: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Rejected {
-    pub revision: u64,
-    pub rejected: bool,
 }

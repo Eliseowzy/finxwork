@@ -1,8 +1,8 @@
 //! The presentation tools (presentation-ai-design §7, presentation-deck-edit §5): the deferred
 //! group `deck`. The read tools read a deck the kernel holds (DeckStore) as it is now, unsaved
 //! edits included, and any other .pptx from disk through the session's environment. `deck_edit`
-//! proposes changes on the kernel's deck, opening it there when no one has; they take effect
-//! when the user accepts them. `deck_save` writes the file.
+//! changes the kernel's deck, opening it there when no one has, as one step the user can take
+//! back; whether it asks first is the approval policy's. `deck_save` writes the file.
 
 use async_trait::async_trait;
 use finx_llm::UserContent;
@@ -36,7 +36,7 @@ use edit::{DeckEdit, DeckSave};
 
 pub(crate) const GROUP: &str = "deck";
 pub(crate) const GROUP_SUMMARY: &str = "Presentations (PPTX): an outline of a deck, its slides' text, notes and objects, search, slide images, a layout check, \
-     and changes proposed for the user to accept (text, text boxes, object positions, slides, notes) and saving";
+     and changes (text, text boxes, object positions, slides, notes) and saving";
 
 /// Largest deck read.
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
@@ -54,11 +54,11 @@ const GUIDELINES: &[&str] = &[
      the conversation, not PowerPoint on the desktop. Start with deck_open for the outline, then deck_read the slides you need, \
      deck_find to locate words or numbers, and deck_view to see a slide's layout, charts and pictures.",
     "Presentations: cite a slide as \"slide N\" (第 N 页). A deck open beside the conversation is read as it is now, unsaved edits included.",
-    "Presentations, changing them: deck_edit proposes; nothing changes until the user accepts, and until then deck_read shows the deck \
-     as it was. Before changing a number or phrase, deck_find it. Put a set of related changes in one deck_edit with a note in the \
-     user's words. After moving or adding objects, look at the slide once with deck_view. If a proposal is refused or rejected, \
-     read the slides again and propose anew; do not work around it. Address slides and objects by the slide_id and shape_id \
-     deck_read gives (detail objects), but to the user speak of slides, titles and text boxes, never of ids or ops.",
+    "Presentations, changing them: deck_edit makes the change in the deck at once, as one step the user can take back; the file \
+     is written only by deck_save. Before changing a number or phrase, deck_find it. Put a set of related changes in one deck_edit \
+     with a note in the user's words. After moving or adding objects, look at the slide once with deck_view. If an edit is refused \
+     or denied, read the slides again before trying anew; do not work around it. Address slides and objects by the slide_id and \
+     shape_id deck_read gives (detail objects), but to the user speak of slides, titles and text boxes, never of ids or ops.",
 ];
 
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
@@ -98,20 +98,6 @@ pub(crate) struct DecksHandle {
     pub(crate) store: Arc<finx_docs::deck::DeckStore>,
     /// The session the tools open decks for; they close with it.
     pub(crate) session: String,
-    /// The session whose permission mode decides whether deck_edit's change waits for the user.
-    pub(crate) owner: std::sync::OnceLock<std::sync::Weak<crate::session::Session>>,
-}
-
-impl DecksHandle {
-    pub(crate) fn new(store: Arc<finx_docs::deck::DeckStore>, session: String) -> Self {
-        Self { store, session, owner: std::sync::OnceLock::new() }
-    }
-
-    /// Full access or accepted edits: deck_edit's change is made at once, as doc_edit's is,
-    /// instead of waiting on a card. Asked permissions (or no session): the card decides.
-    pub(crate) fn applies_at_once(&self) -> bool {
-        self.owner.get().and_then(std::sync::Weak::upgrade).is_some_and(|s| s.permission_mode() != finx_protocol::PermissionMode::Manual)
-    }
 }
 
 async fn load(raw: &str, env: &dyn Environment, decks: Option<&DecksHandle>) -> Result<(PathBuf, Arc<Vec<u8>>, Arc<Outline>), ToolError> {

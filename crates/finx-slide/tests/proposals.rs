@@ -112,3 +112,30 @@ fn accepted_notes_save_with_their_new_notes_slide() {
     let saved = Deck::open(deck.save().unwrap()).unwrap();
     assert_eq!(saved.outline().unwrap().slides[0].notes, "Say hello");
 }
+
+/// The agent's edit is made at once and taken back by undo, on every replica; an edit merged
+/// from a replica is not in the deck's history and survives the undo.
+#[test]
+fn an_applied_edit_reaches_a_replica_and_undo_takes_back_only_it() {
+    let deck = Deck::open(FIXTURE.to_vec()).unwrap();
+    let replica = Presentation::open_from_update(&deck.encode_state(), 42, Some(FIXTURE)).unwrap();
+    let applied = deck.apply(request(vec![title_edit(&deck, "Annual review")])).unwrap();
+    assert!(applied.applied);
+    assert_eq!(applied.strip[0].status, ProposalStripStatus::Changed);
+    assert!(deck.proposals().unwrap().is_empty());
+    replica.apply_update_v1(&applied.update).unwrap();
+    assert_eq!(count(&replica, "Annual review"), 1);
+
+    // The person edits another slide in the replica; the deck merges it.
+    let sv = deck.state_vector();
+    let other = &replica.find_text(&FindRequest { text: "Next steps".into(), within: None, limit: None }).unwrap().unwrap().matches[0].range;
+    replica.insert_text(&EditCtx::local("person"), &other.story_id, other.start, "The ", &TextStyle::default()).unwrap();
+    deck.apply_update(&replica.encode_diff_v1(&sv).unwrap()).unwrap();
+
+    let undo = deck.undo().unwrap().expect("the agent's edit is in the history");
+    replica.apply_update_v1(&undo).unwrap();
+    assert_eq!(count(&replica, "Annual review"), 0);
+    assert_eq!(count(&replica, "Quarterly review"), 1);
+    assert_eq!(count(&replica, "The Next steps"), 1, "the person's edit stays");
+    assert!(deck.undo().unwrap().is_none(), "nothing else of the deck's own to take back");
+}

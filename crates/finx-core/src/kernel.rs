@@ -249,7 +249,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     }
     let emitter = Arc::new(Emitter::new(event_tx));
     if let Some(decks) = &launch.deps.decks {
-        tool_state.insert(Arc::new(crate::deck::DecksHandle::new(decks.clone(), launch.root_id.clone())));
+        tool_state.insert(Arc::new(crate::deck::DecksHandle { store: decks.clone(), session: launch.root_id.clone() }));
     }
     if let Some(store) = &launch.deps.docs {
         let weak = Arc::downgrade(&emitter);
@@ -308,9 +308,6 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         config: launch.config,
         state: Mutex::new(launch.state),
     });
-    if let Some(decks) = session.tool_state.get::<crate::deck::DecksHandle>() {
-        let _ = decks.owner.set(Arc::downgrade(&session));
-    }
     // A browser batch judges its later steps by the session's approval policy (§12.1).
     if let Some(browser) = session.tool_state.get::<BrowserHandle>() {
         let weak = Arc::downgrade(&session);

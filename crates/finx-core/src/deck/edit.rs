@@ -1,9 +1,10 @@
 //! `deck_edit` and `deck_save` (presentation-deck-edit §5): an agent's changes to a deck the
-//! kernel holds, made as one proposal the user accepts or rejects, and saving the file.
+//! kernel holds, made at once as one step the user can take back, and saving the file. Whether
+//! the user is asked first is the approval policy's, as for `doc_edit`.
 //!
 //! [`DeckOp`] is the agent's vocabulary. Each op becomes one engine `ProposalEdit`, resolved
 //! against the deck as it is now: text is found by its words, not by offsets, and positions
-//! are points. The batch is one proposal, or nothing when a step fails.
+//! are points. The batch is one change, or nothing when a step fails.
 
 use std::fmt::Write as _;
 use std::path::Path;
@@ -359,8 +360,8 @@ fn handle(ctx: &ToolCtx) -> Result<Arc<DecksHandle>, ToolError> {
 }
 
 /// The kernel's entry of the deck at `path`, held by the session: joined when the editor (or
-/// another session) has it open, so the deck, and the proposals pending on it, outlive the editor
-/// closing. Without this hold an accept from the conversation card finds the deck gone.
+/// another session) has it open, so the deck, its unsaved edits and the agent's undo history
+/// outlive the editor closing.
 async fn entry(decks: &DecksHandle, path: &Path) -> Result<Arc<DeckEntry>, ToolError> {
     let opened = decks.store.open(path, &decks.session, false).await.map_err(|e| failed(path, e))?;
     Ok(opened.entry)
@@ -382,9 +383,9 @@ fn location(args: &Value, env: &dyn Environment, verb: &str) -> ToolDescription 
 pub(crate) struct EditArgs {
     /// Path of the presentation (.pptx).
     deck: String,
-    /// The changes, proposed together as one change the user accepts or rejects. At most 256.
+    /// The changes, made together as one change the user can take back. At most 256.
     edits: Vec<DeckOp>,
-    /// What the changes do, in the user's words ("按 Q3 财报更新第 3 页的营收"); shown with the proposal.
+    /// What the changes do, in the user's words ("按 Q3 财报更新第 3 页的营收"); shown with the change.
     #[serde(default)]
     note: Option<String>,
 }
@@ -395,13 +396,12 @@ pub(crate) struct DeckEdit;
 impl TypedTool for DeckEdit {
     type Args = EditArgs;
     const NAME: &'static str = "deck_edit";
-    const DESCRIPTION: &'static str = "Propose changes to a presentation (.pptx): replace or format words, set an object's \
-        paragraphs or alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, \
-        change a slide's layout or its speaker notes. All of them become one proposal the user sees beside the deck and \
-        accepts or rejects; nothing changes until they accept, and until then deck_read shows the deck as it was. When the \
-        session runs edits without asking (full access or accepted edits), the change is made at once instead. If a step \
-        cannot be done, nothing is proposed and the error names the step and why (MissingTarget, ContentMismatch, \
-        AmbiguousTarget, Unsupported). Returns the proposal and the slides it changes, with any layout problems they would have.";
+    const DESCRIPTION: &'static str = "Change a presentation (.pptx): replace or format words, set an object's paragraphs or \
+        alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, change a \
+        slide's layout or its speaker notes. All of them are made at once as one change, which the user sees in the deck \
+        and can take back; deck_read shows it from then on. The file is not written until deck_save. If a step cannot be \
+        done, nothing changes and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, \
+        Unsupported). Returns the slides it changed, with any layout problems they have.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -423,37 +423,28 @@ impl TypedTool for DeckEdit {
             return Err(ToolError::InvalidArgs("edits is empty".into()));
         }
         if args.edits.len() > 256 {
-            return Err(ToolError::InvalidArgs("at most 256 edits in one proposal".into()));
+            return Err(ToolError::InvalidArgs("at most 256 edits in one change".into()));
         }
         let decks = handle(&ctx)?;
         let path = pptx_path(&args.deck, ctx.env.as_ref())?;
         let entry = entry(&decks, &path).await?;
         let store: &DeckStore = &decks.store;
         let snapshot = store.snapshot(&entry.deck_id).await.map_err(|e| failed(&path, e))?;
-        let edits = engine_edits(&args.edits, &snapshot).map_err(|e| ToolError::Failed(format!("Nothing was proposed: {e}")))?;
+        let edits = engine_edits(&args.edits, &snapshot).map_err(|e| ToolError::Failed(format!("Nothing was changed: {e}")))?;
         let agent = format!("finx:{}", decks.session);
-        let proposed = match store.propose(&entry.deck_id, &agent, args.note.clone(), Value::Array(edits)).await {
-            Ok(p) => p,
+        let edited = match store.apply(&entry.deck_id, &agent, args.note.clone(), Value::Array(edits)).await {
+            Ok(e) => e,
             // The engine counts steps from 0.
-            Err(DeckError::Refused(m)) => return Err(ToolError::Failed(format!("Nothing was proposed: {}", from_one(&m)))),
+            Err(DeckError::Refused(m)) => return Err(ToolError::Failed(format!("Nothing was changed: {}", from_one(&m)))),
             Err(e) => return Err(failed(&path, e)),
         };
-        let changed: Vec<_> = proposed.strip.iter().filter(|s| s.status != "unchanged").collect();
-        let diagnostics = store.check(&entry.deck_id, Some(&proposed.proposal_id)).await.unwrap_or_default();
-        // Full access or accepted edits: the change is made now, as doc_edit's is; no card asks for it.
-        let mut revision = proposed.changed.revision;
-        let applied = if decks.applies_at_once() {
-            let accepted = store.accept(&entry.deck_id, &proposed.proposal_id, false).await.map_err(|e| failed(&path, e))?;
-            revision = accepted.changed.revision;
-            accepted.applied
-        } else {
-            false
-        };
+        let changed: Vec<_> = edited.strip.iter().filter(|s| s.status != "unchanged").collect();
+        let diagnostics = if edited.applied { store.check(&entry.deck_id).await.unwrap_or_default() } else { Vec::new() };
         let (n, s, name) = (changed.len(), if changed.len() == 1 { "" } else { "s" }, file_name(&path));
-        let mut text = if applied {
-            format!("Made the change ({n} slide{s} of {name}): the session runs edits without asking, so it was applied at once. It is not in the file until deck_save writes it.\n")
+        let mut text = if edited.applied {
+            format!("Changed {n} slide{s} of {name}. The user can take it back; it is not in the file until deck_save writes it.\n")
         } else {
-            format!("Proposed to the user as one change ({n} slide{s} of {name}); it takes effect only when they accept it, and until then the deck reads as it was.\n")
+            format!("The edits left {name} as it was; nothing changed.\n")
         };
         if let Some(note) = &args.note {
             let _ = writeln!(text, "Note: {note}");
@@ -463,24 +454,25 @@ impl TypedTool for DeckEdit {
         }
         let problems: Vec<_> = diagnostics.iter().filter(|d| changed.iter().any(|s| s.slide_id == d.slide_id)).collect();
         if !problems.is_empty() {
-            let _ = writeln!(text, "{}", if applied { "Layout problems the changed slides have:" } else { "Layout problems the changed slides would have:" });
+            let _ = writeln!(text, "Layout problems the changed slides have:");
             for d in problems {
                 let _ = writeln!(text, "- slide {}: {} [{}]", d.index, d.message, d.rule);
             }
         }
+        // `edit` is the change's id for deck/undo: the revision it made.
         let details = json!({
             "deck_id": entry.deck_id,
             "path": path,
-            "proposal_id": proposed.proposal_id,
-            "revision": revision,
-            "applied": applied,
+            "edit": edited.applied.then_some(edited.changed.revision),
+            "revision": edited.changed.revision,
+            "applied": edited.applied,
+            "note": args.note,
             "slides": changed.iter().map(|s| json!({ "index": s.index, "slide_id": s.slide_id, "status": s.status })).collect::<Vec<_>>(),
         });
         Ok(ToolOutput::text(text).with_details(details))
     }
 }
 
-/// "edit 1: …" from the engine, whose steps count from 0, as "step 2: …".
 fn from_one(message: &str) -> String {
     message
         .strip_prefix("edit ")
@@ -509,9 +501,8 @@ pub(crate) struct DeckSave;
 impl TypedTool for DeckSave {
     type Args = SaveArgs;
     const NAME: &'static str = "deck_save";
-    const DESCRIPTION: &'static str = "Write a presentation's accepted changes and the user's unsaved edits to its file (or, \
-        with `path`, to another .pptx). Only the slides that changed are rewritten; the rest of the file stays byte for byte. \
-        Proposals not yet accepted are not saved.";
+    const DESCRIPTION: &'static str = "Write a presentation's unsaved changes, yours and the user's, to its file (or, with \
+        `path`, to another .pptx). Only the slides that changed are rewritten; the rest of the file stays byte for byte.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -538,12 +529,8 @@ impl TypedTool for DeckSave {
         let unsaved = entry.info().dirty;
         let info = decks.store.save(&entry.deck_id, to.as_deref(), args.force).await.map_err(|e| failed(&path, e))?;
         let target = to.clone().unwrap_or_else(|| info.path.clone());
-        let pending = decks.store.proposals(&entry.deck_id).await.map(|r| r.proposals.iter().filter(|p| p.status == finx_protocol::deck::DeckProposalState::Pending).count()).unwrap_or(0);
-        let mut text = if to.is_none() && !unsaved { format!("{} has nothing unsaved; the file is as it was.", file_name(&target)) } else { format!("Saved {}.", target.display()) };
-        if pending > 0 {
-            let _ = write!(text, " {pending} proposal{} not yet accepted {} not in the file.", if pending == 1 { "" } else { "s" }, if pending == 1 { "is" } else { "are" });
-        }
-        Ok(ToolOutput::text(text).with_details(json!({ "deck_id": info.deck_id, "path": target, "revision": info.revision, "pending_proposals": pending })))
+        let text = if to.is_none() && !unsaved { format!("{} has nothing unsaved; the file is as it was.", file_name(&target)) } else { format!("Saved {}.", target.display()) };
+        Ok(ToolOutput::text(text).with_details(json!({ "deck_id": info.deck_id, "path": target, "revision": info.revision })))
     }
 }
 

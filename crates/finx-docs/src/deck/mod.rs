@@ -7,14 +7,12 @@
 //!   and snapshot build on them, so they stay as they are across saves: a save does not restart
 //!   the Yrs history, and an editor's undo history survives it.
 //! - `updates.log`, `snapshot.yupd`, `engine.txt`: see [`journal`].
-//! - `proposals.json`: the agent's proposals, see [`ledger`].
 //! - `meta.json`: the file's path, the hash, size and time of the file as last read or written,
 //!   and the revision that holds.
 
 mod actor;
 mod client;
 pub mod journal;
-pub mod ledger;
 mod wire;
 
 use std::collections::{HashMap, HashSet};
@@ -29,10 +27,10 @@ use serde::{Deserialize, Serialize};
 pub use actor::serve;
 pub use client::{DeckLauncher, QUARANTINED};
 use client::DeckWorker;
-pub use wire::{Accepted, Opened, Proposed, Rejected, StripEntry, Summary};
+pub use wire::{Edited, Opened, StripEntry, Summary};
 use wire::{Bytes, Changed, Request, Saved, Synced};
 
-use finx_protocol::deck::{DeckDiagnostic, DeckProposalsResult};
+use finx_protocol::deck::DeckDiagnostic;
 
 use crate::atomic;
 use crate::worker::WorkerError;
@@ -53,9 +51,10 @@ pub enum DeckError {
     NotOpen(String),
     #[error("refused: {0}")]
     Refused(String),
-    /// No pending proposal has that id.
-    #[error("no proposal {0}")]
-    NoProposal(String),
+    /// The agent's edit cannot be taken back (a later one is in the deck, or it is gone from
+    /// the deck's history); the deck is as it was.
+    #[error("cannot undo: {0}")]
+    NotUndoable(String),
     /// The file changed on disk since it was read: nothing was written.
     #[error("changed on disk: {0}")]
     Conflict(String),
@@ -75,7 +74,7 @@ impl From<WorkerError> for DeckError {
     fn from(e: WorkerError) -> Self {
         match e {
             WorkerError::Failed(m) if m.starts_with("protocol: ") => DeckError::Protocol(m),
-            WorkerError::Failed(m) if m.starts_with(actor::NO_PROPOSAL) => DeckError::NoProposal(m[actor::NO_PROPOSAL.len()..].to_owned()),
+            WorkerError::Failed(m) if m.starts_with(actor::NOT_UNDOABLE) => DeckError::NotUndoable(m[actor::NOT_UNDOABLE.len()..].to_owned()),
             WorkerError::Failed(m) if m.starts_with(actor::REFUSED) => DeckError::Refused(m[actor::REFUSED.len()..].to_owned()),
             e => DeckError::Worker(e.to_string()),
         }
@@ -190,18 +189,6 @@ impl DeckStore {
         self.decks.lock().get(deck_id).cloned().ok_or_else(|| DeckError::NotOpen(deck_id.to_owned()))
     }
 
-    /// The entry of `deck_id` for `session`, opened again from its directory when the kernel no
-    /// longer holds it (it restarted, or every holder let go): a proposal pending on it is made
-    /// again by the worker, so a card in an old conversation can still be decided.
-    pub async fn ensure_open(&self, deck_id: &str, session: &str) -> Result<Arc<DeckEntry>, DeckError> {
-        if let Ok(entry) = self.get(deck_id) {
-            entry.sessions.lock().insert(session.to_owned());
-            return Ok(entry);
-        }
-        let path = read_meta(&self.root.join(deck_id)).map(|m| m.path).ok_or_else(|| DeckError::NotOpen(deck_id.to_owned()))?;
-        Ok(self.open(&path, session, false).await?.entry)
-    }
-
     /// The open entry of a file, if any.
     pub fn by_path(&self, path: &Path) -> Option<Arc<DeckEntry>> {
         let canonical = std::fs::canonicalize(path).ok()?;
@@ -226,8 +213,7 @@ impl DeckStore {
         let mut meta = read_meta(&dir).filter(|m| m.path == canonical && dir.join(journal::SOURCE).is_file());
         let mut conflict = false;
         if let Some(m) = &meta {
-            // Unsaved edits, or proposals still pending (a card may yet decide them).
-            let leftover = dir.join(journal::LOG).metadata().is_ok_and(|l| l.len() > 0) || dir.join(journal::SNAPSHOT).exists() || ledger::has_pending(&dir);
+            let leftover = dir.join(journal::LOG).metadata().is_ok_and(|l| l.len() > 0) || dir.join(journal::SNAPSHOT).exists();
             let same = m.hash == disk.hash;
             match (leftover, same) {
                 // Nothing to recover, or the file moved on: start over from the file.
@@ -347,45 +333,29 @@ impl DeckStore {
         Ok(entry.info())
     }
 
-    /// Makes a proposal of the engine's `ProposalEdit`s (JSON) on the deck. The whole batch is
-    /// one proposal, or nothing when a step fails (`Refused`, naming the step). Listeners hear
-    /// `Changed`, so clients list the proposals again.
-    pub async fn propose(&self, deck_id: &str, agent_id: &str, note: Option<String>, edits: serde_json::Value) -> Result<Proposed, DeckError> {
+    /// Makes the agent's edits, the engine's `ProposalEdit`s (JSON), at once: one revision,
+    /// sent to every replica, and one step the agent's [`DeckStore::undo`] takes back. A batch
+    /// with a step that fails changes nothing (`Refused`, naming the step).
+    pub async fn apply(&self, deck_id: &str, agent_id: &str, note: Option<String>, edits: serde_json::Value) -> Result<Edited, DeckError> {
         let entry = self.get(deck_id)?;
-        let proposed: Proposed = self.worker.request(Request::Propose { deck: deck_id.to_owned(), agent_id: agent_id.to_owned(), note, edits }).await?;
-        self.changed(&entry, &proposed.changed)?;
-        Ok(proposed)
+        let edited: Edited = self.worker.request(Request::Apply { deck: deck_id.to_owned(), agent_id: agent_id.to_owned(), note, edits }).await?;
+        self.changed(&entry, &edited.changed)?;
+        Ok(edited)
     }
 
-    /// Accepts a pending proposal: its update goes to every replica. Targets changed since it
-    /// was made and no `force`: nothing changes, `stale_targets` says what moved.
-    pub async fn accept(&self, deck_id: &str, proposal: &str, force: bool) -> Result<Accepted, DeckError> {
+    /// Takes back the agent's edit that made revision `edit`, when it is the agent's latest
+    /// one in the deck; the person's edits stay. Returns the revision after it.
+    pub async fn undo(&self, deck_id: &str, edit: u64) -> Result<u64, DeckError> {
         let entry = self.get(deck_id)?;
-        let accepted: Accepted = self.worker.request(Request::Accept { deck: deck_id.to_owned(), proposal: proposal.to_owned(), force }).await?;
-        self.changed(&entry, &accepted.changed)?;
-        Ok(accepted)
+        let changed: Changed = self.worker.request(Request::Undo { deck: deck_id.to_owned(), edit }).await?;
+        self.changed(&entry, &changed)?;
+        Ok(changed.revision)
     }
 
-    /// Withdraws a pending proposal; `rejected` is false when none had that id.
-    pub async fn reject(&self, deck_id: &str, proposal: &str) -> Result<Rejected, DeckError> {
-        let entry = self.get(deck_id)?;
-        let rejected: Rejected = self.worker.request(Request::Reject { deck: deck_id.to_owned(), proposal: proposal.to_owned() }).await?;
-        if rejected.rejected {
-            self.emit(DeckEvent::Changed(entry.info()));
-        }
-        Ok(rejected)
-    }
-
-    /// Pending proposals, then the decided ones.
-    pub async fn proposals(&self, deck_id: &str) -> Result<DeckProposalsResult, DeckError> {
+    /// The deterministic checks of the deck now.
+    pub async fn check(&self, deck_id: &str) -> Result<Vec<DeckDiagnostic>, DeckError> {
         self.get(deck_id)?;
-        Ok(self.worker.request(Request::Proposals { deck: deck_id.to_owned() }).await?)
-    }
-
-    /// The deterministic checks of the deck now, or as `proposal` would leave it.
-    pub async fn check(&self, deck_id: &str, proposal: Option<&str>) -> Result<Vec<DeckDiagnostic>, DeckError> {
-        self.get(deck_id)?;
-        Ok(self.worker.request(Request::Check { deck: deck_id.to_owned(), proposal: proposal.map(str::to_owned) }).await?)
+        Ok(self.worker.request(Request::Check { deck: deck_id.to_owned() }).await?)
     }
 
     /// The engine's snapshot of the deck now, unsaved edits included: the ids edits address.
@@ -456,7 +426,7 @@ impl DeckStore {
         if last {
             self.decks.lock().remove(deck_id);
             self.worker.close(deck_id).await;
-            if !entry.info().dirty && !ledger::has_pending(&entry.dir) {
+            if !entry.info().dirty {
                 let _ = std::fs::remove_dir_all(&entry.dir);
             }
         }

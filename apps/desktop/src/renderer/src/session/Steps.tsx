@@ -10,8 +10,8 @@ import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
 import { SearchResults, searchCall, searchDetails } from "./SearchResults";
 import { handoffOf } from "./Yours";
-import { DeckProposalCard } from "./DeckProposalCard";
-import { deckEditDetails } from "../docs/pptx/deckProposal";
+import { DeckEditActions } from "./DeckEditActions";
+import { deckEditDetails } from "../docs/pptx/deckEdit";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -29,24 +29,24 @@ export function Work({ items, live, flat = false }: { items: WorkItem[]; live: b
 }
 
 function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
-  // A proposal waits for the owner: its card stays in sight under the folded line, not inside it.
-  const proposals = items.flatMap((it) => (it.kind === "tool" && proposalOf(it.tool) ? [it.tool] : []));
+  // A deck change stays in sight under the folded line, to look at or take back.
+  const edits = items.flatMap((it) => (it.kind === "tool" && deckEditOf(it.tool) ? [it.tool] : []));
   return (
     <>
       <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} card={false} />)} />
-      {proposals.map((tool) => <ProposalCard key={tool.call_id} tool={tool} />)}
+      {edits.map((tool) => <DeckEdit key={tool.call_id} tool={tool} />)}
     </>
   );
 }
 
-/** A `deck_edit` the agent made, itself or (deferred, as the deck tools are) through call_tool: the details its card shows, once it is done. */
-const proposalOf = (tool: ToolView) => (callTarget(tool.name, tool.args).name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null);
+/** A `deck_edit` that changed the deck, itself or (deferred, as the deck tools are) through call_tool. */
+const deckEditOf = (tool: ToolView) => (callTarget(tool.name, tool.args).name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null);
 
-function ProposalCard({ tool }: { tool: ToolView }) {
+function DeckEdit({ tool }: { tool: ToolView }) {
   const st = useStore();
   const scope = useScope();
-  const proposal = proposalOf(tool);
-  return proposal && st.rpc && scope ? <DeckProposalCard details={proposal} rpc={st.rpc} session={scope.session} /> : null;
+  const details = deckEditOf(tool);
+  return details && st.rpc && scope ? <DeckEditActions details={details} rpc={st.rpc} session={scope.session} /> : null;
 }
 
 /** Calls running at once, as one line ("Reading 2 files") with `after` on it, each on its own line when opened. */
@@ -208,8 +208,8 @@ export function ToolRow({ tool, after, card = true }: { tool: ToolView; after?: 
       )}
       {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
       {found ? open && <SearchResults details={found} /> : output && <div className="out sel-text">{output}</div>}
-      {/* An edit the agent proposed to a presentation: a card to accept or reject it (in a group, under its line). */}
-      {card && <ProposalCard tool={tool} />}
+      {/* A change the agent made to a presentation: its page, and 撤销 (in a group, under its line). */}
+      {card && <DeckEdit tool={tool} />}
     </div>
   );
 }

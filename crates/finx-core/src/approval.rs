@@ -60,7 +60,7 @@ impl Hooks for ApprovalPolicy {
 }
 
 /// A built-in tool run through call_tool, as the call it stands for: judged by its own rule,
-/// not as an unknown change (a deferred deck_edit is still only a proposal).
+/// not as an unknown change (a deferred deck_edit is still a deck edit).
 fn through_call_tool(call: &ToolCall) -> Option<ToolCall> {
     if call.name != crate::mcp::tools::CALL_TOOL {
         return None;
@@ -123,9 +123,7 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
         "write" | "edit" => evaluate_file_change(call, &args, arg("path"), view),
         "doc_edit" => evaluate_doc_edit(&args, arg("doc"), view),
         "doc_save" => evaluate_doc_save(arg("doc"), arg("path"), view),
-        // Only a proposal: with full access or accepted edits it is made at once, and otherwise
-        // its card in the conversation is the question, so nothing is asked here.
-        "deck_edit" => Gate::Allow,
+        "deck_edit" => evaluate_deck_edit(&args, arg("deck"), view),
         "deck_save" => evaluate_doc_save(arg("deck"), arg("path"), view),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
@@ -151,6 +149,59 @@ fn evaluate_doc_edit(args: &serde_json::Value, doc: &str, view: &SessionView) ->
             own_browser: false,
         },
     }
+}
+
+/// A deck edit lands in the kernel's deck, not the file, and can be taken back
+/// (presentation-deck-edit §5): asked like a workbook edit, with each step in the question.
+fn evaluate_deck_edit(args: &serde_json::Value, deck: &str, view: &SessionView) -> Gate {
+    match view.permission_mode {
+        PermissionMode::AcceptEdits | PermissionMode::BypassPermissions => Gate::Allow,
+        PermissionMode::Manual => Gate::Ask {
+            summary: deck_edit_summary(args, deck),
+            reason: None,
+            proposed_rule: None,
+            proposed_mode: Some(PermissionMode::AcceptEdits),
+            proposed_grants: Vec::new(),
+            own_browser: false,
+        },
+    }
+}
+
+/// "edit a.pptx (2 change(s)): note", then a line a step, as the person reads them.
+fn deck_edit_summary(args: &serde_json::Value, deck: &str) -> String {
+    const SHOWN: usize = 12;
+    let edits = args.get("edits").and_then(|v| v.as_array()).map(Vec::as_slice).unwrap_or_default();
+    let note = args.get("note").and_then(|v| v.as_str()).map(|n| format!(": {n}")).unwrap_or_default();
+    let name = Path::new(deck).file_name().and_then(|n| n.to_str()).unwrap_or(deck);
+    let mut out = format!("edit {name} ({} change(s)){note}", edits.len());
+    let s = |e: &serde_json::Value, k: &str| e.get(k).and_then(|v| v.as_str()).map(|t| t.chars().take(80).collect::<String>());
+    for e in edits.iter().take(SHOWN) {
+        let line = match e.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "replace_text" => format!("replace \"{}\" with \"{}\"", s(e, "find").unwrap_or_default(), s(e, "text").unwrap_or_default()),
+            "set_paragraphs" => {
+                let texts: Vec<String> = e.get("paragraphs").and_then(|v| v.as_array()).map(|ps| ps.iter().filter_map(|p| s(p, "text")).collect()).unwrap_or_default();
+                format!("set the text to \"{}\"", texts.join(" / "))
+            }
+            "format_text" => format!("format {}", s(e, "find").map(|f| format!("\"{f}\"")).unwrap_or_else(|| "the text".into())),
+            "set_alignment" => format!("align {}", s(e, "find").map(|f| format!("\"{f}\"")).unwrap_or_else(|| "the text".into())),
+            "add_text_box" => format!("add a text box \"{}\"", s(e, "text").unwrap_or_default()),
+            "remove_shape" => "remove an object".into(),
+            "set_shape_rect" => "move or resize an object".into(),
+            "insert_slide" => "insert a slide".into(),
+            "duplicate_slide" => "duplicate a slide".into(),
+            "delete_slide" => "delete a slide".into(),
+            "move_slide" => "move a slide".into(),
+            "set_slide_layout" => format!("set a slide's layout to {}", s(e, "layout").unwrap_or_default()),
+            "set_notes" => format!("set the speaker notes to \"{}\"", s(e, "text").unwrap_or_default()),
+            other => other.replace('_', " "),
+        };
+        out.push_str("\n- ");
+        out.push_str(&line);
+    }
+    if edits.len() > SHOWN {
+        out.push_str(&format!("\n- and {} more", edits.len() - SHOWN));
+    }
+    out
 }
 
 /// Saving writes the user's file: judged like `write` when the call names the file by its
@@ -566,17 +617,25 @@ mod tests {
     }
 
     #[test]
-    fn deck_edits_are_asked_by_their_card_and_saves_like_files() {
+    fn deck_edits_ask_only_when_file_edits_do_and_saves_like_files() {
         let dir = tempfile::tempdir().unwrap();
-        let edit = doc_call("deck_edit", json!({"deck": "a.pptx", "edits": [{"op": "replace_text"}]}));
-        for mode in [PermissionMode::Manual, PermissionMode::AcceptEdits, PermissionMode::BypassPermissions] {
+        let edit = doc_call("deck_edit", json!({"deck": "/w/a.pptx", "note": "改标题", "edits": [{"op": "replace_text", "slide_id": "s", "shape_id": "t", "find": "Quarterly", "text": "年度"}, {"op": "delete_slide", "slide_id": "s2"}]}));
+        match evaluate(&edit, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)) {
+            Gate::Ask { summary, proposed_mode, .. } => {
+                assert_eq!(summary, "edit a.pptx (2 change(s)): 改标题\n- replace \"Quarterly\" with \"年度\"\n- delete a slide");
+                assert_eq!(proposed_mode, Some(PermissionMode::AcceptEdits));
+            }
+            other => panic!("{other:?}"),
+        }
+        for mode in [PermissionMode::AcceptEdits, PermissionMode::BypassPermissions] {
             assert!(matches!(evaluate(&edit, ToolKind::Mutating, &view(dir.path(), mode)), Gate::Allow));
         }
         // Deferred, through call_tool: judged as itself, not as an unknown change.
         let deferred = doc_call(crate::mcp::tools::CALL_TOOL, json!({"name": "deck_edit", "arguments": {"deck": "a.pptx", "edits": []}}));
         let inner = through_call_tool(&deferred).unwrap();
         assert_eq!(inner.name, "deck_edit");
-        assert!(matches!(evaluate(&inner, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Allow));
+        assert!(matches!(evaluate(&inner, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Ask { .. }));
+        assert!(matches!(evaluate(&inner, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
         let save = doc_call("deck_save", json!({"deck": "a.pptx"}));
         assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
         assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Ask { .. }));

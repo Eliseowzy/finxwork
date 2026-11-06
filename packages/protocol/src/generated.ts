@@ -1534,20 +1534,6 @@ export type DeckPoint = {
   y: number;
 };
 
-export type DeckProposalAcceptResult = {
-  acceptance: DeckProposalAcceptance;
-  /** The deck's revision after it. */
-  revision: number;
-};
-
-/** What `deck/proposal/accept` did (camelCase, as the engine's acceptance). */
-export type DeckProposalAcceptance = {
-  /** False: nothing changed. With `stale_targets`, its targets changed and it is still pending: accept again with `force`. */
-  applied: boolean;
-  proposalId: string;
-  staleTargets?: string[];
-};
-
 /** `deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The rest stays pending as `remaining_id`. */
 export type DeckProposalDecideParams = {
   deck_id: string;
@@ -1556,20 +1542,6 @@ export type DeckProposalDecideParams = {
   proposal_id: string;
   session_id: string;
   slide_ids?: string[] | null;
-};
-
-/** One proposal of `deck/proposals`: the engine's proposal JSON (camelCase), with its state. `edits` are the engine's `ProposalEdit`s, for a replica to preview with its own engine. */
-export type DeckProposalEntry = {
-  agentId: string;
-  changes: unknown[];
-  edits: unknown[];
-  id: string;
-  note: string | null;
-  /** The ids its `ref`s got. */
-  refs?: { [key: string]: string };
-  /** Targets changed since it was made: accepting it needs `force`. */
-  staleTargets: string[];
-  status: DeckProposalState;
 };
 
 /** `deck/proposal`: to every connection that opened the deck. */
@@ -1607,10 +1579,15 @@ export type DeckProposalInfo = {
   status: ProposalStatus;
 };
 
-export type DeckProposalRejectResult = {
-  /** False when no pending proposal had that id. */
-  rejected: boolean;
-  revision: number;
+export type DeckProposalListParams = {
+  /** Accepted, rejected and reverted ones too: the AI ledger. */
+  closed?: boolean;
+  deck_id: string;
+  session_id: string;
+};
+
+export type DeckProposalListResult = {
+  proposals: DeckProposalInfo[];
 };
 
 export type DeckProposalResult = {
@@ -1618,20 +1595,6 @@ export type DeckProposalResult = {
   /** The part not accepted or rejected, still pending. */
   remaining_id?: string | null;
   version: string;
-};
-
-/** Where a kernel-held proposal stands. */
-export type DeckProposalState = "pending" | "accepted" | "rejected";
-
-/** `deck/proposals` (presentation-deck-edit §4). */
-export type DeckProposalsParams = {
-  deck_id: string;
-  session_id: string;
-};
-
-/** Pending proposals first, then those decided, newest last. */
-export type DeckProposalsResult = {
-  proposals: DeckProposalEntry[];
 };
 
 export type DeckReadParams = {
@@ -1767,6 +1730,18 @@ export type DeckTextTarget = {
   /** UTF-16 offsets in the story; both or neither. */
   start?: number | null;
   story_id?: string | null;
+};
+
+/** `deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it is the agent's latest one still in the deck (presentation-deck-edit §5). */
+export type DeckUndoParams = {
+  deck_id: string;
+  edit: number;
+  session_id: string;
+};
+
+export type DeckUndoResult = {
+  /** The deck's revision after it. */
+  revision: number;
 };
 
 /** `deck/view`: a slide rasterized on this machine (§6.5). */
@@ -4471,15 +4446,16 @@ export interface Methods {
   "deck/layouts": [DeckLayoutsParams, DeckLayoutsResult];
   "deck/links": [DeckLinksParams, DeckLinksResult];
   "deck/open": [DeckOpenParams, DeckOpenResult];
-  "deck/proposal/accept": [DeckProposalDecideParams, DeckProposalAcceptResult];
-  "deck/proposal/reject": [DeckProposalDecideParams, DeckProposalRejectResult];
+  "deck/proposal/accept": [DeckProposalDecideParams, DeckProposalResult];
+  "deck/proposal/list": [DeckProposalListParams, DeckProposalListResult];
+  "deck/proposal/reject": [DeckProposalDecideParams, DeckProposalResult];
   "deck/proposal/revert": [DeckProposalIdParams, DeckProposalResult];
-  "deck/proposals": [DeckProposalsParams, DeckProposalsResult];
   "deck/read": [DeckReadParams, DeckReadResult];
   "deck/save": [DeckSaveParams, DeckSaveResult];
   "deck/summary": [DeckIdParams, DeckSummary];
   "deck/sync": [DeckSyncParams, DeckSyncResult];
   "deck/template_profile": [DeckTemplateProfileParams, TemplateProfile];
+  "deck/undo": [DeckUndoParams, DeckUndoResult];
   "deck/view": [DeckViewParams, DeckViewResult];
   "doc/apply": [DocApplyParams, DocApplyResult];
   "doc/autofill": [DocAutofillParams, DocApplyResult];
