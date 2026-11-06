@@ -150,6 +150,7 @@ export function openLink(st: Store, url: string, scope: Scope, external: boolean
   const finx = window.finx;
   if (!finx) return void window.open(url, "_blank", "noreferrer");
   if (external || !scope) return finx.openExternal(url);
+  scope.leave?.();
   void st.run(async () => {
     await finx.openURL(scope.session, url);
     bringBrowserBack(scope.session);

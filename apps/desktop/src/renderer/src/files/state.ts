@@ -107,7 +107,7 @@ export function useFiles(session: string, cwd: string): SessionFiles {
 
 const sep = (path: string) => (path.includes("\\") && !path.includes("/") ? "\\" : "/");
 export const joinPath = (dir: string, name: string) => (dir.endsWith(sep(dir)) ? dir + name : dir + sep(dir) + name);
-const parentOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))) || path;
+export const parentOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))) || path;
 const under = (dir: string, path: string) => path.startsWith(dir + sep(dir));
 export const relativeTo = (dir: string, path: string) => (under(dir, path) ? path.slice(dir.length + 1) : null);
 

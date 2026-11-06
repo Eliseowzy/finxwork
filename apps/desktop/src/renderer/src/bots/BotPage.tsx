@@ -18,6 +18,7 @@ import { MessageTime } from "../session/Chat";
 import { FailureCard, PastFailure } from "../session/Failure";
 import { Markdown } from "../session/Markdown";
 import { useSidePanels, SidePanelButtons, SidePanelViews } from "../session/SidePanels";
+import { FilePreviewProvider } from "../preview/FilePreview";
 import { ContentScope, LocalImages } from "../session/scope";
 import { selectionMenu } from "../session/contentMenus";
 import { useNow, useStore } from "../store";
@@ -75,6 +76,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
   const dot = routineDot(bot.routines);
   return (
     <DocContext.Provider value={panels.opener}>
+    <FilePreviewProvider scope={scope}>
     <div className={`spage bot ${panels.browser || panels.files || settings || routines ? "bgopen" : ""} ${panels.max ? "brmax" : ""}`}>
       <div className="scol">
         <GlassBar className="ctool drag">
@@ -136,6 +138,7 @@ export function BotPage({ bot }: { bot: BotSummary }) {
         </ContentScope>
       )}
     </div>
+    </FilePreviewProvider>
     </DocContext.Provider>
   );
 }
