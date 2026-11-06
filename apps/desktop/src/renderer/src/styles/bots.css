@@ -161,11 +161,8 @@
 @media (prefers-reduced-motion:reduce){.bbub.bq,.bq-fold{transition:none}}
 
 .bm:hover .msg-act,.bline .msg-act:focus-within{opacity:1}
-.msg-act .tb.on{color:var(--l1);background:var(--fill)}
 
-/* A message's process: the session page's steps, opened under the bubble from its hover button. */
-.bm .tg-b.bproc{width:min(640px,100%);margin:6px 0 2px}
-.bproc-h{padding:var(--sp-1) var(--sp-2) 2px;font-size:12px;color:var(--l3)}
+/* A routine run's steps: the session page's, as one card. */
 .tg-b.bproc>.am{padding:var(--sp-1) var(--sp-2)}
 
 /* Busy: the last bubble. Three dots while it answers; with sub-agents at work, the dots quieten and what they do opens
@@ -227,7 +224,6 @@ button.wb-h{cursor:pointer}
 .rtn-line>span{overflow:hidden;text-overflow:ellipsis}
 .rtn-line:hover{color:var(--l2);background:var(--fill)}
 .rtn-line .ic{width:13px;height:13px;flex:none}
-.rtn-step{margin:0;align-self:flex-start}
 .rtn-flash .bbub{animation:rtn-flash 1.4s var(--ease-out)}
 @keyframes rtn-flash{0%,40%{box-shadow:inset 0 0 0 1.5px var(--accent)}100%{box-shadow:inset 0 0 0 .5px var(--sep)}}
 .tb.rtn-btn{position:relative}

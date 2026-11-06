@@ -43,11 +43,6 @@
     "placeholder": "Message {{name}}",
     "empty": "Tell it what to help with in your first message. Write any time after that, several things at once if you like.",
     "copy": "Copy",
-    "process": "Steps",
-    "processLine_one": "Took {{time}} · {{count}} step",
-    "processLine_other": "Took {{time}} · {{count}} steps",
-    "processTime": "Took {{time}}",
-    "processFold": "Hide steps",
     "busyOpen": "See which ones",
     "busyClose": "Hide",
     "retrying": "Connection unstable, retrying",
@@ -211,7 +206,6 @@
       "resume": "Resumed the scheduled task \"{{name}}\" · {{time}}",
       "delete": "Deleted the scheduled task \"{{name}}\""
     },
-    "fromRun": "Scheduled task · {{name}} · the run of {{time}}",
     "fromRoutine": "From the scheduled task \"{{name}}\""
   }
 }

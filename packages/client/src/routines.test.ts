@@ -92,10 +92,6 @@ test("a change to a routine is a line in the chat; reading one is not", () => {
   assert.deepEqual(items.map((i) => i.kind), ["user", "routine", "bot"]);
   const line = items[1] as Extract<(typeof items)[number], { kind: "routine" }>;
   assert.deepEqual([line.action, line.routine_id, line.name, line.when, line.next_run], ["create", "r_1", "喝水", "每天 8 点", "2026-11-06T00:00:00Z"]);
-  // The call is still in the message's process.
-  const bubble = items[2] as Extract<(typeof items)[number], { kind: "bot" }>;
-  const tools = bubble.process.flatMap((s) => (s.kind === "work" ? s.items.flatMap((x) => (x.kind === "tool" ? [x.tool.name] : [])) : []));
-  assert.deepEqual(tools, ["manage_routine", "manage_routine"]);
 });
 
 test("a message a routine's report brought knows its run; the next one the owner asked for does not", () => {
@@ -111,7 +107,7 @@ test("a message a routine's report brought knows its run; the next one the owner
   const bubbles = botChat(v).flatMap((i) => (i.kind === "bot" ? [i] : []));
   assert.deepEqual(bubbles[0].source, { routine_id: "r_1", run_id: "run_1", name: "喝水", at: 1000 });
   assert.equal(bubbles[1].source, undefined);
-  // The letter is a step of its process, in its own words.
+  // The letter is a step of the conversation, in its own words.
   const report = conversation(v).find((s) => s.kind === "report");
   assert.equal(report?.kind === "report" && report.text, "该喝水了。");
   assert.deepEqual(report?.kind === "report" && report.routine, { id: "r_1", run: "run_1" });

@@ -271,16 +271,6 @@ try {
   const reopenedOrder = await page.run(`[...document.querySelectorAll(".tr.bots > .um, .tr.bots > .bm:not(.working)")].map((e) => e.innerText.trim().slice(0, 12))`);
   check(JSON.stringify(shownOrder) === JSON.stringify(reopenedOrder), `the order changed on reopening:\n${JSON.stringify(shownOrder)}\n${JSON.stringify(reopenedOrder)}`);
 
-  step("14. a message's process: hover → 过程");
-  const hasProcess = await page.run(`!!document.querySelector('.bm .msg-act button[aria-label="过程"]')`);
-  if (hasProcess) {
-    await page.run(`document.querySelector('.bm .msg-act button[aria-label="过程"]').click()`);
-    await page.until("the steps under it", `!!document.querySelector(".bproc .bproc-h")`);
-    note(await page.run(`document.querySelector(".bproc .bproc-h").textContent`));
-    await page.shot("05-process");
-    await page.run(`document.querySelector('.bm .msg-act button[aria-label="过程"]').click()`);
-  } else note("(no message with steps yet)");
-
   step("8/9. two things for sub-agents, a quick question meanwhile");
   // Work a sub-agent can finish by itself, with no question for the owner to answer
   // (subagent-design D-43); the approval the bot itself asks for is step 11.

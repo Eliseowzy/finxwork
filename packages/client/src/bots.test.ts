@@ -3,7 +3,7 @@ import { test } from "node:test";
 import type { AssistantContent, BotSummary, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, fromSnapshot, type SessionView } from "./session.ts";
 import { attention, botLine, initialOf, lastText, mergeBots, plain, searchBots, sortBots } from "./bots.ts";
-import { botChat, busyBubble, imageRatio, imageRows, processSteps } from "./botChat.ts";
+import { botChat, busyBubble, imageRatio, imageRows } from "./botChat.ts";
 
 const bot = (id: string, o: Partial<BotSummary> = {}): BotSummary => ({ id, name: id, avatar: { kind: "mono", hue: "slate" }, created_at: "2026-11-01T00:00:00Z", ...o });
 const at = (minute: number) => `2026-11-04T10:${String(minute).padStart(2, "0")}:00Z`;
@@ -59,7 +59,7 @@ const done = (id: string, name = "send_to_user", text = "Sent.", is_error = fals
   result: { call_id: id, tool_name: name, content: [{ type: "text", text }], is_error, ts: 0 },
 });
 
-test("each send_to_user is a bubble; what the bot did and wrote for itself is the next bubble's process", () => {
+test("each send_to_user is a bubble; what the bot did and wrote for itself does not show", () => {
   const v = play([
     { type: "task_started", task_id: "t1" },
     user("u1", "常见的方案有哪些？", 10_000),
@@ -83,16 +83,7 @@ test("each send_to_user is a bubble; what the bot did and wrote for itself is th
     "bot:三种：甲、乙、丙。",
     "bot:要细说哪一种？",
   ]);
-  const [, first, second, third] = items;
-  assert.ok(first.kind === "bot" && second.kind === "bot" && third.kind === "bot");
-  assert.equal(first.ts, 11_500, "sent when its reply ended");
-  assert.equal(first.took, 1_500, "since the owner's message");
-  assert.equal(first.process.length, 0);
-  // The private words and the command went before the answer.
-  assert.deepEqual(second.process.map((s) => s.kind), ["work", "text", "work"]);
-  assert.equal(processSteps(second.process), 1);
-  assert.equal(second.took, 22_000 - 11_500);
-  assert.equal(third.process.length, 0);
+  assert.equal(items[1].ts, 11_500, "sent when its reply ended");
   assert.equal(busyBubble(v), null);
 });
 
@@ -162,9 +153,6 @@ test("sub-agents at work make the bot busy, each with what it was asked to do", 
   const busy = busyBubble(v);
   assert.equal(busy?.typing, false);
   assert.deepEqual(busy?.agents.map((h) => h.label), ["调研更新方案"]);
-  // The launch is part of the first message's process.
-  const bubble = botChat(v).find((i) => i.kind === "bot");
-  assert.ok(bubble?.kind === "bot" && bubble.process.some((s) => s.kind === "agents"));
 });
 
 // ---- message types (bot-design §3.12) ----
