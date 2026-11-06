@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v2.5 |
+| 版本 | v2.6 |
 | 日期 | 2026-11-05 |
 | 状态 | 已定稿；一期已实现并通过验收（§15）；二期、三期未开始 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §2 核心概念、§6 内核运行时、§8 对外协议、§9 会话持久化；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
@@ -120,6 +120,7 @@
 | v2.4 | 2026-11-05 | 主会话多两个按需加载的工具：`check_agents` 查状态和近期操作，`stop_agents` 叫停（§6.6、D-354）；Bot 的 `spawn_agent`、`send_message` 没有 `wait`（§6.1、D-350）；等待开始时已有输入排着就不等（§8.2、D-355）；`spawn_agent` 描述的最后一段改成让模型去查，不再让它直接说"还在做"（附录 A.1）。依据见 [Bot 回合方案](bot-turn-design.md) |
 
 | v2.5 | 2026-11-05 | 智能体之间能互发消息（[智能体通信方案](agent-messaging-design.md)，修订 D-41、D-53、D-354、Q-43，新增 D-450–D-457）：子智能体有 `send_message`，发给主智能体时唤醒它，发给在跑的子智能体时下一步读到，发给空闲的被拒绝（§6.3）；信件多一种 `message`，日志里是 `agent_message` 条目（§7、§9.2）；`check_agents` 改名 `list_agents`，子智能体也能用，多一行最后说的话（§6.6） |
+| v2.6 | 2026-11-05 | Bot 版 `spawn_agent` 的描述和 `task` 说明改了，讲用途的段落和讲后台的段落都和会话模式不同（附录 A.1、bot-design D-482）；会话模式不变 |
 
 ## 1. 目标与原则
 
@@ -1212,16 +1213,24 @@ While it works, an agent can send you an <agent_message> about something that ca
 Leave delegated work to the agent: do not redo it or guess its result; list_agents shows how it stands. Only you see the reports; the user sees each agent's status, so relay what matters.
 ```
 
-Bot 的主会话用同一段描述，只有讲后台的那段不同，也没有 `wait` 参数：
+Bot 的主会话中间两段相同（多个子智能体、`<agent_message>` 和留给它做），开头和讲后台的那段不同，也没有 `wait` 参数。开头：
 
 ```
-The agent runs in the background. Its report comes to you as a new message when it finishes, even after you end your turn. So end your turn rather than wait for it: that is not your final answer.
+Hand work to a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it cannot start agents. It works in the background while you stay free for the user. This is how you get anything beyond a quick answer done: research, data and files, scripts, long writing.
+
+It sees none of this conversation: the task you write is all it knows.
+```
+
+讲后台的那段：
+
+```
+Its report comes to you as a new message when it finishes, even after you end your turn. So end your turn rather than wait for it: that is not your final answer.
 ```
 
 | 参数 | 参数说明 |
 |---|---|
 | `description` | `A short label the user sees for this agent: what it works on, in the user's language, within 20 Chinese characters or 5 words.` |
-| `task` | `All the agent knows: the goal, what you know or ruled out, the files to read and the files it may change, and what to report.` |
+| `task` | `All the agent knows: the goal, what you know or ruled out, the files to read and the files it may change, and what to report.` Bot 版：`What it must do and know: the goal, what you already know, the files to read or change, and what to report. A few lines usually do.` |
 | `name` | `Short handle for addressing the agent later: lowercase letters, digits, '-' or '_'. Generated when omitted.` |
 | `wait` | `Block until the agent is done and return its report. Only when the next step of this reply needs it. Default false.` |
 

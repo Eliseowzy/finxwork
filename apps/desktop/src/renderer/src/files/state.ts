@@ -5,7 +5,9 @@ import { i18n } from "../../../shared/i18n";
 import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, sheetViewingOf, type DocAnchor, type DocTab } from "../docs/state";
 import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
-import { opensAsDoc, previewable } from "./kind";
+import { isPresentation, opensAsDoc, previewable } from "./kind";
+import { readPresentation, type PresentationProgress } from "../docs/pptx/progress";
+import { PresentationDoc } from "../docs/pptx/document";
 
 // The file panel's files (file-panel-design §10), by session: the open tabs with their
 // documents, and the folders of the tree. Kept outside the components, so a panel that is
@@ -27,6 +29,8 @@ export type Tab = {
   error: string | null;
   /** A text file's document: what is on disk and what is being edited. */
   doc: FileDoc | null;
+  presentation: PresentationDoc | null;
+  presentationProgress?: PresentationProgress;
   /** Markdown and SVG: showing what the file looks like, not its source. */
   preview: boolean;
   target: Target | null;
@@ -130,7 +134,7 @@ export function openFile(s: SessionFiles, path: string, at?: { line?: number; en
 
 function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path)): Tab {
   const opened = asDoc ? { docId: null, locked: null, opening: null } : null;
-  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, preview: previewable(path), target: null, editor: null, scroll: 0, opened };
+  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, presentation: null, preview: previewable(path), target: null, editor: null, scroll: 0, opened };
 }
 
 /** Opens a document tab's file in finx, with its password when one was given; an anchor is gone to once it opens. */
@@ -203,6 +207,24 @@ async function load(s: SessionFiles, tab: Tab) {
   // A document is finx's, kept up to date there.
   if (!rpc || tab.opened) return;
   try {
+    if (isPresentation(tab.path)) {
+      const file = await readPresentation(rpc, s.session, tab.path, (progress) => {
+        if (!s.tabs.includes(tab)) return;
+        tab.presentationProgress = progress;
+        changed(s);
+      });
+      // A pending read must not recreate an editor after its tab was closed.
+      if (!s.tabs.includes(tab)) return;
+      if (tab.presentation) tab.presentation.diskChanged(file);
+      else tab.presentation = new PresentationDoc(file, async (data, base_hash) => {
+        if (!rpc) throw new Error(t("files.offline"));
+        return rpc.request("pptx/write", { session_id: s.session, path: tab.path, data, base_hash });
+      }, () => changed(s));
+      tab.error = null;
+      tab.presentationProgress = undefined;
+      changed(s);
+      return;
+    }
     const read = await rpc.request("files/read", { session_id: s.session, path: tab.path });
     tab.read = read;
     tab.error = null;
@@ -240,13 +262,15 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
   const tab = s.tabs.find((x) => x.path === path);
   if (!tab) return;
   await tab.doc?.flush();
-  if (tab.doc?.dirty) {
+  await tab.presentation?.flush();
+  if (tab.doc?.dirty || tab.presentation?.dirty) {
     s.active = path;
     changed(s);
     st.show(t("files.unsavedClose", { name: tab.name }), undefined, true);
     return;
   }
   if (tab.opened?.docId) void closeDoc(rpc, s.session, tab.opened.docId);
+  tab.presentation?.dispose();
   const i = s.tabs.indexOf(tab);
   s.tabs.splice(i, 1);
   if (s.active === path) s.active = (s.tabs[i] ?? s.tabs[i - 1])?.path ?? null;
@@ -256,7 +280,18 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
 /** Saves what every open file of every session has not saved yet (the window hides, the panel goes). */
 export function flushAll(s?: SessionFiles): Promise<void> {
   const all = s ? [s] : [...sessions.values()];
-  return Promise.all(all.flatMap((x) => x.tabs.map((tab) => tab.doc?.flush()))).then(() => {});
+  return Promise.all(all.flatMap((x) => x.tabs.flatMap((tab) => [tab.doc?.flush(), tab.presentation?.flush()]))).then(() => {});
+}
+
+/** Explicitly reload an externally changed presentation, discarding the local editor. */
+export async function takePresentationDisk(s: SessionFiles, tab: Tab) {
+  if (!rpc || !tab.presentation) return;
+  try {
+    const file = await rpc.request("pptx/read", { session_id: s.session, path: tab.path });
+    tab.presentation.takeDisk(file);
+    tab.error = null;
+  } catch (e) { tab.error = errorText(e); }
+  changed(s);
 }
 
 /** "Load the disk's version": the edits are dropped for what is there now. */

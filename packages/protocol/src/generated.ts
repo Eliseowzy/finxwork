@@ -134,7 +134,7 @@ export type Avatar = {
   rev: number;
 };
 
-/** The colours behind an avatar's character or initial: muted, the same in both themes. */
+/** The colours behind an avatar's character or initial, the same in both themes. */
 export type AvatarHue = "slate" | "sage" | "clay" | "ochre" | "plum" | "teal" | "rose" | "stone";
 
 /** An avatar given to `bots/create` and `bots/update`. */
@@ -152,8 +152,8 @@ export type AvatarInput = {
   png: string;
 };
 
-/** The characters an avatar can show, drawn by the client. */
-export type AvatarShape = "round" | "box" | "ghost" | "cloud" | "dome" | "cat" | "egg" | "gem";
+/** The characters an avatar can show, told apart by their eyes and drawn by the client. Each alias is what the bots made before these eyes have in their `bot.json`. */
+export type AvatarShape = "tall" | "dot" | "smile" | "wink" | "lid" | "bar" | "side" | "odd";
 
 export type BotAvatarResult = {
   /** `data:image/png;base64,…` */
@@ -1919,6 +1919,55 @@ export type PendingApproval = {
 /** How much the session may do without asking. Deny and ask rules apply in every mode. Deserializing also accepts the names used before protocol version 2. */
 export type PermissionMode = "manual" | "accept-edits" | "bypass-permissions";
 
+export type PptxMetafileParams = {
+  /** Original EMF/WMF media bytes, base64. The source package is never changed. */
+  data: string;
+  session_id: string;
+};
+
+export type PptxMetafileResult = {
+  /** Drawing operations the converter could not replay, if any. */
+  omissions: string[];
+  svg: string;
+};
+
+/** Optional correlation ID keeps concurrent opens and reopened tabs isolated. */
+export type PptxReadParams = {
+  path: string;
+  progress_id?: string | null;
+  session_id: string;
+};
+
+/** Counts describe this stage only, not an estimated overall percentage. */
+export type PptxReadProgress = {
+  completed: number;
+  progress_id: string;
+  session_id: string;
+  stage: PptxReadStage;
+  total: number;
+};
+
+export type PptxReadResult = {
+  /** Base64 PPTX bytes (at most 20 MiB before encoding). */
+  data: string;
+  /** Explicit font families in the package, plus the host's Latin and CJK fallbacks. */
+  font_families: string[];
+  hash: string;
+  path: string;
+  writable: boolean;
+};
+
+export type PptxReadStage = "reading" | "inspecting" | "encoding";
+
+export type PptxWriteParams = {
+  /** Required: never silently replace an external edit or recreate a deleted file. */
+  base_hash: string;
+  /** Base64 of the edited PPTX. */
+  data: string;
+  path: string;
+  session_id: string;
+};
+
 export type PromptMode = "steer" | "follow_up";
 
 /** A provider's model list as the kernel last saw it. */
@@ -2758,6 +2807,9 @@ export interface Methods {
   "models/list": [Record<string, never>, ModelsListResult];
   "models/refresh": [ModelsRefreshParams, ModelsRefreshResult];
   "models/show": [ModelsShowParams, Empty];
+  "pptx/metafile": [PptxMetafileParams, PptxMetafileResult];
+  "pptx/read": [PptxReadParams, PptxReadResult];
+  "pptx/write": [PptxWriteParams, FilesWriteResult];
   "resource/read": [ResourceReadParams, ResourceReadResult];
   "server/shutdown": [Record<string, never>, Empty];
   "session/archive": [SessionIdParams, Empty];
@@ -2800,6 +2852,7 @@ export interface ServerNotifications {
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
   "models/changed": Empty;
+  "pptx/readProgress": PptxReadProgress;
   "session/detached": SessionDetachedParams;
   "session/event": SessionEventParams;
   "sessions/changed": SessionsChangedParams;

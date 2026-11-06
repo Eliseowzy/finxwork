@@ -10,21 +10,30 @@ use serde::Serialize;
 use crate::api::EventFilter;
 use crate::api::TranscriptItem;
 
-/// The characters an avatar can show, drawn by the client.
+/// The characters an avatar can show, told apart by their eyes and drawn by the client. Each
+/// alias is what the bots made before these eyes have in their `bot.json`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AvatarShape {
-    Round,
-    Box,
-    Ghost,
-    Cloud,
-    Dome,
-    Cat,
-    Egg,
-    Gem,
+    #[serde(alias = "box")]
+    Tall,
+    #[serde(alias = "round")]
+    Dot,
+    #[serde(alias = "cloud")]
+    Smile,
+    #[serde(alias = "cat")]
+    Wink,
+    #[serde(alias = "ghost")]
+    Lid,
+    #[serde(alias = "dome")]
+    Bar,
+    #[serde(alias = "gem")]
+    Side,
+    #[serde(alias = "egg")]
+    Odd,
 }
 
-/// The colours behind an avatar's character or initial: muted, the same in both themes.
+/// The colours behind an avatar's character or initial, the same in both themes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AvatarHue {
@@ -355,4 +364,30 @@ pub struct BotRoutineSetEnabledParams {
     pub bot_id: String,
     pub routine_id: String,
     pub enabled: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `bot.json` that cannot be read is skipped, and its bot gone from the list, so a bot made
+    /// before these eyes must keep loading; it is written back under the new name.
+    #[test]
+    fn a_character_made_before_the_eyes_still_loads() {
+        for (old, shape, new) in [
+            ("box", AvatarShape::Tall, "tall"),
+            ("round", AvatarShape::Dot, "dot"),
+            ("cloud", AvatarShape::Smile, "smile"),
+            ("cat", AvatarShape::Wink, "wink"),
+            ("ghost", AvatarShape::Lid, "lid"),
+            ("dome", AvatarShape::Bar, "bar"),
+            ("gem", AvatarShape::Side, "side"),
+            ("egg", AvatarShape::Odd, "odd"),
+        ] {
+            let saved = serde_json::json!({"kind": "char", "shape": old, "hue": "teal"});
+            let avatar: Avatar = serde_json::from_value(saved).unwrap();
+            assert_eq!(avatar, Avatar::Char { shape, hue: AvatarHue::Teal });
+            assert_eq!(serde_json::to_value(&avatar).unwrap(), serde_json::json!({"kind": "char", "shape": new, "hue": "teal"}));
+        }
+    }
 }

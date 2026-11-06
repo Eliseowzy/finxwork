@@ -71,6 +71,15 @@ export type Step =
 
 /** The conversation's steps, oldest first, ending with what is being written now. */
 export function conversation(v: SessionView): Step[] {
+  return withStreaming(settledSteps(v), v);
+}
+
+/**
+ * The steps of what the session holds, without what is being written now. They depend on its
+ * entries, agents, tool descriptions and live tools, which stay the same while the model writes,
+ * so a window that keeps them need not work out the whole history for each piece of text.
+ */
+export function settledSteps(v: SessionView): Step[] {
   const results = new Map<string, ToolResultMessage>();
   for (const e of v.entries) if (e.type === "tool_result") results.set(e.call_id, e.result);
   const live = new Map((v.live?.tools ?? []).map((t) => [t.call_id, t]));
@@ -148,20 +157,6 @@ export function conversation(v: SessionView): Step[] {
     }
   });
 
-  // What the model is writing now.
-  const s = v.live?.streaming;
-  if (s) {
-    const n = s.blocks.length;
-    s.blocks.forEach((b, j) => {
-      const key = `${s.message_id}:${b.index}`;
-      if (b.type === "thinking") work({ kind: "thinking", key, text: b.text, redacted: false, live: j === n - 1 });
-      else if (b.type === "text") out.push({ kind: "text", key, text: b.text, ts: Date.now(), live: true });
-      else {
-        const d = describe(b.name, {}, v.info.cwd);
-        work({ kind: "tool", key, tool: { call_id: b.call_id, name: b.name, category: d.category, title: b.name, args: {}, state: "streaming" } });
-      }
-    });
-  }
   for (const st of out) if (st.kind === "work") st.live = st.items.some(isLive);
   return out;
 
@@ -186,6 +181,33 @@ export function conversation(v: SessionView): Step[] {
       }
     });
   }
+}
+
+/** `settled` with what the model is writing now after it; `settled` and its steps stay as they are. */
+export function withStreaming(settled: Step[], v: SessionView): Step[] {
+  const s = v.live?.streaming;
+  if (!s?.blocks.length) return settled;
+  const out = [...settled];
+  const work = (item: WorkItem) => {
+    const last = out.at(-1);
+    if (last?.kind === "work") out[out.length - 1] = { ...last, items: [...last.items, item] };
+    else out.push({ kind: "work", key: item.key, items: [item], live: false });
+  };
+  const n = s.blocks.length;
+  s.blocks.forEach((b, j) => {
+    const key = `${s.message_id}:${b.index}`;
+    if (b.type === "thinking") work({ kind: "thinking", key, text: b.text, redacted: false, live: j === n - 1 });
+    else if (b.type === "text") out.push({ kind: "text", key, text: b.text, ts: Date.now(), live: true });
+    else {
+      const d = describe(b.name, {}, v.info.cwd);
+      work({ kind: "tool", key, tool: { call_id: b.call_id, name: b.name, category: d.category, title: b.name, args: {}, state: "streaming" } });
+    }
+  });
+  for (let i = Math.max(settled.length - 1, 0); i < out.length; i++) {
+    const st = out[i];
+    if (st.kind === "work" && st !== settled[i]) st.live = st.items.some(isLive);
+  }
+  return out;
 }
 
 /**

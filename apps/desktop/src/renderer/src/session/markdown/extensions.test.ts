@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
@@ -13,6 +15,14 @@ const render = (text: string) => renderToStaticMarkup(createElement(Markdown, {
   remarkPlugins: [[math, { singleDollarTextMath: false }], texMath, directive, gfm, contentExtensions],
   rehypePlugins: [[katex, { trust: false, throwOnError: false }], [anchors, { prefix: "msg1", block: 0 }]], children: text,
 }));
+// The page's stylesheet and the plugin's own KaTeX can be different versions, whose class
+// names differ: every subscript and fraction then draws at full size, with no error anywhere.
+test("KaTeX's stylesheet styles the classes the plugin renders", () => {
+  const css = readFileSync(createRequire(import.meta.url).resolve("katex/dist/katex.min.css"), "utf8");
+  const sized = /class="(\S+) (reset-size\d+) (size\d+)/.exec(render(String.raw`\(x_i\)`));
+  assert.ok(sized, "a subscript renders with sizing classes");
+  assert.ok(css.includes(`.${sized[1]}.${sized[2]}.${sized[3]}`), `no rule for .${sized[1]}.${sized[2]}.${sized[3]}`);
+});
 test("TeX delimiters and display math work without treating prices as formulas", () => {
   const html = render('Price $100 and $200. Inline \\(x^2\\).\n\n\\[x + y\\]\n\n$$\nx^2\n$$');
   assert.equal((html.match(/class="katex"/g) ?? []).length, 3);

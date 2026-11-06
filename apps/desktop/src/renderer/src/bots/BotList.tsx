@@ -6,7 +6,7 @@ import { RenameField } from "../components";
 import { shortTime } from "../format";
 import { Icon } from "../icons";
 import { useNow, useStore, type Store } from "../store";
-import { botContextMenu, thingsText } from "./actions";
+import { botContextMenu } from "./actions";
 import { BotAvatar } from "./Avatar";
 
 /**
@@ -98,9 +98,8 @@ function RowLine({ b }: { b: BotSummary }) {
         </span>
       );
     case "agents":
-      return <span className="bprev"><span className="shimmer">{t("line.agents", { things: thingsText(line.count) })}</span></span>;
     case "typing":
-      return <span className="bprev"><span className="shimmer">{t("line.typing")}</span></span>;
+      return <span className="bprev">{t("line.typing")}</span>;
     case "empty":
       return <span className="bprev">{t("line.empty")}</span>;
     case "last": {

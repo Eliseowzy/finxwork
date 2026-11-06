@@ -110,6 +110,10 @@ pub mod method {
     // The file panel (docs/desktop/file-panel-design.md §9).
     pub const FILES_LIST: &str = "files/list";
     pub const FILES_READ: &str = "files/read";
+    pub const PPTX_READ_PROGRESS: &str = "pptx/readProgress";
+    pub const PPTX_READ: &str = "pptx/read";
+    pub const PPTX_WRITE: &str = "pptx/write";
+    pub const PPTX_METAFILE: &str = "pptx/metafile";
     pub const FILES_WRITE: &str = "files/write";
     pub const FILES_WATCH: &str = "files/watch";
     /// Server notification to a connection that called `files/watch`.

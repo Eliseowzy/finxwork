@@ -94,7 +94,7 @@ pub fn undelivered_message(ts: Timestamp) -> UserMessage {
 pub fn reply_nudge_message(ts: Timestamp) -> UserMessage {
     UserMessage {
         content: vec![UserContent::Text {
-            text: "<reminder>Reply with send_to_user.</reminder>".into(),
+            text: "<reminder>Reply with send_to_user, and write no text outside the call. Think after it is sent. Long work goes to an agent.</reminder>".into(),
         }],
         ts,
     }
@@ -109,7 +109,8 @@ pub fn unanswered_message(routine: bool, ts: Timestamp) -> UserMessage {
          only NOTHING_TO_REPORT. If the user no longer wants these, pause the routine and tell them you did.\n</reply_reminder>"
     } else {
         "<reply_reminder>\nThe user has not received a reply to their last message: what you write \
-         stays private, and only send_to_user reaches them. Call send_to_user with your reply now.\n</reply_reminder>"
+         stays private, and only send_to_user reaches them. Call send_to_user with your reply now, and write no text \
+         outside the call.\n</reply_reminder>"
     };
     UserMessage {
         content: vec![UserContent::Text { text: text.into() }],

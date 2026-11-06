@@ -28,6 +28,28 @@ function pdfjsAssets(): Plugin {
   };
 }
 
+// The metric-compatible stand-ins for Calibri and Cambria (docs/pptx/fonts.ts), served at fonts/ beside the page.
+// They come from @betteroffice/fonts; the packaged renderer carries them as assets (build-app.mjs checks they are there).
+const fontsDir = path.join(path.dirname(createRequire(import.meta.url).resolve("@betteroffice/fonts/package.json")), "assets");
+const standInFonts = ["Carlito", "Caladea"].flatMap((f) => ["Regular", "Bold", "Italic", "BoldItalic"].map((s) => `${f}-${s}.ttf`));
+function standInFontAssets(): Plugin {
+  return {
+    name: "finxwork-stand-in-fonts",
+    configureServer(server) {
+      server.middlewares.use("/fonts", (req, res, next) => {
+        const name = decodeURIComponent((req.url ?? "").split("?")[0]).replace(/^\/+/, "");
+        if (!standInFonts.includes(name)) return next();
+        res.setHeader("Content-Type", "font/ttf");
+        fs.createReadStream(path.join(fontsDir, name)).pipe(res);
+      });
+    },
+    generateBundle() {
+      for (const name of standInFonts)
+        this.emitFile({ type: "asset", fileName: `fonts/${name}`, source: fs.readFileSync(path.join(fontsDir, name)) });
+    },
+  };
+}
+
 // FINXWORK_DESKTOP_OUT builds somewhere other than out/ (scripts/build-app.mjs stages the app there).
 const out = process.env.FINXWORK_DESKTOP_OUT || path.join(import.meta.dirname, "out");
 
@@ -48,7 +70,7 @@ export default defineConfig({
     build: { outDir: path.join(out, "preload"), rollupOptions: { input: { index: path.resolve("src/preload/index.ts"), browser: path.resolve("src/preload/browser.ts") }, output: { format: "cjs", entryFileNames: "[name].cjs" } } },
   },
   renderer: {
-    plugins: [react(), pdfjsAssets()],
+    plugins: [react(), pdfjsAssets(), standInFontAssets()],
     worker: { format: "es" },
     resolve: { dedupe: ["react", "react-dom"] },
     build: { outDir: path.join(out, "renderer") },

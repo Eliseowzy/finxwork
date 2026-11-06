@@ -8,6 +8,7 @@ pub mod bot;
 pub mod customize;
 pub mod doc;
 pub mod files;
+pub mod pptx;
 mod event;
 pub mod mcp;
 mod op;

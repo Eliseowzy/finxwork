@@ -87,24 +87,24 @@
     "tooLarge": "The image is too large: 10 MB at most",
     "unreadable": "This image cannot be read",
     "shapes": {
-      "round": "Round",
-      "box": "Box",
-      "ghost": "Ghost",
-      "cloud": "Cloud",
-      "dome": "Dome",
-      "cat": "Cat",
-      "egg": "Egg",
-      "gem": "Gem"
+      "tall": "Calm",
+      "dot": "Curious",
+      "smile": "Happy",
+      "wink": "Wink",
+      "lid": "Unfazed",
+      "bar": "Blank",
+      "side": "Sidelong",
+      "odd": "Skeptical"
     },
     "hues": {
-      "slate": "Slate",
-      "sage": "Sage",
-      "clay": "Clay",
-      "ochre": "Ochre",
-      "plum": "Plum",
+      "slate": "Sky",
+      "sage": "Grass",
+      "clay": "Coral",
+      "ochre": "Butter",
+      "plum": "Lilac",
       "teal": "Teal",
       "rose": "Rose",
-      "stone": "Stone"
+      "stone": "Grey"
     }
   },
   "menu": {

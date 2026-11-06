@@ -259,7 +259,7 @@ async fn a_word_follows_each_of_the_owners_messages() {
     h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
     let requests = h.api.requests();
-    let word = "<reminder>Reply with send_to_user.</reminder>";
+    let word = "<reminder>Reply with send_to_user, and write no text outside the call. Think after it is sent. Long work goes to an agent.</reminder>";
     assert_eq!(texts(requests[0].messages.last().unwrap()), word);
     assert_eq!(texts(&requests[0].messages[requests[0].messages.len() - 2]), "帮我查一下");
     // The sub-agent's message and the report have none.
