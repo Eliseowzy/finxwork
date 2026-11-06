@@ -23,6 +23,16 @@ pub(crate) fn name(adapter: &str) -> &'static str {
         _ => "千问办公",
     }
 }
+/// The product's name by language tag, for clients that have an interface language; `name` is
+/// for the rest. Qoder goes by one name everywhere.
+pub(crate) fn names(adapter: &str) -> std::collections::BTreeMap<String, String> {
+    match adapter {
+        "qoder" => Default::default(),
+        _ => [("zh", "千问办公"), ("en", "QwenWork")]
+            .map(|(language, name)| (language.to_string(), name.to_string()))
+            .into(),
+    }
+}
 pub(crate) fn base(adapter: &str) -> &'static str {
     match adapter {
         "qoder" => "https://api2-v2.qoder.sh/model/v1",

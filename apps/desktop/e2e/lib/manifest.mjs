@@ -40,6 +40,7 @@ export const scripts = {
   "file-panel": { covers: [`${renderer}files/`, `${main}files`, `${client}files`, `${core}files.rs`, `${server}files`] },
   "home-browser": { covers: [`${renderer}session/NewTabPage`, `${renderer}settings/BuiltInBrowser`, `${main}browser/pages`, `${main}browser/menu`] },
   markdown: { covers: [`${renderer}session/Markdown`, `${renderer}session/markdown/`, `${renderer}session/content`] },
+  "model-names": { covers: ["apps/desktop/src/shared/model-names", `${renderer}store`, "crates/finx-connections/src/qwenwork", `${core}models.rs`] },
   "model-channels": { covers: [`${renderer}settings/ModelConnections`, `${renderer}settings/ProviderConnections`, `${renderer}settings/ManageModels`, `${renderer}settings/LocalApplicationConnection`, `${renderer}composer/`, `${client}models`, `${core}models.rs`, `${server}models`, "crates/finx-llm/"] },
   notifications: { covers: [`${main}notify`, `${main}notifier`, `${client}alerts`] },
   "paste-drop": { foreground: "uses the system clipboard", covers: [`${renderer}composer/`, `${main}clipboard`] },

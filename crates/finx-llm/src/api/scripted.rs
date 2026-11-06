@@ -182,6 +182,7 @@ impl ScriptedApi {
             plan: None,
             id: PROVIDER_ID.into(),
             name: "Test".into(),
+            names: Default::default(),
             api: API_ID.into(),
             base_url: "scripted://local".into(),
             auth: AuthConfig::None,

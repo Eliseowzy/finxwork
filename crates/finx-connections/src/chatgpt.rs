@@ -261,6 +261,7 @@ impl ChatGpt {
                         plan: None,
                         id,
                         name: "ChatGPT API".into(),
+                        names: Default::default(),
                         api: "openai-responses".into(),
                         base_url: self.endpoints.api.clone(),
                         auth: AuthConfig::Managed,
@@ -935,6 +936,7 @@ impl ChatGpt {
             models.push(ConnectionModel {
                 id: id.into(),
                 name: m["display_name"].as_str().unwrap_or(id).into(),
+                names: Default::default(),
                 context_window: m["context_window"]
                     .as_u64()
                     .map(|v| v.clamp(1024, 2_000_000) as u32),

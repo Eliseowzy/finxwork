@@ -57,6 +57,8 @@ pub struct ModelMeta {
     pub configured: bool,
     /// A chat model an agent can use.
     pub chat: bool,
+    /// Its name by language tag, when its channel declares them.
+    pub names: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug)]
@@ -413,6 +415,7 @@ fn build(
         configured: entry.is_some(),
         chat: entry.is_some()
             || (public.is_none_or(PublicModel::is_chat) && listed.is_none_or(|l| l.tool_call != Some(false))),
+        names: entry.map(|e| e.names.clone()).unwrap_or_default(),
     };
     DirectoryModel { model: Arc::new(model), meta }
 }

@@ -28,6 +28,7 @@ fn model(base: &str) -> Arc<finx_llm::Model> {
         plan: None,
         id: "qoder".into(),
         name: "Qoder".into(),
+        names: Default::default(),
         api: "openai-chat".into(),
         base_url: base.into(),
         auth: AuthConfig::Managed,

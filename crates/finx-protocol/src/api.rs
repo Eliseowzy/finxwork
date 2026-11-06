@@ -1201,6 +1201,9 @@ pub struct ProviderSummary {
     pub plan: Option<TokenPlanSummary>,
     pub id: String,
     pub name: String,
+    /// The name by language tag, as `ModelSummary::names`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub names: std::collections::BTreeMap<String, String>,
     pub auth: AuthKind,
     pub credential: CredentialState,
     /// The environment variable the key comes from, when `credential` is `env`.
@@ -1354,6 +1357,10 @@ pub struct ModelSummary {
     /// `provider/model-id`
     pub id: String,
     pub name: String,
+    /// The name in each language the source offers, by language tag (`zh`, `en`). A client that
+    /// has an interface language picks from these; `name` is for the rest.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub names: std::collections::BTreeMap<String, String>,
     pub provider: String,
     pub context_window: u64,
     pub reasoning: bool,
@@ -1611,6 +1618,9 @@ mod tests {
 pub struct ConnectionModel {
     pub id: String,
     pub name: String,
+    /// The name in each language the application offers, by language tag.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub names: std::collections::BTreeMap<String, String>,
     pub context_window: Option<u32>,
     pub max_output_tokens: Option<u32>,
     #[serde(default)] pub reasoning: bool,
