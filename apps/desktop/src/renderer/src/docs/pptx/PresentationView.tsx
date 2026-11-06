@@ -111,6 +111,7 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     readOnly={!doc.file.writable}
     toolbar={<ControllerContext.Provider value={controller}><Ribbon fonts={ribbonFonts} /></ControllerContext.Provider>}
     plugins={plugins}
+    proposals={false}
     i18n={language.startsWith("zh") ? presentationZhCN : undefined}
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}
