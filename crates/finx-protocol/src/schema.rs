@@ -101,6 +101,16 @@ pub fn document() -> Value {
             name::<crate::doc::DocApplyResult>(g),
         ),
         (
+            method::DOC_STRUCTURE,
+            Some(name::<crate::doc::DocStructureParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
+            method::DOC_SORT,
+            Some(name::<crate::doc::DocSortParams>(g)),
+            name::<crate::doc::DocApplyResult>(g),
+        ),
+        (
             method::DOC_SAVE,
             Some(name::<crate::doc::DocSaveParams>(g)),
             name::<crate::doc::DocInfo>(g),

@@ -321,6 +321,22 @@ try {
   // Saving writes the file, which finx then reports changed: the grid stays on its sheet.
   await new Promise((r) => setTimeout(r, 600));
   check(await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-tab.on")?.textContent`) === "利润表", "saving sent the grid back to its first sheet");
+  step("the right-click menu inserts a row above the cell; undo takes them back");
+  await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tab")].find((x) => x.textContent === "利润表").click()`);
+  await page.until("the income statement", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A3"]')?.textContent === "营业收入"`);
+  const menuItem = (pick) => `[...document.querySelectorAll(".sht-menu .mi")].find((b) => ${either(pick)}.includes(b.querySelector("span")?.textContent))`;
+  await page.run(`(() => { const c = document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A3"]'), r = c.getBoundingClientRect(); c.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 })); })()`);
+  await page.until("the cell menu", `!!document.querySelector(".sht-menu") && !!${menuItem((s) => s.sheet.insert)}`);
+  await page.run(`${menuItem((s) => s.sheet.insert)}.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))`);
+  await page.until("the insert submenu", `document.querySelectorAll(".sht-menu").length === 2`);
+  await page.run(`document.querySelectorAll(".sht-menu")[1].querySelector(".mi").click()`);
+  await page.until("a row inserted above A3", `!document.querySelector(".sht-menu") && document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A4"]')?.textContent === "营业收入" && !document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A3"]')?.textContent`, 10000).catch(async (e) => {
+    fail(`${e.message}: note ${JSON.stringify(await page.run(`document.querySelector(".fpn-note")?.textContent ?? null`))}, toast ${JSON.stringify(await page.run(`document.querySelector(".toast")?.textContent ?? null`))}`);
+  });
+  await page.shot("1-menu-inserted");
+  await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas").focus()`);
+  await key("z", "KeyZ", 90, META);
+  await page.until("the insert undone", `document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A3"]')?.textContent === "营业收入"`, 10000);
   step("a range draws one border and leaves its active cell untinted");
   await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-name").select()`);
   await page.cdp("Input.insertText", { text: "A2" });

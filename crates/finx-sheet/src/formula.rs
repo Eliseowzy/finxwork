@@ -292,7 +292,7 @@ fn mark_whole_ranges(toks: &mut [Tok]) {
 }
 
 /// `$A$1` → (col, col_abs, row, row_abs).
-fn parse_cell(s: &str) -> Option<(u32, bool, u32, bool)> {
+pub(crate) fn parse_cell(s: &str) -> Option<(u32, bool, u32, bool)> {
     let (col_abs, rest) = match s.strip_prefix('$') {
         Some(r) => (true, r),
         None => (false, s),
@@ -310,7 +310,7 @@ fn parse_cell(s: &str) -> Option<(u32, bool, u32, bool)> {
     (row <= MAX_ROW).then_some((col, col_abs, row, row_abs))
 }
 
-fn parse_col_part(s: &str) -> Option<(u32, bool)> {
+pub(crate) fn parse_col_part(s: &str) -> Option<(u32, bool)> {
     let (abs, rest) = match s.strip_prefix('$') {
         Some(r) => (true, r),
         None => (false, s),
@@ -318,7 +318,7 @@ fn parse_col_part(s: &str) -> Option<(u32, bool)> {
     parse_col(rest).map(|c| (c, abs))
 }
 
-fn parse_row_part(s: &str) -> Option<(u32, bool)> {
+pub(crate) fn parse_row_part(s: &str) -> Option<(u32, bool)> {
     let (abs, rest) = match s.strip_prefix('$') {
         Some(r) => (true, r),
         None => (false, s),

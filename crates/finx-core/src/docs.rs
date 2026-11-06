@@ -790,7 +790,7 @@ impl TypedTool for DocSave {
         let (info, written) = docs.store.save(&doc, to.as_deref(), args.force).await.map_err(failed)?;
         let target = to.map(|p| p.display().to_string()).unwrap_or_else(|| info.path.clone());
         (docs.opened)(info.clone());
-        let details = json!({ "doc_id": info.doc_id, "path": target, "formulas": written.formulas, "values": written.values, "cleared": written.cleared });
+        let details = json!({ "doc_id": info.doc_id, "path": target, "formulas": written.formulas, "values": written.values, "cleared": written.cleared, "reshaped": written.reshaped });
         Ok(ToolOutput::text(saved_text(&target, &written)).with_details(details))
     }
 }
@@ -808,6 +808,9 @@ fn saved_text(target: &str, w: &finx_docs::store::Written) -> String {
     if w.cleared > 0 {
         parts.push(n(w.cleared, "range cleared", "ranges cleared"));
     }
+    if w.reshaped > 0 {
+        parts.push(n(w.reshaped, "insertion or deletion of rows or columns", "insertions or deletions of rows or columns"));
+    }
     if parts.is_empty() {
         return format!("Saved {target}: no cell differs from what the file held.");
     }
@@ -821,7 +824,7 @@ mod tests {
     #[test]
     fn saved_says_what_went_in() {
         use finx_docs::store::Written;
-        let w = Written { formulas: 1, values: 2, cleared: 0 };
+        let w = Written { formulas: 1, values: 2, cleared: 0, reshaped: 0 };
         assert_eq!(saved_text("/a.xlsx", &w), "Saved /a.xlsx: 1 formula with its result, 2 values, as doc_read shows them.");
         assert_eq!(saved_text("/a.xlsx", &Written::default()), "Saved /a.xlsx: no cell differs from what the file held.");
     }

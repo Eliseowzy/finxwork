@@ -14,6 +14,7 @@ use finx_protocol::doc::DocViewing;
 use finx_protocol::doc::Impact;
 use finx_protocol::doc::Rect;
 use finx_protocol::doc::SheetOp;
+use finx_protocol::doc::SheetStructure;
 use finx_protocol::doc::TextBlock;
 use parking_lot::Mutex;
 use serde::Deserialize;
@@ -104,6 +105,12 @@ struct View {
 struct Revision {
     ops: Vec<SheetOp>,
     undo: Vec<SheetOp>,
+    /// Rows or columns inserted or deleted, instead of `ops`; undone by putting back
+    /// `snapshot`, the working copy as it was before (a file in the document's directory).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    structure: Option<SheetStructure>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    snapshot: Option<String>,
     session: String,
     at_ms: u128,
 }
@@ -130,6 +137,8 @@ pub struct Written {
     pub formulas: usize,
     pub values: usize,
     pub cleared: usize,
+    /// Rows or columns inserted or deleted.
+    pub reshaped: usize,
 }
 
 impl Written {
@@ -157,7 +166,7 @@ impl Written {
         cleared.sort();
         cleared.dedup();
         let formulas = set.values().filter(|f| **f).count();
-        Self { formulas, values: set.len() - formulas, cleared: cleared.len() }
+        Self { formulas, values: set.len() - formulas, cleared: cleared.len(), reshaped: 0 }
     }
 }
 
@@ -339,6 +348,11 @@ impl DocStore {
             atomic::copy(canonical, &dir.join(format!("current.{ext}")))?;
             atomic::write(&dir.join("meta.json"), &serde_json::to_vec_pretty(&stamp).map_err(std::io::Error::other)?)?;
             let _ = std::fs::remove_file(dir.join("revisions.jsonl"));
+            for e in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+                if e.file_name().to_string_lossy().starts_with("snapshot-") {
+                    let _ = std::fs::remove_file(e.path());
+                }
+            }
         }
         let current = dir.join(format!("current.{ext}"));
         let read_only = kind.read_only() || std::fs::metadata(canonical).map(|m| m.permissions().readonly()).unwrap_or(true);
@@ -632,12 +646,8 @@ impl DocStore {
         }
         {
             let mut h = doc.history.lock();
-            let n = h.applied;
-            h.revisions.truncate(n);
-            if h.saved.is_some_and(|s| s > n) {
-                h.saved = None;
-            }
-            h.revisions.push(Revision { ops, undo: applied.undo, session: session.to_string(), at_ms: now_ms() });
+            Self::drop_redo(doc, &mut h);
+            h.revisions.push(Revision { ops, undo: applied.undo, structure: None, snapshot: None, session: session.to_string(), at_ms: now_ms() });
             h.applied += 1;
         }
         let (revision, dirty) = self.record(doc)?;
@@ -654,19 +664,36 @@ impl DocStore {
         self.step(doc, Step::Redo).await
     }
 
-    /// One step back or forward through the history: its ops sent, and the history moved.
+    /// One step back or forward through the history: its ops sent (or, for rows or columns
+    /// inserted or deleted, the change made again or the copy before it put back), and the
+    /// history moved.
     async fn step(&self, doc: &Doc, step: Step) -> Result<(u64, Impact, bool), DocError> {
         Self::sheet(doc)?;
         let _one = doc.editing.lock().await;
-        let ops = {
+        let revision = {
             let h = doc.history.lock();
             let found = match step {
-                Step::Undo => h.applied.checked_sub(1).map(|i| h.revisions[i].undo.clone()),
-                Step::Redo => h.revisions.get(h.applied).map(|r| r.ops.clone()),
+                Step::Undo => h.applied.checked_sub(1).map(|i| h.revisions[i].clone()),
+                Step::Redo => h.revisions.get(h.applied).cloned(),
             };
             found.ok_or_else(|| DocError::NotEditable(format!("nothing to {}", step.name())))?
         };
-        let applied = self.send(doc, ops, false).await?;
+        let impact = match (&revision.structure, &revision.snapshot, step) {
+            (Some(_), Some(snapshot), Step::Undo) => {
+                atomic::copy(&doc.dir.join(snapshot), &doc.current())?;
+                let opened: SheetOpened = self.worker.request(Request::SheetReload { handle: doc.handle }).await.map_err(worker_error)?;
+                doc.info.lock().sheets = opened.sheets;
+                Impact { converged: true, ..Default::default() }
+            }
+            (Some(change), _, Step::Redo) => self.reshape(doc, change).await?,
+            _ => {
+                let ops = match step {
+                    Step::Undo => revision.undo,
+                    Step::Redo => revision.ops,
+                };
+                self.send(doc, ops, false).await?.impact
+            }
+        };
         {
             let mut h = doc.history.lock();
             match step {
@@ -676,7 +703,70 @@ impl DocStore {
         }
         let (revision, dirty) = self.record(doc)?;
         self.changed(doc);
-        Ok((revision, applied.impact, dirty))
+        Ok((revision, impact, dirty))
+    }
+
+    /// The edits that can no longer be redone, once a new one is made: gone, with their copies.
+    fn drop_redo(doc: &Doc, h: &mut History) {
+        let n = h.applied;
+        for r in h.revisions.drain(n..) {
+            if let Some(snapshot) = r.snapshot {
+                let _ = std::fs::remove_file(doc.dir.join(snapshot));
+            }
+        }
+        if h.saved.is_some_and(|s| s > n) {
+            h.saved = None;
+        }
+    }
+
+    /// Rows or columns inserted or deleted in the working copy; the sheets' shapes kept.
+    async fn reshape(&self, doc: &Doc, change: &SheetStructure) -> Result<Impact, DocError> {
+        let opened: SheetOpened = self.worker.request(Request::SheetStructure { handle: doc.handle, change: change.clone() }).await.map_err(worker_error)?;
+        doc.info.lock().sheets = opened.sheets;
+        Ok(Impact { converged: true, ..Default::default() })
+    }
+
+    /// Inserts or deletes rows or columns (Excel's 插入 / 删除) as one revision. The working
+    /// copy before it is kept, so that undoing it gives back exactly what was deleted.
+    pub async fn structure(&self, doc: &Doc, session: &str, change: SheetStructure, base: Option<u64>) -> Result<(u64, Impact, bool), DocError> {
+        Self::sheet(doc)?;
+        if doc.kind.read_only() {
+            return Err(DocError::Refused("a legacy .xls is read only here: save it as .xlsx in your spreadsheet app".into()));
+        }
+        let _one = doc.editing.lock().await;
+        let now = doc.info.lock().revision;
+        if let Some(base) = base
+            && base != now
+        {
+            return Err(DocError::Stale { base, now });
+        }
+        let snapshot = format!("snapshot-{}.{}", now_ms(), doc.kind.ext());
+        atomic::copy(&doc.current(), &doc.dir.join(&snapshot))?;
+        let impact = match self.reshape(doc, &change).await {
+            Ok(impact) => impact,
+            Err(e) => {
+                let _ = std::fs::remove_file(doc.dir.join(&snapshot));
+                return Err(e);
+            }
+        };
+        {
+            let mut h = doc.history.lock();
+            Self::drop_redo(doc, &mut h);
+            h.revisions.push(Revision { ops: Vec::new(), undo: Vec::new(), structure: Some(change), snapshot: Some(snapshot), session: session.to_string(), at_ms: now_ms() });
+            h.applied += 1;
+        }
+        let (revision, dirty) = self.record(doc)?;
+        self.changed(doc);
+        Ok((revision, impact, dirty))
+    }
+
+    /// The edits that sort a range, to apply as one revision.
+    pub async fn sort_ops(&self, doc: &Doc, sheet: &str, range: &str, by: &str, descending: bool, header: bool) -> Result<Vec<SheetOp>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetSort { handle: doc.handle, sheet: sheet.into(), range: range.into(), by: by.into(), descending, header })
+            .await
+            .map_err(worker_error)
     }
 
     /// Reports discrepancies without changing the working copy, history or trust policy.
@@ -715,7 +805,8 @@ impl DocStore {
         let written = {
             let h = doc.history.lock();
             let from = if in_place { h.saved.filter(|&n| n <= h.applied).unwrap_or(0) } else { 0 };
-            Written::of(h.revisions[from..h.applied].iter().flat_map(|r| r.ops.iter()))
+            let since = &h.revisions[from..h.applied];
+            Written { reshaped: since.iter().filter(|r| r.structure.is_some()).count(), ..Written::of(since.iter().flat_map(|r| r.ops.iter())) }
         };
         // Never half written; the original's permissions carry over to the new file.
         atomic::copy(&doc.current(), &target)?;
@@ -805,7 +896,7 @@ mod tests {
             SheetOp::Clear { sheet: "S".into(), range: "D1:D9".into() }, // takes D5 back
             value("E1"),
         ];
-        assert_eq!(Written::of(ops.iter()), Written { formulas: 2, values: 1, cleared: 1 });
+        assert_eq!(Written::of(ops.iter()), Written { formulas: 2, values: 1, cleared: 1, reshaped: 0 });
         assert_eq!(Written::of([].iter()), Written::default());
     }
 }

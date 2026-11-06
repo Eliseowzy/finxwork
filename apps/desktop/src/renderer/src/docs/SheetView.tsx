@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { baseName, type RpcClient } from "@finx/client";
-import type { CellData, DocApplyResult, FoundCell, Impact, SheetInfo, SheetOp } from "@finx/protocol";
+import type { CellData, DocApplyResult, FoundCell, Impact, SheetInfo, SheetOp, StructureKind } from "@finx/protocol";
 import { Icon } from "../icons";
 import { isRpcKind } from "../rpcError";
 import { errorText, useStore } from "../store";
@@ -9,6 +9,7 @@ import { openRef } from "../session/contentMenus";
 import { addr, areaOf, colName, MAX_COLS, MAX_ROWS, onSheet, parseAddr, parseRange, rangeText, type Area, type Pos } from "./cellref";
 import { useEditQueue } from "./sheet/editQueue";
 import { useGeometry } from "./sheet/geometry";
+import { CellMenu, item, sep, type MenuItem } from "./sheet/CellMenu";
 import { ImpactBar } from "./sheet/ImpactBar";
 import { decimalsOf, editTextOf, inputOp, isHardcoded, lensAt, lensText, MAX_PASTE, parseTsv, pasteOps, readable, readLenses, readSizes, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, UNITS, withLens, writeLenses, writeSizes, type Lens, type SelectionStats, type Sizes, type Unit } from "./sheet/model";
 import { TraceBar, type Trace } from "./sheet/TraceBar";
@@ -84,6 +85,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   /** The sheet grows as far as the selection goes, with room beyond. */
   const reach = (r: number, c: number) => setExtent((x) => ({ rows: Math.max(x.rows, r + 20), cols: Math.max(x.cols, c + 5) }));
   const logActivity = (item: Activity) => setActivity((items) => [item, ...items].slice(0, 20));
+  /** Rows or columns moved since the last read: the heights read before are where they were. */
+  const reshaped = useRef(false);
   const cache = useRef<Cache>({ key: "", cells: new Map(), blocks: new Set(), merges: [], heights: new Map() });
   const { busy, enqueue, idle, made, revision, takeOwn } = useEditQueue(session, info);
 
@@ -103,7 +106,13 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     writeSizes(docId, sized);
   }, [docId, sized]);
   const colSizes = useMemo(() => sizesOf(sized.cols, sheetName), [sized.cols, sheetName]);
-  const rowSizes = useMemo(() => sizesOf(sized.rows, sheetName), [sized.rows, sheetName]);
+  // A filter here (按所选单元格的值筛选) hides rows in the view only: never written to the file.
+  const [filter, setFilter] = useState<{ sheet: string; col: number; value: string; hidden: Set<number> } | null>(null);
+  const rowSizes = useMemo(() => {
+    const m = sizesOf(sized.rows, sheetName);
+    if (filter?.sheet === sheetName) for (const r of filter.hidden) m.set(r, 0);
+    return m;
+  }, [sized.rows, sheetName, filter]);
   const c0 = cache.current;
   const { widths, colLeft, rowY, rowAt, colAt } = useGeometry({ sheet, nCols, nRows, colSizes, rowSizes, heights: c0.heights, heightsStamp: `${c0.key}:${c0.heights.size}` });
   const frozen = { rows: Number(sheet?.frozen?.[0] ?? 0), cols: Number(sheet?.frozen?.[1] ?? 0) };
@@ -142,7 +151,9 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     (diff: boolean) => {
       const old = cache.current;
       const key = `${docId}:${sheetName}:${info.revision}`;
-      cache.current = { key, cells: new Map(), blocks: new Set(), merges: [], heights: old.key.startsWith(`${docId}:${sheetName}:`) ? new Map(old.heights) : new Map() };
+      const keep = old.key.startsWith(`${docId}:${sheetName}:`) && !reshaped.current;
+      reshaped.current = false;
+      cache.current = { key, cells: new Map(), blocks: new Set(), merges: [], heights: keep ? new Map(old.heights) : new Map() };
       const first = Math.floor(Math.max(0, rowAt(view.top) - 1) / BLOCK);
       const last = Math.floor(rowAt(view.top + view.h) / BLOCK);
       void Promise.all(Array.from({ length: last - first + 1 }, (_, i) => load(first + i))).then(() => {
@@ -186,6 +197,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     setAgentNotice(null);
     setImpact(null);
     setEditing(null);
+    setMenuAt(null);
   }, [docId, sheetName]);
 
   // Blocks in sight.
@@ -282,7 +294,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   };
 
   /** An edit on its way, after the ones before it; what it changed lights up, a refusal says why. */
-  const edited = (send: () => Promise<DocApplyResult>) => {
+  const edited = (send: () => Promise<DocApplyResult>, title?: string) => {
     if (!sheet) return;
     return enqueue(async () => {
       try {
@@ -291,7 +303,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
         setNote(null);
         setLit({ edited: new Set(r.impact.edited.filter((e) => e.sheet === sheet.name).map((e) => e.cell)), affected: new Set(onSheet(r.impact.affected ?? [], sheet.name)) });
         setImpact(r.impact.affected_count || r.impact.key_outputs?.length || r.impact.needs_excel?.length ? { impact: r.impact, byAgent: false } : null);
-        logActivity({ revision: r.revision, title: t("sheet.youChanged", { count: r.impact.edited.length }), impact: r.impact });
+        logActivity({ revision: r.revision, title: title ?? t("sheet.youChanged", { count: r.impact.edited.length }), impact: r.impact });
         setAgentNotice(null);
       } catch (e) {
         if (isRpcKind(e, "doc_refused")) setNote({ text: e.message, kind: "refused" });
@@ -321,6 +333,71 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     setSel({ anchor: { r: selected.r1, c: selected.c1 }, focus: { r: selected.r1 + rows.length - 1, c: selected.c1 + width - 1 } });
     void apply(ops);
   };
+
+  /** Excel's 插入 / 删除 of whole rows or columns: the selection's rows (or columns) are how many. */
+  const restructure = (kind: StructureKind) => {
+    if (!sheet || !editable) return;
+    const rows = kind === "insert_rows" || kind === "delete_rows";
+    const at = rows ? selected.r1 : selected.c1;
+    const count = rows ? selected.r2 - selected.r1 + 1 : selected.c2 - selected.c1 + 1;
+    reshaped.current = true;
+    setFilter(null);
+    const what = rows ? t("sheet.rowsN", { count }) : t("sheet.colsN", { count });
+    void edited(() => rpc.request("doc/structure", { session_id: session, doc_id: docId, sheet: sheet.name, kind, at, count, base_revision: revision() }), t(`sheet.did_${kind}`, { what }));
+  };
+
+  /** Excel's 排序: by the active cell's column; one cell sorts the data around it, its first row a header. */
+  const sortBy = (descending: boolean) => {
+    if (!sheet || !editable) return;
+    const multi = selected.r2 > selected.r1;
+    const range = multi ? selectedRange : rangeText({ r1: used.r1, c1: used.c1, r2: used.r2, c2: used.c2 });
+    void edited(() => rpc.request("doc/sort", { session_id: session, doc_id: docId, sheet: sheet.name, range, by: colName(active.c), descending, header: !multi, base_revision: revision() }), t(descending ? "sheet.sortedDown" : "sheet.sortedUp", { col: colName(active.c) }));
+  };
+
+  /** Excel's 按所选单元格的值筛选, in the view: rows under the data's first row whose cell in this column shows something else are hidden. */
+  const filterByValue = async () => {
+    if (!sheet) return;
+    const col = active.c;
+    const value = activeCell?.text ?? "";
+    const hidden = new Set<number>();
+    try {
+      for (let r1 = used.r1 + 1; r1 <= used.r2; r1 += 10000) {
+        const r2 = Math.min(used.r2, r1 + 9999);
+        const res = await rpc.request("doc/cells", { session_id: session, doc_id: docId, sheet: sheet.name, range: `${colName(col)}${r1}:${colName(col)}${r2}` });
+        const shownText = new Map(res.cells.map((c) => [c.cell, c.text]));
+        for (let r = r1; r <= r2; r++) if ((shownText.get(addr({ r, c: col })) ?? "") !== value) hidden.add(r);
+      }
+    } catch (e) {
+      return st.show(errorText(e), undefined, true);
+    }
+    setFilter({ sheet: sheet.name, col, value, hidden });
+    st.show(t("sheet.filtered", { count: used.r2 - used.r1 - hidden.size, col: colName(col) }));
+  };
+
+  const cutSelection = async () => {
+    if (!sheet || !editable) return;
+    await copySelection();
+    void apply([{ op: "clear", sheet: sheet.name, range: selectedRange }]);
+  };
+
+  const pasteClipboard = async () => {
+    try {
+      paste(await navigator.clipboard.readText());
+    } catch (e) {
+      st.show(t("sheet.pasteKey"), undefined, true);
+    }
+  };
+
+  const copyAs = async (text: string, told: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      st.show(told);
+    } catch (error) { st.show(errorText(error), undefined, true); }
+  };
+
+  // ── the right-click menu ──
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const closeMenu = useCallback(() => setMenuAt(null), []);
 
   // ── tracing (Excel's 追踪引用单元格 / 追踪从属单元格) ──
   const [trace, setTrace] = useState<Trace | null>(null);
@@ -412,6 +489,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
   const history = (which: "doc/undo" | "doc/redo") =>
     enqueue(async () => {
       try {
+        reshaped.current = true;
         const r = await rpc.request(which, { session_id: session, doc_id: docId });
         made(r);
         setImpact(null);
@@ -579,6 +657,8 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       void apply([{ op: "clear", sheet: sheet.name, range: selectedRange }]);
     } else if (mod && e.key.toLowerCase() === "z") {
       void history(e.shiftKey ? "doc/redo" : "doc/undo");
+    } else if (mod && e.key.toLowerCase() === "x") {
+      void cutSelection();
     } else if (mod && e.key.toLowerCase() === "c") {
       void copySelection();
     } else if (mod && e.key.toLowerCase() === "l") {
@@ -693,6 +773,12 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       e.stopPropagation();
       setSel({ anchor: { r: 1, c }, focus: { r: Math.max(used.r2, 1), c } });
       grid.current?.focus();
+    }} onContextMenu={(e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!(c >= g.c1 && c <= g.c2 && g.r1 === 1)) setSel({ anchor: { r: 1, c }, focus: { r: Math.max(used.r2, 1), c } });
+      grid.current?.focus();
+      setMenuAt({ x: e.clientX, y: e.clientY });
     }}>{colName(c)}{unitOfCol(c) && <span className="sht-unit">{unitName(unitOfCol(c)!)}</span>}</div>);
   }
   /** Dragging a header's edge, as in Excel: the column (or row) before it takes the new size. */
@@ -737,7 +823,13 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       e.stopPropagation();
       setSel({ anchor: { r, c: 1 }, focus: { r, c: Math.max(used.c2, 1) } });
       grid.current?.focus();
-    }}>{r}</div>);
+    }} onContextMenu={(e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!(r >= g.r1 && r <= g.r2 && g.c1 === 1)) setSel({ anchor: { r, c: 1 }, focus: { r, c: Math.max(used.c2, 1) } });
+      grid.current?.focus();
+      setMenuAt({ x: e.clientX, y: e.clientY });
+    }}><span className={filter?.sheet === sheetName && r > used.r1 ? "sht-filtered" : undefined}>{r}</span></div>);
   }
 
   const multi = g.r1 !== g.r2 || g.c1 !== g.c2;
@@ -803,6 +895,48 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     const m = mergeAt(r, c);
     return m ? { r: m.r1, c: m.c1 } : { r, c };
   };
+
+  const nRowsSel = g.r2 - g.r1 + 1;
+  const nColsSel = g.c2 - g.c1 + 1;
+  const formulas = !!info.capabilities.includes("edit_formulas");
+  const menuItems: MenuItem[] = [
+    item(t("sheet.cut"), () => void cutSelection(), { kbd: "⌘X", disabled: !editable }),
+    item(t("sheet.copy"), () => void copySelection(), { kbd: "⌘C" }),
+    item(t("sheet.paste"), () => void pasteClipboard(), { kbd: "⌘V", disabled: !editable }),
+    item(t("sheet.copyAs"), undefined, { items: [
+      item(t("sheet.copyMarkdown"), () => void selectionText().then((text) => copyAs(toMarkdown(selected, text), t("sheet.copied"))).catch((e) => st.show(errorText(e), undefined, true))),
+      item(t("sheet.copyAddress"), () => void copyAs(`${sheetName}!${selectedRange}`, t("sheet.copiedAddress"))),
+    ] }),
+    sep,
+    item(t("sheet.insert"), undefined, { disabled: !editable, items: [
+      item(t("sheet.insertRows", { count: nRowsSel }), () => restructure("insert_rows")),
+      item(t("sheet.insertCols", { count: nColsSel }), () => restructure("insert_columns")),
+    ] }),
+    item(t("sheet.delete"), undefined, { disabled: !editable, items: [
+      item(t("sheet.deleteRows", { count: nRowsSel }), () => restructure("delete_rows"), { danger: true }),
+      item(t("sheet.deleteCols", { count: nColsSel }), () => restructure("delete_columns"), { danger: true }),
+    ] }),
+    item(t("sheet.clear"), () => sheet && void apply([{ op: "clear", sheet: sheet.name, range: selectedRange }]), { kbd: "⌫", disabled: !editable }),
+    sep,
+    item(t("sheet.filter"), undefined, { items: [
+      item(t("sheet.filterByValue"), () => void filterByValue()),
+      item(t("sheet.filterClear"), () => setFilter(null), { disabled: filter?.sheet !== sheetName }),
+    ] }),
+    item(t("sheet.sort"), undefined, { disabled: !editable, items: [
+      item(t("sheet.sortUp"), () => sortBy(false)),
+      item(t("sheet.sortDown"), () => sortBy(true)),
+    ] }),
+    item(t("sheet.fill"), undefined, { disabled: !editable, items: [
+      item(t("sheet.fillDown"), () => fill("down"), { kbd: "⌘D" }),
+      item(t("sheet.fillRight"), () => fill("right"), { kbd: "⌘R" }),
+    ] }),
+    sep,
+    item(t("sheet.askFinx"), () => void quoteSelection(), { kbd: "⌘L", icon: "chat" }),
+    item(t("sheet.trace"), undefined, { disabled: !formulas, items: [
+      item(t("sheet.traceUp"), () => void traceFrom("up"), { kbd: "⌘[" }),
+      item(t("sheet.traceDown"), () => void traceFrom("down"), { kbd: "⌘]" }),
+    ] }),
+  ];
 
   const bar = editing?.text ?? editText;
   const dirty = info.dirty;
@@ -947,6 +1081,16 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
               window.addEventListener("mouseup", up);
             }}
             onDoubleClick={() => editable && setEditing({ text: editText, inBar: false })}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              const p = pick(e);
+              if (!p) return;
+              if (editing) commit(editing.text);
+              // A click outside the selection selects that cell first, as in Excel.
+              if (p.r < selected.r1 || p.r > selected.r2 || p.c < selected.c1 || p.c > selected.c2) setSel({ anchor: p, focus: p });
+              grid.current?.focus();
+              setMenuAt({ x: e.clientX, y: e.clientY });
+            }}
           >
             <div className="sht-corner" style={{ left: view.left, top: view.top, width: HEAD_W, height: HEAD_H }} onMouseDown={(e) => {
               e.stopPropagation();
@@ -1005,6 +1149,10 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
           )}
           <button className="btn sm" onClick={() => setNote(null)}>{t("sheet.dismiss")}</button>
         </div>
+      )}
+      {menuAt && <CellMenu at={menuAt} items={menuItems} onClose={closeMenu} />}
+      {filter?.sheet === sheetName && (
+        <div className="fpn-note" role="status"><Icon name="search" /><span>{t("sheet.filterOn", { col: colName(filter.col), value: filter.value || t("sheet.blank") })}</span><button className="btn sm" onClick={() => setFilter(null)}>{t("sheet.filterClear")}</button></div>
       )}
       <div className="sht-tabs">
         <div className="sht-tablist" role="tablist">
