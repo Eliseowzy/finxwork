@@ -1710,7 +1710,7 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 
 ### 21.1 自动测试
 
-`cargo test --workspace`（带 PDFium）全过。新增的端到端测试：`e2e_login.rs`、`e2e_commands.rs`、`e2e_components.rs`（本地起一个 GitHub 形状的发布，走安装、升级、签名错误、摘要错误、`install.sh`）、`e2e_interactive.rs`（真实伪终端：发送、审批的回答、`/` 命令、恢复、取回排队、第一次运行登录、信任提问、非终端拒绝）、`e2e_examples.rs`（两个示例真跑）、`e2e_docs.rs`（文档里标了 `doc-test: run` 的命令真跑，链接不断）、`finx-core/tests/mcp.rs` 的审批表。
+`cargo test --workspace`（带 PDFium）全过，92 个测试目标、1290 项；前端 121 项、桌面端 145 项也全过（桌面端有一次全量运行失败，失败详情没有留下，之后连续重跑都通过，没有查明原因）。新增的端到端测试：`e2e_login.rs`、`e2e_commands.rs`、`e2e_components.rs`（本地起一个 GitHub 形状的发布，走安装、升级、签名错误、摘要错误、`install.sh`）、`e2e_interactive.rs`（真实伪终端：发送、审批的回答、`/` 命令、恢复、取回排队、第一次运行登录、信任提问、非终端拒绝）、`e2e_examples.rs`（两个示例真跑）、`e2e_docs.rs`（文档里标了 `doc-test: run` 的命令真跑，链接不断）、`e2e_network.rs`（脚本、查看类命令和编辑器不访问模型之外的地址，常驻服务只访问公共目录）、`finx-core/tests/mcp.rs` 的审批表。
 
 ### 21.2 真实模型验收
 
@@ -1728,13 +1728,43 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 
 打断、运行中插话、跟进、取回只用模拟模型测过，没有在真实模型上走。
 
-### 21.3 没做或做不到的
+**用发布产物验过（2026-11-05 干跑打出的文件）：**
+
+- 公开版的 macOS 程序跑完上面 24 项，全过；
+- x86-64 Linux 主机上，`install.sh` 从本机起的镜像装好；手动放好 PDF 组件后，静态主程序经 `finx-doc-worker` 真实读出 PDF 的内容；
+- macOS 上，签过名、开了 hardened runtime 的主程序加载我们签名的 `libpdfium.dylib`，同样读出内容；
+- `ssh host finx serve --stdio` 完成了初始化握手，后面的方法没有走。
+
+### 21.3 性能棘轮（2026-11-06，未通过）
+
+候选是这个分支的最终代码（合并了 `0c4b181`），基线是 `0c4b181`。macOS、Linux 启动和负载都跑了，**标出 15 项回退、1 项变好，棘轮没有通过，所以不能直接合入 main**。负载测试的任务时延和吞吐没有回退，这一轮也没有失败的运行。
+
+| 指标 | 基线 | 候选 | 变化 |
+|---|---|---|---|
+| Linux `exec` 到第一个模型请求 | 5.217 ms | 5.426 ms | +4.0% |
+| Linux ACP `initialize` | 3.166 ms | 3.309 ms | +4.5% |
+| Linux socket `initialize` | 4.380 ms | 4.615 ms | +5.4% |
+| macOS ACP 到第一个模型请求 | 9.322 ms | 9.524 ms | +2.2% |
+| macOS ACP `session/new` | 1.183 ms | 1.253 ms | +5.9% |
+| Linux ACP 复用进程新建会话到请求 | 1.942 ms | 2.051 ms | +5.6% |
+
+**已经修掉的：** `finx status` 不再为了列组名而生成全部工具定义（缺页 +190 降到 +8）；每个配置文件只解析一次；ACP 的凭据检查不再多开一次工作区、不再绕线程、不再复制服务商配置。
+
+**剩下的原因（`fault_trace.py`，Linux）：** `acp` 多 22 次缺页，其中 `.text` +15、匿名内存 +6；`--help` 多 17 次，其中匿名内存 +11，是新增子命令的解析器占用。主程序 `.text` 多 1.3 MB（+5%）。也就是说，大部分是多了功能和代码的代价，不是某一处写错了。ACP 的 `session/new` 还多一次凭据判断，原因没有再细分。
+
+**预算：** `--help` 的缺页预算从 253 调到 272（`local-command-budget.json`，写了原因）。`status`、`doctor`、`sessions` 仍在预算内。这只是换算出来的，要等 CI 实测。
+
+**一次偶发：** 第三轮的负载测试有一次运行失败，2 个会话报 `mcp_unavailable`（连不上模拟 MCP 服务器的本地地址）。第四轮没有再出现，也没有查出原因。
+
+**能不能合入由负责人决定：** 接受每次启动多 0.1–0.2 ms，或者继续压（可以试的方向：把交互模式的依赖和命令定义挪到冷路径，调整链接时的代码布局），后者的效果没有估过。
+
+### 21.4 没做或做不到的
 
 | 内容 | 卡在哪 |
 |---|---|
 | 真正发布；S1 从 GitHub 安装 | 发布仓库没建，这是对外动作，等负责人。`install.sh` 和 `finx upgrade` 用本地发布测过 |
 | `LICENSE` | §18.5 负责人决定。没有它发布脚本不放行 |
-| 公证 | `FINXWORK_NOTARY_PROFILE` 没设。签名做了，公证和 Gatekeeper 的表现（§13.4）都没验 |
+| 公证 | `FINXWORK_NOTARY_PROFILE` 没设。macOS 文件签了名，公证和 Gatekeeper 的表现（§13.4）都没验 |
 | 私钥备份 | Q-309 |
 | S5 真实编辑器（§10.4） | 这台机器没装 Zed |
 | S7 和真实的 FinxWork 共存 | 没走；配置的新旧兼容有单元和端到端测试，但"上一个发布版"还不存在 |
@@ -1742,4 +1772,6 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 | 多种终端、中文输入法（§16.2） | 只在伪终端里测过，没有在 Terminal.app、iTerm2、tmux、SSH 上看过 |
 | `docs/cli` 的中文版 | 只写了英文 |
 | 静态构建的容器矩阵（§16.1） | 只在一台 Debian 上跑过；Alpine、老 glibc、arm64 没跑 |
+| 发布脚本的 Intel Mac、Linux arm64 冒烟 | 这两个平台的文件打出来了，没有实际运行过；真发布时脚本会因此拒绝，要先在对应系统上跑 |
+| 从签名清单真实下载组件 | 发布构建只认 GitHub 地址，发布之前走不了；同样的流程用开发构建配本地发布测过 |
 | 二期（§17.2） | 按计划不在这次 |
