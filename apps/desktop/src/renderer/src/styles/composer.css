@@ -184,6 +184,14 @@
 .new-hero h1{margin:0;font-size:22px;font-weight:600;letter-spacing:-.01em;color:var(--l1);text-wrap:balance}
 .cmp-zone.new{position:static;background:none;padding-top:0}
 
+/* The new session's glow belongs to its whole column, including the top bar. */
+.scol:has(>.newpage){background-image:radial-gradient(62% 38% at 50% 0%,var(--home-glow) 0%,color-mix(in srgb,var(--home-glow) 32%,transparent) 52%,transparent 100%)}
+.scol:has(>.newpage)>.ctool{background:transparent;box-shadow:none;backdrop-filter:none}
+.newpage{border-top-color:transparent}
+.cmp{box-shadow:var(--cmp-sh)}
+.cmp:focus-within:not(.dropping){box-shadow:var(--cmp-focus-sh)}
+.send:disabled{color:var(--l3);background:var(--fill2)}
+
 /* Connecting a model service (composer/KeySetup.tsx): the first-use card in
    the new session page's middle, and the same form in a sheet and in
    settings. */

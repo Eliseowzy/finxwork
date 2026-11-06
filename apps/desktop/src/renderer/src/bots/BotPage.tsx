@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
-import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, processSteps, routineDot, type BotItem, type WorkingAgent, type SessionView } from "@finx/client";
+import { baseName, botChat, botWorking, busyBubble, conversation, docViewingBlock, pendingApproval, routineDot, type BotItem, type WorkingAgent, type SessionView } from "@finx/client";
 import type { BotSummary, UserMessage } from "@finx/protocol";
 import { SidebarToggle } from "../components";
 import { addAttachments, fromInput, toInput, type Attachment } from "../composer/attachments";
@@ -10,7 +10,7 @@ import { needsKey } from "../composer/KeySetup";
 import { NoModel } from "../composer/NoModel";
 import { useCommands } from "../composer/skills";
 import { Tile } from "../composer/Tile";
-import { durationText, momentText, timeLine } from "../format";
+import { momentText, timeLine } from "../format";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { DocContext } from "../docs/state";
@@ -29,7 +29,6 @@ import { BotAvatar } from "./Avatar";
 import { BotPanel } from "./BotPanel";
 import { Question, SentFiles } from "./Messages";
 import { ModelBlocked, ModelRows } from "./ModelRows";
-import { Process } from "./Process";
 import { RoutinesPanel } from "./RoutinesPanel";
 import { useBotSession } from "./useBotSession";
 
@@ -236,7 +235,6 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
   const st = useStore();
   const items = useMemo(() => botChat(view), [view]);
   const busy = busyBubble(view);
-  const [open, setOpen] = useState<Set<string>>(new Set());
   const [dock, setDock] = useState(0);
   const scroll = useRef<HTMLDivElement>(null);
   // What was on screen when the page opened slides in no more; what comes after does.
@@ -334,8 +332,6 @@ function BotChat({ bot, view, session, loadEarlier }: { bot: BotSummary; view: S
                     fresh={fresh}
                     line={line}
                     copy={copy}
-                    open={open.has(item.key)}
-                    onProcess={() => setOpen((o) => (o.has(item.key) ? new Set([...o].filter((k) => k !== item.key)) : new Set([...o, item.key])))}
                   >
                     {shown}
                   </BotMessage>
@@ -450,17 +446,13 @@ function CopyButton({ text }: { text: string }) {
 
 type SentItem = Extract<BotItem, { kind: "bot" | "attachment" | "question" }>;
 
-/** A message from the bot: what it sent, its time and buttons beside it on hover, and its process under it. */
-function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
-  item: SentItem; fresh: boolean; line: React.ReactNode; copy?: string; open: boolean; onProcess: () => void; children: React.ReactNode;
+/** A message from the bot: what it sent, with its time and buttons beside it on hover. */
+function BotMessage({ item, fresh, line, copy, children }: {
+  item: SentItem; fresh: boolean; line: React.ReactNode; copy?: string; children: React.ReactNode;
 }) {
   const { t } = useTranslation("bots");
   const st = useStore();
   const source = item.source;
-  // Thinking and private text only: no steps to count.
-  const steps = processSteps(item.process);
-  const time = durationText(item.took);
-  const summary = steps > 0 ? t("chat.processLine", { time, count: steps }) : t("chat.processTime", { time });
   return (
     <>
       {line}
@@ -483,14 +475,8 @@ function BotMessage({ item, fresh, line, copy, open, onProcess, children }: {
                   <Icon name="clock" className="sm" />
                 </button>
               )}
-              {item.process.length > 0 && (
-                <button className={`tb ${open ? "on" : ""}`} aria-label={t("chat.process")} title={open ? t("chat.processFold") : `${t("chat.process")}：${summary}`} aria-expanded={open} onClick={onProcess}>
-                  <Icon name="list" className="sm" />
-                </button>
-              )}
             </div>
           </div>
-          {open && <Process steps={item.process} summary={summary} />}
         </div>
       </div>
     </>

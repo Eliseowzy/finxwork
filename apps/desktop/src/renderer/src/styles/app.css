@@ -5,12 +5,6 @@
 html,body{height:100%}
 body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
 #root{height:100%}
-/* macOS: the window's sidebar material shows through the sidebar; everything else stays opaque. */
-html.vibrant,html.vibrant body{background:transparent}
-/* Under a dialog the page is opaque: a blur of a see-through sidebar is see-through too, and its sharp text shows beneath the blur. */
-html.vibrant:has(dialog.sheet[open]),html.vibrant:has(dialog.sheet[open]) body,html.vibrant:has(.settings-dim),html.vibrant:has(.settings-dim) body{background:var(--win)}
-html.vibrant .side{background:var(--side-tint)}
-html.vibrant .grp-h,html.vibrant .grp-row{position:static;background:transparent}
 input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 /* Text that can be selected shows the text cursor, as in a text field; its buttons stay arrows. */
 .sel-text{cursor:text}
@@ -94,8 +88,9 @@ input:disabled,textarea:disabled{cursor:default}
 .mainwrap.noside{grid-template-columns:0 minmax(0,1fr)}
 /* Edge to edge: the sidebar fills the window from top to bottom and left to its edge, one hairline from the content. */
 .side{background:var(--side);border-right:.5px solid var(--sep);display:flex;flex-direction:column;min-height:0;overflow:hidden}
-/* Sidebar titles a step brighter than other text in the dark, as small text on the material reads grey. */
-@media (prefers-color-scheme:dark){.side{--l1:rgba(255,255,255,.93)}}
+/* Selected navigation gets the same quiet raised edge as the dark composer. */
+.side :is(.nav-i,.srow,.brow).sel{box-shadow:var(--side-sel-sh)}
+@media(prefers-color-scheme:light){.side :is(.srow.sel .stitle,.brow.sel .bname,.nav-i.sel){font-weight:500}}
 .noside .side{opacity:0;pointer-events:none}
 .mainwrap>.content{grid-column:2}
 /* No room for the sidebar beside the conversation, but asked for: over it, opaque, until a click beside it (layout.ts). */
@@ -165,7 +160,6 @@ input:disabled,textarea:disabled{cursor:default}
 .side-list.by-project .grp-h .ic:not(.gi){color:var(--l3)}
 .side-list.by-project .grp-row{border-radius:var(--r-md);align-items:center}
 .side-list.by-project .grp-row:hover{background:linear-gradient(var(--fill),var(--fill)),var(--side-head)}
-html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 .side-list.by-project .grp-row .grpact{margin:0 4px 0 0}
 .side-list.by-project>[role=group]+[role=group]{margin-top:2px}
 .srow{display:flex;padding:7px 10px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
