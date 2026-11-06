@@ -1,6 +1,7 @@
 //! Outgoing ACP messages, serialized straight from borrowed kernel data (no owned ACP types,
 //! no copied strings). Tests check every shape against the official schema types.
 
+use finx_core::lang::say;
 use bytes::Bytes;
 use finx_llm::ThinkingLevel;
 use finx_llm::UserContent;
@@ -245,34 +246,34 @@ pub fn config_options(server: &Server, info: &SessionInfo) -> Value {
         .map(|m| json!({ "value": m.as_str(), "name": mode_label(*m) }))
         .collect();
     json!([
-        { "id": "model", "name": "模型", "category": "model", "type": "select",
+        { "id": "model", "name": say("Model", "模型"), "category": "model", "type": "select",
           "currentValue": info.model, "options": model_options },
-        { "id": "thinking", "name": "推理等级", "category": "thought_level", "type": "select",
+        { "id": "thinking", "name": say("Thinking", "推理等级"), "category": "thought_level", "type": "select",
           "currentValue": info.thinking.as_str(), "options": level_options },
-        { "id": "permission_mode", "name": "权限模式", "category": "mode", "type": "select",
+        { "id": "permission_mode", "name": say("Permissions", "权限模式"), "category": "mode", "type": "select",
           "currentValue": info.permission_mode.as_str(), "options": mode_options },
     ])
 }
 
 fn thinking_label(level: ThinkingLevel) -> &'static str {
     match level {
-        ThinkingLevel::Default => "默认",
-        ThinkingLevel::Off => "不思考",
-        ThinkingLevel::On => "思考",
-        ThinkingLevel::Minimal => "最少",
-        ThinkingLevel::Low => "低",
-        ThinkingLevel::Medium => "中",
-        ThinkingLevel::High => "高",
-        ThinkingLevel::Xhigh => "超高",
-        ThinkingLevel::Max => "最高",
+        ThinkingLevel::Default => say("Default", "默认"),
+        ThinkingLevel::Off => say("Off", "不思考"),
+        ThinkingLevel::On => say("On", "思考"),
+        ThinkingLevel::Minimal => say("Minimal", "最少"),
+        ThinkingLevel::Low => say("Low", "低"),
+        ThinkingLevel::Medium => say("Medium", "中"),
+        ThinkingLevel::High => say("High", "高"),
+        ThinkingLevel::Xhigh => say("Extra high", "超高"),
+        ThinkingLevel::Max => say("Max", "最高"),
     }
 }
 
 fn mode_label(mode: PermissionMode) -> &'static str {
     match mode {
-        PermissionMode::Manual => "逐项确认",
-        PermissionMode::AcceptEdits => "自动接受编辑",
-        PermissionMode::BypassPermissions => "跳过权限确认",
+        PermissionMode::Manual => say("Ask each time", "逐项确认"),
+        PermissionMode::AcceptEdits => say("Accept edits", "自动接受编辑"),
+        PermissionMode::BypassPermissions => say("Bypass permissions", "跳过权限确认"),
     }
 }
 
@@ -281,32 +282,36 @@ fn mode_label(mode: PermissionMode) -> &'static str {
 /// site grant; each grant gets its own option, `approve_for_session:<index>`.
 pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>, grants: &[SiteGrant]) -> Value {
     let always = match (rule, mode) {
-        (Some(prefix), _) if !prefix.is_empty() => Some(format!("本会话总是允许 {}", prefix.join(" "))),
-        (_, Some(mode)) => Some(format!("允许，并切换到“{}”", mode_label(mode))),
+        (Some(prefix), _) if !prefix.is_empty() => Some(format!("{} {}", say("Always allow in this session:", "本会话总是允许"), prefix.join(" "))),
+        (_, Some(mode)) => Some(format!("{} “{}”", say("Allow, and switch to", "允许，并切换到"), mode_label(mode))),
         _ => None,
     };
-    let mut options = vec![json!({ "optionId": "approve", "name": "允许", "kind": "allow_once" })];
+    let mut options = vec![json!({ "optionId": "approve", "name": say("Allow", "允许"), "kind": "allow_once" })];
     if let Some(always) = always {
         options.push(json!({ "optionId": "approve_for_session", "name": always, "kind": "allow_always" }));
     }
     for (index, grant) in grants.iter().enumerate() {
         let name = match (grant.authority, grant.origin.as_str()) {
-            (GrantAuthority::Navigate, "*") => "本会话允许打开所有网站".to_string(),
-            (GrantAuthority::Act, "*") => "本会话允许所有网站".to_string(),
-            (GrantAuthority::Navigate, origin) => format!("本会话允许打开 {origin}"),
-            (GrantAuthority::Act, origin) => format!("本会话允许 {origin}"),
+            (GrantAuthority::Navigate, "*") => say("Open any site in this session", "本会话允许打开所有网站").to_string(),
+            (GrantAuthority::Act, "*") => say("Allow any site in this session", "本会话允许所有网站").to_string(),
+            (GrantAuthority::Navigate, origin) => format!("{} {origin}", say("Open in this session:", "本会话允许打开")),
+            (GrantAuthority::Act, origin) => format!("{} {origin}", say("Allow in this session:", "本会话允许")),
         };
         options.push(json!({ "optionId": format!("approve_for_session:{index}"), "name": name, "kind": "allow_always" }));
     }
     // Kept in the configuration, every site included (D-197, D-221).
     for (index, grant) in grants.iter().enumerate() {
         let name = match (grant.authority, grant.origin.as_str()) {
-            (_, "*") => "总是允许所有网站（写入配置；风险：被注入指令的页面可能诱导操作你登录的网站）".to_string(),
-            (GrantAuthority::Navigate, origin) => format!("总是允许打开 {origin}（写入配置）"),
-            (GrantAuthority::Act, origin) => format!("总是允许 {origin}（写入配置）"),
+            (_, "*") => say(
+                "Always allow any site (saved; a page with injected instructions could steer actions on sites you are signed in to)",
+                "总是允许所有网站（写入配置；风险：被注入指令的页面可能诱导操作你登录的网站）",
+            )
+            .to_string(),
+            (GrantAuthority::Navigate, origin) => format!("{} {origin} ({})", say("Always open", "总是允许打开"), say("saved", "写入配置")),
+            (GrantAuthority::Act, origin) => format!("{} {origin} ({})", say("Always allow", "总是允许"), say("saved", "写入配置")),
         };
         options.push(json!({ "optionId": format!("approve_always:{index}"), "name": name, "kind": "allow_always" }));
     }
-    options.push(json!({ "optionId": "deny", "name": "拒绝", "kind": "reject_once" }));
+    options.push(json!({ "optionId": "deny", "name": say("Deny", "拒绝"), "kind": "reject_once" }));
     Value::Array(options)
 }

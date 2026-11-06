@@ -10,7 +10,21 @@ publish.workspace = true
 name = "finx"
 path = "src/main.rs"
 
+[features]
+default = ["local-accounts"]
+# The public release is built without this: --no-default-features.
+local-accounts = ["finx-connections/local-accounts"]
+
 [dependencies]
+crossterm.workspace = true
+unicode-width.workspace = true
+toml_edit.workspace = true
+base64.workspace = true
+strsim.workspace = true
+toml.workspace = true
+tempfile.workspace = true
+tokio-util.workspace = true
+clap_complete.workspace = true
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
@@ -41,5 +55,7 @@ finx-sheet.workspace = true
 encoding_rs.workspace = true
 finx-rpc.workspace = true
 jsonschema.workspace = true
-tempfile.workspace = true
+flate2.workspace = true
+tar.workspace = true
+ring.workspace = true
 parking_lot.workspace = true

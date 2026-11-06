@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use crate::setup;
 
-fn start(overrides: &[String]) -> anyhow::Result<(Server, Option<tracing_appender::non_blocking::WorkerGuard>)> {
+pub(crate) fn start(overrides: &[String]) -> anyhow::Result<(Server, Option<tracing_appender::non_blocking::WorkerGuard>)> {
     let home = setup::home()?;
     let guard = setup::init_logging(&home);
     match finx_server::limits::raise_open_file_limit() {
@@ -97,4 +97,9 @@ pub async fn acp(overrides: &[String]) -> anyhow::Result<u8> {
     let (server, _guard) = start(overrides)?;
     finx_server::serve_stdio(server.clone(), finx_acp::AcpProtocol::new(server)).await;
     Ok(0)
+}
+
+/// Whether a service answers on the default socket.
+pub(crate) fn service_runs(home: &finx_core::paths::FinxHome) -> bool {
+    std::os::unix::net::UnixStream::connect(home.root().join("run").join("finx.sock")).is_ok()
 }

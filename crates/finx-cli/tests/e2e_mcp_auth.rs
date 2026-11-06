@@ -62,7 +62,7 @@ async fn until(rx: &mut IncomingRx, method: &str, progress: &mut Vec<Value>) -> 
 /// A session in `cwd` asks the mock model to call the server's `env` tool; its last message.
 async fn use_in_exec(env: &TestEnv, cwd: &Path, server: &str) -> String {
     let prompt = format!("[[mock:mcp_env:{server}:FINX_NO_BROWSER]] read it");
-    let output = env.finx_in(cwd, &["exec", "--json", &prompt]).output().await.unwrap();
+    let output = env.finx_in(cwd, &["exec", "--output", "stream-json", &prompt]).output().await.unwrap();
     let events: Vec<Value> = String::from_utf8_lossy(&output.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
     events
         .iter()

@@ -40,7 +40,7 @@ pub enum StoreError {
     NotFound(String),
     #[error("{0}")]
     Ambiguous(String),
-    #[error("session log {0} is in use by another finx process")]
+    #[error("this session is open in another finx or FinxWork ({0})")]
     Locked(PathBuf),
     #[error("corrupt session log {path}: {message}")]
     Corrupt { path: PathBuf, message: String },

@@ -24,6 +24,8 @@ use finx_protocol::api::ResourceReadResult;
 use finx_protocol::api::SessionInfo;
 use finx_protocol::api::SessionListParams;
 use finx_protocol::api::SessionListResult;
+use finx_protocol::api::ToolsListParams;
+use finx_protocol::api::ToolsListResult;
 use finx_protocol::api::SessionSummary;
 use finx_protocol::api::SkillsListParams;
 use finx_protocol::api::SkillsListResult;
@@ -85,6 +87,9 @@ pub struct NewSession {
     pub model: Option<String>,
     pub thinking: Option<ThinkingLevel>,
     pub permission_mode: Option<PermissionMode>,
+    /// Refuse a model whose provider has no credentials yet, for clients that have a way to send
+    /// the person to sign in (ACP); others hear of it when a task fails.
+    pub require_credentials: bool,
     /// MCP servers the client brings for this session; the same name replaces a configured one.
     pub mcp_servers: Vec<McpServerConfig>,
 }
@@ -159,6 +164,9 @@ impl Server {
             tracing::warn!("{warning}");
         }
         let llm = Arc::new(runtime::model_registry(&options.home, &workspace.config)?);
+        for warning in llm.warnings() {
+            tracing::warn!("{warning}");
+        }
         let defaults = SessionDefaults {
             model: workspace.config.model.clone(),
             thinking: workspace.config.thinking,
@@ -218,6 +226,10 @@ impl Server {
 
     pub fn acp_settings(&self) -> &AcpSettings {
         &self.0.acp
+    }
+
+    pub fn connections(&self) -> &Arc<finx_connections::Manager> {
+        &self.0.connections
     }
 
     pub fn models(&self) -> &Arc<ModelRegistry> {
@@ -408,6 +420,24 @@ impl Server {
         servers
     }
 
+    /// The model a new session runs on. May read saved keys (the keychain) when nobody named one.
+    pub(crate) async fn session_model(&self, asked: Option<String>, configured: Option<String>) -> Result<String, RpcError> {
+        if let Some(model) = asked.or(configured) {
+            return Ok(model);
+        }
+        let llm = self.0.llm.clone();
+        tokio::task::spawn_blocking(move || finx_core::models::session_model(&llm, None, None))
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))?
+            .map_err(|e| errors::from_kernel(e, "new"))
+    }
+
+    /// The model a new session at `cwd` would start on, if there is one. Blocking I/O.
+    pub fn default_model_at(&self, cwd: &Path) -> Option<String> {
+        let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).ok()?;
+        finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
+    }
+
     /// Starts a session; `attach` receives its snapshot before any event. Returns the id.
     pub async fn create_session(&self, args: NewSession, attach: AttachRequest) -> Result<String, RpcError> {
         if args.cwd.as_ref().is_some_and(|cwd| !cwd.is_absolute()) {
@@ -416,13 +446,25 @@ impl Server {
         self.make_room().await?;
         let cwd = match args.cwd {
             Some(cwd) => cwd,
-            None => self
-                .0
-                .home
-                .new_chat_dir()
-                .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?,
+            None => {
+                // Before a folder is made for it: only the user's own configuration applies here.
+                if args.model.is_none() {
+                    self.session_model(None, self.0.defaults.model.clone()).await?;
+                }
+                self.0
+                    .home
+                    .new_chat_dir()
+                    .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?
+            }
         };
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
+        let model = self.session_model(args.model, workspace.config.model.clone()).await?;
+        if args.require_credentials
+            && let Some((provider, _)) = model.split_once('/')
+            && matches!(self.0.llm.auth_status(provider), Some(finx_llm::AuthStatus::Missing(_)))
+        {
+            return Err(errors::no_credentials(&model, provider));
+        }
         let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
@@ -435,7 +477,7 @@ impl Server {
         deps.docs = Some(self.0.docs.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &args.mcp_servers);
         let options = StartOptions {
-            model: args.model.unwrap_or_else(|| workspace.config.model.clone()),
+            model,
             thinking: args.thinking.unwrap_or(workspace.config.thinking),
             permission_mode: args
                 .permission_mode
@@ -756,12 +798,30 @@ impl Server {
 
     /// What a session started in `cwd` would find, as `finx skills --all --json` reports it.
     /// Blocking I/O.
+    /// A loaded session's tools, or the built-in tools under the configuration of a session
+    /// without a project.
+    pub async fn list_tools(&self, params: ToolsListParams) -> Result<ToolsListResult, RpcError> {
+        if let Some(id) = params.session_id {
+            let (tx, rx) = oneshot::channel();
+            self.loaded(&id)?.send(HubCmd::Tools { reply: tx }).await?;
+            let tools = rx.await.map_err(|_| errors::session_closed(&id))?;
+            return Ok(ToolsListResult { tools });
+        }
+        let server = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let chats = server.0.home.chats_dir();
+            std::fs::create_dir_all(&chats).map_err(|e| RpcError::internal(e.to_string()))?;
+            let workspace = Workspace::open(&server.0.home, &chats, &server.0.overrides).map_err(errors::from_runtime)?;
+            Ok(ToolsListResult { tools: finx_core::tool_list::builtin(&workspace.config) })
+        })
+        .await
+        .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
+    }
+
     fn scan_skills(&self, cwd: &Path) -> Result<SkillsListResult, RpcError> {
         let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).map_err(errors::from_runtime)?;
-        let window = self
-            .0
-            .llm
-            .resolve(&workspace.config.model)
+        let window = finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
+            .and_then(|model| self.0.llm.resolve(&model).ok())
             .map_or(u64::MAX, |resolved| u64::from(resolved.model.context_window));
         let config = &workspace.config;
         let sources = skills::Sources::new(&self.0.home, &workspace.cwd, workspace.project_root.as_deref(), &config.skills);
@@ -833,7 +893,7 @@ impl Server {
                 "session {id} is loaded; close it first"
             )));
         }
-        let (header, location) = self
+        let (header, _) = self
             .0
             .store
             .header(&SessionRef::Id(id.to_string()))
@@ -842,21 +902,7 @@ impl Server {
             return Err(errors::session_not_found(id));
         }
         let trash = self.0.home.root().join("trash").join("sessions");
-        std::fs::create_dir_all(&trash)
-            .map_err(|e| RpcError::internal(format!("cannot create {}: {e}", trash.display())))?;
-        let name = location
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(format!("{id}.jsonl")));
-        // The session's files go with its log.
-        let (data_dir, _) = FinxHome::session_data_dir(&location, id);
-        std::fs::rename(&location, trash.join(&name))
-            .map_err(|e| RpcError::internal(format!("cannot move the log: {e}")))?;
-        if data_dir.is_dir() {
-            let dir_name = name.with_extension("");
-            std::fs::rename(&data_dir, trash.join(dir_name))
-                .map_err(|e| RpcError::internal(format!("cannot move the session files: {e}")))?;
-        }
+        self.0.store.move_to_trash(&SessionRef::Id(id.to_string()), &trash).map_err(|e| errors::from_store(e, id))?;
         self.forget_browser_session(id);
         Ok(())
     }

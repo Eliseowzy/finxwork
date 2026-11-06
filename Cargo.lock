@@ -685,6 +685,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "037e2a1a92236d0aff7e845093f64661d6df4c02c9fcc61a60e9e1d736fa392f"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -857,6 +866,21 @@ name = "crossbeam-utils"
 version = "0.8.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
+
+[[package]]
+name = "crossterm"
+version = "0.29.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
+dependencies = [
+ "bitflags 2.13.2",
+ "document-features",
+ "mio",
+ "parking_lot",
+ "rustix",
+ "signal-hook",
+ "signal-hook-mio",
+]
 
 [[package]]
 name = "crunchy"
@@ -1097,6 +1121,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "document-features"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
+dependencies = [
+ "litrs",
+]
+
+[[package]]
 name = "dyn-clone"
 version = "1.0.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1258,10 +1291,11 @@ checksum = "1c66915cc5391097de7a2b0b972e8505aa33c0df401fd3a6811dbdb32881ba48"
 
 [[package]]
 name = "finx-acp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "agent-client-protocol-schema",
  "bytes",
+ "finx-connections",
  "finx-core",
  "finx-llm",
  "finx-mcp",
@@ -1277,7 +1311,7 @@ dependencies = [
 
 [[package]]
 name = "finx-bench"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1293,7 +1327,7 @@ dependencies = [
 
 [[package]]
 name = "finx-browser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1314,12 +1348,15 @@ dependencies = [
 
 [[package]]
 name = "finx-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
+ "base64 0.22.1",
  "chrono",
  "clap",
+ "clap_complete",
+ "crossterm",
  "encoding_rs",
  "finx-acp",
  "finx-browser",
@@ -1335,22 +1372,30 @@ dependencies = [
  "finx-server",
  "finx-sheet",
  "finx-tools",
+ "flate2",
  "futures",
  "jsonschema",
  "libc",
  "parking_lot",
+ "ring",
  "serde",
  "serde_json",
+ "strsim",
+ "tar",
  "tempfile",
  "tokio",
+ "tokio-util",
+ "toml",
+ "toml_edit",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "unicode-width",
 ]
 
 [[package]]
 name = "finx-connections"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aes",
  "async-stream",
@@ -1386,7 +1431,7 @@ dependencies = [
 
 [[package]]
 name = "finx-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1416,7 +1461,9 @@ dependencies = [
  "ring",
  "schemars 0.8.22",
  "serde",
+ "serde_ignored",
  "serde_json",
+ "strsim",
  "tar",
  "tempfile",
  "thiserror",
@@ -1433,7 +1480,7 @@ dependencies = [
 
 [[package]]
 name = "finx-desktop"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "dirs",
  "png",
@@ -1446,7 +1493,7 @@ dependencies = [
 
 [[package]]
 name = "finx-docs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "finx-protocol",
@@ -1467,7 +1514,7 @@ dependencies = [
 
 [[package]]
 name = "finx-eval"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -1482,7 +1529,7 @@ dependencies = [
 
 [[package]]
 name = "finx-llm"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -1497,6 +1544,7 @@ dependencies = [
  "rustls-platform-verifier",
  "schemars 0.8.22",
  "serde",
+ "serde_ignored",
  "serde_json",
  "tempfile",
  "thiserror",
@@ -1509,7 +1557,7 @@ dependencies = [
 
 [[package]]
 name = "finx-mcp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1536,7 +1584,7 @@ dependencies = [
 
 [[package]]
 name = "finx-mock"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -1550,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "finx-protocol"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "finx-llm",
  "schemars 0.8.22",
@@ -1560,7 +1608,7 @@ dependencies = [
 
 [[package]]
 name = "finx-rpc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytes",
  "memchr",
@@ -1573,7 +1621,7 @@ dependencies = [
 
 [[package]]
 name = "finx-server"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1606,7 +1654,7 @@ dependencies = [
 
 [[package]]
 name = "finx-sheet"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "calamine",
  "chrono-tz",
@@ -1621,7 +1669,7 @@ dependencies = [
 
 [[package]]
 name = "finx-slide"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "betteroffice-pptx",
  "encoding_rs",
@@ -1632,7 +1680,7 @@ dependencies = [
 
 [[package]]
 name = "finx-tools"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -2613,6 +2661,12 @@ name = "litemap"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
+
+[[package]]
+name = "litrs"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
 name = "lock_api"
@@ -3817,6 +3871,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_ignored"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "115dffd5f3853e06e746965a20dcbae6ee747ae30b543d91b0e089668bb07798"
+dependencies = [
+ "serde",
+ "serde_core",
+]
+
+[[package]]
 name = "serde_json"
 version = "1.0.154"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3910,6 +3974,27 @@ name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
+name = "signal-hook"
+version = "0.3.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d881a16cf4426aa584979d30bd82cb33429027e42122b169753d6ef1085ed6e2"
+dependencies = [
+ "libc",
+ "signal-hook-registry",
+]
+
+[[package]]
+name = "signal-hook-mio"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b75a19a7a740b25bc7944bdee6172368f988763b744e3d4dfe753f6b4ece40cc"
+dependencies = [
+ "libc",
+ "mio",
+ "signal-hook",
+]
 
 [[package]]
 name = "signal-hook-registry"
@@ -4634,6 +4719,12 @@ name = "unicode-vo"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1d386ff53b415b7fe27b50bb44679e2cc4660272694b7b6f3326d8480823a94"
+
+[[package]]
+name = "unicode-width"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
 name = "unicode-xid"

@@ -404,6 +404,12 @@
       "$ref": "#/definitions/SnapshotResult"
     },
     {
+      "$ref": "#/definitions/ToolsListParams"
+    },
+    {
+      "$ref": "#/definitions/ToolsListResult"
+    },
+    {
       "$ref": "#/definitions/TranscriptPage"
     },
     {
@@ -842,6 +848,9 @@
             },
             "name": {
               "type": "string"
+            },
+            "provider_data": {
+              "description": "What the provider attached to the call and wants back with it on later turns, untouched: Gemini's signature of its reasoning, for one."
             },
             "type": {
               "enum": [
@@ -4998,6 +5007,39 @@
           "type": "object"
         },
         {
+          "description": "A call that needs approval was refused because nothing here can give it: a run without a person, such as `finx exec` in a script.",
+          "properties": {
+            "call_id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "summary": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "approval_refused"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "call_id",
+            "name",
+            "summary",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
           "properties": {
             "code": {
               "anyOf": [
@@ -6236,6 +6278,13 @@
         }
       ]
     },
+    "McpApproval": {
+      "description": "How much a server's tools are trusted to run unasked.",
+      "enum": [
+        "never"
+      ],
+      "type": "string"
+    },
     "McpAuthKind": {
       "oneOf": [
         {
@@ -6455,7 +6504,6 @@
       "type": "object"
     },
     "McpOAuthClient": {
-      "additionalProperties": false,
       "description": "An OAuth client the user registered with the provider.",
       "properties": {
         "client_id": {
@@ -6814,9 +6862,19 @@
       ]
     },
     "McpServerConfig": {
-      "additionalProperties": false,
       "description": "One MCP server: a local command (stdio) or a URL (Streamable HTTP).\n\nString values may contain `${VAR}` and `${VAR:-default}`; they are expanded from finx's environment when the server connects, so a missing variable fails only this server.",
       "properties": {
+        "approval": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/McpApproval"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`never`: its tools run without asking in every permission mode. Taken only from the user's own configuration file."
+        },
         "args": {
           "items": {
             "type": "string"
@@ -9143,8 +9201,11 @@
     "SessionDefaults": {
       "properties": {
         "model": {
-          "description": "`provider/model-id`",
-          "type": "string"
+          "description": "`provider/model-id`. Absent while no model is set up: `session/new` without a model then fails with `no_model`, and the person has to connect one.",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "permission_mode": {
           "$ref": "#/definitions/PermissionMode"
@@ -9154,7 +9215,6 @@
         }
       },
       "required": [
-        "model",
         "permission_mode",
         "thinking"
       ],
@@ -10505,6 +10565,71 @@
       ],
       "type": "string"
     },
+    "ToolEntry": {
+      "description": "One tool, as `tools/list` and `finx tools --json` give it.",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "`base`, `agents`, `deferred` (the two tools that reach the others), `web`, `doc`, `browser`, `cua`, `bot` or `mcp`.",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/definitions/ToolEntryKind"
+        },
+        "loaded": {
+          "description": "In the model's tool list from the start, rather than found through `tool_search`.",
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "needs": {
+          "description": "What it takes: the setting or the component missing, or a limit on an available tool.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "$ref": "#/definitions/ToolEntryOrigin"
+        },
+        "parameters": {
+          "description": "JSON Schema of its arguments."
+        }
+      },
+      "required": [
+        "available",
+        "description",
+        "group",
+        "kind",
+        "loaded",
+        "name",
+        "origin",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "ToolEntryKind": {
+      "description": "What a tool does to the world: read-only tools may run side by side.",
+      "enum": [
+        "read_only",
+        "mutating"
+      ],
+      "type": "string"
+    },
+    "ToolEntryOrigin": {
+      "description": "Where a tool comes from.",
+      "enum": [
+        "builtin",
+        "mcp"
+      ],
+      "type": "string"
+    },
     "ToolResultMessage": {
       "properties": {
         "call_id": {
@@ -10578,6 +10703,33 @@
         "name",
         "running",
         "title"
+      ],
+      "type": "object"
+    },
+    "ToolsListParams": {
+      "description": "Parameters of `tools/list`.",
+      "properties": {
+        "session_id": {
+          "description": "A loaded session: the tools it really has now, those of connected MCP servers included. Without one, the built-in tools under the current configuration.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ToolsListResult": {
+      "properties": {
+        "tools": {
+          "items": {
+            "$ref": "#/definitions/ToolEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "tools"
       ],
       "type": "object"
     },
@@ -11213,6 +11365,7 @@
     "-32043": "routine_not_found",
     "-32044": "routine_busy",
     "-32045": "routines_unavailable",
+    "-32046": "no_model",
     "-32600": "invalid_request",
     "-32601": "method_not_found",
     "-32602": "invalid_params",
@@ -11614,6 +11767,10 @@
       "params": "SkillsSetEnabledParams",
       "result": "SkillsSetEnabledResult"
     },
+    "tools/list": {
+      "params": "ToolsListParams",
+      "result": "ToolsListResult"
+    },
     "web_search/set_key": {
       "params": "WebSearchSetKeyParams",
       "result": "WebSearchSetKeyResult"
@@ -11644,5 +11801,134 @@
     "session/event": "SessionEventParams",
     "sessions/changed": "SessionsChangedParams",
     "skills/changed": "SkillsChangedParams"
+  },
+  "x-stability": {
+    "methods": {
+      "auth/delete": "stable",
+      "auth/set": "stable",
+      "bots/avatar": "experimental",
+      "bots/clear": "experimental",
+      "bots/create": "experimental",
+      "bots/delete": "experimental",
+      "bots/open": "experimental",
+      "bots/read": "experimental",
+      "bots/routine": "experimental",
+      "bots/routine_delete": "experimental",
+      "bots/routine_run": "experimental",
+      "bots/routine_run_now": "experimental",
+      "bots/routine_runs": "experimental",
+      "bots/routine_set_enabled": "experimental",
+      "bots/routine_stop": "experimental",
+      "bots/subscribe": "experimental",
+      "bots/unread": "experimental",
+      "bots/unsubscribe": "experimental",
+      "bots/update": "experimental",
+      "browser/allow": "experimental",
+      "browser/assign_tab": "experimental",
+      "browser/cancel_wait": "experimental",
+      "browser/close_tabs": "experimental",
+      "browser/host": "internal",
+      "browser/reveal": "experimental",
+      "browser/site_icon": "experimental",
+      "browser/status": "experimental",
+      "browser/use_extension": "experimental",
+      "chatgpt/cancel": "stable",
+      "chatgpt/login": "stable",
+      "chatgpt/logout": "stable",
+      "chatgpt/status": "stable",
+      "config/read": "stable",
+      "config/write": "stable",
+      "connections/connect": "experimental",
+      "connections/disconnect": "experimental",
+      "connections/discover": "experimental",
+      "connections/list": "experimental",
+      "connections/models": "experimental",
+      "connections/remove": "experimental",
+      "connections/retry": "experimental",
+      "connectors/install": "experimental",
+      "credentials/delete": "stable",
+      "credentials/set": "stable",
+      "doc/apply": "experimental",
+      "doc/autofill": "experimental",
+      "doc/cells": "experimental",
+      "doc/close": "experimental",
+      "doc/fill": "experimental",
+      "doc/find": "experimental",
+      "doc/locate": "experimental",
+      "doc/open": "experimental",
+      "doc/recalc": "experimental",
+      "doc/redo": "experimental",
+      "doc/resolve": "experimental",
+      "doc/save": "experimental",
+      "doc/trace": "experimental",
+      "doc/undo": "experimental",
+      "doc/view": "experimental",
+      "files/list": "stable",
+      "files/read": "stable",
+      "files/watch": "stable",
+      "files/write": "stable",
+      "initialize": "stable",
+      "mcp/check": "stable",
+      "mcp/list": "stable",
+      "mcp/login": "stable",
+      "mcp/login_cancel": "stable",
+      "mcp/logout": "stable",
+      "mcp/probe": "stable",
+      "mcp/probe_cancel": "stable",
+      "mcp/tools": "stable",
+      "models/list": "stable",
+      "models/refresh": "stable",
+      "models/show": "stable",
+      "pptx/metafile": "experimental",
+      "pptx/read": "experimental",
+      "pptx/write": "experimental",
+      "resource/read": "stable",
+      "server/shutdown": "stable",
+      "session/archive": "stable",
+      "session/attach": "stable",
+      "session/close": "stable",
+      "session/context": "stable",
+      "session/delete": "stable",
+      "session/detach": "stable",
+      "session/history": "stable",
+      "session/list": "stable",
+      "session/new": "stable",
+      "session/op": "stable",
+      "session/rename": "stable",
+      "session/resume": "stable",
+      "session/unarchive": "stable",
+      "sessions/subscribe": "stable",
+      "sessions/unsubscribe": "stable",
+      "skills/files": "stable",
+      "skills/install": "stable",
+      "skills/list": "stable",
+      "skills/read": "stable",
+      "skills/remove": "stable",
+      "skills/set_enabled": "stable",
+      "tools/list": "stable",
+      "web_search/set_key": "stable",
+      "web_search/status": "stable",
+      "web_search/test": "stable"
+    },
+    "notifications": {
+      "$/cancel_request": "stable",
+      "bots/changed": "experimental",
+      "browser/cdp": "internal",
+      "browser/changed": "experimental",
+      "browser/control": "internal",
+      "browser/extension": "internal",
+      "browser/request": "internal",
+      "config/changed": "stable",
+      "doc/changed": "experimental",
+      "files/changed": "stable",
+      "mcp/changed": "stable",
+      "mcp/probe_progress": "stable",
+      "models/changed": "stable",
+      "pptx/readProgress": "experimental",
+      "session/detached": "stable",
+      "session/event": "stable",
+      "sessions/changed": "stable",
+      "skills/changed": "stable"
+    }
   }
 }

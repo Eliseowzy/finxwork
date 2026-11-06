@@ -448,7 +448,7 @@ async fn acp_rejects_what_it_does_not_support() {
     assert_eq!(err.kind(), Some("not_initialized"));
     init(&client).await;
     let err = client.request("authenticate", json!({"methodId": "x"})).await.unwrap_err();
-    assert_eq!(err.code, finx_rpc::code::METHOD_NOT_FOUND);
+    assert_eq!(err.code, -32602, "no such way to sign in");
     let (session, _, _) = new_session(&client, &mut rx, &env.workspace("audio")).await;
     let err = client
         .request("session/prompt", json!({"sessionId": session, "prompt": [{"type": "audio", "data": "AAAA", "mimeType": "audio/wav"}]}))

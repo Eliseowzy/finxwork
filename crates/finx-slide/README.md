@@ -10,7 +10,7 @@ PowerPoint 文稿：渲染幻灯片、导出 Markdown、查找和替换文字、
 
 ```toml
 [patch."https://github.com/Eliseowzy/betteroffice"]
-betteroffice-pptx = { path = "/Users/eliseo/betteroffice/crates/betteroffice-pptx" }
+betteroffice-pptx = { path = "../betteroffice/crates/betteroffice-pptx" }
 ```
 
 之后 `cargo build` 用的就是本地 checkout，fork 上的改动无需推送就能试。打了补丁时 Cargo 会把 `Cargo.lock` 里这些包的 git 来源去掉，这样的 `Cargo.lock` 不要提交；删掉补丁后再构建一次，锁文件就恢复了。fork 上有了新的提交、要正式引用时，删掉这个文件，把根 `Cargo.toml` 的 `rev` 改成 `git -C <fork> rev-parse origin/finx/0.5` 的完整提交号，再 `cargo update -p betteroffice-pptx`。

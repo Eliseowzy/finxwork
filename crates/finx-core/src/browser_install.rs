@@ -38,7 +38,7 @@ pub async fn install(browser_dir: &Path, progress: impl Fn(u64, Option<u64>)) ->
 }
 
 /// An HTTP client with finx's TLS settings; redirects only to HTTPS.
-fn client(no_proxy: bool) -> Result<reqwest::Client, String> {
+pub(crate) fn client(no_proxy: bool) -> Result<reqwest::Client, String> {
     let tls = finx_llm::tls_client_config().map_err(|e| format!("cannot set up TLS: {e}"))?;
     let redirects = reqwest::redirect::Policy::custom(|attempt| {
         if attempt.previous().len() >= 5 || attempt.url().scheme() != "https" {

@@ -495,9 +495,20 @@ pub fn uninstall() -> anyhow::Result<u8> {
 
 /// `finx browser extension status`: where the host is installed, and whether what each
 /// browser would start is there and is this home's.
-pub fn status() -> anyhow::Result<u8> {
+pub fn status(as_json: bool) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let launcher = home.browser_dir().join("native-host");
+    if as_json {
+        let browsers: Vec<Value> = browser_dirs()
+            .into_iter()
+            .map(|(name, dir)| (name, manifest_path(&dir)))
+            .filter(|(_, path)| path.exists())
+            .map(|(name, path)| serde_json::json!({ "name": name, "state": manifest_state(&path, &launcher), "manifest": path }))
+            .collect();
+        let program = launcher_program(&launcher);
+        println!("{}", serde_json::json!({ "browsers": browsers, "host": launcher.exists().then_some(&launcher), "program": program }));
+        return Ok(0);
+    }
     let mut any = false;
     for (name, dir) in browser_dirs() {
         let path = manifest_path(&dir);

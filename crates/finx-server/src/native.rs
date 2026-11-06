@@ -29,6 +29,7 @@ use finx_protocol::api::SessionRenameParams;
 use finx_protocol::api::SessionResumeParams;
 use finx_protocol::api::SessionSnapshot;
 use finx_protocol::api::SkillsListParams;
+use finx_protocol::api::ToolsListParams;
 use finx_protocol::api::method;
 use finx_protocol::bot::BotCreateParams;
 use finx_protocol::bot::BotIdParams;
@@ -243,6 +244,7 @@ impl NativeProtocol {
                 Ok(p) => {
                     let attach = Self::attach_request(conn, id, p.events, p.history_limit, true);
                     let args = NewSession {
+                        require_credentials: false,
                         cwd: p.cwd,
                         extra_roots: p.extra_roots,
                         model: p.model,
@@ -627,6 +629,7 @@ impl NativeProtocol {
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
+            method::TOOLS_LIST => self.call(id, params, conn, |server, p: ToolsListParams| async move { server.list_tools(p).await }),
             method::MODELS_LIST => {
                 server.watch_models(conn);
                 // Saved keys may be read from the keychain on the first listing.

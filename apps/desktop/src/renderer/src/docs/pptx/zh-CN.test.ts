@@ -25,7 +25,8 @@ test("every editor UI string has a Chinese translation with intact interpolation
     const value = translated.get(key)!;
     const variables = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
     assert.deepEqual(variables(value), variables(original), `${key} interpolation variables`);
-    if (key !== "_lang" && key !== "presentation.slideCounter") {
+    // These have no words to translate: only variables, signs and units.
+    if (key !== "_lang" && key !== "presentation.slideCounter" && key !== "proposals.geometryValues") {
       assert.match(value, /\p{Script=Han}/u, `${key} must contain Chinese UI text`);
     }
   }

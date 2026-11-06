@@ -253,7 +253,7 @@ finx-llm      钥匙串（credentials）
 - **文件头**：服务第一次创建这个文件时写两行注释：
 
   ```toml
-  # Personal settings for /Users/yee/CodeSpace/finxwork
+  # Personal settings for /Users/me/code/finxwork
   # (only you, only this project; written by finx)
   ```
 
@@ -651,8 +651,8 @@ interface McpChanged { name?: string; login_id?: string; login_error?: string }
 | `finx skills enable/disable <名字或路径>` | `skills/set_enabled`；写名字时停用全部同名；写路径时按默认状态写 `opt_in` 或 `disabled`（skill-design §4.4） |
 | `finx mcp add <名字> --url <URL> [--header K=V]…` | `credentials/set`（`--token` 从标准输入读）和 `config/write` |
 | `finx mcp add <名字> [--env K=V]… -- <命令> [参数…]` | 同上；`--secret-env K` 把 K 的值存进钥匙串，配置里写引用 |
-| 范围选项 | 默认写用户配置；`--here` 写个人项目层；`--project` 写仓库的项目配置 |
-| `finx mcp remove/enable/disable <名字> [--here]` | `config/write`；仓库里的服务器用 `disable --here` 只对自己关闭 |
+| 范围选项 | `--global` 写用户配置（默认）；`--local` 写个人项目层；`--project` 写仓库的项目配置 |
+| `finx mcp remove/enable/disable <名字> [--local]` | `config/write`；仓库里的服务器用 `disable --local` 只对自己关闭 |
 | `finx mcp list --check`（已有） | 同时写缓存 |
 | `finx mcp login/logout <名字>`（二期） | 自己打开浏览器，在终端等回调 |
 
@@ -1273,8 +1273,8 @@ logo 来自服务器声明或它的网站（mcp-design §13.9），形态各异�
 
 ```toml
 [skills]
-disabled = ["/Users/yee/CodeSpace/finxwork/.agents/skills/desktop-dev-run"]
-opt_in = ["/Users/yee/CodeSpace/finxwork/.claude/skills/release-notes"]
+disabled = ["/Users/me/code/finxwork/.agents/skills/desktop-dev-run"]
+opt_in = ["/Users/me/code/finxwork/.claude/skills/release-notes"]
 
 [mcp_servers.github]
 url = "https://api.githubcopilot.com/mcp/"
@@ -1292,7 +1292,7 @@ enabled = false
 个人项目层 `~/.finx/projects/finxwork-3fa81c02/config.toml`：
 
 ```toml
-# Personal settings for /Users/yee/CodeSpace/finxwork
+# Personal settings for /Users/me/code/finxwork
 # (only you, only this project; written by finx)
 
 [mcp_servers.postgres-dev]

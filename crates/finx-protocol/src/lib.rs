@@ -36,6 +36,7 @@ pub use event::SkillUse;
 pub use event::TaskTrigger;
 pub use event::ToolCategory;
 pub use event::WarningCode;
+pub use mcp::McpApproval;
 pub use mcp::McpAuthMode;
 pub use mcp::McpExposure;
 pub use mcp::McpOAuthClient;

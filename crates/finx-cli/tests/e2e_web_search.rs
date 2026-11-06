@@ -25,7 +25,7 @@ async fn search_env(web_search: &str) -> TestEnv {
 
 /// One `finx exec`: its events, with every key in the environment that `keys` names.
 async fn exec(env: &TestEnv, prompt: &str, keys: &[(&str, &str)]) -> Vec<Value> {
-    let mut command = env.finx(&["exec", "--json", prompt]);
+    let mut command = env.finx(&["exec", "--output", "stream-json", prompt]);
     for (name, value) in keys {
         command.env(name, value);
     }

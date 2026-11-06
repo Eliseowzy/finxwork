@@ -233,6 +233,11 @@ impl Tool for ToolSearch {
         ToolOrigin::Mcp
     }
 
+    // It only looks through the definitions finx already holds.
+    fn runs_unasked(&self, _args: &Value) -> bool {
+        true
+    }
+
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {
         let query = args.get("query").and_then(Value::as_str).unwrap_or_default();
         let server = args.get("server").and_then(Value::as_str);
@@ -406,6 +411,17 @@ impl Tool for CallTool {
         match self.builtin(args) {
             Some((tool, inner)) => tool.origin_for(&inner),
             None => ToolOrigin::Mcp,
+        }
+    }
+
+    fn runs_unasked(&self, args: &Value) -> bool {
+        let Some(name) = args.get("name").and_then(Value::as_str) else { return true };
+        let Some(manager) = &self.manager else { return true };
+        let catalog = manager.catalog();
+        match catalog.find(name) {
+            Some(entry) => entry.server.config().runs_unasked(entry.info.read_only),
+            // Nothing runs under a name no server has, unless one still connecting brings it.
+            None => !manager.connecting(),
         }
     }
 
