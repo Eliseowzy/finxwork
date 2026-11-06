@@ -2,8 +2,8 @@
 //! text, and save surgically, touching only the parts an edit changed.
 
 pub mod check;
-pub mod outline;
 mod fonts;
+pub mod outline;
 mod parts;
 
 use std::collections::BTreeSet;
@@ -24,6 +24,10 @@ const EAST_ASIAN_LANGUAGE: &str = "zh-CN";
 const AUTHOR: &str = "FinxWork";
 /// One CSS pixel in EMU, the unit slide sizes come in.
 const EMU_PER_PX: f32 = 9525.0;
+const PRESENTATION: &str = "ppt/presentation.xml";
+const CONTENT_TYPES: &str = "[Content_Types].xml";
+const MEDIA_DIR: &str = "ppt/media/";
+const SLIDES_DIR: &str = "ppt/slides/";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SlideError {
@@ -46,6 +50,10 @@ pub type Result<T> = std::result::Result<T, SlideError>;
 pub struct Deck {
     presentation: Presentation,
     source: Vec<u8>,
+    /// Every part of the source package.
+    source_parts: BTreeSet<String>,
+    /// The source's slide ids, in deck order.
+    source_slide_ids: Vec<String>,
     /// Part paths of the slides an edit has touched.
     edited: Mutex<BTreeSet<String>>,
 }
@@ -58,9 +66,13 @@ impl Deck {
         };
         let presentation = Presentation::open_with_options(&bytes, &options)?;
         presentation.set_default_east_asian_language(Some(EAST_ASIAN_LANGUAGE));
+        let source_parts = parts::names(&bytes)?;
+        let source_slide_ids = presentation.slide_ids()?;
         Ok(Self {
             presentation,
             source: bytes,
+            source_parts,
+            source_slide_ids,
             edited: Mutex::default(),
         })
     }
@@ -171,33 +183,46 @@ impl Deck {
         Ok(self.presentation.encode_diff_v1(state_vector)?)
     }
 
-    /// Apply a replica update. The existing surgical-save guard continues to reject
-    /// changes outside slide parts: support for structural edits must be added explicitly.
+    /// Apply a replica update. Slides it changes join the edited set; structural changes
+    /// (slide list, new media) are judged by the save guard against the source.
     pub fn apply_update(&self, update: &[u8]) -> Result<()> {
-        // Collect before applying: after a successful update we must not report failure
-        // while leaving a mutation in place. The update can touch any existing slide.
-        let slide_parts: BTreeSet<_> = self.slide_parts()?.into_iter().map(|(_, path)| path).collect();
-        let before = self.presentation.save().ok();
-        self.presentation.apply_update_v1(update)?;
-        let changed = before.and_then(|before| self.presentation.save().ok().and_then(|after| parts::changed(&before, &after).ok()));
-        let touched = changed.map(|parts| parts.into_iter().filter(|part| slide_parts.contains(part)).collect()).unwrap_or(slide_parts);
-        self.edited.lock().unwrap_or_else(|e| e.into_inner()).extend(touched);
+        // Compare the in-memory model per slide id before and after instead of serializing
+        // the package twice (K1). A slide whose snapshot changed counts as edited; the save
+        // guard still checks the real bytes, so a change this misses fails safe at save.
+        // TODO(engine): apply_update_touched — let the engine report touched slides itself.
+        let before = self.presentation.snapshot().ok();
+        let after = self.presentation.apply_update_v1(update)?;
+        let touched: Vec<String> = match before {
+            Some(before) => after
+                .slides
+                .iter()
+                .filter(|slide| !before.slides.iter().any(|old| old == *slide))
+                .filter_map(|slide| slide.source_part_path.as_deref())
+                .map(|path| path.trim_start_matches('/').to_owned())
+                .collect(),
+            None => self
+                .slide_parts()?
+                .into_iter()
+                .map(|(_, path)| path)
+                .collect(),
+        };
+        self.edited
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(touched);
         Ok(())
     }
 
     /// The deck with every edit applied. Before returning, the bytes are opened again and
-    /// compared with the source: a part other than an edited slide that differs is an error.
+    /// compared with the source part by part: every changed part must be in the intended
+    /// change set ([`Deck::intended`]), otherwise nothing is returned.
     pub fn save(&self) -> Result<Vec<u8>> {
         let saved = self.presentation.save()?;
         Presentation::open(&saved)?;
-        let edited = self
-            .edited
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone();
+        let intended = self.intended(&parts::names(&saved)?);
         let unexpected: Vec<String> = parts::changed(&self.source, &saved)?
             .into_iter()
-            .filter(|part| !edited.contains(part))
+            .filter(|part| !intended.contains(part))
             .collect();
         if !unexpected.is_empty() {
             return Err(SlideError::Unexpected(unexpected));
@@ -205,14 +230,69 @@ impl Deck {
         Ok(saved)
     }
 
+    /// Parts the edits so far may change, opened capability by capability:
+    /// - editing a slide: the slide and its relationships (a new picture adds one);
+    /// - inserting, duplicating, deleting or moving slides: those slides and their
+    ///   relationships, `presentation.xml` with its relationships, and the content types;
+    /// - inserting a picture: the new media part (never an existing one) and the content types.
+    fn intended(&self, saved_parts: &BTreeSet<String>) -> BTreeSet<String> {
+        let mut intended = self
+            .edited
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        let edited_rels: Vec<String> = intended.iter().map(|part| parts::rels_of(part)).collect();
+        intended.extend(edited_rels);
+
+        // `slide_ids` follows merged updates; the parsed slide list does not, so new and
+        // removed slide parts are read from the saved package.
+        if self.presentation.slide_ids().ok().as_ref() != Some(&self.source_slide_ids) {
+            let is_slide = |p: &&String| p.starts_with(SLIDES_DIR) && p.ends_with(".xml");
+            let added = saved_parts
+                .iter()
+                .filter(is_slide)
+                .filter(|p| !self.source_parts.contains(*p));
+            let removed = self
+                .source_parts
+                .iter()
+                .filter(is_slide)
+                .filter(|p| !saved_parts.contains(*p));
+            let slides: Vec<String> = added.chain(removed).cloned().collect();
+            for slide in slides {
+                intended.insert(parts::rels_of(&slide));
+                intended.insert(slide);
+            }
+            intended.insert(PRESENTATION.to_owned());
+            intended.insert(parts::rels_of(PRESENTATION));
+            intended.insert(CONTENT_TYPES.to_owned());
+        }
+
+        let new_media: Vec<&String> = saved_parts
+            .iter()
+            .filter(|p| p.starts_with(MEDIA_DIR) && !self.source_parts.contains(*p))
+            .collect();
+        if !new_media.is_empty() {
+            intended.extend(new_media.into_iter().cloned());
+            intended.insert(CONTENT_TYPES.to_owned());
+        }
+        intended
+    }
+
     /// Each slide's id with its part path, in deck order.
     fn slide_parts(&self) -> Result<Vec<(String, String)>> {
         let ids = self.presentation.slide_ids()?;
-        let paths = self
-            .presentation
-            .slides()
-            .iter()
-            .map(|s| s.part_path.trim_start_matches('/').to_owned());
-        Ok(ids.into_iter().zip(paths).collect())
+        Ok(ids
+            .into_iter()
+            .zip(slide_paths(&self.presentation))
+            .collect())
     }
+}
+
+/// Slide part paths in deck order, without the leading `/`.
+fn slide_paths(presentation: &Presentation) -> Vec<String> {
+    presentation
+        .slides()
+        .iter()
+        .map(|s| s.part_path.trim_start_matches('/').to_owned())
+        .collect()
 }

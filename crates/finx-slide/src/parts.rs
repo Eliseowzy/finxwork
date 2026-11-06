@@ -1,6 +1,6 @@
 //! Byte comparison of two OPC packages, part by part.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read};
 
 use zip::ZipArchive;
@@ -17,6 +17,28 @@ pub(crate) fn changed(before: &[u8], after: &[u8]) -> ZipResult<Vec<String>> {
     changed.extend(after.into_keys());
     changed.sort();
     Ok(changed)
+}
+
+/// Names of every part in `package`.
+pub(crate) fn names(package: &[u8]) -> ZipResult<BTreeSet<String>> {
+    let mut archive = ZipArchive::new(Cursor::new(package))?;
+    (0..archive.len())
+        .filter_map(|i| match archive.by_index(i) {
+            Ok(entry) if entry.is_dir() => None,
+            Ok(entry) => Some(entry.name().map(|n| n.into_owned())),
+            Err(e) => Some(Err(e)),
+        })
+        .collect()
+}
+
+/// The relationships part of `part`: `ppt/slides/slide1.xml` → `ppt/slides/_rels/slide1.xml.rels`.
+pub(crate) fn rels_of(part: &str) -> String {
+    let (dir, file) = part.rsplit_once('/').unwrap_or(("", part));
+    if dir.is_empty() {
+        format!("_rels/{file}.rels")
+    } else {
+        format!("{dir}/_rels/{file}.rels")
+    }
 }
 
 fn parts(package: &[u8]) -> ZipResult<BTreeMap<String, Vec<u8>>> {
@@ -61,5 +83,22 @@ mod tests {
             ["a.xml", "gone.xml", "new.xml"]
         );
         assert!(changed(&before, &before).unwrap().is_empty());
+    }
+
+    #[test]
+    fn names_and_rels() {
+        let pkg = package(&[("a.xml", "1"), ("ppt/b.xml", "2")]);
+        assert_eq!(
+            names(&pkg).unwrap().into_iter().collect::<Vec<_>>(),
+            ["a.xml", "ppt/b.xml"]
+        );
+        assert_eq!(
+            rels_of("ppt/slides/slide1.xml"),
+            "ppt/slides/_rels/slide1.xml.rels"
+        );
+        assert_eq!(
+            rels_of("ppt/presentation.xml"),
+            "ppt/_rels/presentation.xml.rels"
+        );
     }
 }
