@@ -8,6 +8,7 @@ import type { RpcClient } from "@finx/client";
 import type { AsyncCollaborationReplica } from "@betteroffice/pptx";
 import { fromBase64, toBase64, type PresentationFile } from "./document.ts";
 
+export type KernelState = { dirty: boolean; hash: string | null };
 type WriteResult = { status: "saved" | "conflict" | "refused"; hash?: string | null; message?: string | null };
 
 /** Off unless turned on: `localStorage["finx.deck.kernelAuthority"] = "1"` (§11.2, internal first). */
@@ -57,11 +58,26 @@ export class KernelLink {
       if (notice.deck_id !== this.deckId || !this.replica) return;
       void this.replica.applyUpdate(fromBase64(notice.update)).catch(() => { this.resync = true; });
     }));
+    this.stops.push(rpc.on("deck/changed", (notice) => {
+      if (notice.deck_id !== this.deckId || this.closed) return;
+      const state = { dirty: notice.dirty, hash: notice.hash ?? null };
+      for (const f of this.stateListeners) f(state);
+    }));
   }
+
+  private stateListeners = new Set<(state: KernelState) => void>();
+  /** The kernel's own view of the file: unsaved edits (an accepted proposal) and saves made elsewhere (deck_save). */
+  onState(f: (state: KernelState) => void): () => void {
+    this.stateListeners.add(f);
+    return () => { this.stateListeners.delete(f); };
+  }
+
+  /** Local edits not yet acknowledged by the kernel. */
+  get pending(): boolean { return this.queue.length > 0 || this.unseen > 0; }
 
   /** The editor's replica is ready (or gone, with null). */
   attach(replica: AsyncCollaborationReplica | null) {
-    for (const stop of this.stops.splice(1)) stop();
+    for (const stop of this.stops.splice(2)) stop();
     this.replica = replica;
     if (!replica) return;
     this.stops.push(replica.onUpdate((update, origin) => {

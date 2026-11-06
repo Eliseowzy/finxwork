@@ -1,4 +1,4 @@
-import type { KernelLink } from "./kernel.ts";
+import type { KernelLink, KernelState } from "./kernel.ts";
 
 // A browser-owned presentation session (or, with `file.kernel`, a replica of the kernel's). Its editor stays alive when the file panel is
 // hidden; writes are serialized and always checked against the version opened from disk.
@@ -47,6 +47,31 @@ export class PresentationDoc {
     this.bytes = fromBase64(file.data);
     this.savedBytes = this.bytes;
     if (file.recoveredDirty) this.recovered();
+    this.followKernel();
+  }
+  private stopKernel: (() => void) | null = null;
+  private followKernel() {
+    this.stopKernel?.();
+    this.stopKernel = this.file.kernel?.onState((s) => this.kernelState(s)) ?? null;
+  }
+  /**
+   * The kernel's dirty flag drives the tab for changes the editor did not make: an accepted
+   * proposal shows as unsaved without starting the editor's save timer, and the agent's
+   * deck_save shows as saved. Local edits keep their own path (edit → flush).
+   */
+  kernelState(state: KernelState) {
+    if (this.disposed || this.stuck || this.state === "saving" || this.running) return;
+    if (state.dirty && !this.dirty) {
+      this.revision = this.savedRevision + 1;
+      this.state = "dirty";
+      this.emit();
+    } else if (!state.dirty && this.dirty && this.timer === undefined && !this.file.kernel?.pending) {
+      if (state.hash) this.file = { ...this.file, hash: state.hash };
+      this.savedRevision = this.revision;
+      this.savedAt = Date.now();
+      this.state = "clean";
+      this.emit();
+    }
   }
   get kernel() { return this.file.kernel ?? null; }
   /** Unsaved edits came back with the deck: dirty until saved. */
@@ -61,10 +86,12 @@ export class PresentationDoc {
     if (!this.stuck && this.state !== "saving") this.state = "dirty";
     this.emit();
     clearTimeout(this.timer);
+    this.timer = undefined;
     if (!this.stuck) this.timer = setTimeout(() => void this.flush(), 1200);
   }
   flush(): Promise<void> {
     clearTimeout(this.timer);
+    this.timer = undefined;
     if (this.running) return this.running;
     if (this.disposed || this.stuck || !(this.serialize || this.kernel)) return Promise.resolve();
     this.running = this.save().finally(() => { this.running = null; });
@@ -146,9 +173,11 @@ export class PresentationDoc {
     this.state = "clean";
     this.message = null;
     if (next.recoveredDirty) this.recovered();
+    this.followKernel();
     this.emit();
   }
   dispose() {
+    this.stopKernel?.();
     this.file.kernel?.close();
     this.disposed = true;
     clearTimeout(this.timer);

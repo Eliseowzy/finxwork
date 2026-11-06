@@ -299,6 +299,7 @@ try {
   check(!(await page.run(outline)).includes(NEW_TITLE), "the editor shows the proposal as if accepted");
   await page.shot("02-proposed");
 
+  const tabStatus = `document.querySelector(".fpn-tools .fpn-state")?.textContent.trim() ?? ""`;
   step("accepted on the card: the title reaches the editor once and the preview goes");
   await page.click(`[data-testid=deck-proposal-card] .btn.primary`);
   await page.until("the card accepted", `${cardState(0)} === "accepted"`, 20000);
@@ -309,6 +310,7 @@ try {
   check(count(after, "年度经营") === 1 && !after.includes("年度经营年度经营"), `the title applied once: ${after}`);
   check((await proposals())[0].status === "accepted", "the kernel has it accepted");
   check(sha(fs.readFileSync(pptx)) === sha(original), "accepting wrote the file");
+  await page.until("the tab says unsaved", `${tabStatus} === "未保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
   await page.shot("03-accepted");
 
   step("a second proposal, rejected in the editor's review: rejected in the kernel and on the card");
@@ -332,6 +334,7 @@ try {
   await page.until("the file written", `${sha(fs.readFileSync(pptx)) !== sha(original)}`, 1).catch(() => {});
   for (let i = 0; i < 100 && sha(fs.readFileSync(pptx)) === sha(original); i++) await sleep(100);
   check(sha(fs.readFileSync(pptx)) !== sha(original), "deck_save did not write the file");
+  await page.until("the tab says saved", `${tabStatus} === "已保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
   const orig = path.join(work, "original.pptx");
   fs.writeFileSync(orig, original);
   const before = parts(orig), now = parts(pptx);

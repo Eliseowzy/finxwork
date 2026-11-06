@@ -86,3 +86,30 @@ test("save includes acknowledged editor changes before the UI change notificatio
   assert.equal(doc.dirty, false);
   doc.dispose();
 });
+
+test("the kernel's dirty flag shows changes the editor did not make, without saving them", async () => {
+  let push!: (s: { dirty: boolean; hash: string | null }) => void;
+  let saves = 0;
+  const kernel = {
+    pending: false,
+    onState(f: typeof push) { push = f; return () => {}; },
+    save: async () => { saves++; return { status: "saved" as const, hash: "k" }; },
+    close() {},
+  };
+  const doc = new PresentationDoc({ ...file, kernel: kernel as never }, async () => ({ status: "saved", hash: "x" }), () => {});
+  // An accepted proposal: unsaved, and the editor does not write it on its own.
+  push({ dirty: true, hash: null });
+  assert.equal(doc.state, "dirty");
+  assert.equal(doc.dirty, true);
+  await new Promise((r) => setTimeout(r, 1300));
+  assert.equal(saves, 0);
+  // The agent's deck_save: saved, with the file's new hash.
+  push({ dirty: false, hash: "after-save" });
+  assert.equal(doc.state, "clean");
+  assert.equal(doc.file.hash, "after-save");
+  // While a local edit waits for its save, the kernel's "clean" does not hide it.
+  doc.edit();
+  push({ dirty: false, hash: null });
+  assert.equal(doc.state, "dirty");
+  doc.dispose();
+});
