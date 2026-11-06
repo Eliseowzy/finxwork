@@ -16367,11 +16367,203 @@
       ],
       "type": "object"
     },
+    "SheetChart": {
+      "properties": {
+        "categories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "from": {
+          "$ref": "#/definitions/SheetChartCorner"
+        },
+        "grouping": {
+          "$ref": "#/definitions/SheetChartGrouping",
+          "default": "clustered"
+        },
+        "height": {
+          "format": "float",
+          "type": "number"
+        },
+        "horizontal": {
+          "description": "Bars run sideways.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/SheetChartKind"
+        },
+        "labels": {
+          "description": "Values written on the marks.",
+          "type": "boolean"
+        },
+        "legend": {
+          "description": "`b`, `t`, `l`, `r`; none when there is no legend.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "series": {
+          "items": {
+            "$ref": "#/definitions/SheetChartSeries"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SheetChartCorner"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The far corner of a two-cell anchor; else the size below applies."
+        },
+        "width": {
+          "description": "Pixels.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "categories",
+        "from",
+        "height",
+        "kind",
+        "series",
+        "width"
+      ],
+      "type": "object"
+    },
+    "SheetChartCorner": {
+      "description": "A place on the grid: a cell (1-based) and the offset into it, in pixels.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "dx": {
+          "format": "float",
+          "type": "number"
+        },
+        "dy": {
+          "format": "float",
+          "type": "number"
+        },
+        "row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "col",
+        "dx",
+        "dy",
+        "row"
+      ],
+      "type": "object"
+    },
+    "SheetChartGrouping": {
+      "description": "How a bar or area chart's series sit together.",
+      "enum": [
+        "clustered",
+        "stacked",
+        "percent"
+      ],
+      "type": "string"
+    },
+    "SheetChartKind": {
+      "description": "What a chart drawn on a worksheet is (spreadsheet-design §4.1: shown, not edited).",
+      "enum": [
+        "bar",
+        "line",
+        "area",
+        "pie",
+        "doughnut",
+        "scatter",
+        "radar"
+      ],
+      "type": "string"
+    },
+    "SheetChartSeries": {
+      "properties": {
+        "color": {
+          "description": "`RRGGBB`, when the file names one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "values": {
+          "description": "One per category; none for a gap.",
+          "items": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "type": "array"
+        },
+        "x": {
+          "description": "A scatter's x values.",
+          "items": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "type": "object"
+    },
     "SheetInfo": {
       "properties": {
         "chart": {
           "description": "A chart sheet has no cells: the grid shows a placeholder.",
           "type": "boolean"
+        },
+        "charts": {
+          "description": "Charts drawn on the sheet, as the file anchors them.",
+          "items": {
+            "$ref": "#/definitions/SheetChart"
+          },
+          "type": "array"
         },
         "columns": {
           "description": "Column widths in pixels where they are not the default.",

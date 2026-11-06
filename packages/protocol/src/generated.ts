@@ -3698,9 +3698,57 @@ export type ShapeRef = {
   slide_id: string;
 };
 
+export type SheetChart = {
+  categories: string[];
+  from: SheetChartCorner;
+  grouping: SheetChartGrouping;
+  height: number;
+  /** Bars run sideways. */
+  horizontal?: boolean;
+  kind: SheetChartKind;
+  /** Values written on the marks. */
+  labels?: boolean;
+  /** `b`, `t`, `l`, `r`; none when there is no legend. */
+  legend?: string | null;
+  max?: number | null;
+  min?: number | null;
+  series: SheetChartSeries[];
+  title?: string | null;
+  /** The far corner of a two-cell anchor; else the size below applies. */
+  to?: SheetChartCorner | null;
+  /** Pixels. */
+  width: number;
+};
+
+/** A place on the grid: a cell (1-based) and the offset into it, in pixels. */
+export type SheetChartCorner = {
+  col: number;
+  dx: number;
+  dy: number;
+  row: number;
+};
+
+/** How a bar or area chart's series sit together. */
+export type SheetChartGrouping = "clustered" | "stacked" | "percent";
+
+/** What a chart drawn on a worksheet is (spreadsheet-design §4.1: shown, not edited). */
+export type SheetChartKind = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar";
+
+export type SheetChartSeries = {
+  /** `RRGGBB`, when the file names one. */
+  color?: string | null;
+  name?: string | null;
+  /** One per category; none for a gap. */
+  values: (number | null)[];
+  /** A scatter's x values. */
+  x?: (number | null)[];
+};
+
 export type SheetInfo = {
   /** A chart sheet has no cells: the grid shows a placeholder. */
   chart?: boolean;
+  /** Charts drawn on the sheet, as the file anchors them. */
+  charts?: SheetChart[];
   /** Column widths in pixels where they are not the default. */
   columns?: ColumnWidth[];
   default_height: number;
