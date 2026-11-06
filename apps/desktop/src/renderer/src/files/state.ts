@@ -1,5 +1,5 @@
 import { useEffect, useSyncExternalStore } from "react";
-import { FileDoc, baseName, docViewingBlock, sheetViewingBlock, type RpcClient } from "@finx/client";
+import { FileDoc, baseName, docViewingBlock, presentationViewingBlock, sheetViewingBlock, type RpcClient } from "@finx/client";
 import type { FilesListResult, FilesReadResult } from "@finx/protocol";
 import { i18n } from "../../../shared/i18n";
 import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, sheetViewingOf, type DocAnchor, type DocTab } from "../docs/state";
@@ -194,7 +194,11 @@ export function viewingDoc(session: string): DocTab | undefined {
 /** What goes along with a message while the file panel shows a document: the PDF's page, or the
  *  workbook's selected cells (§7.4). Undefined when the panel is closed or shows something else. */
 export function viewingBlock(session: string, panelOpen: boolean) {
-  const tab = panelOpen ? viewingDoc(session) : undefined;
+  if (!panelOpen) return undefined;
+  const s = sessions.get(session);
+  const front = s?.tabs.find((x) => x.path === s.active);
+  if (front && isPresentation(front.path)) return presentationViewingBlock(front.path, !!front.presentation?.dirty);
+  const tab = viewingDoc(session);
   if (!tab) return undefined;
   const sheet = tab.info.layout === "grid" ? sheetViewingOf(session) : undefined;
   return sheet

@@ -2,6 +2,7 @@
 //! text, and save surgically, touching only the parts an edit changed.
 
 pub mod check;
+pub mod outline;
 mod fonts;
 mod parts;
 
@@ -67,6 +68,11 @@ impl Deck {
     /// Runs the implemented deterministic checks on the current in-memory snapshot.
     pub fn check(&self) -> Result<Vec<finx_protocol::deck::DeckDiagnostic>> {
         Ok(check::check(&self.presentation.snapshot()?))
+    }
+
+    /// Every slide's title, text, notes and objects, as the agent reads them.
+    pub fn outline(&self) -> Result<outline::Outline> {
+        Ok(outline::outline(&self.presentation.snapshot()?))
     }
 
     pub fn slide_count(&self) -> usize {
