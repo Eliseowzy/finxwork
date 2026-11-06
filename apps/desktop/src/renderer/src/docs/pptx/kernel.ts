@@ -40,6 +40,8 @@ export class KernelLink {
   private stops: (() => void)[] = [];
   private failure: Error | null = null;
   private closed = false;
+  /** Local edits the editor has not yet counted as its own (see `local()`). */
+  private unseen = 0;
 
   private rpc: RpcClient;
   private session: string;
@@ -64,6 +66,7 @@ export class KernelLink {
     if (!replica) return;
     this.stops.push(replica.onUpdate((update, origin) => {
       if (origin !== "local" || this.closed) return;
+      this.unseen++;
       this.queue.push(update.slice());
       void this.pump();
     }));
@@ -101,6 +104,17 @@ export class KernelLink {
       }
     })().finally(() => { this.sending = null; });
     return this.sending;
+  }
+
+  /**
+   * Whether the document's latest change was made here. A change that came from the kernel (an
+   * accepted proposal, another editor) is the kernel's to save: counting it as the editor's own
+   * would save it on the editor's timer, which deck_save and the person decide.
+   */
+  local(): boolean {
+    if (!this.unseen) return false;
+    this.unseen = 0;
+    return true;
   }
 
   /** Resolves once the kernel holds every local edit; throws when it cannot be reached. */

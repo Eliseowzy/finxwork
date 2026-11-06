@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
+import { callTarget, toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
 import { doingText, toolVerb, workText } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
@@ -29,7 +29,24 @@ export function Work({ items, live, flat = false }: { items: WorkItem[]; live: b
 }
 
 function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
-  return <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} />)} />;
+  // A proposal waits for the owner: its card stays in sight under the folded line, not inside it.
+  const proposals = items.flatMap((it) => (it.kind === "tool" && proposalOf(it.tool) ? [it.tool] : []));
+  return (
+    <>
+      <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} card={false} />)} />
+      {proposals.map((tool) => <ProposalCard key={tool.call_id} tool={tool} />)}
+    </>
+  );
+}
+
+/** A `deck_edit` the agent made, itself or (deferred, as the deck tools are) through call_tool: the details its card shows, once it is done. */
+const proposalOf = (tool: ToolView) => (callTarget(tool.name, tool.args).name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null);
+
+function ProposalCard({ tool }: { tool: ToolView }) {
+  const st = useStore();
+  const scope = useScope();
+  const proposal = proposalOf(tool);
+  return proposal && st.rpc && scope ? <DeckProposalCard details={proposal} rpc={st.rpc} session={scope.session} /> : null;
 }
 
 /** Calls running at once, as one line ("Reading 2 files") with `after` on it, each on its own line when opened. */
@@ -52,8 +69,8 @@ function Fold({ title, live, after, body }: { title: string; live: boolean; afte
   );
 }
 
-function Item({ it }: { it: WorkItem }) {
-  return it.kind === "thinking" ? <Thinking text={it.text} redacted={it.redacted} live={it.live} /> : <ToolRow tool={it.tool} />;
+function Item({ it, card = true }: { it: WorkItem; card?: boolean }) {
+  return it.kind === "thinking" ? <Thinking text={it.text} redacted={it.redacted} live={it.live} /> : <ToolRow tool={it.tool} card={card} />;
 }
 
 /** The model's thinking: a quiet line with where it got to, the whole of it when opened. */
@@ -130,7 +147,7 @@ export function LiveThinking({ text, children }: { text: string; children: React
  * code. While the model is still writing a call, what it is on is not known
  * yet: the verb alone ("Editing…"). `after`: what follows on the line (how long the work has run).
  */
-export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) {
+export function ToolRow({ tool, after, card = true }: { tool: ToolView; after?: ReactNode; card?: boolean }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const scope = useScope();
@@ -149,8 +166,6 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   // A web search reads as the words searched for, and opens to the pages found.
   const search = searchCall(tool);
   const found = search && searchDetails(tool);
-  // An edit the agent proposed to a presentation: a card to accept or reject it.
-  const proposal = tool.name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null;
   const named = search
     ? search.query + (search.sites.length ? t("webSearch.only", { sites: search.sites.join(t("webSearch.siteSeparator")) }) : "")
     : toAgent ? t("agents.messageObject", { to: address === "main" || address === "parent" ? t("agents.mainAgent") : address, message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
@@ -193,7 +208,8 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
       )}
       {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
       {found ? open && <SearchResults details={found} /> : output && <div className="out sel-text">{output}</div>}
-      {proposal && st.rpc && scope && <DeckProposalCard details={proposal} rpc={st.rpc} session={scope.session} />}
+      {/* An edit the agent proposed to a presentation: a card to accept or reject it (in a group, under its line). */}
+      {card && <ProposalCard tool={tool} />}
     </div>
   );
 }

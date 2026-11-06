@@ -143,7 +143,12 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}
     collaboration={collaboration}
-    onDocumentChange={() => { if (api.current) { doc.edit(); setRevision(value => value + 1); } }}
+    onDocumentChange={() => {
+      if (!api.current) return;
+      // A change the kernel sent (an accepted proposal) is not an edit of this editor's to save.
+      if (!doc.kernel || doc.kernel.local()) doc.edit();
+      setRevision(value => value + 1);
+    }}
     onSaveRequest={async () => { await doc.flush(); return false; }}
     downloadOnSave={false}
     onError={(e) => setError(e.message)}
