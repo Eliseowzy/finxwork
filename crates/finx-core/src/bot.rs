@@ -164,13 +164,13 @@ struct OptionArg {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct SendArgs {
-    /// What this message is. text (the default): words, rendered as Markdown. attachment: one or more files or images, with words if they help. question: a question, when you need the user to decide; it ends your turn and their answer comes back as their next message; send any background first as a text message.
+    /// What this message is. text (the default): words, rendered as Markdown. attachment: one or more files or images, with the message that goes with them, however long. question: a question, when you need the user to decide; it ends your turn and their answer comes back as their next message; send any background first as a text message.
     #[serde(default, rename = "type")]
     kind: Option<MessageType>,
-    /// The message. For attachment, the words to go with the files. For question, the question in one sentence.
+    /// The message. For attachment, the message shown above the files. For question, the question in one sentence.
     #[serde(default)]
     text: Option<String>,
-    /// For attachment, what to send, in order.
+    /// For attachment, the files to hand over, in order.
     #[serde(default)]
     files: Option<Vec<FileArg>>,
     /// For question, answers the user can tap, each worded the way they would say it. Leave it out when the answers cannot be listed.

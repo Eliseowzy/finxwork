@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.26 |
-| 日期 | 2026-11-05 |
+| 版本 | v1.27 |
+| 日期 | 2026-11-06 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
 
@@ -43,6 +43,7 @@
 | v1.24 | 2026-11-05 | 模型回了一条空回复不再算连接错误，交给 §3.11 判断要不要提醒；读不出来的内容才算失败（D-464）；D-321 里没查明的"回复全是空"有了原因 |
 | v1.25 | 2026-11-05 | 头像的小角色换成 8 种眼神（§4，PRD DD-158）；旧名字仍能读出来 |
 | v1.26 | 2026-11-05 | 提示词第二版：`bot.md` 改成"主人跟你说话，活由子智能体做"，判断从估轮数改成看类型；每句话后面的提示和没回话的提醒改文字；Bot 版 `spawn_agent` 的描述去掉"自己做"的出口（§3.14、附录 A、D-480–D-482；统计见[回合方案](bot-turn-design.md) §14） |
+| v1.27 | 2026-11-06 | Bot 交文件走 `files`，不再被教成写链接：桌面段换成 `prompts/app_bot.md`，`bot.md` 和工具说明改成结论和文件一次发（§2.3、§3.12、附录 A、D-555） |
 
 ## 方案摘要
 
@@ -186,7 +187,7 @@
 **现在的系统提示词怎么来的**（总方案 §7.2，`prompt.rs` 的 `build_system_prompt`）：内核在会话开始时按段拼一次，之后冻结，写进日志的 system_prompt 条目；恢复会话时用日志里那份，子智能体沿用父的那份。各段依次是：
 
 1. 基础段：内置的 `prompts/base.md`；配置了 `system_prompt_file` 时换成那个文件；
-2. 桌面段：会话开始时桌面端连着，就加 `prompts/app.md`（文件链接、命令代码块的写法）；
+2. 桌面段：会话开始时桌面端连着，就加 `prompts/app.md`（文件链接、命令代码块的写法）；Bot 换成 `prompts/app_bot.md`，只有命令代码块的写法，文件走 `send_to_user`（§3.12，D-555）；
 3. `<tool_guidelines>`：各工具自带的使用规则；
 4. 指令：`~/.finx/AGENTS.md`、项目的指令文件、配置的 `instructions.extra`；
 5. 技能清单；
@@ -423,7 +424,7 @@ pub enum PromptProfile {
 - **列表摘要**：`LastMessage` 加可选的 `file`（第一个不是图片的文件名）；`images` 是图片数，`text` 是文字（没有就是空的）。客户端有文字显示文字，否则显示 `[图片]` 或 `[文件] 名字`，系统通知同样。
 - **截图**：`browser_screenshot`、`cua_screenshot` 的结果文字写上保存路径，否则模型不知道路径，发不出自己的截图。
 - **提醒（§3.11）不变**：任何类型成功的 `send_to_user` 都算回过话。
-- **给模型的说明写在工具描述里**（附录 A.3）：已有 Bot 的系统提示词是冻结的（Q-200），工具描述恢复时会重建。bot.md 只改一处，"links the file" 改成发文件。
+- **给模型的说明写在工具描述里**（附录 A.3）：已有 Bot 的系统提示词是冻结的（Q-200），工具描述恢复时会重建。bot.md 只改一处，"links the file" 改成发文件。v1.27 起 `bot.md` 写明文件放进 `files`、结论和文件一次发（D-555）。
 - **验证**：`finx-core/tests/bot.rs`（文件的详情、按内容认图片、同一步生成再发、路径错、提问、类型和参数对不上）；`finx-cli/tests/e2e_bots.rs`（列表一行和未读）；`packages/client/src/bots.test.ts`（气泡、选项开合、每行几张）；`apps/desktop/e2e/bot-messages.mjs`（真实应用加脚本化模型，PRD §11 第 19 到 21 条）。真实模型用不用这些类型，用 `tools/bench/bot_turns.mjs N files choice` 统计。
 - **真实模型统计**（DeepSeek flash，`tools/bench/bot_turns.mjs`，每个场景 12 遍）。第一版要求附件不带文字、提问必须有选项，模型几乎每次都想把文字和文件放在一个调用里，还常不写 `type`；它之后能自己改对，但每次白白多一轮请求。两条规则都放开以后，拒绝降到 0，调用少了四成，主人看到的样子不变：
 
@@ -448,6 +449,19 @@ pub enum PromptProfile {
   | `poems` | 现在 | 8/12 | 4 | 0 | 按顺序回来 5/12 |
 
   `poems` 两边都比 §8 记录的旧数据差（当时 10/12 到 12/12），不是这次改动带来的：常见的情况是第一首写成了私有的文字，后面几首正常发出，提醒只看主人最新一句之后发过没有，第一首就丢了。后来查清并修了（§3.11、§8 的"连发丢第一首"、D-400）。
+- **报告写进文件时的交付**（qwen3.8-flash，2026-11-06，D-555）。主人只是提问，长报告是 Bot 自己决定存的，这时模型常在文字末尾写一个链接就结束。原因有三层：桌面段教它 `Link files in Markdown`；`bot.md` 那句"先发结论，再发文件"没写 `files`，读起来还要多一步；链接在界面上点得开，没有东西纠正它。
+
+  测法：用一段真实对话，截到报告刚写好、还没发的时刻，再由主人问一句"报告出来了吗？"，只看这一步。桌面段要 `FINX_BENCH_APP=1` 才有；在这之前的统计都没连桌面端，模型根本没读到那句链接规则，所以量不出这个问题。
+
+  | 对话历史 | 对照（文件在 `files` 里） | 改后 |
+  |---|---|---|
+  | 还没发过文件 | 9/12 | 33/33 |
+  | 上一份报告是写成链接发的 | 0/12 | 16/33 |
+  | 上一份报告是用 `files` 发的 | 12/12 | 12/12 |
+
+  模型最听自己刚才的写法：历史里一条链接就能把 9/12 压到 0/12。这也说明老 Bot 只要发成功一次，之后就回到正轨，所以不另加内核提醒。回归（各 6 遍）：`files` 两边都 6/6，`simple`、`complex` 第一条回复没有变差。
+
+  没量到的：主人不提问、子智能体汇报直接唤醒 Bot 的那一步，这里用主人的一句话代替，而且这句话后面带着每句话的提示（§3.14）。从新 Bot 走完全程的 `report` 场景，7 遍做完的都发了文件（对照 4 遍、改后 3 遍），超过 10 分钟的不算，这个场景分不出两边。改后 78 遍里有 2 遍模型说"上一条没发出去"又重发了一次，对照 36 遍里没有；后来保留日志又跑的 42 遍（已计入这 78 遍）没再出现，原因没查到。
 
 
 - **写在文字里的图**：主人试用时，一个模型（qwen3.8-flash）要发图时 7 条消息都写成 `![说明](路径)`。回复里的图片原来只显示说明文字，图等于没发。所以 Bot 的对话里，本机的图直接显示在气泡里，点开看大图；不存在的和网上的还是只显示说明文字（D-329）。会话页不变。
@@ -959,6 +973,7 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-480 | 每句话后面的提示改成 `Reply with send_to_user, and write no text outside the call. Think after it is sent. Long work goes to an agent.`，没回话的提醒也加上 `write no text outside the call` | 模型把 `send_to_user` 当成干活的工具，闲聊就直接写文字；这句是模型做决定前最后读到的，在长对话里比系统提示词管用 | §3.14 |
 | D-481 | `bot.md` 第二版：开头讲清主人跟你说话、活由子智能体做和等待的代价；判断从"超过约两轮"改成"能不能用几句话马上答好"，委派按类型列；回应模型不委派的三个理由；加三个例子；能力清单移到规则后面 | 模型的思考里引用了"两轮"还是说服自己不委派；统计见回合方案 §14 | 附录 A.1 |
 | D-482 | Bot 版 `spawn_agent` 的描述去掉 `Do quick, blocking or tightly coupled steps yourself`，`task` 参数的说明改短；`send_to_user` 的结果还是 `Sent.` | 工具文字不再给模型留出口；结果里加提醒实测没有帮助（0/6 对 2/6）；会话模式不变 | 附录 A.1、[子智能体方案](subagent-design.md)附录 A.1 |
+| D-555 | Bot 的桌面段换成 `prompts/app_bot.md`，只留命令代码块的写法；`bot.md` 写明文件放进 `files`、和结论同一次调用发，链接只用来提已经发过的文件；模板哈希把这段也算进去，已有的 Bot 恢复时拿到 | 桌面段教模型写链接，和附件矛盾。真实对话截到发送那一步：历史干净 9/12 到 33/33，历史有链接 0/12 到 16/33，历史有附件两边都 12/12。发成功一次就能自己回到正轨，不加内核提醒，也不把链接自动转成附件 | §2.3、§3.12、附录 A.1、A.3 |
 
 ## 15. 待定问题
 
@@ -1098,10 +1113,12 @@ You: send_to_user "Looking into what moved it today."
 Then: spawn_agent with a task: find today's move, the reported catalysts and the evidence for each;
 report the figures with their sources. End your turn.
 When its report comes: send_to_user with the answer and end_turn.
+If the agent also wrote a full report, it goes in files of that same call.
 
 User: Compare these two companies' results in a spreadsheet.
-You: send_to_user "Pulling both sets of results." Then the same: spawn_agent, end your turn, and
-send the file when the report comes.
+You: send_to_user "Pulling both sets of results." Then the same: spawn_agent, end your turn.
+When its report comes: send_to_user with the conclusion as text, the spreadsheet in files, and
+end_turn.
 
 What you are for:
 You are strongest at professional finance and office work, and with your agents you excel at tasks
@@ -1112,7 +1129,10 @@ including, but not limited to:
 3. Writing multi-chapter articles and in-depth research reports based on reliable sources.
 4. Writing and running programs.
 What you make stays in your own folder. Long results go in a file there: send the conclusion with
-send_to_user, then the file.
+send_to_user and the file in the same call, the conclusion as text and the file in files.
+Putting a file in files is what hands it over: it arrives as a card they can open, and you get an
+error if it isn't there. A path or link in your words only points at it, so use one just to mention
+a file you already sent.
 
 How to work:
 - Carry requests through to a finished result. Settle routine choices yourself and mention what
@@ -1198,12 +1218,12 @@ one message, all at once.
 
 ```
 type: What this message is. text (the default): words, rendered as Markdown. attachment: one or
-more files or images, with words if they help. question: a question, when you need the user to
-decide; it ends your turn and their answer comes back as their next message; send any background
-first as a text message.
-text: The message. For attachment, the words to go with the files. For question, the question in
-one sentence.
-files: For attachment, what to send, in order.
+more files or images, with the message that goes with them, however long. question: a question,
+when you need the user to decide; it ends your turn and their answer comes back as their next
+message; send any background first as a text message.
+text: The message. For attachment, the message shown above the files. For question, the question
+in one sentence.
+files: For attachment, the files to hand over, in order.
 files[].path: A file on this computer, absolute or relative to your folder. Save anything from
 the web to a file first.
 options: For question, answers the user can tap, each worded the way they would say it. Leave it

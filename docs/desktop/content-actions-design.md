@@ -416,6 +416,8 @@ In the FinxWork app, where the user reads your replies:
 - Give each command the user may run its own ```bash block, with no $ prompt and no output in it.
 ```
 
+Bot 不用第一条，它的文件放进 `send_to_user` 的 `files` 里交出去（[Bot 方案](../kernel/bot-design.md) §3.12，D-555）；已经写出来的文件链接照样显示成文件标签。
+
 - **为什么要加**：
   - 链接让文件有一个读得懂的名字，不用把长路径塞进句子；
   - 行号写在固定的位置，程序能准确取到；
