@@ -52,14 +52,14 @@
    what is written; what is attached shows as tiles above the text. Its
    corners a little tighter than the window's; its buttons' corners follow
    them, 6 px in. The I-beam over all of it but its buttons and tiles. */
-.cmp{cursor:text;background:var(--pill);border-radius:20px;box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
+.cmp{cursor:text;background:var(--pill);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--pill-bd),0 1px 2px rgba(0,0,0,.04),0 6px 20px rgba(0,0,0,.06);padding:6px;display:flex;flex-direction:column;gap:6px}
 .cmp-row{display:flex;align-items:flex-end;gap:4px}
 .cmp button,.cmp .tile{cursor:default}
 /* The text (composer/PromptEditor.tsx, Lexical): plain text that grows to
    ten lines, the placeholder laid over it while it is empty. */
 .cmp-ed{position:relative;flex:1;min-width:0}
-.cmp-in{border:0;outline:none;background:none;font:inherit;font-size:14px;line-height:24px;color:var(--l1);padding:5.5px 4px;min-height:32px;max-height:220px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere;caret-color:var(--l1)}
-.cmp-ph{position:absolute;top:5.5px;left:4px;right:4px;font-size:14px;line-height:24px;color:var(--l3);pointer-events:none;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp-in{border:0;outline:none;background:none;font:inherit;font-size:15px;line-height:21px;color:var(--l1);padding:5.5px 4px;min-height:32px;max-height:220px;overflow-y:auto;white-space:pre-wrap;overflow-wrap:anywhere;caret-color:var(--l1)}
+.cmp-ph{position:absolute;top:5.5px;left:4px;right:4px;font-size:15px;line-height:21px;color:var(--l3);pointer-events:none;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .cmp-p{margin:0}
 /* A skill mentioned as /skill:name: a tag with its name, in the composer and
    in the conversation. The text stays /skill:name for copying. */
@@ -257,7 +257,7 @@
 .cmp{transition:box-shadow .18s ease,transform .18s ease}
 .cmp.dropping{transform:translateY(-3px);box-shadow:0 0 0 1.5px #3294ff,0 0 0 6px rgba(50,148,255,.16),0 14px 40px rgba(50,148,255,.28);animation:cmp-drop-glow 1.6s ease-in-out infinite}
 @keyframes cmp-drop-glow{50%{box-shadow:0 0 0 1.5px #3294ff,0 0 0 10px rgba(50,148,255,.08),0 18px 48px rgba(50,148,255,.34)}}
-.cmp-drop{position:absolute;inset:4px;z-index:5;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 16px;border-radius:16px;border:1.5px dashed rgba(50,148,255,.75);background:color-mix(in srgb,var(--pill) 80%,#3294ff);backdrop-filter:blur(8px);color:var(--l1);font-size:13.5px;pointer-events:none;animation:cmp-drop-in .16s ease-out}
+.cmp-drop{position:absolute;inset:4px;z-index:5;display:flex;align-items:center;justify-content:center;gap:10px;padding:0 16px;border-radius:calc(var(--r-xl) - 4px);border:1.5px dashed rgba(50,148,255,.75);background:color-mix(in srgb,var(--pill) 80%,#3294ff);backdrop-filter:blur(8px);color:var(--l1);font-size:13.5px;pointer-events:none;animation:cmp-drop-in .16s ease-out}
 .cmp-drop b{font-weight:600}
 .cmp-drop-hint{color:var(--l2);font-size:12px}
 .cmp-drop-ic{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#3294ff;color:#fff;box-shadow:0 4px 12px rgba(50,148,255,.45);animation:cmp-drop-bob 1.1s ease-in-out infinite}
