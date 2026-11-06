@@ -237,9 +237,13 @@ try {
   await page.until("the window", `!!document.querySelector(".seg.mode")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("FinxBot's page", `!!document.querySelector(".bempty") || document.querySelectorAll(".tr.bots > *").length > 0`);
-  await page.until("the first-time note", `!!document.querySelector(".knote .btn.primary")`);
-  await page.run(`document.querySelector(".knote .btn.primary").click()`);
-  await page.until("the note closed", `!document.querySelector(".knote")`);
+  // The default bot first asks for its model (bot-setup.mjs): what it starts with will do here.
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+  // Then, with full access, a note says so once.
+  await page.run(`document.querySelector(".knote .btn.primary")?.click()`);
+  await page.until("the notes closed", `!document.querySelector(".knote")`);
   for (const text of ["看看这个", "还有这个", "就它了"]) await ask(page, text);
   await page.until("the files", `document.querySelectorAll(".tr.bots .bfiles .tile").length >= 6`);
   await page.shot("01-conversation");
@@ -298,6 +302,9 @@ try {
   await page.until("the panel closed", `!document.querySelector(".bgp")`);
   await page.run(`localStorage.removeItem("finxwork.filePanelWidth")`);
   await page.clickTile("notes.md");
+  // A bot's file opens in a preview over the window (DD-159); from there it goes to the panel.
+  await page.until("the note's preview", `!!document.querySelector(".fpv .fpv-panel")`, 20000);
+  await page.run(`document.querySelector(".fpv .fpv-panel").click()`);
   await page.until("the panel with the note", `[...document.querySelectorAll(".bgp.fpn .brp-tab-t")].some((t) => t.textContent.includes("notes.md"))`, 20000);
   const plain = await page.run(layout);
   await near(plain.panel.right, plain.win, 0.5, "the plain file's panel ends at the window's edge");
