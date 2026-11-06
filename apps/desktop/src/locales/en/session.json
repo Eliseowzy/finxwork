@@ -738,5 +738,47 @@
     "rendering": "Rendering diagram…",
     "footnotes": "Footnotes",
     "backToReference": "Back to reference"
+  },
+  "pptx": {
+    "loadingPanel": {
+      "title": "Opening presentation",
+      "hints": {
+        "preparing": "Just a moment — you can edit once it opens.",
+        "reading": "Larger files take a little longer to read.",
+        "inspecting": "Organizing the text, images and layout of each slide.",
+        "encoding": "Organizing the text, images and layout of each slide.",
+        "fonts": "So the text looks the way it was designed.",
+        "rendering": "Showing the first slide."
+      }
+    },
+    "progress": {
+      "preparing": "Opening presentation…",
+      "reading": "Reading file…",
+      "inspecting": "Organizing content…",
+      "encoding": "Organizing content…",
+      "fonts": "Preparing text…",
+      "rendering": "Almost ready…"
+    },
+    "mediaWarning": "A vector object could not be displayed completely: {{message}}",
+    "editor": "Presentation editor",
+    "loading": "Loading presentation and local fonts…",
+    "loadFailed": "Cannot open the presentation: {{message}}",
+    "conflict": "The file changed or was deleted outside FinxWork. Your edits are kept here. Reload the file to discard them.",
+    "ribbon": {
+      "home": "Home",
+      "select": "Select (Esc)",
+      "insert": "Insert",
+      "paragraph": "Paragraph",
+      "image": "Picture",
+      "shapeStyle": "Shape style",
+      "fontSearch": "Search fonts",
+      "documentFonts": "In this presentation",
+      "allFonts": "All fonts",
+      "fontLoading": "Loading…",
+      "fontFailed": "Can't use this font: {{message}}",
+      "fontSubstitute": "(substitute)",
+      "fontSubstituteHint": "Drawn with {{family}}, which has the same letter widths",
+      "fontsUnavailable": "Can't read this computer's fonts: {{message}}"
+    }
   }
 }

@@ -9,6 +9,9 @@ const prose = /\.(md|markdown|txt|text|log)$/i;
 /** Opens as finx's document (pdf.js, or the workbook grid), not read as text. */
 export const opensAsDoc = (path: string) => doc.test(path);
 
+/** An object-based presentation editor, opened in the browser's own WASM session. */
+export const isPresentation = (path: string) => /\.pptx$/i.test(path);
+
 /** A document that shows as the grid: a workbook, a CSV. */
 export const isGrid = (path: string) => opensAsDoc(path) && !/\.pdf$/i.test(path);
 

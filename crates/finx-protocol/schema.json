@@ -302,6 +302,24 @@
       "$ref": "#/definitions/Op"
     },
     {
+      "$ref": "#/definitions/PptxMetafileParams"
+    },
+    {
+      "$ref": "#/definitions/PptxMetafileResult"
+    },
+    {
+      "$ref": "#/definitions/PptxReadParams"
+    },
+    {
+      "$ref": "#/definitions/PptxReadProgress"
+    },
+    {
+      "$ref": "#/definitions/PptxReadResult"
+    },
+    {
+      "$ref": "#/definitions/PptxWriteParams"
+    },
+    {
       "$ref": "#/definitions/ResourceReadParams"
     },
     {
@@ -8304,6 +8322,161 @@
         }
       ]
     },
+    "PptxMetafileParams": {
+      "properties": {
+        "data": {
+          "description": "Original EMF/WMF media bytes, base64. The source package is never changed.",
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "data",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "PptxMetafileResult": {
+      "properties": {
+        "omissions": {
+          "description": "Drawing operations the converter could not replay, if any.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "svg": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "omissions",
+        "svg"
+      ],
+      "type": "object"
+    },
+    "PptxReadParams": {
+      "description": "Optional correlation ID keeps concurrent opens and reopened tabs isolated.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "progress_id": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "PptxReadProgress": {
+      "description": "Counts describe this stage only, not an estimated overall percentage.",
+      "properties": {
+        "completed": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "progress_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/definitions/PptxReadStage"
+        },
+        "total": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "completed",
+        "progress_id",
+        "session_id",
+        "stage",
+        "total"
+      ],
+      "type": "object"
+    },
+    "PptxReadResult": {
+      "properties": {
+        "data": {
+          "description": "Base64 PPTX bytes (at most 20 MiB before encoding).",
+          "type": "string"
+        },
+        "font_families": {
+          "description": "Explicit font families in the package, plus the host's Latin and CJK fallbacks.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "writable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "data",
+        "font_families",
+        "hash",
+        "path",
+        "writable"
+      ],
+      "type": "object"
+    },
+    "PptxReadStage": {
+      "enum": [
+        "reading",
+        "inspecting",
+        "encoding"
+      ],
+      "type": "string"
+    },
+    "PptxWriteParams": {
+      "properties": {
+        "base_hash": {
+          "description": "Required: never silently replace an external edit or recreate a deleted file.",
+          "type": "string"
+        },
+        "data": {
+          "description": "Base64 of the edited PPTX.",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_hash",
+        "data",
+        "path",
+        "session_id"
+      ],
+      "type": "object"
+    },
     "PromptMode": {
       "oneOf": [
         {
@@ -11339,6 +11512,18 @@
       "params": "ModelsShowParams",
       "result": "Empty"
     },
+    "pptx/metafile": {
+      "params": "PptxMetafileParams",
+      "result": "PptxMetafileResult"
+    },
+    "pptx/read": {
+      "params": "PptxReadParams",
+      "result": "PptxReadResult"
+    },
+    "pptx/write": {
+      "params": "PptxWriteParams",
+      "result": "FilesWriteResult"
+    },
     "resource/read": {
       "params": "ResourceReadParams",
       "result": "ResourceReadResult"
@@ -11454,6 +11639,7 @@
     "mcp/changed": "McpChangedParams",
     "mcp/probe_progress": "McpProbeProgressParams",
     "models/changed": "Empty",
+    "pptx/readProgress": "PptxReadProgress",
     "session/detached": "SessionDetachedParams",
     "session/event": "SessionEventParams",
     "sessions/changed": "SessionsChangedParams",
