@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PptxEditor, definePptxPlugin, type PptxAsyncEditorApi } from "@betteroffice/pptx-react";
-import type { PptxFontFace } from "@betteroffice/pptx";
+import type { AsyncCollaborationReplica, PptxFontFace } from "@betteroffice/pptx";
 import { presentationZhCN } from "./zh-CN";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import type { RpcClient } from "@finx/client";
@@ -64,6 +64,12 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
   }), [doc, rpc, session]);
   // Chinese text in a Latin font draws in the deck's CJK faces rather than a substitute.
   const fallbackFonts = useMemo(() => fonts?.filter((face) => isCjk(face.family)), [fonts]);
+  // A replica of the kernel's deck: it joins with the kernel's state and syncs through it.
+  const collaboration = useMemo(() => doc.kernel ? {
+    clientId: doc.kernel.clientId,
+    initialUpdate: doc.kernel.initialState,
+    onReplica: (replica: AsyncCollaborationReplica | null) => doc.kernel?.attach(replica),
+  } : undefined, [doc, doc.kernel]);
   const shell = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (!shell.current) return;
@@ -115,6 +121,7 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     i18n={language.startsWith("zh") ? presentationZhCN : undefined}
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}
+    collaboration={collaboration}
     onDocumentChange={() => { if (api.current) { doc.edit(); setRevision(value => value + 1); } }}
     onSaveRequest={async () => { await doc.flush(); return false; }}
     downloadOnSave={false}

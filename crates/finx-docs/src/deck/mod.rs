@@ -346,6 +346,17 @@ impl DeckStore {
         Ok(Some(bytes?))
     }
 
+    /// Drops a file's unsaved edits, open or left by an earlier run: the next open reads it anew.
+    pub async fn discard_path(&self, path: &Path) -> Result<(), DeckError> {
+        let canonical = std::fs::canonicalize(path).map_err(|_| DeckError::NotFound(path.display().to_string()))?;
+        let id = crate::store::doc_id(&canonical);
+        if self.decks.lock().contains_key(&id) {
+            return self.discard(&id).await;
+        }
+        let _ = std::fs::remove_dir_all(self.root.join(&id));
+        Ok(())
+    }
+
     /// Drops the unsaved edits and the entry's directory; the next open reads the file anew.
     pub async fn discard(&self, deck_id: &str) -> Result<(), DeckError> {
         let entry = self.decks.lock().remove(deck_id).ok_or_else(|| DeckError::NotOpen(deck_id.to_owned()))?;

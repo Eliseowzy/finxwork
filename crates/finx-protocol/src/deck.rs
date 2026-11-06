@@ -1721,6 +1721,9 @@ pub struct DeckOpenParams {
     /// The caller joins as a Yrs replica (the editor): the result carries the state.
     #[serde(default)]
     pub replica: bool,
+    /// Drop the kernel's unsaved edits of this file and read it anew ("load the disk's version").
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub discard: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -1740,6 +1743,10 @@ pub struct DeckOpenResult {
     /// Replicas: the whole Yrs document as one v1 update, base64.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// Replicas: the file as first opened, base64, which the state builds on (replicas open
+    /// from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     /// Explicit font families in the package, plus the host's Latin and CJK fallbacks.
     pub font_families: Vec<String>,
     /// The `op`s this kernel and engine carry out; others are `unsupported`.

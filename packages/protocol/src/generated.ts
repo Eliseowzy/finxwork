@@ -1492,6 +1492,8 @@ export type DeckOp = {
 
 /** `deck/open`. Progress goes out as `pptx/readProgress`. */
 export type DeckOpenParams = {
+  /** Drop the kernel's unsaved edits of this file and read it anew ("load the disk's version"). */
+  discard?: boolean;
   path: string;
   progress_id?: string | null;
   /** The caller joins as a Yrs replica (the editor): the result carries the state. */
@@ -1512,6 +1514,8 @@ export type DeckOpenResult = {
   /** SHA-256 of the file as read. */
   hash: string;
   path: string;
+  /** Replicas: the file as first opened, base64, which the state builds on (replicas open from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4). */
+  source?: string | null;
   /** Replicas: the whole Yrs document as one v1 update, base64. */
   state?: string | null;
   summary: DeckSummary;

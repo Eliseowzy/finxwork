@@ -29,11 +29,14 @@ let bytes = fs.readFileSync(sourceFile);
 const originalBytes = bytes;
 const hash = () => crypto.createHash("sha256").update(bytes).digest("hex");
 let saves = 0;
+let deckSyncs = 0;
 let kernel;
 let nativeCall;
 let nativeSession;
 const nativeFile = path.join(work, "editor.pptx");
-if (process.env.FINXWORK_E2E_NATIVE === "1") {
+// The kernel holds the deck and the editor joins as its replica (presentation-kernel-authority).
+const kernelMode = process.env.FINXWORK_E2E_KERNEL === "1";
+if (process.env.FINXWORK_E2E_NATIVE === "1" || kernelMode) {
   const home = path.join(work, "finx");
   fs.mkdirSync(home);
   fs.writeFileSync(nativeFile, bytes);
@@ -78,8 +81,13 @@ const server = http.createServer(async (req, res) => {
         if (nativeCall) fs.writeFileSync(nativeFile, bytes);
         result = {};
       } else if (nativeCall) {
-        result = await nativeCall(method, { ...params, session_id: nativeSession, path: nativeFile });
+        // Only the methods that name a file get its path; the others refuse unknown fields.
+        const named = method.startsWith("pptx/") || method === "deck/open";
+        result = await nativeCall(method, { ...params, session_id: nativeSession, ...(named ? { path: nativeFile } : {}) });
         if (method === "pptx/write" && result.status === "saved") { saves++; bytes = fs.readFileSync(nativeFile); }
+        if (method === "deck/save") { saves++; bytes = fs.readFileSync(nativeFile); }
+        if (kernelMode && method === "pptx/write") throw new Error("kernel mode wrote through pptx/write");
+        if (method === "deck/sync" && params.update) deckSyncs++;
       }
       else if (method === "pptx/read") result = { path: "editor.pptx", data: bytes.toString("base64"), hash: hash(), writable: true, font_families: ["Arial"] };
       else if (method === "pptx/font") {
@@ -103,7 +111,7 @@ await new Promise((r) => portServer.listen(0, "127.0.0.1", r));
 const port = portServer.address().port;
 await new Promise((r) => portServer.close(r));
 const launcher = path.join(work, "electron.cjs");
-fs.writeFileSync(launcher, `const {app,BrowserWindow}=require(${JSON.stringify(path.join(desktop, "node_modules/electron"))});\napp.setPath('userData',${JSON.stringify(path.join(work, "profile"))});\napp.whenReady().then(()=>{const w=new BrowserWindow({width:1400,height:950,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false}});w.loadURL(${JSON.stringify(`http://127.0.0.1:${server.address().port}/`)});});\napp.on('window-all-closed',()=>app.quit());`);
+fs.writeFileSync(launcher, `const {app,BrowserWindow}=require(${JSON.stringify(path.join(desktop, "node_modules/electron"))});\napp.setPath('userData',${JSON.stringify(path.join(work, "profile"))});\napp.whenReady().then(()=>{const w=new BrowserWindow({width:1400,height:950,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false}});w.loadURL(${JSON.stringify(`http://127.0.0.1:${server.address().port}/${kernelMode ? "?kernel=1" : ""}`)});});\napp.on('window-all-closed',()=>app.quit());`);
 // Inside Electron require('electron') resolves its builtin, not the npm executable-path module.
 fs.writeFileSync(launcher, fs.readFileSync(launcher, "utf8").replace(`require(${JSON.stringify(path.join(desktop, "node_modules/electron"))})`, "require('electron')"));
 const app = spawn(path.join(desktop, "node_modules/.bin/electron"), [launcher, `--remote-debugging-port=${port}`], { env: { ...process.env, HOME: privateHome }, stdio: ["ignore", "ignore", "pipe"] });
@@ -375,6 +383,7 @@ try {
   await run("window.smoke.doc.flush()");
   await until("!window.smoke.doc.dirty", "save");
   if (!saves || !(await run("window.smoke.text()")).includes("Edited in FinxWork")) throw new Error("Edited text did not survive PPTX serialization");
+  if (kernelMode && !deckSyncs) throw new Error("kernel mode: no edit reached the kernel through deck/sync");
   // Moving a shape changes its PPTX geometry, rather than moving a preview image.
   const cardX = rect.x + rect.width * .23, cardY = rect.y + rect.height * .47;
   await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: cardX, y: cardY, button: "left", clickCount: 1 });

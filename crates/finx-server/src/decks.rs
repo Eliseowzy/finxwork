@@ -110,10 +110,14 @@ impl Server {
         let scope = self.file_scope(&p.session_id).await?;
         let path: PathBuf = scope.env.resolve(&p.path);
         let refused = finx_core::files::refused(&self.0.home, &path);
+        if p.discard {
+            self.0.decks.discard_path(&path).await.map_err(rpc_error)?;
+        }
         let opened = self.0.decks.open(&path, &p.session_id, p.replica).await.map_err(rpc_error)?;
         let entry = opened.entry;
         self.0.deck_watchers.lock().entry(entry.deck_id.clone()).or_default().insert(p.session_id.clone(), conn.clone());
         let source = tokio::fs::read(entry.source()).await.map_err(|e| RpcError::internal(e.to_string()))?;
+        let source_b64 = p.replica.then(|| B64.encode(&source));
         let font_families = tokio::task::spawn_blocking(move || finx_core::pptx::font_families_of(&source))
             .await
             .map_err(|e| RpcError::internal(e.to_string()))?
@@ -136,6 +140,7 @@ impl Server {
             contract_version: DECK_CONTRACT_VERSION,
             engine: finx_docs::deck::ENGINE.to_owned(),
             state: opened.state.map(|s| B64.encode(s)),
+            source: source_b64,
             font_families,
             // Edits come from replicas only: `deck/edit` is not carried out here yet.
             supported_ops: Vec::new(),

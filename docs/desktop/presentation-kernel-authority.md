@@ -1,6 +1,6 @@
 # 演示文稿：内核持有（Kernel Authority）设计
 
-状态：后端已实现（阶段 1、2、4，阶段 5 的内核部分）；前端（阶段 3）未做 · 2026-11-06 · 展开 [presentation-ai-design.md](presentation-ai-design.md) §6.2 方案 B（PD-01）
+状态：阶段 1–4 与阶段 5 的内核部分已实现；新链路默认关闭，内部用 `localStorage["finx.deck.kernelAuthority"] = "1"` 打开 · 2026-11-06 · 展开 [presentation-ai-design.md](presentation-ai-design.md) §6.2 方案 B（PD-01）
 
 ## 0. 结论先行
 

@@ -7187,6 +7187,10 @@
       "additionalProperties": false,
       "description": "`deck/open`. Progress goes out as `pptx/readProgress`.",
       "properties": {
+        "discard": {
+          "description": "Drop the kernel's unsaved edits of this file and read it anew (\"load the disk's version\").",
+          "type": "boolean"
+        },
         "path": {
           "type": "string"
         },
@@ -7243,6 +7247,13 @@
         },
         "path": {
           "type": "string"
+        },
+        "source": {
+          "description": "Replicas: the file as first opened, base64, which the state builds on (replicas open from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "state": {
           "description": "Replicas: the whole Yrs document as one v1 update, base64.",

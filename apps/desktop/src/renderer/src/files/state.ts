@@ -6,6 +6,7 @@ import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPa
 import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
 import { isPresentation, opensAsDoc, previewable } from "./kind";
+import { kernelAuthority, openKernelPresentation } from "../docs/pptx/kernel";
 import { readPresentation, type PresentationProgress } from "../docs/pptx/progress";
 import { PresentationDoc } from "../docs/pptx/document";
 
@@ -212,6 +213,7 @@ async function load(s: SessionFiles, tab: Tab) {
   if (!rpc || tab.opened) return;
   try {
     if (isPresentation(tab.path)) {
+      if (kernelAuthority()) return await loadKernelPresentation(s, tab);
       const file = await readPresentation(rpc, s.session, tab.path, (progress) => {
         if (!s.tabs.includes(tab)) return;
         tab.presentationProgress = progress;
@@ -241,6 +243,32 @@ async function load(s: SessionFiles, tab: Tab) {
     tab.error = errorText(e);
     tab.doc?.diskChanged(null);
   }
+  changed(s);
+}
+
+/** A presentation held by the kernel: the editor joins its deck as a replica. On a later read
+ *  (the file changed on disk) unsaved edits wait for a choice; with none, the deck is read anew. */
+async function loadKernelPresentation(s: SessionFiles, tab: Tab) {
+  if (!rpc) return;
+  const doc = tab.presentation;
+  if (doc?.kernel) {
+    const disk = await rpc.request("files/read", { session_id: s.session, path: tab.path }).catch(() => null);
+    // No hash for a file too large to read whole: the kernel's save still checks it.
+    if (disk && !disk.hash) return;
+    const hash = disk?.hash ?? null;
+    if (hash === doc.file.hash || doc.state === "saving") return;
+    if (!hash || doc.dirty) return doc.diskChanged(hash ? { ...doc.file, hash } : null);
+    doc.takeDisk(await openKernelPresentation(rpc, s.session, tab.path, true));
+    changed(s);
+    return;
+  }
+  tab.presentationProgress = { stage: "reading", completed: 0, total: 0 };
+  changed(s);
+  const file = await openKernelPresentation(rpc, s.session, tab.path);
+  if (!s.tabs.includes(tab)) { file.kernel?.close(); return; }
+  tab.presentation = new PresentationDoc(file, async () => { throw new Error("the kernel writes this deck"); }, () => changed(s));
+  tab.error = null;
+  tab.presentationProgress = undefined;
   changed(s);
 }
 
@@ -291,7 +319,9 @@ export function flushAll(s?: SessionFiles): Promise<void> {
 export async function takePresentationDisk(s: SessionFiles, tab: Tab) {
   if (!rpc || !tab.presentation) return;
   try {
-    const file = await rpc.request("pptx/read", { session_id: s.session, path: tab.path });
+    const file = tab.presentation.kernel
+      ? await openKernelPresentation(rpc, s.session, tab.path, true)
+      : await rpc.request("pptx/read", { session_id: s.session, path: tab.path });
     tab.presentation.takeDisk(file);
     tab.error = null;
   } catch (e) { tab.error = errorText(e); }

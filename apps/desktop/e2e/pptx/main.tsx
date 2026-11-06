@@ -6,6 +6,7 @@ import { PresentationLoading } from "../../src/renderer/src/docs/pptx/Presentati
 import PresentationView from "../../src/renderer/src/docs/pptx/PresentationView";
 import { PresentationDoc, fromBase64, type PresentationFile } from "../../src/renderer/src/docs/pptx/document";
 import { i18n } from "../../src/shared/i18n";
+import { openKernelPresentation } from "../../src/renderer/src/docs/pptx/kernel";
 import "../../src/renderer/src/styles/tokens.css";
 import "../../src/renderer/src/styles/app.css";
 
@@ -16,7 +17,10 @@ const rpc = {
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
-} as RpcClient;
+  // No notifications through the proxy: one replica, nobody else edits.
+  on: () => () => {},
+} as unknown as RpcClient;
+const kernel = new URLSearchParams(location.search).get("kernel") === "1";
 let doc: PresentationDoc;
 let visible = true;
 function render() {
@@ -24,7 +28,9 @@ function render() {
 }
 async function open() {
   doc?.dispose();
-  const file = await rpc.request("pptx/read", { session_id: "test", path: "editor.pptx" }) as PresentationFile;
+  const file = kernel
+    ? await openKernelPresentation(rpc, "test", "editor.pptx")
+    : await rpc.request("pptx/read", { session_id: "test", path: "editor.pptx" }) as PresentationFile;
   doc = new PresentationDoc(file, (data, base_hash) => rpc.request("pptx/write", { session_id: "test", path: "editor.pptx", data, base_hash }), () => {});
   render();
 }
