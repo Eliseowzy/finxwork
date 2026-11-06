@@ -42,6 +42,7 @@
 //   - updates:    what sub-agents told the owner themselves (send_to_user), each printed;
 //   - updateRuns: runs with at least one; updateLeaks, updateInternal: of them, naming a tool or
 //                 the machinery; updateOtherLanguage: with no Chinese, when the owner writes Chinese;
+//   - updateFiller: of them, ones that only say what it is about to do or is doing;
 //   - firstUpdateMs: from the first agent's start to the first update, median and worst;
 //   - gapMs:      the longest the owner went without a word while agents worked, per run; workMs: how
 //                 long they worked; updateChars: how long an update is;
@@ -185,6 +186,8 @@ const updateText = (e) => e.message.content.map((c) => c.text ?? "").join("").re
 /** What a bubble says, whichever agent sent it. */
 const bubbleText = (e) => (isUpdate(e) ? updateText(e) : String(e.args?.text ?? ""));
 const isBubble = (e) => isSend(e) || isUpdate(e);
+/** An update with no news: it opens on what the agent is about to do or is doing, and holds no figure. */
+const isFiller = (text) => /^\s*(我先|我来|我开始|我这就|我正在|我已经开始|先|开始|正在|接下来|现在开始|已经开始|长诗已经动笔|let me|i'm starting|i am starting|starting|first,? i)/i.test(text) && !/\d{2,}|缺失|发现|问题/.test(text);
 const isCall = (e, name) => e.type === "tool_started" && toolOf(e) === name;
 const firstAfter = (w, at, test) => w.events.find((e) => e.at >= at && test(e));
 const long = "写一篇一万字的小作文，主题随便，写好整理成文件告诉我。";
@@ -528,6 +531,7 @@ async function oneRun(name, s, run, t) {
     const text = updateText(e);
     console.log(`   (update from ${e.mail.from.name}: ${text.replace(/\s+/g, " ").slice(0, 400)})`);
     t.updateChars.push(text.length);
+    if (isFiller(text)) t.updateFiller++;
     t.updateLeaks += tools.test(text) ? 1 : 0;
     t.updateInternal += internal.test(text) ? 1 : 0;
     t.updateOtherLanguage += /[\u4e00-\u9fff]/.test(text) ? 0 : 1;
@@ -600,7 +604,7 @@ for (const [name, s] of Object.entries(scenarios)) {
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
     ordered: 0, attached: 0, linked: 0, handed: 0, pointed: 0, kept: 0, alsoLinked: 0, noFile: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
     notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0, alone: 0, thinking: [], ownRounds: [],
-    updates: 0, updateRuns: 0, updateLeaks: 0, updateInternal: 0, updateOtherLanguage: 0, firstUpdateMs: [], gapMs: [], workMs: [], updateChars: [], botSteps: 0, repeated: 0,
+    updates: 0, updateRuns: 0, updateFiller: 0, updateLeaks: 0, updateInternal: 0, updateOtherLanguage: 0, firstUpdateMs: [], gapMs: [], workMs: [], updateChars: [], botSteps: 0, repeated: 0,
   });
   for (let run = 0; run < runs; run += parallel) {
     const batch = Array.from({ length: Math.min(parallel, runs - run) }, (_, k) => oneRun(name, s, run + k, t).catch((e) => console.log(`${name} #${run + k + 1}: ${e.message}`)));

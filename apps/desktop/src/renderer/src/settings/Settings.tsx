@@ -135,7 +135,9 @@ function General() {
   const { t } = useTranslation("settings");
   const [prefs, setPrefs] = useState<Preferences>();
   useEffect(() => {
+    const stop = window.finx?.onPreferences(setPrefs);
     window.finx?.getPreferences().then(setPrefs);
+    return stop;
   }, []);
   const set = (p: Partial<Preferences>) => window.finx?.setPreferences(p).then(setPrefs);
   const running = window.finx?.language;
@@ -143,16 +145,28 @@ function General() {
   const restart = prefs && running && resolveLanguage(prefs.language, navigator.languages) !== running;
   return (
     <div className="form">
+      <fieldset className="appearance-picker" disabled={!prefs}>
+        <legend>{t("appearance.title")}</legend>
+        <div className="appearance-options">
+          {(["system", "light", "gray", "black"] as Appearance[]).map((a) => (
+            <label key={a} className="appearance-choice">
+              <input type="radio" name="appearance" value={a} checked={prefs?.appearance === a} onChange={() => set({ appearance: a })} />
+              <span className="appearance-preview" aria-hidden="true">
+                <span className={`appearance-mini ${a === "system" ? "light" : a}`}>
+                  <span className="appearance-mini-side" /><span className="appearance-mini-lines"><i /><i /><i /></span>
+                </span>
+                {a === "system" && (
+                  <span className="appearance-mini gray appearance-system-dark">
+                    <span className="appearance-mini-side" /><span className="appearance-mini-lines"><i /><i /><i /></span>
+                  </span>
+                )}
+              </span>
+              <span className="appearance-caption"><span>{t(`appearance.${a}`)}</span><Icon name="check" /></span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="fgroup">
-        <SRow title={t("appearance.title")}>
-          <div className="seg" role="group" aria-label={t("appearance.title")}>
-            {(["system", "light", "dark"] as Appearance[]).map((a) => (
-              <button key={a} type="button" className={prefs?.appearance === a ? "on" : ""} aria-pressed={prefs?.appearance === a} disabled={!prefs} onClick={() => set({ appearance: a })}>
-                {t(`appearance.${a}`)}
-              </button>
-            ))}
-          </div>
-        </SRow>
         <SRow
           title={t("language.title")}
           desc={

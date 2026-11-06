@@ -812,6 +812,8 @@ export type ConnectionModel = {
   images: boolean;
   max_output_tokens?: number | null;
   name: string;
+  /** The name in each language the application offers, by language tag. */
+  names?: { [key: string]: string };
   reasoning: boolean;
   /** The thinking levels the application offers for it (model-catalog-design §18). */
   thinking?: ThinkingLevel[];
@@ -2951,6 +2953,8 @@ export type ModelSummary = {
   /** Its details come from somewhere; `false` means default limits. */
   known: boolean;
   name: string;
+  /** The name in each language the source offers, by language tag (`zh`, `en`). A client that has an interface language picks from these; `name` is for the rest. */
+  names?: { [key: string]: string };
   provider: string;
   reasoning: boolean;
   /** `YYYY-MM-DD` */
@@ -3293,6 +3297,8 @@ export type ProviderSummary = {
   /** Where its models came from; absent while it has no credentials. */
   listing?: ProviderListing | null;
   name: string;
+  /** The name by language tag, as `ModelSummary::names`. */
+  names?: { [key: string]: string };
   /** Subscription product metadata; API-key authentication alone does not imply a plan. */
   plan?: TokenPlanSummary | null;
 };

@@ -3,7 +3,8 @@ import { handedTabBlock, handedTabsBlock, listView, mergeBots, mergeSessions, Rp
 import { draftThinking } from "./format";
 import type { BotSummary, Methods, ModelsListResult, Op, PermissionMode, ThinkingLevel, UserContent } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
-import { i18n } from "../../shared/i18n";
+import { i18n, language } from "../../shared/i18n";
+import { modelsIn } from "../../shared/model-names";
 import { toInput, type Attachment } from "./composer/attachments";
 import { docChanged } from "./docs/state";
 import { connect } from "./kernel";
@@ -178,7 +179,8 @@ export function FinxProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [bots, setBots] = useState<BotSummary[]>([]);
   const [botsLoaded, setBotsLoaded] = useState(false);
-  const [models, setModels] = useState<ModelsListResult>(noModels);
+  const [listedModels, setModels] = useState<ModelsListResult>(noModels);
+  const models = useMemo(() => modelsIn(listedModels, language()), [listedModels]);
   const [width, setWidth] = useState(() => window.innerWidth);
   useEffect(() => {
     const resize = () => setWidth(window.innerWidth);

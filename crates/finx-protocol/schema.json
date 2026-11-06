@@ -3898,6 +3898,13 @@
         "name": {
           "type": "string"
         },
+        "names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The name in each language the application offers, by language tag.",
+          "type": "object"
+        },
         "reasoning": {
           "default": false,
           "type": "boolean"
@@ -13272,6 +13279,13 @@
         "name": {
           "type": "string"
         },
+        "names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The name in each language the source offers, by language tag (`zh`, `en`). A client that has an interface language picks from these; `name` is for the rest.",
+          "type": "object"
+        },
         "provider": {
           "type": "string"
         },
@@ -14812,6 +14826,13 @@
         },
         "name": {
           "type": "string"
+        },
+        "names": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The name by language tag, as `ModelSummary::names`.",
+          "type": "object"
         },
         "plan": {
           "anyOf": [

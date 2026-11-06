@@ -3,7 +3,7 @@
 // real click, with the name and avatar; a row's menu is pin, rename in place and delete; a file in
 // a message opens in the preview over the window, a PDF too, and one button moves it to the file
 // panel, which takes turns with the settings; a link opens in the built-in browser, and the bot
-// drives it too. A model server on the Mac stands in for the provider.
+// drives it too; clearing a bot's chat from its settings keeps its files and settings. A model server on the Mac stands in for the provider.
 //
 // A PDF's pages need PDFium, which the packaged app carries: without it the preview says why. Run
 // against the package to check the pages as well.
@@ -284,6 +284,7 @@ try {
   const box = await page.run(`(() => { const r = document.querySelector(".bpn").getBoundingClientRect(); return { right: r.right, width: r.width, inner: innerWidth, name: document.querySelector(".bpn-name").textContent }; })()`);
   check(box.right <= box.inner && box.width === 340 && box.name === "FinxBot", `the panel: ${JSON.stringify(box)}`);
   check(!(await page.run(`!!document.querySelector(".bpn-del")`)), "the default bot has no delete in its settings");
+  check(await page.run(`!!document.querySelector(".bpn-clear")`), "the default bot can clear its chat");
   await page.shot("m1-settings");
   await press(page, ".bhead");
   await page.until("closed by its name again", `!document.querySelector(".bpn")`);
@@ -389,6 +390,27 @@ try {
   await page.until("its settings again", `!!${thinkRow}`, 30000);
   check((await page.run(`${modelButton}.textContent`)).includes("Mock Two") && (await page.run(`${thinkRow}.querySelector(".lbl").textContent`)) === "高", "the model and level stay after finx restarts");
 
+  step("settings: clearing the chat under real clicks; files and settings stay, the conversation is new");
+  const chatRow = (await finxCall(home, "bots/subscribe")).result.bots.find((b) => b.name === "小帮手");
+  const filesDir = path.join(home, "bots", chatRow.id, "files");
+  fs.writeFileSync(path.join(filesDir, "stays.txt"), "kept");
+  await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("小帮手"))`);
+  await page.until("the panel shows that bot", `document.querySelector(".bpn-name")?.textContent === "小帮手" && !!${modelButton}`, 30000);
+  await page.until("there is a chat to clear", `${bubbles} > 0`, 30000);
+  const settingsBefore = await page.run(`${modelButton}.textContent`);
+  await press(page, ".bpn-clear");
+  await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
+  await page.shot("m-clear-confirm");
+  await press(page, "dialog.sheet[open] .btn.danger");
+  await page.until("the chat is gone", `${bubbles} === 0`, 30000);
+  await page.until("a new conversation, its settings shown", `!!${modelButton}`, 30000);
+  check((await page.run(`${modelButton}.textContent`)) === settingsBefore, "the model stays after clearing");
+  check((await page.run(`document.querySelector(".bpn-name")?.textContent`)) === "小帮手", "the panel stays open");
+  check(fs.existsSync(path.join(filesDir, "stays.txt")), "its files stay after clearing");
+  const afterClear = (await finxCall(home, "bots/subscribe")).result.bots.find((b) => b.id === chatRow.id);
+  check(afterClear.session_id !== chatRow.session_id, "the next conversation is another");
+  await page.shot("m-cleared");
+
   step("settings: another bot keeps its own model; deleting one closes the panel");
   const other = (await finxCall(home, "bots/create", { name: "别的", avatar: { kind: "mono", hue: "teal" } })).result.bot;
   await page.until("its row", `[...document.querySelectorAll(".brow")].some((r) => r.textContent.includes("别的"))`);
@@ -427,6 +449,28 @@ try {
   const bar = await page.run(`(() => { const r = [...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1).getBoundingClientRect(); return { bottom: r.bottom, left: r.left, text: [...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1).textContent }; })()`);
   check(bar.left >= bubble.right - 1 && bar.bottom <= bubble.bottom + 1, `beside the bubble: ${JSON.stringify({ bar, bubble })}`);
   await page.shot("m4-bubble-actions");
+  // No room beside a bubble that fills a narrow conversation: over its corner, still in the window. A short one keeps outside.
+  const narrow = await page.run(`(() => {
+    const box = document.createElement("div");
+    box.className = "bm-b";
+    box.style.cssText = "width:300px;position:fixed;top:0;left:0";
+    const line = [...document.querySelectorAll(".tr.bots .bm .bline")].at(-1).cloneNode(true);
+    const bubble = document.createElement("div");
+    bubble.className = "bbub";
+    line.firstElementChild.replaceWith(bubble);
+    box.append(line);
+    document.body.append(box);
+    const place = (text) => {
+      bubble.textContent = text;
+      const a = line.querySelector(".msg-act").getBoundingClientRect(), b = bubble.getBoundingClientRect();
+      return { left: a.left, right: a.right, bubble: b.right, width: b.width };
+    };
+    const got = { long: place("很长的一段话。".repeat(30)), short: place("好") };
+    box.remove();
+    return got;
+  })()`);
+  check(narrow.long.width >= 298 && narrow.long.right <= 301 && narrow.long.left < narrow.long.bubble, `no room beside it: ${JSON.stringify(narrow.long)}`);
+  check(narrow.short.left >= narrow.short.bubble - 1, `room beside it: ${JSON.stringify(narrow.short)}`);
   const tag = (name) => `[...document.querySelectorAll(".tr.bots .fref")].find((e) => e.textContent.includes(${JSON.stringify(name)}))`;
   await page.until("the file tag", `!!${tag("note.md")}`, 15000);
   step("a file in a message opens over the window; one button moves it to the file panel");

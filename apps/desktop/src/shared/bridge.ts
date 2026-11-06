@@ -57,8 +57,8 @@ export type PickedFile = { path: string; name: string } & ({ kind: "file" } | { 
 /** What a paste attaches: files as picked, or a folder. */
 export type PastedItem = PickedFile | { kind: "folder"; path: string; name: string };
 
-/** Light or dark: the system's, or one chosen for the app. */
-export type Appearance = "system" | "light" | "dark";
+/** Follow the system (soft gray when dark), or choose a fixed palette. */
+export type Appearance = "system" | "light" | "gray" | "black";
 
 export type Preferences = {
   appearance: Appearance;
@@ -337,6 +337,7 @@ export type Bridge = {
   showAbout(): void;
   getPreferences(): Promise<Preferences>;
   setPreferences(p: Partial<Preferences>): Promise<Preferences>;
+  onPreferences(cb: (p: Preferences) => void): () => void;
   /** Quits and opens the app again (a new language takes effect). */
   relaunch(): void;
   /** Where the app is with its next version, and as that changes. */

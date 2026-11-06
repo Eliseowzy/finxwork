@@ -49,6 +49,7 @@ pub(crate) fn valid_id(id: &str) -> bool {
 pub(crate) fn declared_model(m: &ConnectionModel) -> finx_llm::catalog::ModelToml {
     finx_llm::catalog::ModelToml {
         name: Some(m.name.clone()),
+        names: m.names.clone(),
         context_window: m.context_window.map(|window| window.clamp(1024, 2_000_000)),
         max_output_tokens: m.max_output_tokens.map(|limit| limit.max(1)),
         reasoning: Some(m.reasoning),
@@ -284,6 +285,7 @@ impl Manager {
                     plan: None,
                     id: record.provider_id.clone(),
                     name: view.display_name.clone(),
+                    names: adapter::names(&record.adapter_id),
                     api: "openai-chat".into(),
                     base_url: adapter::base(&record.adapter_id).into(),
                     auth: AuthConfig::Managed,

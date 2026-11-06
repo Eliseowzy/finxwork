@@ -27,7 +27,8 @@
     "title": "Appearance",
     "system": "System",
     "light": "Light",
-    "dark": "Dark"
+    "gray": "Soft gray",
+    "black": "Deep black"
   },
   "language": {
     "title": "Language",

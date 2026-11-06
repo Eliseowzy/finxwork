@@ -99,6 +99,7 @@ fn record(enabled: bool) -> Record {
         models: vec![ConnectionModel {
             id: "flash".into(),
             name: "Flash".into(),
+            names: Default::default(),
             context_window: Some(1000000),
             max_output_tokens: None,
             reasoning: true,
@@ -494,6 +495,29 @@ fn qwenwork_thinking_follows_the_application() {
         of("qwen3.8-max-preview", json!({"is_reasoning": true})),
         (all.clone(), Xhigh)
     );
+    // An opaque key: the display name says which model it is.
+    assert_eq!(
+        of(
+            "mode-5d41402a",
+            json!({"is_reasoning": true, "display_name": "Qwen3.8-Max"})
+        ),
+        (all.clone(), Xhigh)
+    );
+    assert_eq!(
+        of(
+            "mode-7d793037",
+            json!({"is_reasoning": true, "display_name": "Qwen3.7-Max"})
+        ),
+        (vec![Off, On], On)
+    );
+    // The name shown may be the Chinese one while the English one says which model it is.
+    assert_eq!(
+        of(
+            "mode-7d793037",
+            json!({"is_reasoning": true, "i18n": {"display_name": {"zh": "千问旗舰", "en": "Qwen3.7-Max"}}})
+        ),
+        (vec![Off, On], On)
+    );
     // A thinking_config means the model keeps thinking: no "off".
     assert_eq!(
         of(
@@ -576,6 +600,69 @@ fn gateway_words_lose_what_may_identify_the_account() {
     );
     assert_eq!(scrub("请求过多，请稍后再试"), "请求过多，请稍后再试");
     assert_eq!(scrub(&"字".repeat(600)).chars().count(), 501);
+}
+
+#[tokio::test]
+async fn qwen_catalog_names_models_as_the_application_does_and_requests_by_key() {
+    let server = MockServer::start().await;
+    let mut q = QwenWork::new("test".into(), "account-a".into(), Fake::new());
+    q.gateway = server.uri();
+    let entry = |key: &str, fields: serde_json::Value| {
+        let mut entry = json!({"key": key, "enable": true, "format": "openai/chat-completions"});
+        entry
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        entry
+    };
+    let body = json!({"catalog": [
+        entry("mode-a", json!({"displayName": "First", "display_name": "Second", "name": "Third"})),
+        entry("mode-b", json!({"display_name": "Second", "name": "Third"})),
+        entry("mode-c", json!({"name": "Third"})),
+        entry("mode-d", json!({"name": "Own", "server_model": {"display_name": "From server"}})),
+        entry("mode-e", json!({"serverModel": {"name": "From server"}})),
+        entry("mode-f", json!({"display_name": "  "})),
+        entry("flash", json!({})),
+        // As the real catalog has it (2026-11-06): only names by language.
+        entry("mode-g", json!({"name": "Plain", "i18n": {"display_name": {"en": "Standard", "zh": "标准"}}})),
+        entry("mode-h", json!({"i18n": {"displayName": {"en": "Pro"}}})),
+        entry("mode-i", json!({"server_model": {"i18n": {"display_name": {"zh": "高级"}}}})),
+        entry("mode-j", json!({"i18n": {"display_name": {"zh-CN": "标准版"}}})),
+        entry("mode-k", json!({"name": "Plain", "i18n": {"description": {"zh": "说明"}}})),
+    ]});
+    Mock::given(path("/api/desktop/chat-modes"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(&server)
+        .await;
+    let models = q.catalog(&client()).await.unwrap();
+    let got: Vec<_> = models
+        .iter()
+        .map(|m| (m.id.as_str(), m.name.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("mode-a", "First"),
+            ("mode-b", "Second"),
+            ("mode-c", "Third"),
+            ("mode-d", "From server"),
+            ("mode-e", "From server"),
+            ("mode-f", "mode-f"),
+            ("flash", "flash"),
+            ("mode-g", "标准"),
+            ("mode-h", "Pro"),
+            ("mode-i", "高级"),
+            ("mode-j", "标准版"),
+            ("mode-k", "Plain"),
+        ]
+    );
+    // Every language goes along, for clients that have an interface language to pick by.
+    let names = |id: &str| &models.iter().find(|m| m.id == id).unwrap().names;
+    assert_eq!(names("mode-g")["en"], "Standard");
+    assert_eq!(names("mode-g")["zh"], "标准");
+    assert_eq!(names("mode-i")["zh"], "高级");
+    assert!(names("mode-a").is_empty());
+    assert!(names("mode-k").is_empty());
 }
 
 #[tokio::test]

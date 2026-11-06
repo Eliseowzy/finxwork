@@ -42,7 +42,7 @@
   --conversation-width: 768px;
   --chat-size: 14.5px;
   /* The window's chrome: the top band, and room for the system's window buttons. */
-  --top: 40px;
+  --top: 44px;
   --lights: 78px;
   --caption: 0px;
 
@@ -116,6 +116,34 @@
     --cmp-sh: inset 0 1px 0 rgba(255, 255, 255, .035), 0 0 0 1px rgba(255, 255, 255, .09), 0 8px 24px -8px rgba(0, 0, 0, .32);
     --cmp-focus-sh: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 1px rgba(255, 255, 255, .16), 0 8px 24px -8px rgba(0, 0, 0, .36);
     color-scheme: dark;
+  }
+
+  /* Soft gray is the default dark palette. The original deep black remains
+     above; both share semantic accents, typography, spacing and components. */
+  :root:not([data-dark-style="black"]) {
+    --win: #242424; --win2: #2a2a2a; --win3: #303030;
+    --side: #1e1e1e; --side-head: #1e1e1e;
+    --l1: #f0f0ed; --l2: #b2b2ad; --l3: #999993;
+    --msg: #dededb;
+    --sep: rgba(255, 255, 255, .08);
+    --side-sel: #303030;
+    --btn: #303030; --seg-on: #303030;
+    --field: #202020; --field-bd: rgba(255, 255, 255, .16);
+    --menu: rgba(48, 48, 48, .96); --menu-solid: #303030;
+    --menu-bd: rgba(255, 255, 255, .12);
+    --bub: #303030; --bot-user: #303030;
+    --glass: rgba(42, 42, 42, .94);
+    --glass-sh: inset 0 1px 0 rgba(255, 255, 255, .06), 0 0 0 .5px rgba(255, 255, 255, .10), 0 12px 32px -12px rgba(0, 0, 0, .28);
+    --tb-fg: var(--l2);
+    --bar-tint: rgba(36, 36, 36, .82);
+    --code: #202020;
+    --scrim: rgba(0, 0, 0, .40);
+    --pill: #303030; --pill-bd: rgba(255, 255, 255, .10);
+    --tray: #202020;
+    --home-glow: color-mix(in srgb, var(--accent) 6%, transparent);
+    --side-sel-sh: inset 0 0 0 .5px rgba(255, 255, 255, .07);
+    --cmp-sh: inset 0 1px 0 rgba(255, 255, 255, .04), 0 0 0 1px var(--pill-bd), 0 6px 18px -8px rgba(0, 0, 0, .24);
+    --cmp-focus-sh: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 1px rgba(138, 180, 248, .45), 0 6px 18px -8px rgba(0, 0, 0, .28);
   }
 }
 

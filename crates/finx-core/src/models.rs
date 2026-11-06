@@ -84,6 +84,7 @@ fn summary_of(llm: &ModelRegistry, model: &Model, meta: &ModelMeta, available: b
     ModelSummary {
         id: model.reference(),
         name: model.name.clone(),
+        names: meta.names.clone(),
         provider: model.provider.clone(),
         context_window: u64::from(model.context_window),
         reasoning: model.reasoning,
@@ -186,6 +187,7 @@ pub fn list(llm: &ModelRegistry, defaults: &SessionDefaults, refreshing: &dyn Fn
             }),
             id: provider.id.clone(),
             name: provider.name.clone(),
+            names: provider.names.clone(),
             auth: match provider.auth {
                 AuthConfig::None => AuthKind::None,
                 AuthConfig::Managed => AuthKind::Connection,
@@ -292,8 +294,16 @@ mod tests {
         provider.id = "qwenwork-a".into();
         provider.auth = AuthConfig::Managed;
         provider.listing.entries = ["flash", "pro"].map(finx_llm::catalog::ModelToml::new).to_vec();
+        provider.listing.entries[0].names = [("en".to_string(), "Standard".to_string()), ("zh".to_string(), "标准".to_string())].into();
+        provider.names = [("en".to_string(), "QwenWork".to_string())].into();
         llm.replace_source("model-connections", vec![provider]).unwrap();
         let defaults = SessionDefaults { model: Some("deepseek/deepseek-flash".into()), thinking: ThinkingLevel::Medium, permission_mode: PermissionMode::Manual };
+        let listed = list(&llm, &defaults, &|_| false);
+        let names = |id: &str| listed.models.iter().find(|m| m.id == id).unwrap().names.clone();
+        assert_eq!(names("qwenwork-a/flash")["en"], "Standard", "a channel's names reach the list");
+        assert!(names("qwenwork-a/pro").is_empty());
+        let own = listed.providers.iter().find(|p| p.id == "qwenwork-a").unwrap();
+        assert_eq!(own.names["en"], "QwenWork", "so does the name of its product");
         let shown = |llm: &ModelRegistry| -> Vec<(String, bool)> {
             list(llm, &defaults, &|_| false).models.into_iter().filter(|m| m.provider == "qwenwork-a").map(|m| (m.id, m.shown)).collect()
         };

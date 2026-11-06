@@ -29,7 +29,7 @@ export function preferences(): Preferences {
   try {
     const p = JSON.parse(fs.readFileSync(file(), "utf8")) as Partial<Preferences>;
     cached = {
-      appearance: (["system", "light", "dark"] as Appearance[]).includes(p.appearance as Appearance) ? (p.appearance as Appearance) : defaults.appearance,
+      appearance: (["system", "light", "gray", "black"] as Appearance[]).includes(p.appearance as Appearance) ? (p.appearance as Appearance) : defaults.appearance,
       language: p.language === "en" || p.language === "zh-CN" ? p.language : "system",
       searchEngines: savedEngines(p.searchEngines),
       searchEngine: engineIn(p.searchEngine, savedEngines(p.searchEngines)),
@@ -47,7 +47,7 @@ export function preferences(): Preferences {
 
 export function setPreferences(p: Partial<Preferences>): Preferences {
   const next = { ...preferences() };
-  if (p.appearance === "system" || p.appearance === "light" || p.appearance === "dark") next.appearance = p.appearance;
+  if (p.appearance === "system" || p.appearance === "light" || p.appearance === "gray" || p.appearance === "black") next.appearance = p.appearance;
   if (p.language === "system" || p.language === "en" || p.language === "zh-CN") next.language = p.language;
   if (p.moveDeclined === true) next.moveDeclined = true;
   if ("notifications" in p) next.notifications = notificationsFrom(p.notifications, next.notifications);
@@ -75,5 +75,6 @@ export function setPreferences(p: Partial<Preferences>): Preferences {
 
 /** Light, dark or the system's: every window's prefers-color-scheme follows. */
 export function applyAppearance() {
-  nativeTheme.themeSource = preferences().appearance;
+  const appearance = preferences().appearance;
+  nativeTheme.themeSource = appearance === "gray" || appearance === "black" ? "dark" : appearance;
 }

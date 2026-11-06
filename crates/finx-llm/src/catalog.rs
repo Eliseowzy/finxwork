@@ -108,6 +108,9 @@ pub enum ListModelsToml {
 pub struct ModelToml {
     pub id: String,
     pub name: Option<String>,
+    /// The name by language tag, from an account's own catalog; never written by hand.
+    #[serde(skip)]
+    pub names: BTreeMap<String, String>,
     pub api: Option<String>,
     pub base_url: Option<String>,
     pub context_window: Option<u32>,
@@ -174,6 +177,8 @@ impl Listing {
 pub struct ProviderConfig {
     pub id: String,
     pub name: String,
+    /// The name by language tag, for an account connection's product; never written by hand.
+    pub names: BTreeMap<String, String>,
     pub api: String,
     pub base_url: String,
     pub auth: AuthConfig,
@@ -523,6 +528,7 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
         let config = ProviderConfig {
             plan: p.plan,
             name: p.name.unwrap_or_else(|| id.clone()),
+            names: Default::default(),
             id: id.clone(),
             api,
             base_url,

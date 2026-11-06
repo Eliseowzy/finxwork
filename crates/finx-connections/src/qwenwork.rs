@@ -41,6 +41,7 @@ pub struct QwenWork {
 /// catalog gives one keeps thinking (measured 2026-10-30: "pro" still reasons at `none`), so it
 /// is not offered "off". The qwen3.7 models only switch thinking on and off; QwenWork itself
 /// asks qwen3.8-max for `xhigh` and the others for `high` unless the catalog names a level.
+/// An account's `key` can be an opaque string, so the model is told by its display name too.
 pub(crate) fn thinking_of(
     id: &str,
     entry: &serde_json::Value,
@@ -52,24 +53,73 @@ pub(crate) fn thinking_of(
     if !reasoning {
         return (Vec::new(), Default);
     }
-    let id = id.to_ascii_lowercase();
-    if id.starts_with("qwen3.7") {
+    let mut names = vec![id.to_ascii_lowercase()];
+    names.extend(display_name(entry).map(str::to_ascii_lowercase));
+    names.extend(
+        localized_names(entry)
+            .as_object()
+            .into_iter()
+            .flat_map(|names| names.values())
+            .filter_map(Value::as_str)
+            .map(str::to_ascii_lowercase),
+    );
+    let is = |model: &str| names.iter().any(|name| name.starts_with(model));
+    if is("qwen3.7") {
         return (vec![Off, On], On);
     }
     let named = config["effort"]
         .as_str()
         .and_then(|e| e.parse::<ThinkingLevel>().ok())
         .filter(|l| l.is_effort() && *l != Minimal);
-    let own = if id.starts_with("qwen3.8-max") {
-        Xhigh
-    } else {
-        High
-    };
+    let own = if is("qwen3.8-max") { Xhigh } else { High };
     let mut levels = vec![Off, Low, Medium, High, Xhigh, Max];
     if config.is_object() {
         levels.retain(|l| *l != Off);
     }
     (levels, named.unwrap_or(own))
+}
+
+/// A field of a catalog entry: its own, else its `server_model`'s.
+fn field<'a>(entry: &'a Value, name: &str) -> &'a Value {
+    let server = if entry["serverModel"].is_object() {
+        &entry["serverModel"]
+    } else {
+        &entry["server_model"]
+    };
+    if entry[name].is_null() {
+        &server[name]
+    } else {
+        &entry[name]
+    }
+}
+
+/// The entry's names by language, `{"zh": …, "en": …}`.
+fn localized_names(entry: &Value) -> &Value {
+    let i18n = field(entry, "i18n");
+    if i18n["displayName"].is_object() {
+        &i18n["displayName"]
+    } else {
+        &i18n["display_name"]
+    }
+}
+
+/// The name QwenWork shows for a catalog entry, looked for in the order it looks: by language,
+/// then the plain fields. `key` is what requests must say and is not meant to be read. The kernel
+/// has no interface language and the source is QwenWork's Chinese edition, so Chinese comes first;
+/// a client with a language picks from `ConnectionModel::names` instead.
+fn display_name(entry: &Value) -> Option<&str> {
+    fn text(value: &Value) -> Option<&str> {
+        value.as_str().map(str::trim).filter(|s| !s.is_empty())
+    }
+    let localized = localized_names(entry);
+    text(&localized["zh"])
+        .or_else(|| text(&localized["en"]))
+        .or_else(|| localized.as_object()?.values().find_map(text))
+        .or_else(|| {
+            ["displayName", "display_name", "name"]
+                .iter()
+                .find_map(|name| text(field(entry, name)))
+        })
 }
 
 impl QwenWork {
@@ -149,7 +199,16 @@ impl QwenWork {
                 let (thinking, default_thinking) = thinking_of(id, m);
                 Some(ConnectionModel {
                     id: id.into(),
-                    name: id.into(),
+                    name: display_name(m).unwrap_or(id).into(),
+                    names: localized_names(m)
+                        .as_object()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|(language, name)| {
+                            let name = name.as_str()?.trim();
+                            (!name.is_empty()).then(|| (language.clone(), name.to_string()))
+                        })
+                        .collect(),
                     context_window: m["max_input_tokens"]
                         .as_u64()
                         .and_then(|n| u32::try_from(n).ok()),

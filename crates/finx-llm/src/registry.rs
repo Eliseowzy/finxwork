@@ -410,6 +410,7 @@ impl ModelRegistry {
         let gone = ProviderConfig {
             id: provider.to_string(),
             name: provider.to_string(),
+            names: Default::default(),
             api: "openai-chat".to_string(),
             base_url: String::new(),
             auth: crate::AuthConfig::None,

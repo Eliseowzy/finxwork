@@ -27,7 +27,8 @@
     "title": "外观",
     "system": "跟随系统",
     "light": "浅色",
-    "dark": "深色"
+    "gray": "柔灰",
+    "black": "深黑"
   },
   "language": {
     "title": "语言",

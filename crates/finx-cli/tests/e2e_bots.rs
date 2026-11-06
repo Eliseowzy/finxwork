@@ -564,6 +564,88 @@ async fn a_new_bot_starts_on_the_model_it_was_made_with() {
     assert_eq!(opened["snapshot"]["session"]["model"], "mock/mock-1", "without a choice, the configured model");
 }
 
+/// The panel shows them as the bot's: clearing leaves them, whether its conversation is loaded or
+/// not, and a log that will not load does not stop it.
+#[tokio::test]
+async fn clearing_leaves_the_model_and_the_permission_mode() {
+    let env = TestEnv::new("manual", "").await;
+    let settings = async |client: &Client, bot: &str| {
+        let opened = client.request("bots/open", json!({"bot_id": bot})).await.unwrap();
+        let info = &opened["snapshot"]["session"];
+        (opened["session_id"].as_str().unwrap().to_string(), info["model"].clone(), info["thinking"].clone(), info["permission_mode"].clone())
+    };
+    let chosen = (json!("deepseek/deepseek-flash"), json!("low"), json!("accept-edits"));
+    let (child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    drop(incoming);
+    let created = client.request("bots/create", json!({"name": "研究员", "avatar": {"kind": "mono", "hue": "teal"}})).await.unwrap();
+    let bot = created["bot"]["id"].as_str().unwrap().to_string();
+    let (first, ..) = settings(&client, &bot).await;
+    client.request("session/op", json!({"session_id": first, "op": {"type": "set_model", "model": chosen.0, "thinking": chosen.1}})).await.unwrap();
+    client.request("session/op", json!({"session_id": first, "op": {"type": "set_permission_mode", "mode": chosen.2}})).await.unwrap();
+    tokio::time::timeout(WAIT, async {
+        while settings(&client, &bot).await.3 != chosen.2 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the settings took");
+
+    // Loaded.
+    client.request("bots/clear", json!({"bot_id": bot})).await.unwrap();
+    let (second, model, thinking, mode) = settings(&client, &bot).await;
+    assert_ne!(second, first);
+    assert_eq!((model, thinking, mode), chosen.clone());
+    drop((client, child));
+
+    // Not loaded, and read back from its file after another restart.
+    let changed = json!("bypass-permissions");
+    let (child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    // A conversation nobody has spoken in has no log yet: this one starts from the file too.
+    let (second, ..) = settings(&client, &bot).await;
+    say(&client, &second, "[[mock:send:在。]] 在吗").await;
+    until_event(&mut wire, ended).await;
+    client.request("session/op", json!({"session_id": second, "op": {"type": "set_permission_mode", "mode": changed}})).await.unwrap();
+    // The test kills finx: it has to be in the log first.
+    tokio::time::timeout(WAIT, async {
+        while !logs(env.home.path()).iter().any(|(_, text)| text.contains(&second) && text.contains("bypass-permissions")) {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the setting reached its log");
+    drop((client, child, wire));
+    let (child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    client.request("bots/clear", json!({"bot_id": bot})).await.unwrap();
+    drop((client, child));
+    let (child, client, incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    let mut wire = route(incoming);
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    let (third, model, thinking, mode) = settings(&client, &bot).await;
+    assert_ne!(third, second);
+    assert_eq!((model, thinking, mode), (chosen.0.clone(), chosen.1.clone(), changed));
+
+    // A log that will not load: clearing goes on, a new conversation starts.
+    say(&client, &third, "[[mock:send:在。]] 在吗").await;
+    until_event(&mut wire, ended).await;
+    drop((client, child, wire));
+    let (log, text) = logs(env.home.path()).into_iter().find(|(_, text)| text.contains(&third)).expect("its log");
+    let header = text.lines().next().unwrap();
+    std::fs::write(&log, format!("{header}\nnot an entry\n{{\"neither\":1}}\n")).unwrap();
+    let (_child, client, _incoming) = env.spawn_rpc(&["serve", "--stdio"]);
+    native_init(&client).await;
+    client.request("bots/subscribe", Value::Null).await.unwrap();
+    client.request("bots/clear", json!({"bot_id": bot})).await.unwrap();
+    let (fourth, ..) = settings(&client, &bot).await;
+    assert_ne!(fourth, third);
+}
+
 #[tokio::test]
 async fn renaming_avatars_clearing_and_deleting() {
     let env = TestEnv::new("manual", "").await;

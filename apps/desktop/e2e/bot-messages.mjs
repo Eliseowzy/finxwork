@@ -395,9 +395,10 @@ try {
   const sheet = await page.run(`(() => { const r = document.querySelector(".fpv").getBoundingClientRect(); return { w: r.width, h: r.height, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom }; })()`);
   same([sheet.w, sheet.h], [1040, 732], "its size in a window of 1280 × 820");
   check(Math.abs(sheet.left - sheet.right) < 1 && Math.abs(sheet.top - sheet.bottom) < 1, `in the middle: ${JSON.stringify(sheet)}`);
-  // The blur reaches the sidebar too: a see-through page would leave its sharp text showing beneath.
+  // The blur reaches the sidebar too: it covers the sidebar's text, and what it blurs is solid, as a blur of something see-through leaves sharp text showing beneath.
   check(await page.run(`getComputedStyle(document.querySelector(".fpv"), "::backdrop").backdropFilter.includes("blur(20px)")`), "the window blurred behind it");
-  check(await page.run(`!/, 0\\)$/.test(getComputedStyle(document.documentElement).backgroundColor)`), "the page opaque under it");
+  check(await page.run(`(() => { const r = document.querySelector(".brow.sel .bname").getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === document.querySelector(".fpv"); })()`), "the blur over the sidebar");
+  check(await page.run(`[document.body, document.querySelector(".side")].every((e) => getComputedStyle(e).backgroundColor.startsWith("rgb("))`), "the page and sidebar opaque under it");
   await sleep(300);
   await page.shot("05-file-preview");
   await page.click(".fpv-source");
@@ -406,7 +407,6 @@ try {
   await page.until("back as it reads", `!!document.querySelector(".fpv .md h1")`);
   await page.key("Escape");
   await page.until("Esc closes it", closed);
-  same(await page.run(`getComputedStyle(document.documentElement).backgroundColor`), "rgba(0, 0, 0, 0)", "the page see-through again, for the sidebar's material");
 
   await page.click(tiles);
   await page.until("the preview again", previewing("notes.md"));
