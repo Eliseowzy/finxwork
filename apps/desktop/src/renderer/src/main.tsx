@@ -4,6 +4,7 @@ import { I18nextProvider } from "react-i18next";
 import { i18n } from "../../shared/i18n";
 import { App } from "./App";
 import { Tips } from "./tips";
+import "./styles/fonts.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
 import "./styles/composer.css";

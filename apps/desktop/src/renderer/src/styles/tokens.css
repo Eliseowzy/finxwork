@@ -30,11 +30,19 @@
   --ease-in: cubic-bezier(0.3, 0, 1, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
 
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --mono: "SF Mono", ui-monospace, Menlo, "JetBrains Mono", Consolas, monospace;
-  --fs: 13px;
+  --font: "Google Sans Flex", "Google Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Google Sans Code", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --fs: 14px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 450;
+  --font-weight-semibold: 550;
+  --font-weight-bold: 650;
+  --font-axes: "ROND" 0, "slnt" 0, "wdth" 92;
+  --sidebar-width: 256px;
+  --conversation-width: 768px;
+  --chat-size: 14.5px;
   /* The window's chrome: the top band, and room for the system's window buttons. */
-  --top: 44px;
+  --top: 40px;
   --lights: 78px;
   --caption: 0px;
 
@@ -111,20 +119,14 @@
   }
 }
 
-/* Windows: Segoe, a step larger; the caption buttons sit at the top band's right. */
+/* The bundled typefaces are shared across platforms; window controls are native. */
 :root[data-platform="win"] {
-  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  --mono: "Cascadia Mono", Consolas, monospace;
-  --fs: 13.5px;
   --lights: 12px;
   --caption: 138px;
 }
 
-/* Linux: the desktop's UI font; the system draws the title bar. */
+/* Linux: the system draws the title bar. */
 :root[data-platform="linux"] {
-  --font: system-ui, "Noto Sans", "Noto Sans CJK SC", "Ubuntu", sans-serif;
-  --mono: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
-  --fs: 13.5px;
   --lights: 12px;
 }
 

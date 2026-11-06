@@ -1,17 +1,22 @@
 /* FinxWork's reading surface. UI sizes remain independent of content sizes. */
 :root {
-  --md-size:15px; --md-leading:1.6; --md-code-size:13px;
+  --md-size:var(--chat-size); --md-leading:1.625; --md-code-size:13px;
   --md-fg:var(--msg); --md-muted:var(--l2); --md-link:var(--accent-fg);
-  --md-prose-width:730px; --md-rich-width:1040px;
+  --md-prose-width:752px; --md-rich-width:752px;
 }
 @media(prefers-color-scheme:dark){:root{--md-fg:var(--msg);--md-muted:var(--l2)}}
-.md{font:var(--md-size)/var(--md-leading) var(--font);color:var(--md-fg);min-width:0;overflow-wrap:anywhere}
+.md{font:var(--font-weight-normal) var(--md-size)/var(--md-leading) var(--font);font-variation-settings:var(--font-axes);color:var(--md-fg);min-width:0;overflow-wrap:anywhere}
 .md[data-mode=compact]{--md-size:14px}
 .md>*{margin:0}
-.md>*+*{margin-top:.8em}
-.md :is(h1,h2,h3,h4,h5,h6){font-weight:650;line-height:1.35;scroll-margin-top:32px;text-wrap:pretty}
+.md>*+*{margin-top:8px}
+.md :is(h1,h2,h3,h4,h5,h6){font-weight:var(--font-weight-medium);line-height:1.5;scroll-margin-top:32px;text-wrap:pretty}
 .md :is(h1,h2,h3,h4,h5,h6):not(:first-child){margin-top:1.5em}
-.md h1{font-size:1.5em}.md h2{font-size:1.25em}.md h3{font-size:1.125em}.md h4{font-size:1em}.md h5{font-size:.95em}.md h6{font-size:.9em;color:var(--md-muted)}
+.md h1{font-size:20px;line-height:28px;font-weight:var(--font-weight-semibold)}.md h2{font-size:18px;line-height:28px;font-weight:var(--font-weight-semibold)}.md h3{font-size:16px;line-height:24px}.md h4,.md h5,.md h6{font-size:14px;line-height:20px}
+.md :is(h1,h2){letter-spacing:-.015em}
+.md :is(h3,h4,h5,h6){letter-spacing:-.008em}
+.md :is(strong,b){font-weight:490}
+.md :is(h1,h2,h3,h4,h5,h6) :is(strong,b){font-weight:650}
+.md :is(strong,b) code{font-weight:600}
 .md p{text-wrap:pretty}
 .md ul,.md ol{padding-inline-start:1.5em}
 .md li+li{margin-top:.3em}.md li>p+p{margin-top:.65em}
@@ -27,7 +32,7 @@
 .md .md-callout[data-kind=tip]{border-inline-start-color:var(--ok)}
 .md a{color:var(--md-link);text-underline-offset:3px}
 .md a:focus-visible,.md summary:focus-visible,.md-tools button:focus-visible,.md-table-scroll:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
-.md code{font-size:.9em;box-decoration-break:clone;-webkit-box-decoration-break:clone;overflow-wrap:anywhere}
+.md code{font-weight:400;font-variation-settings:normal;font-size:.9em;box-decoration-break:clone;-webkit-box-decoration-break:clone;overflow-wrap:anywhere}
 .md pre code{font-size:var(--md-code-size);line-height:1.6;overflow-wrap:normal}
 .md pre{tab-size:4}
 .md .cblock pre{max-height:520px;overscroll-behavior:contain}
@@ -75,15 +80,14 @@
 .md .katex{font-size:1.05em}
 .md .katex-display{overflow:auto;max-width:100%;padding:6px 0;margin:.8em 0}
 .md .katex-error{color:inherit!important;font-family:var(--mono);font-size:.9em;white-space:pre-wrap}
-/* The conversation owns the available width, including when side panels open.
-   Ordinary rows remain narrow; rich blocks can use the center column's space. */
+/* Replies and rich blocks share the centered conversation column, including with side panels open. */
 .markdown-chat{container-type:inline-size}
-.markdown-chat>.dbody{max-width:calc(var(--md-rich-width) + 68px)}
-.markdown-chat .tr>.am{width:100%;align-self:center}
+.markdown-chat>.dbody{max-width:calc(var(--conversation-width) + 32px)}
+.markdown-chat .tr>.am{width:100%;padding-inline:8px;align-self:center}
 .markdown-chat .am>.md>*{max-width:var(--md-prose-width);margin-inline:auto}
-.markdown-chat .am>.msg-act{left:max(-2px,calc((100% - var(--md-prose-width))/2 - 2px))}
-.markdown-chat .tr>:not(.am){max-width:var(--md-prose-width);width:100%;align-self:center}
-.markdown-chat .tr>.um{width:auto;align-self:flex-end;max-width:min(78%,var(--md-prose-width))}
+.markdown-chat .am>.msg-act{left:6px}
+.markdown-chat .tr>:not(.am){max-width:var(--conversation-width);width:100%;align-self:center}
+.markdown-chat .tr>.um{width:auto;align-self:flex-end;max-width:min(80%,var(--conversation-width))}
 .markdown-chat .am>.md>.md-wide{width:100%;max-width:var(--md-rich-width)}
 /* A table keeps the prose's left edge and grows to the right, so writing it never slides it.
    The end margin is its tools' place: a finished row's containment would clip them past the row. */
