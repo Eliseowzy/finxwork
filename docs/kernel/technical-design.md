@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.51 |
-| 日期 | 2026-11-05 |
+| 版本 | v1.52 |
+| 日期 | 2026-11-06 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
 
@@ -98,6 +98,7 @@
 | v1.49 | 2026-11-05 | Bot 的回合和插话（[bot-turn-design.md](bot-turn-design.md)）：日志加 `undelivered`、`reply_nudge` 条目，`system_prompt` 条目加 `template`（§7.2、§9.2）；所有主会话的目录多一组 `agents`：`check_agents`、`stop_agents`（subagent-design §6.6） |
 | v1.50 | 2026-11-05 | 智能体之间能互发消息（[agent-messaging-design.md](agent-messaging-design.md)）：子智能体有 `send_message`，事件的 `mail.kind` 多一个 `message`，日志加 `agent_message` 条目（§9.2、subagent-design §9.2）；`check_agents` 改名 `list_agents`，子智能体也有 |
 | v1.51 | 2026-11-05 | 超长消息的读取（§1.4，D-445）：一超过上限就报错，已读入的部分当即释放，后面边读边丢；错误带上请求的 `id`；长行的读缓冲不再靠 `realloc` 增长，`finx acp < /dev/zero` 由 2.1 GiB 降到约 138 MiB；`server.max_frame_bytes` 默认值由 32 MiB 提到 128 MiB（protocol-design §4.4） |
+| v1.52 | 2026-11-06 | 错误分类（§4.11，D-483）：429 的 `Allocated quota exceeded` 是每分钟 Token 限流，按限流重试；`insufficient_quota` 这个码不再单独定性 |
 
 ## 1. 目标与范围
 
@@ -1024,7 +1025,7 @@ pub enum ErrorKind {
 |---|---|---|
 | 401 / 403 | Auth | 否 |
 | 402，或表示余额、配额不足的错误码或提示（含"余额不足""欠费"） | QuotaExceeded | 否 |
-| 429 | RateLimited | 是 |
+| 其他 429，包括 `Allocated quota exceeded`（D-483） | RateLimited | 是 |
 | 503 / 529 / overloaded | Overloaded | 是 |
 | 其他 5xx | Server | 是 |
 | 连接失败、连接被重置 | Network | 是 |
@@ -1035,6 +1036,8 @@ pub enum ErrorKind {
 | 流的格式无法解析 | Protocol | 否 |
 
 流里的错误事件没有状态码，只能按措辞判断。先排除不会自己好的：上下文超限、余额不足；再认过载（overloaded、busy、capacity、繁忙）、限流（rate limit、too many requests、throttl、限流、频率、并发）、服务端错误（server、internal、内部错误）、超时（timeout、超时）。都不像的归为 Unknown，不重试。"billing""balance"这类宽泛的词只在 429 里算余额不足，别处可能是负载均衡器（load balancer）报的错。
+
+`insufficient_quota` 这个错误码本身分不出两种情况：百炼把每分钟 Token 限流和真的用光都放在它下面，所以措辞优先，码只在措辞没说明时才算配额不足。`Allocated quota exceeded` 算限流；`Free allocated`、`hour allocated`、`week allocated`、`month allocated` 和 `quota has been exhausted` 要等几小时以上或根本等不回来，立即报错（D-483）。
 
 重试规则：
 - **时长**：从第一次失败算起，最多再重试 10 分钟（`llm.retry_window_secs`，0 表示不重试）。次数默认不限，`llm.max_retries` 可以另设上限。时长用单调时钟计；最后一次等待截到时长用完的那一刻，到点再试最后一次。
@@ -3129,6 +3132,7 @@ Skill 的决策 D-60–D-89 和待定问题 Q-60–Q-68 记在 skill-design.md �
 | D-239 | 工具结果的预算按 token 计，4 字节 1 个 token，不调用分词器；工具自身的预算默认 10,000 token，内核兜底为它的 1.2 倍；单个结果仍不超过可用窗口的 10% | 与上下文窗口、压缩阈值同一个单位，配置和给模型的说明都按 token 说；按字节换算不增加开销，在 Qwen3.8-Flash 上实测，中文为主的文本偏差 −5% 到 +3%，英文 +10%；兜底的余量按比例给，工具附加的说明不会让结果被裁第二次；裁掉的部分可以读回，预算比原来的 50 KB（约 12,800 token）小一些也不丢信息 | §5.7 §10.2 |
 | D-342 | 调试构建只给工作区自己的 crate 行号表（`debug = "line-tables-only"`），依赖不带调试信息；保留 `split-debuginfo` 的默认值和增量缓存 | 三种 `-p` 组合各构建一次后 target 由 12.96 小到 9.36 GiB（小 28%），冷编译快约一成，改一个函数后的重编译不变；工作区代码的 `RUST_BACKTRACE` 仍有 file:line，panic 消息里的位置在任何配置下都有。`split-debuginfo = "off"` 让测试 crate 自己的栈帧没有 file:line；`"packed"` 更大（14.53 GiB）且重编译慢一倍以上；关增量缓存可再小约四成，重编译却慢 4 倍。体积的大头（增量缓存约一半、测试可执行文件约三成）不随调试信息变化，所以还需要清理旧的构建组合 | §15.1 |
 | D-445 | 超长的一行一过上限就报错（带请求的 `id`，认得出时），已读入的部分当即释放，后面边读边丢，连接继续可用。行超过 4 MiB 时读缓冲搬到一块新内存（默认上限下一次留够 128 MiB 加一次读取），不用 `realloc`；这一行取走后，后面的数据移回这块的开头。`server.max_frame_bytes` 默认 128 MiB | `finx acp < /dev/zero` 的 2.1 GiB 不是没有上限：活跃数据约 50 MiB，其余是 macOS 分配器留着的 `realloc` 废块，到约 2 GiB 才停。Linux 上同样的输入只有 49 MiB。合法的长行在 macOS 上一样累积，有间隔地发 40 行 7 MiB 就留下 292 MiB，所以只改丢弃路径不够。实测 4 MiB 以内的 `realloc` 不累积，这段不动，普通消息走的还是原来的路径。一次留够而不是继续翻倍：页面用到才占，长行不用一路拷贝。长行取走后不换块：连续发长行时每行换一块，Linux 上每行都要重新缺页，吞吐掉到约一半。不断开连接：提示词太大不是客户端坏了，桌面端也不该因此断线。超过 32 MiB 的合法消息确实有（5 张满尺寸的图就是 33.3 MiB），依据见 protocol-design §4.4 | §1.4 |
+| D-483 | 429 的 `Allocated quota exceeded` 按限流重试，不按欠费立即报错，虽然它带 `insufficient_quota`。依据：百炼错误码文档写明它是 TPS/TPM 触发限流；2026-11-04 两个子智能体因它失败后，同一个 key、同一个模型在几秒内就再次成功。文档列出的长周期和用尽的说法仍立即报错。百炼文档把 `You exceeded your current quota` 也算作 TPM，但这句和别家真的欠费时一字不差，分不开，继续按配额不足，至今没在百炼上见过这句 |
 
 ## 20. 待定问题
 

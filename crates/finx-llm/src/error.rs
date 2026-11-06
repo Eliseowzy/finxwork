@@ -96,6 +96,12 @@ const QUOTA_PATTERNS: &[&str] = &[
 ];
 /// Point to money only in a 429: elsewhere "balance" may be a load balancer's.
 const QUOTA_WORDS: &[&str] = &["billing", "balance"];
+/// A limit per second or minute, sent under the code an empty account uses
+/// (`insufficient_quota`): the wording decides here, not the code. Seen 2026-11-04: right after
+/// it, the same key and model answered within seconds.
+const PASSING_ALLOCATION: &str = "allocated quota exceeded";
+/// The same wording for an allowance that is gone for hours or more, or for good.
+const LASTING_ALLOCATIONS: &[&str] = &["free allocated", "hour allocated", "week allocated", "month allocated"];
 
 // Error events inside a stream carry no status, only wording.
 const OVERLOADED_PATTERNS: &[&str] = &["overloaded", "overload", "busy", "capacity", "繁忙", "过载"];
@@ -160,6 +166,8 @@ impl LlmError {
             ErrorKind::Auth
         } else if matches_any(&haystack, DEFAULT_OVERFLOW_PATTERNS, overflow_patterns) {
             ErrorKind::ContextOverflow
+        } else if is_passing_allocation(&haystack) {
+            ErrorKind::RateLimited
         } else if has(QUOTA_PATTERNS) {
             ErrorKind::QuotaExceeded
         } else if has(OVERLOADED_PATTERNS) {
@@ -227,6 +235,7 @@ fn classify(status: u16, haystack: &str, overflow_patterns: &[String]) -> ErrorK
         401 | 403 => ErrorKind::Auth,
         402 => ErrorKind::QuotaExceeded,
         408 => ErrorKind::Timeout,
+        429 if is_passing_allocation(haystack) => ErrorKind::RateLimited,
         429 if QUOTA_PATTERNS.iter().chain(QUOTA_WORDS).any(|p| haystack.contains(p)) => ErrorKind::QuotaExceeded,
         429 => ErrorKind::RateLimited,
         503 | 529 => ErrorKind::Overloaded,
@@ -241,6 +250,10 @@ fn classify(status: u16, haystack: &str, overflow_patterns: &[String]) -> ErrorK
         400..=499 => ErrorKind::InvalidRequest,
         _ => ErrorKind::Unknown,
     }
+}
+
+fn is_passing_allocation(haystack: &str) -> bool {
+    haystack.contains(PASSING_ALLOCATION) && !LASTING_ALLOCATIONS.iter().any(|p| haystack.contains(p))
 }
 
 fn matches_any(haystack: &str, defaults: &[&str], extra: &[String]) -> bool {
@@ -357,6 +370,49 @@ mod tests {
         assert_eq!(stream(serde_json::json!({"code": "insufficient_quota", "message": "server says no"})), ErrorKind::QuotaExceeded);
         assert_eq!(stream(serde_json::json!({"message": "tool schema is malformed"})), ErrorKind::Unknown);
         assert_eq!(stream(serde_json::json!({"message": "load balancer: server unavailable"})), ErrorKind::Server);
+    }
+
+    #[test]
+    fn a_limit_per_minute_is_told_from_an_empty_account_under_the_same_code() {
+        let none: Vec<String> = Vec::new();
+        let body = |message: &str| serde_json::json!({"error": {"message": message, "code": "insufficient_quota"}}).to_string();
+        let http = |message: &str| LlmError::from_http(429, &body(message), None, &none).kind;
+        let stream = |message: &str| {
+            let error = serde_json::json!({"message": message, "code": "insufficient_quota"});
+            LlmError::from_stream_error(&error, &none).kind
+        };
+
+        // Passes by itself: the body as it came back, and the forms that say to try again soon.
+        for passing in [
+            "Allocated quota exceeded, please increase your quota limit. For details, see: https://www.alibabacloud.com/help/en/model-studio/error-code#token-limit",
+            "concurrency allocated quota exceeded",
+            "usage allocated quota exceeded. please try again later.",
+        ] {
+            assert_eq!(http(passing), ErrorKind::RateLimited, "{passing}");
+            assert_eq!(stream(passing), ErrorKind::RateLimited, "{passing}");
+            assert!(http(passing).is_retryable());
+        }
+
+        // Gone for hours or longer, or for good: reported at once.
+        for lasting in [
+            "Free allocated quota exceeded.",
+            "hour allocated quota exceeded",
+            "week allocated quota exceeded",
+            "month allocated quota exceeded",
+            "Your token-plan quota has been exhausted.",
+            "You exceeded your current quota, please check your plan and billing details.",
+            "账户已欠费",
+        ] {
+            assert_eq!(http(lasting), ErrorKind::QuotaExceeded, "{lasting}");
+            assert_eq!(stream(lasting), ErrorKind::QuotaExceeded, "{lasting}");
+            assert!(!http(lasting).is_retryable());
+        }
+
+        // Only a 429 speaks of the moment; the code alone still means an empty account.
+        let allocated = body("Allocated quota exceeded");
+        assert_eq!(LlmError::from_http(402, &allocated, None, &none).kind, ErrorKind::QuotaExceeded);
+        assert_eq!(http("server says no"), ErrorKind::QuotaExceeded);
+        assert_eq!(stream("server says no"), ErrorKind::QuotaExceeded);
     }
 
     #[test]

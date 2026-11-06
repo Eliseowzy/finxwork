@@ -611,4 +611,4 @@ send_message lets it continue later. The result lists what stopped and what had 
 - **历史里的旧习惯和失败记录**：25 万 token 那段对话里子智能体因为额度错误失败过，模型的思考写着 `agents hit quota errors earlier`，所以还有一次自己写。
 - **寒暄偶尔还是写成文字**："谢谢"这种，定稿提示的两组共 54 遍里 1 遍提醒后也没发，主人看到失败卡。
 - **没测过的模型**：`gpt-6.1-sol` 这次没跑，统计只有上面两个模型。
-- **百炼的额度错误不重试**：`Allocated quota exceeded` 的 429 带 `insufficient_quota`，内核按欠费处理（`finx-llm/src/error.rs`）。测试中它时断时续，当时额度也确实紧张，是不是该重试还没定。
+- **百炼的额度错误（已查清，D-483）**：`Allocated quota exceeded` 的 429 是每分钟 Token 限流，不是额度用完：百炼文档这样写，日志里失败之后同一个 key、同一个模型几秒内又成功。内核现在按限流重试（`finx-llm/src/error.rs`）。这段统计是改之前跑的，子智能体失败的次数和受它影响的委派比例要重新量。
