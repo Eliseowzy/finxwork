@@ -412,7 +412,8 @@ try {
   await until("filled down", async () => { const v = await valuesAt("H2:H5"); return v.H4 === 1 && v.H5 === 1; }, 5000);
   step("a right-click in the selection keeps it and opens Excel's cell menu; Clear Contents clears it");
   const rightClick = async (at) => {
-    const p = await page.run(`(() => { const r = document.querySelector('${V} .sht-c[data-cell="${at}"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    const p = await page.run(`(() => { const r = document.querySelector('${V} .sht-c[data-cell="${at}"]')?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    check(p, `${at} is not drawn: the grid draws only the cells in sight, and a right-click needs one`);
     await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...p });
     await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...p, button: "right", buttons: 2, clickCount: 1 });
     await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...p, button: "right", clickCount: 1 });
@@ -429,8 +430,8 @@ try {
   await until("H2:H5 cleared", async () => { const v = await valuesAt("H2:H5"); return Object.values(v).every((x) => x === undefined || x === null); }, 5000);
   check((await page.run(`document.querySelector("${V} .sht-name").value`)) === "H2" && (await page.run(`!!document.querySelector("${V} .sht-sel.multi")`)), "the right-click moved off the selection");
   step("a right-click outside the selection selects the cell it lands on");
-  await rightClick("K3");
-  await page.until("K3 selected", `document.querySelector("${V} .sht-name").value === "K3" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
+  await rightClick("H12");
+  await page.until("H12 selected", `document.querySelector("${V} .sht-name").value === "H12" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
   // The fill handle: 1…4 dragged down four rows carries on to 8, the tip showing 8 on the way.
   await goCell("J2");
   await page.run(`(() => { const d = new DataTransfer(); d.setData("text/plain", "1\\n2\\n3\\n4\\n"); document.querySelector("${V} .sht-canvas").dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
