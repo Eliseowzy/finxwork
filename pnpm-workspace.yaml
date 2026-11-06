@@ -10,6 +10,6 @@ onlyBuiltDependencies:
 # published as release tarballs; see docs/desktop/betteroffice-fork.md. Overrides also catch
 # pptx-react's own dependency on pptx and pptx-i18n.
 overrides:
-  '@betteroffice/pptx': file:/tmp/bo-finx/betteroffice-pptx-0.5.1-finx.g05cccb78.tgz
-  '@betteroffice/pptx-i18n': file:/tmp/bo-finx/betteroffice-pptx-i18n-0.5.1-finx.g05cccb78.tgz
-  '@betteroffice/pptx-react': file:/tmp/bo-finx/betteroffice-pptx-react-0.5.1-finx.g05cccb78.tgz
+  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g05cccb78/betteroffice-pptx-0.5.1-finx.g05cccb78.tgz
+  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g05cccb78/betteroffice-pptx-i18n-0.5.1-finx.g05cccb78.tgz
+  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g05cccb78/betteroffice-pptx-react-0.5.1-finx.g05cccb78.tgz
