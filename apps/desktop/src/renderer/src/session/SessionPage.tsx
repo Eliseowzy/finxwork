@@ -63,7 +63,7 @@ export function SessionPage({ s }: { s: ListSession }) {
             aria-pressed={info}
             onClick={() => setCard(st, !info)}
           >
-            <Icon name="infoCard" className="panel" />
+            <Icon name="sessionInfo" />
           </button>
           {/* The background panel's button, with how many tasks run; only for a session that has some. */}
           {agents > 0 && (
