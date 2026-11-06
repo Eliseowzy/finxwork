@@ -15,6 +15,7 @@
 //   node apps/desktop/e2e/content-actions.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/content-actions.mjs   also screenshots
 //   FINXWORK_E2E_APP=dist/FinxWork.app node apps/desktop/e2e/content-actions.mjs   the packaged app, with its own finx
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -167,6 +168,8 @@ function finxCall(method, params = {}) {
       }
     });
     s.on("error", reject);
+    // A kernel told to shut down may go before it answers.
+    s.on("close", () => reject(new Error("the kernel closed the connection")));
   });
 }
 
@@ -174,7 +177,7 @@ function finxCall(method, params = {}) {
 let app = null;
 let port = 0;
 async function launch() {
-  port = 9400 + Math.floor(Math.random() * 400);
+  port = cdpPort();
   const program = packaged ? path.join(packaged, "Contents/MacOS/FinxWork") : electron;
   app = spawn(program, [...(packaged ? [] : [desktop]), `--remote-debugging-port=${port}`], {
     env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },

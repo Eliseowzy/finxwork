@@ -655,7 +655,22 @@ async fn the_agent_lets_go_of_its_tabs_and_finds_them_again() {
     assert_eq!(state["sessions"][0]["handoff"], "sign in", "{state}");
     assert_eq!(state["sessions"][0]["state"], "awaiting_approval", "{state}");
     assert_eq!(state["host"], "connected", "{state}");
-    evaluate_in(&chrome, &popup, &format!("chrome.runtime.sendMessage({{do: 'done', session: {}}})", json!(session))).await;
+    // The page was opened before the task asked: it says so by itself, and its button does it.
+    let mut shown = Value::Null;
+    for _ in 0..50 {
+        shown = evaluate_in(
+            &chrome,
+            &popup,
+            "({head: document.querySelector('.head').textContent === chrome.i18n.getMessage('waitingOne'), what: document.querySelector('.line.whole')?.textContent, done: document.querySelector('button.primary')?.textContent === chrome.i18n.getMessage('done')})",
+        )
+        .await;
+        if shown == json!({"head": true, "what": "sign in", "done": true}) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(shown, json!({"head": true, "what": "sign in", "done": true}));
+    evaluate_in(&chrome, &popup, "document.querySelector('button.primary').click()").await;
     let mut said = String::new();
     loop {
         let incoming = common::recv(&mut events).await;
@@ -733,6 +748,74 @@ async fn the_agent_lets_go_of_its_tabs_and_finds_them_again() {
 
     client.request("server/shutdown", json!({})).await.unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(20), service.wait()).await;
+}
+
+/// What the extension's page says, read until it says `title`; and what its one button is.
+async fn page_says(chrome: &finx_browser::cdp::Conn, popup: &str, title: &str, within: Duration) -> Value {
+    let expression = format!(
+        "({{head: document.querySelector('.head')?.textContent === chrome.i18n.getMessage({title:?}), button: document.querySelector('button.primary')?.textContent ?? null}})"
+    );
+    let deadline = std::time::Instant::now() + within;
+    loop {
+        let shown = evaluate_in(chrome, popup, &expression).await;
+        if shown["head"] == true {
+            return shown["button"].clone();
+        }
+        assert!(std::time::Instant::now() < deadline, "the page never said {title}: {shown}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// The toolbar's "!" is only worth it if the page explains it: a host that cannot start is quiet at
+/// first, then asks for the user with one button, and that button brings the connection back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_extensions_page_says_what_is_wrong_and_what_to_do() {
+    let Some(chrome_exe) = finx_browser::launch::find_executable() else {
+        eprintln!("no Chromium-family browser installed; skipping");
+        return;
+    };
+    let env = TestEnv::new("bypass-permissions", "[browser]\nextension = true\n").await;
+    let profile = env.work().join("chrome-profile");
+    let installed = env
+        .finx(&["browser", "extension", "install", "--user-data-dir", profile.to_str().unwrap()])
+        .output()
+        .await
+        .unwrap();
+    assert!(installed.status.success(), "{}", String::from_utf8_lossy(&installed.stderr));
+    let manifest: Value =
+        serde_json::from_str(&std::fs::read_to_string(profile.join("NativeMessagingHosts/com.finxwork.browser.json")).unwrap()).unwrap();
+    let script = std::path::PathBuf::from(manifest["path"].as_str().unwrap());
+    let working = std::fs::read(&script).unwrap();
+
+    // No service runs: the host starts and says FinxWork is not open, which is not a problem.
+    let (chrome, chrome_process) = chrome_with_extension(&env, &profile, &chrome_exe).await;
+    let opened = chrome.send(None, "Target.createTarget", json!({"url": format!("chrome-extension://{EXTENSION_ID}/src/popup.html"), "background": true})).await.unwrap();
+    let popup = opened["targetId"].as_str().unwrap().to_string();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let button = page_says(&chrome, &popup, "statusNotOpen", Duration::from_secs(20)).await;
+    assert_eq!(evaluate_in(&chrome, &popup, "chrome.i18n.getMessage('openApp')").await, button);
+    assert_eq!(worker(&chrome, "chrome.action.getBadgeText({})").await, "", "nothing on the icon");
+
+    // The host cannot start any more, and the one running dies.
+    std::fs::write(&script, "#!/bin/sh\nexit 1\n").unwrap();
+    let hosts = std::process::Command::new("/usr/bin/pgrep").args(["-P", &chrome_process.id().unwrap().to_string(), "-f", "native-host"]).output().unwrap();
+    let host = String::from_utf8_lossy(&hosts.stdout).lines().next().expect("the extension's host runs").to_string();
+    std::process::Command::new("/bin/kill").args(["-9", &host]).status().unwrap();
+
+    // Quiet while reconnecting would still be normal.
+    assert_eq!(page_says(&chrome, &popup, "statusConnecting", Duration::from_secs(5)).await, Value::Null);
+    assert_eq!(worker(&chrome, "chrome.action.getBadgeText({})").await, "", "too early for the icon");
+
+    // Past that, it asks: on the icon, and on the page with one button.
+    let button = page_says(&chrome, &popup, "statusStuck", Duration::from_secs(15)).await;
+    assert_eq!(evaluate_in(&chrome, &popup, "chrome.i18n.getMessage('retry')").await, button);
+    assert_eq!(worker(&chrome, "chrome.action.getBadgeText({})").await, "!");
+
+    // Repaired, and tried again: back to normal, with the icon clear.
+    std::fs::write(&script, &working).unwrap();
+    evaluate_in(&chrome, &popup, "document.querySelector('button.primary').click()").await;
+    page_says(&chrome, &popup, "statusNotOpen", Duration::from_secs(20)).await;
+    assert_eq!(worker(&chrome, "chrome.action.getBadgeText({})").await, "", "the icon clears");
 }
 
 /// The bug behind "the extension is not connected": the app was replaced while Chrome kept a host

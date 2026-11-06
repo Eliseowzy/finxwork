@@ -10,6 +10,7 @@
 //
 //   node apps/desktop/e2e/web-search.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/web-search.mjs   also screenshots
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -102,7 +103,7 @@ const credentials = () => {
 };
 
 // ── the app, driven over the DevTools protocol ──
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 let app = null;
 
 async function attach(match, what) {

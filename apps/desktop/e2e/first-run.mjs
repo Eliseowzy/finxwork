@@ -11,6 +11,7 @@
 //
 //   node apps/desktop/e2e/first-run.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/first-run.mjs   also screenshots
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -94,7 +95,7 @@ function finxCall({ socket }, method, params = {}) {
 // ── the app, driven over the DevTools protocol ──
 let app = null;
 async function launch({ work, home }, mode) {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   // Everything that would make a provider connected is left out: this is the first run.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.endsWith("_API_KEY") && k !== "FINX_MODEL"));
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {

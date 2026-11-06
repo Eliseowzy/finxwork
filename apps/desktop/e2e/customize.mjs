@@ -12,6 +12,7 @@
 //
 //   node apps/desktop/e2e/customize.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/customize.mjs   also screenshots, light and dark
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -50,7 +51,7 @@ function cli(args) {
 // ── the app, driven over the DevTools protocol (as e2e/stale-model.mjs) ──
 let app = null;
 async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
     env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
@@ -291,10 +292,14 @@ try {
     await page.until("sidebar after reload", `!![...document.querySelectorAll('.nav-i')].find(e => e.textContent.includes('自定义'))`);
     await page.run(`[...document.querySelectorAll('.nav-i')].find(e => e.textContent.includes('自定义')).click()`);
     await page.until("customize after reload", `!!document.querySelector('.cz-back, .cz-tab')`);
-    await page.run(`document.querySelector('.cz-back')?.click()`);
-    await page.run(`[...document.querySelectorAll('.cz-tab')].find(e => e.textContent.includes('连接器'))?.click()`);
-    await page.run(`[...document.querySelectorAll('.cz-seg button')][0]?.click()`);
-    await page.until("tracker after reload", `!!${trackerRow}`);
+    // Each click until the row shows: what it clicks may not be drawn yet, and a click on nothing is lost.
+    await page.until("tracker after reload", `(() => {
+      if (${trackerRow}) return true;
+      document.querySelector('.cz-back')?.click();
+      [...document.querySelectorAll('.cz-tab')].find(e => e.textContent.includes('连接器'))?.click();
+      [...document.querySelectorAll('.cz-seg button')][0]?.click();
+      return false;
+    })()`);
     await page.run(`${trackerRow}.click()`);
     await page.until("resume login action", `!!document.querySelector('.cz-note .btn.primary')`);
     await page.run(`document.querySelector('.cz-note .btn.primary').click()`);

@@ -95,7 +95,7 @@ fn a_model_that_names_its_efforts_offers_them() {
     each_model(|provider, m| {
         let model = &m.model;
         let Some(row) = row_of(provider, &model.id) else { return };
-        let (thinking, _) = finx_llm::directory::derive_thinking(&row.reasoning_options);
+        let (thinking, _) = finx_llm::directory::row_thinking(&row);
         if !model.reasoning || provider.entry(&model.id).is_some_and(|e| e.thinking.is_some()) {
             return;
         }

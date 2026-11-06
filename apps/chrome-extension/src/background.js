@@ -25,6 +25,8 @@ const GROUP_TITLE = "FinxWork";
 const TITLE_CHARS = 30;
 const RETRY_MIN = 1000;
 const RETRY_MAX = 30000;
+/** Reconnecting takes seconds (§8.4.7). Past this, as long as the app waits, it is worth saying. */
+const STUCK_AFTER = 10000;
 
 const msg = (name, ...args) => chrome.i18n.getMessage(name, args.map(String)) || name;
 
@@ -36,6 +38,11 @@ let live = null;
 const pieces = new Map();
 /** What the host said last: "connecting", "connected", "not_open", "missing" or "outdated". */
 let hostState = "connecting";
+/** While "outdated": which side is too old, "extension" or "finx". */
+let tooOld = null;
+/** "connecting" has lasted past STUCK_AFTER. */
+let stuck = false;
+let stuckTimer = null;
 /** Whether the agent uses this browser and profile; another may be in use. */
 let inUse = true;
 let retries = 0;
@@ -113,6 +120,12 @@ function reportNow() {
     });
   }
   postControl({ kind: "tabs", sessions: out });
+  tellPage();
+}
+
+/** The extension's page, when it is open, draws again. */
+function tellPage() {
+  chrome.runtime.sendMessage({ changed: true }).catch(() => {});
 }
 
 function postControl(control) {
@@ -317,13 +330,28 @@ function onControl(control) {
 
 // ---- The host ----
 
+/** Starts the wait of a "connecting" that goes on across retries, and ends it with any other state. */
+function timeConnecting() {
+  if (hostState !== "connecting") {
+    clearTimeout(stuckTimer);
+    stuckTimer = null;
+    stuck = false;
+  } else if (stuckTimer === null) {
+    stuckTimer = setTimeout(() => {
+      stuck = true;
+      show();
+    }, STUCK_AFTER);
+  }
+}
+
 /** Only what asks something of the user shows on the icon: FinxWork not being open is fine. */
 function show() {
+  timeConnecting();
   const waiting = Object.values(sessions).filter((s) => s.state === "awaiting_approval").length;
-  const text = waiting > 0 ? String(waiting) : hostState === "outdated" ? "!" : "";
+  const text = waiting > 0 ? String(waiting) : hostState === "outdated" || stuck ? "!" : "";
   const title = waiting > 0 ? msg("titleWaiting") : msg({
     connected: inUse ? "titleConnected" : "titleStandby",
-    connecting: "titleConnecting",
+    connecting: stuck ? "titleStuck" : "titleConnecting",
     not_open: "titleNotOpen",
     missing: "titleMissing",
     outdated: "titleOutdated",
@@ -331,6 +359,7 @@ function show() {
   chrome.action.setTitle({ title }).catch(() => {});
   chrome.action.setBadgeText({ text }).catch(() => {});
   chrome.action.setBadgeBackgroundColor({ color: hostState === "outdated" && waiting === 0 ? "#d93025" : "#e8710a" }).catch(() => {});
+  tellPage();
 }
 
 function letGo() {
@@ -385,6 +414,7 @@ function onMessage(message) {
     letGo();
     if (message.status === "outdated") {
       hostState = "outdated";
+      tooOld = message.update ?? null;
       // Too old for this FinxWork: ask the store now rather than within hours.
       if (message.update === "extension") chrome.runtime.requestUpdateCheck?.().catch(() => {});
     } else if (message.status === "connected") {
@@ -486,11 +516,23 @@ function connect() {
     clearTimeout(retryTimer);
     retryTimer = setTimeout(connect, Math.min(RETRY_MAX, RETRY_MIN * 2 ** retries++));
   });
-  hostState = "connecting";
+  // A host not installed stays that until one answers: each retry is not news.
+  if (hostState !== "missing") hostState = "connecting";
   show();
 }
 
 // ---- This extension's page ----
+
+/** The page's button: from a folder the files are already new; the store is asked, else the user. */
+async function updateExtension() {
+  if (!chrome.runtime.getManifest().update_url) {
+    updateWaiting = true;
+    takeUpdate();
+    return;
+  }
+  const { status } = await chrome.runtime.requestUpdateCheck();
+  if (status !== "update_available") await chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
+}
 
 async function pageState() {
   const [current] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -504,6 +546,8 @@ async function pageState() {
   return {
     host: hostState,
     inUse,
+    stuck,
+    update: tooOld,
     sessions: list,
     // A page of the user's that the agent may be given; chrome:// and the like cannot be attached.
     offerable: !!current && !agentTabs.has(current.id) && /^https?:/.test(current.url ?? ""),
@@ -529,6 +573,17 @@ function pageAction(action) {
     case "use_this":
       postControl({ kind: "use_this" });
       break;
+    case "retry":
+      // The wait starts over, so the page says it is trying.
+      clearTimeout(stuckTimer);
+      stuckTimer = null;
+      stuck = false;
+      retries = 0;
+      connect();
+      show();
+      break;
+    case "update":
+      return updateExtension();
     case "offer":
       return chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => {
         if (!tab) return;

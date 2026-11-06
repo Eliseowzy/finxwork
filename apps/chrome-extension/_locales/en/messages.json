@@ -14,17 +14,11 @@
   "statusMissing": {
     "message": "Not set up on this computer"
   },
-  "statusOutdated": {
-    "message": "Needs an update"
-  },
   "hintMissing": {
     "message": "Install FinxWork, then connect your browser in its Settings."
   },
   "hintStandby": {
     "message": "The agent uses another browser or profile."
-  },
-  "hintOutdated": {
-    "message": "This extension and FinxWork need the same version. Update whichever is older."
   },
   "hintNotOpen": {
     "message": "Open it to let the agent use this browser."
@@ -34,9 +28,6 @@
   },
   "useThis": {
     "message": "Use this browser"
-  },
-  "nothing": {
-    "message": "The agent has no tabs here."
   },
   "tabs": {
     "message": "$1 tabs"
@@ -52,9 +43,6 @@
   },
   "finished": {
     "message": "Finished"
-  },
-  "handoff": {
-    "message": "Waiting for you: $1"
   },
   "back": {
     "message": "Back to conversation"
@@ -94,5 +82,38 @@
   },
   "titleWaiting": {
     "message": "FinxWork is waiting for you"
+  },
+  "statusStuck": {
+    "message": "Can't reach FinxWork"
+  },
+  "statusUpdateExtension": {
+    "message": "The extension needs an update"
+  },
+  "statusUpdateFinx": {
+    "message": "FinxWork needs an update"
+  },
+  "hintStuck": {
+    "message": "Opening FinxWork repairs the connection. Then retry."
+  },
+  "hintUpdateExtension": {
+    "message": "It reconnects by itself afterwards, and your tabs stay as they are."
+  },
+  "hintUpdateFinx": {
+    "message": "Open it and update. It reconnects by itself afterwards."
+  },
+  "retry": {
+    "message": "Try again"
+  },
+  "update": {
+    "message": "Update extension"
+  },
+  "waitingOne": {
+    "message": "1 thing needs you"
+  },
+  "waiting": {
+    "message": "$1 things need you"
+  },
+  "titleStuck": {
+    "message": "FinxWork: can't connect"
   }
 }

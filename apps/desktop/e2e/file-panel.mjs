@@ -13,6 +13,7 @@
 //   node apps/desktop/e2e/file-panel.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/file-panel.mjs   also screenshots
 //   FINXWORK_E2E_APP=dist/FinxWork.app node apps/desktop/e2e/file-panel.mjs   the packaged app
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -116,6 +117,8 @@ function finxCall(method, params = {}) {
       }
     });
     s.on("error", reject);
+    // A kernel told to shut down may go before it answers.
+    s.on("close", () => reject(new Error("the kernel closed the connection")));
   });
 }
 
@@ -123,7 +126,7 @@ function finxCall(method, params = {}) {
 let app = null;
 let port = 0;
 async function launch() {
-  port = 9400 + Math.floor(Math.random() * 400);
+  port = cdpPort();
   const program = packaged ? path.join(packaged, "Contents/MacOS/FinxWork") : electron;
   app = spawn(program, [...(packaged ? [] : [desktop]), `--remote-debugging-port=${port}`], {
     env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
@@ -416,7 +419,8 @@ try {
   await until("filled down", async () => { const v = await valuesAt("H2:H5"); return v.H4 === 1 && v.H5 === 1; }, 5000);
   step("a right-click in the selection keeps it and opens Excel's cell menu; Clear Contents clears it");
   const rightClick = async (at) => {
-    const p = await page.run(`(() => { const r = document.querySelector('${V} .sht-c[data-cell="${at}"]').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    const p = await page.run(`(() => { const r = document.querySelector('${V} .sht-c[data-cell="${at}"]')?.getBoundingClientRect(); return r && { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    check(p, `${at} is not drawn: the grid draws only the cells in sight, and a right-click needs one`);
     await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...p });
     await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", ...p, button: "right", buttons: 2, clickCount: 1 });
     await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", ...p, button: "right", clickCount: 1 });
@@ -433,8 +437,8 @@ try {
   await until("H2:H5 cleared", async () => { const v = await valuesAt("H2:H5"); return Object.values(v).every((x) => x === undefined || x === null); }, 5000);
   check((await page.run(`document.querySelector("${V} .sht-name").value`)) === "H2" && (await page.run(`!!document.querySelector("${V} .sht-sel.multi")`)), "the right-click moved off the selection");
   step("a right-click outside the selection selects the cell it lands on");
-  await rightClick("G7");
-  await page.until("G7 selected", `document.querySelector("${V} .sht-name").value === "G7" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
+  await rightClick("H12");
+  await page.until("H12 selected", `document.querySelector("${V} .sht-name").value === "H12" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
   // The fill handle: 1…4 dragged down four rows carries on to 8, the tip showing 8 on the way.
   await goCell("J2");
   await page.run(`(() => { const d = new DataTransfer(); d.setData("text/plain", "1\\n2\\n3\\n4\\n"); document.querySelector("${V} .sht-canvas").dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);

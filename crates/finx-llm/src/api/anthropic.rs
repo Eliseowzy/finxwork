@@ -761,6 +761,22 @@ mod tests {
         assert_eq!(body("anthropic", "claude-sonnet-5", Off)["thinking"], json!({"type": "disabled"}));
         assert!(body("anthropic", "claude-sonnet-5", Off).get("output_config").is_none());
         assert_eq!(body("anthropic", "claude-sonnet-5", Low)["output_config"], json!({"effort": "low"}));
+        // The catalog lists no switch for these, yet they turn off. Sending no effort stays within
+        // Opus 5's limit: it takes `disabled` only at `high` or below, and `high` is its default.
+        for id in ["claude-opus-4-7", "claude-opus-4-8", "claude-opus-5"] {
+            let off = body("anthropic", id, Off);
+            assert_eq!(off["thinking"], json!({"type": "disabled"}), "{id}");
+            assert!(off.get("output_config").is_none(), "{id}");
+            let on = body("anthropic", id, Max);
+            assert_eq!(on["thinking"], json!({"type": "adaptive", "display": "summarized"}), "{id}");
+            assert_eq!(on["output_config"], json!({"effort": "max"}), "{id}");
+            // Correcting the row does not pin the model to the menu, as a model entry would.
+            assert!(!directory.models(&catalog.providers["anthropic"]).get(id).unwrap().meta.configured, "{id}");
+        }
+        // These refuse `disabled` at every effort.
+        for id in ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5", "claude-fable-5-1"] {
+            assert!(!directory.model(&catalog.providers["anthropic"], id).unwrap().offers(Off), "{id}");
+        }
         // Both: thinking on older models takes a budget, and the effort goes along.
         let opus_45 = body("anthropic", "claude-opus-4-5", High);
         assert_eq!(opus_45["thinking"], json!({"type": "enabled", "budget_tokens": 24_576}));

@@ -11,6 +11,7 @@
 //   node apps/desktop/e2e/pptx-panel.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/pptx-panel.mjs   also screenshots
 //   FINXWORK_E2E_NO_BUILD=1 …    uses the builds there are
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -117,7 +118,7 @@ async function devtools(url) {
 
 let app = null;
 async function launch() {
-  const port = 9900 + Math.floor(Math.random() * 90);
+  const port = cdpPort();
   // ELECTRON_RUN_AS_NODE (set in some shells) would run Electron as plain Node.
   const env = { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" };
   delete env.ELECTRON_RUN_AS_NODE;

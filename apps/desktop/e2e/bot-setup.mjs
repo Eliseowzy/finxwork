@@ -8,6 +8,7 @@
 //   node apps/desktop/e2e/bot-setup.mjs
 //   FINXWORK_E2E_SHOTS=<folder> …   also screenshots each step
 //   FINXWORK_E2E_NO_BUILD=1 …       uses the builds there are
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -65,7 +66,7 @@ const place = (name, model) => {
 // ── the app, driven over the DevTools protocol ──
 let app = null;
 async function launch({ home, profile }) {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" };
   delete env.DEEPSEEK_API_KEY;
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], { env, stdio: ["ignore", "ignore", "inherit"] });

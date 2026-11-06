@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Browser-only integration: production Markdown components, isolated mock store.
+import { cdpPort } from "./lib/port.mjs";
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -15,7 +16,7 @@ let server, browser, socket;
 try {
   if (!await fetch(url).then(r => r.ok, () => false)) server = spawn('pnpm', ['exec', 'vite', '--config', 'e2e/markdown.vite.config.ts'], { cwd: desktop, stdio: 'ignore' });
   for (let i = 0; i < 100 && !await fetch(url).then(r => r.ok, () => false); i++) await sleep(100);
-  const port = 9600 + Math.floor(Math.random() * 300);
+  const port = cdpPort();
   browser = spawn(process.env.CHROME_PATH ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', 'about:blank'], { stdio: 'ignore' });
   let page;
   for (let i = 0; i < 100 && !page; i++) {
