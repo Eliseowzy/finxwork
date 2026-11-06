@@ -200,6 +200,7 @@ impl Server {
 
     /// `deck/proposals`: pending proposals, then those decided (presentation-deck-edit §4).
     pub(crate) async fn deck_proposals(&self, p: DeckProposalsParams) -> Result<DeckProposalsResult, RpcError> {
+        self.0.decks.ensure_open(&p.deck_id, &p.session_id).await.map_err(rpc_error)?;
         self.0.decks.proposals(&p.deck_id).await.map_err(rpc_error)
     }
 
@@ -209,6 +210,7 @@ impl Server {
         if p.slide_ids.is_some() {
             return Err(RpcError::invalid_params("accepting some slides of a proposal is not supported yet"));
         }
+        self.0.decks.ensure_open(&p.deck_id, &p.session_id).await.map_err(rpc_error)?;
         let accepted = self.0.decks.accept(&p.deck_id, &p.proposal_id, p.force).await.map_err(rpc_error)?;
         Ok(DeckProposalAcceptResult {
             revision: accepted.changed.revision,
@@ -221,6 +223,7 @@ impl Server {
         if p.slide_ids.is_some() {
             return Err(RpcError::invalid_params("rejecting some slides of a proposal is not supported yet"));
         }
+        self.0.decks.ensure_open(&p.deck_id, &p.session_id).await.map_err(rpc_error)?;
         let rejected = self.0.decks.reject(&p.deck_id, &p.proposal_id).await.map_err(rpc_error)?;
         Ok(DeckProposalRejectResult { revision: rejected.revision, rejected: rejected.rejected })
     }

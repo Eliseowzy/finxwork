@@ -358,11 +358,10 @@ fn handle(ctx: &ToolCtx) -> Result<Arc<DecksHandle>, ToolError> {
     ctx.session_state.get::<DecksHandle>().ok_or_else(|| ToolError::Failed("presentations cannot be changed in this session".into()))
 }
 
-/// The kernel's entry of the deck at `path`, opened for the session when no one holds it.
+/// The kernel's entry of the deck at `path`, held by the session: joined when the editor (or
+/// another session) has it open, so the deck, and the proposals pending on it, outlive the editor
+/// closing. Without this hold an accept from the conversation card finds the deck gone.
 async fn entry(decks: &DecksHandle, path: &Path) -> Result<Arc<DeckEntry>, ToolError> {
-    if let Some(entry) = decks.store.by_path(path) {
-        return Ok(entry);
-    }
     let opened = decks.store.open(path, &decks.session, false).await.map_err(|e| failed(path, e))?;
     Ok(opened.entry)
 }
@@ -399,7 +398,8 @@ impl TypedTool for DeckEdit {
     const DESCRIPTION: &'static str = "Propose changes to a presentation (.pptx): replace or format words, set an object's \
         paragraphs or alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, \
         change a slide's layout or its speaker notes. All of them become one proposal the user sees beside the deck and \
-        accepts or rejects; nothing changes until they accept, and until then deck_read shows the deck as it was. If a step \
+        accepts or rejects; nothing changes until they accept, and until then deck_read shows the deck as it was. When the \
+        session runs edits without asking (full access or accepted edits), the change is made at once instead. If a step \
         cannot be done, nothing is proposed and the error names the step and why (MissingTarget, ContentMismatch, \
         AmbiguousTarget, Unsupported). Returns the proposal and the slides it changes, with any layout problems they would have.";
 
@@ -440,12 +440,21 @@ impl TypedTool for DeckEdit {
         };
         let changed: Vec<_> = proposed.strip.iter().filter(|s| s.status != "unchanged").collect();
         let diagnostics = store.check(&entry.deck_id, Some(&proposed.proposal_id)).await.unwrap_or_default();
-        let mut text = format!(
-            "Proposed to the user as one change ({} slide{} of {}); it takes effect only when they accept it, and until then the deck reads as it was.\n",
-            changed.len(),
-            if changed.len() == 1 { "" } else { "s" },
-            file_name(&path)
-        );
+        // Full access or accepted edits: the change is made now, as doc_edit's is; no card asks for it.
+        let mut revision = proposed.changed.revision;
+        let applied = if decks.applies_at_once() {
+            let accepted = store.accept(&entry.deck_id, &proposed.proposal_id, false).await.map_err(|e| failed(&path, e))?;
+            revision = accepted.changed.revision;
+            accepted.applied
+        } else {
+            false
+        };
+        let (n, s, name) = (changed.len(), if changed.len() == 1 { "" } else { "s" }, file_name(&path));
+        let mut text = if applied {
+            format!("Made the change ({n} slide{s} of {name}): the session runs edits without asking, so it was applied at once. It is not in the file until deck_save writes it.\n")
+        } else {
+            format!("Proposed to the user as one change ({n} slide{s} of {name}); it takes effect only when they accept it, and until then the deck reads as it was.\n")
+        };
         if let Some(note) = &args.note {
             let _ = writeln!(text, "Note: {note}");
         }
@@ -454,7 +463,7 @@ impl TypedTool for DeckEdit {
         }
         let problems: Vec<_> = diagnostics.iter().filter(|d| changed.iter().any(|s| s.slide_id == d.slide_id)).collect();
         if !problems.is_empty() {
-            let _ = writeln!(text, "Layout problems the changed slides would have:");
+            let _ = writeln!(text, "{}", if applied { "Layout problems the changed slides have:" } else { "Layout problems the changed slides would have:" });
             for d in problems {
                 let _ = writeln!(text, "- slide {}: {} [{}]", d.index, d.message, d.rule);
             }
@@ -463,7 +472,8 @@ impl TypedTool for DeckEdit {
             "deck_id": entry.deck_id,
             "path": path,
             "proposal_id": proposed.proposal_id,
-            "revision": proposed.changed.revision,
+            "revision": revision,
+            "applied": applied,
             "slides": changed.iter().map(|s| json!({ "index": s.index, "slide_id": s.slide_id, "status": s.status })).collect::<Vec<_>>(),
         });
         Ok(ToolOutput::text(text).with_details(details))

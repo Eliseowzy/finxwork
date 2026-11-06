@@ -51,8 +51,24 @@ impl Hooks for ApprovalPolicy {
         if !authorities.is_empty() {
             return crate::site_policy::evaluate(authorities, view).await;
         }
-        evaluate(call, tool.kind_for(&call.arguments.to_value()), view)
+        let kind = tool.kind_for(&call.arguments.to_value());
+        match through_call_tool(call) {
+            Some(inner) => evaluate(&inner, kind, view),
+            None => evaluate(call, kind, view),
+        }
     }
+}
+
+/// A built-in tool run through call_tool, as the call it stands for: judged by its own rule,
+/// not as an unknown change (a deferred deck_edit is still only a proposal).
+fn through_call_tool(call: &ToolCall) -> Option<ToolCall> {
+    if call.name != crate::mcp::tools::CALL_TOOL {
+        return None;
+    }
+    let args = call.arguments.to_value();
+    let name = args.get("name")?.as_str()?.to_owned();
+    let inner = args.get("arguments").cloned().unwrap_or(serde_json::Value::Object(Default::default()));
+    Some(ToolCall { id: call.id.clone(), name, arguments: inner.into(), arguments_error: None, provider_data: None })
 }
 
 /// The kernel cannot tell what a tool from outside does (standalone-cli-design §8.5). So it asks,
@@ -107,6 +123,10 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
         "write" | "edit" => evaluate_file_change(call, &args, arg("path"), view),
         "doc_edit" => evaluate_doc_edit(&args, arg("doc"), view),
         "doc_save" => evaluate_doc_save(arg("doc"), arg("path"), view),
+        // Only a proposal: with full access or accepted edits it is made at once, and otherwise
+        // its card in the conversation is the question, so nothing is asked here.
+        "deck_edit" => Gate::Allow,
+        "deck_save" => evaluate_doc_save(arg("deck"), arg("path"), view),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
             (ToolKind::Mutating, _) if call.name == crate::routine::MANAGE_ROUTINE => ask(crate::routine::approval_summary(&args), None),
@@ -543,6 +563,25 @@ mod tests {
         let by_id = doc_call("doc_save", json!({"doc": "3f2a9c0d1e2b4a5c"}));
         assert!(matches!(evaluate(&by_id, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Ask { .. }));
         assert!(matches!(evaluate(&by_id, ToolKind::Mutating, &view(dir.path(), PermissionMode::BypassPermissions)), Gate::Allow));
+    }
+
+    #[test]
+    fn deck_edits_are_asked_by_their_card_and_saves_like_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let edit = doc_call("deck_edit", json!({"deck": "a.pptx", "edits": [{"op": "replace_text"}]}));
+        for mode in [PermissionMode::Manual, PermissionMode::AcceptEdits, PermissionMode::BypassPermissions] {
+            assert!(matches!(evaluate(&edit, ToolKind::Mutating, &view(dir.path(), mode)), Gate::Allow));
+        }
+        // Deferred, through call_tool: judged as itself, not as an unknown change.
+        let deferred = doc_call(crate::mcp::tools::CALL_TOOL, json!({"name": "deck_edit", "arguments": {"deck": "a.pptx", "edits": []}}));
+        let inner = through_call_tool(&deferred).unwrap();
+        assert_eq!(inner.name, "deck_edit");
+        assert!(matches!(evaluate(&inner, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Allow));
+        let save = doc_call("deck_save", json!({"deck": "a.pptx"}));
+        assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
+        assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Ask { .. }));
+        let outside = doc_call("deck_save", json!({"deck": "/elsewhere/a.pptx"}));
+        assert!(matches!(evaluate(&outside, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Ask { .. }));
     }
 
     /// The reason of an `Ask` that offers nothing for the rest of the session.

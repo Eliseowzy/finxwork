@@ -11,9 +11,13 @@ import { fromBase64, toBase64, type PresentationFile } from "./document.ts";
 export type KernelState = { dirty: boolean; hash: string | null };
 type WriteResult = { status: "saved" | "conflict" | "refused"; hash?: string | null; message?: string | null };
 
-/** Off unless turned on: `localStorage["finx.deck.kernelAuthority"] = "1"` (§11.2, internal first). */
+/**
+ * On unless turned off: `localStorage["finx.deck.kernelAuthority"] = "0"`. deck_edit proposes on
+ * the kernel's deck, so an editor that read the file by itself would never show what the card
+ * accepted: the accept landed in a deck the editor is not a replica of.
+ */
 export function kernelAuthority(): boolean {
-  try { return globalThis.localStorage?.getItem("finx.deck.kernelAuthority") === "1"; } catch { return false; }
+  try { return globalThis.localStorage?.getItem("finx.deck.kernelAuthority") !== "0"; } catch { return true; }
 }
 
 /** A Yrs client id for this replica: fresh on every open (K5), never the engine's standalone id 0. */

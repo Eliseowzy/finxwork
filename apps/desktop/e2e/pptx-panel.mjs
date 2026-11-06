@@ -251,8 +251,9 @@ try {
   step("the panel opens beside the conversation, though its width was kept from a wider window");
   // The state the bug was reported from: a width remembered from a wider window.
   await page.run(`localStorage.setItem("finxwork.filePanelWidth", "1400")`);
-  // FINXWORK_E2E_KERNEL=1: the kernel holds the deck and the panel's editor joins as its replica.
-  if (process.env.FINXWORK_E2E_KERNEL === "1") await page.run(`localStorage.setItem("finx.deck.kernelAuthority", "1")`);
+  // FINXWORK_E2E_KERNEL=1: the kernel holds the deck and the panel's editor joins as its replica
+  // (the default); otherwise the editor reads the file by itself.
+  await page.run(`localStorage.setItem("finx.deck.kernelAuthority", ${JSON.stringify(process.env.FINXWORK_E2E_KERNEL === "1" ? "1" : "0")})`);
   // The owner scrolled up the conversation to find the presentation.
   await page.run(`(() => { const s = document.querySelector(".cscroll"); s.scrollTop = 0; })()`);
   await page.clickTile("sample-presentation.pptx");

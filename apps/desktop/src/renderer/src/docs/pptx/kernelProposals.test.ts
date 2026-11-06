@@ -69,6 +69,20 @@ test("the review's accept and reject go to the kernel with the kernel's id", asy
   assert.equal((await mirror.decide("nope", "accept")).ok, false);
 });
 
+test("a click on a preview drawn but not yet recorded waits for it", async () => {
+  const k = fakeRpc(), e = fakeEngine();
+  k.set([entry("p1")]);
+  let shown: () => void = () => {};
+  const drawn = new Promise<void>((r) => { shown = r; });
+  // The engine draws the preview, then takes a while to answer with its id.
+  const slow: PreviewEngine = { ...e.engine, propose: async (a, n, edits) => { const made = await e.engine.propose(a, n, edits); shown(); await new Promise((r) => setTimeout(r, 20)); return made; } };
+  const mirror = new KernelProposals(k.rpc, "S", "D");
+  mirror.attach(slow);
+  await drawn;
+  assert.deepEqual(await mirror.decide("local1", "reject"), { ok: true });
+  assert.deepEqual(k.calls.filter((c) => c.method === "deck/proposal/reject").map((c) => c.params.proposal_id), ["p1"]);
+});
+
 test("a preview's propose and reject write nothing to the Yrs document; only an accept would", async () => {
   const dist = path.dirname(import.meta.resolve("@betteroffice/pptx").replace("file://", ""));
   await initWasm(readFileSync(path.join(dist, "generated/pptx_wasm_bg.wasm")));

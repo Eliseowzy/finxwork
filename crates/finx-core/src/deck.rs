@@ -98,6 +98,20 @@ pub(crate) struct DecksHandle {
     pub(crate) store: Arc<finx_docs::deck::DeckStore>,
     /// The session the tools open decks for; they close with it.
     pub(crate) session: String,
+    /// The session whose permission mode decides whether deck_edit's change waits for the user.
+    pub(crate) owner: std::sync::OnceLock<std::sync::Weak<crate::session::Session>>,
+}
+
+impl DecksHandle {
+    pub(crate) fn new(store: Arc<finx_docs::deck::DeckStore>, session: String) -> Self {
+        Self { store, session, owner: std::sync::OnceLock::new() }
+    }
+
+    /// Full access or accepted edits: deck_edit's change is made at once, as doc_edit's is,
+    /// instead of waiting on a card. Asked permissions (or no session): the card decides.
+    pub(crate) fn applies_at_once(&self) -> bool {
+        self.owner.get().and_then(std::sync::Weak::upgrade).is_some_and(|s| s.permission_mode() != finx_protocol::PermissionMode::Manual)
+    }
 }
 
 async fn load(raw: &str, env: &dyn Environment, decks: Option<&DecksHandle>) -> Result<(PathBuf, Arc<Vec<u8>>, Arc<Outline>), ToolError> {

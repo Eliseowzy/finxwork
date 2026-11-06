@@ -190,6 +190,18 @@ impl DeckStore {
         self.decks.lock().get(deck_id).cloned().ok_or_else(|| DeckError::NotOpen(deck_id.to_owned()))
     }
 
+    /// The entry of `deck_id` for `session`, opened again from its directory when the kernel no
+    /// longer holds it (it restarted, or every holder let go): a proposal pending on it is made
+    /// again by the worker, so a card in an old conversation can still be decided.
+    pub async fn ensure_open(&self, deck_id: &str, session: &str) -> Result<Arc<DeckEntry>, DeckError> {
+        if let Ok(entry) = self.get(deck_id) {
+            entry.sessions.lock().insert(session.to_owned());
+            return Ok(entry);
+        }
+        let path = read_meta(&self.root.join(deck_id)).map(|m| m.path).ok_or_else(|| DeckError::NotOpen(deck_id.to_owned()))?;
+        Ok(self.open(&path, session, false).await?.entry)
+    }
+
     /// The open entry of a file, if any.
     pub fn by_path(&self, path: &Path) -> Option<Arc<DeckEntry>> {
         let canonical = std::fs::canonicalize(path).ok()?;
@@ -214,7 +226,8 @@ impl DeckStore {
         let mut meta = read_meta(&dir).filter(|m| m.path == canonical && dir.join(journal::SOURCE).is_file());
         let mut conflict = false;
         if let Some(m) = &meta {
-            let leftover = dir.join(journal::LOG).metadata().is_ok_and(|l| l.len() > 0) || dir.join(journal::SNAPSHOT).exists();
+            // Unsaved edits, or proposals still pending (a card may yet decide them).
+            let leftover = dir.join(journal::LOG).metadata().is_ok_and(|l| l.len() > 0) || dir.join(journal::SNAPSHOT).exists() || ledger::has_pending(&dir);
             let same = m.hash == disk.hash;
             match (leftover, same) {
                 // Nothing to recover, or the file moved on: start over from the file.
@@ -443,7 +456,7 @@ impl DeckStore {
         if last {
             self.decks.lock().remove(deck_id);
             self.worker.close(deck_id).await;
-            if !entry.info().dirty {
+            if !entry.info().dirty && !ledger::has_pending(&entry.dir) {
                 let _ = std::fs::remove_dir_all(&entry.dir);
             }
         }

@@ -914,7 +914,7 @@
     }
   },
   {
-    "description": "Propose changes to a presentation (.pptx): replace or format words, set an object's paragraphs or alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, change a slide's layout or its speaker notes. All of them become one proposal the user sees beside the deck and accepts or rejects; nothing changes until they accept, and until then deck_read shows the deck as it was. If a step cannot be done, nothing is proposed and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, Unsupported). Returns the proposal and the slides it changes, with any layout problems they would have.",
+    "description": "Propose changes to a presentation (.pptx): replace or format words, set an object's paragraphs or alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, change a slide's layout or its speaker notes. All of them become one proposal the user sees beside the deck and accepts or rejects; nothing changes until they accept, and until then deck_read shows the deck as it was. When the session runs edits without asking (full access or accepted edits), the change is made at once instead. If a step cannot be done, nothing is proposed and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, Unsupported). Returns the proposal and the slides it changes, with any layout problems they would have.",
     "group": "deck",
     "kind": "mutating",
     "loaded": false,

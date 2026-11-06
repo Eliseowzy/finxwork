@@ -282,3 +282,53 @@ async fn a_batch_with_a_bad_step_proposes_nothing() {
     assert_eq!(store.get(&id).unwrap().info().revision, 0);
     assert!(store.check(&id, None).await.is_ok());
 }
+
+/// A proposal pending on a deck the editor has open must survive the editor closing, as long as
+/// the agent's session joined the entry (deck_edit does, via `open`): the conversation card's
+/// accept then still finds the deck. Without the join the deck is gone ("not open: <id>").
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pending_proposal_outlives_the_editor_when_the_agent_session_holds_the_deck() {
+    let s = setup();
+    let store = store(&s);
+    let editor = store.open(&s.file, "editor", true).await.unwrap();
+    let id = editor.entry.deck_id.clone();
+    // The agent's session joins the open entry.
+    store.open(&s.file, "agent", false).await.unwrap();
+    let proposed = store.propose(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
+    store.close(&id, "editor").await.unwrap();
+    assert!(store.accept(&id, &proposed.proposal_id, false).await.unwrap().applied);
+
+    // The agent that did not join leaves the deck to the editor alone: its close drops the deck.
+    let other = store.open(&s.file, "editor", false).await.unwrap().entry.deck_id.clone();
+    store.close(&other, "agent").await.unwrap();
+    store.close(&other, "editor").await.unwrap();
+    assert!(matches!(store.accept(&id, &proposed.proposal_id, false).await, Err(DeckError::NotOpen(_))));
+}
+
+/// A card in an old conversation: the kernel restarted (or every holder let go) while a proposal
+/// was pending; deciding it opens the deck again from its directory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_proposal_pending_over_a_kernel_restart_is_decided_by_reopening() {
+    let s = setup();
+    let first = store(&s);
+    let id = first.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
+    let proposed = first.propose(&id, "agent", None, serde_json::json!([retitle(&first, &id, "Annual review").await])).await.unwrap();
+    drop(first); // the process ends: no close, the directory stays
+    let second = store(&s);
+    assert!(matches!(second.accept(&id, &proposed.proposal_id, false).await, Err(DeckError::NotOpen(_))));
+    second.ensure_open(&id, "b").await.unwrap();
+    assert!(second.accept(&id, &proposed.proposal_id, false).await.unwrap().applied);
+}
+
+/// Every holder let go (the editor closed, the agent's session ended) with a proposal pending:
+/// the directory stays for it, and deciding it opens the deck again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_proposal_pending_when_every_holder_closes_is_decided_by_reopening() {
+    let s = setup();
+    let store = store(&s);
+    let id = store.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
+    let proposed = store.propose(&id, "agent", None, serde_json::json!([retitle(&store, &id, "Annual review").await])).await.unwrap();
+    store.close(&id, "a").await.unwrap();
+    store.ensure_open(&id, "b").await.unwrap();
+    assert!(store.accept(&id, &proposed.proposal_id, false).await.unwrap().applied);
+}

@@ -52,6 +52,8 @@ const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const FIRST = { find: "Quarterly", text: "年度经营" };
 const NEW_TITLE = "年度经营 review";
 const SECOND = { find: "review", text: "复盘（不要）" };
+// Made under full access: no card, straight into the deck.
+const DIRECT = { find: "review", text: "总结" };
 
 // ── the agent ──
 const sse = (delta, finish) =>
@@ -109,6 +111,13 @@ const provider = http.createServer((req, res) => {
       if (!done.includes("deck_edit")) return call("deck_edit", { deck: pptx, note: "再改一处", edits: [{ op: "replace_text", slide_id: at.slide, shape_id: at.shape, ...SECOND }] });
       return reply("又提议了一处。");
     }
+    if (ask.includes("直接改")) {
+      if (!done.includes("deck_read")) return call("deck_read", { deck: pptx, slides: "1", detail: "objects" });
+      const at = ids(messages);
+      if (!at) return reply("读不到标题");
+      if (!done.includes("deck_edit")) return call("deck_edit", { deck: pptx, note: "直接改", edits: [{ op: "replace_text", slide_id: at.slide, shape_id: at.shape, ...DIRECT }] });
+      return reply("改好了。");
+    }
     if (ask.includes("保存")) {
       if (!done.includes("deck_save")) return call("deck_save", { deck: pptx });
       return reply("保存了。");
@@ -122,22 +131,28 @@ fs.writeFileSync(
   path.join(home, "models.toml"),
   `[providers.mock]\nname = "Mock"\napi = "openai-chat"\nbase_url = "http://127.0.0.1:${provider.address().port}/v1"\nauth = "none"\n\n[[providers.mock.models]]\nid = "mock-1"\nname = "Mock One"\ncontext_window = 128000\nmax_output_tokens = 2000\n`,
 );
-fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "bypass-permissions"\n[models]\nnetwork = false\n`);
+fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n`);
 
 /** One request to finx over its socket. */
 function finxCall(method, params = {}) {
+  return finxCalls([[method, params]]);
+}
+
+/** Requests in order on one connection (an attach holds for the ones after it); the last one's answer. */
+function finxCalls(calls) {
   return new Promise((resolve, reject) => {
     const s = net.createConnection(socket);
     let buf = "";
     const send = (id, m, p) => s.write(JSON.stringify({ jsonrpc: "2.0", id, method: m, params: p }) + "\n");
-    s.on("connect", () => send(1, "initialize", { protocol_version: 2, client_info: { name: "e2e" } }));
+    s.on("connect", () => send(0, "initialize", { protocol_version: 2, client_info: { name: "e2e" } }));
     s.on("data", (c) => {
       buf += c;
       for (let i = buf.indexOf("\n"); i >= 0; i = buf.indexOf("\n")) {
         const msg = JSON.parse(buf.slice(0, i));
         buf = buf.slice(i + 1);
-        if (msg.id === 1) send(2, method, params);
-        if (msg.id === 2) {
+        if (typeof msg.id !== "number") continue;
+        if (msg.id < calls.length && (msg.id === 0 || !msg.error)) send(msg.id + 1, ...calls[msg.id]);
+        else {
           s.end();
           resolve(msg);
         }
@@ -207,9 +222,16 @@ async function launch() {
   };
   /** A real click on the element: the editor's review is caught on the window's capture phase. */
   const click = async (selector) => {
-    const box = await run(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; e.scrollIntoView({ block: "nearest" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const at = () => run(`(() => { const e = document.querySelector(${JSON.stringify(selector)}); if (!e) return null; e.scrollIntoView({ block: "nearest" }); const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    // Where it stays: a panel still sliding in would take the click somewhere else.
+    let box = await at();
+    for (let i = 0; i < 30 && box; i++) {
+      await sleep(100);
+      const next = await at();
+      if (next && next.x === box.x && next.y === box.y) break;
+      box = next;
+    }
     check(box, `nothing to click: ${selector}`);
-    await sleep(100);
     await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: box.x, y: box.y, button: "left", clickCount: 1 });
     await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: box.x, y: box.y, button: "left", clickCount: 1 });
   };
@@ -229,6 +251,16 @@ async function quit() {
   } catch {}
 }
 
+/** Sets the conversation's permission mode, as its menu does. */
+async function permission(mode) {
+  const listed = await finxCall("session/list", {});
+  const sessions = listed.result?.sessions ?? [];
+  const sid = (sessions.find((x) => x.cwd === proj) ?? sessions[0])?.session_id;
+  check(sid, `the session: ${JSON.stringify(listed).slice(0, 400)}`);
+  const set = await finxCalls([["session/attach", { session_id: sid }], ["session/op", { session_id: sid, op: { type: "set_permission_mode", mode } }]]);
+  check(!set.error, `set_permission_mode: ${JSON.stringify(set.error)}`);
+}
+
 /** Says something and waits for the turn to end. */
 async function ask(page, words) {
   await page.run(`document.querySelector(".cmp-in").focus()`);
@@ -238,7 +270,7 @@ async function ask(page, words) {
   await page.run(`document.querySelector("button.send").click()`);
   await page.until(`the model asked about ${words}`, `${requests.length > before}`, 20000).catch(() => {});
   await sleep(300);
-  await page.until(`the turn ${words} ended`, `!document.querySelector(".working")`, 60000);
+  await page.until(`the turn ${words} ended`, `!document.querySelector(".working")`, 60000).catch(async (e) => fail(`${e.message}: ${await page.run(`[...document.querySelectorAll(".working")].map((w) => w.closest("[class]")?.parentElement?.className + " :: " + w.innerText).join(" | ")`)}`));
 }
 
 const cards = `[...document.querySelectorAll("[data-testid=deck-proposal-card]")]`;
@@ -269,7 +301,7 @@ try {
   const page = await launch();
   await page.until("the new session page", `!!document.querySelector(".cmp-in")`, 60000);
   await page.run(`localStorage.setItem("finx.deck.kernelAuthority", "1")`);
-  await page.run(`localStorage.setItem("main-view", JSON.stringify({ ...JSON.parse(localStorage.getItem("main-view") ?? "{}"), draft: { cwd: ${JSON.stringify(proj)}, model: null, thinking: null, permission: "bypass-permissions" } }))`);
+  await page.run(`localStorage.setItem("main-view", JSON.stringify({ ...JSON.parse(localStorage.getItem("main-view") ?? "{}"), draft: { cwd: ${JSON.stringify(proj)}, model: null, thinking: null, permission: "manual" } }))`);
   await page.run(`location.reload()`);
   await page.until("the new session page again", `!!document.querySelector(".cmp-in")`, 60000);
 
@@ -321,7 +353,7 @@ try {
   await page.until("the review panel", `!!document.querySelector("[data-testid=pptx-proposal-reject]")`, 10000);
   await page.shot("04-review");
   await page.click("[data-testid=pptx-proposal-reject]");
-  await page.until("the card rejected", `${cardState(1)} === "rejected"`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(cardState(1))}`));
+  await page.until("the card rejected", `${cardState(1)} === "rejected"`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(cardState(1))} kernel ${JSON.stringify((await proposals()).map((p) => [p.note, p.status]))} alert ${await page.run(`[...document.querySelectorAll(".fpn [role=alert], .fpn .err, .fpn .error")].map((e) => e.innerText).join(" / ")`)} review ${await page.run(`[...document.querySelectorAll("[data-proposal-id]")].map((e) => e.getAttribute("data-proposal-id") + ":" + e.innerText.slice(0, 80)).join(" | ")`)}`));
   const second = (await proposals()).find((p) => p.note === "再改一处");
   check(second?.status === "rejected", `the kernel has it rejected: ${JSON.stringify(second)}`);
   await page.until("no preview", `${previews} === "0"`, 20000);
@@ -330,6 +362,8 @@ try {
   await page.shot("05-rejected");
 
   step("deck_save writes the accepted title, and only its slide's part changes");
+  // Saving writes the file: asked like a write unless edits run without asking.
+  await permission("accept-edits");
   await ask(page, "保存");
   await page.until("the file written", `${sha(fs.readFileSync(pptx)) !== sha(original)}`, 1).catch(() => {});
   for (let i = 0; i < 100 && sha(fs.readFileSync(pptx)) === sha(original); i++) await sleep(100);
@@ -354,8 +388,19 @@ try {
   check(reread?.includes(NEW_TITLE), `reopened, the deck reads the new title: ${reread}`);
   await page.shot("06-saved");
 
+  step("full access: deck_edit makes the change at once, with no card");
+  await permission("bypass-permissions");
+  await ask(page, "直接改");
+  await page.until("the change in the editor", `(${outline}).includes("年度经营 总结")`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(outline)}`));
+  check((await page.run(`${cards}.length`)) === 2, "full access still showed a card");
+  const direct = (await proposals()).find((p) => p.note === "直接改");
+  check(direct?.status === "accepted", `the kernel made it at once: ${JSON.stringify(direct)}`);
+  check(await page.run(`${previews} === "0" || ${previews} === null`), "a preview is left in the editor");
+  await page.until("the tab says unsaved", `${tabStatus} === "未保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
+  await page.shot("07-full-access");
+
   page.close();
-  console.log("\n✔ the agent's edit is proposed, reviewed in the conversation and the editor, and saved");
+  console.log("\n✔ the agent's edit is proposed, reviewed in the conversation and the editor, and saved; under full access it is made at once");
 } catch (e) {
   failed = true;
   console.error(`\n✘ ${e.message}`);

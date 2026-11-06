@@ -28,6 +28,8 @@ export function deckEditDetails(raw: unknown): DeckEditDetails | null {
   if (!raw || typeof raw !== "object") return null;
   const d = raw as Record<string, unknown>;
   if (typeof d.deck_id !== "string" || typeof d.proposal_id !== "string" || typeof d.path !== "string" || !Array.isArray(d.slides)) return null;
+  // Made at once under full access: nothing is left to decide, so no card.
+  if (d.applied === true) return null;
   const slides = d.slides.flatMap((s) => {
     if (!s || typeof s !== "object") return [];
     const x = s as Record<string, unknown>;

@@ -910,6 +910,10 @@ impl Session {
         }
     }
 
+    pub(crate) fn permission_mode(&self) -> PermissionMode {
+        self.state.lock().permission_mode
+    }
+
     fn permissions(&self) -> (PermissionMode, Vec<CommandRule>, Vec<SiteGrant>) {
         let state = self.state.lock();
         (state.permission_mode, state.session_rules.clone(), state.site_grants.clone())

@@ -12,6 +12,11 @@ test("deck_edit details parse, and malformed ones do not", () => {
   assert.equal(deckEditDetails(undefined), null);
 });
 
+test("a deck_edit made at once under full access has no card", () => {
+  assert.equal(deckEditDetails({ deck_id: "d", path: "/a.pptx", proposal_id: "p1", revision: 4, applied: true, slides: [{ index: 0, slide_id: "s1", status: "changed" }] }), null);
+  assert.ok(deckEditDetails({ deck_id: "d", path: "/a.pptx", proposal_id: "p1", revision: 4, applied: false, slides: [] }));
+});
+
 test("accepting from the card", () => {
   const busy = run([{ type: "start", action: "accept" }]);
   assert.equal(busy.busy, "accept");

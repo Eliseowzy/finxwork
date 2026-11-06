@@ -93,6 +93,8 @@ export class KernelProposals {
 
   /** The review's accept or reject of a local preview, done by the kernel. */
   async decide(localId: string, action: "accept" | "reject", force = false): Promise<DecideResult> {
+    // A preview shows before its id is recorded: a click that quick waits for the sync drawing it.
+    if (!this.kernel.has(localId)) await this.chain;
     const proposal_id = this.kernel.get(localId);
     if (!proposal_id) return { ok: false, stale: false, message: "not a kernel proposal" };
     const params = { session_id: this.session, deck_id: this.deckId, proposal_id, ...(force ? { force: true } : {}) };

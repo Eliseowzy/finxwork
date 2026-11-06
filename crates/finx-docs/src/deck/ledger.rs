@@ -37,6 +37,15 @@ pub struct Ledger {
     entries: Vec<Entry>,
 }
 
+/// Whether `dir`'s ledger has a proposal still pending: the directory then has something to
+/// keep, even with no unsaved edit.
+pub fn has_pending(dir: &Path) -> bool {
+    std::fs::read(dir.join(FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Vec<Entry>>(&b).ok())
+        .is_some_and(|entries| entries.iter().any(|e| e.status == DeckProposalState::Pending))
+}
+
 impl Ledger {
     /// The ledger of `dir`, its pending proposals made again on `deck`. One that no longer
     /// applies is listed as rejected.
