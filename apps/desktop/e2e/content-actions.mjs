@@ -345,6 +345,24 @@ try {
   check(same(plain, ["feat/x", "cargo test", "src/nope.ts"]), `left as code: ${JSON.stringify(plain)}`);
   check((await page.run(`${chip("应用入口")}.title`)) === `src/app.ts · ${strings["zh-CN"].content.line.replace("{{line}}", "3")}` || (await page.run(`${chip("应用入口")}.title`)) === `src/app.ts · ${strings.en.content.line.replace("{{line}}", "3")}`, `the tag's tip: ${await page.run(`${chip("应用入口")}.title`)}`);
 
+  step("file tags fit narrow message bubbles");
+  const narrow = await page.run(`(() => {
+    const bubble = document.createElement("div");
+    bubble.className = "bbub";
+    bubble.style.cssText = "width:140px;position:fixed;top:0;left:0";
+    bubble.innerHTML = '<div class="md"><p></p></div>';
+    const tag = ${chip("应用入口")}.cloneNode(true);
+    tag.querySelector(".fref-n").textContent = "中概盘中走势卡片和很长的文件名称";
+    bubble.querySelector("p").append(tag);
+    document.body.append(bubble);
+    const bounds = bubble.getBoundingClientRect();
+    const fragments = [...tag.getClientRects()];
+    const result = { lines: fragments.length, fits: fragments.every((r) => r.left >= bounds.left && r.right <= bounds.right) };
+    bubble.remove();
+    return result;
+  })()`);
+  check(narrow.lines > 1 && narrow.fits, `narrow file tag: ${JSON.stringify(narrow)}`);
+
   step("web pages: real links with icons, a bare one shortened; mailto stays words");
   const links = await page.run(`[...document.querySelectorAll(".am a.wl")].map((a) => [a.textContent, a.getAttribute("href"), !!a.querySelector(".wl-i svg"), !!a.querySelector(".wl-i img")])`);
   check(

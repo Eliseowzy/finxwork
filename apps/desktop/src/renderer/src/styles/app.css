@@ -419,9 +419,8 @@ button.insp-row:active{background:var(--fill2)}
 .wl-i .site-ic{display:inline-flex}
 .wl-i .ic,.wl-i img{width:14px;height:14px}
 .md a.wl code{color:inherit}
-/* A file or folder: a quiet tag in the link's colour, the lines in grey; greyed when nothing is there. Inline and
-   unbroken, so punctuation after it never starts a line on its own. */
-.md .fref{display:inline;white-space:nowrap;padding:1px 5px;border-radius:var(--r-xs);background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--accent-t);font-size:14px;cursor:pointer}
+/* A file or folder: a quiet tag in the link's colour, the lines in grey; greyed when nothing is there. */
+.md .fref{display:inline;padding:1px 5px;border-radius:var(--r-xs);background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);box-decoration-break:clone;color:var(--accent-t);font-size:14px;cursor:pointer}
 .md .fref:hover{background:var(--fill2)}
 .md .fref:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .md .fref .ic{display:inline-block;width:13px;height:13px;margin-right:4px;vertical-align:-2px;color:var(--l2)}

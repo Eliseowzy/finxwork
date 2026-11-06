@@ -296,6 +296,26 @@ try {
   same(await page.run(rowLine), "[图片]", "the list's line");
   await page.shot("01-five-images");
 
+  step("narrow conversation gives long messages the available width");
+  const widths = await page.run(`(() => {
+    const container = document.createElement("div");
+    container.className = "bm-b";
+    container.style.cssText = "width:300px;position:fixed;top:0;left:0";
+    const line = ${lastMessage}.querySelector(".bline").cloneNode(true);
+    const bubble = document.createElement("div");
+    bubble.className = "bbub";
+    bubble.textContent = "你好，我在。刚才正在拆你给的文件，已经认出它的流结构：PowerPoint Document 87,600 字节。".repeat(3);
+    line.firstElementChild.replaceWith(bubble);
+    container.append(line);
+    document.body.append(container);
+    const long = bubble.getBoundingClientRect().width;
+    bubble.textContent = "你好";
+    const short = bubble.getBoundingClientRect().width;
+    container.remove();
+    return [long, short];
+  })()`);
+  check(widths[0] >= 298 && widths[1] < 150, `narrow long and short bubbles: ${widths}`);
+
   step("19. the large view steps through them");
   await page.click(`.tr.bots > .bm:last-of-type .bim`, 1);
   await page.until("the large view", `!!document.querySelector(".lightbox.many")`);
