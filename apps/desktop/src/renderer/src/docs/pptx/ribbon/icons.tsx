@@ -23,5 +23,5 @@ const ICONS: Record<string, LucideIcon> = {
 
 export function RIcon({ name, className = "" }: { name: string; className?: string }) {
   const Glyph = ICONS[name] ?? Square;
-  return <Glyph className={`ic ${className}`} aria-hidden="true" />;
+  return <Glyph className={`ic ${className}`} aria-hidden="true" data-icon={name} />;
 }

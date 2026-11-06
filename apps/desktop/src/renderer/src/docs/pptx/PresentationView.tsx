@@ -17,6 +17,7 @@ import { onSlideRequest, takeSlide } from "./deckEdit";
 import { Ribbon, type RibbonFonts } from "./Ribbon";
 import { RibbonController } from "./commands/controller";
 import { ControllerContext } from "./ribbon/controls";
+import "./theme.css";
 import "./ribbon.css";
 import "./presentation.css";
 

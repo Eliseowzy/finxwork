@@ -1,0 +1,98 @@
+/* The presentation editor follows the window's appearance (tokens.css, which follows
+   nativeTheme). Light keeps the editor's own palette; dark takes the window's tokens.
+   The slides themselves draw in their own colours, as in PowerPoint.
+   On :root, not .pptx-surface: the editor's menus and dialogs portal to <body>.
+   --pptx-* colour FinxWork's ribbon, outline and loading card; --bo-editor-* and
+   --bo-toolbar-* the BetterOffice editor's stage, strip, panels and toolbar controls. */
+:root {
+  --pptx-bg: #fff;
+  --pptx-ink: #202124;
+  --pptx-ink-2: #45474c;
+  --pptx-ink-3: #6b6e75;
+  --pptx-ink-4: #8a8d94;
+  --pptx-ribbon: #f3f4f6;
+  --pptx-hover: #e8eaed;
+  --pptx-item-hover: #eef1f6;
+  --pptx-line: #d6d8dc;
+  --pptx-line-soft: #e6e6e6;
+  --pptx-field: #fff;
+  --pptx-accent: #325ee6;
+  --pptx-drop: #2563eb;
+  --pptx-warn-bg: #fff4e5;
+  --pptx-warn-fg: #7a4600;
+  --pptx-present-bg: #202124;
+  --pptx-present-fg: #fff;
+  /* Ribbon icon hues, as PowerPoint's: the part of a glyph that names the action takes one. */
+  --pptx-ic-blue: #1f6fd1;
+  --pptx-ic-green: #1f8f4e;
+  --pptx-ic-orange: #d9620f;
+  --pptx-ic-amber: #c98a00;
+  --pptx-ic-red: #d13438;
+  /* The loading card. */
+  --pptx-load-title: #29364b;
+  --pptx-load-ink: #4a5568;
+  --pptx-load-hint: #7a8596;
+  --pptx-load-file: #a0a9b8;
+  --pptx-load-track: #edf0f5;
+  --pptx-load-bar: #3b6fd8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pptx-bg: var(--win);
+    --pptx-ink: var(--l1);
+    --pptx-ink-2: var(--l2);
+    --pptx-ink-3: var(--l3);
+    --pptx-ink-4: var(--l3);
+    --pptx-ribbon: var(--win2);
+    --pptx-hover: var(--fill2);
+    --pptx-item-hover: var(--fill2);
+    --pptx-line: var(--l4);
+    --pptx-line-soft: var(--sep);
+    --pptx-field: var(--field);
+    --pptx-accent: var(--accent-fg);
+    --pptx-drop: var(--accent-fg);
+    --pptx-warn-bg: var(--orange-bg);
+    --pptx-warn-fg: var(--warn);
+    --pptx-present-bg: var(--l1);
+    --pptx-present-fg: var(--win);
+    --pptx-ic-blue: #5aa9f5;
+    --pptx-ic-green: #5cc98a;
+    --pptx-ic-orange: #f39a4c;
+    --pptx-ic-amber: #f2c14e;
+    --pptx-ic-red: #f1707a;
+    --pptx-load-title: var(--l1);
+    --pptx-load-ink: var(--l2);
+    --pptx-load-hint: var(--l3);
+    --pptx-load-file: var(--l3);
+    --pptx-load-track: var(--fill2);
+    --pptx-load-bar: var(--accent);
+
+    --bo-editor-ink: var(--l1);
+    --bo-editor-ink-muted: var(--l3);
+    --bo-editor-ink-soft: var(--l2);
+    --bo-editor-stage: var(--win2);
+    --bo-editor-rail: var(--win);
+    --bo-editor-surface: var(--win2);
+    --bo-editor-raised: var(--menu-solid);
+    --bo-editor-line: var(--l4);
+    --bo-editor-control: var(--field-bd);
+    --bo-editor-control-ink: var(--l2);
+    --bo-editor-selected: var(--sel);
+    --bo-editor-accent: var(--accent-fg);
+    --bo-editor-proposal: var(--violet);
+    --bo-editor-proposal-selected: color-mix(in srgb, var(--violet) 22%, transparent);
+    --bo-editor-slide-shadow: 0 0 0 1px rgba(255, 255, 255, .06), 0 8px 32px rgba(0, 0, 0, .55);
+    --bo-editor-thumb-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 1px 4px rgba(0, 0, 0, .5);
+
+    --bo-toolbar-ink: var(--l1);
+    --bo-toolbar-ink-muted: var(--l2);
+    --bo-toolbar-rail: var(--win2);
+    --bo-toolbar-surface: var(--menu-solid);
+    --bo-toolbar-hover: var(--fill2);
+    --bo-toolbar-selected: var(--fill3);
+    --bo-toolbar-line: var(--l4);
+    --bo-toolbar-accent: var(--l1);
+    --bo-toolbar-accent-ink: var(--win);
+  }
+}

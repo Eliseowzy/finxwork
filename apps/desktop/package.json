@@ -26,9 +26,9 @@
   },
   "dependencies": {
     "@betteroffice/fonts": "0.4.2",
-    "@betteroffice/pptx": "0.5.1-finx.g05cccb78",
-    "@betteroffice/pptx-i18n": "0.5.1-finx.g05cccb78",
-    "@betteroffice/pptx-react": "0.5.1-finx.g05cccb78",
+    "@betteroffice/pptx": "0.5.1-finx.g330266fb",
+    "@betteroffice/pptx-i18n": "0.5.1-finx.g330266fb",
+    "@betteroffice/pptx-react": "0.5.1-finx.g330266fb",
     "@codemirror/autocomplete": "6.20.4",
     "@codemirror/commands": "6.11.1",
     "@codemirror/language": "6.13.1",
