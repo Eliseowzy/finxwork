@@ -3,7 +3,7 @@
    the same rules. Colours come from tokens.css only. */
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);font-weight:var(--font-weight-normal);font-variation-settings:var(--font-axes);font-optical-sizing:auto;font-variant-ligatures:no-contextual;line-height:20px;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
 #root{height:100%}
 input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 /* Text that can be selected shows the text cursor, as in a text field; its buttons stay arrows. */
@@ -69,6 +69,10 @@ input:disabled,textarea:disabled{cursor:default}
 .dotc.on{background:var(--green)}
 .dotc.warn{background:var(--orange)}
 .mono{font-family:var(--mono)}
+:where(code,pre,kbd,.mono,.cblock,.cm-editor,.tool .cmd,.tool .out){font-variation-settings:normal;font-weight:400}
+:where(input,textarea,select){font-family:var(--font);font-variation-settings:inherit}
+:where(h1,h2){font-variation-settings:"ROND" 20,"slnt" 0,"wdth" 100}
+:where(h3,h4,h5,h6){font-variation-settings:"ROND" 20,"slnt" 0,"wdth" 94}
 .muted{color:var(--l2)}
 .faint{color:var(--l3)}
 .tnum{font-variant-numeric:tabular-nums}
@@ -84,25 +88,25 @@ input:disabled,textarea:disabled{cursor:default}
 .mini-spin{width:12px;height:12px;border-radius:50%;border:1.6px solid var(--fill3);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
 
 /* main window */
-.mainwrap{position:relative;display:grid;grid-template-columns:272px minmax(0,1fr);height:100%;transition:grid-template-columns .3s cubic-bezier(.2,0,0,1)}
+.mainwrap{position:relative;display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);height:100%;transition:grid-template-columns .3s cubic-bezier(.2,0,0,1)}
 .mainwrap.noside{grid-template-columns:0 minmax(0,1fr)}
 /* Edge to edge: the sidebar fills the window from top to bottom and left to its edge, one hairline from the content. */
 .side{background:var(--side);border-right:.5px solid var(--sep);display:flex;flex-direction:column;min-height:0;overflow:hidden}
 /* Selected navigation gets the same quiet raised edge as the dark composer. */
 .side :is(.nav-i,.srow,.brow).sel{box-shadow:var(--side-sel-sh)}
-@media(prefers-color-scheme:light){.side :is(.srow.sel .stitle,.brow.sel .bname,.nav-i.sel){font-weight:500}}
+.side :is(.stitle,.bname,.nav-i){font-weight:var(--font-weight-normal)}
 .noside .side{opacity:0;pointer-events:none}
 .mainwrap>.content{grid-column:2}
 /* No room for the sidebar beside the conversation, but asked for: over it, opaque, until a click beside it (layout.ts). */
-.mainwrap.peek .side{position:absolute;top:0;left:0;bottom:0;z-index:20;width:272px;opacity:1;pointer-events:auto;background:var(--side);
+.mainwrap.peek .side{position:absolute;top:0;left:0;bottom:0;z-index:20;width:var(--sidebar-width);opacity:1;pointer-events:auto;background:var(--side);
   box-shadow:10px 0 30px rgba(0,0,0,.14);animation:peek-in .22s cubic-bezier(.2,0,0,1)}
 .peek-scrim{position:absolute;inset:0;z-index:19;background:rgba(0,0,0,.08);animation:scrim-in .2s}
 @keyframes scrim-in{from{opacity:0}}
 @keyframes peek-in{from{transform:translateX(-24px);opacity:0}}
 @media (prefers-reduced-motion:reduce){.mainwrap.peek .side{animation:none}}
 /* A narrow conversation: less margin beside its column and its composer. */
-.mainwrap.narrow .dbody{padding-left:var(--sp-3);padding-right:var(--sp-3)}
-.mainwrap.narrow .cmp-zone{padding-left:calc(var(--sp-3) - 12px);padding-right:calc(var(--sp-3) - 12px)}
+.mainwrap.narrow .dbody{padding-left:16px;padding-right:16px}
+.mainwrap.narrow .cmp-zone{padding-left:16px;padding-right:16px}
 /* The sidebar toggle sits a step after the traffic lights (which end at x 74); the list's view options end the row. */
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
 .tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
@@ -115,10 +119,10 @@ input:disabled,textarea:disabled{cursor:default}
 .tip{position:fixed;left:0;top:0;z-index:1000;visibility:hidden;pointer-events:none;padding:4px 8px;border-radius:var(--r-sm);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 2px 8px rgba(0,0,0,.12);font-size:12px;line-height:16px;color:var(--l1);white-space:nowrap;animation:tip-in .1s var(--ease-out)}
 .tip kbd{margin-left:6px;font:inherit;color:var(--l2)}
 @keyframes tip-in{from{opacity:0}}
-/* One rhythm with the list: rows 32 high, 34 apart. */
-.side-nav{padding:0 8px 6px;display:flex;flex-direction:column;gap:2px;flex:none}
-.nav-i{display:flex;align-items:center;gap:9px;height:32px;padding:0 9px;border-radius:var(--r-md);font-size:14px;border:0;background:none;width:100%;text-align:left}
-.nav-i .ic{width:18px;height:18px;color:var(--l1)}
+/* Navigation rows are 32px high, with a 6px gap. */
+.side-nav{padding:12px 8px 6px;display:flex;flex-direction:column;gap:6px;flex:none}
+.nav-i{display:flex;align-items:center;gap:6px;height:32px;padding:0 8px;border-radius:var(--r-md);font-size:14px;border:0;background:none;width:100%;text-align:left}
+.nav-i .ic{width:16px;height:16px;color:var(--l1)}
 /* The shortcut shows on hover only: the menus say it too. */
 .nav-i .kbd{margin-left:auto;opacity:0;transition:opacity .12s}
 .nav-i:hover .kbd,.nav-i:focus-visible .kbd{opacity:1}
@@ -130,7 +134,7 @@ input:disabled,textarea:disabled{cursor:default}
 .side-list{flex:1;overflow-y:auto;min-height:0;padding:0 0 8px 8px;scrollbar-gutter:stable}
 .side-list::-webkit-scrollbar{width:8px}
 .side-list::-webkit-scrollbar-thumb{border-width:2px}
-.side-list>[role=group]{display:flex;flex-direction:column;gap:2px}
+.side-list>[role=group]{display:flex;flex-direction:column;gap:1px}
 /* The list's heading, a step below the actions so the list reads as its own part: its name, and ▾ to collapse every group (▸ when all are shut).
    The view options are as quiet as the name, their icon ending where the rows' text may. */
 .side-lh{display:flex;align-items:center;padding:12px 8px 4px;flex:none}
@@ -141,7 +145,7 @@ input:disabled,textarea:disabled{cursor:default}
 .side-lh-t .ic{width:16px;height:16px;transition:transform .15s var(--ease-out)}
 .side-lh-t.shut .ic{transform:rotate(-90deg)}
 /* A group's heading: its title, its count, and ▾ (▸ when collapsed); a click collapses or opens it. */
-.grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:400;color:var(--l2);padding:24px 10px 6px;margin-bottom:2px;display:flex;align-items:center;gap:5px;background:var(--side-head);border:0;width:100%;text-align:left}
+.grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:var(--font-weight-medium);line-height:16px;letter-spacing:-.015em;color:var(--l2);padding:16px 8px 4px;margin-bottom:2px;display:flex;align-items:center;gap:5px;background:var(--side-head);border:0;width:100%;text-align:left}
 .side-list>[role=group]:first-child .grp-h{padding-top:8px}
 .grp-h:hover{color:var(--l1)}
 .grp-h .n{font-weight:500;color:var(--l3)}
@@ -154,15 +158,17 @@ input:disabled,textarea:disabled{cursor:default}
 .grp-row .grpact{display:none;flex:none;margin-bottom:2px}
 .grp-row:hover .grpact,.grp-row .grpact:focus-visible{display:flex}
 /* Grouped by project, a heading is a row like the list's own: the folder, the name in full colour, close to its neighbours. */
-.side-list.by-project .grp-h{padding:7px 10px;margin:0;font-size:13.5px;color:var(--l1);gap:8px}
-.side-list.by-project>[role=group]:first-child .grp-h{padding-top:7px}
+.side-list:not(.by-project) .grp-h,.side-lh-t{font-weight:var(--font-weight-medium);font-variation-settings:"ROND" 20,"slnt" 0,"wdth" 100;letter-spacing:-.015em}
+.side-list.by-project .grp-h{padding:6px 8px;margin:0;font-size:14px;font-weight:var(--font-weight-normal);line-height:20px;letter-spacing:normal;color:var(--l1);gap:6px}
+.side-list.by-project>[role=group]:first-child .grp-h{padding-top:6px}
 .side-list.by-project .grp-h .gi{width:16px;height:16px;flex:none;color:var(--l2)}
 .side-list.by-project .grp-h .ic:not(.gi){color:var(--l3)}
 .side-list.by-project .grp-row{border-radius:var(--r-md);align-items:center}
 .side-list.by-project .grp-row:hover{background:linear-gradient(var(--fill),var(--fill)),var(--side-head)}
 .side-list.by-project .grp-row .grpact{margin:0 4px 0 0}
 .side-list.by-project>[role=group]+[role=group]{margin-top:2px}
-.srow{display:flex;padding:7px 10px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
+.srow{display:flex;padding:6px 8px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
+.side-list.by-project .srow{padding-left:30px}
 .srow:hover{background:var(--fill)}
 .srow.sel{background:var(--side-sel)}
 .srow .sdot{width:6px;height:6px}
@@ -177,7 +183,7 @@ input:disabled,textarea:disabled{cursor:default}
 .anote{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:8px 12px;margin-bottom:16px}
 .anote .link{margin-left:auto}
 .smain{min-width:0;flex:1}
-.sl1{display:flex;gap:8px;align-items:center;line-height:18px}
+.sl1{display:flex;gap:8px;align-items:center;line-height:20px}
 .stitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* In a task: a faded band crosses the title left to right every 2.4s at an even speed, like a progress
    bar, the next one entering as the last leaves, until the task ends. The title itself is
@@ -206,17 +212,17 @@ span.shimmer{display:inline-block;max-width:100%;vertical-align:bottom}
 .shimmer::after{content:"";position:absolute;top:0;bottom:0;left:-100%;width:300%;pointer-events:none;background:linear-gradient(90deg,transparent 38%,color-mix(in srgb,var(--shimmer-on,var(--win)) 64%,transparent) 50%,transparent 62%);animation:shimmer 2.4s linear infinite}
 @keyframes shimmer{from{transform:translateX(-28.6667%)}to{transform:translateX(28.6667%)}}
 @media (prefers-reduced-motion:reduce){.shimmer::after{display:none;animation:none}}
-.smeta{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
+.smeta{display:inline-flex;align-items:center;gap:5px;font-size:12px;line-height:16px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
 /* Nothing to show takes no gap: the title runs to the row's padding, the same as on its left. */
 .smeta:empty{display:none}
-.sl2{display:flex;align-items:baseline;gap:8px;font-size:11px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:2px}
+.sl2{display:flex;align-items:baseline;gap:8px;font-size:12px;line-height:16px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:0}
 .sl2t{flex:1;min-width:0;display:flex;align-items:center;gap:9px;overflow:hidden}
 /* The project, then the branch, each after its icon; the branch gives way first. */
 .sl2i{display:inline-flex;align-items:center;gap:3px;min-width:0;flex:0 1 auto}
 .sl2i+.sl2i{flex-shrink:1000}
 .sl2i>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sl2i .ic{width:11px;height:11px;stroke-width:2.025}
-.stime{flex:none;font-size:11px;font-variant-numeric:tabular-nums}
+.stime{flex:none;font-size:12px;font-variant-numeric:tabular-nums}
 .loadrow{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;color:var(--l2);font-size:12px}
 .endrow{text-align:center;color:var(--l3);font-size:11.5px;padding:14px 0 6px}
 /* finx did not start: why, and its last words. */
@@ -278,7 +284,9 @@ span.shimmer{display:inline-block;max-width:100%;vertical-align:bottom}
 .ctitle{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
 .ctitle h2{margin:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctitle .sub{font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cscroll{flex:1;overflow-y:auto;min-height:0;scrollbar-gutter:stable both-edges}
+/* No reserved scrollbar lanes: prose and composer share the same center and gutters. */
+.cscroll{flex:1;overflow-y:auto;min-height:0;scrollbar-width:none}
+.cscroll::-webkit-scrollbar{display:none}
 
 /* session page */
 .dwrap{flex:1;min-height:0;display:flex;position:relative;border-top:.5px solid var(--sep)}
@@ -360,20 +368,20 @@ button.insp-row:active{background:var(--fill2)}
 .ctx-other{background:var(--l2)}
 .ctx-reserved{background:var(--l3)}
 .ctx-free{background:var(--fill2);box-shadow:inset 0 0 0 .5px var(--l4)}
-/* The conversation: a 730-wide column, at least 34 from the edges; lines close together, blocks apart. */
-.dbody{max-width:798px;margin:0 auto;padding:var(--sp-3) var(--sp-4) 40px}
+/* A centered 768px conversation with 16px gutters; reply text is inset 8px. */
+.dbody{max-width:calc(var(--conversation-width) + 32px);margin:0 auto;padding:24px 16px 40px}
 .tr{display:flex;flex-direction:column;gap:var(--sp-2)}
 /* A time line before a message, only after a pause: centred, no rule. */
 .tdiv{align-self:center;font-size:11.5px;color:var(--l3);margin:10px 0 2px}
 /* Earlier history: the link, or while it comes the spinner, in the same height so nothing below moves. */
 .tdiv.earlier{display:flex;align-items:center;justify-content:center;height:16px}
 /* The owner speaks in a dark bubble on the right; the model writes plain text across the page. */
-.um{position:relative;align-self:flex-end;max-width:78%;margin-top:var(--sp-1)}
-.um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}
+.um{position:relative;align-self:flex-end;max-width:80%;margin-top:var(--sp-1)}
+.um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:var(--chat-size);line-height:1.625;white-space:pre-wrap;overflow-wrap:anywhere}
 /* What the message carried, above its bubble: images as thumbnails, files and folders as chips. */
 .um.again .bub,.um.again .um-att{outline:1.5px solid var(--accent);outline-offset:2px;border-radius:var(--r-xl)}
 .um-att{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-bottom:8px}
-.am{position:relative;font-size:15px;line-height:21px;color:var(--msg)}
+.am{position:relative;font-size:var(--chat-size);line-height:1.625;color:var(--msg)}
 /* A message with time and Copy keeps room below it for them, shown on hover under the bubble's right edge or the
    text's left; the model's words between tool calls have none, so they sit as far from the work above as below. */
 .um,.am.act{margin-bottom:var(--sp-3)}

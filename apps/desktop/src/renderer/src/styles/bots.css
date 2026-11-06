@@ -39,14 +39,14 @@
 /* The list: a row per bot, as a chat app's. Its two lines are 36 high, the avatar's height; padding, corners, hover
    and selection are a session row's (.srow). */
 .side-list.bots{display:flex;flex-direction:column;gap:2px}
-.brow{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:var(--r-md);outline-offset:-2px;cursor:default}
+.brow{display:flex;align-items:center;gap:10px;width:100%;padding:6px 8px;border-radius:var(--r-md);outline-offset:-2px;cursor:default}
 .brow:hover{background:var(--fill)}
 .brow.sel{background:var(--side-sel)}
 .bmain{flex:1;min-width:0}
 .bl1{position:relative;display:flex;align-items:center;gap:5px;height:20px}
 .bname{flex:0 1 auto;min-width:0;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bpin{width:12px;height:12px;color:var(--l3);flex:none}
-.btime{margin-left:auto;flex:none;padding-left:6px;font-size:11px;color:var(--l3);font-variant-numeric:tabular-nums}
+.btime{margin-left:auto;flex:none;padding-left:6px;font-size:12px;color:var(--l3);font-variant-numeric:tabular-nums}
 .bl2{display:flex;align-items:center;gap:8px;height:16px;font-size:12px;color:var(--l2)}
 .bprev{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .btag{color:var(--orange)}
@@ -99,7 +99,7 @@
 .tr.bots .bm+.bm{margin-top:-7px}
 .bm-b{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
 .bline{position:relative;display:flex;align-items:flex-end;gap:6px;max-width:100%}
-.bbub{min-width:0;max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--bot-reply);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--msg);font-size:15px;line-height:21px;overflow-wrap:anywhere}
+.bbub{min-width:0;max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--bot-reply);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--msg);font-size:var(--chat-size);line-height:1.625;overflow-wrap:anywhere}
 .bbub .md>*+*{margin-top:8px}
 .bbub .md pre{background:var(--win)}
 .bbub .md :is(pre,table,.md-table){max-width:100%;overflow-x:auto}
