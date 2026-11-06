@@ -93,6 +93,10 @@ pub(crate) enum HubCmd {
     Skills {
         reply: oneshot::Sender<(Arc<[SkillRef]>, bool)>,
     },
+    /// The tools the session has now.
+    Tools {
+        reply: oneshot::Sender<Vec<finx_protocol::api::ToolEntry>>,
+    },
     /// What fills the session's context window; `None` while it has no kernel.
     Context {
         reply: oneshot::Sender<Option<finx_protocol::ContextReport>>,
@@ -563,6 +567,9 @@ impl Hub {
                     None => (Arc::from(Vec::new()), false),
                 };
                 let _ = reply.send(skills);
+            }
+            HubCmd::Tools { reply } => {
+                let _ = reply.send(self.kernel.as_ref().map(|kernel| kernel.tools()).unwrap_or_default());
             }
             HubCmd::Context { reply } => {
                 let _ = reply.send(self.kernel.as_ref().and_then(|kernel| kernel.context()));

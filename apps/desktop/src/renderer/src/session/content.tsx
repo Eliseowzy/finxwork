@@ -1,8 +1,10 @@
 import { useContext, useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { fileOfCode, fileOfLink, hiddenChars, loopback, shellLanguage, shortURL, webOf, webOfCode, type FileRef as Ref } from "@finx/client";
+import { showsInApp } from "../files/kind";
 import { inSession, showFile, showFolder } from "../files/state";
 import { Icon } from "../icons";
+import { useFilePreview } from "../preview/context";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { Code } from "./Code";
@@ -26,6 +28,7 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const { t } = useTranslation("session");
   const st = useStore();
   const info = useFileInfo(scope.cwd, target.path);
+  const preview = useFilePreview();
   useEffect(() => void editorList(), []);
   if (code !== undefined && !info?.kind) return <code>{code}</code>;
   const missing = info?.kind === null;
@@ -38,11 +41,18 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const open = () => {
     if (!info) return;
     if (info.kind === null) return void openRef(st, info, target.line);
+    // Over the window where the page offers it (DD-159); a reference to lines is to the source, in the panel.
+    if (preview && info.kind === "file" && target.line === undefined && showsInApp(info.path)) return preview.open(info.path);
+    scope.leave?.();
     if (info.kind === "folder") return inSession(scope.cwd, info.path) ? showFolder(st, scope.session, scope.cwd, info.path) : window.finx?.openFolder(info.path);
     if (page) return showPage(st, scope.session, info.path);
     showFile(st, scope.session, scope.cwd, info.path, { line: target.line, endLine: target.endLine });
   };
-  const menu = () => info && void fileMenu(st, info, target.line, open, otherView(st, scope.session, scope.cwd, info.path, page ? "page" : "source"));
+  const menu = () => {
+    if (!info) return;
+    const view = otherView(st, scope.session, scope.cwd, info.path, page ? "page" : "source");
+    void fileMenu(st, info, target.line, open, view && { ...view, run: () => (scope.leave?.(), view.run()) });
+  };
   return (
     <span
       className={`fref ${code !== undefined ? "mono" : ""} ${missing ? "gone" : ""}`}

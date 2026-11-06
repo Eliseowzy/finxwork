@@ -84,6 +84,8 @@ impl TestEnv {
             .env("FINX_CREDENTIAL_STORE", "file")
             // Sign-ins print their address; tests play the browser themselves.
             .env("FINX_NO_BROWSER", "1")
+            // What it says to people does not depend on the machine's locale.
+            .env("FINX_LANG", "en")
             // The public model catalog comes from the mock; the developer's keys stay out.
             .env("FINX_MODEL_CATALOG_URL", self.mock.catalog_url())
             .env_remove("DEEPSEEK_API_KEY")

@@ -6,6 +6,7 @@
 | 日期 | 2026-10-30 |
 | 状态 | 已实现，本机端到端验证通过；发布仓库未创建，尚未发布过版本（§9） |
 | 关系 | 细化 desktop-design.md §11 的三期（Developer ID 签名与公证、DMG、自动更新）；更新后内核的替换沿用 desktop-kernel-integration.md §6.4，本文补上它漏掉的情形（§4.6） |
+| 命令行 | 独立发布的 finx 命令行走另一个仓库 `finxwork/finx-releases`，见 [kernel/standalone-cli-design.md](../kernel/standalone-cli-design.md) §13：一个仓库只有一个 latest，混在一起应用会以为没有更新 |
 
 ## 目录
 

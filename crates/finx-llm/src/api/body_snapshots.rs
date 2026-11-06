@@ -45,6 +45,7 @@ fn call(id: &str, name: &str, arguments: Value) -> AssistantContent {
         name: name.into(),
         arguments: arguments.into(),
         arguments_error: None,
+        provider_data: None,
     })
 }
 

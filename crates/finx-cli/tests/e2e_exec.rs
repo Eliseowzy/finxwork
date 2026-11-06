@@ -60,7 +60,7 @@ async fn foreground_runtime_drives_parallel_agents_and_their_tools() {
     std::fs::write(env.work().join("README.md"), "A small library.\n").unwrap();
     let (code, events) = tokio::time::timeout(
         std::time::Duration::from_secs(20),
-        json_lines(&env, &["exec", "--json", "[[mock:fanout:3:foreground]] inspect modules"]),
+        json_lines(&env, &["exec", "--output", "stream-json", "[[mock:fanout:3:foreground]] inspect modules"]),
     ).await.expect("foreground agents must not deadlock");
     assert_eq!(code, 0);
     let tools = of_type(&events, "tool_completed");
@@ -79,7 +79,7 @@ async fn foreground_runtime_drives_parallel_agents_and_their_tools() {
 #[tokio::test]
 async fn foreground_runtime_accepts_interrupt_while_streaming() {
     let env = TestEnv::new("manual", "").await;
-    let mut child = env.finx(&["exec", "--json", "--ops-stdin", "[[mock:slow:200]] reply slowly"])
+    let mut child = env.finx(&["exec", "--output", "stream-json", "--ops-stdin", "[[mock:slow:200]] reply slowly"])
         .stdin(Stdio::piped()).stdout(Stdio::piped()).kill_on_drop(true).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
@@ -103,7 +103,7 @@ async fn foreground_runtime_accepts_interrupt_while_streaming() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exec_json_emits_enriched_tool_events() {
     let env = TestEnv::new("bypass-permissions", "").await;
-    let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:bash:echo e2e-marker]] run it"]).await;
+    let (code, events) = json_lines(&env, &["exec", "--output", "stream-json", "[[mock:bash:echo e2e-marker]] run it"]).await;
     assert_eq!(code, 0);
     assert_increasing(&events);
     let started = of_type(&events, "session_started");
@@ -127,7 +127,7 @@ async fn exec_json_emits_enriched_tool_events() {
 async fn exec_ops_stdin_answers_approvals() {
     let env = TestEnv::new("manual", "").await;
     let mut child = env
-        .finx(&["exec", "--json", "--ops-stdin", "[[mock:files]] edit notes"])
+        .finx(&["exec", "--output", "stream-json", "--ops-stdin", "[[mock:files]] edit notes"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -158,7 +158,7 @@ async fn exec_ops_stdin_answers_approvals() {
 async fn exec_ops_stdin_answers_what_a_sub_agent_asks() {
     let env = TestEnv::new("manual", "").await;
     let mut child = env
-        .finx(&["exec", "--json", "--ops-stdin", "[[mock:delegate:touch made.txt]] run it"])
+        .finx(&["exec", "--output", "stream-json", "--ops-stdin", "[[mock:delegate:touch made.txt]] run it"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -183,7 +183,7 @@ async fn exec_ops_stdin_answers_what_a_sub_agent_asks() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn with_nobody_to_ask_exec_refuses_a_sub_agents_call() {
     let env = TestEnv::new("manual", "").await;
-    let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:delegate:touch made.txt]] run it"]).await;
+    let (code, events) = json_lines(&env, &["exec", "--output", "stream-json", "[[mock:delegate:touch made.txt]] run it"]).await;
     assert_eq!(code, 0);
     let refused = events.iter().find(|e| e["type"] == "agent_event" && e["event"]["type"] == "tool_completed").expect("the call ended");
     let text = refused["event"]["result"]["content"][0]["text"].as_str().unwrap();
@@ -194,22 +194,22 @@ async fn with_nobody_to_ask_exec_refuses_a_sub_agents_call() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exec_reports_retries_failures_and_cutoffs() {
     let env = TestEnv::new("bypass-permissions", "").await;
-    let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:retry]] once"]).await;
+    let (code, events) = json_lines(&env, &["exec", "--output", "stream-json", "[[mock:retry]] once"]).await;
     assert_eq!(code, 0);
     assert_eq!(of_type(&events, "stream_retry").len(), 1);
     assert_eq!(of_type(&events, "task_completed")[0]["last_message"], "recovered after a retry");
 
-    let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:fail]] please"]).await;
+    let (code, events) = json_lines(&env, &["exec", "--output", "stream-json", "[[mock:fail]] please"]).await;
     assert_eq!(code, 1);
     let failed = of_type(&events, "task_failed");
     assert_eq!(failed.len(), 1);
     assert!(failed[0]["error"]["message"].as_str().unwrap().contains("mock rejects"));
 
-    let (code, events) = json_lines(&env, &["exec", "--json", "[[mock:cut]] long answer"]).await;
+    let (code, events) = json_lines(&env, &["exec", "--output", "stream-json", "[[mock:cut]] long answer"]).await;
     assert_eq!(code, 0);
     assert_eq!(of_type(&events, "task_completed")[0]["reason"], "output_limit");
 
-    let (code, events) = json_lines(&env, &["exec", "--json", "--max-turns", "2", "[[mock:loop:5]] spin"]).await;
+    let (code, events) = json_lines(&env, &["exec", "--output", "stream-json", "--max-turns", "2", "[[mock:loop:5]] spin"]).await;
     assert_eq!(code, 0);
     assert_eq!(of_type(&events, "task_completed")[0]["reason"], "max_turns");
 }

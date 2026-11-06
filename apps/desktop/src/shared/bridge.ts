@@ -98,6 +98,12 @@ export type BrowserPanel = {
   editing?: boolean;
 };
 
+/** Where an HTML file's preview shows, in window coordinates. */
+export type PagePreviewRect = { x: number; y: number; width: number; height: number };
+
+/** What the page in a preview asks of the app: to close (Esc, with the keys in the page), or to go to a web address. */
+export type PagePreviewEvent = { kind: "close" } | { kind: "link"; url: string };
+
 /** A picture of a session's shown tab, taken as it stepped aside; `width` in CSS pixels. */
 export type BrowserStill = { session: string; image: string; width: number };
 
@@ -316,6 +322,11 @@ export type Bridge = {
   openURL(session: string, url: string): Promise<void>;
   /** An HTML file in the session's browser, as it is now; false when it is not there. */
   openPageFile(session: string, path: string): Promise<boolean>;
+  /** An HTML file over the given rectangle, nobody's tab; false when it is not there. It stays until closed. */
+  openPagePreview(path: string, rect: PagePreviewRect): Promise<boolean>;
+  placePagePreview(rect: PagePreviewRect): void;
+  closePagePreview(): void;
+  onPagePreview(cb: (event: PagePreviewEvent) => void): () => void;
   /** Opens a folder itself in Finder (Explorer, the file manager). */
   openFolder(path: string): void;
   /** A new terminal window, its shell in this folder. */

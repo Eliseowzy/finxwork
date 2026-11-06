@@ -1,5 +1,5 @@
 //! DocStore on PDFium, in a worker thread: a PDF written here, and, when the machine has it, the
-//! phase-0 corpus's real Chinese broker report (`FINX_DOC_CORPUS`, else pdf_oxide's fixtures).
+//! phase-0 corpus's real Chinese broker report (`FINX_DOC_CORPUS`).
 
 use finx_docs::DocStore;
 use finx_docs::Launcher;
@@ -180,7 +180,7 @@ async fn a_changed_file_is_taken_again_and_bad_files_are_refused() {
 }
 
 fn corpus(name: &str) -> Option<PathBuf> {
-    let dir = std::env::var_os("FINX_DOC_CORPUS").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/Users/eliseo/pdf_oxide/tests/fixtures"));
+    let dir = PathBuf::from(std::env::var_os("FINX_DOC_CORPUS")?);
     let path = dir.join(name);
     path.is_file().then_some(path)
 }

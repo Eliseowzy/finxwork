@@ -469,7 +469,7 @@ fn create_private_dir(dir: &Path) -> io::Result<()> {
 
 /// An exclusive lock for writing `path`, waited for up to two seconds. Lock files are kept in
 /// `run/locks` of finx's own directory (`finx_dir`), never beside a repository's file.
-fn lock(path: &Path, finx_dir: &Path) -> Result<File, WriteError> {
+pub fn lock(path: &Path, finx_dir: &Path) -> Result<File, WriteError> {
     let dir = finx_dir.join("run").join("locks");
     create_private_dir(&dir).map_err(|source| WriteError::Io { path: dir.clone(), source })?;
     // The same file however it is spelled: its directory exists by now.

@@ -513,6 +513,24 @@ impl JsonlStore {
         (hidden, summary)
     }
 
+    /// Moves the log of a session no process has open, and its files, into `trash`. Returns the
+    /// session's id; `Locked` while a process has it open.
+    pub fn move_to_trash(&self, reference: &SessionRef, trash: &Path) -> Result<String, StoreError> {
+        let path = self.find(reference)?;
+        let (header, _) = self.header(reference)?;
+        let file = File::open(&path).map_err(io_err(&path))?;
+        lock(&file, &path)?;
+        std::fs::create_dir_all(trash).map_err(io_err(trash))?;
+        let name = path.file_name().map_or_else(|| PathBuf::from(format!("{}.jsonl", header.id)), PathBuf::from);
+        // The session's files go with its log.
+        let (data_dir, _) = crate::paths::FinxHome::session_data_dir(&path, &header.id);
+        std::fs::rename(&path, trash.join(&name)).map_err(io_err(&path))?;
+        if data_dir.is_dir() {
+            std::fs::rename(&data_dir, trash.join(name.with_extension(""))).map_err(io_err(&data_dir))?;
+        }
+        Ok(header.id)
+    }
+
     /// Appends entries to the log of a session no process has open: after its last entry,
     /// under the log's lock. Returns `Locked` while a process has it open.
     pub fn append(&self, reference: &SessionRef, kinds: Vec<EntryKind>) -> Result<(), StoreError> {

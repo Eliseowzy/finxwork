@@ -11,6 +11,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::sync::OnceLock;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::time::SystemTime;
 
 pub trait CredentialStore: Send + Sync {
     /// Where keys go, for messages ("keychain").
@@ -24,9 +27,57 @@ static STORE: OnceLock<Box<dyn CredentialStore>> = OnceLock::new();
 /// Provider → key (or its absence), read at most once per process.
 static CACHE: LazyLock<Mutex<HashMap<String, Option<String>>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// A file every `set` and `delete` touches, here or in another process: the saved keys changed.
+static STAMP: OnceLock<PathBuf> = OnceLock::new();
+/// The stamp's time when the cache was last good.
+static SEEN: Mutex<Option<SystemTime>> = Mutex::new(None);
+/// Counts the changes this process noticed from elsewhere.
+static CHANGES: AtomicU64 = AtomicU64::new(0);
+
 /// Chooses the store for this process; later calls are ignored.
 pub fn install(store: Box<dyn CredentialStore>) {
     let _ = STORE.set(store);
+}
+
+/// Names the stamp file, so that keys saved by another process are seen here at once. A `stat`
+/// costs about a microsecond (standalone-cli-design §11.3).
+pub fn watch(stamp: PathBuf) {
+    let time = stamp_time(&stamp);
+    if STAMP.set(stamp).is_ok() {
+        *SEEN.lock() = time;
+    }
+}
+
+fn stamp_time(path: &std::path::Path) -> Option<SystemTime> {
+    std::fs::metadata(path).and_then(|meta| meta.modified()).ok()
+}
+
+/// Forgets what was read when another process changed the keys since.
+fn notice_changes() {
+    let Some(stamp) = STAMP.get() else { return };
+    let time = stamp_time(stamp);
+    let mut seen = SEEN.lock();
+    if *seen != time {
+        *seen = time;
+        CACHE.lock().clear();
+        CHANGES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// How many times another process changed the keys, as far as this one looked. A service compares
+/// it to know when to tell its clients.
+pub fn changes_elsewhere() -> u64 {
+    notice_changes();
+    CHANGES.load(Ordering::Relaxed)
+}
+
+fn touch_stamp() {
+    let Some(stamp) = STAMP.get() else { return };
+    let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    if std::fs::write(stamp, now.to_string()).is_ok() {
+        // This process's own change is in its cache already.
+        *SEEN.lock() = stamp_time(stamp);
+    }
 }
 
 /// The store for this platform. `FINX_CREDENTIAL_STORE=file` uses the file everywhere
@@ -47,6 +98,7 @@ pub fn store_name() -> Option<&'static str> {
 /// The saved key of a provider, if a store is installed and has one.
 pub fn get(provider: &str) -> Option<String> {
     let store = STORE.get()?;
+    notice_changes();
     if let Some(cached) = CACHE.lock().get(provider) {
         return cached.clone();
     }
@@ -79,6 +131,7 @@ pub fn set(provider: &str, key: &str) -> Result<(), String> {
     let store = STORE.get().ok_or("no credential store is available")?;
     store.set(provider, key)?;
     CACHE.lock().insert(provider.to_string(), Some(key.to_string()));
+    touch_stamp();
     Ok(())
 }
 
@@ -87,6 +140,7 @@ pub fn delete(provider: &str) -> Result<(), String> {
     let store = STORE.get().ok_or("no credential store is available")?;
     store.delete(provider)?;
     CACHE.lock().insert(provider.to_string(), None);
+    touch_stamp();
     Ok(())
 }
 

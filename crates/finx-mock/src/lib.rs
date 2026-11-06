@@ -1210,6 +1210,19 @@ fn churn_step(seed: u64, k: usize) -> Step {
     }
 }
 
+/// `finx models check` offers a tool of its own and can put no directive in its words.
+fn check_plan(request: &Value, messages: &[Value]) -> Option<Plan> {
+    let tools = request.get("tools")?.as_array()?;
+    tools.iter().find(|tool| tool["function"]["name"] == "check_echo")?;
+    if messages.last().is_some_and(|m| m.get("role").and_then(Value::as_str) == Some("tool")) {
+        return Some(Plan::Step(Step::text("ping")));
+    }
+    let text = messages.last().map(content_text).unwrap_or_default();
+    let echo = |text: &str| ("check_echo", json!({"text": text}));
+    let calls = if text.contains("twice") { vec![echo("a"), echo("b")] } else { vec![echo("ping")] };
+    Some(Plan::Step(Step::calls(calls)))
+}
+
 async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> io::Result<()> {
     shared.stats.requests.fetch_add(1, Ordering::Relaxed);
     shared.stats.request_bytes.fetch_add(body.len() as u64, Ordering::Relaxed);
@@ -1225,7 +1238,10 @@ async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> i
             shared.stats.record_controls(&request);
             let messages = request.get("messages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
             let (name, arg, prompt, step) = directive(messages);
-            let plan = plan(shared, messages, &name, &arg, &prompt, step);
+            let plan = match check_plan(&request, messages) {
+                Some(plan) => plan,
+                None => plan(shared, messages, &name, &arg, &prompt, step),
+            };
             (name, plan)
         }
     };
