@@ -101,6 +101,7 @@ const bridge: Bridge = {
   showAbout: () => ipcRenderer.send("show-about"),
   getPreferences: () => ipcRenderer.invoke("preferences"),
   setPreferences: (p: Partial<Preferences>) => ipcRenderer.invoke("set-preferences", p),
+  onPreferences: (cb) => listen("preferences-changed", cb),
   relaunch: () => ipcRenderer.send("relaunch"),
   updates: () => ipcRenderer.invoke("update-info"),
   onUpdate: (cb: (u: UpdateInfo) => void) => listen("update", cb),

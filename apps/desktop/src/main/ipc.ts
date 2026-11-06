@@ -506,6 +506,9 @@ export function registerIPC() {
   ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => {
     if (!trusted(e) || typeof p !== "object" || p === null) return null;
     const next = setPreferences(p);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (ours(win.webContents.getURL())) win.webContents.send("preferences-changed", next);
+    }
     notifier.refresh();
     applyRoutinePreferences();
     return next;
