@@ -908,7 +908,7 @@ timeout_secs = 10
 | 档 | 方法 | 承诺 |
 |---|---|---|
 | **稳定** | `initialize`；`session/*`（13 个）；`sessions/*`；`resource/read`；`models/*`；`auth/*`；`credentials/*`；`config/*`；`skills/*`；`mcp/*`；`web_search/*`；`files/*`；`chatgpt/*`；`server/shutdown`；新增的 `tools/list` | §9.3 的规则 |
-| **实验** | `connections/*`；`connectors/install`；`doc/*`；`bots/*`；`browser/` 下除 `host` 之外的方法 | 可以随版本改，由 capabilities 声明，文档标明 |
+| **实验** | `connections/*`；`connectors/install`；`doc/*`；`pptx/*`；`bots/*`；`browser/` 下除 `host` 之外的方法 | 可以随版本改，由 capabilities 声明，文档标明 |
 | **内部** | `browser/host`，以及通知 `browser/cdp`、`browser/extension`、`browser/control`、`browser/request` | 只给桌面端和扩展宿主用，不写进公开文档 |
 
 通知同样分档：`session/event`、`session/detached`、`sessions/changed`、`models/changed`、`config/changed`、`skills/changed`、`mcp/changed`、`mcp/probe_progress`、`files/changed` 和 `$/cancel_request` 稳定，`doc/changed`、`bots/changed`、`browser/changed` 实验。

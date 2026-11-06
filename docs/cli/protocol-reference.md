@@ -114,6 +114,9 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `doc/trace` | `DocTraceParams` | `DocFoundResult` | `doc/trace`: Excel's 追踪引用单元格 / 追踪从属单元格, `depth` steps out (1 to 10). |
 | `doc/undo` | `DocIdParams` | `DocApplyResult` |  |
 | `doc/view` | `DocViewParams` | `Empty` | What a session's document column shows: the page, and what is selected. |
+| `pptx/metafile` | `PptxMetafileParams` | `PptxMetafileResult` |  |
+| `pptx/read` | `PptxReadParams` | `PptxReadResult` | Optional correlation ID keeps concurrent opens and reopened tabs isolated. |
+| `pptx/write` | `PptxWriteParams` | `FilesWriteResult` |  |
 
 ## Client notifications
 
@@ -133,6 +136,7 @@ Protocol version 2. Generated from `finx protocol schema` by `tools/gen-protocol
 | `mcp/changed` | `McpChangedParams` | stable |
 | `mcp/probe_progress` | `McpProbeProgressParams` | stable |
 | `models/changed` | `Empty` | stable |
+| `pptx/readProgress` | `PptxReadProgress` | experimental |
 | `session/detached` | `SessionDetachedParams` | stable |
 | `session/event` | `SessionEventParams` | stable |
 | `sessions/changed` | `SessionsChangedParams` | stable |

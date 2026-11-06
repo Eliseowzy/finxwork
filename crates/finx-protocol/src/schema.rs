@@ -363,7 +363,7 @@ pub fn document() -> Value {
 /// the desktop app and the extension host.
 pub fn stability(name: &str) -> &'static str {
     const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request"];
-    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "bots/", "browser/", "routines/", "bot/", "connector/"];
+    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "pptx/", "bots/", "browser/", "routines/", "bot/", "connector/"];
     if INTERNAL.contains(&name) {
         "internal"
     } else if EXPERIMENTAL.iter().any(|prefix| name.starts_with(prefix)) {
@@ -499,6 +499,7 @@ mod tests {
         assert_eq!(methods["tools/list"], "stable");
         assert_eq!(methods["session/op"], "stable");
         assert_eq!(methods["doc/open"], "experimental");
+        assert_eq!(methods["pptx/read"], "experimental");
         assert_eq!(methods["browser/host"], "internal");
         assert_eq!(doc["x-stability"]["notifications"]["session/event"], "stable");
     }

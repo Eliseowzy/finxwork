@@ -135,6 +135,8 @@
     "FINX_DESKTOP_E2E": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_DOC_CORPUS": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_LEGACY_OK": { "job": "test", "stability": "internal", "legacy": true },
+    "FINX_PPT_RENDER_OUT": { "job": "test", "stability": "internal", "legacy": true },
+    "FINX_PPT_SAMPLES": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_QODER_CAPABILITIES_OUT": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_QODER_CATALOG_IN": { "job": "test", "stability": "internal", "legacy": true },
     "FINX_QODER_RUST_OK": { "job": "test", "stability": "internal", "legacy": true },
