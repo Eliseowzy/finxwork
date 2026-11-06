@@ -23,10 +23,11 @@ impl Server {
 }
 pub(crate) fn rpc_error(e: finx_connections::ConnectionError) -> RpcError {
     let diagnostic = e.diagnostic();
+    let data = serde_json::json!({"kind":e.code,"diagnostic":diagnostic});
     RpcError {
         code: -32000,
-        message: e.message,
-        data: Some(serde_json::json!({"kind":e.code,"diagnostic":diagnostic})),
+        message: e.into_message(),
+        data: Some(data),
     }
 }
 

@@ -12,18 +12,30 @@ use std::io::Read;
 
 fn pair_from_stdin() -> Ed25519KeyPair {
     let mut text = String::new();
-    std::io::stdin().read_to_string(&mut text).expect("the seed on standard input");
-    let seed = base64::engine::general_purpose::STANDARD.decode(text.trim()).expect("a base64 seed");
+    std::io::stdin()
+        .read_to_string(&mut text)
+        .expect("the seed on standard input");
+    let seed = base64::engine::general_purpose::STANDARD
+        .decode(text.trim())
+        .expect("a base64 seed");
     Ed25519KeyPair::from_seed_unchecked(&seed).expect("a 32-byte seed")
 }
 
+#[allow(clippy::print_stdout, clippy::print_stderr)] // a CLI: output on stdout, usage on stderr
 fn main() {
     let base64 = base64::engine::general_purpose::STANDARD;
     let args: Vec<String> = std::env::args().skip(1).collect();
-    match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
         ["keygen"] => {
             let mut seed = [0u8; 32];
-            ring::rand::SystemRandom::new().fill(&mut seed).expect("random bytes");
+            ring::rand::SystemRandom::new()
+                .fill(&mut seed)
+                .expect("random bytes");
             let pair = Ed25519KeyPair::from_seed_unchecked(&seed).expect("a 32-byte seed");
             println!("{}", base64.encode(seed));
             println!("{}", base64.encode(pair.public_key().as_ref()));

@@ -11,7 +11,9 @@ mod reply;
 mod tests;
 
 use super::cosy;
-use finx_llm::{ErrorKind, LlmError, LlmStream, MessageAccumulator, StreamEvent, WireApi, WireRequest};
+use finx_llm::{
+    ErrorKind, LlmError, LlmStream, MessageAccumulator, StreamEvent, WireApi, WireRequest,
+};
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 
@@ -19,8 +21,7 @@ pub(crate) use queue::Queue;
 
 pub(crate) const BASE: &str = "https://api3.qoder.sh";
 const CATALOG_PATH: &str = "/algo/api/v2/model/list?Encode=1";
-const CHAT_PATH: &str =
-    "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
+const CHAT_PATH: &str = "/algo/api/v2/service/pro/sse/agent_chat_generation?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1";
 
 /// The catalog's entries by model, shared by the adapter, which fills it whenever it reads the
 /// catalog, and by its legacy requests, which read it once themselves when it is empty.
@@ -62,10 +63,18 @@ impl Target {
         if key.is_empty() || matches!(key, "default") {
             return None;
         }
-        let number = |v: &Value| v.as_u64().or_else(|| v.as_str()?.parse().ok()).filter(|n| *n > 0);
+        let number = |v: &Value| {
+            v.as_u64()
+                .or_else(|| v.as_str()?.parse().ok())
+                .filter(|n| *n > 0)
+        };
         let mut tiers = Vec::new();
         let mut default_tier = None;
-        for tier in entry["context_config"].as_object().into_iter().flat_map(|m| m.values()) {
+        for tier in entry["context_config"]
+            .as_object()
+            .into_iter()
+            .flat_map(|m| m.values())
+        {
             if let Some(tokens) = number(&tier["token_count"]) {
                 tiers.push(tokens);
                 if tier["is_default"] == true {
@@ -82,17 +91,32 @@ impl Target {
             .or_else(|| thinking.get("enabled")?.get("efforts"));
         let efforts = match efforts {
             Some(Value::Object(map)) => map.keys().cloned().collect(),
-            Some(Value::Array(list)) => list.iter().filter_map(Value::as_str).map(str::to_owned).collect(),
+            Some(Value::Array(list)) => list
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect(),
             _ => Vec::new(),
         };
         Some(Target {
             key: key.into(),
-            display_name: entry["display_name"].as_str().filter(|s| !s.is_empty()).unwrap_or(key).into(),
+            display_name: entry["display_name"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or(key)
+                .into(),
             format: entry["format"].as_str().unwrap_or("openai").into(),
             is_vl: entry["is_vl"] == true,
             is_reasoning: entry["is_reasoning"] == true,
-            source: entry["source"].as_str().filter(|s| !s.is_empty()).unwrap_or("system").into(),
-            outer_provider: entry["outer_provider"].as_str().filter(|s| !s.is_empty()).map(str::to_owned),
+            source: entry["source"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("system")
+                .into(),
+            outer_provider: entry["outer_provider"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned),
             max_input_tokens: number(&entry["max_input_tokens"]).unwrap_or(200_000),
             tiers,
             default_tier,
@@ -106,7 +130,11 @@ impl Target {
         if let Some(tier) = self.default_tier.filter(|t| *t >= window) {
             return Some(tier);
         }
-        self.tiers.iter().copied().find(|t| *t >= window).or_else(|| self.tiers.last().copied())
+        self.tiers
+            .iter()
+            .copied()
+            .find(|t| *t >= window)
+            .or_else(|| self.tiers.last().copied())
     }
 
     /// The `model_config` Qoder's App sends: the entry's own fields, never the entry whole.
@@ -141,12 +169,24 @@ pub(crate) struct Legacy {
 }
 
 /// Reads the catalog for the legacy route's entries, as the adapter reads it.
-async fn read_targets(http: &reqwest::Client, signer: &queue::Signer) -> Option<HashMap<String, Target>> {
+async fn read_targets(
+    http: &reqwest::Client,
+    signer: &queue::Signer,
+) -> Option<HashMap<String, Target>> {
     let url = format!("{}{CATALOG_PATH}", signer.base);
     let headers = cosy::headers(&url, &signer.uid, &signer.token, &signer.machine).ok()?;
-    let response = http.get(&url).headers(headers).timeout(std::time::Duration::from_secs(30)).send().await.ok()?;
+    let response = http
+        .get(&url)
+        .headers(headers)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .ok()?;
     if !response.status().is_success() {
-        tracing::warn!(status = response.status().as_u16(), "qoder_legacy_catalog_unavailable");
+        tracing::warn!(
+            status = response.status().as_u16(),
+            "qoder_legacy_catalog_unavailable"
+        );
         return None;
     }
     let value: Value = response.json().await.ok()?;
@@ -155,7 +195,10 @@ async fn read_targets(http: &reqwest::Client, signer: &queue::Signer) -> Option<
 
 /// A queued task's attempt ends here; the kernel's retry waits the queue's delay.
 fn queued(acc: &MessageAccumulator, retry_after: Option<f64>) -> StreamEvent {
-    let mut error = LlmError::new(ErrorKind::Overloaded, "Qoder 正在为该模型排队，稍后自动重试");
+    let mut error = LlmError::new(
+        ErrorKind::Overloaded,
+        "Qoder 正在为该模型排队，稍后自动重试",
+    );
     error.provider_code = Some("qoder_queued".into());
     error.retry_after_ms = Some(queue::pause(retry_after).as_millis() as u64);
     StreamEvent::Failed(acc.fail(error))
@@ -174,8 +217,13 @@ impl WireApi for Legacy {
 
     fn stream(&self, req: WireRequest) -> LlmStream {
         let url = format!("{}{CHAT_PATH}", self.base);
-        let (base, uid, machine, queue, targets) =
-            (self.base.clone(), self.uid.clone(), self.machine.clone(), self.queue.clone(), self.targets.clone());
+        let (base, uid, machine, queue, targets) = (
+            self.base.clone(),
+            self.uid.clone(),
+            self.machine.clone(),
+            self.queue.clone(),
+            self.targets.clone(),
+        );
         Box::pin(async_stream::stream! {
             let mut acc = MessageAccumulator::for_model(&req.model);
             let Some(token) = req.credentials.api_key.clone() else {

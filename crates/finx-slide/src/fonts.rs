@@ -63,7 +63,9 @@ fn bundled_face(family: &str, bold: bool, italic: bool) -> Option<FontFaceHandle
     };
     let bytes: &'static [u8] = faces[usize::from(bold) + 2 * usize::from(italic)];
     // Registered under the document's own name, so its runs find the face.
-    Some(FontFaceHandle::new(family, bold, italic, move || Ok(bytes.to_vec())))
+    Some(FontFaceHandle::new(family, bold, italic, move || {
+        Ok(bytes.to_vec())
+    }))
 }
 
 const LAST_RESORT: [&str; 3] = ["Helvetica Neue", "Helvetica", "Arial"];
@@ -78,7 +80,9 @@ impl SystemFonts {
     /// A standalone local face for the browser WASM engine and Canvas painter.
     pub fn face_bytes(&self, family: &str, bold: bool, italic: bool) -> Result<Vec<u8>, FontError> {
         self.resolve_family(family, bold, italic)
-            .unwrap_or_else(|| self.resolve_last_resort(family, bold, italic, LastResortOffice::default()))
+            .unwrap_or_else(|| {
+                self.resolve_last_resort(family, bold, italic, LastResortOffice::default())
+            })
             .load()
     }
 }
@@ -276,10 +280,11 @@ fn catalog() -> &'static Catalog {
                     continue;
                 };
                 for (i, (names, bold, italic, size, label)) in faces.into_iter().enumerate() {
-                    if let Some(family) = label.filter(|f| size <= MAX_FACE_BYTES && listable(&f.family)) {
-                        if listed.insert(family.family.to_lowercase()) {
-                            families.push(family);
-                        }
+                    if let Some(family) =
+                        label.filter(|f| size <= MAX_FACE_BYTES && listable(&f.family))
+                        && listed.insert(family.family.to_lowercase())
+                    {
+                        families.push(family);
                     }
                     for name in names {
                         let list = index.entry(name).or_default();
@@ -307,14 +312,24 @@ fn asset_font_dirs() -> Vec<PathBuf> {
     };
     let mut kinds: Vec<PathBuf> = kinds
         .flatten()
-        .filter(|kind| kind.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font"))
+        .filter(|kind| {
+            kind.file_name()
+                .to_string_lossy()
+                .starts_with("com_apple_MobileAsset_Font")
+        })
         .map(|kind| kind.path())
         .collect();
     kinds.sort();
     let mut dirs = Vec::new();
     for kind in kinds {
-        let Ok(assets) = std::fs::read_dir(&kind) else { continue };
-        let mut found: Vec<PathBuf> = assets.flatten().map(|a| a.path().join("AssetData")).filter(|p| p.is_dir()).collect();
+        let Ok(assets) = std::fs::read_dir(&kind) else {
+            continue;
+        };
+        let mut found: Vec<PathBuf> = assets
+            .flatten()
+            .map(|a| a.path().join("AssetData"))
+            .filter(|p| p.is_dir())
+            .collect();
         found.sort();
         dirs.extend(found);
     }
@@ -398,10 +413,20 @@ fn family_names(table: &[u8]) -> Vec<String> {
 /// (ID 1), in English and, if present, Simplified Chinese.
 fn family_label(table: &[u8]) -> Option<SystemFamily> {
     let records = family_records(table);
-    let pick = |id: u16, lang: Lang| records.iter().find(|r| r.0 == id && r.1 == lang).map(|r| r.2.clone());
+    let pick = |id: u16, lang: Lang| {
+        records
+            .iter()
+            .find(|r| r.0 == id && r.1 == lang)
+            .map(|r| r.2.clone())
+    };
     let any = |id: u16| records.iter().find(|r| r.0 == id).map(|r| r.2.clone());
-    let family = pick(16, Lang::English).or_else(|| pick(1, Lang::English)).or_else(|| any(16)).or_else(|| any(1))?;
-    let localized = pick(16, Lang::Chinese).or_else(|| pick(1, Lang::Chinese)).filter(|name| *name != family);
+    let family = pick(16, Lang::English)
+        .or_else(|| pick(1, Lang::English))
+        .or_else(|| any(16))
+        .or_else(|| any(1))?;
+    let localized = pick(16, Lang::Chinese)
+        .or_else(|| pick(1, Lang::Chinese))
+        .filter(|name| *name != family);
     Some(SystemFamily { family, localized })
 }
 
@@ -455,7 +480,10 @@ fn family_records(table: &[u8]) -> Vec<(u16, Lang, String)> {
                     .collect::<Vec<_>>(),
             ),
             // Mac Simplified Chinese records are GB2312; other Mac records are Mac Roman.
-            1 if language == 33 => encoding_rs::GBK.decode_without_bom_handling(bytes).0.into_owned(),
+            1 if language == 33 => encoding_rs::GBK
+                .decode_without_bom_handling(bytes)
+                .0
+                .into_owned(),
             1 => bytes.iter().map(|&b| b as char).collect(),
             _ => continue,
         };
@@ -679,17 +707,34 @@ mod tests {
 
     #[test]
     fn calibri_and_cambria_have_bundled_metric_compatible_faces() {
-        let load = |family: &str, bold, italic| bundled_face(family, bold, italic).unwrap().load().unwrap();
-        for (family, faces) in [("Calibri", &CARLITO), ("calibri light", &CARLITO), ("Carlito", &CARLITO), ("Cambria", &CALADEA), ("Caladea", &CALADEA)] {
+        let load = |family: &str, bold, italic| {
+            bundled_face(family, bold, italic).unwrap().load().unwrap()
+        };
+        for (family, faces) in [
+            ("Calibri", &CARLITO),
+            ("calibri light", &CARLITO),
+            ("Carlito", &CARLITO),
+            ("Cambria", &CALADEA),
+            ("Caladea", &CALADEA),
+        ] {
             assert_eq!(load(family, false, false), faces[0], "{family} regular");
             assert_eq!(load(family, true, false), faces[1], "{family} bold");
             assert_eq!(load(family, false, true), faces[2], "{family} italic");
             assert_eq!(load(family, true, true), faces[3], "{family} bold italic");
         }
-        assert!(CARLITO.iter().chain(&CALADEA).all(|b| b.starts_with(&[0, 1, 0, 0]) && b.len() > 50_000));
+        assert!(
+            CARLITO
+                .iter()
+                .chain(&CALADEA)
+                .all(|b| b.starts_with(&[0, 1, 0, 0]) && b.len() > 50_000)
+        );
         assert!(bundled_face("Cambria Math", false, false).is_none());
         // Office's own copy, then the machine's, win; the bundled face is what a machine without them draws.
-        assert!(SystemFonts.resolve_family("Calibri", false, false).is_some());
+        assert!(
+            SystemFonts
+                .resolve_family("Calibri", false, false)
+                .is_some()
+        );
     }
 
     #[test]
@@ -738,7 +783,17 @@ mod tests {
 
     #[test]
     fn chinese_families_have_stand_ins() {
-        for f in ["Heiti SC", "黑体", "STHeiti", "Songti SC", "宋体", "楷体", "KaiTi", "FangSong", "仿宋"] {
+        for f in [
+            "Heiti SC",
+            "黑体",
+            "STHeiti",
+            "Songti SC",
+            "宋体",
+            "楷体",
+            "KaiTi",
+            "FangSong",
+            "仿宋",
+        ] {
             assert!(is_cjk_family(f), "{f}");
         }
         assert_eq!(cjk_stand_ins("楷体")[0], "Kaiti SC");
@@ -752,9 +807,17 @@ mod tests {
         assert!(sizes.iter().any(|&s| s > 0));
         // Whatever resolves for a CJK family fits the host's limit.
         let provider = SystemFonts::new().unwrap();
-        for family in ["Heiti SC", "宋体", "楷体", "仿宋", "PingFang SC", "微软雅黑"] {
+        for family in [
+            "Heiti SC",
+            "宋体",
+            "楷体",
+            "仿宋",
+            "PingFang SC",
+            "微软雅黑",
+        ] {
             if let Some(face) = provider.resolve_family(family, false, false) {
-                let n = face.load().unwrap().len() as u64; assert!(n <= MAX_FACE_BYTES, "{family} {n}");
+                let n = face.load().unwrap().len() as u64;
+                assert!(n <= MAX_FACE_BYTES, "{family} {n}");
             }
         }
         if let Some(face) = provider.resolve_script_fallback("cjk", false, false) {
@@ -808,7 +871,13 @@ mod tests {
             (3, 0x0404, 1, "華文行楷"),
         ]);
         let label = family_label(&table).unwrap();
-        assert_eq!(label, SystemFamily { family: "STXingkai".into(), localized: Some("华文行楷".into()) });
+        assert_eq!(
+            label,
+            SystemFamily {
+                family: "STXingkai".into(),
+                localized: Some("华文行楷".into())
+            }
+        );
         assert_eq!(family_names(&table), ["stxingkai", "华文行楷", "華文行楷"]);
     }
 
@@ -818,24 +887,39 @@ mod tests {
         let gb = encoding_rs::GBK.encode("华文行楷").0.into_owned();
         // Patch the empty second record to point at GB2312 bytes appended to the table.
         let at = (table.len() - (6 + 24)) as u16;
-        table[6 + 12 + 8..6 + 12 + 12].copy_from_slice(&[(gb.len() as u16).to_be_bytes(), at.to_be_bytes()].concat());
+        table[6 + 12 + 8..6 + 12 + 12]
+            .copy_from_slice(&[(gb.len() as u16).to_be_bytes(), at.to_be_bytes()].concat());
         table.extend(gb);
-        assert_eq!(family_label(&table).unwrap().localized.as_deref(), Some("华文行楷"));
+        assert_eq!(
+            family_label(&table).unwrap().localized.as_deref(),
+            Some("华文行楷")
+        );
     }
 
     #[test]
     fn the_typographic_family_wins_over_the_style_linked_one() {
-        let table = name_table(&[(1, 0, 1, "Helvetica Neue Light"), (3, 0x0409, 16, "Helvetica Neue")]);
-        assert_eq!(family_label(&table).unwrap(), SystemFamily { family: "Helvetica Neue".into(), localized: None });
+        let table = name_table(&[
+            (1, 0, 1, "Helvetica Neue Light"),
+            (3, 0x0409, 16, "Helvetica Neue"),
+        ]);
+        assert_eq!(
+            family_label(&table).unwrap(),
+            SystemFamily {
+                family: "Helvetica Neue".into(),
+                localized: None
+            }
+        );
     }
 
     #[test]
     fn the_menu_lists_installed_families_but_not_hidden_ones() {
         let families = SystemFonts::new().unwrap().families();
-        assert!(families.iter().any(|f| f.family == "Helvetica Neue"), "{families:?}");
+        assert!(
+            families.iter().any(|f| f.family == "Helvetica Neue"),
+            "{families:?}"
+        );
         assert!(families.iter().all(|f| listable(&f.family)));
         let keys: Vec<String> = families.iter().map(|f| f.family.to_lowercase()).collect();
         assert!(keys.windows(2).all(|w| w[0] < w[1]), "sorted and unique");
     }
-
 }

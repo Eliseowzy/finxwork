@@ -56,7 +56,11 @@ pub(super) fn signed(
     let ts = chrono::Utc::now().timestamp().to_string();
     // The signed path leaves out the gateway's `/algo` prefix, which some calls go without.
     let url = reqwest::Url::parse(url).map_err(|_| ConnectionError::unsupported())?;
-    let path = url.path().strip_prefix("/algo").unwrap_or(url.path()).to_string();
+    let path = url
+        .path()
+        .strip_prefix("/algo")
+        .unwrap_or(url.path())
+        .to_string();
     let input = zeroize::Zeroizing::new(format!("{payload}\n{wrapped}\n{ts}\n{body}\n{path}"));
     let signature = format!("{:x}", Md5::digest(input.as_bytes()));
     let mut headers = reqwest::header::HeaderMap::new();
@@ -89,9 +93,22 @@ pub(super) fn signed(
             }
             .into(),
         ),
-        ("Accept", if chat { "text/event-stream" } else { "application/json" }.into()),
+        (
+            "Accept",
+            if chat {
+                "text/event-stream"
+            } else {
+                "application/json"
+            }
+            .into(),
+        ),
     ] {
-        if chat && matches!(name, "Cosy-ClientIp" | "Cosy-MachineToken" | "Cosy-MachineType") {
+        if chat
+            && matches!(
+                name,
+                "Cosy-ClientIp" | "Cosy-MachineToken" | "Cosy-MachineType"
+            )
+        {
             continue;
         }
         let mut value = reqwest::header::HeaderValue::from_str(&value)

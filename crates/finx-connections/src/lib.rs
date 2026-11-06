@@ -52,7 +52,11 @@ pub(crate) fn declared_model(m: &ConnectionModel) -> finx_llm::catalog::ModelTom
         context_window: m.context_window.map(|window| window.clamp(1024, 2_000_000)),
         max_output_tokens: m.max_output_tokens.map(|limit| limit.max(1)),
         reasoning: Some(m.reasoning),
-        input: Some(if m.images { vec![Modality::Text, Modality::Image] } else { vec![Modality::Text] }),
+        input: Some(if m.images {
+            vec![Modality::Text, Modality::Image]
+        } else {
+            vec![Modality::Text]
+        }),
         thinking: Some(m.thinking.clone()),
         default_thinking: Some(m.default_thinking),
         ..finx_llm::catalog::ModelToml::new(&m.id)
@@ -165,7 +169,9 @@ impl Manager {
         let weak = self.myself.clone();
         let notify = callback.clone();
         self.chatgpt.on_change(Arc::new(move || {
-            if let Some(manager) = weak.upgrade() { manager.revision.fetch_add(1, Ordering::AcqRel); }
+            if let Some(manager) = weak.upgrade() {
+                manager.revision.fetch_add(1, Ordering::AcqRel);
+            }
             notify();
         }));
         *self.changed.write() = Some(callback);
@@ -175,9 +181,19 @@ impl Manager {
     }
     pub fn snapshot(&self) -> Result<ConnectionsSnapshot> {
         self.check()?;
-        let mut connections: Vec<_> = self.entries.read().values().map(|e| e.view.read().clone()).collect();
-        if let Some(view) = self.chatgpt.sync()? { connections.push(view); }
-        Ok(ConnectionsSnapshot { revision: self.revision.load(Ordering::Acquire), connections })
+        let mut connections: Vec<_> = self
+            .entries
+            .read()
+            .values()
+            .map(|e| e.view.read().clone())
+            .collect();
+        if let Some(view) = self.chatgpt.sync()? {
+            connections.push(view);
+        }
+        Ok(ConnectionsSnapshot {
+            revision: self.revision.load(Ordering::Acquire),
+            connections,
+        })
     }
     pub async fn discover(&self) -> Result<Vec<ConnectionDiscovery>> {
         let mut discoveries = Vec::new();
@@ -273,8 +289,14 @@ impl Manager {
                     auth: AuthConfig::Managed,
                     headers: BTreeMap::new(),
                     currency: Default::default(),
-                    compat: Compat { thinking_format: adapter::thinking_format(&record.adapter_id), ..Compat::default() },
-                    listing: finx_llm::catalog::Listing { entries, ..Default::default() },
+                    compat: Compat {
+                        thinking_format: adapter::thinking_format(&record.adapter_id),
+                        ..Compat::default()
+                    },
+                    listing: finx_llm::catalog::Listing {
+                        entries,
+                        ..Default::default()
+                    },
                 })
             })
             .collect();
@@ -307,7 +329,9 @@ impl Manager {
             }
             view.state = match error.code.as_str() {
                 "connection_login_required" | "identity_changed" => ConnectionState::NeedsLogin,
-                "connection_permission_required" | "permission_cancelled" => ConnectionState::PermissionRequired,
+                "connection_permission_required" | "permission_cancelled" => {
+                    ConnectionState::PermissionRequired
+                }
                 c if c.starts_with("unsupported") => ConnectionState::Unsupported,
                 _ if error.retryable && record.enabled && !view.models.is_empty() => {
                     ConnectionState::Ready
@@ -336,36 +360,69 @@ impl Manager {
             schema: 1,
             connections,
         })
-        .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
+        .map_err(|_| {
+            ConnectionError::new(
+                "connection_storage_failed",
+                "无法保存连接配置，请检查本地目录权限和磁盘空间",
+            )
+            .at("credential_store")
+        })?;
         let dir = self.home.join("connections");
-        tokio::fs::create_dir_all(&dir)
-            .await
-            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
+        tokio::fs::create_dir_all(&dir).await.map_err(|_| {
+            ConnectionError::new(
+                "connection_storage_failed",
+                "无法保存连接配置，请检查本地目录权限和磁盘空间",
+            )
+            .at("credential_store")
+        })?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             tokio::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
                 .await
-                .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
+                .map_err(|_| {
+                    ConnectionError::new(
+                        "connection_storage_failed",
+                        "无法保存连接配置，请检查本地目录权限和磁盘空间",
+                    )
+                    .at("credential_store")
+                })?;
         }
         let temporary = dir.join("config.rust.tmp");
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
         options.mode(0o600);
-        let mut file = options
-            .open(&temporary)
-            .await
-            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
-        file.write_all(&data)
-            .await
-            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
-        file.sync_all()
-            .await
-            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))?;
+        let mut file = options.open(&temporary).await.map_err(|_| {
+            ConnectionError::new(
+                "connection_storage_failed",
+                "无法保存连接配置，请检查本地目录权限和磁盘空间",
+            )
+            .at("credential_store")
+        })?;
+        file.write_all(&data).await.map_err(|_| {
+            ConnectionError::new(
+                "connection_storage_failed",
+                "无法保存连接配置，请检查本地目录权限和磁盘空间",
+            )
+            .at("credential_store")
+        })?;
+        file.sync_all().await.map_err(|_| {
+            ConnectionError::new(
+                "connection_storage_failed",
+                "无法保存连接配置，请检查本地目录权限和磁盘空间",
+            )
+            .at("credential_store")
+        })?;
         tokio::fs::rename(&temporary, dir.join("config.json"))
             .await
-            .map_err(|_| ConnectionError::new("connection_storage_failed", "无法保存连接配置，请检查本地目录权限和磁盘空间").at("credential_store"))
+            .map_err(|_| {
+                ConnectionError::new(
+                    "connection_storage_failed",
+                    "无法保存连接配置，请检查本地目录权限和磁盘空间",
+                )
+                .at("credential_store")
+            })
     }
     /// Asks ready connections whose model catalog is older than `max_age` for it again
     /// (model-catalog-design §14). Quiet: a failure keeps the old catalog and the connection's
@@ -389,12 +446,24 @@ impl Manager {
             .collect();
         let mut changed = false;
         for e in due {
-            let Ok(http) = self.http() else { return changed };
-            let (adapter_id, connection_id) = { let r = e.record.read(); (r.adapter_id.clone(), r.connection_id.clone()) };
-            let fetched = diagnostic::operation("refresh_catalog", &adapter_id, &connection_id, false,
-                async { e.adapter.lock().await.catalog(&http).await }).await;
+            let Ok(http) = self.http() else {
+                return changed;
+            };
+            let (adapter_id, connection_id) = {
+                let r = e.record.read();
+                (r.adapter_id.clone(), r.connection_id.clone())
+            };
+            let fetched = diagnostic::operation(
+                "refresh_catalog",
+                &adapter_id,
+                &connection_id,
+                false,
+                async { e.adapter.lock().await.catalog(&http).await },
+            )
+            .await;
             let Ok(models) = fetched else { continue };
-            let same = serde_json::to_value(&e.record.read().models).ok() == serde_json::to_value(&models).ok();
+            let same = serde_json::to_value(&e.record.read().models).ok()
+                == serde_json::to_value(&models).ok();
             {
                 let mut record = e.record.write();
                 record.models_fetched_at = Some(finx_llm::discovery::now());
@@ -485,7 +554,9 @@ impl Manager {
         let discovery = diagnostic::stage("discovery", environment.discover()).await?;
         tracing::info!(installed = discovery.installed, version = ?discovery.version, "connection_source_detected");
         if !discovery.installed {
-            return Err(ConnectionError::new("source_not_found", "未检测到来源应用").at("discovery"));
+            return Err(
+                ConnectionError::new("source_not_found", "未检测到来源应用").at("discovery")
+            );
         }
         let _ = diagnostic::stage("app_metadata", environment.headers()).await?;
         let login = diagnostic::stage("source_login", environment.interactive_login()).await?;
@@ -511,11 +582,19 @@ impl Manager {
         self.snapshot()
     }
     pub async fn retry(&self, id: &str) -> Result<ConnectionsSnapshot> {
-        let adapter = self.entries.read().get(id).map(|e| e.record.read().adapter_id.clone()).unwrap_or_default();
+        let adapter = self
+            .entries
+            .read()
+            .get(id)
+            .map(|e| e.record.read().adapter_id.clone())
+            .unwrap_or_default();
         diagnostic::operation("retry", &adapter, id, true, self.retry_inner(id)).await
     }
     async fn retry_inner(&self, id: &str) -> Result<ConnectionsSnapshot> {
-        if id == chatgpt::ID { self.chatgpt.refresh().await?; return self.snapshot(); }
+        if id == chatgpt::ID {
+            self.chatgpt.refresh().await?;
+            return self.snapshot();
+        }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
@@ -524,7 +603,12 @@ impl Manager {
             let _view = e.view.write();
             e.generation.fetch_add(1, Ordering::AcqRel);
         }
-        if let Err(error) = diagnostic::stage("source_login", self.environments[&adapter_id].interactive_login()).await {
+        if let Err(error) = diagnostic::stage(
+            "source_login",
+            self.environments[&adapter_id].interactive_login(),
+        )
+        .await
+        {
             self.failed(&e, &error);
             return Err(error);
         }
@@ -532,7 +616,10 @@ impl Manager {
         self.snapshot()
     }
     pub async fn disconnect(&self, id: &str) -> Result<ConnectionsSnapshot> {
-        if id == chatgpt::ID { self.chatgpt.logout().await?; return self.snapshot(); }
+        if id == chatgpt::ID {
+            self.chatgpt.logout().await?;
+            return self.snapshot();
+        }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
@@ -540,11 +627,18 @@ impl Manager {
         e.view.write().state = ConnectionState::Disabled;
         self.publish();
         self.persist().await?;
-        let _ = e.requests.subscribe().wait_for(|running| *running == 0).await;
+        let _ = e
+            .requests
+            .subscribe()
+            .wait_for(|running| *running == 0)
+            .await;
         self.snapshot()
     }
     pub async fn remove(&self, id: &str) -> Result<ConnectionsSnapshot> {
-        if id == chatgpt::ID { self.chatgpt.forget().await?; return self.snapshot(); }
+        if id == chatgpt::ID {
+            self.chatgpt.forget().await?;
+            return self.snapshot();
+        }
         let _guard = self.mutations.lock().await;
         self.check()?;
         let e = self.entry(id)?;
@@ -641,7 +735,9 @@ impl ConnectionAuthorizer for Manager {
         model: &str,
         http: reqwest::Client,
     ) -> std::result::Result<Box<dyn ConnectionRequest>, LlmError> {
-        if provider.starts_with("local-chatgpt-api-") { return self.chatgpt.begin(provider, model).await; }
+        if provider.starts_with("local-chatgpt-api-") {
+            return self.chatgpt.begin(provider, model).await;
+        }
         self.check().map_err(|e| e.llm())?;
         let e = self
             .entries
@@ -674,22 +770,40 @@ impl ConnectionAuthorizer for Manager {
 #[async_trait]
 impl ConnectionRequest for RequestLease {
     async fn authorize(&self, rejected: bool) -> std::result::Result<Authorization, LlmError> {
-        let (adapter_id, connection_id) = { let r = self.entry.record.read(); (r.adapter_id.clone(), r.connection_id.clone()) };
-        let result = diagnostic::operation("authorize", &adapter_id, &connection_id, false, async {
-            if rejected { tracing::info!("connection_reauthorize_after_rejection"); }
-            self.entry.adapter.lock().await.authorize(&self.http, rejected).await
-        }).await;
-        if let Err(ref error) = result {
-            if let Some(manager) = self.manager.upgrade() {
-                manager.failed_for(&self.entry, error, Some(self.generation));
-            }
+        let (adapter_id, connection_id) = {
+            let r = self.entry.record.read();
+            (r.adapter_id.clone(), r.connection_id.clone())
+        };
+        let result =
+            diagnostic::operation("authorize", &adapter_id, &connection_id, false, async {
+                if rejected {
+                    tracing::info!("connection_reauthorize_after_rejection");
+                }
+                self.entry
+                    .adapter
+                    .lock()
+                    .await
+                    .authorize(&self.http, rejected)
+                    .await
+            })
+            .await;
+        if let Err(ref error) = result
+            && let Some(manager) = self.manager.upgrade()
+        {
+            manager.failed_for(&self.entry, error, Some(self.generation));
         }
         if result.is_ok() {
             let recovered = {
                 let mut view = self.entry.view.write();
                 if self.generation == self.entry.generation.load(Ordering::Acquire)
                     && matches!(view.state, ConnectionState::Ready)
-                    && view.diagnostic.as_ref().is_some_and(|d| d.retryable && matches!(d.stage.as_str(), "authorization" | "refresh" | "connection"))
+                    && view.diagnostic.as_ref().is_some_and(|d| {
+                        d.retryable
+                            && matches!(
+                                d.stage.as_str(),
+                                "authorization" | "refresh" | "connection"
+                            )
+                    })
                 {
                     view.reason_code = None;
                     view.diagnostic = None;
@@ -718,7 +832,7 @@ impl ConnectionRequest for RequestLease {
                     stage = "inference", http_status = ?failure.http_status, code = %failure.code, "connection_failed");
                 manager.failed_for(&self.entry, &failure, Some(self.generation));
             }
-            error.message = ConnectionError::login().message;
+            error.message = ConnectionError::login().into_message();
             return;
         }
         adapter::reclassify(&adapter_id, error);
