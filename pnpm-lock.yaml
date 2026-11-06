@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz
+  '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz
+  '@betteroffice/pptx-react': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-react-0.5.1-finx.g5f1f9d7c.tgz
+
 importers:
 
   .: {}
@@ -12,6 +17,18 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@betteroffice/fonts':
+        specifier: 0.4.2
+        version: 0.4.2
+      '@betteroffice/pptx':
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz
+      '@betteroffice/pptx-i18n':
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz
+      '@betteroffice/pptx-react':
+        specifier: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-react-0.5.1-finx.g5f1f9d7c.tgz
+        version: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-react-0.5.1-finx.g5f1f9d7c.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@codemirror/autocomplete':
         specifier: 6.20.4
         version: 6.20.4
@@ -259,6 +276,29 @@ packages:
   '@babel/types@7.29.11':
     resolution: {integrity: sha512-WCsemW40Cpc6gouC1SrY6PBaZ+oLRlEVY9XBvZBI7il/HyUrb2nJ505wE1MHEFyDZNnrWDEuy4jL50WVHfTTSQ==}
     engines: {node: '>=6.9.0'}
+
+  '@betteroffice/fonts@0.4.2':
+    resolution: {integrity: sha512-OBumyWSLgyJjbElgHrE+lIcAoqNnXJ08ycOvH0vIs9JVzCDY5L0AirbpSUHn2A1NMTrHt0j8E0PmMFA3vhJkFw==}
+    peerDependencies:
+      '@betteroffice/fonts-cjk': ^0
+    peerDependenciesMeta:
+      '@betteroffice/fonts-cjk':
+        optional: true
+
+  '@betteroffice/pptx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz':
+    resolution: {integrity: sha512-OSeoLRhiy03+VQgDCMRxAT5NkEXrVhGNMEN3h0Dt9YdL0A7h3yql6yHdEk8oGO0D8ADI2PMrLjiSffs99elZcw==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz}
+    version: 0.5.1-finx.g5f1f9d7c
+
+  '@betteroffice/pptx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-react-0.5.1-finx.g5f1f9d7c.tgz':
+    resolution: {integrity: sha512-JeIuyMmrZxIxc0o2ma2L5lk4xy4AZdBCEu8akcdlC7umkf6HpFwJVa2/st/XyGCo1L1taC0lGH5uYsFXT2YPng==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-react-0.5.1-finx.g5f1f9d7c.tgz}
+    version: 0.5.1-finx.g5f1f9d7c
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+
+  '@betteroffice/pptx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz':
+    resolution: {integrity: sha512-XYKJa6kCkA+fOz+9y3hWDb1skyZOOHTgH1t7VdYKESB4eTshNtUcgrSSzhK4O8BY9EeSAgDFk+udtZGgg/4HQA==, tarball: https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz}
+    version: 0.5.1-finx.g5f1f9d7c
 
   '@braintree/sanitize-url@7.1.2':
     resolution: {integrity: sha512-jigsZK+sMF/cuiB7sERuo9V7N9jx+dhmHHnQyDSVdpZwVutaBu7WvNYqMDLSgFgfB30n452TP3vjDAvFC973mA==}
@@ -2345,6 +2385,26 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.11
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@betteroffice/fonts@0.4.2': {}
+
+  '@betteroffice/pptx-i18n@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz': {}
+
+  '@betteroffice/pptx-react@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-react-0.5.1-finx.g5f1f9d7c.tgz(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      '@betteroffice/fonts': 0.4.2
+      '@betteroffice/pptx': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz
+      '@betteroffice/pptx-i18n': https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-i18n-0.5.1-finx.g5f1f9d7c.tgz
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
+    transitivePeerDependencies:
+      - '@betteroffice/fonts-cjk'
+
+  '@betteroffice/pptx@https://github.com/Eliseowzy/betteroffice/releases/download/v0.5.1-finx.g5f1f9d7c/betteroffice-pptx-0.5.1-finx.g5f1f9d7c.tgz':
+    dependencies:
+      '@betteroffice/fonts': 0.4.2
+    transitivePeerDependencies:
+      - '@betteroffice/fonts-cjk'
 
   '@braintree/sanitize-url@7.1.2': {}
 

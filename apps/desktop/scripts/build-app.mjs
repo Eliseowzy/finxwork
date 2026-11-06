@@ -13,7 +13,7 @@
 //   Contents/MacOS/agent-desktop         desktop control's program, which finx's desktop tools find beside finx,
 //   Contents/MacOS/agent-desktop-macos-helper   and its helper (scripts/agent-desktop.mjs: a pinned release, checked)
 //   Contents/Frameworks/libpdfium.dylib  PDFium, which finx's document worker loads (scripts/pdfium.mjs: a pinned release, checked)
-//   Contents/Resources/app.asar          main, preload and the page
+//   Contents/Resources/app.asar          main, preload and the page (renderer/fonts: the deck editor's Carlito and Caladea, checked after signing)
 //   Contents/Resources/kernel.json       the kernel's version and protocol version
 //   Contents/Resources/catalog/skills    the 自定义 page's catalog skills (resources/catalog/skills, checked against src/shared/catalog.ts)
 //   Contents/Resources/chrome-extension  the FinxWork extension (apps/chrome-extension), which the settings help load into the user's browser
@@ -238,6 +238,18 @@ await sign({
 });
 sh("codesign", ["--verify", "--strict", "--deep", app]);
 for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify", "--strict", f]);
+// The deck editor's metric-compatible Calibri/Cambria stand-ins (Carlito, Caladea) travel in the page (app.asar, covered by
+// the signature above); the signed bundle must still hold every face, at its full size, where the page fetches them (fonts/).
+{
+  const asar = fs.readFileSync(path.join(contents, "Resources/app.asar"));
+  const header = JSON.parse(asar.subarray(16, 16 + asar.readUInt32LE(12)).toString("utf8"));
+  for (const family of ["Carlito", "Caladea"]) for (const style of ["Regular", "Bold", "Italic", "BoldItalic"]) {
+    const name = `${family}-${style}.ttf`;
+    const entry = header.files?.renderer?.files?.fonts?.files?.[name];
+    const source = path.join(desktop, "node_modules/@betteroffice/fonts/assets", name);
+    if (!entry || entry.size !== fs.statSync(source).size) throw new Error(`the signed app.asar lacks renderer/fonts/${name} (the deck editor's ${family} stand-in)`);
+  }
+}
 // The signed copy still runs and reports the version the app expects (where it can run).
 if (arch === nativeArch) {
   const signedVersion = execFileSync(embedded, ["--version"], { encoding: "utf8" }).trim().split(/\s+/).pop();

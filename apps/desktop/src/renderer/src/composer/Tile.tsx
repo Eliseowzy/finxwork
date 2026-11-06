@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { baseName, type DocQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
-import { opensAsDoc } from "../files/kind";
+import { isPresentation, opensAsDoc } from "../files/kind";
 import { Icon } from "../icons";
 import { opensAsPage, showPage } from "../session/contentMenus";
 import { SiteIcon, siteOrigin } from "../siteIcon";
@@ -312,7 +312,7 @@ export function useOpenFile() {
   const st = useStore();
   return (path: string) => {
     if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
-    if (docs && opensAsDoc(path)) return docs.open({ path });
+    if (docs && (opensAsDoc(path) || isPresentation(path))) return docs.open({ path });
     if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
     docs.open({ path });
   };

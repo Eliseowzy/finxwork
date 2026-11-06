@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "../components";
+import { PresentationLoading } from "../docs/pptx/PresentationLoading";
 import { PdfView, Unlock } from "../docs/PdfView";
 import { SheetView } from "../docs/SheetView";
 import { useSessionDocs } from "../docs/state";
@@ -10,9 +11,9 @@ import { fileMenu, openRef, opensAsPage, otherView, showPage } from "../session/
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
 import { usePanelWidth } from "../panelWidth";
-import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, useFiles, type SessionFiles, type Tab } from "./state";
 import { ImageView } from "./ImageView";
-import { isGrid, isMarkdown, isSvg, previewable } from "./kind";
+import { isGrid, isMarkdown, isPresentation, isSvg, previewable } from "./kind";
 import { Tree } from "./Tree";
 import { sizeText } from "../format";
 
@@ -23,6 +24,7 @@ import { sizeText } from "../format";
 // bar of its own tools under the strip (document-editor-design §7.2, spreadsheet-design §8).
 
 const Editor = lazy(() => import("./Editor"));
+const PresentationView = lazy(() => import("../docs/pptx/PresentationView"));
 
 /** What the conversation keeps beside the panel at least, as with the browser; more beside a document, which is read beside it. */
 const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
@@ -39,7 +41,7 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const s = useFiles(session, cwd);
   const docs = useSessionDocs(session);
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
-  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened));
+  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened || !!tab?.presentation));
   const docOf = (x: Tab) => docs.tabs.find((d) => d.info.doc_id === x.opened?.docId);
   // No file open: the panel is only the folder tree to pick one from, not an empty editor's width.
   const bare = s.tabs.length === 0;
@@ -82,14 +84,14 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
           {s.tabs.map((x) => {
             const on = x.path === s.active;
             const opened = docOf(x);
-            const dirty = !!x.doc?.dirty || !!opened?.info.dirty;
+            const dirty = !!x.doc?.dirty || !!x.presentation?.dirty || !!opened?.info.dirty;
             const locked = x.read?.kind === "text" && !x.read.writable;
             // A workbook (xlsx, xlsm, xls, csv, tsv) shows as a grid; until it opens, its name says so.
             const grid = opened ? opened.info.layout === "grid" : isGrid(x.path);
             return (
               <div key={x.path} role="tab" aria-selected={on} className={`brp-tab fpn-tab no-drag ${on ? "on" : ""} ${dirty ? "dirty" : ""}`} title={x.rel ?? x.path} onClick={() => activate(s, x.path)}>
                 <span className="brp-tab-ic">
-                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : "file"} />
+                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : isPresentation(x.path) ? "doc" : "file"} />
                 </span>
                 <span className="brp-tab-t">{x.name}</span>
                 <button
@@ -163,7 +165,13 @@ function Tools({ s, tab }: { s: SessionFiles; tab: Tab | null }) {
   const st = useStore();
   const read = tab?.read;
   const doc = tab?.doc;
-  const status = !read || read.kind !== "text"
+  const presentation = tab?.presentation;
+  const status = presentation
+    ? !presentation.file.writable ? t("files.readOnly")
+      : presentation.state === "saving" ? t("files.saving")
+      : presentation.dirty ? t("files.unsaved")
+      : presentation.savedAt ? t("files.saved") : ""
+    : !read || read.kind !== "text"
     ? ""
     : !read.writable
       ? read.encoding && !read.encoding.startsWith("utf-8") ? t("files.readOnlyEncoding", { encoding: encodingName(read.encoding) }) : t("files.readOnly")
@@ -219,9 +227,18 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const read = tab.read;
+  if (tab.presentation && st.rpc) return (
+    <Suspense fallback={<PresentationLoading name={tab.name} stage="preparing" bytes={tab.presentation.bytes.byteLength} fontCount={tab.presentation.file.font_families.length} />}>
+      <PresentationView doc={tab.presentation} rpc={st.rpc} session={s.session} name={tab.name} />
+    </Suspense>
+  );
   if (tab.error && !tab.doc) return <Card tab={tab} text={tab.error} />;
   if (tab.opened) return tab.opened.locked ? <Unlock s={s} tab={tab} /> : <Loading />;
-  if (!read) return <Loading />;
+  if (!read) return isPresentation(tab.path)
+    ? <PresentationLoading name={tab.name} stage={tab.presentationProgress?.stage ?? "reading"}
+        completed={tab.presentationProgress?.completed} total={tab.presentationProgress?.total}
+        bytes={tab.presentationProgress?.bytes} />
+    : <Loading />;
   if (read.kind === "image" && read.image) {
     return (
       <ImageView key={tab.path} src={`data:${read.image.mime_type};base64,${read.image.data}`} alt={tab.name} />
@@ -255,11 +272,7 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
 
 function Loading() {
   const { t } = useTranslation("session");
-  return (
-    <div className="fpn-empty">
-      <span className="mini-spin" aria-label={t("files.loading")} />
-    </div>
-  );
+  return <div className="fpn-empty"><span className="mini-spin" aria-label={t("files.loading")} /></div>;
 }
 
 /** Why a file is not shown, and where else it opens. */
@@ -289,6 +302,17 @@ function Note({ s, tab }: { s: SessionFiles; tab: Tab }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const doc = tab.doc;
+  if (tab.presentation) {
+    const pptx = tab.presentation;
+    const conflict = pptx.state === "conflict" || pptx.state === "deleted";
+    if (!conflict && pptx.state !== "failed" && pptx.state !== "refused" && !tab.error) return null;
+    return <div className="fpn-note warn" role="alert">
+      <Icon name="warn" />
+      <span>{tab.error ?? (conflict ? t("pptx.conflict") : t("files.failed", { message: pptx.message ?? "" }))}</span>
+      {conflict && <button className="btn sm" onClick={() => void takePresentationDisk(s, tab)}>{t("files.takeDisk")}</button>}
+      {pptx.state === "failed" && <button className="btn sm" onClick={() => void pptx.flush()}>{t("files.retry")}</button>}
+    </div>;
+  }
   if (!doc) return null;
   switch (doc.state) {
     case "conflict":

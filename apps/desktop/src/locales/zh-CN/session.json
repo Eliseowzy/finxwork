@@ -709,5 +709,47 @@
     "rendering": "正在绘制图形…",
     "footnotes": "脚注",
     "backToReference": "返回引用位置"
+  },
+  "pptx": {
+    "loadingPanel": {
+      "title": "正在打开演示文稿",
+      "hints": {
+        "preparing": "稍等片刻，打开后即可编辑。",
+        "reading": "文件越大，读取所需时间越长。",
+        "inspecting": "正在整理每一页的文字、图片和版式。",
+        "encoding": "正在整理每一页的文字、图片和版式。",
+        "fonts": "让文字按原来的样式显示。",
+        "rendering": "正在显示第一页。"
+      }
+    },
+    "progress": {
+      "preparing": "正在打开演示文稿…",
+      "reading": "正在读取文件…",
+      "inspecting": "正在整理内容…",
+      "encoding": "正在整理内容…",
+      "fonts": "正在准备文字显示…",
+      "rendering": "马上就好…"
+    },
+    "mediaWarning": "部分矢量对象未能完整显示：{{message}}",
+    "editor": "演示文稿编辑器",
+    "loading": "正在加载演示文稿和本机字体…",
+    "loadFailed": "无法打开演示文稿：{{message}}",
+    "conflict": "文件已被外部修改或删除。你的编辑仍保留在此处，可重新加载文件并放弃当前编辑。",
+    "ribbon": {
+      "home": "开始",
+      "select": "选择（Esc）",
+      "insert": "插入",
+      "paragraph": "段落",
+      "image": "图片",
+      "shapeStyle": "形状样式",
+      "fontSearch": "搜索字体",
+      "documentFonts": "本文档字体",
+      "allFonts": "所有字体",
+      "fontLoading": "正在加载…",
+      "fontFailed": "无法使用该字体：{{message}}",
+      "fontSubstitute": "（替代字体）",
+      "fontSubstituteHint": "使用 {{family}} 显示，字宽与原字体一致",
+      "fontsUnavailable": "无法读取本机字体：{{message}}"
+    }
   }
 }

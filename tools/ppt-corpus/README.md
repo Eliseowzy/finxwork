@@ -20,6 +20,8 @@ cargo run --release -p finx-slide --example render -- tools/ppt-corpus/corpus/de
 
 第一个 `名称=目录` 是参考，其余各列打印相对它的平均 RGB 差和灰度差大于 40 的像素占比，并生成拼图：
 
+分数在参考图的原始尺寸上计算；候选图尺寸不同时会等比例缩放。宽高比不一致时会标记 `ASPECT MISMATCH`，不计算分数；缺图会标记 `MISSING`。因此新版分数不一定能和旧版固定拉伸到 1080×607 后的分数直接比较。
+
 ```bash
 python3 tools/ppt-corpus/compare.py deck_office tools/ppt-corpus/out/compare_deck_office.png PowerPoint=tools/ppt-corpus/corpus/pp BetterOffice=tools/ppt-corpus/out/bo
 ```
@@ -29,6 +31,8 @@ python3 tools/ppt-corpus/compare.py deck_office tools/ppt-corpus/out/compare_dec
 ```bash
 python3 tools/ppt-corpus/heat.py tools/ppt-corpus/corpus/pp/deck_office-2.png tools/ppt-corpus/out/bo/deck_office-2.png tools/ppt-corpus/out/heat-2.png
 ```
+
+热力图同样要求两张图宽高比一致。
 
 ## 保存检查
 
