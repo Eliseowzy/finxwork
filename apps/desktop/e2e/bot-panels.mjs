@@ -3,7 +3,7 @@
 // real click, with the name and avatar; a row's menu is pin, rename in place and delete; a file in
 // a message opens in the preview over the window, a PDF too, and one button moves it to the file
 // panel, which takes turns with the settings; a link opens in the built-in browser, and the bot
-// drives it too. A model server on the Mac stands in for the provider.
+// drives it too; clearing a bot's chat from its settings keeps its files and settings. A model server on the Mac stands in for the provider.
 //
 // A PDF's pages need PDFium, which the packaged app carries: without it the preview says why. Run
 // against the package to check the pages as well.
@@ -284,6 +284,7 @@ try {
   const box = await page.run(`(() => { const r = document.querySelector(".bpn").getBoundingClientRect(); return { right: r.right, width: r.width, inner: innerWidth, name: document.querySelector(".bpn-name").textContent }; })()`);
   check(box.right <= box.inner && box.width === 340 && box.name === "FinxBot", `the panel: ${JSON.stringify(box)}`);
   check(!(await page.run(`!!document.querySelector(".bpn-del")`)), "the default bot has no delete in its settings");
+  check(await page.run(`!!document.querySelector(".bpn-clear")`), "the default bot can clear its chat");
   await page.shot("m1-settings");
   await press(page, ".bhead");
   await page.until("closed by its name again", `!document.querySelector(".bpn")`);
@@ -388,6 +389,27 @@ try {
   await press(page, ".bhead");
   await page.until("its settings again", `!!${thinkRow}`, 30000);
   check((await page.run(`${modelButton}.textContent`)).includes("Mock Two") && (await page.run(`${thinkRow}.querySelector(".lbl").textContent`)) === "高", "the model and level stay after finx restarts");
+
+  step("settings: clearing the chat under real clicks; files and settings stay, the conversation is new");
+  const chatRow = (await finxCall(home, "bots/subscribe")).result.bots.find((b) => b.name === "小帮手");
+  const filesDir = path.join(home, "bots", chatRow.id, "files");
+  fs.writeFileSync(path.join(filesDir, "stays.txt"), "kept");
+  await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("小帮手"))`);
+  await page.until("the panel shows that bot", `document.querySelector(".bpn-name")?.textContent === "小帮手" && !!${modelButton}`, 30000);
+  await page.until("there is a chat to clear", `${bubbles} > 0`, 30000);
+  const settingsBefore = await page.run(`${modelButton}.textContent`);
+  await press(page, ".bpn-clear");
+  await page.until("the confirmation", `!!document.querySelector("dialog.sheet[open] .btn.danger")`);
+  await page.shot("m-clear-confirm");
+  await press(page, "dialog.sheet[open] .btn.danger");
+  await page.until("the chat is gone", `${bubbles} === 0`, 30000);
+  await page.until("a new conversation, its settings shown", `!!${modelButton}`, 30000);
+  check((await page.run(`${modelButton}.textContent`)) === settingsBefore, "the model stays after clearing");
+  check((await page.run(`document.querySelector(".bpn-name")?.textContent`)) === "小帮手", "the panel stays open");
+  check(fs.existsSync(path.join(filesDir, "stays.txt")), "its files stay after clearing");
+  const afterClear = (await finxCall(home, "bots/subscribe")).result.bots.find((b) => b.id === chatRow.id);
+  check(afterClear.session_id !== chatRow.session_id, "the next conversation is another");
+  await page.shot("m-cleared");
 
   step("settings: another bot keeps its own model; deleting one closes the panel");
   const other = (await finxCall(home, "bots/create", { name: "别的", avatar: { kind: "mono", hue: "teal" } })).result.bot;

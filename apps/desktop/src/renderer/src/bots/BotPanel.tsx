@@ -7,7 +7,7 @@ import { MenuButton, PermissionItems } from "../composer/Composer";
 import { permissionDesc, permissionTitle } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
-import { runBotAction } from "./actions";
+import { clearBotChat, runBotAction } from "./actions";
 import { BotAvatar } from "./Avatar";
 import { AvatarChoices, NAME_MAX, pickPicture } from "./BotSheet";
 import { ModelRows } from "./ModelRows";
@@ -15,7 +15,7 @@ import { ModelRows } from "./ModelRows";
 /**
  * A bot's settings (bot-mode-design §6.5.1), opened from its name at the top of its page: its
  * avatar and name, changed where they are; the model it answers with and how hard it thinks; what
- * it may do without asking; deleting it, unless it is the default bot. Beside the conversation, in
+ * it may do without asking; clearing its chat; deleting it, unless it is the default bot. Beside the conversation, in
  * the place the file panel and the browser take.
  */
 export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; view: SessionView | null; session: string | null; onClose: () => void }) {
@@ -55,13 +55,16 @@ export function BotPanel({ bot, view, session, onClose }: { bot: BotSummary; vie
             </div>
             <p className="set-note">{t("panel.mutedNote")}</p>
           </section>
-          {!bot.default && (
-            <section className="fgroup">
-              <button className="frow bpn-del" onClick={() => runBotAction(st, bot, "delete")}>
+          <section className="fgroup">
+            <button className="frow bpn-end bpn-clear" onClick={() => clearBotChat(st, bot)}>
+              {t("panel.clear")}
+            </button>
+            {!bot.default && (
+              <button className="frow bpn-end bpn-del" onClick={() => runBotAction(st, bot, "delete")}>
                 {t("menu.delete")}
               </button>
-            </section>
-          )}
+            )}
+          </section>
         </div>
       </div>
     </aside>

@@ -13,6 +13,8 @@ use finx_core::Workspace;
 use finx_llm::ThinkingLevel;
 use finx_protocol::Event;
 use finx_protocol::EventMsg;
+use finx_protocol::PermissionMode;
+use finx_protocol::api::SessionInfo;
 use finx_protocol::api::SessionState;
 use finx_protocol::api::method;
 use finx_protocol::bot::Avatar;
@@ -73,12 +75,14 @@ struct BotFile {
     created_at: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     session_id: Option<String>,
-    /// What `bots/create` was told its conversation starts with. Once it runs, the conversation
-    /// keeps its own (`set_model`).
+    /// What its next conversation starts with: what `bots/create` was told, then what the last one
+    /// had when it was cleared. While one runs, it keeps its own (`set_model`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     thinking: Option<ThinkingLevel>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    permission_mode: Option<PermissionMode>,
     /// The list's row, kept for when the conversation is not loaded.
     #[serde(default)]
     summary: Kept,
@@ -585,9 +589,9 @@ impl Server {
     async fn open_bot(&self, id: &str, attach: Option<AttachRequest>) -> Result<String, RpcError> {
         let registry = self.bots().clone();
         let _opening = registry.opening.lock().await;
-        let (session, name, model, thinking) = {
+        let (session, name, start) = {
             let (registry, id) = (registry.clone(), id.to_string());
-            tokio::task::spawn_blocking(move || registry.with_bot(&id, |b| (b.file.session_id.clone(), b.file.name.clone(), b.file.model.clone(), b.file.thinking)))
+            tokio::task::spawn_blocking(move || registry.with_bot(&id, |b| (b.file.session_id.clone(), b.file.name.clone(), (b.file.model.clone(), b.file.thinking, b.file.permission_mode))))
                 .await
                 .map_err(|e| RpcError::internal(e.to_string()))??
         };
@@ -598,7 +602,7 @@ impl Server {
                 return Ok(session);
             }
         }
-        let session = self.start_bot_session(id, name, model, thinking, attach).await?;
+        let session = self.start_bot_session(id, name, start, attach).await?;
         registry.with_bot(id, |bot| bot.file.session_id = Some(session.clone()))?;
         let saved = {
             let (registry, id) = (registry.clone(), id.to_string());
@@ -609,7 +613,7 @@ impl Server {
     }
 
     /// Starts a bot's conversation in its folder.
-    async fn start_bot_session(&self, id: &str, name: String, model: Option<String>, thinking: Option<ThinkingLevel>, attach: Option<AttachRequest>) -> Result<String, RpcError> {
+    async fn start_bot_session(&self, id: &str, name: String, (model, thinking, permission_mode): (Option<String>, Option<ThinkingLevel>, Option<PermissionMode>), attach: Option<AttachRequest>) -> Result<String, RpcError> {
         self.make_room().await?;
         let folder = self.0.home.bot_files_dir(id);
         std::fs::create_dir_all(&folder).map_err(|e| RpcError::internal(format!("cannot create {}: {e}", folder.display())))?;
@@ -624,7 +628,7 @@ impl Server {
         let options = StartOptions {
             model,
             thinking: thinking.unwrap_or(workspace.config.thinking),
-            permission_mode: workspace.config.permission_mode,
+            permission_mode: permission_mode.unwrap_or(workspace.config.permission_mode),
             cwd: workspace.cwd.clone(),
             home: self.0.home.clone(),
             project_root: None,
@@ -647,10 +651,21 @@ impl Server {
         Ok(self.register(kernel, Vec::new(), attach, base, Some(id.to_string())))
     }
 
-    /// `bots/clear`: the conversation goes to the trash; the next `bots/open` starts another.
+    /// `bots/clear`: the conversation goes to the trash; the next `bots/open` starts another, with
+    /// the settings this one has, which the bot's settings show as the bot's.
     pub async fn bots_clear(&self, id: &str) -> Result<(), RpcError> {
         let registry = self.bots().clone();
+        let current = registry.with_bot(id, |bot| bot.file.session_id.clone())?;
+        let settings = match &current {
+            Some(session) => self.conversation_settings(session).await,
+            None => None,
+        };
         let session = registry.with_bot(id, |bot| {
+            if let Some(info) = settings {
+                bot.file.model = Some(info.model);
+                bot.file.thinking = Some(info.thinking);
+                bot.file.permission_mode = Some(info.permission_mode);
+            }
             bot.file.summary = Kept::default();
             bot.file.session_id.take()
         })?;
@@ -687,6 +702,13 @@ impl Server {
         Ok(())
     }
 
+    /// A conversation's settings, loading it if need be. A log that will not load is no reason to
+    /// keep it: clearing goes on, and the next conversation starts on the defaults.
+    async fn conversation_settings(&self, session: &str) -> Option<SessionInfo> {
+        self.load_session(session, ResumeOverrides::default(), None).await.ok()?;
+        self.info(session).await.ok()
+    }
+
     /// Closes a bot's conversation, waiting for its log, and moves the log to the trash.
     async fn drop_conversation(&self, session: Option<String>) -> Result<(), RpcError> {
         let Some(session) = session else {
@@ -718,6 +740,7 @@ fn new_file(name: String, avatar: Avatar, default: bool) -> BotFile {
         session_id: None,
         model: None,
         thinking: None,
+        permission_mode: None,
         summary: Kept::default(),
     }
 }

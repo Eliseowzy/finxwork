@@ -44,6 +44,20 @@ export function runBotAction(st: Store, b: BotSummary, id: NonNullable<BotAction
   }
 }
 
+/** Clearing a bot's chat, from its settings: asked first, and what stays is said (bot-mode-design §6.5.1). */
+export function clearBotChat(st: Store, b: BotSummary) {
+  st.set({
+    sheet: {
+      kind: "confirm",
+      title: t("clear.title", { name: b.name }),
+      message: t("clear.message"),
+      button: t("clear.button"),
+      run: () => st.call("bots/clear", { bot_id: b.id }),
+      done: t("clear.done"),
+    },
+  });
+}
+
 /** The bot's native right-click menu. */
 export async function botContextMenu(st: Store, b: BotSummary) {
   const items = rowActions(b).map((a) => (a ? { id: a.id, label: a.label } : { separator: true as const }));

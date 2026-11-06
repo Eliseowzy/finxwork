@@ -108,6 +108,12 @@
     "delete": "Delete Bot",
     "rename": "Rename"
   },
+  "clear": {
+    "title": "Clear your chat with “{{name}}”?",
+    "message": "The chat history is cleared and the work it is doing stops. Its files, routines and these settings stay.",
+    "button": "Clear",
+    "done": "Chat cleared"
+  },
   "delete": {
     "title": "Delete “{{name}}”?",
     "message": "Its chat history, the files it made and the work it is doing go with it.",
@@ -131,6 +137,7 @@
     "permissionNote": "{{desc}}. Applies to this bot only. The agents and tasks it creates run with this mode too, and follow any change at once. Its scheduled tasks run with this mode too, while you are away.",
     "bypassNote": "The agents and tasks this bot creates will do the same.",
     "close": "Close",
+    "clear": "Clear chat",
     "notifications": "Notifications",
     "muted": "Do Not Disturb",
     "mutedNote": "No system notifications, and it doesn't count in the number on the app's icon. Unread still shows in the list."
