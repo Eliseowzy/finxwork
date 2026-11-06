@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.56 |
+| 版本 | v1.57 |
 | 日期 | 2026-11-06 |
 | 状态 | 已定稿；首个交付已完成并通过验收（§18），随实现迭代 |
 | 范围 | 内核 v1（里程碑 M0–M2）；M3 只定接口 |
@@ -103,6 +103,7 @@
 | v1.54 | 2026-11-05 | 现有命令按该文 §4 统一（已实现）：`exec --json` 改成一个结果对象，事件流用 `--output stream-json`；去掉 `finx resume` 和 `exec --continue`，继续会话用 `exec --resume`；`models show` 改名 `unhide`；`--here` 改名 `--local`；`finx chat` 隐藏；重复或冲突的参数以最后一个为准；`--json` 下的失败也是 JSON（§12）。去掉没有实现的 HTTP 转储环境变量（§10.4、§13） |
 | v1.55 | 2026-11-05 | 命令行一期实现（standalone-cli-design v0.6）：交互模式、`login`、`logout`、`tools`、`config`、`install`、`upgrade`、`completion`、`models check`、`web-search`、`resume`；配置里不认识的键只警告（§10.1 的严格校验只留给写入和 `-c`）；退出码 3；MCP 工具审批；版本 0.2.0 |
 | v1.56 | 2026-11-06 | 错误分类（§4.11，D-483）：429 的 `Allocated quota exceeded` 是每分钟 Token 限流，按限流重试；`insufficient_quota` 这个码不再单独定性 |
+| v1.57 | 2026-11-06 | Bot 的子智能体直接告诉主人（[agent-messaging-design.md](agent-messaging-design.md) §17）：事件的 `mail.kind` 多一个 `to_user`，日志多一种 `agent_to_user` 条目；不走信箱，也不唤醒 Bot |
 
 ## 1. 目标与范围
 

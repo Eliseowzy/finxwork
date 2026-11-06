@@ -301,6 +301,17 @@ impl Registry {
                     bot.file.summary.last = Some(last(Speaker::User, &user.text_content(), images as u32, None, event.ts));
                     kept = true;
                 }
+                // What a sub-agent told the owner is a message like the bot's own
+                // (agent-messaging-design §17).
+                EventMsg::MessageCompleted {
+                    message: finx_llm::Message::User(user),
+                    mail: Some(mail),
+                    ..
+                } if mail.kind == finx_protocol::MailKind::ToUser => {
+                    bot.file.summary.last = Some(last(Speaker::Bot, finx_core::bot::told_words(&user.text_content()), 0, None, event.ts));
+                    bot.file.summary.unread += 1;
+                    kept = true;
+                }
                 EventMsg::ApprovalRequested { .. } => {
                     bot.file.summary.unread += 1;
                     kept = true;

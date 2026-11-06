@@ -1437,7 +1437,7 @@ export type MailInfo = {
   status: AgentStatus;
 };
 
-export type MailKind = "report" | "message" | "routine";
+export type MailKind = "report" | "message" | "routine" | "to_user";
 
 /** How much a server's tools are trusted to run unasked. */
 export type McpApproval = "never";

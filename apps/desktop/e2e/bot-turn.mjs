@@ -4,7 +4,8 @@
 // while it goes on, its report comes back as a message. Asked how it is going, the bot finds the
 // deferred tool and says what it shows; told to drop it, it stops the work before saying so, and
 // nothing comes of it afterwards. An agent can speak up on the way (agent-messaging-design §3.1):
-// the owner hears it from the bot, a session shows it as a card, and the work goes on.
+// the owner hears it from the bot, a session shows it as a card, and the work goes on. A bot's
+// agent can also tell the owner itself (§17): a message like the bot's own, at once.
 //
 // Runs the development build against the repository's target/debug/finx in a temporary FINX_HOME
 // and profile, with finx-mock as the model, scripted by the prompt. Takes under a minute once built.
@@ -253,6 +254,19 @@ try {
   await page.shot("7-spoke-up");
   await page.until("then its report", has('agent_report agent="sales"'), 20000);
   await page.until("the work over", `!${working}`, 5000);
+
+  step("an agent tells the owner itself: a message like the bot's own, at once, and the work goes on");
+  const told = "3 月的数据整月缺失，我先按其余 11 个月做。";
+  await write("[[mock:relay_told:6]] 把另一份 sales.csv 按月汇总");
+  await page.until("what it told them", `${bubbles}.includes(${JSON.stringify(told)})`, 10000);
+  check(await page.run(working), "the work goes on");
+  check((await page.run(workingText)).trim() === "汇总销售数据", `what it says it does: ${await page.run(workingText)}`);
+  check(!(await page.run(`[...document.querySelectorAll(".tr.bots .bm:not(.working)")].find((m) => m.querySelector(".bbub")?.innerText === ${JSON.stringify(told)}).querySelector("button.tb[aria-label='过程']")`)), "no process of the bot's behind it");
+  await page.shot("7b-told");
+  // The earlier agent took the name.
+  await page.until("then its report", has('agent_report agent="sales-2"'), 20000);
+  await page.until("the work over", `!${working}`, 5000);
+  check((await page.run(bubbles)).indexOf(told) < (await page.run(bubbles)).findLastIndex((t) => t.includes("agent_report")), "it stays before the report");
 
   step("in a session: a card for what it sent, and the agent still at work");
   await page.run(`document.querySelector('.seg.mode [data-mode=sessions]').click()`);

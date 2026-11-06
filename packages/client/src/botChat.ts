@@ -5,7 +5,8 @@ import { baseName } from "./text.ts";
 
 // A bot's conversation as Bot mode shows it (docs/kernel/bot-design.md §3.4):
 // the owner's messages, each message the bot sent with send_to_user (words,
-// files or a question, §3.12) and failures, in the order they were sent. What
+// files or a question, §3.12), what its sub-agents told the owner, which reads
+// the same (agent-messaging-design §17), and failures, in the order they were sent. What
 // the bot did and wrote for itself is the "process" of the message that
 // followed it. An approval is no part of it: it pops up above the composer, as
 // on a session's page.
@@ -171,9 +172,13 @@ export function botChat(v: SessionView): BotItem[] {
         }
         keep(s);
         break;
+      case "agent_message":
+        // What a sub-agent told the owner is a message like the bot's own, with no process of the bot's behind it.
+        if (s.to_user) out.push({ kind: "bot", key: s.key, text: s.text, ts: s.ts, process: [], took: 0 });
+        else keep(s);
+        break;
       case "text":
       case "agents":
-      case "agent_message":
         keep(s);
         break;
       case "end":

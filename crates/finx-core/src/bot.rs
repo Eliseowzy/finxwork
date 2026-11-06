@@ -39,8 +39,8 @@ pub struct BotIdentity {
 
 pub const SEND_TO_USER: &str = "send_to_user";
 
-/// The tools a bot's session gets on top of a session's. Its sub-agents do not get them: their
-/// replies are reports to the bot.
+/// The tools a bot's session gets on top of a session's. Its sub-agents have a `send_to_user` of
+/// their own (agent-messaging-design §17).
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
     vec![Arc::new(Typed::new(SendToUser)), crate::routine::tool()]
 }
@@ -117,6 +117,15 @@ pub fn words_of(args: &Value) -> Option<&str> {
     args.get("text")
         .and_then(Value::as_str)
         .filter(|text| !text.trim().is_empty() && crate::routine::quiet_note(text).is_none())
+}
+
+/// The words a sub-agent told the owner, from what the bot's model reads of them
+/// (agent-messaging-design §17).
+pub fn told_words(text: &str) -> &str {
+    text.strip_prefix("<sent_to_user")
+        .and_then(|rest| rest.split_once(">\n"))
+        .and_then(|(_, rest)| rest.strip_suffix("\n</sent_to_user>"))
+        .unwrap_or(text)
 }
 
 /// Whether a call sends files: by its type, or without one by what it carries (bot-design §3.12).

@@ -521,6 +521,9 @@ pub enum MailKind {
     /// What a run of a routine has to say, or that it failed: `from` is the run and the
     /// routine's name (docs/kernel/routine-design.md §2.3).
     Routine,
+    /// What a bot's sub-agent told the user with `send_to_user`: they have it already, and its
+    /// round goes on (docs/kernel/agent-messaging-design.md §17).
+    ToUser,
 }
 
 /// Where a delivered message came from.

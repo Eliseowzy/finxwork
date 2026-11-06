@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.31 |
-| 日期 | 2026-11-05 |
+| 版本 | v0.32 |
+| 日期 | 2026-11-06 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
 
@@ -47,6 +47,7 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.32 | 2026-11-06 | Bot 的子智能体直接告诉主人（agent-messaging-design.md §17），版本 2 之内：`MailInfo.kind` 多一个 `to_user`，主会话没有任务时也会发这条 `message_completed`。桌面端和服务总是一起升级，其他客户端不认识这个值时当作普通信件处理即可 |
 | v0.31 | 2026-11-05 | `bots/create` 加可选的 `model`、`thinking`（bot-design.md D-459），版本 2 之内，老客户端不带时行为不变 |
 | v0.30 | 2026-11-05 | 独立发布（standalone-cli-design §9、§10）：Schema 加 `x-stability`，稳定、实验、内部三档，发版基线 `schema-released.json` 由测试比较；新方法 `tools/list`；事件 `approval_refused`；`ToolCall.provider_data`；`McpServerConfig` 不再拒绝未知字段，多了 `approval`；ACP 的 `authMethods`、`authenticate`，`finx acp --login`，没有凭据的模型和因凭据失败的 prompt 都答 `auth_required`（-32000） |
 | v0.29 | 2026-11-05 | 命令行改名（standalone-cli-design §4）：逐行输出事件的写法从 `finx exec --json` 改成 `finx exec --output stream-json`，内容不变；`--json` 现在是一个结果对象。协议本身没有变化。去掉没有实现的调试日志环境变量（§9） |

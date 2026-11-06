@@ -16,6 +16,10 @@ use crate::routine::RoutineRun;
 use crate::session::Session;
 
 const TASK_TEMPLATE: &str = include_str!("prompts/child_task.md");
+/// The part of a sub-agent's first message that says who hears of its work on the way: a session's
+/// user follows its status, a bot's owner has only what it tells them (agent-messaging-design §17).
+const ON_THE_WAY: &str = include_str!("prompts/child_on_the_way.md");
+const BOT_ON_THE_WAY: &str = include_str!("prompts/bot_child_on_the_way.md");
 
 /// Characters of a report shown in `agent_status`.
 const SUMMARY_CHARS: usize = 200;
@@ -32,9 +36,28 @@ const ROUTINE_REPORTED: &str = "This routine is the user's own request: pass on 
 const ROUTINE_FAILED: &str = "This routine failed. Tell the user what failed and what would fix it with send_to_user. You will \
     not hear about later failures until it works again.";
 
-/// The first message of a sub-agent: who it is, how to report, and the task.
-pub(crate) fn task_message(name: &str, task: &str) -> String {
-    TASK_TEMPLATE.trim_end().replace("{name}", name).replace("{task}", task)
+/// The first message of a sub-agent: who it is, how to report, and the task. `bot`: a bot started it.
+pub(crate) fn task_message(name: &str, task: &str, bot: bool) -> String {
+    let on_the_way = if bot { BOT_ON_THE_WAY } else { ON_THE_WAY };
+    TASK_TEMPLATE
+        .trim_end()
+        .replace("{on_the_way}", on_the_way.trim_end())
+        .replace("{name}", name)
+        .replace("{task}", task)
+}
+
+/// What a bot's sub-agent told the user: where it came from and what the bot's model reads of it.
+pub(crate) fn to_user(from: AgentRef, text: &str, seq: u64) -> (MailInfo, UserMessage) {
+    let message = UserMessage::text(format!("<sent_to_user from=\"{}\">\n{text}\n</sent_to_user>", from.name));
+    let info = MailInfo {
+        id: format!("m{seq}"),
+        from,
+        kind: MailKind::ToUser,
+        status: AgentStatus::Running,
+        no_reply: false,
+        routine_id: None,
+    };
+    (info, message)
 }
 
 /// A report or a message waiting in a session's inbox. The text is final: rendered and cut once.
@@ -226,9 +249,22 @@ mod tests {
 
     #[test]
     fn the_task_message_names_the_agent_and_carries_the_task() {
-        let text = task_message("explore-api", "Find the {name} handlers.");
+        let text = task_message("explore-api", "Find the {name} handlers.", false);
         assert!(text.starts_with("You are a sub-agent named \"explore-api\""));
         assert!(text.ends_with("<task>\nFind the {name} handlers.\n</task>"));
+    }
+
+    /// Only a bot's owner hears from its sub-agents on the way (agent-messaging-design §17).
+    #[test]
+    fn a_bots_sub_agent_is_told_to_keep_its_owner_posted() {
+        let session = task_message("a", "Do it.", false);
+        assert!(session.contains("Send no routine progress and no acknowledgements."));
+        assert!(!session.contains("send_to_user"));
+        let bot = task_message("a", "Do it.", true);
+        assert!(bot.contains("call send_to_user with a brief update"));
+        assert!(!bot.contains("Send no routine progress"));
+        assert!(!bot.contains("{on_the_way}") && !session.contains("{on_the_way}"));
+        assert!(bot.ends_with("<task>\nDo it.\n</task>"));
     }
 
     #[test]

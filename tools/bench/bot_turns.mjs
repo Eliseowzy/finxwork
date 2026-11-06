@@ -36,6 +36,14 @@
 //   - wokenByNote: tasks those messages started: what they cost;
 //   - answered:   the main agent's send_message after a note, to see that nobody goes back and forth;
 //   - peerNotes:  what sub-agents sent one another;
+//   - updates:    what sub-agents told the owner themselves (send_to_user), each printed;
+//   - updateRuns: runs with at least one; updateLeaks, updateInternal: of them, naming a tool or
+//                 the machinery; updateOtherLanguage: with no Chinese, when the owner writes Chinese;
+//   - firstUpdateMs: from the first agent's start to the first update, median and worst;
+//   - gapMs:      the longest the owner went without a word while agents worked, per run; workMs: how
+//                 long they worked; updateChars: how long an update is;
+//   - botSteps:   the requests the bot made: an update must not add any;
+//   - repeated:   the bot's messages that say again what an update said;
 //   - covered:    `ten`, runs in which the owner heard of all ten companies;
 //   - early:      `blocker`, `milestone`: the owner heard before the last report;
 //   - inTask:     `milestone`, the bot asked for the step in the agent's task;
@@ -164,6 +172,12 @@ async function settled(w, since, ms, done) {
 /** The tool a call really runs, deferred or not. */
 const toolOf = (e) => (e.name === "call_tool" ? e.args?.name : e.name);
 const isSend = (e) => e.type === "tool_started" && e.name === "send_to_user";
+/** A sub-agent's own message to the owner (agent-messaging-design §17). */
+const isUpdate = (e) => e.type === "message_completed" && e.mail?.kind === "to_user";
+const updateText = (e) => e.message.content.map((c) => c.text ?? "").join("").replace(/<\/?sent_to_user[^>]*>/g, "").trim();
+/** What a bubble says, whichever agent sent it. */
+const bubbleText = (e) => (isUpdate(e) ? updateText(e) : String(e.args?.text ?? ""));
+const isBubble = (e) => isSend(e) || isUpdate(e);
 const isCall = (e, name) => e.type === "tool_started" && toolOf(e) === name;
 const firstAfter = (w, at, test) => w.events.find((e) => e.at >= at && test(e));
 const long = "写一篇一万字的小作文，主题随便，写好整理成文件告诉我。";
@@ -242,7 +256,7 @@ const scenarios = {
     ms: 600_000,
     say: () => [[0, `查一下这十家公司的主营业务和最新一年的营收，每查完一家就告诉我：${companies.join("、")}。`]],
     check(t, w) {
-      const said = w.events.filter(isSend).map((e) => String(e.args?.text ?? "")).join("\n");
+      const said = w.events.filter(isBubble).map(bubbleText).join("\n");
       t.covered += companies.every((c) => said.includes(c)) ? 1 : 0;
     },
   },
@@ -256,8 +270,15 @@ const scenarios = {
       t.early += beforeLastReport(w, /备份(已经|已)?(好|完|成)|backup.*(done|complete)/i, (e) => e.at > (w.events.find((x) => x.type === "agent_started")?.at ?? Infinity)) ? 1 : 0;
     },
   },
-  // Long work with nothing asked along the way: the messages are the noise.
+  // Long work with nothing asked along the way.
   quiet: { ms: 600_000, say: () => [[0, long.replace("一万字", "两千字")]] },
+  // Work in stages, with nothing asked along the way and nothing wrong: what the owner hears while
+  // it runs is what updates are for.
+  stages: {
+    ms: 600_000,
+    files: { "sales.csv": dailySales() },
+    say: () => [[0, "请交给子智能体去做：把我文件夹里的 sales.csv 先核对数据质量，再按月和按地区汇总，用 Python 画两张图，最后写一份一千字的分析报告，都存成文件。"]],
+  },
   // A problem only working through the data shows, the case the plan is for (§3.1): the file has a
   // row per day and looks fine at a glance, but March is not in it. The owner should not wait for
   // the whole job to learn of it.
@@ -322,7 +343,7 @@ const companies = ["苹果", "微软", "谷歌", "亚马逊", "特斯拉", "英�
 /** A message that says this reached the owner before the last report came. */
 function beforeLastReport(w, words, also = () => true) {
   const last = w.events.filter((e) => e.type === "message_completed" && e.mail?.kind === "report").at(-1);
-  return w.events.some((e) => isSend(e) && also(e) && (!last || e.at < last.at) && words.test(String(e.args?.text ?? "")));
+  return w.events.some((e) => isBubble(e) && also(e) && (!last || e.at < last.at) && words.test(bubbleText(e)));
 }
 const isAck = (e) => /我看|我查|我去|稍等|看一下|查一下|let me|checking/i.test(String(e.args?.text ?? "")) && String(e.args?.text ?? "").length < 30;
 const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|list_agents|stop_agents|tool_search|call_tool|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
@@ -451,6 +472,36 @@ async function oneRun(name, s, run, t) {
   });
   t.peerNotes += events.filter((e) => e.type === "agent_event" && e.event.type === "message_completed" && e.event.mail?.kind === "message").length;
 
+  // What agents told the owner themselves, what it cost, and how long the owner went without a word.
+  const updates = events.filter(isUpdate);
+  t.updates += updates.length;
+  t.updateRuns += updates.length ? 1 : 0;
+  for (const e of updates) {
+    const text = updateText(e);
+    console.log(`   (update from ${e.mail.from.name}: ${text.replace(/\s+/g, " ").slice(0, 400)})`);
+    t.updateChars.push(text.length);
+    t.updateLeaks += tools.test(text) ? 1 : 0;
+    t.updateInternal += internal.test(text) ? 1 : 0;
+    t.updateOtherLanguage += /[\u4e00-\u9fff]/.test(text) ? 0 : 1;
+  }
+  const firstAgent = events.find((e) => e.type === "agent_started");
+  if (updates.length && firstAgent) t.firstUpdateMs.push(updates[0].at - firstAgent.at);
+  t.botSteps += events.filter((e) => e.type === "message_completed" && e.message.role === "assistant").length;
+  if (firstAgent) {
+    const lastStatus = events.filter((e) => e.type === "agent_status" && ["completed", "failed", "interrupted"].includes(e.status)).at(-1);
+    // Up to the end of the work, or of the run when it was still going.
+    const end = lastStatus?.at ?? events.at(-1).at;
+    const moments = [firstAgent.at, ...events.filter(isBubble).map((e) => e.at).filter((at) => at > firstAgent.at && at < end), end];
+    t.gapMs.push(Math.max(0, ...moments.slice(1).map((at, i) => at - moments[i])));
+    t.workMs.push(end - firstAgent.at);
+  }
+  // The bot saying again what the owner has: most of an update's words in one of its later messages.
+  for (const e of updates) {
+    const words = updateText(e).replace(/[\s，。、,.!！:：;；]/g, "");
+    const later = calls.filter((c) => c.at > e.at).map((c) => String(c.args.text ?? "").replace(/[\s，。、,.!！:：;；]/g, ""));
+    if (words.length >= 12 && later.some((x) => x.includes(words.slice(0, 12)))) t.repeated++;
+  }
+
   // How long the owner waits for a bubble, and whether the work went on meanwhile.
   at.forEach((time, i) => {
     const bubble = firstAfter(w, time, isSend);
@@ -500,12 +551,13 @@ for (const [name, s] of Object.entries(scenarios)) {
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
     ordered: 0, attached: 0, linked: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
     notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0, alone: 0, thinking: [], ownRounds: [],
+    updates: 0, updateRuns: 0, updateLeaks: 0, updateInternal: 0, updateOtherLanguage: 0, firstUpdateMs: [], gapMs: [], workMs: [], updateChars: [], botSteps: 0, repeated: 0,
   });
   for (let run = 0; run < runs; run += parallel) {
     const batch = Array.from({ length: Math.min(parallel, runs - run) }, (_, k) => oneRun(name, s, run + k, t).catch((e) => console.log(`${name} #${run + k + 1}: ${e.message}`)));
     await Promise.all(batch);
   }
-  for (const key of ["firstMs", "nextMs", "thinking", "ownRounds"]) t[key] = { median: median(t[key]), worst: t[key].length ? Math.max(...t[key]) : null };
+  for (const key of ["firstMs", "nextMs", "thinking", "ownRounds", "firstUpdateMs", "gapMs", "workMs", "updateChars"]) t[key] = { median: median(t[key]), worst: t[key].length ? Math.max(...t[key]) : null };
 }
 console.log("\n" + JSON.stringify(totals, null, 1));
 server.kill();

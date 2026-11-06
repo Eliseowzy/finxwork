@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v2.6 |
-| 日期 | 2026-11-05 |
+| 版本 | v2.7 |
+| 日期 | 2026-11-06 |
 | 状态 | 已定稿；一期已实现并通过验收（§15）；二期、三期未开始 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §2 核心概念、§6 内核运行时、§8 对外协议、§9 会话持久化；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
 
@@ -121,6 +121,7 @@
 
 | v2.5 | 2026-11-05 | 智能体之间能互发消息（[智能体通信方案](agent-messaging-design.md)，修订 D-41、D-53、D-354、Q-43，新增 D-450–D-457）：子智能体有 `send_message`，发给主智能体时唤醒它，发给在跑的子智能体时下一步读到，发给空闲的被拒绝（§6.3）；信件多一种 `message`，日志里是 `agent_message` 条目（§7、§9.2）；`check_agents` 改名 `list_agents`，子智能体也能用，多一行最后说的话（§6.6） |
 | v2.6 | 2026-11-05 | Bot 版 `spawn_agent` 的描述和 `task` 说明改了，讲用途的段落和讲后台的段落都和会话模式不同（附录 A.1、bot-design D-482）；会话模式不变 |
+| v2.7 | 2026-11-06 | Bot 的子智能体有自己的 `send_to_user`，任务说明里讲中途的那段按模式换（附录 A.2，[智能体通信方案](agent-messaging-design.md) §17）；Bot 版 `spawn_agent` 描述讲中途的那句跟着改（附录 A.1） |
 
 ## 1. 目标与原则
 
@@ -653,6 +654,7 @@ pub struct AgentOrigin {
 | `agent_spawned` | 父会话 | `agent_id`、`name`、`description`（v2.0 起；之前的条目没有）、`session_file`、`call_id` | 恢复时重建登记表（§9.4） |
 | `mail` | 收件方会话 | `mail: {id, from, kind, status}` 加 `message` | 投递记录，同时就是模型看到的内容 |
 | `agent_message` | 收件方会话 | 同 `mail`，`kind` 是 `message` | 运行中发的话。单独一种条目：不认识它的旧版保留位置，历史不断（智能体通信方案 §8） |
+| `agent_to_user` | Bot 的主会话 | 同 `mail`，`kind` 是 `to_user` | Bot 的子智能体直接告诉主人的话，同样单独一种条目（智能体通信方案 §17） |
 
 ### 9.3 列表与"最近会话"
 
@@ -1213,7 +1215,7 @@ While it works, an agent can send you an <agent_message> about something that ca
 Leave delegated work to the agent: do not redo it or guess its result; list_agents shows how it stands. Only you see the reports; the user sees each agent's status, so relay what matters.
 ```
 
-Bot 的主会话中间两段相同（多个子智能体、`<agent_message>` 和留给它做），开头和讲后台的那段不同，也没有 `wait` 参数。开头：
+Bot 的主会话多个子智能体和留给它做的两段相同，开头、讲后台的那段和讲中途的那句不同，也没有 `wait` 参数。讲中途的那句见智能体通信方案 §17.7。开头：
 
 ```
 Hand work to a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it cannot start agents. It works in the background while you stay free for the user. This is how you get anything beyond a quick answer done: research, data and files, scripts, long writing.
@@ -1279,6 +1281,8 @@ Stop running agents at once: name them, or set all to true. A stopped agent keep
 | `stop_agents.all` | `Stop every running agent.` |
 
 ### A.2 任务说明模板
+
+Bot 发起的子智能体，第三段换成[智能体通信方案](agent-messaging-design.md) §17.7 的文字（`bot_child_on_the_way.md`）。下面是会话模式的。
 
 ```
 You are a sub-agent named "{name}", started by another agent (your parent, addressed as "main") for the task below. Messages here come from your parent or from other agents, not from a human, and your final reply is delivered to your parent.

@@ -407,6 +407,8 @@ async fn finish_task(session: &Arc<Session>, task: &TaskCtx, outcome: TaskOutcom
         if state.active_task.as_ref().is_some_and(|t| t.id == task.id) {
             state.active_task = None;
         }
+        // No call is open now, and the next boundary may be a long way off.
+        session.write_all_told(state);
         // A `resend` waited for this end, however it came: it takes what still waits, below.
         let resend = state.pending_resend.take();
         let going_back = resend.is_some();

@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.26 |
-| 日期 | 2026-11-05 |
+| 版本 | v1.27 |
+| 日期 | 2026-11-06 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
 
@@ -43,6 +43,7 @@
 | v1.24 | 2026-11-05 | 模型回了一条空回复不再算连接错误，交给 §3.11 判断要不要提醒；读不出来的内容才算失败（D-464）；D-321 里没查明的"回复全是空"有了原因 |
 | v1.25 | 2026-11-05 | 头像的小角色换成 8 种眼神（§4，PRD DD-158）；旧名字仍能读出来 |
 | v1.26 | 2026-11-05 | 提示词第二版：`bot.md` 改成"主人跟你说话，活由子智能体做"，判断从估轮数改成看类型；每句话后面的提示和没回话的提醒改文字；Bot 版 `spawn_agent` 的描述去掉"自己做"的出口（§3.14、附录 A、D-480–D-482；统计见[回合方案](bot-turn-design.md) §14） |
+| v1.27 | 2026-11-06 | Bot 的子智能体有自己的 `send_to_user`（只有 `text`），直接告诉主人进展，Bot 不被唤醒（§3.6，[智能体通信方案](agent-messaging-design.md) §17，D-555–D-558） |
 
 ## 方案摘要
 
@@ -215,8 +216,8 @@ pub enum PromptProfile {
 - **内核自己决定用哪个配置**：`Kernel::start` 带 `bot` 时用 Bot 配置，否则用会话配置。提示词的文字不经过协议，桌面端只告诉服务层"打开这个 Bot"。
 - **共用的两节**：base.md 里"Numbers and data""Acting with care"两节，两种配置都要。把它们移到 `prompts/shared/numbers_and_data.md` 和 `prompts/shared/acting_with_care.md`，base.md 和 bot.md 用 `{{numbers_and_data}}`、`{{acting_with_care}}` 引用，内置文本第一次用时替换一次。会话配置拼出的文字与现在逐字相同（测试拿现在的 base.md 原文比对）。各自不同的是身份、一轮怎么过、怎么工作、怎么说话（bot.md 全文见附录 A.1）。
 - **覆盖文件也按配置分**：`system_prompt_file` 只换会话配置的基础段，意思不变；另加 `bot_prompt_file` 换 Bot 配置的。覆盖文件里也可以用上面这些标记。`bot_prompt_file` 的用途是调提示词时不用重新编译，验收时改几句就能对比。
-- **子智能体用会话配置**：子智能体本来沿用父的系统提示词（子智能体方案 D-42）。Bot 的提示词讲的是怎么跟主人聊天、只有 `send_to_user` 可见，子智能体没有这个工具，它的回复是写给 Bot 的汇报。所以 Bot 会话开始时，用同一份输入（工作目录、指令、技能、环境）按会话配置多拼一份，存在 `SessionState.sub_agent_prompt`；`spawn_agent` 有它就用它代替父的基础提示词。指令和技能只扫描一次，拼两遍。恢复 Bot 会话时按当时的输入重拼这一份：子智能体都是新会话，本来就以当时为准。
-  - 代价：子智能体的第一个请求用不上 Bot 提示词的缓存。子智能体与 Bot 的工具列表本来就不同（没有智能体工具和 `send_to_user`），损失只是一次系统提示词长度的未命中。
+- **子智能体用会话配置**：子智能体本来沿用父的系统提示词（子智能体方案 D-42）。Bot 的提示词讲的是怎么跟主人聊天，子智能体的最后回复是写给 Bot 的汇报；它中途怎么跟主人说话写在任务说明里（[智能体通信方案](agent-messaging-design.md) §17.7）。所以 Bot 会话开始时，用同一份输入（工作目录、指令、技能、环境）按会话配置多拼一份，存在 `SessionState.sub_agent_prompt`；`spawn_agent` 有它就用它代替父的基础提示词。指令和技能只扫描一次，拼两遍。恢复 Bot 会话时按当时的输入重拼这一份：子智能体都是新会话，本来就以当时为准。
+  - 代价：子智能体的第一个请求用不上 Bot 提示词的缓存。子智能体与 Bot 的工具列表本来就不同（没有派子智能体的工具，`send_to_user` 也只有文字），损失只是一次系统提示词长度的未命中。
 
 **为什么不让桌面端把提示词传进来**
 
@@ -328,9 +329,10 @@ pub enum PromptProfile {
 - **一件事一个子智能体**（D-357）：不相关的事各开一个，看起来相似也一样，这样每件事能各自做完、各自汇报、单独叫停。只有紧接着同一件工作的后续和修正才用 `send_message` 发给原来那个。主人试用时连发四首诗，模型把四首都交给了一个子智能体，一轮做完才有汇报。
 - 汇报：Bot 空闲时唤醒它开一个任务，Bot 正在回时在下一个轮次边界送达（子智能体方案 §7）。Bot 用 `send_to_user` 转告；过时、重复的可以不发。
 - 子智能体要确认的调用由主人批准（子智能体方案 §10）：弹同一个授权窗口，写明是哪个子智能体，Bot 不能替主人答。等答复时 Bot 照常回话；被拒绝的话，子智能体接着做，写进汇报，由 Bot 转告。
-- **中途的消息**：子智能体遇到等不到汇报的事，用 `send_message` 发给 Bot，`<agent_message>` 唤醒它，由它转告主人；子智能体接着做，汇报照旧。能拆开的事不走这条路，各开一个子智能体（[智能体通信方案](agent-messaging-design.md) §3）。Bot 被它唤醒后只写文字时，和汇报一样提醒一次，还不发就正常结束（§3.13）。
+- **中途的进展**：子智能体用自己的 `send_to_user` 直接告诉主人，气泡马上出现，Bot 不醒，在下一个边界读到 `<sent_to_user>`（[智能体通信方案](agent-messaging-design.md) §17）。
+- **中途的消息**：子智能体有别的智能体要照着做的事时，用 `send_message` 发给 Bot，`<agent_message>` 唤醒它；子智能体接着做，汇报照旧。能拆开的事不走这条路，各开一个子智能体（[智能体通信方案](agent-messaging-design.md) §3）。Bot 被它唤醒后只写文字时，和汇报一样提醒一次，还不发就正常结束（§3.13）。
 - **查进度和叫停**：`list_agents`、`stop_agents`，所有主会话共用，按需加载（子智能体方案 §6.6）。Bot 页没有停止键，说话是唯一的办法，bot.md 写明什么时候查、停下优先。要改方向用 `send_message`（带 interrupt）。
-- **只有主 Bot 跟主人说话**：子智能体的工具列表在加上 `send_to_user` 之前就定了，它没有这个工具，也没有 `stop_agents`。汇报和它发的消息只有 Bot 看得到，转告是它的责任（§3.13）。
+- **交付是主 Bot 的责任**：子智能体的 `send_to_user` 只有文字，没有 `stop_agents`。汇报和它用 `send_message` 发的消息只有 Bot 看得到，转告是 Bot 的责任（§3.13）。
 
 ### 3.7 在忙
 
@@ -927,6 +929,10 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-309 | `end_turn` 由工具结果的通用标记 `ends_task` 实现：这一批执行完、插话队列为空时任务结束，不再请求模型；有新消息时照常接着回 | 说完了就结束，省一次模型请求；新消息总要回；信号放在拥有它的那一层 | §3.3 |
 | D-310 | 提示词的文字不经过协议，由内核按会话类型选配置；`bot_prompt_file` 只用来调试 | 提示词和内核的工具、版本是一套；所有客户端看到同一个 Bot | §2.3 |
 | D-311 | Bot 的子智能体按会话配置另拼系统提示词，不沿用 Bot 的（子智能体方案 D-42 的例外） | Bot 的聊天约定不适用于写汇报的子智能体；损失只是子智能体第一次请求的一段缓存 | §2.3 |
+| D-555 | Bot 的子智能体有自己的 `send_to_user`，直接告诉主人进展，不走 Bot 转告（主人定） | 转告每次多一次主会话请求，长寿 Bot 一次 20–30 秒，转告时还挡主人的话 | 通信方案 §17.1 |
+| D-556 | 它只有 `text`：不发文件、不提问、没有 `end_turn` | 要解决的是进展；答复回到 Bot，子智能体等不到 | 通信方案 §17.3 |
+| D-557 | 气泡在调用时立刻出现；写进主会话日志要等 Bot 空闲或下一个边界，任务结束时一定写 | 主人不等 Bot；工具调用和结果之间不能插 user 消息 | 通信方案 §17.4 |
+| D-558 | 子智能体说的话不算 Bot 回了话，也不算有结果没发 | 否则主人的话会漏回，或者多一次无谓的提醒 | 通信方案 §17.5 |
 | D-312 | 对话按时间排：主人的消息取发出的时间，Bot 的气泡取那条助手消息写完的时间。实时显示时气泡在 `tool_started` 出现，调用失败才撤下 | 实时看到的和重新打开后的一样；同一步的几条按调用顺序；同一批里有调用要确认时，整批等确认答复才执行，先发的话不能被挡住 | §3.4 |
 | D-313 | 改名：头部记建会话时的名字；名字变了，在轮次边界记一条 `bot_name` 条目，模型看到一条环境更新；压缩后再告诉一次 | 系统提示词冻结、缓存不动；与日期变化的做法一致 | §2.4 |
 | D-314 | 未读由客户端报告"在看"（`bots/read`），服务层计数并写进 bot.json | 附着不等于在看；崩溃后未读还在 | §5.3 |
@@ -1069,14 +1075,17 @@ Agents cannot change routines: do that part and hand over the rest. If something
 yourself needs more than one step after all, hand the rest to an agent.
 
 - An agent sees none of this conversation, so the task is all it knows. A few lines usually do: the
-  goal, what you already know, the files, and what to report.
+  goal, what you already know, the files, and what to report. Write it in the user's language: the
+  agent speaks to them in the language of its task.
 - Agents move work off your turn; they are not for splitting one job into parallel pieces. Anything
   separate gets its own agent, so that each can finish, report and be stopped on its own, even when
   the requests look alike: four poems are four agents. Only what closely continues an
   agent's work, such as a follow-up or a correction to it, goes to that agent with send_message.
-- After starting an agent, never sit waiting or keep checking on it. An agent may also message you
-  about a blocker or a change of plan. If the user wants results one by one, give each its own
-  agent. Don't promise anything along the way that you haven't asked an agent for in its task.
+- After starting an agent, never sit waiting or keep checking on it. It tells the user how the work
+  is going by itself, and you read what it sent as <sent_to_user>: they have that already, so don't
+  repeat it. An agent may also message you when it needs you to act. If the user wants results one
+  by one, give each its own agent. Don't promise anything along the way that you haven't asked an
+  agent for in its task.
 - Use list_agents when an agent has run unusually long, when the user asks about it, and before
   you say it is still working. If its activity has stopped or keeps repeating, treat it as stuck:
   redirect or stop it, and tell the user what really happened.
@@ -1227,6 +1236,8 @@ two options have the same label: <label>
 <path>: not a file
 <path>: a web address, save it to a file first
 ```
+
+Bot 的子智能体有自己的 `send_to_user`，只有 `text`，文字见[智能体通信方案](agent-messaging-design.md) §17.3、§17.7。
 
 ### A.4 改名的环境更新
 

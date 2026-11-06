@@ -96,6 +96,46 @@ test("each send_to_user is a bubble; what the bot did and wrote for itself is th
   assert.equal(busyBubble(v), null);
 });
 
+test("what a sub-agent told the owner is a bubble of its own, in the order things were said", () => {
+  const told = (id: string, text: string, ts: number): EventMsg => ({
+    type: "message_completed",
+    message_id: id,
+    message: { role: "user", content: [{ type: "text", text: `<sent_to_user from="sales">\n${text}\n</sent_to_user>` }], ts },
+    mail: { id: "m1", from: { id: "ag1", name: "sales" }, kind: "to_user", status: "running" },
+  });
+  const v = play([
+    { type: "task_started", task_id: "t1" },
+    user("u1", "把销售额按月汇总", 10_000),
+    assistant("a1", [send("c1", "好，我来。"), { type: "tool_call", id: "c2", name: "spawn_agent", arguments: { description: "汇总", task: "Sum it." } }], 11_000),
+    started("c1"),
+    done("c1"),
+    started("c2", "spawn_agent"),
+    // The bot is still writing when it comes, and the log will have it after this reply.
+    told("t2", "3 月的数据整月缺失。", 11_500),
+    done("c2", "spawn_agent", "started"),
+    assistant("a2", [{ type: "text", text: "It is at work." }], 12_000),
+    { type: "task_completed", task_id: "t1", usage: { per_model: {} }, reason: "done" },
+    told("t3", "数据汇总好了，在画图。", 20_000),
+    assistant("a3", [{ type: "thinking", text: "可以发了" }, send("c3", "做好了。", true)], 30_000),
+    started("c3"),
+    done("c3"),
+  ]);
+  const items = botChat(v);
+  assert.deepEqual(items.map((i) => (i.kind === "bot" ? i.text : i.kind === "user" ? `user:${i.text}` : i.kind)), [
+    "user:把销售额按月汇总",
+    "好，我来。",
+    "3 月的数据整月缺失。",
+    "数据汇总好了，在画图。",
+    "做好了。",
+  ]);
+  const [, , first, second, last] = items;
+  assert.ok(first.kind === "bot" && second.kind === "bot" && last.kind === "bot");
+  assert.deepEqual([first.process, first.took, first.ts], [[], 0, 11_500]);
+  assert.deepEqual([second.process, second.took], [[], 0]);
+  // The bot's own steps stay with the bot's own next message.
+  assert.ok(processSteps(last.process) >= 0 && last.process.length > 0);
+});
+
 test("a message sent while the bot answered keeps its place, whether queued or in the history", () => {
   const live = play([
     { type: "task_started", task_id: "t1" },

@@ -221,7 +221,9 @@ pub fn branch_messages(branch: &[&Entry]) -> Vec<Message> {
 pub fn entry_message(kind: &EntryKind, ts: Timestamp) -> Option<Cow<'_, Message>> {
     match kind {
         EntryKind::Message { message, skills, .. } if !skills.is_empty() => Some(Cow::Owned(with_skills(message, skills))),
-        EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } | EntryKind::AgentMessage { message, .. } => Some(Cow::Borrowed(message)),
+        EntryKind::Message { message, .. } | EntryKind::Mail { message, .. } | EntryKind::AgentMessage { message, .. } | EntryKind::AgentToUser { message, .. } => {
+            Some(Cow::Borrowed(message))
+        }
         EntryKind::Date { date } => Some(Cow::Owned(Message::from(date_message(date, ts)))),
         EntryKind::BotName { name } => Some(Cow::Owned(Message::from(bot_name_message(name, ts)))),
         EntryKind::Routines { text } => Some(Cow::Owned(Message::from(routines_message(text, ts)))),

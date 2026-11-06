@@ -399,6 +399,8 @@ fn extended(tools: &Arc<ToolRegistry>, kind: &'static str, make: fn() -> Vec<Arc
 /// What a sub-agent's session starts from: the main session's current settings.
 pub(crate) struct ChildLaunch {
     pub(crate) header: SessionHeader,
+    /// Started for a bot: it can tell the owner how the work goes (agent-messaging-design §17).
+    pub(crate) bot: bool,
     /// The main session's prompt as sent, its fixed part and its MCP part.
     pub(crate) system_prompt: Arc<str>,
     pub(crate) base_prompt: Arc<str>,
@@ -430,7 +432,11 @@ pub(crate) fn start_child(mut child: ChildLaunch) -> Result<Kernel, KernelError>
     // A routine's run is on its own: no other agent to talk to, nor one that knows of it.
     let run = child.header.agent.as_ref().is_some_and(|agent| agent.routine.is_some());
     if !run {
-        child.deps.tools = extended(&child.deps.tools, "sub-agent", agents::sub_agent_tools);
+        child.deps.tools = if child.bot {
+            extended(&child.deps.tools, "bot-sub-agent", agents::bot_sub_agent_tools)
+        } else {
+            extended(&child.deps.tools, "sub-agent", agents::sub_agent_tools)
+        };
     }
     let created = child.deps.store.create(&child.header)?;
     let model_ref = child.model.reference();
@@ -606,7 +612,7 @@ impl Kernel {
         let resolved = deps.llm.resolve(&opts.model)?;
         let mcp = mcp_manager(&deps, &opts.config, opts.project_root.clone());
         let agents = agent_tree(&mut deps, &opts.home, &opts.config, opts.trusted, mcp.clone(), opts.bot.is_some());
-        // After the sub-agents took their tools: they never send to the user.
+        // After the sub-agents took their tools: they have a `send_to_user` of their own.
         if opts.bot.is_some() {
             deps.tools = extended(&deps.tools, "bot", bot::tools);
         }
@@ -1237,7 +1243,7 @@ pub(crate) fn transcript_of<'a>(branch: impl IntoIterator<Item = &'a Entry>) -> 
                 skills: context::skill_uses(skills, skill.as_deref()),
                 mail: None,
             }),
-            EntryKind::Mail { mail, message } | EntryKind::AgentMessage { mail, message } => Some(TranscriptItem::Message {
+            EntryKind::Mail { mail, message } | EntryKind::AgentMessage { mail, message } | EntryKind::AgentToUser { mail, message } => Some(TranscriptItem::Message {
                 message_id: entry.id.clone(),
                 message: message.clone(),
                 skills: Vec::new(),

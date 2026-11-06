@@ -12,6 +12,7 @@ use finx_llm::now_ms;
 use finx_protocol::ApprovalDecision;
 use finx_protocol::CommandRule;
 use finx_protocol::EventMsg;
+use finx_protocol::MailInfo;
 use finx_protocol::MailKind;
 use finx_protocol::PermissionMode;
 use finx_protocol::PromptMode;
@@ -112,6 +113,9 @@ pub(crate) struct SessionState {
     pub(crate) turn_scan: crate::budget::TurnScan,
     /// Sub-agents' reports and messages not yet in the history, oldest first.
     pub(crate) inbox: VecDeque<Mail>,
+    /// What sub-agents told the user during the running task, which joins the history at its next
+    /// boundary (agent-messaging-design §17).
+    pub(crate) told: Vec<Told>,
     /// The last task was interrupted: reports wait for new input instead of starting a task.
     pub(crate) hold: bool,
     /// `Idle` was sent and nothing has started since.
@@ -129,6 +133,14 @@ pub(crate) struct SessionState {
     pub(crate) sub_agent_prompt: Option<Arc<str>>,
     /// A bot's session: which `bot.md` its prompt comes from (bot-turn-design §8).
     pub(crate) prompt_template: Option<String>,
+}
+
+/// What a sub-agent told the user, not yet in the history. The user has it: `id` is the message's
+/// in the event they got it by.
+pub(crate) struct Told {
+    id: String,
+    info: MailInfo,
+    message: Message,
 }
 
 /// A bot session's names.
@@ -169,6 +181,7 @@ impl SessionState {
             estimate_ratio: 1.0,
             turn_scan: crate::budget::TurnScan::default(),
             inbox: VecDeque::new(),
+            told: Vec::new(),
             hold: false,
             idle: false,
             title: None,
@@ -196,7 +209,7 @@ impl SessionState {
     pub(crate) fn input_id(&self) -> String {
         loop {
             let id = self.history.new_id();
-            if !self.steer.iter().chain(&self.follow_up).any(|input| input.id == id) {
+            if !self.steer.iter().chain(&self.follow_up).any(|input| input.id == id) && !self.told.iter().any(|told| told.id == id) {
                 return id;
             }
         }
@@ -438,10 +451,54 @@ impl Session {
         }
     }
 
-    /// Writes the waiting reports and messages into the history, oldest first. True when a
-    /// routine's is among them.
+    /// A sub-agent told the user something: they have it from now on, and no task starts for it.
+    /// The model reads it where it reads mail, never between a call and its result, so while a
+    /// task runs it joins the history at the next boundary (agent-messaging-design §17).
+    pub(crate) fn tell_user(&self, info: MailInfo, message: UserMessage) {
+        let mut guard = self.state.lock();
+        let state = &mut *guard;
+        let id = state.input_id();
+        let message = Message::from(message);
+        // Under the lock, so that it cannot overtake the start of a task it is written before.
+        self.emit(EventMsg::MessageCompleted {
+            message_id: id.clone(),
+            message: message.clone(),
+            mail: Some(info.clone()),
+            skills: Vec::new(),
+        });
+        let told = Told { id, info, message };
+        if state.active_task.is_none() {
+            self.write_told(state, told);
+        } else {
+            state.told.push(told);
+        }
+    }
+
+    fn write_told(&self, state: &mut SessionState, told: Told) {
+        let kind = EntryKind::AgentToUser {
+            mail: Box::new(told.info),
+            message: told.message,
+        };
+        let entry = state.history.append(told.id, kind, now_ms());
+        self.writer.append(entry);
+    }
+
+    /// What sub-agents told the user joins the history: at a boundary, or as a task ends.
+    pub(crate) fn write_all_told(&self, state: &mut SessionState) {
+        for told in std::mem::take(&mut state.told) {
+            self.write_told(state, told);
+        }
+    }
+
+    /// Writes what sub-agents told the user and the waiting reports and messages into the history,
+    /// oldest first. True when a routine's is among them.
     pub(crate) fn deliver_mail(&self) -> bool {
-        let mails: Vec<Mail> = self.state.lock().inbox.drain(..).collect();
+        let mails: Vec<Mail> = {
+            let mut guard = self.state.lock();
+            let state = &mut *guard;
+            self.write_all_told(state);
+            state.inbox.drain(..).collect()
+        };
         let routine = mails.iter().any(|mail| mail.info.kind == MailKind::Routine);
         for mail in mails {
             let message = Message::from(mail.message);
@@ -449,6 +506,8 @@ impl Session {
             let entry = self.record(match mail.info.kind {
                 MailKind::Report | MailKind::Routine => EntryKind::Mail { mail: info, message: message.clone() },
                 MailKind::Message => EntryKind::AgentMessage { mail: info, message: message.clone() },
+                // It never waits in the inbox: see `tell_user`.
+                MailKind::ToUser => EntryKind::AgentToUser { mail: info, message: message.clone() },
             });
             self.emit(EventMsg::MessageCompleted {
                 message_id: entry.id,
