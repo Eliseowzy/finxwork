@@ -2,6 +2,15 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "anyOf": [
     {
+      "$ref": "#/definitions/AiActionParams"
+    },
+    {
+      "$ref": "#/definitions/AiActionProgress"
+    },
+    {
+      "$ref": "#/definitions/AiActionResult"
+    },
+    {
       "$ref": "#/definitions/AuthDeleteParams"
     },
     {
@@ -144,6 +153,117 @@
     },
     {
       "$ref": "#/definitions/CredentialsSetParams"
+    },
+    {
+      "$ref": "#/definitions/DeckChangedParams"
+    },
+    {
+      "$ref": "#/definitions/DeckCheckParams"
+    },
+    {
+      "$ref": "#/definitions/DeckCheckResult"
+    },
+    {
+      "$ref": "#/definitions/DeckCopyParams"
+    },
+    {
+      "$ref": "#/definitions/DeckCopyResult"
+    },
+    {
+      "$ref": "#/definitions/DeckDiff"
+    },
+    {
+      "$ref": "#/definitions/DeckDiffParams"
+    },
+    {
+      "$ref": "#/definitions/DeckEditParams"
+    },
+    {
+      "$ref": "#/definitions/DeckEditResult"
+    },
+    {
+      "$ref": "#/definitions/DeckFindParams"
+    },
+    {
+      "$ref": "#/definitions/DeckFindResult"
+    },
+    {
+      "$ref": "#/definitions/DeckFocusParams"
+    },
+    {
+      "$ref": "#/definitions/DeckIdParams"
+    },
+    {
+      "$ref": "#/definitions/DeckLayoutsParams"
+    },
+    {
+      "$ref": "#/definitions/DeckLayoutsResult"
+    },
+    {
+      "$ref": "#/definitions/DeckLinksParams"
+    },
+    {
+      "$ref": "#/definitions/DeckLinksResult"
+    },
+    {
+      "$ref": "#/definitions/DeckOpenParams"
+    },
+    {
+      "$ref": "#/definitions/DeckOpenResult"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalDecideParams"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalEvent"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalIdParams"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalListParams"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalListResult"
+    },
+    {
+      "$ref": "#/definitions/DeckProposalResult"
+    },
+    {
+      "$ref": "#/definitions/DeckReadParams"
+    },
+    {
+      "$ref": "#/definitions/DeckReadResult"
+    },
+    {
+      "$ref": "#/definitions/DeckSaveParams"
+    },
+    {
+      "$ref": "#/definitions/DeckSaveResult"
+    },
+    {
+      "$ref": "#/definitions/DeckSummary"
+    },
+    {
+      "$ref": "#/definitions/DeckSyncNotice"
+    },
+    {
+      "$ref": "#/definitions/DeckSyncParams"
+    },
+    {
+      "$ref": "#/definitions/DeckSyncResult"
+    },
+    {
+      "$ref": "#/definitions/DeckTemplateProfileParams"
+    },
+    {
+      "$ref": "#/definitions/DeckViewParams"
+    },
+    {
+      "$ref": "#/definitions/DeckViewResult"
+    },
+    {
+      "$ref": "#/definitions/DiagnosticRule"
     },
     {
       "$ref": "#/definitions/DocApplyParams"
@@ -404,6 +524,9 @@
       "$ref": "#/definitions/SnapshotResult"
     },
     {
+      "$ref": "#/definitions/TemplateProfile"
+    },
+    {
       "$ref": "#/definitions/TranscriptPage"
     },
     {
@@ -606,6 +729,217 @@
         }
       ]
     },
+    "AiActionKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "rewrite",
+            "shorten",
+            "expand",
+            "bullets",
+            "translate",
+            "to_diagram",
+            "to_chart"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "美化: the slide's look, content unchanged.",
+          "enum": [
+            "beautify"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "对齐整理.",
+          "enum": [
+            "align"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "⌘K: `instruction` in natural language.",
+          "enum": [
+            "command"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "AiActionParams": {
+      "additionalProperties": false,
+      "description": "`ai/action`. Answers when the proposal is ready; `ai/action_progress` goes out meanwhile, and `$/cancel_request` stops it.",
+      "properties": {
+        "action": {
+          "$ref": "#/definitions/AiActionKind"
+        },
+        "action_id": {
+          "description": "Chosen by the client, to match the progress notifications.",
+          "type": "string"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "instruction": {
+          "description": "The user's own words: ⌘K, a custom rewrite, a saved instruction.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "language": {
+          "description": "`translate`: BCP 47 (`en`, `ja`, `zh-Hans`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replaces": {
+          "description": "\"再来一版\": supersedes this proposal.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection": {
+          "$ref": "#/definitions/DeckSelection"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "tone": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RewriteTone"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action",
+        "action_id",
+        "deck_id",
+        "selection",
+        "session_id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "AiActionProgress": {
+      "description": "`ai/action_progress`: to the connection that asked.",
+      "properties": {
+        "action_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "stage": {
+          "$ref": "#/definitions/AiActionStage"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckStoryTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The story the streamed text will replace."
+        },
+        "text_delta": {
+          "description": "Text the model wrote since the last notice, for the preview box to stream.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "action_id",
+        "session_id",
+        "stage"
+      ],
+      "type": "object"
+    },
+    "AiActionResult": {
+      "properties": {
+        "action_id": {
+          "type": "string"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckEditFailure"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "handoff": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/AiHandoff"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "proposal_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "description": "One line for the preview box.",
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "AiActionStage": {
+      "enum": [
+        "reading",
+        "writing",
+        "laying_out",
+        "checking"
+      ],
+      "type": "string"
+    },
+    "AiHandoff": {
+      "description": "An action too large for an instant answer, handed to the conversation (§5.2.9).",
+      "properties": {
+        "prompt": {
+          "description": "The message to start the conversation turn with, context included.",
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt",
+        "reason"
+      ],
+      "type": "object"
+    },
     "Anchor": {
       "description": "A position or a range in a document, as people and agents both refer to content (§4.2).",
       "oneOf": [
@@ -695,6 +1029,93 @@
         }
       ]
     },
+    "AnimationClass": {
+      "enum": [
+        "entrance",
+        "emphasis",
+        "exit"
+      ],
+      "type": "string"
+    },
+    "AnimationEffect": {
+      "description": "The effects FinxWork writes; the file's others are kept and listed by their preset id.",
+      "enum": [
+        "appear",
+        "fade",
+        "fly_in",
+        "wipe",
+        "zoom",
+        "float_in",
+        "split",
+        "pulse",
+        "spin",
+        "grow_shrink",
+        "teeter",
+        "disappear",
+        "fly_out",
+        "float_out"
+      ],
+      "type": "string"
+    },
+    "AnimationSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "delay_ms": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "direction": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MotionDirection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_ms": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "effect": {
+          "$ref": "#/definitions/AnimationEffect"
+        },
+        "order": {
+          "description": "Position in the slide's sequence, from 1; at the end when left out.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "trigger": {
+          "$ref": "#/definitions/AnimationTrigger"
+        }
+      },
+      "required": [
+        "effect",
+        "trigger"
+      ],
+      "type": "object"
+    },
+    "AnimationTrigger": {
+      "enum": [
+        "on_click",
+        "with_previous",
+        "after_previous"
+      ],
+      "type": "string"
+    },
     "ApprovalDecision": {
       "oneOf": [
         {
@@ -775,6 +1196,17 @@
           "type": "object"
         }
       ]
+    },
+    "ArrowHead": {
+      "enum": [
+        "none",
+        "triangle",
+        "stealth",
+        "diamond",
+        "oval",
+        "arrow"
+      ],
+      "type": "string"
     },
     "AssistantContent": {
       "oneOf": [
@@ -2006,6 +2438,114 @@
       ],
       "type": "object"
     },
+    "BulletSpec": {
+      "description": "A paragraph's list marker.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "No marker, even where the layout gives one (`a:buNone`).",
+          "properties": {
+            "kind": {
+              "enum": [
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The marker the layout or master gives this level.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "inherit"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "char": {
+              "description": "`•`, `–`, `▪`…",
+              "type": "string"
+            },
+            "color": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckColor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "font": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "char"
+              ],
+              "type": "string"
+            },
+            "size_ratio": {
+              "description": "Marker size relative to the text, 1.0 = the same.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "char",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "number"
+              ],
+              "type": "string"
+            },
+            "scheme": {
+              "$ref": "#/definitions/NumberScheme"
+            },
+            "start_at": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "scheme"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "CancelRequestParams": {
       "description": "Parameters of the `$/cancel_request` notification.",
       "properties": {
@@ -2017,6 +2557,31 @@
         "id"
       ],
       "type": "object"
+    },
+    "CandidateSource": {
+      "oneOf": [
+        {
+          "description": "A layout of the deck's own masters, its placeholders filled.",
+          "enum": [
+            "template"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A diagram template (cards, timeline, process…) drawn in the content area.",
+          "enum": [
+            "structure"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A table's numbers as a chart.",
+          "enum": [
+            "data"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "Capability": {
       "description": "What a document supports (§4.5); toolbars and tool descriptions follow it.",
@@ -2090,6 +2655,50 @@
         "tokens"
       ],
       "type": "object"
+    },
+    "CellBorder": {
+      "additionalProperties": false,
+      "properties": {
+        "line": {
+          "$ref": "#/definitions/LineSpec"
+        },
+        "side": {
+          "$ref": "#/definitions/CellBorderSide"
+        }
+      },
+      "required": [
+        "line",
+        "side"
+      ],
+      "type": "object"
+    },
+    "CellBorderSide": {
+      "oneOf": [
+        {
+          "enum": [
+            "top",
+            "bottom",
+            "left",
+            "right",
+            "inside_v"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Lines between the range's cells.",
+          "enum": [
+            "inside_h"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Every line of the range.",
+          "enum": [
+            "all"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "CellChange": {
       "description": "A cell an edit changed: before and after, as values and as shown.",
@@ -2225,6 +2834,91 @@
       },
       "type": "object"
     },
+    "CellPos": {
+      "additionalProperties": false,
+      "description": "A table cell, counted from 0.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "col",
+        "row"
+      ],
+      "type": "object"
+    },
+    "CellRange": {
+      "additionalProperties": false,
+      "description": "Cells `first_row..=last_row` × `first_col..=last_col`, counted from 0.",
+      "properties": {
+        "first_col": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "first_row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "last_col": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "last_row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first_col",
+        "first_row",
+        "last_col",
+        "last_row"
+      ],
+      "type": "object"
+    },
+    "CellText": {
+      "additionalProperties": false,
+      "description": "One cell's text, for filling a table quickly.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "expect": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "col",
+        "row",
+        "text"
+      ],
+      "type": "object"
+    },
     "CellValue": {
       "description": "A cell's value: what it holds, or what its formula gave.",
       "oneOf": [
@@ -2301,6 +2995,259 @@
             "value"
           ],
           "type": "object"
+        }
+      ]
+    },
+    "ChartData": {
+      "additionalProperties": false,
+      "description": "A chart's data, written to the chart part's cache and its embedded workbook.",
+      "properties": {
+        "categories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "number_format": {
+          "description": "Excel number format of the values (`#,##0.0`, `0%`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "series": {
+          "items": {
+            "$ref": "#/definitions/ChartSeries"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "categories",
+        "series"
+      ],
+      "type": "object"
+    },
+    "ChartGrouping": {
+      "enum": [
+        "clustered",
+        "stacked",
+        "percent_stacked"
+      ],
+      "type": "string"
+    },
+    "ChartInfo": {
+      "properties": {
+        "category_count": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "chart_type": {
+          "$ref": "#/definitions/ChartType"
+        },
+        "data": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChartData"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`detail: full`, or always for small charts (≤ 200 values)."
+        },
+        "series_count": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "category_count",
+        "chart_type",
+        "series_count"
+      ],
+      "type": "object"
+    },
+    "ChartSeries": {
+      "additionalProperties": false,
+      "properties": {
+        "chart_type": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChartType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Combo charts: this series drawn as another type."
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckColor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "secondary_axis": {
+          "type": "boolean"
+        },
+        "values": {
+          "description": "One per category; `null` is a gap.",
+          "items": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "type": "array"
+        },
+        "x_values": {
+          "description": "Scatter charts: the x of each value.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "values"
+      ],
+      "type": "object"
+    },
+    "ChartStyle": {
+      "additionalProperties": false,
+      "description": "A chart's look. Fields left out stay as they are; `title: null` removes the title.",
+      "properties": {
+        "chart_type": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChartType"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "data_labels": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DataLabels"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`null` hides the labels."
+        },
+        "gap_width_pct": {
+          "description": "Bar and column charts: the gap between categories, % of a bar's width.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "gridlines": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "grouping": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChartGrouping"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "legend": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LegendPosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "smooth": {
+          "description": "Line charts.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "x_axis_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "y_axis_title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ChartType": {
+      "oneOf": [
+        {
+          "enum": [
+            "line",
+            "pie",
+            "doughnut",
+            "area",
+            "scatter"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Vertical bars.",
+          "enum": [
+            "column"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Horizontal bars.",
+          "enum": [
+            "bar"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -3058,6 +4005,62 @@
       ],
       "type": "object"
     },
+    "ConnectorEnd": {
+      "description": "A connector's end: glued to a shape's connection site, or free.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "shape"
+              ],
+              "type": "string"
+            },
+            "shape_id": {
+              "type": "string"
+            },
+            "site": {
+              "description": "The preset's connection site index (rectangles: 0 top, 1 left, 2 bottom, 3 right).",
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "shape_id",
+            "site"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "point"
+              ],
+              "type": "string"
+            },
+            "x": {
+              "format": "double",
+              "type": "number"
+            },
+            "y": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y"
+          ],
+          "type": "object"
+        }
+      ]
+    },
     "ConnectorInstallParams": {
       "additionalProperties": false,
       "description": "Install a curated connector. No arbitrary download URLs or commands are accepted.",
@@ -3083,6 +4086,90 @@
       "required": [
         "server",
         "version"
+      ],
+      "type": "object"
+    },
+    "ConnectorKind": {
+      "enum": [
+        "straight",
+        "elbow",
+        "curved"
+      ],
+      "type": "string"
+    },
+    "ContentBlock": {
+      "additionalProperties": false,
+      "properties": {
+        "emphasis": {
+          "description": "The visual lead of the slide.",
+          "type": "boolean"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/ContentItem"
+          },
+          "type": "array"
+        },
+        "kind": {
+          "$ref": "#/definitions/ContentBlockKind"
+        },
+        "shape_ids": {
+          "description": "The shapes it came from; `image`, `table` and `chart` blocks move that shape.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ContentBlockKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "bullets",
+            "paragraph",
+            "image",
+            "table",
+            "chart",
+            "quote"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A key figure (KPI).",
+          "enum": [
+            "number"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ContentItem": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "description": "`number` blocks: the label under the figure (\"同比增长\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "level": {
+          "default": 0,
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
       ],
       "type": "object"
     },
@@ -3334,6 +4421,3698 @@
       ],
       "type": "string"
     },
+    "DataLabels": {
+      "additionalProperties": false,
+      "properties": {
+        "category": {
+          "type": "boolean"
+        },
+        "number_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "percent": {
+          "type": "boolean"
+        },
+        "series": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "DataLink": {
+      "description": "A link from slide content to a spreadsheet, stored in the deck (custom XML, kept by PowerPoint).",
+      "properties": {
+        "format": {
+          "description": "Excel number format used to show a linked number in text.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "link_id": {
+          "type": "string"
+        },
+        "refreshed_at": {
+          "description": "Unix milliseconds.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "snapshot": {
+          "description": "The values when linked or last refreshed, row by row, as shown.",
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/definitions/DataLinkSource"
+        },
+        "source_hash": {
+          "description": "Of the source cells' values at the snapshot.",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/definitions/DataLinkStatus"
+        },
+        "target": {
+          "$ref": "#/definitions/DataLinkTarget"
+        }
+      },
+      "required": [
+        "link_id",
+        "refreshed_at",
+        "slide_id",
+        "snapshot",
+        "source",
+        "source_hash",
+        "status",
+        "target"
+      ],
+      "type": "object"
+    },
+    "DataLinkSource": {
+      "additionalProperties": false,
+      "description": "Cells in a workbook, as the spreadsheet tools name them.",
+      "properties": {
+        "path": {
+          "description": "Relative to the deck's folder.",
+          "type": "string"
+        },
+        "range": {
+          "description": "`D15` or `B3:F9`.",
+          "type": "string"
+        },
+        "sheet": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "range",
+        "sheet"
+      ],
+      "type": "object"
+    },
+    "DataLinkStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "fresh"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The source's values differ from the snapshot: offer a refresh.",
+          "enum": [
+            "stale"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The file, sheet or range is gone.",
+          "enum": [
+            "missing"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Not checked yet.",
+          "enum": [
+            "unknown"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DataLinkTarget": {
+      "description": "What on the slide a data link feeds.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "The chart's data: the range is categories down the first column, series across.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "chart"
+              ],
+              "type": "string"
+            },
+            "shape_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "shape_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "table"
+              ],
+              "type": "string"
+            },
+            "shape_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "shape_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A number in text, `start`/`end` in the story when linked.",
+          "properties": {
+            "end": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            },
+            "shape_id": {
+              "type": "string"
+            },
+            "start": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "story_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "end",
+            "kind",
+            "shape_id",
+            "start"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DeckChangedParams": {
+      "description": "`deck/changed`: the deck's state, after any edit, undo, save or reload; to every connection that opened it.",
+      "properties": {
+        "conflict": {
+          "description": "The file changed on disk under unsaved edits: the editor offers to reload or keep.",
+          "type": "boolean"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "hash": {
+          "description": "After a save: the file's new hash.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "$ref": "#/definitions/DeckOrigin"
+        },
+        "slide_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "dirty",
+        "origin",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckCheckParams": {
+      "additionalProperties": false,
+      "properties": {
+        "ai": {
+          "description": "Also the model's checks (content, terms…): slower, and uses the network model.",
+          "type": "boolean"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "rules": {
+          "description": "Rule ids or categories (`layout`); empty: every rule-engine rule.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slides": {
+          "description": "Empty: every slide.",
+          "items": {
+            "$ref": "#/definitions/SlidePick"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckCheckResult": {
+      "properties": {
+        "diagnostics": {
+          "items": {
+            "$ref": "#/definitions/DeckDiagnostic"
+          },
+          "type": "array"
+        },
+        "rules": {
+          "description": "The rules that ran.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "diagnostics",
+        "rules",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckColor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "$ref": "#/definitions/ThemeColorRef"
+        }
+      ],
+      "description": "`\"#RRGGBB\"`, or a theme colour. Prefer theme colours: they follow a theme change."
+    },
+    "DeckCopyParams": {
+      "additionalProperties": false,
+      "description": "`deck/copy`: shapes, slides or text, for `paste` here or in another deck.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/definitions/ShapeRef"
+          },
+          "type": "array"
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/definitions/SlideRef"
+          },
+          "type": "array"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckTextTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckCopyResult": {
+      "properties": {
+        "clip": {
+          "description": "Opaque to clients, base64: the engine's clip with its media, fonts and theme.",
+          "type": "string"
+        },
+        "plain_text": {
+          "description": "For the system clipboard.",
+          "type": "string"
+        },
+        "png_base64": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "clip",
+        "plain_text"
+      ],
+      "type": "object"
+    },
+    "DeckDiagnostic": {
+      "description": "One problem a check found.",
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/DiagnosticCategory"
+        },
+        "checker": {
+          "$ref": "#/definitions/DiagnosticChecker"
+        },
+        "fix": {
+          "description": "Ops that fix it, to send to `deck/edit` as they are.",
+          "items": {
+            "$ref": "#/definitions/DeckOp"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "fix_label": {
+          "description": "The fix in a few words: \"统一为 24 磅\".",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Unique within one check, for \"fix this one\".",
+          "type": "string"
+        },
+        "index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "message": {
+          "description": "In the user's words.",
+          "type": "string"
+        },
+        "rule": {
+          "description": "A `DiagnosticRule` id, or a scene pack's.",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/definitions/DiagnosticSeverity"
+        },
+        "shape_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckTextTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "For text problems: where, with `expect`."
+        }
+      },
+      "required": [
+        "category",
+        "checker",
+        "id",
+        "index",
+        "message",
+        "rule",
+        "severity",
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckDiff": {
+      "properties": {
+        "left_path": {
+          "type": "string"
+        },
+        "pairs": {
+          "description": "In the right deck's order, deleted slides where they were.",
+          "items": {
+            "$ref": "#/definitions/SlidePair"
+          },
+          "type": "array"
+        },
+        "right_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "left_path",
+        "pairs",
+        "right_path"
+      ],
+      "type": "object"
+    },
+    "DeckDiffParams": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "$ref": "#/definitions/DeckDiffSide"
+        },
+        "right": {
+          "$ref": "#/definitions/DeckDiffSide"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "left",
+        "right",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckDiffSide": {
+      "additionalProperties": false,
+      "description": "One side of a comparison: an open deck, or a file.",
+      "properties": {
+        "deck_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "DeckEditFailure": {
+      "description": "Why a batch did not land. The deck is as it was at `version`.",
+      "properties": {
+        "actual": {
+          "description": "`content_mismatch`: what the target holds now (at most 512 characters).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "code": {
+          "$ref": "#/definitions/DeckEditFailureCode"
+        },
+        "conflicting_op_index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "latest": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckSummary"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`stale_version`: the deck now, so an agent can re-read without another call."
+        },
+        "message": {
+          "type": "string"
+        },
+        "op_index": {
+          "description": "The op, from 0, in `ops`.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "version": {
+          "description": "The deck's version now.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckEditFailureCode": {
+      "description": "The engine's refusal codes (`EditFailureCode`), snake_cased.",
+      "oneOf": [
+        {
+          "enum": [
+            "missing_target",
+            "invalid_step",
+            "limit_exceeded"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The deck changed since `version`: read again, then edit.",
+          "enum": [
+            "stale_version"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A `find` matched more than once, or a story was left out where a shape has several.",
+          "enum": [
+            "ambiguous_target"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`expect` or `expect_rect` differs from what is there.",
+          "enum": [
+            "content_mismatch"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Two ops write the same text or object.",
+          "enum": [
+            "overlapping_steps"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Not something FinxWork can do to this content (or this build); say so, or suggest PowerPoint.",
+          "enum": [
+            "unsupported"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DeckEditMode": {
+      "oneOf": [
+        {
+          "description": "One proposal, applied only when accepted (§6.4). The default for agents.",
+          "enum": [
+            "propose"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Applied now, as one undo step.",
+          "enum": [
+            "apply"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Checked against the deck; nothing is changed or proposed.",
+          "enum": [
+            "validate"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DeckEditParams": {
+      "additionalProperties": false,
+      "description": "`deck/edit`, and the `deck_edit` tool without `session_id`: a batch that lands whole or not at all.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/definitions/DeckEditMode",
+          "default": "propose"
+        },
+        "note": {
+          "description": "What the batch does, in the user's words (\"按 Q3 财报更新第 3–5 页的营收\").",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ops": {
+          "description": "At most 256.",
+          "items": {
+            "$ref": "#/definitions/DeckOp"
+          },
+          "type": "array"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "version": {
+          "description": "The version the targets were read at; behind, the batch fails with `stale_version`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "ops",
+        "session_id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckEditResult": {
+      "properties": {
+        "applied": {
+          "description": "`apply`: false when every op was a no-op.",
+          "type": "boolean"
+        },
+        "diagnostics": {
+          "description": "The deterministic check of the slides the batch touches, after it (§6.5).",
+          "items": {
+            "$ref": "#/definitions/DeckDiagnostic"
+          },
+          "type": "array"
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckEditFailure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present when the batch did not land; nothing else then changed."
+        },
+        "proposal_id": {
+          "description": "`propose`: the proposal made.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "refs": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "The ids the batch's `ref`s got.",
+          "type": "object"
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/definitions/SlideChangeSummary"
+          },
+          "type": "array"
+        },
+        "version": {
+          "description": "The deck's version after the batch; unchanged by `propose` and `validate`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slides",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckFindMatch": {
+      "description": "One hit. `slide_id`, `shape_id`, `story_id`, `start`, `end` and `text` (as `expect`) make a `DeckTextTarget`.",
+      "properties": {
+        "after": {
+          "type": "string"
+        },
+        "before": {
+          "description": "Up to 40 characters either side.",
+          "type": "string"
+        },
+        "end": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "in_notes": {
+          "description": "In the speaker notes.",
+          "type": "boolean"
+        },
+        "index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "shape_id": {
+          "type": "string"
+        },
+        "shape_name": {
+          "type": "string"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "story_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "after",
+        "before",
+        "end",
+        "index",
+        "shape_id",
+        "shape_name",
+        "slide_id",
+        "start",
+        "story_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "DeckFindParams": {
+      "additionalProperties": false,
+      "description": "`deck/find`: text or numbers, case folded unless `case_sensitive`.",
+      "properties": {
+        "case_sensitive": {
+          "type": "boolean"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "limit": {
+          "description": "Defaults to 100; at most 1,000.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "notes": {
+          "description": "Search the speaker notes too.",
+          "type": "boolean"
+        },
+        "query": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/definitions/SlidePick"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "deck_id",
+        "query",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckFindResult": {
+      "properties": {
+        "matches": {
+          "items": {
+            "$ref": "#/definitions/DeckFindMatch"
+          },
+          "type": "array"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "matches",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckFocusParams": {
+      "additionalProperties": false,
+      "description": "`deck/focus`: what the user is looking at, sent as it changes, for the short context block each message carries (§6.6) and for \"this slide\" in commands.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slide_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id",
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckIdParams": {
+      "additionalProperties": false,
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckLayoutsParams": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SlideContentTree"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The content, when the caller already has it; otherwise the kernel analyses the slide."
+        },
+        "count": {
+          "description": "3 when left out, at most 6.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slide": {
+          "$ref": "#/definitions/SlideRef"
+        },
+        "templates": {
+          "description": "Only these solver templates or families (`cards`, `timeline`).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "thumbnails": {
+          "default": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id",
+        "slide"
+      ],
+      "type": "object"
+    },
+    "DeckLayoutsResult": {
+      "properties": {
+        "candidates": {
+          "items": {
+            "$ref": "#/definitions/LayoutCandidate"
+          },
+          "type": "array"
+        },
+        "content": {
+          "$ref": "#/definitions/SlideContentTree"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidates",
+        "content",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckLinksParams": {
+      "additionalProperties": false,
+      "properties": {
+        "check": {
+          "description": "Read the sources now to set each link's status.",
+          "type": "boolean"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckLinksResult": {
+      "properties": {
+        "links": {
+          "items": {
+            "$ref": "#/definitions/DataLink"
+          },
+          "type": "array"
+        },
+        "refresh": {
+          "description": "With `check`: the ops that bring stale links up to date, for one `link_refresh` proposal.",
+          "items": {
+            "$ref": "#/definitions/DeckOp"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "links"
+      ],
+      "type": "object"
+    },
+    "DeckOp": {
+      "description": "One edit to a deck. People (toolbar, shortcuts) and agents use the same ops; a batch of them becomes one proposal or one undo step (§6.3).",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "$ref": "#/definitions/TextEdge",
+              "default": "end",
+              "description": "Which end of the target."
+            },
+            "op": {
+              "enum": [
+                "insert_text"
+              ],
+              "type": "string"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RunStyle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "target",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`\\n` starts a new paragraph that takes the formatting of the one it splits.",
+          "properties": {
+            "op": {
+              "enum": [
+                "replace_text"
+              ],
+              "type": "string"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/RunStyle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "target",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "delete_text"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            }
+          },
+          "required": [
+            "op",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "format_text"
+              ],
+              "type": "string"
+            },
+            "style": {
+              "$ref": "#/definitions/RunStyle"
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            }
+          },
+          "required": [
+            "op",
+            "style",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "清除格式: runs go back to what the paragraph, shape and layout give them.",
+          "properties": {
+            "op": {
+              "enum": [
+                "clear_text_format"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            }
+          },
+          "required": [
+            "op",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Replaces a story's paragraphs (rewrites, outline edits). `expect` is the story's whole text now.",
+          "properties": {
+            "expect": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_paragraphs"
+              ],
+              "type": "string"
+            },
+            "paragraphs": {
+              "items": {
+                "$ref": "#/definitions/ParagraphSpec"
+              },
+              "type": "array"
+            },
+            "target": {
+              "$ref": "#/definitions/DeckStoryTarget"
+            }
+          },
+          "required": [
+            "op",
+            "paragraphs",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Every paragraph the target touches.",
+          "properties": {
+            "op": {
+              "enum": [
+                "set_paragraph_props"
+              ],
+              "type": "string"
+            },
+            "props": {
+              "$ref": "#/definitions/ParagraphProps"
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            }
+          },
+          "required": [
+            "op",
+            "props",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "anchor": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextAnchor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "autofit": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextAutofit"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "column_gap_pt": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "columns": {
+              "format": "uint8",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "direction": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextDirection"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "insets_pt": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextInsets"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_text_body"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            },
+            "wrap": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "link": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/HyperlinkTarget"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`null` removes the link."
+            },
+            "op": {
+              "enum": [
+                "set_hyperlink"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ShapeRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "text": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckTextTarget"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "A link on text; or, instead, `shape`: a click on the whole shape."
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Replaces the speaker notes; empty text clears them.",
+          "properties": {
+            "expect": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_notes"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op",
+            "slide",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A preset shape (`rect`, `roundRect`, `ellipse`, `rightArrow`, `chevron`… the `a:prstGeom` names).",
+          "properties": {
+            "fill": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FillSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "line": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LineSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "add_shape"
+              ],
+              "type": "string"
+            },
+            "paragraphs": {
+              "items": {
+                "$ref": "#/definitions/ParagraphSpec"
+              },
+              "type": "array"
+            },
+            "preset": {
+              "type": "string"
+            },
+            "rect": {
+              "$ref": "#/definitions/DeckRect"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "preset",
+            "rect",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "autofit": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextAutofit"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "add_text_box"
+              ],
+              "type": "string"
+            },
+            "paragraphs": {
+              "items": {
+                "$ref": "#/definitions/ParagraphSpec"
+              },
+              "type": "array"
+            },
+            "rect": {
+              "$ref": "#/definitions/DeckRect"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "paragraphs",
+            "rect",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "alt_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "add_picture"
+              ],
+              "type": "string"
+            },
+            "rect": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckRect"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Left out: the image's own size, centred."
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            },
+            "source": {
+              "$ref": "#/definitions/PictureSource"
+            }
+          },
+          "required": [
+            "op",
+            "slide",
+            "source"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cells": {
+              "description": "Row by row; may be shorter than the table.",
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "cols": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "flags": {
+              "$ref": "#/definitions/TableStyleFlags",
+              "default": {}
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "add_table"
+              ],
+              "type": "string"
+            },
+            "rect": {
+              "$ref": "#/definitions/DeckRect"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rows": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            },
+            "style_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "cols",
+            "op",
+            "rect",
+            "rows",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "chart_type": {
+              "$ref": "#/definitions/ChartType"
+            },
+            "data": {
+              "$ref": "#/definitions/ChartData"
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "add_chart"
+              ],
+              "type": "string"
+            },
+            "rect": {
+              "$ref": "#/definitions/DeckRect"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            },
+            "style": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ChartStyle"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "chart_type",
+            "data",
+            "op",
+            "rect",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "end": {
+              "$ref": "#/definitions/ConnectorEnd"
+            },
+            "kind": {
+              "$ref": "#/definitions/ConnectorKind"
+            },
+            "line": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LineSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "op": {
+              "enum": [
+                "add_connector"
+              ],
+              "type": "string"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            },
+            "start": {
+              "$ref": "#/definitions/ConnectorEnd"
+            }
+          },
+          "required": [
+            "end",
+            "kind",
+            "op",
+            "slide",
+            "start"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Copies of shapes, on their slide or another, `offset` from the originals. The refs, when given, name the copies in order.",
+          "properties": {
+            "offset": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckPoint"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "op": {
+              "enum": [
+                "duplicate_shapes"
+              ],
+              "type": "string"
+            },
+            "refs": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "shapes": {
+              "items": {
+                "$ref": "#/definitions/ShapeRef"
+              },
+              "type": "array"
+            },
+            "to_slide": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SlideRef"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "shapes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "delete_shapes"
+              ],
+              "type": "string"
+            },
+            "shapes": {
+              "items": {
+                "$ref": "#/definitions/ShapeRef"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op",
+            "shapes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Position, size, rotation and flips of one shape. Aligning and distributing several shapes is one `transform` each.",
+          "properties": {
+            "expect_rect": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckRect"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The rectangle the shape has now; `content_mismatch` when it moved."
+            },
+            "flip_h": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "flip_v": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "transform"
+              ],
+              "type": "string"
+            },
+            "rect": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckRect"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rotation_deg": {
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fill": {
+              "$ref": "#/definitions/FillSpec"
+            },
+            "op": {
+              "enum": [
+                "set_fill"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "fill",
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "line": {
+              "$ref": "#/definitions/LineSpec"
+            },
+            "op": {
+              "enum": [
+                "set_line"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "line",
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`null` removes the shadow.",
+          "properties": {
+            "op": {
+              "enum": [
+                "set_effects"
+              ],
+              "type": "string"
+            },
+            "shadow": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/ShadowSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Another preset, and/or its adjust handles (`adj`, `adj1`…).",
+          "properties": {
+            "adjust": {
+              "additionalProperties": {
+                "format": "double",
+                "type": "number"
+              },
+              "type": "object"
+            },
+            "op": {
+              "enum": [
+                "set_geometry"
+              ],
+              "type": "string"
+            },
+            "preset": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "What the selection pane shows: name, alternative text, hidden, locked aspect ratio.",
+          "properties": {
+            "alt_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "decorative": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "hidden": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "lock_aspect": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_shape_props"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Shapes of one slide into a group.",
+          "properties": {
+            "name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "group"
+              ],
+              "type": "string"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "shapes": {
+              "items": {
+                "$ref": "#/definitions/ShapeRef"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op",
+            "shapes"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "ungroup"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "z_order"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            },
+            "to": {
+              "$ref": "#/definitions/ZOrder"
+            }
+          },
+          "required": [
+            "op",
+            "shape",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Text (or a picture) into a placeholder of the slide's layout, making the placeholder shape when the slide has none yet. `ref` names that shape.",
+          "properties": {
+            "op": {
+              "enum": [
+                "fill_placeholder"
+              ],
+              "type": "string"
+            },
+            "paragraphs": {
+              "items": {
+                "$ref": "#/definitions/ParagraphSpec"
+              },
+              "type": "array"
+            },
+            "picture": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/PictureSource"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "placeholder": {
+              "$ref": "#/definitions/PlaceholderRef"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "placeholder",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "重置: placeholders back to the layout's position, size and formatting.",
+          "properties": {
+            "op": {
+              "enum": [
+                "reset_slide"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "edit": {
+              "$ref": "#/definitions/TableEdit"
+            },
+            "op": {
+              "enum": [
+                "table_edit"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "edit",
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "data": {
+              "$ref": "#/definitions/ChartData"
+            },
+            "op": {
+              "enum": [
+                "chart_data"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "data",
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "chart_style"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            },
+            "style": {
+              "$ref": "#/definitions/ChartStyle"
+            }
+          },
+          "required": [
+            "op",
+            "shape",
+            "style"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "layout": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/LayoutRef"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The layout of the slide before it when left out."
+            },
+            "op": {
+              "enum": [
+                "insert_slide"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/definitions/SlidePosition"
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "op",
+            "position"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "duplicate_slide"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/SlidePosition"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Right after the original when left out."
+            },
+            "ref": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "delete_slide"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "enum": [
+                "move_slide"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/definitions/SlidePosition"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "position",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Placeholders move to the new layout's by type; `mapping` overrides that.",
+          "properties": {
+            "layout": {
+              "$ref": "#/definitions/LayoutRef"
+            },
+            "mapping": {
+              "items": {
+                "$ref": "#/definitions/PlaceholderMove"
+              },
+              "type": "array"
+            },
+            "op": {
+              "enum": [
+                "set_layout"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "layout",
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`null` follows the layout again.",
+          "properties": {
+            "fill": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FillSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_background"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hidden": {
+              "type": "boolean"
+            },
+            "op": {
+              "enum": [
+                "set_slide_hidden"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "hidden",
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "advance_after_ms": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "advance_on_click": {
+              "default": true,
+              "type": "boolean"
+            },
+            "direction": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/MotionDirection"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "duration_ms": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "kind": {
+              "$ref": "#/definitions/TransitionKind"
+            },
+            "op": {
+              "enum": [
+                "set_transition"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            }
+          },
+          "required": [
+            "kind",
+            "op",
+            "slide"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "The shape's animation of `class`; `animation: null` removes it.",
+          "properties": {
+            "animation": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/AnimationSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "class": {
+              "$ref": "#/definitions/AnimationClass"
+            },
+            "op": {
+              "enum": [
+                "set_animation"
+              ],
+              "type": "string"
+            },
+            "shape": {
+              "$ref": "#/definitions/ShapeRef"
+            }
+          },
+          "required": [
+            "class",
+            "op",
+            "shape"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "colors": {
+              "$ref": "#/definitions/ThemeColors"
+            },
+            "op": {
+              "enum": [
+                "set_theme_colors"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "colors",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "fonts": {
+              "$ref": "#/definitions/ThemeFonts"
+            },
+            "op": {
+              "enum": [
+                "set_theme_fonts"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "fonts",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "height_pt": {
+              "format": "double",
+              "type": "number"
+            },
+            "op": {
+              "enum": [
+                "set_slide_size"
+              ],
+              "type": "string"
+            },
+            "resize": {
+              "$ref": "#/definitions/SlideResize",
+              "default": "keep"
+            },
+            "width_pt": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "height_pt",
+            "op",
+            "width_pt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Replaces the section list, in deck order; empty removes the sections. Moving a section is `move_slide` ops, then this.",
+          "properties": {
+            "op": {
+              "enum": [
+                "set_sections"
+              ],
+              "type": "string"
+            },
+            "sections": {
+              "items": {
+                "$ref": "#/definitions/SectionSpec"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op",
+            "sections"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "页眉页脚. Fields left out stay; `slides` empty is every slide.",
+          "properties": {
+            "date": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FooterDate"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "footer": {
+              "description": "`null` hides the footer.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "hide_on_title": {
+              "description": "标题幻灯片中不显示.",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_header_footer"
+              ],
+              "type": "string"
+            },
+            "slide_number": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "slides": {
+              "items": {
+                "$ref": "#/definitions/SlideRef"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Content `deck/copy` gave, from this deck or another.",
+          "properties": {
+            "at": {
+              "$ref": "#/definitions/PasteAt"
+            },
+            "clip": {
+              "type": "string"
+            },
+            "mode": {
+              "$ref": "#/definitions/PasteMode"
+            },
+            "op": {
+              "enum": [
+                "paste"
+              ],
+              "type": "string"
+            },
+            "refs": {
+              "description": "Names the pasted shapes or slides, in order.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "at",
+            "clip",
+            "mode",
+            "op"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Links content to a workbook; `link_id` given replaces that link.",
+          "properties": {
+            "format": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "link_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "op": {
+              "enum": [
+                "set_data_link"
+              ],
+              "type": "string"
+            },
+            "slide": {
+              "$ref": "#/definitions/SlideRef"
+            },
+            "source": {
+              "$ref": "#/definitions/DataLinkSource"
+            },
+            "target": {
+              "$ref": "#/definitions/DataLinkTarget"
+            }
+          },
+          "required": [
+            "op",
+            "slide",
+            "source",
+            "target"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "link_id": {
+              "type": "string"
+            },
+            "op": {
+              "enum": [
+                "remove_data_link"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "link_id",
+            "op"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DeckOpenParams": {
+      "additionalProperties": false,
+      "description": "`deck/open`. Progress goes out as `pptx/readProgress`.",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "progress_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "replica": {
+          "default": false,
+          "description": "The caller joins as a Yrs replica (the editor): the result carries the state.",
+          "type": "boolean"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckOpenResult": {
+      "properties": {
+        "contract_version": {
+          "description": "`DECK_CONTRACT_VERSION` of the kernel.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "deck_id": {
+          "description": "From the file's canonical path: the same in every session.",
+          "type": "string"
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "engine": {
+          "description": "The engine build (`betteroffice 0.5.1+finx.3`): a replica built from another is refused.",
+          "type": "string"
+        },
+        "font_families": {
+          "description": "Explicit font families in the package, plus the host's Latin and CJK fallbacks.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "hash": {
+          "description": "SHA-256 of the file as read.",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "state": {
+          "description": "Replicas: the whole Yrs document as one v1 update, base64.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "summary": {
+          "$ref": "#/definitions/DeckSummary"
+        },
+        "supported_ops": {
+          "description": "The `op`s this kernel and engine carry out; others are `unsupported`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        },
+        "writable": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "contract_version",
+        "deck_id",
+        "dirty",
+        "engine",
+        "font_families",
+        "hash",
+        "path",
+        "summary",
+        "supported_ops",
+        "version",
+        "writable"
+      ],
+      "type": "object"
+    },
+    "DeckOrigin": {
+      "description": "Who made a change.",
+      "oneOf": [
+        {
+          "enum": [
+            "agent"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Someone in an editor (this replica or another).",
+          "enum": [
+            "human"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The kernel itself: reload, recovery, data-link refresh.",
+          "enum": [
+            "system"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DeckPoint": {
+      "additionalProperties": false,
+      "description": "A point on a slide, in points from its top left.",
+      "properties": {
+        "x": {
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "DeckProposalDecideParams": {
+      "additionalProperties": false,
+      "description": "`deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The rest stays pending as `remaining_id`.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "force": {
+          "description": "Accept although targets changed (stale).",
+          "type": "boolean"
+        },
+        "proposal_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slide_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "deck_id",
+        "proposal_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckProposalEvent": {
+      "description": "`deck/proposal`: to every connection that opened the deck.",
+      "properties": {
+        "change": {
+          "$ref": "#/definitions/ProposalChange"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "proposal": {
+          "$ref": "#/definitions/DeckProposalInfo"
+        }
+      },
+      "required": [
+        "change",
+        "deck_id",
+        "proposal"
+      ],
+      "type": "object"
+    },
+    "DeckProposalIdParams": {
+      "additionalProperties": false,
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "proposal_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "proposal_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckProposalInfo": {
+      "properties": {
+        "accepted_slides": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "base_version": {
+          "description": "The deck version it was made against.",
+          "type": "string"
+        },
+        "created_at": {
+          "description": "Unix milliseconds.",
+          "format": "int64",
+          "type": "integer"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "engine_edits": {
+          "description": "The engine's edits for the same change, JSON, for a replica to preview it on the canvas with its own engine. Opaque to clients; tied to `DeckOpenResult.engine`.",
+          "type": "string"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ops": {
+          "items": {
+            "$ref": "#/definitions/DeckOp"
+          },
+          "type": "array"
+        },
+        "origin": {
+          "$ref": "#/definitions/ProposalOrigin"
+        },
+        "proposal_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "description": "The session whose agent or action made it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/definitions/SlideChangeSummary"
+          },
+          "type": "array"
+        },
+        "source": {
+          "$ref": "#/definitions/ProposalSource"
+        },
+        "stale_slides": {
+          "description": "Slides whose targets changed under it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/definitions/ProposalStatus"
+        }
+      },
+      "required": [
+        "base_version",
+        "created_at",
+        "deck_id",
+        "engine_edits",
+        "ops",
+        "origin",
+        "proposal_id",
+        "slides",
+        "source",
+        "status"
+      ],
+      "type": "object"
+    },
+    "DeckProposalListParams": {
+      "additionalProperties": false,
+      "properties": {
+        "closed": {
+          "description": "Accepted, rejected and reverted ones too: the AI ledger.",
+          "type": "boolean"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckProposalListResult": {
+      "properties": {
+        "proposals": {
+          "items": {
+            "$ref": "#/definitions/DeckProposalInfo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "proposals"
+      ],
+      "type": "object"
+    },
+    "DeckProposalResult": {
+      "properties": {
+        "proposal": {
+          "$ref": "#/definitions/DeckProposalInfo"
+        },
+        "remaining_id": {
+          "description": "The part not accepted or rejected, still pending.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "proposal",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckReadParams": {
+      "additionalProperties": false,
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "detail": {
+          "$ref": "#/definitions/ReadDetail",
+          "default": "brief"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slides": {
+          "description": "Empty: every slide, at most 30 a call.",
+          "items": {
+            "$ref": "#/definitions/SlidePick"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckReadResult": {
+      "properties": {
+        "more": {
+          "description": "Slides asked for but left out to stay in the limit: read them next.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "slides": {
+          "items": {
+            "$ref": "#/definitions/DeckSlideRead"
+          },
+          "type": "array"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slides",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckRect": {
+      "additionalProperties": false,
+      "description": "A rectangle on a slide, in points from its top left.",
+      "properties": {
+        "height": {
+          "format": "double",
+          "type": "number"
+        },
+        "width": {
+          "format": "double",
+          "type": "number"
+        },
+        "x": {
+          "format": "double",
+          "type": "number"
+        },
+        "y": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "height",
+        "width",
+        "x",
+        "y"
+      ],
+      "type": "object"
+    },
+    "DeckSaveParams": {
+      "additionalProperties": false,
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "force": {
+          "description": "Write over a file that changed on disk since it was read.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Save as: another file.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckSaveResult": {
+      "properties": {
+        "hash": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hash",
+        "path",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckSelection": {
+      "additionalProperties": false,
+      "description": "What the user has selected, for `ai/action` and `deck/focus`.",
+      "properties": {
+        "shape_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckTextTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Selected text, when the caret is in a text box."
+        }
+      },
+      "required": [
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckShapeKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "shape",
+            "text_box",
+            "picture",
+            "table",
+            "chart",
+            "group",
+            "connector"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "SmartArt, video, OLE and the like: kept, not edited.",
+          "enum": [
+            "other"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DeckSlideRead": {
+      "properties": {
+        "hidden": {
+          "type": "boolean"
+        },
+        "index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "layout_id": {
+          "type": "string"
+        },
+        "layout_name": {
+          "type": "string"
+        },
+        "markdown": {
+          "description": "The slide as Markdown, a block per object headed with its shape id (`<!-- s12 -->`).",
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "shapes": {
+          "items": {
+            "$ref": "#/definitions/ShapeInfo"
+          },
+          "type": "array"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "transition": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TransitionKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "layout_id",
+        "layout_name",
+        "markdown",
+        "shapes",
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckStoryTarget": {
+      "additionalProperties": false,
+      "description": "A whole text story: a shape's text body, or one table cell's.",
+      "properties": {
+        "shape_id": {
+          "type": "string"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "story_id": {
+          "description": "Required for a table (a story per cell); a shape with one story may leave it out.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "shape_id",
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckSummary": {
+      "description": "The structure summary `deck_open` gives (§7): at most about 2,000 tokens.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "layouts": {
+          "items": {
+            "$ref": "#/definitions/LayoutInfo"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        },
+        "pending_proposals": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sections": {
+          "items": {
+            "$ref": "#/definitions/SectionInfo"
+          },
+          "type": "array"
+        },
+        "size": {
+          "$ref": "#/definitions/SlideSize"
+        },
+        "slide_count": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "slides": {
+          "description": "Every slide, unless `truncated`: then the first and last ones, and `deck/read` for the rest.",
+          "items": {
+            "$ref": "#/definitions/SlideLine"
+          },
+          "type": "array"
+        },
+        "stale_links": {
+          "description": "Data links whose source changed (§5.2.5).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "theme": {
+          "$ref": "#/definitions/ThemeInfo"
+        },
+        "truncated": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "layouts",
+        "path",
+        "size",
+        "slide_count",
+        "slides",
+        "theme",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckSyncNotice": {
+      "description": "`deck/sync` from the kernel: edits made elsewhere, for every replica of the deck but the one that made them.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/definitions/DeckOrigin"
+        },
+        "proposal_id": {
+          "description": "The accepted proposal the update comes from.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "update": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "origin",
+        "update",
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckSyncParams": {
+      "additionalProperties": false,
+      "description": "`deck/sync` from a replica: its local edits, and what it lacks.",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "state_vector": {
+          "description": "The replica's state vector, base64: the result then carries what it lacks.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "update": {
+          "description": "A Yrs v1 update, base64; empty to only ask.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckSyncResult": {
+      "properties": {
+        "update": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version"
+      ],
+      "type": "object"
+    },
+    "DeckTemplateProfileParams": {
+      "additionalProperties": false,
+      "description": "`deck/template_profile`: of an open deck, or of a template file.",
+      "properties": {
+        "deck_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "A .pptx or .potx file, instead of `deck_id`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "thumbnails": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckTextTarget": {
+      "additionalProperties": false,
+      "description": "Text inside a story: `start`/`end`, or the one occurrence of `find`, or (neither) all of it. `expect` is the text there now; when it differs the batch fails with `content_mismatch` (PD-03). A `find` target expects its own text.",
+      "properties": {
+        "end": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "expect": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find": {
+          "description": "Exact, case-sensitive, within one paragraph; more than one occurrence is `ambiguous_target`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shape_id": {
+          "type": "string"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "start": {
+          "description": "UTF-16 offsets in the story; both or neither.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "story_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "shape_id",
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckViewParams": {
+      "additionalProperties": false,
+      "description": "`deck/view`: a slide rasterized on this machine (§6.5).",
+      "properties": {
+        "compare": {
+          "description": "With `proposal_id`: before and after, side by side in one image.",
+          "type": "boolean"
+        },
+        "deck_id": {
+          "type": "string"
+        },
+        "highlight": {
+          "description": "Outlined in the image.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "proposal_id": {
+          "description": "The slide as this proposal would leave it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "region": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckRect"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Only this part of the slide."
+        },
+        "session_id": {
+          "type": "string"
+        },
+        "slide": {
+          "$ref": "#/definitions/SlidePick"
+        },
+        "width_px": {
+          "description": "Pixels across the whole slide; 1280 when left out, at most 2560.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "deck_id",
+        "session_id",
+        "slide"
+      ],
+      "type": "object"
+    },
+    "DeckViewResult": {
+      "properties": {
+        "height_px": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "png_base64": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "width_px": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "height_px",
+        "png_base64",
+        "version",
+        "width_px"
+      ],
+      "type": "object"
+    },
     "Delta": {
       "oneOf": [
         {
@@ -3462,6 +8241,153 @@
           "type": "string"
         }
       ]
+    },
+    "DiagnosticCategory": {
+      "enum": [
+        "layout",
+        "consistency",
+        "content",
+        "data",
+        "accessibility",
+        "file"
+      ],
+      "type": "string"
+    },
+    "DiagnosticChecker": {
+      "description": "Who finds a problem: the rule engine (milliseconds, always run) or a model (on request).",
+      "enum": [
+        "rule",
+        "ai"
+      ],
+      "type": "string"
+    },
+    "DiagnosticRule": {
+      "description": "The built-in checks (§5.2.3). `DeckDiagnostic.rule` is one of these, or a scene pack's own (`pack.<pack>.<rule>`).",
+      "enum": [
+        "layout.text_overflow",
+        "layout.off_slide",
+        "layout.safe_area",
+        "layout.overlap",
+        "layout.near_alignment",
+        "layout.title_drift",
+        "layout.empty_placeholder",
+        "layout.too_dense",
+        "layout.weak_hierarchy",
+        "consistency.font_count",
+        "consistency.off_theme_color",
+        "consistency.title_size",
+        "consistency.bullet_mix",
+        "consistency.footer_missing",
+        "consistency.slide_number_gap",
+        "consistency.terms",
+        "consistency.units",
+        "content.typo",
+        "content.grammar",
+        "content.punctuation_width",
+        "content.cjk_latin_spacing",
+        "content.number_mismatch",
+        "content.claim_conflict",
+        "data.link_stale",
+        "data.no_source",
+        "a11y.contrast",
+        "a11y.alt_text",
+        "a11y.small_text",
+        "file.image_resolution",
+        "file.image_size",
+        "file.missing_font"
+      ],
+      "type": "string"
+    },
+    "DiagnosticSeverity": {
+      "enum": [
+        "error",
+        "warning",
+        "info"
+      ],
+      "type": "string"
+    },
+    "DiffChange": {
+      "properties": {
+        "after": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/definitions/DiffChangeKind"
+        },
+        "left_shape_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "right_shape_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "type": "object"
+    },
+    "DiffChangeKind": {
+      "oneOf": [
+        {
+          "enum": [
+            "text",
+            "shape_added",
+            "shape_removed",
+            "shape_moved",
+            "style",
+            "layout",
+            "notes",
+            "chart_data",
+            "table"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Text whose numbers changed: listed apart, they matter most.",
+          "enum": [
+            "number"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DiffSlide": {
+      "properties": {
+        "index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "slide_id"
+      ],
+      "type": "object"
     },
     "DocApplyParams": {
       "properties": {
@@ -5857,6 +10783,198 @@
         }
       ]
     },
+    "FillSpec": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "No fill (`a:noFill`).",
+          "properties": {
+            "kind": {
+              "enum": [
+                "none"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "alpha": {
+              "description": "Opacity, 1 = opaque.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "color": {
+              "$ref": "#/definitions/DeckColor"
+            },
+            "kind": {
+              "enum": [
+                "solid"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "color",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "angle_deg": {
+              "description": "Linear gradients only.",
+              "format": "double",
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "gradient"
+              ],
+              "type": "string"
+            },
+            "radial": {
+              "type": "boolean"
+            },
+            "stops": {
+              "items": {
+                "$ref": "#/definitions/GradientStop"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "kind",
+            "stops"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "picture"
+              ],
+              "type": "string"
+            },
+            "mode": {
+              "$ref": "#/definitions/PictureFillMode"
+            },
+            "source": {
+              "$ref": "#/definitions/PictureSource"
+            }
+          },
+          "required": [
+            "kind",
+            "mode",
+            "source"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FooterDate": {
+      "description": "The date in the footer.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "hidden"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "fixed"
+              ],
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Updated when the deck is opened; `format` is the field type (`datetime1`, `datetime13`…).",
+          "properties": {
+            "format": {
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "auto"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "format",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "FooterRule": {
+      "description": "Which footer parts the template shows, and where.",
+      "properties": {
+        "date": {
+          "type": "boolean"
+        },
+        "footer": {
+          "type": "boolean"
+        },
+        "footer_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hide_on_title": {
+          "type": "boolean"
+        },
+        "slide_number": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "date",
+        "footer",
+        "hide_on_title",
+        "slide_number"
+      ],
+      "type": "object"
+    },
     "FoundCell": {
       "description": "A cell found or traced, as the grid lists it and the agent reads it.",
       "properties": {
@@ -5903,6 +11021,24 @@
       ],
       "type": "object"
     },
+    "GradientStop": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "$ref": "#/definitions/DeckColor"
+        },
+        "position": {
+          "description": "0–1 along the gradient.",
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "color",
+        "position"
+      ],
+      "type": "object"
+    },
     "GrantAuthority": {
       "oneOf": [
         {
@@ -5918,6 +11054,115 @@
             "act"
           ],
           "type": "string"
+        }
+      ]
+    },
+    "HyperlinkTarget": {
+      "description": "Where a link goes.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "url"
+              ],
+              "type": "string"
+            },
+            "tooltip": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "url": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "url"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "slide"
+              ],
+              "type": "string"
+            },
+            "slide_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "slide_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "next_slide"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "previous_slide"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "first_slide"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "last_slide"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
         }
       ]
     },
@@ -6034,6 +11279,13 @@
       ],
       "type": "object"
     },
+    "InsertSide": {
+      "enum": [
+        "before",
+        "after"
+      ],
+      "type": "string"
+    },
     "LastMessage": {
       "description": "The last message of a bot's conversation, for its row in the list.",
       "properties": {
@@ -6067,6 +11319,289 @@
         "text",
         "ts"
       ],
+      "type": "object"
+    },
+    "LayoutCandidate": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "description": "In the user's words: \"三卡片\".",
+          "type": "string"
+        },
+        "layout_id": {
+          "description": "The deck layout it uses.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ops": {
+          "description": "Applies it: send to `deck/edit` as they are.",
+          "items": {
+            "$ref": "#/definitions/DeckOp"
+          },
+          "type": "array"
+        },
+        "score": {
+          "description": "0–1, best first.",
+          "format": "double",
+          "type": "number"
+        },
+        "score_parts": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LayoutScore"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "$ref": "#/definitions/CandidateSource"
+        },
+        "template": {
+          "description": "The solver template (`cards.3`, `timeline.h`, `layout:twoObj`).",
+          "type": "string"
+        },
+        "thumbnail_png_base64": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "ops",
+        "score",
+        "source",
+        "template"
+      ],
+      "type": "object"
+    },
+    "LayoutInfo": {
+      "properties": {
+        "layout_id": {
+          "type": "string"
+        },
+        "layout_type": {
+          "description": "`p:sldLayout/@type` as written (`title`, `obj`, `twoObj`…).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "master_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "placeholders": {
+          "items": {
+            "$ref": "#/definitions/PlaceholderInfo"
+          },
+          "type": "array"
+        },
+        "tag": {
+          "$ref": "#/definitions/LayoutTag"
+        },
+        "used_by": {
+          "description": "Slides using it.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "layout_id",
+        "master_id",
+        "name",
+        "placeholders",
+        "tag",
+        "used_by"
+      ],
+      "type": "object"
+    },
+    "LayoutRef": {
+      "additionalProperties": false,
+      "description": "A slide layout: its part path in the package (`ppt/slideLayouts/slideLayout2.xml`), as `DeckSummary.layouts` and `TemplateProfile` list them.",
+      "properties": {
+        "layout_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layout_id"
+      ],
+      "type": "object"
+    },
+    "LayoutScore": {
+      "description": "How the solver scored a candidate, each 0–1.",
+      "properties": {
+        "alignment": {
+          "format": "double",
+          "type": "number"
+        },
+        "consistency": {
+          "format": "double",
+          "type": "number"
+        },
+        "fill": {
+          "format": "double",
+          "type": "number"
+        },
+        "focus": {
+          "format": "double",
+          "type": "number"
+        },
+        "hierarchy": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "alignment",
+        "consistency",
+        "fill",
+        "focus",
+        "hierarchy"
+      ],
+      "type": "object"
+    },
+    "LayoutTag": {
+      "description": "What a layout is for, from its type or, for templates that name layouts loosely, its placeholders (§6.8).",
+      "enum": [
+        "title",
+        "section",
+        "title_content",
+        "two_content",
+        "comparison",
+        "title_only",
+        "blank",
+        "picture_caption",
+        "content_caption",
+        "other"
+      ],
+      "type": "string"
+    },
+    "LegendPosition": {
+      "enum": [
+        "none",
+        "top",
+        "bottom",
+        "left",
+        "right"
+      ],
+      "type": "string"
+    },
+    "LineDash": {
+      "enum": [
+        "solid",
+        "dot",
+        "dash",
+        "dash_dot",
+        "long_dash",
+        "long_dash_dot",
+        "sys_dot",
+        "sys_dash"
+      ],
+      "type": "string"
+    },
+    "LineSpacing": {
+      "description": "Line spacing: a multiple of single spacing (`{\"multiple\": 1.2}`) or exact points.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "multiple": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "multiple"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "points": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "points"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "LineSpec": {
+      "additionalProperties": false,
+      "description": "An outline. In an edit, fields left out stay as they are.",
+      "properties": {
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckColor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dash": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LineDash"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "head": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ArrowHead"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tail": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ArrowHead"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "visible": {
+          "description": "False draws no line (`a:ln/a:noFill`); the other fields are then ignored.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "width_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
       "type": "object"
     },
     "ListingError": {
@@ -7740,6 +13275,36 @@
       ],
       "type": "object"
     },
+    "MotionDirection": {
+      "enum": [
+        "left",
+        "right",
+        "up",
+        "down",
+        "in",
+        "out"
+      ],
+      "type": "string"
+    },
+    "NumberScheme": {
+      "description": "`a:buAutoNum@type`, snake_cased: `arabic_period` is \"1.\", `alpha_lc_paren_r` is \"a)\", `ea1_chs_period` is \"一、\". Others the engine knows pass through as written.",
+      "enum": [
+        "arabic_period",
+        "arabic_paren_r",
+        "arabic_paren_both",
+        "arabic_plain",
+        "alpha_lc_period",
+        "alpha_uc_period",
+        "alpha_lc_paren_r",
+        "alpha_uc_paren_r",
+        "roman_lc_period",
+        "roman_uc_period",
+        "circle_num_db_plain",
+        "ea1_chs_period",
+        "ea1_chs_plain"
+      ],
+      "type": "string"
+    },
     "Op": {
       "oneOf": [
         {
@@ -8119,6 +13684,234 @@
       ],
       "type": "object"
     },
+    "ParagraphAlign": {
+      "oneOf": [
+        {
+          "enum": [
+            "left",
+            "center",
+            "right",
+            "justify"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "分散对齐.",
+          "enum": [
+            "distributed"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ParagraphProps": {
+      "additionalProperties": false,
+      "description": "Paragraph formatting. In an edit, fields left out stay as they are.",
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ParagraphAlign"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bullet": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BulletSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_line_pt": {
+          "description": "First line relative to the margin (`indent`); negative hangs, as list items do.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "indent_pt": {
+          "description": "Left margin (`marL`).",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "level": {
+          "description": "Outline level, 0–8.",
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "line_spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LineSpacing"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "space_after_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "space_before_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ParagraphRead": {
+      "properties": {
+        "editable": {
+          "default": true,
+          "description": "False when an edit here could not keep a field (a slide number…).",
+          "type": "boolean"
+        },
+        "end": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "paragraph_id": {
+          "type": "string"
+        },
+        "props": {
+          "$ref": "#/definitions/ParagraphProps",
+          "description": "Effective, after inheritance."
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/definitions/RunRead"
+          },
+          "type": "array"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "end",
+        "paragraph_id",
+        "props",
+        "runs",
+        "start",
+        "text"
+      ],
+      "type": "object"
+    },
+    "ParagraphSpec": {
+      "additionalProperties": false,
+      "description": "One paragraph to write. It starts from the formatting of paragraph `like` (an id from `deck/read`), or of the paragraph at the same position, then applies its own fields (those of `ParagraphProps`): this is how a rewrite keeps the original look (§5.2.1).",
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ParagraphAlign"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bullet": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/BulletSpec"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_line_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "indent_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "level": {
+          "format": "uint8",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "like": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line_spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/LineSpacing"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runs": {
+          "items": {
+            "$ref": "#/definitions/RunSpec"
+          },
+          "type": "array"
+        },
+        "space_after_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "space_before_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "runs"
+      ],
+      "type": "object"
+    },
     "PartialBlock": {
       "oneOf": [
         {
@@ -8222,6 +14015,88 @@
       ],
       "type": "object"
     },
+    "PasteAt": {
+      "description": "Where pasted content goes: onto a slide (shapes), among slides, or into text.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/DeckPoint"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Top left of the pasted shapes' bounds; where they were copied from when left out."
+            },
+            "kind": {
+              "enum": [
+                "slide"
+              ],
+              "type": "string"
+            },
+            "slide_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "slide_id"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "slides"
+              ],
+              "type": "string"
+            },
+            "position": {
+              "$ref": "#/definitions/SlidePosition"
+            }
+          },
+          "required": [
+            "kind",
+            "position"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            },
+            "target": {
+              "$ref": "#/definitions/DeckTextTarget"
+            }
+          },
+          "required": [
+            "kind",
+            "target"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PasteMode": {
+      "description": "How `paste` brings content in (粘贴选项).",
+      "enum": [
+        "keep_source",
+        "use_destination_theme",
+        "plain_text"
+      ],
+      "type": "string"
+    },
     "PeerInfo": {
       "properties": {
         "name": {
@@ -8321,6 +14196,162 @@
           "type": "string"
         }
       ]
+    },
+    "PictureFillMode": {
+      "enum": [
+        "stretch",
+        "tile"
+      ],
+      "type": "string"
+    },
+    "PictureSource": {
+      "description": "An image: a file the session may read, or its bytes.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Read by the kernel under the session's file rules.",
+          "properties": {
+            "kind": {
+              "enum": [
+                "path"
+              ],
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "base64": {
+              "description": "Base64; at most 20 MiB decoded.",
+              "type": "string"
+            },
+            "content_type": {
+              "description": "`image/png`, `image/jpeg`, `image/svg+xml`…",
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "bytes"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "base64",
+            "content_type",
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PlaceholderInfo": {
+      "properties": {
+        "idx": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rect": {
+          "$ref": "#/definitions/DeckRect"
+        },
+        "size_pt": {
+          "description": "The size its first level of text gets.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/definitions/PlaceholderKind"
+        }
+      },
+      "required": [
+        "rect",
+        "type"
+      ],
+      "type": "object"
+    },
+    "PlaceholderKind": {
+      "description": "`p:ph/@type`, snake_cased (`ctrTitle` is `ctr_title`). A placeholder without a type is `obj`.",
+      "enum": [
+        "title",
+        "ctr_title",
+        "sub_title",
+        "body",
+        "obj",
+        "pic",
+        "chart",
+        "tbl",
+        "dgm",
+        "media",
+        "clip_art",
+        "dt",
+        "ftr",
+        "sld_num",
+        "hdr",
+        "sld_img"
+      ],
+      "type": "string"
+    },
+    "PlaceholderMove": {
+      "additionalProperties": false,
+      "description": "A placeholder shape moved onto another layout's placeholder `idx` (`set_layout`).",
+      "properties": {
+        "idx": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "shape_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "idx",
+        "shape_id"
+      ],
+      "type": "object"
+    },
+    "PlaceholderRef": {
+      "additionalProperties": false,
+      "description": "A placeholder of the slide's layout, by type and, when the layout has several of the type, `idx`.",
+      "properties": {
+        "idx": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "type": {
+          "$ref": "#/definitions/PlaceholderKind"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "type": "object"
     },
     "PptxMetafileParams": {
       "properties": {
@@ -8495,6 +14526,86 @@
         }
       ]
     },
+    "ProposalChange": {
+      "enum": [
+        "created",
+        "updated",
+        "accepted",
+        "rejected",
+        "reverted",
+        "stale",
+        "superseded"
+      ],
+      "type": "string"
+    },
+    "ProposalOrigin": {
+      "description": "What made a proposal, for the AI ledger and the card's wording.",
+      "oneOf": [
+        {
+          "enum": [
+            "ai_action",
+            "check_fix",
+            "layout",
+            "generate",
+            "link_refresh"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`deck_edit` or `deck/edit`.",
+          "enum": [
+            "edit"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "ProposalSource": {
+      "enum": [
+        "human",
+        "agent"
+      ],
+      "type": "string"
+    },
+    "ProposalStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "pending",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Wholly, or the slides in `accepted_slides`.",
+          "enum": [
+            "accepted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Accepted, then undone from the AI ledger.",
+          "enum": [
+            "reverted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Its targets changed: accepting needs `force`, or a new proposal.",
+          "enum": [
+            "stale"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Replaced by a newer proposal of the same action (\"再来一版\").",
+          "enum": [
+            "superseded"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "ProviderListing": {
       "description": "A provider's model list as the kernel last saw it.",
       "properties": {
@@ -8624,6 +14735,24 @@
       ],
       "type": "object"
     },
+    "ReadDetail": {
+      "oneOf": [
+        {
+          "description": "Text and a style summary per shape.",
+          "enum": [
+            "brief"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Paragraphs and runs with their formatting.",
+          "enum": [
+            "full"
+          ],
+          "type": "string"
+        }
+      ]
+    },
     "Rect": {
       "description": "A rectangle on a page: `x0 < x1`, `y0 < y1`.",
       "properties": {
@@ -8735,6 +14864,16 @@
         "total_bytes"
       ],
       "type": "object"
+    },
+    "RewriteTone": {
+      "enum": [
+        "formal",
+        "casual",
+        "persuasive",
+        "concise",
+        "conclusion_first"
+      ],
+      "type": "string"
     },
     "Role": {
       "enum": [
@@ -9022,6 +15161,264 @@
         "deny"
       ],
       "type": "string"
+    },
+    "RunRead": {
+      "properties": {
+        "end": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/HyperlinkTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "style": {
+          "$ref": "#/definitions/RunStyle"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "end",
+        "start",
+        "style",
+        "text"
+      ],
+      "type": "object"
+    },
+    "RunSpec": {
+      "additionalProperties": false,
+      "description": "A run of text and its formatting.",
+      "properties": {
+        "link": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/HyperlinkTarget"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "style": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/RunStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "type": "object"
+    },
+    "RunStyle": {
+      "additionalProperties": false,
+      "description": "Character formatting. In an edit, fields left out stay as they are; in a read, the effective values after inheritance (left out when mixed).",
+      "properties": {
+        "baseline_pct": {
+          "description": "Superscript above 0 (30), subscript below (-25); 0 is the baseline.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "bold": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "caps": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TextCaps"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "color": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckColor"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "font_ea": {
+          "description": "The East Asian face; `+mj-ea` / `+mn-ea` for the theme's. The font box sets both.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font_latin": {
+          "description": "The Latin face; `+mj-lt` / `+mn-lt` are the theme's heading and body fonts.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "highlight": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DeckColor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "`null` removes the highlight."
+        },
+        "italic": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "size_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "spacing_pt": {
+          "description": "Character spacing.",
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "strike": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/StrikeStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "underline": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/UnderlineStyle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SchemeColor": {
+      "description": "A colour of the theme's scheme. `tx1`/`bg1`/`tx2`/`bg2` go through the master's colour map.",
+      "oneOf": [
+        {
+          "enum": [
+            "dk1",
+            "lt1",
+            "dk2",
+            "lt2",
+            "accent1",
+            "accent2",
+            "accent3",
+            "accent4",
+            "accent5",
+            "accent6",
+            "hlink",
+            "tx1",
+            "bg1",
+            "tx2",
+            "bg2"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "`folHlink`.",
+          "enum": [
+            "fol_hlink"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SectionInfo": {
+      "properties": {
+        "first_slide_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "section_id": {
+          "type": "string"
+        },
+        "slide_count": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "first_slide_id",
+        "name",
+        "section_id",
+        "slide_count"
+      ],
+      "type": "object"
+    },
+    "SectionSpec": {
+      "additionalProperties": false,
+      "description": "A section, from its first slide to the next section's.",
+      "properties": {
+        "first_slide_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "section_id": {
+          "description": "Keeps an existing section's id; a new one gets an id.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "first_slide_id",
+        "name"
+      ],
+      "type": "object"
     },
     "ServerCapabilities": {
       "properties": {
@@ -9677,6 +16074,175 @@
       },
       "required": [
         "sessions"
+      ],
+      "type": "object"
+    },
+    "ShadowSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "alpha": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "angle_deg": {
+          "format": "double",
+          "type": "number"
+        },
+        "blur_pt": {
+          "format": "double",
+          "type": "number"
+        },
+        "color": {
+          "$ref": "#/definitions/DeckColor"
+        },
+        "distance_pt": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "angle_deg",
+        "blur_pt",
+        "color",
+        "distance_pt"
+      ],
+      "type": "object"
+    },
+    "ShapeInfo": {
+      "description": "One object of a slide, in z order (back first).",
+      "properties": {
+        "alt_text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "chart": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ChartInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "data_link_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fill": {
+          "description": "`#RRGGBB` of a solid fill, `none`, `gradient` or `picture`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "flip_h": {
+          "type": "boolean"
+        },
+        "flip_v": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/DeckShapeKind"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent_id": {
+          "description": "The group it is in.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "placeholder": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/PlaceholderRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "preset": {
+          "description": "The `a:prstGeom` name, for preset shapes.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "rect": {
+          "$ref": "#/definitions/DeckRect"
+        },
+        "rotation_deg": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "shape_id": {
+          "type": "string"
+        },
+        "stories": {
+          "items": {
+            "$ref": "#/definitions/StoryRead"
+          },
+          "type": "array"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TableInfo"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text_look": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TextLook"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "name",
+        "rect",
+        "shape_id"
+      ],
+      "type": "object"
+    },
+    "ShapeRef": {
+      "additionalProperties": false,
+      "properties": {
+        "shape_id": {
+          "type": "string"
+        },
+        "slide_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "shape_id",
+        "slide_id"
       ],
       "type": "object"
     },
@@ -10386,6 +16952,329 @@
       ],
       "type": "object"
     },
+    "SlideChangeKind": {
+      "enum": [
+        "changed",
+        "inserted",
+        "deleted",
+        "moved"
+      ],
+      "type": "string"
+    },
+    "SlideChangeSummary": {
+      "description": "What a batch or proposal does to one slide, for the canvas markers and the approval card.",
+      "properties": {
+        "index": {
+          "description": "From 1; where it ends up, or was for a deleted slide.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/definitions/SlideChangeKind"
+        },
+        "shape_ids": {
+          "description": "Shapes added, removed or changed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "summary": {
+          "description": "In the user's words: \"替换 3 处文字、移动 1 个对象\".",
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "kind",
+        "slide_id",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "SlideContentTree": {
+      "additionalProperties": false,
+      "description": "What a slide says, without how it looks: the solver's input (§5.2.2).",
+      "properties": {
+        "blocks": {
+          "items": {
+            "$ref": "#/definitions/ContentBlock"
+          },
+          "type": "array"
+        },
+        "subtitle": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "takeaway": {
+          "description": "The one-line conclusion.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "blocks",
+        "title"
+      ],
+      "type": "object"
+    },
+    "SlideLine": {
+      "description": "One line of the summary per slide.",
+      "properties": {
+        "has_chart": {
+          "type": "boolean"
+        },
+        "has_notes": {
+          "type": "boolean"
+        },
+        "has_picture": {
+          "type": "boolean"
+        },
+        "has_table": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "index": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "layout_id": {
+          "type": "string"
+        },
+        "section_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "shape_count": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "slide_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index",
+        "layout_id",
+        "shape_count",
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "SlidePair": {
+      "description": "Slides matched across two decks by title and content, not position.",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/definitions/DiffChange"
+          },
+          "type": "array"
+        },
+        "left": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DiffSlide"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "right": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DiffSlide"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "similarity": {
+          "description": "0–1.",
+          "format": "double",
+          "type": "number"
+        },
+        "status": {
+          "$ref": "#/definitions/SlidePairStatus"
+        }
+      },
+      "required": [
+        "similarity",
+        "status"
+      ],
+      "type": "object"
+    },
+    "SlidePairStatus": {
+      "oneOf": [
+        {
+          "enum": [
+            "same",
+            "changed"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Only on the right.",
+          "enum": [
+            "inserted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Only on the left.",
+          "enum": [
+            "deleted"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Same content, another place.",
+          "enum": [
+            "moved"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SlidePick": {
+      "anyOf": [
+        {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        {
+          "type": "string"
+        }
+      ],
+      "description": "A slide to read or check: its id, or its number (from 1) as people say it."
+    },
+    "SlidePosition": {
+      "description": "Where a slide goes.",
+      "oneOf": [
+        {
+          "enum": [
+            "start",
+            "end"
+          ],
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "after": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "after"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "before": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "before"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "SlideRef": {
+      "additionalProperties": false,
+      "properties": {
+        "slide_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "slide_id"
+      ],
+      "type": "object"
+    },
+    "SlideResize": {
+      "description": "What happens to the content when the slide size changes.",
+      "oneOf": [
+        {
+          "description": "Positions and sizes stay.",
+          "enum": [
+            "keep"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Scale down to fit inside the new size (PowerPoint's 确保适合).",
+          "enum": [
+            "fit"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Scale up to fill it (最大化).",
+          "enum": [
+            "fill"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "SlideSize": {
+      "properties": {
+        "height_pt": {
+          "format": "double",
+          "type": "number"
+        },
+        "ratio": {
+          "description": "`16:9`, `4:3`, or `custom`.",
+          "type": "string"
+        },
+        "width_pt": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "height_pt",
+        "ratio",
+        "width_pt"
+      ],
+      "type": "object"
+    },
     "SnapshotResult": {
       "description": "Result of `session/resume` and `session/attach`.",
       "properties": {
@@ -10415,6 +17304,445 @@
       ],
       "type": "string"
     },
+    "StoryRead": {
+      "description": "A text story of a shape: its body, or one table cell's.",
+      "properties": {
+        "cell": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CellPos"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "A table cell's."
+        },
+        "paragraphs": {
+          "description": "`detail: full` only.",
+          "items": {
+            "$ref": "#/definitions/ParagraphRead"
+          },
+          "type": "array"
+        },
+        "story_id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "story_id",
+        "text"
+      ],
+      "type": "object"
+    },
+    "StrikeStyle": {
+      "enum": [
+        "none",
+        "single",
+        "double"
+      ],
+      "type": "string"
+    },
+    "TableEdit": {
+      "description": "One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "count": {
+              "default": 1,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "insert_rows"
+              ],
+              "type": "string"
+            },
+            "side": {
+              "$ref": "#/definitions/InsertSide"
+            }
+          },
+          "required": [
+            "at",
+            "kind",
+            "side"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "count": {
+              "default": 1,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "delete_rows"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "count": {
+              "default": 1,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "insert_cols"
+              ],
+              "type": "string"
+            },
+            "side": {
+              "$ref": "#/definitions/InsertSide"
+            }
+          },
+          "required": [
+            "at",
+            "kind",
+            "side"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "count": {
+              "default": 1,
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "delete_cols"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "at",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "merge"
+              ],
+              "type": "string"
+            },
+            "range": {
+              "$ref": "#/definitions/CellRange"
+            }
+          },
+          "required": [
+            "kind",
+            "range"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Undoes the merge the cell belongs to.",
+          "properties": {
+            "col": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "split"
+              ],
+              "type": "string"
+            },
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "col",
+            "kind",
+            "row"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "cells": {
+              "items": {
+                "$ref": "#/definitions/CellText"
+              },
+              "type": "array"
+            },
+            "kind": {
+              "enum": [
+                "set_cells"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "cells",
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "anchor": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextAnchor"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "borders": {
+              "items": {
+                "$ref": "#/definitions/CellBorder"
+              },
+              "type": "array"
+            },
+            "fill": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/FillSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "kind": {
+              "enum": [
+                "cell_style"
+              ],
+              "type": "string"
+            },
+            "margins_pt": {
+              "anyOf": [
+                {
+                  "$ref": "#/definitions/TextInsets"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "range": {
+              "$ref": "#/definitions/CellRange"
+            }
+          },
+          "required": [
+            "kind",
+            "range"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "col": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "kind": {
+              "enum": [
+                "column_width"
+              ],
+              "type": "string"
+            },
+            "width_pt": {
+              "format": "double",
+              "type": "number"
+            }
+          },
+          "required": [
+            "col",
+            "kind",
+            "width_pt"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "height_pt": {
+              "format": "double",
+              "type": "number"
+            },
+            "kind": {
+              "enum": [
+                "row_height"
+              ],
+              "type": "string"
+            },
+            "row": {
+              "format": "uint32",
+              "minimum": 0.0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "height_pt",
+            "kind",
+            "row"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "A table style by its GUID (`{5C22544A-…}`), and its flags.",
+          "properties": {
+            "flags": {
+              "$ref": "#/definitions/TableStyleFlags",
+              "default": {}
+            },
+            "kind": {
+              "enum": [
+                "style"
+              ],
+              "type": "string"
+            },
+            "style_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "TableInfo": {
+      "properties": {
+        "cols": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "merges": {
+          "items": {
+            "$ref": "#/definitions/CellRange"
+          },
+          "type": "array"
+        },
+        "rows": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "style_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "cols",
+        "rows"
+      ],
+      "type": "object"
+    },
+    "TableStyleFlags": {
+      "additionalProperties": false,
+      "description": "Which parts of a table style are switched on (`a:tblPr` flags).",
+      "properties": {
+        "banded_cols": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "banded_rows": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "first_col": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "header_row": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "last_col": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "total_row": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
     "TaskOutcome": {
       "enum": [
         "completed",
@@ -10441,6 +17769,461 @@
           "type": "string"
         }
       ]
+    },
+    "TemplateLayout": {
+      "properties": {
+        "content_area": {
+          "$ref": "#/definitions/DeckRect",
+          "description": "The area free for content: the body placeholders' union, or the safe area."
+        },
+        "decorations": {
+          "default": 0,
+          "description": "Shapes the layout draws besides placeholders (logos, bars).",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "layout_id": {
+          "type": "string"
+        },
+        "layout_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "master_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "placeholders": {
+          "items": {
+            "$ref": "#/definitions/PlaceholderInfo"
+          },
+          "type": "array"
+        },
+        "tag": {
+          "$ref": "#/definitions/LayoutTag"
+        },
+        "thumbnail_png_base64": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "content_area",
+        "layout_id",
+        "master_id",
+        "name",
+        "placeholders",
+        "tag"
+      ],
+      "type": "object"
+    },
+    "TemplateMaster": {
+      "properties": {
+        "layout_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "master_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "layout_ids",
+        "master_id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "TemplateProfile": {
+      "description": "What generating into a template needs to know of it (§5.2.4, §6.8).",
+      "properties": {
+        "footer": {
+          "$ref": "#/definitions/FooterRule"
+        },
+        "layouts": {
+          "items": {
+            "$ref": "#/definitions/TemplateLayout"
+          },
+          "type": "array"
+        },
+        "masters": {
+          "items": {
+            "$ref": "#/definitions/TemplateMaster"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "safe_area": {
+          "$ref": "#/definitions/DeckRect",
+          "description": "Inside the slide's edges, where nothing should go."
+        },
+        "size": {
+          "$ref": "#/definitions/SlideSize"
+        },
+        "template_id": {
+          "description": "For \"my templates\" in `FINX_HOME/templates/`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "theme": {
+          "$ref": "#/definitions/ThemeInfo"
+        },
+        "type_scale_pt": {
+          "description": "Title, subtitle, body and caption sizes the template uses, largest first.",
+          "items": {
+            "format": "double",
+            "type": "number"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "footer",
+        "layouts",
+        "masters",
+        "name",
+        "path",
+        "safe_area",
+        "size",
+        "theme",
+        "type_scale_pt"
+      ],
+      "type": "object"
+    },
+    "TextAnchor": {
+      "enum": [
+        "top",
+        "middle",
+        "bottom"
+      ],
+      "type": "string"
+    },
+    "TextAutofit": {
+      "oneOf": [
+        {
+          "description": "Text may overflow.",
+          "enum": [
+            "none"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Shrink text on overflow (`normAutofit`).",
+          "enum": [
+            "shrink"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Resize the shape to fit the text (`spAutoFit`).",
+          "enum": [
+            "resize"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "TextCaps": {
+      "enum": [
+        "none",
+        "small",
+        "all"
+      ],
+      "type": "string"
+    },
+    "TextDirection": {
+      "oneOf": [
+        {
+          "enum": [
+            "horizontal",
+            "vertical270"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Rotated 90°.",
+          "enum": [
+            "vertical"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "竖排: East Asian characters upright (`eaVert`).",
+          "enum": [
+            "east_asian_vertical"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "TextEdge": {
+      "enum": [
+        "start",
+        "end"
+      ],
+      "type": "string"
+    },
+    "TextInsets": {
+      "additionalProperties": false,
+      "properties": {
+        "bottom": {
+          "format": "double",
+          "type": "number"
+        },
+        "left": {
+          "format": "double",
+          "type": "number"
+        },
+        "right": {
+          "format": "double",
+          "type": "number"
+        },
+        "top": {
+          "format": "double",
+          "type": "number"
+        }
+      },
+      "required": [
+        "bottom",
+        "left",
+        "right",
+        "top"
+      ],
+      "type": "object"
+    },
+    "TextLook": {
+      "description": "The look of a shape's text, as one line can say it; mixed values are left out.",
+      "properties": {
+        "align": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ParagraphAlign"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "autofit": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/TextAutofit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bold": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "color": {
+          "description": "`#RRGGBB`, resolved.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "font": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "overflows": {
+          "description": "The engine's layout says the text does not fit.",
+          "type": "boolean"
+        },
+        "size_pt": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ThemeColorRef": {
+      "additionalProperties": false,
+      "description": "A theme colour, optionally lighter or darker, as PowerPoint's palette derives them (`accent1`, 25% lighter = `lum_mod: 0.75, lum_off: 0.25`).",
+      "properties": {
+        "lum_mod": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "lum_off": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "scheme": {
+          "$ref": "#/definitions/SchemeColor"
+        }
+      },
+      "required": [
+        "scheme"
+      ],
+      "type": "object"
+    },
+    "ThemeColors": {
+      "additionalProperties": false,
+      "description": "The theme's twelve colours, `#RRGGBB`. In `set_theme_colors`, those left out stay.",
+      "properties": {
+        "accent1": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accent2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accent3": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accent4": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accent5": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accent6": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dk1": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dk2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fol_hlink": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hlink": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lt1": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "lt2": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ThemeFonts": {
+      "additionalProperties": false,
+      "description": "The theme's font scheme: headings (major) and body (minor), per script. In `set_theme_fonts`, those left out stay.",
+      "properties": {
+        "major_ea": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "major_latin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "minor_ea": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "minor_latin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "ThemeInfo": {
+      "properties": {
+        "colors": {
+          "$ref": "#/definitions/ThemeColors",
+          "description": "All twelve, resolved."
+        },
+        "fonts": {
+          "$ref": "#/definitions/ThemeFonts"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "colors",
+        "fonts"
+      ],
+      "type": "object"
     },
     "ThinkingLevel": {
       "description": "How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others are the providers' own levels, and a model offers only those it supports (docs/kernel/model-catalog-design.md §18).",
@@ -10743,6 +18526,44 @@
         "items"
       ],
       "type": "object"
+    },
+    "TransitionKind": {
+      "description": "Transitions FinxWork writes; others the file has are kept and shown by name.",
+      "oneOf": [
+        {
+          "enum": [
+            "none",
+            "cut",
+            "fade",
+            "push",
+            "wipe",
+            "split",
+            "reveal",
+            "cover",
+            "zoom"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "平滑 (`p159:morph`); drawn as a fade in the slide show for now.",
+          "enum": [
+            "morph"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "UnderlineStyle": {
+      "enum": [
+        "none",
+        "single",
+        "double",
+        "heavy",
+        "dotted",
+        "dash",
+        "wavy"
+      ],
+      "type": "string"
     },
     "Usage": {
       "properties": {
@@ -11169,6 +18990,15 @@
         "url"
       ],
       "type": "object"
+    },
+    "ZOrder": {
+      "enum": [
+        "front",
+        "back",
+        "forward",
+        "backward"
+      ],
+      "type": "string"
     }
   },
   "description": "JSON-RPC 2.0 over newline-delimited JSON. Every message type is under `definitions`; the root accepts any top-level payload. `x-methods` maps each request to its params and result types, `x-client-notifications` and `x-server-notifications` map notifications to their params, and `x-error-codes` maps error codes to the `kind` in the error data.",
@@ -11207,6 +19037,9 @@
     "-32034": "doc_refused",
     "-32035": "doc_stale",
     "-32036": "doc_conflict",
+    "-32037": "deck_unavailable",
+    "-32038": "deck_conflict",
+    "-32039": "proposal_not_found",
     "-32040": "bot_not_found",
     "-32041": "bot_default",
     "-32042": "bot_invalid",
@@ -11221,6 +19054,10 @@
     "-32800": "request_cancelled"
   },
   "x-methods": {
+    "ai/action": {
+      "params": "AiActionParams",
+      "result": "AiActionResult"
+    },
     "auth/delete": {
       "params": "AuthDeleteParams",
       "result": "Empty"
@@ -11388,6 +19225,86 @@
     "credentials/set": {
       "params": "CredentialsSetParams",
       "result": "Empty"
+    },
+    "deck/check": {
+      "params": "DeckCheckParams",
+      "result": "DeckCheckResult"
+    },
+    "deck/close": {
+      "params": "DeckIdParams",
+      "result": "Empty"
+    },
+    "deck/copy": {
+      "params": "DeckCopyParams",
+      "result": "DeckCopyResult"
+    },
+    "deck/diff": {
+      "params": "DeckDiffParams",
+      "result": "DeckDiff"
+    },
+    "deck/edit": {
+      "params": "DeckEditParams",
+      "result": "DeckEditResult"
+    },
+    "deck/find": {
+      "params": "DeckFindParams",
+      "result": "DeckFindResult"
+    },
+    "deck/focus": {
+      "params": "DeckFocusParams",
+      "result": "Empty"
+    },
+    "deck/layouts": {
+      "params": "DeckLayoutsParams",
+      "result": "DeckLayoutsResult"
+    },
+    "deck/links": {
+      "params": "DeckLinksParams",
+      "result": "DeckLinksResult"
+    },
+    "deck/open": {
+      "params": "DeckOpenParams",
+      "result": "DeckOpenResult"
+    },
+    "deck/proposal/accept": {
+      "params": "DeckProposalDecideParams",
+      "result": "DeckProposalResult"
+    },
+    "deck/proposal/list": {
+      "params": "DeckProposalListParams",
+      "result": "DeckProposalListResult"
+    },
+    "deck/proposal/reject": {
+      "params": "DeckProposalDecideParams",
+      "result": "DeckProposalResult"
+    },
+    "deck/proposal/revert": {
+      "params": "DeckProposalIdParams",
+      "result": "DeckProposalResult"
+    },
+    "deck/read": {
+      "params": "DeckReadParams",
+      "result": "DeckReadResult"
+    },
+    "deck/save": {
+      "params": "DeckSaveParams",
+      "result": "DeckSaveResult"
+    },
+    "deck/summary": {
+      "params": "DeckIdParams",
+      "result": "DeckSummary"
+    },
+    "deck/sync": {
+      "params": "DeckSyncParams",
+      "result": "DeckSyncResult"
+    },
+    "deck/template_profile": {
+      "params": "DeckTemplateProfileParams",
+      "result": "TemplateProfile"
+    },
+    "deck/view": {
+      "params": "DeckViewParams",
+      "result": "DeckViewResult"
     },
     "doc/apply": {
       "params": "DocApplyParams",
@@ -11628,12 +19545,16 @@
   },
   "x-protocol-version": 2,
   "x-server-notifications": {
+    "ai/action_progress": "AiActionProgress",
     "bots/changed": "BotsChangedParams",
     "browser/cdp": "BrowserCdpParams",
     "browser/changed": "BrowserStatus",
     "browser/control": "BrowserControl",
     "browser/request": "BrowserRequest",
     "config/changed": "ConfigChangedParams",
+    "deck/changed": "DeckChangedParams",
+    "deck/proposal": "DeckProposalEvent",
+    "deck/sync": "DeckSyncNotice",
     "doc/changed": "DocChangedParams",
     "files/changed": "FilesChangedParams",
     "mcp/changed": "McpChangedParams",

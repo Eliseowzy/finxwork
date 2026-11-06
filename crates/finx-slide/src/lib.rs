@@ -1,6 +1,7 @@
 //! PowerPoint decks on BetterOffice: render slides, read them as Markdown, find and replace
 //! text, and save surgically, touching only the parts an edit changed.
 
+pub mod check;
 mod fonts;
 mod parts;
 
@@ -61,6 +62,11 @@ impl Deck {
             source: bytes,
             edited: Mutex::default(),
         })
+    }
+
+    /// Runs the implemented deterministic checks on the current in-memory snapshot.
+    pub fn check(&self) -> Result<Vec<finx_protocol::deck::DeckDiagnostic>> {
+        Ok(check::check(&self.presentation.snapshot()?))
     }
 
     pub fn slide_count(&self) -> usize {
@@ -142,6 +148,35 @@ impl Deck {
             }
         }
         Ok(matches.len())
+    }
+
+    /// Full Yrs state for a replica joining this document.
+    pub fn encode_state(&self) -> Vec<u8> {
+        self.presentation.encode_state_as_update_v1()
+    }
+
+    /// State vector for computing a replica's missing changes.
+    pub fn state_vector(&self) -> Vec<u8> {
+        self.presentation.encode_state_vector_v1()
+    }
+
+    /// Changes the replica does not yet have.
+    pub fn encode_diff(&self, state_vector: &[u8]) -> Result<Vec<u8>> {
+        Ok(self.presentation.encode_diff_v1(state_vector)?)
+    }
+
+    /// Apply a replica update. The existing surgical-save guard continues to reject
+    /// changes outside slide parts: support for structural edits must be added explicitly.
+    pub fn apply_update(&self, update: &[u8]) -> Result<()> {
+        // Collect before applying: after a successful update we must not report failure
+        // while leaving a mutation in place. The update can touch any existing slide.
+        let slide_parts: BTreeSet<_> = self.slide_parts()?.into_iter().map(|(_, path)| path).collect();
+        let before = self.presentation.save().ok();
+        self.presentation.apply_update_v1(update)?;
+        let changed = before.and_then(|before| self.presentation.save().ok().and_then(|after| parts::changed(&before, &after).ok()));
+        let touched = changed.map(|parts| parts.into_iter().filter(|part| slide_parts.contains(part)).collect()).unwrap_or(slide_parts);
+        self.edited.lock().unwrap_or_else(|e| e.into_inner()).extend(touched);
+        Ok(())
     }
 
     /// The deck with every edit applied. Before returning, the bytes are opened again and

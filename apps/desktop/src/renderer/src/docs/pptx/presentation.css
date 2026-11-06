@@ -29,3 +29,15 @@
 /* Dropdown menus keep each option on one line and are at least as wide as their trigger. */
 .pptx-surface [role="listbox"] { min-width: 108px; }
 .pptx-surface [role="listbox"] [role="option"], .pptx-surface [role="menu"] [role="menuitem"] { white-space: nowrap; }
+
+.pptx-editor-shell { display: flex; flex-direction: column; }
+.pptx-outline-bar { display: flex; padding: 3px 8px; border-bottom: 1px solid #ddd; }
+.pptx-outline-bar button { border: 0; background: transparent; padding: 4px 8px; cursor: pointer; }
+.pptx-outline-bar button:disabled { opacity: .5; cursor: default; }
+.pptx-editor-body { display: flex; flex: 1; min-height: 0; }
+.pptx-editor-canvas { flex: 1; min-width: 0; min-height: 0; }
+.pptx-outline { width: 220px; flex: 0 0 220px; overflow: auto; border-right: 1px solid #ddd; }
+.pptx-outline-slide { display: block; width: 100%; padding: 9px; border: 0; border-bottom: 1px solid #eee; background: white; text-align: left; cursor: pointer; }
+.pptx-outline-slide:hover { background: #f3f6fa; }
+.pptx-outline-slide strong, .pptx-outline-slide span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pptx-outline-slide span { margin-top: 3px; color: #555; font-size: 12px; }

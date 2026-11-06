@@ -11,6 +11,7 @@ import { isCjk, listFonts, loadFonts } from "./fonts";
 import type { FontEntry } from "./fontMenu";
 import { presentationImageDecoder } from "./metafile";
 import { PresentationLoading, type FontLoadProgress } from "./PresentationLoading";
+import { SlideOutline } from "./SlideOutline";
 import { installSlideReorder } from "./slideReorder";
 import { Ribbon, type RibbonFonts } from "./Ribbon";
 import "./ribbon.css";
@@ -19,6 +20,8 @@ import "./presentation.css";
 function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcClient; session: string; name: string }) {
   const [fontProgress, setFontProgress] = useState<FontLoadProgress>({ completed: 0, total: 0 });
   const [isReady, setReady] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(false);
+  const [revision, setRevision] = useState(0);
   const [fonts, setFonts] = useState<PptxFontFace[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState(i18n.language);
@@ -78,7 +81,7 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     completed={fontProgress.completed} total={fontProgress.total} font={fontProgress}
     bytes={doc.bytes.byteLength} fontCount={doc.file.font_families.length} />;
   if (!fonts) return loading;
-  return <div className="pptx-editor-shell" ref={shell}>{(error || mediaWarning) && <div className="pptx-error" role="alert">{error ?? i18n.t("pptx.mediaWarning", { ns: "session", message: mediaWarning ?? "" })}</div>}<PptxEditor
+  return <div className="pptx-editor-shell" ref={shell}>{(error || mediaWarning) && <div className="pptx-error" role="alert">{error ?? i18n.t("pptx.mediaWarning", { ns: "session", message: mediaWarning ?? "" })}</div>}<div className="pptx-outline-bar"><button type="button" disabled={!isReady} aria-expanded={outlineOpen} onClick={() => setOutlineOpen(value => !value)}>{i18n.t("pptx.outlineTitle", { ns: "session" })}</button></div><div className="pptx-editor-body">{outlineOpen && api.current && <SlideOutline api={api.current} revision={revision} />}<div className="pptx-editor-canvas"><PptxEditor
     loadingIndicator={null}
     file={doc.bytes}
     fileName={name}
@@ -91,11 +94,11 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     i18n={language.startsWith("zh") ? presentationZhCN : undefined}
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}
-    onDocumentChange={() => { if (api.current) doc.edit(); }}
+    onDocumentChange={() => { if (api.current) { doc.edit(); setRevision(value => value + 1); } }}
     onSaveRequest={async () => { await doc.flush(); return false; }}
     downloadOnSave={false}
     onError={(e) => setError(e.message)}
-  />{!isReady && !error && <div className="pptx-opening-overlay">{loading}</div>}</div>;
+  /></div></div>{!isReady && !error && <div className="pptx-opening-overlay">{loading}</div>}</div>;
 }
 
 /** Attach the persistent editor surface. Switching tabs/panels keeps its worker and undo history. */

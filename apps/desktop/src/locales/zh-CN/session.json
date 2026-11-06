@@ -711,6 +711,9 @@
     "backToReference": "返回引用位置"
   },
   "pptx": {
+    "outlineTitle": "大纲",
+    "outlineError": "无法加载大纲。",
+    "outlineUntitled": "无标题幻灯片",
     "loadingPanel": {
       "title": "正在打开演示文稿",
       "hints": {

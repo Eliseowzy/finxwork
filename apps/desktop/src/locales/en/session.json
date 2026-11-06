@@ -736,6 +736,9 @@
     "backToReference": "Back to reference"
   },
   "pptx": {
+    "outlineTitle": "Outline",
+    "outlineError": "Could not load the outline.",
+    "outlineUntitled": "Untitled slide",
     "loadingPanel": {
       "title": "Opening presentation",
       "hints": {

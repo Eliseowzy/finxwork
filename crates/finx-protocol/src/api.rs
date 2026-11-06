@@ -109,10 +109,44 @@ pub mod method {
     // The file panel (docs/desktop/file-panel-design.md §9).
     pub const FILES_LIST: &str = "files/list";
     pub const FILES_READ: &str = "files/read";
+    /// Also `deck/open`'s progress.
     pub const PPTX_READ_PROGRESS: &str = "pptx/readProgress";
+    /// Transitional: the editor holds the deck. Replaced by `deck/open` (presentation-ai-design
+    /// §12); kept until the editor joins as a replica.
     pub const PPTX_READ: &str = "pptx/read";
+    /// Transitional, like `pptx/read`: replaced by `deck/save`.
     pub const PPTX_WRITE: &str = "pptx/write";
     pub const PPTX_METAFILE: &str = "pptx/metafile";
+    // Presentations held by the kernel (docs/desktop/presentation-ai-design.md §12).
+    pub const DECK_OPEN: &str = "deck/open";
+    pub const DECK_CLOSE: &str = "deck/close";
+    /// A request from a replica (its Yrs update), and a server notification with the kernel's.
+    pub const DECK_SYNC: &str = "deck/sync";
+    pub const DECK_SAVE: &str = "deck/save";
+    pub const DECK_SUMMARY: &str = "deck/summary";
+    pub const DECK_READ: &str = "deck/read";
+    pub const DECK_FIND: &str = "deck/find";
+    pub const DECK_VIEW: &str = "deck/view";
+    pub const DECK_FOCUS: &str = "deck/focus";
+    pub const DECK_EDIT: &str = "deck/edit";
+    pub const DECK_COPY: &str = "deck/copy";
+    pub const DECK_PROPOSAL_LIST: &str = "deck/proposal/list";
+    pub const DECK_PROPOSAL_ACCEPT: &str = "deck/proposal/accept";
+    pub const DECK_PROPOSAL_REJECT: &str = "deck/proposal/reject";
+    pub const DECK_PROPOSAL_REVERT: &str = "deck/proposal/revert";
+    pub const DECK_CHECK: &str = "deck/check";
+    pub const DECK_LAYOUTS: &str = "deck/layouts";
+    pub const DECK_TEMPLATE_PROFILE: &str = "deck/template_profile";
+    pub const DECK_LINKS: &str = "deck/links";
+    pub const DECK_DIFF: &str = "deck/diff";
+    /// Server notification to connections that opened the deck.
+    pub const DECK_CHANGED: &str = "deck/changed";
+    /// Server notification to connections that opened the deck: a proposal's life.
+    pub const DECK_PROPOSAL: &str = "deck/proposal";
+    /// Instant AI actions on the canvas (presentation-ai-design §6.6).
+    pub const AI_ACTION: &str = "ai/action";
+    /// Server notification to the connection that called `ai/action`.
+    pub const AI_ACTION_PROGRESS: &str = "ai/action_progress";
     pub const FILES_WRITE: &str = "files/write";
     pub const FILES_WATCH: &str = "files/watch";
     /// Server notification to a connection that called `files/watch`.
@@ -246,6 +280,12 @@ pub mod error_code {
     pub const DOC_STALE: i64 = -32035;
     /// `doc/save`: the file changed on disk since it was opened; `force` writes over it.
     pub const DOC_CONFLICT: i64 = -32036;
+    /// `deck/*`: no deck of that id is open in the session, or the file cannot be opened.
+    pub const DECK_UNAVAILABLE: i64 = -32037;
+    /// `deck/save`: the file changed on disk since it was read; `force` writes over it.
+    pub const DECK_CONFLICT: i64 = -32038;
+    /// `deck/proposal/*`, `deck/view`: no proposal of that id, or it is no longer pending.
+    pub const PROPOSAL_NOT_FOUND: i64 = -32039;
     /// `bots/*`: no bot has that id.
     pub const BOT_NOT_FOUND: i64 = -32040;
     /// `bots/delete` of the default bot, or the mark as another bot's avatar.
@@ -295,6 +335,9 @@ pub mod error_code {
         (DOC_REFUSED, "doc_refused"),
         (DOC_STALE, "doc_stale"),
         (DOC_CONFLICT, "doc_conflict"),
+        (DECK_UNAVAILABLE, "deck_unavailable"),
+        (DECK_CONFLICT, "deck_conflict"),
+        (PROPOSAL_NOT_FOUND, "proposal_not_found"),
         (BOT_NOT_FOUND, "bot_not_found"),
         (BOT_DEFAULT, "bot_default"),
         (BOT_INVALID, "bot_invalid"),

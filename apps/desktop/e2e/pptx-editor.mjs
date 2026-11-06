@@ -148,6 +148,12 @@ try {
   const shownKey = await until(`(() => { const el = document.querySelector('.pptx-surface .pptx-load'); return el ? { text: el.innerText } : (window.smoke?.doc.serialize ? { text: "" } : null); })()`, "Editor loading panel");
   if (/\bpptx\.[a-zA-Z]/.test(shownKey.text)) throw new Error(`Untranslated loading text: ${JSON.stringify(shownKey.text)}`);
   await until("!!window.smoke?.doc.serialize", "PPTX Worker and Canvas");
+  await until("!!document.querySelector('.pptx-outline-bar button:not(:disabled)')", "Outline button ready");
+  await run("document.querySelector('.pptx-outline-bar button').click()");
+  await until("!!document.querySelector('.pptx-outline-slide')", "Slide outline");
+  await run("document.querySelector('.pptx-outline-slide').click()");
+  await run("document.querySelector('.pptx-outline-bar button').click()");
+  await until("!document.querySelector('.pptx-outline')", "Close slide outline");
   if (process.env.FINXWORK_E2E_LOADING === "1") {
     fs.mkdirSync(shotDir, { recursive: true });
     const preview = async (options, label) => {
