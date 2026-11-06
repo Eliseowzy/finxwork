@@ -1,13 +1,15 @@
 #!/usr/bin/env node
-// A bot's page and its list (bot-mode-design §6.5, §6.5.1, §6.6, §6.16): its name in the middle opens its settings under a
+// A bot's page and its list (bot-mode-design §6.5, §6.5.1, §6.6, §6.6.1, §6.16): its name in the middle opens its settings under a
 // real click, with the name and avatar; a row's menu is pin, rename in place and delete; a file in
-// a message opens in the file panel, a PDF in the document column; a link opens in the built-in
-// browser, and the bot drives it too. A model server on the Mac stands in for the provider.
+// a message opens in the preview over the window, a PDF too, and one button moves it to the file
+// panel, which takes turns with the settings; a link opens in the built-in browser, and the bot
+// drives it too. A model server on the Mac stands in for the provider.
 //
-// A PDF needs PDFium, which the packaged app carries: run against it to check that as well.
+// A PDF's pages need PDFium, which the packaged app carries: without it the preview says why. Run
+// against the package to check the pages as well.
 //
 //   node apps/desktop/e2e/bot-panels.mjs
-//   FINXWORK_E2E_APP=dist/FinxWork.app/Contents/MacOS/FinxWork …   the packaged app, PDF included
+//   FINXWORK_E2E_APP=dist/FinxWork.app/Contents/MacOS/FinxWork …   the packaged app, a PDF's pages included
 //   FINXWORK_E2E_SHOTS=<folder> …   also screenshots each step
 //   FINXWORK_E2E_NO_BUILD=1 …       uses the builds there are
 import { cdpPort } from "./lib/port.mjs";
@@ -409,7 +411,7 @@ try {
   await pressOn(page, `[...document.querySelectorAll(".brow")].find((r) => r.textContent.includes("小帮手"))`);
   await page.until("the bot again", `document.querySelector(".bhead-n")?.textContent === "小帮手"`, 30000);
 
-  step("a file in a message opens in the panel");
+  step("a message that names its files");
   const { result } = await finxCall(home, "bots/subscribe");
   const folder = path.join(home, "bots", result.bots[0].id, "files");
   fs.writeFileSync(path.join(folder, "note.md"), "# 笔记\n");
@@ -427,25 +429,39 @@ try {
   await page.shot("m4-bubble-actions");
   const tag = (name) => `[...document.querySelectorAll(".tr.bots .fref")].find((e) => e.textContent.includes(${JSON.stringify(name)}))`;
   await page.until("the file tag", `!!${tag("note.md")}`, 15000);
+  step("a file in a message opens over the window; one button moves it to the file panel");
+  const previewing = (name) => `document.querySelector(".fpv .fpv-name")?.textContent === ${JSON.stringify(name)}`;
+  const closed = `!document.querySelector(".fpv")`;
   await page.run(`${tag("note.md")}.click()`);
-  await page.until("the file panel with note.md", `!!document.querySelector(".spage.bot.bgopen") && document.body.innerText.includes("笔记")`, 15000);
+  await page.until("the preview of note.md", `${previewing("note.md")} && document.querySelector(".fpv .md h1")?.textContent === "笔记"`, 15000);
+  check(await page.run(`!document.querySelector(".spage.bot.bgopen")`), "nothing beside the conversation behind it");
+  await page.shot("m4-file-preview");
+  await press(page, ".fpv-panel");
+  await page.until("the file panel with note.md", `${closed} && !!document.querySelector(".spage.bot.bgopen .fpn") && document.querySelector(".fpn").innerText.includes("笔记")`, 15000);
   await page.shot("m4-file-panel");
   await press(page, ".bhead");
   await page.until("settings take the place of the file panel", `!!document.querySelector(".bpn") && !document.querySelector(".fpn")`);
   await page.run(`${tag("note.md")}.click()`);
-  await page.until("the file panel takes it back, settings gone for good", `!!document.querySelector(".fpn") && !document.querySelector(".bpn")`, 15000);
+  await page.until("the preview over the settings", `${previewing("note.md")} && !!document.querySelector(".bpn")`, 15000);
+  await press(page, ".fpv-panel");
+  await page.until("the file panel takes it back, settings gone for good", `${closed} && !!document.querySelector(".fpn") && !document.querySelector(".bpn")`, 15000);
 
-  if (packaged) {
-    step("a PDF opens in the file panel (PDFium: the packaged app)");
-    await page.run(`${tag("report.pdf")}.click()`);
-    await page.until("the PDF's page", `!!document.querySelector(".fpn .page canvas")`, 30000);
-    await page.until("its text", `document.querySelector(".fpn .textLayer")?.textContent.includes("Report")`, 30000);
+  step("a PDF opens over the window too; its pages need PDFium (the packaged app)");
+  await page.run(`${tag("report.pdf")}.click()`);
+  await page.until("a PDF as a document, or why not", `${previewing("report.pdf")} && !!document.querySelector(".fpv .dcp-viewer, .fpv .fpn-card")`, 30000);
+  const pages = await page.run(`!!document.querySelector(".fpv .dcp-viewer")`);
+  check(pages || !packaged, "the packaged app shows a PDF's pages");
+  if (pages) {
+    await page.until("the PDF's page", `!!document.querySelector(".fpv .page canvas")`, 30000);
+    await page.until("its text", `document.querySelector(".fpv .textLayer")?.textContent.includes("Report")`, 30000);
     await page.shot("m5-pdf");
-  } else console.log("  · (no PDFium in a development build: run with FINXWORK_E2E_APP for the PDF)");
+  } else console.log(`  · (no PDF view: ${await page.run(`document.querySelector(".fpv .fpn-card p").textContent`)})`);
+  await key(page, "Escape");
+  await page.until("Esc closes it", closed);
 
   step("a link opens in the built-in browser");
   await page.run(`document.querySelector(".tr.bots a.wl").click()`);
-  await page.until("the browser panel", `!!document.querySelector(".brp-tabs [role=tab]")`, 30000);
+  await page.until("the browser panel", `!!document.querySelector(".brp:not(.fpn) .brp-tabs [role=tab]")`, 30000);
   await page.until("the page's title", `[...document.querySelectorAll(".brp-tab-t")].some((e) => e.textContent.includes("测试页面"))`, 30000);
   await page.shot("m6-browser");
 
