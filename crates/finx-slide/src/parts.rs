@@ -41,6 +41,34 @@ pub(crate) fn rels_of(part: &str) -> String {
     }
 }
 
+/// The bytes of one part, if the package has it.
+pub(crate) fn read(package: &[u8], name: &str) -> Option<Vec<u8>> {
+    let mut archive = ZipArchive::new(Cursor::new(package)).ok()?;
+    let mut entry = archive.by_name(name).ok()?;
+    let mut bytes = Vec::new();
+    entry.read_to_end(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// The notes slide `slide`'s relationships name in `package`, as a part name.
+pub(crate) fn notes_of(package: &[u8], slide: &str) -> Option<String> {
+    let rels = String::from_utf8(read(package, &rels_of(slide))?).ok()?;
+    let rel = rels.split('<').find(|r| r.contains("relationships/notesSlide\""))?;
+    let target = rel.split("Target=\"").nth(1)?.split('"').next()?;
+    let dir = slide.rsplit_once('/').map_or("", |(d, _)| d);
+    let mut path: Vec<&str> = if target.starts_with('/') { Vec::new() } else { dir.split('/').filter(|s| !s.is_empty()).collect() };
+    for piece in target.trim_start_matches('/').split('/') {
+        match piece {
+            ".." => {
+                path.pop();
+            }
+            "." | "" => {}
+            p => path.push(p),
+        }
+    }
+    Some(path.join("/"))
+}
+
 fn parts(package: &[u8]) -> ZipResult<BTreeMap<String, Vec<u8>>> {
     let mut archive = ZipArchive::new(Cursor::new(package))?;
     let mut parts = BTreeMap::new();

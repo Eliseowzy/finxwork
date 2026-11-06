@@ -500,6 +500,13 @@ impl NativeProtocol {
             method::DECK_SYNC => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckSyncParams| async move { server.deck_sync(p).await }),
             method::DECK_SAVE => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckSaveParams| async move { server.deck_save(p).await }),
             method::DECK_CLOSE => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckIdParams| async move { server.deck_close(p).await }),
+            method::DECK_PROPOSALS => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckProposalsParams| async move { server.deck_proposals(p).await }),
+            method::DECK_PROPOSAL_ACCEPT => {
+                self.call(id, params, conn, |server, p: finx_protocol::deck::DeckProposalDecideParams| async move { server.deck_proposal_accept(p).await })
+            }
+            method::DECK_PROPOSAL_REJECT => {
+                self.call(id, params, conn, |server, p: finx_protocol::deck::DeckProposalDecideParams| async move { server.deck_proposal_reject(p).await })
+            }
             method::PPTX_METAFILE => self.call(id, params, conn, |server, p: finx_protocol::pptx::PptxMetafileParams| async move { server.pptx_metafile(p).await }),
             method::FILES_WRITE => self.call(id, params, conn, |server, p: FilesWriteParams| async move { server.files_write(p).await }),
             method::FILES_WATCH => {

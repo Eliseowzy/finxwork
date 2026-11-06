@@ -7,12 +7,14 @@
 //!   and snapshot build on them, so they stay as they are across saves: a save does not restart
 //!   the Yrs history, and an editor's undo history survives it.
 //! - `updates.log`, `snapshot.yupd`, `engine.txt`: see [`journal`].
+//! - `proposals.json`: the agent's proposals, see [`ledger`].
 //! - `meta.json`: the file's path, the hash, size and time of the file as last read or written,
 //!   and the revision that holds.
 
 mod actor;
 mod client;
 pub mod journal;
+pub mod ledger;
 mod wire;
 
 use std::collections::{HashMap, HashSet};
@@ -27,8 +29,10 @@ use serde::{Deserialize, Serialize};
 pub use actor::serve;
 pub use client::{DeckLauncher, QUARANTINED};
 use client::DeckWorker;
-pub use wire::{Opened, Summary};
-use wire::{Bytes, Request, Saved, Synced};
+pub use wire::{Accepted, Opened, Proposed, Rejected, StripEntry, Summary};
+use wire::{Bytes, Changed, Request, Saved, Synced};
+
+use finx_protocol::deck::{DeckDiagnostic, DeckProposalsResult};
 
 use crate::atomic;
 use crate::worker::WorkerError;
@@ -49,6 +53,9 @@ pub enum DeckError {
     NotOpen(String),
     #[error("refused: {0}")]
     Refused(String),
+    /// No pending proposal has that id.
+    #[error("no proposal {0}")]
+    NoProposal(String),
     /// The file changed on disk since it was read: nothing was written.
     #[error("changed on disk: {0}")]
     Conflict(String),
@@ -68,6 +75,8 @@ impl From<WorkerError> for DeckError {
     fn from(e: WorkerError) -> Self {
         match e {
             WorkerError::Failed(m) if m.starts_with("protocol: ") => DeckError::Protocol(m),
+            WorkerError::Failed(m) if m.starts_with(actor::NO_PROPOSAL) => DeckError::NoProposal(m[actor::NO_PROPOSAL.len()..].to_owned()),
+            WorkerError::Failed(m) if m.starts_with(actor::REFUSED) => DeckError::Refused(m[actor::REFUSED.len()..].to_owned()),
             e => DeckError::Worker(e.to_string()),
         }
     }
@@ -323,6 +332,63 @@ impl DeckStore {
             self.emit(DeckEvent::Changed(entry.info()));
         }
         Ok(entry.info())
+    }
+
+    /// Makes a proposal of the engine's `ProposalEdit`s (JSON) on the deck. The whole batch is
+    /// one proposal, or nothing when a step fails (`Refused`, naming the step). Listeners hear
+    /// `Changed`, so clients list the proposals again.
+    pub async fn propose(&self, deck_id: &str, agent_id: &str, note: Option<String>, edits: serde_json::Value) -> Result<Proposed, DeckError> {
+        let entry = self.get(deck_id)?;
+        let proposed: Proposed = self.worker.request(Request::Propose { deck: deck_id.to_owned(), agent_id: agent_id.to_owned(), note, edits }).await?;
+        self.changed(&entry, &proposed.changed)?;
+        Ok(proposed)
+    }
+
+    /// Accepts a pending proposal: its update goes to every replica. Targets changed since it
+    /// was made and no `force`: nothing changes, `stale_targets` says what moved.
+    pub async fn accept(&self, deck_id: &str, proposal: &str, force: bool) -> Result<Accepted, DeckError> {
+        let entry = self.get(deck_id)?;
+        let accepted: Accepted = self.worker.request(Request::Accept { deck: deck_id.to_owned(), proposal: proposal.to_owned(), force }).await?;
+        self.changed(&entry, &accepted.changed)?;
+        Ok(accepted)
+    }
+
+    /// Withdraws a pending proposal; `rejected` is false when none had that id.
+    pub async fn reject(&self, deck_id: &str, proposal: &str) -> Result<Rejected, DeckError> {
+        let entry = self.get(deck_id)?;
+        let rejected: Rejected = self.worker.request(Request::Reject { deck: deck_id.to_owned(), proposal: proposal.to_owned() }).await?;
+        if rejected.rejected {
+            self.emit(DeckEvent::Changed(entry.info()));
+        }
+        Ok(rejected)
+    }
+
+    /// Pending proposals, then the decided ones.
+    pub async fn proposals(&self, deck_id: &str) -> Result<DeckProposalsResult, DeckError> {
+        self.get(deck_id)?;
+        Ok(self.worker.request(Request::Proposals { deck: deck_id.to_owned() }).await?)
+    }
+
+    /// The deterministic checks of the deck now, or as `proposal` would leave it.
+    pub async fn check(&self, deck_id: &str, proposal: Option<&str>) -> Result<Vec<DeckDiagnostic>, DeckError> {
+        self.get(deck_id)?;
+        Ok(self.worker.request(Request::Check { deck: deck_id.to_owned(), proposal: proposal.map(str::to_owned) }).await?)
+    }
+
+    /// The engine's snapshot of the deck now, unsaved edits included: the ids edits address.
+    pub async fn snapshot(&self, deck_id: &str) -> Result<finx_slide::DeckSnapshot, DeckError> {
+        self.get(deck_id)?;
+        Ok(self.worker.request(Request::Snapshot { deck: deck_id.to_owned() }).await?)
+    }
+
+    /// After a change of the worker's own: its update to every replica, the state to all.
+    fn changed(&self, entry: &DeckEntry, changed: &Changed) -> Result<(), DeckError> {
+        if !changed.update.is_empty() {
+            *entry.revision.lock() = changed.revision;
+            self.emit(DeckEvent::Update { deck_id: entry.deck_id.clone(), session: None, update: decode(&changed.update)?, revision: changed.revision });
+        }
+        self.emit(DeckEvent::Changed(entry.info()));
+        Ok(())
     }
 
     /// Slide lines and size of the deck as it is now, unsaved edits included.

@@ -1,6 +1,8 @@
-//! The presentation read tools (presentation-ai-design §7): the deferred group `deck`. They read
-//! the .pptx from disk through the session's environment, so they work whether or not the file
-//! panel shows the deck; the kernel does not hold decks yet (§6.2), so there is no edit or save.
+//! The presentation tools (presentation-ai-design §7, presentation-deck-edit §5): the deferred
+//! group `deck`. The read tools read a deck the kernel holds (DeckStore) as it is now, unsaved
+//! edits included, and any other .pptx from disk through the session's environment. `deck_edit`
+//! proposes changes on the kernel's deck, opening it there when no one has; they take effect
+//! when the user accepts them. `deck_save` writes the file.
 
 use async_trait::async_trait;
 use finx_llm::UserContent;
@@ -28,8 +30,13 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+mod edit;
+
+use edit::{DeckEdit, DeckSave};
+
 pub(crate) const GROUP: &str = "deck";
-pub(crate) const GROUP_SUMMARY: &str = "Presentations (PPTX): an outline of a deck, its slides' text, notes and objects, search, slide images and a layout check";
+pub(crate) const GROUP_SUMMARY: &str = "Presentations (PPTX): an outline of a deck, its slides' text, notes and objects, search, slide images, a layout check, \
+     and changes proposed for the user to accept (text, text boxes, object positions, slides, notes) and saving";
 
 /// Largest deck read.
 const MAX_BYTES: u64 = 512 * 1024 * 1024;
@@ -47,6 +54,11 @@ const GUIDELINES: &[&str] = &[
      the conversation, not PowerPoint on the desktop. Start with deck_open for the outline, then deck_read the slides you need, \
      deck_find to locate words or numbers, and deck_view to see a slide's layout, charts and pictures.",
     "Presentations: cite a slide as \"slide N\" (第 N 页). A deck open beside the conversation is read as it is now, unsaved edits included.",
+    "Presentations, changing them: deck_edit proposes; nothing changes until the user accepts, and until then deck_read shows the deck \
+     as it was. Before changing a number or phrase, deck_find it. Put a set of related changes in one deck_edit with a note in the \
+     user's words. After moving or adding objects, look at the slide once with deck_view. If a proposal is refused or rejected, \
+     read the slides again and propose anew; do not work around it. Address slides and objects by the slide_id and shape_id \
+     deck_read gives (detail objects), but to the user speak of slides, titles and text boxes, never of ids or ops.",
 ];
 
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
@@ -59,6 +71,8 @@ pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
                 Arc::new(Typed::new(DeckFind)),
                 Arc::new(Typed::new(DeckView)),
                 Arc::new(Typed::new(DeckCheck)),
+                Arc::new(Typed::new(DeckEdit)),
+                Arc::new(Typed::new(DeckSave)),
             ]
         })
         .clone()
@@ -80,30 +94,28 @@ fn cache() -> &'static Mutex<Vec<Loaded>> {
 
 /// The deck at `raw`, parsed once per version of the file.
 /// The service's decks, in a session's tool state.
-pub(crate) struct DecksHandle(pub(crate) Arc<finx_docs::deck::DeckStore>);
+pub(crate) struct DecksHandle {
+    pub(crate) store: Arc<finx_docs::deck::DeckStore>,
+    /// The session the tools open decks for; they close with it.
+    pub(crate) session: String,
+}
 
 async fn load(raw: &str, env: &dyn Environment, decks: Option<&DecksHandle>) -> Result<(PathBuf, Arc<Vec<u8>>, Arc<Outline>), ToolError> {
-    let path = env.resolve(raw);
-    if !path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pptx")) {
-        let hint = if path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ppt")) {
-            " This is the old binary .ppt format: the deck tools read .pptx only."
-        } else {
-            ""
-        };
-        return Err(ToolError::InvalidArgs(format!("{} is not a .pptx presentation.{hint}", path.display())));
-    }
-    // An open deck's entry holds unsaved edits the file does not (§10).
-    let open = match decks {
-        Some(decks) => decks.0.current_bytes(&path).await.map_err(|e| ToolError::Failed(format!("cannot read {}: {e}", path.display())))?,
-        None => None,
-    };
-    let (bytes, truncated) = match open {
-        Some(bytes) => (bytes, false),
-        None => {
-            let file = env.read_file(&path, MAX_BYTES).await.map_err(|e| ToolError::Failed(format!("cannot read {}: {e}", path.display())))?;
-            (file.bytes, file.truncated)
+    let path = pptx_path(raw, env)?;
+    // A deck the kernel holds: its outline from the deck itself, so the ids are the ones
+    // deck_edit addresses (they follow inserted and moved slides, which a reopened file's do not).
+    if let Some(decks) = decks
+        && let Some(entry) = decks.store.by_path(&path)
+    {
+        let failed = |e: finx_docs::deck::DeckError| ToolError::Failed(format!("cannot read {}: {e}", path.display()));
+        let snapshot = decks.store.snapshot(&entry.deck_id).await.map_err(failed)?;
+        let bytes = decks.store.current_bytes(&path).await.map_err(failed)?;
+        if let Some(bytes) = bytes {
+            return Ok((path, Arc::new(bytes), Arc::new(finx_slide::outline::outline(&snapshot))));
         }
-    };
+    }
+    let file = env.read_file(&path, MAX_BYTES).await.map_err(|e| ToolError::Failed(format!("cannot read {}: {e}", path.display())))?;
+    let (bytes, truncated) = (file.bytes, file.truncated);
     if truncated {
         return Err(ToolError::Failed(format!("{} is larger than the deck tools read ({} MB)", path.display(), MAX_BYTES >> 20)));
     }
@@ -124,6 +136,19 @@ async fn load(raw: &str, env: &dyn Environment, decks: Option<&DecksHandle>) -> 
     cached.insert(0, Loaded { path: path.clone(), hash, bytes: bytes.clone(), outline: outline.clone() });
     cached.truncate(CACHED);
     Ok((path, bytes, outline))
+}
+
+fn pptx_path(raw: &str, env: &dyn Environment) -> Result<PathBuf, ToolError> {
+    let path = env.resolve(raw);
+    if !path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pptx")) {
+        let hint = if path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ppt")) {
+            " This is the old binary .ppt format: the deck tools read .pptx only."
+        } else {
+            ""
+        };
+        return Err(ToolError::InvalidArgs(format!("{} is not a .pptx presentation.{hint}", path.display())));
+    }
+    Ok(path)
 }
 
 fn file_name(path: &Path) -> String {
@@ -296,8 +321,13 @@ impl TypedTool for DeckRead {
 
 fn read_slide(s: &SlideOutline, objects: bool, out: &mut String) {
     let _ = writeln!(out, "## Slide {}: {}{}", s.index, s.title.as_deref().unwrap_or("(no title)"), if s.hidden { " (hidden)" } else { "" });
-    if let Some(layout) = &s.layout {
-        let _ = writeln!(out, "layout: {layout}, slide_id {}", s.slide_id);
+    match &s.layout {
+        Some(layout) => {
+            let _ = writeln!(out, "layout: {layout}, slide_id {}", s.slide_id);
+        }
+        None => {
+            let _ = writeln!(out, "slide_id {}", s.slide_id);
+        }
     }
     for o in &s.objects {
         let indent = "  ".repeat(o.depth);

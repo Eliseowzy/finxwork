@@ -10,7 +10,8 @@ use base64::engine::general_purpose::STANDARD as B64;
 use finx_docs::deck::{DeckError, DeckEvent, DeckInfo};
 use finx_protocol::api::{Empty, error_code, method};
 use finx_protocol::deck::{
-    DECK_CONTRACT_VERSION, DeckChangedParams, DeckIdParams, DeckOpenParams, DeckOpenResult, DeckOrigin, DeckSaveParams, DeckSaveResult, DeckSummary,
+    DECK_CONTRACT_VERSION, DeckChangedParams, DeckIdParams, DeckOpenParams, DeckProposalAcceptResult, DeckProposalAcceptance, DeckProposalDecideParams,
+    DeckProposalRejectResult, DeckProposalsParams, DeckProposalsResult, DeckOpenResult, DeckOrigin, DeckSaveParams, DeckSaveResult, DeckSummary,
     DeckSyncNotice, DeckSyncParams, DeckSyncResult, SlideSize, ThemeInfo,
 };
 use finx_rpc::RpcError;
@@ -25,6 +26,7 @@ fn rpc_error(e: DeckError) -> RpcError {
     match e {
         DeckError::NotFound(_) | DeckError::TooLarge(_) => RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string()),
         DeckError::NotOpen(_) | DeckError::Protocol(_) => RpcError::invalid_params(e),
+        DeckError::NoProposal(_) => RpcError::with_kind(error_code::PROPOSAL_NOT_FOUND, "proposal_not_found", e.to_string()),
         DeckError::Refused(_) => RpcError::with_kind(error_code::DOC_REFUSED, "doc_refused", e.to_string()),
         DeckError::Conflict(_) | DeckError::Deleted(_) => RpcError::with_kind(error_code::DOC_CONFLICT, "doc_conflict", e.to_string()),
         DeckError::Worker(_) | DeckError::Io(_) => RpcError::internal(e.to_string()),
@@ -194,6 +196,33 @@ impl Server {
             None => info.hash,
         };
         Ok(DeckSaveResult { path: path.display().to_string(), hash, version: info.revision.to_string() })
+    }
+
+    /// `deck/proposals`: pending proposals, then those decided (presentation-deck-edit §4).
+    pub(crate) async fn deck_proposals(&self, p: DeckProposalsParams) -> Result<DeckProposalsResult, RpcError> {
+        self.0.decks.proposals(&p.deck_id).await.map_err(rpc_error)
+    }
+
+    /// `deck/proposal/accept`: the update goes to every replica as `deck/sync`. Not applied with
+    /// `stale_targets`: the targets changed, and it stays pending for a `force`d accept.
+    pub(crate) async fn deck_proposal_accept(&self, p: DeckProposalDecideParams) -> Result<DeckProposalAcceptResult, RpcError> {
+        if p.slide_ids.is_some() {
+            return Err(RpcError::invalid_params("accepting some slides of a proposal is not supported yet"));
+        }
+        let accepted = self.0.decks.accept(&p.deck_id, &p.proposal_id, p.force).await.map_err(rpc_error)?;
+        Ok(DeckProposalAcceptResult {
+            revision: accepted.changed.revision,
+            acceptance: DeckProposalAcceptance { proposal_id: p.proposal_id, applied: accepted.applied, stale_targets: accepted.stale_targets },
+        })
+    }
+
+    /// `deck/proposal/reject`.
+    pub(crate) async fn deck_proposal_reject(&self, p: DeckProposalDecideParams) -> Result<DeckProposalRejectResult, RpcError> {
+        if p.slide_ids.is_some() {
+            return Err(RpcError::invalid_params("rejecting some slides of a proposal is not supported yet"));
+        }
+        let rejected = self.0.decks.reject(&p.deck_id, &p.proposal_id).await.map_err(rpc_error)?;
+        Ok(DeckProposalRejectResult { revision: rejected.revision, rejected: rejected.rejected })
     }
 
     pub(crate) async fn deck_close(&self, p: DeckIdParams) -> Result<Empty, RpcError> {

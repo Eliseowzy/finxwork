@@ -4,6 +4,9 @@
 //! deck's directory (source, snapshot and log: nothing acknowledged is lost) and tries once more.
 //! A deck that brings the process down three times in a minute is quarantined (§7.3).
 
+// The worker has no other log than its stderr, which the kernel keeps.
+#![allow(clippy::print_stderr)]
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;

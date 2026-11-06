@@ -1,6 +1,9 @@
 //! The worker's side: every open deck lives on a thread of its own (`Deck` is not `Send`, K3),
 //! which also makes each deck's requests run strictly one after another.
 
+// The worker has no other log than its stderr, which the kernel keeps.
+#![allow(clippy::print_stderr)]
+
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -12,8 +15,12 @@ use base64::engine::general_purpose::STANDARD as B64;
 use finx_slide::Deck;
 use serde_json::Value;
 
+use finx_protocol::deck::{DeckProposalState, DeckProposalsResult};
+use finx_slide::{ProposalEdit, ProposalRequest, SlideError};
+
 use super::journal::{self, Journal};
-use super::wire::{Bytes, Envelope, Opened, Request, Saved, Summary, Synced};
+use super::ledger::{self, Ledger};
+use super::wire::{Accepted, Bytes, Changed, Envelope, Opened, Proposed, Rejected, Request, Saved, StripEntry, Summary, Synced};
 
 type Reply = Box<dyn FnOnce(Result<Value, String>) + Send>;
 
@@ -100,7 +107,13 @@ struct Held {
     deck: Deck,
     journal: Journal,
     revision: u64,
+    ledger: Ledger,
 }
+
+/// Prefix of the error for a proposal id that is not pending.
+pub const NO_PROPOSAL: &str = "no proposal: ";
+/// Prefix of the error for a proposal the engine refused.
+pub const REFUSED: &str = "proposal: ";
 
 fn run(dir: PathBuf, jobs: mpsc::Receiver<Job>, opened: Reply) {
     let mut held = match open(&dir) {
@@ -149,13 +162,15 @@ fn open(dir: &Path) -> Result<(Held, Opened), String> {
                 let (journal, _) = Journal::open(dir).map_err(|e| e.to_string())?;
                 journal.stamp_engine(finx_slide::ENGINE).map_err(|e| e.to_string())?;
                 let opened = Opened { revision: 0, slide_count: deck.slide_count(), recovered: false, set_aside };
-                return Ok((Held { deck, journal, revision: 0 }, opened));
+                let ledger = Ledger::open(dir, &deck);
+                return Ok((Held { deck, journal, revision: 0, ledger }, opened));
             }
         }
     }
     journal.stamp_engine(finx_slide::ENGINE).map_err(|e| e.to_string())?;
     let opened = Opened { revision, slide_count: deck.slide_count(), recovered: revision > 0, set_aside };
-    Ok((Held { deck, journal, revision }, opened))
+    let ledger = Ledger::open(dir, &deck);
+    Ok((Held { deck, journal, revision, ledger }, opened))
 }
 
 fn replay(deck: &Deck, recovered: &journal::Recovered) -> Result<(), String> {
@@ -174,16 +189,64 @@ fn handle(held: &mut Held, request: Request) -> Result<Value, String> {
             let update = B64.decode(update).map_err(|e| format!("update: {e}"))?;
             // A rejected update leaves the deck as it was (I5) and is not logged.
             held.deck.apply_update(&update).map_err(|e| format!("protocol: {e}"))?;
-            held.revision += 1;
-            // Logged and synced before the acknowledgement (§5.2-4).
-            held.journal.append(held.revision, &update).map_err(|e| format!("log: {e}"))?;
-            if held.journal.wants_compaction()
-                && let Err(e) = held.journal.compact(held.revision, &held.deck.encode_state())
-            {
-                eprintln!("deck-worker: compaction failed, the log keeps growing: {e}");
-            }
+            record(held, &update)?;
             to_value(Synced { revision: held.revision })
         }
+        Request::Propose { agent_id, note, edits, .. } => {
+            let edits: Vec<ProposalEdit> = serde_json::from_value(edits).map_err(|e| format!("{REFUSED}edits: {e}"))?;
+            let request = ProposalRequest { agent_id, note, edits };
+            let (proposal, update) = held.deck.propose(request.clone()).map_err(slide_error)?;
+            let changed = record(held, &update)?;
+            let strip = held
+                .deck
+                .proposal_strip(&proposal.id)
+                .map_err(slide_error)?
+                .into_iter()
+                .map(|e| StripEntry {
+                    status: serde_json::to_value(e.status).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_default(),
+                    index: e.preview_index.or(e.live_index).unwrap_or_default(),
+                    slide_id: e.slide_id,
+                })
+                .collect();
+            let id = held.ledger.add(request, &proposal);
+            to_value(Proposed { changed, proposal: ledger::relabel(&proposal, &id), proposal_id: id, strip })
+        }
+        Request::Accept { proposal, force, .. } => {
+            let engine = held.ledger.engine_id(&proposal).ok_or_else(|| format!("{NO_PROPOSAL}{proposal}"))?;
+            let accepted = held.deck.accept_proposal(&engine, force).map_err(slide_error)?;
+            // Logged first: a crash in between leaves it pending, to accept again.
+            let changed = record(held, &accepted.update)?;
+            if accepted.stale_targets.is_empty() {
+                held.ledger.decide(&proposal, DeckProposalState::Accepted);
+            }
+            to_value(Accepted { changed, applied: accepted.applied, stale_targets: accepted.stale_targets })
+        }
+        Request::Reject { proposal, .. } => {
+            let rejected = match held.ledger.engine_id(&proposal) {
+                Some(engine) => {
+                    held.deck.reject_proposal(&engine);
+                    held.ledger.decide(&proposal, DeckProposalState::Rejected);
+                    true
+                }
+                None => false,
+            };
+            to_value(Rejected { revision: held.revision, rejected })
+        }
+        Request::Proposals { .. } => {
+            let pending = held.deck.proposals().map_err(|e| e.to_string())?;
+            to_value(DeckProposalsResult { proposals: held.ledger.list(&pending) })
+        }
+        Request::Check { proposal, .. } => {
+            let found = match proposal {
+                Some(id) => {
+                    let engine = held.ledger.engine_id(&id).ok_or_else(|| format!("{NO_PROPOSAL}{id}"))?;
+                    held.deck.check_proposal(&engine)
+                }
+                None => held.deck.check(),
+            };
+            to_value(found.map_err(slide_error)?)
+        }
+        Request::Snapshot { .. } => to_value(held.deck.snapshot().map_err(|e| e.to_string())?),
         Request::Diff { state_vector, .. } => {
             let sv = B64.decode(state_vector).map_err(|e| format!("state vector: {e}"))?;
             let diff = held.deck.encode_diff(&sv).map_err(|e| format!("protocol: {e}"))?;
@@ -218,6 +281,30 @@ fn handle(held: &mut Held, request: Request) -> Result<Value, String> {
         }
         Request::Close { .. } => Ok(Value::Null),
         Request::Open { .. } | Request::Exit => Err("unexpected request".into()),
+    }
+}
+
+/// Logs a change the deck made, under the next revision; nothing for an empty update.
+/// Logged and synced before the acknowledgement (§5.2-4).
+fn record(held: &mut Held, update: &[u8]) -> Result<Changed, String> {
+    if update.is_empty() {
+        return Ok(Changed { revision: held.revision, update: String::new() });
+    }
+    held.revision += 1;
+    held.journal.append(held.revision, update).map_err(|e| format!("log: {e}"))?;
+    if held.journal.wants_compaction()
+        && let Err(e) = held.journal.compact(held.revision, &held.deck.encode_state())
+    {
+        eprintln!("deck-worker: compaction failed, the log keeps growing: {e}");
+    }
+    Ok(Changed { revision: held.revision, update: B64.encode(update) })
+}
+
+fn slide_error(e: SlideError) -> String {
+    match e {
+        SlideError::NoProposal(id) => format!("{NO_PROPOSAL}{id}"),
+        SlideError::Proposal { .. } => format!("{REFUSED}{e}"),
+        e => e.to_string(),
     }
 }
 

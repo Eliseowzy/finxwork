@@ -2329,19 +2329,75 @@ pub struct DeckProposalInfo {
     pub created_at: i64,
 }
 
+/// `deck/proposals` (presentation-deck-edit §4).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct DeckProposalListParams {
+pub struct DeckProposalsParams {
     pub session_id: String,
     pub deck_id: String,
-    /// Accepted, rejected and reverted ones too: the AI ledger.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub closed: bool,
 }
 
+/// Where a kernel-held proposal stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DeckProposalState {
+    Pending,
+    Accepted,
+    Rejected,
+}
+
+/// One proposal of `deck/proposals`: the engine's proposal JSON (camelCase), with its state.
+/// `edits` are the engine's `ProposalEdit`s, for a replica to preview with its own engine.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DeckProposalListResult {
-    pub proposals: Vec<DeckProposalInfo>,
+#[serde(rename_all = "camelCase")]
+pub struct DeckProposalEntry {
+    pub id: String,
+    pub agent_id: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub edits: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub changes: Vec<serde_json::Value>,
+    /// Targets changed since it was made: accepting it needs `force`.
+    #[serde(default)]
+    pub stale_targets: Vec<String>,
+    /// The ids its `ref`s got.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub refs: BTreeMap<String, String>,
+    pub status: DeckProposalState,
+}
+
+/// Pending proposals first, then those decided, newest last.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DeckProposalsResult {
+    pub proposals: Vec<DeckProposalEntry>,
+}
+
+/// What `deck/proposal/accept` did (camelCase, as the engine's acceptance).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DeckProposalAcceptance {
+    pub proposal_id: String,
+    /// False: nothing changed. With `stale_targets`, its targets changed and it is still
+    /// pending: accept again with `force`.
+    pub applied: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stale_targets: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeckProposalAcceptResult {
+    /// The deck's revision after it.
+    pub revision: u64,
+    pub acceptance: DeckProposalAcceptance,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeckProposalRejectResult {
+    pub revision: u64,
+    /// False when no pending proposal had that id.
+    pub rejected: bool,
 }
 
 /// `deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The

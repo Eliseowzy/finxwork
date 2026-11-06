@@ -914,6 +914,505 @@
     }
   },
   {
+    "description": "Propose changes to a presentation (.pptx): replace or format words, set an object's paragraphs or alignment, add a text box, move, resize or remove an object, insert, duplicate, delete or move slides, change a slide's layout or its speaker notes. All of them become one proposal the user sees beside the deck and accepts or rejects; nothing changes until they accept, and until then deck_read shows the deck as it was. If a step cannot be done, nothing is proposed and the error names the step and why (MissingTarget, ContentMismatch, AmbiguousTarget, Unsupported). Returns the proposal and the slides it changes, with any layout problems they would have.",
+    "group": "deck",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "deck_edit",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        },
+        "edits": {
+          "description": "The changes, proposed together as one change the user accepts or rejects. At most 256.",
+          "items": {
+            "description": "One change. Slides and objects are addressed by the slide_id and shape_id deck_read gives (detail `objects`); positions and sizes are points from the slide's top left.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "description": "Replace words in an object's text; `find` must occur exactly once in it, within one paragraph. The new words take the formatting of those they replace.",
+                "properties": {
+                  "find": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "replace_text"
+                    ],
+                    "type": "string"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "find",
+                  "op",
+                  "shape_id",
+                  "slide_id",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Replace all of an object's text with these paragraphs.",
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "set_paragraphs"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraphs": {
+                    "items": {
+                      "properties": {
+                        "alignment": {
+                          "enum": [
+                            "left",
+                            "center",
+                            "right",
+                            "justify"
+                          ],
+                          "type": "string"
+                        },
+                        "bullet": {
+                          "default": null,
+                          "description": "A bulleted paragraph; default as the layout has it.",
+                          "type": "boolean"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraphs",
+                  "shape_id",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Format words of an object's text (`find`, once), or all of it.",
+                "properties": {
+                  "bold": {
+                    "default": null,
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "default": null,
+                    "description": "`#RRGGBB`.",
+                    "type": "string"
+                  },
+                  "find": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "font": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "italic": {
+                    "default": null,
+                    "type": "boolean"
+                  },
+                  "op": {
+                    "enum": [
+                      "format_text"
+                    ],
+                    "type": "string"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "size_pt": {
+                    "default": null,
+                    "type": "number"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  },
+                  "underline": {
+                    "default": null,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "op",
+                  "shape_id",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Align the paragraphs holding `find`, or all of the object's.",
+                "properties": {
+                  "alignment": {
+                    "enum": [
+                      "left",
+                      "center",
+                      "right",
+                      "justify"
+                    ],
+                    "type": "string"
+                  },
+                  "find": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_alignment"
+                    ],
+                    "type": "string"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "alignment",
+                  "op",
+                  "shape_id",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "A new text box.",
+                "properties": {
+                  "bold": {
+                    "default": null,
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "height": {
+                    "type": "number"
+                  },
+                  "name": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "add_text_box"
+                    ],
+                    "type": "string"
+                  },
+                  "size_pt": {
+                    "default": null,
+                    "type": "number"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "width": {
+                    "type": "number"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "height",
+                  "op",
+                  "slide_id",
+                  "text",
+                  "width",
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "remove_shape"
+                    ],
+                    "type": "string"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "shape_id",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Move or resize an object.",
+                "properties": {
+                  "height": {
+                    "type": "number"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_shape_rect"
+                    ],
+                    "type": "string"
+                  },
+                  "shape_id": {
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  },
+                  "width": {
+                    "type": "number"
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "height",
+                  "op",
+                  "shape_id",
+                  "slide_id",
+                  "width",
+                  "x",
+                  "y"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "A new, empty slide after `after_slide_id` (first when omitted), with a layout another slide of the deck uses (its name, as deck_read shows it), or the one of the slide before.",
+                "properties": {
+                  "after_slide_id": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "layout": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "insert_slide"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "A copy of a slide, right after it or after `after_slide_id`.",
+                "properties": {
+                  "after_slide_id": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "duplicate_slide"
+                    ],
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "delete_slide"
+                    ],
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Move a slide after `after_slide_id`, or to the start when omitted.",
+                "properties": {
+                  "after_slide_id": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "move_slide"
+                    ],
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Give a slide the layout another slide of the deck uses (its name, as deck_read shows it).",
+                "properties": {
+                  "layout": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_slide_layout"
+                    ],
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "layout",
+                  "op",
+                  "slide_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Replace a slide's speaker notes.",
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "set_notes"
+                    ],
+                    "type": "string"
+                  },
+                  "slide_id": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "slide_id",
+                  "text"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "note": {
+          "default": null,
+          "description": "What the changes do, in the user's words (\"按 Q3 财报更新第 3 页的营收\"); shown with the proposal.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck",
+        "edits"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Write a presentation's accepted changes and the user's unsaved edits to its file (or, with `path`, to another .pptx). Only the slides that changed are rewritten; the rest of the file stays byte for byte. Proposals not yet accepted are not saved.",
+    "group": "deck",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "deck_save",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        },
+        "force": {
+          "default": false,
+          "description": "Write over the file although it changed on disk since it was opened. Only when the user said so.",
+          "type": "boolean"
+        },
+        "path": {
+          "default": null,
+          "description": "Save as another .pptx instead (absolute, or relative to the working directory).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "description": "See the agents in this session: each one's label, status, how long it has run, its recent steps, what it last said and how long ago it last did anything. Name agents, or leave it out for all. For diagnosing, not for waiting: a report comes when an agent is done.",
     "group": "agents",
     "kind": "read_only",

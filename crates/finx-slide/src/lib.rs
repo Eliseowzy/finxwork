@@ -15,7 +15,10 @@ use betteroffice_pptx::{
     TextStyle,
 };
 
-pub use betteroffice_pptx::FindMatch;
+pub use betteroffice_pptx::{
+    DeckSnapshot, FindMatch, Proposal, ProposalEdit, ProposalError, ProposalRequest,
+    ProposalStripEntry, ProposalStripStatus, ShapeSnapshot, SlideSnapshot, StorySnapshot,
+};
 pub use fonts::SystemFonts;
 
 /// The engine build, recorded beside a deck's update log: a log written by another build is
@@ -48,6 +51,23 @@ pub enum SlideError {
     Package(#[from] zip::result::ZipError),
     #[error("saving changed parts no edit touched: {}", .0.join(", "))]
     Unexpected(Vec<String>),
+    #[error("no proposal {0}")]
+    NoProposal(String),
+    /// A proposal the engine refused, whole: `step` is the first edit (from 0) that fails on
+    /// its own, when one does.
+    #[error("{}{message}", .step.map(|s| format!("edit {s}: ")).unwrap_or_default())]
+    Proposal { step: Option<usize>, message: String },
+}
+
+/// What accepting a proposal did.
+#[derive(Debug, Default)]
+pub struct Accepted {
+    /// False when its targets changed (`stale_targets`) or it changes nothing.
+    pub applied: bool,
+    /// Targets changed since it was made: accepting needs `force`. Nothing changed.
+    pub stale_targets: Vec<String>,
+    /// The Yrs update the acceptance made; empty when nothing changed.
+    pub update: Vec<u8>,
 }
 
 pub type Result<T> = std::result::Result<T, SlideError>;
@@ -80,6 +100,103 @@ impl Deck {
             source_slide_ids,
             edited: Mutex::default(),
         })
+    }
+
+    /// The Yrs client id of this deck's own edits (accepted proposals, `replace_text`). The
+    /// engine opens a standalone deck as client 1; replicas take a random 53-bit id from 1 up
+    /// (`replicaClientId` in the desktop app), so they meet only by a 2^-53 chance. Every run of
+    /// the worker reuses 1, which is safe: Yrs continues a client's clock from the state it
+    /// holds, and the worker replays the whole log before it writes.
+    pub fn client_id(&self) -> u64 {
+        self.presentation.client_id()
+    }
+
+    /// The engine's model of the deck as it is now.
+    pub fn snapshot(&self) -> Result<DeckSnapshot> {
+        Ok(self.presentation.snapshot()?)
+    }
+
+    /// Makes a proposal. Proposals live in this deck only: the engine keeps them beside the Yrs
+    /// document, not in it, so making one changes no replica and the returned update is empty
+    /// unless the engine wrote to the document after all. A request that fails fails whole.
+    pub fn propose(&self, request: ProposalRequest) -> Result<(Proposal, Vec<u8>)> {
+        let sv = self.state_vector();
+        match self.presentation.propose(request.clone()) {
+            Ok(proposal) => Ok((proposal, self.changes_since(&sv)?)),
+            Err(e) => Err(self.failing_step(request, e)),
+        }
+    }
+
+    /// Finds the first edit that fails on its own, by proposing ever longer prefixes (each
+    /// withdrawn at once), so the agent hears which step to fix.
+    fn failing_step(&self, request: ProposalRequest, error: betteroffice_pptx::Error) -> SlideError {
+        let message = error.to_string();
+        let whole = matches!(&error, betteroffice_pptx::Error::Proposal(ProposalError::Invalid(_)));
+        if whole || request.edits.is_empty() {
+            return SlideError::Proposal { step: None, message };
+        }
+        for n in 1..=request.edits.len() {
+            let prefix = ProposalRequest { edits: request.edits[..n].to_vec(), ..request.clone() };
+            match self.presentation.propose(prefix) {
+                Ok(p) => {
+                    self.presentation.reject_proposal(&p.id);
+                }
+                Err(e) => return SlideError::Proposal { step: Some(n - 1), message: e.to_string() },
+            }
+        }
+        SlideError::Proposal { step: None, message }
+    }
+
+    /// Pending proposals, with the targets changed under each (`stale_targets`).
+    pub fn proposals(&self) -> Result<Vec<Proposal>> {
+        Ok(self.presentation.proposals()?)
+    }
+
+    /// What a proposal does to each slide, in the order the deck would have.
+    pub fn proposal_strip(&self, id: &str) -> Result<Vec<ProposalStripEntry>> {
+        self.presentation.proposal_slide_strip(id).map_err(|e| no_proposal(id, e))
+    }
+
+    /// The deterministic checks on the deck as the proposal would leave it.
+    pub fn check_proposal(&self, id: &str) -> Result<Vec<finx_protocol::deck::DeckDiagnostic>> {
+        let preview = self.presentation.preview_proposal(id).map_err(|e| no_proposal(id, e))?;
+        Ok(check::check(&preview.snapshot))
+    }
+
+    /// Accepts a proposal: its edits land as one change, and the slides it changes join the
+    /// edited set. With targets changed since it was made and no `force`, nothing happens and
+    /// `stale_targets` says what changed.
+    pub fn accept_proposal(&self, id: &str, force: bool) -> Result<Accepted> {
+        let sv = self.state_vector();
+        let before = self.presentation.snapshot().ok();
+        match self.presentation.accept_proposal(id, force) {
+            Ok(acceptance) => {
+                if !acceptance.applied {
+                    return Ok(Accepted::default());
+                }
+                self.touch(before, &self.presentation.snapshot()?)?;
+                Ok(Accepted { applied: true, stale_targets: Vec::new(), update: self.encode_diff(&sv)? })
+            }
+            Err(betteroffice_pptx::Error::Proposal(ProposalError::Stale(targets))) => {
+                Ok(Accepted { applied: false, stale_targets: targets, update: Vec::new() })
+            }
+            Err(e) => Err(no_proposal(id, e)),
+        }
+    }
+
+    /// Withdraws a pending proposal; false when there was none of that id. The document is
+    /// not touched, so there is no update.
+    pub fn reject_proposal(&self, id: &str) -> bool {
+        self.presentation.reject_proposal(id)
+    }
+
+    /// The update since `sv`, or nothing when the document has not moved. Only for calls
+    /// that cannot delete: a deletion alone leaves the state vector as it was.
+    fn changes_since(&self, sv: &[u8]) -> Result<Vec<u8>> {
+        if self.state_vector() == sv {
+            return Ok(Vec::new());
+        }
+        self.encode_diff(sv)
     }
 
     /// Runs the implemented deterministic checks on the current in-memory snapshot.
@@ -198,6 +315,12 @@ impl Deck {
         // TODO(engine): apply_update_touched — let the engine report touched slides itself.
         let before = self.presentation.snapshot().ok();
         let after = self.presentation.apply_update_v1(update)?;
+        self.touch(before, &after)
+    }
+
+    /// Adds the slides whose snapshot differs between `before` and `after` to the edited set;
+    /// without `before`, every slide.
+    fn touch(&self, before: Option<DeckSnapshot>, after: &DeckSnapshot) -> Result<()> {
         let touched: Vec<String> = match before {
             Some(before) => after
                 .slides
@@ -225,7 +348,7 @@ impl Deck {
     pub fn save(&self) -> Result<Vec<u8>> {
         let saved = self.presentation.save()?;
         Presentation::open(&saved)?;
-        let intended = self.intended(&parts::names(&saved)?);
+        let intended = self.intended(&saved, &parts::names(&saved)?);
         let unexpected: Vec<String> = parts::changed(&self.source, &saved)?
             .into_iter()
             .filter(|part| !intended.contains(part))
@@ -240,13 +363,23 @@ impl Deck {
     /// - editing a slide: the slide and its relationships (a new picture adds one);
     /// - inserting, duplicating, deleting or moving slides: those slides and their
     ///   relationships, `presentation.xml` with its relationships, and the content types;
-    /// - inserting a picture: the new media part (never an existing one) and the content types.
-    fn intended(&self, saved_parts: &BTreeSet<String>) -> BTreeSet<String> {
+    /// - inserting a picture: the new media part (never an existing one) and the content types;
+    /// - editing a slide's notes: its notes slide and that part's relationships, and the
+    ///   content types when the notes slide is new.
+    fn intended(&self, saved: &[u8], saved_parts: &BTreeSet<String>) -> BTreeSet<String> {
         let mut intended = self
             .edited
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
+        let notes: Vec<String> = intended.iter().filter_map(|slide| parts::notes_of(saved, slide)).collect();
+        for part in notes {
+            if !self.source_parts.contains(&part) {
+                intended.insert(CONTENT_TYPES.to_owned());
+            }
+            intended.insert(parts::rels_of(&part));
+            intended.insert(part);
+        }
         let edited_rels: Vec<String> = intended.iter().map(|part| parts::rels_of(part)).collect();
         intended.extend(edited_rels);
 
@@ -291,6 +424,13 @@ impl Deck {
             .into_iter()
             .zip(slide_paths(&self.presentation))
             .collect())
+    }
+}
+
+fn no_proposal(id: &str, error: betteroffice_pptx::Error) -> SlideError {
+    match error {
+        betteroffice_pptx::Error::Proposal(ProposalError::NotFound(_)) => SlideError::NoProposal(id.to_owned()),
+        e => e.into(),
     }
 }
 

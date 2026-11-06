@@ -29,6 +29,18 @@ pub enum Request {
     /// Slide lines and size for `DeckSummary`, from the deck as it is now.
     Summary { deck: String },
     Close { deck: String },
+    /// Makes a proposal of the engine's `ProposalEdit`s (JSON); replies `Proposed`.
+    Propose { deck: String, agent_id: String, note: Option<String>, edits: serde_json::Value },
+    /// Accepts a pending proposal; replies `Accepted`.
+    Accept { deck: String, proposal: String, force: bool },
+    /// Withdraws a pending proposal; replies `Rejected`.
+    Reject { deck: String, proposal: String },
+    /// Pending proposals and those decided; replies `DeckProposalsResult`.
+    Proposals { deck: String },
+    /// The deterministic checks of the deck now, or as `proposal` would leave it.
+    Check { deck: String, proposal: Option<String> },
+    /// The engine's snapshot of the deck now (JSON): its ids are the ones edits address.
+    Snapshot { deck: String },
     /// Ends the process: after shutdown, and in tests as a crash.
     Exit,
 }
@@ -42,7 +54,13 @@ impl Request {
             | Request::State { deck }
             | Request::Save { deck, .. }
             | Request::Summary { deck }
-            | Request::Close { deck } => Some(deck),
+            | Request::Close { deck }
+            | Request::Propose { deck, .. }
+            | Request::Accept { deck, .. }
+            | Request::Reject { deck, .. }
+            | Request::Proposals { deck }
+            | Request::Check { deck, .. }
+            | Request::Snapshot { deck } => Some(deck),
             Request::Exit => None,
         }
     }
@@ -81,4 +99,49 @@ pub struct Summary {
     pub width_pt: f64,
     pub height_pt: f64,
     pub slides: Vec<finx_protocol::deck::SlideLine>,
+}
+
+/// A change's reply: the revision after it, and the update it made (base64, empty for none:
+/// then nothing was logged and the revision is as it was).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Changed {
+    pub revision: u64,
+    #[serde(default)]
+    pub update: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Proposed {
+    #[serde(flatten)]
+    pub changed: Changed,
+    /// Its id, the worker's: stable across a worker restart.
+    pub proposal_id: String,
+    /// The engine's proposal JSON, under that id.
+    pub proposal: serde_json::Value,
+    /// What it does to each slide, in the order the deck would have.
+    pub strip: Vec<StripEntry>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StripEntry {
+    pub slide_id: String,
+    /// `unchanged`, `changed`, `inserted`, `deleted` or `moved`.
+    pub status: String,
+    /// From 0: where it is in the deck as proposed, or for a deleted slide where it was.
+    pub index: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Accepted {
+    #[serde(flatten)]
+    pub changed: Changed,
+    pub applied: bool,
+    #[serde(default)]
+    pub stale_targets: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Rejected {
+    pub revision: u64,
+    pub rejected: bool,
 }

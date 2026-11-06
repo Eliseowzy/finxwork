@@ -249,7 +249,7 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
     }
     let emitter = Arc::new(Emitter::new(event_tx));
     if let Some(decks) = &launch.deps.decks {
-        tool_state.insert(Arc::new(crate::deck::DecksHandle(decks.clone())));
+        tool_state.insert(Arc::new(crate::deck::DecksHandle { store: decks.clone(), session: launch.root_id.clone() }));
     }
     if let Some(store) = &launch.deps.docs {
         let weak = Arc::downgrade(&emitter);
