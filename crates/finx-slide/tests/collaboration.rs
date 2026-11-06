@@ -158,3 +158,16 @@ mod structural {
         assert_eq!(reopened.slide_count(), 2);
     }
 }
+
+#[test]
+fn deleted_slide_saves() {
+    use betteroffice_pptx::{EditCtx, Presentation};
+    let bytes = include_bytes!("fixtures/editor.pptx").to_vec();
+    let authority = finx_slide::Deck::open(bytes.clone()).unwrap();
+    let replica = Presentation::open_from_update(&authority.encode_state(), 42, Some(&bytes)).unwrap();
+    let ids = replica.slide_ids().unwrap();
+    replica.delete_slide(&EditCtx::local("replica"), &ids[0]).unwrap();
+    authority.apply_update(&replica.encode_diff_v1(&authority.state_vector()).unwrap()).unwrap();
+    let reopened = finx_slide::Deck::open(authority.save().unwrap()).unwrap();
+    assert_eq!(reopened.slide_count(), 1);
+}
