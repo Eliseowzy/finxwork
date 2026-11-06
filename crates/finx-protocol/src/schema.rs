@@ -16,6 +16,7 @@ use crate::api::error_code;
 use crate::api::method;
 use crate::bot;
 use crate::customize;
+use crate::deck;
 use crate::event::Event;
 use crate::files;
 use crate::op::Op;
@@ -258,6 +259,27 @@ pub fn document() -> Value {
         (method::PPTX_READ, Some(name::<crate::pptx::PptxReadParams>(g)), name::<crate::pptx::PptxReadResult>(g)),
         (method::PPTX_WRITE, Some(name::<crate::pptx::PptxWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::PPTX_METAFILE, Some(name::<crate::pptx::PptxMetafileParams>(g)), name::<crate::pptx::PptxMetafileResult>(g)),
+        (method::DECK_OPEN, Some(name::<deck::DeckOpenParams>(g)), name::<deck::DeckOpenResult>(g)),
+        (method::DECK_CLOSE, Some(name::<deck::DeckIdParams>(g)), name::<api::Empty>(g)),
+        (method::DECK_SYNC, Some(name::<deck::DeckSyncParams>(g)), name::<deck::DeckSyncResult>(g)),
+        (method::DECK_SAVE, Some(name::<deck::DeckSaveParams>(g)), name::<deck::DeckSaveResult>(g)),
+        (method::DECK_SUMMARY, Some(name::<deck::DeckSummaryParams>(g)), name::<deck::DeckSummary>(g)),
+        (method::DECK_READ, Some(name::<deck::DeckReadParams>(g)), name::<deck::DeckReadResult>(g)),
+        (method::DECK_FIND, Some(name::<deck::DeckFindParams>(g)), name::<deck::DeckFindResult>(g)),
+        (method::DECK_VIEW, Some(name::<deck::DeckViewParams>(g)), name::<deck::DeckViewResult>(g)),
+        (method::DECK_FOCUS, Some(name::<deck::DeckFocusParams>(g)), name::<api::Empty>(g)),
+        (method::DECK_EDIT, Some(name::<deck::DeckEditParams>(g)), name::<deck::DeckEditResult>(g)),
+        (method::DECK_COPY, Some(name::<deck::DeckCopyParams>(g)), name::<deck::DeckCopyResult>(g)),
+        (method::DECK_PROPOSAL_LIST, Some(name::<deck::DeckProposalListParams>(g)), name::<deck::DeckProposalListResult>(g)),
+        (method::DECK_PROPOSAL_ACCEPT, Some(name::<deck::DeckProposalDecideParams>(g)), name::<deck::DeckProposalResult>(g)),
+        (method::DECK_PROPOSAL_REJECT, Some(name::<deck::DeckProposalDecideParams>(g)), name::<deck::DeckProposalResult>(g)),
+        (method::DECK_PROPOSAL_REVERT, Some(name::<deck::DeckProposalIdParams>(g)), name::<deck::DeckProposalResult>(g)),
+        (method::DECK_CHECK, Some(name::<deck::DeckCheckParams>(g)), name::<deck::DeckCheckResult>(g)),
+        (method::DECK_LAYOUTS, Some(name::<deck::DeckLayoutsParams>(g)), name::<deck::DeckLayoutsResult>(g)),
+        (method::DECK_TEMPLATE_PROFILE, Some(name::<deck::DeckTemplateProfileParams>(g)), name::<deck::TemplateProfile>(g)),
+        (method::DECK_LINKS, Some(name::<deck::DeckLinksParams>(g)), name::<deck::DeckLinksResult>(g)),
+        (method::DECK_DIFF, Some(name::<deck::DeckDiffParams>(g)), name::<deck::DeckDiff>(g)),
+        (method::AI_ACTION, Some(name::<deck::AiActionParams>(g)), name::<deck::AiActionResult>(g)),
         (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_SUBSCRIBE, None, name::<bot::BotsResult>(g)),
@@ -294,6 +316,10 @@ pub fn document() -> Value {
         (method::MCP_PROBE_PROGRESS, name::<customize::McpProbeProgressParams>(g)),
         (method::PPTX_READ_PROGRESS, name::<crate::pptx::PptxReadProgress>(g)),
         (method::FILES_CHANGED, name::<files::FilesChangedParams>(g)),
+        (method::DECK_SYNC, name::<deck::DeckSyncNotice>(g)),
+        (method::DECK_CHANGED, name::<deck::DeckChangedParams>(g)),
+        (method::DECK_PROPOSAL, name::<deck::DeckProposalEvent>(g)),
+        (method::AI_ACTION_PROGRESS, name::<deck::AiActionProgress>(g)),
         (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
         (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
@@ -308,7 +334,8 @@ pub fn document() -> Value {
         ),
     ];
     // Also used on their own: `finx exec --output stream-json` lines and `--ops-stdin` lines.
-    let standalone = [name::<Event>(g), name::<Op>(g)];
+    // The deck's rule ids, for clients to name checks (`DeckDiagnostic.rule` is a string).
+    let standalone = [name::<Event>(g), name::<Op>(g), name::<deck::DiagnosticRule>(g)];
 
     let reference = |name: &str| json!({ "$ref": format!("#/definitions/{name}") });
     let mut methods_doc = Map::new();

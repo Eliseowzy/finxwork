@@ -1,13 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { PptxFontFamily } from "./fonts";
 import { useTranslation } from "react-i18next";
 import {
-  ToolbarButton, ToolbarCommand, ToolbarCommandButton, ToolbarDropdown,
+  ToolbarButton, ToolbarCommand, ToolbarCommandButton, ToolbarDropdown, ToolbarMenuItem, ToolbarMenuSeparator,
   usePptxCommand, usePptxCommandState, usePptxCommands, useTranslation as useOfficeTranslation,
 } from "@betteroffice/pptx-react";
 import { COLLAPSED, COMPACT, FULL, narrower, type RibbonLevel } from "./ribbonFit";
 import { RibbonIcon, type RibbonIconName } from "./ribbonIcons";
 import { fontMenu, type FontEntry } from "./fontMenu";
+import { useController, useCommandText } from "./ribbon/controls";
+import { RIcon } from "./ribbon/icons";
 
 /** The host's fonts: the machine's families, and loading one into the running editor. */
 export interface RibbonFonts {
@@ -142,11 +144,69 @@ function FontPicker({ fonts, compact }: { fonts: RibbonFonts; compact: boolean }
   </ToolbarDropdown>;
 }
 
+/** Re-renders on every command-layer state change (selection, document, painter, clipboard). */
+function useRibbonState() {
+  const controller = useController();
+  return useSyncExternalStore(controller.subscribe, controller.state);
+}
+
+/** A button for a command-layer command (commands/registry.ts): status, reason and shortcut come from the controller. */
+function Cmd({ cmd, icon, args, captioned = false, large, onDoubleClick }: {
+  cmd: string; icon: string; args?: unknown; captioned?: boolean; large?: boolean; onDoubleClick?: () => void;
+}) {
+  const controller = useController();
+  useRibbonState();
+  const status = controller.status(cmd, args);
+  const { label, title, reason } = useCommandText()(cmd, status);
+  const button = <ToolbarButton title={label} active={typeof status.active === "boolean" ? status.active : status.active === "mixed" ? "mixed" : undefined}
+    disabled={!status.enabled} description={reason || title} testId={`pptx-cmd-${cmd}`} onClick={() => void controller.run(cmd, args)}
+    className={`pptx-rb-tile${large ? " pptx-rb-tile-large" : ""}${captioned ? " pptx-rb-captioned" : ""}`}>
+    <RIcon name={icon} className={large ? "pptx-rb-icon-large" : "pptx-rb-icon"} />{captioned && <span className="pptx-rb-caption">{label}</span>}
+  </ToolbarButton>;
+  return onDoubleClick ? <span className="pptx-rb-dbl" onDoubleClick={onDoubleClick}>{button}</span> : button;
+}
+
+/** A menu of command-layer commands; a separator goes before each item marked `sep`. */
+function CmdMenu({ id, icon, items }: { id: string; icon: string; items: readonly { cmd: string; icon: string; sep?: boolean }[] }) {
+  const controller = useController();
+  useRibbonState();
+  const text = useCommandText();
+  const { t } = useTranslation("session");
+  const label = t(`pptx.ribbon.group.${id}` as never) as string;
+  const enabled = items.some((item) => controller.status(item.cmd).enabled);
+  return <ToolbarDropdown title={label} popup="menu" disabled={!enabled} testId={`pptx-menu-${id}`}
+    trigger={<span className="pptx-rb-menu-trigger"><RIcon name={icon} className="pptx-rb-icon" /><RibbonIcon name="chevron" size={10} /></span>}>
+    {(close) => items.flatMap((item) => {
+      const status = controller.status(item.cmd);
+      const { label: itemLabel, reason } = text(item.cmd, status);
+      const row = <ToolbarMenuItem key={item.cmd} label={itemLabel} icon={<RIcon name={item.icon} className="pptx-rb-icon" />}
+        selected={status.active === true} disabled={!status.enabled} description={reason || undefined} close={close}
+        onClick={() => void controller.run(item.cmd)} />;
+      return item.sep ? [<ToolbarMenuSeparator key={`${item.cmd}-sep`} />, row] : [row];
+    })}
+  </ToolbarDropdown>;
+}
+
+const ALIGN_ITEMS = [
+  { cmd: "align.left", icon: "AlignStartVertical" }, { cmd: "align.center", icon: "AlignCenterVertical" }, { cmd: "align.right", icon: "AlignEndVertical" },
+  { cmd: "align.top", icon: "AlignStartHorizontal", sep: true }, { cmd: "align.middle", icon: "AlignCenterHorizontal" }, { cmd: "align.bottom", icon: "AlignEndHorizontal" },
+  { cmd: "distribute.horizontal", icon: "AlignHorizontalDistributeCenter", sep: true }, { cmd: "distribute.vertical", icon: "AlignVerticalDistributeCenter" },
+  { cmd: "alignToPage", icon: "Frame", sep: true },
+] as const;
+
 function useGroups(fonts: RibbonFonts): Record<TabId, Group[]> {
   const { t: office } = useOfficeTranslation();
   const { t } = useTranslation("session");
+  const clipboard: Group = { id: "clipboard", label: t("pptx.ribbon.group.clipboard"), icon: "insert", priority: 6, hasCompact: true,
+    render: (level) => <div className="pptx-rb-row">
+      <Cmd cmd="paste" icon="ClipboardPaste" captioned={level === FULL} large={level === FULL} />
+      <div className="pptx-rb-rows">
+        <div className="pptx-rb-row"><Cmd cmd="cut" icon="Scissors" /><Cmd cmd="copy" icon="Copy" /></div>
+        <div className="pptx-rb-row"><FormatPainter /><Cmd cmd="duplicate" icon="CopyPlus" /></div>
+      </div>
+    </div> };
   const slides: Group = { id: "slides", label: office("toolbar.groups.slides"), icon: "slide", priority: 3, hasCompact: true,
-    render: (level) => <NewSlide level={level} /> };
+    render: (level) => <div className="pptx-rb-row"><NewSlide level={level} /><Cmd cmd="deleteSlide" icon="Trash2" /></div> };
   const font: Group = { id: "font", label: office("toolbar.groups.font"), icon: "font", priority: 10, hasCompact: true,
     render: (level) => <div className={`pptx-rb-rows${level === COMPACT ? " pptx-rb-font-compact" : ""}`}>
       <div className="pptx-rb-row">
@@ -159,7 +219,10 @@ function useGroups(fonts: RibbonFonts): Record<TabId, Group[]> {
         <ToolbarCommandButton id="bold" />
         <ToolbarCommandButton id="italic" />
         <ToolbarCommandButton id="underline" />
+        <Cmd cmd="superscript" icon="Superscript" />
+        <Cmd cmd="subscript" icon="Subscript" />
         <ToolbarCommand id="textColor" />
+        <Cmd cmd="clearFormat" icon="RemoveFormatting" />
       </div>
     </div> };
   const paragraph: Group = { id: "paragraph", label: t("pptx.ribbon.paragraph"), icon: "paragraph", priority: 8, hasCompact: true,
@@ -174,7 +237,9 @@ function useGroups(fonts: RibbonFonts): Record<TabId, Group[]> {
       <ImageTile level={level} />
     </div> });
   const arrange: Group = { id: "arrange", label: office("toolbar.arrange"), icon: "arrange", priority: 2, hasCompact: false,
-    render: () => <div className="pptx-rb-row"><ToolbarCommand id="zOrder" /></div> };
+    render: () => <div className="pptx-rb-row"><ToolbarCommand id="zOrder" /><CmdMenu id="alignObjects" icon="AlignStartVertical" items={ALIGN_ITEMS} /></div> };
+  const editing: Group = { id: "editing", label: t("pptx.ribbon.group.editing"), icon: "pointer", priority: 0, hasCompact: false,
+    render: () => <div className="pptx-rb-row"><Cmd cmd="selectAll" icon="SquareMousePointer" /></div> };
   const shapeStyle: Group = { id: "shapeStyle", label: t("pptx.ribbon.shapeStyle"), icon: "drawing", priority: 4, hasCompact: false,
     render: () => <div className="pptx-rb-row">
       <ToolbarCommand id="shapeFill" />
@@ -184,10 +249,16 @@ function useGroups(fonts: RibbonFonts): Record<TabId, Group[]> {
   const adjust: Group = { id: "adjust", label: office("toolbar.shapeAdjustment"), icon: "adjust", priority: 1, hasCompact: false,
     render: () => <div className="pptx-rb-row"><ToolbarCommand id="shapeAdjustment" /></div> };
   return {
-    home: [slides, font, paragraph, insert(5), { ...shapeStyle, priority: 2 }, { ...arrange, priority: 1 }],
+    home: [clipboard, slides, font, paragraph, insert(5), { ...shapeStyle, priority: 2 }, { ...arrange, priority: 1 }, editing],
     insert: [{ ...slides, priority: 6 }, insert(8)],
     shape: [shapeStyle, adjust, arrange],
   };
+}
+
+/** Click: paint once. Double click: keep painting until Esc or a second click. */
+function FormatPainter() {
+  const controller = useController();
+  return <Cmd cmd="formatPainter" icon="Paintbrush" onDoubleClick={() => void controller.run("formatPainter", { sticky: true })} />;
 }
 
 /** The agent's proposals and the slideshow, which the library mounts only beside its own toolbar. */

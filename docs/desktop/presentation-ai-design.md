@@ -380,7 +380,7 @@ finx-slide（纯 Rust）：BetterOffice fork 门面 · fonts · check（体检�
 | B. 内核权威 + 前端副本 | doc-worker 里开 `DeckSession`（pptx-edit，同一份 Rust 代码），编辑器用 `collaboration` 选项作为 Yrs 副本加入；人和智能体的编辑都经 CRDT 合并 | 面板开不开都能改；与表格的 DocStore 架构一致；保存只在内核；天然支持以后多窗口、多智能体并行 | 要接 Yrs 同步通道（引擎有 `encodeStateVector`/`applyUpdate`/`peer.rs`）；首次打开多一次同步 |
 | C. 两份各自编辑、按文件合并 | 智能体改磁盘文件，前端检测冲突后重载 | 最简单 | 用户正在编辑时体验很差（现在的冲突提示就是这样） |
 
-**建议 B**（PD-01），A 作为过渡：P0 前两周先做 A 跑通工具与提议，同时做 B 的同步通道，第三周切到 B。理由：AI 原生意味着智能体会经常在用户不看的时候改（生成、批量体检修复），A 撑不住；B 的每个零件 BetterOffice 都有。
+**建议 B**（PD-01，详细方案见 [presentation-kernel-authority.md](presentation-kernel-authority.md)），A 作为过渡：P0 前两周先做 A 跑通工具与提议，同时做 B 的同步通道，第三周切到 B。理由：AI 原生意味着智能体会经常在用户不看的时候改（生成、批量体检修复），A 撑不住；B 的每个零件 BetterOffice 都有。
 
 B 的细节：
 - **打开**：`pptx/read` 改为 `deck/open`：内核读文件、建 DeckSession，返回 Yrs 状态 + 字体族；前端用 `collaboration.onReplica` 加入。字体和元文件的通道不变。

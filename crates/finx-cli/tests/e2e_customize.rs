@@ -107,7 +107,8 @@ async fn the_command_line_adds_switches_and_removes_skills_and_servers() {
     let (code, out) = run(&env, &work, &["skills", "remove", "weekly"]).await;
     assert_eq!(code, 0, "{out}");
     assert!(!installed.exists());
-    assert!(env.user_home().join(".Trash/weekly").join("SKILL.md").is_file(), "{out}");
+    let trashed = if cfg!(target_os = "macos") { ".Trash/weekly" } else { ".local/share/Trash/files/weekly" };
+    assert!(env.user_home().join(trashed).join("SKILL.md").is_file(), "{out}");
 
     // A server with a secret: the value goes to the credential store, the file gets a reference.
     let bin = server_bin();

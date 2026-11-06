@@ -495,6 +495,7 @@ function quotesOf(text: string): DocQuote[] | null {
 
 const viewing = "The user has a document open beside the conversation: ";
 const sheetViewing = "The user has a workbook selection open beside the conversation: ";
+const deckViewing = "The user has a presentation open beside the conversation: ";
 
 /** What the document column shows, sent with each message so "this page" means something (§7.4); not shown in the conversation. */
 export function docViewingBlock(path: string, docId: string, page: number, pages: number): UserContent {
@@ -505,6 +506,12 @@ export function docViewingBlock(path: string, docId: string, page: number, pages
 export function sheetViewingBlock(path: string, docId: string, sheet: string, range: string, text: string): UserContent {
   const value = text ? ` Current cell: ${text}.` : "";
   return { type: "text", text: `${sheetViewing}${path} (doc_id ${docId}), ${sheet}!${range}.${value} Read it with doc_read.` };
+}
+
+/** The presentation the file panel shows, so "this PPT" means the open file, not a desktop app. */
+export function presentationViewingBlock(path: string, unsaved: boolean): UserContent {
+  const note = unsaved ? " It has edits not yet saved to disk; the file may be behind what the user sees." : "";
+  return { type: "text", text: `${deckViewing}${path}. "This PPT" / "the open deck" means this file: read it with the deck tools (deck_open, then deck_read), not PowerPoint on the desktop.${note}` };
 }
 
 const handedTab = "The user has handed you a tab of their own browser: ";
@@ -554,7 +561,7 @@ export function userText(content: UserContent[]): { text: string; files: string[
     if (web) comments.push(...web);
     else if (quoted) quotes.push(...quoted);
     else if (handed) tabs.push(handed);
-    else if (c.text.startsWith(viewing) || c.text.startsWith(sheetViewing)) continue;
+    else if (c.text.startsWith(viewing) || c.text.startsWith(sheetViewing) || c.text.startsWith(deckViewing)) continue;
     else if (paths) files.push(...paths);
     else texts.push(c.text);
   }

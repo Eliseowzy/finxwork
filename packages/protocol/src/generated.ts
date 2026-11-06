@@ -44,6 +44,56 @@ export type AgentSnapshot = {
 
 export type AgentStatus = "running" | "completed" | "failed" | "interrupted" | "closed";
 
+export type AiActionKind = "rewrite" | "shorten" | "expand" | "bullets" | "translate" | "to_diagram" | "to_chart" | "beautify" | "align" | "command";
+
+/** `ai/action`. Answers when the proposal is ready; `ai/action_progress` goes out meanwhile, and `$/cancel_request` stops it. */
+export type AiActionParams = {
+  action: AiActionKind;
+  /** Chosen by the client, to match the progress notifications. */
+  action_id: string;
+  deck_id: string;
+  /** The user's own words: ⌘K, a custom rewrite, a saved instruction. */
+  instruction?: string | null;
+  /** `translate`: BCP 47 (`en`, `ja`, `zh-Hans`). */
+  language?: string | null;
+  /** "再来一版": supersedes this proposal. */
+  replaces?: string | null;
+  selection: DeckSelection;
+  session_id: string;
+  tone?: RewriteTone | null;
+  version: string;
+};
+
+/** `ai/action_progress`: to the connection that asked. */
+export type AiActionProgress = {
+  action_id: string;
+  session_id: string;
+  stage: AiActionStage;
+  /** The story the streamed text will replace. */
+  target?: DeckStoryTarget | null;
+  /** Text the model wrote since the last notice, for the preview box to stream. */
+  text_delta?: string | null;
+};
+
+export type AiActionResult = {
+  action_id: string;
+  failure?: DeckEditFailure | null;
+  handoff?: AiHandoff | null;
+  proposal_id?: string | null;
+  /** One line for the preview box. */
+  summary?: string;
+  version: string;
+};
+
+export type AiActionStage = "reading" | "writing" | "laying_out" | "checking";
+
+/** An action too large for an instant answer, handed to the conversation (§5.2.9). */
+export type AiHandoff = {
+  /** The message to start the conversation turn with, context included. */
+  prompt: string;
+  reason: string;
+};
+
 /** A position or a range in a document, as people and agents both refer to content (§4.2). */
 export type Anchor = {
   kind: "page";
@@ -61,6 +111,23 @@ export type Anchor = {
   text: string;
 };
 
+export type AnimationClass = "entrance" | "emphasis" | "exit";
+
+/** The effects FinxWork writes; the file's others are kept and listed by their preset id. */
+export type AnimationEffect = "appear" | "fade" | "fly_in" | "wipe" | "zoom" | "float_in" | "split" | "pulse" | "spin" | "grow_shrink" | "teeter" | "disappear" | "fly_out" | "float_out";
+
+export type AnimationSpec = {
+  delay_ms?: number | null;
+  direction?: MotionDirection | null;
+  duration_ms?: number | null;
+  effect: AnimationEffect;
+  /** Position in the slide's sequence, from 1; at the end when left out. */
+  order?: number | null;
+  trigger: AnimationTrigger;
+};
+
+export type AnimationTrigger = "on_click" | "with_previous" | "after_previous";
+
 export type ApprovalDecision = {
   type: "approve";
 } | {
@@ -75,6 +142,8 @@ export type ApprovalDecision = {
 } | {
   type: "abort";
 };
+
+export type ArrowHead = "none" | "triangle" | "stealth" | "diamond" | "oval" | "arrow";
 
 export type AssistantContent = {
   text: string;
@@ -414,10 +483,31 @@ export type BrowserUseExtensionParams = {
   instance: string;
 };
 
+/** A paragraph's list marker. */
+export type BulletSpec = {
+  kind: "none";
+} | {
+  kind: "inherit";
+} | {
+  /** `•`, `–`, `▪`… */
+  char: string;
+  color?: DeckColor | null;
+  font?: string | null;
+  kind: "char";
+  /** Marker size relative to the text, 1.0 = the same. */
+  size_ratio?: number | null;
+} | {
+  kind: "number";
+  scheme: NumberScheme;
+  start_at?: number | null;
+};
+
 /** Parameters of the `$/cancel_request` notification. */
 export type CancelRequestParams = {
   id: RequestId;
 };
+
+export type CandidateSource = "template" | "structure" | "data";
 
 /** What a document supports (§4.5); toolbars and tool descriptions follow it. */
 export type Capability = "view" | "text" | "search" | "outline" | "edit_values" | "edit_formulas" | "cells" | "calc";
@@ -433,6 +523,13 @@ export type CatalogInfo = {
   /** Estimated size of the catalog. */
   tokens: number;
 };
+
+export type CellBorder = {
+  line: LineSpec;
+  side: CellBorderSide;
+};
+
+export type CellBorderSide = "top" | "bottom" | "left" | "right" | "inside_v" | "inside_h" | "all";
 
 /** A cell an edit changed: before and after, as values and as shown. */
 export type CellChange = {
@@ -470,6 +567,28 @@ export type CellLook = {
   italic?: boolean;
 };
 
+/** A table cell, counted from 0. */
+export type CellPos = {
+  col: number;
+  row: number;
+};
+
+/** Cells `first_row..=last_row` × `first_col..=last_col`, counted from 0. */
+export type CellRange = {
+  first_col: number;
+  first_row: number;
+  last_col: number;
+  last_row: number;
+};
+
+/** One cell's text, for filling a table quickly. */
+export type CellText = {
+  col: number;
+  expect?: string | null;
+  row: number;
+  text: string;
+};
+
 /** A cell's value: what it holds, or what its formula gave. */
 export type CellValue = {
   type: "number";
@@ -484,6 +603,56 @@ export type CellValue = {
   type: "error";
   value: string;
 };
+
+/** A chart's data, written to the chart part's cache and its embedded workbook. */
+export type ChartData = {
+  categories: string[];
+  /** Excel number format of the values (`#,##0.0`, `0%`). */
+  number_format?: string | null;
+  series: ChartSeries[];
+};
+
+export type ChartGrouping = "clustered" | "stacked" | "percent_stacked";
+
+export type ChartInfo = {
+  category_count: number;
+  chart_type: ChartType;
+  /** `detail: full`, or always for small charts (≤ 200 values). */
+  data?: ChartData | null;
+  series_count: number;
+  title?: string | null;
+};
+
+export type ChartSeries = {
+  /** Combo charts: this series drawn as another type. */
+  chart_type?: ChartType | null;
+  color?: DeckColor | null;
+  name: string;
+  secondary_axis?: boolean;
+  /** One per category; `null` is a gap. */
+  values: (number | null)[];
+  /** Scatter charts: the x of each value. */
+  x_values?: number[] | null;
+};
+
+/** A chart's look. Fields left out stay as they are; `title: null` removes the title. */
+export type ChartStyle = {
+  chart_type?: ChartType | null;
+  /** `null` hides the labels. */
+  data_labels?: DataLabels | null;
+  /** Bar and column charts: the gap between categories, % of a bar's width. */
+  gap_width_pct?: number | null;
+  gridlines?: boolean | null;
+  grouping?: ChartGrouping | null;
+  legend?: LegendPosition | null;
+  /** Line charts. */
+  smooth?: boolean | null;
+  title?: string | null;
+  x_axis_title?: string | null;
+  y_axis_title?: string | null;
+};
+
+export type ChartType = "line" | "pie" | "doughnut" | "area" | "scatter" | "column" | "bar";
 
 export type ChatGptCancelParams = {
   login_id: string;
@@ -673,6 +842,18 @@ export type ConnectionsSnapshot = {
   revision: number;
 };
 
+/** A connector's end: glued to a shape's connection site, or free. */
+export type ConnectorEnd = {
+  kind: "shape";
+  shape_id: string;
+  /** The preset's connection site index (rectangles: 0 top, 1 left, 2 bottom, 3 right). */
+  site: number;
+} | {
+  kind: "point";
+  x: number;
+  y: number;
+};
+
 /** Install a curated connector. No arbitrary download URLs or commands are accepted. */
 export type ConnectorInstallParams = {
   id: string;
@@ -681,6 +862,26 @@ export type ConnectorInstallParams = {
 export type ConnectorInstallResult = {
   server: McpServerConfig;
   version: string;
+};
+
+export type ConnectorKind = "straight" | "elbow" | "curved";
+
+export type ContentBlock = {
+  /** The visual lead of the slide. */
+  emphasis?: boolean;
+  items?: ContentItem[];
+  kind: ContentBlockKind;
+  /** The shapes it came from; `image`, `table` and `chart` blocks move that shape. */
+  shape_ids?: string[];
+};
+
+export type ContentBlockKind = "bullets" | "paragraph" | "image" | "table" | "chart" | "quote" | "number";
+
+export type ContentItem = {
+  /** `number` blocks: the label under the figure ("同比增长"). */
+  label?: string | null;
+  level?: number;
+  text: string;
 };
 
 export type ContextPart = {
@@ -742,6 +943,815 @@ export type CredentialsSetParams = {
 
 export type Currency = "USD" | "CNY";
 
+export type DataLabels = {
+  category?: boolean;
+  number_format?: string | null;
+  percent?: boolean;
+  series?: boolean;
+  value?: boolean;
+};
+
+/** A link from slide content to a spreadsheet, stored in the deck (custom XML, kept by PowerPoint). */
+export type DataLink = {
+  /** Excel number format used to show a linked number in text. */
+  format?: string | null;
+  link_id: string;
+  /** Unix milliseconds. */
+  refreshed_at: number;
+  slide_id: string;
+  /** The values when linked or last refreshed, row by row, as shown. */
+  snapshot: string[][];
+  source: DataLinkSource;
+  /** Of the source cells' values at the snapshot. */
+  source_hash: string;
+  status: DataLinkStatus;
+  target: DataLinkTarget;
+};
+
+/** Cells in a workbook, as the spreadsheet tools name them. */
+export type DataLinkSource = {
+  /** Relative to the deck's folder. */
+  path: string;
+  /** `D15` or `B3:F9`. */
+  range: string;
+  sheet: string;
+};
+
+export type DataLinkStatus = "fresh" | "stale" | "missing" | "unknown";
+
+/** What on the slide a data link feeds. */
+export type DataLinkTarget = {
+  kind: "chart";
+  shape_id: string;
+} | {
+  kind: "table";
+  shape_id: string;
+} | {
+  end: number;
+  kind: "text";
+  shape_id: string;
+  start: number;
+  story_id?: string | null;
+};
+
+/** `deck/changed`: the deck's state, after any edit, undo, save or reload; to every connection that opened it. */
+export type DeckChangedParams = {
+  /** The file changed on disk under unsaved edits: the editor offers to reload or keep. */
+  conflict?: boolean;
+  deck_id: string;
+  dirty: boolean;
+  /** After a save: the file's new hash. */
+  hash?: string | null;
+  origin: DeckOrigin;
+  slide_ids?: string[];
+  version: string;
+};
+
+export type DeckCheckParams = {
+  /** Also the model's checks (content, terms…): slower, and uses the network model. */
+  ai?: boolean;
+  deck_id: string;
+  /** Rule ids or categories (`layout`); empty: every rule-engine rule. */
+  rules?: string[];
+  session_id: string;
+  /** Empty: every slide. */
+  slides?: SlidePick[];
+};
+
+export type DeckCheckResult = {
+  diagnostics: DeckDiagnostic[];
+  /** The rules that ran. */
+  rules: string[];
+  version: string;
+};
+
+/** `"#RRGGBB"`, or a theme colour. Prefer theme colours: they follow a theme change. */
+export type DeckColor = string | ThemeColorRef;
+
+/** `deck/copy`: shapes, slides or text, for `paste` here or in another deck. */
+export type DeckCopyParams = {
+  deck_id: string;
+  session_id: string;
+  shapes?: ShapeRef[];
+  slides?: SlideRef[];
+  text?: DeckTextTarget | null;
+};
+
+export type DeckCopyResult = {
+  /** Opaque to clients, base64: the engine's clip with its media, fonts and theme. */
+  clip: string;
+  /** For the system clipboard. */
+  plain_text: string;
+  png_base64?: string | null;
+};
+
+/** One problem a check found. */
+export type DeckDiagnostic = {
+  category: DiagnosticCategory;
+  checker: DiagnosticChecker;
+  /** Ops that fix it, to send to `deck/edit` as they are. */
+  fix?: DeckOp[] | null;
+  /** The fix in a few words: "统一为 24 磅". */
+  fix_label?: string | null;
+  /** Unique within one check, for "fix this one". */
+  id: string;
+  index: number;
+  /** In the user's words. */
+  message: string;
+  /** A `DiagnosticRule` id, or a scene pack's. */
+  rule: string;
+  severity: DiagnosticSeverity;
+  shape_ids?: string[];
+  slide_id: string;
+  /** For text problems: where, with `expect`. */
+  text?: DeckTextTarget | null;
+};
+
+export type DeckDiff = {
+  left_path: string;
+  /** In the right deck's order, deleted slides where they were. */
+  pairs: SlidePair[];
+  right_path: string;
+};
+
+export type DeckDiffParams = {
+  left: DeckDiffSide;
+  right: DeckDiffSide;
+  session_id: string;
+};
+
+/** One side of a comparison: an open deck, or a file. */
+export type DeckDiffSide = {
+  deck_id?: string | null;
+  path?: string | null;
+};
+
+/** Why a batch did not land. The deck is as it was at `version`. */
+export type DeckEditFailure = {
+  /** `content_mismatch`: what the target holds now (at most 512 characters). */
+  actual?: string | null;
+  code: DeckEditFailureCode;
+  conflicting_op_index?: number | null;
+  /** `stale_version`: the deck now, so an agent can re-read without another call. */
+  latest?: DeckSummary | null;
+  message: string;
+  /** The op, from 0, in `ops`. */
+  op_index?: number | null;
+  /** The deck's version now. */
+  version: string;
+};
+
+/** The engine's refusal codes (`EditFailureCode`), snake_cased. */
+export type DeckEditFailureCode = "missing_target" | "invalid_step" | "limit_exceeded" | "stale_version" | "ambiguous_target" | "content_mismatch" | "overlapping_steps" | "unsupported";
+
+export type DeckEditMode = "propose" | "apply" | "validate";
+
+/** `deck/edit`, and the `deck_edit` tool without `session_id`: a batch that lands whole or not at all. */
+export type DeckEditParams = {
+  deck_id: string;
+  mode?: DeckEditMode;
+  /** What the batch does, in the user's words ("按 Q3 财报更新第 3–5 页的营收"). */
+  note?: string | null;
+  /** At most 256. */
+  ops: DeckOp[];
+  session_id: string;
+  /** The version the targets were read at; behind, the batch fails with `stale_version`. */
+  version: string;
+};
+
+export type DeckEditResult = {
+  /** `apply`: false when every op was a no-op. */
+  applied?: boolean;
+  /** The deterministic check of the slides the batch touches, after it (§6.5). */
+  diagnostics?: DeckDiagnostic[];
+  /** Present when the batch did not land; nothing else then changed. */
+  failure?: DeckEditFailure | null;
+  /** `propose`: the proposal made. */
+  proposal_id?: string | null;
+  /** The ids the batch's `ref`s got. */
+  refs?: { [key: string]: string };
+  slides: SlideChangeSummary[];
+  /** The deck's version after the batch; unchanged by `propose` and `validate`. */
+  version: string;
+};
+
+/** One hit. `slide_id`, `shape_id`, `story_id`, `start`, `end` and `text` (as `expect`) make a `DeckTextTarget`. */
+export type DeckFindMatch = {
+  after: string;
+  /** Up to 40 characters either side. */
+  before: string;
+  end: number;
+  /** In the speaker notes. */
+  in_notes?: boolean;
+  index: number;
+  shape_id: string;
+  shape_name: string;
+  slide_id: string;
+  start: number;
+  story_id: string;
+  text: string;
+};
+
+/** `deck/find`: text or numbers, case folded unless `case_sensitive`. */
+export type DeckFindParams = {
+  case_sensitive?: boolean;
+  deck_id: string;
+  /** Defaults to 100; at most 1,000. */
+  limit?: number | null;
+  /** Search the speaker notes too. */
+  notes?: boolean;
+  query: string;
+  session_id: string;
+  slides?: SlidePick[];
+};
+
+export type DeckFindResult = {
+  matches: DeckFindMatch[];
+  truncated?: boolean;
+  version: string;
+};
+
+/** `deck/focus`: what the user is looking at, sent as it changes, for the short context block each message carries (§6.6) and for "this slide" in commands. */
+export type DeckFocusParams = {
+  deck_id: string;
+  selection?: DeckSelection | null;
+  session_id: string;
+  slide_id: string;
+};
+
+export type DeckIdParams = {
+  deck_id: string;
+  session_id: string;
+};
+
+export type DeckLayoutsParams = {
+  /** The content, when the caller already has it; otherwise the kernel analyses the slide. */
+  content?: SlideContentTree | null;
+  /** 3 when left out, at most 6. */
+  count?: number | null;
+  deck_id: string;
+  session_id: string;
+  slide: SlideRef;
+  /** Only these solver templates or families (`cards`, `timeline`). */
+  templates?: string[];
+  thumbnails?: boolean;
+};
+
+export type DeckLayoutsResult = {
+  candidates: LayoutCandidate[];
+  content: SlideContentTree;
+  version: string;
+};
+
+export type DeckLinksParams = {
+  /** Read the sources now to set each link's status. */
+  check?: boolean;
+  deck_id: string;
+  session_id: string;
+};
+
+export type DeckLinksResult = {
+  links: DataLink[];
+  /** With `check`: the ops that bring stale links up to date, for one `link_refresh` proposal. */
+  refresh?: DeckOp[];
+};
+
+/** One edit to a deck. People (toolbar, shortcuts) and agents use the same ops; a batch of them becomes one proposal or one undo step (§6.3). */
+export type DeckOp = {
+  /** Which end of the target. */
+  at?: TextEdge;
+  op: "insert_text";
+  style?: RunStyle | null;
+  target: DeckTextTarget;
+  text: string;
+} | {
+  op: "replace_text";
+  style?: RunStyle | null;
+  target: DeckTextTarget;
+  text: string;
+} | {
+  op: "delete_text";
+  target: DeckTextTarget;
+} | {
+  op: "format_text";
+  style: RunStyle;
+  target: DeckTextTarget;
+} | {
+  op: "clear_text_format";
+  target: DeckTextTarget;
+} | {
+  expect?: string | null;
+  op: "set_paragraphs";
+  paragraphs: ParagraphSpec[];
+  target: DeckStoryTarget;
+} | {
+  op: "set_paragraph_props";
+  props: ParagraphProps;
+  target: DeckTextTarget;
+} | {
+  anchor?: TextAnchor | null;
+  autofit?: TextAutofit | null;
+  column_gap_pt?: number | null;
+  columns?: number | null;
+  direction?: TextDirection | null;
+  insets_pt?: TextInsets | null;
+  op: "set_text_body";
+  shape: ShapeRef;
+  wrap?: boolean | null;
+} | {
+  /** `null` removes the link. */
+  link?: HyperlinkTarget | null;
+  op: "set_hyperlink";
+  shape?: ShapeRef | null;
+  /** A link on text; or, instead, `shape`: a click on the whole shape. */
+  text?: DeckTextTarget | null;
+} | {
+  expect?: string | null;
+  op: "set_notes";
+  slide: SlideRef;
+  text: string;
+} | {
+  fill?: FillSpec | null;
+  line?: LineSpec | null;
+  name?: string | null;
+  op: "add_shape";
+  paragraphs?: ParagraphSpec[];
+  preset: string;
+  rect: DeckRect;
+  ref?: string | null;
+  slide: SlideRef;
+} | {
+  autofit?: TextAutofit | null;
+  name?: string | null;
+  op: "add_text_box";
+  paragraphs: ParagraphSpec[];
+  rect: DeckRect;
+  ref?: string | null;
+  slide: SlideRef;
+} | {
+  alt_text?: string | null;
+  name?: string | null;
+  op: "add_picture";
+  /** Left out: the image's own size, centred. */
+  rect?: DeckRect | null;
+  ref?: string | null;
+  slide: SlideRef;
+  source: PictureSource;
+} | {
+  /** Row by row; may be shorter than the table. */
+  cells?: string[][];
+  cols: number;
+  flags?: TableStyleFlags;
+  name?: string | null;
+  op: "add_table";
+  rect: DeckRect;
+  ref?: string | null;
+  rows: number;
+  slide: SlideRef;
+  style_id?: string | null;
+} | {
+  chart_type: ChartType;
+  data: ChartData;
+  name?: string | null;
+  op: "add_chart";
+  rect: DeckRect;
+  ref?: string | null;
+  slide: SlideRef;
+  style?: ChartStyle | null;
+} | {
+  end: ConnectorEnd;
+  kind: ConnectorKind;
+  line?: LineSpec | null;
+  op: "add_connector";
+  ref?: string | null;
+  slide: SlideRef;
+  start: ConnectorEnd;
+} | {
+  offset?: DeckPoint | null;
+  op: "duplicate_shapes";
+  refs?: string[];
+  shapes: ShapeRef[];
+  to_slide?: SlideRef | null;
+} | {
+  op: "delete_shapes";
+  shapes: ShapeRef[];
+} | {
+  /** The rectangle the shape has now; `content_mismatch` when it moved. */
+  expect_rect?: DeckRect | null;
+  flip_h?: boolean | null;
+  flip_v?: boolean | null;
+  op: "transform";
+  rect?: DeckRect | null;
+  rotation_deg?: number | null;
+  shape: ShapeRef;
+} | {
+  fill: FillSpec;
+  op: "set_fill";
+  shape: ShapeRef;
+} | {
+  line: LineSpec;
+  op: "set_line";
+  shape: ShapeRef;
+} | {
+  op: "set_effects";
+  shadow?: ShadowSpec | null;
+  shape: ShapeRef;
+} | {
+  adjust?: { [key: string]: number };
+  op: "set_geometry";
+  preset?: string | null;
+  shape: ShapeRef;
+} | {
+  alt_text?: string | null;
+  decorative?: boolean | null;
+  hidden?: boolean | null;
+  lock_aspect?: boolean | null;
+  name?: string | null;
+  op: "set_shape_props";
+  shape: ShapeRef;
+} | {
+  name?: string | null;
+  op: "group";
+  ref?: string | null;
+  shapes: ShapeRef[];
+} | {
+  op: "ungroup";
+  shape: ShapeRef;
+} | {
+  op: "z_order";
+  shape: ShapeRef;
+  to: ZOrder;
+} | {
+  op: "fill_placeholder";
+  paragraphs?: ParagraphSpec[];
+  picture?: PictureSource | null;
+  placeholder: PlaceholderRef;
+  ref?: string | null;
+  slide: SlideRef;
+} | {
+  op: "reset_slide";
+  slide: SlideRef;
+} | {
+  edit: TableEdit;
+  op: "table_edit";
+  shape: ShapeRef;
+} | {
+  data: ChartData;
+  op: "chart_data";
+  shape: ShapeRef;
+} | {
+  op: "chart_style";
+  shape: ShapeRef;
+  style: ChartStyle;
+} | {
+  /** The layout of the slide before it when left out. */
+  layout?: LayoutRef | null;
+  op: "insert_slide";
+  position: SlidePosition;
+  ref?: string | null;
+} | {
+  op: "duplicate_slide";
+  /** Right after the original when left out. */
+  position?: SlidePosition | null;
+  ref?: string | null;
+  slide: SlideRef;
+} | {
+  op: "delete_slide";
+  slide: SlideRef;
+} | {
+  op: "move_slide";
+  position: SlidePosition;
+  slide: SlideRef;
+} | {
+  layout: LayoutRef;
+  mapping?: PlaceholderMove[];
+  op: "set_layout";
+  slide: SlideRef;
+} | {
+  fill?: FillSpec | null;
+  op: "set_background";
+  slide: SlideRef;
+} | {
+  hidden: boolean;
+  op: "set_slide_hidden";
+  slide: SlideRef;
+} | {
+  advance_after_ms?: number | null;
+  advance_on_click?: boolean;
+  direction?: MotionDirection | null;
+  duration_ms?: number | null;
+  kind: TransitionKind;
+  op: "set_transition";
+  slide: SlideRef;
+} | {
+  animation?: AnimationSpec | null;
+  class: AnimationClass;
+  op: "set_animation";
+  shape: ShapeRef;
+} | {
+  colors: ThemeColors;
+  op: "set_theme_colors";
+} | {
+  fonts: ThemeFonts;
+  op: "set_theme_fonts";
+} | {
+  height_pt: number;
+  op: "set_slide_size";
+  resize?: SlideResize;
+  width_pt: number;
+} | {
+  op: "set_sections";
+  sections: SectionSpec[];
+} | {
+  date?: FooterDate | null;
+  /** `null` hides the footer. */
+  footer?: string | null;
+  /** 标题幻灯片中不显示. */
+  hide_on_title?: boolean | null;
+  op: "set_header_footer";
+  slide_number?: boolean | null;
+  slides?: SlideRef[];
+} | {
+  at: PasteAt;
+  clip: string;
+  mode: PasteMode;
+  op: "paste";
+  /** Names the pasted shapes or slides, in order. */
+  refs?: string[];
+} | {
+  format?: string | null;
+  link_id?: string | null;
+  op: "set_data_link";
+  slide: SlideRef;
+  source: DataLinkSource;
+  target: DataLinkTarget;
+} | {
+  link_id: string;
+  op: "remove_data_link";
+};
+
+/** `deck/open`. Progress goes out as `pptx/readProgress`. */
+export type DeckOpenParams = {
+  path: string;
+  progress_id?: string | null;
+  /** The caller joins as a Yrs replica (the editor): the result carries the state. */
+  replica?: boolean;
+  session_id: string;
+};
+
+export type DeckOpenResult = {
+  /** `DECK_CONTRACT_VERSION` of the kernel. */
+  contract_version: number;
+  /** From the file's canonical path: the same in every session. */
+  deck_id: string;
+  dirty: boolean;
+  /** The engine build (`betteroffice 0.5.1+finx.3`): a replica built from another is refused. */
+  engine: string;
+  /** Explicit font families in the package, plus the host's Latin and CJK fallbacks. */
+  font_families: string[];
+  /** SHA-256 of the file as read. */
+  hash: string;
+  path: string;
+  /** Replicas: the whole Yrs document as one v1 update, base64. */
+  state?: string | null;
+  summary: DeckSummary;
+  /** The `op`s this kernel and engine carry out; others are `unsupported`. */
+  supported_ops: string[];
+  version: string;
+  writable: boolean;
+};
+
+/** Who made a change. */
+export type DeckOrigin = "agent" | "human" | "system";
+
+/** A point on a slide, in points from its top left. */
+export type DeckPoint = {
+  x: number;
+  y: number;
+};
+
+/** `deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The rest stays pending as `remaining_id`. */
+export type DeckProposalDecideParams = {
+  deck_id: string;
+  /** Accept although targets changed (stale). */
+  force?: boolean;
+  proposal_id: string;
+  session_id: string;
+  slide_ids?: string[] | null;
+};
+
+/** `deck/proposal`: to every connection that opened the deck. */
+export type DeckProposalEvent = {
+  change: ProposalChange;
+  deck_id: string;
+  proposal: DeckProposalInfo;
+};
+
+export type DeckProposalIdParams = {
+  deck_id: string;
+  proposal_id: string;
+  session_id: string;
+};
+
+export type DeckProposalInfo = {
+  accepted_slides?: string[];
+  /** The deck version it was made against. */
+  base_version: string;
+  /** Unix milliseconds. */
+  created_at: number;
+  deck_id: string;
+  /** The engine's edits for the same change, JSON, for a replica to preview it on the canvas with its own engine. Opaque to clients; tied to `DeckOpenResult.engine`. */
+  engine_edits: string;
+  note?: string | null;
+  ops: DeckOp[];
+  origin: ProposalOrigin;
+  proposal_id: string;
+  /** The session whose agent or action made it. */
+  session_id?: string | null;
+  slides: SlideChangeSummary[];
+  source: ProposalSource;
+  /** Slides whose targets changed under it. */
+  stale_slides?: string[];
+  status: ProposalStatus;
+};
+
+export type DeckProposalListParams = {
+  /** Accepted, rejected and reverted ones too: the AI ledger. */
+  closed?: boolean;
+  deck_id: string;
+  session_id: string;
+};
+
+export type DeckProposalListResult = {
+  proposals: DeckProposalInfo[];
+};
+
+export type DeckProposalResult = {
+  proposal: DeckProposalInfo;
+  /** The part not accepted or rejected, still pending. */
+  remaining_id?: string | null;
+  version: string;
+};
+
+export type DeckReadParams = {
+  deck_id: string;
+  detail?: ReadDetail;
+  session_id: string;
+  /** Empty: every slide, at most 30 a call. */
+  slides?: SlidePick[];
+};
+
+export type DeckReadResult = {
+  /** Slides asked for but left out to stay in the limit: read them next. */
+  more?: string[];
+  slides: DeckSlideRead[];
+  version: string;
+};
+
+/** A rectangle on a slide, in points from its top left. */
+export type DeckRect = {
+  height: number;
+  width: number;
+  x: number;
+  y: number;
+};
+
+export type DeckSaveParams = {
+  deck_id: string;
+  /** Write over a file that changed on disk since it was read. */
+  force?: boolean;
+  /** Save as: another file. */
+  path?: string | null;
+  session_id: string;
+};
+
+export type DeckSaveResult = {
+  hash: string;
+  path: string;
+  version: string;
+};
+
+/** What the user has selected, for `ai/action` and `deck/focus`. */
+export type DeckSelection = {
+  shape_ids?: string[];
+  slide_id: string;
+  /** Selected text, when the caret is in a text box. */
+  text?: DeckTextTarget | null;
+};
+
+export type DeckShapeKind = "shape" | "text_box" | "picture" | "table" | "chart" | "group" | "connector" | "other";
+
+export type DeckSlideRead = {
+  hidden?: boolean;
+  index: number;
+  layout_id: string;
+  layout_name: string;
+  /** The slide as Markdown, a block per object headed with its shape id (`<!-- s12 -->`). */
+  markdown: string;
+  notes?: string;
+  shapes: ShapeInfo[];
+  slide_id: string;
+  title?: string | null;
+  transition?: TransitionKind | null;
+};
+
+/** A whole text story: a shape's text body, or one table cell's. */
+export type DeckStoryTarget = {
+  shape_id: string;
+  slide_id: string;
+  /** Required for a table (a story per cell); a shape with one story may leave it out. */
+  story_id?: string | null;
+};
+
+/** The structure summary `deck_open` gives (§7): at most about 2,000 tokens. */
+export type DeckSummary = {
+  deck_id: string;
+  layouts: LayoutInfo[];
+  path: string;
+  pending_proposals?: number | null;
+  sections?: SectionInfo[];
+  size: SlideSize;
+  slide_count: number;
+  /** Every slide, unless `truncated`: then the first and last ones, and `deck/read` for the rest. */
+  slides: SlideLine[];
+  /** Data links whose source changed (§5.2.5). */
+  stale_links?: number | null;
+  theme: ThemeInfo;
+  truncated?: boolean;
+  version: string;
+};
+
+/** `deck/sync` from the kernel: edits made elsewhere, for every replica of the deck but the one that made them. */
+export type DeckSyncNotice = {
+  deck_id: string;
+  origin: DeckOrigin;
+  /** The accepted proposal the update comes from. */
+  proposal_id?: string | null;
+  update: string;
+  version: string;
+};
+
+/** `deck/sync` from a replica: its local edits, and what it lacks. */
+export type DeckSyncParams = {
+  deck_id: string;
+  session_id: string;
+  /** The replica's state vector, base64: the result then carries what it lacks. */
+  state_vector?: string | null;
+  /** A Yrs v1 update, base64; empty to only ask. */
+  update?: string;
+};
+
+export type DeckSyncResult = {
+  update?: string | null;
+  version: string;
+};
+
+/** `deck/template_profile`: of an open deck, or of a template file. */
+export type DeckTemplateProfileParams = {
+  deck_id?: string | null;
+  /** A .pptx or .potx file, instead of `deck_id`. */
+  path?: string | null;
+  session_id: string;
+  thumbnails?: boolean;
+};
+
+/** Text inside a story: `start`/`end`, or the one occurrence of `find`, or (neither) all of it. `expect` is the text there now; when it differs the batch fails with `content_mismatch` (PD-03). A `find` target expects its own text. */
+export type DeckTextTarget = {
+  end?: number | null;
+  expect?: string | null;
+  /** Exact, case-sensitive, within one paragraph; more than one occurrence is `ambiguous_target`. */
+  find?: string | null;
+  shape_id: string;
+  slide_id: string;
+  /** UTF-16 offsets in the story; both or neither. */
+  start?: number | null;
+  story_id?: string | null;
+};
+
+/** `deck/view`: a slide rasterized on this machine (§6.5). */
+export type DeckViewParams = {
+  /** With `proposal_id`: before and after, side by side in one image. */
+  compare?: boolean;
+  deck_id: string;
+  /** Outlined in the image. */
+  highlight?: string[];
+  /** The slide as this proposal would leave it. */
+  proposal_id?: string | null;
+  /** Only this part of the slide. */
+  region?: DeckRect | null;
+  session_id: string;
+  slide: SlidePick;
+  /** Pixels across the whole slide; 1280 when left out, at most 2560. */
+  width_px?: number | null;
+};
+
+export type DeckViewResult = {
+  height_px: number;
+  png_base64: string;
+  version: string;
+  width_px: number;
+};
+
 export type Delta = {
   index: number;
   text: string;
@@ -762,6 +1772,32 @@ export type Delta = {
 };
 
 export type DetachReason = "overflow" | "closed" | "unloaded";
+
+export type DiagnosticCategory = "layout" | "consistency" | "content" | "data" | "accessibility" | "file";
+
+/** Who finds a problem: the rule engine (milliseconds, always run) or a model (on request). */
+export type DiagnosticChecker = "rule" | "ai";
+
+/** The built-in checks (§5.2.3). `DeckDiagnostic.rule` is one of these, or a scene pack's own (`pack.<pack>.<rule>`). */
+export type DiagnosticRule = "layout.text_overflow" | "layout.off_slide" | "layout.safe_area" | "layout.overlap" | "layout.near_alignment" | "layout.title_drift" | "layout.empty_placeholder" | "layout.too_dense" | "layout.weak_hierarchy" | "consistency.font_count" | "consistency.off_theme_color" | "consistency.title_size" | "consistency.bullet_mix" | "consistency.footer_missing" | "consistency.slide_number_gap" | "consistency.terms" | "consistency.units" | "content.typo" | "content.grammar" | "content.punctuation_width" | "content.cjk_latin_spacing" | "content.number_mismatch" | "content.claim_conflict" | "data.link_stale" | "data.no_source" | "a11y.contrast" | "a11y.alt_text" | "a11y.small_text" | "file.image_resolution" | "file.image_size" | "file.missing_font";
+
+export type DiagnosticSeverity = "error" | "warning" | "info";
+
+export type DiffChange = {
+  after?: string | null;
+  before?: string | null;
+  kind: DiffChangeKind;
+  left_shape_id?: string | null;
+  right_shape_id?: string | null;
+};
+
+export type DiffChangeKind = "text" | "shape_added" | "shape_removed" | "shape_moved" | "style" | "layout" | "notes" | "chart_data" | "table" | "number";
+
+export type DiffSlide = {
+  index: number;
+  slide_id: string;
+  title?: string | null;
+};
 
 export type DocApplyParams = {
   /** The revision the edit was made against; behind, the edit is refused (`doc_stale`). */
@@ -1343,6 +2379,45 @@ export type FilesWriteResult = {
 
 export type FillDirection = "down" | "right";
 
+export type FillSpec = {
+  kind: "none";
+} | {
+  /** Opacity, 1 = opaque. */
+  alpha?: number | null;
+  color: DeckColor;
+  kind: "solid";
+} | {
+  /** Linear gradients only. */
+  angle_deg?: number | null;
+  kind: "gradient";
+  radial?: boolean;
+  stops: GradientStop[];
+} | {
+  kind: "picture";
+  mode: PictureFillMode;
+  source: PictureSource;
+};
+
+/** The date in the footer. */
+export type FooterDate = {
+  kind: "hidden";
+} | {
+  kind: "fixed";
+  text: string;
+} | {
+  format: string;
+  kind: "auto";
+};
+
+/** Which footer parts the template shows, and where. */
+export type FooterRule = {
+  date: boolean;
+  footer: boolean;
+  footer_text?: string | null;
+  hide_on_title: boolean;
+  slide_number: boolean;
+};
+
 /** A cell found or traced, as the grid lists it and the agent reads it. */
 export type FoundCell = {
   cell: string;
@@ -1356,7 +2431,31 @@ export type FoundCell = {
   via?: string | null;
 };
 
+export type GradientStop = {
+  color: DeckColor;
+  /** 0–1 along the gradient. */
+  position: number;
+};
+
 export type GrantAuthority = "navigate" | "act";
+
+/** Where a link goes. */
+export type HyperlinkTarget = {
+  kind: "url";
+  tooltip?: string | null;
+  url: string;
+} | {
+  kind: "slide";
+  slide_id: string;
+} | {
+  kind: "next_slide";
+} | {
+  kind: "previous_slide";
+} | {
+  kind: "first_slide";
+} | {
+  kind: "last_slide";
+};
 
 /** What an edit changed (spreadsheet-design §5.5, §7). */
 export type Impact = {
@@ -1388,6 +2487,8 @@ export type InitializeResult = {
   server_info: PeerInfo;
 };
 
+export type InsertSide = "before" | "after";
+
 /** The last message of a bot's conversation, for its row in the list. */
 export type LastMessage = {
   /** A bot's message of files: the name of the first that is not an image. */
@@ -1399,6 +2500,74 @@ export type LastMessage = {
   text: string;
   /** RFC 3339. */
   ts: string;
+};
+
+export type LayoutCandidate = {
+  id: string;
+  /** In the user's words: "三卡片". */
+  label: string;
+  /** The deck layout it uses. */
+  layout_id?: string | null;
+  /** Applies it: send to `deck/edit` as they are. */
+  ops: DeckOp[];
+  /** 0–1, best first. */
+  score: number;
+  score_parts?: LayoutScore | null;
+  source: CandidateSource;
+  /** The solver template (`cards.3`, `timeline.h`, `layout:twoObj`). */
+  template: string;
+  thumbnail_png_base64?: string | null;
+};
+
+export type LayoutInfo = {
+  layout_id: string;
+  /** `p:sldLayout/@type` as written (`title`, `obj`, `twoObj`…). */
+  layout_type?: string | null;
+  master_id: string;
+  name: string;
+  placeholders: PlaceholderInfo[];
+  tag: LayoutTag;
+  /** Slides using it. */
+  used_by: number;
+};
+
+/** A slide layout: its part path in the package (`ppt/slideLayouts/slideLayout2.xml`), as `DeckSummary.layouts` and `TemplateProfile` list them. */
+export type LayoutRef = {
+  layout_id: string;
+};
+
+/** How the solver scored a candidate, each 0–1. */
+export type LayoutScore = {
+  alignment: number;
+  consistency: number;
+  fill: number;
+  focus: number;
+  hierarchy: number;
+};
+
+/** What a layout is for, from its type or, for templates that name layouts loosely, its placeholders (§6.8). */
+export type LayoutTag = "title" | "section" | "title_content" | "two_content" | "comparison" | "title_only" | "blank" | "picture_caption" | "content_caption" | "other";
+
+export type LegendPosition = "none" | "top" | "bottom" | "left" | "right";
+
+export type LineDash = "solid" | "dot" | "dash" | "dash_dot" | "long_dash" | "long_dash_dot" | "sys_dot" | "sys_dash";
+
+/** Line spacing: a multiple of single spacing (`{"multiple": 1.2}`) or exact points. */
+export type LineSpacing = {
+  multiple: number;
+} | {
+  points: number;
+};
+
+/** An outline. In an edit, fields left out stay as they are. */
+export type LineSpec = {
+  color?: DeckColor | null;
+  dash?: LineDash | null;
+  head?: ArrowHead | null;
+  tail?: ArrowHead | null;
+  /** False draws no line (`a:ln/a:noFill`); the other fields are then ignored. */
+  visible?: boolean | null;
+  width_pt?: number | null;
 };
 
 export type ListingError = {
@@ -1805,6 +2974,11 @@ export type ModelsShowParams = {
   shown: boolean;
 };
 
+export type MotionDirection = "left" | "right" | "up" | "down" | "in" | "out";
+
+/** `a:buAutoNum@type`, snake_cased: `arabic_period` is "1.", `alpha_lc_paren_r` is "a)", `ea1_chs_period` is "一、". Others the engine knows pass through as written. */
+export type NumberScheme = "arabic_period" | "arabic_paren_r" | "arabic_paren_both" | "arabic_plain" | "alpha_lc_period" | "alpha_uc_period" | "alpha_lc_paren_r" | "alpha_uc_paren_r" | "roman_lc_period" | "roman_uc_period" | "circle_num_db_plain" | "ea1_chs_period" | "ea1_chs_plain";
+
 export type Op = {
   /** Whether a leading `/name` is a command: a built-in one such as `/compact`, or a skill, whose instructions replace it. Front ends leave it out; messages between agents set false. */
   commands?: boolean;
@@ -1876,6 +3050,49 @@ export type PageQuads = {
   quads: Rect[];
 };
 
+export type ParagraphAlign = "left" | "center" | "right" | "justify" | "distributed";
+
+/** Paragraph formatting. In an edit, fields left out stay as they are. */
+export type ParagraphProps = {
+  align?: ParagraphAlign | null;
+  bullet?: BulletSpec | null;
+  /** First line relative to the margin (`indent`); negative hangs, as list items do. */
+  first_line_pt?: number | null;
+  /** Left margin (`marL`). */
+  indent_pt?: number | null;
+  /** Outline level, 0–8. */
+  level?: number | null;
+  line_spacing?: LineSpacing | null;
+  space_after_pt?: number | null;
+  space_before_pt?: number | null;
+};
+
+export type ParagraphRead = {
+  /** False when an edit here could not keep a field (a slide number…). */
+  editable: boolean;
+  end: number;
+  paragraph_id: string;
+  /** Effective, after inheritance. */
+  props: ParagraphProps;
+  runs: RunRead[];
+  start: number;
+  text: string;
+};
+
+/** One paragraph to write. It starts from the formatting of paragraph `like` (an id from `deck/read`), or of the paragraph at the same position, then applies its own fields (those of `ParagraphProps`): this is how a rewrite keeps the original look (§5.2.1). */
+export type ParagraphSpec = {
+  align?: ParagraphAlign | null;
+  bullet?: BulletSpec | null;
+  first_line_pt?: number | null;
+  indent_pt?: number | null;
+  level?: number | null;
+  like?: string | null;
+  line_spacing?: LineSpacing | null;
+  runs: RunSpec[];
+  space_after_pt?: number | null;
+  space_before_pt?: number | null;
+};
+
 export type PartialBlock = {
   index: number;
   text: string;
@@ -1898,6 +3115,23 @@ export type PartialMessage = {
   message_id: string;
 };
 
+/** Where pasted content goes: onto a slide (shapes), among slides, or into text. */
+export type PasteAt = {
+  /** Top left of the pasted shapes' bounds; where they were copied from when left out. */
+  at?: DeckPoint | null;
+  kind: "slide";
+  slide_id: string;
+} | {
+  kind: "slides";
+  position: SlidePosition;
+} | {
+  kind: "text";
+  target: DeckTextTarget;
+};
+
+/** How `paste` brings content in (粘贴选项). */
+export type PasteMode = "keep_source" | "use_destination_theme" | "plain_text";
+
 export type PeerInfo = {
   name: string;
   version?: string | null;
@@ -1918,6 +3152,44 @@ export type PendingApproval = {
 
 /** How much the session may do without asking. Deny and ask rules apply in every mode. Deserializing also accepts the names used before protocol version 2. */
 export type PermissionMode = "manual" | "accept-edits" | "bypass-permissions";
+
+export type PictureFillMode = "stretch" | "tile";
+
+/** An image: a file the session may read, or its bytes. */
+export type PictureSource = {
+  kind: "path";
+  path: string;
+} | {
+  /** Base64; at most 20 MiB decoded. */
+  base64: string;
+  /** `image/png`, `image/jpeg`, `image/svg+xml`… */
+  content_type: string;
+  kind: "bytes";
+};
+
+export type PlaceholderInfo = {
+  idx?: number | null;
+  name?: string | null;
+  rect: DeckRect;
+  /** The size its first level of text gets. */
+  size_pt?: number | null;
+  type: PlaceholderKind;
+};
+
+/** `p:ph/@type`, snake_cased (`ctrTitle` is `ctr_title`). A placeholder without a type is `obj`. */
+export type PlaceholderKind = "title" | "ctr_title" | "sub_title" | "body" | "obj" | "pic" | "chart" | "tbl" | "dgm" | "media" | "clip_art" | "dt" | "ftr" | "sld_num" | "hdr" | "sld_img";
+
+/** A placeholder shape moved onto another layout's placeholder `idx` (`set_layout`). */
+export type PlaceholderMove = {
+  idx: number;
+  shape_id: string;
+};
+
+/** A placeholder of the slide's layout, by type and, when the layout has several of the type, `idx`. */
+export type PlaceholderRef = {
+  idx?: number | null;
+  type: PlaceholderKind;
+};
 
 export type PptxMetafileParams = {
   /** Original EMF/WMF media bytes, base64. The source package is never changed. */
@@ -1970,6 +3242,15 @@ export type PptxWriteParams = {
 
 export type PromptMode = "steer" | "follow_up";
 
+export type ProposalChange = "created" | "updated" | "accepted" | "rejected" | "reverted" | "stale" | "superseded";
+
+/** What made a proposal, for the AI ledger and the card's wording. */
+export type ProposalOrigin = "ai_action" | "check_fix" | "layout" | "generate" | "link_refresh" | "edit";
+
+export type ProposalSource = "human" | "agent";
+
+export type ProposalStatus = "pending" | "rejected" | "accepted" | "reverted" | "stale" | "superseded";
+
 /** A provider's model list as the kernel last saw it. */
 export type ProviderListing = {
   /** Why the last refresh failed; the older list is still in use. */
@@ -2008,6 +3289,8 @@ export type QueuedInput = {
   mode: PromptMode;
 };
 
+export type ReadDetail = "brief" | "full";
+
 /** A rectangle on a page: `x0 < x1`, `y0 < y1`. */
 export type Rect = {
   x0: number;
@@ -2038,6 +3321,8 @@ export type ResourceReadResult = {
   text: string;
   total_bytes: number;
 };
+
+export type RewriteTone = "formal" | "casual" | "persuasive" | "concise" | "conclusion_first";
 
 export type Role = "user" | "assistant";
 
@@ -2115,6 +3400,60 @@ export type RowHeight = {
 };
 
 export type RuleDecision = "allow" | "ask" | "deny";
+
+export type RunRead = {
+  end: number;
+  link?: HyperlinkTarget | null;
+  start: number;
+  style: RunStyle;
+  text: string;
+};
+
+/** A run of text and its formatting. */
+export type RunSpec = {
+  link?: HyperlinkTarget | null;
+  style?: RunStyle | null;
+  text: string;
+};
+
+/** Character formatting. In an edit, fields left out stay as they are; in a read, the effective values after inheritance (left out when mixed). */
+export type RunStyle = {
+  /** Superscript above 0 (30), subscript below (-25); 0 is the baseline. */
+  baseline_pct?: number | null;
+  bold?: boolean | null;
+  caps?: TextCaps | null;
+  color?: DeckColor | null;
+  /** The East Asian face; `+mj-ea` / `+mn-ea` for the theme's. The font box sets both. */
+  font_ea?: string | null;
+  /** The Latin face; `+mj-lt` / `+mn-lt` are the theme's heading and body fonts. */
+  font_latin?: string | null;
+  /** `null` removes the highlight. */
+  highlight?: DeckColor | null;
+  italic?: boolean | null;
+  size_pt?: number | null;
+  /** Character spacing. */
+  spacing_pt?: number | null;
+  strike?: StrikeStyle | null;
+  underline?: UnderlineStyle | null;
+};
+
+/** A colour of the theme's scheme. `tx1`/`bg1`/`tx2`/`bg2` go through the master's colour map. */
+export type SchemeColor = "dk1" | "lt1" | "dk2" | "lt2" | "accent1" | "accent2" | "accent3" | "accent4" | "accent5" | "accent6" | "hlink" | "tx1" | "bg1" | "tx2" | "bg2" | "fol_hlink";
+
+export type SectionInfo = {
+  first_slide_id: string;
+  name: string;
+  section_id: string;
+  slide_count: number;
+};
+
+/** A section, from its first slide to the next section's. */
+export type SectionSpec = {
+  first_slide_id: string;
+  name: string;
+  /** Keeps an existing section's id; a new one gets an id. */
+  section_id?: string | null;
+};
 
 export type ServerCapabilities = {
   /** Sub-agents: `agent_event`, `agents` in snapshots, `mail` on transcript messages, and the `agent_interrupt` op. */
@@ -2303,6 +3642,44 @@ export type SessionsChangedParams = {
   deleted?: string[];
   /** Whole summaries of the sessions that changed or appeared. */
   sessions: SessionSummary[];
+};
+
+export type ShadowSpec = {
+  alpha?: number | null;
+  angle_deg: number;
+  blur_pt: number;
+  color: DeckColor;
+  distance_pt: number;
+};
+
+/** One object of a slide, in z order (back first). */
+export type ShapeInfo = {
+  alt_text?: string | null;
+  chart?: ChartInfo | null;
+  data_link_id?: string | null;
+  /** `#RRGGBB` of a solid fill, `none`, `gradient` or `picture`. */
+  fill?: string | null;
+  flip_h?: boolean;
+  flip_v?: boolean;
+  hidden?: boolean;
+  kind: DeckShapeKind;
+  name: string;
+  /** The group it is in. */
+  parent_id?: string | null;
+  placeholder?: PlaceholderRef | null;
+  /** The `a:prstGeom` name, for preset shapes. */
+  preset?: string | null;
+  rect: DeckRect;
+  rotation_deg?: number | null;
+  shape_id: string;
+  stories?: StoryRead[];
+  table?: TableInfo | null;
+  text_look?: TextLook | null;
+};
+
+export type ShapeRef = {
+  shape_id: string;
+  slide_id: string;
 };
 
 export type SheetInfo = {
@@ -2509,6 +3886,81 @@ export type SkillsSetEnabledResult = {
   removed_names?: string[];
 };
 
+export type SlideChangeKind = "changed" | "inserted" | "deleted" | "moved";
+
+/** What a batch or proposal does to one slide, for the canvas markers and the approval card. */
+export type SlideChangeSummary = {
+  /** From 1; where it ends up, or was for a deleted slide. */
+  index: number;
+  kind: SlideChangeKind;
+  /** Shapes added, removed or changed. */
+  shape_ids?: string[];
+  slide_id: string;
+  /** In the user's words: "替换 3 处文字、移动 1 个对象". */
+  summary: string;
+  title?: string | null;
+};
+
+/** What a slide says, without how it looks: the solver's input (§5.2.2). */
+export type SlideContentTree = {
+  blocks: ContentBlock[];
+  subtitle?: string | null;
+  /** The one-line conclusion. */
+  takeaway?: string | null;
+  title: string;
+};
+
+/** One line of the summary per slide. */
+export type SlideLine = {
+  has_chart?: boolean;
+  has_notes?: boolean;
+  has_picture?: boolean;
+  has_table?: boolean;
+  hidden?: boolean;
+  index: number;
+  layout_id: string;
+  section_id?: string | null;
+  shape_count: number;
+  slide_id: string;
+  title?: string | null;
+};
+
+/** Slides matched across two decks by title and content, not position. */
+export type SlidePair = {
+  changes?: DiffChange[];
+  left?: DiffSlide | null;
+  right?: DiffSlide | null;
+  /** 0–1. */
+  similarity: number;
+  status: SlidePairStatus;
+};
+
+export type SlidePairStatus = "same" | "changed" | "inserted" | "deleted" | "moved";
+
+/** A slide to read or check: its id, or its number (from 1) as people say it. */
+export type SlidePick = number | string;
+
+/** Where a slide goes. */
+export type SlidePosition = "start" | "end" | {
+  after: string;
+} | {
+  before: string;
+};
+
+export type SlideRef = {
+  slide_id: string;
+};
+
+/** What happens to the content when the slide size changes. */
+export type SlideResize = "keep" | "fit" | "fill";
+
+export type SlideSize = {
+  height_pt: number;
+  /** `16:9`, `4:3`, or `custom`. */
+  ratio: string;
+  width_pt: number;
+};
+
 /** Result of `session/resume` and `session/attach`. */
 export type SnapshotResult = {
   snapshot: SessionSnapshot;
@@ -2518,10 +3970,194 @@ export type Speaker = "user" | "bot";
 
 export type StopReason = "stop" | "length" | "tool_use" | "error" | "aborted";
 
+/** A text story of a shape: its body, or one table cell's. */
+export type StoryRead = {
+  /** A table cell's. */
+  cell?: CellPos | null;
+  /** `detail: full` only. */
+  paragraphs?: ParagraphRead[];
+  story_id: string;
+  text: string;
+};
+
+export type StrikeStyle = "none" | "single" | "double";
+
+/** One change to a table's structure or look. Cell text is edited as text: every cell is a story (`deck/read` lists their `story_id`s), or `set_cells`. */
+export type TableEdit = {
+  at: number;
+  count?: number;
+  kind: "insert_rows";
+  side: InsertSide;
+} | {
+  at: number;
+  count?: number;
+  kind: "delete_rows";
+} | {
+  at: number;
+  count?: number;
+  kind: "insert_cols";
+  side: InsertSide;
+} | {
+  at: number;
+  count?: number;
+  kind: "delete_cols";
+} | {
+  kind: "merge";
+  range: CellRange;
+} | {
+  col: number;
+  kind: "split";
+  row: number;
+} | {
+  cells: CellText[];
+  kind: "set_cells";
+} | {
+  anchor?: TextAnchor | null;
+  borders?: CellBorder[];
+  fill?: FillSpec | null;
+  kind: "cell_style";
+  margins_pt?: TextInsets | null;
+  range: CellRange;
+} | {
+  col: number;
+  kind: "column_width";
+  width_pt: number;
+} | {
+  height_pt: number;
+  kind: "row_height";
+  row: number;
+} | {
+  flags?: TableStyleFlags;
+  kind: "style";
+  style_id?: string | null;
+};
+
+export type TableInfo = {
+  cols: number;
+  merges?: CellRange[];
+  rows: number;
+  style_id?: string | null;
+};
+
+/** Which parts of a table style are switched on (`a:tblPr` flags). */
+export type TableStyleFlags = {
+  banded_cols?: boolean | null;
+  banded_rows?: boolean | null;
+  first_col?: boolean | null;
+  header_row?: boolean | null;
+  last_col?: boolean | null;
+  total_row?: boolean | null;
+};
+
 export type TaskOutcome = "completed" | "failed" | "interrupted";
 
 /** What started a task. */
 export type TaskTrigger = "user" | "mail";
+
+export type TemplateLayout = {
+  /** The area free for content: the body placeholders' union, or the safe area. */
+  content_area: DeckRect;
+  /** Shapes the layout draws besides placeholders (logos, bars). */
+  decorations: number;
+  layout_id: string;
+  layout_type?: string | null;
+  master_id: string;
+  name: string;
+  placeholders: PlaceholderInfo[];
+  tag: LayoutTag;
+  thumbnail_png_base64?: string | null;
+};
+
+export type TemplateMaster = {
+  layout_ids: string[];
+  master_id: string;
+  name: string;
+};
+
+/** What generating into a template needs to know of it (§5.2.4, §6.8). */
+export type TemplateProfile = {
+  footer: FooterRule;
+  layouts: TemplateLayout[];
+  masters: TemplateMaster[];
+  name: string;
+  path: string;
+  /** Inside the slide's edges, where nothing should go. */
+  safe_area: DeckRect;
+  size: SlideSize;
+  /** For "my templates" in `FINX_HOME/templates/`. */
+  template_id?: string | null;
+  theme: ThemeInfo;
+  /** Title, subtitle, body and caption sizes the template uses, largest first. */
+  type_scale_pt: number[];
+};
+
+export type TextAnchor = "top" | "middle" | "bottom";
+
+export type TextAutofit = "none" | "shrink" | "resize";
+
+export type TextCaps = "none" | "small" | "all";
+
+export type TextDirection = "horizontal" | "vertical270" | "vertical" | "east_asian_vertical";
+
+export type TextEdge = "start" | "end";
+
+export type TextInsets = {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+};
+
+/** The look of a shape's text, as one line can say it; mixed values are left out. */
+export type TextLook = {
+  align?: ParagraphAlign | null;
+  autofit?: TextAutofit | null;
+  bold?: boolean | null;
+  /** `#RRGGBB`, resolved. */
+  color?: string | null;
+  font?: string | null;
+  /** The engine's layout says the text does not fit. */
+  overflows?: boolean;
+  size_pt?: number | null;
+};
+
+/** A theme colour, optionally lighter or darker, as PowerPoint's palette derives them (`accent1`, 25% lighter = `lum_mod: 0.75, lum_off: 0.25`). */
+export type ThemeColorRef = {
+  lum_mod?: number | null;
+  lum_off?: number | null;
+  scheme: SchemeColor;
+};
+
+/** The theme's twelve colours, `#RRGGBB`. In `set_theme_colors`, those left out stay. */
+export type ThemeColors = {
+  accent1?: string | null;
+  accent2?: string | null;
+  accent3?: string | null;
+  accent4?: string | null;
+  accent5?: string | null;
+  accent6?: string | null;
+  dk1?: string | null;
+  dk2?: string | null;
+  fol_hlink?: string | null;
+  hlink?: string | null;
+  lt1?: string | null;
+  lt2?: string | null;
+};
+
+/** The theme's font scheme: headings (major) and body (minor), per script. In `set_theme_fonts`, those left out stay. */
+export type ThemeFonts = {
+  major_ea?: string | null;
+  major_latin?: string | null;
+  minor_ea?: string | null;
+  minor_latin?: string | null;
+};
+
+export type ThemeInfo = {
+  /** All twelve, resolved. */
+  colors: ThemeColors;
+  fonts: ThemeFonts;
+  name?: string | null;
+};
 
 /** How hard a model thinks. `Default` sends nothing and leaves it to the provider; the others are the providers' own levels, and a model offers only those it supports (docs/kernel/model-catalog-design.md §18). */
 export type ThinkingLevel = "default" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "on";
@@ -2621,6 +4257,11 @@ export type TranscriptPage = {
   /** Oldest first. */
   items: TranscriptItem[];
 };
+
+/** Transitions FinxWork writes; others the file has are kept and shown by name. */
+export type TransitionKind = "none" | "cut" | "fade" | "push" | "wipe" | "split" | "reveal" | "cover" | "zoom" | "morph";
+
+export type UnderlineStyle = "none" | "single" | "double" | "heavy" | "dotted" | "dash" | "wavy";
 
 export type Usage = {
   cache_read: number;
@@ -2730,8 +4371,11 @@ export type YoursTab = {
   url: string;
 };
 
+export type ZOrder = "front" | "back" | "forward" | "backward";
+
 /** Requests: [params, result]. */
 export interface Methods {
+  "ai/action": [AiActionParams, AiActionResult];
   "auth/delete": [AuthDeleteParams, Empty];
   "auth/set": [AuthSetParams, AuthSetResult];
   "bots/avatar": [BotIdParams, BotAvatarResult];
@@ -2776,6 +4420,26 @@ export interface Methods {
   "connectors/install": [ConnectorInstallParams, ConnectorInstallResult];
   "credentials/delete": [CredentialsDeleteParams, Empty];
   "credentials/set": [CredentialsSetParams, Empty];
+  "deck/check": [DeckCheckParams, DeckCheckResult];
+  "deck/close": [DeckIdParams, Empty];
+  "deck/copy": [DeckCopyParams, DeckCopyResult];
+  "deck/diff": [DeckDiffParams, DeckDiff];
+  "deck/edit": [DeckEditParams, DeckEditResult];
+  "deck/find": [DeckFindParams, DeckFindResult];
+  "deck/focus": [DeckFocusParams, Empty];
+  "deck/layouts": [DeckLayoutsParams, DeckLayoutsResult];
+  "deck/links": [DeckLinksParams, DeckLinksResult];
+  "deck/open": [DeckOpenParams, DeckOpenResult];
+  "deck/proposal/accept": [DeckProposalDecideParams, DeckProposalResult];
+  "deck/proposal/list": [DeckProposalListParams, DeckProposalListResult];
+  "deck/proposal/reject": [DeckProposalDecideParams, DeckProposalResult];
+  "deck/proposal/revert": [DeckProposalIdParams, DeckProposalResult];
+  "deck/read": [DeckReadParams, DeckReadResult];
+  "deck/save": [DeckSaveParams, DeckSaveResult];
+  "deck/summary": [DeckIdParams, DeckSummary];
+  "deck/sync": [DeckSyncParams, DeckSyncResult];
+  "deck/template_profile": [DeckTemplateProfileParams, TemplateProfile];
+  "deck/view": [DeckViewParams, DeckViewResult];
   "doc/apply": [DocApplyParams, DocApplyResult];
   "doc/autofill": [DocAutofillParams, DocApplyResult];
   "doc/cells": [DocCellsParams, DocCellsResult];
@@ -2841,12 +4505,16 @@ export interface Methods {
 
 /** Notifications: their params. */
 export interface ServerNotifications {
+  "ai/action_progress": AiActionProgress;
   "bots/changed": BotsChangedParams;
   "browser/cdp": BrowserCdpParams;
   "browser/changed": BrowserStatus;
   "browser/control": BrowserControl;
   "browser/request": BrowserRequest;
   "config/changed": ConfigChangedParams;
+  "deck/changed": DeckChangedParams;
+  "deck/proposal": DeckProposalEvent;
+  "deck/sync": DeckSyncNotice;
   "doc/changed": DocChangedParams;
   "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
@@ -2896,6 +4564,9 @@ export const RPC_ERROR_KINDS = {
   "-32034": "doc_refused",
   "-32035": "doc_stale",
   "-32036": "doc_conflict",
+  "-32037": "deck_unavailable",
+  "-32038": "deck_conflict",
+  "-32039": "proposal_not_found",
   "-32040": "bot_not_found",
   "-32041": "bot_default",
   "-32042": "bot_invalid",

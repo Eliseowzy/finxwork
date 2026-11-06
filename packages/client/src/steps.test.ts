@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, callTarget, fromSnapshot, type SessionView } from "./session.ts";
-import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, settledSteps, withStreaming, toolObject, userText, workSummary } from "./steps.ts";
+import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, presentationViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, settledSteps, withStreaming, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
 const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
@@ -185,4 +185,10 @@ test("a workbook range comes back as a quote, and its live selection is not show
   const quote = { path: "/w/model.xlsx", doc_id: "fedcba9876543210", sheet: "利润表", range: "B3:D6", text: "| | B | C | D |" };
   const content = [{ type: "text" as const, text: "分析这个区域" }, docQuoteBlock([quote]), sheetViewingBlock(quote.path, quote.doc_id, quote.sheet, quote.range, "1,344.00")];
   assert.deepEqual(userText(content), { text: "分析这个区域", files: [], comments: [], quotes: [quote], tabs: [] });
+});
+
+test("the open presentation goes along with a message but is not shown", () => {
+  const block = presentationViewingBlock("/w/deck.pptx", false);
+  assert.match((block as { text: string }).text, /deck\.pptx/);
+  assert.equal(userText([{ type: "text", text: "当前打开的ppt内容是啥" }, block]).text, "当前打开的ppt内容是啥");
 });

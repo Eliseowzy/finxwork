@@ -58,3 +58,10 @@
 .pptx-font-busy { flex: 0 0 auto; color: #6b6e75; font: 11px ui-sans-serif, system-ui, sans-serif; }
 .pptx-font-error { margin: 0 8px 6px; padding: 6px 8px; border-radius: 6px; background: #fff4e5; color: #7a4600; font-size: 12px; }
 .pptx-font-empty { padding: 8px 12px; color: #6b6e75; font-size: 12px; }
+
+/* Command-layer buttons (commands/registry.ts) draw Lucide icons at the ribbon's sizes. */
+.pptx-ribbon .pptx-rb-icon { width: 18px; height: 18px; stroke-width: 1.6; flex: 0 0 auto; }
+.pptx-ribbon .pptx-rb-icon-large { width: 28px; height: 28px; stroke-width: 1.4; }
+.pptx-ribbon .pptx-rb-dbl { display: inline-flex; }
+.pptx-ribbon .pptx-rb-menu-trigger { display: inline-flex; align-items: center; gap: 2px; }
+[role="menu"] .pptx-rb-icon { width: 16px; height: 16px; stroke-width: 1.6; }

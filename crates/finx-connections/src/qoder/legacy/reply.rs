@@ -66,7 +66,11 @@ impl Reply {
         };
         let inner = envelope["body"].as_str().unwrap_or_default();
         if let Some(status) = envelope["statusCodeValue"].as_u64().filter(|s| *s != 200) {
-            let text = if inner.is_empty() { payload.trim() } else { inner };
+            let text = if inner.is_empty() {
+                payload.trim()
+            } else {
+                inner
+            };
             return Step::Refused(status as u16, text.into());
         }
         if inner.trim() == "[DONE]" {
@@ -77,7 +81,8 @@ impl Reply {
         };
         // A refusal said inside an OK frame.
         if !chunk["choices"].is_array()
-            && (!chunk["error"].is_null() || (!chunk["code"].is_null() && !chunk["message"].is_null()))
+            && (!chunk["error"].is_null()
+                || (!chunk["code"].is_null() && !chunk["message"].is_null()))
         {
             return Step::Refused(502, inner.into());
         }
@@ -88,9 +93,15 @@ impl Reply {
         let mut out = Vec::new();
         let choice = &chunk["choices"][0];
         let delta = &choice["delta"];
-        if let Some(text) = delta["reasoning_content"].as_str().filter(|t| !t.is_empty()) {
+        if let Some(text) = delta["reasoning_content"]
+            .as_str()
+            .filter(|t| !t.is_empty())
+        {
             let index = self.thinking_block();
-            out.push(StreamEvent::ThinkingDelta { index, text: text.into() });
+            out.push(StreamEvent::ThinkingDelta {
+                index,
+                text: text.into(),
+            });
         }
         if let Some(text) = delta["content"].as_str().filter(|t| !t.is_empty()) {
             for piece in self.text.feed(text, &self.tools) {
@@ -148,23 +159,40 @@ impl Reply {
                     id: format!("call_{}", uuid::Uuid::new_v4().simple()),
                     name,
                 });
-                out.push(StreamEvent::ToolCallArgs { index, json: arguments });
+                out.push(StreamEvent::ToolCallArgs {
+                    index,
+                    json: arguments,
+                });
             }
         }
     }
 
     fn native_call(&mut self, call: &Value, out: &mut Vec<StreamEvent>) {
         let at = call["index"].as_u64().unwrap_or(0);
-        let name = call["function"]["name"].as_str().map(str::trim).unwrap_or_default().to_owned();
-        let arguments = call["function"]["arguments"].as_str().unwrap_or_default().to_owned();
+        let name = call["function"]["name"]
+            .as_str()
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_owned();
+        let arguments = call["function"]["arguments"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
         let id = call["id"].as_str().unwrap_or_default().to_owned();
-        let entry = self.native.entry(at).or_insert(Native { index: None, id: String::new(), held: String::new() });
+        let entry = self.native.entry(at).or_insert(Native {
+            index: None,
+            id: String::new(),
+            held: String::new(),
+        });
         if !id.is_empty() {
             entry.id = id;
         }
         if let Some(index) = entry.index {
             if !arguments.is_empty() {
-                out.push(StreamEvent::ToolCallArgs { index, json: arguments });
+                out.push(StreamEvent::ToolCallArgs {
+                    index,
+                    json: arguments,
+                });
             }
             return;
         }
@@ -226,7 +254,9 @@ impl Reply {
 
 fn usage(u: &Value) -> Usage {
     let prompt = u["prompt_tokens"].as_u64().unwrap_or(0);
-    let cached = u["prompt_tokens_details"]["cached_tokens"].as_u64().unwrap_or(0);
+    let cached = u["prompt_tokens_details"]["cached_tokens"]
+        .as_u64()
+        .unwrap_or(0);
     Usage {
         input: prompt.saturating_sub(cached),
         output: u["completion_tokens"].as_u64().unwrap_or(0),
@@ -362,7 +392,11 @@ fn parse_call(block: &str, tools: &[String]) -> Option<(String, String)> {
         let name = value["name"].as_str()?.trim().to_owned();
         let arguments = match &value["arguments"] {
             Value::Object(_) => value["arguments"].to_string(),
-            Value::String(text) if serde_json::from_str::<Value>(text).is_ok_and(|v| v.is_object()) => text.clone(),
+            Value::String(text)
+                if serde_json::from_str::<Value>(text).is_ok_and(|v| v.is_object()) =>
+            {
+                text.clone()
+            }
             _ => return None,
         };
         return tools.contains(&name).then_some((name, arguments));
@@ -392,9 +426,13 @@ fn parse_call(block: &str, tools: &[String]) -> Option<(String, String)> {
 
 const QUEUED: &str = "10605";
 /// Codes Qoder's App reads as the plan's usage or credits used up.
-const QUOTA: &[&str] = &["110", "112", "113", "114", "115", "116", "117", "118", "119", "122"];
+const QUOTA: &[&str] = &[
+    "110", "112", "113", "114", "115", "116", "117", "118", "119", "122",
+];
 /// Refusals of this request, not of the account.
-const REFUSED: &[&str] = &["406", "416", "430", "80411", "80412", "100400", "100401", "100403"];
+const REFUSED: &[&str] = &[
+    "406", "416", "430", "80411", "80412", "100400", "100401", "100403",
+];
 /// How Qoder's App recognises an input over the model's limit.
 const TOO_LONG: &[&str] = &[
     "prompt is too long",
@@ -409,18 +447,26 @@ const TOO_LONG: &[&str] = &[
 /// A failed legacy call as the kernel's error.
 pub(crate) fn failure(status: u16, text: &str) -> LlmError {
     tracing::debug!(status, body = %crate::adapter::scrub(text), "qoder_legacy_failure");
-    let status = if (400..=599).contains(&status) { status } else { 502 };
+    let status = if (400..=599).contains(&status) {
+        status
+    } else {
+        502
+    };
     let mut value = serde_json::from_str::<Value>(text.trim()).unwrap_or(Value::Null);
     // A wrapper can hold the queue's own body as its message.
     if matches!(code_of(&value).as_deref(), None | Some("" | "401" | "403"))
-        && let Some(inner) = value["message"].as_str().and_then(|m| serde_json::from_str::<Value>(m.trim()).ok())
+        && let Some(inner) = value["message"]
+            .as_str()
+            .and_then(|m| serde_json::from_str::<Value>(m.trim()).ok())
         && code_of(&inner).as_deref() == Some(QUEUED)
     {
         value = inner;
     }
     let code = code_of(&value).unwrap_or_default();
     let mut message = value["message"].as_str().unwrap_or(text).trim().to_owned();
-    if let Some(detail) = value["details"].as_str().and_then(|d| serde_json::from_str::<Value>(d).ok())
+    if let Some(detail) = value["details"]
+        .as_str()
+        .and_then(|d| serde_json::from_str::<Value>(d).ok())
         && let Some(more) = detail["error"]["message"].as_str()
     {
         message = format!("{message}: {more}");
@@ -433,30 +479,68 @@ pub(crate) fn failure(status: u16, text: &str) -> LlmError {
         error.provider_code = Some(code.into());
         error
     };
-    if code == QUEUED || queue.as_ref().is_some_and(|q| q["isQueued"] == true || q["serviceAvailable"] == false) {
+    if code == QUEUED
+        || queue
+            .as_ref()
+            .is_some_and(|q| q["isQueued"] == true || q["serviceAvailable"] == false)
+    {
         let wait = queue
             .as_ref()
-            .and_then(|q| q["retryAfterSeconds"].as_f64().or_else(|| q["retryAfterSeconds"].as_str()?.parse().ok()))
+            .and_then(|q| {
+                q["retryAfterSeconds"]
+                    .as_f64()
+                    .or_else(|| q["retryAfterSeconds"].as_str()?.parse().ok())
+            })
             .filter(|s| *s > 0.0)
             .unwrap_or(30.0);
-        let mut error = make(ErrorKind::Overloaded, "qoder_queued", "Qoder 正在为该模型排队，稍后自动重试".into());
+        let mut error = make(
+            ErrorKind::Overloaded,
+            "qoder_queued",
+            "Qoder 正在为该模型排队，稍后自动重试".into(),
+        );
         error.retry_after_ms = Some((wait * 1000.0).ceil() as u64);
         return error;
     }
-    if status == 413 || lower.contains("request body size exceeds") || lower.contains("request_too_large") {
-        return make(ErrorKind::ContextOverflow, "request_too_large", format!("Qoder 请求体超出上限：{message}"));
+    if status == 413
+        || lower.contains("request body size exceeds")
+        || lower.contains("request_too_large")
+    {
+        return make(
+            ErrorKind::ContextOverflow,
+            "request_too_large",
+            format!("Qoder 请求体超出上限：{message}"),
+        );
     }
     if TOO_LONG.iter().any(|p| lower.contains(p)) {
-        return make(ErrorKind::ContextOverflow, "context_length_exceeded", message);
+        return make(
+            ErrorKind::ContextOverflow,
+            "context_length_exceeded",
+            message,
+        );
     }
-    if QUOTA.contains(&code.as_str()) || lower.contains("quota exhausted") || lower.contains("billing daily count exceeded") {
-        return make(ErrorKind::QuotaExceeded, &format!("qoder_{code}"), format!("Qoder 额度已用尽：{message}"));
+    if QUOTA.contains(&code.as_str())
+        || lower.contains("quota exhausted")
+        || lower.contains("billing daily count exceeded")
+    {
+        return make(
+            ErrorKind::QuotaExceeded,
+            &format!("qoder_{code}"),
+            format!("Qoder 额度已用尽：{message}"),
+        );
     }
     if lower.contains("session blocked") {
-        return make(ErrorKind::ContentFiltered, "qoder_sensitive_content", message);
+        return make(
+            ErrorKind::ContentFiltered,
+            "qoder_sensitive_content",
+            message,
+        );
     }
     if REFUSED.contains(&code.as_str()) {
-        return make(ErrorKind::InvalidRequest, &format!("qoder_{code}"), format!("Qoder 拒绝了该请求（{code}）：{message}"));
+        return make(
+            ErrorKind::InvalidRequest,
+            &format!("qoder_{code}"),
+            format!("Qoder 拒绝了该请求（{code}）：{message}"),
+        );
     }
     if lower.contains("error in upstream response") {
         return make(ErrorKind::Server, "qoder_upstream_failed", message);
@@ -466,7 +550,15 @@ pub(crate) fn failure(status: u16, text: &str) -> LlmError {
         return make(ErrorKind::Protocol, "qoder_signature_invalid", message);
     }
     if matches!(status, 401 | 403) {
-        let mut error = make(ErrorKind::Auth, if code.is_empty() { "auth_rejected" } else { &code }, message);
+        let mut error = make(
+            ErrorKind::Auth,
+            if code.is_empty() {
+                "auth_rejected"
+            } else {
+                &code
+            },
+            message,
+        );
         error.status = Some(401);
         return error;
     }

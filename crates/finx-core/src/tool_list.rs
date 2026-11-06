@@ -26,13 +26,25 @@ pub fn builtin(config: &Config) -> Vec<ToolEntry> {
     let mut list = Vec::new();
     let all = finx_tools::builtin_registry(BashTool::default());
     for spec in all.iter_specs() {
-        let enabled = config.enabled_tools.iter().any(|name| *name == spec.name);
+        let enabled = config.enabled_tools.contains(&spec.name);
         let tool = all.get(&spec.name).expect("listed");
-        list.push(entry(&*tool, "base", true, enabled, (!enabled).then(|| format!("add \"{}\" to tools.enabled", spec.name))));
+        list.push(entry(
+            &*tool,
+            "base",
+            true,
+            enabled,
+            (!enabled).then(|| format!("add \"{}\" to tools.enabled", spec.name)),
+        ));
     }
     for tool in crate::agents::agent_tools() {
         let enabled = config.agents_enabled;
-        list.push(entry(&*tool, "agents", true, enabled, (!enabled).then(|| "agents.enabled = true".to_string())));
+        list.push(entry(
+            &*tool,
+            "agents",
+            true,
+            enabled,
+            (!enabled).then(|| "agents.enabled = true".to_string()),
+        ));
     }
     let none: crate::deferred::DeferredCell = Default::default();
     for tool in crate::mcp::tools::kernel_tools(None, &none, &Default::default()) {
@@ -48,15 +60,34 @@ pub fn builtin(config: &Config) -> Vec<ToolEntry> {
     // Those of the groups that are off: the first to name a tool says what it needs.
     let mut off = |name: &str, tools: Vec<Arc<dyn Tool>>, needs: &str| {
         for tool in tools {
-            if !list.iter().any(|known: &ToolEntry| known.name == tool.spec().name) {
+            if !list
+                .iter()
+                .any(|known: &ToolEntry| known.name == tool.spec().name)
+            {
                 list.push(entry(&*tool, name, false, false, Some(needs.to_string())));
             }
         }
     };
-    off(crate::web_search::GROUP, crate::web_search::tools(&settings.web_search), "web_search.enabled = true");
-    off("browser", crate::browser::one_browser(), "browser.enabled = true");
-    off("browser", crate::browser::one_browser_with_scripts(), "browser.script_enabled = true");
-    let desktop = if cfg!(target_os = "macos") { "desktop.enabled = true" } else { "macOS" };
+    off(
+        crate::web_search::GROUP,
+        crate::web_search::tools(&settings.web_search),
+        "web_search.enabled = true",
+    );
+    off(
+        "browser",
+        crate::browser::one_browser(),
+        "browser.enabled = true",
+    );
+    off(
+        "browser",
+        crate::browser::one_browser_with_scripts(),
+        "browser.script_enabled = true",
+    );
+    let desktop = if cfg!(target_os = "macos") {
+        "desktop.enabled = true"
+    } else {
+        "macOS"
+    };
     off("cua", crate::desktop::desktop_tools(), desktop);
     list
 }
@@ -65,7 +96,11 @@ pub fn builtin(config: &Config) -> Vec<ToolEntry> {
 /// `finx status` says, cheaply.
 pub fn summary(config: &Config) -> (usize, Vec<&'static str>) {
     let settings = SystemSettings::of(config);
-    let role = if config.agents_enabled { AgentRole::Main } else { AgentRole::None };
+    let role = if config.agents_enabled {
+        AgentRole::Main
+    } else {
+        AgentRole::None
+    };
     let groups = Deferred::names_of(&settings, true, false, true, role);
     (config.enabled_tools.len(), groups)
 }
@@ -94,7 +129,11 @@ pub(crate) fn of_session(session: &crate::session::Session) -> Vec<ToolEntry> {
                 description: found.info.description.clone().unwrap_or_default(),
                 parameters: found.parameters.clone(),
             };
-            let kind = if found.info.read_only { ToolEntryKind::ReadOnly } else { ToolEntryKind::Mutating };
+            let kind = if found.info.read_only {
+                ToolEntryKind::ReadOnly
+            } else {
+                ToolEntryKind::Mutating
+            };
             list.push(from_spec(spec, "mcp", ToolEntryOrigin::Mcp, kind, false));
         }
     }
@@ -103,7 +142,9 @@ pub(crate) fn of_session(session: &crate::session::Session) -> Vec<ToolEntry> {
 
 /// Why PDFs would not open, while they would not.
 fn pdf_needs() -> Option<String> {
-    finx_docs::engine::locate_library().is_none().then(|| "PDF: finx install pdf".to_string())
+    finx_docs::engine::locate_library()
+        .is_none()
+        .then(|| "PDF: finx install pdf".to_string())
 }
 
 fn group_of(tool: &dyn Tool) -> &'static str {
@@ -118,7 +159,13 @@ fn group_of(tool: &dyn Tool) -> &'static str {
     }
 }
 
-fn entry(tool: &dyn Tool, group: &str, loaded: bool, available: bool, needs: Option<String>) -> ToolEntry {
+fn entry(
+    tool: &dyn Tool,
+    group: &str,
+    loaded: bool,
+    available: bool,
+    needs: Option<String>,
+) -> ToolEntry {
     let spec = tool.spec();
     ToolEntry {
         name: spec.name.clone(),
@@ -139,7 +186,13 @@ fn entry(tool: &dyn Tool, group: &str, loaded: bool, available: bool, needs: Opt
     }
 }
 
-fn from_spec(spec: ToolSpec, group: &str, origin: ToolEntryOrigin, kind: ToolEntryKind, loaded: bool) -> ToolEntry {
+fn from_spec(
+    spec: ToolSpec,
+    group: &str,
+    origin: ToolEntryOrigin,
+    kind: ToolEntryKind,
+    loaded: bool,
+) -> ToolEntry {
     ToolEntry {
         name: spec.name,
         description: spec.description,
@@ -179,7 +232,12 @@ fn sorted(value: Value) -> Value {
         Value::Object(map) => {
             let mut entries: Vec<(String, Value)> = map.into_iter().collect();
             entries.sort_by(|a, b| a.0.cmp(&b.0));
-            Value::Object(entries.into_iter().map(|(key, value)| (key, sorted(value))).collect())
+            Value::Object(
+                entries
+                    .into_iter()
+                    .map(|(key, value)| (key, sorted(value)))
+                    .collect(),
+            )
         }
         Value::Array(items) => Value::Array(items.into_iter().map(sorted).collect()),
         other => other,
@@ -193,7 +251,10 @@ mod tests {
     #[test]
     fn a_turned_off_group_is_listed_with_what_it_needs() {
         let list = builtin(&Config::default());
-        let browser = list.iter().find(|t| t.name == "browser_navigate").expect("browser tools are listed");
+        let browser = list
+            .iter()
+            .find(|t| t.name == "browser_navigate")
+            .expect("browser tools are listed");
         assert!(!browser.available);
         assert!(!browser.loaded);
         assert_eq!(browser.needs.as_deref(), Some("browser.enabled = true"));
@@ -209,24 +270,35 @@ mod tests {
 
     #[test]
     fn a_tool_left_out_of_the_enabled_list_says_so() {
-        let config = Config { enabled_tools: vec!["read".to_string()], ..Config::default() };
+        let config = Config {
+            enabled_tools: vec!["read".to_string()],
+            ..Config::default()
+        };
         let list = builtin(&config);
         let bash = list.iter().find(|t| t.name == "bash").expect("bash");
         assert!(!bash.available);
-        assert!(bash.needs.as_deref().is_some_and(|n| n.contains("tools.enabled")));
+        assert!(
+            bash.needs
+                .as_deref()
+                .is_some_and(|n| n.contains("tools.enabled"))
+        );
     }
 
     /// Tool names and parameters are what models and old logs rely on: a change has to show in
     /// the review. `FINX_UPDATE_SNAPSHOTS=1` rewrites the copy.
     #[test]
     fn the_tool_contract_is_the_one_in_the_repository() {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots/tools.json");
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/snapshots/tools.json");
         let now = serde_json::to_string_pretty(&contract(&Config::default())).expect("json") + "\n";
         if std::env::var_os("FINX_UPDATE_SNAPSHOTS").is_some() {
             std::fs::create_dir_all(path.parent().expect("parent")).expect("dir");
             std::fs::write(&path, &now).expect("write");
         }
         let saved = std::fs::read_to_string(&path).unwrap_or_default();
-        assert!(saved == now, "the tools changed: run with FINX_UPDATE_SNAPSHOTS=1 and review the diff");
+        assert!(
+            saved == now,
+            "the tools changed: run with FINX_UPDATE_SNAPSHOTS=1 and review the diff"
+        );
     }
 }

@@ -80,6 +80,7 @@ impl TestEnv {
             .current_dir(cwd)
             .env("FINX_HOME", self.home.path())
             .env("HOME", self.user_home())
+            .env_remove("XDG_DATA_HOME")
             // Saved keys go to a file in the test's home, never the developer's keychain.
             .env("FINX_CREDENTIAL_STORE", "file")
             // Sign-ins print their address; tests play the browser themselves.

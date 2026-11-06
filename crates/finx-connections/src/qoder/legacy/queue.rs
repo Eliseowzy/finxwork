@@ -60,14 +60,24 @@ impl Queue {
         let mut tasks = self.tasks.lock();
         let gone: Vec<String> = tasks
             .iter()
-            .filter(|(key, p)| (p.waiting && p.touched.elapsed() > ABANDONED) || (p.session == session && *key != task))
+            .filter(|(key, p)| {
+                (p.waiting && p.touched.elapsed() > ABANDONED)
+                    || (p.session == session && *key != task)
+            })
             .map(|(key, _)| key.clone())
             .collect();
         gone.iter().filter_map(|key| tasks.remove(key)).collect()
     }
 
     /// A chat of `task` was refused with the queue code.
-    pub(crate) fn enter(&self, task: &str, model: &str, queue_type: Option<String>, request: &str, session: &str) {
+    pub(crate) fn enter(
+        &self,
+        task: &str,
+        model: &str,
+        queue_type: Option<String>,
+        request: &str,
+        session: &str,
+    ) {
         let mut tasks = self.tasks.lock();
         let place = tasks.entry(task.into()).or_insert_with(|| Place {
             task: task.into(),
@@ -148,7 +158,10 @@ pub(crate) fn state_of(text: &str) -> Option<State> {
         if queued.is_some() || available.is_some() {
             return Some(State {
                 queued: queued == Some(true) || available == Some(false),
-                queue_type: value["queueType"].as_str().filter(|s| !s.is_empty()).map(str::to_owned),
+                queue_type: value["queueType"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_owned),
                 retry_after: value["retryAfterSeconds"]
                     .as_f64()
                     .or_else(|| value["retryAfterSeconds"].as_str()?.parse().ok()),
@@ -179,7 +192,11 @@ pub(crate) struct Signer {
 }
 
 /// Asks where `place` stands; `None` when the ask failed or said nothing of the queue.
-pub(crate) async fn status(http: &reqwest::Client, signer: &Signer, place: &Place) -> Option<State> {
+pub(crate) async fn status(
+    http: &reqwest::Client,
+    signer: &Signer,
+    place: &Place,
+) -> Option<State> {
     let mut url = reqwest::Url::parse(&format!("{}{STATUS_PATH}", signer.base)).ok()?;
     url.query_pairs_mut()
         .append_pair("requestSetId", &place.task)
@@ -187,13 +204,30 @@ pub(crate) async fn status(http: &reqwest::Client, signer: &Signer, place: &Plac
     if let Some(queue_type) = &place.queue_type {
         url.query_pairs_mut().append_pair("queueType", queue_type);
     }
-    let mut headers = cosy::signed(url.as_str(), &signer.uid, &signer.token, &signer.machine, "", cosy::Kind::Request).ok()?;
-    for (name, value) in [("X-Request-ID", place.request.as_str()), ("X-Session-ID", place.session.as_str())] {
+    let mut headers = cosy::signed(
+        url.as_str(),
+        &signer.uid,
+        &signer.token,
+        &signer.machine,
+        "",
+        cosy::Kind::Request,
+    )
+    .ok()?;
+    for (name, value) in [
+        ("X-Request-ID", place.request.as_str()),
+        ("X-Session-ID", place.session.as_str()),
+    ] {
         if let Ok(value) = reqwest::header::HeaderValue::from_str(value) {
             headers.insert(name, value);
         }
     }
-    let response = http.get(url).headers(headers).timeout(Duration::from_secs(30)).send().await.ok()?;
+    let response = http
+        .get(url)
+        .headers(headers)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .ok()?;
     let ok = response.status().is_success();
     let code = response.status().as_u16();
     let text = response.text().await.ok()?;
@@ -216,14 +250,31 @@ pub(crate) async fn finish(http: &reqwest::Client, signer: &Signer, place: &Plac
     });
     let plain = json!({"payload": payload.to_string(), "encodeVersion": "1"}).to_string();
     let wire = super::codec::encode(&plain);
-    let Ok(mut headers) = cosy::signed(&url, &signer.uid, &signer.token, &signer.machine, &wire, cosy::Kind::Request) else {
+    let Ok(mut headers) = cosy::signed(
+        &url,
+        &signer.uid,
+        &signer.token,
+        &signer.machine,
+        &wire,
+        cosy::Kind::Request,
+    ) else {
         return;
     };
-    headers.insert(reqwest::header::CONTENT_TYPE, reqwest::header::HeaderValue::from_static("application/json"));
+    headers.insert(
+        reqwest::header::CONTENT_TYPE,
+        reqwest::header::HeaderValue::from_static("application/json"),
+    );
     if let Ok(id) = reqwest::header::HeaderValue::from_str(&uuid::Uuid::new_v4().to_string()) {
         headers.insert("X-Request-ID", id);
     }
-    match http.post(&url).headers(headers).body(wire).timeout(Duration::from_secs(10)).send().await {
+    match http
+        .post(&url)
+        .headers(headers)
+        .body(wire)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+    {
         Ok(response) => {
             let ok = response.status().is_success();
             let code = response.status().as_u16();

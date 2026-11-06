@@ -4,9 +4,9 @@ mod cosy;
 mod legacy;
 mod route;
 mod sse;
-mod transport;
 #[cfg(test)]
 mod tests;
+mod transport;
 use crate::{
     ConnectionError, Result,
     adapter::ProductAdapter,
@@ -26,8 +26,21 @@ const MODEL_BASE: &str = "https://api2-v2.qoder.sh/model/v1";
 // Models whose App HTTP route is verified with text and a complete tool roundtrip.
 // Unknown catalog entries stay visible but cannot bypass this check via ad-hoc IDs.
 pub(crate) const SUPPORTED: &[&str] = &[
-    "auto", "ultimate", "fast", "efficient", "smodel", "cmodel", "qmodel_38max", "qfmodel", "gmodel",
-    "gfmodel", "kmodel_latest", "kmodel", "dmodel", "dfmodel", "mmodel",
+    "auto",
+    "ultimate",
+    "fast",
+    "efficient",
+    "smodel",
+    "cmodel",
+    "qmodel_38max",
+    "qfmodel",
+    "gmodel",
+    "gfmodel",
+    "kmodel_latest",
+    "kmodel",
+    "dmodel",
+    "dfmodel",
+    "mmodel",
 ];
 pub(crate) fn supports_model(model: &str) -> bool {
     SUPPORTED.contains(&model)
@@ -71,16 +84,30 @@ pub(crate) struct Qoder {
 }
 pub(crate) fn source_login(v: &Value) -> Result<Login> {
     if v["schemaVersion"] != 1 {
-        return Err(ConnectionError::new("unsupported_login_schema", "Qoder 登录文件格式暂不支持").at("source_login").field("schemaVersion"));
+        return Err(
+            ConnectionError::new("unsupported_login_schema", "Qoder 登录文件格式暂不支持")
+                .at("source_login")
+                .field("schemaVersion"),
+        );
     }
     if v["openApiBase"].as_str().is_some_and(|s| !s.is_empty()) {
-        return Err(ConnectionError::new("unsupported_origin", "当前适配器暂不支持自定义 Qoder 认证地址").at("source_login").field("openApiBase"));
+        return Err(ConnectionError::new(
+            "unsupported_origin",
+            "当前适配器暂不支持自定义 Qoder 认证地址",
+        )
+        .at("source_login")
+        .field("openApiBase"));
     }
     if let Some(context) = v["authenticationContext"].as_str() {
         let context: Value = serde_json::from_str(context)
             .map_err(|_| ConnectionError::format("source_login", "authenticationContext"))?;
         if context[1] != OPENAPI || context[2] != CLIENT_ID {
-            return Err(ConnectionError::new("unsupported_auth_context", "Qoder 认证服务或客户端标识不受当前适配器支持").at("source_login").field("authenticationContext"));
+            return Err(ConnectionError::new(
+                "unsupported_auth_context",
+                "Qoder 认证服务或客户端标识不受当前适配器支持",
+            )
+            .at("source_login")
+            .field("authenticationContext"));
         }
     }
     let uid = v["user"]["id"]
@@ -94,7 +121,8 @@ pub(crate) fn source_login(v: &Value) -> Result<Login> {
         .filter(|s| !s.is_empty())
         .ok_or_else(|| ConnectionError::format("source_login", "token"))?
         .to_owned();
-    let expires = date(&v["expiresAt"]).ok_or_else(|| ConnectionError::format("source_login", "expiresAt"))?;
+    let expires = date(&v["expiresAt"])
+        .ok_or_else(|| ConnectionError::format("source_login", "expiresAt"))?;
     Ok(Login {
         identity: digest(json!(["qoder-global", uid]).to_string().as_bytes()),
         token,
@@ -122,7 +150,12 @@ fn parse_job(v: &Value, now: i64) -> Result<Job> {
     let refresh_expires = date(&v["refresh_token_expires_at"])
         .or_else(|| now.checked_add(v["refresh_token_expires_in"].as_i64()?))
         .filter(|e| *e > now)
-        .ok_or_else(|| ConnectionError::format("authorization", "refresh_token_expires_at / refresh_token_expires_in"))?;
+        .ok_or_else(|| {
+            ConnectionError::format(
+                "authorization",
+                "refresh_token_expires_at / refresh_token_expires_in",
+            )
+        })?;
     Ok(Job {
         token: string("token")?,
         refresh_token: string("refresh_token")?,
@@ -191,9 +224,10 @@ impl Qoder {
         Ok(login)
     }
     async fn save(&mut self) -> Result<()> {
-        let value = zeroize::Zeroizing::new(
-            serde_json::to_string(&self.saved).map_err(|_| ConnectionError::new("saved_session_invalid", "无法编码 Qoder 授权数据").at("credential_store"))?,
-        );
+        let value = zeroize::Zeroizing::new(serde_json::to_string(&self.saved).map_err(|_| {
+            ConnectionError::new("saved_session_invalid", "无法编码 Qoder 授权数据")
+                .at("credential_store")
+        })?);
         self.environment.set(&self.id, &value).await?;
         self.dirty = false;
         Ok(())
@@ -204,12 +238,21 @@ impl Qoder {
         let now = self.environment.now();
         if !self.loaded {
             if let Some(value) = self.environment.get(&self.id).await? {
-                let saved: Saved =
-                    serde_json::from_str(&value).map_err(|_| ConnectionError::new("saved_session_invalid", "已保存的 Qoder 授权数据格式无效，请移除连接后重新连接").at("credential_store"))?;
+                let saved: Saved = serde_json::from_str(&value).map_err(|_| {
+                    ConnectionError::new(
+                        "saved_session_invalid",
+                        "已保存的 Qoder 授权数据格式无效，请移除连接后重新连接",
+                    )
+                    .at("credential_store")
+                })?;
                 if saved.identity != self.identity
                     || uuid::Uuid::parse_str(&saved.machine_id).is_err()
                 {
-                    return Err(ConnectionError::new("saved_session_invalid", "已保存的 Qoder 授权身份或设备标识无效，请移除连接后重新连接").at("credential_store"));
+                    return Err(ConnectionError::new(
+                        "saved_session_invalid",
+                        "已保存的 Qoder 授权身份或设备标识无效，请移除连接后重新连接",
+                    )
+                    .at("credential_store"));
                 }
                 self.saved = saved;
             }
@@ -228,7 +271,10 @@ impl Qoder {
                 if !rejected && job.expires > now + 60_000 {
                     return Ok(job);
                 }
-                return Err(self.last_failure.clone().unwrap_or_else(|| ConnectionError::unavailable().at("authorization")));
+                return Err(self
+                    .last_failure
+                    .clone()
+                    .unwrap_or_else(|| ConnectionError::unavailable().at("authorization")));
             }
             if !self.refresh_uncertain && job.refresh_expires > now + 30_000 {
                 let result = json_request(
@@ -266,14 +312,18 @@ impl Qoder {
             }
         }
         if login.expires <= now {
-            if !rejected {
-                if let Some(job) = self.saved.job.clone() {
-                    if job.expires > now + 60_000 {
-                        self.retry_at = now + 30_000;
-                        tracing::info!(stage = "authorization", reason = "source_expired", backoff_ms = 30_000, "connection_using_valid_cached_authorization");
-                        return Ok(job);
-                    }
-                }
+            if !rejected
+                && let Some(job) = self.saved.job.clone()
+                && job.expires > now + 60_000
+            {
+                self.retry_at = now + 30_000;
+                tracing::info!(
+                    stage = "authorization",
+                    reason = "source_expired",
+                    backoff_ms = 30_000,
+                    "connection_using_valid_cached_authorization"
+                );
+                return Ok(job);
             }
             return Err(ConnectionError::login());
         }
@@ -290,13 +340,18 @@ impl Qoder {
             Err(e) => {
                 self.retry_at = now + 30_000;
                 self.last_failure = Some(e.clone().source_rejected());
-                if e.retryable && !rejected {
-                    if let Some(job) = self.saved.job.clone() {
-                        if job.expires > now + 60_000 {
-                            tracing::info!(stage = "authorization", reason = "transient_issue_failure", backoff_ms = 30_000, "connection_using_valid_cached_authorization");
-                            return Ok(job);
-                        }
-                    }
+                if e.retryable
+                    && !rejected
+                    && let Some(job) = self.saved.job.clone()
+                    && job.expires > now + 60_000
+                {
+                    tracing::info!(
+                        stage = "authorization",
+                        reason = "transient_issue_failure",
+                        backoff_ms = 30_000,
+                        "connection_using_valid_cached_authorization"
+                    );
+                    return Ok(job);
                 }
                 return Err(e.source_rejected());
             }
@@ -338,7 +393,10 @@ impl ProductAdapter for Qoder {
             .ok_or_else(|| ConnectionError::format("catalog", "app"))?;
         for (index, entry) in entries.iter().enumerate() {
             if entry["enable"] == true && !entry["key"].as_str().is_some_and(crate::valid_id) {
-                return Err(ConnectionError::format("catalog", &format!("app[{index}].key")));
+                return Err(ConnectionError::format(
+                    "catalog",
+                    &format!("app[{index}].key"),
+                ));
             }
         }
         let mut ids = std::collections::HashSet::new();
@@ -357,7 +415,11 @@ impl ProductAdapter for Qoder {
             return Err(if entries.iter().all(|m| m["enable"] != true) {
                 ConnectionError::new("catalog_empty", "Qoder 账户当前没有启用的模型").at("catalog")
             } else {
-                ConnectionError::new("unsupported_model_protocol", "Qoder 目录中没有当前适配器支持的模型").at("catalog")
+                ConnectionError::new(
+                    "unsupported_model_protocol",
+                    "Qoder 目录中没有当前适配器支持的模型",
+                )
+                .at("catalog")
             });
         }
         Ok(models)
@@ -382,7 +444,11 @@ impl Qoder {
                 .ok_or_else(|| ConnectionError::format("source_login", "user.id"))?,
             &job.token,
             &self.saved.machine_id,
-        ).map_err(|_| ConnectionError::new("catalog_request_invalid", "无法构造 Qoder 模型目录授权请求").at("catalog"))?;
+        )
+        .map_err(|_| {
+            ConnectionError::new("catalog_request_invalid", "无法构造 Qoder 模型目录授权请求")
+                .at("catalog")
+        })?;
         let request = http
             .get(self.catalog_url())
             .headers(headers)

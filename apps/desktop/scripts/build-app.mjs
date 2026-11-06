@@ -41,7 +41,7 @@
 import { flipFuses, FuseV1Options, FuseVersion } from "@electron/fuses";
 import { sign } from "@electron/osx-sign";
 import { packager } from "@electron/packager";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -250,6 +250,30 @@ for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify",
     if (!entry || entry.size !== fs.statSync(source).size) throw new Error(`the signed app.asar lacks renderer/fonts/${name} (the deck editor's ${family} stand-in)`);
   }
 }
+/** Runs `finx serve` (stdio JSON-RPC) for one body of calls, then stops it. */
+async function withKernel(bin, env, cwd, body) {
+  const child = spawn(bin, ["serve"], { env, cwd, stdio: ["pipe", "pipe", "pipe"] });
+  const waiting = new Map();
+  let buffered = "";
+  child.stdout.on("data", (chunk) => {
+    buffered += chunk;
+    let at;
+    while ((at = buffered.indexOf("\n")) >= 0) {
+      const line = buffered.slice(0, at);
+      buffered = buffered.slice(at + 1);
+      let message;
+      try { message = JSON.parse(line); } catch { continue; }
+      if (message.id != null && waiting.has(message.id)) { waiting.get(message.id)(message); waiting.delete(message.id); }
+    }
+  });
+  const call = (id, method, params) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`the embedded finx gave no reply to ${method}`)), 60000);
+    waiting.set(id, (message) => { clearTimeout(timer); resolve(message); });
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+  });
+  try { return await body(call); } finally { child.kill(); }
+}
+
 // The signed copy still runs and reports the version the app expects (where it can run).
 if (arch === nativeArch) {
   const signedVersion = execFileSync(embedded, ["--version"], { encoding: "utf8" }).trim().split(/\s+/).pop();
@@ -287,6 +311,19 @@ if (arch === nativeArch) {
   if (joined.ok?.impact?.edited?.[0]?.after_text !== "a-b") throw new Error(`the embedded finx lacks the patched IronCalc (TEXTJOIN): ${JSON.stringify(joined)}`);
   if (csv.ok?.sheets?.[0]?.used !== "A1:B2") throw new Error(`the embedded finx cannot open a CSV: ${JSON.stringify(csv)}`);
   if (!xls.ok?.sheets?.length) throw new Error(`the embedded finx cannot open a legacy .xls: ${JSON.stringify(xls)}`);
+  // Presentations (finx-slide): the kernel reads a deck back byte for byte, with its fonts listed (pptx/read, protocol 2).
+  const deck = path.join(docHome, "check.pptx");
+  const deckBytes = fs.readFileSync(path.join(root, "crates/finx-slide/tests/fixtures/editor.pptx"));
+  fs.writeFileSync(deck, deckBytes);
+  const read = await withKernel(embedded, { ...env, HOME: docHome }, docHome, async (call) => {
+    await call(1, "initialize", { protocol_version: 2 });
+    const session = await call(2, "session/new", { cwd: docHome });
+    if (!session.result?.session_id) throw new Error(`the embedded finx cannot start a session: ${JSON.stringify(session)}`);
+    return call(3, "pptx/read", { session_id: session.result.session_id, path: deck });
+  });
+  if (!read.result) throw new Error(`the embedded finx cannot read a presentation: ${JSON.stringify(read)}`);
+  if (!Buffer.from(read.result.data, "base64").equals(deckBytes)) throw new Error("the embedded finx changed a presentation it only read");
+  if (!read.result.font_families?.includes("Arial")) throw new Error(`the embedded finx lists no Arial for the presentation: ${JSON.stringify(read.result.font_families)}`);
 }
 
 if (notaryAuth) {
