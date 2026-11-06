@@ -5,7 +5,6 @@ export * from "./alerts.ts";
 export * from "./bots.ts";
 export * from "./botChat.ts";
 export * from "./calendar.ts";
-export * from "./draft.ts";
 export * from "./files.ts";
 export * from "./mentions.ts";
 export * from "./models.ts";

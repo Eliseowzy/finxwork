@@ -89,6 +89,7 @@ const bridge: Bridge = {
   openFile: (path: string, options?: { line?: number; app?: string }) => ipcRenderer.invoke("open-file", path, options),
   editors: () => ipcRenderer.invoke("editors"),
   openURL: (session: string, url: string) => ipcRenderer.invoke("browser-open-url", session, url),
+  openPageFile: (session: string, path: string) => ipcRenderer.invoke("browser-open-file", session, path),
   openFolder: (path: string) => ipcRenderer.send("open-folder", path),
   openTerminal: (path: string) => ipcRenderer.send("open-terminal", path),
   gitBranch: (path: string) => ipcRenderer.invoke("git-branch", path),

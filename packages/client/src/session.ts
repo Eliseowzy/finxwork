@@ -237,6 +237,14 @@ function agentFrom(info: SessionInfo, a: AgentSnapshot): AgentView {
   };
 }
 
+/**
+ * The view with only its latest entries, for showing a session again until its snapshot comes.
+ * Earlier history can be asked for again; what it is asked with comes from that snapshot.
+ */
+export function latestPage(v: SessionView, entries: number): SessionView {
+  return v.entries.length <= entries ? v : { ...v, entries: v.entries.slice(-entries), before: v.before ?? "more" };
+}
+
 /** The sub-agents still working. */
 export function runningAgents(v: SessionView): AgentView[] {
   return v.agents.filter((a) => a.status === "running");

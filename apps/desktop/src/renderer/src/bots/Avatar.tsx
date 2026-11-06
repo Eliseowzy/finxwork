@@ -4,46 +4,48 @@ import type { Avatar as AvatarSpec, AvatarHue, AvatarShape, BotSummary } from "@
 import markSolid from "../../../../../../assets/brand/mark/finxwork-mark-solid.svg";
 import { useStore } from "../store";
 
-// A bot's face (bot-mode-design §6.3, §6.12): a rounded square, never a circle,
-// as square as the window; a small white character with two eyes, the first
-// character of its name, the FinxWork mark, or an uploaded picture. Its colour
-// is its own, the same in both themes, like a photo. While the bot is busy the
-// character looks around and blinks, and a mark or letter breathes.
+// A bot's face (bot-mode-design §6.3, §6.12): a circle of one clear colour with a faint drift in it,
+// with a pair of eyes on it, the first character of its name, the FinxWork mark, or an uploaded
+// picture. Its colour is its own, the same in both themes, like a photo. While the bot is busy the
+// eyes look around and blink, and a mark or letter breathes.
 
+/** Clear but not loud, each the middle of its avatar's gradient. The eyes and letter are a deep shade of it (bots.css), at least 5:1 on it, so they still read at 22 px. */
 export const hues: Record<AvatarHue, string> = {
-  slate: "#6a82b5",
-  sage: "#729d84",
-  clay: "#c27f69",
-  ochre: "#bd9a4f",
-  plum: "#9879ae",
-  teal: "#5a999e",
-  rose: "#bf7f95",
-  stone: "#848a94",
+  slate: "#6ba6e2",
+  sage: "#81cc91",
+  clay: "#e68f61",
+  ochre: "#e7c771",
+  plum: "#a88fd6",
+  teal: "#65c3c0",
+  rose: "#e88ba1",
+  stone: "#9b9fa5",
 };
 
-export const shapes: AvatarShape[] = ["round", "box", "ghost", "cloud", "dome", "cat", "egg", "gem"];
+/** Each colour's drift, in degrees of hue: yellow and orange run the other way round, or yellow would turn green. */
+const paint = (hue: AvatarHue) => ({ "--h": hues[hue], "--lean": hue === "ochre" || hue === "clay" ? -13 : 13 }) as React.CSSProperties;
 
-const bodies: Record<AvatarShape, string> = {
-  round: '<circle cx="18" cy="21" r="10.5"/>',
-  box: '<rect x="8.5" y="11.5" width="19" height="17" rx="5"/>',
-  ghost: '<path d="M9 29V18.5a9 9 0 0 1 18 0V29l-3-2.3-3 2.3-3-2.3-3 2.3-3-2.3z"/>',
-  cloud: '<path d="M11.3 27.5a5.2 5.2 0 0 1 .3-10.4 7 7 0 0 1 13.2-.9 5.7 5.7 0 0 1 .2 11.3z"/>',
-  dome: '<path d="M6 37V27.5C6 19.5 11.4 14 18 14s12 5.5 12 13.5V37z"/>',
-  cat: '<path d="M9.4 18.2L10.7 8.4l6.6 4.6zM26.6 18.2L25.3 8.4l-6.6 4.6z"/><circle cx="18" cy="20.6" r="9.4"/>',
-  egg: '<ellipse cx="18" cy="20" rx="8.6" ry="10.6"/>',
-  gem: '<rect x="10.6" y="10.6" width="14.8" height="14.8" rx="3.8" transform="rotate(45 18 18)"/>',
-};
+export const shapes: AvatarShape[] = ["tall", "dot", "smile", "wink", "lid", "bar", "side", "odd"];
 
-/** Where each character's eyes are: the left one's x, the right one's x, and their y. */
-const eyes: Record<AvatarShape, [number, number, number]> = {
-  round: [14.3, 21.7, 20.3],
-  box: [14, 22, 19.6],
-  ghost: [14.6, 21.4, 19.4],
-  cloud: [15.2, 21.6, 21.4],
-  dome: [14.4, 21.6, 23],
-  cat: [14.6, 21.4, 20.4],
-  egg: [14.8, 21.2, 19.2],
-  gem: [15, 21, 18.2],
+// The eyes on the 36 grid: where the two sit, then each kind at its x.
+const L = 12.1;
+const R = 23.9;
+const Y = 17.4;
+
+const tall = (x: number) => <rect x={x - 2} y={Y - 4.4} width={4} height={8.8} rx={2} />;
+const dot = (x: number, r = 3) => <circle cx={x} cy={Y} r={r} />;
+const arc = (x: number) => <path d={`M${x - 3.5} ${Y + 1.5}Q${x} ${Y - 3.7} ${x + 3.5} ${Y + 1.5}`} fill="none" strokeWidth={2.7} />;
+const lid = (x: number) => <path d={`M${x - 3.6} ${Y - 2}h7.2a3.6 3.6 0 0 1-7.2 0z`} strokeWidth={0.8} />;
+const bar = (x: number) => <rect x={x - 3.6} y={Y - 1.1} width={7.2} height={2.8} rx={1.4} />;
+
+const faces: Record<AvatarShape, React.ReactNode> = {
+  tall: <>{tall(L)}{tall(R)}</>,
+  dot: <>{dot(L)}{dot(R)}</>,
+  smile: <>{arc(L)}{arc(R)}</>,
+  wink: <>{tall(L)}{arc(R)}</>,
+  lid: <>{lid(L)}{lid(R)}</>,
+  bar: <>{bar(L)}{bar(R)}</>,
+  side: <>{tall(L + 4)}{tall(R + 4)}</>,
+  odd: <>{dot(L, 3.9)}{dot(R, 2.3)}</>,
 };
 
 export type AvatarSize = 22 | 28 | 36 | 64 | 72;
@@ -92,24 +94,20 @@ export function Avatar({ spec, name, size, busy = false, bot, preview }: { spec:
     }
     case "mono":
       return (
-        <span className={cls} style={{ "--h": hues[spec.hue] } as React.CSSProperties} aria-hidden="true">
+        <span className={cls} style={paint(spec.hue)} aria-hidden="true">
           <b className="ch">{initialOf(name) || "·"}</b>
         </span>
       );
-    case "char": {
-      const [a, b, y] = eyes[spec.shape];
+    case "char":
       return (
-        <span className={cls} style={{ "--h": hues[spec.hue] } as React.CSSProperties} aria-hidden="true">
+        <span className={cls} style={paint(spec.hue)} aria-hidden="true">
           <svg viewBox="0 0 36 36">
-            <g fill="#fff" fillOpacity=".94" dangerouslySetInnerHTML={{ __html: bodies[spec.shape] }} />
-            <g className="eyes" fill="#1d1e24">
-              <ellipse cx={a} cy={y} rx="1.45" ry="1.75" />
-              <ellipse cx={b} cy={y} rx="1.45" ry="1.75" />
+            <g className="eyes" fill="currentColor" stroke="currentColor" strokeWidth={0} strokeLinecap="round" strokeLinejoin="round">
+              {faces[spec.shape]}
             </g>
           </svg>
         </span>
       );
-    }
   }
 }
 

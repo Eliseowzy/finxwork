@@ -60,6 +60,8 @@ type UI = {
   botDefaulted: Record<string, string>;
   /** The owner closed the note about Full Access above the composer, or opened a bot's settings (bot-mode-design §6.13). */
   botAccessSeen: boolean;
+  /** The default bot's model has been set the first time (bot-mode-design §6.4). */
+  botSetupDone: boolean;
   inspector: boolean;
   /** The context card is open (closed, it shows only the share used). */
   contextOpen: boolean;
@@ -154,7 +156,7 @@ export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "botDefaulted" | "botAccessSeen" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
+type Saved = Pick<UI, "selection" | "mode" | "lastSession" | "lastBot" | "botDefaulted" | "botAccessSeen" | "botSetupDone" | "sidebar" | "inspector" | "contextOpen" | "view" | "archived" | "collapsed"> & { draft: Partial<Draft>; customize?: CustomizeView };
 
 function saved(): Partial<Saved> {
   if (location.hash.startsWith("#settings")) return {};
@@ -194,6 +196,7 @@ export function FinxProvider({ children }: { children: ReactNode }) {
       botRoutines: null,
       botDefaulted: s.botDefaulted ?? {},
       botAccessSeen: s.botAccessSeen ?? false,
+      botSetupDone: s.botSetupDone ?? false,
       inspector: s.inspector ?? true,
       contextOpen: s.contextOpen ?? true,
       background: false,
@@ -299,13 +302,13 @@ export function FinxProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (location.hash.startsWith("#settings")) return;
-    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, botDefaulted: ui.botDefaulted, botAccessSeen: ui.botAccessSeen, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
+    const v: Saved = { selection: ui.selection, mode: ui.mode, lastSession: ui.lastSession, lastBot: ui.lastBot, botDefaulted: ui.botDefaulted, botAccessSeen: ui.botAccessSeen, botSetupDone: ui.botSetupDone, sidebar: ui.sidebar, inspector: ui.inspector, contextOpen: ui.contextOpen, view: ui.view, archived: ui.archived, collapsed: ui.collapsed, draft: ui.draft, customize: ui.customize };
     try {
       localStorage.setItem("main-view", JSON.stringify(v));
     } catch {
       // The window's layout is a convenience; without storage it just doesn't stick.
     }
-  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.botDefaulted, ui.botAccessSeen, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
+  }, [ui.selection, ui.mode, ui.lastSession, ui.lastBot, ui.botDefaulted, ui.botAccessSeen, ui.botSetupDone, ui.sidebar, ui.inspector, ui.contextOpen, ui.view, ui.archived, ui.collapsed, ui.draft, ui.customize]);
 
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const set = useCallback((patch: Partial<UI>) => setUI((u) => ({ ...u, ...patch })), []);

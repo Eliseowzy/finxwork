@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.26 |
+| 版本 | v0.28 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,6 +47,8 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
+| v0.28 | 2026-11-05 | `bots/create` 加可选的 `model`、`thinking`（bot-design.md D-459），版本 2 之内，老客户端不带时行为不变 |
+| v0.27 | 2026-11-05 | 超长消息（§4.4、§4.8，technical-design D-445）：一超过上限就报错，不再等这一行结束；错误带上请求的 `id`（认得出时）；`server.max_frame_bytes` 默认值由 32 MiB 提到 128 MiB，依据见 §4.4。长行的读缓冲不再靠 `realloc` 增长 |
 | v0.26 | 2026-11-05 | 子智能体运行中能发消息（agent-messaging-design.md），版本 2 之内：`MailInfo.kind` 多一个 `message`；客户端不认识这个值时当汇报显示不合适，所以和内核一起升级 |
 | v0.25 | 2026-11-05 | 定时任务（routine-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `routines` 声明：方法 `bots/routine`、`bots/routine_runs`、`bots/routine_run`、`bots/routine_set_enabled`、`bots/routine_run_now`、`bots/routine_stop`、`bots/routine_delete`；`BotSummary` 增加 `routines`、`routines_error`；`MailKind` 增加 `routine`，`MailInfo` 增加 `routine_id`；错误码 −32043 `routine_not_found`、−32044 `routine_busy`、−32045 `routines_unavailable`。新建和修改只走对话，没有方法 |
 | v0.24 | 2026-11-05 | 撤回重发（message-resend-design.md），版本 2 之内，由 capabilities 的 `message_resend` 声明：新 Op `resend`、新事件 `session_rewound`、warning code `resend_rejected`（§6.11）。ACP 不变 |
@@ -379,8 +381,24 @@ pub struct EventFrame {
 
 - **两步解析**：先把一行解析成借用形式的信封 `RawMessage<'a> { id, method: Option<&'a str>, params: Option<&'a RawValue>, result, error }`，按 method 分发，再把 params 反序列化成具体类型。params 在分发之前不分配内存。
 - 读缓冲按连接复用。
-- 单条消息超过 `server.max_frame_bytes`（默认 32 MiB）时，返回 -32600 并丢弃这一行，连接继续可用。
+- 单条消息不能超过 `server.max_frame_bytes`（默认 128 MiB）。stdio 和 Unix socket、两种协议读的是同一段代码（`finx_rpc::FrameReader`），超过时：
+  - 一过上限就返回 -32600，不等这一行结束。不写换行、一直写下去的客户端也能马上收到错误。
+  - 这一行已读入的部分当即释放，后面到达的内容边读边丢，不占内存，也不再报错。读到换行后照常读下一行，连接继续可用。
+  - 超限的消息不解析，也不会被截断后当成一条消息。错误的 `id` 取自行首 1 KiB：里面已经有 `id` 和 `method` 时（常见的 JSON-RPC 库都写在 `params` 前面）就是这条请求的 id，否则客户端只能一直等它的回复。认不出时为 null；通知和响应也是 null。
 - 无法解析的行返回 -32700（id 为 null），连接继续可用。
+
+**上限为什么是 128 MiB**（2026-11-05 查证）。入站消息里能变大的只有下面这些，其余都在 1 KiB 上下。恢复长会话的请求只带会话 id，大的是回复，这个上限只管入站。
+
+| 消息 | 最大的合法大小 | 依据 |
+|---|---|---|
+| 带图片的提示词 | 每张图 6.67 MiB，张数不限 | 桌面端每张图原始大小不超过 5 MiB，base64 之后 6.67 MiB；其他文件只传路径。5 张满尺寸的图就是 33.3 MiB，原来的 32 MiB 放不下 |
+| 同上，服务商的限制 | Claude API 128 MB，OpenAI 512 MB，Gemini 内联 20 MB | 各家文档（[Claude](https://platform.claude.com/docs/en/build-with-claude/vision)、[OpenAI](https://developers.openai.com/docs/guides/images-vision)、[Gemini](https://firebase.google.com/docs/ai-logic/input-file-requirements)）说的是一次请求的总量，历史也算在内 |
+| `browser/cdp`：全页截图 | 文字页几 MiB；图片为主的长页约 50～130 MiB（估算） | PNG，区域限制在 4000×16000 CSS 像素（`finx-browser` 的 `screenshot`）。最坏 256 MiB 只出现在满屏噪点、宽 4000 的页面上 |
+| `browser/extension` | 64 MiB | 本机程序收扩展消息的上限（`cmd_browser.rs` 的 `MAX_INBOUND`） |
+| `files/write` | 30 MiB，一般 5 MiB 出头 | 文件面板只打开 5 MiB 以内的文本（`MAX_TEXT`）；JSON 转义最坏 6 倍（全是控制字符） |
+| Bot 头像 | 1.4 MiB | PNG 不超过 1 MiB（`PNG_MAX`），base64 之后 |
+
+128 MiB 放得下 Claude API 接受的最大请求（128 MB，即 122 MiB），约 19 张满尺寸的图，也放得下本表其余各项的常见情况。OpenAI 接受的更大的提示词和最坏情况的截图放不下，它们会收到明确的错误（截图是工具调用超时失败），需要时可调大这个配置。提高上限的代价只在真有这么长的内容时才付：内存按实际到达的数据占用。异常客户端最多占一个上限（约 138 MiB，macOS）；真实的 126.7 MiB 提示词能走完全程，3.7 秒，进程占到 646 MiB（行本身、解析出的字符串、日志、请求体各一份）。
 
 ### 4.5 写出
 
@@ -415,6 +433,7 @@ pub struct EventFrame {
 - 镜像中正在生成的消息和工具进度都有长度上限。
 - 事件和会话中枢的命令在通道里装箱传递。通道按块分配槽位并一直保留，装箱后空闲会话的每个槽位只有指针大小（technical-design §3.3）。
 - 连接的读缓冲从 4 KiB 起：读满就翻倍，最多 64 KiB；读不满就减半，空闲的连接缩回最小。写出批次的缓冲按需增长。
+- 一行比读缓冲长时，缓冲跟着增长，到 4 MiB 为止用 `realloc`。再长就搬到一块新内存，只搬一次：默认上限下这块留够 128 MiB 加一次读取，页面用到才占。这一行取走后，后面的数据移回这块的开头，下一行接着用，所以碰过的页不超过最长的一行；缓冲读空时这块释放。4 MiB 以上不能用 `realloc`（D-445）：macOS 的分配器留着大块 `realloc` 换下来的脏块，有间隔地发 40 行 7 MiB 就留下 292 MiB，持续发 31 MiB 的行能到 3.1 GiB 以上。Linux 上没有这个问题。释放后的这一块仍可能留在分配器里等复用（macOS 上 `malloc_zone_pressure_relief` 对它无效），所以一行超长的内容之后，进程可能还占着约一行的内存，但不会再涨。
 - 服务由忙转闲或会话变少时，请分配器把空闲内存还给系统（macOS 的 xzone 分配器不响应，见 technical-design Q-90）。
 - 100–200 个会话的实测见 technical-design §1.4。
 
@@ -801,7 +820,7 @@ pub struct ResourceReadResult {
 
 ```jsonl
 → {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":2,"client_info":{"name":"demo","version":"0.1.0"}}}
-← {"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"server_info":{"name":"finx","version":"0.2.0"},"capabilities":{"max_frame_bytes":33554432,"session_delete":true,"resource_read":true,"event_filter":true}}}
+← {"jsonrpc":"2.0","id":1,"result":{"protocol_version":2,"server_info":{"name":"finx","version":"0.2.0"},"capabilities":{"max_frame_bytes":134217728,"session_delete":true,"resource_read":true,"event_filter":true}}}
 → {"jsonrpc":"2.0","id":2,"method":"session/new","params":{"cwd":"/work/demo"}}
 ← {"jsonrpc":"2.0","id":2,"result":{"session_id":"0193f0c2-…","snapshot":{"session":{…},"last_seq":0,"transcript":{"items":[]},"usage":{…}}}}
 ← {"jsonrpc":"2.0","method":"session/event","params":{"session_id":"0193f0c2-…","event":{"seq":1,"type":"session_started",…}}}
@@ -1102,7 +1121,7 @@ ACP 允许 agent 通过客户端读写文件（`fs/*`）、运行命令（`termi
 ## 9. 安全
 
 - **本机访问控制**：只监听 Unix socket，靠文件权限和对端 uid 检查限定为同一用户。不监听 TCP。
-- **输入限制**：单条消息有上限（`server.max_frame_bytes`）；JSON 嵌套深度沿用 serde_json 的默认限制（128 层）。
+- **输入限制**：单条消息有上限（`server.max_frame_bytes`，§4.4），超过上限的内容不保留；JSON 嵌套深度沿用 serde_json 的默认限制（128 层）。
 - **资源读取**：`resource/read` 只能读取该会话数据目录下 `tool-output/` 里的文件，不能借此读取任意路径。
 - **审批不可绕过**：两种协议都只能通过 Op 答复内核发起的审批。审批策略、受保护路径、项目信任（technical-design §11）对协议客户端一视同仁。
 - **不传密钥**：事件与协议消息中不包含模型密钥；工具子进程的环境照常清理密钥变量。
@@ -1117,7 +1136,7 @@ ACP 允许 agent 通过客户端读写文件（`fs/*`）、运行命令（`termi
 
 ```toml
 [server]
-max_frame_bytes = 33554432      # 单条消息上限，32 MiB
+max_frame_bytes = 134217728     # 单条消息上限，128 MiB（依据见 §4.4）
 queue_hard_bytes = 16777216     # 每个连接、每个会话的待发上限，16 MiB；超过则断开该接入
 max_sessions = 1000             # 同时加载的会话数上限；满了先卸载最久没用的会话
 idle_session_secs = 900         # 无人接入且空闲的会话，多少秒后卸载

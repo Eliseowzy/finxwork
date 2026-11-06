@@ -999,7 +999,7 @@
       ]
     },
     "AvatarHue": {
-      "description": "The colours behind an avatar's character or initial: muted, the same in both themes.",
+      "description": "The colours behind an avatar's character or initial, the same in both themes.",
       "enum": [
         "slate",
         "sage",
@@ -1091,16 +1091,16 @@
       ]
     },
     "AvatarShape": {
-      "description": "The characters an avatar can show, drawn by the client.",
+      "description": "The characters an avatar can show, told apart by their eyes and drawn by the client. Each alias is what the bots made before these eyes have in their `bot.json`.",
       "enum": [
-        "round",
-        "box",
-        "ghost",
-        "cloud",
-        "dome",
-        "cat",
-        "egg",
-        "gem"
+        "tall",
+        "dot",
+        "smile",
+        "wink",
+        "lid",
+        "bar",
+        "side",
+        "odd"
       ],
       "type": "string"
     },
@@ -1121,9 +1121,27 @@
         "avatar": {
           "$ref": "#/definitions/AvatarInput"
         },
+        "model": {
+          "description": "The model its conversation starts with; the configured one without it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "name": {
           "description": "1 to 20 characters once trimmed.",
           "type": "string"
+        },
+        "thinking": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ThinkingLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "How hard its conversation starts out thinking; the configured level without it."
         }
       },
       "required": [

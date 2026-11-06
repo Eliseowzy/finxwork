@@ -259,7 +259,7 @@ async fn a_word_follows_each_of_the_owners_messages() {
     h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
     let requests = h.api.requests();
-    let word = "<reminder>Reply with send_to_user.</reminder>";
+    let word = "<reminder>Reply with send_to_user, and write no text outside the call. Think after it is sent. Long work goes to an agent.</reminder>";
     assert_eq!(texts(requests[0].messages.last().unwrap()), word);
     assert_eq!(texts(&requests[0].messages[requests[0].messages.len() - 2]), "帮我查一下");
     // The sub-agent's message and the report have none.
@@ -766,6 +766,28 @@ async fn a_report_written_up_in_plain_text_is_reminded_and_sent() {
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
     assert_eq!(sent(&events), ["好，我查一下。", "查到了：42。"]);
     assert_eq!((reminders(&h), undelivered(&h)), (0, 1));
+}
+
+/// With the work handed over there is nothing to say, and a model may say just that: an empty reply
+/// ends the turn, and the report wakes the bot as usual (D-464).
+#[tokio::test]
+async fn an_empty_reply_after_handing_work_over_ends_the_turn() {
+    let mut h = bot(
+        "FinxBot",
+        PermissionMode::BypassPermissions,
+        vec![
+            Script::tool_call("c1", "send_to_user", json!({ "text": "好，我查一下。" })).then_tool_call("c2", "spawn_agent", json!({ "description": "查资料", "task": "Find it." })),
+            Script::text(""),
+            Script::text("Found: 42."),
+            send_last("c3", "查到了：42。"),
+        ],
+    )
+    .await;
+    h.kernel.submit(Op::prompt("帮我查一下")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::Idle)).await;
+    assert_eq!(sent(&events), ["好，我查一下。", "查到了：42。"]);
+    assert_eq!((reminders(&h), undelivered(&h)), (0, 0));
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::TaskFailed { .. })), "{events:?}");
 }
 
 /// Reminded of what came of its work and still silent: that may be right, so the task just ends.

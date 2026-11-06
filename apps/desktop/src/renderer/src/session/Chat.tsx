@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { addTotals, baseName, conversation, costText, openChain, runningAgents, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
+import { addTotals, baseName, costText, openChain, runningAgents, segments, settledSteps, tokensText, totals, withStreaming, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
@@ -12,7 +12,7 @@ import { useNow, useStore } from "../store";
 import { AgentCard, AgentMessageCard, BackgroundLine, ReportCard } from "./Agents";
 import { Dock, writingAgain } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
-import { DraftMarkdown, Markdown } from "./Markdown";
+import { Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 import { useBrowserStatus } from "./Yours";
 
@@ -24,7 +24,9 @@ import { useBrowserStatus } from "./Yours";
 export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionView; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const steps = useMemo(() => conversation(view), [view]);
+  // The history does not change while the model writes: only what it is writing is worked out for each piece of text.
+  const settled = useMemo(() => settledSteps(view), [view.entries, view.agents, view.descriptions, view.live?.tools, view.live === null, view.info.cwd]);
+  const steps = useMemo(() => withStreaming(settled, view), [settled, view.live?.streaming]);
   const scroll = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
   const retry = view.live?.retry;
@@ -53,6 +55,17 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   // Follow the conversation: open at its end, and stay there as it grows unless the person scrolled up;
   // scrolled well up, a button takes them back down.
   const atEnd = useRef(true);
+  const lastTop = useRef(0);
+  // When the person last acted on the conversation itself. A held pointer (the scrollbar) counts until it lets go.
+  const touched = useRef(-Infinity);
+  const touch = () => {
+    touched.current = performance.now();
+  };
+  const hold = () => {
+    touched.current = Infinity;
+    window.addEventListener("pointerup", touch, { once: true });
+    window.addEventListener("pointercancel", touch, { once: true });
+  };
   const [away, setAway] = useState(false);
   useLayoutEffect(() => {
     const el = scroll.current;
@@ -60,14 +73,61 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
     else if (el && fromEnd.current !== null) el.scrollTop = el.scrollHeight - fromEnd.current;
     fromEnd.current = null;
+    if (el) lastTop.current = el.scrollTop;
     if (el && nearTop(el)) earlier();
   }, [steps, dock, retry]);
+  // Images, fonts, formulas and diagrams can resize without a new session event.
+  // Preserve a visible row while reading above the end, or follow the bottom.
+  const anchor = useRef<{ key: string; top: number } | null>(null);
+  const rememberAnchor = () => {
+    const el = scroll.current;
+    if (!el) return;
+    // At the end there is nothing to hold, and finding the row measures every one above it, at each scroll that follows.
+    if (atEnd.current) {
+      anchor.current = null;
+      return;
+    }
+    const top = el.getBoundingClientRect().top;
+    const row = [...el.querySelectorAll<HTMLElement>("[data-step-key]")].find((node) => node.getBoundingClientRect().bottom > top);
+    anchor.current = row ? { key: row.dataset.stepKey!, top: row.getBoundingClientRect().top - top } : null;
+  };
+  useEffect(() => {
+    const el = scroll.current;
+    const body = el?.firstElementChild;
+    if (!el || !body) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      // Following the end needs no frame of its own: this runs before the frame it resized is painted.
+      if (atEnd.current) {
+        el.scrollTop = el.scrollHeight;
+        lastTop.current = el.scrollTop;
+        return;
+      }
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (anchor.current) {
+          const row = el.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(anchor.current.key)}"]`);
+          if (row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.current.top;
+        }
+        lastTop.current = el.scrollTop;
+        rememberAnchor();
+      });
+    });
+    observer.observe(body);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atEnd.current = below < 80;
-    setAway(below > 240);
+    // Only the person going up leaves the end. Rows settle their heights and pictures load after the scroll
+    // that followed them, which moves the position with no one touching anything: that goes back to the end.
+    if (below < 80) atEnd.current = true;
+    else if (el.scrollTop < lastTop.current && performance.now() - touched.current < 1000) atEnd.current = false;
+    else if (atEnd.current) el.scrollTop = el.scrollHeight;
+    lastTop.current = el.scrollTop;
+    setAway(!atEnd.current && below > 240);
+    rememberAnchor();
     if (nearTop(el)) earlier();
   };
   const toEnd = () => {
@@ -81,14 +141,17 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   const [again, setAgain] = useState(() => writingAgain(s.session_id));
   const takeBack = useRef<(messageId: string) => void>(() => {});
   const onResend = useCallback((messageId: string) => takeBack.current(messageId), []);
-  const find = (messageId: string) => scroll.current?.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  const find = (messageId: string) => {
+    atEnd.current = false;
+    scroll.current?.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
 
   // The session's current failure is told once, at the end, with Retry; earlier ones in one quiet line.
-  const lastEnd = [...steps].reverse().find((x) => x.kind === "end");
+  const lastEnd = steps.findLast((x) => x.kind === "end");
   const working = runningAgents(view).length;
   return (
     <>
-      <div className="cscroll" ref={scroll} onScroll={onScroll}>
+      <div className="cscroll markdown-chat" ref={scroll} onScroll={onScroll} onWheel={touch} onTouchMove={touch} onKeyDown={touch} onPointerDown={hold}>
         <div className="dbody" style={{ paddingBottom: dock + 40 }}>
           {s.archived && (
             <div className="anote">
@@ -265,7 +328,7 @@ const Row = memo(
     a.sessionId === b.sessionId &&
     a.again === b.again &&
     a.onResend === b.onResend &&
-    sameStep(a.step, b.step),
+    (a.step === b.step || sameStep(a.step, b.step)),
 );
 
 function sameStep(a: Step, b: Step): boolean {
@@ -314,7 +377,7 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
       return (
         <>
           <TimeLine at={step.ts} previous={previous} />
-          <div className={`um ${again ? "again" : ""}`} data-mid={step.key}>
+          <div className={`um ${again ? "again" : ""}`} data-mid={step.key} data-step-key={step.key}>
             {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.tabs.length > 0) && (
               <div className="um-att">
                 {rest.map((im, i) => (
@@ -346,8 +409,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId, a
     }
     case "text":
       return (
-        <div className={`am ${final ? "act" : ""}`}>
-          {step.live ? <DraftMarkdown text={step.text} /> : <Markdown text={step.text} />}
+        <div className={`am ${final ? "act" : ""}`} data-step-key={step.key}>
+          <Markdown text={step.text} streaming={step.live} />
           {final && <MessageBar text={step.text} at={step.ts} task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined} />}
         </div>
       );

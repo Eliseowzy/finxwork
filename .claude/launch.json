@@ -60,6 +60,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--dir", ".claude/worktrees/input-queue/apps/desktop", "web"],
       "port": 5176
+    },
+    {
+      "name": "desktop-web-bots",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PORT=5180", "pnpm", "--dir", ".claude/worktrees/bot-mode/apps/desktop", "web"],
+      "port": 5180
     }
   ]
 }

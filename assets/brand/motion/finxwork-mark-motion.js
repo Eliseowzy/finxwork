@@ -218,7 +218,7 @@ export function animateMark(canvas, { theme = "auto", look = "strands", speed = 
   const ctx = canvas.getContext("2d"), scheme = matchMedia("(prefers-color-scheme: dark)");
   const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const start = performance.now();
-  let cache = null, key = "", raf = 0;
+  let cache = null, key = "", raf = 0, timer = 0;
   const paint = (now) => {
     const px = Math.max(1, Math.round(canvas.clientWidth * devicePixelRatio)), th = theme === "auto" ? (scheme.matches ? "dark" : "light") : theme;
     if (canvas.width !== px || canvas.height !== px) canvas.width = canvas.height = px;
@@ -240,12 +240,55 @@ export function animateMark(canvas, { theme = "auto", look = "strands", speed = 
       ctx.drawImage(cache, 0, 0);
       ctx.save(); ctx.scale(px / VIEW, px / VIEW); ctx.translate(-ORIGIN, -ORIGIN); drawPoints(ctx, th, t * speed, 1); ctx.restore();
     }
-    if (!still) raf = requestAnimationFrame(paint);
+    // 60 a second at most, whatever the display's rate. Asking for every frame and skipping some would still
+    // run the whole page's rendering at that rate: ask only for the frame it will draw, a little before it is due.
+    if (!still) timer = setTimeout(() => { raf = requestAnimationFrame(paint); }, 1000 / 60 - 4);
   };
   // A still frame only needs drawing again when its size or the appearance changes.
   const redraw = () => still && paint(performance.now());
   const ro = new ResizeObserver(redraw);
   ro.observe(canvas); scheme.addEventListener("change", redraw);
   raf = requestAnimationFrame(paint);
-  return { stop() { cancelAnimationFrame(raf); ro.disconnect(); scheme.removeEventListener("change", redraw); } };
+  return { stop() { clearTimeout(timer); cancelAnimationFrame(raf); ro.disconnect(); scheme.removeEventListener("change", redraw); } };
+}
+
+const strips = new Map();
+
+/**
+ * The rewrite for something in progress, which may go on for minutes over a page of any weight: each frame
+ * is drawn once, into a strip, and the compositor moves the strip behind a window of one frame. Nothing runs
+ * on the page's main thread after that; a canvas drawn over and over would render the whole page each time.
+ * The canvas's parent is the window, sized by CSS, with overflow hidden; the strip fills it from the left.
+ */
+export function rewriteStrip(canvas, { theme = "auto" } = {}) {
+  const ctx = canvas.getContext("2d"), scheme = matchMedia("(prefers-color-scheme: dark)");
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const frames = still ? 1 : REWRITE * 30;
+  canvas.style.cssText += `;display:block;height:100%;width:${frames * 100}%`;
+  const draw = () => {
+    const px = Math.max(1, Math.round(canvas.clientHeight * devicePixelRatio)), th = theme === "auto" ? (scheme.matches ? "dark" : "light") : theme;
+    const key = `${px}:${th}:${frames}`;
+    if (canvas.dataset.strip === key) return;
+    canvas.dataset.strip = key;
+    let strip = strips.get(key);
+    if (!strip) {
+      strip = Object.assign(document.createElement("canvas"), { width: px * frames, height: px });
+      const c = strip.getContext("2d");
+      for (let i = 0; i < frames; i++) {
+        const r = still ? { alpha: 1, sweep: 0, reveal: 1 } : rewriteAt(i / 30);
+        if (r.alpha <= 0) continue;
+        c.save(); c.translate(i * px, 0); c.beginPath(); c.rect(0, 0, px, px); c.clip(); c.globalAlpha = r.alpha;
+        drawMarkFrame(c, px, r.sweep, { theme: th, look: "solid", reveal: r.reveal });
+        c.restore();
+      }
+      strips.set(key, strip);
+    }
+    canvas.width = strip.width; canvas.height = strip.height;
+    ctx.drawImage(strip, 0, 0);
+  };
+  const ro = new ResizeObserver(draw);
+  ro.observe(canvas); scheme.addEventListener("change", draw);
+  draw();
+  const motion = still ? null : canvas.animate([{ transform: "translateX(0)" }, { transform: "translateX(-100%)" }], { duration: REWRITE * 1000, iterations: Infinity, easing: `steps(${frames})` });
+  return { stop() { motion?.cancel(); ro.disconnect(); scheme.removeEventListener("change", draw); } };
 }

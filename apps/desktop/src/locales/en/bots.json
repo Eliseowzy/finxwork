@@ -63,9 +63,19 @@
     "settings": "Open Settings",
     "ok": "Got it"
   },
+  "setup": {
+    "title": "Choose a model for {{name}}",
+    "body": "It answers with this model and thinking level. You can change them later in the bot's settings. You can send messages once you've chosen.",
+    "ok": "Get Started"
+  },
+  "model": {
+    "noKey": "This model has no key yet. Add one to use it.",
+    "addKey": "Add Key",
+    "none": "Choose a model to continue."
+  },
   "sheet": {
     "newTitle": "New Bot",
-    "sub": "Give it a name and pick an avatar. Tell it what to do in the conversation.",
+    "sub": "Give it a name, pick an avatar and choose a model. Tell it what to do in the conversation.",
     "name": "Name",
     "placeholder": "For example: Researcher",
     "avatar": "Avatar",
@@ -77,24 +87,24 @@
     "tooLarge": "The image is too large: 10 MB at most",
     "unreadable": "This image cannot be read",
     "shapes": {
-      "round": "Round",
-      "box": "Box",
-      "ghost": "Ghost",
-      "cloud": "Cloud",
-      "dome": "Dome",
-      "cat": "Cat",
-      "egg": "Egg",
-      "gem": "Gem"
+      "tall": "Calm",
+      "dot": "Curious",
+      "smile": "Happy",
+      "wink": "Wink",
+      "lid": "Unfazed",
+      "bar": "Blank",
+      "side": "Sidelong",
+      "odd": "Skeptical"
     },
     "hues": {
-      "slate": "Slate",
-      "sage": "Sage",
-      "clay": "Clay",
-      "ochre": "Ochre",
-      "plum": "Plum",
+      "slate": "Sky",
+      "sage": "Grass",
+      "clay": "Coral",
+      "ochre": "Butter",
+      "plum": "Lilac",
       "teal": "Teal",
       "rose": "Rose",
-      "stone": "Stone"
+      "stone": "Grey"
     }
   },
   "menu": {
@@ -148,8 +158,11 @@
     "noRuns": "It has not run yet.",
     "earlier": "Earlier runs",
     "running": "Running…",
+    "runningLine": "Running · {{time}}",
+    "runningFor": "Running for",
+    "ranFor": "Run time {{time}}",
     "lastFailed": "Last run failed · {{time}}",
-    "whenNext": "{{when}} · next {{time}}",
+    "whenNext": "Next {{time}} · {{when}}",
     "note": "Scheduled tasks run on this Mac. They do not run with the lid closed or the Mac off, and catch up once, with the latest, the next time it starts. They keep running after you quit the app, without notifications.",
     "unavailable": "Scheduled tasks are not available",
     "empty": {

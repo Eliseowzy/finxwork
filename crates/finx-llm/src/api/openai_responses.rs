@@ -214,6 +214,7 @@ impl WireApi for OpenAiResponsesApi {
             };
             let mut events = http::sse_events(response,req.timeouts.idle);
             let mut streamed = HashSet::new();
+            let mut passed_over = Vec::new();
             loop {
                 let data = match events.next().await {
                     Ok(Some(e)) => e.data,
@@ -234,12 +235,14 @@ impl WireApi for OpenAiResponsesApi {
                     "response.output_item.done" => {
                         if v["item"]["type"] == "reasoning" { acc.append_thinking_signature(index, &v["item"].to_string()); }
                         else if !streamed.contains(&index) { item(&mut acc,index,&v["item"]); }
+                        // The subscription route's `response.completed` lists no items: this is its
+                        // only word on what the reply held.
+                        passed_over.extend(unreadable(std::slice::from_ref(&v["item"])));
                         None
                     }
                     "response.completed" => {
                         let r = &v["response"];
                         if r["status"].as_str().is_some_and(|s| s != "completed") { yield StreamEvent::Failed(acc.fail(protocol("Response did not complete"))); return; }
-                        let mut passed_over = Vec::new();
                         // An empty list says nothing about what was streamed.
                         if let Some(output) = r["output"].as_array().filter(|o| !o.is_empty()) {
                             // Terminal items are authoritative (also capture non-streamed arguments
@@ -257,10 +260,11 @@ impl WireApi for OpenAiResponsesApi {
                         acc.usage.output = u["output_tokens"].as_u64().unwrap_or_default();
                         acc.usage.reasoning = u["output_tokens_details"]["reasoning_tokens"].as_u64();
                         let message = acc.finish(StopReason::Stop);
-                        // The model wrote something and none of it is here: that is no answer.
-                        if message.content.is_empty() && acc.usage.output > 0 {
-                            let what = if passed_over.is_empty() { "an empty output".to_string() } else { passed_over.join(", ") };
-                            yield StreamEvent::Failed(acc.fail(protocol(&format!("The model's reply has nothing finx can read: {what}")))); return;
+                        // Nothing here because finx could not read it is a failure. An empty reply
+                        // is not: the model chose to say nothing, as after handing work to a
+                        // background agent, and the layers above judge whether that will do.
+                        if message.content.is_empty() && !passed_over.is_empty() {
+                            yield StreamEvent::Failed(acc.fail(protocol(&format!("The model's reply has nothing finx can read: {}", passed_over.join(", "))))); return;
                         }
                         if message.tool_calls().iter().any(|t| t.id.is_empty() || t.name.is_empty() || t.arguments_error.is_some()) {
                             yield StreamEvent::Failed(acc.fail(protocol("Invalid Responses tool call"))); return;

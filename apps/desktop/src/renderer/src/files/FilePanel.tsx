@@ -6,7 +6,7 @@ import { SheetView } from "../docs/SheetView";
 import { useSessionDocs } from "../docs/state";
 import { Icon } from "../icons";
 import { useStore } from "../store";
-import { fileMenu, openRef } from "../session/contentMenus";
+import { fileMenu, openRef, opensAsPage, otherView, showPage } from "../session/contentMenus";
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
 import { usePanelWidth } from "../panelWidth";
@@ -186,12 +186,23 @@ function Tools({ s, tab }: { s: SessionFiles; tab: Tab | null }) {
           <Icon name="code" />
         </button>
       )}
+      {tab && !tab.error && opensAsPage(tab.path) && (
+        <button
+          className="tb"
+          aria-label={t("content.previewInBrowser")}
+          title={t("content.previewInBrowser")}
+          // What was just typed is saved first, so the page shows it.
+          onClick={() => void flushAll(s).then(() => showPage(st, s.session, tab.path))}
+        >
+          <Icon name="globe" />
+        </button>
+      )}
       {tab && (
         <button
           className="tb"
           aria-label={t("files.more")}
           title={t("files.more")}
-          onClick={() => void fileMenu(st, { path: tab.path, rel: tab.rel, kind: tab.error ? null : "file" }, tab.target?.line)}
+          onClick={() => void fileMenu(st, { path: tab.path, rel: tab.rel, kind: tab.error ? null : "file" }, tab.target?.line, undefined, tab.error ? undefined : otherView(st, s.session, s.cwd, tab.path, "source"))}
         >
           <Icon name="more" />
         </button>
@@ -229,7 +240,7 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
     return (
       <ContentScope value={{ session: s.session, cwd: dirOf(tab.path) }}>
         <div className="fpn-md">
-          <Markdown text={text} />
+          <Markdown text={text} mode="document" />
         </div>
       </ContentScope>
     );

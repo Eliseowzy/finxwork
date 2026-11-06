@@ -38,7 +38,11 @@
 //   - peerNotes:  what sub-agents sent one another;
 //   - covered:    `ten`, runs in which the owner heard of all ten companies;
 //   - early:      `blocker`, `milestone`: the owner heard before the last report;
-//   - inTask:     `milestone`, the bot asked for the step in the agent's task.
+//   - inTask:     `milestone`, the bot asked for the step in the agent's task;
+//   - alone:      the first reply was one send_to_user and nothing else;
+//   - thinking:   characters of thinking before the first reply's calls, median and worst;
+//   - ownRounds:  `complex`, `medium`, `simple`, `lookup`, steps of tool calls the bot ran itself
+//                 before it started an agent, or in all when it started none.
 // Messages are printed, to read for the rest: does an acknowledgement name its first step, does
 // what it says of the progress match.
 //
@@ -48,9 +52,14 @@
 //   FINX_BENCH_PARALLEL=<n>    runs at a time, 3 by default
 //   FINX_BENCH_MODELS=<file>   a models.toml, with FINX_MODEL: another provider, or finx-mock to try
 //                              the script itself
+//   FINX_BENCH_KEEP=1          keeps the home, with every session's log, to read the thinking
+//   FINX_BENCH_SEED=<file>     each run's bot starts with this conversation (a session log with
+//                              __FILES__ for the bot's folder and __USER__ for the home folder):
+//                              a bot with a long history behaves unlike a new one
 //
 // It uses a home of its own, so the person's ~/.finx is not touched.
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -69,6 +78,27 @@ fs.writeFileSync(path.join(home, "config.toml"), config.join("\n") + "\n");
 if (process.env.FINX_BENCH_MODELS) fs.copyFileSync(process.env.FINX_BENCH_MODELS, path.join(home, "models.toml"));
 
 fs.mkdirSync(path.join(home, "user"), { recursive: true });
+// Bots with a conversation already: the service reads them when it starts.
+const seeded = [];
+if (process.env.FINX_BENCH_SEED) {
+  const seed = fs.readFileSync(process.env.FINX_BENCH_SEED, "utf8");
+  const header = JSON.parse(seed.slice(0, seed.indexOf("\n")));
+  const oldSession = header.id;
+  const scenariosRun = Math.max(1, only.length);
+  for (let i = 0; i < runs * scenariosRun; i++) {
+    const bot = randomUUID();
+    const session = randomUUID();
+    const folder = path.join(home, "bots", bot, "files");
+    fs.mkdirSync(folder, { recursive: true });
+    const now = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+    fs.writeFileSync(path.join(home, "bots", bot, "bot.json"), JSON.stringify({ version: 1, id: bot, name: header.bot.name, avatar: { kind: "mono", hue: "slate" }, default: false, pinned: false, muted: false, created_at: now, session_id: session }));
+    const day = path.join(home, "sessions", "2026", "11", "05");
+    fs.mkdirSync(day, { recursive: true });
+    const text = seed.replaceAll(oldSession, session).replaceAll("__FILES__", folder).replaceAll("__USER__", path.join(home, "user")).replaceAll("__BOT__", bot);
+    fs.writeFileSync(path.join(day, `20261105T000000-${session}.jsonl`), text);
+    seeded.push(bot);
+  }
+}
 const server = spawn(finx, ["serve", "--stdio"], { env: { ...process.env, FINX_HOME: home, HOME: path.join(home, "user") }, stdio: ["pipe", "pipe", "inherit"] });
 let next = 1;
 const waiting = new Map();
@@ -90,7 +120,9 @@ const call = (method, params = {}) =>
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[xs.length >> 1] : null);
 
-const allow = () => ({ type: "approve" });
+// A call that names the person's real home is refused: a seeded conversation may remember paths.
+const realHome = os.homedir();
+const allow = (e) => (JSON.stringify(e ?? "").includes(realHome) ? { type: "deny", feedback: "test run: stay in your own folder" } : { type: "approve" });
 const deny = () => ({ type: "deny", feedback: "这个文件名不行，先别建" });
 
 /** Everything `session` says, stamped on arrival; what it asks is answered with `decide`. */
@@ -150,7 +182,23 @@ function dailySales() {
   }
   return rows.join("\n") + "\n";
 }
+// Which way a request goes. What needs research, data, files or long writing goes to an agent
+// however it is worded; what takes one step does not. No need to wait for the work: the decision is
+// made once an agent starts, or once the bot has run this many steps itself.
+const complexAsks = ["民主党当选，为何港股大涨？", "中期选举之后还有什么选举流程，什么时候真正大选，之间应该还有变数吧", "香港的恒生科技股为什么持续下跌？", "帮我对比一下腾讯和阿里最近一年的财报，做成一份 Excel 发我。", "写一份两千字的港股科技行业分析报告，存成文件发我。", "消费板块最近有什么利好？帮我梳理一下。"];
+const mediumAsks = ["帮我写个 Python 脚本，造一份 200 行、5 列的随机数据存成 data.csv，算每列的平均值，把结果告诉我。", "把 1 到 1000 里的质数算出来存成 primes.txt，发给我。"];
+const simpleAsks = ["1 加 1 等于几？", "今天星期几？", "你好，你是谁？用一句话回答。", "谢谢！", "1 公里等于多少英里？", "你能帮我做什么？简单说。"];
+const lookupAsks = ["你文件夹里现在有哪些文件？", "现在几点了？", "腾讯现在股价多少？"];
+const isOwnStep = (e) => e.type === "message_completed" && e.message.role === "assistant" && e.message.content.some((x) => x.type === "tool_call" && !["send_to_user", "spawn_agent"].includes(x.name));
+const routed = (w) => w.events.filter(isOwnStep).length >= 5 || w.events.some((e) => e.type === "agent_started" && Date.now() - e.at > 3000);
+const route = (asks) => ({ ms: 300_000, route: true, say: (run) => [[0, asks[run % asks.length]]], until: routed });
 const scenarios = {
+  complex: route(complexAsks),
+  medium: route(mediumAsks),
+  simple: route(simpleAsks),
+  lookup: route(lookupAsks),
+  // One request of your own, FINX_BENCH_ASK.
+  ask: route([process.env.FINX_BENCH_ASK ?? "你好"]),
   poems: { say: () => ["写一首春天的诗", "写一首夏天的诗", "写一首秋天的诗", "写一首冬天的诗"].map((t) => [400, t]) },
   // One at a time, each answered before the next: a short answer is where a bot forgets to send.
   quick: { oneByOne: true, say: () => ["用一句话介绍你自己。", "今天星期几？", "1 加 1 等于几？"].map((t) => [0, t]) },
@@ -299,7 +347,7 @@ async function oneRun(name, s, run, t) {
     fs.mkdirSync(cwd, { recursive: true });
     session = (await call("session/new", { cwd })).session_id;
   } else {
-    bot = (await call("bots/create", { name: `测试${run + 1}`, avatar: { kind: "mono", hue: "slate" } })).bot;
+    bot = seeded.length ? { id: seeded.pop() } : (await call("bots/create", { name: `测试${run + 1}`, avatar: { kind: "mono", hue: "slate" } })).bot;
     for (const [file, text] of Object.entries(s.files ?? {})) {
       const folder = path.join(home, "bots", bot.id, "files");
       fs.mkdirSync(folder, { recursive: true });
@@ -425,9 +473,21 @@ async function oneRun(name, s, run, t) {
     else console.log(`   (order: got through ${next} of the 4 poems)`);
   }
   s.check?.(t, w, at);
+  // The first decision: what the first reply called, and how long it thought before.
+  const opening = events.find((e) => e.type === "message_completed" && e.message.role === "assistant");
+  const openingCalls = opening ? opening.message.content.filter((x) => x.type === "tool_call").map((x) => x.name) : [];
+  if (openingCalls.length === 1 && openingCalls[0] === "send_to_user") t.alone++;
+  if (opening) t.thinking.push(opening.message.content.filter((x) => x.type === "thinking" || x.type === "reasoning").reduce((n, x) => n + (x.thinking ?? x.text ?? "").length, 0));
+  const spawned = events.find((e) => e.type === "agent_started");
+  const own = events.filter((e) => isOwnStep(e) && (!spawned || e.at < spawned.at)).length;
+  t.ownRounds.push(own);
+  if (s.route) {
+    const bubble = firstAfter(w, at[0], isSend);
+    console.log(`   [${s.say(run)[0][1].slice(0, 24)}] first=${openingCalls.join("+") || "text"} own=${own} ${spawned ? "agent" : "no agent"} bubble=${bubble ? ((bubble.at - at[0]) / 1000).toFixed(1) + "s" : "none"}`);
+  }
   console.log(`${name} #${run + 1}: ${sent.length} messages${quiet ? "" : " (timed out)"}${delegated ? ", delegated" : ""}`);
   for (const x of sent) console.log("   ·", x.replace(/\s+/g, " ").slice(0, 90));
-  if (bot) await call("bots/delete", { bot_id: bot.id });
+  if (bot && !process.env.FINX_BENCH_KEEP) await call("bots/delete", { bot_id: bot.id });
 }
 
 const totals = {};
@@ -439,15 +499,16 @@ for (const [name, s] of Object.entries(scenarios)) {
     runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, failed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
     ordered: 0, attached: 0, linked: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
-    notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0,
+    notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0, alone: 0, thinking: [], ownRounds: [],
   });
   for (let run = 0; run < runs; run += parallel) {
     const batch = Array.from({ length: Math.min(parallel, runs - run) }, (_, k) => oneRun(name, s, run + k, t).catch((e) => console.log(`${name} #${run + k + 1}: ${e.message}`)));
     await Promise.all(batch);
   }
-  for (const key of ["firstMs", "nextMs"]) t[key] = { median: median(t[key]), worst: t[key].length ? Math.max(...t[key]) : null };
+  for (const key of ["firstMs", "nextMs", "thinking", "ownRounds"]) t[key] = { median: median(t[key]), worst: t[key].length ? Math.max(...t[key]) : null };
 }
 console.log("\n" + JSON.stringify(totals, null, 1));
 server.kill();
-fs.rmSync(home, { recursive: true, force: true });
+if (process.env.FINX_BENCH_KEEP) console.log(`home kept: ${home}`);
+else fs.rmSync(home, { recursive: true, force: true });
 process.exit(0);

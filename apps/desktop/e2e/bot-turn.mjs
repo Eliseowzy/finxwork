@@ -133,6 +133,13 @@ const working = `!!document.querySelector(".tr.bots .bm.working")`;
 const workingText = `document.querySelector(".tr.bots .bm.working")?.innerText ?? ""`;
 const rowSays = `document.querySelector(".brow")?.innerText ?? ""`;
 
+/** The default bot asks for its model the first time (bot-setup.mjs): what it starts with will do here. */
+async function pastSetup(page) {
+  await page.until("the bot's page, its models known", `!!document.querySelector(".cmp-zone.bot") && !document.querySelector(".bsetup .btn.primary:disabled")`, 30000);
+  await page.run(`document.querySelector(".bsetup .btn.primary")?.click()`);
+  await page.until("past the first time", `!document.querySelector(".bsetup")`);
+}
+
 let failed = false;
 let page = null;
 try {
@@ -166,6 +173,7 @@ try {
   await page.until("the new session page", `!!document.querySelector(".seg.mode [data-mode=bots]")`, 60000);
   await page.run(`document.querySelector('.seg.mode [data-mode=bots]').click()`);
   await page.until("the bot's page", `!!document.querySelector(".bhead") && !!document.querySelector(".cmp-in")`, 30000);
+  await pastSetup(page);
 
   step("a long job: the first message at once, the work in the background");
   const t0 = Date.now();
@@ -176,7 +184,8 @@ try {
   // What the bot called the work, and no more.
   check((await page.run(workingText)).trim() === "写长文", `what it says it does: ${await page.run(workingText)}`);
   check(!(await page.run(`!!document.querySelector(".tr.bots .bm.working button")`)), "one agent: nothing to open");
-  await page.until("its row says so", `(${rowSays}).includes("正在处理一件事")`, 5000);
+  await page.until("its row says so", `(${rowSays}).includes("正在输入…")`, 5000);
+  check(!(await page.run(`!!document.querySelector(".brow .bprev .shimmer")`)), "its row does not shimmer");
   await page.shot("1-working");
 
   step("the owner goes on talking: answered at once, while the work goes on");
@@ -211,7 +220,7 @@ try {
   await write("[[mock:stop_all]] 算了不用了");
   await page.until("what it stopped", has("Stopped: "), 15000);
   await page.until("the work over", `!${working}`, 5000);
-  await page.until("its row, quiet", `!(${rowSays}).includes("正在处理")`, 5000);
+  await page.until("its row, quiet", `!(${rowSays}).includes("正在输入")`, 5000);
   const before = (await page.run(bubbles)).length;
   await sleep(1500);
   check((await page.run(bubbles)).length === before, "a stopped agent's report wakes no one");

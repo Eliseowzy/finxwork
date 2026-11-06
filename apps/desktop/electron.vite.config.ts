@@ -49,6 +49,7 @@ export default defineConfig({
   },
   renderer: {
     plugins: [react(), pdfjsAssets()],
+    worker: { format: "es" },
     resolve: { dedupe: ["react", "react-dom"] },
     build: { outDir: path.join(out, "renderer") },
   },

@@ -1011,7 +1011,14 @@ impl BrowserSession {
         };
         let main_before = self.main_loader(&tab);
         let since = Instant::now();
+        let guarded = may_open_file_chooser(action);
+        if guarded {
+            self.hold_file_chooser(&tab, true).await;
+        }
         let done = tokio::time::timeout(self.options.action_timeout, self.perform(action, place, &tab, cancel)).await;
+        if guarded && !matches!(done, Ok(Ok(_))) {
+            self.hold_file_chooser(&tab, false).await;
+        }
         let summary = match done {
             Ok(Ok(summary)) => summary,
             Ok(Err(err)) => return Err(err),
@@ -1025,6 +1032,9 @@ impl BrowserSession {
             }
         };
         self.settle(&tab, main_before.clone(), since).await;
+        if guarded {
+            self.hold_file_chooser(&tab, false).await;
+        }
         drop(_busy);
         let navigated = self.main_loader(&tab) != main_before;
         let changes = if navigated {
@@ -1052,6 +1062,7 @@ impl BrowserSession {
         let main_before = self.main_loader(&tab);
         let since = Instant::now();
         let timeout = self.options.action_timeout;
+        self.hold_file_chooser(&tab, true).await;
         // No contextId: the main world of the session's top frame, which is the approved one.
         let sent = self
             .conn()
@@ -1068,6 +1079,7 @@ impl BrowserSession {
                 timeout + Duration::from_secs(1),
             )
             .await;
+        self.hold_file_chooser(&tab, false).await;
         let result = match sent {
             Ok(result) => result,
             Err(CdpError::Timeout { .. }) => {
@@ -1105,6 +1117,27 @@ impl BrowserSession {
             Some((page.frame.clone(), frame, before))
         };
         self.report(&tab, changes, &summary).await
+    }
+
+    /// While the agent acts, a file chooser the page opens goes no further than this tab: on
+    /// the person's screen it would take over the window. Only around the agent's own actions,
+    /// as the person clicking in the same tab expects the real one. On the way out, says if the
+    /// page asked for one.
+    async fn hold_file_chooser(&self, tab: &Tab, on: bool) {
+        if on {
+            tab.state.lock().file_chooser = None;
+        }
+        // Waited for: it must reach the page before the click does.
+        let _ = self
+            .conn()
+            .send(Some(tab.session.as_str()), "Page.setInterceptFileChooserDialog", json!({ "enabled": on }))
+            .await;
+        if !on {
+            let mut state = tab.state.lock();
+            if state.file_chooser.take().is_some() {
+                state.note("The page opened a file chooser, which was not shown. Use upload with the ref of the file input or its button.".into());
+            }
+        }
     }
 
     async fn perform(&self, action: &Action, place: &Place, tab: &Arc<Tab>, cancel: &CancellationToken) -> Result<String, BrowserError> {
@@ -1152,6 +1185,9 @@ impl BrowserSession {
         let s = Some(frame.session.as_str());
         match action {
             Action::Click | Action::DoubleClick | Action::Hover => {
+                if !matches!(action, Action::Hover) {
+                    self.refuse_native_popup(frame_id, &frame, element).await?;
+                }
                 let (x, y) = self.clickable_point(tab, element).await?;
                 self.verify(&element.page)?;
                 self.mouse(tab, action, x, y).await?;
@@ -1242,6 +1278,22 @@ impl BrowserSession {
                 }
                 Ok(format!("Uploaded {} file(s) to {label}.", files.len()))
             }
+        }
+    }
+
+    /// A real click on these opens a menu or panel of the browser's own, above every window on
+    /// the person's screen, and no tool can answer it. So they are not clicked.
+    async fn refuse_native_popup(&self, frame_id: &str, frame: &Frame, element: &ElementTarget) -> Result<(), BrowserError> {
+        let kind = self.call_on(frame_id, frame, element.backend, NATIVE_POPUP_SCRIPT, vec![]).await?;
+        let label = &element.label;
+        match kind.as_str() {
+            Some("select") => Err(BrowserError::failed(format!(
+                "{label} is a dropdown, so it was not clicked: its menu would cover the user's screen. Use select with the option's value or label."
+            ))),
+            Some("color") => Err(BrowserError::failed(format!(
+                "{label} is a color picker, so it was not clicked: its panel would cover the user's screen. Set its value with browser_eval."
+            ))),
+            _ => Ok(()),
         }
     }
 
@@ -1918,6 +1970,11 @@ fn past(action: &Action) -> &'static str {
     }
 }
 
+/// What can make a page open a file chooser: a click, or Enter or Space on a focused control.
+fn may_open_file_chooser(action: &Action) -> bool {
+    matches!(action, Action::Click | Action::DoubleClick | Action::Check(_) | Action::Press(_))
+}
+
 const CHECKED_SCRIPT: &str = "function(){ if ('checked' in this) return this.checked; const a = this.getAttribute('aria-checked'); return a === null ? null : a === 'true'; }";
 
 const SELECT_ALL_SCRIPT: &str = r#"function(){
@@ -1950,6 +2007,8 @@ const SELECT_SCRIPT: &str = r#"function(values){
   this.dispatchEvent(new Event('change', {bubbles: true}));
   return {selected: chosen.map(o => o.label.trim())};
 }"#;
+
+const NATIVE_POPUP_SCRIPT: &str = "function(){ if (this.tagName === 'SELECT' && !this.multiple && this.size <= 1) return 'select'; if (this.tagName === 'INPUT' && this.type === 'color') return 'color'; return null; }";
 
 const FILE_INPUT_SCRIPT: &str = "function(){ return this.tagName === 'INPUT' && this.type === 'file'; }";
 

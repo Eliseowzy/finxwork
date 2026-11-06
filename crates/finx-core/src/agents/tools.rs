@@ -74,7 +74,7 @@ pub(crate) struct SpawnArgs {
 pub(crate) struct BotSpawnArgs {
     /// A short label the user sees for this agent: what it works on, in the user's language, within 20 Chinese characters or 5 words.
     description: String,
-    /// All the agent knows: the goal, what you know or ruled out, the files to read and the files it may change, and what to report.
+    /// What it must do and know: the goal, what you already know, the files to read or change, and what to report. A few lines usually do.
     task: String,
     /// Short handle for addressing the agent later: lowercase letters, digits, '-' or '_'. Generated when omitted.
     #[serde(default)]
@@ -133,15 +133,12 @@ pub(crate) struct StopArgs {
     all: bool,
 }
 
-/// `spawn_agent`'s description; the paragraph on waiting differs.
+/// `spawn_agent`'s description; what it is for and the paragraph on waiting differ.
 macro_rules! spawn_description {
-    ($waiting:literal) => {
+    ($purpose:literal, $waiting:literal) => {
         concat!(
-            "Start a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it \
-            cannot start agents. It sees none of this conversation: the task you write is all it knows.\n\n\
-            Delegate self-contained work that takes many steps: broad searches, independent changes, long \
-            investigations, test runs. Do quick, blocking or tightly coupled steps yourself.\n\n\
-            Several agents can run at once: call spawn_agent several times in one reply. You all share one workspace, \
+            $purpose,
+            "\n\nSeveral agents can run at once: call spawn_agent several times in one reply. You all share one workspace, \
             so give each agent its own files to change, and run tasks that change the same file one after another.\n\n",
             $waiting,
             "\n\nWhile it works, an agent can send you an <agent_message> about something that can't wait, such as a \
@@ -193,6 +190,10 @@ impl TypedTool for SpawnAgent {
     type Args = SpawnArgs;
     const NAME: &'static str = "spawn_agent";
     const DESCRIPTION: &'static str = spawn_description!(
+        "Start a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it \
+        cannot start agents. It sees none of this conversation: the task you write is all it knows.\n\n\
+        Delegate self-contained work that takes many steps: broad searches, independent changes, long \
+        investigations, test runs. Do quick, blocking or tightly coupled steps yourself.",
         "The agent runs in the background. Its report comes to you as a new message when it finishes, even after you \
         end your turn. So to wait, end your turn: that is not your final answer. Set wait=true only when the next \
         step of this reply needs the report."
@@ -214,8 +215,12 @@ impl TypedTool for BotSpawnAgent {
     type Args = BotSpawnArgs;
     const NAME: &'static str = "spawn_agent";
     const DESCRIPTION: &'static str = spawn_description!(
-        "The agent runs in the background. Its report comes to you as a new message when it finishes, even after you \
-        end your turn. So end your turn rather than wait for it: that is not your final answer."
+        "Hand work to a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it \
+        cannot start agents. It works in the background while you stay free for the user. This is how you get anything \
+        beyond a quick answer done: research, data and files, scripts, long writing.\n\n\
+        It sees none of this conversation: the task you write is all it knows.",
+        "Its report comes to you as a new message when it finishes, even after you end your turn. So end your turn \
+        rather than wait for it: that is not your final answer."
     );
 
     fn describe(&self, args: &Value, _env: &dyn Environment) -> ToolDescription {

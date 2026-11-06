@@ -14,6 +14,9 @@ export interface MarkMotionOptions {
 /** Draws the mark into a canvas sized by CSS and keeps it moving until stop(); one still frame with reduced motion. */
 export function animateMark(canvas: HTMLCanvasElement, options?: MarkMotionOptions): { stop(): void };
 
+/** The rewrite for something in progress: a strip of frames in the canvas, moved by the compositor behind its parent, a window of one frame. */
+export function rewriteStrip(canvas: HTMLCanvasElement, options?: Pick<MarkMotionOptions, "theme">): { stop(): void };
+
 /** One frame into ctx, size × size device pixels from the current origin, t seconds into the motion. */
 export function drawMarkFrame(
   ctx: CanvasRenderingContext2D,

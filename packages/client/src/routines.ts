@@ -23,13 +23,13 @@ export function routineGroups(routines: RoutineSummary[]): { active: RoutineSumm
 
 /** A row's second line, the first that applies. */
 export type RoutineLine =
-  | { kind: "running" }
+  | { kind: "running"; since: Date | null }
   | { kind: "failed"; at: Date }
   | { kind: "next"; when: string; at: Date }
   | { kind: "when"; when: string };
 
 export function routineLine(r: RoutineSummary): RoutineLine {
-  if (r.running) return { kind: "running" };
+  if (r.running) return { kind: "running", since: r.last_run ? new Date(r.last_run.started) : null };
   if (r.last_run?.outcome === "failed") return { kind: "failed", at: new Date(r.last_run.started) };
   if (r.next_run) return { kind: "next", when: r.when, at: new Date(r.next_run) };
   return { kind: "when", when: r.when };
@@ -67,10 +67,11 @@ export function runTime(run: RoutineRunInfo): Date {
   return new Date(run.started ?? run.scheduled);
 }
 
-/** How long it ran, in ms; null when it did not, or still does. */
-export function runTook(run: RoutineRunInfo): number | null {
-  if (!run.started || !run.ended) return null;
-  return Math.max(0, Date.parse(run.ended) - Date.parse(run.started));
+/** How long it ran, in ms, one still running up to `now`; null when it never started, or nothing says how long. */
+export function runTook(run: RoutineRunInfo, now?: Date): number | null {
+  if (!run.started) return null;
+  const end = run.ended ? Date.parse(run.ended) : run.outcome ? null : (now?.getTime() ?? null);
+  return end === null ? null : Math.max(0, end - Date.parse(run.started));
 }
 
 /** How late it started, in ms; null when it was on time. */

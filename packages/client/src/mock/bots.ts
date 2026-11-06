@@ -85,7 +85,7 @@ export function demoBots(): DemoBot[] {
     },
     {
       name: "研究员",
-      avatar: { kind: "char", shape: "round", hue: "slate" },
+      avatar: { kind: "char", shape: "dot", hue: "slate" },
       ago: 26 * hour,
       history: [
         {
@@ -128,7 +128,7 @@ export function demoBots(): DemoBot[] {
     },
     {
       name: "运维",
-      avatar: { kind: "char", shape: "box", hue: "teal" },
+      avatar: { kind: "char", shape: "tall", hue: "teal" },
       ago: 2 * hour,
       history: [],
       live: { prompt: "nginx 挂了，帮我看看", script: restartScript() },
@@ -147,7 +147,7 @@ export function demoBots(): DemoBot[] {
     },
     {
       name: "分析师",
-      avatar: { kind: "char", shape: "round", hue: "teal" },
+      avatar: { kind: "char", shape: "smile", hue: "plum" },
       ago: 8 * hour,
       history: [
         {
@@ -167,7 +167,7 @@ export function demoBots(): DemoBot[] {
         },
       ],
     },
-    { name: "记账", avatar: { kind: "char", shape: "egg", hue: "ochre" }, ago: 50 * hour, history: [] },
+    { name: "记账", avatar: { kind: "char", shape: "odd", hue: "ochre" }, ago: 50 * hour, history: [] },
   ];
 }
 

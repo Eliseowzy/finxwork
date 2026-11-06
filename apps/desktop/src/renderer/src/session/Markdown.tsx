@@ -1,4 +1,4 @@
-import { memo, useContext, useEffect, useState, type ReactNode } from "react";
+import { Component, createContext, lazy, memo, Suspense, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { baseName, fileOfLink } from "@finx/client";
@@ -7,57 +7,62 @@ import { useStore } from "../store";
 import { parseCitation, useDocOpener } from "../docs/state";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
-import { splitBlocks, withoutOpenTable } from "@finx/client";
+import remarkMath from "remark-math";
+import remarkDirective from "remark-directive";
+import type { PluggableList } from "unified";
+import { createMarkdownSlices, pendingText } from "./markdown/parse";
+import { anchors, contentExtensions } from "./markdown/plugins";
+import { texMath } from "./markdown/tex";
+import { MarkdownTable } from "./markdown/Table";
 import { CodeBlock, InlineCode, Link } from "./content";
 import { DraftContext, LocalImages, useScope } from "./scope";
 
-/**
- * The model's reply as GitHub Markdown, rendered as React elements (raw HTML
- * stays text). Web pages, files and code blocks become what they point at
- * (content-actions-design): only http and https links are real links; images
- * show their alt text, so a reply never loads anything.
- */
-export function Markdown({ text }: { text: string }) {
-  return (
-    <div className="md sel-text">
-      <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={asWritten}>
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
+const MermaidBlock = lazy(() => import("./markdown/Mermaid"));
+const SourceContext = createContext("");
+
+/** One component tree throughout streaming and completion. AST-aware slices keep
+ * settled blocks memoized; document-scoped references take the whole-document path.
+ * How often text arrives while it is written is useSession's to pace. */
+export function Markdown({ text, streaming = false, mode = "chat" }: { text: string; streaming?: boolean; mode?: "chat" | "document" | "compact" }) {
+  const prefix = useId();
+  const split = useRef(createMarkdownSlices());
+  const blocks = useMemo(() => split.current(text, streaming), [text, streaming]);
+  return <div className="md sel-text" data-mode={mode}>
+    {blocks.map((block) => <Block key={block.id} text={block.text} pending={block.pending} prefix={prefix} offset={block.id} mode={mode} />)}
+  </div>;
 }
 
-/**
- * A reply the model is still writing: its finished blocks as they will
- * stay, each parsed once, then the last one with what is still open closed
- * (remend), or without a table that has no delimiter row yet, so nothing
- * shows as raw Markdown on its way.
- */
-export function DraftMarkdown({ text }: { text: string }) {
-  const blocks = splitBlocks(text);
-  const last = withoutOpenTable(blocks.pop() ?? "");
-  return (
-    <div className="md sel-text">
-      {blocks.map((b, i) => (
-        <Block key={i} text={b} />
-      ))}
-      {/* Still being written: nothing in it acts yet. */}
-      {last.trim() !== "" && (
-        <DraftContext.Provider value={true}>
-          <Block key={blocks.length} text={remend(last, { linkMode: "text-only", katex: false })} />
-        </DraftContext.Provider>
-      )}
-    </div>
-  );
-}
+// Compatibility for callers; Chat uses Markdown directly so completion never
+// changes the component type or remounts the code/table/diagram subtree.
+export function DraftMarkdown({ text }: { text: string }) { return <Markdown text={text} streaming />; }
 
-const Block = memo(function Block({ text }: { text: string }) {
-  return (
-    <ReactMarkdown remarkPlugins={plugins} components={components} urlTransform={asWritten}>
-      {text}
-    </ReactMarkdown>
-  );
+const Block = memo(function Block({ text, pending, prefix, offset, mode }: { text: string; pending: boolean; prefix: string; offset: number; mode: string }) {
+  const { t } = useTranslation("session");
+  const [mathPlugin, setMathPlugin] = useState<PluggableList>([]);
+  const hasMath = /\$\$|```math|~~~math|\\[([]/.test(text);
+  useEffect(() => {
+    if (!hasMath) return;
+    let live = true;
+    Promise.all([import("rehype-katex"), import("katex/dist/katex.min.css")]).then(([module]) => {
+      if (live) setMathPlugin([[module.default, { output: "htmlAndMathml", throwOnError: false, strict: "ignore", trust: false, maxExpand: 1000, maxSize: 20, errorColor: "inherit" }]]);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [hasMath]);
+  const rehypePlugins = useMemo<PluggableList>(() => [...mathPlugin, [anchors, { prefix, block: offset }]], [mathPlugin, prefix, offset]);
+  const shown = pending ? remend(pendingText(text), { linkMode: "text-only", katex: true }) : text;
+  return <DraftContext.Provider value={pending}><SourceContext.Provider value={text}>
+    <RenderBoundary source={text}><ReactMarkdown remarkPlugins={mode === "document" ? documentPlugins : plugins} rehypePlugins={rehypePlugins} components={components} urlTransform={asWritten} remarkRehypeOptions={{ footnoteLabel: t("markdown.footnotes"), footnoteBackLabel: t("markdown.backToReference") }}>{shown}</ReactMarkdown></RenderBoundary>
+  </SourceContext.Provider></DraftContext.Provider>;
 });
+
+class RenderBoundary extends Component<{ source: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidUpdate(previous: { source: string }) {
+    if (this.state.failed && previous.source !== this.props.source) this.setState({ failed: false });
+  }
+  render() { return this.state.failed ? <pre>{this.props.source}</pre> : this.props.children; }
+}
 
 const web = /^https?:\/\//i;
 
@@ -84,9 +89,10 @@ function codeOf(pre: HNode | undefined): { lang: string; text: string } | null {
 function Cite({ docId, target, children }: { docId: string; target: string; children: ReactNode }) {
   const { t } = useTranslation("session");
   const docs = useDocOpener();
+  const draft = useContext(DraftContext);
   const [found, setFound] = useState<{ title: string } | "gone" | null>(null);
   const look = () => {
-    if (!docs || found) return;
+    if (!docs || draft || found) return;
     void docs.locate(docId, target).then((r) => {
       if (!r) return setFound("gone");
       if ("locked" in r) return setFound({ title: t("doc.citeLocked", { name: baseName(r.path) }) });
@@ -105,8 +111,8 @@ function Cite({ docId, target, children }: { docId: string; target: string; chil
       title={gone ? t("doc.citeGone") : (found?.title ?? undefined)}
       onMouseEnter={look}
       onFocus={look}
-      onClick={() => !gone && docs?.open({ doc_id: docId }, undefined, target)}
-      disabled={!docs}
+      onClick={() => !draft && !gone && docs?.open({ doc_id: docId }, undefined, target)}
+      disabled={!docs || draft}
     >
       {children}
     </button>
@@ -122,32 +128,34 @@ function ReplyImage({ src, alt }: { src?: string; alt?: string }) {
   const st = useStore();
   const scope = useScope();
   const allowed = useContext(LocalImages);
-  const file = allowed && scope && src ? fileOfLink(src, window.finx?.platform === "win") : null;
-  const [picture, setPicture] = useState<string | null>(null);
+  const draft = useContext(DraftContext);
+  const file = !draft && allowed && scope && src ? fileOfLink(src, window.finx?.platform === "win") : null;
+  const [picture, setPicture] = useState<{ path: string; data: string } | null>(null);
   const [large, setLarge] = useState(false);
   useEffect(() => {
     if (!file || !scope) return;
     let live = true;
     st.call("files/read", { session_id: scope.session, path: file.path })
-      .then((read) => live && setPicture(read.image ? `data:${read.image.mime_type};base64,${read.image.data}` : null))
+      .then((read) => live && setPicture(read.image ? { path: file.path, data: `data:${read.image.mime_type};base64,${read.image.data}` } : null))
       .catch(() => live && setPicture(null));
     return () => {
       live = false;
     };
   }, [file?.path, scope?.session]);
-  if (!picture) return <span>{alt}</span>;
+  if (!picture || picture.path !== file?.path || draft) return <span>{alt}</span>;
   return (
     <>
       <button className="md-img" title={alt || file?.path} aria-label={alt || file?.path} onClick={() => setLarge(true)}>
-        <img src={picture} alt={alt ?? ""} draggable={false} />
+        <img src={picture.data} alt={alt ?? ""} draggable={false} />
       </button>
-      {large && <Lightbox src={picture} caption={alt || undefined} onClose={() => setLarge(false)} />}
+      {large && <Lightbox src={picture.data} caption={alt || undefined} onClose={() => setLarge(false)} />}
     </>
   );
 }
 
 const components: Components = {
-  a: ({ href, children }) => {
+  a: ({ href, children, node, ...props }) => {
+    if (href?.startsWith("#")) return <Anchor href={href} {...props}>{children}</Anchor>;
     const cite = href ? parseCitation(href) : null;
     if (cite) return <Cite docId={cite.doc_id} target={cite.target}>{children}</Cite>;
     return <Link href={href}>{children}</Link>;
@@ -157,13 +165,11 @@ const components: Components = {
   code: ({ children }) => <InlineCode>{children}</InlineCode>,
   pre: ({ node, children }) => {
     const code = codeOf(node as HNode | undefined);
+    if (code?.lang.toLowerCase() === "mermaid") return <Suspense fallback={<CodeBlock lang="mermaid" text={code.text} />}><MermaidBlock text={code.text} /></Suspense>;
     return code ? <CodeBlock lang={code.lang} text={code.text} /> : <pre>{children}</pre>;
   },
-  table: ({ children }) => (
-    <div className="md-table">
-      <table>{children}</table>
-    </div>
-  ),
+  table: ({ children, node }) => <Table sourceStart={node?.position?.start.offset} sourceEnd={node?.position?.end.offset}>{children}</Table>,
+  details: ({ children, node }) => <Disclosure title={String(node?.properties?.dataTitle ?? node?.properties?.["data-title"] ?? "")}>{children}</Disclosure>,
 };
 
 type Node = { type: string; value?: string; url?: string; children?: Node[] };
@@ -205,4 +211,31 @@ function chatText() {
   };
 }
 
-const plugins = [remarkGfm, chatText];
+const documentPlugins: PluggableList = [[remarkGfm, { singleTilde: false }], [remarkMath, { singleDollarTextMath: false }], remarkDirective, texMath, contentExtensions];
+const plugins: PluggableList = [...documentPlugins, chatText];
+
+function Table({ children, sourceStart, sourceEnd }: { children: ReactNode; sourceStart?: number; sourceEnd?: number }) {
+  const source = useContext(SourceContext);
+  return <MarkdownTable source={source.slice(sourceStart, sourceEnd)}>{children}</MarkdownTable>;
+}
+
+function Disclosure({ title, children }: { title: string; children: ReactNode }) {
+  const { t } = useTranslation("session");
+  return <details className="md-details"><summary>{title || t("markdown.details")}</summary>{children}</details>;
+}
+
+function Anchor({ href, children, ...props }: { href: string; children?: ReactNode } & React.AnchorHTMLAttributes<HTMLAnchorElement>) {
+  const draft = useContext(DraftContext);
+  return <a {...props} href={draft ? undefined : href} onClick={(e) => {
+    e.preventDefault();
+    if (draft) return;
+    const root = e.currentTarget.closest(".md");
+    let id = href.slice(1);
+    try { id = decodeURIComponent(id); } catch { /* literal fragment */ }
+    const target = root?.querySelector<HTMLElement>(`[id="${CSS.escape(id)}"], [data-heading="${CSS.escape(id)}"]`);
+    if (!target) return;
+    for (let parent = target.parentElement; parent && parent !== root; parent = parent.parentElement) if (parent instanceof HTMLDetailsElement) parent.open = true;
+    target.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
+    target.tabIndex = -1; target.focus({ preventScroll: true });
+  }}>{children}</a>;
+}

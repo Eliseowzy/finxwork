@@ -48,6 +48,9 @@ interface MockBot {
   summary: BotSummary;
   png?: string;
   routines: MockRoutine[];
+  /** What `bots/create` was told its conversation starts with. */
+  model?: string;
+  thinking?: ThinkingLevel;
 }
 
 /** A routine in the mock: what the row shows, and what only its detail does. */
@@ -256,9 +259,9 @@ export class MockServer {
 
   /** A bot's conversation: a session in its folder, out of session lists. */
   private botSession(id: string, at: number): Session {
-    const s = this.create(crypto.randomUUID(), `~/.finx/bots/${id}/files`, demoModels().defaults!.model, "medium", "manual", at, true);
-    s.bot = id;
     const bot = this.bots.get(id)!;
+    const s = this.create(crypto.randomUUID(), `~/.finx/bots/${id}/files`, bot.model ?? demoModels().defaults!.model, bot.thinking ?? "medium", "manual", at, true);
+    s.bot = id;
     bot.summary = { ...bot.summary, session_id: s.id };
     return s;
   }
@@ -932,7 +935,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, routines: true };
+        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, routines: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -953,7 +956,7 @@ export class MockServer {
         const q = p as P<"bots/create">;
         const id = crypto.randomUUID();
         const name = this.botName(q.name);
-        const bot: MockBot = { routines: [], summary: { id, name, avatar: { kind: "mono", hue: "slate" }, created_at: iso(Date.now()) } };
+        const bot: MockBot = { routines: [], model: q.model ?? undefined, thinking: q.thinking ?? undefined, summary: { id, name, avatar: { kind: "mono", hue: "slate" }, created_at: iso(Date.now()) } };
         bot.summary = { ...bot.summary, avatar: this.avatarOf(bot, q.avatar, false) };
         this.bots.set(id, bot);
         this.botsChanged([bot.summary]);

@@ -6,12 +6,12 @@ type Sent = { method: string; params: object; session?: string };
 
 /** Pages that answer every command with its name, and remember what they got. */
 function fakeHost() {
-  const pages = new Map<string, { events: PageEvents; sent: Sent[]; closed: boolean; url: string }>();
+  const pages = new Map<string, { events: PageEvents; sent: Sent[]; closed: boolean; url: string; byPerson?: boolean }>();
   const activated: string[] = [];
   let report: ((d: Download) => void) | null = null;
   const host: PageHost = {
-    create({ targetId, url, openerId }, events) {
-      const page = { events, sent: [] as Sent[], closed: false, url, openerId };
+    create({ targetId, url, openerId, byPerson }, events) {
+      const page = { events, sent: [] as Sent[], closed: false, url, openerId, byPerson };
       pages.set(targetId, page);
       return {
         send: async (method, params, session) => (page.sent.push({ method, params, session }), { echo: method }),
@@ -40,6 +40,18 @@ function browser() {
   const events = (method: string) => out.filter((m) => m.method === method) as { params: Record<string, unknown>; sessionId?: string }[];
   return { b, fake, out, call, events };
 }
+
+test("the host hears which tabs the person opened, so the others can stay out of their way", async () => {
+  const { fake, call } = browser();
+  const created = await call("Target.createTarget", { url: "about:blank", finxSession: "s1" });
+  const agent = fake.pages.get(created.result!.targetId as string)!;
+  assert.equal(agent.byPerson, undefined);
+  agent.events.open("https://example.com");
+  agent.events.open("about:blank", true);
+  const [, page, person] = [...fake.pages.values()];
+  assert.equal(page.byPerson, undefined);
+  assert.equal(person.byPerson, true);
+});
 
 test("tabs are created, attached and driven through their page's debugger", async () => {
   const { fake, call, events } = browser();
