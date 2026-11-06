@@ -21,6 +21,7 @@ mod desktop;
 mod docs;
 mod emitter;
 pub mod files;
+pub mod pptx;
 pub mod history;
 pub mod hooks;
 pub mod instructions;

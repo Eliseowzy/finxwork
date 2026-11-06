@@ -483,6 +483,12 @@ impl NativeProtocol {
             }
             method::FILES_LIST => self.call(id, params, conn, |server, p: FilesListParams| async move { server.files_list(p).await }),
             method::FILES_READ => self.call(id, params, conn, |server, p: FilesReadParams| async move { server.files_read(p).await }),
+            method::PPTX_READ => {
+                let conn2 = conn.clone();
+                self.call(id, params, conn, move |server, p: finx_protocol::pptx::PptxReadParams| async move { server.pptx_read(p, &conn2).await })
+            }
+            method::PPTX_WRITE => self.call(id, params, conn, |server, p: finx_protocol::pptx::PptxWriteParams| async move { server.pptx_write(p).await }),
+            method::PPTX_METAFILE => self.call(id, params, conn, |server, p: finx_protocol::pptx::PptxMetafileParams| async move { server.pptx_metafile(p).await }),
             method::FILES_WRITE => self.call(id, params, conn, |server, p: FilesWriteParams| async move { server.files_write(p).await }),
             method::FILES_WATCH => {
                 let conn2 = conn.clone();
