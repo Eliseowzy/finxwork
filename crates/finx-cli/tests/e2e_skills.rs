@@ -51,10 +51,10 @@ fn install_skills(env: &TestEnv, work: &Path) -> PathBuf {
     skill
 }
 
-/// Runs `finx exec --json --ops-stdin` in `cwd`, approving every request; returns the exit
+/// Runs `finx exec --output stream-json --ops-stdin` in `cwd`, approving every request; returns the exit
 /// code, the events and how many approvals were asked for.
 async fn exec_approving(env: &TestEnv, cwd: &Path, args: &[&str]) -> (i32, Vec<Value>, Vec<Value>) {
-    let mut all = vec!["exec", "--json", "--ops-stdin"];
+    let mut all = vec!["exec", "--output", "stream-json", "--ops-stdin"];
     all.extend_from_slice(args);
     let mut child = env
         .finx_in(cwd, &all)

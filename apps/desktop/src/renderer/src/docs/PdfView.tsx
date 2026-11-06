@@ -7,6 +7,7 @@ import { errorText, useStore } from "../store";
 import { maxComment } from "../../../shared/annotations";
 import { loadPdf, pdfjs, viewerLib } from "./pdf";
 import { lockedOut, unlockDoc, type SessionFiles, type Tab } from "../files/state";
+import { useScope } from "../session/scope";
 import { quoteToComposer, setDocPassword, setPage, type DocTab, type Jump } from "./state";
 
 // A PDF in the file panel (document-editor-design §7): the bar of its own tools — the page,
@@ -27,6 +28,7 @@ const cardWidth = 296;
 type Flash = { parts: { page: number; rects: Rect[] }[]; seq: number };
 
 export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string; tab: DocTab; jump: Jump | null }) {
+  const scope = useScope();
   const { t } = useTranslation("session");
   const st = useStore();
   const docId = tab.info.doc_id;
@@ -287,6 +289,8 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
       const toPage = p.more.at(-1)?.page;
       const comment = note.trim() || undefined;
       quoteToComposer(session, { quote: { path: tab.info.path, doc_id: docId, page: p.page, text: r.text, block, region: p.rect ? true : undefined, to_page: toPage, comment }, image: p.image });
+      // Over the window (a preview), the composer it went to is out of sight.
+      scope?.leave?.();
       const parts = [{ page: p.page, rects: r.boxes.length ? r.boxes : p.rect ? [p.rect] : [] }, ...(r.more ?? []).map((m) => ({ page: m.anchor.page, rects: m.boxes }))];
       setFlash({ parts, seq: Date.now() });
       setPending(null);

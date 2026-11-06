@@ -2,6 +2,7 @@
 //! local commands, each printing text or, with `--json`, one JSON document.
 
 use finx_core::JsonlStore;
+use finx_core::SessionRef;
 use finx_core::SessionStore;
 use finx_core::instructions;
 use finx_core::skills;
@@ -11,7 +12,11 @@ use finx_llm::AuthStatus;
 use finx_llm::ProviderConfig;
 use finx_protocol::api::CredentialState;
 use finx_protocol::api::ListingSource;
+use finx_core::lang;
+use finx_core::lang::Lang;
 use finx_protocol::api::SessionDefaults;
+use finx_protocol::api::ToolEntry;
+use finx_protocol::api::ToolsListResult;
 use serde_json::Value;
 use serde_json::json;
 use std::io::Write;
@@ -78,41 +83,6 @@ pub fn models(
     action: Option<crate::ModelsAction>,
 ) -> anyhow::Result<u8> {
     let rt = setup::init_local(std::env::current_dir()?, overrides)?;
-    if let Some(action @ (crate::ModelsAction::Login { .. } | crate::ModelsAction::Logout { .. } | crate::ModelsAction::Status { .. } | crate::ModelsAction::Forget { .. })) = &action {
-        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
-        let status = runtime.block_on(async {
-            let chatgpt = &rt.connections.chatgpt;
-            match action {
-                crate::ModelsAction::Status { .. } => Ok(chatgpt.status()?),
-                crate::ModelsAction::Logout { .. } => Ok(chatgpt.logout().await?),
-                crate::ModelsAction::Forget { .. } => { chatgpt.forget().await?; Ok(chatgpt.status()?) },
-                _ => {
-                    let started = chatgpt.start().await?;
-                    if let Some(url) = &started.authorize_url {
-                        // Print a URL for browser-less terminals; never launch a shell with it.
-                        writeln!(std::io::stderr(), "Open this URL to connect ChatGPT API:\n{url}")?;
-                    }
-                    loop {
-                        tokio::select! {
-                            _ = tokio::signal::ctrl_c() => {
-                                if let Some(id) = &started.login_id { let _ = chatgpt.cancel(id); }
-                                anyhow::bail!("ChatGPT sign-in cancelled");
-                            }
-                            _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => {}
-                        }
-                        let status = chatgpt.status()?;
-                        match status.state {
-                            finx_protocol::api::ChatGptLoginState::Pending => continue,
-                            finx_protocol::api::ChatGptLoginState::Connected => break Ok(status),
-                            _ => anyhow::bail!("{}", status.message.unwrap_or_else(|| "ChatGPT sign-in did not complete".into())),
-                        }
-                    }
-                }
-            }
-        })?;
-        print_json(&serde_json::to_value(status)?)?;
-        return Ok(0);
-    }
     anyhow::ensure!(
         provider.is_none_or(|wanted| rt.llm.provider(wanted).is_some()),
         "unknown provider '{}'",
@@ -125,11 +95,13 @@ pub fn models(
     };
     if let Some(action) = action {
         let (reference, shown) = match &action {
-            crate::ModelsAction::Show { model } => (model, true),
+            crate::ModelsAction::Unhide { model } => (model, true),
             crate::ModelsAction::Hide { model } => (model, false),
-            _ => unreachable!("connection actions handled above"),
+            _ => unreachable!("handled in main"),
         };
-        finx_core::models::set_shown(&rt.llm, &defaults.model, reference, shown).map_err(anyhow::Error::msg)?;
+        finx_core::models::set_shown(&rt.llm, defaults.model.as_deref(), reference, shown).map_err(anyhow::Error::msg)?;
+        let file = rt.home.models_dir().join("selection.json");
+        println!("{} {reference} in {}", if shown { "unhid" } else { "hid" }, crate::cmd_customize::shorten(&rt.home, &file));
         return Ok(0);
     }
     let mut problems = Vec::new();
@@ -164,6 +136,7 @@ pub fn models(
         return Ok(0);
     }
     let style = Style::detect();
+    let default_model = listing.defaults.as_ref().and_then(|d| d.model.as_deref());
     // One write for the whole listing instead of one per line.
     let mut out = std::io::BufWriter::new(std::io::stdout().lock());
     for problem in &problems {
@@ -212,7 +185,7 @@ pub fn models(
             if !m.available {
                 traits.push("no key");
             }
-            let marker = if m.id == defaults.model { " (default)" } else { "" };
+            let marker = if default_model == Some(m.id.as_str()) { " (default)" } else { "" };
             writeln!(
                 out,
                 "    {}{marker}  {}  context {}{}",
@@ -222,6 +195,9 @@ pub fn models(
                 if traits.is_empty() { String::new() } else { format!("  {}", traits.join(", ")) }
             )?;
         }
+    }
+    if default_model.is_none() {
+        writeln!(out, "\n{}", setup::no_model_help(rt))?;
     }
     out.flush()?;
     Ok(0)
@@ -282,23 +258,129 @@ fn file_entry(path: &Path) -> Value {
     json!({ "path": path, "exists": path.exists() })
 }
 
+/// For `finx status`: the list on its own would read as if these were all the tools there are.
+fn tools_line((base, groups): &(usize, Vec<&'static str>)) -> String {
+    let groups = groups.join(", ");
+    match (groups.is_empty(), lang::current()) {
+        (true, Lang::Zh) => format!("基础 {base} 个"),
+        (true, _) => format!("{base} basic"),
+        (false, Lang::Zh) => format!("基础 {base} 个，按需 {groups}"),
+        (false, _) => format!("{base} basic, on demand {groups}"),
+    }
+}
+
+/// `finx tools`: what a session here would have. `name` prints one tool's definition.
+pub fn tools(overrides: &[String], name: Option<&str>, all: bool, as_json: bool) -> anyhow::Result<u8> {
+    let rt = setup::init_local(std::env::current_dir()?, overrides)?;
+    let tools = finx_core::tool_list::builtin(&rt.config);
+    if let Some(name) = name {
+        let Some(tool) = tools.iter().find(|t| t.name == name) else {
+            let close = tools.iter().map(|t| t.name.as_str()).find(|t| strsim::osa_distance(t, name) <= 2);
+            let hint = close.map(|c| format!("; did you mean {c}?")).unwrap_or_default();
+            let mcp = if name.starts_with("mcp__") { "; an MCP server's tools show under `finx mcp get SERVER`" } else { "" };
+            anyhow::bail!("no tool named {name}{hint}{mcp}");
+        };
+        if as_json {
+            print_json(&serde_json::to_value(tool)?)?;
+            return Ok(0);
+        }
+        println!("{}  ({})", tool.name, tool.group);
+        println!("\n{}\n", tool.description);
+        if let Some(needs) = &tool.needs {
+            println!("{}: {needs}\n", lang::say("Needs", "需要"));
+        }
+        println!("{}", serde_json::to_string_pretty(&tool.parameters)?);
+        return Ok(0);
+    }
+    if as_json {
+        print_json(&serde_json::to_value(ToolsListResult { tools })?)?;
+        return Ok(0);
+    }
+    let mut rows: Vec<[String; 4]> = Vec::new();
+    let mut listed: Vec<&str> = Vec::new();
+    for tool in &tools {
+        // A group that is off as a whole takes one line, unless every tool was asked for.
+        let whole_group_off = !all && !tool.available && tool.group != "base" && tools.iter().filter(|t| t.group == tool.group).all(|t| !t.available);
+        if whole_group_off {
+            if !listed.contains(&tool.group.as_str()) {
+                listed.push(&tool.group);
+                let count = tools.iter().filter(|t| t.group == tool.group).count();
+                rows.push([
+                    format!("{}_*", tool.group),
+                    tool.group.clone(),
+                    match lang::current() {
+                        Lang::Zh => format!("{count} 个工具"),
+                        _ => format!("{count} tools"),
+                    },
+                    state_of(tool),
+                ]);
+            }
+            continue;
+        }
+        if !all && tool.needs.is_some() && !tool.available {
+            continue;
+        }
+        rows.push([tool.name.clone(), tool.group.clone(), first_line(&tool.description), state_of(tool)]);
+    }
+    for server in rt.mcp_servers.iter().filter(|s| s.is_enabled()) {
+        rows.push([
+            format!("mcp__{}__*", server.name),
+            "mcp".to_string(),
+            lang::say("known once connected", "连接后才知道").to_string(),
+            format!("finx mcp get {}", server.name),
+        ]);
+    }
+    let name_width = rows.iter().map(|r| r[0].chars().count()).max().unwrap_or(0);
+    let group_width = rows.iter().map(|r| r[1].chars().count()).max().unwrap_or(0);
+    let about_width = rows.iter().map(|r| r[2].chars().count()).max().unwrap_or(0);
+    for [name, group, about, state] in &rows {
+        println!("{name:<name_width$}  {group:<group_width$}  {about:<about_width$}  {state}");
+    }
+    Ok(0)
+}
+
+fn state_of(tool: &ToolEntry) -> String {
+    let word = if tool.available { lang::say("available", "可用") } else { lang::say("off", "未开启") };
+    match &tool.needs {
+        Some(needs) => format!("{word}: {needs}"),
+        None => word.to_string(),
+    }
+}
+
+/// A description's first sentence, kept short enough for one row.
+fn first_line(description: &str) -> String {
+    let line = description.lines().next().unwrap_or_default();
+    let sentence = line.split(". ").next().unwrap_or(line).trim_end_matches('.');
+    const WIDTH: usize = 56;
+    if sentence.chars().count() <= WIDTH {
+        return sentence.to_string();
+    }
+    let cut: String = sentence.chars().take(WIDTH - 1).collect();
+    format!("{}…", cut.trim_end())
+}
+
 pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
     let rt = setup::init_local(std::env::current_dir()?, overrides)?;
     let project_dir = rt.project_root.clone().unwrap_or_else(|| rt.cwd.clone());
-    let resolved = rt.llm.resolve(&rt.config.model);
-    let provider = resolved
-        .as_ref()
-        .ok()
-        .and_then(|r| rt.llm.provider(&r.model.provider));
+    let default_model = finx_core::models::default_model(&rt.llm, rt.config.model.as_deref());
+    let resolved = default_model.as_deref().map(|reference| rt.llm.resolve(reference));
+    let provider = match &resolved {
+        Some(Ok(r)) => rt.llm.provider(&r.model.provider),
+        _ => None,
+    };
+    let chosen = if rt.config.model.is_some() { "configured" } else { "first usable provider" };
     let model = match &resolved {
-        Ok(r) => json!({
+        Some(Ok(r)) => json!({
             "ref": r.model.reference(),
+            "chosen": chosen,
             "in_catalog": !r.ad_hoc,
             "api": r.model.api,
             "endpoint": r.model.base_url,
         }),
-        Err(err) => json!({ "ref": rt.config.model, "error": err.to_string() }),
+        Some(Err(err)) => json!({ "ref": default_model, "error": err.to_string() }),
+        None => json!({ "ref": null, "error": "no model is set up" }),
     };
+    let tools = finx_core::tool_list::summary(&rt.config);
     let skill_report = scan_skills(rt);
     let skills_line = if rt.config.skills.enabled {
         format!(
@@ -315,7 +397,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         "model": model,
         "credentials": provider.as_ref().map(|p| {
             let mut auth = auth_json(&p.auth.status(&p.id));
-            if let Some(key) = masked_key(&p) {
+            if let Some(key) = masked_key(p) {
                 auth["key"] = json!(key);
             }
             auth
@@ -323,6 +405,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         "thinking": rt.config.thinking,
         "permission_mode": rt.config.permission_mode,
         "tools": rt.config.enabled_tools,
+        "deferred_tools": tools.1,
         "mcp_servers": rt.mcp_servers.iter().filter(|s| s.is_enabled()).map(|s| s.name.as_str()).collect::<Vec<_>>(),
         "skills": {
             "enabled": rt.config.skills.enabled,
@@ -361,18 +444,20 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         other => other.to_string(),
     };
     let model_line = match &resolved {
-        Ok(r) => format!(
-            "{}{} · {} · {}",
+        Some(Ok(r)) => format!(
+            "{}{}{} · {} · {}",
             r.model.reference(),
             if r.ad_hoc {
                 " (not in the catalog)"
             } else {
                 ""
             },
+            if rt.config.model.is_some() { "" } else { " (first usable provider; set `model` to choose)" },
             r.model.api,
             r.model.base_url
         ),
-        Err(err) => format!("{} ({err})", rt.config.model),
+        Some(Err(err)) => format!("{} ({err})", default_model.as_deref().unwrap_or_default()),
+        None => "none is set up: `finx models` lists the providers and what each needs".to_string(),
     };
     let credentials = match provider {
         Some(p) => format!(
@@ -405,7 +490,7 @@ pub fn status(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
         ("credentials", credentials),
         ("thinking", text(&info["thinking"])),
         ("permissions", text(&info["permission_mode"])),
-        ("tools", text(&info["tools"])),
+        ("tools", tools_line(&tools)),
         ("mcp servers", mcp_line(rt)),
         ("skills", skills_line),
         ("from environment", text(&info["env_overrides"])),
@@ -449,7 +534,46 @@ struct Check {
     detail: String,
 }
 
-pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
+/// One real request to the default model, for `finx doctor --online`.
+pub async fn online_check(overrides: &[String]) -> (bool, String) {
+    let attempt = async {
+        let rt = setup::init(std::env::current_dir()?, overrides)?;
+        let reference = setup::session_model(&rt, None)?;
+        setup::check_credentials(&rt, &reference)?;
+        let model = rt.llm.resolve(&reference)?.model;
+        crate::cmd_check::answers(&rt.llm, &model).await.map_err(anyhow::Error::msg)
+    };
+    match attempt.await {
+        Ok(detail) => (true, detail),
+        Err(err) => (false, format!("{err:#}").lines().next().unwrap_or_default().to_string()),
+    }
+}
+
+/// Each component's state: none of them is required, so none fails the check.
+fn component_rows(home: &finx_core::paths::FinxHome) -> Vec<(&'static str, String)> {
+    use finx_core::release;
+    let pdf = match finx_docs::engine::locate_library() {
+        Some(path) => format!("ready ({})", path.display()),
+        None => "not installed: finx install pdf".to_string(),
+    };
+    let browser = match finx_browser::launch::find_executable() {
+        Some(path) => format!("ready ({})", path.display()),
+        None if home.browser_dir().join("chromium").exists() => "ready (Chrome for Testing)".to_string(),
+        None => "not installed: finx install browser".to_string(),
+    };
+    let mut rows = vec![("pdf component", pdf), ("browser component", browser)];
+    if cfg!(target_os = "macos") {
+        let computer = if release::Addon::Computer.installed(home, release::VERSION) {
+            "ready".to_string()
+        } else {
+            "not installed: finx install computer".to_string()
+        };
+        rows.push(("computer component", computer));
+    }
+    rows
+}
+
+pub fn doctor(overrides: &[String], as_json: bool, strict: bool, online: Option<(bool, String)>) -> anyhow::Result<u8> {
     let mut checks = Vec::new();
     let mut warnings = Vec::new();
     let mut check =
@@ -490,9 +614,11 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
                 })
                 .unwrap_or_else(|| "none (no .git found)".into());
             check("project", true, project);
-            match rt.llm.resolve(&rt.config.model) {
-                Ok(resolved) => {
-                    check("default model", true, rt.config.model.clone());
+            let default_model = finx_core::models::default_model(&rt.llm, rt.config.model.as_deref());
+            match default_model.as_deref().map(|reference| (reference, rt.llm.resolve(reference))) {
+                None => check("default model", false, "none is set up: `finx models` lists the providers and what each needs".to_string()),
+                Some((reference, Ok(resolved))) => {
+                    check("default model", true, reference.to_string());
                     if let Some(provider) = rt.llm.provider(&resolved.model.provider) {
                         let status = provider.auth.status(&provider.id);
                         let missing = matches!(status, AuthStatus::Missing(_));
@@ -506,9 +632,12 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
                         );
                     }
                 }
-                Err(err) => check("default model", false, err.to_string()),
+                Some((_, Err(err))) => check("default model", false, err.to_string()),
             }
             let shell = if PathBuf::from("/bin/bash").exists() { "/bin/bash" } else { "/bin/sh" };
+            if let Some((ok, detail)) = online {
+                check("model answers", ok, detail);
+            }
             check("shell", true, rt.config.bash_shell.clone().unwrap_or_else(|| shell.to_string()));
             // Broken skills are reported, but they do not make the setup fail.
             let report = scan_skills(rt);
@@ -520,6 +649,9 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
                 (true, broken) => format!("{active} loaded, {broken} failed to load (`finx skills --all`)"),
             };
             check("skills", true, detail);
+            for (name, detail) in component_rows(&rt.home) {
+                check(name, true, detail);
+            }
             warnings = rt.warnings.clone();
             warnings.extend(report.warnings());
         }
@@ -530,7 +662,7 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
             .iter()
             .map(|c| json!({ "name": c.name, "ok": c.ok, "detail": c.detail }))
             .collect();
-        print_json(&json!({ "ok": ok, "checks": checks, "warnings": warnings }))?;
+        print_json(&json!({ "ok": ok && !(strict && !warnings.is_empty()), "checks": checks, "warnings": warnings }))?;
     } else {
         let style = Style::detect();
         for c in &checks {
@@ -545,15 +677,14 @@ pub fn doctor(overrides: &[String], as_json: bool) -> anyhow::Result<u8> {
             println!("{} {warning}", style.yellow("!"));
         }
     }
-    Ok(if ok { 0 } else { 1 })
+    Ok(if ok && !(strict && !warnings.is_empty()) { 0 } else { 1 })
 }
 
 /// The skills of a session that would start in `rt.cwd`, and its catalog. Without a model,
 /// the budget is the largest default.
 fn scan_skills(rt: &setup::Runtime) -> skills::Scan {
-    let window = rt
-        .llm
-        .resolve(&rt.config.model)
+    let window = finx_core::models::default_model(&rt.llm, rt.config.model.as_deref())
+        .and_then(|model| rt.llm.resolve(&model).ok())
         .map_or(u64::MAX, |resolved| u64::from(resolved.model.context_window));
     let sources = skills::Sources::new(&rt.home, &rt.cwd, rt.project_root.as_deref(), &rt.config.skills);
     skills::Scan::new(&sources, &rt.config.enabled_tools, window)
@@ -693,7 +824,37 @@ pub async fn browser_install() -> anyhow::Result<u8> {
     }
 }
 
-pub fn trust(dir: Option<PathBuf>) -> anyhow::Result<u8> {
+/// Moves a session's log and files to the trash folder, unless another process has it open.
+pub fn sessions_remove(session: &str) -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let store = JsonlStore::new(home.sessions_dir());
+    let trash = home.root().join("trash").join("sessions");
+    let id = store.move_to_trash(&SessionRef::Id(session.to_string()), &trash)?;
+    println!("moved session {} to {}", finx_core::short_id(&id), crate::cmd_customize::shorten(&home, &trash));
+    Ok(0)
+}
+
+pub fn sessions_rename(session: &str, title: &str) -> anyhow::Result<u8> {
+    let home = setup::home()?;
+    let store = JsonlStore::new(home.sessions_dir());
+    let Some(title) = finx_core::clean_title(title) else { anyhow::bail!("the title is empty") };
+    let reference = if session == "last" {
+        let cwd = std::env::current_dir()?;
+        SessionRef::LastIn(setup::workspace(&std::fs::canonicalize(&cwd)?))
+    } else {
+        SessionRef::Id(session.to_string())
+    };
+    let (header, location) = store.header(&reference)?;
+    store.append(&reference, vec![finx_core::store::EntryKind::Title { title: title.clone() }])?;
+    println!(
+        "session {} renamed to \"{title}\" in {}",
+        finx_core::short_id(&header.id),
+        crate::cmd_customize::shorten(&home, &location)
+    );
+    Ok(0)
+}
+
+pub fn trust(dir: Option<PathBuf>, remove: bool) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let dir = match dir {
         Some(dir) => dir,
@@ -701,8 +862,18 @@ pub fn trust(dir: Option<PathBuf>) -> anyhow::Result<u8> {
     };
     let dir = std::fs::canonicalize(&dir)?;
     let root = instructions::find_project_root(&dir, &[".git".to_string()]).unwrap_or(dir);
+    if remove {
+        let file = crate::cmd_customize::shorten(&home, &home.trusted_file());
+        if instructions::untrust(&home, &root)? {
+            println!("no longer trusting {} in {file}", root.display());
+        } else {
+            println!("{} was not trusted", root.display());
+        }
+        return Ok(0);
+    }
     if instructions::trust(&home, &root)? {
-        println!("trusted {}", root.display());
+        let file = crate::cmd_customize::shorten(&home, &home.trusted_file());
+        println!("trusted {} in {file}", root.display());
     } else {
         println!("{} was already trusted", root.display());
     }

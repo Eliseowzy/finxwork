@@ -420,7 +420,7 @@ fn build(
 /// A row as a layer of the model the channel calls `id`, which is what requests must say.
 fn public_layer(row: Row<'_>, id: &str) -> ModelToml {
     let p = row.model();
-    let (thinking, thinking_budgets) = derive_thinking(&p.reasoning_options);
+    let (thinking, thinking_budgets) = row_thinking(p);
     let own = matches!(row, Row::Own(_));
     ModelToml {
         id: id.to_string(),
@@ -455,6 +455,19 @@ fn list_layer(l: &ListedModel) -> ModelToml {
         cost: l.cost.clone().filter(|c| c.is_configured()),
         ..Default::default()
     }
+}
+
+/// Models whose thinking can be switched off although the public catalog names only their efforts:
+/// Anthropic's API takes `thinking: {type: "disabled"}` on them, and the aggregator's rows of the
+/// same models list `none`. A correction of the row, not a model entry, so that it does not pin
+/// them to the model menu (§18.2).
+const SWITCH_MISSING_FROM_THE_CATALOG: &[&str] = &["claude-opus-4-7", "claude-opus-4-8", "claude-opus-5"];
+
+/// How a row's model is controlled: what the row says, with what it is known to leave out.
+pub fn row_thinking(row: &PublicModel) -> (CatalogThinking, Option<ThinkingBudgets>) {
+    let (mut thinking, budgets) = derive_thinking(&row.reasoning_options);
+    thinking.switch |= SWITCH_MISSING_FROM_THE_CATALOG.contains(&row.id.as_str());
+    (thinking, budgets)
 }
 
 /// How a model is controlled, and its budgets, from the catalog's reasoning options (§18): the

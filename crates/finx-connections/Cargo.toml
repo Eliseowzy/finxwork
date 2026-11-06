@@ -6,6 +6,11 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = ["local-accounts"]
+# Connections through other apps' sign-ins on this computer: the desktop app's, not the public CLI's.
+local-accounts = []
+
 [dependencies]
 tracing.workspace = true
 finx-llm.workspace = true

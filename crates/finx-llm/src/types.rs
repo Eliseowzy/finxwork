@@ -162,6 +162,10 @@ pub struct ToolCall {
     /// Set when the model's arguments were not a valid JSON object; `arguments` is then `{}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub arguments_error: Option<String>,
+    /// What the provider attached to the call and wants back with it on later turns, untouched:
+    /// Gemini's signature of its reasoning, for one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_data: Option<Value>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -489,6 +493,7 @@ mod json_text_tests {
             name: "write".into(),
             arguments,
             arguments_error: None,
+            provider_data: None,
         }
     }
 

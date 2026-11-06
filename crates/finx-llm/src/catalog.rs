@@ -44,7 +44,6 @@ pub enum CatalogError {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CatalogFile {
     #[serde(default)]
     pub providers: BTreeMap<String, ProviderToml>,
@@ -67,7 +66,6 @@ impl StringOrList {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ProviderToml {
     pub name: Option<String>,
     pub api: Option<String>,
@@ -95,7 +93,6 @@ pub struct ProviderToml {
 
 /// Product metadata. Endpoints and credentials still use the normal provider machinery.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct PlanConfig {
     pub key_url: String,
 }
@@ -108,7 +105,6 @@ pub enum ListModelsToml {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelToml {
     pub id: String,
     pub name: Option<String>,
@@ -345,6 +341,8 @@ fn offered_thinking(
 #[derive(Debug, Clone, Default)]
 pub struct Catalog {
     pub providers: BTreeMap<String, ProviderConfig>,
+    /// What reading the user's models.toml left to say.
+    pub warnings: Vec<String>,
 }
 
 impl Catalog {
@@ -356,6 +354,7 @@ impl Catalog {
     pub fn load(user_file: Option<&Path>) -> Result<Self, CatalogError> {
         let mut file = builtin_file()?;
         let mut origin = "builtin catalog".to_string();
+        let mut warnings = Vec::new();
         if let Some(path) = user_file
             && path.exists()
         {
@@ -363,11 +362,15 @@ impl Catalog {
                 path: path.to_path_buf(),
                 source,
             })?;
-            let user = parse(&text, &path.display().to_string())?;
+            let origin_name = path.display().to_string();
+            let (user, unknown) = parse_with_unknown(&text, &origin_name)?;
+            warnings.extend(unknown.into_iter().map(|key| format!("ignored unknown setting `{key}` in {origin_name}")));
             merge(&mut file, user);
-            origin = path.display().to_string();
+            origin = origin_name;
         }
-        resolve(file, &origin)
+        let mut catalog = resolve(file, &origin)?;
+        catalog.warnings = warnings;
+        Ok(catalog)
     }
 
     pub fn from_toml(text: &str) -> Result<Self, CatalogError> {
@@ -375,11 +378,26 @@ impl Catalog {
     }
 }
 
+/// A file strictly: a key nobody knows is a mistake here.
 fn parse(text: &str, origin: &str) -> Result<CatalogFile, CatalogError> {
-    toml::from_str(text).map_err(|e| CatalogError::Parse {
+    let (file, unknown) = parse_with_unknown(text, origin)?;
+    match unknown.first() {
+        Some(key) => Err(CatalogError::Parse { origin: origin.to_string(), message: format!("unknown setting `{key}`") }),
+        None => Ok(file),
+    }
+}
+
+/// The user's file, with the keys this version does not know: a newer version may have written
+/// them, and they should not stop every command (standalone-cli-design §11.2).
+fn parse_with_unknown(text: &str, origin: &str) -> Result<(CatalogFile, Vec<String>), CatalogError> {
+    let error = |e: toml::de::Error| CatalogError::Parse {
         origin: origin.to_string(),
         message: e.to_string(),
-    })
+    };
+    let mut unknown = Vec::new();
+    let deserializer = toml::Deserializer::parse(text).map_err(error)?;
+    let file = serde_ignored::deserialize(deserializer, |path| unknown.push(path.to_string().replace(".?", ""))).map_err(error)?;
+    Ok((file, unknown))
 }
 
 fn merge(base: &mut CatalogFile, over: CatalogFile) {
@@ -522,7 +540,7 @@ fn resolve(file: CatalogFile, origin: &str) -> Result<Catalog, CatalogError> {
         };
         providers.insert(id, config);
     }
-    Ok(Catalog { providers })
+    Ok(Catalog { providers, warnings: Vec::new() })
 }
 
 #[cfg(test)]

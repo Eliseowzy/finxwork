@@ -544,10 +544,10 @@ async fn cli_turn(
     let mut c = env.command(args, cwd);
     match session.as_ref() {
         Some(id) => {
-            c.args(["resume", id, "--prompt", text, "--json"]);
+            c.args(["exec", "--resume", id, "--output", "stream-json", text]);
         }
         None => {
-            c.args(["exec", "--json", text]);
+            c.args(["exec", "--output", "stream-json", text]);
         }
     }
     let mut child = c.spawn()?;

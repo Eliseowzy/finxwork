@@ -33,7 +33,8 @@
     "mock": "Demo data · no kernel"
   },
   "model": {
-    "unavailable": "This model's connection is no longer available. Choose another model."
+    "unavailable": "This model's connection is no longer available. Choose another model.",
+    "none": "No model is connected yet. Connect one to get started."
   },
   "foot": {
     "label": "This computer and settings",

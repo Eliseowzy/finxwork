@@ -16,10 +16,20 @@ pub struct Style {
     color: bool,
 }
 
+/// `NO_COLOR` counts when it is not empty (no-color.org); a dumb terminal has no colors at all.
+fn color_allowed(no_color: Option<std::ffi::OsString>, term: Option<std::ffi::OsString>) -> bool {
+    no_color.is_none_or(|value| value.is_empty()) && term.is_none_or(|value| value != "dumb")
+}
+
 impl Style {
+    #[cfg(test)]
+    pub fn plain() -> Self {
+        Self { color: false }
+    }
+
     pub fn detect() -> Self {
         Self {
-            color: std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
+            color: std::io::stderr().is_terminal() && color_allowed(std::env::var_os("NO_COLOR"), std::env::var_os("TERM")),
         }
     }
 
@@ -49,6 +59,10 @@ impl Style {
 
     pub fn cyan(&self, text: &str) -> String {
         self.paint("36", text)
+    }
+
+    pub fn bold(&self, text: &str) -> String {
+        self.paint("1", text)
     }
 }
 
@@ -100,16 +114,6 @@ impl Renderer {
             return;
         }
         match &event.msg {
-            EventMsg::SessionStarted {
-                session_id,
-                model,
-                resumed,
-                ..
-            } => {
-                let action = if *resumed { "resumed" } else { "session" };
-                let short = finx_core::short_id(session_id);
-                eprintln!("{}", self.style.dim(&format!("finx · {model} · {action} {short}")));
-            }
             EventMsg::MessageDelta {
                 delta: Delta::Text { text, .. },
                 ..
@@ -137,141 +141,29 @@ impl Renderer {
                 self.end_thinking();
                 self.end_line();
             }
-            EventMsg::MessageCompleted {
-                message: Message::User(_),
-                skills,
-                ..
-            } if !skills.is_empty() => {
-                self.end_line();
-                let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
-                eprintln!("{}", self.style.dim(&format!("using skill(s): {}", names.join(", "))));
-            }
-            EventMsg::ToolStarted { name, args, .. } => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!("{} {}", self.style.cyan(&format!("• {name}")), tool_summary(name, args));
-            }
-            EventMsg::ToolCompleted { result, .. } => {
-                let text = result.text_content();
-                let line = result_line(&result.tool_name, &text, result.duration_ms);
-                if result.is_error {
-                    eprintln!("  {}", self.style.red(&format!("✗ {line}")));
-                } else {
-                    eprintln!("  {}", self.style.green(&format!("✓ {line}")));
-                }
-            }
-            EventMsg::StreamRetry {
-                attempt,
-                delay_ms,
-                error,
-            } => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!(
-                    "{}",
-                    self.style.yellow(&format!(
-                        "retrying in {:.1}s (attempt {attempt}): {}",
-                        *delay_ms as f64 / 1000.0,
-                        error.message
-                    ))
-                );
-            }
-            // Shown by the server status lines already.
-            EventMsg::Warning {
-                code: Some(WarningCode::McpServersNotReady),
-                ..
-            } => {}
-            EventMsg::Warning { message, .. } => {
-                self.end_line();
-                eprintln!("{}", self.style.yellow(&format!("warning: {message}")));
-            }
-            EventMsg::McpServerStatus {
-                server,
-                state,
-                tools,
-                error,
-                elapsed_ms,
-            } => {
-                let elapsed = elapsed_ms.map(|ms| format!(", {ms} ms")).unwrap_or_default();
-                match state {
-                    McpServerState::Ready => {
-                        let line = self.style.dim(&format!("mcp: {server} ready ({tools} tools{elapsed})"));
-                        self.status_line(line);
-                    }
-                    McpServerState::Failed | McpServerState::NeedsLogin => {
-                        let error = error.as_deref().unwrap_or("not connected");
-                        let line = self.style.yellow(&format!("mcp: {server} failed: {error}"));
-                        self.status_line(line);
-                    }
-                    McpServerState::Starting | McpServerState::Closed => {}
-                }
-            }
-            EventMsg::CompactionStarted { reason } => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!("{}", self.style.dim(&format!("compacting the context ({})…", reason.as_str())));
-            }
-            EventMsg::CompactionCompleted {
-                seq,
-                tokens_before,
-                tokens_after,
-                retained_messages,
-                kept_skills,
-                summary,
-                ..
-            } => {
-                let skills = if kept_skills.is_empty() {
-                    String::new()
-                } else {
-                    format!(" · kept skill(s) {}", kept_skills.join(", "))
-                };
-                eprintln!(
-                    "{}",
-                    self.style.dim(&format!(
-                        "context compacted (#{seq}): {} → {} tokens · kept {retained_messages} user message(s){skills} · summary {} chars",
-                        group_digits(*tokens_before),
-                        group_digits(*tokens_after),
-                        group_digits(summary.chars().count() as u64)
-                    ))
-                );
-            }
             EventMsg::ContextReported { report } => {
                 self.end_thinking();
                 self.end_line();
                 print!("{}", finx_core::context_report::text(report));
             }
-            EventMsg::CompactionFailed { error, .. } => {
-                eprintln!("{}", self.style.yellow(&format!("compaction failed: {}", error.message)));
+            msg => {
+                let lines = status_lines(&self.style, msg);
+                if lines.is_empty() {
+                    return;
+                }
+                // These arrive on their own, not because of the reply: they wait for its line to end.
+                if matches!(msg, EventMsg::ApprovalRefused { .. } | EventMsg::McpServerStatus { .. }) {
+                    for line in lines {
+                        self.status_line(line);
+                    }
+                } else {
+                    self.end_thinking();
+                    self.end_line();
+                    for line in lines {
+                        eprintln!("{line}");
+                    }
+                }
             }
-            EventMsg::TaskFailed { error, usage, .. } => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!("{}", self.style.red(&format!("error ({}): {}", error.kind, error.message)));
-                eprintln!("{}", self.style.dim(&usage_line(usage)));
-            }
-            EventMsg::TaskInterrupted { usage, .. } => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!("{}", self.style.yellow("interrupted"));
-                eprintln!("{}", self.style.dim(&usage_line(usage)));
-            }
-            EventMsg::TaskCompleted { usage, .. } => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!("{}", self.style.dim(&usage_line(usage)));
-            }
-            EventMsg::AgentStarted { name, description, .. } => {
-                self.end_thinking();
-                self.end_line();
-                let label = if description.is_empty() { String::new() } else { format!(": {description}") };
-                eprintln!("{}", self.style.dim(&format!("· agent {name} started{label}")));
-            }
-            EventMsg::AgentStatus { name, status, .. } if *status != AgentStatus::Running => {
-                self.end_thinking();
-                self.end_line();
-                eprintln!("{}", self.style.dim(&format!("· agent {name} {}", status.as_str())));
-            }
-            _ => {}
         }
     }
 
@@ -293,6 +185,84 @@ impl Renderer {
         if !self.thinking_open {
             self.release_held();
         }
+    }
+}
+
+/// What an event adds to the output apart from the reply itself: the same words in `finx exec` and
+/// in the interactive mode.
+pub fn status_lines(style: &Style, msg: &EventMsg) -> Vec<String> {
+    match msg {
+        EventMsg::SessionStarted { session_id, model, resumed, .. } => {
+            let action = if *resumed { "resumed" } else { "session" };
+            let short = finx_core::short_id(session_id);
+            vec![style.dim(&format!("finx · {model} · {action} {short}"))]
+        }
+        EventMsg::MessageCompleted { message: Message::User(_), skills, .. } if !skills.is_empty() => {
+            let names: Vec<&str> = skills.iter().map(|skill| skill.name.as_str()).collect();
+            vec![style.dim(&format!("using skill(s): {}", names.join(", ")))]
+        }
+        EventMsg::ToolStarted { name, args, .. } => {
+            vec![format!("{} {}", style.cyan(&format!("• {name}")), tool_summary(name, args))]
+        }
+        EventMsg::ToolCompleted { result, .. } => {
+            let line = result_line(&result.tool_name, &result.text_content(), result.duration_ms);
+            if result.is_error {
+                vec![format!("  {}", style.red(&format!("✗ {line}")))]
+            } else {
+                vec![format!("  {}", style.green(&format!("✓ {line}")))]
+            }
+        }
+        EventMsg::StreamRetry { attempt, delay_ms, error } => vec![style.yellow(&format!(
+            "retrying in {:.1}s (attempt {attempt}): {}",
+            *delay_ms as f64 / 1000.0,
+            error.message
+        ))],
+        // Shown by the server status lines already.
+        EventMsg::Warning { code: Some(WarningCode::McpServersNotReady), .. } => Vec::new(),
+        EventMsg::ApprovalRefused { name, summary, .. } => {
+            vec![style.yellow(&format!("refused {name}: {summary} (nothing here can approve it)"))]
+        }
+        EventMsg::Warning { message, .. } => vec![style.yellow(&format!("warning: {message}"))],
+        EventMsg::McpServerStatus { server, state, tools, error, elapsed_ms } => {
+            let elapsed = elapsed_ms.map(|ms| format!(", {ms} ms")).unwrap_or_default();
+            match state {
+                McpServerState::Ready => vec![style.dim(&format!("mcp: {server} ready ({tools} tools{elapsed})"))],
+                McpServerState::Failed | McpServerState::NeedsLogin => {
+                    let error = error.as_deref().unwrap_or("not connected");
+                    vec![style.yellow(&format!("mcp: {server} failed: {error}"))]
+                }
+                McpServerState::Starting | McpServerState::Closed => Vec::new(),
+            }
+        }
+        EventMsg::CompactionStarted { reason } => vec![style.dim(&format!("compacting the context ({})…", reason.as_str()))],
+        EventMsg::CompactionCompleted { seq, tokens_before, tokens_after, retained_messages, kept_skills, summary, .. } => {
+            let skills = if kept_skills.is_empty() {
+                String::new()
+            } else {
+                format!(" · kept skill(s) {}", kept_skills.join(", "))
+            };
+            vec![style.dim(&format!(
+                "context compacted (#{seq}): {} → {} tokens · kept {retained_messages} user message(s){skills} · summary {} chars",
+                group_digits(*tokens_before),
+                group_digits(*tokens_after),
+                group_digits(summary.chars().count() as u64)
+            ))]
+        }
+        EventMsg::CompactionFailed { error, .. } => vec![style.yellow(&format!("compaction failed: {}", error.message))],
+        EventMsg::TaskFailed { error, usage, .. } => vec![
+            style.red(&format!("error ({}): {}", error.kind, error.message)),
+            style.dim(&usage_line(usage)),
+        ],
+        EventMsg::TaskInterrupted { usage, .. } => vec![style.yellow("interrupted"), style.dim(&usage_line(usage))],
+        EventMsg::TaskCompleted { usage, .. } => vec![style.dim(&usage_line(usage))],
+        EventMsg::AgentStarted { name, description, .. } => {
+            let label = if description.is_empty() { String::new() } else { format!(": {description}") };
+            vec![style.dim(&format!("· agent {name} started{label}"))]
+        }
+        EventMsg::AgentStatus { name, status, .. } if *status != AgentStatus::Running => {
+            vec![style.dim(&format!("· agent {name} {}", status.as_str()))]
+        }
+        _ => Vec::new(),
     }
 }
 
@@ -389,5 +359,20 @@ mod tests {
         assert_eq!(group_digits(12), "12");
         assert_eq!(result_line("bash", "Exit code: 2\nDuration: 0.1s\nOutput:\nx", Some(1500)), "exit 2 · 1.5s");
         assert_eq!(truncate("one\ntwo", 10), "one…");
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::color_allowed;
+
+    #[test]
+    fn no_color_and_a_dumb_terminal_turn_colors_off() {
+        let some = |text: &str| Some(std::ffi::OsString::from(text));
+        assert!(color_allowed(None, None));
+        assert!(color_allowed(None, some("xterm-256color")));
+        assert!(!color_allowed(None, some("dumb")));
+        assert!(!color_allowed(some("1"), None));
+        assert!(color_allowed(some(""), None), "an empty NO_COLOR does not count");
     }
 }

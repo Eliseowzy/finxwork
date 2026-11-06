@@ -93,6 +93,8 @@ export type AssistantContent = {
   arguments_error?: string | null;
   id: string;
   name: string;
+  /** What the provider attached to the call and wants back with it on later turns, untouched: Gemini's signature of its reasoning, for one. */
+  provider_data?: unknown;
   type: "tool_call";
 };
 
@@ -1129,6 +1131,12 @@ export type Event = {
   archived: boolean;
   type: "archived_changed";
 } | {
+  call_id: string;
+  name: string;
+  reason?: string | null;
+  summary: string;
+  type: "approval_refused";
+} | {
   /** What the warning is about, for a client that words or places it itself. Absent for one-off warnings, which are only shown as `message`. */
   code?: WarningCode | null;
   message: string;
@@ -1431,6 +1439,9 @@ export type MailInfo = {
 
 export type MailKind = "report" | "message" | "routine";
 
+/** How much a server's tools are trusted to run unasked. */
+export type McpApproval = "never";
+
 export type McpAuthKind = "none" | "oauth" | "credential";
 
 export type McpAuthMode = "oauth";
@@ -1573,6 +1584,8 @@ export type McpRemoteTransport = "streamable_http" | "sse";
  * String values may contain `${VAR}` and `${VAR:-default}`; they are expanded from finx's environment when the server connects, so a missing variable fails only this server.
  */
 export type McpServerConfig = {
+  /** `never`: its tools run without asking in every permission mode. Taken only from the user's own configuration file. */
+  approval?: McpApproval | null;
   args?: string[];
   /** Remote server: `oauth` signs in with OAuth; the token is kept in the credential store. */
   auth?: McpAuthMode | null;
@@ -1906,6 +1919,55 @@ export type PendingApproval = {
 /** How much the session may do without asking. Deny and ask rules apply in every mode. Deserializing also accepts the names used before protocol version 2. */
 export type PermissionMode = "manual" | "accept-edits" | "bypass-permissions";
 
+export type PptxMetafileParams = {
+  /** Original EMF/WMF media bytes, base64. The source package is never changed. */
+  data: string;
+  session_id: string;
+};
+
+export type PptxMetafileResult = {
+  /** Drawing operations the converter could not replay, if any. */
+  omissions: string[];
+  svg: string;
+};
+
+/** Optional correlation ID keeps concurrent opens and reopened tabs isolated. */
+export type PptxReadParams = {
+  path: string;
+  progress_id?: string | null;
+  session_id: string;
+};
+
+/** Counts describe this stage only, not an estimated overall percentage. */
+export type PptxReadProgress = {
+  completed: number;
+  progress_id: string;
+  session_id: string;
+  stage: PptxReadStage;
+  total: number;
+};
+
+export type PptxReadResult = {
+  /** Base64 PPTX bytes (at most 20 MiB before encoding). */
+  data: string;
+  /** Explicit font families in the package, plus the host's Latin and CJK fallbacks. */
+  font_families: string[];
+  hash: string;
+  path: string;
+  writable: boolean;
+};
+
+export type PptxReadStage = "reading" | "inspecting" | "encoding";
+
+export type PptxWriteParams = {
+  /** Required: never silently replace an external edit or recreate a deleted file. */
+  base_hash: string;
+  /** Base64 of the edited PPTX. */
+  data: string;
+  path: string;
+  session_id: string;
+};
+
 export type PromptMode = "steer" | "follow_up";
 
 /** A provider's model list as the kernel last saw it. */
@@ -2095,8 +2157,8 @@ export type SessionAttachParams = {
 };
 
 export type SessionDefaults = {
-  /** `provider/model-id` */
-  model: string;
+  /** `provider/model-id`. Absent while no model is set up: `session/new` without a model then fails with `no_model`, and the person has to connect one. */
+  model?: string | null;
   permission_mode: PermissionMode;
   thinking: ThinkingLevel;
 };
@@ -2475,6 +2537,29 @@ export type TokenPlanSummary = {
 /** What a tool call does, for display. The values are a subset of the ACP tool kinds. */
 export type ToolCategory = "read" | "edit" | "delete" | "move" | "search" | "execute" | "fetch" | "other";
 
+/** One tool, as `tools/list` and `finx tools --json` give it. */
+export type ToolEntry = {
+  available: boolean;
+  description: string;
+  /** `base`, `agents`, `deferred` (the two tools that reach the others), `web`, `doc`, `browser`, `cua`, `bot` or `mcp`. */
+  group: string;
+  kind: ToolEntryKind;
+  /** In the model's tool list from the start, rather than found through `tool_search`. */
+  loaded: boolean;
+  name: string;
+  /** What it takes: the setting or the component missing, or a limit on an available tool. */
+  needs?: string | null;
+  origin: ToolEntryOrigin;
+  /** JSON Schema of its arguments. */
+  parameters: unknown;
+};
+
+/** What a tool does to the world: read-only tools may run side by side. */
+export type ToolEntryKind = "read_only" | "mutating";
+
+/** Where a tool comes from. */
+export type ToolEntryOrigin = "builtin" | "mcp";
+
 export type ToolResultMessage = {
   call_id: string;
   /** Sent to the model. */
@@ -2496,6 +2581,16 @@ export type ToolState = {
   progress_tail?: string;
   running: boolean;
   title: string;
+};
+
+/** Parameters of `tools/list`. */
+export type ToolsListParams = {
+  /** A loaded session: the tools it really has now, those of connected MCP servers included. Without one, the built-in tools under the current configuration. */
+  session_id?: string | null;
+};
+
+export type ToolsListResult = {
+  tools: ToolEntry[];
 };
 
 export type TraceDirection = "up" | "down";
@@ -2712,6 +2807,9 @@ export interface Methods {
   "models/list": [Record<string, never>, ModelsListResult];
   "models/refresh": [ModelsRefreshParams, ModelsRefreshResult];
   "models/show": [ModelsShowParams, Empty];
+  "pptx/metafile": [PptxMetafileParams, PptxMetafileResult];
+  "pptx/read": [PptxReadParams, PptxReadResult];
+  "pptx/write": [PptxWriteParams, FilesWriteResult];
   "resource/read": [ResourceReadParams, ResourceReadResult];
   "server/shutdown": [Record<string, never>, Empty];
   "session/archive": [SessionIdParams, Empty];
@@ -2735,6 +2833,7 @@ export interface Methods {
   "skills/read": [SkillsReadParams, SkillsReadResult];
   "skills/remove": [SkillsRemoveParams, Empty];
   "skills/set_enabled": [SkillsSetEnabledParams, SkillsSetEnabledResult];
+  "tools/list": [ToolsListParams, ToolsListResult];
   "web_search/set_key": [WebSearchSetKeyParams, WebSearchSetKeyResult];
   "web_search/status": [Record<string, never>, WebSearchStatus];
   "web_search/test": [WebSearchTestParams, WebSearchTestResult];
@@ -2753,6 +2852,7 @@ export interface ServerNotifications {
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;
   "models/changed": Empty;
+  "pptx/readProgress": PptxReadProgress;
   "session/detached": SessionDetachedParams;
   "session/event": SessionEventParams;
   "sessions/changed": SessionsChangedParams;
@@ -2802,6 +2902,7 @@ export const RPC_ERROR_KINDS = {
   "-32043": "routine_not_found",
   "-32044": "routine_busy",
   "-32045": "routines_unavailable",
+  "-32046": "no_model",
   "-32600": "invalid_request",
   "-32601": "method_not_found",
   "-32602": "invalid_params",

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { applyEvents, fromSnapshot, RpcError, withHistory, type SessionView } from "@finx/client";
 import type { Event } from "@finx/protocol";
+import { needsKey } from "../composer/KeySetup";
 import { errorText, useStore } from "../store";
 
 /** What a bot's page never shows: the words as they are written (bot-design §3.5). */
@@ -24,6 +25,8 @@ function keep(bot: string, session: string, view: SessionView) {
 export function useBotSession(bot: string, session: string | undefined): [SessionView | null, string | null, () => Promise<void>] {
   const st = useStore();
   const { rpc, show } = st;
+  // Without a model there is no starting it: once one is connected, it starts.
+  const keyless = needsKey(st);
   const [got, setGot] = useState<{ bot: string; session: string | null; view: SessionView | null }>(() => ({ bot, session: kept.get(bot)?.session ?? null, view: kept.get(bot)?.view ?? null }));
   const earlier = useRef<() => Promise<void>>(async () => {});
   // A conversation cleared, or started elsewhere, is another session: attach again.
@@ -77,8 +80,9 @@ export function useBotSession(bot: string, session: string | undefined): [Sessio
       return paging;
     };
     // Deleting a bot ends its session, which can reach here before the list hears: then it is simply gone.
+    // Without a model, the page says so itself.
     const failed = (e: unknown) => {
-      if (!stop && !(e instanceof RpcError && e.kind === "bot_not_found")) show(errorText(e), undefined, true);
+      if (!stop && !(e instanceof RpcError && (e.kind === "bot_not_found" || e.kind === "no_model"))) show(errorText(e), undefined, true);
     };
     const offEvent = rpc.on("session/event", (p) => {
       // Before the snapshot names the session, events are of no session known yet.
@@ -98,7 +102,7 @@ export function useBotSession(bot: string, session: string | undefined): [Sessio
       cancelAnimationFrame(frame);
       if (id) rpc.request("session/detach", { session_id: id }).catch(() => {});
     };
-  }, [rpc, bot, generation, show]);
+  }, [rpc, bot, generation, show, keyless]);
 
   const loadEarlier = useCallback(() => earlier.current(), []);
   const fresh = got.bot === bot;

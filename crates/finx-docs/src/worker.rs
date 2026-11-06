@@ -27,8 +27,12 @@ pub enum Launcher {
 }
 
 impl Launcher {
-    /// This program, run as `<exe> doc-worker`.
+    /// The `pdf` component's worker where it has one (static builds cannot load the library
+    /// themselves), otherwise this program, run as `<exe> doc-worker`.
     pub fn this_program() -> Self {
+        if let Some(worker) = crate::pdf_addon_dir().map(|dir| dir.join("finx-doc-worker")).filter(|path| path.is_file()) {
+            return Launcher::Process { program: worker, args: Vec::new() };
+        }
         let program = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("finx"));
         Launcher::Process { program, args: vec!["doc-worker".into()] }
     }

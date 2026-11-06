@@ -3,8 +3,9 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { baseName, type DocQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
-import { opensAsDoc } from "../files/kind";
+import { isPresentation, opensAsDoc, opensInOwnApp, showsInApp } from "../files/kind";
 import { Icon } from "../icons";
+import { useFilePreview } from "../preview/context";
 import { opensAsPage, showPage } from "../session/contentMenus";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
@@ -302,25 +303,28 @@ export function Lightbox({ src, caption, onStep, onClose }: { src: string; capti
         </>
       )}
     </div>,
-    document.body,
+    // Inside the dialog open over the window, if any: nothing outside one shows above it.
+    [...document.querySelectorAll("dialog[open]")].at(-1) ?? document.body,
   );
 }
 
-/** Opens a file: beside the conversation (a PDF as a document, Markdown previewed, an HTML file as its page), one the panel cannot show in its own app. */
+/**
+ * Opens a file: over the window where the page offers that (preview/FilePreview), else beside the
+ * conversation (a PDF as a document, Markdown previewed, an HTML file as its page); one that
+ * shows only as "binary" in its own app.
+ */
 export function useOpenFile() {
   const docs = useDocOpener();
+  const preview = useFilePreview();
   const st = useStore();
   return (path: string) => {
+    if (preview && showsInApp(path)) return preview.open(path);
     if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
-    if (docs && opensAsDoc(path)) return docs.open({ path });
-    if (!docs || opensInApp(path)) return void window.finx?.openFile(path, { app: "system" });
+    if (docs && (opensAsDoc(path) || isPresentation(path))) return docs.open({ path });
+    if (!docs || opensInOwnApp(path)) return void window.finx?.openFile(path, { app: "system" });
     docs.open({ path });
   };
 }
-
-/** Files the panel shows only as "binary": Office documents, media, archives — these open in their own app. */
-const opensInApp = (path: string) =>
-  /\.(docx?|xlsx?|xlsm|pptx?|key|numbers|pages|rtf|odt|ods|odp|epub|mp3|m4a|wav|aac|flac|mp4|mov|m4v|avi|mkv|webm|zip|rar|7z|tar|gz|dmg|pkg|app)$/i.test(path);
 
 /** A file type's family, for its badge's colour. */
 const families: [string, RegExp][] = [

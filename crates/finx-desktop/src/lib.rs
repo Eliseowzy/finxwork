@@ -30,8 +30,8 @@ pub const HIDDEN: &str = "<hidden>";
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum DesktopError {
     #[error(
-        "agent-desktop was not found. FinxWork brings its own; elsewhere install it \
-         (npm install -g agent-desktop), put it in ~/.finx/desktop/bin, or set desktop.executable."
+        "agent-desktop was not found. FinxWork brings its own; elsewhere run `finx install computer`, \
+         or set desktop.executable."
     )]
     NotInstalled,
     #[error("cannot run agent-desktop: {0}")]
@@ -72,10 +72,11 @@ impl DesktopError {
 }
 
 /// Where the CLI is: `configured`, else the copy beside finx (FinxWork.app's
-/// `Contents/MacOS`), else finx's own copy in `~/.finx/desktop/bin`, else `PATH`.
+/// `Contents/MacOS`), else finx's own copy in `$FINX_HOME/desktop/bin`, else `PATH`.
 pub fn locate(configured: Option<&Path>) -> Result<PathBuf, DesktopError> {
     let beside = std::env::current_exe().ok().and_then(|exe| exe.parent().map(Path::to_path_buf));
-    locate_in(configured, beside.as_deref(), dirs::home_dir().as_deref(), std::env::var_os("PATH"))
+    let home = std::env::var_os("FINX_HOME").filter(|home| !home.is_empty()).map(PathBuf::from).or_else(|| dirs::home_dir().map(|home| home.join(".finx")));
+    locate_in(configured, beside.as_deref(), home.as_deref(), std::env::var_os("PATH"))
 }
 
 fn locate_in(
@@ -88,7 +89,7 @@ fn locate_in(
         return if path.is_file() { Ok(path.to_path_buf()) } else { Err(DesktopError::NotInstalled) };
     }
     let bundled = beside.map(|dir| dir.join(PROGRAM));
-    let own = home.map(|home| home.join(".finx/desktop/bin").join(PROGRAM));
+    let own = home.map(|home| home.join("desktop/bin").join(PROGRAM));
     let on_path = path_var
         .into_iter()
         .flat_map(|paths| std::env::split_paths(&paths).collect::<Vec<_>>())
@@ -762,7 +763,7 @@ mod tests {
             d.join(PROGRAM)
         };
         let (app, home, bin) = (dir.path().join("MacOS"), dir.path().join("home"), dir.path().join("bin"));
-        let own = put("home/.finx/desktop/bin");
+        let own = put("home/desktop/bin");
         let on_path = put("bin");
         let path_var = || Some(bin.clone().into_os_string());
         assert_eq!(locate_in(None, Some(&app), Some(&home), path_var()).unwrap(), own, "nothing beside finx");

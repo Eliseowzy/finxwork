@@ -275,7 +275,7 @@ try {
     const written = fs.readFileSync(path.join(home, "config.toml"), "utf8");
     check(/\[mcp_servers\.tracker\][^[]*auth = "oauth"/.test(written), `the configuration:\n${written}`);
     check(credentials().includes("mcp-oauth.tracker") && !written.includes("access_token"), "the token is not in the credential store");
-    const used = cli(["exec", "--json", "[[mock:mcp_env:tracker:HOME]] read it"]).trim().split("\n").map((l) => JSON.parse(l));
+    const used = cli(["exec", "--output", "stream-json", "[[mock:mcp_env:tracker:HOME]] read it"]).trim().split("\n").map((l) => JSON.parse(l));
     check(used.some((e) => e.type === "task_completed" && String(e.last_message).startsWith("mcp done")), "the session could not use the signed-in server");
     console.log("  signed in through the page; a session used it");
 
@@ -329,7 +329,7 @@ try {
 
   step("finx exec uses what the page added");
   const exec = (prompt) =>
-    cli(["exec", "--json", prompt])
+    cli(["exec", "--output", "stream-json", prompt])
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l));

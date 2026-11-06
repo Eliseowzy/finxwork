@@ -16,7 +16,6 @@ pub enum Modality {
 
 /// Prices per million tokens, in the provider's currency.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelCost {
     #[serde(default)]
     pub input: f64,
@@ -112,7 +111,6 @@ pub enum AuthHeader {
 /// Differences between implementations of the same wire protocol, expressed as data.
 /// Merge order: adapter defaults → provider → model (field by field).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct Compat {
     // openai-chat
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -173,7 +171,6 @@ impl Compat {
 /// Token budgets for budget-style reasoning (anthropic, qwen). Set in models.toml, they make
 /// the levels of a model the catalog does not describe go out as budgets.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ThinkingBudgets {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub minimal: Option<u32>,

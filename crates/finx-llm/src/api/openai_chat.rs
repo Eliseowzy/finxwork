@@ -279,6 +279,9 @@ impl ChatStreamState {
                     json: args.to_string(),
                 });
             }
+            if let Some(data) = call.extra {
+                out.push(StreamEvent::ToolCallData { index, data: data.clone() });
+            }
         }
 
         if let Some(reason) = chunk.finish_reason {
@@ -332,6 +335,8 @@ struct WireCall<'a> {
     id: Option<Cow<'a, str>>,
     #[serde(borrow, default)]
     function: Option<WireFunction<'a>>,
+    #[serde(default)]
+    extra_content: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -360,6 +365,7 @@ struct CallView<'a> {
     id: Option<&'a str>,
     name: Option<&'a str>,
     arguments: Option<&'a str>,
+    extra: Option<&'a Value>,
 }
 
 impl<'a> ChunkView<'a> {
@@ -392,6 +398,7 @@ impl<'a> ChunkView<'a> {
                 id: call.id.as_deref(),
                 name: call.function.as_ref().and_then(|f| f.name.as_deref()),
                 arguments: call.function.as_ref().and_then(|f| f.arguments.as_deref()),
+                extra: call.extra_content.as_ref(),
             })
             .collect();
         view
@@ -429,6 +436,7 @@ impl<'a> ChunkView<'a> {
                     id: call.get("id").and_then(Value::as_str),
                     name: function.get("name").and_then(Value::as_str),
                     arguments: function.get("arguments").and_then(Value::as_str),
+                    extra: call.get("extra_content"),
                 }
             })
             .collect();
@@ -485,6 +493,7 @@ pub fn build_body(model: &Model, ctx: &Context, opts: &RequestOptions) -> Vec<u8
             Message::Assistant(assistant) => messages.message(&AssistantTurn {
                 message: assistant,
                 reasoning: replayed_reasoning(model, assistant),
+                same_model: assistant.model == model.id,
             }),
             Message::ToolResult(result) => {
                 let images = result.content.iter().any(is_image);
@@ -716,6 +725,8 @@ impl Serialize for ImageUrl<'_> {
 struct AssistantTurn<'a> {
     message: &'a AssistantMessage,
     reasoning: Option<(&'a str, &'a str)>,
+    /// What the provider attached to its tool calls goes back only to the model that wrote it.
+    same_model: bool,
 }
 
 impl Serialize for AssistantTurn<'_> {
@@ -733,7 +744,7 @@ impl Serialize for AssistantTurn<'_> {
         }
         if content.iter().any(|c| matches!(c, AssistantContent::ToolCall(_))) {
             let calls = content.iter().filter_map(|c| match c {
-                AssistantContent::ToolCall(call) => Some(FunctionCall(call)),
+                AssistantContent::ToolCall(call) => Some(FunctionCall(call, self.same_model)),
                 _ => None,
             });
             map.serialize_entry("tool_calls", &SerializeIter::new(calls))?;
@@ -756,15 +767,18 @@ impl fmt::Display for AssistantText<'_> {
     }
 }
 
-struct FunctionCall<'a>(&'a ToolCall);
+struct FunctionCall<'a>(&'a ToolCall, bool);
 
 impl Serialize for FunctionCall<'_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let call = self.0;
-        let mut map = serializer.serialize_map(Some(3))?;
+        let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("id", &call.id)?;
         map.serialize_entry("type", "function")?;
         map.serialize_entry("function", &Function(call))?;
+        if let Some(data) = call.provider_data.as_ref().filter(|_| self.1) {
+            map.serialize_entry("extra_content", data)?;
+        }
         map.end()
     }
 }
@@ -926,6 +940,7 @@ mod tests {
             name: "read".into(),
             arguments: json!({"path": "a.txt"}).into(),
             arguments_error: None,
+            provider_data: None,
         };
         let ctx = Context {
             system: "You are helpful.".into(),
@@ -1110,4 +1125,33 @@ mod tests {
         assert_eq!(messages[2]["role"], "user");
         assert_eq!(messages[2]["content"][1]["type"], "image_url");
     }
+
+    /// Gemini's signature comes with the call and goes back with it, to the same model only.
+    #[test]
+    fn what_a_provider_attaches_to_a_call_goes_back_to_that_model() {
+        let data = json!({"google": {"thought_signature": "sig"}});
+        let chunk = json!({"choices": [{"index": 0, "delta": {"tool_calls": [{
+            "index": 0, "id": "c1", "type": "function",
+            "function": {"name": "read", "arguments": "{}"},
+            "extra_content": data,
+        }]}}]});
+        let view = ChunkView::from_value(&chunk);
+        assert_eq!(view.calls[0].extra, Some(&data));
+        let text = chunk.to_string();
+        let typed: WireChunk = serde_json::from_str(&text).unwrap();
+        assert_eq!(ChunkView::from_wire(&typed).calls[0].extra, Some(&data));
+
+        let call = ToolCall {
+            id: "c1".into(),
+            name: "read".into(),
+            arguments: crate::types::JsonText::default(),
+            arguments_error: None,
+            provider_data: Some(data.clone()),
+        };
+        let with = serde_json::to_value(FunctionCall(&call, true)).unwrap();
+        assert_eq!(with["extra_content"], data);
+        let without = serde_json::to_value(FunctionCall(&call, false)).unwrap();
+        assert!(without.get("extra_content").is_none(), "{without}");
+    }
+
 }

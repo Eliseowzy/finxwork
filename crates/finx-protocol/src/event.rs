@@ -234,6 +234,15 @@ pub enum EventMsg {
     ArchivedChanged {
         archived: bool,
     },
+    /// A call that needs approval was refused because nothing here can give it: a run without a
+    /// person, such as `finx exec` in a script.
+    ApprovalRefused {
+        call_id: String,
+        name: String,
+        summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     Warning {
         message: String,
         /// What the warning is about, for a client that words or places it itself. Absent for

@@ -283,6 +283,12 @@ async fn request_approval(
     proposal: Proposal,
 ) -> Approval {
     if !session.interactive_approvals {
+        session.emit(EventMsg::ApprovalRefused {
+            call_id: call.id.clone(),
+            name: call.name.clone(),
+            summary,
+            reason: reason.clone(),
+        });
         return Approval::NoApprover(reason);
     }
     let (tx, rx) = oneshot::channel();
