@@ -511,6 +511,10 @@
     "hidden": "Hidden characters",
     "hiddenTip": "This code has characters you can't see. Check it before you paste it."
   },
+  "preview": {
+    "toPanel": "Open in side panel",
+    "close": "Close preview"
+  },
   "files": {
     "title": "Files",
     "hide": "Hide files",

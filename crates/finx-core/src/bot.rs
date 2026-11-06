@@ -39,8 +39,8 @@ pub struct BotIdentity {
 
 pub const SEND_TO_USER: &str = "send_to_user";
 
-/// The tools a bot's session gets on top of a session's. Its sub-agents do not get them: their
-/// replies are reports to the bot.
+/// The tools a bot's session gets on top of a session's. Its sub-agents have a `send_to_user` of
+/// their own (agent-messaging-design §17).
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
     vec![Arc::new(Typed::new(SendToUser)), crate::routine::tool()]
 }
@@ -119,6 +119,15 @@ pub fn words_of(args: &Value) -> Option<&str> {
         .filter(|text| !text.trim().is_empty() && crate::routine::quiet_note(text).is_none())
 }
 
+/// The words a sub-agent told the owner, from what the bot's model reads of them
+/// (agent-messaging-design §17).
+pub fn told_words(text: &str) -> &str {
+    text.strip_prefix("<sent_to_user")
+        .and_then(|rest| rest.split_once(">\n"))
+        .and_then(|(_, rest)| rest.strip_suffix("\n</sent_to_user>"))
+        .unwrap_or(text)
+}
+
 /// Whether a call sends files: by its type, or without one by what it carries (bot-design §3.12).
 pub fn sends_files(args: &Value) -> bool {
     match args.get("type").and_then(Value::as_str) {
@@ -164,13 +173,13 @@ struct OptionArg {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub(crate) struct SendArgs {
-    /// What this message is. text (the default): words, rendered as Markdown. attachment: one or more files or images, with words if they help. question: a question, when you need the user to decide; it ends your turn and their answer comes back as their next message; send any background first as a text message.
+    /// What this message is. text (the default): words, rendered as Markdown. attachment: one or more files or images, with the message that goes with them, however long. question: a question, when you need the user to decide; it ends your turn and their answer comes back as their next message; send any background first as a text message.
     #[serde(default, rename = "type")]
     kind: Option<MessageType>,
-    /// The message. For attachment, the words to go with the files. For question, the question in one sentence.
+    /// The message. For attachment, the message shown above the files. For question, the question in one sentence.
     #[serde(default)]
     text: Option<String>,
-    /// For attachment, what to send, in order.
+    /// For attachment, the files to hand over, in order.
     #[serde(default)]
     files: Option<Vec<FileArg>>,
     /// For question, answers the user can tap, each worded the way they would say it. Leave it out when the answers cannot be listed.

@@ -154,6 +154,8 @@ Bot   send_to_user("写好了，一共一万零二百字：[作文](…)", end_t
 
 ### 5.5 只有主 Bot 跟主人说话
 
+> 2026-11-06 主人改了这一条：Bot 的子智能体可以用自己的 `send_to_user` 直接告诉主人进展，Bot 不被唤醒（[智能体通信方案](agent-messaging-design.md) §17）。下面"工具"和"主人看得到"两条是当时的文字，以 §17 为准；结果仍然由 Bot 交付。
+
 子智能体不能给主人发消息，它的话都经 Bot 转告。这一点现在已经成立，改动时要保持：
 
 - **工具**：子智能体的工具列表在 Bot 加上 `send_to_user` 之前就定了，所以它没有这个工具，也没有 `spawn_agent`、`send_message`。§5.3 的两个工具也只有主会话有。测试 `a_bots_sub_agents_get_a_sessions_prompt_and_no_send_to_user` 守着这一条，新工具要加进去。
@@ -161,7 +163,6 @@ Bot   send_to_user("写好了，一共一万零二百字：[作文](…)", end_t
 - **主人看得到、但不算它在说话的**：
   - 授权窗口：只有子智能体要确认时才弹，写明是谁（子智能体方案 §10）。包括要主人去网页上操作一步的那种，这是唯一由它的模型写字、直接给主人看的地方。
   - 进度：气泡里的名字（§13.6）。
-  - "过程"里的汇报卡片：主人主动展开才看到。
 - **汇报不等于告诉了主人**：汇报只有主 Bot 看得到，转告是它的责任（§6）。
 
 ### 5.6 边界情况
@@ -428,7 +429,7 @@ send_message lets it continue later. The result lists what stopped and what had 
 - `stop_agents`：点名和 `all`，两个都没有时报错；结果写明停了什么、早已结束的；汇报不唤醒主会话；停下后 `send_message` 能接着做。
 - `list_agents`：状态、近期操作、上次动静；经 `tool_search` 取定义、`call_tool` 调用。
 - 会话模式和 Bot 的主会话目录里都有 `agents` 这一组；子智能体、关掉子智能体的会话没有；设置变化重建目录后还在。
-- 子智能体的工具里没有 `send_to_user`，也调不到 `list_agents`、`stop_agents`，新建和恢复后都一样。
+- 子智能体的工具里没有 `send_to_user`（2026-11-06 起有一个只有文字的，见智能体通信方案 §17），也调不到 `list_agents`、`stop_agents`，新建和恢复后都一样。
 
 **真实模型统计**（`bot_turns.mjs`，每个场景 12 遍）：
 

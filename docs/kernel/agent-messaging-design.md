@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.5 |
-| 日期 | 2026-11-05 |
-| 状态 | 主人已确认，已实现（分支 `feat/bot-turn`）；模拟模型下全部通过，真实模型统计用百炼 Token Plan 跑过，结果和没解决的问题见 §16 |
+| 版本 | v0.6 |
+| 日期 | 2026-11-06 |
+| 状态 | 主人已确认，已实现；§1–§16 的统计见 §16。§17（Bot 的子智能体直接告诉主人）是主人 2026-11-06 改的决定，推翻了本文原来的"只有主 Bot 跟主人说话" |
 | 关系 | 改了 [子智能体方案](subagent-design.md)（§1.2、§6、§7、§9.2、附录 A；D-41、D-53、D-354、Q-43）、[Bot 技术方案](bot-design.md)（§3.6、附录 A.1）、[Bot 回合方案](bot-turn-design.md)（§5.3、§7.2）。代码基于分支 `feat/bot-turn` |
 
 ## 方案摘要
@@ -25,7 +25,8 @@
   2. 子智能体发的话都走信件，收件人看到 `<agent_message from="…">`（§5）。
   3. `check_agents` 改名 `list_agents`，子智能体也能用，多一行"最后说了什么"（§6）。
   4. 给模型的文字：任务说明、工具描述、`bot.md`（§7）。
-- **不变的**：做完自动汇报；只有人能批准；只有主 Bot 跟主人说话；子智能体不能再派子智能体；`stop_agents` 只有主智能体有；不打断正在进行的生成和工具。
+- **不变的**：做完自动汇报；只有人能批准；子智能体不能再派子智能体；`stop_agents` 只有主智能体有；不打断正在进行的生成和工具。
+- **v0.6 改的**：Bot 的子智能体用自己的 `send_to_user` 直接把进展告诉主人，Bot 不被唤醒（§17）。`send_message` 还在，只用于别的智能体要照着做的事。
 - **要改的旧决定**：D-53（子不能发消息）、Q-43（默认不唤醒）、D-354（`agents` 组只给主会话）。依据见 §3 和 §14。
 - **验证**：内核测试、端到端测试和桌面走查用模拟模型，真实模型统计用百炼 Token Plan（§13、§16）。
 
@@ -347,7 +348,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 - **协议**：`MailKind` 加 `message`，重新生成 schema 和 TS 类型。`MailInfo.from` 是发件人，`status` 是发送时的状态（`running`）。其他不变。
 - **客户端**（`packages/client`）：现在的代码把所有信件都当作汇报，还用它判断这个子智能体这一轮结束了（`steps.ts` 的 `close`）。要改成按 `mail.kind` 判断，否则一条中途消息会让界面以为它做完了。新增一种步骤 `agent_message`。
 - **会话页**：和汇报卡片同样的位置，显示"writer 发来消息"和正文，子智能体仍然显示在跑。
-- **Bot 页**：消息不进对话，在"过程"里是一步（和汇报一样，PRD §6.11）。主人看到的是 Bot 转告的气泡。"它在忙"的气泡不变，仍然只写名字。
+- **Bot 页**：消息不进对话（和汇报一样，PRD §6.11）。主人看到的是 Bot 转告的气泡。"它在忙"的气泡不变，仍然只写名字。
 - **列表和通知**：不变。Bot 发出气泡才算未读和通知。
 - **ACP 和命令行**：信件现在怎么显示就怎么显示。`finx exec` 仍然等 `idle` 才退出（D-49）。
 - **日志兼容**：消息不写成 `mail` 条目，单独一种 `agent_message` 条目。实现时查了旧版怎么读：`mail` 条目的 `kind` 是旧版不认识的值时，这一行读不出来；历史是顺着 parent 往回走的，走到缺的这一行就断了，这之前的对话都看不到。不认识的条目类型则保留位置，什么也不丢（`EntryKind::Unknown`）。桌面端和内核总是一起升级，但主人有时换着用不同分支的包，而一个 Bot 只有一个长期会话，所以走这条现成的路。
@@ -357,7 +358,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 - **批准只有人能答**：内核没有别的路径，不受这次改动影响（子智能体方案 §10）。
 - **权限不变**：整棵树用同一份权限，发消息不能提升权限。某个调用被拒绝后，再让兄弟去做，兄弟的调用仍然要问主人。工具描述也写明不要这样做（§7.2）。
 - **智能体的话不算主人的话**：子智能体可能读到网页里的恶意内容，再发给主智能体。信件带标签，`bot.md` 和工具描述都写明这不是用户说的。这个风险汇报本来就有，不是新问题。
-- **只有主 Bot 跟主人说话**（Bot 回合方案 §5.5）不变。子智能体发的话到不了主人那里，除非主 Bot 转告。
+- **谁能跟主人说话**：v0.6 起 Bot 的子智能体也能（§17）。它能说的只有文字，不能提问，也不能代主人批准；会话模式的子智能体和定时任务的运行仍然不能。
 
 ## 10. 边界情况
 
@@ -384,7 +385,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 | 会话模式不唤醒 | 多一条规则。文字限制以后可能够用 | 统计显示会话模式话太多，改一个开关 |
 | 去掉 `send_message` 的 `interrupt` | 真实使用 0/38，但改方向时比"停下再发"少一步，留着没有成本 | 需要精简工具时 |
 | 用消息分批交付结果 | 能拆开的事各开一个子智能体就够了（§3） | 不做 |
-| 子智能体直接发给主人 | 主人定过只有主 Bot 跟主人说话 | 不做 |
+| 子智能体直接发给主人 | v0.6 改了，见 §17 | 已做（Bot 模式） |
 | 子智能体再派子智能体 | 树保持一层（D-53 保留的部分） | 另行讨论 |
 | 广播和共享消息板 | 同一句发给几个，用几次调用就够 | 不做 |
 
@@ -404,7 +405,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 | `crates/finx-core/src/prompts/bot.md` | §7.4 |
 | `crates/finx-protocol/src/event.rs`、`schema.json`，`packages/protocol/src/generated.ts` | `MailKind::Message` |
 | `packages/client/src/steps.ts`、`botChat.ts` 及测试 | 按 `mail.kind` 区分，消息不结束这一轮；新步骤 |
-| `apps/desktop/src/renderer/src/session/Agents.tsx`、`Chat.tsx`、`bots/BotPage.tsx`、locales | 消息卡片和"过程"里的一步 |
+| `apps/desktop/src/renderer/src/session/Agents.tsx`、`Chat.tsx`、locales | 消息卡片 |
 | `crates/finx-core/src/store/entry.rs` 和读它的 `session.rs`、`context.rs`、`kernel.rs`、`bot.rs` | `agent_message` 条目（§8） |
 | `crates/finx-mock/src/lib.rs` | 场景 `note`（子智能体发给主再接着做）、`relay_note`（Bot 交给它）、`note_session`（会话模式交给它）；`check` 场景跟着改名 |
 | `crates/finx-core/tests/`、`crates/finx-cli/tests/e2e_bots.rs` | §13 |
@@ -430,7 +431,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 
 **端到端**（`e2e_bots.rs`，模拟模型）：长活中途发消息 → Bot 被唤醒 → 主人收到气泡 → 子智能体继续 → 汇报再来一次。
 
-**桌面走查**（`bot-turn.mjs`，开发版和打好的包）：中途的气泡出现时"它在忙"的气泡还在，名字不变；"过程"里有这一步；会话页的卡片；子智能体没有被显示成做完。子之间的消息没有走查，用内核测试和客户端测试覆盖。
+**桌面走查**（`bot-turn.mjs`，开发版和打好的包）：中途的气泡出现时"它在忙"的气泡还在，名字不变；会话页的卡片；子智能体没有被显示成做完。子之间的消息没有走查，用内核测试和客户端测试覆盖。
 
 **真实模型统计**（`bot_turns.mjs`，要先给测试 Key 充值）：
 
@@ -539,3 +540,168 @@ D-53 改成：子智能体不能再派子智能体，也不能让空闲的智能
 - **子之间的消息真实模型没有用过**：`peer` 12 轮 0 条，它们用共享文件。机制留着，成本只有工具描述里的半句。
 - **Qwen 的分工和转告弱一些**：`whole`、`follow`、`stop` 告诉主人、`progress` 都比 DeepSeek 差。提示词是按 DeepSeek 调的，要不要为它调另说。
 - **Bot 自己写完中等长度的活**：`long`、`quiet` 里两千字的稿子约一半没有交出去，那时主人的下一句要等几十秒到几分钟，这也是 `long` 漏回的主要场合。老问题，不是这次造成的。
+
+## 17. Bot 的子智能体直接告诉主人（v0.6）
+
+### 17.1 为什么改
+
+主人的感受是长活交出去以后等得太久，中间什么都听不到。最先想的办法是让子智能体用 `send_message` 发进展、Bot 转告，主人看了代价后否掉了：
+
+| 走 Bot 转告 | 后果 |
+|---|---|
+| 每条进展唤醒一次 Bot | 多一次主会话的模型请求，带着 Bot 的全部上下文 |
+| 长寿 Bot 开口慢 | 25 万 token 的 Bot 第一个气泡要 20–30 秒，进展晚这么久才到 |
+| 转告期间挡路 | 主人这时说话，要等这一步做完才送达，正好和"要花时间的事在后台"相反 |
+
+所以把 `send_to_user` 下放：子智能体自己说，气泡马上出现，Bot 不醒，也不花模型请求。这推翻了 Bot 回合方案 §5.5 的"只有主 Bot 跟主人说话"。
+
+### 17.2 一个例子
+
+```
+主人  把 sales.csv 按月汇总，做成图表和一份分析报告
+Bot   send_to_user("好，我先把数据汇总出来。")
+Bot   spawn_agent(name: sales, task: "…")
+Bot   结束这一轮
+                                        （子智能体在处理）
+子    send_to_user("数据有 3 月的缺口，我先按其余 11 个月做。")     ← 气泡马上出现，Bot 不醒，它接着做
+子    send_to_user("汇总好了，正在画图。")                          ← 同上
+                                        （主人这时说话，Bot 立刻回，上下文里已经有这两句）
+主人  3 月的在 march.csv 里
+Bot   send_to_user("好，我让它加上。")
+Bot   send_message(to: sales, "3 月的数据在 march.csv，合进去。")
+                                        （子智能体做完，自动汇报）
+      <agent_report agent="sales"> 唤醒 Bot
+Bot   send_to_user("报告做好了：[报告](…)", end_turn)
+```
+
+### 17.3 工具
+
+| 谁 | `send_to_user` |
+|---|---|
+| Bot | 不变：`type`、`text`、`files`、`options`、`end_turn` |
+| Bot 的子智能体 | 同名，只有 `text` |
+| 会话模式的子智能体 | 没有，对方看得到它的状态，文字也没有地方显示 |
+| 定时任务的运行 | 没有，结果由 Bot 转告（定时任务方案 §2.3） |
+
+- **同名**：模型只记一个"跟用户说话"的工具。
+- **只有 `text`**：要解决的是进展，文字就够了。文件和结果由 Bot 在汇报回来时发。
+- **没有 `question`**：答复会回到 Bot 那里，子智能体等不到；要主人拿主意时仍然写进汇报（D-53）。
+- **没有 `end_turn`**：子智能体的轮次按有没有工具调用结束，发完接着做。
+- **不用确认**：和 `send_message` 一样。Bot 自己的 `send_to_user` 也不用。
+
+结果：`Sent. Keep working: your final report still follows.`。空文字报 `text must not be empty`。
+
+### 17.4 一条话走到哪里
+
+| 去处 | 什么时候 | 怎么走 |
+|---|---|---|
+| 主人的气泡、列表最后一条、未读、通知 | 调用时立刻 | 主会话发一个 `message_completed`，`mail.kind` 是 `to_user` |
+| 主会话的日志和 Bot 的上下文 | Bot 空闲：立刻。Bot 在忙：下一个边界，或者任务结束时 | `agent_to_user` 条目，模型读到 `<sent_to_user from="…">` |
+
+```
+<sent_to_user from="sales">
+数据有 3 月的缺口，我先按其余 11 个月做。
+</sent_to_user>
+```
+
+- **事件和写日志分开**：主人不能等 Bot。Bot 可能在等模型回复、在跑工具、在压缩，也可能卡在等批准上，等多久都有可能，所以气泡不跟着边界走。
+- **写日志要等边界**：Bot 在忙时，最后一条可能是还没有结果的工具调用，这时插一条 user 消息，请求会被拒绝。边界是信件本来就用的位置（§5.2），只追加的上下文也不受影响。
+- **任务结束时也写**：这一轮最后一次请求期间来的话，后面没有边界了，下一个任务可能很久以后才来。
+- **Bot 空闲时马上写**：子智能体多半是在 Bot 空闲时说话。等下一个任务才写的话，服务重启就丢了这些气泡。
+- **日志是单独的条目类型**：旧版读到不认识的条目类型会保留位置，读到不认识的 `kind` 会断掉历史（§8 里查过）。
+- **Bot 在忙时崩溃**：这之前发的话已经到了主人眼前，但没有写进主会话日志，重开后这条气泡不见，子智能体自己的日志里还有。窗口最多是一次请求或一批工具，可以接受。
+
+### 17.5 不改变的判断
+
+- **不唤醒**：没有 `wake`，不走信箱，空闲的 Bot 不开任务。这是这次改动要的结果，测试直接数 Bot 的请求次数。
+- **不算 Bot 回了话**：主人的话还没回时，子智能体说话不算回复，Bot 照样被提醒（§3.11）。扫描时这种条目既不算"发过"，也不算"有结果没发"（`owed`）。
+- **不影响汇报**：做完仍然自动汇报，唤醒 Bot，由 Bot 交付。子智能体一轮的结束只看汇报，界面上这条不当作结束（`steps.ts` 的 `endsRound`）。
+- **主人的回复归 Bot**：主人读到后说的话发给 Bot，Bot 读到 `<sent_to_user>` 就知道在说什么，要转达就用 `send_message`。
+- **智能体的话不算主人的话**（§9）：`<sent_to_user>` 同样不算，只说明主人听到过什么。
+
+### 17.6 界面
+
+- **气泡**：和 Bot 自己的一样，不写是哪个子智能体，主人只跟一个对象说话。按发出的时间排，Bot 在忙时也一样（`botChat` 按 `ts` 排）。
+- **列表和通知**：算一条 Bot 的消息，未读加一，有通知（`bots.rs` 的 `on_event`）。
+
+### 17.7 给模型的文字
+
+**任务说明**：`child_task.md` 中间那段换成一个位置，会话模式填 `child_on_the_way.md`（原文不变），Bot 填 `bot_child_on_the_way.md`：
+
+```
+Nothing you write reaches anyone until you finish, except what you send with send_to_user and send_message.
+
+The user asked for this and is waiting. They talk to your parent and can't see your work: all they have is what you tell them, and silence leaves them wondering whether anything is happening. A short word now and then puts them at ease. So from the moment you start, keep them posted as a habit of how you work, not something to remember at the end. On work of more than a few steps, call send_to_user with a brief update:
+- once you have seen what you are working with;
+- at each turning point: a stage done, a finding, a choice you made that affects the outcome, a blocker, a changed plan, or what your task asks you to tell them along the way;
+- and whenever about fifteen tool calls have passed since your last update: what is done and what comes next.
+Make the call alongside your next tool call: it doesn't stop your work, and your final report still follows. No command-by-command commentary, no word about retries, and no acknowledgement: they already know the work has started.
+
+They read your updates as coming from your parent, who sees them too. Write one or two short sentences in plain words, in the language your task is written in, and speak of the work as your own: "The sales data is in. March is missing, so I'm charting the other 11 months." Keep the machinery out: tool names, your task, your parent, agents and reports. Details and the finished result are not updates: they go in your report, and your parent delivers it.
+
+Use send_message for what another agent has to act on: what it needs from you, or a decision only your parent can make. It wakes your parent, so what the user only needs to hear goes straight to them. Send no acknowledgements.
+```
+
+从 `bot.md` 摘了什么，又为什么这样写：
+
+| `bot.md` 的内容 | 处理 | 为什么 |
+|---|---|---|
+| "只在真正的转折点发短消息：结果、决定、卡点、计划变化" | 摘，去掉"只"，多一个"阶段做完" | 子智能体现在的问题是说得太少（§16.3）；"结果"容易被理解成最终结果，所以写明阶段 |
+| "不逐条讲命令，不提重试" | 原样摘 | 进展变多以后更需要 |
+| （`bot.md` 没有）看清材料先说一句；约 15 次工具调用说一句；和下一个调用一起发 | 新加 | 第一版只写转折点，模型一直觉得还没到，有的走了 80 步才想起来（§17.9） |
+| （`bot.md` 没有）用户看不到你的工作，沉默让人不安，把汇报当成工作习惯 | 新加（主人提的） | 讲清原因，模型才不会逐条对照"现在算不算转折点" |
+| "在等的人只看得到你发的" | 摘意思 | 子智能体原来只知道"消息不是人发的"，不知道有人在等 |
+| "别把内部的东西写进去：工具名…" | 摘，加上任务、父智能体、子智能体、汇报 | 现在没有 Bot 替它改写 |
+| "说话用用户的语言""把活说成自己的" | 摘 | 同上；子智能体看不到对话，语言靠任务 |
+| 先回一句、`end_turn`、收尾规则 | 不摘 | Bot 已经回过了；子智能体没有这个参数 |
+
+**工具描述**：
+
+```
+Send the user a short message about your work. It reaches them at once, in the conversation they have with your parent, and doesn't stop your work.
+```
+
+**`bot.md`**（附录 A.1）改两句：写任务要用主人的语言；子智能体自己会说进展，读到 `<sent_to_user>` 不用重复。
+
+**Bot 版 `spawn_agent` 描述**讲中途的那句换成：
+
+```
+While it works, an agent tells the user how the work is going by itself, which you read as <sent_to_user>, and can send you an <agent_message> when it needs you to act; its report still follows.
+```
+
+### 17.8 第一版的教训
+
+第一版文字（只写转折点）在真实模型上暴露的问题，读模型的思考才看出来：子智能体的节奏很稳，每步 5–15 秒，但一口气走几十步，思考里基本不提要告诉用户，到第 70、80 步才想起来。提示词在第一条消息里，走远了就淡了。所以第二版加了具体的时点，第三版加了原因。
+
+### 17.9 没做的
+
+| 没做 | 为什么 | 什么时候再做 |
+|---|---|---|
+| 子智能体发文件 | 进展用文字够了，结果由 Bot 发 | 统计或试用里常有"做完一部分想先给主人看" |
+| 子智能体提问 | 答复回到 Bot，要多一条路把它转回来；写进汇报的路已经有 | 主人常常要等到做完才能回答一个早就能问的问题 |
+| 结果也由子智能体直接发、Bot 不醒 | Bot 要决定接下来做什么，也要保留"交付是 Bot 的责任" | 试用里交付的那次唤醒明显慢 |
+| 按时间提醒子智能体该说话了 | 主人定过不要按轮数加内核提醒；先看提示词够不够 | 统计里阶段之间仍然长时间没有话 |
+| 限流 | 不设没有证据的上限 | 统计里话明显太多 |
+
+### 17.10 真实模型统计
+
+百炼 Token Plan，`tools/bench/bot_turns.mjs`，每个场景每个模型 3 遍，轮数少，只看大方向。`stages`：分阶段的数据分析，没有人要求中途汇报；`blocker`：同样的活，数据缺了整个 3 月。单遍上限 `stages` 10 分钟、`blocker` 7 分钟，很多遍在上限内没做完，所以"最长沉默"有的算到上限为止。
+
+| 看什么 | 对照（没有这个功能，DeepSeek） | 第一版 DeepSeek | 第一版 Qwen | 第二版 DeepSeek | 第二版 Qwen |
+|---|---|---|---|---|---|
+| `stages` 有进展的遍数 | 0/3 | 2/3 | 1/3 | 3/3 | 2/3（另 1 遍 Bot 自己做了） |
+| `stages` 第一条进展（中位，秒） | 无 | 302 | 161 | 134 | 108 |
+| `stages` 最长沉默（中位，秒） | 没有可比的数 | 300 | 569 | 391 | 559 |
+| `blocker` 有进展的遍数 | 0/3 | 2/3 | 2/3（1 遍 Bot 自己做了） | 3/3 | 3/3 |
+| `blocker` 第一条进展（中位，秒） | 无 | 21 | 297 | 24 | 48 |
+| `blocker` 最长沉默（中位，秒） | 没有可比的数 | 没有可比的数 | 328 | 276 | 320 |
+| `blocker` 提前告诉主人缺 3 月 | 0/3 | 2/3 | 2/3 | 2/3 | 2/3 |
+| 进展唤醒 Bot 的次数 | | 0 | 0 | 0 | 0 |
+| 露工具名或内部词的进展 | | 0 | 0 | 0 | 0 |
+| 不是中文的进展 | | 0 | 0 | 0 | 0 |
+
+- **有效的**：Bot 不醒；进展都是中文，内容有用；第二版让第一句来得早了很多。
+- **还没解决的**：之后的沉默仍然长，"约 15 次工具调用说一句"基本没被执行。第三版（加了原因）在这次提交时还没有统计。如果文字到头，下一步是内核在连续很多步没说话时提醒一次，这要主人定（§17.9）。
+- **其他**：有的进展把最后的结果也说了，Bot 随后再交付一次；每条进展仍然偏长。两者都不影响使用，先看主人试用的感受。
+- **回归没跑完**：连发、叫停、小活变不变吵（`fan`、`ten`、`milestone`、`one`、`stop`）在这次提交时还没有跑。
+

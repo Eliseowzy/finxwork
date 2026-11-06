@@ -4,6 +4,7 @@ import { modelGroups, recentModels } from "@finx/client";
 import type { ModelsListResult } from "@finx/protocol";
 import { menuModels, type MenuModel } from "../format";
 import { Icon } from "../icons";
+import { onboardingEvent } from "../onboarding/Onboarding";
 import { useStore } from "../store";
 import { MenuItem } from "./Composer";
 
@@ -118,7 +119,13 @@ export function ModelList({ models, current, search = false, onPick }: {
             </div>
           );
         })}
-        {groups.length === 0 && <div className="mempty">{t("composer.noModel")}</div>}
+        {groups.length === 0 && list.length > 0 && <div className="mempty">{t("composer.noModel")}</div>}
+        {list.length === 0 && (
+          <>
+            <div className="mempty">{t("new.noModel")}</div>
+            <MenuItem icon="plus" label={t("new.connect")} onClick={() => window.dispatchEvent(new Event(onboardingEvent))} />
+          </>
+        )}
       </div>
     </div>
   );

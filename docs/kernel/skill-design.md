@@ -458,7 +458,7 @@ extract report.pdf
 **公布可用的命令**：都从命令表生成（`commands::available`）：先是内置命令，再是本会话可以显式调用的 Skill，按优先级排列；与内置命令重名的、文件已经读不出头部的不列。
 - ACP：`session/new`、`session/load`、`session/resume` 的应答之后发一次 `available_commands_update`（§11.5）。每项有 name、description；Skill 头部有 `argument-hint` 时，作为这一项的 `input.hint`（D-77）。
 - 原生协议：`skills/list` 带 `session_id` 时返回同样的命令（§11.4），桌面端用它做 `/` 菜单。
-- 命令行：`finx exec`、`finx resume -p` 的任务直接以 `/名字` 开头即可。`finx chat` 只用模型层、不经过内核，不支持。
+- 命令行：`finx exec` 的任务（包括 `--resume`）直接以 `/名字` 开头即可。`finx chat` 只用模型层、不经过内核，不支持。
 
 **为什么用 `/名字`**：
 - 这是用户最熟悉的写法；编辑器的 ACP 命令菜单本来就以 `/` 开头，Skill 进菜单不需要额外的映射。
@@ -714,7 +714,7 @@ not read: ~/.agents/skills, ~/.claude/skills (skills.other_apps is off)
 
 - `finx status`：显示当前目录可用的 Skill 数、进清单的数目和清单的 token 数；`--json` 里是 `skills: {enabled, active, listed, catalog_tokens, catalog_budget}`。
 - `finx doctor`：增加 skills 一项，显示加载了几个、几个加载失败；加载失败的原因列在 warning 里。失败的 Skill 不让这项检查失败，也不影响退出码。
-- `finx exec`、`finx resume`：会话 warning 照常输出到 stderr。`finx chat` 只用模型层、不经过内核，不加载 Skill。
+- `finx exec`：会话 warning 照常输出到 stderr。`finx chat` 只用模型层、不经过内核，不加载 Skill。
 
 ### 11.3 子智能体
 

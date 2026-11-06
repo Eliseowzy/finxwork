@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Verify "add to chat": a part of a page, picked in the embedded browser, lands in the composer.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -29,7 +30,7 @@ const env = { ...process.env, FINX_HOME: home, HOME: userHome, FINX_CREDENTIAL_S
 // ── the app, driven over the DevTools protocol (as e2e/stale-model.mjs) ──
 let app = null;
 async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(electron, [desktop, ...(process.env.FINXWORK_E2E_NO_SANDBOX ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`], {
     env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],

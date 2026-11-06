@@ -5,7 +5,7 @@ import { i18n } from "../shared/i18n";
 import { Notifier } from "./notifier";
 import { platform } from "./platform";
 import { preferences } from "./preferences";
-import { mainWindow, showMain } from "./windows";
+import { background, mainWindow, showMain } from "./windows";
 
 // System notifications and the Dock's number (docs/desktop/notification-design.md §5): the system's
 // side of the notifier. A click opens what the notification is about.
@@ -26,6 +26,8 @@ export function screenLocked(): boolean {
 
 function inFront(): boolean {
   if (recordTo) return false;
+  // Behind the person's work a test's app is never focused, and its notifications would reach them.
+  if (background) return true;
   return BrowserWindow.getFocusedWindow() !== null && !screenLocked();
 }
 

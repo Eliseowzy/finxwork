@@ -301,6 +301,17 @@ impl Registry {
                     bot.file.summary.last = Some(last(Speaker::User, &user.text_content(), images as u32, None, event.ts));
                     kept = true;
                 }
+                // What a sub-agent told the owner is a message like the bot's own
+                // (agent-messaging-design §17).
+                EventMsg::MessageCompleted {
+                    message: finx_llm::Message::User(user),
+                    mail: Some(mail),
+                    ..
+                } if mail.kind == finx_protocol::MailKind::ToUser => {
+                    bot.file.summary.last = Some(last(Speaker::Bot, finx_core::bot::told_words(&user.text_content()), 0, None, event.ts));
+                    bot.file.summary.unread += 1;
+                    kept = true;
+                }
                 EventMsg::ApprovalRequested { .. } => {
                     bot.file.summary.unread += 1;
                     kept = true;
@@ -603,6 +614,7 @@ impl Server {
         let folder = self.0.home.bot_files_dir(id);
         std::fs::create_dir_all(&folder).map_err(|e| RpcError::internal(format!("cannot create {}: {e}", folder.display())))?;
         let workspace = Workspace::open(&self.0.home, &folder, &self.0.overrides).map_err(errors::from_runtime)?;
+        let model = self.session_model(model, workspace.config.model.clone()).await?;
         let store: Arc<dyn SessionStore> = self.store().clone();
         let mut deps = workspace.kernel_deps(self.0.llm.clone(), store, &[]).map_err(errors::from_runtime)?;
         deps.browser_pool = Some(self.0.browser_pool.clone());
@@ -610,7 +622,7 @@ impl Server {
         deps.mcp_servers = self.session_mcp_servers(&workspace, &[]);
         deps.routines = Some(self.0.routines.clone());
         let options = StartOptions {
-            model: model.unwrap_or_else(|| workspace.config.model.clone()),
+            model,
             thinking: thinking.unwrap_or(workspace.config.thinking),
             permission_mode: workspace.config.permission_mode,
             cwd: workspace.cwd.clone(),

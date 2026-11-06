@@ -2,9 +2,10 @@ import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
+import type { PagePreviewRect, BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
+import { closePagePreview, openPagePreview, placePagePreview } from "./browser/pagePreview";
 import { devServers, stopDevServer } from "./browser/devservers";
 import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
 import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testNotification } from "./notify";
@@ -68,8 +69,12 @@ function browserPanel(p: unknown): p is BrowserPanel {
   if (session !== null && typeof session !== "string") return false;
   if (hold !== undefined && typeof hold !== "boolean") return false;
   if (editing !== undefined && typeof editing !== "boolean") return false;
-  if (rect === null) return true;
-  if (typeof rect !== "object" || rect === undefined) return false;
+  return rect === null || finiteRect(rect);
+}
+
+/** A rectangle as the page reports it: four finite numbers. */
+function finiteRect(rect: unknown): rect is PagePreviewRect {
+  if (typeof rect !== "object" || rect === null) return false;
   const r = rect as Record<string, unknown>;
   return ["x", "y", "width", "height"].every((k) => typeof r[k] === "number" && Number.isFinite(r[k]));
 }
@@ -289,6 +294,13 @@ export function registerIPC() {
     if (url) openURL(session, url, true);
     return !!url;
   });
+  // An HTML file in the preview over the window (bot-mode-design DD-159): false when it is not there.
+  ipcMain.handle("page-preview-open", (e, file: unknown, rect: unknown) => {
+    if (!trusted(e) || !revealable(file) || !finiteRect(rect)) return false;
+    return openPagePreview(e.sender, file.replace(/^~(?=$|\/)/, os.homedir()), rect);
+  });
+  ipcMain.on("page-preview-place", (e, rect: unknown) => trusted(e) && finiteRect(rect) && placePagePreview(e.sender, rect));
+  ipcMain.on("page-preview-close", (e) => trusted(e) && closePagePreview(e.sender));
   ipcMain.handle("browser-claim-home", (e, session: unknown) => {
     if (!trusted(e) || typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid browser session");
     return claimHomeBrowser(session);

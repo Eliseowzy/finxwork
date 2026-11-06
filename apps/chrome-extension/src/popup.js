@@ -1,6 +1,8 @@
-// The extension's page, from its toolbar icon (browser-design §8.4.7): how the connection stands
-// and what to do about it, the sessions with tabs here and the way back to their conversations,
-// and handing the tab in front to the agent. The worker holds the state.
+// The extension's page, from its toolbar icon (your-browser-design §3): one line on how things
+// stand, what to do about it if anything, and the conversations with tabs here. The worker holds
+// the state and says when it changes; details are in FinxWork's settings.
+
+import { headline, isWaiting, listed, offersTab } from "./panel.js";
 
 const msg = (name, ...args) => chrome.i18n.getMessage(name, args.map(String)) || name;
 const root = document.getElementById("root");
@@ -11,56 +13,101 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
+/** Lucide shapes, on its 24 grid; the stop is the composer's square. */
+const ICONS = {
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  stop: '<rect width="24" height="24" rx="4"/>',
+};
+
+function icon(name, className = "") {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  if (className) svg.setAttribute("class", className);
+  svg.innerHTML = ICONS[name];
+  return svg;
+}
+
 const act = (action) => chrome.runtime.sendMessage(action).then(draw);
 const closing = (action) => () => chrome.runtime.sendMessage(action).then(() => window.close());
-const button = (label, onclick, className = "") => el("button", { className, onclick, textContent: label });
 
-function status(state) {
-  const [dot, text] = {
-    connected: state.inUse ? ["on", msg("statusConnected")] : ["", msg("statusStandby")],
-    connecting: ["", msg("statusConnecting")],
-    not_open: ["", msg("statusNotOpen")],
-    missing: ["", msg("statusMissing")],
-    outdated: ["warn", msg("statusOutdated")],
-  }[state.host];
-  return el("span", { className: "status" }, el("i", { className: `dot ${dot}` }), text);
+function primary(label, onclick) {
+  return el("div", { className: "acts" }, el("button", { className: "primary", onclick, textContent: label }));
+}
+
+const glyph = (className, ...children) => el("span", { className: `glyph ${className}` }, ...children);
+const dot = (className) => el("i", { className: `dot ${className}` });
+
+/** A spinner keeps turning across a redraw: each starts where the turn stands now. */
+function spinner() {
+  const node = el("i", { className: "spin" });
+  node.style.animationDelay = `-${Date.now() % 900}ms`;
+  return node;
+}
+
+function sessionGlyph(s) {
+  if (isWaiting(s)) return glyph("", dot("warn"));
+  return s.state === "running" ? glyph("", spinner()) : glyph("done", icon("check"));
 }
 
 function sessionLine(s) {
-  if (s.handoff) return msg("handoff", s.handoff);
-  const tabs = s.tabs === 1 ? msg("oneTab") : msg("tabs", s.tabs);
+  if (s.handoff) return s.handoff;
   if (s.state === "awaiting_approval") return msg("approval");
-  return `${tabs} · ${s.state === "running" ? msg("working") : msg("finished")}`;
+  const tabs = s.tabs === 1 ? msg("oneTab") : msg("tabs", s.tabs);
+  return `${s.state === "running" ? msg("working") : msg("finished")} · ${tabs}`;
 }
 
 function session(s) {
-  const acts = el("div", { className: "acts" });
-  if (s.state === "running" && !s.handoff) acts.append(button(msg("stop"), () => act({ do: "stop", session: s.id }), "danger"));
-  acts.append(button(msg("back"), closing({ do: "back", session: s.id })));
-  if (s.handoff) acts.append(button(msg("done"), () => act({ do: "done", session: s.id }), "primary"));
-  return el("div", { className: "session" }, el("div", {}, el("b", { textContent: s.title }), el("span", { textContent: sessionLine(s) })), acts);
+  const text = el("span", { className: "text" }, el("b", { textContent: s.title }), el("span", { className: s.handoff ? "line whole" : "line", textContent: sessionLine(s) }));
+  const row = el("div", { className: "row" }, el("button", { className: "open", title: msg("back"), onclick: closing({ do: "back", session: s.id }) }, sessionGlyph(s), text, icon("chevron", "arrow")));
+  if (s.state === "running" && !s.handoff) {
+    const stop = msg("stop");
+    row.append(el("button", { className: "stop", title: stop, ariaLabel: stop, onclick: () => act({ do: "stop", session: s.id }) }, icon("stop")));
+  }
+  return s.handoff ? [row, primary(msg("done"), () => act({ do: "done", session: s.id }))] : [row];
 }
 
+/** A newer drawing that finishes first wins. */
+let drawing = 0;
+/** What is on the page: drawing it again would only lose the pointer's place and restart motion. */
+let drawn = null;
+
 async function draw() {
+  const turn = ++drawing;
   const state = await chrome.runtime.sendMessage({ get: "state" });
-  const parts = [el("div", { className: "head" }, el("img", { src: chrome.runtime.getURL("icons/32.png"), alt: "" }), "FinxWork", status(state))];
-  if (state.host === "not_open") {
-    parts.push(el("p", { className: "hint", textContent: msg("hintNotOpen") }));
-    parts.push(el("div", { className: "acts start" }, button(msg("openApp"), closing({ do: "open_app" }), "primary")));
-  } else if (state.host === "missing") {
-    parts.push(el("p", { className: "hint", textContent: msg("hintMissing") }));
-  } else if (state.host === "outdated") {
-    parts.push(el("p", { className: "hint", textContent: msg("hintOutdated") }));
-  } else if (state.host === "connected" && !state.inUse) {
-    parts.push(el("p", { className: "hint", textContent: msg("hintStandby") }));
-    parts.push(el("div", { className: "acts start" }, button(msg("useThis"), () => act({ do: "use_this" }))));
+  if (turn !== drawing) return;
+  const said = JSON.stringify(state);
+  if (said === drawn) return;
+  const first = drawn === null;
+  drawn = said;
+  const line = headline(state);
+  const parts = [
+    el(
+      "div",
+      { className: "head", role: "status" },
+      glyph("", dot(line.dot)),
+      line.count === undefined ? msg(line.title) : msg(line.title, line.count),
+    ),
+  ];
+  if (line.hint) parts.push(el("p", { className: "hint", textContent: msg(line.hint) }));
+  if (line.action) {
+    const action = { do: line.action.do };
+    parts.push(primary(msg(line.action.label), line.action.closes ? closing(action) : () => act(action)));
   }
-  for (const s of state.sessions) parts.push(session(s));
-  if (state.host === "connected" && state.inUse && state.sessions.length === 0) parts.push(el("p", { className: "hint", textContent: msg("nothing") }));
-  if (state.host === "connected" && state.inUse && state.offerable) {
-    parts.push(el("div", { className: "offer" }, button(msg("offer"), closing({ do: "offer" })), el("p", { className: "hint", textContent: msg("offerNote") })));
+  const sessions = listed(state);
+  if (sessions.length > 0) parts.push(el("div", { className: "sep" }));
+  for (const s of sessions) parts.push(...session(s));
+  if (offersTab(state)) {
+    parts.push(el("div", { className: "sep" }));
+    parts.push(el("div", { className: "row" }, el("button", { className: "open", title: msg("offerNote"), onclick: closing({ do: "offer" }) }, glyph("", icon("plus")), el("span", { className: "text", textContent: msg("offer") }))));
   }
+  if (first) root.classList.add("in");
   root.replaceChildren(...parts);
 }
 
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.changed) void draw();
+});
 void draw();

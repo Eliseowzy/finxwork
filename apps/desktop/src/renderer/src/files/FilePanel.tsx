@@ -7,11 +7,12 @@ import { SheetView } from "../docs/SheetView";
 import { useSessionDocs } from "../docs/state";
 import { Icon } from "../icons";
 import { useStore } from "../store";
-import { fileMenu, openRef, opensAsPage, otherView, showPage } from "../session/contentMenus";
+import { fileMenu, opensAsPage, otherView, showPage } from "../session/contentMenus";
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
 import { usePanelWidth } from "../panelWidth";
 import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { FileCard, FileLoading as Loading } from "./FileCard";
 import { ImageView } from "./ImageView";
 import { isGrid, isMarkdown, isPresentation, isSvg, previewable } from "./kind";
 import { Tree } from "./Tree";
@@ -270,31 +271,9 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   );
 }
 
-function Loading() {
-  const { t } = useTranslation("session");
-  return <div className="fpn-empty"><span className="mini-spin" aria-label={t("files.loading")} /></div>;
-}
-
 /** Why a file is not shown, and where else it opens. */
 function Card({ tab, text }: { tab: Tab; text: string }) {
-  const { t } = useTranslation("session");
-  const st = useStore();
-  const mac = window.finx?.platform === "mac";
-  const info = { path: tab.path, rel: tab.rel, kind: tab.error ? null : ("file" as const) };
-  return (
-    <div className="fpn-card">
-      <Icon name="file" />
-      <b>{tab.name}</b>
-      {/* The name is above; an error that starts with the path need not say it again. */}
-      <p>{text.startsWith(`${tab.path}: `) ? text.slice(tab.path.length + 2) : text}</p>
-      {!tab.error && (
-        <div className="fpn-card-b">
-          <button className="btn" onClick={() => void openRef(st, info, undefined, "system")}>{t("files.openDefault")}</button>
-          <button className="btn" onClick={() => window.finx?.revealPath(tab.path)}>{t(mac ? "content.revealFinder" : "content.reveal")}</button>
-        </div>
-      )}
-    </div>
-  );
+  return <FileCard path={tab.path} rel={tab.rel} text={text} gone={!!tab.error} />;
 }
 
 /** A choice to make, under the file: it changed elsewhere, it is gone, it would not save. */

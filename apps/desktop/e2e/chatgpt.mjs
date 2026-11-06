@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Build first: cargo build -p finx-cli; pnpm --filter @finx/desktop build
 // Exercises the real Electron UI and kernel with the local OAuth/Responses fixture.
+import { cdpPort } from "./lib/port.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +10,7 @@ import path from "node:path";
 import { fixture, finx, until, sleep } from "../../../crates/finx-connections/tests/chatgpt-fixture.mjs";
 const f = await fixture();
 const desktop = path.resolve(import.meta.dirname, "..");
-const port = 9800 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 const socket = path.join(f.home, "run/finx.sock");
 const locales = ["en", "zh-CN"].map(l => JSON.parse(fs.readFileSync(path.join(desktop, `src/locales/${l}/settings.json`))));
 const labels = key => locales.map(l => key.split(".").reduce((v, k) => v[k], l));

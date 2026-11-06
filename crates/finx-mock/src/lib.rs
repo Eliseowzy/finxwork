@@ -41,6 +41,8 @@
 //! | `web_search:QUERY[\|allowed=A,B][\|blocked=C][\|recency=week]` | `tool_search` for the search tool, `call_tool` on `web_search`, then `search done: <its result>` |
 //! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
 //! | `relay_slow:SECONDS` | a bot's opening line and a `spawn_agent` (named `writer`) that runs `sleep SECONDS`, a private line that ends the turn, then `回复：<the latest message>` sent with `end_turn` for whatever comes next, its report too |
+//! | `relay_told:SECONDS` | a bot's opening line and a `spawn_agent` (named `sales`) that runs `told`, a private line, then `send_to_user` of each thing that wakes it |
+//! | `told:SECONDS:TEXT` | a bot's sub-agent: `send_to_user` of TEXT, `sleep SECONDS`, then its report |
 //! | `check` | `tool_search`, `call_tool` on `list_agents`, its result sent with `end_turn`, then as `relay_slow` |
 //! | `stop_all` | the same with `stop_agents` and `all`, ahead of any message |
 //! | `relay_note:SECONDS` | as `relay_slow`, with a sub-agent that runs `note:SECONDS:3 月的数据整月缺失。` |
@@ -740,6 +742,18 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
             1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
             _ => Plan::Step(answer_latest(messages)),
         },
+        // A sub-agent that tells the owner itself, with the bot asleep meanwhile (§17).
+        "relay_told" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，我先把数据汇总出来。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "汇总销售数据", "task": format!("[[mock:told:{arg}:3 月的数据整月缺失，我先按其余 11 个月做。]] Sum it and report."), "name": "sales" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
         "note_session" => match step {
             0 => Plan::Step(Step::calls(vec![(
                 "spawn_agent",
@@ -755,6 +769,18 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 0 => Plan::Step(Step {
                     delay: Duration::from_millis(500),
                     ..Step::calls(vec![("send_message", json!({ "to": "main", "message": text }))])
+                }),
+                1 => Plan::Step(Step::calls(vec![("bash", json!({ "command": format!("sleep {seconds}") }))])),
+                _ => Plan::Step(Step::text("写完了。".to_string())),
+            }
+        }
+        "told" => {
+            let (seconds, text) = arg.split_once(':').unwrap_or((arg, "有新进展。"));
+            match step {
+                // By then the bot has ended its turn.
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(500),
+                    ..Step::calls(vec![("send_to_user", json!({ "text": text }))])
                 }),
                 1 => Plan::Step(Step::calls(vec![("bash", json!({ "command": format!("sleep {seconds}") }))])),
                 _ => Plan::Step(Step::text("写完了。".to_string())),
@@ -1210,6 +1236,19 @@ fn churn_step(seed: u64, k: usize) -> Step {
     }
 }
 
+/// `finx models check` offers a tool of its own and can put no directive in its words.
+fn check_plan(request: &Value, messages: &[Value]) -> Option<Plan> {
+    let tools = request.get("tools")?.as_array()?;
+    tools.iter().find(|tool| tool["function"]["name"] == "check_echo")?;
+    if messages.last().is_some_and(|m| m.get("role").and_then(Value::as_str) == Some("tool")) {
+        return Some(Plan::Step(Step::text("ping")));
+    }
+    let text = messages.last().map(content_text).unwrap_or_default();
+    let echo = |text: &str| ("check_echo", json!({"text": text}));
+    let calls = if text.contains("twice") { vec![echo("a"), echo("b")] } else { vec![echo("ping")] };
+    Some(Plan::Step(Step::calls(calls)))
+}
+
 async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> io::Result<()> {
     shared.stats.requests.fetch_add(1, Ordering::Relaxed);
     shared.stats.request_bytes.fetch_add(body.len() as u64, Ordering::Relaxed);
@@ -1225,7 +1264,10 @@ async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> i
             shared.stats.record_controls(&request);
             let messages = request.get("messages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
             let (name, arg, prompt, step) = directive(messages);
-            let plan = plan(shared, messages, &name, &arg, &prompt, step);
+            let plan = match check_plan(&request, messages) {
+                Some(plan) => plan,
+                None => plan(shared, messages, &name, &arg, &prompt, step),
+            };
             (name, plan)
         }
     };

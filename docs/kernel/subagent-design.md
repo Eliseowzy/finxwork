@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v2.6 |
-| 日期 | 2026-11-05 |
+| 版本 | v2.7 |
+| 日期 | 2026-11-06 |
 | 状态 | 已定稿；一期已实现并通过验收（§15）；二期、三期未开始 |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §2 核心概念、§6 内核运行时、§8 对外协议、§9 会话持久化；对外协议部分与 protocol-design.md（下称协议方案）衔接 |
 
@@ -41,7 +41,7 @@
   - 内核另有兜底：同一个文件的写入按路径加锁、依次进行，文件被别人改过时拒绝覆盖。
 - **可见性**：
   - 子会话与普通会话同格式、同目录，头部记录父链接；
-  - 不出现在 `finx sessions`、`resume last` 里，按 id 仍能打开。
+  - 不出现在 `finx sessions`、`--resume last` 里，按 id 仍能打开。
 - **前端**：
   - `finx exec` 等整棵树空闲（`idle`）才退出；
   - ACP 的一次 prompt 也等 `idle` 才回复，取消会停下整棵树；
@@ -121,6 +121,7 @@
 
 | v2.5 | 2026-11-05 | 智能体之间能互发消息（[智能体通信方案](agent-messaging-design.md)，修订 D-41、D-53、D-354、Q-43，新增 D-450–D-457）：子智能体有 `send_message`，发给主智能体时唤醒它，发给在跑的子智能体时下一步读到，发给空闲的被拒绝（§6.3）；信件多一种 `message`，日志里是 `agent_message` 条目（§7、§9.2）；`check_agents` 改名 `list_agents`，子智能体也能用，多一行最后说的话（§6.6） |
 | v2.6 | 2026-11-05 | Bot 版 `spawn_agent` 的描述和 `task` 说明改了，讲用途的段落和讲后台的段落都和会话模式不同（附录 A.1、bot-design D-482）；会话模式不变 |
+| v2.7 | 2026-11-06 | Bot 的子智能体有自己的 `send_to_user`，任务说明里讲中途的那段按模式换（附录 A.2，[智能体通信方案](agent-messaging-design.md) §17）；Bot 版 `spawn_agent` 描述讲中途的那句跟着改（附录 A.1） |
 
 ## 1. 目标与原则
 
@@ -182,7 +183,7 @@
 | 工具拿不到所属会话（`ToolCtx` 里没有会话句柄），工具注册表由进程共享 | 智能体工具不知道是谁在调用 | 智能体工具在 finx-core 中实现；`ToolCtx` 带上发起调用的会话的智能体树，工具调用时从中取（§6.1） |
 | 插话队列没有"已入队"事件；父阻塞在同步调用时，插话要等工具返回 | 界面看不到排队中的消息；用户插不进话 | §8 |
 | 会话之间没有引用关系，也没有内部投递通道 | 子的结果送不回父 | 智能体树（§4）与信箱（§7） |
-| 会话头部不记录来源；列表和"最近会话"不区分 | 子会话会出现在用户的列表里，`resume last` 可能选中子会话 | §9 |
+| 会话头部不记录来源；列表和"最近会话"不区分 | 子会话会出现在用户的列表里，`--resume last` 可能选中子会话 | §9 |
 | 中断只作用于当前会话 | 用户停不下后台的子智能体 | §12 |
 | `finx exec` 收到第一个 `task_completed` 就退出 | 后台子智能体还在运行时会被直接关掉 | 以 `idle` 为结束条件（§11.4） |
 | ACP 收到 `task_completed` 就回复这次 prompt | 被汇报唤醒的任务落在 prompt 之外 | prompt 在整棵树空闲时才结束（§11.5） |
@@ -653,11 +654,12 @@ pub struct AgentOrigin {
 | `agent_spawned` | 父会话 | `agent_id`、`name`、`description`（v2.0 起；之前的条目没有）、`session_file`、`call_id` | 恢复时重建登记表（§9.4） |
 | `mail` | 收件方会话 | `mail: {id, from, kind, status}` 加 `message` | 投递记录，同时就是模型看到的内容 |
 | `agent_message` | 收件方会话 | 同 `mail`，`kind` 是 `message` | 运行中发的话。单独一种条目：不认识它的旧版保留位置，历史不断（智能体通信方案 §8） |
+| `agent_to_user` | Bot 的主会话 | 同 `mail`，`kind` 是 `to_user` | Bot 的子智能体直接告诉主人的话，同样单独一种条目（智能体通信方案 §17） |
 
 ### 9.3 列表与"最近会话"
 
-- `finx sessions`、`resume last`、`--continue` 跳过头部带 `agent` 的会话。只读头部就能判断，不读整个文件。
-- 按 id 或路径打开（`finx resume <id>`）照常可用，用来检查子会话，同时提示它是哪个会话的子智能体。
+- `finx sessions`、`--resume last` 跳过头部带 `agent` 的会话。只读头部就能判断，不读整个文件。
+- 按 id 或路径打开（`finx exec --resume <id>`）照常可用，用来检查子会话，同时提示它是哪个会话的子智能体。
 - `finx sessions --agents` 列出子会话，缩进显示在父会话下面。
 - 服务层和 ACP 的会话列表同样排除子会话；查看某个会话的子智能体另有方法（§11.5）。
 
@@ -1213,7 +1215,7 @@ While it works, an agent can send you an <agent_message> about something that ca
 Leave delegated work to the agent: do not redo it or guess its result; list_agents shows how it stands. Only you see the reports; the user sees each agent's status, so relay what matters.
 ```
 
-Bot 的主会话中间两段相同（多个子智能体、`<agent_message>` 和留给它做），开头和讲后台的那段不同，也没有 `wait` 参数。开头：
+Bot 的主会话多个子智能体和留给它做的两段相同，开头、讲后台的那段和讲中途的那句不同，也没有 `wait` 参数。讲中途的那句见智能体通信方案 §17.7。开头：
 
 ```
 Hand work to a sub-agent: a separate agent with your workspace, permissions, model and tools, except that it cannot start agents. It works in the background while you stay free for the user. This is how you get anything beyond a quick answer done: research, data and files, scripts, long writing.
@@ -1279,6 +1281,8 @@ Stop running agents at once: name them, or set all to true. A stopped agent keep
 | `stop_agents.all` | `Stop every running agent.` |
 
 ### A.2 任务说明模板
+
+Bot 发起的子智能体，第三段换成[智能体通信方案](agent-messaging-design.md) §17.7 的文字（`bot_child_on_the_way.md`）。下面是会话模式的。
 
 ```
 You are a sub-agent named "{name}", started by another agent (your parent, addressed as "main") for the task below. Messages here come from your parent or from other agents, not from a human, and your final reply is delivered to your parent.

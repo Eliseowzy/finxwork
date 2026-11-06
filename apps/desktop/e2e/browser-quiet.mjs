@@ -3,6 +3,7 @@
 // (browser-design §8.3.6): the real app and kernel, a scripted model, and the main process
 // asked what has the keyboard. FINXWORK_E2E_WINDOWS names a program that lists the window
 // server's on-screen windows as JSON, to also catch what no Electron API reports.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -135,7 +136,7 @@ const evaluate = async (conn, expression, extra = {}) => {
   if (r.exceptionDetails) fail(`eval: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text}`);
   return r.result.value;
 };
-const port = 9400 + Math.floor(Math.random() * 300);
+const port = cdpPort();
 const inspect = port + 400;
 const app = spawn(electron, [`--inspect=${inspect}`, desktop, ...(process.env.FINXWORK_E2E_NO_SANDBOX ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`], {
   env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },

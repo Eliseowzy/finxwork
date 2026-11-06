@@ -1,10 +1,10 @@
 /* FinxWork's reading surface. UI sizes remain independent of content sizes. */
 :root {
   --md-size:15px; --md-leading:1.6; --md-code-size:13px;
-  --md-fg:#0b1633; --md-muted:#5b6478; --md-link:var(--accent-fg);
+  --md-fg:var(--msg); --md-muted:var(--l2); --md-link:var(--accent-fg);
   --md-prose-width:730px; --md-rich-width:1040px;
 }
-@media(prefers-color-scheme:dark){:root{--md-fg:#e8ecf4;--md-muted:#9aa3b5}}
+@media(prefers-color-scheme:dark){:root{--md-fg:var(--msg);--md-muted:var(--l2)}}
 .md{font:var(--md-size)/var(--md-leading) var(--font);color:var(--md-fg);min-width:0;overflow-wrap:anywhere}
 .md[data-mode=compact]{--md-size:14px}
 .md>*{margin:0}

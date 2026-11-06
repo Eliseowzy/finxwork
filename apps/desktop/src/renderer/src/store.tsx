@@ -151,6 +151,7 @@ export function errorText(e: unknown): string {
   if (e instanceof RpcError) {
     if (e.kind === "disconnected") return i18n.t("common:kernel.down");
     if (e.kind === "model_unavailable") return i18n.t("common:model.unavailable");
+    if (e.kind === "no_model") return i18n.t("common:model.none");
     return e.message;
   }
   return e instanceof Error ? e.message : String(e);

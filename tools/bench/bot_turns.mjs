@@ -19,7 +19,10 @@
 //   - during:     later messages answered while a sub-agent still worked, of those asked then;
 //   - ordered:    `poems`, the four poems came back in the order asked, one message each;
 //   - attached:   a file went out as an attachment message; linked: only as a link in words;
-//   - asked:      a choice went out as a question with options; prose: only as words ending in a
+//   - handed, pointed, kept: `report`, a file the run made went out in files; was only named in
+//                 words; was made and never named; alsoLinked: handed, and named in words too;
+//                 noFile: the run made no file;
+//   - asked:     a choice went out as a question with options; prose: only as words ending in a
 //                 question;
 //   - rejected:   a send the kernel refused (printed with why): it costs a round trip, the owner
 //                 sees nothing;
@@ -36,6 +39,14 @@
 //   - wokenByNote: tasks those messages started: what they cost;
 //   - answered:   the main agent's send_message after a note, to see that nobody goes back and forth;
 //   - peerNotes:  what sub-agents sent one another;
+//   - updates:    what sub-agents told the owner themselves (send_to_user), each printed;
+//   - updateRuns: runs with at least one; updateLeaks, updateInternal: of them, naming a tool or
+//                 the machinery; updateOtherLanguage: with no Chinese, when the owner writes Chinese;
+//   - firstUpdateMs: from the first agent's start to the first update, median and worst;
+//   - gapMs:      the longest the owner went without a word while agents worked, per run; workMs: how
+//                 long they worked; updateChars: how long an update is;
+//   - botSteps:   the requests the bot made: an update must not add any;
+//   - repeated:   the bot's messages that say again what an update said;
 //   - covered:    `ten`, runs in which the owner heard of all ten companies;
 //   - early:      `blocker`, `milestone`: the owner heard before the last report;
 //   - inTask:     `milestone`, the bot asked for the step in the agent's task;
@@ -56,6 +67,10 @@
 //   FINX_BENCH_SEED=<file>     each run's bot starts with this conversation (a session log with
 //                              __FILES__ for the bot's folder and __USER__ for the home folder):
 //                              a bot with a long history behaves unlike a new one
+//   FINX_BENCH_APP=1           connects as the desktop app does, so the bots get its section of the
+//                              prompt; browser tools then hang, as nothing here serves them
+//   FINX_BENCH_ASK=<text>      `ask`, `report`: the owner's words
+//   FINX_BENCH_FILES=<dir>     `report`: what the bot's folder starts with, the report already written
 //
 // It uses a home of its own, so the person's ~/.finx is not touched.
 import { spawn } from "node:child_process";
@@ -164,6 +179,12 @@ async function settled(w, since, ms, done) {
 /** The tool a call really runs, deferred or not. */
 const toolOf = (e) => (e.name === "call_tool" ? e.args?.name : e.name);
 const isSend = (e) => e.type === "tool_started" && e.name === "send_to_user";
+/** A sub-agent's own message to the owner (agent-messaging-design §17). */
+const isUpdate = (e) => e.type === "message_completed" && e.mail?.kind === "to_user";
+const updateText = (e) => e.message.content.map((c) => c.text ?? "").join("").replace(/<\/?sent_to_user[^>]*>/g, "").trim();
+/** What a bubble says, whichever agent sent it. */
+const bubbleText = (e) => (isUpdate(e) ? updateText(e) : String(e.args?.text ?? ""));
+const isBubble = (e) => isSend(e) || isUpdate(e);
 const isCall = (e, name) => e.type === "tool_started" && toolOf(e) === name;
 const firstAfter = (w, at, test) => w.events.find((e) => e.at >= at && test(e));
 const long = "写一篇一万字的小作文，主题随便，写好整理成文件告诉我。";
@@ -180,6 +201,19 @@ function dailySales() {
     if (d.getUTCMonth() === 2) continue;
     for (const region of ["北区", "南区", "东区", "西区"]) rows.push(`${d.toISOString().slice(0, 10)},${region},${1000 + ((d.getUTCDate() * 37 + region.charCodeAt(0)) % 900)}`);
   }
+  return rows.join("\n") + "\n";
+}
+/** A small table with a story to find, so an agent is done in a few minutes: the east grows, the
+ * north dips in spring, the west drops after a price change in September. */
+function monthlySales() {
+  const series = {
+    北区: [812, 798, 640, 655, 701, 790, 806, 821, 815, 830, 844, 902],
+    南区: [655, 640, 662, 671, 668, 690, 702, 695, 710, 722, 731, 788],
+    东区: [520, 548, 575, 610, 642, 668, 705, 741, 776, 812, 851, 913],
+    西区: [701, 688, 712, 705, 721, 718, 730, 726, 612, 581, 575, 590],
+  };
+  const rows = ["month,north,south,east,west"];
+  for (let m = 0; m < 12; m++) rows.push(`2026-${String(m + 1).padStart(2, "0")},${Object.values(series).map((s) => s[m]).join(",")}`);
   return rows.join("\n") + "\n";
 }
 // Which way a request goes. What needs research, data, files or long writing goes to an agent
@@ -205,6 +239,34 @@ const scenarios = {
   hello: { oneByOne: true, say: () => ["你好，你是谁？用一句话回答。", "你能帮我做什么？简单说。", "谢谢！"].map((t) => [0, t]) },
   // The message types (bot-design §3.12): is a file sent as one, and a choice asked as one?
   files: { say: () => [[0, "写一份 100 字的周报，存成 report.md，再用 Python 把 1 到 5 的平方写进 squares.csv，都发给我。"]] },
+  // A question, not a request for a file: the owner gets a conclusion, and the long version the bot
+  // chose to write is the file. Is it handed over, or only named at the end of the words?
+  report: {
+    ms: 600_000,
+    files: process.env.FINX_BENCH_FILES
+      ? Object.fromEntries(fs.readdirSync(process.env.FINX_BENCH_FILES).map((f) => [f, fs.readFileSync(path.join(process.env.FINX_BENCH_FILES, f), "utf8")]))
+      : { "regions.csv": monthlySales() },
+    say: () => [[0, process.env.FINX_BENCH_ASK ?? "我文件夹里的 regions.csv 是公司今年四个区的月度收入，今年情况怎么样？帮我详细分析一下，要写得全面一点。"]],
+    check(t, w, at, bot) {
+      const before = new Set(Object.keys(scenarios.report.files));
+      const folder = path.join(home, "bots", bot.id, "files");
+      // With FINX_BENCH_FILES the report is already written: a seeded conversation cut just before
+      // it is sent, the moment this measures.
+      const made = process.env.FINX_BENCH_FILES ? [...before] : fs.readdirSync(folder, { recursive: true, withFileTypes: true }).filter((f) => f.isFile()).map((f) => f.name).filter((f) => !before.has(f));
+      const failed = new Set(w.events.filter((e) => e.type === "tool_completed" && e.result.is_error).map((e) => e.call_id));
+      const sends = w.events.filter((e) => isSend(e) && !failed.has(e.call_id));
+      const inFiles = sends.flatMap((e) => (e.args.files ?? []).map((f) => path.basename(f.path)));
+      const words = sends.map((e) => String(e.args.text ?? "")).join("\n");
+      const handed = made.some((f) => inFiles.includes(f));
+      const named = made.some((f) => words.includes(f));
+      if (!made.length) t.noFile++;
+      else if (handed) t.handed++;
+      else if (named) t.pointed++;
+      else t.kept++;
+      if (handed && named) t.alsoLinked++;
+      console.log(`   (made: ${made.join(", ") || "none"}; in files: ${inFiles.join(", ") || "none"})`);
+    },
+  },
   // The answers can be listed: a question with options fits.
   choice: { say: () => [[0, "我有两份周报草稿：A 版详细，B 版简洁。你不知道我要哪版，先问我一下，我选了你再往下写。"]] },
   // The answers cannot all be listed (a name, a date): words may fit better.
@@ -242,7 +304,7 @@ const scenarios = {
     ms: 600_000,
     say: () => [[0, `查一下这十家公司的主营业务和最新一年的营收，每查完一家就告诉我：${companies.join("、")}。`]],
     check(t, w) {
-      const said = w.events.filter(isSend).map((e) => String(e.args?.text ?? "")).join("\n");
+      const said = w.events.filter(isBubble).map(bubbleText).join("\n");
       t.covered += companies.every((c) => said.includes(c)) ? 1 : 0;
     },
   },
@@ -256,8 +318,15 @@ const scenarios = {
       t.early += beforeLastReport(w, /备份(已经|已)?(好|完|成)|backup.*(done|complete)/i, (e) => e.at > (w.events.find((x) => x.type === "agent_started")?.at ?? Infinity)) ? 1 : 0;
     },
   },
-  // Long work with nothing asked along the way: the messages are the noise.
+  // Long work with nothing asked along the way.
   quiet: { ms: 600_000, say: () => [[0, long.replace("一万字", "两千字")]] },
+  // Work in stages, with nothing asked along the way and nothing wrong: what the owner hears while
+  // it runs is what updates are for.
+  stages: {
+    ms: 600_000,
+    files: { "sales.csv": dailySales() },
+    say: () => [[0, "请交给子智能体去做：把我文件夹里的 sales.csv 先核对数据质量，再按月和按地区汇总，用 Python 画两张图，最后写一份一千字的分析报告，都存成文件。"]],
+  },
   // A problem only working through the data shows, the case the plan is for (§3.1): the file has a
   // row per day and looks fine at a glance, but March is not in it. The owner should not wait for
   // the whole job to learn of it.
@@ -322,7 +391,7 @@ const companies = ["苹果", "微软", "谷歌", "亚马逊", "特斯拉", "英�
 /** A message that says this reached the owner before the last report came. */
 function beforeLastReport(w, words, also = () => true) {
   const last = w.events.filter((e) => e.type === "message_completed" && e.mail?.kind === "report").at(-1);
-  return w.events.some((e) => isSend(e) && also(e) && (!last || e.at < last.at) && words.test(String(e.args?.text ?? "")));
+  return w.events.some((e) => isBubble(e) && also(e) && (!last || e.at < last.at) && words.test(bubbleText(e)));
 }
 const isAck = (e) => /我看|我查|我去|稍等|看一下|查一下|let me|checking/i.test(String(e.args?.text ?? "")) && String(e.args?.text ?? "").length < 30;
 const tools = /\b(send_to_user|spawn_agent|send_message|end_turn|list_agents|stop_agents|tool_search|call_tool|bash|read|write|edit|tool_call|call_[a-z0-9]+)\b/i;
@@ -451,6 +520,36 @@ async function oneRun(name, s, run, t) {
   });
   t.peerNotes += events.filter((e) => e.type === "agent_event" && e.event.type === "message_completed" && e.event.mail?.kind === "message").length;
 
+  // What agents told the owner themselves, what it cost, and how long the owner went without a word.
+  const updates = events.filter(isUpdate);
+  t.updates += updates.length;
+  t.updateRuns += updates.length ? 1 : 0;
+  for (const e of updates) {
+    const text = updateText(e);
+    console.log(`   (update from ${e.mail.from.name}: ${text.replace(/\s+/g, " ").slice(0, 400)})`);
+    t.updateChars.push(text.length);
+    t.updateLeaks += tools.test(text) ? 1 : 0;
+    t.updateInternal += internal.test(text) ? 1 : 0;
+    t.updateOtherLanguage += /[\u4e00-\u9fff]/.test(text) ? 0 : 1;
+  }
+  const firstAgent = events.find((e) => e.type === "agent_started");
+  if (updates.length && firstAgent) t.firstUpdateMs.push(updates[0].at - firstAgent.at);
+  t.botSteps += events.filter((e) => e.type === "message_completed" && e.message.role === "assistant").length;
+  if (firstAgent) {
+    const lastStatus = events.filter((e) => e.type === "agent_status" && ["completed", "failed", "interrupted"].includes(e.status)).at(-1);
+    // Up to the end of the work, or of the run when it was still going.
+    const end = lastStatus?.at ?? events.at(-1).at;
+    const moments = [firstAgent.at, ...events.filter(isBubble).map((e) => e.at).filter((at) => at > firstAgent.at && at < end), end];
+    t.gapMs.push(Math.max(0, ...moments.slice(1).map((at, i) => at - moments[i])));
+    t.workMs.push(end - firstAgent.at);
+  }
+  // The bot saying again what the owner has: most of an update's words in one of its later messages.
+  for (const e of updates) {
+    const words = updateText(e).replace(/[\s，。、,.!！:：;；]/g, "");
+    const later = calls.filter((c) => c.at > e.at).map((c) => String(c.args.text ?? "").replace(/[\s，。、,.!！:：;；]/g, ""));
+    if (words.length >= 12 && later.some((x) => x.includes(words.slice(0, 12)))) t.repeated++;
+  }
+
   // How long the owner waits for a bubble, and whether the work went on meanwhile.
   at.forEach((time, i) => {
     const bubble = firstAfter(w, time, isSend);
@@ -472,7 +571,7 @@ async function oneRun(name, s, run, t) {
     if (next === 4) t.ordered++;
     else console.log(`   (order: got through ${next} of the 4 poems)`);
   }
-  s.check?.(t, w, at);
+  s.check?.(t, w, at, bot);
   // The first decision: what the first reply called, and how long it thought before.
   const opening = events.find((e) => e.type === "message_completed" && e.message.role === "assistant");
   const openingCalls = opening ? opening.message.content.filter((x) => x.type === "tool_call").map((x) => x.name) : [];
@@ -493,19 +592,21 @@ async function oneRun(name, s, run, t) {
 const totals = {};
 await call("initialize", { protocol_version: 2, client_info: { name: "bot-turns" } });
 await call("bots/subscribe", {});
+if (process.env.FINX_BENCH_APP) await call("browser/host");
 for (const [name, s] of Object.entries(scenarios)) {
   if (only.length && !only.includes(name)) continue;
   const t = (totals[name] = {
     runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, failed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
-    ordered: 0, attached: 0, linked: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
+    ordered: 0, attached: 0, linked: 0, handed: 0, pointed: 0, kept: 0, alsoLinked: 0, noFile: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
     notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0, alone: 0, thinking: [], ownRounds: [],
+    updates: 0, updateRuns: 0, updateLeaks: 0, updateInternal: 0, updateOtherLanguage: 0, firstUpdateMs: [], gapMs: [], workMs: [], updateChars: [], botSteps: 0, repeated: 0,
   });
   for (let run = 0; run < runs; run += parallel) {
     const batch = Array.from({ length: Math.min(parallel, runs - run) }, (_, k) => oneRun(name, s, run + k, t).catch((e) => console.log(`${name} #${run + k + 1}: ${e.message}`)));
     await Promise.all(batch);
   }
-  for (const key of ["firstMs", "nextMs", "thinking", "ownRounds"]) t[key] = { median: median(t[key]), worst: t[key].length ? Math.max(...t[key]) : null };
+  for (const key of ["firstMs", "nextMs", "thinking", "ownRounds", "firstUpdateMs", "gapMs", "workMs", "updateChars"]) t[key] = { median: median(t[key]), worst: t[key].length ? Math.max(...t[key]) : null };
 }
 console.log("\n" + JSON.stringify(totals, null, 1));
 server.kill();

@@ -13,6 +13,7 @@ import { useGeometry } from "./sheet/geometry";
 import { ImpactBar } from "./sheet/ImpactBar";
 import { decimalsOf, editTextOf, inputOp, isHardcoded, lensAt, lensText, MAX_PASTE, parseTsv, pasteOps, readable, readLenses, readSizes, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, UNITS, withLens, writeLenses, writeSizes, type Lens, type SelectionStats, type Sizes, type Unit } from "./sheet/model";
 import { TraceBar, type Trace } from "./sheet/TraceBar";
+import { useScope } from "../session/scope";
 import { quoteToComposer, setDocInfo, setSheetViewing, type DocTab, type Jump } from "./state";
 
 export { inputOp } from "./sheet/model";
@@ -44,6 +45,7 @@ type Cache = { key: string; cells: Map<string, CellData>; blocks: Set<number>; m
 type Activity = { revision: number; title: string; impact?: Impact };
 
 export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc: RpcClient; session: string; tab: DocTab; jump?: Jump | null; activeView?: boolean }) {
+  const scope = useScope();
   const { t, i18n } = useTranslation("session");
   const st = useStore();
   const info = tab.info;
@@ -680,6 +682,7 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
     if (shownIn && shownIn.unit !== 1) text += `\n\n${t("sheet.lensQuote", { unit: t(`sheet.unit${shownIn.unit}`) })}`;
     quoteToComposer(session, { quote: { path: info.path, doc_id: docId, sheet: sheet.name, range: selectedRange, text } });
     st.show(t("sheet.quoted"));
+    scope?.leave?.();
   };
 
   // ── moving ──

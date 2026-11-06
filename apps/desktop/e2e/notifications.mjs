@@ -11,6 +11,7 @@
 //   node apps/desktop/e2e/notifications.mjs
 //   FINXWORK_E2E_SHOTS=<folder> …   also screenshots each step
 //   FINXWORK_E2E_NO_BUILD=1 …       uses the builds there are
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -113,12 +114,14 @@ function finxCalls(...calls) {
       }
     });
     s.on("error", reject);
+    // A kernel told to shut down may go before it answers.
+    s.on("close", () => reject(new Error("the kernel closed the connection")));
   });
 }
 
 // ── the app, driven over the DevTools protocol ──
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 function launch() {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
     env: { ...process.env, HOME: work, FINX_HOME: home, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_NOTIFIED: notified, FINXWORK_NO_BROWSER: "1" },
@@ -247,7 +250,8 @@ try {
   await away(page);
 
   step("2. every window closed: the main process still says so, and a click opens a window on the bot");
-  await page.run(`window.close()`).catch(() => {});
+  // After the answer: a window that closes first leaves the question unanswered for good.
+  await page.run(`void setTimeout(() => window.close(), 50)`).catch(() => {});
   page.close();
   await sleep(500);
   const session = (await finxCalls(["bots/subscribe"])).bots[0].session_id;

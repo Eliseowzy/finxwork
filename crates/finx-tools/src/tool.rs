@@ -51,6 +51,12 @@ pub trait Tool: Send + Sync + 'static {
         self.origin()
     }
 
+    /// For a tool from outside: whether one call runs without asking in the modes that ask.
+    fn runs_unasked(&self, args: &Value) -> bool {
+        let _ = args;
+        false
+    }
+
     /// Lines added to the "tool guidelines" part of the system prompt.
     fn guidelines(&self) -> &[&'static str] {
         &[]

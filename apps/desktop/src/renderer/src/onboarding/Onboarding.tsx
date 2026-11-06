@@ -108,7 +108,7 @@ function Ready({ onDone }: { onDone: () => void }) {
           <span>{t("onboarding.ready.active", { count: available.length })}</span>
         </div>
         <div className="connection-models">
-          {available.slice(0, 6).map((m) => (
+          {(chosen ? [chosen, ...available.filter((m) => m !== chosen)] : available).slice(0, 6).map((m) => (
             <div className="connection-model" key={m.id}>
               <span>
                 <strong>{m.name}</strong>

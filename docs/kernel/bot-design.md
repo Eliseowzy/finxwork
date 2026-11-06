@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.26 |
-| 日期 | 2026-11-05 |
+| 版本 | v1.29 |
+| 日期 | 2026-11-06 |
 | 状态 | 一期已实现（分支 feat/bot-mode），测试与真实模型验收见 §8。二期（§10）是方向，开工前另行细化 |
 | 关系 | 产品需求见 [docs/desktop/bot-mode-design.md](../desktop/bot-mode-design.md)（下称 PRD）。扩展 technical-design.md（下称总方案）的 §7.2 系统提示词、§9 会话持久化、§11.5 受保护路径，protocol-design.md（下称协议方案）的 §3 服务层、§6 原生协议。一期不改输入队列和子智能体的调度；任务循环只加两处判断：结束标记（§3.3）和没回话时的提醒（§3.11） |
 
@@ -43,6 +43,9 @@
 | v1.24 | 2026-11-05 | 模型回了一条空回复不再算连接错误，交给 §3.11 判断要不要提醒；读不出来的内容才算失败（D-464）；D-321 里没查明的"回复全是空"有了原因 |
 | v1.25 | 2026-11-05 | 头像的小角色换成 8 种眼神（§4，PRD DD-158）；旧名字仍能读出来 |
 | v1.26 | 2026-11-05 | 提示词第二版：`bot.md` 改成"主人跟你说话，活由子智能体做"，判断从估轮数改成看类型；每句话后面的提示和没回话的提醒改文字；Bot 版 `spawn_agent` 的描述去掉"自己做"的出口（§3.14、附录 A、D-480–D-482；统计见[回合方案](bot-turn-design.md) §14） |
+| v1.27 | 2026-11-06 | 气泡不再带"过程"：`botChat` 只产出气泡，步骤留在会话历史里，Bot 页不显示（§3.4，PRD DD-163） |
+| v1.28 | 2026-11-06 | Bot 交文件走 `files`，不再被教成写链接：桌面段换成 `prompts/app_bot.md`，`bot.md` 和工具说明改成结论和文件一次发（§2.3、§3.12、附录 A、D-555） |
+| v1.29 | 2026-11-06 | Bot 的子智能体有自己的 `send_to_user`（只有 `text`），直接告诉主人进展，Bot 不被唤醒（§3.6，[智能体通信方案](agent-messaging-design.md) §17，D-556–D-559） |
 
 ## 方案摘要
 
@@ -95,7 +98,7 @@
 | Bot 会话 | 头部带 `bot` 的会话：Bot 唯一的那段对话 |
 | 主人 | 使用这个 Bot 的人 |
 | 气泡 | 桌面端显示的一条消息：主人的一条消息，或者 Bot 的一次成功的 `send_to_user` |
-| 私有文字 | Bot 会话里普通的助手文字和思考。只在"过程"里看得到，永远不送到主人那里 |
+| 私有文字 | Bot 会话里普通的助手文字和思考。Bot 页不显示，永远不送到主人那里 |
 | 子智能体 | Bot 用 `spawn_agent` 起的子智能体 |
 | 私有文件夹 | 会话自己的工作目录，在 finx 数据目录里：无项目会话的 `chats/<uuid>/`，Bot 的 `bots/<id>/files/` |
 | 提示词配置 | 拼系统提示词时选哪份基础段：会话配置用 base.md，Bot 配置用 bot.md（§2.3） |
@@ -179,14 +182,14 @@
   - `has_no_project(cwd)`：现在的 `is_chat_dir` 加上 `bots/<id>/files/`，供 `Workspace::open` 判断有没有项目；
   - `private_folder(cwd)`：cwd 恰好是 `chats/<uuid>/` 或 `bots/<id>/files/` 时返回它，供写保护放行（§2.5）。
 - **工具**：与无项目会话相同（基础工具、连接器、技能、子智能体工具），另加 `send_to_user`（§3.2）。挂法与子智能体工具相同：`extended(tools, "bot", bot::tools)`，在 `agent_tree` 之后挂，所以子智能体拿到的工具里没有它。恢复会话时按头部的 `bot` 同样挂上（工具不记在日志里，恢复时本来就重建）。
-- **权限与模型**：默认模型与新建会话相同（PRD DQ-54）。权限模式按 §3.8，会话启动时是配置的默认值，桌面端接入后按主人的选择改；桌面端接入，所以审批可交互。
+- **权限与模型**：默认模型与新建会话相同（PRD DQ-54）。没有默认模型时，要新开对话的 `bots/open` 返回 `no_model`（standalone-cli-design §7.2），已有的对话照常打开。权限模式按 §3.8，会话启动时是配置的默认值，桌面端接入后按主人的选择改；桌面端接入，所以审批可交互。
 
 ### 2.3 系统提示词：按会话类型选配置
 
 **现在的系统提示词怎么来的**（总方案 §7.2，`prompt.rs` 的 `build_system_prompt`）：内核在会话开始时按段拼一次，之后冻结，写进日志的 system_prompt 条目；恢复会话时用日志里那份，子智能体沿用父的那份。各段依次是：
 
 1. 基础段：内置的 `prompts/base.md`；配置了 `system_prompt_file` 时换成那个文件；
-2. 桌面段：会话开始时桌面端连着，就加 `prompts/app.md`（文件链接、命令代码块的写法）；
+2. 桌面段：会话开始时桌面端连着，就加 `prompts/app.md`（文件链接、命令代码块的写法）；Bot 换成 `prompts/app_bot.md`，只有命令代码块的写法，文件走 `send_to_user`（§3.12，D-555）；
 3. `<tool_guidelines>`：各工具自带的使用规则；
 4. 指令：`~/.finx/AGENTS.md`、项目的指令文件、配置的 `instructions.extra`；
 5. 技能清单；
@@ -215,8 +218,8 @@ pub enum PromptProfile {
 - **内核自己决定用哪个配置**：`Kernel::start` 带 `bot` 时用 Bot 配置，否则用会话配置。提示词的文字不经过协议，桌面端只告诉服务层"打开这个 Bot"。
 - **共用的两节**：base.md 里"Numbers and data""Acting with care"两节，两种配置都要。把它们移到 `prompts/shared/numbers_and_data.md` 和 `prompts/shared/acting_with_care.md`，base.md 和 bot.md 用 `{{numbers_and_data}}`、`{{acting_with_care}}` 引用，内置文本第一次用时替换一次。会话配置拼出的文字与现在逐字相同（测试拿现在的 base.md 原文比对）。各自不同的是身份、一轮怎么过、怎么工作、怎么说话（bot.md 全文见附录 A.1）。
 - **覆盖文件也按配置分**：`system_prompt_file` 只换会话配置的基础段，意思不变；另加 `bot_prompt_file` 换 Bot 配置的。覆盖文件里也可以用上面这些标记。`bot_prompt_file` 的用途是调提示词时不用重新编译，验收时改几句就能对比。
-- **子智能体用会话配置**：子智能体本来沿用父的系统提示词（子智能体方案 D-42）。Bot 的提示词讲的是怎么跟主人聊天、只有 `send_to_user` 可见，子智能体没有这个工具，它的回复是写给 Bot 的汇报。所以 Bot 会话开始时，用同一份输入（工作目录、指令、技能、环境）按会话配置多拼一份，存在 `SessionState.sub_agent_prompt`；`spawn_agent` 有它就用它代替父的基础提示词。指令和技能只扫描一次，拼两遍。恢复 Bot 会话时按当时的输入重拼这一份：子智能体都是新会话，本来就以当时为准。
-  - 代价：子智能体的第一个请求用不上 Bot 提示词的缓存。子智能体与 Bot 的工具列表本来就不同（没有智能体工具和 `send_to_user`），损失只是一次系统提示词长度的未命中。
+- **子智能体用会话配置**：子智能体本来沿用父的系统提示词（子智能体方案 D-42）。Bot 的提示词讲的是怎么跟主人聊天，子智能体的最后回复是写给 Bot 的汇报；它中途怎么跟主人说话写在任务说明里（[智能体通信方案](agent-messaging-design.md) §17.7）。所以 Bot 会话开始时，用同一份输入（工作目录、指令、技能、环境）按会话配置多拼一份，存在 `SessionState.sub_agent_prompt`；`spawn_agent` 有它就用它代替父的基础提示词。指令和技能只扫描一次，拼两遍。恢复 Bot 会话时按当时的输入重拼这一份：子智能体都是新会话，本来就以当时为准。
+  - 代价：子智能体的第一个请求用不上 Bot 提示词的缓存。子智能体与 Bot 的工具列表本来就不同（没有派子智能体的工具，`send_to_user` 也只有文字），损失只是一次系统提示词长度的未命中。
 
 **为什么不让桌面端把提示词传进来**
 
@@ -276,7 +279,7 @@ pub enum PromptProfile {
   - 先回一句再去做事、做的过程中发进展、做完发结果，都是"发不发、什么时候发"的选择，由模型决定；
   - 什么时候算这一轮说完了，模型用 `end_turn` 明说。
 - **参数**：`type` 说明这是什么消息，不写就是 `text`；各类型的参数见 §3.12。`end_turn`（可选，布尔）。描述与参数说明见附录 A.3。
-- **执行**：只读工具（`ToolKind::ReadOnly`），不走审批、不占锁。校验参数，返回 `Sent.`；`end_turn` 为真、或者是提问时，结果带结束任务的标记（§3.3）。`describe` 的标题取 `text` 的第一行，附件取文件名，供"过程"和命令行显示。
+- **执行**：只读工具（`ToolKind::ReadOnly`），不走审批、不占锁。校验参数，返回 `Sent.`；`end_turn` 为真、或者是提问时，结果带结束任务的标记（§3.3）。`describe` 的标题取 `text` 的第一行，附件取文件名，供定时任务运行详情和命令行显示。
 - **不另记条目、不发新事件**：调用的参数在 `tool_started` 和历史里本来就有，附件的文件信息在结果的 `details` 里，桌面端按工具名认出它。
 - **只在 Bot 会话里有**：按头部的 `bot` 挂上（§2.2）。子智能体没有这个工具，它的汇报照旧回到 Bot。
 - **没发就结束**：模型一次都没调用就要结束这一轮时，内核提醒它一次（§3.11）。
@@ -301,9 +304,9 @@ pub enum PromptProfile {
 | `send_to_user`，`attachment` | 左边的图片组和文件组（§3.12） |
 | `send_to_user`，`question` | 左边的气泡，带可以点的选项（§3.12） |
 | 失败的 `send_to_user`（`text` 为空、被钩子拒绝、没有执行） | 不显示 |
-| 助手的文字、思考 | 不显示；归进它后面那个气泡的"过程" |
+| 助手的文字、思考 | 不显示 |
 | 其他工具调用和结果 | 同上 |
-| 子智能体的汇报（`mail`） | 不进对话；在"过程"里是一步 |
+| 子智能体的汇报（`mail`） | 不显示 |
 | 中断留下的半截消息（stop_reason 为 aborted） | 不显示。Bot 模式没有停止键，只有命令行、ACP 才会产生 |
 | 日期、改名、提醒和提示条目 | 不显示 |
 | 等确认的调用 | 不进对话；输入框上方的授权窗口（§3.8） |
@@ -312,7 +315,6 @@ pub enum PromptProfile {
 - **实时显示**：气泡来自写完的助手消息里的 `send_to_user` 调用，按调用在消息里的顺序。助手消息写完（`message_completed`）紧接着就是这一批的 `tool_started`，两者几乎同时到。调用最后失败了（被钩子拒绝、没有执行）就不显示；这种情况很少。服务层的列表摘要用 `tool_started`，与此同步。附件例外，等执行成功才显示（§3.12）。
   - 不等结果才显示，是因为同一批里只要有一个调用要确认，整批都要等确认答复以后才执行：先发的那句"要重启 nginx，你确认一下"得在授权窗口之前让主人看到。
 - **按时间排**：对话按时间排序，同一时间按历史的顺序。主人的消息取发出的时间（`UserMessage.ts`，消息到达内核时就定了，排队的也一样）；Bot 的气泡取那条助手消息写完的时间（`ts + duration_ms`）。这样，Bot 回话中途发出的话，实时看到的位置和重新打开后的一样。否则按历史的顺序，排队的消息要到这一步结束才写进历史，重新打开时会挪到 Bot 那一步的气泡后面。
-- **过程**：一个气泡的过程是同一个任务里、从上一个气泡（或任务开始）到它之间的步骤，用时从任务开始或上一个气泡算起。
 - 这不是在客户端猜：`send_to_user` 的参数就是 Bot 发出的话。不另记聊天视图的条目，不加 `reply_to`（D-302）。
 
 ### 3.5 不流式
@@ -328,9 +330,10 @@ pub enum PromptProfile {
 - **一件事一个子智能体**（D-357）：不相关的事各开一个，看起来相似也一样，这样每件事能各自做完、各自汇报、单独叫停。只有紧接着同一件工作的后续和修正才用 `send_message` 发给原来那个。主人试用时连发四首诗，模型把四首都交给了一个子智能体，一轮做完才有汇报。
 - 汇报：Bot 空闲时唤醒它开一个任务，Bot 正在回时在下一个轮次边界送达（子智能体方案 §7）。Bot 用 `send_to_user` 转告；过时、重复的可以不发。
 - 子智能体要确认的调用由主人批准（子智能体方案 §10）：弹同一个授权窗口，写明是哪个子智能体，Bot 不能替主人答。等答复时 Bot 照常回话；被拒绝的话，子智能体接着做，写进汇报，由 Bot 转告。
-- **中途的消息**：子智能体遇到等不到汇报的事，用 `send_message` 发给 Bot，`<agent_message>` 唤醒它，由它转告主人；子智能体接着做，汇报照旧。能拆开的事不走这条路，各开一个子智能体（[智能体通信方案](agent-messaging-design.md) §3）。Bot 被它唤醒后只写文字时，和汇报一样提醒一次，还不发就正常结束（§3.13）。
+- **中途的进展**：子智能体用自己的 `send_to_user` 直接告诉主人，气泡马上出现，Bot 不醒，在下一个边界读到 `<sent_to_user>`（[智能体通信方案](agent-messaging-design.md) §17）。
+- **中途的消息**：子智能体有别的智能体要照着做的事时，用 `send_message` 发给 Bot，`<agent_message>` 唤醒它；子智能体接着做，汇报照旧。能拆开的事不走这条路，各开一个子智能体（[智能体通信方案](agent-messaging-design.md) §3）。Bot 被它唤醒后只写文字时，和汇报一样提醒一次，还不发就正常结束（§3.13）。
 - **查进度和叫停**：`list_agents`、`stop_agents`，所有主会话共用，按需加载（子智能体方案 §6.6）。Bot 页没有停止键，说话是唯一的办法，bot.md 写明什么时候查、停下优先。要改方向用 `send_message`（带 interrupt）。
-- **只有主 Bot 跟主人说话**：子智能体的工具列表在加上 `send_to_user` 之前就定了，它没有这个工具，也没有 `stop_agents`。汇报和它发的消息只有 Bot 看得到，转告是它的责任（§3.13）。
+- **交付是主 Bot 的责任**：子智能体的 `send_to_user` 只有文字，没有 `stop_agents`。汇报和它用 `send_message` 发的消息只有 Bot 看得到，转告是 Bot 的责任（§3.13）。
 
 ### 3.7 在忙
 
@@ -345,7 +348,7 @@ pub enum PromptProfile {
 ### 3.8 确认
 
 - 待审批项（快照的 `active_task.approvals` 和 approval_requested 事件；子智能体的在 `agents[].active_task.approvals`，事件走 `agent_event`，用 `agent_approval` 答复）由会话页的授权窗口（`session/Approval.tsx`）显示，弹在输入框上方，能力和快捷键与会话页相同，几件按提出的先后一件一件答。答复走现有的审批 Op。
-- 授权不进对话：`botChat` 不产出它，答过以后对话里不留痕迹，那一步在"过程"里看得到（PRD §6.13）。
+- 授权不进对话：`botChat` 不产出它，答过以后对话里不留痕迹（PRD §6.13）。
 - ⌘↩ 走菜单：Bot 没有会话那组菜单状态，`MenuState.botApprovable` 单独说屏幕上的 Bot 在等确认。
 - **权限模式**：Bot 设置面板里是会话页的三档权限，发 `set_permission_mode`；选择写进会话日志，恢复时还在。界面上 `bypass-permissions` 叫"完全访问"，协议和配置里的名字不变。
 - **默认值**：Bot 默认完全访问，存在桌面端。每个 Bot 记下已经给过默认值的会话 id：接入一个没给过的会话时发一次 `set_permission_mode`，已有的对话和新对话都这样，之后主人选的不会被覆盖；清空聊天记录是新会话，回到默认。
@@ -423,7 +426,7 @@ pub enum PromptProfile {
 - **列表摘要**：`LastMessage` 加可选的 `file`（第一个不是图片的文件名）；`images` 是图片数，`text` 是文字（没有就是空的）。客户端有文字显示文字，否则显示 `[图片]` 或 `[文件] 名字`，系统通知同样。
 - **截图**：`browser_screenshot`、`cua_screenshot` 的结果文字写上保存路径，否则模型不知道路径，发不出自己的截图。
 - **提醒（§3.11）不变**：任何类型成功的 `send_to_user` 都算回过话。
-- **给模型的说明写在工具描述里**（附录 A.3）：已有 Bot 的系统提示词是冻结的（Q-200），工具描述恢复时会重建。bot.md 只改一处，"links the file" 改成发文件。
+- **给模型的说明写在工具描述里**（附录 A.3）：已有 Bot 的系统提示词是冻结的（Q-200），工具描述恢复时会重建。bot.md 只改一处，"links the file" 改成发文件。v1.28 起 `bot.md` 写明文件放进 `files`、结论和文件一次发（D-555）。
 - **验证**：`finx-core/tests/bot.rs`（文件的详情、按内容认图片、同一步生成再发、路径错、提问、类型和参数对不上）；`finx-cli/tests/e2e_bots.rs`（列表一行和未读）；`packages/client/src/bots.test.ts`（气泡、选项开合、每行几张）；`apps/desktop/e2e/bot-messages.mjs`（真实应用加脚本化模型，PRD §11 第 19 到 21 条）。真实模型用不用这些类型，用 `tools/bench/bot_turns.mjs N files choice` 统计。
 - **真实模型统计**（DeepSeek flash，`tools/bench/bot_turns.mjs`，每个场景 12 遍）。第一版要求附件不带文字、提问必须有选项，模型几乎每次都想把文字和文件放在一个调用里，还常不写 `type`；它之后能自己改对，但每次白白多一轮请求。两条规则都放开以后，拒绝降到 0，调用少了四成，主人看到的样子不变：
 
@@ -448,6 +451,19 @@ pub enum PromptProfile {
   | `poems` | 现在 | 8/12 | 4 | 0 | 按顺序回来 5/12 |
 
   `poems` 两边都比 §8 记录的旧数据差（当时 10/12 到 12/12），不是这次改动带来的：常见的情况是第一首写成了私有的文字，后面几首正常发出，提醒只看主人最新一句之后发过没有，第一首就丢了。后来查清并修了（§3.11、§8 的"连发丢第一首"、D-400）。
+- **报告写进文件时的交付**（qwen3.8-flash，2026-11-06，D-555）。主人只是提问，长报告是 Bot 自己决定存的，这时模型常在文字末尾写一个链接就结束。原因有三层：桌面段教它 `Link files in Markdown`；`bot.md` 那句"先发结论，再发文件"没写 `files`，读起来还要多一步；链接在界面上点得开，没有东西纠正它。
+
+  测法：用一段真实对话，截到报告刚写好、还没发的时刻，再由主人问一句"报告出来了吗？"，只看这一步。桌面段要 `FINX_BENCH_APP=1` 才有；在这之前的统计都没连桌面端，模型根本没读到那句链接规则，所以量不出这个问题。
+
+  | 对话历史 | 对照（文件在 `files` 里） | 改后 |
+  |---|---|---|
+  | 还没发过文件 | 9/12 | 33/33 |
+  | 上一份报告是写成链接发的 | 0/12 | 16/33 |
+  | 上一份报告是用 `files` 发的 | 12/12 | 12/12 |
+
+  模型最听自己刚才的写法：历史里一条链接就能把 9/12 压到 0/12。这也说明老 Bot 只要发成功一次，之后就回到正轨，所以不另加内核提醒。回归（各 6 遍）：`files` 两边都 6/6，`simple`、`complex` 第一条回复没有变差。
+
+  没量到的：主人不提问、子智能体汇报直接唤醒 Bot 的那一步，这里用主人的一句话代替，而且这句话后面带着每句话的提示（§3.14）。从新 Bot 走完全程的 `report` 场景，7 遍做完的都发了文件（对照 4 遍、改后 3 遍），超过 10 分钟的不算，这个场景分不出两边。改后 78 遍里有 2 遍模型说"上一条没发出去"又重发了一次，对照 36 遍里没有；后来保留日志又跑的 42 遍（已计入这 78 遍）没再出现，原因没查到。
 
 
 - **写在文字里的图**：主人试用时，一个模型（qwen3.8-flash）要发图时 7 条消息都写成 `![说明](路径)`。回复里的图片原来只显示说明文字，图等于没发。所以 Bot 的对话里，本机的图直接显示在气泡里，点开看大图；不存在的和网上的还是只显示说明文字（D-329）。会话页不变。
@@ -603,7 +619,7 @@ Bot 会话加载着时，中枢看到这些事件就更新摘要，不另外查�
 
 - **客户端库**（packages/client）：
   - `bots.ts`：订阅 Bot 列表，按 PRD §6.2 排序（置顶在前，然后按最近一句的时间；在忙不改变顺序）；头像图片按 (bot_id, rev) 缓存；
-  - `botChat.ts`：由会话快照和事件按 §3.4 的规则得出气泡、过程和"它在忙"（§3.7）；
+  - `botChat.ts`：由会话快照和事件按 §3.4 的规则得出气泡和"它在忙"（§3.7）；
   - 模拟服务加 `bots/*` 和演示用的几个 Bot：连发四首诗、带子智能体的长活、确认。失败与重试没有放进模拟服务，由桌面端的 `e2e/bot-failure.mjs` 走查（§8）。
 - **桌面端**（apps/desktop）：PRD 一期的界面。原型（docs/desktop/bot-mode-demo.html）的样式搬进新的 `styles/bots.css`；原型里属于二期的部分（眼睛和对勾、引用）先不搬。
   - 接入 Bot 会话时声明排除增量事件（§3.5）；
@@ -917,7 +933,7 @@ pub trait SessionHost: Send + Sync + 'static {
 |---|---|---|---|
 | D-300 | Bot = 身份 + 一个会话；身份存在 `bots/<id>/bot.json`，会话头部记 `bot`，不进会话列表 | 复用会话的全部机制 | §2 |
 | D-301 | 一期只给 Bot 加 `send_to_user` 一个工具；不改输入队列和子智能体的调度，任务循环只加结束标记和没回话提醒两处判断：连发靠插话队列，长活靠现有的子智能体 | 它是 Bot 交互的核心；其余现有内核已经能做到 | §3 |
-| D-302 | 气泡就是一次成功的 `send_to_user` 调用；普通的助手文字是私有的，和工具调用、汇报一样只在"过程"里；不另记聊天视图，不加 `reply_to` | 对应整条出现的交互；思考过程不漏给主人 | §3.2、§3.4 |
+| D-302 | 气泡就是一次成功的 `send_to_user` 调用；普通的助手文字是私有的，和工具调用、汇报一样不进对话；不另记聊天视图，不加 `reply_to` | 对应整条出现的交互；思考过程不漏给主人 | §3.2、§3.4 |
 | D-303 | 不流式由桌面端接入时排除增量事件实现，协议和内核不改 | 会话模式照旧流式；没人要的事件不编码 | §3.5 |
 | D-304 | Bot 的工作目录按无项目会话处理；数据目录的写保护对会话自己的私有文件夹放行（已核实需要，同时修好无项目会话） | 否则会话在自己的文件夹里写文件也要确认 | §2.2、§2.5 |
 | D-305 | 系统提示词按会话类型选配置：Bot 会话的基础段换成 bot.md，其余各段不动；共用的两节抽成片段 | 原来的基础段和 Bot 的交互约定互相矛盾；只换基础段，不影响冻结、日志、恢复和压缩 | §2.3 |
@@ -927,6 +943,10 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-309 | `end_turn` 由工具结果的通用标记 `ends_task` 实现：这一批执行完、插话队列为空时任务结束，不再请求模型；有新消息时照常接着回 | 说完了就结束，省一次模型请求；新消息总要回；信号放在拥有它的那一层 | §3.3 |
 | D-310 | 提示词的文字不经过协议，由内核按会话类型选配置；`bot_prompt_file` 只用来调试 | 提示词和内核的工具、版本是一套；所有客户端看到同一个 Bot | §2.3 |
 | D-311 | Bot 的子智能体按会话配置另拼系统提示词，不沿用 Bot 的（子智能体方案 D-42 的例外） | Bot 的聊天约定不适用于写汇报的子智能体；损失只是子智能体第一次请求的一段缓存 | §2.3 |
+| D-556 | Bot 的子智能体有自己的 `send_to_user`，直接告诉主人进展，不走 Bot 转告（主人定） | 转告每次多一次主会话请求，长寿 Bot 一次 20–30 秒，转告时还挡主人的话 | 通信方案 §17.1 |
+| D-557 | 它只有 `text`：不发文件、不提问、没有 `end_turn` | 要解决的是进展；答复回到 Bot，子智能体等不到 | 通信方案 §17.3 |
+| D-558 | 气泡在调用时立刻出现；写进主会话日志要等 Bot 空闲或下一个边界，任务结束时一定写 | 主人不等 Bot；工具调用和结果之间不能插 user 消息 | 通信方案 §17.4 |
+| D-559 | 子智能体说的话不算 Bot 回了话，也不算有结果没发 | 否则主人的话会漏回，或者多一次无谓的提醒 | 通信方案 §17.5 |
 | D-312 | 对话按时间排：主人的消息取发出的时间，Bot 的气泡取那条助手消息写完的时间。实时显示时气泡在 `tool_started` 出现，调用失败才撤下 | 实时看到的和重新打开后的一样；同一步的几条按调用顺序；同一批里有调用要确认时，整批等确认答复才执行，先发的话不能被挡住 | §3.4 |
 | D-313 | 改名：头部记建会话时的名字；名字变了，在轮次边界记一条 `bot_name` 条目，模型看到一条环境更新；压缩后再告诉一次 | 系统提示词冻结、缓存不动；与日期变化的做法一致 | §2.4 |
 | D-314 | 未读由客户端报告"在看"（`bots/read`），服务层计数并写进 bot.json | 附着不等于在看；崩溃后未读还在 | §5.3 |
@@ -959,6 +979,7 @@ pub trait SessionHost: Send + Sync + 'static {
 | D-480 | 每句话后面的提示改成 `Reply with send_to_user, and write no text outside the call. Think after it is sent. Long work goes to an agent.`，没回话的提醒也加上 `write no text outside the call` | 模型把 `send_to_user` 当成干活的工具，闲聊就直接写文字；这句是模型做决定前最后读到的，在长对话里比系统提示词管用 | §3.14 |
 | D-481 | `bot.md` 第二版：开头讲清主人跟你说话、活由子智能体做和等待的代价；判断从"超过约两轮"改成"能不能用几句话马上答好"，委派按类型列；回应模型不委派的三个理由；加三个例子；能力清单移到规则后面 | 模型的思考里引用了"两轮"还是说服自己不委派；统计见回合方案 §14 | 附录 A.1 |
 | D-482 | Bot 版 `spawn_agent` 的描述去掉 `Do quick, blocking or tightly coupled steps yourself`，`task` 参数的说明改短；`send_to_user` 的结果还是 `Sent.` | 工具文字不再给模型留出口；结果里加提醒实测没有帮助（0/6 对 2/6）；会话模式不变 | 附录 A.1、[子智能体方案](subagent-design.md)附录 A.1 |
+| D-555 | Bot 的桌面段换成 `prompts/app_bot.md`，只留命令代码块的写法；`bot.md` 写明文件放进 `files`、和结论同一次调用发，链接只用来提已经发过的文件；模板哈希把这段也算进去，已有的 Bot 恢复时拿到 | 桌面段教模型写链接，和附件矛盾。真实对话截到发送那一步：历史干净 9/12 到 33/33，历史有链接 0/12 到 16/33，历史有附件两边都 12/12。发成功一次就能自己回到正轨，不加内核提醒，也不把链接自动转成附件 | §2.3、§3.12、附录 A.1、A.3 |
 
 ## 15. 待定问题
 
@@ -1069,14 +1090,17 @@ Agents cannot change routines: do that part and hand over the rest. If something
 yourself needs more than one step after all, hand the rest to an agent.
 
 - An agent sees none of this conversation, so the task is all it knows. A few lines usually do: the
-  goal, what you already know, the files, and what to report.
+  goal, what you already know, the files, and what to report. Write it in the user's language: the
+  agent speaks to them in the language of its task.
 - Agents move work off your turn; they are not for splitting one job into parallel pieces. Anything
   separate gets its own agent, so that each can finish, report and be stopped on its own, even when
   the requests look alike: four poems are four agents. Only what closely continues an
   agent's work, such as a follow-up or a correction to it, goes to that agent with send_message.
-- After starting an agent, never sit waiting or keep checking on it. An agent may also message you
-  about a blocker or a change of plan. If the user wants results one by one, give each its own
-  agent. Don't promise anything along the way that you haven't asked an agent for in its task.
+- After starting an agent, never sit waiting or keep checking on it. It tells the user how the work
+  is going by itself, and you read what it sent as <sent_to_user>: they have that already, so don't
+  repeat it. An agent may also message you when it needs you to act. If the user wants results one
+  by one, give each its own agent. Don't promise anything along the way that you haven't asked an
+  agent for in its task.
 - Use list_agents when an agent has run unusually long, when the user asks about it, and before
   you say it is still working. If its activity has stopped or keeps repeating, treat it as stuck:
   redirect or stop it, and tell the user what really happened.
@@ -1098,10 +1122,12 @@ You: send_to_user "Looking into what moved it today."
 Then: spawn_agent with a task: find today's move, the reported catalysts and the evidence for each;
 report the figures with their sources. End your turn.
 When its report comes: send_to_user with the answer and end_turn.
+If the agent also wrote a full report, it goes in files of that same call.
 
 User: Compare these two companies' results in a spreadsheet.
-You: send_to_user "Pulling both sets of results." Then the same: spawn_agent, end your turn, and
-send the file when the report comes.
+You: send_to_user "Pulling both sets of results." Then the same: spawn_agent, end your turn.
+When its report comes: send_to_user with the conclusion as text, the spreadsheet in files, and
+end_turn.
 
 What you are for:
 You are strongest at professional finance and office work, and with your agents you excel at tasks
@@ -1112,7 +1138,10 @@ including, but not limited to:
 3. Writing multi-chapter articles and in-depth research reports based on reliable sources.
 4. Writing and running programs.
 What you make stays in your own folder. Long results go in a file there: send the conclusion with
-send_to_user, then the file.
+send_to_user and the file in the same call, the conclusion as text and the file in files.
+Putting a file in files is what hands it over: it arrives as a card they can open, and you get an
+error if it isn't there. A path or link in your words only points at it, so use one just to mention
+a file you already sent.
 
 How to work:
 - Carry requests through to a finished result. Settle routine choices yourself and mention what
@@ -1198,12 +1227,12 @@ one message, all at once.
 
 ```
 type: What this message is. text (the default): words, rendered as Markdown. attachment: one or
-more files or images, with words if they help. question: a question, when you need the user to
-decide; it ends your turn and their answer comes back as their next message; send any background
-first as a text message.
-text: The message. For attachment, the words to go with the files. For question, the question in
-one sentence.
-files: For attachment, what to send, in order.
+more files or images, with the message that goes with them, however long. question: a question,
+when you need the user to decide; it ends your turn and their answer comes back as their next
+message; send any background first as a text message.
+text: The message. For attachment, the message shown above the files. For question, the question
+in one sentence.
+files: For attachment, the files to hand over, in order.
 files[].path: A file on this computer, absolute or relative to your folder. Save anything from
 the web to a file first.
 options: For question, answers the user can tap, each worded the way they would say it. Leave it
@@ -1227,6 +1256,8 @@ two options have the same label: <label>
 <path>: not a file
 <path>: a web address, save it to a file first
 ```
+
+Bot 的子智能体有自己的 `send_to_user`，只有 `text`，文字见[智能体通信方案](agent-messaging-design.md) §17.3、§17.7。
 
 ### A.4 改名的环境更新
 

@@ -11,6 +11,7 @@
 //   FINXWORK_E2E_SHOTS=<folder> …   also screenshots each step
 //   FINXWORK_E2E_NO_BUILD=1 …       uses the builds there are
 //   FINXWORK_E2E_APP=dist/FinxWork.app/Contents/MacOS/FinxWork …   the packaged app
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -65,6 +66,20 @@ function png(width, height, [r, g, b]) {
   return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk("IHDR", ihdr), chunk("IDAT", zlib.deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
 
+/** The smallest PDF that opens: one empty page, with a table that points right. */
+function onePagePdf() {
+  const objects = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>", "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"];
+  let body = "%PDF-1.4\n";
+  const offsets = objects.map((o, i) => {
+    const at = body.length;
+    body += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return at;
+  });
+  const xref = body.length;
+  body += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  return `${body}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+}
+
 const folder = path.join(work, "out");
 fs.mkdirSync(folder);
 const at = (name) => path.join(folder, name);
@@ -77,7 +92,16 @@ fs.writeFileSync(at("stays.png"), png(960, 600, [90, 90, 90]));
 fs.writeFileSync(at("report.pdf"), Buffer.alloc(2_400_000, 0x20));
 fs.writeFileSync(at("gone.pdf"), "%PDF-1.7");
 fs.writeFileSync(at("notes.md"), "# 笔记\n\n正文。\n");
-fs.writeFileSync(at("page.html"), "<!doctype html><title>Bot 的页面</title><h1>页面</h1>");
+fs.writeFileSync(at("page.html"), '<!doctype html><title>Bot 的页面</title><h1>页面</h1><a id="out" href="http://127.0.0.1:59999/out">外面</a>');
+// A report in a folder of its own: its picture and its links are relative to it, not to the bot's folder.
+fs.mkdirSync(at("report"));
+fs.writeFileSync(at("report/q3.md"), "# 三季度\n\n![走势](chart.png)\n\n[明细](more.md)\n\n[来源](http://127.0.0.1:59999/source)\n");
+fs.writeFileSync(at("report/chart.png"), png(960, 600, [40, 120, 200]));
+fs.writeFileSync(at("report/more.md"), "# 明细\n");
+fs.writeFileSync(at("data.csv"), "季度,收入\nQ3,123\n");
+fs.writeFileSync(at("run.log"), "第一行\n第二行\n");
+fs.writeFileSync(at("calc.py"), "print('finx')\n");
+fs.writeFileSync(at("real.pdf"), onePagePdf());
 const long = "三季度毛利率分析_给管理层汇报用_修订第三版_2026年11月_再改一次.md";
 fs.writeFileSync(at(long), "# 很长的名字\n");
 
@@ -90,6 +114,7 @@ const SCRIPT = {
   混发: attach(["a.png", "notes.md", "b.png", long]),
   发文件: attach(["report.pdf"]),
   发网页: attach(["page.html"]),
+  发报告: attach(["report/q3.md", "data.csv", "run.log", "calc.py", "real.pdf"]),
   带字的文件: { text: "**报告**做好了。", files: [{ path: at("notes.md") }, { path: at("c.png") }], end_turn: true },
   问名字: { type: "question", text: "发给谁？" },
   图写在文字里: { text: `指数走势：\n\n![指数走势](${at("c.png")})\n\n![不存在的图](${at("nothing.png")})\n\n![网上的图](https://example.com/a.png)\n\n说明在这里。`, end_turn: true },
@@ -153,13 +178,15 @@ function finxCall(method, params = {}) {
       }
     });
     s.on("error", reject);
+    // A kernel told to shut down may go before it answers.
+    s.on("close", () => reject(new Error("the kernel closed the connection")));
   });
 }
 
 // ── the app, driven over the DevTools protocol ──
 let app = null;
 async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(packaged ?? electron, packaged ? [`--remote-debugging-port=${port}`] : [desktop, `--remote-debugging-port=${port}`], {
     env: { ...process.env, FINX_HOME: home, HOME: userHome, FINXWORK_USER_DATA: profile, ...(packaged ? {} : { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],
@@ -206,7 +233,12 @@ async function launch() {
     await cdp("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: name, windowsVirtualKeyCode: { ArrowRight: 39, ArrowLeft: 37, Escape: 27 }[name] });
   };
   await cdp("Emulation.setDeviceMetricsOverride", { width: 1280, height: 820, deviceScaleFactor: 0, mobile: false });
-  return { cdp, run, until, shot, click, key, close: page.close };
+  /** The target of a page in a view of its own (the preview's), by the end of its address. */
+  const pageTarget = async (ending) => {
+    const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
+    return list.find((t) => t.url.endsWith(ending));
+  };
+  return { cdp, run, until, shot, click, key, pageTarget, close: page.close };
 }
 
 async function devtools(url) {
@@ -351,21 +383,164 @@ try {
   same(await page.run(`[...${lastMessage}.querySelectorAll(".bfiles .tile-ext")][1].textContent`), ".md", "the extension");
   await page.shot("04-mixed");
 
-  step("19. a file opens beside the conversation");
-  await page.click(`.tr.bots > .bm:last-of-type .bfiles .tile-open`);
-  await page.until("the file panel", `document.querySelector(".bgp")?.innerText.includes("notes.md")`);
-  await page.shot("05-file-panel");
-  // Its own button, at the panel's end while it is open.
-  await page.run(`[...document.querySelectorAll('.bgp button.tb.on[aria-pressed="true"]')].at(-1).click()`);
+  step("19. a file opens over the window to read, not beside the conversation");
+  const tiles = `.tr.bots > .bm:last-of-type .bfiles .tile-open`;
+  const previewing = (name) => `document.querySelector(".fpv .fpv-name")?.textContent === ${JSON.stringify(name)}`;
+  const closed = `!document.querySelector(".fpv")`;
+  const panelClose = `[...document.querySelectorAll('.bgp button.tb.on[aria-pressed="true"]')].at(-1).click()`;
+  await page.click(tiles);
+  await page.until("the preview of the file", previewing("notes.md"));
+  await page.until("the file as it reads", `document.querySelector(".fpv .md h1")?.textContent === "笔记"`);
+  check(await page.run(`!document.querySelector(".bgp")`), "no side panel behind it");
+  const sheet = await page.run(`(() => { const r = document.querySelector(".fpv").getBoundingClientRect(); return { w: r.width, h: r.height, left: r.left, top: r.top, right: innerWidth - r.right, bottom: innerHeight - r.bottom }; })()`);
+  same([sheet.w, sheet.h], [1040, 732], "its size in a window of 1280 × 820");
+  check(Math.abs(sheet.left - sheet.right) < 1 && Math.abs(sheet.top - sheet.bottom) < 1, `in the middle: ${JSON.stringify(sheet)}`);
+  // The blur reaches the sidebar too: a see-through page would leave its sharp text showing beneath.
+  check(await page.run(`getComputedStyle(document.querySelector(".fpv"), "::backdrop").backdropFilter.includes("blur(20px)")`), "the window blurred behind it");
+  check(await page.run(`!/, 0\\)$/.test(getComputedStyle(document.documentElement).backgroundColor)`), "the page opaque under it");
+  await sleep(300);
+  await page.shot("05-file-preview");
+  await page.click(".fpv-source");
+  await page.until("its source", `document.querySelector(".fpv .fpv-text")?.textContent.includes("# 笔记")`);
+  await page.click(".fpv-source");
+  await page.until("back as it reads", `!!document.querySelector(".fpv .md h1")`);
+  await page.key("Escape");
+  await page.until("Esc closes it", closed);
+  same(await page.run(`getComputedStyle(document.documentElement).backgroundColor`), "rgba(0, 0, 0, 0)", "the page see-through again, for the sidebar's material");
+
+  await page.click(tiles);
+  await page.until("the preview again", previewing("notes.md"));
+  await page.click(".fpv-panel");
+  await page.until("it moves to the file panel", `${closed} && document.querySelector(".bgp")?.innerText.includes("notes.md")`);
+  await page.shot("05a-to-panel");
+  await page.run(panelClose);
   await page.until("the panel closed", `!document.querySelector(".bgp")`);
 
-  step("19. an HTML file opens as its page in the conversation's browser, not as its source");
+  step("19. a report: its picture and links are its folder's, a table, a text, code and a PDF read over the window too");
+  await ask(page, "发报告");
+  await page.click(tiles, 0);
+  await page.until("the report", `${previewing("q3.md")} && document.querySelector(".fpv .md h1")?.textContent === "三季度"`);
+  await page.until("its picture, next to it", `(() => { const i = document.querySelector(".fpv .md-img img"); return i?.complete && i.naturalWidth === 960; })()`);
+  await sleep(300);
+  await page.shot("05b-report");
+  await page.click(".fpv .md-img");
+  await page.until("the picture large, above the preview", `!!document.querySelector(".fpv .lightbox")`);
+  await page.key("Escape");
+  await page.until("Esc closes only the picture", `!document.querySelector(".lightbox") && !!document.querySelector(".fpv")`);
+  await page.until("its link, as a file", `!!document.querySelector(".fpv .fref")`);
+  await page.click(".fpv .fref");
+  await page.until("the linked file, in the preview", `${previewing("more.md")} && document.querySelector(".fpv .md h1")?.textContent === "明细"`);
+  await page.key("Escape");
+  await page.until("closed", closed);
+  await page.click(tiles, 0);
+  // The picture first: it moves what is under it as it comes.
+  await page.until("the report again", `!!document.querySelector(".fpv a.wl") && document.querySelector(".fpv .md-img img")?.complete`);
+  await sleep(150);
+  await page.click(".fpv a.wl");
+  await page.until("a web link leaves for the conversation's browser", `${closed} && !!document.querySelector(".brp:not(.fpn)")`);
+  await page.run(panelClose);
+  await page.until("the panel closed", `!document.querySelector(".bgp")`);
+
+  await page.click(tiles, 1);
+  await page.until("the table as a grid", `${previewing("data.csv")} && !!document.querySelector(".fpv .dcp-viewer")`);
+  await sleep(300);
+  await page.shot("05c-table");
+  await page.until("the part selected, to ask about", `[...document.querySelectorAll(".fpv button")].some((b) => b.textContent.includes("问 agent"))`);
+  await page.run(`[...document.querySelectorAll(".fpv button")].find((b) => b.textContent.includes("问 agent")).click()`);
+  await page.until("asking leaves for the composer, with what was quoted", `${closed} && !!document.querySelector(".cmp-zone .tile")`);
+  await page.run(`document.querySelector(".cmp-zone .tile-x").click()`);
+  await page.until("taken out again", `!document.querySelector(".cmp-zone .tile")`);
+  // The composer has just changed height: the conversation settles.
+  await sleep(500);
+  await page.click(tiles, 2);
+  await page.until("text as text", `${previewing("run.log")} && document.querySelector(".fpv .fpv-text")?.textContent.includes("第二行")`);
+  await page.key("Escape");
+  await page.until("closed", closed);
+  await page.click(tiles, 3);
+  await page.until("code as code", `${previewing("calc.py")} && document.querySelector(".fpv .cblock code")?.textContent.includes("print")`);
+  await sleep(300);
+  await page.shot("05d-code");
+  await page.key("Escape");
+  await page.until("closed", closed);
+  await page.click(tiles, 4);
+  // Without PDFium here (it is in the package; see crates/finx-docs) finx says so, and the card shows why.
+  await page.until("a PDF as a document, or why not", `${previewing("real.pdf")} && !!document.querySelector(".fpv .dcp-viewer, .fpv .fpn-card")`);
+  if (await page.run(`!!document.querySelector(".fpv .fpn-card")`)) console.log(`  (no PDF view: ${await page.run(`document.querySelector(".fpv .fpn-card p").textContent`)})`);
+  await sleep(300);
+  await page.shot("05e-pdf");
+  await page.key("Escape");
+  await page.until("closed", closed);
+  check(await page.run(`!document.querySelector(".bgp")`), "none of them brought out the side panel");
+
+  step("19. an HTML file shows as its page, in a view of its own, nobody's tab");
   await ask(page, "发网页");
-  await page.click(`.tr.bots > .bm:last-of-type .bfiles .tile-open`);
+  const pageView = async () => {
+    const end = Date.now() + 15000;
+    for (;;) {
+      const target = await page.pageTarget("/page.html");
+      if (target) return target;
+      if (Date.now() > end) fail("the page's own view never came");
+      await sleep(150);
+    }
+  };
+  const noPageView = async () => {
+    const end = Date.now() + 15000;
+    while (await page.pageTarget("/page.html")) {
+      if (Date.now() > end) fail("the page's view stayed");
+      await sleep(150);
+    }
+  };
+  await page.click(tiles);
+  await page.until("the preview of the page", `${previewing("page.html")} && !!document.querySelector(".fpv-page")`);
+  let target = await pageView();
+  same(await page.run(`window.finx.browserTabs().then((t) => t.filter((x) => x.url.endsWith("/page.html")).length)`), 0, "tabs of it");
+  const room = await page.run(`(() => { const r = document.querySelector(".fpv-page").getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; })()`);
+  let view = await devtools(target.webSocketDebuggerUrl);
+  const inPage = async (expr) => (await view.call("Runtime.evaluate", { expression: expr, returnByValue: true })).result.value;
+  for (let i = 0; i < 50 && (await inPage(`document.title`)) !== "Bot 的页面"; i++) await sleep(100);
+  same(await inPage(`document.title`), "Bot 的页面", "the page's title");
+  same(await inPage(`[innerWidth, innerHeight]`), room, "the view fills the room left for it");
+  // It has no way to the app's bridge.
+  same(await inPage(`typeof window.finx`), "undefined", "the app's bridge in the page");
+  const pictureOfPage = await view.call("Page.captureScreenshot", { format: "png" });
+  if (shots) fs.writeFileSync(path.join(shots, "05f-html-view.png"), Buffer.from(pictureOfPage.data, "base64"));
+  await sleep(300);
+  await page.shot("05f-html-room");
+
+  await page.click(".fpv-source");
+  await page.until("its source", `document.querySelector(".fpv .cblock code")?.textContent.includes("<h1>")`);
+  view.close();
+  await noPageView();
+  await page.click(".fpv-source");
+  target = await pageView();
+  view = await devtools(target.webSocketDebuggerUrl);
+  // A key sent over the protocol does not pass through the browser's own handling, so Esc with the
+  // keys in the page (before-input-event in browser/pagePreview) takes a real keyboard to check.
+  await page.key("Escape");
+  await page.until("Esc closes the preview", closed);
+  view.close();
+  await noPageView();
+
+  await page.click(tiles);
+  target = await pageView();
+  view = await devtools(target.webSocketDebuggerUrl);
+  for (let i = 0; i < 50 && !(await view.call("Runtime.evaluate", { expression: `!!document.getElementById("out")`, returnByValue: true })).result.value; i++) await sleep(100);
+  // Not waited for: the view may be gone before it can answer.
+  void view.call("Runtime.evaluate", { expression: `document.getElementById("out").click()` });
+  await page.until("a web link leaves for the conversation's browser", `${closed} && !!document.querySelector(".brp:not(.fpn)")`);
+  view.close();
+  await noPageView();
+  await page.run(panelClose);
+  await page.until("the panel closed", `!document.querySelector(".bgp")`);
+
+  await page.click(tiles);
+  await page.until("the preview of the page again", `!!document.querySelector(".fpv-page")`);
+  await pageView();
+  await page.click(".fpv-panel");
   await page.until("its page in a tab of this conversation", `window.finx.browserTabs().then((t) => t.some((x) => x.session && x.title === "Bot 的页面" && x.url.endsWith("/page.html")))`);
-  await page.until("the browser panel, not the file panel", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
-  await page.shot("05a-html-page");
-  await page.run(`[...document.querySelectorAll('.bgp button.tb.on[aria-pressed="true"]')].at(-1).click()`);
+  await page.until("the browser panel, not the file panel", `${closed} && !!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.shot("05g-html-to-panel");
+  await page.run(panelClose);
   await page.until("the panel closed", `!document.querySelector(".bgp")`);
 
   step("19. one file: a row with its size; the list names it");

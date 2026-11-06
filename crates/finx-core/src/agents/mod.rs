@@ -5,7 +5,8 @@
 //! that joins the main session's history at its next turn boundary and wakes it when it is idle.
 //! While it works, a sub-agent can use `send_message` too: to the main agent, which wakes it, or
 //! to another working sub-agent. Only the main agent sets an idle agent to work
-//! (agent-messaging-design §3).
+//! (agent-messaging-design §3). A bot's sub-agents also tell its owner how the work goes with
+//! `send_to_user`, which wakes nobody (§17).
 
 mod driver;
 mod mail;
@@ -50,6 +51,7 @@ pub use restore::RestoredAgent;
 pub(crate) use restore::restore;
 pub(crate) use tools::agent_tools;
 pub(crate) use tools::bot_agent_tools;
+pub(crate) use tools::bot_sub_agent_tools;
 pub(crate) use tools::deferred_agent_tools;
 pub(crate) use tools::deferred_sub_agent_tools;
 pub(crate) use tools::sub_agent_tools;
@@ -577,6 +579,7 @@ impl AgentTree {
         };
         ChildLaunch {
             header,
+            bot: state.bot.is_some(),
             system_prompt,
             base_prompt,
             mcp_section: state.mcp_section.clone(),
@@ -678,10 +681,11 @@ impl AgentTree {
         if let Some(agent) = self.state.lock().agents.iter_mut().find(|a| a.id == id) {
             agent.driver = Some(driver);
         }
+        let bot = root.state.lock().bot.is_some();
         let _ = ops
             .send(Op::Prompt {
                 input: vec![UserContent::Text {
-                    text: mail::task_message(&name, task),
+                    text: mail::task_message(&name, task, bot),
                 }],
                 mode: PromptMode::Steer,
                 // A task brief is not the user's input: a leading `/name` stays text.
@@ -860,6 +864,31 @@ impl AgentTree {
                 Ok(ToolOutput::text(format!("Sent to {MAIN}. Keep working: your final report still follows.")))
             }
         }
+    }
+
+    /// What a bot's sub-agent `from` tells the user: a message in the bot's conversation from now
+    /// on, which wakes nobody (agent-messaging-design §17).
+    pub(crate) fn to_user(&self, from: &str, text: &str) -> Result<ToolOutput, ToolError> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Err(ToolError::InvalidArgs("text must not be empty".into()));
+        }
+        let root = self.root()?;
+        let (sender, seq) = {
+            let mut state = self.state.lock();
+            let Some(sender) = state.agents.iter().find(|a| a.id == from).filter(|_| !state.closing) else {
+                return Err(ToolError::Failed("the session is closing".into()));
+            };
+            let sender = AgentRef {
+                id: sender.id.clone(),
+                name: sender.name.clone(),
+            };
+            state.mails += 1;
+            (sender, state.mails)
+        };
+        let (info, message) = mail::to_user(sender, text, seq);
+        root.tell_user(info, message);
+        Ok(ToolOutput::text("Sent. Keep working: your final report still follows."))
     }
 
     /// Waits for the report of `id`'s current round of work. New input from the user ends the

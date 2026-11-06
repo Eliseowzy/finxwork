@@ -6,6 +6,7 @@
 //
 //   node apps/desktop/e2e/conversation.mjs
 //   FINXWORK_E2E_NO_BUILD=1 node apps/desktop/e2e/conversation.mjs   with what is built already
+import { cdpPort } from "./lib/port.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -79,7 +80,7 @@ if (!process.env.FINXWORK_E2E_NO_BUILD) {
   execFileSync("cargo", ["build", "-p", "finx-cli"], { cwd: root, stdio: "inherit" });
   execFileSync("pnpm", ["--dir", desktop, "build"], { stdio: "inherit" });
 }
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 const app = spawn(path.join(desktop, "node_modules/.bin/electron"), [desktop, `--remote-debugging-port=${port}`, "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"], {
   env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: path.join(work, "profile"), FINXWORK_FINX: path.join(root, "target/debug/finx"), FINX_CREDENTIAL_STORE: "file" },
   stdio: ["ignore", "ignore", "inherit"],

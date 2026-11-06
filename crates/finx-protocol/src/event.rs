@@ -234,6 +234,15 @@ pub enum EventMsg {
     ArchivedChanged {
         archived: bool,
     },
+    /// A call that needs approval was refused because nothing here can give it: a run without a
+    /// person, such as `finx exec` in a script.
+    ApprovalRefused {
+        call_id: String,
+        name: String,
+        summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
     Warning {
         message: String,
         /// What the warning is about, for a client that words or places it itself. Absent for
@@ -512,6 +521,9 @@ pub enum MailKind {
     /// What a run of a routine has to say, or that it failed: `from` is the run and the
     /// routine's name (docs/kernel/routine-design.md §2.3).
     Routine,
+    /// What a bot's sub-agent told the user with `send_to_user`: they have it already, and its
+    /// round goes on (docs/kernel/agent-messaging-design.md §17).
+    ToUser,
 }
 
 /// Where a delivered message came from.

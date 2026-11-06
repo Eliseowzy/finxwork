@@ -94,7 +94,7 @@ export function ToastView() {
  * Escape or a click outside closes it, and Escape goes no further (the
  * settings window closes on an Escape nothing else took).
  */
-export function Dialog({ label, width, className, onClose, children }: { label: string; width: number; className?: string; onClose: () => void; children: ReactNode }) {
+export function Dialog({ label, width, className, onClose, children }: { label: string; width: number | string; className?: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   useOverlay();
   useEffect(() => {
@@ -109,6 +109,8 @@ export function Dialog({ label, width, className, onClose, children }: { label: 
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.preventDefault();
+        // A dialog from inside another one (a table made large in a preview) closes alone.
+        e.stopPropagation();
         onClose();
       }}
       onCancel={(e) => (e.preventDefault(), onClose())}

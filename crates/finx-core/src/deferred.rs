@@ -135,6 +135,28 @@ impl Deferred {
         Self { groups }
     }
 
+    /// The names of the groups `of` would make, without making their tools: their definitions take
+    /// time and memory that `finx status` has no use for.
+    pub(crate) fn names_of(settings: &SystemSettings, pool: bool, app: bool, docs: bool, agents: AgentRole) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        if settings.web_search.enabled {
+            names.push(crate::web_search::GROUP);
+        }
+        if pool && (settings.browser.builtin_on(app) || settings.browser.yours_on(app)) {
+            names.push(BROWSER);
+        }
+        if settings.desktop.on(app) {
+            names.push(CUA);
+        }
+        if docs {
+            names.push(DOC);
+        }
+        if agents != AgentRole::None {
+            names.push(AGENTS);
+        }
+        names
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.groups.is_empty()
     }
@@ -156,6 +178,21 @@ mod tests {
     use super::Deferred;
     use crate::config::Config;
     use crate::system::SystemSettings;
+
+    #[test]
+    fn the_names_are_those_of_the_groups() {
+        let mut config = Config::default();
+        for (web, browser, desktop) in [(true, false, false), (false, true, true), (true, true, false)] {
+            config.web_search.enabled = web;
+            config.browser.enabled = Some(browser);
+            config.desktop.enabled = Some(desktop);
+            let settings = SystemSettings::of(&config);
+            for role in [super::AgentRole::Main, super::AgentRole::None] {
+                let made: Vec<&str> = Deferred::of(&settings, true, false, true, role).groups.iter().map(|g| g.name).collect();
+                assert_eq!(made, Deferred::names_of(&settings, true, false, true, role));
+            }
+        }
+    }
 
     #[test]
     fn document_catalog_advertises_workbook_support() {

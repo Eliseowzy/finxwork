@@ -159,6 +159,13 @@ pub enum EntryKind {
         mail: Box<MailInfo>,
         message: Message,
     },
+    /// What a bot's sub-agent told the user: `message` is what the bot's model reads of it. An
+    /// entry of its own for the same reason as `AgentMessage`
+    /// (agent-messaging-design §17).
+    AgentToUser {
+        mail: Box<MailInfo>,
+        message: Message,
+    },
     /// Marks a rewind: the parent is the point the branch continues from.
     Branch {
         /// It went back before the first user message: the next one is the session's first.

@@ -119,8 +119,27 @@ pub fn from_store(err: StoreError, id: &str) -> RpcError {
     }
 }
 
+/// The model named or configured cannot run yet.
+pub fn no_credentials(model: &str, provider: &str) -> RpcError {
+    RpcError::with_kind(
+        error_code::NO_MODEL,
+        "no_credentials",
+        format!("{model} has no credentials yet: run `finx login {provider}` in a terminal, or sign in here"),
+    )
+}
+
+/// Nothing to run a session on yet. Clients send the person to set a model up.
+pub fn no_model() -> RpcError {
+    RpcError::with_kind(
+        error_code::NO_MODEL,
+        "no_model",
+        "no model is set up: connect a provider (auth/set, or its key in the environment), or name a model in session/new or in the configuration",
+    )
+}
+
 pub fn from_kernel(err: KernelError, id: &str) -> RpcError {
     match err {
+        KernelError::NoModel => no_model(),
         KernelError::Store(err) => from_store(err, id),
         KernelError::Model(err) => match &err {
             // A provider that is gone (a removed or disconnected connection): clients say so in

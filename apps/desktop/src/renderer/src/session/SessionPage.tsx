@@ -5,7 +5,9 @@ import { SidebarToggle } from "../components";
 import { GlassBar } from "../glass";
 import { Icon } from "../icons";
 import { DocContext } from "../docs/state";
+import { readsAsResult } from "../files/kind";
 import { layoutOf, setCard } from "../layout";
+import { FilePreviewProvider } from "../preview/FilePreview";
 import { useStore } from "../store";
 import { Background } from "./Background";
 import { Chat } from "./Chat";
@@ -80,15 +82,18 @@ export function SessionPage({ s }: { s: ListSession }) {
           {yours && !info && <YoursButton yours={yours} sessionId={s.session_id} />}
           <SidePanelButtons panels={panels} />
         </GlassBar>
-        {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
-        <ContentScope value={scope}>
-          {/* Right-click on selected text: Copy (anything with a menu of its own shows that instead). */}
-          <div className={`dwrap ${dock ? "dock" : ""}`} onContextMenu={() => selectionMenu(st)}>
-            <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
-            {view && info && <Inspector s={s} view={view} yours={yours} />}
-            {view && background && <Background s={s} view={view} />}
-          </div>
-        </ContentScope>
+        {/* A result of the conversation opens over the window, code beside it to work on (DD-161). Not the side panels: a link in one stays there. */}
+        <FilePreviewProvider scope={scope} takes={readsAsResult}>
+          {/* The conversation keeps clear of the card beside it; a card over it (no room) leaves it be. */}
+          <ContentScope value={scope}>
+            {/* Right-click on selected text: Copy (anything with a menu of its own shows that instead). */}
+            <div className={`dwrap ${dock ? "dock" : ""}`} onContextMenu={() => selectionMenu(st)}>
+              <div className="dmain">{view ? <Chat s={s} view={view} loadEarlier={loadEarlier} /> : <div className="empty"><span className="mini-spin" /></div>}</div>
+              {view && info && <Inspector s={s} view={view} yours={yours} />}
+              {view && background && <Background s={s} view={view} />}
+            </div>
+          </ContentScope>
+        </FilePreviewProvider>
       </div>
       <SidePanelViews panels={panels} view={view} />
     </div>

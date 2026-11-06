@@ -32,11 +32,14 @@ const LOCAL_WAIT: Duration = Duration::from_millis(300);
 /// How often the background refresh wakes up to look.
 const UPKEEP_TICK: Duration = Duration::from_secs(60);
 const PARALLEL_REFRESHES: usize = 4;
+/// How often the service looks whether another process changed the saved keys: one `stat`.
+const KEY_WATCH_TICK: Duration = Duration::from_secs(2);
 
 /// Background refresh state.
 pub(crate) struct Upkeep {
     network: bool,
     started: AtomicBool,
+    watching: AtomicBool,
     /// Providers being refreshed now.
     refreshing: Mutex<BTreeSet<String>>,
     /// Providers to refresh at the next wake-up (a new key, a failed check).
@@ -49,6 +52,7 @@ impl Upkeep {
         Self {
             network,
             started: AtomicBool::new(false),
+            watching: AtomicBool::new(false),
             refreshing: Mutex::new(BTreeSet::new()),
             stale: Mutex::new(BTreeSet::new()),
             wake: tokio::sync::Notify::new(),
@@ -116,7 +120,7 @@ impl Server {
 
     /// Asks local servers (no key) again when their answer is older than a minute, waiting at
     /// most 300 ms: a stopped Ollama should not stay in the menu.
-    pub(crate) async fn refresh_local_models(&self) {
+    pub async fn refresh_local_models(&self) {
         let llm = self.0.llm.clone();
         let local: Vec<String> = llm
             .providers()
@@ -263,7 +267,7 @@ impl Server {
 
     /// `models/show`: puts a model in the menu or takes it out. Blocking I/O.
     pub fn show_model(&self, reference: &str, shown: bool) -> Result<(), RpcError> {
-        finx_core::models::set_shown(&self.0.llm, &self.0.defaults.model, reference, shown)
+        finx_core::models::set_shown(&self.0.llm, self.0.defaults.model.as_deref(), reference, shown)
             .map_err(RpcError::invalid_params)?;
         self.models_changed();
         Ok(())
@@ -273,12 +277,33 @@ impl Server {
     /// Nothing happens with `[models] network = false`.
     pub fn start_model_upkeep(&self) {
         let upkeep = &self.0.model_upkeep;
-        if !upkeep.network || upkeep.started.swap(true, Ordering::Relaxed) {
-            return;
-        }
         let Ok(runtime) = tokio::runtime::Handle::try_current() else {
             return;
         };
+        if upkeep.watching.swap(true, Ordering::Relaxed) {
+            return;
+        }
+        // A key saved by `finx login` in a terminal reaches this service's clients.
+        let weak = std::sync::Arc::downgrade(&self.0);
+        let shutdown = self.shutdown_token();
+        runtime.spawn(async move {
+            let mut seen = finx_llm::credentials::changes_elsewhere();
+            loop {
+                tokio::select! {
+                    _ = shutdown.cancelled() => return,
+                    _ = tokio::time::sleep(KEY_WATCH_TICK) => {}
+                }
+                let Some(inner) = weak.upgrade() else { return };
+                let now = finx_llm::credentials::changes_elsewhere();
+                if now != seen {
+                    seen = now;
+                    Server(inner).models_changed();
+                }
+            }
+        });
+        if !upkeep.network || upkeep.started.swap(true, Ordering::Relaxed) {
+            return;
+        }
         let weak = std::sync::Arc::downgrade(&self.0);
         let shutdown = self.shutdown_token();
         runtime.spawn(async move {

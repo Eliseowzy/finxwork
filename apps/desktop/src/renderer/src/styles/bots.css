@@ -89,6 +89,7 @@
    a session page's; the bot's sits on the left, a shade off the window, with no avatar, so a run of them reads as one.
    Two bubbles in a row from the same side sit close (6); a change of side puts them apart (21). On hover, the time
    and buttons go beside the bubble, taking no room under it, so a run stays close. */
+.tr.bots{--bub:var(--bot-user)}
 .tr.bots .um{margin-bottom:var(--sp-1)}
 .tr.bots .um:has(+ .um){margin-bottom:0}
 .tr.bots .um+.um{margin-top:-7px}
@@ -98,7 +99,7 @@
 .tr.bots .bm+.bm{margin-top:-7px}
 .bm-b{min-width:0;display:flex;flex-direction:column;align-items:flex-start}
 .bline{position:relative;display:flex;align-items:flex-end;gap:6px;max-width:100%}
-.bbub{min-width:0;max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--msg);font-size:15px;line-height:21px;overflow-wrap:anywhere}
+.bbub{min-width:0;max-width:min(640px,100%);padding:9px 15px;border-radius:var(--r-xl);background:var(--bot-reply);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--msg);font-size:15px;line-height:21px;overflow-wrap:anywhere}
 .bbub .md>*+*{margin-top:8px}
 .bbub .md pre{background:var(--win)}
 .bbub .md :is(pre,table,.md-table){max-width:100%;overflow-x:auto}
@@ -128,7 +129,7 @@
 
 /* The files. A bubble with a row per file; one file is a bubble with one row. The hairline between rows starts where
    the names do. A long name gives way before its extension. */
-.bfiles{display:flex;flex-direction:column;width:320px;max-width:100%;border-radius:var(--r-xl);background:var(--win2);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
+.bfiles{display:flex;flex-direction:column;width:320px;max-width:100%;border-radius:var(--r-xl);background:var(--bot-reply);box-shadow:inset 0 0 0 .5px var(--sep);overflow:hidden}
 .bfiles .tile.file{width:100%;height:52px}
 .bfiles .tile.file .tile-open{background:none;box-shadow:none;border-radius:0;outline-offset:-2px}
 .bfiles .tile.file .tile-open:hover{background:var(--fill)}
@@ -162,16 +163,13 @@
 @media (prefers-reduced-motion:reduce){.bbub.bq,.bq-fold{transition:none}}
 
 .bm:hover .msg-act,.bline .msg-act:focus-within{opacity:1}
-.msg-act .tb.on{color:var(--l1);background:var(--fill)}
 
-/* A message's process: the session page's steps, opened under the bubble from its hover button. */
-.bm .tg-b.bproc{width:min(640px,100%);margin:6px 0 2px}
-.bproc-h{padding:var(--sp-1) var(--sp-2) 2px;font-size:12px;color:var(--l3)}
+/* A routine run's steps: the session page's, as one card. */
 .tg-b.bproc>.am{padding:var(--sp-1) var(--sp-2)}
 
 /* Busy: the last bubble. Three dots while it answers; with sub-agents at work, the dots quieten and what they do opens
    out after them, shimmering. Several open to each one's name. */
-.wbub{--shimmer-on:var(--win2);display:flex;flex-direction:column;padding:0}
+.wbub{--shimmer-on:var(--bot-reply);display:flex;flex-direction:column;padding:0}
 .wb-h{display:flex;align-items:center;gap:7px;min-height:39px;padding:0 15px;border:0;border-radius:var(--r-xl);background:none;font:inherit;color:inherit;text-align:left;min-width:0}
 button.wb-h{cursor:pointer}
 .dots{display:inline-flex;align-items:center;gap:4px;height:21px;flex:none}
@@ -228,7 +226,6 @@ button.wb-h{cursor:pointer}
 .rtn-line>span{overflow:hidden;text-overflow:ellipsis}
 .rtn-line:hover{color:var(--l2);background:var(--fill)}
 .rtn-line .ic{width:13px;height:13px;flex:none}
-.rtn-step{margin:0;align-self:flex-start}
 .rtn-flash .bbub{animation:rtn-flash 1.4s var(--ease-out)}
 @keyframes rtn-flash{0%,40%{box-shadow:inset 0 0 0 1.5px var(--accent)}100%{box-shadow:inset 0 0 0 .5px var(--sep)}}
 .tb.rtn-btn{position:relative}
