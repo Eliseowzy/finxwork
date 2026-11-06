@@ -763,6 +763,157 @@
     }
   },
   {
+    "description": "The outline of a presentation (.pptx): its slide size and count, and a line a slide with its number, title, layout, object count and whether it has tables, charts, pictures or speaker notes.",
+    "group": "deck",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "deck_open",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Read slides of a presentation (.pptx): each slide's title, the text of its text boxes, shapes and tables, the alternative text of pictures and charts, and its speaker notes; with detail `objects`, also each object's shape_id, kind and position.",
+    "group": "deck",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "deck_read",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        },
+        "detail": {
+          "description": "`text` (default) or `objects`.",
+          "oneOf": [
+            {
+              "description": "The slides' text and notes.",
+              "enum": [
+                "text"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Also every object: its shape_id, kind, placeholder and position in points.",
+              "enum": [
+                "objects"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "slides": {
+          "default": null,
+          "description": "Slides to read: \"3\", \"2-5\" or \"1,4,7-8\". Default: from the first, up to 30.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find every place a text or number appears in a presentation (.pptx): slide text, tables, alternative text and speaker notes, with the slide, the object and the text around it.",
+    "group": "deck",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "deck_find",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "case_sensitive": {
+          "default": false,
+          "description": "Match case exactly; default false.",
+          "type": "boolean"
+        },
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        },
+        "query": {
+          "description": "Text or number to look for.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck",
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Look at a slide of a presentation (.pptx) as an image: its layout, charts, pictures and how the text sits.",
+    "group": "deck",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "deck_view",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        },
+        "slide": {
+          "description": "The slide, from 1.",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "width": {
+          "default": null,
+          "description": "Width of the image in pixels; default 1280, at most 2000.",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "deck",
+        "slide"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Check a presentation (.pptx) for layout problems: objects off the slide, pictures and charts without alternative text. Lists each problem with its slide and object.",
+    "group": "deck",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "deck_check",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "deck": {
+          "description": "Path of the presentation (.pptx).",
+          "type": "string"
+        },
+        "slides": {
+          "default": null,
+          "description": "Slides to check: \"3\", \"2-5\" or \"1,4,7-8\". Default: all.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "description": "See the agents in this session: each one's label, status, how long it has run, its recent steps, what it last said and how long ago it last did anything. Name agents, or leave it out for all. For diagnosing, not for waiting: a report comes when an agent is done.",
     "group": "agents",
     "kind": "read_only",

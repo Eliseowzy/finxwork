@@ -150,6 +150,7 @@ impl Deferred {
         }
         if docs {
             names.push(DOC);
+            names.push(crate::deck::GROUP);
         }
         if agents != AgentRole::None {
             names.push(AGENTS);
