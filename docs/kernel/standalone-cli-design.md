@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | v0.6 |
 | 日期 | 2026-11-06 |
-| 状态 | 一期 A–F 包已实现，在分支上，未合入、未发布。§18 的决定都先按文中的建议做，可以再改。还差什么见 §21 |
+| 状态 | 一期 A–F 包已实现，已合入 main，未发布。§18 的决定都先按文中的建议做，可以再改。还差什么见 §21 |
 | 关系 | 把总方案 technical-design.md §12 的"交互界面"（Q-12）从桌面端扩到命令行；扩展 protocol-design.md §6–§8、model-catalog-design.md、mcp-design.md §9；发布沿用 desktop-release.md 的原则 |
 | 编号 | 决策从 D-500 起，待定问题从 Q-300 起，避开并行分支正在使用的编号 |
 
@@ -1708,11 +1708,11 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 
 ## 21. 实施现状（2026-11-05）
 
-分支 `claude/cli-standalone-capabilities-bbc7da`，未合入 main，未推送。
+开发分支 `claude/cli-standalone-capabilities-bbc7da`，2026-11-06 合入 main 并推送，还没有发布。下面 §21.2 的真实模型验收和发布产物检查是合并前做的。
 
 ### 21.1 自动测试
 
-`cargo test --workspace`（带 PDFium）全过，92 个测试目标、1290 项；前端 121 项、桌面端 145 项也全过（桌面端有一次全量运行失败，失败详情没有留下，之后连续重跑都通过，没有查明原因）。新增的端到端测试：`e2e_login.rs`、`e2e_commands.rs`、`e2e_components.rs`（本地起一个 GitHub 形状的发布，走安装、升级、签名错误、摘要错误、`install.sh`）、`e2e_interactive.rs`（真实伪终端：发送、审批的回答、`/` 命令、恢复、取回排队、第一次运行登录、信任提问、非终端拒绝）、`e2e_examples.rs`（两个示例真跑）、`e2e_docs.rs`（文档里标了 `doc-test: run` 的命令真跑，链接不断）、`e2e_network.rs`（脚本、查看类命令和编辑器不访问模型之外的地址，常驻服务只访问公共目录）、`finx-core/tests/mcp.rs` 的审批表。
+合入 main 之后 `cargo test --workspace`（带 PDFium）全过，95 个测试目标、1314 项；桌面端 173 项全过。前端 123 项是合并后第一次跑的结果，之后只改了实验档归类和一条测试例外。合并之前桌面端有一次全量运行失败，失败详情没有留下，之后连续重跑都通过，没有查明原因。新增的端到端测试：`e2e_login.rs`、`e2e_commands.rs`、`e2e_components.rs`（本地起一个 GitHub 形状的发布，走安装、升级、签名错误、摘要错误、`install.sh`）、`e2e_interactive.rs`（真实伪终端：发送、审批的回答、`/` 命令、恢复、取回排队、第一次运行登录、信任提问、非终端拒绝）、`e2e_examples.rs`（两个示例真跑）、`e2e_docs.rs`（文档里标了 `doc-test: run` 的命令真跑，链接不断）、`e2e_network.rs`（脚本、查看类命令和编辑器不访问模型之外的地址，常驻服务只访问公共目录）、`finx-core/tests/mcp.rs` 的审批表。
 
 ### 21.2 真实模型验收
 
@@ -1754,7 +1754,9 @@ ChatGPT 订阅不在这一项：按 chatgpt-api-design，开源和本地使用�
 
 **剩下的原因（`fault_trace.py`，Linux）：** `acp` 多 22 次缺页，其中 `.text` +15、匿名内存 +6；`--help` 多 17 次，其中匿名内存 +11，是新增子命令的解析器占用。主程序 `.text` 多 1.3 MB（+5%）。也就是说，大部分是多了功能和代码的代价，不是某一处写错了。ACP 的 `session/new` 还多一次凭据判断，原因没有再细分。
 
-**预算：** `--help` 的缺页预算从 253 调到 272（`local-command-budget.json`，写了原因）。`status`、`doctor`、`sessions` 仍在预算内。这只是换算出来的，要等 CI 实测。
+**和合并后的 main 比（基线 `3d6bc2d`，已带 PPT 编辑器）：** 同样标出 15 项回退、1 项变好，13 项启动类都在 2–6%，和上表同一性质。另外两项是高负载下关闭会话后的内存（+14.7%）和文件描述符（+9%），单独复跑负载后消失（+3.3%，p=0.69；+2.7%，p=1.0），算偶发。
+
+**预算：** `local-command-budget.json` 的缺页预算调到 288、414、407、337（`--help`、`status`、`doctor`、`sessions`）。专用主机上 main 是 254、373、364、272，合并后是 275、387、375、278；`--help` 在合并前就已经超过原来的 253。新预算是把主机数字按之前的差值换算到 CI 再加 5%，要等 CI 实测后替换。
 
 **一次偶发：** 第三轮的负载测试有一次运行失败，2 个会话报 `mcp_unavailable`（连不上模拟 MCP 服务器的本地地址）。第四轮没有再出现，也没有查出原因。
 

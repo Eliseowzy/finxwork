@@ -1,10 +1,10 @@
 {
   "definition": "Minor page faults of one fresh process, spawn to exit: the median of 50 runs of the static dist build on the CI's Linux runner (bench_cli.py). A command without a number is only reported. Set a number about 5% above what the command measures, because changes elsewhere move the binary's layout and with it a few faults. Raising a number needs a reason below.",
-  "reason": "CI run 41986118445 (binary b182cf613216, EPYC 9V45) measured 241, 365, 364 and 302; these are 5% above. Runners agree: one binary took the same medians on EPYC 7763 and 9V45. The numbers include the Excel engine's static data that a static PIE relocates at start, after its time-zone tables were cut to UTC (technical design D-99). 2026-11-05: help raised from 253 for the standalone CLI's new commands: a dedicated host measured 242 before and 259 after, 17 more faults, 11 of them the parser's heap for the added subcommands (fault_trace.py). 272 is that increase on the CI number, 5% above.",
+  "reason": "CI run 41986118445 (binary b182cf613216, EPYC 9V45) measured 241, 365, 364 and 302; these are 5% above. Runners agree: one binary took the same medians on EPYC 7763 and 9V45. The numbers include the Excel engine's static data that a static PIE relocates at start, after its time-zone tables were cut to UTC (technical design D-99). 2026-11-06: raised with the standalone CLI (D-554), which the owner accepted, on top of what the PPT editor had already added to main. A dedicated host measured main at 254, 373, 364, 272 and the merge at 275, 387, 375, 278. These are estimates: the host's numbers moved to CI's scale by the difference seen before, plus 5%. Replace them with a real CI run's.",
   "page_faults": {
-    "help": 272,
-    "status": 383,
-    "doctor": 382,
-    "sessions": 317
+    "help": 288,
+    "status": 414,
+    "doctor": 407,
+    "sessions": 337
   }
 }
