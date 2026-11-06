@@ -9,7 +9,7 @@ import type { Store } from "./store";
 // selection changes.
 
 /** Widths (px): the sidebar's column, the room the info card (or the background card in its place) keeps on the conversation's right. */
-export const sidebarWidth = 272;
+export const sidebarWidth = 256;
 export const cardRoom = 270;
 /** The least a conversation needs: a composer with its controls, and a message column that still reads as one. */
 export const conversationMin = 560;
