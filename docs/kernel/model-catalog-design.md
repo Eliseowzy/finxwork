@@ -652,6 +652,7 @@ network = true          # false：不在后台刷新公共目录和列表；手�
 | D-338 | 公共目录刷新逐家失败，不再整次作废；构建时的同步仍要求每家都成功 | 目录的家数变多之后，一家的问题不该拖累全部；快照则必须完整 | §5.2 |
 | D-339 | 预算模型的"最高"档是模型能接受的最大预算，不再是固定的 32,768 | 百炼文档说不传预算时用模型的最大值，固定值让"最高"比"默认"想得还少 | §18.2 |
 | D-340 | 用守卫测试遍历每个内置渠道的每个模型，断言每个档位都改变请求；新渠道不声明格式就要显式说明；真实渠道用 `probe_channel` 工具验收 | 这类问题靠逐个渠道发现太慢，要让新增渠道的人在测试里就看到 | §18.7 |
+| D-484 | Opus 4.7、Opus 4.8、Opus 5 提供"不思考"：读目录行时补上目录漏写的开关，不加模型条目 | Anthropic 的 API 文档写明这三个模型接受 `disabled`，聚合商的同款行也有 `none`，只是公共目录没写开关。模型条目会把模型算作"已配置"，一直显示在菜单里，下架后也不消失，所以改在读行时补。尚未用真实 Anthropic 密钥验收 | §18.2 |
 
 ## 16. 待定问题
 
@@ -726,6 +727,7 @@ finx 原来有一套统一等级（不思考、极少、少量、适中、深入
   - 只有开关，且渠道会发开关：提供 `off、on`。渠道不会发开关时没有档位。
   - 什么控制方式都没写：不提供档位，只有"默认"（D-334）。例外是 OpenRouter，它替每个模型翻译，给 `off、low、medium、high`。
   - 例：DeepSeek 是开关加 `low、high、max`，提供 `off、low、high、max`；GLM-5.3 只有 `low、high、max`，官方说关不掉，就没有"不思考"。
+  - 目录漏写的开关在读目录行时补上（D-484）：Opus 4.7、Opus 4.8、Opus 5 的行只写了档位，其实能关。不写成模型条目，因为条目会让模型一直留在菜单里，下架了也不消失。
 - **来自配置**：models.toml 的 `thinking = ["off", "high"]` 直接指定；没写 `thinking` 时，`thinking_levels` 里写了值的档位就是提供的档位（兼容旧写法），值是发送的内容。
 - **没有目录行但模型能推理**（手写的模型、只有列表知道的模型）：按请求格式给一组保守的档位（deepseek、qwen、zai 格式是 `off、on`；openai 格式是 `low、medium、high`；openrouter 是 `off、low、medium、high`；anthropic 接口是 `off、low、medium、high、max`；没有格式就没有）。
 - **不能指定推理**：模型不推理，或渠道的 `thinking_format` 明确写了 `none`，就不提供任何档位，界面隐藏思考强度，请求里也不发。
@@ -765,7 +767,7 @@ finx 原来有一套统一等级（不思考、极少、少量、适中、深入
 | 只有预算（Haiku 4.5、Sonnet 4.5） | `thinking: {type: "enabled", budget_tokens: N}` |
 | 两者都有（Opus 4.5、Opus 4.6、Sonnet 4.6） | 上面的预算，加 `output_config: {effort: <值>}` |
 
-`off` 发 `thinking: {type: "disabled"}`，只有目录写了开关（或只有预算）的模型才提供。DeepSeek 的 Anthropic 兼容端点把 `adaptive` 当作 `enabled`，同样可用。
+`off` 发 `thinking: {type: "disabled"}`，不带 `output_config`，只有目录写了开关（或只有预算）的模型才提供，D-484 补上的三个模型也算。Opus 5 只在 effort 不高于 `high` 时接受 `disabled`，不带 effort 时它用默认的 `high`，不会被拒。Opus 5.5、Sonnet 5.5、Fable 发 `disabled` 都返回 400，不提供 `off`；Sonnet 5.5 另有 `between_tools` 可以关，尚未实现。DeepSeek 的 Anthropic 兼容端点把 `adaptive` 当作 `enabled`，同样可用。
 
 各请求格式的完整参数见总方案 §4.13。
 
