@@ -170,7 +170,7 @@ max_output_tokens = 8192
     )
     env = {k: v for k, v in os.environ.items() if not k.endswith("_API_KEY") and not k.startswith("FINX_")}
     env.update(FINX_HOME=str(home), NO_COLOR="1")
-    cmd = [finx, "exec", "--json", "--permission-mode", "bypass-permissions", "-m", "mock/bench", PROMPT]
+    cmd = [finx, "exec", "--output", "stream-json", "--permission-mode", "bypass-permissions", "-m", "mock/bench", PROMPT]
     started = time.monotonic()
     with open(tmp / "stdout.jsonl", "wb") as out, open(tmp / "stderr.log", "wb") as err:
         proc = subprocess.Popen(cmd, cwd=workspace, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err)

@@ -106,10 +106,15 @@ pub struct Manager {
 impl Manager {
     /// Loads only non-secret configuration. No network, Keychain, timers, or spawned processes.
     pub fn new(home: PathBuf, registry: &Arc<ModelRegistry>) -> Arc<Self> {
-        let environments = BTreeMap::from([
-            ("qwenwork".into(), platform::system(&home)),
-            ("qoder".into(), platform::system_for(&home, "qoder")),
-        ]);
+        // A public build does not borrow other apps' sign-ins (standalone-cli-design §18.3).
+        let environments = if cfg!(feature = "local-accounts") {
+            BTreeMap::from([
+                ("qwenwork".into(), platform::system(&home)),
+                ("qoder".into(), platform::system_for(&home, "qoder")),
+            ])
+        } else {
+            BTreeMap::new()
+        };
         Self::with_environments(home, registry, environments)
     }
     pub fn with_environment(

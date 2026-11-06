@@ -57,6 +57,8 @@
   --bar-tint: rgba(255, 255, 255, .7);
   --code: #f6f7fa; --add-bg: rgba(23, 146, 79, .10); --del-bg: rgba(215, 51, 63, .08); --add-fg: #127443; --del-fg: #b0232f;
   --scrim: rgba(0, 0, 0, .18);
+  /* What is behind a dialog: colour and shape only, no words to read. */
+  --scrim-blur: blur(20px) saturate(1.3);
   /* The composer's pill and the approval card over it; the tray of waiting messages behind it, a step below the window. */
   --pill: #ffffff; --pill-bd: rgba(0, 0, 0, .12);
   --tray: #f4f4f7;

@@ -115,6 +115,7 @@ fn the_body_is_the_apps_envelope_around_the_kernels_turns() {
         name: "read".into(),
         arguments: finx_llm::JsonText::from_value(&json!({"path": "a.txt"})),
         arguments_error: None,
+        provider_data: None,
     };
     let context = Context {
         system: "finx system".into(),

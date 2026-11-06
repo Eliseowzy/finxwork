@@ -90,6 +90,9 @@ pub fn discover(
 struct TrustedFile {
     #[serde(default)]
     paths: Vec<PathBuf>,
+    /// Asked and answered no: not asked again.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    declined: Vec<PathBuf>,
 }
 
 fn canonical(path: &Path) -> PathBuf {
@@ -107,6 +110,40 @@ pub fn is_trusted(home: &FinxHome, project_dir: &Path) -> bool {
     file.paths.iter().any(|p| canonical(p) == target)
 }
 
+/// Whether the person answered no when asked to trust this directory.
+pub fn was_declined(home: &FinxHome, project_dir: &Path) -> bool {
+    let Some(file) = std::fs::read_to_string(home.trusted_file()).ok().and_then(|text| toml::from_str::<TrustedFile>(&text).ok()) else {
+        return false;
+    };
+    let target = canonical(project_dir);
+    file.declined.iter().any(|p| canonical(p) == target)
+}
+
+/// Remembers that the person does not want to trust this directory.
+pub fn decline(home: &FinxHome, project_dir: &Path) -> io::Result<()> {
+    let path = home.trusted_file();
+    let mut file: TrustedFile = std::fs::read_to_string(&path).ok().and_then(|text| toml::from_str(&text).ok()).unwrap_or_default();
+    file.declined.push(canonical(project_dir));
+    std::fs::create_dir_all(home.root())?;
+    std::fs::write(&path, toml::to_string(&file).map_err(io::Error::other)?)
+}
+
+/// Stops trusting a directory. Returns false when it was not trusted.
+pub fn untrust(home: &FinxHome, project_dir: &Path) -> io::Result<bool> {
+    let path = home.trusted_file();
+    let Some(mut file) = std::fs::read_to_string(&path).ok().and_then(|text| toml::from_str::<TrustedFile>(&text).ok()) else {
+        return Ok(false);
+    };
+    let target = canonical(project_dir);
+    let before = file.paths.len();
+    file.paths.retain(|p| canonical(p) != target);
+    if file.paths.len() == before {
+        return Ok(false);
+    }
+    std::fs::write(&path, toml::to_string(&file).map_err(io::Error::other)?)?;
+    Ok(true)
+}
+
 /// Marks a directory as trusted. Returns false when it already was.
 pub fn trust(home: &FinxHome, project_dir: &Path) -> io::Result<bool> {
     let path = home.trusted_file();
@@ -118,6 +155,7 @@ pub fn trust(home: &FinxHome, project_dir: &Path) -> io::Result<bool> {
     if file.paths.iter().any(|p| canonical(p) == target) {
         return Ok(false);
     }
+    file.declined.retain(|p| canonical(p) != target);
     file.paths.push(target);
     let text = toml::to_string(&file).map_err(io::Error::other)?;
     std::fs::create_dir_all(home.root())?;

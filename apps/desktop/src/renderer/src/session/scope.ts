@@ -2,7 +2,12 @@ import { createContext, useCallback, useContext, useSyncExternalStore } from "re
 import type { PathInfo } from "../../../shared/bridge";
 
 /** The session a reply belongs to: its folder resolves the paths it writes, its browser opens its links. None outside a session. */
-export type Scope = { session: string; cwd: string } | null;
+export type Scope = {
+  session: string;
+  cwd: string;
+  /** What shows this content, over the window: it goes first when something here opens beside the conversation, behind it. */
+  leave?: () => void;
+} | null;
 const ScopeContext = createContext<Scope>(null);
 export const ContentScope = ScopeContext.Provider;
 export const useScope = () => useContext(ScopeContext);

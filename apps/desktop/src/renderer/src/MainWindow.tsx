@@ -122,10 +122,10 @@ function useOnboarding() {
   const decided = useRef(false);
   const keyless = needsKey(st);
   useEffect(() => {
-    if (decided.current || !st.loaded || st.models.models.length === 0) return;
+    if (decided.current || !st.loaded || st.models.providers.length === 0) return;
     decided.current = true;
     if (keyless) setOpen(true);
-  }, [st.loaded, st.models.models.length, keyless]);
+  }, [st.loaded, st.models.providers.length, keyless]);
   useEffect(() => {
     const show = () => setOpen(true);
     window.addEventListener(onboardingEvent, show);

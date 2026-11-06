@@ -31,6 +31,8 @@ pub enum StreamEvent {
     ThinkingDelta { index: usize, text: String },
     ToolCallStart { index: usize, id: String, name: String },
     ToolCallArgs { index: usize, json: String },
+    /// What the provider attached to a tool call and wants back (`ToolCall::provider_data`).
+    ToolCallData { index: usize, data: Value },
     /// Produced by the registry's retry layer only. Deltas before it belong to the attempt that
     /// failed: drop them, the next attempt starts over.
     Retrying { attempt: u32, delay: Duration, error: LlmError },
@@ -46,6 +48,7 @@ impl StreamEvent {
                 | StreamEvent::ThinkingDelta { .. }
                 | StreamEvent::ToolCallStart { .. }
                 | StreamEvent::ToolCallArgs { .. }
+                | StreamEvent::ToolCallData { .. }
         )
     }
 }
@@ -63,6 +66,7 @@ enum Block {
         id: String,
         name: String,
         args: String,
+        data: Option<Value>,
     },
 }
 
@@ -134,7 +138,13 @@ impl MessageAccumulator {
                         id: id.clone(),
                         name: name.clone(),
                         args: String::new(),
+                        data: None,
                     };
+                }
+            }
+            StreamEvent::ToolCallData { index, data } => {
+                if let Block::ToolCall { data: slot, .. } = self.slot(*index) {
+                    *slot = Some(data.clone());
                 }
             }
             StreamEvent::ToolCallArgs { index, json } => {
@@ -253,7 +263,11 @@ impl MessageAccumulator {
                         })
                     }
                 }
-                Block::ToolCall { id, name, args } => Some(AssistantContent::ToolCall(parse_tool_call(id, name, args))),
+                Block::ToolCall { id, name, args, data } => {
+                    let mut call = parse_tool_call(id, name, args);
+                    call.provider_data = data.clone();
+                    Some(AssistantContent::ToolCall(call))
+                }
             })
             .collect();
         let has_tools = content.iter().any(|c| matches!(c, AssistantContent::ToolCall(_)));
@@ -313,6 +327,7 @@ pub fn parse_tool_call(id: &str, name: &str, raw: &str) -> ToolCall {
         name: name.to_string(),
         arguments: arguments.into(),
         arguments_error,
+        provider_data: None,
     }
 }
 

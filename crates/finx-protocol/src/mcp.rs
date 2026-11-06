@@ -15,7 +15,6 @@ use std::path::PathBuf;
 /// String values may contain `${VAR}` and `${VAR:-default}`; they are expanded from finx's
 /// environment when the server connects, so a missing variable fails only this server.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct McpServerConfig {
     /// A curated CLI connector managed by finx. Its command is the internal MCP adapter.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -85,6 +84,29 @@ pub struct McpServerConfig {
     /// The first request always waits for this server, and a task fails without it.
     #[serde(default, skip_serializing_if = "is_false")]
     pub required: bool,
+    /// `never`: its tools run without asking in every permission mode. Taken only from the
+    /// user's own configuration file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval: Option<McpApproval>,
+    /// A project defines it, so what it says about its own tools is not taken at its word. Worked
+    /// out when the configuration is read; no file sets it.
+    #[serde(skip)]
+    pub project_defined: bool,
+}
+
+/// How much a server's tools are trusted to run unasked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpApproval {
+    Never,
+}
+
+impl McpServerConfig {
+    /// Whether a tool of this server runs without asking in the modes that ask. `read_only` is
+    /// the tool's `readOnlyHint`, which is the server's own claim.
+    pub fn runs_unasked(&self, read_only: bool) -> bool {
+        self.approval == Some(McpApproval::Never) || (read_only && !self.project_defined)
+    }
 }
 
 fn is_false(value: &bool) -> bool {
@@ -140,7 +162,6 @@ pub enum McpAuthMode {
 
 /// An OAuth client the user registered with the provider.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
 pub struct McpOAuthClient {
     pub client_id: String,
     /// Only for providers that require one; best written as a `${credential:…}` reference.
@@ -307,6 +328,5 @@ mod tests {
         assert_eq!(config.exposure, Some(McpExposure::Direct));
         assert!(config.parallel_tools);
         assert_eq!(serde_json::to_value(&config).unwrap(), json);
-        assert!(serde_json::from_value::<McpServerConfig>(serde_json::json!({"name": "x", "comand": "y"})).is_err());
     }
 }

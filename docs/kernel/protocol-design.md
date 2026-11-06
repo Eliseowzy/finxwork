@@ -2,7 +2,7 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.28 |
+| 版本 | v0.31 |
 | 日期 | 2026-11-05 |
 | 状态 | 三期均已实现，端到端测试与压测通过（§11.1） |
 | 关系 | 扩展 technical-design.md §8（对外协议）。§8.1–§8.4 中 Op、Event 的定义继续有效，本文只做增量补充 |
@@ -47,7 +47,10 @@
 | 版本 | 日期 | 说明 |
 |---|---|---|
 | v0.1 | 2026-10-28 | 初稿：服务层、原生协议、ACP 兼容、传输与常驻服务、性能预算、实施计划 |
-| v0.28 | 2026-11-05 | `bots/create` 加可选的 `model`、`thinking`（bot-design.md D-459），版本 2 之内，老客户端不带时行为不变 |
+| v0.31 | 2026-11-05 | `bots/create` 加可选的 `model`、`thinking`（bot-design.md D-459），版本 2 之内，老客户端不带时行为不变 |
+| v0.30 | 2026-11-05 | 独立发布（standalone-cli-design §9、§10）：Schema 加 `x-stability`，稳定、实验、内部三档，发版基线 `schema-released.json` 由测试比较；新方法 `tools/list`；事件 `approval_refused`；`ToolCall.provider_data`；`McpServerConfig` 不再拒绝未知字段，多了 `approval`；ACP 的 `authMethods`、`authenticate`，`finx acp --login`，没有凭据的模型和因凭据失败的 prompt 都答 `auth_required`（-32000） |
+| v0.29 | 2026-11-05 | 命令行改名（standalone-cli-design §4）：逐行输出事件的写法从 `finx exec --json` 改成 `finx exec --output stream-json`，内容不变；`--json` 现在是一个结果对象。协议本身没有变化。去掉没有实现的调试日志环境变量（§9） |
+| v0.28 | 2026-11-05 | 没有模型时不再假设一个（standalone-cli-design §7.2，已实现），都在版本 2 之内：`SessionDefaults.model` 改为可选，什么都没设置时不出现；`session/new`（没点名模型）、`bots/open`（要新开对话）这时返回新错误码 −32046 `no_model`，ACP 的 `session/new` 返回 `auth_required`（−32000）；`models/list` 不再列没人配置的默认模型 |
 | v0.27 | 2026-11-05 | 超长消息（§4.4、§4.8，technical-design D-445）：一超过上限就报错，不再等这一行结束；错误带上请求的 `id`（认得出时）；`server.max_frame_bytes` 默认值由 32 MiB 提到 128 MiB，依据见 §4.4。长行的读缓冲不再靠 `realloc` 增长 |
 | v0.26 | 2026-11-05 | 子智能体运行中能发消息（agent-messaging-design.md），版本 2 之内：`MailInfo.kind` 多一个 `message`；客户端不认识这个值时当汇报显示不合适，所以和内核一起升级 |
 | v0.25 | 2026-11-05 | 定时任务（routine-design.md §8，已实现），都在版本 2 之内、由 capabilities 的 `routines` 声明：方法 `bots/routine`、`bots/routine_runs`、`bots/routine_run`、`bots/routine_set_enabled`、`bots/routine_run_now`、`bots/routine_stop`、`bots/routine_delete`；`BotSummary` 增加 `routines`、`routines_error`；`MailKind` 增加 `routine`，`MailInfo` 增加 `routine_id`；错误码 −32043 `routine_not_found`、−32044 `routine_busy`、−32045 `routines_unavailable`。新建和修改只走对话，没有方法 |
@@ -111,14 +114,14 @@
 | 使用途径 | 链路 | 每个事件的序列化次数 | 额外进程 |
 |---|---|---|---|
 | `finx chat`、`finx exec`（文本） | 进程内 API | 0 | 无 |
-| `finx exec --json` | 进程内 API → stdout | 1 | 无 |
+| `finx exec --output stream-json` | 进程内 API → stdout | 1 | 无 |
 | 编辑器 | stdio ⇄ `finx acp` → 服务层 → 内核 | 1（ACP） | 无 |
 | 自研客户端，单连接 | stdio ⇄ `finx serve --stdio` → 服务层 → 内核 | 1（原生） | 无 |
 | 自研客户端，常驻服务 | Unix socket ⇄ `finx serve --listen` → 服务层 → 内核 | 1（原生），所有连接共享 | 无 |
 | 远程（以后） | WebSocket ⇄ `finx serve` | 同上 | 无 |
 
 - 进程内路径完全不经过服务层，`finx chat`、`finx exec` 保持现状。
-- `finx exec --json` 输出的每一行，与原生协议 `session/event` 通知里的 `event` 对象使用同一个序列化函数，内容逐字节相同。
+- `finx exec --output stream-json` 输出的每一行，与原生协议 `session/event` 通知里的 `event` 对象使用同一个序列化函数，内容逐字节相同。
 - 两种协议都在内核所在的进程里编码。不存在"内核先输出一种 JSON，再由另一个进程翻译成另一种 JSON"的环节。
 
 ### 2.2 分层
@@ -128,7 +131,7 @@
             │                  │ ACP                │ 原生协议                    │ JSONL
 传输      进程内           stdio（NDJSON）    stdio、Unix socket（NDJSON）     stdin/stdout
             │                  │                    │                            │
-投影         —              ACP 投影            原生投影                     exec --json
+投影         —              ACP 投影            原生投影                     exec stream-json
             │                  └─────────┬──────────┘                            │
 服务层       —                    finx-server                                    —
             │                            │                                       │
@@ -357,7 +360,7 @@ pub enum Outgoing {
 {"jsonrpc":"2.0","method":"session/event","params":{"session_id":"<id>","event":<EVENT>}}\n
 ```
 
-- `<EVENT>` 就是 Event 的 JSON，与 `finx exec --json` 输出的一行相同。
+- `<EVENT>` 就是 Event 的 JSON，与 `finx exec --output stream-json` 输出的一行相同。
 - 每个会话预先算好前缀 `{"jsonrpc":"2.0","method":"session/event","params":{"session_id":"<id>","event":` 和后缀 `}}\n`。
 - 编码一个事件：把 Event 序列化进可复用的缓冲区，再按精确长度一次分配出"前缀 + 事件 + 后缀"，存成 `Bytes` 缓存在 EventFrame 上（`OnceLock`）。
 - 各连接的写任务直接写出这份 `Bytes`，没有任何按连接的编码工作。
@@ -567,7 +570,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | 方法 | 参数 | 结果 | 说明 |
 |---|---|---|---|
 | `initialize` | protocol_version、client_info、capabilities | protocol_version、server_info、capabilities | §6.3 |
-| `session/new` | cwd?、extra_roots?、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | session_id、snapshot | 新建会话，发起的连接自动接入。省略 cwd 时会话没有项目：内核在 `~/.finx/chats/` 下新建一个空文件夹作为它的工作目录，列表里标为 `no_project`（v0.17）。mcp_servers 是客户端带来的 MCP 服务器，同名时替换配置里的（mcp-design §4.1） |
+| `session/new` | cwd?、extra_roots?、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | session_id、snapshot | 新建会话，发起的连接自动接入。省略 model 且没有默认模型时返回 `no_model`（v0.28）。省略 cwd 时会话没有项目：内核在 `~/.finx/chats/` 下新建一个空文件夹作为它的工作目录，列表里标为 `no_project`（v0.17）。mcp_servers 是客户端带来的 MCP 服务器，同名时替换配置里的（mcp-design §4.1） |
 | `session/resume` | session_id、model?、thinking?、permission_mode?、mcp_servers?、events?、history_limit? | snapshot | 未加载时从磁盘恢复；已加载时等同于接入，此时不能带覆盖参数（包括 mcp_servers） |
 | `session/attach` | session_id、events?、history_limit? | snapshot | 接入已加载的会话，不会触发加载 |
 | `session/detach` | session_id | `{}` | 停止接收该会话的事件 |
@@ -578,7 +581,7 @@ pub fn transcript(&self) -> Vec<TranscriptItem>;
 | `session/close` | session_id | `{}` | 关闭会话：中断任务、日志落盘、释放锁 |
 | `session/delete` | session_id | `{}` | 会话日志移入回收目录。会话已加载时先关闭（中断任务），再移入 |
 | `resource/read` | uri、offset?、limit? | text、offset、eof、total_bytes | 分段读取工具的完整输出等大内容 |
-| `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
+| `models/list` | — | models、providers、defaults | models 与 `finx models --json` 同一份数据；providers 是每个服务商的认证方式与密钥来源（不含密钥本身）；defaults 是 `session/new` 省略设置时使用的模型、推理等级、权限模式；模型由内核按实际接入的服务商算出，什么都没设置时不出现（v0.28）。v0.14 起只列有凭据的服务商的模型，模型带 `shown`、`known`、`deprecated`，服务商带 `listing`（model-catalog-design §8.1） |
 | `models/refresh` | provider?、catalog? | providers | 立即刷新服务商的模型列表，`catalog: true` 时同时刷新公共目录（model-catalog-design §8.2） |
 | `models/show` | model、shown | `{}` | 在模型菜单里显示或隐藏一个模型（model-catalog-design §6.3） |
 | `server/shutdown` | — | `{}` | 只用于常驻服务，优雅退出（§3.8） |
@@ -813,6 +816,7 @@ pub struct ResourceReadResult {
 | -32043 | routine_not_found | 这个 Bot 没有这个定时任务，或没有这次运行（v0.24） |
 | -32044 | routine_busy | `bots/routine_run_now`：它已经在运行 |
 | -32045 | routines_unavailable | 定时任务的数据库打不开；消息写明原因。服务和聊天不受影响 |
+| -32046 | no_model | 没点名模型、没配置，也没有能用的服务商（v0.28）。客户端把人带到模型设置；接入后不用重启 |
 
 ### 6.8 示例
 
@@ -849,7 +853,7 @@ pub struct ResourceReadResult {
   - `x-error-codes`：错误码与错误 data 中的 `kind`；
   - `x-protocol-version`：协议版本。
 - **仓库中的副本**：`crates/finx-protocol/schema.json`。测试要求它与类型一致，协议有改动时用 `FINX_UPDATE_SNAPSHOTS=1` 重新生成，在评审中查看差异。
-- **校验**：端到端测试用这份 Schema 校验 `finx exec --json` 的每一行，以及原生协议的初始化结果、快照、历史、列表、模型列表和会话中的每个事件。
+- **校验**：端到端测试用这份 Schema 校验 `finx exec --output stream-json` 的每一行，以及原生协议的初始化结果、快照、历史、列表、模型列表和会话中的每个事件。
 
 ### 6.10 子智能体（v0.9）
 
@@ -921,7 +925,7 @@ capabilities 的 `message_resend` 为 true 的服务提供以下内容，都是�
 
 | ACP 方法 | finx 的处理 |
 |---|---|
-| `session/new` | 新建会话，additionalDirectories 作为额外的工作区根目录。回复 sessionId 与配置项。mcpServers 里的 stdio 与 http 服务器交给会话，名字整理成合法且不重复的形式；其他传输跳过，并在客户端支持时各发一条 notice（mcp-design §11.3） |
+| `session/new` | 新建会话，additionalDirectories 作为额外的工作区根目录。回复 sessionId 与配置项。什么模型都没设置时返回 `auth_required`（−32000，v0.28）。mcpServers 里的 stdio 与 http 服务器交给会话，名字整理成合法且不重复的形式；其他传输跳过，并在客户端支持时各发一条 notice（mcp-design §11.3） |
 | `session/load` | 恢复会话，把完整历史按顺序回放成 session/update，再回复配置项。回放规则见下。会话还没加载时使用带来的 mcpServers，已经加载时忽略 |
 | `session/resume` | 恢复会话，不回放，回复配置项。mcpServers 的处理同 session/load |
 | `session/list` | 列出磁盘上的会话和本服务中还没写出日志的新会话，支持 cwd 过滤与游标分页。title 取第一条用户消息的开头，updatedAt 取最后修改时间 |
@@ -1126,7 +1130,7 @@ ACP 允许 agent 通过客户端读写文件（`fs/*`）、运行命令（`termi
 - **审批不可绕过**：两种协议都只能通过 Op 答复内核发起的审批。审批策略、受保护路径、项目信任（technical-design §11）对协议客户端一视同仁。
 - **不传密钥**：事件与协议消息中不包含模型密钥；工具子进程的环境照常清理密钥变量。
 - **删除可恢复**：`session/delete` 只把日志移入回收目录。
-- **调试日志**：默认不记录消息内容，因为其中可能有代码。设置 `FINX_DEBUG_RPC=1` 时，把收发的每条消息写入日志文件，只用于开发排查。
+- **调试日志**：默认不记录消息内容，因为其中可能有代码。逐条记录收发消息的开关还没有做（standalone-cli-design Q-310）。
 
 ## 10. 配置与命令行
 
@@ -1181,7 +1185,7 @@ delegate_fs = false             # 是否通过客户端读写文件（Q-23）
 1. 脚本化场景通过 `finx serve --stdio` 跑通：初始化 → 新建会话 → 提问 → 审批 → 完成，收发的消息与金样一致。
 2. 中途接入的一致性测试通过（§12.1）。
 3. 慢客户端测试通过：内核不被阻塞，内存不超过上限，合并后的文本与逐条接收的一致。
-4. `finx exec --json` 的输出除新增字段外不变。
+4. `finx exec --output stream-json` 的输出除新增字段外不变。
 5. §12.2 的预算达标。未达标的项记录实测值和原因，修订预算后再进入二期。
 
 ### 二期：ACP（预估 1 周）
@@ -1302,7 +1306,7 @@ delegate_fs = false             # 是否通过客户端读写文件（Q-23）
 |---|---|---|---|
 | D-21 | 所有对外协议都是内核事件在同一进程内的投影：每个事件在每种协议下最多序列化一次，不经过中间形式，不经过第二个进程 | 协议层不增加可感知的开销（G3） | §1.2 §4 |
 | D-22 | 新增服务层 finx-server：一个进程承载多个会话与多个连接，会话与连接解耦 | 多客户端、常驻服务、断线重连的基础（G2） | §3 |
-| D-23 | 原生协议使用 JSON-RPC 2.0 信封，`session/op` 承载 Op，`session/event` 承载 Event；载荷与进程内 API、`exec --json`、`--ops-stdin` 完全相同 | 零映射；新增 Op、Event 不用改协议层 | §6 |
+| D-23 | 原生协议使用 JSON-RPC 2.0 信封，`session/op` 承载 Op，`session/event` 承载 Event；载荷与进程内 API、`exec --output stream-json`、`--ops-stdin` 完全相同 | 零映射；新增 Op、Event 不用改协议层 | §6 |
 | D-24 | 原生协议的审批沿用"事件 + Op"，不使用服务端请求；ACP 投影将其转换为 session/request_permission | 审批属于会话，天然支持多客户端、快照和重连 | §3.7 §7.6 |
 | D-25 | 接入会话 = 快照 + 增量。快照由会话中枢根据事件流维护的镜像生成，与 seq 严格衔接 | 中途接入与重连不缺事件，也不重复 | §3.2–§3.4 |
 | D-26 | 每个连接一个按字节设上限的发送队列；积压时合并相邻的增量；超过上限只断开该连接对该会话的接入。内核事件通道保持无界 | 慢客户端只影响自己；跟得上时不增加延迟 | §3.6 |

@@ -88,12 +88,18 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpSe
     }
 }
 
+/// Most tests are about what the tools do, not whether they may: those that ask get `manual` by
+/// setting it.
+fn config_mode(config: &Config) -> PermissionMode {
+    if config.permission_mode == PermissionMode::Manual { PermissionMode::BypassPermissions } else { config.permission_mode }
+}
+
 fn start_options(work: &Path, home: &FinxHome, config: Config) -> StartOptions {
     StartOptions {
         model: "test/scripted".into(),
         thinking: ThinkingLevel::Off,
-        // Manual mode without anyone to approve: MCP calls must still run.
-        permission_mode: PermissionMode::Manual,
+        // Without anyone to approve; the tools below that are not read-only would be refused.
+        permission_mode: config_mode(&config),
         cwd: work.to_path_buf(),
         home: home.clone(),
         config: Arc::new(config),
@@ -323,7 +329,7 @@ async fn deferred_tools_are_searched_and_called_without_changing_the_request() {
     assert!(search.contains("\"Text to repeat\""), "the schema comes with it: {search}");
     assert_eq!(tool_results(&requests[2])[1], "echo: hi");
 
-    assert!(events.iter().all(|e| !matches!(e, EventMsg::ApprovalRequested { .. })), "MCP calls are not approved");
+    assert!(events.iter().all(|e| !matches!(e, EventMsg::ApprovalRequested { .. })), "a tool that says it only reads is not asked about");
     let started = events
         .iter()
         .find_map(|e| match e {
@@ -589,4 +595,53 @@ async fn resumed_sessions_reconnect_and_keep_one_prompt_entry() {
     assert_eq!(tool_results(&api.requests()[1]).last().unwrap(), "3");
     assert_eq!(prompt_entries(&h.home).len(), 1, "same prompt and tools: no new entry on resume");
     let _ = kernel.shutdown().await;
+}
+
+/// A run under `mode`: the model calls `tool` through `call_tool`. Returns whether it ran.
+async fn runs_without_a_person(mode: PermissionMode, configure: impl FnOnce(&mut McpServerConfig), tool: &str, args: Value, rules: Vec<finx_protocol::CommandRule>) -> (bool, Vec<EventMsg>) {
+    let server = test_server(McpTestOptions::default()).await;
+    let mut config = http_config("test", &server);
+    configure(&mut config);
+    let mut h = Harness::start_with(
+        Config { permission_mode: mode, rules, ..Config::default() },
+        vec![config],
+        Some(server),
+        |api| {
+            api.push(Script::tool_call("t0", "tool_search", json!({ "query": "repeat" })));
+            api.push(Script::tool_call("t1", "call_tool", json!({ "name": tool, "arguments": args })));
+            api.push(Script::text("done"));
+        },
+    )
+    .await;
+    let (_, events) = h.run("go").await;
+    let refused = events.iter().any(|e| matches!(e, EventMsg::ApprovalRefused { .. }));
+    (!refused, events)
+}
+
+/// standalone-cli-design §8.5.
+#[tokio::test]
+async fn tools_from_servers_are_asked_about_unless_they_only_read_or_the_user_trusts_them() {
+    let add = json!({ "a": 1, "b": 2 });
+    let echo = json!({ "text": "hi" });
+    let manual = PermissionMode::AcceptEdits;
+    // Nobody can approve here, so asking is refusing.
+    assert!(!runs_without_a_person(manual, |_| {}, "mcp__test__add", add.clone(), vec![]).await.0, "a tool that may change things is asked about");
+    assert!(runs_without_a_person(manual, |_| {}, "mcp__test__echo", echo.clone(), vec![]).await.0, "one that says it only reads is not");
+    assert!(
+        !runs_without_a_person(manual, |c| c.project_defined = true, "mcp__test__echo", echo.clone(), vec![]).await.0,
+        "a project's server is not taken at its word"
+    );
+    assert!(
+        runs_without_a_person(manual, |c| c.approval = Some(finx_protocol::McpApproval::Never), "mcp__test__add", add.clone(), vec![]).await.0,
+        "the user trusts this server"
+    );
+    assert!(runs_without_a_person(PermissionMode::BypassPermissions, |_| {}, "mcp__test__add", add.clone(), vec![]).await.0, "every action runs");
+    let allow = finx_protocol::CommandRule { prefix: vec!["mcp__test__add".into()], decision: finx_protocol::RuleDecision::Allow, reason: None };
+    assert!(runs_without_a_person(manual, |_| {}, "mcp__test__add", add.clone(), vec![allow]).await.0, "a rule names the tool");
+    let deny = finx_protocol::CommandRule { prefix: vec!["mcp__test__echo".into()], decision: finx_protocol::RuleDecision::Deny, reason: None };
+    let (_, events) = runs_without_a_person(PermissionMode::BypassPermissions, |_| {}, "mcp__test__echo", echo, vec![deny]).await;
+    assert!(
+        format!("{events:?}").contains("blocked by the rule"),
+        "a rule that forbids it holds in every mode: {events:?}"
+    );
 }

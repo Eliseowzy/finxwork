@@ -5,6 +5,7 @@ import { baseName, fileOfLink } from "@finx/client";
 import { Lightbox } from "../composer/Tile";
 import { useStore } from "../store";
 import { parseCitation, useDocOpener } from "../docs/state";
+import { joinPath } from "../files/state";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import remarkMath from "remark-math";
@@ -135,7 +136,9 @@ function ReplyImage({ src, alt }: { src?: string; alt?: string }) {
   useEffect(() => {
     if (!file || !scope) return;
     let live = true;
-    st.call("files/read", { session_id: scope.session, path: file.path })
+    // Relative to where the words are (a file's own folder), which may not be the session's.
+    const path = /^(~|[\\/]|[A-Za-z]:[\\/])/.test(file.path) ? file.path : joinPath(scope.cwd, file.path);
+    st.call("files/read", { session_id: scope.session, path })
       .then((read) => live && setPicture(read.image ? { path: file.path, data: `data:${read.image.mime_type};base64,${read.image.data}` } : null))
       .catch(() => live && setPicture(null));
     return () => {

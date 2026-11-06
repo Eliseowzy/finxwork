@@ -21,6 +21,13 @@ export type PanelWidth = {
   grip: { onPointerDown: (e: ReactPointerEvent) => void; onKeyDown: (e: KeyboardEvent) => void; "aria-valuenow": number | undefined };
 };
 
+/**
+ * The room the conversation keeps beside it. A width kept from a wider window (or from another
+ * file's room, a document's being more) gives way to it, so the panel never takes the page whole
+ * and the conversation's column never shrinks to nothing.
+ */
+const fit = (room: number): CSSProperties => ({ maxWidth: `calc(100% - ${room}px)` });
+
 export function usePanelWidth(key: string, room: () => number): PanelWidth {
   const panel = useRef<HTMLElement>(null);
   const [width, setWidth] = useState<number | null>(() => savedWidth(key));
@@ -72,7 +79,10 @@ export function usePanelWidth(key: string, room: () => number): PanelWidth {
     panel,
     width,
     resizing,
-    style: (max) => (width !== null && !max ? ({ "--brp-w": `${width}px` } as CSSProperties) : undefined),
+    style: (max) => {
+      if (max) return undefined;
+      return { ...fit(room()), ...(width !== null ? ({ "--brp-w": `${width}px` } as CSSProperties) : {}) };
+    },
     grip: { onPointerDown, onKeyDown, "aria-valuenow": width ?? undefined },
   };
 }

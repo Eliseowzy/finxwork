@@ -454,6 +454,7 @@ mod tests {
             name: "bash".into(),
             arguments: json!({}).into(),
             arguments_error: None,
+            provider_data: None,
         })
     }
 

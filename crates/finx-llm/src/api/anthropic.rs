@@ -681,6 +681,7 @@ mod tests {
             name: "read".into(),
             arguments: json!({"path": id}).into(),
             arguments_error: None,
+            provider_data: None,
         };
         let result = |id: &str, is_error: bool| {
             Message::from(ToolResultMessage {

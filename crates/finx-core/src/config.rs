@@ -15,10 +15,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub const DEFAULT_MODEL: &str = "deepseek/deepseek-flash";
-
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ConfigFile {
     pub model: Option<String>,
     pub thinking: Option<ThinkingLevel>,
@@ -42,13 +39,35 @@ pub struct ConfigFile {
     pub desktop: Option<DesktopFile>,
     pub web_search: Option<WebSearchFile>,
     pub models: Option<ModelsFile>,
+    pub ui: Option<UiFile>,
+    pub history: Option<HistoryFile>,
+    pub update: Option<UpdateFile>,
     /// `[mcp_servers.<name>]`, by name.
     pub mcp_servers: Option<BTreeMap<String, McpServerConfig>>,
 }
 
+/// `[ui]`: how the interactive mode shows things.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UiFile {
+    /// Write the model's reasoning into the scrollback, dimmed.
+    pub show_thinking: Option<bool>,
+}
+
+/// `[history]`: what was typed in the interactive mode.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct HistoryFile {
+    pub enabled: Option<bool>,
+}
+
+/// `[update]`
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct UpdateFile {
+    /// Let the interactive mode look for a new release, at most once a day.
+    pub check: Option<bool>,
+}
+
 /// `[mcp]`: settings for every MCP server.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct McpFile {
     pub enabled: Option<bool>,
     /// Read `.mcp.json` at the root of a trusted project.
@@ -63,7 +82,6 @@ pub struct McpFile {
 
 /// `[browser]`: the browser tools (docs/kernel/browser-design.md §10).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct BrowserFile {
     /// Whether FinxWork controls browsers at all (browser-design §10.1).
     pub enabled: Option<bool>,
@@ -213,7 +231,6 @@ impl BrowserSettings {
 
 /// `[desktop]`: the desktop app tools, through the agent-desktop CLI.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct DesktopFile {
     pub enabled: Option<bool>,
     /// The agent-desktop program; by default `~/.finx/desktop/bin`, then `PATH`.
@@ -279,7 +296,6 @@ impl DesktopSettings {
 
 /// `[web_search]` (docs/kernel/web-search-design.md §6.3).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct WebSearchFile {
     pub enabled: Option<bool>,
     /// Service ids, the first tried first; the ones not named follow in the default order.
@@ -322,7 +338,6 @@ impl WebSearchSettings {
 
 /// `[models]`: model lists and the public catalog (docs/kernel/model-catalog-design.md §11).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ModelsFile {
     /// `false`: no background refresh of the catalog and the lists.
     pub network: Option<bool>,
@@ -330,14 +345,12 @@ pub struct ModelsFile {
 
 /// `[agents]`: sub-agents (`spawn_agent`, `send_message`).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AgentsFile {
     pub enabled: Option<bool>,
 }
 
 /// `[skills]` (docs/kernel/skill-design.md §10).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct SkillsFile {
     pub enabled: Option<bool>,
     /// Removed in 2e (design D-176); still read so that the error can say what replaced it.
@@ -383,7 +396,6 @@ impl Default for SkillsSettings {
 
 /// `[server]`: the protocol service (`finx serve`, `finx acp`).
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ServerFile {
     pub max_frame_bytes: Option<u64>,
     pub queue_hard_bytes: Option<u64>,
@@ -394,7 +406,6 @@ pub struct ServerFile {
 
 /// `[acp]`: the ACP projection.
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AcpFile {
     pub progress_interval_ms: Option<u64>,
     pub progress_tail_bytes: Option<usize>,
@@ -419,7 +430,6 @@ pub struct AcpSettings {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct InstructionsFile {
     pub files: Option<Vec<String>>,
     pub extra: Option<String>,
@@ -427,7 +437,6 @@ pub struct InstructionsFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct ToolsFile {
     pub enabled: Option<Vec<String>>,
     pub bash: Option<BashFile>,
@@ -435,7 +444,6 @@ pub struct ToolsFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct BashFile {
     pub default_timeout_secs: Option<u64>,
     pub max_timeout_secs: Option<u64>,
@@ -444,7 +452,6 @@ pub struct BashFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct LimitsFile {
     pub max_lines: Option<usize>,
     pub max_tokens: Option<usize>,
@@ -456,7 +463,6 @@ pub struct LimitsFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct CompactionFile {
     pub enabled: Option<bool>,
     pub threshold: Option<f64>,
@@ -466,7 +472,6 @@ pub struct CompactionFile {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct LlmFile {
     pub max_retries: Option<u32>,
     pub retry_window_secs: Option<u64>,
@@ -506,7 +511,9 @@ pub struct McpSettings {
 /// Resolved configuration with every default applied.
 #[derive(Debug, Clone)]
 pub struct Config {
-    pub model: String,
+    /// The `model` the configuration names. Without one, `models::default_model` decides, and no
+    /// model is assumed when nothing is set up.
+    pub model: Option<String>,
     pub thinking: ThinkingLevel,
     pub permission_mode: PermissionMode,
     pub max_turns: u32,
@@ -518,6 +525,12 @@ pub struct Config {
     pub instructions_extra: String,
     pub project_root_markers: Vec<String>,
     pub enabled_tools: Vec<String>,
+    /// `ui.show_thinking`
+    pub show_thinking: bool,
+    /// `history.enabled`
+    pub history_enabled: bool,
+    /// `update.check`
+    pub update_check: bool,
     pub bash_default_timeout: Duration,
     pub bash_max_timeout: Duration,
     pub bash_shell: Option<String>,
@@ -606,7 +619,7 @@ impl Config {
         }
         let bash_max = Duration::from_secs(bash.max_timeout_secs.unwrap_or(600).max(1));
         Ok(Self {
-            model: file.model.unwrap_or_else(|| DEFAULT_MODEL.to_string()),
+            model: file.model,
             thinking: file.thinking.unwrap_or_default(),
             permission_mode: file.permission_mode.unwrap_or_default(),
             max_turns: file.max_turns.unwrap_or(0),
@@ -618,6 +631,9 @@ impl Config {
             project_root_markers: instructions
                 .project_root_markers
                 .unwrap_or_else(|| vec![".git".to_string()]),
+            show_thinking: file.ui.as_ref().and_then(|ui| ui.show_thinking).unwrap_or(false),
+            history_enabled: file.history.as_ref().and_then(|history| history.enabled).unwrap_or(true),
+            update_check: file.update.as_ref().and_then(|update| update.check).unwrap_or(true),
             enabled_tools: tools
                 .enabled
                 .unwrap_or_else(|| finx_tools::DEFAULT_TOOLS.iter().map(|s| s.to_string()).collect()),
@@ -748,6 +764,7 @@ pub fn load_layers_with(
     substitute: Option<(ConfigLayer, toml::Table)>,
 ) -> Result<LoadedConfig, ConfigError> {
     let mut substitute = substitute;
+    let mut warnings = Vec::new();
     let mut layer_table = |layer: ConfigLayer, path: Option<&Path>| -> Result<Option<toml::Table>, ConfigError> {
         if let Some((replaced, _)) = &substitute
             && *replaced == layer
@@ -760,7 +777,6 @@ pub fn load_layers_with(
         }
     };
     let mut merged = toml::Table::new();
-    let mut warnings = Vec::new();
     let mut sources = Vec::new();
     let mut mcp_sources = BTreeMap::new();
     let mut origins = BTreeMap::new();
@@ -817,6 +833,7 @@ pub fn load_layers_with(
                 project_file.display()
             ));
         }
+        strip_mcp_approval(&mut table, project_file, &mut warnings);
         note_mcp_servers(&table, "project config", &mut mcp_sources);
         note_origins(&table, "", ConfigLayer::Project, &mut origins);
         merge_tables(&mut merged, table, "");
@@ -830,6 +847,7 @@ pub fn load_layers_with(
         if let Some(project_root) = files.project_root {
             anchor_skill_paths(&mut table, project_root);
         }
+        strip_mcp_approval(&mut table, user_project, &mut warnings);
         note_mcp_servers(&table, "personal project config", &mut mcp_sources);
         note_origins(&table, "", ConfigLayer::UserProject, &mut origins);
         merge_tables(&mut merged, table, "");
@@ -843,12 +861,36 @@ pub fn load_layers_with(
         merge_tables(&mut merged, table, "");
     }
     let kept = merged.clone();
-    let file: ConfigFile = toml::Value::Table(merged)
-        .try_into()
-        .map_err(|e: toml::de::Error| ConfigError::Parse {
-            path: "merged configuration".into(),
-            message: e.to_string(),
-        })?;
+    let mut unknown = Vec::new();
+    let file: ConfigFile = serde_ignored::deserialize(toml::Value::Table(merged), |path| unknown.push(dotted(&path))).map_err(|e: toml::de::Error| {
+        // Only now is it worth going through the files, to name the one that holds the mistake.
+        let layers = [Some(files.user), files.project, files.user_project];
+        let culprit = layers.into_iter().flatten().find_map(|path| {
+            let text = std::fs::read_to_string(path).ok()?;
+            let err = unknown_keys(&text).err()?;
+            Some((path.display().to_string(), err.to_string()))
+        });
+        let (path, message) = culprit.unwrap_or_else(|| ("merged configuration".to_string(), e.to_string()));
+        ConfigError::Parse { path, message }
+    })?;
+    // Typed on this command line, not found in a file another version may have written.
+    if let Some(key) = unknown.iter().find(|key| origins.get(*key) == Some(&ConfigLayer::Flag)) {
+        return Err(ConfigError::Invalid(unknown_key_message(key)));
+    }
+    // Rare, so the files are read again for the line numbers only now.
+    for key in &unknown {
+        let file = match origins.get(key) {
+            Some(ConfigLayer::User) => Some(files.user),
+            Some(ConfigLayer::Project) => files.project,
+            Some(ConfigLayer::UserProject) => files.user_project,
+            _ => None,
+        };
+        let place = file.map_or(String::new(), |file| {
+            let line = std::fs::read_to_string(file).map_or(String::new(), |text| line_of(&text, key));
+            format!(" in {}{line}", file.display())
+        });
+        warnings.push(format!("ignored {}{place}", unknown_key_message(key)));
+    }
     Ok(LoadedConfig {
         config: Config::from_file(file)?,
         warnings,
@@ -892,28 +934,147 @@ fn note_mcp_servers(table: &toml::Table, layer: &str, sources: &mut BTreeMap<Str
     }
 }
 
-/// Checks one file's text against the schema (unknown keys are errors) and parses it.
+/// `tools.bash.x`; serde_ignored also has a step for each optional value.
+fn dotted(path: &serde_ignored::Path) -> String {
+    path.to_string().replace(".?", "")
+}
+
+/// The keys of `text` the schema does not know, by dotted path; an error for what it cannot read.
+fn unknown_keys(text: &str) -> Result<Vec<String>, toml::de::Error> {
+    let mut unknown = Vec::new();
+    let deserializer = toml::Deserializer::parse(text)?;
+    serde_ignored::deserialize::<_, _, ConfigFile>(deserializer, |path| unknown.push(dotted(&path)))?;
+    Ok(unknown)
+}
+
+/// Checks one file's text against the schema and parses it. Unknown keys are errors: whoever writes
+/// one through `config/write` or `finx config set` made a mistake.
 pub fn check_file(text: &str, path: &Path) -> Result<toml::Table, ConfigError> {
     let parse_error = |e: toml::de::Error| ConfigError::Parse {
         path: path.display().to_string(),
         message: e.to_string(),
     };
-    toml::from_str::<ConfigFile>(text).map_err(parse_error)?;
+    let unknown = unknown_keys(text).map_err(parse_error)?;
+    if let Some(key) = unknown.first() {
+        return Err(ConfigError::Parse { path: path.display().to_string(), message: unknown_key_message(key) });
+    }
     toml::from_str::<toml::Table>(text).map_err(parse_error)
 }
 
+/// Reads one layer's file. A key this version does not know is a warning, not a failure: a newer
+/// finx or FinxWork may have written it, and every command, `finx doctor` included, should still
+/// run. A value it cannot read stays an error, and so does anything unknown in `rules`: a safety
+/// rule must not quietly go missing.
 fn read_table(path: &Path) -> Result<toml::Table, ConfigError> {
     let text = std::fs::read_to_string(path).map_err(|source| ConfigError::Io {
         path: path.to_path_buf(),
         source,
     })?;
-    let parse_error = |e: toml::de::Error| ConfigError::Parse {
+    let table = toml::from_str::<toml::Table>(&text).map_err(|e| ConfigError::Parse {
         path: path.display().to_string(),
         message: e.to_string(),
-    };
-    // Validate against the schema first so errors point at the right file and line.
-    toml::from_str::<ConfigFile>(&text).map_err(parse_error)?;
-    toml::from_str::<toml::Table>(&text).map_err(parse_error)
+    })?;
+    // One name would quietly replace the other once the old one is migrated.
+    if table.contains_key("permission_mode") && table.contains_key("approval_mode") {
+        return Err(ConfigError::Parse {
+            path: path.display().to_string(),
+            message: "permission_mode and approval_mode are the same setting: keep permission_mode".to_string(),
+        });
+    }
+    Ok(table)
+}
+
+/// `:12` when the key's line can be found.
+fn line_of(text: &str, key: &str) -> String {
+    let last = key.rsplit('.').next().unwrap_or(key);
+    let found = text.lines().position(|line| {
+        let line = line.trim_start();
+        line.strip_prefix(last).is_some_and(|rest| rest.trim_start().starts_with('='))
+            || line.trim_start_matches('[').strip_prefix(key).is_some_and(|rest| rest.starts_with(']'))
+    });
+    found.map_or(String::new(), |index| format!(":{}", index + 1))
+}
+
+/// Names the fields of a struct: its generated `Deserialize` passes them to the deserializer.
+struct FieldNames<'a>(&'a std::cell::Cell<&'static [&'static str]>);
+
+impl<'de> serde::Deserializer<'de> for FieldNames<'_> {
+    type Error = serde::de::value::Error;
+
+    fn deserialize_any<V: serde::de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
+        Err(serde::de::Error::custom("only asked for the fields"))
+    }
+
+    fn deserialize_struct<V: serde::de::Visitor<'de>>(
+        self,
+        _name: &'static str,
+        fields: &'static [&'static str],
+        _visitor: V,
+    ) -> Result<V::Value, Self::Error> {
+        self.0.set(fields);
+        Err(serde::de::Error::custom("only asked for the fields"))
+    }
+
+    serde::forward_to_deserialize_any! {
+        bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string bytes byte_buf option
+        unit unit_struct newtype_struct seq tuple tuple_struct map enum identifier ignored_any
+    }
+}
+
+fn fields_of<'de, T: Deserialize<'de>>() -> &'static [&'static str] {
+    let fields = std::cell::Cell::new(&[][..]);
+    let _ = T::deserialize(FieldNames(&fields));
+    fields.get()
+}
+
+/// The keys a table of the configuration can hold, by the table's path.
+fn known_keys(table: &str) -> &'static [&'static str] {
+    match table {
+        "" => fields_of::<ConfigFile>(),
+        "mcp" => fields_of::<McpFile>(),
+        "browser" => fields_of::<BrowserFile>(),
+        "desktop" => fields_of::<DesktopFile>(),
+        "web_search" => fields_of::<WebSearchFile>(),
+        "models" => fields_of::<ModelsFile>(),
+        "ui" => fields_of::<UiFile>(),
+        "history" => fields_of::<HistoryFile>(),
+        "update" => fields_of::<UpdateFile>(),
+        "agents" => fields_of::<AgentsFile>(),
+        "skills" => fields_of::<SkillsFile>(),
+        "server" => fields_of::<ServerFile>(),
+        "acp" => fields_of::<AcpFile>(),
+        "instructions" => fields_of::<InstructionsFile>(),
+        "tools" => fields_of::<ToolsFile>(),
+        "tools.bash" => fields_of::<BashFile>(),
+        "tools.limits" => fields_of::<LimitsFile>(),
+        "compaction" => fields_of::<CompactionFile>(),
+        "llm" => fields_of::<LlmFile>(),
+        _ if table.starts_with("mcp_servers.") => fields_of::<McpServerConfig>(),
+        _ => &[],
+    }
+}
+
+/// "unknown setting `tool`; did you mean `tools`?"
+/// What is wrong with a key someone typed: nothing for one finx knows, or under a table whose keys
+/// are not fixed.
+pub fn key_problem(key: &str) -> Option<String> {
+    let (table, last) = key.rsplit_once('.').unwrap_or(("", key));
+    let known = known_keys(table);
+    (!known.is_empty() && !known.contains(&last)).then(|| unknown_key_message(key))
+}
+
+fn unknown_key_message(key: &str) -> String {
+    let (table, last) = key.rsplit_once('.').unwrap_or(("", key));
+    let closest = known_keys(table)
+        .iter()
+        .map(|known| (strsim::damerau_levenshtein(known, last), *known))
+        .filter(|(distance, _)| *distance <= 2)
+        .min();
+    match closest {
+        Some((_, known)) if table.is_empty() => format!("unknown setting `{key}` (did you mean `{known}`?)"),
+        Some((_, known)) => format!("unknown setting `{key}` (did you mean `{table}.{known}`?)"),
+        None => format!("unknown setting `{key}`"),
+    }
 }
 
 /// Tables merge key by key and arrays replace each other, except the lists that add up:
@@ -1106,7 +1267,23 @@ fn tighten_web_search(table: &mut toml::Table) -> Vec<String> {
     dropped
 }
 
-fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
+/// Trusting a server for good is for the user's own file: a repository could otherwise switch off
+/// the questions about the tools it brings.
+fn strip_mcp_approval(table: &mut toml::Table, file: &Path, warnings: &mut Vec<String>) {
+    let Some(toml::Value::Table(servers)) = table.get_mut("mcp_servers") else { return };
+    for (name, server) in servers.iter_mut() {
+        if let toml::Value::Table(server) = server
+            && server.remove("approval").is_some()
+        {
+            warnings.push(format!(
+                "ignored mcp_servers.{name}.approval in {}: it counts only in ~/.finx/config.toml",
+                file.display()
+            ));
+        }
+    }
+}
+
+pub(crate) fn strip_untrusted(table: &mut toml::Table) -> Vec<String> {
     let mut removed = Vec::new();
     for key in ["permission_mode", "approval_mode", "extra_writable_roots", "system_prompt_file", "bot_prompt_file"] {
         if table.remove(key).is_some() {
@@ -1165,7 +1342,7 @@ mod tests {
     #[test]
     fn defaults_are_sensible() {
         let config = Config::default();
-        assert_eq!(config.model, DEFAULT_MODEL);
+        assert_eq!(config.model, None, "no model is assumed");
         assert_eq!(config.permission_mode, PermissionMode::Manual);
         assert_eq!(config.enabled_tools, vec!["read", "write", "edit", "bash"]);
         assert_eq!(config.bash_default_timeout, Duration::from_secs(120));
@@ -1189,7 +1366,7 @@ mod tests {
         .unwrap();
         let loaded = load(&user, Some(&project), false, &["max_turns=7".into(), "tools.enabled=[\"read\"]".into()]).unwrap();
         let config = loaded.config;
-        assert_eq!(config.model, "deepseek/deepseek-v4-pro");
+        assert_eq!(config.model.as_deref(), Some("deepseek/deepseek-v4-pro"));
         assert_eq!(config.thinking, ThinkingLevel::Low);
         assert_eq!(config.permission_mode, PermissionMode::Manual, "untrusted project cannot loosen approvals");
         assert_eq!(config.bash_shell, None);
@@ -1431,14 +1608,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_keys_are_errors_with_location() {
+    fn unknown_keys_are_warnings_with_location() {
         let dir = tempfile::tempdir().unwrap();
         let user = dir.path().join("config.toml");
         std::fs::write(&user, "modle = \"x\"\n").unwrap();
-        let err = load(&user, None, false, &[]).err().unwrap();
-        let text = err.to_string();
+        let text = load(&user, None, false, &[]).unwrap().warnings.join("\n");
         assert!(text.contains("modle"), "{text}");
-        assert!(text.contains("config.toml"), "{text}");
+        assert!(text.contains("config.toml:1"), "{text}");
     }
 
     #[test]
@@ -1494,6 +1670,42 @@ mod tests {
     #[test]
     fn string_overrides_need_no_quotes() {
         let loaded = load(Path::new("/nonexistent"), None, false, &["model=deepseek/deepseek-flash".into()]).unwrap();
-        assert_eq!(loaded.config.model, "deepseek/deepseek-flash");
+        assert_eq!(loaded.config.model.as_deref(), Some("deepseek/deepseek-flash"));
     }
+
+    fn with_user_file(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, text).unwrap();
+        (dir, path)
+    }
+
+    #[test]
+    fn a_key_this_version_does_not_know_is_a_warning() {
+        let (_dir, path) = with_user_file("thinking = \"low\"\nthinkng = \"high\"\n[future]\nx = 1\n[tools.bash]\ndefault_timeout_sec = 5\n");
+        let loaded = load(&path, None, false, &[]).unwrap();
+        assert_eq!(loaded.config.thinking, ThinkingLevel::Low);
+        let warnings = loaded.warnings.join("\n");
+        assert!(warnings.contains("unknown setting `thinkng` (did you mean `thinking`?)"), "{warnings}");
+        assert!(warnings.contains("config.toml:2"), "{warnings}");
+        assert!(warnings.contains("unknown setting `future`"), "{warnings}");
+        assert!(warnings.contains("did you mean `tools.bash.default_timeout_secs`"), "{warnings}");
+    }
+
+    #[test]
+    fn what_stays_an_error() {
+        // A value this version cannot read: it must not guess.
+        let (_dir, path) = with_user_file("permission_mode = \"plan\"\n");
+        assert!(load(&path, None, false, &[]).is_err());
+        // Anything unknown in a safety rule.
+        let (_dir, path) = with_user_file("[[rules]]\nprefix = [\"git\"]\ndecision = \"ask\"\nonly_on = \"fridays\"\n");
+        assert!(load(&path, None, false, &[]).is_err());
+        // A key typed on the command line.
+        let error = load(Path::new("/nonexistent"), None, false, &["thinkng=low".into()]).err().expect("rejected");
+        assert!(error.to_string().contains("did you mean `thinking`"), "{error}");
+        // Writing one through config/write.
+        let error = check_file("thinkng = \"low\"\n", Path::new("c.toml")).unwrap_err();
+        assert!(error.to_string().contains("did you mean `thinking`"), "{error}");
+    }
+
 }

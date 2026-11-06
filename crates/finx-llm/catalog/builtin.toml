@@ -4,7 +4,9 @@
 # models it offers comes from its own model list. Each model's details come from the public
 # catalog (catalog/public, refreshed by `cargo run -p finx-llm --example sync_catalog`): the row
 # of this channel (`catalog_id`), else the row of the model's maker.
-# Model entries here only fix what the catalog lacks or gets wrong; say why next to each.
+# Model entries here fix what the catalog lacks or gets wrong; say why next to each. A provider's
+# first entry is also the model a session starts on when this is the first usable provider and no
+# `model` is configured: pick one that suits everyday work, neither the dearest nor the weakest.
 # `thinking_format` is how the channel's thinking switch and budget are sent; left out, a model
 # can still be given its named efforts. Override or extend anything in ~/.finx/models.toml.
 # Prices are per million tokens in the provider's currency (or the entry's `currency`); the
@@ -50,12 +52,31 @@ api_key_env = "OPENAI_API_KEY"
 catalog_id = "openai"
 compat = { system_role = "developer", thinking_format = "openai", prompt_cache_key = true }
 
+[[providers.openai.models]]
+id = "gpt-6.1-terra"
+
 [providers.anthropic]
 name = "Anthropic"
 api = "anthropic-messages"
 base_url = "https://api.anthropic.com"
 api_key_env = "ANTHROPIC_API_KEY"
 catalog_id = "anthropic"
+
+[[providers.anthropic.models]]
+id = "claude-sonnet-5-5"
+
+# Gemini through its OpenAI-compatible endpoint. Its tool calls carry a signature that later turns
+# send back (`extra_content`, kept as ToolCall::provider_data).
+[providers.google]
+name = "Google Gemini"
+api = "openai-chat"
+base_url = "https://generativelanguage.googleapis.com/v1beta/openai"
+api_key_env = "GEMINI_API_KEY"
+catalog_id = "google"
+compat = { thinking_format = "openai" }
+
+[[providers.google.models]]
+id = "gemini-3.8-flash"
 
 [providers.qwen]
 name = "Qwen (Alibaba Cloud Model Studio)"
@@ -66,6 +87,9 @@ currency = "CNY"
 catalog_id = "alibaba-cn"
 compat = { thinking_format = "qwen", max_tokens_field = "max_tokens" }
 
+[[providers.qwen.models]]
+id = "qwen3.8-max"
+
 [providers.kimi]
 name = "Moonshot Kimi"
 api = "openai-chat"
@@ -74,6 +98,9 @@ api_key_env = "MOONSHOT_API_KEY"
 currency = "CNY"
 catalog_id = "moonshotai-cn"
 compat = { thinking_format = "deepseek", max_tokens_field = "max_tokens" }
+
+[[providers.kimi.models]]
+id = "kimi-k3.1-pro"
 
 [providers.glm]
 name = "Zhipu GLM"
@@ -84,6 +111,9 @@ currency = "CNY"
 catalog_id = "zhipuai"
 compat = { thinking_format = "zai", max_tokens_field = "max_tokens" }
 
+[[providers.glm.models]]
+id = "glm-5.3"
+
 [providers.openrouter]
 name = "OpenRouter"
 api = "openai-chat"
@@ -91,6 +121,9 @@ base_url = "https://openrouter.ai/api/v1"
 api_key_env = "OPENROUTER_API_KEY"
 catalog_id = "openrouter"
 compat = { thinking_format = "openrouter" }
+
+[[providers.openrouter.models]]
+id = "anthropic/claude-sonnet-5.5"
 
 [providers.ollama]
 name = "Ollama (local)"
