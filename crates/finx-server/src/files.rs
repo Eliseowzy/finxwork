@@ -77,7 +77,7 @@ fn join_error(err: tokio::task::JoinError) -> RpcError {
 }
 
 impl Server {
-    async fn file_scope(&self, id: &str) -> Result<FileScope, RpcError> {
+    pub(crate) async fn file_scope(&self, id: &str) -> Result<FileScope, RpcError> {
         let (tx, rx) = oneshot::channel();
         self.loaded(id)?.send(HubCmd::FileScope { reply: tx }).await?;
         rx.await.ok().flatten().ok_or_else(|| errors::session_closed(id))

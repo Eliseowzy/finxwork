@@ -4,6 +4,7 @@
 
 mod atomic;
 pub mod autofill;
+pub mod deck;
 pub mod engine;
 pub mod kind;
 pub mod layout;

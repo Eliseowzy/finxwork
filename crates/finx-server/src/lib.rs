@@ -40,6 +40,7 @@ mod browser_status;
 mod connections;
 mod customize;
 mod db;
+mod decks;
 mod docs;
 mod files;
 mod models;

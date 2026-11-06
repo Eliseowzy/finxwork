@@ -119,6 +119,9 @@ enum Command {
     /// The document worker `finx serve` starts: PDFium, one request a line on stdin
     #[command(hide = true)]
     DocWorker,
+    /// The presentation worker `finx serve` starts: open decks, one request a line on stdin
+    #[command(hide = true)]
+    DeckWorker,
     /// Run a managed connector's internal tool adapter
     #[command(hide = true)]
     Connector {
@@ -935,7 +938,8 @@ async fn run(overrides: &[String], command: Command) -> anyhow::Result<u8> {
         | Command::Trust { .. }
         | Command::Mcp { .. }
         | Command::Protocol { .. }
-        | Command::DocWorker => {
+        | Command::DocWorker
+        | Command::DeckWorker => {
             unreachable!("local commands run without the async runtime")
         }
     }
@@ -1052,7 +1056,7 @@ fn pointer(args: &[std::ffi::OsString]) -> Option<&'static str> {
 
 /// The commands `finx` knows without building its parser; `cli_shape` keeps this in step with them.
 const COMMAND_WORDS: &[&str] = &[
-    "doc-worker", "connector", "chat", "interactive", "exec", "resume", "login", "logout", "sessions", "models", "tools", "config", "web-search", "status",
+    "doc-worker", "deck-worker", "connector", "chat", "interactive", "exec", "resume", "login", "logout", "sessions", "models", "tools", "config", "web-search", "status",
     "doctor", "install", "uninstall", "upgrade", "update", "completion", "skills", "browser", "trust", "mcp", "serve", "acp", "protocol", "help",
 ];
 
@@ -1061,7 +1065,7 @@ const COMMAND_WORDS: &[&str] = &[
 fn close_command(word: &str) -> Option<&'static str> {
     COMMAND_WORDS
         .iter()
-        .filter(|command| !["doc-worker", "connector", "interactive", "chat"].contains(command))
+        .filter(|command| !["doc-worker", "deck-worker", "connector", "interactive", "chat"].contains(command))
         .map(|command| (strsim::osa_distance(word, command), *command))
         .filter(|(distance, command)| *distance <= if command.len() < 6 { 1 } else { 2 })
         .min()
@@ -1226,6 +1230,10 @@ fn main() -> ExitCode {
             finx_docs::engine::serve(std::io::stdin().lock(), std::io::stdout().lock())?;
             Ok(0)
         }
+        Command::DeckWorker => {
+            finx_docs::deck::serve(std::io::stdin().lock(), std::io::stdout())?;
+            Ok(0)
+        }
         command => run_async(&overrides, command),
     });
     match result {
@@ -1299,6 +1307,7 @@ mod parsing_tests {
             &["finx", "serve", "--listen", "unix://", "--idle-exit", "30"],
             &["finx", "acp"],
             &["finx", "doc-worker"],
+            &["finx", "deck-worker"],
             &["finx", "mcp", "list", "--json"],
             &["finx", "mcp", "add", "tools", "--", "npx", "--yes", "tools"],
             &["finx", "browser", "native-host", "chrome-extension://abc/", "--parent-window=0"],

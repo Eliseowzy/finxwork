@@ -18,6 +18,11 @@ use betteroffice_pptx::{
 pub use betteroffice_pptx::FindMatch;
 pub use fonts::SystemFonts;
 
+/// The engine build, recorded beside a deck's update log: a log written by another build is
+/// replayed only if the result still saves (presentation-kernel-authority §7.2). Keep in step
+/// with the `betteroffice-pptx` rev in the workspace Cargo.toml.
+pub const ENGINE: &str = "betteroffice b73babb";
+
 /// Language PowerPoint would edit in: East Asian text with no language of its own is Chinese.
 const EAST_ASIAN_LANGUAGE: &str = "zh-CN";
 /// Author of FinxWork's edits.
@@ -87,8 +92,9 @@ impl Deck {
         Ok(outline::outline(&self.presentation.snapshot()?))
     }
 
+    /// Slides in the deck now: the session's list, which follows merged updates.
     pub fn slide_count(&self) -> usize {
-        self.presentation.slides().len()
+        self.presentation.slide_ids().map(|ids| ids.len()).unwrap_or_else(|_| self.presentation.slides().len())
     }
 
     /// Slide `slide` (0-based) as PNG bytes, `width_px` wide.

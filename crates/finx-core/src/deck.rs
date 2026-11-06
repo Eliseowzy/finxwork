@@ -46,7 +46,7 @@ const GUIDELINES: &[&str] = &[
     "Presentations (pptx): when the user asks about \"this PPT\" or the open deck, use the deck tools on the file open beside \
      the conversation, not PowerPoint on the desktop. Start with deck_open for the outline, then deck_read the slides you need, \
      deck_find to locate words or numbers, and deck_view to see a slide's layout, charts and pictures.",
-    "Presentations: cite a slide as \"slide N\" (第 N 页). The deck tools read the saved file; edits the user has not saved yet are not in it.",
+    "Presentations: cite a slide as \"slide N\" (第 N 页). A deck open beside the conversation is read as it is now, unsaved edits included.",
 ];
 
 pub(crate) fn tools() -> Vec<Arc<dyn Tool>> {
@@ -79,7 +79,10 @@ fn cache() -> &'static Mutex<Vec<Loaded>> {
 }
 
 /// The deck at `raw`, parsed once per version of the file.
-async fn load(raw: &str, env: &dyn Environment) -> Result<(PathBuf, Arc<Vec<u8>>, Arc<Outline>), ToolError> {
+/// The service's decks, in a session's tool state.
+pub(crate) struct DecksHandle(pub(crate) Arc<finx_docs::deck::DeckStore>);
+
+async fn load(raw: &str, env: &dyn Environment, decks: Option<&DecksHandle>) -> Result<(PathBuf, Arc<Vec<u8>>, Arc<Outline>), ToolError> {
     let path = env.resolve(raw);
     if !path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("pptx")) {
         let hint = if path.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("ppt")) {
@@ -89,17 +92,28 @@ async fn load(raw: &str, env: &dyn Environment) -> Result<(PathBuf, Arc<Vec<u8>>
         };
         return Err(ToolError::InvalidArgs(format!("{} is not a .pptx presentation.{hint}", path.display())));
     }
-    let file = env.read_file(&path, MAX_BYTES).await.map_err(|e| ToolError::Failed(format!("cannot read {}: {e}", path.display())))?;
-    if file.truncated {
+    // An open deck's entry holds unsaved edits the file does not (§10).
+    let open = match decks {
+        Some(decks) => decks.0.current_bytes(&path).await.map_err(|e| ToolError::Failed(format!("cannot read {}: {e}", path.display())))?,
+        None => None,
+    };
+    let (bytes, truncated) = match open {
+        Some(bytes) => (bytes, false),
+        None => {
+            let file = env.read_file(&path, MAX_BYTES).await.map_err(|e| ToolError::Failed(format!("cannot read {}: {e}", path.display())))?;
+            (file.bytes, file.truncated)
+        }
+    };
+    if truncated {
         return Err(ToolError::Failed(format!("{} is larger than the deck tools read ({} MB)", path.display(), MAX_BYTES >> 20)));
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    file.bytes.hash(&mut hasher);
+    bytes.hash(&mut hasher);
     let hash = hasher.finish();
     if let Some(hit) = cache().lock().iter().find(|l| l.path == path && l.hash == hash) {
         return Ok((path, hit.bytes.clone(), hit.outline.clone()));
     }
-    let bytes = Arc::new(file.bytes);
+    let bytes = Arc::new(bytes);
     let source = bytes.clone();
     let outline = tokio::task::spawn_blocking(move || -> Result<_, finx_slide::SlideError> { Ok(Arc::new(Deck::open(source.to_vec())?.outline()?)) })
     .await
@@ -202,7 +216,7 @@ impl TypedTool for DeckOpen {
     }
 
     async fn run(&self, args: OpenArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let (path, _, outline) = load(&args.deck, ctx.env.as_ref()).await?;
+        let (path, _, outline) = load(&args.deck, ctx.env.as_ref(), ctx.session_state.get::<DecksHandle>().as_deref()).await?;
         let mut text = format!(
             "{} — {} slides, {:.0}×{:.0} pt\n",
             file_name(&path),
@@ -265,7 +279,7 @@ impl TypedTool for DeckRead {
     }
 
     async fn run(&self, args: ReadArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let (path, _, outline) = load(&args.deck, ctx.env.as_ref()).await?;
+        let (path, _, outline) = load(&args.deck, ctx.env.as_ref(), ctx.session_state.get::<DecksHandle>().as_deref()).await?;
         let wanted = parse_slides(args.slides.as_deref(), outline.slides.len())?;
         let objects = matches!(args.detail, Some(ReadDetail::Objects));
         let (now, more) = wanted.split_at(wanted.len().min(MAX_READ));
@@ -362,7 +376,7 @@ impl TypedTool for DeckFind {
         if args.query.trim().is_empty() {
             return Err(ToolError::InvalidArgs("query is empty".into()));
         }
-        let (path, _, outline) = load(&args.deck, ctx.env.as_ref()).await?;
+        let (path, _, outline) = load(&args.deck, ctx.env.as_ref(), ctx.session_state.get::<DecksHandle>().as_deref()).await?;
         let found = find(&outline, &args.query, args.case_sensitive);
         let mut text = match found.len() {
             0 => format!("\"{}\" is not in {}.\n", args.query, file_name(&path)),
@@ -447,7 +461,7 @@ impl TypedTool for DeckView {
         if !ctx.model_accepts_images {
             return Err(ToolError::Failed("the current model does not take images; read the slide with deck_read".into()));
         }
-        let (path, deck, outline) = load(&args.deck, ctx.env.as_ref()).await?;
+        let (path, deck, outline) = load(&args.deck, ctx.env.as_ref(), ctx.session_state.get::<DecksHandle>().as_deref()).await?;
         let count = outline.slides.len();
         if args.slide == 0 || args.slide > count {
             return Err(ToolError::InvalidArgs(format!("no slide {}: the deck has {count}", args.slide)));
@@ -499,7 +513,7 @@ impl TypedTool for DeckCheck {
     }
 
     async fn run(&self, args: CheckArgs, ctx: ToolCtx) -> Result<ToolOutput, ToolError> {
-        let (path, deck, outline) = load(&args.deck, ctx.env.as_ref()).await?;
+        let (path, deck, outline) = load(&args.deck, ctx.env.as_ref(), ctx.session_state.get::<DecksHandle>().as_deref()).await?;
         let wanted = parse_slides(args.slides.as_deref(), outline.slides.len())?;
         let all = tokio::task::spawn_blocking(move || Deck::open(deck.to_vec())?.check())
             .await

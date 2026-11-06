@@ -199,6 +199,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         mcp_servers: Vec::new(),
         browser_pool: Some(Arc::new(BrowserPool::new(home.browser_dir(), false))),
         docs: None,
+        decks: None,
         routines: None,
     };
     let options = StartOptions {

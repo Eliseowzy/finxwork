@@ -490,6 +490,16 @@ impl NativeProtocol {
                 self.call(id, params, conn, move |server, p: finx_protocol::pptx::PptxReadParams| async move { server.pptx_read(p, &conn2).await })
             }
             method::PPTX_WRITE => self.call(id, params, conn, |server, p: finx_protocol::pptx::PptxWriteParams| async move { server.pptx_write(p).await }),
+            method::DECK_OPEN => match finx_rpc::params::<finx_protocol::deck::DeckOpenParams>(params) {
+                Ok(p) => {
+                    let (reply_id, conn2) = (id.clone(), conn.clone());
+                    self.spawn(id.clone(), conn, async move { Some(reply(&reply_id, server.deck_open(p, &conn2).await)) });
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            method::DECK_SYNC => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckSyncParams| async move { server.deck_sync(p).await }),
+            method::DECK_SAVE => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckSaveParams| async move { server.deck_save(p).await }),
+            method::DECK_CLOSE => self.call(id, params, conn, |server, p: finx_protocol::deck::DeckIdParams| async move { server.deck_close(p).await }),
             method::PPTX_METAFILE => self.call(id, params, conn, |server, p: finx_protocol::pptx::PptxMetafileParams| async move { server.pptx_metafile(p).await }),
             method::FILES_WRITE => self.call(id, params, conn, |server, p: FilesWriteParams| async move { server.files_write(p).await }),
             method::FILES_WATCH => {
