@@ -1,6 +1,6 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { PptxEditor, type PptxAsyncEditorApi } from "@betteroffice/pptx-react";
+import { PptxEditor, definePptxPlugin, type PptxAsyncEditorApi } from "@betteroffice/pptx-react";
 import type { PptxFontFace } from "@betteroffice/pptx";
 import { presentationZhCN } from "./zh-CN";
 import { I18nextProvider, useTranslation } from "react-i18next";
@@ -14,6 +14,8 @@ import { PresentationLoading, type FontLoadProgress } from "./PresentationLoadin
 import { SlideOutline } from "./SlideOutline";
 import { installSlideReorder } from "./slideReorder";
 import { Ribbon, type RibbonFonts } from "./Ribbon";
+import { RibbonController } from "./commands/controller";
+import { ControllerContext } from "./ribbon/controls";
 import "./ribbon.css";
 import "./presentation.css";
 
@@ -28,6 +30,22 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
   const [mediaWarning, setMediaWarning] = useState<string | null>(null);
   const decodeImage = useMemo(() => presentationImageDecoder(rpc, session, setMediaWarning), [rpc, session]);
   const api = useRef<PptxAsyncEditorApi | null>(null);
+  // The ribbon's command layer: it reads selection and geometry through a plugin, and edits through the api.
+  const controller = useMemo(() => new RibbonController(doc.bytes, !doc.file.writable), [doc]);
+  const plugins = useMemo(() => [definePptxPlugin<null>({
+    id: "finx-ribbon",
+    createState: () => null,
+    initialize: (context) => controller.pluginContext(context as never),
+    onEvent: (context, event) => controller.pluginEvent(context as never, event),
+    overlay: () => <div ref={(element) => controller.setOverlay(element)} style={{ position: "absolute", inset: 0, pointerEvents: "none" }} />,
+  })], [controller]);
+  useEffect(() => () => controller.dispose(), [controller]);
+  // Esc puts down a format painter kept by double click.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape" && controller.current.painter) controller.host.setPainter(null); };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [controller]);
   // Families the editor can already draw: the deck's, given at open, plus any picked since.
   const registered = useRef(new Set(doc.file.font_families.map((f) => f.toLowerCase())));
   const ribbonFonts = useMemo<RibbonFonts>(() => ({
@@ -71,10 +89,11 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
   }, [doc, rpc, session]);
   const ready = (editor: PptxAsyncEditorApi) => {
     api.current = editor;
+    const detach = controller.attach(editor);
     setReady(true);
     doc.serialize = () => editor.save();
     doc.prepare = () => editor.flushPendingInput();
-    return () => { if (api.current === editor) { api.current = null; doc.serialize = null; doc.prepare = null; } };
+    return () => { detach(); if (api.current === editor) { api.current = null; doc.serialize = null; doc.prepare = null; } };
   };
   if (error && !api.current) return <div className="pptx-message" role="alert">{i18n.t("pptx.loadFailed", { ns: "session", message: error })}</div>;
   const loading = <PresentationLoading name={name} stage={fonts ? "rendering" : "fonts"}
@@ -90,7 +109,8 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
     defaultFonts={false}
     decodeImage={decodeImage}
     readOnly={!doc.file.writable}
-    toolbar={<Ribbon fonts={ribbonFonts} />}
+    toolbar={<ControllerContext.Provider value={controller}><Ribbon fonts={ribbonFonts} /></ControllerContext.Provider>}
+    plugins={plugins}
     i18n={language.startsWith("zh") ? presentationZhCN : undefined}
     style={{ height: "100%", width: "100%", minHeight: 0 }}
     onReady={ready}

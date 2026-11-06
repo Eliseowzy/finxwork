@@ -20,10 +20,11 @@ const out = path.join(work, "web");
 const shotDir = process.env.FINXWORK_E2E_SHOTS ?? work;
 const vector = process.env.FINXWORK_E2E_VECTOR === "1";
 const textLayout = process.env.FINXWORK_E2E_TEXT_LAYOUT === "1";
+const ribbon = process.env.FINXWORK_E2E_RIBBON === "1";
 if (textLayout) for (const variant of ["default", "list", "inherit", "table", "mixed"]) execFileSync("python3", [path.join(import.meta.dirname, "pptx/text-layout-fixture.py"), path.join(work, `text-layout-${variant}.pptx`), variant]);
 const textSample = textLayout && process.env.FINXWORK_E2E_TEXT_LAYOUT_SAMPLE;
 if (textSample) execFileSync("python3", [path.join(import.meta.dirname, "pptx/text-layout-fixture.py"), path.join(work, "text-layout-sample.pptx"), "sample", textSample]);
-const sourceFile = (textLayout ? path.join(work, "text-layout-default.pptx") : process.env.FINXWORK_E2E_PPTX) ?? path.join(desktop, `../../crates/finx-slide/tests/fixtures/${vector ? "ole-preview" : "editor"}.pptx`);
+const sourceFile = (textLayout ? path.join(work, "text-layout-default.pptx") : process.env.FINXWORK_E2E_PPTX) ?? path.join(desktop, `../../crates/finx-slide/tests/fixtures/${vector ? "ole-preview" : ribbon ? "ribbon" : "editor"}.pptx`);
 let bytes = fs.readFileSync(sourceFile);
 const originalBytes = bytes;
 const hash = () => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -213,7 +214,56 @@ try {
     console.log(`PASS: Chinese controls, shape menu, live English/Chinese switching. Artifacts: ${shotDir}`);
   }
 
-  if (textLayout) {
+  if (ribbon) {
+    // The command layer (commands/registry.ts) behind the ribbon: select, align, distribute, copy/paste, delete slide.
+    const deck = async () => { await run("window.smoke.doc.edit(); window.smoke.doc.flush()"); return JSON.parse(await run("window.smoke.text()")); };
+    const cards = async () => (await deck()).slides[0].shapes.filter((x) => /^Card/.test(x.name));
+    const button = (id) => `document.querySelector('[data-testid="pptx-cmd-${id}"]')`;
+    const press = async (id) => {
+      await until(`!!${button(id)} && ${button(id)}.getAttribute("aria-disabled")!=="true"`, `${id} enabled`);
+      await run(`${button(id)}.click()`);
+    };
+    const menu = async (id, label) => {
+      await run(`document.querySelector('[data-testid="pptx-menu-${id}"]').click()`);
+      await until(`Array.from(document.querySelectorAll('[role=menuitem]')).some(el=>el.textContent.includes(${JSON.stringify(label)}))`, `${label} in menu`);
+      await run(`Array.from(document.querySelectorAll('[role=menuitem]')).find(el=>el.textContent.includes(${JSON.stringify(label)})).click()`);
+    };
+    await until(`!!document.querySelector('${canvas}') && !!${button("selectAll")}`, "ribbon with command-layer buttons");
+    if (!(await run(`${button("copy")}.getAttribute("aria-disabled")==="true"`))) throw new Error("Copy is enabled with nothing selected");
+    const rect = await run(`(()=>{const r=document.querySelector('${canvas}').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}})()`);
+    const at = (emuX, emuY) => ({ x: rect.x + rect.width * emuX / 12192000, y: rect.y + rect.height * emuY / 6858000 });
+    const click = async ({ x, y }) => {
+      await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+      await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+      await sleep(200);
+    };
+    await press("selectAll");
+    await menu("alignObjects", "顶端对齐");
+    await until("window.smoke.doc.revision > 0", "align edit");
+    // Select all takes the title and body placeholders too: everything lines up with the topmost.
+    const top = await cards();
+    if (top.length !== 3 || top.some((c) => c.transform.y !== top[0].transform.y) || top[0].transform.y >= 3200400) throw new Error(`Align top: ${JSON.stringify(top.map((c) => c.transform))}`);
+    await menu("alignObjects", "横向分布");
+    await sleep(500);
+    await sleep(300);
+    // The cards end up evenly spaced (the placeholders take part too, so gaps are not the original ones).
+    const spread = (await cards()).map((x) => x.transform).sort((a, b) => a.x - b.x);
+    const gaps = spread.slice(1).map((t, i) => t.x - (spread[i].x + spread[i].width));
+    if (Math.max(...gaps) - Math.min(...gaps) > 2 || gaps[0] === 1371600) throw new Error(`Distribute: gaps ${JSON.stringify(gaps)}`);
+    await click(at(spread[0].x + spread[0].width / 2, spread[0].y + spread[0].height * .8));
+    await press("copy");
+    await press("paste");
+    await until("window.smoke.text().then(t=>JSON.parse(t).slides[0].shapes.filter(s=>/Card|Rounded/.test(s.name)||s.geometry==='roundRect').length>=4)", "pasted card");
+    const before = (await deck()).slides.length;
+    await press("deleteSlide");
+    await sleep(300);
+    if ((await deck()).slides.length !== before - 1) throw new Error("Delete slide did not remove a slide");
+    fs.mkdirSync(shotDir, { recursive: true });
+    const shot = await cdp("Page.captureScreenshot", { format: "png" });
+    fs.writeFileSync(path.join(shotDir, "pptx-ribbon.png"), Buffer.from(shot.data, "base64"));
+    if (errors.length) throw new Error(`Browser errors: ${JSON.stringify(errors)}`);
+    console.log(`PASS: ribbon select all, align, distribute, copy/paste, delete slide. Artifacts: ${shotDir}`);
+  } else if (textLayout) {
     const { verifyTextLayout } = await import("./pptx/text-layout.mjs");
     await verifyTextLayout({ run, cdp, until, sleep, shotDir, textSample: Boolean(textSample) });
   } else if (process.env.FINXWORK_E2E_CAPTURE === "1") {
