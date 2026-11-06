@@ -3,6 +3,7 @@
 // Uses real Electron/finx with an isolated CLI fixture; never authorizes a real account.
 // Build first: cargo build -p finx-cli -p finx-mock && pnpm --filter @finx/desktop build
 // Run once per provider: FINX_CONNECTOR_E2E=dingtalk|feishu|wecom node apps/desktop/e2e/dingtalk.mjs
+import { cdpPort } from "./lib/port.mjs";
 import { createHash } from "node:crypto";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
@@ -39,7 +40,7 @@ function cli(args) {
 // ── the app, driven over the DevTools protocol (as e2e/stale-model.mjs) ──
 let app = null;
 async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
     env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
@@ -287,6 +288,8 @@ try {
   await page.until("menu", `!!document.querySelector('.cz-menu')`);
   await page.run(click(".cz-menu .mi", words((x) => x.connector.signOut)[1]) + " || " + click(".cz-menu .mi", words((x) => x.connector.signOut)[0]));
   await page.until("signed out", anyText(words((x) => x.connector.signedOut)));
+  // The page says so as the logout finishes, and the file may take a moment longer to go.
+  for (let i = 0; i < 50 && fs.existsSync(path.join(configDir, accountFile)); i++) await sleep(100);
   check(!fs.existsSync(path.join(configDir, accountFile)), "logout retained credentials");
   check(await page.run(`document.querySelector('[role=switch]')?.getAttribute('aria-checked') === 'false' && document.querySelector('[role=switch]')?.disabled`), "logout did not disable the connector");
   step("reinstall resumes through the sheet, including an immediate authorization callback");

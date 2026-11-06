@@ -9,6 +9,7 @@
 // so when it is wrong, and opens with the right one. finxdoc:// serves nothing without a token.
 // Everything stays in a private HOME. Needs `pnpm build`, `cargo build -p finx-cli` and PDFium
 // (tools/pdfium, see crates/finx-docs). The PDF: FINX_DOC_PDF, else pdf_oxide's 1.pdf.
+import { cdpPort } from "./lib/port.mjs";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -135,7 +136,7 @@ fs.writeFileSync(path.join(home, "models.toml"), `[providers.mock]\nname = "Mock
 fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n`);
 
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function attach(match, what) {
   let target;

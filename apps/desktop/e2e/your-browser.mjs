@@ -11,6 +11,7 @@
 // both, and the one chosen stays chosen when it is away. Everything stays in a private HOME, so the
 // developer's own Chrome is never touched. Needs `pnpm build`, `cargo build -p finx-cli` and Google
 // Chrome. FINXWORK_E2E_APP=<FinxWork.app> runs the packaged app instead.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -103,7 +104,7 @@ fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermiss
 
 // ── the app, driven over the DevTools protocol ──
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function devtools(wsUrl) {
   const ws = new WebSocket(wsUrl);

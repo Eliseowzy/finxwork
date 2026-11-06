@@ -9,6 +9,7 @@
 //
 //   node apps/desktop/e2e/paste-drop.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/paste-drop.mjs   also screenshots
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -59,7 +60,7 @@ const osa = (script) => execFileSync("osascript", ["-e", script]);
 
 let app = null;
 try {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
     env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINX_CREDENTIAL_STORE: "file" },
     stdio: ["ignore", "ignore", "inherit"],

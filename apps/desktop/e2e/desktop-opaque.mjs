@@ -9,6 +9,7 @@
 // macOS only, with the screen unlocked; it moves the pointer for a few seconds. Needs `pnpm
 // build` (which puts agent-desktop beside the debug finx), `cargo build -p finx-cli` and swiftc;
 // FinxWork (Electron here) needs Accessibility and Screen Recording.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -125,7 +126,7 @@ fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermiss
 
 // ── the app, over the DevTools protocol (as e2e/desktop-approval.mjs) ──
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 async function attach(match, what) {
   let target;
   for (let i = 0; i < 100 && !target; i++) {

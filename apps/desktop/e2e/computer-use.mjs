@@ -5,6 +5,7 @@
 // Accessibility the switch is grey, says so, and opens them in a dialog. There is no agent-desktop
 // to install: it comes with FinxWork, and missing, the line says to reinstall (macOS). Everything stays in a private HOME. Needs `pnpm build` (which puts agent-desktop
 // beside the debug finx) and `cargo build -p finx-cli`.
+import { cdpPort } from "./lib/port.mjs";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -36,7 +37,7 @@ for (const k of Object.keys(env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete e
 fs.writeFileSync(path.join(home, "config.toml"), `permission_mode = "manual"\n[models]\nnetwork = false\n`);
 
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function attach(match, what) {
   let target;
