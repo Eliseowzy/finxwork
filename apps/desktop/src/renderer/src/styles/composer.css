@@ -272,3 +272,9 @@
 .appr-sheet-table code{overflow:hidden;text-overflow:ellipsis;color:var(--accent);font-size:10.5px}.appr-sheet-table span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.appr-sheet-table>small{display:block;padding:5px 9px;color:var(--l3)}
 .appr-sheet-loading,.appr-sheet-meta{grid-column:1/-1;display:flex;align-items:center;gap:8px;color:var(--l3);font-size:11px}.appr-sheet-meta{justify-content:flex-end}
 @media(max-width:640px){.appr-sheet{grid-template-columns:1fr}}
+/* A deck_edit proposal under its tool row (presentation-deck-edit §6). */
+.deck-proposal{margin:6px 0 4px}
+.deck-proposal-slides{margin:0 0 8px;padding:0 0 0 18px;font-size:12.5px;color:var(--l2)}
+.deck-proposal-note{font-size:12px;margin:0 0 8px;opacity:.85}
+.deck-proposal-note.err{color:var(--red)}
+.deck-proposal-done{font-size:12.5px;opacity:.75}

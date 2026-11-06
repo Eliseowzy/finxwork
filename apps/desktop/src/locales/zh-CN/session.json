@@ -804,5 +804,28 @@
       "standardColors": "标准色",
       "moreColors": "其他颜色…"
     }
+  },
+  "deckProposal": {
+    "label": "修改提议",
+    "title_other": "修改 {{name}}？改了 {{count}} 页",
+    "slide": "第 {{n}} 页 · {{status}}",
+    "status": {
+      "changed": "改动",
+      "inserted": "新增",
+      "deleted": "删除",
+      "moved": "移动",
+      "unchanged": "未改"
+    },
+    "accept": "接受",
+    "force": "仍然接受",
+    "reject": "拒绝",
+    "stale": "提议之后这些页又被改过，接受会覆盖这些改动。",
+    "failed": "没有完成：{{message}}",
+    "done": {
+      "pending": "等待处理",
+      "accepted": "已接受",
+      "rejected": "已拒绝",
+      "handled": "已在编辑器里处理"
+    }
   }
 }

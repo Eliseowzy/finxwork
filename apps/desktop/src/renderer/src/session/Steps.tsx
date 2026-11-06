@@ -10,6 +10,8 @@ import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
 import { SearchResults, searchCall, searchDetails } from "./SearchResults";
 import { handoffOf } from "./Yours";
+import { DeckProposalCard } from "./DeckProposalCard";
+import { deckEditDetails } from "../docs/pptx/deckProposal";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -147,6 +149,8 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
   // A web search reads as the words searched for, and opens to the pages found.
   const search = searchCall(tool);
   const found = search && searchDetails(tool);
+  // An edit the agent proposed to a presentation: a card to accept or reject it.
+  const proposal = tool.name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null;
   const named = search
     ? search.query + (search.sites.length ? t("webSearch.only", { sites: search.sites.join(t("webSearch.siteSeparator")) }) : "")
     : toAgent ? t("agents.messageObject", { to: address === "main" || address === "parent" ? t("agents.mainAgent") : address, message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
@@ -189,6 +193,7 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
       )}
       {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
       {found ? open && <SearchResults details={found} /> : output && <div className="out sel-text">{output}</div>}
+      {proposal && st.rpc && scope && <DeckProposalCard details={proposal} rpc={st.rpc} session={scope.session} />}
     </div>
   );
 }
