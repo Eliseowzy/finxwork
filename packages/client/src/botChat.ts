@@ -1,15 +1,14 @@
 import type { ErrorInfo } from "@finx/protocol";
 import { runningAgents, type AgentView, type SessionView } from "./session.ts";
-import { conversation, detailsOf, userText, type Step, type ToolView, type WorkItem } from "./steps.ts";
+import { conversation, detailsOf, userText, type ToolView, type WorkItem } from "./steps.ts";
 import { baseName } from "./text.ts";
 
 // A bot's conversation as Bot mode shows it (docs/kernel/bot-design.md §3.4):
 // the owner's messages, each message the bot sent with send_to_user (words,
 // files or a question, §3.12), what its sub-agents told the owner, which reads
-// the same (agent-messaging-design §17), and failures, in the order they were sent. What
-// the bot did and wrote for itself is the "process" of the message that
-// followed it. An approval is no part of it: it pops up above the composer, as
-// on a session's page.
+// the same (agent-messaging-design §17), and failures, in the order they were sent.
+// What the bot did and wrote for itself does not show. An approval is no part of it:
+// it pops up above the composer, as on a session's page.
 
 export const SEND_TO_USER = "send_to_user";
 export const MANAGE_ROUTINE = "manage_routine";
@@ -35,12 +34,12 @@ export interface RoutineSource {
 export type BotItem =
   /** queued: sent while the bot was busy, not in its conversation yet. */
   | { kind: "user"; key: string; text: string; images: { mime_type: string; data: string }[]; files: string[]; skills: string[]; ts: number; queued: boolean }
-  /** A message from the bot; process: what it did since its last message (or since the task began), took: how long that was. */
-  | { kind: "bot"; key: string; text: string; ts: number; process: Step[]; took: number; source?: RoutineSource }
+  /** A message from the bot. */
+  | { kind: "bot"; key: string; text: string; ts: number; source?: RoutineSource }
   /** Files and images the bot sent, as one message, with its words if it had any. */
-  | { kind: "attachment"; key: string; files: BotFile[]; text?: string; ts: number; process: Step[]; took: number; source?: RoutineSource }
+  | { kind: "attachment"; key: string; files: BotFile[]; text?: string; ts: number; source?: RoutineSource }
   /** A question, with answers to tap if they can be listed; open: they can still be tapped. */
-  | { kind: "question"; key: string; text: string; options: string[]; open: boolean; ts: number; process: Step[]; took: number; source?: RoutineSource }
+  | { kind: "question"; key: string; text: string; options: string[]; open: boolean; ts: number; source?: RoutineSource }
   /** What the bot did to a routine, as a line in the chat. */
   | ({ kind: "routine"; key: string; ts: number } & RoutineChange)
   /** last: no task ran since, so it can be retried. */
@@ -129,11 +128,9 @@ function routineChange(item: WorkItem): RoutineChange | null {
 export function botChat(v: SessionView): BotItem[] {
   const times = sendTimes(v);
   const out: BotItem[] = [];
-  let process: Step[] = [];
   let since: number | undefined;
   // The run whose report this task passes on.
   let source: RoutineSource | undefined;
-  const keep = (s: Step) => process.push(s);
   for (const s of conversation(v)) {
     switch (s.kind) {
       case "user":
@@ -141,53 +138,33 @@ export function botChat(v: SessionView): BotItem[] {
         since ??= s.ts;
         source = undefined;
         break;
-      case "work": {
-        // A work step splits where the bot sent a message: what came before is that message's process.
-        let items: WorkItem[] = [];
-        const flush = () => {
-          if (items.length) keep({ kind: "work", key: items[0].key, items, live: items.some((i) => i.kind === "tool" && i.tool.state !== "done") });
-          items = [];
-        };
+      case "work":
         for (const item of s.items) {
           const sent = delivered(item);
           if (sent === null) {
-            if (!(item.kind === "tool" && item.tool.name === SEND_TO_USER)) items.push(item);
             const change = routineChange(item);
             if (change) out.push({ kind: "routine", key: `routine:${item.key}`, ts: times.get(item.key) ?? since ?? Date.now(), ...change });
             continue;
           }
-          flush();
           const ts = times.get(item.key) ?? since ?? Date.now();
-          out.push({ ...sent, key: item.key, ts, process, took: since === undefined ? 0 : Math.max(0, ts - since), source });
-          process = [];
+          out.push({ ...sent, key: item.key, ts, source });
           since = ts;
         }
-        flush();
         break;
-      }
       case "report":
         if (s.routine) {
           source = { routine_id: s.routine.id, run_id: s.routine.run, name: s.name, at: s.ts };
           since ??= s.ts;
         }
-        keep(s);
         break;
       case "agent_message":
-        // What a sub-agent told the owner is a message like the bot's own, with no process of the bot's behind it.
-        if (s.to_user) out.push({ kind: "bot", key: s.key, text: s.text, ts: s.ts, process: [], took: 0 });
-        else keep(s);
-        break;
-      case "text":
-      case "agents":
-        keep(s);
+        // What a sub-agent told the owner is a message like the bot's own.
+        if (s.to_user) out.push({ kind: "bot", key: s.key, text: s.text, ts: s.ts });
         break;
       case "end":
         if (s.end.outcome === "failed" && s.end.error) out.push({ kind: "failure", key: s.key, error: s.end.error, ts: s.end.ts, last: false });
-        process = [];
         since = undefined;
         source = undefined;
-        break;
-      case "note":
         break;
     }
   }
@@ -239,9 +216,4 @@ export function busyBubble(v: SessionView): { typing: boolean; agents: WorkingAg
   const agents = runningAgents(v).map((a) => ({ id: a.id, label: a.description || a.name }));
   const typing = !!v.live && v.live.approvals.length === 0;
   return typing || agents.length > 0 ? { typing, agents } : null;
-}
-
-/** The steps of a bot message's process, counted as the process line shows them ("6 步"). */
-export function processSteps(process: Step[]): number {
-  return process.reduce((n, s) => n + (s.kind === "work" ? s.items.filter((i) => i.kind === "tool").length : s.kind === "agents" ? s.launches.length : s.kind === "report" || s.kind === "agent_message" ? 1 : 0), 0);
 }

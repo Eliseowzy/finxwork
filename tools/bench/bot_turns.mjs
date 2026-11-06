@@ -19,7 +19,10 @@
 //   - during:     later messages answered while a sub-agent still worked, of those asked then;
 //   - ordered:    `poems`, the four poems came back in the order asked, one message each;
 //   - attached:   a file went out as an attachment message; linked: only as a link in words;
-//   - asked:      a choice went out as a question with options; prose: only as words ending in a
+//   - handed, pointed, kept: `report`, a file the run made went out in files; was only named in
+//                 words; was made and never named; alsoLinked: handed, and named in words too;
+//                 noFile: the run made no file;
+//   - asked:     a choice went out as a question with options; prose: only as words ending in a
 //                 question;
 //   - rejected:   a send the kernel refused (printed with why): it costs a round trip, the owner
 //                 sees nothing;
@@ -64,6 +67,10 @@
 //   FINX_BENCH_SEED=<file>     each run's bot starts with this conversation (a session log with
 //                              __FILES__ for the bot's folder and __USER__ for the home folder):
 //                              a bot with a long history behaves unlike a new one
+//   FINX_BENCH_APP=1           connects as the desktop app does, so the bots get its section of the
+//                              prompt; browser tools then hang, as nothing here serves them
+//   FINX_BENCH_ASK=<text>      `ask`, `report`: the owner's words
+//   FINX_BENCH_FILES=<dir>     `report`: what the bot's folder starts with, the report already written
 //
 // It uses a home of its own, so the person's ~/.finx is not touched.
 import { spawn } from "node:child_process";
@@ -196,6 +203,19 @@ function dailySales() {
   }
   return rows.join("\n") + "\n";
 }
+/** A small table with a story to find, so an agent is done in a few minutes: the east grows, the
+ * north dips in spring, the west drops after a price change in September. */
+function monthlySales() {
+  const series = {
+    北区: [812, 798, 640, 655, 701, 790, 806, 821, 815, 830, 844, 902],
+    南区: [655, 640, 662, 671, 668, 690, 702, 695, 710, 722, 731, 788],
+    东区: [520, 548, 575, 610, 642, 668, 705, 741, 776, 812, 851, 913],
+    西区: [701, 688, 712, 705, 721, 718, 730, 726, 612, 581, 575, 590],
+  };
+  const rows = ["month,north,south,east,west"];
+  for (let m = 0; m < 12; m++) rows.push(`2026-${String(m + 1).padStart(2, "0")},${Object.values(series).map((s) => s[m]).join(",")}`);
+  return rows.join("\n") + "\n";
+}
 // Which way a request goes. What needs research, data, files or long writing goes to an agent
 // however it is worded; what takes one step does not. No need to wait for the work: the decision is
 // made once an agent starts, or once the bot has run this many steps itself.
@@ -219,6 +239,34 @@ const scenarios = {
   hello: { oneByOne: true, say: () => ["你好，你是谁？用一句话回答。", "你能帮我做什么？简单说。", "谢谢！"].map((t) => [0, t]) },
   // The message types (bot-design §3.12): is a file sent as one, and a choice asked as one?
   files: { say: () => [[0, "写一份 100 字的周报，存成 report.md，再用 Python 把 1 到 5 的平方写进 squares.csv，都发给我。"]] },
+  // A question, not a request for a file: the owner gets a conclusion, and the long version the bot
+  // chose to write is the file. Is it handed over, or only named at the end of the words?
+  report: {
+    ms: 600_000,
+    files: process.env.FINX_BENCH_FILES
+      ? Object.fromEntries(fs.readdirSync(process.env.FINX_BENCH_FILES).map((f) => [f, fs.readFileSync(path.join(process.env.FINX_BENCH_FILES, f), "utf8")]))
+      : { "regions.csv": monthlySales() },
+    say: () => [[0, process.env.FINX_BENCH_ASK ?? "我文件夹里的 regions.csv 是公司今年四个区的月度收入，今年情况怎么样？帮我详细分析一下，要写得全面一点。"]],
+    check(t, w, at, bot) {
+      const before = new Set(Object.keys(scenarios.report.files));
+      const folder = path.join(home, "bots", bot.id, "files");
+      // With FINX_BENCH_FILES the report is already written: a seeded conversation cut just before
+      // it is sent, the moment this measures.
+      const made = process.env.FINX_BENCH_FILES ? [...before] : fs.readdirSync(folder, { recursive: true, withFileTypes: true }).filter((f) => f.isFile()).map((f) => f.name).filter((f) => !before.has(f));
+      const failed = new Set(w.events.filter((e) => e.type === "tool_completed" && e.result.is_error).map((e) => e.call_id));
+      const sends = w.events.filter((e) => isSend(e) && !failed.has(e.call_id));
+      const inFiles = sends.flatMap((e) => (e.args.files ?? []).map((f) => path.basename(f.path)));
+      const words = sends.map((e) => String(e.args.text ?? "")).join("\n");
+      const handed = made.some((f) => inFiles.includes(f));
+      const named = made.some((f) => words.includes(f));
+      if (!made.length) t.noFile++;
+      else if (handed) t.handed++;
+      else if (named) t.pointed++;
+      else t.kept++;
+      if (handed && named) t.alsoLinked++;
+      console.log(`   (made: ${made.join(", ") || "none"}; in files: ${inFiles.join(", ") || "none"})`);
+    },
+  },
   // The answers can be listed: a question with options fits.
   choice: { say: () => [[0, "我有两份周报草稿：A 版详细，B 版简洁。你不知道我要哪版，先问我一下，我选了你再往下写。"]] },
   // The answers cannot all be listed (a name, a date): words may fit better.
@@ -523,7 +571,7 @@ async function oneRun(name, s, run, t) {
     if (next === 4) t.ordered++;
     else console.log(`   (order: got through ${next} of the 4 poems)`);
   }
-  s.check?.(t, w, at);
+  s.check?.(t, w, at, bot);
   // The first decision: what the first reply called, and how long it thought before.
   const opening = events.find((e) => e.type === "message_completed" && e.message.role === "assistant");
   const openingCalls = opening ? opening.message.content.filter((x) => x.type === "tool_call").map((x) => x.name) : [];
@@ -544,12 +592,13 @@ async function oneRun(name, s, run, t) {
 const totals = {};
 await call("initialize", { protocol_version: 2, client_info: { name: "bot-turns" } });
 await call("bots/subscribe", {});
+if (process.env.FINX_BENCH_APP) await call("browser/host");
 for (const [name, s] of Object.entries(scenarios)) {
   if (only.length && !only.includes(name)) continue;
   const t = (totals[name] = {
     runs: 0, idle: 0, tasks: 0, first: 0, missed: 0, failed: 0, late: 0, unanswered: 0, undelivered: 0, sends: 0, leaked: 0, asides: 0, internal: 0,
     delegated: 0, agents: {}, redirected: 0, reported: 0, delivered: 0, firstMs: [], nextMs: [], askedDuring: 0, during: 0,
-    ordered: 0, attached: 0, linked: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
+    ordered: 0, attached: 0, linked: 0, handed: 0, pointed: 0, kept: 0, alsoLinked: 0, noFile: 0, asked: 0, prose: 0, rejected: 0, stopFirst: 0, stopped: 0, told: 0, restarted: 0, checked: 0, lastAutumn: 0, spring: 0,
     notes: 0, wokenByNote: 0, answered: 0, peerNotes: 0, covered: 0, early: 0, inTask: 0, alone: 0, thinking: [], ownRounds: [],
     updates: 0, updateRuns: 0, updateLeaks: 0, updateInternal: 0, updateOtherLanguage: 0, firstUpdateMs: [], gapMs: [], workMs: [], updateChars: [], botSteps: 0, repeated: 0,
   });

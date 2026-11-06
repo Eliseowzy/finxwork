@@ -248,9 +248,6 @@ try {
   await page.until("what it sent, through the bot", has("3 月的数据整月缺失"), 10000);
   check(await page.run(working), "the work goes on");
   check((await page.run(workingText)).trim() === "汇总销售数据", `what it says it does: ${await page.run(workingText)}`);
-  // The bot's message shows where it came from in its process.
-  await page.run(`(() => { const b = [...document.querySelectorAll(".tr.bots .bm:not(.working)")].find((m) => m.querySelector(".bbub")?.innerText.includes("3 月的数据整月缺失")); b.querySelector("button.tb[aria-label='过程']").click(); })()`);
-  await page.until("the message in its process", `[...document.querySelectorAll(".bproc .rpc")].some((c) => c.innerText.includes("发来消息") && c.innerText.includes("3 月的数据整月缺失"))`, 3000);
   await page.shot("7-spoke-up");
   await page.until("then its report", has('agent_report agent="sales"'), 20000);
   await page.until("the work over", `!${working}`, 5000);
@@ -261,7 +258,6 @@ try {
   await page.until("what it told them", `${bubbles}.includes(${JSON.stringify(told)})`, 10000);
   check(await page.run(working), "the work goes on");
   check((await page.run(workingText)).trim() === "汇总销售数据", `what it says it does: ${await page.run(workingText)}`);
-  check(!(await page.run(`[...document.querySelectorAll(".tr.bots .bm:not(.working)")].find((m) => m.querySelector(".bbub")?.innerText === ${JSON.stringify(told)}).querySelector("button.tb[aria-label='过程']")`)), "no process of the bot's behind it");
   await page.shot("7b-told");
   // The earlier agent took the name.
   await page.until("then its report", has('agent_report agent="sales-2"'), 20000);

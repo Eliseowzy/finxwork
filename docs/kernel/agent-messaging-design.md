@@ -348,7 +348,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 - **协议**：`MailKind` 加 `message`，重新生成 schema 和 TS 类型。`MailInfo.from` 是发件人，`status` 是发送时的状态（`running`）。其他不变。
 - **客户端**（`packages/client`）：现在的代码把所有信件都当作汇报，还用它判断这个子智能体这一轮结束了（`steps.ts` 的 `close`）。要改成按 `mail.kind` 判断，否则一条中途消息会让界面以为它做完了。新增一种步骤 `agent_message`。
 - **会话页**：和汇报卡片同样的位置，显示"writer 发来消息"和正文，子智能体仍然显示在跑。
-- **Bot 页**：消息不进对话，在"过程"里是一步（和汇报一样，PRD §6.11）。主人看到的是 Bot 转告的气泡。"它在忙"的气泡不变，仍然只写名字。
+- **Bot 页**：消息不进对话（和汇报一样，PRD §6.11）。主人看到的是 Bot 转告的气泡。"它在忙"的气泡不变，仍然只写名字。
 - **列表和通知**：不变。Bot 发出气泡才算未读和通知。
 - **ACP 和命令行**：信件现在怎么显示就怎么显示。`finx exec` 仍然等 `idle` 才退出（D-49）。
 - **日志兼容**：消息不写成 `mail` 条目，单独一种 `agent_message` 条目。实现时查了旧版怎么读：`mail` 条目的 `kind` 是旧版不认识的值时，这一行读不出来；历史是顺着 parent 往回走的，走到缺的这一行就断了，这之前的对话都看不到。不认识的条目类型则保留位置，什么也不丢（`EntryKind::Unknown`）。桌面端和内核总是一起升级，但主人有时换着用不同分支的包，而一个 Bot 只有一个长期会话，所以走这条现成的路。
@@ -405,7 +405,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 | `crates/finx-core/src/prompts/bot.md` | §7.4 |
 | `crates/finx-protocol/src/event.rs`、`schema.json`，`packages/protocol/src/generated.ts` | `MailKind::Message` |
 | `packages/client/src/steps.ts`、`botChat.ts` 及测试 | 按 `mail.kind` 区分，消息不结束这一轮；新步骤 |
-| `apps/desktop/src/renderer/src/session/Agents.tsx`、`Chat.tsx`、`bots/BotPage.tsx`、locales | 消息卡片和"过程"里的一步 |
+| `apps/desktop/src/renderer/src/session/Agents.tsx`、`Chat.tsx`、locales | 消息卡片 |
 | `crates/finx-core/src/store/entry.rs` 和读它的 `session.rs`、`context.rs`、`kernel.rs`、`bot.rs` | `agent_message` 条目（§8） |
 | `crates/finx-mock/src/lib.rs` | 场景 `note`（子智能体发给主再接着做）、`relay_note`（Bot 交给它）、`note_session`（会话模式交给它）；`check` 场景跟着改名 |
 | `crates/finx-core/tests/`、`crates/finx-cli/tests/e2e_bots.rs` | §13 |
@@ -431,7 +431,7 @@ See the agents in this session: each one's label, status, how long it has run, i
 
 **端到端**（`e2e_bots.rs`，模拟模型）：长活中途发消息 → Bot 被唤醒 → 主人收到气泡 → 子智能体继续 → 汇报再来一次。
 
-**桌面走查**（`bot-turn.mjs`，开发版和打好的包）：中途的气泡出现时"它在忙"的气泡还在，名字不变；"过程"里有这一步；会话页的卡片；子智能体没有被显示成做完。子之间的消息没有走查，用内核测试和客户端测试覆盖。
+**桌面走查**（`bot-turn.mjs`，开发版和打好的包）：中途的气泡出现时"它在忙"的气泡还在，名字不变；会话页的卡片；子智能体没有被显示成做完。子之间的消息没有走查，用内核测试和客户端测试覆盖。
 
 **真实模型统计**（`bot_turns.mjs`，要先给测试 Key 充值）：
 
@@ -622,7 +622,6 @@ Bot   send_to_user("报告做好了：[报告](…)", end_turn)
 ### 17.6 界面
 
 - **气泡**：和 Bot 自己的一样，不写是哪个子智能体，主人只跟一个对象说话。按发出的时间排，Bot 在忙时也一样（`botChat` 按 `ts` 排）。
-- **过程**：这种气泡没有"过程"：它不是 Bot 做出来的，Bot 的步骤仍然归 Bot 自己的下一条。
 - **列表和通知**：算一条 Bot 的消息，未读加一，有通知（`bots.rs` 的 `on_event`）。
 
 ### 17.7 给模型的文字
@@ -670,7 +669,7 @@ Send the user a short message about your work. It reaches them at once, in the c
 While it works, an agent tells the user how the work is going by itself, which you read as <sent_to_user>, and can send you an <agent_message> when it needs you to act; its report still follows.
 ```
 
-### 17.8 统计之前的判断
+### 17.8 第一版的教训
 
 第一版文字（只写转折点）在真实模型上暴露的问题，读模型的思考才看出来：子智能体的节奏很稳，每步 5–15 秒，但一口气走几十步，思考里基本不提要告诉用户，到第 70、80 步才想起来。提示词在第一条消息里，走远了就淡了。所以第二版加了具体的时点，第三版加了原因。
 
@@ -702,7 +701,7 @@ While it works, an agent tells the user how the work is going by itself, which y
 | 不是中文的进展 | | 0 | 0 | 0 | 0 |
 
 - **有效的**：Bot 不醒；进展都是中文，内容有用；第二版让第一句来得早了很多。
-- **还没解决的**：之后的沉默仍然长，"约 15 次工具调用说一句"基本没被执行。第三版（加了原因）在这次提交时还没有统计。如果文字到头，下一步是内核在连续很多步没说话时提醒一次，这要主人定（§17.9、§17.8）。
+- **还没解决的**：之后的沉默仍然长，"约 15 次工具调用说一句"基本没被执行。第三版（加了原因）在这次提交时还没有统计。如果文字到头，下一步是内核在连续很多步没说话时提醒一次，这要主人定（§17.9）。
 - **其他**：有的进展把最后的结果也说了，Bot 随后再交付一次；每条进展仍然偏长。两者都不影响使用，先看主人试用的感受。
 - **回归没跑完**：连发、叫停、小活变不变吵（`fan`、`ten`、`milestone`、`one`、`stop`）在这次提交时还没有跑。
 

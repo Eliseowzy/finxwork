@@ -19,6 +19,9 @@ const SHARED: [(&str, &str); 2] = [
 /// How to write files and commands for the desktop app, which turns them into controls
 /// (content-actions-design §9.1).
 pub const APP_PROMPT: &str = include_str!("prompts/app.md");
+/// The same for a bot, which hands over files with `send_to_user` instead of linking them
+/// (bot-design §3.12).
+const BOT_APP_PROMPT: &str = include_str!("prompts/app_bot.md");
 
 /// Which base section a system prompt starts with; the sections after it are the same.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -82,8 +85,8 @@ fn base_section(profile: &PromptProfile, config: &Config) -> io::Result<String> 
     })
 }
 
-/// Which `bot.md` a bot's prompt comes from: what is stored with its prompt, so that a new one
-/// reaches the bots that already have a conversation (bot-turn-design §8).
+/// Which `bot.md` and app section a bot's prompt comes from: what is stored with its prompt, so
+/// that a new one reaches the bots that already have a conversation (bot-turn-design §8).
 pub fn bot_template(config: &Config) -> io::Result<String> {
     use std::hash::Hash;
     use std::hash::Hasher;
@@ -93,6 +96,7 @@ pub fn bot_template(config: &Config) -> io::Result<String> {
     };
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     with_shared(&text).hash(&mut hasher);
+    BOT_APP_PROMPT.hash(&mut hasher);
     Ok(format!("{:016x}", hasher.finish()))
 }
 
@@ -103,7 +107,10 @@ pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
     // too, as it says how the app shows replies, not who the agent is.
     if inputs.in_app {
         prompt.push_str("\n\n");
-        prompt.push_str(APP_PROMPT.trim_end());
+        prompt.push_str(match inputs.profile {
+            PromptProfile::Session => APP_PROMPT.trim_end(),
+            PromptProfile::Bot { .. } => BOT_APP_PROMPT.trim_end(),
+        });
     }
 
     let guidelines = inputs.tools.guidelines();
@@ -251,8 +258,9 @@ mod tests {
         assert_eq!(prompt_date("You are FinxWork. date: 2026-10-28"), None);
     }
 
-    /// A bot's prompt changes only the base section: its name, its turns, how it talks; the
-    /// shared sections and everything after the base are a session's (bot-design §2.3).
+    /// A bot's prompt changes the base section (its name, its turns, how it talks) and how files
+    /// reach the user; the shared sections and everything after the app section are a session's
+    /// (bot-design §2.3, §3.12).
     #[test]
     fn a_bots_prompt_differs_from_a_sessions_only_in_the_base() {
         let env = LocalEnvironment::new(PathBuf::from("/work/bot"));
@@ -283,7 +291,10 @@ mod tests {
                 assert!(text.contains(shared));
             }
         }
-        let after = |text: &str| text[text.find("In the FinxWork app").unwrap()..].to_string();
+        assert!(session.contains("Link files in Markdown"));
+        assert!(!bot.contains("Link files in Markdown"), "a bot hands files over in send_to_user");
+        assert!(bot.contains("```bash block, with no $ prompt"));
+        let after = |text: &str| text[text.find("<tool_guidelines>").unwrap()..].to_string();
         assert_eq!(after(&session), after(&bot));
     }
 
