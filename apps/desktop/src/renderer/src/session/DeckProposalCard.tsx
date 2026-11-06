@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import type { RpcClient } from "@finx/client";
-import { cardReducer, changedSlides, deckCall, initialCard, type DeckEditDetails } from "../docs/pptx/deckProposal";
+import { cardReducer, changedSlides, initialCard, type DeckEditDetails } from "../docs/pptx/deckProposal";
 
 // The pending card that answers ⌘↩: the latest one mounted.
 const pending: (() => void)[] = [];
@@ -15,7 +15,7 @@ export function DeckProposalCard({ details, rpc, session }: { details: DeckEditD
   const slides = changedSlides(details);
 
   const refresh = useCallback(() => {
-    deckCall(rpc, "deck/proposals", { session_id: session, deck_id }).then((r) => dispatch({ type: "listed", proposals: r.proposals ?? [] }), () => {});
+    rpc.request("deck/proposals", { session_id: session, deck_id }).then((r) => dispatch({ type: "listed", proposals: r.proposals ?? [] }), () => {});
   }, [rpc, session, deck_id]);
   useEffect(() => {
     refresh();
@@ -26,13 +26,13 @@ export function DeckProposalCard({ details, rpc, session }: { details: DeckEditD
   const accept = () => {
     if (state.status !== "pending" || state.busy) return;
     dispatch({ type: "start", action: "accept" });
-    deckCall(rpc, "deck/proposal/accept", { session_id: session, deck_id, proposal_id, ...(state.stale ? { force: true } : {}) })
-      .then((r) => dispatch({ type: "accepted", applied: r.acceptance?.applied !== false }), fail);
+    rpc.request("deck/proposal/accept", { session_id: session, deck_id, proposal_id, ...(state.stale ? { force: true } : {}) })
+      .then((r) => dispatch({ type: "accepted", applied: r.acceptance.applied }), fail);
   };
   const reject = () => {
     if (state.status !== "pending" || state.busy) return;
     dispatch({ type: "start", action: "reject" });
-    deckCall(rpc, "deck/proposal/reject", { session_id: session, deck_id, proposal_id }).then((r) => dispatch({ type: "rejected", rejected: r.rejected }), fail);
+    rpc.request("deck/proposal/reject", { session_id: session, deck_id, proposal_id }).then((r) => dispatch({ type: "rejected", rejected: r.rejected }), fail);
   };
   const acceptRef = useRef(accept);
   acceptRef.current = accept;

@@ -36,8 +36,8 @@ test("a failure keeps it pending with the message", () => {
 });
 
 test("a refetch learns of decisions made in the editor", () => {
-  assert.equal(run([{ type: "listed", proposals: [{ id: "p1" }] }]).status, "pending");
-  assert.equal(run([{ type: "listed", proposals: [{ id: "other" }] }]).status, "handled");
+  assert.equal(run([{ type: "listed", proposals: [{ id: "p1", status: "pending" }] }]).status, "pending");
+  assert.equal(run([{ type: "listed", proposals: [{ id: "other", status: "pending" }] }]).status, "handled");
   assert.equal(run([{ type: "listed", proposals: [{ id: "p1", status: "accepted" }] }]).status, "accepted");
   assert.equal(run([{ type: "listed", proposals: [{ id: "p1", status: "rejected" }] }]).status, "rejected");
 });
@@ -46,5 +46,5 @@ test("what the card decided itself is not overridden by a refetch", () => {
   const s = run([{ type: "start", action: "accept" }, { type: "accepted", applied: true }, { type: "listed", proposals: [] }]);
   assert.equal(s.status, "accepted");
   // handled, then seen pending again (an undo in the editor): pending.
-  assert.equal(run([{ type: "listed", proposals: [] }, { type: "listed", proposals: [{ id: "p1" }] }]).status, "pending");
+  assert.equal(run([{ type: "listed", proposals: [] }, { type: "listed", proposals: [{ id: "p1", status: "pending" }] }]).status, "pending");
 });

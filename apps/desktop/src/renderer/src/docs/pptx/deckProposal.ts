@@ -2,8 +2,8 @@
 // tool's details say, the server methods the card calls, and the card's state as answers and
 // `deck/changed` refetches arrive. Kept free of React so the state logic is tested alone.
 //
-// The kernel side is still settling: every shape it sends is declared here, in one place.
-import type { RpcClient } from "@finx/client";
+// The details' shape is the tool's, declared here in one place; the methods' are the protocol's.
+import type { DeckProposalEntry } from "@finx/protocol";
 
 /** How one page changed (the engine's proposal strip). */
 export type DeckSlideStatus = "changed" | "inserted" | "deleted" | "moved" | "unchanged";
@@ -18,21 +18,8 @@ export type DeckEditDetails = {
   slides: { index: number; slide_id: string; status: DeckSlideStatus }[];
 };
 
-/** One entry of `deck/proposals` (the engine's JSON, camelCase). Only what the card reads. */
-export type ListedProposal = { id: string; status?: "pending" | "accepted" | "rejected" };
-
-/** The server methods for proposals (presentation-deck-edit §4). */
-export type DeckProposalMethods = {
-  "deck/proposals": [{ session_id: string; deck_id: string }, { proposals: ListedProposal[] }];
-  "deck/proposal/accept": [{ session_id: string; deck_id: string; proposal_id: string; force?: boolean }, { revision: number; acceptance: { proposalId: string; applied: boolean } }];
-  "deck/proposal/reject": [{ session_id: string; deck_id: string; proposal_id: string }, { revision: number; rejected: boolean }];
-};
-
-// The generated protocol still declares the earlier `deck/proposal/*` shapes; until the kernel's
-// schema is regenerated, these go through this one typed door.
-export function deckCall<M extends keyof DeckProposalMethods>(rpc: RpcClient, method: M, params: DeckProposalMethods[M][0]): Promise<DeckProposalMethods[M][1]> {
-  return (rpc.request as unknown as (m: string, p: unknown) => Promise<DeckProposalMethods[M][1]>)(method, params);
-}
+/** What the card reads of a `deck/proposals` entry (`DeckProposalEntry`). */
+export type ListedProposal = Pick<DeckProposalEntry, "id" | "status">;
 
 const statuses = new Set<string>(["changed", "inserted", "deleted", "moved", "unchanged"]);
 
@@ -55,8 +42,8 @@ export function deckEditDetails(raw: unknown): DeckEditDetails | null {
 export const changedSlides = (d: DeckEditDetails) => d.slides.filter((s) => s.status !== "unchanged").sort((a, b) => a.index - b.index);
 
 /**
- * pending: waiting for the user. accepted / rejected: decided, here or in the editor when the
- * kernel says which. handled: no longer pending, decided elsewhere, which way not known.
+ * pending: waiting for the user. accepted / rejected: decided, here or in the editor.
+ * handled: no longer listed (the kernel keeps the latest 64 decided), which way not known.
  */
 export type ProposalStatus = "pending" | "accepted" | "rejected" | "handled";
 export type CardState = {
@@ -94,10 +81,7 @@ export function cardReducer(id: string) {
         // What this card decided itself stands; a refetch only learns of decisions made elsewhere.
         if (decided(state.status)) return state;
         const found = event.proposals.find((p) => p.id === id);
-        if (!found || found.status === "accepted" || found.status === "rejected") {
-          const status: ProposalStatus = found?.status === "accepted" || found?.status === "rejected" ? found.status : "handled";
-          return { ...state, status, busy: null };
-        }
+        if (!found || found.status !== "pending") return { ...state, status: found?.status ?? "handled", busy: null };
         return state.status === "pending" ? state : { ...state, status: "pending" };
       }
     }
