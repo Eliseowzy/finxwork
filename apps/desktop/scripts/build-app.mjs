@@ -317,7 +317,7 @@ if (arch === nativeArch) {
   fs.writeFileSync(deck, deckBytes);
   const read = await withKernel(embedded, { ...env, HOME: docHome }, docHome, async (call) => {
     await call(1, "initialize", { protocol_version: 2 });
-    const session = await call(2, "session/new", { cwd: docHome });
+    const session = await call(2, "session/new", { cwd: docHome, model: "deepseek/deepseek-flash" });
     if (!session.result?.session_id) throw new Error(`the embedded finx cannot start a session: ${JSON.stringify(session)}`);
     return call(3, "pptx/read", { session_id: session.result.session_id, path: deck });
   });
