@@ -46,12 +46,12 @@ function drop(owner: WebContents) {
   const shown = previews.get(owner);
   if (!shown) return;
   previews.delete(owner);
-  if (!shown.win.isDestroyed()) shown.win.contentView.removeChildView(shown.view);
   const wc = shown.view.webContents;
-  if (wc.isDestroyed()) return;
-  // Keys go back to the app's page, or Esc and the shortcuts would go nowhere.
-  if (wc.isFocused() && !owner.isDestroyed()) owner.focus();
-  wc.close();
+  // Keys go back to the app's page, or Esc and the shortcuts would go nowhere. Asked while the view is
+  // still in the window: out of it, it no longer has the focus.
+  if (!wc.isDestroyed() && wc.isFocused() && !owner.isDestroyed()) owner.focus();
+  if (!shown.win.isDestroyed()) shown.win.contentView.removeChildView(shown.view);
+  if (!wc.isDestroyed()) wc.close();
 }
 
 /** The window's page says its preview is gone by going itself: closed, or loaded again. */

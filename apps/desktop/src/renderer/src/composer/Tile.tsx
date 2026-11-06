@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { baseName, type DocQuote, type WebComment } from "@finx/client";
 import { useDocOpener } from "../docs/state";
-import { isPresentation, opensAsDoc, opensInOwnApp, showsInApp } from "../files/kind";
+import { isPresentation, opensAsDoc, opensInOwnApp } from "../files/kind";
 import { Icon } from "../icons";
 import { useFilePreview } from "../preview/context";
 import { opensAsPage, showPage } from "../session/contentMenus";
@@ -309,7 +309,7 @@ export function Lightbox({ src, caption, onStep, onClose }: { src: string; capti
 }
 
 /**
- * Opens a file: over the window where the page offers that (preview/FilePreview), else beside the
+ * Opens a file: over the window where the page offers that for it (preview/FilePreview), else beside the
  * conversation (a PDF as a document, Markdown previewed, an HTML file as its page); one that
  * shows only as "binary" in its own app.
  */
@@ -318,7 +318,7 @@ export function useOpenFile() {
   const preview = useFilePreview();
   const st = useStore();
   return (path: string) => {
-    if (preview && showsInApp(path)) return preview.open(path);
+    if (preview?.takes(path)) return preview.open(path);
     if (docs && opensAsPage(path)) return showPage(st, docs.session, path);
     if (docs && (opensAsDoc(path) || isPresentation(path))) return docs.open({ path });
     if (!docs || opensInOwnApp(path)) return void window.finx?.openFile(path, { app: "system" });

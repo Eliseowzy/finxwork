@@ -8,7 +8,7 @@ import { PdfView } from "../docs/PdfView";
 import { SheetView } from "../docs/SheetView";
 import { FileCard, FileLoading } from "../files/FileCard";
 import { ImageView } from "../files/ImageView";
-import { isMarkdown, isSvg, opensAsDoc, previewable, wraps } from "../files/kind";
+import { isMarkdown, isSvg, opensAsDoc, previewable, showsInApp, wraps } from "../files/kind";
 import { filesOf, parentOf, relativeTo, showFile } from "../files/state";
 import { sizeText } from "../format";
 import { Icon } from "../icons";
@@ -24,11 +24,14 @@ import { FilePreviewContext, type FilePreviewOpener } from "./context";
 // shows it whole, and one button away from the panel. A page that wants it wraps its content in
 // FilePreviewProvider; file tiles and file tags under it then open here.
 
-/** The window's preview of `scope`'s files, for what is under it. Without a scope, files open as they would. */
-export function FilePreviewProvider({ scope, children }: { scope: Scope; children: ReactNode }) {
+/**
+ * The window's preview of `scope`'s files, for what is under it. `takes`: which files; any the app
+ * can show unless the page says less. Others, or all without a scope, open as they would.
+ */
+export function FilePreviewProvider({ scope, takes = showsInApp, children }: { scope: Scope; takes?: (path: string) => boolean; children: ReactNode }) {
   const [path, setPath] = useState<string | null>(null);
   const available = !!scope;
-  const opener = useMemo<FilePreviewOpener | null>(() => (available ? { open: setPath } : null), [available]);
+  const opener = useMemo<FilePreviewOpener | null>(() => (available ? { takes, open: setPath } : null), [available, takes]);
   return (
     <FilePreviewContext.Provider value={opener}>
       {children}

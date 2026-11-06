@@ -1,10 +1,13 @@
 // What a file in the panel is, by its name: one place for the extensions that decide how it
 // opens (finx's document, as pdf.js or the workbook grid, or text), and how text shows.
 
+import { isPageFile } from "../../../shared/pageFile.ts";
+
 const doc = /\.(pdf|xlsx|xlsm|xls|csv|tsv)$/i;
 const markdown = /\.(md|markdown)$/i;
 const svg = /\.svg$/i;
 const prose = /\.(md|markdown|txt|text|log)$/i;
+const image = /\.(png|jpe?g|gif|webp|svg|bmp|ico|heic|tiff?)$/i;
 
 /** Opens as finx's document (pdf.js, or the workbook grid), not read as text. */
 export const opensAsDoc = (path: string) => doc.test(path);
@@ -21,6 +24,12 @@ export const opensInOwnApp = (path: string) =>
 
 /** Whether the app shows the file itself: as a document (a workbook among them), or by reading it. */
 export const showsInApp = (path: string) => opensAsDoc(path) || !opensInOwnApp(path);
+
+/**
+ * A file a conversation hands over to be looked at, rather than one being worked on: a report, a
+ * picture, a PDF, a table, a page (content-actions-design §4.2, DD-161). Code and plain text are the other kind.
+ */
+export const readsAsResult = (path: string) => markdown.test(path) || image.test(path) || opensAsDoc(path) || isPageFile(path);
 
 export const isMarkdown = (path: string) => markdown.test(path);
 export const isSvg = (path: string) => svg.test(path);

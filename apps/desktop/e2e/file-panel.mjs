@@ -213,6 +213,13 @@ const either = (pick) => JSON.stringify(Object.values(strings).map(pick));
 
 const chip = (name) => `[...document.querySelectorAll(".am .fref")].find((c) => c.querySelector(".fref-n").textContent === ${JSON.stringify(name)})`;
 const editorText = `(document.querySelector(".fpn .cm-content")?.innerText ?? "")`;
+/** A result opens over the window (content-actions-design DD-161); its button takes it to the panel, which is what these steps are about. */
+const toPanel = async (page, name) => {
+  await page.run(`${chip(name)}.click()`);
+  await page.until(`${name} over the window`, `!!document.querySelector(".fpv-panel")`);
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until(`${name} out of the preview`, `!document.querySelector(".fpv")`);
+};
 const activeTab = `(document.querySelector(".fpn-tab.on .brp-tab-t")?.textContent ?? null)`;
 const status = `(document.querySelector(".fpn-state")?.textContent ?? "")`;
 const note = `(document.querySelector(".fpn-note")?.className ?? "")`;
@@ -271,7 +278,7 @@ try {
   await page.shot("1-opened");
 
   step("an Excel workbook shows as a grid, edits a cell, saves, and quotes the selection");
-  await page.run(`${chip("模型")}.click()`);
+  await toPanel(page, "模型");
   await page.until("the workbook grid", `${activeTab} === "model.xlsx" && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas") && [...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tab")].some((x) => x.textContent.includes("假设"))`);
   await page.run(`document.querySelector(".dcp-viewer:not([hidden]) .sht-name").select()`);
   await page.cdp("Input.insertText", { text: "B6" });
@@ -306,7 +313,7 @@ try {
   await page.run(`(() => { const g = document.querySelector(".dcp-viewer:not([hidden]) .sht-grip.row"), r = g.getBoundingClientRect(); g.dispatchEvent(new MouseEvent("mousedown", { bubbles:true, clientX:r.x+5, clientY:r.y })); window.dispatchEvent(new MouseEvent("mousemove", { clientX:r.x+5, clientY:r.y+12 })); window.dispatchEvent(new MouseEvent("mouseup")); })()`);
   await page.until("the resized row", `Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.row").getBoundingClientRect().height - ${oldHeight + 12}) < 1`);
   await page.run(`document.querySelector(".fpn-tab.on .brp-tab-x").click()`);
-  await page.run(`${chip("模型")}.click()`);
+  await toPanel(page, "模型");
   await page.until("the saved column width", `!!document.querySelector(".dcp-viewer:not([hidden]) .sht-h.col") && Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.col").getBoundingClientRect().width - ${oldWidth + 40}) < 1`);
   check(await page.run(`Math.abs(document.querySelector(".dcp-viewer:not([hidden]) .sht-h.row").getBoundingClientRect().height - ${oldHeight + 12}) < 1`), "row height was not restored");
   step("an edit from another session refreshes the grid; switching sheets clears its notice");
@@ -426,14 +433,16 @@ try {
   await until("H2:H5 cleared", async () => { const v = await valuesAt("H2:H5"); return Object.values(v).every((x) => x === undefined || x === null); }, 5000);
   check((await page.run(`document.querySelector("${V} .sht-name").value`)) === "H2" && (await page.run(`!!document.querySelector("${V} .sht-sel.multi")`)), "the right-click moved off the selection");
   step("a right-click outside the selection selects the cell it lands on");
-  await rightClick("K3");
-  await page.until("K3 selected", `document.querySelector("${V} .sht-name").value === "K3" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
+  await rightClick("G7");
+  await page.until("G7 selected", `document.querySelector("${V} .sht-name").value === "G7" && !document.querySelector("${V} .sht-sel.multi")`, 3000);
   // The fill handle: 1…4 dragged down four rows carries on to 8, the tip showing 8 on the way.
   await goCell("J2");
   await page.run(`(() => { const d = new DataTransfer(); d.setData("text/plain", "1\\n2\\n3\\n4\\n"); document.querySelector("${V} .sht-canvas").dispatchEvent(new ClipboardEvent("paste", { clipboardData: d, bubbles: true, cancelable: true })); })()`);
   await until("1…4 pasted", async () => (await valuesAt("J5")).J5 === 4, 5000);
   await page.until("the fill handle", `!!document.querySelector("${V} .sht-fill-handle")`);
   const centre = (sel) => page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  // Measured once going to the cell has stopped scrolling the grid.
+  await page.until("the grid at rest", `!document.querySelector("${V} .sht-scroll.scrolling")`, 5000);
   const handle = await centre(`${V} .sht-fill-handle`);
   const j9 = await centre(`${V} .sht-c[data-cell="J9"]`);
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseMoved", ...handle });
@@ -498,7 +507,7 @@ try {
   await page.until("no note", `!document.querySelector(".fpn-note")`);
 
   step("Markdown shows rendered, its source a click away");
-  await page.run(`${chip("说明")}.click()`);
+  await toPanel(page, "说明");
   await page.until("notes.md rendered", `${activeTab} === "notes.md" && document.querySelector(".fpn-md h1")?.textContent === "标题"`);
   await page.shot("3-markdown");
   await page.run(`document.querySelector('.fpn-tools .tb[aria-pressed]').click()`);
@@ -512,7 +521,7 @@ try {
   await until("saved with \\r\\n", () => disk("crlf.txt") === "first\r\nsecond\r\nthird", 4000);
 
   step("an image shows; GBK text is read-only; a binary file says why and opens elsewhere");
-  await page.run(`${chip("图")}.click()`);
+  await toPanel(page, "图");
   await page.until("the image", `!!document.querySelector(".fpn-img img")?.src.startsWith("data:image/png;base64,")`);
   // A pinch (Chromium's control-modified wheel) zooms it; a double click takes it back to fitted.
   const imgWidth = `document.querySelector(".fpn-img img").getBoundingClientRect().width`;
@@ -528,7 +537,7 @@ try {
   await sleep(300);
   check(!(await page.run(`(${editorText}).includes("x")`)), "a read-only file took typing");
   step("CSV opens in the grid, rejects formulas and saves values; XLS stays read-only");
-  await page.run(`${chip("CSV")}.click()`);
+  await toPanel(page, "CSV");
   await page.until("CSV grid", `${activeTab} === "values.csv" && document.querySelector('.dcp-viewer:not([hidden]) .sht-c[data-cell="A1"]')?.textContent === "名称"`);
   const enterFormula = async (text) => page.run(`(() => { const x = document.querySelector(".dcp-viewer:not([hidden]) .sht-formula"); x.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(x, ${JSON.stringify(text)}); x.dispatchEvent(new Event("input", { bubbles: true })); x.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); })()`);
   await enterFormula("=1+1");
@@ -551,7 +560,7 @@ try {
   check(await page.run(`!document.querySelector(".dcp-viewer:not([hidden]) .sht-agent")`), "the grid took its own quick edits for the agent's");
   const tabIcon = (name) => `[...document.querySelectorAll(".fpn-tab")].find((x) => x.querySelector(".brp-tab-t")?.textContent === ${JSON.stringify(name)})?.querySelector(".brp-tab-ic svg rect")`;
   check(await page.run(`!!${tabIcon("values.csv")} && !!${tabIcon("model.xlsx")}`), "a workbook tab does not show the grid icon");
-  await page.run(`${chip("旧表")}.click()`);
+  await toPanel(page, "旧表");
   await page.until("XLS read only", `${activeTab} === "legacy.xls" && document.querySelector(".dcp-viewer:not([hidden]) .sht-formula")?.readOnly && !!document.querySelector(".dcp-viewer:not([hidden]) .sht-canvas")`);
   check(await page.run(`[...document.querySelectorAll(".dcp-viewer:not([hidden]) .sht-tools button")].filter((b) => [${either((s) => s.sheet.undo)} , ${either((s) => s.sheet.redo)}].flat().includes(b.getAttribute("aria-label"))).every((b) => b.disabled)`), "XLS undo/redo enabled");
   check(await page.run(`!!${tabIcon("legacy.xls")}`), "the .xls tab does not show the grid icon");
@@ -563,7 +572,7 @@ try {
   await until("opened in its app", () => lines(opened).length > before, 4000);
   check(JSON.stringify(lines(opened).at(-1)) === JSON.stringify({ kind: "open", path: path.join(proj, "bin/blob.bin") }), `opened: ${JSON.stringify(lines(opened).at(-1))}`);
 
-  await page.run(`${chip("坏表")}.click()`);
+  await toPanel(page, "坏表");
   await page.until("the broken workbook's card", `${activeTab}?.startsWith("a_workbook") && !!document.querySelector(".fpn-main > .fpn-card")`);
   check(await page.run(`(() => { const c = document.querySelector(".fpn-main > .fpn-card").getBoundingClientRect(), m = document.querySelector(".fpn-main").getBoundingClientRect(); return c.left >= m.left && c.right <= m.right; })()`), "the card spills out of the file's column");
   await page.shot("5-broken");

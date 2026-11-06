@@ -57,7 +57,7 @@ const write = (rel, body, mode = 0o644) => {
   fs.chmodSync(p, mode);
 };
 write("src/app.ts", Array.from({ length: 12 }, (_, i) => `export const line${i + 1} = ${i + 1};`).join("\n") + "\n");
-write("docs/报告 草稿.md", "# 报告\n");
+write("docs/报告 草稿.md", "# 报告\n\n[图](../assets/logo.png)\n");
 write("run.command", "#!/bin/sh\necho ran > /tmp/should-not-run\n", 0o755);
 write("scripts/build.sh", "#!/bin/sh\necho build\n", 0o755);
 // Its title says that its script ran, and whether it could read another file: by fetch, or through a frame.
@@ -363,7 +363,7 @@ try {
     await page.cdp("Emulation.setEmulatedMedia", { features: [] });
   }
 
-  step("a click opens a file in the file panel; a folder in its tree (file-panel-design DD-91)");
+  step("a click opens code in the file panel; a folder in its tree (file-panel-design DD-91)");
   const activeTab = `(document.querySelector(".fpn-tab.on .brp-tab-t")?.textContent ?? null)`;
   let before = openedNow().length;
   await page.run(`${chip("应用入口")}.click()`);
@@ -377,6 +377,55 @@ try {
   await page.run(`${chip("不存在")}.click()`);
   await page.until("the word that it is missing", toastSays((s) => s.content.missing));
   check(openedNow().length === before, "a missing file was opened");
+
+  step("a result opens over the window, code beside the conversation (DD-161)");
+  await page.run(`${chip("scripts/build.sh")}.click()`);
+  await page.until("code in the file panel", `${activeTab} === "build.sh"`);
+  check(!(await page.run(`!!document.querySelector(".fpv")`)), "code opened over the window");
+  await page.run(`${chip("报告草稿")}.click()`);
+  await page.until("the report over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "报告 草稿.md" && document.querySelector(".fpv .md h1")?.textContent === "报告"`);
+  check((await page.run(activeTab)) === "build.sh", "the report went to the panel too");
+  await page.shot("2a-result-preview");
+  await page.run(`document.querySelector(".fpv-close").click()`);
+  await page.until("the preview closed", `!document.querySelector(".fpv")`);
+  await page.run(`${chip("assets/logo.png")}.click()`);
+  await page.until("the picture over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "logo.png"`);
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until("its button takes it to the panel", `!document.querySelector(".fpv") && ${activeTab} === "logo.png"`);
+  await page.run(`${chip("报告草稿")}.click()`);
+  await page.until("the report over the window again", `!!document.querySelector(".fpv-panel")`);
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until("the report's link, in the panel", `!document.querySelector(".fpv") && ${activeTab} === "报告 草稿.md" && !!document.querySelector(".fpn .fref")`);
+  await page.run(`document.querySelector(".fpn .fref").click()`);
+  await page.until("a link in the panel stays in the panel", `${activeTab} === "logo.png"`);
+  check(!(await page.run(`!!document.querySelector(".fpv")`)), "a link in the panel opened over the window");
+  check(openedNow().length === before, `a result opened something outside the app: ${JSON.stringify(openedNow().slice(before))}`);
+
+  step("a file attached in the composer follows the same rule (DD-161)");
+  await page.run(`(() => { const input = document.createElement("input"); input.type = "file"; input.multiple = true; input.id = "attach-test"; document.body.append(input); })()`);
+  const attachDoc = await page.cdp("DOM.getDocument");
+  const attachInput = await page.cdp("DOM.querySelector", { nodeId: attachDoc.root.nodeId, selector: "#attach-test" });
+  await page.cdp("DOM.setFileInputFiles", { nodeId: attachInput.nodeId, files: [path.join(proj, "docs/报告 草稿.md"), path.join(proj, "scripts/build.sh")] });
+  check(await page.run(`(() => {
+    const data = new DataTransfer();
+    for (const file of document.querySelector("#attach-test").files) data.items.add(file);
+    const target = document.querySelector(".cmp");
+    const event = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data });
+    return target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data })), target.dispatchEvent(event), event.defaultPrevented;
+  })()`), "the files were not dropped");
+  const attached = (name) => `[...document.querySelectorAll(".cmp .tile")].find((t) => t.querySelector(".tile-name")?.textContent === ${JSON.stringify(name)})`;
+  await page.until("both attached", `!!${attached("报告 草稿.md")} && !!${attached("build.sh")}`);
+  await page.run(`${attached("报告 草稿.md")}.querySelector(".tile-open").click()`);
+  await page.until("the attached report over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "报告 草稿.md"`);
+  await page.run(`document.querySelector(".fpv-close").click()`);
+  await page.until("the preview closed again", `!document.querySelector(".fpv")`);
+  await page.run(`${chip("应用入口")}.click()`);
+  await page.until("back on app.ts", `${activeTab} === "app.ts"`);
+  await page.run(`${attached("build.sh")}.querySelector(".tile-open").click()`);
+  await page.until("the attached script in the panel", `${activeTab} === "build.sh"`);
+  check(!(await page.run(`!!document.querySelector(".fpv")`)), "the attached script opened over the window");
+  await page.run(`[...document.querySelectorAll(".cmp .tile")].forEach((t) => t.querySelector(".tile-x, .tile-remove")?.click())`);
+  await page.run(`document.querySelector("#attach-test").remove()`);
 
   step("Open With › Default App: what would run is only shown in Finder");
   let shown = shownNow().length;
@@ -456,17 +505,33 @@ try {
   const kept = fs.existsSync(icons) ? fs.readdirSync(icons).map((f) => fs.readFileSync(path.join(icons, f), "utf8")) : [];
   check(!kept.some((k) => k.includes("electronjs")), "the linked site was asked for its icon");
 
-  step("an HTML file opens as its page in the session's browser, once, as it is now; its source is a menu away (DD-157)");
+  step("an HTML file opens as its page over the window, in a view of its own; its button takes it to the session's browser, once, as it is now (DD-157, DD-161)");
   const pageURL = pathToFileURL(path.join(proj, "report/季度 报告.html")).href;
   const pageTabs = `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(pageURL)}))`;
-  await page.run(`${chip("季度报告")}.click()`);
+  const pageView = async (title) => {
+    for (let i = 0; i < 100; i++) {
+      const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
+      const view = list.find((t) => t.url === pageURL && t.title === title);
+      if (view) return view;
+      await sleep(100);
+    }
+    fail(`no view of the page titled ${title}`);
+  };
   // Only the package has the fuse that takes away what Electron adds to file: pages (build-app.mjs).
   const pageTitle = packaged ? "第一版 · 脚本跑了" : "读到了别的文件";
-  await page.until(packaged ? "the page's script ran, and could not read another file" : "the page's script ran", `${pageTabs}.then((t) => t.length === 1 && t[0].title === ${JSON.stringify(pageTitle)})`);
-  await page.until("the browser panel in front", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.run(`${chip("季度报告")}.click()`);
+  await page.until("the page's room over the window", `!!document.querySelector(".fpv-page")`);
+  await pageView(pageTitle);
+  check((await page.run(pageTabs)).length === 0, "the preview's page became a tab");
+  await page.shot("3a-html-preview");
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until(packaged ? "the page's script ran in a tab, and could not read another file" : "the page's script ran in a tab", `${pageTabs}.then((t) => t.length === 1 && t[0].title === ${JSON.stringify(pageTitle)})`);
+  await page.until("the browser panel in front", `!document.querySelector(".fpv") && !!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
   await page.shot("3a-html-page");
   write("report/季度 报告.html", "<!doctype html><title>第二版</title>");
   await page.run(`${chip("季度报告")}.click()`);
+  await pageView("第二版");
+  await page.run(`document.querySelector(".fpv-panel").click()`);
   await page.until("the page as written again, in the same tab", `${pageTabs}.then((t) => t.length === 1 && t[0].title === "第二版")`);
   shown = shownNow().length;
   pick("view");

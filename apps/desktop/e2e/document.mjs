@@ -438,14 +438,21 @@ try {
   const fileTile = (p) => `[...document.querySelectorAll('.cmp .tile')].find(t => t.title === ${JSON.stringify(p)})`;
   await main.until("the dropped files attached", `!!${fileTile(pdf)} && !!${fileTile(secondPdf)} && !!${fileTile(otherFile)}`, 30000);
   check(await main.run(`!document.querySelector('.dcp')`), "a dropped PDF opened by itself");
-  await main.run(`${fileTile(pdf)}.querySelector('.tile-open').click()`);
+  // A PDF is a result: over the window (content-actions-design DD-161), its button takes it to the panel.
+  const toPanel = async (p) => {
+    await main.run(`${fileTile(p)}.querySelector('.tile-open').click()`);
+    await main.until("the PDF over the window", `!!document.querySelector('.fpv-panel')`, 30000);
+    await main.run(`document.querySelector('.fpv-panel').click()`);
+    await main.until("the PDF out of the preview", `!document.querySelector('.fpv')`);
+  };
+  await toPanel(pdf);
   await main.until("the first PDF open", `document.querySelectorAll('.dcp-tab').length === 1`, 30000);
-  await main.run(`${fileTile(secondPdf)}.querySelector('.tile-open').click()`);
+  await toPanel(secondPdf);
   await main.until("both PDFs open", `document.querySelectorAll('.dcp-tab').length === 2 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === '第二份.PDF'`, 30000);
   await main.run(`document.querySelectorAll('.dcp-tab-close')[0].click()`);
   await main.until("inactive tab closed", `document.querySelectorAll('.dcp-tab').length === 1 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === '第二份.PDF'`);
-  await main.run(`${fileTile(pdf)}.querySelector('.tile-open').click()`);
-  await main.run(`${fileTile(secondPdf)}.querySelector('.tile-open').click()`);
+  await toPanel(pdf);
+  await toPanel(secondPdf);
   await main.until("two PDFs open again", `document.querySelectorAll('.dcp-tab').length === 2 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === '第二份.PDF'`);
   await main.run(`document.querySelector('.dcp-tab[aria-selected="true"]').parentElement.querySelector('.dcp-tab-close').click()`);
   await main.until("active tab closed and remaining tab selected", `document.querySelectorAll('.dcp-tab').length === 1 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === ${JSON.stringify(pdfName)}`);
