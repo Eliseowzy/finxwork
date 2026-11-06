@@ -449,6 +449,28 @@ try {
   const bar = await page.run(`(() => { const r = [...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1).getBoundingClientRect(); return { bottom: r.bottom, left: r.left, text: [...document.querySelectorAll(".tr.bots .bm .msg-act")].at(-1).textContent }; })()`);
   check(bar.left >= bubble.right - 1 && bar.bottom <= bubble.bottom + 1, `beside the bubble: ${JSON.stringify({ bar, bubble })}`);
   await page.shot("m4-bubble-actions");
+  // No room beside a bubble that fills a narrow conversation: over its corner, still in the window. A short one keeps outside.
+  const narrow = await page.run(`(() => {
+    const box = document.createElement("div");
+    box.className = "bm-b";
+    box.style.cssText = "width:300px;position:fixed;top:0;left:0";
+    const line = [...document.querySelectorAll(".tr.bots .bm .bline")].at(-1).cloneNode(true);
+    const bubble = document.createElement("div");
+    bubble.className = "bbub";
+    line.firstElementChild.replaceWith(bubble);
+    box.append(line);
+    document.body.append(box);
+    const place = (text) => {
+      bubble.textContent = text;
+      const a = line.querySelector(".msg-act").getBoundingClientRect(), b = bubble.getBoundingClientRect();
+      return { left: a.left, right: a.right, bubble: b.right, width: b.width };
+    };
+    const got = { long: place("很长的一段话。".repeat(30)), short: place("好") };
+    box.remove();
+    return got;
+  })()`);
+  check(narrow.long.width >= 298 && narrow.long.right <= 301 && narrow.long.left < narrow.long.bubble, `no room beside it: ${JSON.stringify(narrow.long)}`);
+  check(narrow.short.left >= narrow.short.bubble - 1, `room beside it: ${JSON.stringify(narrow.short)}`);
   const tag = (name) => `[...document.querySelectorAll(".tr.bots .fref")].find((e) => e.textContent.includes(${JSON.stringify(name)}))`;
   await page.until("the file tag", `!!${tag("note.md")}`, 15000);
   step("a file in a message opens over the window; one button moves it to the file panel");

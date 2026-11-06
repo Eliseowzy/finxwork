@@ -14,6 +14,9 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxa-"));
 const profile = path.join(work, "profile");
 const home = path.join(work, "finx");
 fs.mkdirSync(home, { recursive: true });
+// A private HOME: the app registers the extension's host in the browsers under it.
+const userHome = path.join(work, "home");
+fs.mkdirSync(userHome);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let app;
 let port;
@@ -64,7 +67,7 @@ async function launch() {
   port = cdpPort();
   app = spawn(path.join(desktop, "node_modules/.bin/electron"), [desktop, `--remote-debugging-port=${port}`], {
     env: {
-      ...process.env, FINX_HOME: home, FINX_CREDENTIAL_STORE: "file", FINX_NO_BROWSER: "1",
+      ...process.env, FINX_HOME: home, HOME: userHome, FINX_CREDENTIAL_STORE: "file", FINX_NO_BROWSER: "1",
       FINXWORK_USER_DATA: profile, FINXWORK_FINX: path.join(root, "target/debug/finx"),
       FINXWORK_NO_BROWSER: "1", FINXWORK_DEFAULT_MODE: "sessions",
     },
