@@ -360,6 +360,24 @@ try {
   if (!rect.width || !rect.height) throw new Error("Canvas has no visible dimensions");
   const pixels = await run(`(()=>{const c=document.querySelector('${canvas}');const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let blue=0;for(let i=0;i<d.length;i+=4)if(d[i]<80&&d[i+1]<140&&d[i+2]>180)blue++;return blue})()`);
   if (pixels < 100) throw new Error("The shape was not painted on Canvas");
+  // Agent edits go through deck_edit's approval card, so the engine's proposal review stays hidden.
+  if (await run("!!document.querySelector('[data-testid=pptx-proposals-button], [data-testid=pptx-proposals-panel]')")) throw new Error("The agent-proposals button is shown");
+  // Arrow keys page like PowerPoint, from the slide strip and from the stage with nothing selected.
+  const arrow = async (key) => { for (const type of ["keyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key, code: key, windowsVirtualKeyCode: key === "ArrowDown" ? 40 : 38 }); };
+  const activeRow = `[...document.querySelectorAll('aside > button')].findIndex((b) => b.getAttribute('aria-current') === 'page')`;
+  await run("document.querySelectorAll('aside > button')[0].click(); document.querySelectorAll('aside > button')[0].focus()");
+  await until(`${activeRow} === 0`, "first slide active");
+  await arrow("ArrowDown");
+  await until(`${activeRow} === 1 && document.activeElement === document.querySelectorAll('aside > button')[1]`, "ArrowDown on the strip pages forward and keeps strip focus");
+  await arrow("ArrowUp");
+  await until(`${activeRow} === 0`, "ArrowUp on the strip pages back");
+  await run("document.querySelector('[role=application]').focus()");
+  await arrow("ArrowDown");
+  await until(`${activeRow} === 1`, "ArrowDown on the stage pages forward");
+  if (await run("getComputedStyle(document.querySelector('[role=application]')).outlineStyle") !== "none") throw new Error("The focused stage draws a focus ring");
+  await arrow("ArrowUp");
+  await until(`${activeRow} === 0`, "ArrowUp on the stage pages back");
+  await until(`(()=>{const c=document.querySelector('${canvas}');const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let blue=0;for(let i=0;i<d.length;i+=4)if(d[i]<80&&d[i+1]<140&&d[i+2]>180)blue++;return blue>=100})()`, "first slide repainted");
   const x = rect.x + rect.width * .22, y = rect.y + rect.height * .18;
   for (let clickCount = 1; clickCount <= 2; clickCount++) {
     await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount });

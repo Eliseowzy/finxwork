@@ -13,6 +13,7 @@ import { presentationImageDecoder } from "./metafile";
 import { PresentationLoading, type FontLoadProgress } from "./PresentationLoading";
 import { SlideOutline } from "./SlideOutline";
 import { installSlideReorder } from "./slideReorder";
+import { installSlideKeys } from "./slideKeys";
 import { Ribbon, type RibbonFonts } from "./Ribbon";
 import { RibbonController } from "./commands/controller";
 import { ControllerContext } from "./ribbon/controls";
@@ -78,6 +79,14 @@ function Editor({ doc, rpc, session, name }: { doc: PresentationDoc; rpc: RpcCli
       onError: (e) => setError(e instanceof Error ? e.message : String(e)),
     });
   }, [doc, fonts]);
+  useLayoutEffect(() => {
+    if (!shell.current) return;
+    return installSlideKeys(shell.current, {
+      position: () => ({ index: controller.current.slideIndex, count: controller.current.slides.length }),
+      objectSelected: () => { const kind = controller.current.selection?.target.kind; return kind === "shape" || kind === "text"; },
+      go: async (index) => { await api.current?.goToSlide(index + 1); },
+    });
+  }, [controller, fonts]);
   useLayoutEffect(() => {
     let live = true;
     void loadFonts(doc.file.font_families, (value) => { if (live) setFontProgress(value); }).then((faces) => { if (live) setFonts(faces); }, (e: unknown) => {
