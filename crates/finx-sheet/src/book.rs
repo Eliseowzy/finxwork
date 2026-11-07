@@ -61,6 +61,8 @@ pub struct Sheet {
     pub index: Option<SheetIndex>,
     /// Every formula cell's text as stored (no `=`), shared formulas written out.
     pub formulas: BTreeMap<CellRef, String>,
+    /// The charts drawn on a worksheet (spreadsheet-design §4.1).
+    pub charts: Vec<crate::chart::Chart>,
 }
 
 pub struct Book {
@@ -98,16 +100,24 @@ impl Book {
                 kind: entry.kind.clone(),
                 index,
                 formulas,
+                charts: Vec::new(),
             });
         }
         let tables = crate::tables::load(&pkg, &info)?;
-        Ok(Self {
+        let mut book = Self {
             tables,
             info,
             strings,
             styles,
             sheets,
-        })
+        };
+        // After the cells are in: a chart reads its numbers from them.
+        for i in 0..book.sheets.len() {
+            if book.sheets[i].kind == SheetKind::Worksheet {
+                book.sheets[i].charts = crate::chart::load(&pkg, &book, i);
+            }
+        }
+        Ok(book)
     }
 
     pub fn sheet_index(&self, name: &str) -> Option<usize> {

@@ -270,6 +270,7 @@ pub fn document() -> Value {
         (method::DECK_FOCUS, Some(name::<deck::DeckFocusParams>(g)), name::<api::Empty>(g)),
         (method::DECK_EDIT, Some(name::<deck::DeckEditParams>(g)), name::<deck::DeckEditResult>(g)),
         (method::DECK_COPY, Some(name::<deck::DeckCopyParams>(g)), name::<deck::DeckCopyResult>(g)),
+        (method::DECK_UNDO, Some(name::<deck::DeckUndoParams>(g)), name::<deck::DeckUndoResult>(g)),
         (method::DECK_PROPOSAL_LIST, Some(name::<deck::DeckProposalListParams>(g)), name::<deck::DeckProposalListResult>(g)),
         (method::DECK_PROPOSAL_ACCEPT, Some(name::<deck::DeckProposalDecideParams>(g)), name::<deck::DeckProposalResult>(g)),
         (method::DECK_PROPOSAL_REJECT, Some(name::<deck::DeckProposalDecideParams>(g)), name::<deck::DeckProposalResult>(g)),

@@ -29,11 +29,14 @@ let bytes = fs.readFileSync(sourceFile);
 const originalBytes = bytes;
 const hash = () => crypto.createHash("sha256").update(bytes).digest("hex");
 let saves = 0;
+let deckSyncs = 0;
 let kernel;
 let nativeCall;
 let nativeSession;
 const nativeFile = path.join(work, "editor.pptx");
-if (process.env.FINXWORK_E2E_NATIVE === "1") {
+// The kernel holds the deck and the editor joins as its replica (presentation-kernel-authority).
+const kernelMode = process.env.FINXWORK_E2E_KERNEL === "1";
+if (process.env.FINXWORK_E2E_NATIVE === "1" || kernelMode) {
   const home = path.join(work, "finx");
   fs.mkdirSync(home);
   fs.writeFileSync(nativeFile, bytes);
@@ -78,8 +81,13 @@ const server = http.createServer(async (req, res) => {
         if (nativeCall) fs.writeFileSync(nativeFile, bytes);
         result = {};
       } else if (nativeCall) {
-        result = await nativeCall(method, { ...params, session_id: nativeSession, path: nativeFile });
+        // Only the methods that name a file get its path; the others refuse unknown fields.
+        const named = method.startsWith("pptx/") || method === "deck/open";
+        result = await nativeCall(method, { ...params, session_id: nativeSession, ...(named ? { path: nativeFile } : {}) });
         if (method === "pptx/write" && result.status === "saved") { saves++; bytes = fs.readFileSync(nativeFile); }
+        if (method === "deck/save") { saves++; bytes = fs.readFileSync(nativeFile); }
+        if (kernelMode && method === "pptx/write") throw new Error("kernel mode wrote through pptx/write");
+        if (method === "deck/sync" && params.update) deckSyncs++;
       }
       else if (method === "pptx/read") result = { path: "editor.pptx", data: bytes.toString("base64"), hash: hash(), writable: true, font_families: ["Arial"] };
       else if (method === "pptx/font") {
@@ -103,7 +111,7 @@ await new Promise((r) => portServer.listen(0, "127.0.0.1", r));
 const port = portServer.address().port;
 await new Promise((r) => portServer.close(r));
 const launcher = path.join(work, "electron.cjs");
-fs.writeFileSync(launcher, `const {app,BrowserWindow}=require(${JSON.stringify(path.join(desktop, "node_modules/electron"))});\napp.setPath('userData',${JSON.stringify(path.join(work, "profile"))});\napp.whenReady().then(()=>{const w=new BrowserWindow({width:1400,height:950,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false}});w.loadURL(${JSON.stringify(`http://127.0.0.1:${server.address().port}/`)});});\napp.on('window-all-closed',()=>app.quit());`);
+fs.writeFileSync(launcher, `const {app,BrowserWindow}=require(${JSON.stringify(path.join(desktop, "node_modules/electron"))});\napp.setPath('userData',${JSON.stringify(path.join(work, "profile"))});\napp.whenReady().then(()=>{const w=new BrowserWindow({width:1400,height:950,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false}});w.loadURL(${JSON.stringify(`http://127.0.0.1:${server.address().port}/${kernelMode ? "?kernel=1" : ""}`)});});\napp.on('window-all-closed',()=>app.quit());`);
 // Inside Electron require('electron') resolves its builtin, not the npm executable-path module.
 fs.writeFileSync(launcher, fs.readFileSync(launcher, "utf8").replace(`require(${JSON.stringify(path.join(desktop, "node_modules/electron"))})`, "require('electron')"));
 const app = spawn(path.join(desktop, "node_modules/.bin/electron"), [launcher, `--remote-debugging-port=${port}`], { env: { ...process.env, HOME: privateHome }, stdio: ["ignore", "ignore", "pipe"] });
@@ -377,6 +385,19 @@ try {
   if (await run("getComputedStyle(document.querySelector('[role=application]')).outlineStyle") !== "none") throw new Error("The focused stage draws a focus ring");
   await arrow("ArrowUp");
   await until(`${activeRow} === 0`, "ArrowUp on the stage pages back");
+  // Ribbon commands answer their shortcuts: ⌘M adds a slide, Backspace on the strip deletes one.
+  const chord = async (key, code, vk, modifiers = 0) => { for (const type of ["rawKeyDown", "keyUp"]) await cdp("Input.dispatchKeyEvent", { type, key, code, windowsVirtualKeyCode: vk, modifiers }); };
+  const rows = "document.querySelectorAll('aside > button:not([data-testid^=pptx-proposal])').length";
+  const before = await run(rows);
+  const focusRow = (i) => run(`document.querySelectorAll('aside > button')[${i}].click(); document.querySelectorAll('aside > button')[${i}].focus()`);
+  await focusRow(0);
+  await chord("m", "KeyM", 77, 4);
+  await until(`${rows} === ${before + 1} && ${activeRow} === 1`, "⌘M adds a slide after the current one");
+  await focusRow(1);
+  await chord("Backspace", "Backspace", 8);
+  await until(`${rows} === ${before}`, "Backspace on the strip deletes the slide");
+  await focusRow(0);
+  await until(`${activeRow} === 0`, "back on the first slide");
   await until(`(()=>{const c=document.querySelector('${canvas}');const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let blue=0;for(let i=0;i<d.length;i+=4)if(d[i]<80&&d[i+1]<140&&d[i+2]>180)blue++;return blue>=100})()`, "first slide repainted");
   const x = rect.x + rect.width * .22, y = rect.y + rect.height * .18;
   for (let clickCount = 1; clickCount <= 2; clickCount++) {
@@ -393,6 +414,10 @@ try {
   await run("window.smoke.doc.flush()");
   await until("!window.smoke.doc.dirty", "save");
   if (!saves || !(await run("window.smoke.text()")).includes("Edited in FinxWork")) throw new Error("Edited text did not survive PPTX serialization");
+  // ⌘A inside the box selected all of its text, so typing replaced it rather than inserting into it.
+  const edited = JSON.parse(await run("window.smoke.text()")).slides[0].shapes.map((s) => s.text?.paragraphs?.map((p) => p.runs.map((r) => r.text).join("")).join("\\n") ?? "").find((t) => t.includes("Edited in FinxWork"));
+  if (edited !== "Edited in FinxWork") throw new Error(`⌘A did not select the whole text box: ${JSON.stringify(edited)}`);
+  if (kernelMode && !deckSyncs) throw new Error("kernel mode: no edit reached the kernel through deck/sync");
   // Moving a shape changes its PPTX geometry, rather than moving a preview image.
   const cardX = rect.x + rect.width * .23, cardY = rect.y + rect.height * .47;
   await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: cardX, y: cardY, button: "left", clickCount: 1 });

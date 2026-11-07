@@ -804,5 +804,12 @@
       "standardColors": "标准色",
       "moreColors": "其他颜色…"
     }
+  },
+  "deckEdit": {
+    "show": "查看第 {{n}} 页",
+    "open": "打开演示文稿",
+    "undo": "撤销",
+    "undone": "已撤销",
+    "failed": "没有撤销：{{message}}"
   }
 }

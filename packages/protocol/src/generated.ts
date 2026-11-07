@@ -1494,6 +1494,8 @@ export type DeckOp = {
 
 /** `deck/open`. Progress goes out as `pptx/readProgress`. */
 export type DeckOpenParams = {
+  /** Drop the kernel's unsaved edits of this file and read it anew ("load the disk's version"). */
+  discard?: boolean;
   path: string;
   progress_id?: string | null;
   /** The caller joins as a Yrs replica (the editor): the result carries the state. */
@@ -1514,6 +1516,8 @@ export type DeckOpenResult = {
   /** SHA-256 of the file as read. */
   hash: string;
   path: string;
+  /** Replicas: the file as first opened, base64, which the state builds on (replicas open from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4). */
+  source?: string | null;
   /** Replicas: the whole Yrs document as one v1 update, base64. */
   state?: string | null;
   summary: DeckSummary;
@@ -1728,6 +1732,18 @@ export type DeckTextTarget = {
   /** UTF-16 offsets in the story; both or neither. */
   start?: number | null;
   story_id?: string | null;
+};
+
+/** `deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it is the agent's latest one still in the deck (presentation-deck-edit §5). */
+export type DeckUndoParams = {
+  deck_id: string;
+  edit: number;
+  session_id: string;
+};
+
+export type DeckUndoResult = {
+  /** The deck's revision after it. */
+  revision: number;
 };
 
 /** `deck/view`: a slide rasterized on this machine (§6.5). */
@@ -3688,9 +3704,57 @@ export type ShapeRef = {
   slide_id: string;
 };
 
+export type SheetChart = {
+  categories: string[];
+  from: SheetChartCorner;
+  grouping: SheetChartGrouping;
+  height: number;
+  /** Bars run sideways. */
+  horizontal?: boolean;
+  kind: SheetChartKind;
+  /** Values written on the marks. */
+  labels?: boolean;
+  /** `b`, `t`, `l`, `r`; none when there is no legend. */
+  legend?: string | null;
+  max?: number | null;
+  min?: number | null;
+  series: SheetChartSeries[];
+  title?: string | null;
+  /** The far corner of a two-cell anchor; else the size below applies. */
+  to?: SheetChartCorner | null;
+  /** Pixels. */
+  width: number;
+};
+
+/** A place on the grid: a cell (1-based) and the offset into it, in pixels. */
+export type SheetChartCorner = {
+  col: number;
+  dx: number;
+  dy: number;
+  row: number;
+};
+
+/** How a bar or area chart's series sit together. */
+export type SheetChartGrouping = "clustered" | "stacked" | "percent";
+
+/** What a chart drawn on a worksheet is (spreadsheet-design §4.1: shown, not edited). */
+export type SheetChartKind = "bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "radar";
+
+export type SheetChartSeries = {
+  /** `RRGGBB`, when the file names one. */
+  color?: string | null;
+  name?: string | null;
+  /** One per category; none for a gap. */
+  values: (number | null)[];
+  /** A scatter's x values. */
+  x?: (number | null)[];
+};
+
 export type SheetInfo = {
   /** A chart sheet has no cells: the grid shows a placeholder. */
   chart?: boolean;
+  /** Charts drawn on the sheet, as the file anchors them. */
+  charts?: SheetChart[];
   /** Column widths in pixels where they are not the default. */
   columns?: ColumnWidth[];
   default_height: number;
@@ -4445,6 +4509,7 @@ export interface Methods {
   "deck/summary": [DeckIdParams, DeckSummary];
   "deck/sync": [DeckSyncParams, DeckSyncResult];
   "deck/template_profile": [DeckTemplateProfileParams, TemplateProfile];
+  "deck/undo": [DeckUndoParams, DeckUndoResult];
   "deck/view": [DeckViewParams, DeckViewResult];
   "doc/apply": [DocApplyParams, DocApplyResult];
   "doc/autofill": [DocAutofillParams, DocApplyResult];

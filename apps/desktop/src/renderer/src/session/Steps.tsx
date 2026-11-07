@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
+import { callTarget, toolObject, toolOutput, type ToolView, type WorkItem } from "@finx/client";
 import { doingText, toolVerb, workText } from "../format";
 import { Icon } from "../icons";
 import { useStore } from "../store";
@@ -10,6 +10,8 @@ import { stepMenu } from "./contentMenus";
 import { useScope } from "./scope";
 import { SearchResults, searchCall, searchDetails } from "./SearchResults";
 import { handoffOf } from "./Yours";
+import { DeckEditActions } from "./DeckEditActions";
+import { deckEditDetails } from "../docs/pptx/deckEdit";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -27,7 +29,24 @@ export function Work({ items, live, flat = false }: { items: WorkItem[]; live: b
 }
 
 function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
-  return <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} />)} />;
+  // A deck change stays in sight under the folded line, to look at or take back.
+  const edits = items.flatMap((it) => (it.kind === "tool" && deckEditOf(it.tool) ? [it.tool] : []));
+  return (
+    <>
+      <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} card={false} />)} />
+      {edits.map((tool) => <DeckEdit key={tool.call_id} tool={tool} />)}
+    </>
+  );
+}
+
+/** A `deck_edit` that changed the deck, itself or (deferred, as the deck tools are) through call_tool. */
+const deckEditOf = (tool: ToolView) => (callTarget(tool.name, tool.args).name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null);
+
+function DeckEdit({ tool }: { tool: ToolView }) {
+  const st = useStore();
+  const scope = useScope();
+  const details = deckEditOf(tool);
+  return details && st.rpc && scope ? <DeckEditActions details={details} rpc={st.rpc} session={scope.session} /> : null;
 }
 
 /** Calls running at once, as one line ("Reading 2 files") with `after` on it, each on its own line when opened. */
@@ -50,8 +69,8 @@ function Fold({ title, live, after, body }: { title: string; live: boolean; afte
   );
 }
 
-function Item({ it }: { it: WorkItem }) {
-  return it.kind === "thinking" ? <Thinking text={it.text} redacted={it.redacted} live={it.live} /> : <ToolRow tool={it.tool} />;
+function Item({ it, card = true }: { it: WorkItem; card?: boolean }) {
+  return it.kind === "thinking" ? <Thinking text={it.text} redacted={it.redacted} live={it.live} /> : <ToolRow tool={it.tool} card={card} />;
 }
 
 /** The model's thinking: a quiet line with where it got to, the whole of it when opened. */
@@ -128,7 +147,7 @@ export function LiveThinking({ text, children }: { text: string; children: React
  * code. While the model is still writing a call, what it is on is not known
  * yet: the verb alone ("Editing…"). `after`: what follows on the line (how long the work has run).
  */
-export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) {
+export function ToolRow({ tool, after, card = true }: { tool: ToolView; after?: ReactNode; card?: boolean }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const scope = useScope();
@@ -189,6 +208,8 @@ export function ToolRow({ tool, after }: { tool: ToolView; after?: ReactNode }) 
       )}
       {large && <Lightbox src={large} onClose={() => setLarge(null)} />}
       {found ? open && <SearchResults details={found} /> : output && <div className="out sel-text">{output}</div>}
+      {/* A change the agent made to a presentation: its page, and 撤销 (in a group, under its line). */}
+      {card && <DeckEdit tool={tool} />}
     </div>
   );
 }

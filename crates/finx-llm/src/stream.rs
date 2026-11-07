@@ -133,13 +133,26 @@ impl MessageAccumulator {
             }
             StreamEvent::ToolCallStart { index, id, name } => {
                 let slot = self.slot(*index);
-                if matches!(slot, Block::Pending) {
-                    *slot = Block::ToolCall {
-                        id: id.clone(),
-                        name: name.clone(),
-                        args: String::new(),
-                        data: None,
-                    };
+                match slot {
+                    Block::Pending => {
+                        *slot = Block::ToolCall {
+                            id: id.clone(),
+                            name: name.clone(),
+                            args: String::new(),
+                            data: None,
+                        }
+                    }
+                    // A later word on the same call (e.g. Responses' `output_item.done`) fills in
+                    // what its opening event left blank, never overwrites it.
+                    Block::ToolCall { id: i, name: n, .. } => {
+                        if i.is_empty() {
+                            *i = id.clone();
+                        }
+                        if n.is_empty() {
+                            *n = name.clone();
+                        }
+                    }
+                    _ => {}
                 }
             }
             StreamEvent::ToolCallData { index, data } => {

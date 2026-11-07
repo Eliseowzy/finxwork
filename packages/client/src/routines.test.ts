@@ -55,12 +55,17 @@ test("how long a run took and how late it was", () => {
 
 /** A bot's conversation with these transcript items. */
 function chat(items: unknown[]): SessionView {
-  return fromSnapshot({
+  return fromSnapshot(snapshotOf(items));
+}
+
+/** A session's snapshot with these transcript items. */
+function snapshotOf(items: unknown[]) {
+  return {
     session: { session_id: "s", cwd: "/", session_file: "/s.jsonl", model: "m", thinking: "off", permission_mode: "manual", context_window: 1, archived: false },
     last_seq: 0,
     transcript: { items: items as never },
     usage: { per_model: {} },
-  });
+  } as Parameters<typeof fromSnapshot>[0];
 }
 
 const assistant = (ts: number, calls: { id: string; name: string; args: unknown }[]) => ({
@@ -92,6 +97,39 @@ test("a change to a routine is a line in the chat; reading one is not", () => {
   assert.deepEqual(items.map((i) => i.kind), ["user", "routine", "bot"]);
   const line = items[1] as Extract<(typeof items)[number], { kind: "routine" }>;
   assert.deepEqual([line.action, line.routine_id, line.name, line.when, line.next_run], ["create", "r_1", "喝水", "每天 8 点", "2026-11-06T00:00:00Z"]);
+});
+
+test("a deck_edit the bot made, through call_tool, shows in the chat, to take back", () => {
+  const details = { deck_id: "d1", path: "/a.pptx", edit: 1, revision: 1, slides: [{ index: 0, slide_id: "slide:0:256", status: "changed" }] };
+  const items = botChat(
+    chat([
+      { type: "message", message_id: "u1", message: { role: "user", content: [{ type: "text", text: "加英文" }], ts: 1 } },
+      assistant(2, [{ id: "c1", name: "call_tool", args: { name: "deck_edit", arguments: { deck: "/a.pptx", edits: [] } } }]),
+      result("c1", "call_tool", details),
+      assistant(3, [{ id: "c2", name: "send_to_user", args: { text: "好了。" } }]),
+      result("c2", "send_to_user"),
+    ]),
+  );
+  assert.deepEqual(items.map((i) => i.kind), ["user", "deck_edit", "bot"]);
+  assert.deepEqual((items[1] as Extract<(typeof items)[number], { kind: "deck_edit" }>).details, details);
+});
+
+test("a deck_edit a sub-agent made shows in the bot's chat, once, when it was made", () => {
+  const details = { deck_id: "d1", path: "/a.pptx", edit: 2, revision: 2, slides: [{ index: 5, slide_id: "slide:5:261", status: "changed" }] };
+  const base = chat([
+    { type: "message", message_id: "u1", message: { role: "user", content: [{ type: "text", text: "美化一下第六页" }], ts: 1 } },
+    assistant(2, [{ id: "s1", name: "spawn_agent", args: { name: "agent-1", task: "美化第六页" } }]),
+    result("s1", "spawn_agent"),
+    assistant(9, [{ id: "c9", name: "send_to_user", args: { text: "提案提上去了。" } }]),
+    result("c9", "send_to_user"),
+  ]);
+  const proposed = { ...result("e1", "call_tool", details), result: { ...result("e1", "call_tool", details).result, ts: 5 } };
+  const agentTranscript = [assistant(4, [{ id: "e1", name: "call_tool", args: { name: "deck_edit", arguments: { deck: "/a.pptx", edits: [] } } }]), proposed];
+  const agent = fromSnapshot(snapshotOf(agentTranscript));
+  const v: SessionView = { ...base, agents: [{ id: "g1", name: "agent-1", description: "", call_id: "s1", status: "completed", since: 3, view: agent }] };
+  const items = botChat(v);
+  assert.deepEqual(items.map((i) => i.kind), ["user", "deck_edit", "bot"]);
+  assert.deepEqual((items[1] as Extract<(typeof items)[number], { kind: "deck_edit" }>).details, details);
 });
 
 test("a message a routine's report brought knows its run; the next one the owner asked for does not", () => {

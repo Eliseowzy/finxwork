@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { sizeText } from "../../format";
 import type { PresentationProgress } from "./progress";
+import "./theme.css";
 import "./loading.css";
 
 export type FontLoadProgress = { completed: number; total: number; family?: string; bold?: boolean; italic?: boolean };

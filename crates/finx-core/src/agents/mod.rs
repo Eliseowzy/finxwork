@@ -112,6 +112,7 @@ pub(crate) struct ChildDeps {
     /// The main session's browsers: a sub-agent has its own tabs in the same browser.
     pub(crate) browser_pool: Option<Arc<finx_browser::BrowserPool>>,
     pub(crate) docs: Option<Arc<finx_docs::DocStore>>,
+    pub(crate) decks: Option<Arc<finx_docs::deck::DeckStore>>,
 }
 
 /// How a sub-agent's tools find the tree and who is calling. Weak: the tree owns its agents.
@@ -599,6 +600,7 @@ impl AgentTree {
                 mcp_servers: Vec::new(),
                 browser_pool: self.deps.browser_pool.clone(),
                 docs: self.deps.docs.clone(),
+                decks: self.deps.decks.clone(),
                 routines: None,
             },
             home: self.deps.home.clone(),

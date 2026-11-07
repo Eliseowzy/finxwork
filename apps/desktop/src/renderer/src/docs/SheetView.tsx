@@ -10,6 +10,7 @@ import type { MenuItem } from "../../../shared/bridge";
 import { addr, areaOf, colName, MAX_COLS, MAX_ROWS, onSheet, parseAddr, parseRange, rangeText, type Area, type Pos } from "./cellref";
 import { useEditQueue } from "./sheet/editQueue";
 import { useGeometry } from "./sheet/geometry";
+import { ChartView } from "./sheet/ChartView";
 import { ImpactBar } from "./sheet/ImpactBar";
 import { decimalsOf, editTextOf, inputOp, isHardcoded, lensAt, lensText, MAX_PASTE, parseTsv, pasteOps, readable, readLenses, readSizes, selectionStats, sizeKey, sizesOf, statText, toMarkdown, toTsv, UNITS, withLens, writeLenses, writeSizes, type Lens, type SelectionStats, type Sizes, type Unit } from "./sheet/model";
 import { TraceBar, type Trace } from "./sheet/TraceBar";
@@ -875,6 +876,22 @@ export function SheetView({ rpc, session, tab, jump, activeView = true }: { rpc:
       );
     }
   }
+
+  // Charts the file draws on this sheet: shown over the cells where it anchors them, in the
+  // scrolling layer; the clicks go through to the cells below.
+  const colX = (c: number) => (c <= nCols + 1 ? colLeft[c] : colLeft[nCols + 1] + (c - nCols - 1) * (sheet?.default_width ?? 64));
+  (sheet?.charts ?? []).forEach((ch, i) => {
+    const x = colX(ch.from.col) + ch.from.dx;
+    const y = rowY(ch.from.row) + ch.from.dy;
+    const w = ch.to ? colX(ch.to.col) + ch.to.dx - x : ch.width;
+    const h = ch.to ? rowY(ch.to.row) + ch.to.dy - y : ch.height;
+    if (w < 20 || h < 20) return;
+    panes.s.push(
+      <div key={`chart${i}`} className="sht-chartbox" style={{ left: HEAD_W + x, top: HEAD_H + y, width: w, height: h }}>
+        <ChartView chart={ch} width={w} height={h} />
+      </div>,
+    );
+  });
 
   /** Headers: of columns that scroll, of rows that scroll, and frozen ones with the corner. */
   const heads: Record<"hc" | "hr" | "hx", React.ReactNode[]> = { hc: [], hr: [], hx: [] };

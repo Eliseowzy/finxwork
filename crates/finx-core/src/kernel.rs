@@ -102,6 +102,9 @@ pub struct KernelDeps {
     /// The service's documents, shared by its sessions (document-editor-design §5.2). `None`
     /// leaves the document tools out.
     pub docs: Option<Arc<finx_docs::DocStore>>,
+    /// The service's presentations (presentation-kernel-authority): the deck tools read an open
+    /// deck's entry, unsaved edits included. `None` reads the files only.
+    pub decks: Option<Arc<finx_docs::deck::DeckStore>>,
     /// The service's routines (routine-design §4.3), for a bot's session. Without it the bot's
     /// `manage_routine` says they are not available.
     pub routines: Option<Arc<dyn RoutineHost>>,
@@ -245,6 +248,9 @@ fn launch(launch: Launch) -> (Kernel, Arc<Session>) {
         tool_state.insert(Arc::new(DesktopHandle::new(settings.desktop.clone(), launch.root_id.clone())));
     }
     let emitter = Arc::new(Emitter::new(event_tx));
+    if let Some(decks) = &launch.deps.decks {
+        tool_state.insert(Arc::new(crate::deck::DecksHandle { store: decks.clone(), session: launch.root_id.clone() }));
+    }
     if let Some(store) = &launch.deps.docs {
         let weak = Arc::downgrade(&emitter);
         tool_state.insert(Arc::new(crate::docs::DocsHandle {
@@ -362,6 +368,7 @@ fn agent_tree(
         mcp,
         browser_pool: deps.browser_pool.clone(),
         docs: deps.docs.clone(),
+        decks: deps.decks.clone(),
     });
     deps.tools = if bot { extended(&deps.tools, "bot-agents", agents::bot_agent_tools) } else { with_agent_tools(&deps.tools) };
     Some(tree)

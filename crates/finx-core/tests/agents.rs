@@ -168,6 +168,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &std::path::Path, home: &FinxHome) -> Kern
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
         routines: None,
     }
 }
@@ -1507,6 +1508,7 @@ async fn sub_agents_can_be_turned_off() {
             mcp_servers: Vec::new(),
             browser_pool: None,
             docs: None,
+            decks: None,
             routines: None,
         },
     )

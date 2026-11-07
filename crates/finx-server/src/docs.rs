@@ -199,5 +199,7 @@ impl Server {
     /// A closed session's columns show nothing any more.
     pub(crate) async fn docs_forget(&self, session: &str) {
         self.0.docs.forget_session(session).await;
+        // Decks the session's agent opened (deck_edit) close with it; unsaved edits stay.
+        self.0.decks.forget_session(session).await;
     }
 }

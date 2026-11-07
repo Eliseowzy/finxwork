@@ -197,7 +197,7 @@ const ALIGN_ITEMS = [
 function useGroups(fonts: RibbonFonts): Record<TabId, Group[]> {
   const { t: office } = useOfficeTranslation();
   const { t } = useTranslation("session");
-  const clipboard: Group = { id: "clipboard", label: t("pptx.ribbon.group.clipboard"), icon: "insert", priority: 6, hasCompact: true,
+  const clipboard: Group = { id: "clipboard", label: t("pptx.ribbon.group.clipboard"), icon: "clipboard", priority: 6, hasCompact: true,
     render: (level) => <div className="pptx-rb-row">
       <Cmd cmd="paste" icon="ClipboardPaste" captioned={level === FULL} large={level === FULL} />
       <div className="pptx-rb-rows">

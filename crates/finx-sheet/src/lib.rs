@@ -6,6 +6,7 @@
 
 pub mod book;
 pub mod calc;
+pub mod chart;
 pub mod cellref;
 pub mod csv;
 pub mod deps;

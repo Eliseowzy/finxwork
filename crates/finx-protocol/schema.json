@@ -257,6 +257,12 @@
       "$ref": "#/definitions/DeckTemplateProfileParams"
     },
     {
+      "$ref": "#/definitions/DeckUndoParams"
+    },
+    {
+      "$ref": "#/definitions/DeckUndoResult"
+    },
+    {
       "$ref": "#/definitions/DeckViewParams"
     },
     {
@@ -7194,6 +7200,10 @@
       "additionalProperties": false,
       "description": "`deck/open`. Progress goes out as `pptx/readProgress`.",
       "properties": {
+        "discard": {
+          "description": "Drop the kernel's unsaved edits of this file and read it anew (\"load the disk's version\").",
+          "type": "boolean"
+        },
         "path": {
           "type": "string"
         },
@@ -7250,6 +7260,13 @@
         },
         "path": {
           "type": "string"
+        },
+        "source": {
+          "description": "Replicas: the file as first opened, base64, which the state builds on (replicas open from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4).",
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "state": {
           "description": "Replicas: the whole Yrs document as one v1 update, base64.",
@@ -8040,6 +8057,43 @@
       "required": [
         "shape_id",
         "slide_id"
+      ],
+      "type": "object"
+    },
+    "DeckUndoParams": {
+      "additionalProperties": false,
+      "description": "`deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it is the agent's latest one still in the deck (presentation-deck-edit §5).",
+      "properties": {
+        "deck_id": {
+          "type": "string"
+        },
+        "edit": {
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "session_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "deck_id",
+        "edit",
+        "session_id"
+      ],
+      "type": "object"
+    },
+    "DeckUndoResult": {
+      "properties": {
+        "revision": {
+          "description": "The deck's revision after it.",
+          "format": "uint64",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "revision"
       ],
       "type": "object"
     },
@@ -16334,11 +16388,203 @@
       ],
       "type": "object"
     },
+    "SheetChart": {
+      "properties": {
+        "categories": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "from": {
+          "$ref": "#/definitions/SheetChartCorner"
+        },
+        "grouping": {
+          "$ref": "#/definitions/SheetChartGrouping",
+          "default": "clustered"
+        },
+        "height": {
+          "format": "float",
+          "type": "number"
+        },
+        "horizontal": {
+          "description": "Bars run sideways.",
+          "type": "boolean"
+        },
+        "kind": {
+          "$ref": "#/definitions/SheetChartKind"
+        },
+        "labels": {
+          "description": "Values written on the marks.",
+          "type": "boolean"
+        },
+        "legend": {
+          "description": "`b`, `t`, `l`, `r`; none when there is no legend.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "min": {
+          "format": "double",
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "series": {
+          "items": {
+            "$ref": "#/definitions/SheetChartSeries"
+          },
+          "type": "array"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/SheetChartCorner"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The far corner of a two-cell anchor; else the size below applies."
+        },
+        "width": {
+          "description": "Pixels.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "required": [
+        "categories",
+        "from",
+        "height",
+        "kind",
+        "series",
+        "width"
+      ],
+      "type": "object"
+    },
+    "SheetChartCorner": {
+      "description": "A place on the grid: a cell (1-based) and the offset into it, in pixels.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "dx": {
+          "format": "float",
+          "type": "number"
+        },
+        "dy": {
+          "format": "float",
+          "type": "number"
+        },
+        "row": {
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "col",
+        "dx",
+        "dy",
+        "row"
+      ],
+      "type": "object"
+    },
+    "SheetChartGrouping": {
+      "description": "How a bar or area chart's series sit together.",
+      "enum": [
+        "clustered",
+        "stacked",
+        "percent"
+      ],
+      "type": "string"
+    },
+    "SheetChartKind": {
+      "description": "What a chart drawn on a worksheet is (spreadsheet-design §4.1: shown, not edited).",
+      "enum": [
+        "bar",
+        "line",
+        "area",
+        "pie",
+        "doughnut",
+        "scatter",
+        "radar"
+      ],
+      "type": "string"
+    },
+    "SheetChartSeries": {
+      "properties": {
+        "color": {
+          "description": "`RRGGBB`, when the file names one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "values": {
+          "description": "One per category; none for a gap.",
+          "items": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "type": "array"
+        },
+        "x": {
+          "description": "A scatter's x values.",
+          "items": {
+            "format": "double",
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "values"
+      ],
+      "type": "object"
+    },
     "SheetInfo": {
       "properties": {
         "chart": {
           "description": "A chart sheet has no cells: the grid shows a placeholder.",
           "type": "boolean"
+        },
+        "charts": {
+          "description": "Charts drawn on the sheet, as the file anchors them.",
+          "items": {
+            "$ref": "#/definitions/SheetChart"
+          },
+          "type": "array"
         },
         "columns": {
           "description": "Column widths in pixels where they are not the default.",
@@ -19483,6 +19729,10 @@
       "params": "DeckTemplateProfileParams",
       "result": "TemplateProfile"
     },
+    "deck/undo": {
+      "params": "DeckUndoParams",
+      "result": "DeckUndoResult"
+    },
     "deck/view": {
       "params": "DeckViewParams",
       "result": "DeckViewResult"
@@ -19817,6 +20067,7 @@
       "deck/summary": "stable",
       "deck/sync": "stable",
       "deck/template_profile": "stable",
+      "deck/undo": "stable",
       "deck/view": "stable",
       "doc/apply": "experimental",
       "doc/autofill": "experimental",

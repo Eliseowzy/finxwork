@@ -1721,6 +1721,9 @@ pub struct DeckOpenParams {
     /// The caller joins as a Yrs replica (the editor): the result carries the state.
     #[serde(default)]
     pub replica: bool,
+    /// Drop the kernel's unsaved edits of this file and read it anew ("load the disk's version").
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub discard: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -1740,6 +1743,10 @@ pub struct DeckOpenResult {
     /// Replicas: the whole Yrs document as one v1 update, base64.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state: Option<String>,
+    /// Replicas: the file as first opened, base64, which the state builds on (replicas open
+    /// from these bytes). Transitional until it streams over `finxdoc://` (kernel-authority §4).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     /// Explicit font families in the package, plus the host's Latin and CJK fallbacks.
     pub font_families: Vec<String>,
     /// The `op`s this kernel and engine carry out; others are `unsupported`.
@@ -2335,6 +2342,22 @@ pub struct DeckProposalListParams {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DeckProposalListResult {
     pub proposals: Vec<DeckProposalInfo>,
+}
+
+/// `deck/undo`: takes back the agent's edit `edit` (the revision its `deck_edit` made), when it
+/// is the agent's latest one still in the deck (presentation-deck-edit §5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeckUndoParams {
+    pub session_id: String,
+    pub deck_id: String,
+    pub edit: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DeckUndoResult {
+    /// The deck's revision after it.
+    pub revision: u64,
 }
 
 /// `deck/proposal/accept`, `deck/proposal/reject`: all of it, or only `slide_ids` (逐页). The

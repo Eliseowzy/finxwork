@@ -829,5 +829,12 @@
       "standardColors": "Standard Colors",
       "moreColors": "More Colors…"
     }
+  },
+  "deckEdit": {
+    "show": "Show slide {{n}}",
+    "open": "Open the presentation",
+    "undo": "Undo",
+    "undone": "Undone",
+    "failed": "Not undone: {{message}}"
   }
 }

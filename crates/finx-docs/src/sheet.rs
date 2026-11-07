@@ -18,6 +18,11 @@ use finx_protocol::doc::CellValue;
 use finx_protocol::doc::ColumnWidth;
 use finx_protocol::doc::RowHeight;
 use finx_protocol::doc::Impact;
+use finx_protocol::doc::SheetChart;
+use finx_protocol::doc::SheetChartCorner;
+use finx_protocol::doc::SheetChartGrouping;
+use finx_protocol::doc::SheetChartKind;
+use finx_protocol::doc::SheetChartSeries;
 use finx_protocol::doc::SheetInfo;
 use finx_protocol::doc::SheetOp;
 use crate::kind::DocKind;
@@ -119,6 +124,7 @@ fn flat_sheet(name: &str, rows: u32, cols: u32) -> SheetInfo {
         columns: Vec::new(),
         default_width: CSV_WIDTH,
         default_height: 20.0,
+        charts: Vec::new(),
     }
 }
 
@@ -168,6 +174,40 @@ fn refusal(e: finx_sheet::Error) -> String {
     match e {
         finx_sheet::Error::Unsupported(m) | finx_sheet::Error::Formula(m) => format!("{REFUSED}{m}"),
         other => other.to_string(),
+    }
+}
+
+fn protocol_chart(c: &finx_sheet::chart::Chart) -> SheetChart {
+    use finx_sheet::chart::Grouping;
+    use finx_sheet::chart::Kind;
+    let corner = |k: finx_sheet::chart::Corner| SheetChartCorner { col: k.col, row: k.row, dx: k.dx, dy: k.dy };
+    SheetChart {
+        kind: match c.kind {
+            Kind::Bar => SheetChartKind::Bar,
+            Kind::Line => SheetChartKind::Line,
+            Kind::Area => SheetChartKind::Area,
+            Kind::Pie => SheetChartKind::Pie,
+            Kind::Doughnut => SheetChartKind::Doughnut,
+            Kind::Scatter => SheetChartKind::Scatter,
+            Kind::Radar => SheetChartKind::Radar,
+        },
+        horizontal: c.horizontal,
+        grouping: match c.grouping {
+            Grouping::Clustered => SheetChartGrouping::Clustered,
+            Grouping::Stacked => SheetChartGrouping::Stacked,
+            Grouping::Percent => SheetChartGrouping::Percent,
+        },
+        title: c.title.clone(),
+        legend: c.legend.clone(),
+        labels: c.labels,
+        categories: c.categories.clone(),
+        series: c.series.iter().map(|s| SheetChartSeries { name: s.name.clone(), color: s.color.clone(), values: s.values.clone(), x: s.x.clone() }).collect(),
+        min: c.min,
+        max: c.max,
+        from: corner(c.from),
+        to: c.to.map(corner),
+        width: c.width,
+        height: c.height,
     }
 }
 
@@ -230,6 +270,7 @@ impl Sheets {
                         .unwrap_or_default(),
                     default_width: width_px(ix.and_then(|ix| ix.default_width).unwrap_or(8.43)),
                     default_height: height_px(ix.and_then(|ix| ix.default_height).unwrap_or(15.0)),
+                    charts: s.charts.iter().map(protocol_chart).collect(),
                 }
             })
             .collect();

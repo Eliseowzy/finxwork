@@ -37,6 +37,11 @@ fn package(bytes: &[u8]) -> io::Result<ZipArchive<Cursor<&[u8]>>> {
     Ok(zip)
 }
 
+/// The font families a package names, plus the host's fallbacks: what an editor loads.
+pub fn font_families_of(bytes: &[u8]) -> io::Result<Vec<String>> {
+    font_families(&mut package(bytes)?, &mut |_, _, _| {})
+}
+
 fn font_families(zip: &mut ZipArchive<Cursor<&[u8]>>, progress: &mut impl FnMut(PptxReadStage, u64, u64)) -> io::Result<Vec<String>> {
     let mut names = BTreeSet::from(["Arial".to_owned(), "PingFang SC".to_owned()]);
     let mut budget = 32 * 1024 * 1024;
