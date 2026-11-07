@@ -79,6 +79,7 @@ export function WordAi({ editor, where, readOnly }: { editor: DocxEditorRef; whe
   const [, moved] = useState(0);
   const request = useSyncExternalStore(onWordRequests, () => wordRequestOf(where.docxId));
   const menuRef = useRef<HTMLDivElement>(null);
+  const [menuAt, setMenuAt] = useState<{ top: number; left: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const shown = useRef<number | null>(null);
 
@@ -190,6 +191,20 @@ export function WordAi({ editor, where, readOnly }: { editor: DocxEditorRef; whe
     else if (e.key === "ArrowUp") { e.preventDefault(); items[(at - 1 + items.length) % items.length]?.focus(); }
   };
 
+  // The menu beside ✦, flipped to the left or upwards when it would leave the view.
+  useLayoutEffect(() => {
+    const menu = menuRef.current;
+    if (open !== "menu" || !menu || !selection || !layer.current) { setMenuAt(null); return; }
+    const view = layer.current.getBoundingClientRect();
+    const p = place(selection);
+    const w = menu.offsetWidth, h = menu.offsetHeight;
+    const right = p.x + 6;
+    const left = right + w + 8 > view.width ? Math.max(4, p.x - w - 6) : right;
+    const below = p.top - 2;
+    const top = below + h + 8 > view.height ? Math.max(4, Math.min(p.bottom - h, view.height - h - 8)) : Math.max(4, below);
+    setMenuAt({ top, left });
+  }, [open, selection]);
+
   const live = request && (request.phase === "sending" || request.phase === "running");
   const reqAnchor = request && anchors.get(request.id);
   const sel = selection && place(selection);
@@ -200,16 +215,15 @@ export function WordAi({ editor, where, readOnly }: { editor: DocxEditorRef; whe
         const p = place(reqAnchor);
         return <div className="word-ai-shimmer" style={{ top: p.top, left: p.left, width: Math.max(24, p.right - p.left), height: p.bottom - p.top }} aria-hidden="true" />;
       })()}
-      {request && (live || request.phase === "failed" || (request.phase === "done" && request.revisions.length > 0)) && (() => {
-        const p = reqAnchor ? place(reqAnchor) : null;
-        const style = p ? { top: p.clamp(p.bottom + 4), left: Math.max(4, p.left) } : { top: 8, right: 12 };
-        return <RequestBar request={request} style={style} />;
-      })()}
+      {request && (live || request.phase === "failed" || (request.phase === "done" && request.revisions.length > 0)) && (
+        // At the foot of the view, over no line it is about: the shimmer marks the text.
+        <RequestBar request={request} style={{ bottom: 16, left: "50%", transform: "translateX(-50%)" }} />
+      )}
       {sel && !readOnly && !live && open !== "prompt" && (
         <button
           type="button"
           className="word-ai-spark"
-          style={{ top: sel.clamp(sel.top - 26), left: Math.max(4, sel.x + 6) }}
+          style={{ top: sel.clamp(sel.top - 26), left: Math.min(Math.max(4, sel.x + 6), (box?.width ?? 0) - 32) }}
           aria-label={t("wordAi.open")}
           title={t("wordAi.open")}
           aria-haspopup="menu"
@@ -219,7 +233,7 @@ export function WordAi({ editor, where, readOnly }: { editor: DocxEditorRef; whe
         >✦</button>
       )}
       {sel && open === "menu" && (
-        <div className="word-ai-menu" role="menu" ref={menuRef} onKeyDown={menuKeys} style={{ top: sel.clamp(sel.top - 2), left: Math.max(4, sel.x + 6) }}>
+        <div className="word-ai-menu" role="menu" ref={menuRef} onKeyDown={menuKeys} style={menuAt ?? { top: sel.clamp(sel.top - 2), left: Math.max(4, sel.x + 6), visibility: "hidden" }}>
           {MENU.map((a) => (
             <button key={a} type="button" role="menuitem" onClick={() => void run(a)}>{t(`wordAi.action.${a}`)}</button>
           ))}
