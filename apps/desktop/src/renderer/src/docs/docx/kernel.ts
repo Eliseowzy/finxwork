@@ -73,7 +73,7 @@ export class DocxKernelLink {
   private stateListeners = new Set<(state: WordKernelState) => void>();
 
   private rpc: DocxRpc;
-  private session: string;
+  readonly session: string;
   readonly docxId: string;
   readonly initialState: Uint8Array;
 

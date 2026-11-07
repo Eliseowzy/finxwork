@@ -68,7 +68,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
     if (kind === "folder") return window.finx?.openFolder(path);
     openFile(path);
   };
-  const pages = !quote ? "" : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
+  const pages = !quote ? "" : quote.paragraphs && quote.page === undefined ? t("doc.paragraphs", { count: quote.paragraphs.length }) : quote.sheet && quote.range ? `${quote.sheet}!${quote.range}` : quote.to_page && quote.to_page !== quote.page ? t("doc.pageRange", { from: quote.page, to: quote.to_page }) : t("doc.pageN", { page: quote.page });
   const where = !quote ? "" : `${baseName(quote.path)} · ${pages}`;
   const type = web ? hostOf(web.url) : quote ? pages : kind === "tabs" ? t("composer.tabKind") : kindOf(name ?? "", kind === "folder", t("composer.folder"));
   const title = web ? [web.comment, web.text && `“${web.text}”`, `<${web.tag}> · ${web.title || web.url}`, web.url].filter(Boolean).join("\n") : quote ? [quote.comment, where, quote.text].filter(Boolean).join("\n") : path;
@@ -146,7 +146,7 @@ export function Tile({ kind, path, name, src, web, quote, shot, meta, gone, onCo
           comment={quote.comment}
           rows={[[t("composer.webDetails.file"), baseName(quote.path)], ...(quote.text ? [[t("composer.webDetails.text"), quote.text] as Row] : [])]}
           more={[]}
-          action={docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }, quote.block)) } : undefined}
+          action={quote.paragraphs && quote.page === undefined ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), openFile(quote.path)) } : docs ? { label: t("composer.webDetails.openDoc"), run: () => (setDetails(false), quote.sheet && quote.range ? docs.open({ doc_id: quote.doc_id }, { kind: "cells", sheet: quote.sheet, range: quote.range }) : docs.open({ doc_id: quote.doc_id }, quote.block ? undefined : { kind: "page", page: quote.page ?? 1 }, quote.block)) } : undefined}
         />
       )}
     </div>

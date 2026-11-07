@@ -460,7 +460,8 @@
     "lockedTitle": "需要密码",
     "showPassword": "显示密码",
     "hidePassword": "隐藏密码",
-    "citeLocked": "「{{name}}」有密码保护，点开后输入密码"
+    "citeLocked": "「{{name}}」有密码保护，点开后输入密码",
+    "paragraphs_other": "{{count}} 段"
   },
   "content": {
     "open": "打开",
@@ -828,5 +829,40 @@
     "undo": "撤销",
     "undone": "已撤销",
     "failed": "没有撤销：{{message}}"
+  },
+  "wordAi": {
+    "open": "对选中内容使用 AI",
+    "placeholder": "让 AI 改写或写点什么…",
+    "quote": "引用到对话",
+    "message": "在《{{file}}》：{{what}}",
+    "commentMessage": "在《{{file}}》的批注：{{question}}",
+    "working": "AI 正在处理…",
+    "stop": "停止",
+    "failed": "AI 未完成：{{message}}",
+    "unknown": "未知错误",
+    "acceptAll": "接受全部",
+    "rejectAll": "拒绝全部",
+    "close": "关闭",
+    "result_other": "AI 的 {{count}} 处修改",
+    "action": {
+      "polish": "润色",
+      "concise": "更简洁",
+      "formal": "更正式",
+      "expand": "扩写",
+      "continue": "续写",
+      "toChinese": "翻译为中文",
+      "toEnglish": "翻译为英文",
+      "proofread": "纠正错别字与语法",
+      "summarize": "总结到批注",
+      "custom": "自定义…"
+    }
+  },
+  "docxEdit": {
+    "show": "查看修改",
+    "acceptAll": "接受全部",
+    "rejectAll": "拒绝全部",
+    "accepted": "已接受",
+    "rejected": "已拒绝",
+    "failed": "未成功：{{message}}"
   }
 }

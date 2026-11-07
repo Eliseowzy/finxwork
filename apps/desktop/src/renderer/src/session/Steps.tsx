@@ -12,6 +12,8 @@ import { SearchResults, searchCall, searchDetails } from "./SearchResults";
 import { handoffOf } from "./Yours";
 import { DeckEditActions } from "./DeckEditActions";
 import { deckEditDetails } from "../docs/pptx/deckEdit";
+import { DocxEditActions } from "./DocxEditActions";
+import { docxEditDetails } from "../docs/docx/aiPrompt";
 
 /**
  * What the model did between its words: one step alone as its own line,
@@ -30,7 +32,7 @@ export function Work({ items, live, flat = false }: { items: WorkItem[]; live: b
 
 function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
   // A deck change stays in sight under the folded line, to look at or take back.
-  const edits = items.flatMap((it) => (it.kind === "tool" && deckEditOf(it.tool) ? [it.tool] : []));
+  const edits = items.flatMap((it) => (it.kind === "tool" && (deckEditOf(it.tool) || docxEditOf(it.tool)) ? [it.tool] : []));
   return (
     <>
       <Fold title={workText(items)} live={live} body={items.map((it) => <Item key={it.key} it={it} card={false} />)} />
@@ -42,11 +44,20 @@ function Group({ items, live }: { items: WorkItem[]; live: boolean }) {
 /** A `deck_edit` that changed the deck, itself or (deferred, as the deck tools are) through call_tool. */
 const deckEditOf = (tool: ToolView) => (callTarget(tool.name, tool.args).name === "deck_edit" && tool.state === "done" ? deckEditDetails(tool.result?.details) : null);
 
+/** A Word change (docx_edit, docx_review), as deckEditOf. */
+const docxEditOf = (tool: ToolView) => {
+  const name = callTarget(tool.name, tool.args).name;
+  return (name === "docx_edit" || name === "docx_review") && tool.state === "done" && !tool.result?.is_error ? docxEditDetails(tool.result?.details) : null;
+};
+
 function DeckEdit({ tool }: { tool: ToolView }) {
   const st = useStore();
   const scope = useScope();
+  if (!st.rpc || !scope) return null;
+  const docx = docxEditOf(tool);
+  if (docx) return <DocxEditActions details={docx} rpc={st.rpc} session={scope.session} review={callTarget(tool.name, tool.args).name === "docx_edit"} />;
   const details = deckEditOf(tool);
-  return details && st.rpc && scope ? <DeckEditActions details={details} rpc={st.rpc} session={scope.session} /> : null;
+  return details ? <DeckEditActions details={details} rpc={st.rpc} session={scope.session} /> : null;
 }
 
 /** Calls running at once, as one line ("Reading 2 files") with `after` on it, each on its own line when opened. */

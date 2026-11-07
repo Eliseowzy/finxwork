@@ -42,7 +42,7 @@ export type BotItem =
   | { kind: "question"; key: string; text: string; options: string[]; open: boolean; ts: number; source?: RoutineSource }
   /** What the bot did to a routine, as a line in the chat. */
   | ({ kind: "routine"; key: string; ts: number } & RoutineChange)
-  /** A change the bot made to a deck (deck_edit), shown where the owner looks so it can be taken back; `details` is the tool's, validated where it is shown. */
+  /** A change the bot made to a deck (deck_edit) or a Word document (docx_edit, docx_review), shown where the owner looks so it can be taken back; `details` is the tool's, validated where it is shown. */
   | { kind: "deck_edit"; key: string; details: unknown; ts: number }
   /** last: no task ran since, so it can be retried. */
   | { kind: "failure"; key: string; error: ErrorInfo; ts: number; last: boolean };
@@ -112,10 +112,13 @@ function delivered(item: WorkItem): Sent | null {
   return text !== null ? { kind: "bot", text } : null;
 }
 
-/** The details of a deck_edit that changed the deck, itself or through call_tool. */
+const docEdits = new Set(["deck_edit", "docx_edit", "docx_review"]);
+
+/** The details of a deck_edit that changed the deck, or of a Word change (docx_edit, docx_review), itself or through call_tool. */
 function deckEdit(item: WorkItem): Record<string, unknown> | null {
-  if (item.kind !== "tool" || item.tool.state !== "done" || callTarget(item.tool.name, item.tool.args).name !== "deck_edit") return null;
+  if (item.kind !== "tool" || item.tool.state !== "done" || !docEdits.has(callTarget(item.tool.name, item.tool.args).name)) return null;
   const d = detailsOf(item.tool.result);
+  if (typeof d.docx_id === "string") return typeof d.edit === "number" || typeof d.edit === "string" ? d : null;
   return typeof d.deck_id === "string" && typeof d.edit === "number" ? d : null;
 }
 
@@ -180,7 +183,7 @@ export function botChat(v: SessionView): BotItem[] {
     }
   }
   // A sub-agent's change is the owner's to take back all the same: the bot sent the agent to make it.
-  const editId = (d: unknown) => { const x = d as { deck_id: string; edit: number }; return `${x.deck_id}:${x.edit}`; };
+  const editId = (d: unknown) => { const x = d as { deck_id?: string; docx_id?: string; edit: number }; return `${x.deck_id ?? x.docx_id}:${x.edit}`; };
   const shown = new Set(out.flatMap((i) => (i.kind === "deck_edit" ? [editId(i.details)] : [])));
   for (const agent of v.agents) {
     for (const s of conversation(agent.view)) {

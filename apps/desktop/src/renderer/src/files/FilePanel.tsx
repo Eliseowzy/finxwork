@@ -16,6 +16,8 @@ import { FileCard, FileLoading as Loading } from "./FileCard";
 import { ImageView } from "./ImageView";
 import { isGrid, isLegacyWord, isMarkdown, isPresentation, isSvg, isWord, previewable } from "./kind";
 import { WordLoading } from "../docs/docx/WordLoading";
+import { setWordAiHost } from "../docs/docx/ai";
+import { isRunning } from "@finx/client";
 import { Tree } from "./Tree";
 import { sizeText } from "../format";
 
@@ -42,6 +44,13 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const { t } = useTranslation("session");
   const st = useStore();
   const s = useFiles(session, cwd);
+  // The Word editor's own root reaches the conversation through this: its in-document AI's turns.
+  const sessions = useRef(st.sessions);
+  sessions.current = st.sessions;
+  useEffect(() => {
+    if (!st.rpc) return;
+    setWordAiHost({ rpc: st.rpc, op: st.op, live: (id) => { const x = sessions.current.find((y) => y.session_id === id); return !!x && isRunning(x); } });
+  }, [st.rpc, st.op]);
   const docs = useSessionDocs(session);
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
   const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened || !!tab?.presentation || !!tab?.word));

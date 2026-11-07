@@ -13,6 +13,7 @@ import type { WordDoc } from "./document";
 import { wordFonts } from "./fonts";
 import { registerWordHandle } from "./handle";
 import { WordLoading } from "./WordLoading";
+import { askFromComment, WordAi } from "./WordAi";
 import "../pptx/theme.css";
 import "./word.css";
 
@@ -41,6 +42,7 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
   const editor = useRef<DocxEditorRef | null>(null);
   const bytes = useMemo(() => fromBase64(doc.file.data), [doc, doc.generation]);
   const kernel = doc.kernel;
+  const where = useMemo(() => ({ session: kernel.session, docxId: kernel.docxId, path }), [kernel, path]);
   // A replica of the kernel's document: it joins with the kernel's state and syncs through it.
   const collaboration = useMemo(() => ({
     clientId: kernel.clientId,
@@ -90,6 +92,10 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
       showHelpMenu={false}
       style={{ height: "100%", width: "100%", minHeight: 0 }}
       onFirstPagePainted={() => setReady(true)}
+      onCommentAdd={(comment) => {
+        // A comment opening with @AI asks the agent (word-design §5.1 item 4).
+        if (editor.current) void askFromComment(editor.current, where, comment, t).catch((e: unknown) => console.warn("word AI comment", e));
+      }}
       onDocumentChange={() => {
         // A change the kernel sent (the agent's) is not an edit of this editor's to save.
         if (kernel.local()) doc.edit();
@@ -97,7 +103,7 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
       onSaveRequest={async () => { await doc.flush(); return false; }}
       downloadOnSave={false}
       onError={(e) => setError(e.message)}
-    /></div>
+    />{ready && editor.current && <WordAi editor={editor.current} where={where} readOnly={!doc.file.writable} />}</div>
     {!ready && !error && <div className="word-opening-overlay">{loading}</div>}
   </div>;
 }
