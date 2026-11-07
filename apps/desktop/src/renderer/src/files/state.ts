@@ -5,10 +5,12 @@ import { i18n } from "../../../shared/i18n";
 import { closeDoc, docTab, lockedPath, openDoc, refreshDoc, setDocInfo, setDocPassword, sheetViewingOf, type DocAnchor, type DocTab } from "../docs/state";
 import { isRpcKind } from "../rpcError";
 import { errorText, type Store } from "../store";
-import { isPresentation, opensAsDoc, previewable } from "./kind";
+import { isLegacyWord, isPresentation, isWord, opensAsDoc, previewable } from "./kind";
 import { kernelAuthority, openKernelPresentation } from "../docs/pptx/kernel";
 import { readPresentation, type PresentationProgress } from "../docs/pptx/progress";
 import { PresentationDoc } from "../docs/pptx/document";
+import { openKernelWord } from "../docs/docx/kernel";
+import { WordDoc } from "../docs/docx/document";
 
 // The file panel's files (file-panel-design §10), by session: the open tabs with their
 // documents, and the folders of the tree. Kept outside the components, so a panel that is
@@ -32,6 +34,8 @@ export type Tab = {
   doc: FileDoc | null;
   presentation: PresentationDoc | null;
   presentationProgress?: PresentationProgress;
+  /** A .docx: the kernel's document, the editor its replica (word-design §6). */
+  word: WordDoc | null;
   /** Markdown and SVG: showing what the file looks like, not its source. */
   preview: boolean;
   target: Target | null;
@@ -135,7 +139,7 @@ export function openFile(s: SessionFiles, path: string, at?: { line?: number; en
 
 function newTab(s: SessionFiles, path: string, asDoc = opensAsDoc(path)): Tab {
   const opened = asDoc ? { docId: null, locked: null, opening: null } : null;
-  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, presentation: null, preview: previewable(path), target: null, editor: null, scroll: 0, opened };
+  return { path, name: baseName(path), rel: relativeTo(s.cwd, path), read: null, error: null, doc: null, presentation: null, word: null, preview: previewable(path), target: null, editor: null, scroll: 0, opened };
 }
 
 /** Opens a document tab's file in finx, with its password when one was given; an anchor is gone to once it opens. */
@@ -210,8 +214,9 @@ export function viewingBlock(session: string, panelOpen: boolean) {
 /** Reads a tab's file (again): a document's disk version moves on, or the edits wait for a choice. */
 async function load(s: SessionFiles, tab: Tab) {
   // A document is finx's, kept up to date there.
-  if (!rpc || tab.opened) return;
+  if (!rpc || tab.opened || isLegacyWord(tab.path)) return;
   try {
+    if (isWord(tab.path)) return await loadWord(s, tab);
     if (isPresentation(tab.path)) {
       if (kernelAuthority()) return await loadKernelPresentation(s, tab);
       const file = await readPresentation(rpc, s.session, tab.path, (progress) => {
@@ -272,6 +277,35 @@ async function loadKernelPresentation(s: SessionFiles, tab: Tab) {
   changed(s);
 }
 
+/** A Word document held by the kernel: the editor joins as its replica. On a later read (the file
+ *  changed on disk) unsaved edits wait for a choice; with none, the document is opened anew. */
+async function loadWord(s: SessionFiles, tab: Tab) {
+  if (!rpc) return;
+  const doc = tab.word;
+  if (doc) {
+    const disk = await rpc.request("files/read", { session_id: s.session, path: tab.path }).catch(() => null);
+    if (disk && !disk.hash) return;
+    if (doc.diskChanged(disk?.hash ?? null)) doc.takeDisk(await openKernelWord(rpc, s.session, tab.path, true));
+    changed(s);
+    return;
+  }
+  const file = await openKernelWord(rpc, s.session, tab.path);
+  if (!s.tabs.includes(tab)) { file.kernel.close(); return; }
+  tab.word = new WordDoc(file, () => changed(s));
+  tab.error = null;
+  changed(s);
+}
+
+/** "Reload": a Word document's unsaved edits are dropped for the file as it is now. */
+export async function takeWordDisk(s: SessionFiles, tab: Tab) {
+  if (!rpc || !tab.word) return;
+  try {
+    tab.word.takeDisk(await openKernelWord(rpc, s.session, tab.path, true));
+    tab.error = null;
+  } catch (e) { tab.error = errorText(e); }
+  changed(s);
+}
+
 /** A text file's contents as read, with the hash a write is checked against. */
 function textVersion(read: FilesReadResult): { text: string; hash: string } | null {
   return read.kind === "text" && typeof read.text === "string" && read.hash ? { text: read.text, hash: read.hash } : null;
@@ -295,7 +329,8 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
   if (!tab) return;
   await tab.doc?.flush();
   await tab.presentation?.flush();
-  if (tab.doc?.dirty || tab.presentation?.dirty) {
+  await tab.word?.flush();
+  if (tab.doc?.dirty || tab.presentation?.dirty || tab.word?.dirty) {
     s.active = path;
     changed(s);
     st.show(t("files.unsavedClose", { name: tab.name }), undefined, true);
@@ -303,6 +338,7 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
   }
   if (tab.opened?.docId) void closeDoc(rpc, s.session, tab.opened.docId);
   tab.presentation?.dispose();
+  tab.word?.dispose();
   const i = s.tabs.indexOf(tab);
   s.tabs.splice(i, 1);
   if (s.active === path) s.active = (s.tabs[i] ?? s.tabs[i - 1])?.path ?? null;
@@ -312,7 +348,7 @@ export async function closeTab(st: Store, s: SessionFiles, path: string) {
 /** Saves what every open file of every session has not saved yet (the window hides, the panel goes). */
 export function flushAll(s?: SessionFiles): Promise<void> {
   const all = s ? [s] : [...sessions.values()];
-  return Promise.all(all.flatMap((x) => x.tabs.flatMap((tab) => [tab.doc?.flush(), tab.presentation?.flush()]))).then(() => {});
+  return Promise.all(all.flatMap((x) => x.tabs.flatMap((tab) => [tab.doc?.flush(), tab.presentation?.flush(), tab.word?.flush()]))).then(() => {});
 }
 
 /** Explicitly reload an externally changed presentation, discarding the local editor. */

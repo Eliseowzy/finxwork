@@ -1,0 +1,40 @@
+/* The Word editor in the file panel. Light keeps the editor's own palette, tuned to the app's
+   type and accent; dark (colorMode="system" follows the window, as the app's tokens do) takes the
+   window's tokens for the chrome around the pages. The pages draw in the document's own colours. */
+.word-view, .word-surface { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.word-view { flex: 1; }
+.word-surface { position: relative; background: var(--pptx-bg); color: var(--pptx-ink); }
+.word-message { display: flex; align-items: center; justify-content: center; padding: 24px; height: 100%; color: var(--l3); font-size: 13px; }
+.word-error { padding: 8px 12px; background: var(--pptx-warn-bg); color: var(--pptx-warn-fg); font-size: 12px; }
+.word-readonly { display: flex; align-items: center; gap: 10px; padding: 5px 12px; border-bottom: 1px solid var(--pptx-line-soft); color: var(--pptx-ink-3); font-size: 12px; }
+.word-readonly span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.word-editor-shell { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; }
+.word-editor-canvas { flex: 1; min-width: 0; min-height: 0; }
+.word-opening-overlay { position: absolute; inset: 0; z-index: 5; background: var(--pptx-bg); }
+.word-ai-mark { color: var(--accent); font-size: 12px; line-height: 1; }
+
+.word-surface .oox-root {
+  --doc-primary: var(--accent);
+  --doc-font-ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  font-family: var(--doc-font-ui);
+}
+/* A denser toolbar, as the panel is narrower than a page of its own. */
+.word-surface .oox-root [role="toolbar"] { gap: 2px; padding-block: 3px; }
+
+@media (prefers-color-scheme: dark) {
+  .word-surface .oox-root {
+    --doc-bg: var(--win2);
+    --doc-surface: var(--win);
+    --doc-bg-hover: var(--fill2);
+    --doc-text: var(--l1);
+    --doc-text-muted: var(--l3);
+    --doc-border: var(--l4);
+    --doc-primary: var(--accent-fg);
+    --doc-toolbar-rail: var(--win2);
+    --doc-toolbar-surface: var(--menu-solid);
+    --doc-toolbar-ink: var(--l1);
+    --doc-toolbar-ink-muted: var(--l2);
+    --doc-toolbar-hover: var(--fill2);
+    --doc-toolbar-line: var(--l4);
+  }
+}

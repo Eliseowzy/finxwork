@@ -830,6 +830,23 @@
       "moreColors": "More Colors…"
     }
   },
+  "word": {
+    "editor": "Word document editor",
+    "loadFailed": "Could not open the Word document: {{message}}",
+    "loadingTitle": "Opening the Word document",
+    "progress": {
+      "reading": "Reading the file…",
+      "fonts": "Preparing the text…",
+      "rendering": "Almost there…"
+    },
+    "readOnly": "This file is read-only. Save a copy to edit it.",
+    "saveAs": "Save As…",
+    "savedAs": "Saved a copy to {{path}}",
+    "conflict": "The file was changed outside FinxWork",
+    "overwrite": "Overwrite",
+    "reload": "Reload",
+    "legacy": "This is the old Word format. FinxWork supports only .docx."
+  },
   "deckEdit": {
     "show": "Show slide {{n}}",
     "open": "Open the presentation",
