@@ -19,6 +19,7 @@ members = [
     "crates/finx-bench",
     "crates/finx-eval",
     "crates/finx-slide",
+    "crates/finx-word",
 ]
 
 [workspace.package]
@@ -44,6 +45,7 @@ finx-docs = { path = "crates/finx-docs" }
 finx-sheet = { path = "crates/finx-sheet" }
 finx-eval = { path = "crates/finx-eval" }
 finx-slide = { path = "crates/finx-slide" }
+finx-word = { path = "crates/finx-word" }
 
 agent-client-protocol-schema = { version = "1.13", default-features = false }
 anyhow = "1"
@@ -58,11 +60,15 @@ async-trait = "0.1"
 #     legend margin), full-width punctuation, run-level a:ea and chart text in +mn-ea,
 #     Latin line breaking without an East Asian lang
 #   b73babb pptx: save after delete_slide (fonts over the session's slides)
+#   330266fb pptx-react: editor chrome reads --bo-editor-* custom properties
 # Back to upstream once all of these are merged there and a release carries them. No font packs
 # (fonts-latin, fonts-intl, fonts-cjk): every face comes from the machine (finx-slide's
 # SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
-betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "b73babb28a4ca60c16d3fc5691560bc2ce1c8711", default-features = false, features = ["raster", "fonts"] }
-ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "b73babb28a4ca60c16d3fc5691560bc2ce1c8711", features = ["svg"] }
+betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac", default-features = false, features = ["raster", "fonts"] }
+# Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
+betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac", default-features = false, features = ["raster", "fonts"] }
+docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac" }
+ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac", features = ["svg"] }
 base64 = "0.22"
 bytes = "1"
 calamine = "0.38"

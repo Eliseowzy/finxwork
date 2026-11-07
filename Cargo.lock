@@ -57,6 +57,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloc-no-stdlib"
+version = "2.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc7bb162ec39d46ab1ca8c77bf72e890535becd1751bb45f64c597edb4c8c6b3"
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -270,9 +276,101 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 
 [[package]]
+name = "betteroffice-base-latin"
+version = "0.5.1"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
+
+[[package]]
+name = "betteroffice-docx"
+version = "0.5.1"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
+dependencies = [
+ "betteroffice-docx-edit",
+ "betteroffice-docx-layout",
+ "betteroffice-docx-parse",
+ "betteroffice-docx-raster",
+ "betteroffice-fonts",
+ "betteroffice-ooxml-text",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "betteroffice-docx-edit"
+version = "0.5.1"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
+dependencies = [
+ "betteroffice-docx-layout",
+ "betteroffice-docx-parse",
+ "betteroffice-drawingml",
+ "betteroffice-ooxml-diff",
+ "betteroffice-ooxml-text",
+ "betteroffice-opc",
+ "foldhash",
+ "libm",
+ "ryu-js",
+ "serde",
+ "serde_json",
+ "sha2",
+ "unicode-segmentation",
+ "wuff",
+ "yrs",
+]
+
+[[package]]
+name = "betteroffice-docx-layout"
+version = "0.5.1"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
+dependencies = [
+ "betteroffice-drawingml",
+ "betteroffice-ooxml-text",
+ "foldhash",
+ "js-sys",
+ "libm",
+ "serde",
+ "serde_json",
+ "unicode-segmentation",
+ "wasm-bindgen",
+ "zmij",
+]
+
+[[package]]
+name = "betteroffice-docx-parse"
+version = "0.5.1"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
+dependencies = [
+ "base64 0.22.1",
+ "betteroffice-drawingml",
+ "betteroffice-opc",
+ "indexmap 2.14.2",
+ "libm",
+ "memchr",
+ "quick-xml 0.41.0",
+ "ryu-js",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "betteroffice-docx-raster"
+version = "0.5.1"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
+dependencies = [
+ "base64 0.22.1",
+ "betteroffice-docx-layout",
+ "betteroffice-ooxml-raster",
+ "betteroffice-ooxml-text",
+ "image",
+ "serde_json",
+ "tiny-skia",
+]
+
+[[package]]
 name = "betteroffice-drawingml"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "crc32fast",
  "flate2",
@@ -284,7 +382,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-fonts"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "cc",
  "quick-xml 0.41.0",
@@ -297,7 +395,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-metafile"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -307,12 +405,12 @@ dependencies = [
 [[package]]
 name = "betteroffice-ooxml-diff"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 
 [[package]]
 name = "betteroffice-ooxml-raster"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-ooxml-text",
@@ -323,8 +421,9 @@ dependencies = [
 [[package]]
 name = "betteroffice-ooxml-text"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
+ "betteroffice-base-latin",
  "betteroffice-drawingml",
  "rustybuzz",
  "serde",
@@ -337,7 +436,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-opc"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "js-sys",
  "quick-xml 0.41.0",
@@ -347,7 +446,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "betteroffice-fonts",
  "betteroffice-pptx-edit",
@@ -359,7 +458,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-edit"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -376,7 +475,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-parse"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "base64 0.22.1",
  "betteroffice-drawingml",
@@ -390,7 +489,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-raster"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-metafile",
@@ -408,7 +507,7 @@ dependencies = [
 [[package]]
 name = "betteroffice-pptx-render"
 version = "0.5.1"
-source = "git+https://github.com/Eliseowzy/betteroffice?rev=b73babb28a4ca60c16d3fc5691560bc2ce1c8711#b73babb28a4ca60c16d3fc5691560bc2ce1c8711"
+source = "git+https://github.com/Eliseowzy/betteroffice?rev=330266fb736226800ef0c4478c221e56ea2b62ac#330266fb736226800ef0c4478c221e56ea2b62ac"
 dependencies = [
  "betteroffice-drawingml",
  "betteroffice-metafile",
@@ -497,6 +596,15 @@ name = "borrow-or-share"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
+
+[[package]]
+name = "brotli-decompressor"
+version = "5.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3a32acac15fe1967bc3986b2a6347dffc965602354ea6f450ad07e8bfd253583"
+dependencies = [
+ "alloc-no-stdlib",
+]
 
 [[package]]
 name = "bs58"
@@ -1702,6 +1810,20 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing",
+]
+
+[[package]]
+name = "finx-word"
+version = "0.2.0"
+dependencies = [
+ "betteroffice-docx",
+ "betteroffice-docx-edit",
+ "finx-slide",
+ "png",
+ "ring",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -3732,6 +3854,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
+name = "ryu-js"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04d056b875a9d2e6cb9a61d127afee9ac5999b9f87bcb32079d1318e505be714"
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5189,7 +5317,9 @@ version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "200a7b806377b65f1ff9a985874332f15357c87e5dd7855f35f06dade95b8b3d"
 dependencies = [
+ "brotli-decompressor",
  "bytes",
+ "flate2",
 ]
 
 [[package]]
