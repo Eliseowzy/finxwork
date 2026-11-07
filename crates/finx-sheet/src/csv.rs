@@ -367,6 +367,61 @@ impl Csv {
         }
         Ok(file)
     }
+
+    /// The file with rows or columns inserted or deleted (Excel's 插入 / 删除). A CSV has no
+    /// references: only the fields move. Rows not touched keep their text as written.
+    pub fn reshape(&self, shift: crate::structure::Shift) -> Result<Vec<u8>, Error> {
+        use crate::structure::Axis;
+        let (at, count) = (shift.at as usize - 1, shift.count as usize);
+        let mut lines: Vec<String> = self.records.iter().map(|r| self.text[r.span.clone()].to_string()).collect();
+        let mut want: Vec<Vec<String>> = self.records.iter().map(|r| r.fields.iter().map(|f| f.text.clone()).collect()).collect();
+        match shift.axis {
+            Axis::Rows => {
+                if at >= lines.len() {
+                    return Err(Error::Unsupported("there are no rows there to move".into()));
+                }
+                if shift.delete {
+                    let end = (at + count).min(lines.len());
+                    lines.drain(at..end);
+                    want.drain(at..end);
+                } else {
+                    lines.splice(at..at, std::iter::repeat_n(String::new(), count));
+                    want.splice(at..at, std::iter::repeat_n(Vec::new(), count));
+                }
+            }
+            Axis::Cols => {
+                for (i, rec) in self.records.iter().enumerate() {
+                    let mut fields = rec.fields.clone();
+                    if fields.len() <= at {
+                        continue;
+                    }
+                    if shift.delete {
+                        let end = (at + count).min(fields.len());
+                        fields.drain(at..end);
+                    } else {
+                        fields.splice(at..at, std::iter::repeat_n(Field { text: String::new(), quoted: false }, count));
+                    }
+                    lines[i] = self.record_text(&fields);
+                    want[i] = fields.into_iter().map(|f| f.text).collect();
+                }
+            }
+        }
+        let mut out = lines.join(self.newline);
+        if self.text.ends_with(['\n', '\r']) && !out.is_empty() {
+            out.push_str(self.newline);
+        }
+        let file = self.encode(&out)?;
+        // Check: read back, every row as intended (an empty row reads as one empty field).
+        let back = Csv::parse(&file, self.delimiter == '\t')?;
+        let blank = |f: &[String]| f.iter().all(String::is_empty);
+        for (i, w) in want.iter().enumerate() {
+            let got: Vec<String> = back.records.get(i).map(|r| r.fields.iter().map(|f| f.text.clone()).collect()).unwrap_or_default();
+            if *w != got && !(blank(w) && blank(&got)) {
+                return Err(Error::SelfCheck(format!("CSV row {} reads back differently", i + 1)));
+            }
+        }
+        Ok(file)
+    }
 }
 
 #[cfg(test)]

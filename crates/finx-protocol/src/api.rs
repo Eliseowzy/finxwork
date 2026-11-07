@@ -76,6 +76,8 @@ pub mod method {
     pub const DOC_TRACE: &str = "doc/trace";
     pub const DOC_FIND: &str = "doc/find";
     pub const DOC_FILL: &str = "doc/fill";
+    pub const DOC_STRUCTURE: &str = "doc/structure";
+    pub const DOC_SORT: &str = "doc/sort";
     pub const DOC_AUTOFILL: &str = "doc/autofill";
     pub const DOC_SAVE: &str = "doc/save";
     /// Notification: a document changed (an edit, undo, redo or save, from any session); to

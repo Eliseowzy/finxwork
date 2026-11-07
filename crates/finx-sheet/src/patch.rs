@@ -122,12 +122,12 @@ pub struct Outcome {
 }
 
 /// A replacement of `range` in a part's bytes. Zero-length ranges insert.
-struct Splice {
-    range: Range<usize>,
-    text: String,
+pub(crate) struct Splice {
+    pub(crate) range: Range<usize>,
+    pub(crate) text: String,
 }
 
-fn apply_splices(src: &[u8], mut splices: Vec<Splice>) -> Result<Vec<u8>, Error> {
+pub(crate) fn apply_splices(src: &[u8], mut splices: Vec<Splice>) -> Result<Vec<u8>, Error> {
     splices.sort_by_key(|s| (s.range.start, s.range.end));
     let mut out =
         Vec::with_capacity(src.len() + splices.iter().map(|s| s.text.len()).sum::<usize>());
@@ -352,7 +352,7 @@ fn t_element(p: &str, s: &str) -> String {
 
 /// Sets `name="value"` on a start tag given as text: replaces the value if
 /// present, else adds it before the tag closes.
-fn set_attr(tag: &str, name: &str, value: &str, present: bool) -> String {
+pub(crate) fn set_attr(tag: &str, name: &str, value: &str, present: bool) -> String {
     if present {
         // Match ` name="` exactly, not a longer attribute ending in `name`.
         for q in ['"', '\''] {
@@ -826,7 +826,7 @@ fn edit_sheet(
 }
 
 /// Removes elements (by span) from a part.
-fn remove_spans(xml: &[u8], spans: Vec<Range<usize>>) -> Result<Vec<u8>, Error> {
+pub(crate) fn remove_spans(xml: &[u8], spans: Vec<Range<usize>>) -> Result<Vec<u8>, Error> {
     apply_splices(
         xml,
         spans
@@ -839,7 +839,7 @@ fn remove_spans(xml: &[u8], spans: Vec<Range<usize>>) -> Result<Vec<u8>, Error> 
     )
 }
 
-fn content_type_override_span(xml: &[u8], part: &str) -> Result<Option<Range<usize>>, Error> {
+pub(crate) fn content_type_override_span(xml: &[u8], part: &str) -> Result<Option<Range<usize>>, Error> {
     let (mut rd, base) = crate::xmltext::reader(xml);
     let want = format!("/{}", part.trim_start_matches('/')).to_lowercase();
     loop {
@@ -866,7 +866,7 @@ fn content_type_override_span(xml: &[u8], part: &str) -> Result<Option<Range<usi
 }
 
 /// `fullCalcOnLoad="1"` on `<calcPr>`, adding the element in schema order if absent.
-fn set_full_calc(xml: &[u8]) -> Result<Vec<u8>, Error> {
+pub(crate) fn set_full_calc(xml: &[u8]) -> Result<Vec<u8>, Error> {
     const AFTER_CALC_PR: &[&str] = &[
         "oleSize",
         "customWorkbookViews",
@@ -1046,7 +1046,7 @@ pub fn apply(input: &[u8], edits: &[CellEdit], opts: &Options) -> Result<Outcome
     })
 }
 
-fn write_package(
+pub(crate) fn write_package(
     pkg: &Package,
     changed: &BTreeMap<String, Vec<u8>>,
     removed: &[String],
