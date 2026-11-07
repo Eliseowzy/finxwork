@@ -49,6 +49,7 @@ fn grant_label(grant: &SiteGrant) -> String {
         (GrantAuthority::Act, "*") => "allow every site in this session (an injected page could make the model act on sites you are signed in to)".into(),
         (GrantAuthority::Navigate, origin) => format!("allow opening {origin} in this session"),
         (GrantAuthority::Act, origin) => format!("allow {origin} in this session"),
+        (GrantAuthority::Script, origin) => format!("allow scripts on {origin} in this session"),
     }
 }
 

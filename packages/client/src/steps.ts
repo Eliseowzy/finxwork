@@ -605,8 +605,10 @@ export function approvalPreview(name: string, args: Record<string, unknown>, sum
     }
     return { kind: "diff", lines: all.slice(0, max), more: Math.max(0, all.length - max) };
   }
-  if (name === "write" && typeof args.content === "string") {
-    const all = lines(args.content);
+  // A file's content, or a page script: what the question is about.
+  const text = name === "write" ? args.content : name === "browser_eval" ? args.expression : undefined;
+  if (typeof text === "string") {
+    const all = lines(text);
     return { kind: "content", lines: all.slice(0, max), more: Math.max(0, all.length - max) };
   }
   return { kind: "args", text: summary || JSON.stringify(args, null, 2) };

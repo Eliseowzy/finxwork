@@ -532,7 +532,7 @@ async fn a_batch_runs_its_steps_and_stops_where_approval_is_needed() {
 }
 
 #[tokio::test]
-async fn scripts_run_only_when_enabled_and_always_ask() {
+async fn scripts_run_only_when_enabled_and_ask_once_per_site() {
     let Some(mut h) = harness_with(PermissionMode::BypassPermissions, true, &[], "script_enabled = false").await else {
         return;
     };
@@ -546,7 +546,7 @@ async fn scripts_run_only_when_enabled_and_always_ask() {
     assert!(last_results(&h.api).pop().unwrap().contains("Unknown tool"), "turned off: not even listed");
     h.kernel.shutdown().await;
 
-    // On by default (browser-design §10.1), and still asked about every time.
+    // On by default (browser-design §10.1), and asked about once per site, even in bypass.
     let Some(mut h) = harness(PermissionMode::BypassPermissions, true, &[]).await else {
         return;
     };
@@ -564,12 +564,21 @@ async fn scripts_run_only_when_enabled_and_always_ask() {
     let events = until(&mut h.kernel, |m| matches!(m, EventMsg::ApprovalRequested { .. })).await;
     let (call_id, summary, grants) = approval(&events);
     assert_eq!(summary, format!("run a script on {}", h.origin), "asked even in bypass");
-    assert!(grants.is_empty(), "never for the session");
-    approve(&mut h.kernel, call_id, ApprovalDecision::Approve).await;
+    assert_eq!(grants, vec![SiteGrant { authority: GrantAuthority::Script, origin: h.origin.clone() }]);
+    approve(&mut h.kernel, call_id, ApprovalDecision::ApproveForSession { grant: Some(0), persist: true }).await;
     until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
     let text = last_results(&h.api).pop().unwrap();
     assert!(text.contains("\"n\": 42") && text.contains("\"title\": \"Other\""), "{text}");
     assert!(text.contains("Changed"), "the change shows: {text}");
+    // The site's next script runs without a question; nothing went into the configuration.
+    h.api.push(Script::tool_call("c3", "browser_eval", json!({ "expression": "6 * 7" })));
+    h.api.push(Script::text("ran again"));
+    h.kernel.submit(Op::prompt("again")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert!(!events.iter().any(|e| matches!(e.msg, EventMsg::ApprovalRequested { .. })), "asked once per site");
+    assert!(last_results(&h.api).pop().unwrap().contains("42"));
+    let saved = std::fs::read_to_string(&h.config).unwrap_or_default();
+    assert!(!saved.contains("script"), "{saved}");
     h.kernel.shutdown().await;
 }
 

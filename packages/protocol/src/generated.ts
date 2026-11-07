@@ -2439,7 +2439,7 @@ export type GradientStop = {
   position: number;
 };
 
-export type GrantAuthority = "navigate" | "act";
+export type GrantAuthority = "navigate" | "act" | "script";
 
 /** Where a link goes. */
 export type HyperlinkTarget = {

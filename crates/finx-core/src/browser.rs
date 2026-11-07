@@ -342,7 +342,10 @@ impl KernelGuard {
     }
 
     fn private_allowed(&self, origin: &str) -> bool {
-        self.grants.lock().iter().any(|g| g.origin == origin)
+        self.grants
+            .lock()
+            .iter()
+            .any(|g| g.origin == origin && g.authority != finx_protocol::GrantAuthority::Script)
             || matches!(self.policy().site(origin), Some(SiteLevel::Navigate | SiteLevel::Act))
     }
 }

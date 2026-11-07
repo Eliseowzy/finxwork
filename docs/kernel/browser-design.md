@@ -2,9 +2,9 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v1.6 |
-| 日期 | 2026-11-05 |
-| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明）。v1.3：桌面端退出时不再重建停靠窗口，面板显示过网页后也能一次退出（§8.3.4）。v1.4：用户自己的浏览器按对话显示，任务结束后放开标签页、之后再接管，连接断了能自己恢复，需要用户时等用户（§8.4.7，D-330 至 D-341） |
+| 版本 | v1.7 |
+| 日期 | 2026-11-07 |
+| 状态 | 一期、二期已实现（feature/browser-control）；三期已实现（feature/browser-extension）。v0.7：内置浏览器和用户自己的浏览器在一个会话里并存，用户的浏览器由 `browser.extension` 打开（connectors-entry-design D-225，已实现）。v0.8：浏览器工具改为按需加载，不进工具列表，经 `tool_search` 和 `call_tool` 使用（mcp-design §7.11，desktop/computer-use-design.md §5）。v0.9：`browser.enabled` 改为浏览器控制的总开关，新增默认浏览器 `browser.default`，脚本默认开；桌面端设置页重做（§10.1）。v1.0：网站权限列表显示每个网站自己的图标（§10.2）。v1.1：`browser/site_icon` 加 `cached`，只给已存的图标（§10.2，content-actions-design §9.2）。v1.2：面板打开时，顶栏的浏览器按钮移到面板右上角取代 ×（§8.3.4 一段的说明）。v1.3：桌面端退出时不再重建停靠窗口，面板显示过网页后也能一次退出（§8.3.4）。v1.4：用户自己的浏览器按对话显示，任务结束后放开标签页、之后再接管，连接断了能自己恢复，需要用户时等用户（§8.4.7，D-330 至 D-341）。v1.7：页面脚本改为每个网站每个会话问一次，所有模式一样，答案可以留到本会话结束（§7.3、§7.6，D-561） |
 | 关系 | 扩展 technical-design.md（下称总方案）的 §5 工具系统、§11 安全；审批部分改造 approval.rs 和 tool_exec.rs；桌面端部分与 desktop-kernel-integration.md 衔接 |
 
 ## 方案摘要
@@ -497,7 +497,7 @@ pub trait Tool {
 - 跳到被拒绝的域名或未授权的私有地址时，停止加载，并在工具结果里说明。
 - 页面自己跳转到一个普通的新 origin 不需要审批，因为导航本身不是模型发起的；但之后在新 origin 上的 `Act` 照常检查。
 
-### 7.3 审批规则（D-173、D-180、D-221）
+### 7.3 审批规则（D-173、D-180、D-221、D-561）
 
 | 权限 | manual / accept-edits | bypass-permissions |
 |---|---|---|
@@ -506,10 +506,10 @@ pub trait Tool {
 | `Act` | 第一次使用一个 origin 时询问（打开时已经允许过就不再问） | 不询问 |
 | `Upload` | 每次询问，列出文件 | 工作区内的文件不询问 |
 | 下载 | 不询问，保存到会话的下载目录 | 不询问 |
-| `Script` | 每次询问 | 每次询问 |
+| `Script` | 每个 origin 在会话里第一次运行脚本时询问 | 同左 |
 
 - **会话授权**（D-180）：
-  - `Gate::Ask` 新增 `proposed_grants: Vec<Grant>`，`Grant = { authority: navigate | act | upload, origin }`。公网站点提议两条：本站点和所有网站（D-221）；私有地址只提议本站点。所以是列表而不是 `Option`（D-208）；
+  - `Gate::Ask` 新增 `proposed_grants: Vec<Grant>`，`Grant = { authority: navigate | act | script, origin }`。公网站点提议两条：本站点和所有网站（D-221）；私有地址只提议本站点。所以是列表而不是 `Option`（D-208）；
   - 用户选"本会话允许"时，`ApprovalDecision::ApproveForSession` 新增可选的 `grant: Option<usize>`，指明选的是 `proposed_grants` 里的哪一条，缺省为第一条。内核只接受提议过的授权，客户端不能自己构造一条更宽的；
   - 选中的授权加入主会话的 `site_grants`，子智能体问的也一样。它与 `session_rules` 并列：只在内存中，恢复会话后要重新批准；子智能体通过 `share_permissions` 共享主会话当前的授权；
   - `SessionView` 新增 `site_grants`（与 `session_rules` 一样，取的是共享后的那一份），以及配置里的 `browser.sites` 和域名策略。`site_policy.rs` 只读 `SessionView`，不直接碰会话；
@@ -519,7 +519,8 @@ pub trait Tool {
     - 放行所有公网站点的打开和操作；私有地址、云元数据地址、域名策略、站点的 `deny`、`Upload` 和 `Script` 照常检查；
     - 可以只在本会话有效，也可以写进配置（见"永久允许"）；
     - 只能由用户在审批框里主动选择，不是默认值。界面写明风险：被注入指令的页面可能诱导模型在用户登录的网站上操作；
-  - `Upload` 和 `Script` 不提出会话授权，每次都问。
+  - `Upload` 不提出会话授权，每次都问；
+  - **脚本**（D-561）：`Script` 提议一条 `Grant = { authority: script, origin }`，只管在这个 origin 上运行脚本，不包含打开和操作；`Act` 和所有网站也不包含脚本。它只在本会话有效，不写进配置，"永久允许"不适用。
 - **不管什么模式都拒绝**：域名策略和站点授权里的 `deny`、云元数据地址。
 - **没有审批人**：非交互的 `finx exec`、会话和它们的子智能体遇到需要审批的调用时，得到"没有人可以批准"的结果，结果里写明需要在配置的 `browser.sites` 里允许哪个 origin。
 - **永久允许**（D-197）：审批时选"永久允许"，写入用户配置（`~/.finx/config.toml`）的 `browser.sites`，与命令审批的 `[[rules]]` 放在同一个文件，用户在一处查看和修改所有权限。只写用户配置，不写项目配置。
@@ -558,7 +559,7 @@ pub trait Tool {
 - **`browser_eval`**（在页面里执行 JS）：二期提供，默认关闭。需要同时满足三个条件：
   - 配置 `browser.script_enabled = true`（只认用户配置，项目配置不能打开）；
   - 该 origin 的策略不是 `deny`，也不是云元数据地址；
-  - 每次调用都经过审批，`bypass-permissions` 也一样，不提出会话授权（权限 `Script`）。
+  - 每个 origin 在会话里第一次运行脚本时经过审批，`bypass-permissions` 也一样；用户可以选本会话允许这个网站运行脚本，之后同一个 origin 上的脚本不再问（权限 `Script`，D-561）。
 - 实现：在审批时那个页面的主框架里用 `Runtime.evaluate` 执行（执行前照常再核对，§7.4），等待 promise，返回值按 JSON 给出并作为页面内容包起来，结果里另附页面的变化；抛出异常或超时时说明"页面可能已经被改动"。不能放进 `browser_batch`。
 - **raw CDP**：不提供给模型。以后如果要提供，至少要有：
   - 域名白名单；
@@ -999,7 +1000,7 @@ profile = "default"          # 用户目录 ~/.finx/browser/profiles/<profile>
 headless = "auto"            # auto | true | false；auto：finx exec 和没有显示器时无界面
 allowed_domains = []         # 非空时只允许这些域名（支持 *.example.com）
 denied_domains = []
-script_enabled = true        # browser_eval；默认开，每次运行前仍先询问（§7.6）。设置页不显示
+script_enabled = true        # browser_eval；默认开，每个网站在会话里第一次运行前先询问（§7.6）。设置页不显示
 navigation_timeout_secs = 30
 action_timeout_secs = 10
 
@@ -1191,7 +1192,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-172 | 工具声明权限，内核按网址检查 → 私有网络 → 域名策略 → 站点授权 → 审批的顺序检查 |
 | D-173 | 审批规则见 §7.3 |
 | D-174 | 确认规则写进浏览器工具的 guidelines |
-| D-175 | 一期不提供 raw CDP；`browser_eval` 二期提供，需要总开关 + origin 策略 + 每次审批 |
+| D-175 | 一期不提供 raw CDP；`browser_eval` 二期提供，需要总开关 + origin 策略 + 审批（审批由 D-561 改为每个网站每个会话一次） |
 | D-176 | 页面内容（包括控制台消息）用标记包住，标明为不可信 |
 | D-177 | 默认显示浏览器窗口；`finx exec` 和没有显示器时无界面 |
 | D-178 | 项目配置只能收紧浏览器策略 |
@@ -1248,6 +1249,7 @@ CI 在 Linux 上安装 Chromium，以 headless 方式运行；macOS 本地验收
 | D-461 | 显示中的标签页跳转时拿走的原生焦点，同一时刻还给窗口自己的页面；窗口不在前台时等它回到前台再还，否则还焦点本身会把窗口带到前台 |
 | D-462 | 用户正在地址栏打字或点在页面里时，智能体的新标签页和选中不切换面板；回到对话后恢复跟随 |
 | D-463 | 第一个页面自动展开面板，但不盖住用户开着的面板；用户收起后按会话记住，直到用户再打开 |
+| D-561 | 页面脚本每个网站每个会话问一次，所有权限模式一样：第一次询问时提议本会话允许这个网站运行脚本（`script` 授权，只管脚本，不写进配置）。原来每次都问，用户逐页读内容时要一直点，而第一次允许时已经看过脚本、认可了这个网站。取代 D-175 的每次审批 |
 
 ### 待定问题
 

@@ -123,7 +123,7 @@ fn desktop_app(app: &str, action: Option<&str>, view: &SessionView) -> Verdict {
     let granted = view
         .site_grants
         .iter()
-        .any(|g| g.origin == origin && (g.authority == GrantAuthority::Act || !acting));
+        .any(|g| g.origin == origin && opens(g.authority, acting));
     if granted || level == Some(AppLevel::Act) || (level == Some(AppLevel::Read) && !acting) {
         return Verdict::Allow;
     }
@@ -141,8 +141,9 @@ fn desktop_app(app: &str, action: Option<&str>, view: &SessionView) -> Verdict {
     }
 }
 
-/// Scripts: only with `browser.script_enabled`, never on a refused site, and asked about every
-/// time in every mode (§7.3, §7.6).
+/// Scripts: only with `browser.script_enabled`, never on a refused site; asked once per site
+/// and session in every mode, and that answer can keep scripts on the site allowed for the
+/// rest of the session, never in the configuration (§7.3, §7.6, D-175 revised).
 async fn script(origin: &str, view: &SessionView) -> Verdict {
     if !view.browser.script_enabled {
         return Verdict::Deny("running scripts is off (browser.script_enabled)".into());
@@ -155,10 +156,29 @@ async fn script(origin: &str, view: &SessionView) -> Verdict {
             return Verdict::Deny(format!("{origin} is a cloud metadata address"));
         }
     }
+    if view
+        .site_grants
+        .iter()
+        .any(|g| g.origin == origin && g.authority == GrantAuthority::Script)
+    {
+        return Verdict::Allow;
+    }
     Verdict::Ask {
         summary: format!("run a script on {origin}"),
-        reason: "A script can read and change anything on the page, so every one is asked about.".into(),
-        grants: Vec::new(),
+        reason: format!(
+            "First script on {origin} in this session: a script can read and change anything on the page."
+        ),
+        grants: vec![grant(GrantAuthority::Script, origin)],
+    }
+}
+
+/// Whether a grant lets the session open pages of its origin, or with `act` act on them. A
+/// script grant does neither.
+fn opens(authority: GrantAuthority, act: bool) -> bool {
+    match authority {
+        GrantAuthority::Act => true,
+        GrantAuthority::Navigate => !act,
+        GrantAuthority::Script => false,
     }
 }
 
@@ -171,7 +191,7 @@ fn grant(authority: GrantAuthority, origin: &str) -> SiteGrant {
 
 fn granted(view: &SessionView, origin: &str, act: bool) -> bool {
     view.site_grants.iter().any(|g| {
-        g.origin == origin && (g.authority == GrantAuthority::Act || !act)
+        g.origin == origin && opens(g.authority, act)
     }) || covers(view.browser.site(origin), act)
 }
 
@@ -179,7 +199,7 @@ fn granted(view: &SessionView, origin: &str, act: bool) -> bool {
 /// only, so a private address never asks this (D-221).
 fn any_site(view: &SessionView, act: bool) -> bool {
     view.site_grants.iter().any(|g| {
-        g.origin == ANY_SITE && (g.authority == GrantAuthority::Act || !act)
+        g.origin == ANY_SITE && opens(g.authority, act)
     }) || covers(view.browser.any_site(), act)
 }
 
@@ -334,6 +354,10 @@ async fn upload(origin: &str, paths: &[PathBuf], own: bool, view: &SessionView) 
 /// Comments and the rest of the file stay as they are.
 /// A desktop app's grant goes into `[desktop.apps]` instead, as `allow`.
 pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), String> {
+    // Scripts are allowed for one session at a time, never kept (§7.6).
+    if grant.authority == GrantAuthority::Script {
+        return Ok(());
+    }
     let text = match std::fs::read_to_string(file) {
         Ok(text) => text,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
@@ -358,6 +382,7 @@ pub(crate) fn remember(file: &std::path::Path, grant: &SiteGrant) -> Result<(), 
         GrantAuthority::Navigate => weaker,
         GrantAuthority::Act if section == "desktop" => "allow",
         GrantAuthority::Act => "act",
+        GrantAuthority::Script => unreachable!("scripts are never kept"),
     };
     let current = entries.get(&key).and_then(|v| v.as_str()).map(str::to_string);
     match current.as_deref() {
@@ -570,10 +595,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn scripts_ask_every_time_and_only_when_enabled() {
+    async fn scripts_ask_once_per_site_and_only_when_enabled() {
         let dir = tempfile::tempdir().unwrap();
+        let origin = "http://localhost:3000";
         let script = Authority::Script {
-            origin: "http://localhost:3000".into(),
+            origin: origin.into(),
             target: page(),
             own: false,
         };
@@ -583,9 +609,29 @@ mod tests {
             script_enabled: true,
             ..SitePolicy::default()
         };
-        let granted = vec![grant(GrantAuthority::Act, "http://localhost:3000")];
-        let bypass = view(PermissionMode::BypassPermissions, granted, on, dir.path());
-        assert_eq!(asks(&evaluate(std::slice::from_ref(&script), &bypass).await), Some(vec![]), "asks even in bypass, never for the session");
+        let mode = |mode, grants| view(mode, grants, on.clone(), dir.path());
+        // Acting on the site does not cover its scripts: the first one asks, in every mode,
+        // and offers this site's scripts for the session.
+        for m in [PermissionMode::Manual, PermissionMode::BypassPermissions] {
+            let acting = mode(m, vec![grant(GrantAuthority::Act, origin), grant(GrantAuthority::Act, ANY_SITE)]);
+            assert_eq!(
+                asks(&evaluate(std::slice::from_ref(&script), &acting).await),
+                Some(vec![grant(GrantAuthority::Script, origin)]),
+                "{m:?}"
+            );
+            let scripts = mode(m, vec![grant(GrantAuthority::Script, origin)]);
+            assert_eq!(evaluate(std::slice::from_ref(&script), &scripts).await, Gate::Allow, "{m:?}: asked once");
+        }
+        // Another site's grant does not carry over, and a script grant opens nothing.
+        let other = mode(PermissionMode::Manual, vec![grant(GrantAuthority::Script, "http://localhost:4000")]);
+        assert!(asks(&evaluate(std::slice::from_ref(&script), &other).await).is_some());
+        let only_scripts = mode(PermissionMode::Manual, vec![grant(GrantAuthority::Script, "https://93.184.215.14")]);
+        assert!(asks(&evaluate(&[nav("https://93.184.215.14/")], &only_scripts).await).is_some());
+        assert!(asks(&evaluate(&[act_on("https://93.184.215.14")], &only_scripts).await).is_some());
+        // Never kept in the configuration.
+        let file = dir.path().join("config.toml");
+        remember(&file, &grant(GrantAuthority::Script, origin)).unwrap();
+        assert!(!file.exists());
     }
 
     #[tokio::test]

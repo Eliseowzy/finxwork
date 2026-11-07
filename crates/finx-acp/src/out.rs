@@ -296,12 +296,15 @@ pub fn permission_options(rule: Option<&[String]>, mode: Option<PermissionMode>,
             (GrantAuthority::Act, "*") => say("Allow any site in this session", "本会话允许所有网站").to_string(),
             (GrantAuthority::Navigate, origin) => format!("{} {origin}", say("Open in this session:", "本会话允许打开")),
             (GrantAuthority::Act, origin) => format!("{} {origin}", say("Allow in this session:", "本会话允许")),
+            (GrantAuthority::Script, origin) => format!("{} {origin}", say("Allow scripts in this session:", "本会话允许运行脚本：")),
         };
         options.push(json!({ "optionId": format!("approve_for_session:{index}"), "name": name, "kind": "allow_always" }));
     }
     // Kept in the configuration, every site included (D-197, D-221).
     for (index, grant) in grants.iter().enumerate() {
         let name = match (grant.authority, grant.origin.as_str()) {
+            // Scripts are allowed for the session only (browser-design §7.6).
+            (GrantAuthority::Script, _) => continue,
             (_, "*") => say(
                 "Always allow any site (saved; a page with injected instructions could steer actions on sites you are signed in to)",
                 "总是允许所有网站（写入配置；风险：被注入指令的页面可能诱导操作你登录的网站）",

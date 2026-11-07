@@ -242,6 +242,10 @@ pub enum GrantAuthority {
     Navigate,
     /// Open pages of the origin and act on them: click, type, select.
     Act,
+    /// Run scripts in pages of the origin (`browser_eval`). Only this: it neither opens nor
+    /// acts, and opening or acting never runs scripts. Kept for the session only, never in
+    /// the configuration (browser-design §7.6, D-175 revised).
+    Script,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

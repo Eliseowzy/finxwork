@@ -23,6 +23,7 @@ export const scripts = {
   "bot-turn": { covers: [`${renderer}bots/useBotSession`, `${core}bot.rs`, `${core}agents/`] },
   "browser-annotations": { foreground: "a click inside the browser panel brings the app forward", covers: [`${renderer}session/Browser`, "apps/desktop/src/preload/browser", "apps/desktop/src/shared/annotations"] },
   "browser-handoff": { covers: [`${renderer}session/browserPanel`, `${main}browser/`, "crates/finx-browser/", `${core}browser`] },
+  "browser-script": { covers: [`${renderer}session/Approval`, `${core}site_policy`, "crates/finx-browser/"] },
   "browser-quiet": { foreground: "checks which window really has the keyboard", covers: [`${main}browser/pages`, "crates/finx-browser/"] },
   "browser-quit": { covers: [`${main}browser/pages`, `${main}index`, `${main}windows`] },
   chatgpt: { covers: [`${renderer}settings/ChatGptConnection`, "crates/finx-connections/", `${server}connections`] },

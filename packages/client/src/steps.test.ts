@@ -112,6 +112,11 @@ test("an approval previews the command, the change, or what is written", () => {
   const long = approvalPreview("write", { path: "a", content: "1\n2\n3\n4" }, "", 3);
   assert.deepEqual(long, { kind: "content", lines: ["1", "2", "3"], more: 1 });
   assert.deepEqual(approvalPreview("fetch", { url: "u" }, "fetch u"), { kind: "args", text: "fetch u" });
+  assert.deepEqual(approvalPreview("browser_eval", { expression: "document.title" }, "run a script on https://a.example"), {
+    kind: "content",
+    lines: ["document.title"],
+    more: 0,
+  });
 });
 
 test("a message's attached files go to the model as a block of paths and come back as files, not words", () => {

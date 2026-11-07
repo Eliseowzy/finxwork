@@ -11103,6 +11103,13 @@
             "act"
           ],
           "type": "string"
+        },
+        {
+          "description": "Run scripts in pages of the origin (`browser_eval`). Only this: it neither opens nor acts, and opening or acting never runs scripts. Kept for the session only, never in the configuration (browser-design §7.6, D-175 revised).",
+          "enum": [
+            "script"
+          ],
+          "type": "string"
         }
       ]
     },

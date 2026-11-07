@@ -93,8 +93,10 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
   const { status } = useDesktopStatus(undefined, cua);
   const permission = target.name === "cua_screenshot" ? "screen" : "accessibility";
   const missing = cua && status && status[permission] !== "granted" && status[permission] !== "unsupported";
+  // A page script: its one grant is the site's scripts for this session, never kept (browser-design §7.6).
+  const script = grants.find((g) => g.authority === "script");
   // A website: its grants are the site and every site, never an app (D-221).
-  const site = grants.length > 0 && !grants.some((g) => g.origin.startsWith(APP_ORIGIN));
+  const site = grants.length > 0 && !script && !grants.some((g) => g.origin.startsWith(APP_ORIGIN));
   const keys = useRef({ give, denying, blocked: false, grants: false, site: false });
   keys.current = { give, denying, blocked: st.sheet !== null || st.searching, grants: grants.length > 0, site };
   useEffect(() => {
@@ -120,7 +122,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
     if (denying) field.current?.focus();
   }, [denying]);
 
-  const question = sheetArgs ? t("approval.editWorkbook", { name: sheetFile ?? String(sheetArgs.doc ?? "") }) : tool.category === "execute" ? t("approval.runCommand") : t("approval.useTool", { verb: toolDo(tool.category), object: toolObject(tool) });
+  const question = sheetArgs ? t("approval.editWorkbook", { name: sheetFile ?? String(sheetArgs.doc ?? "") }) : script ? t("approval.scriptQuestion", { site: hostOf(script.origin) }) : tool.category === "execute" ? t("approval.runCommand") : t("approval.useTool", { verb: toolDo(tool.category), object: toolObject(tool) });
   const rule = a.proposed_rule?.prefix.join(" ");
   const denyField = (
     <>
@@ -269,7 +271,7 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
           <>
             <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("approval.denyWhy")}</button>
             <span className="appr-sp" />
-            {grants.length > 0 && (
+            {grants.length > 0 && !script && (
               <label className="appr-keep" title={t("approval.rememberDesc")}>
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
                 {t("approval.remember")}
@@ -277,14 +279,17 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
             )}
             {grants.length > 0 ? (
               grants.map((g, i) => (
-                <button key={i} className="btn" disabled={busy} title={t("approval.grantAppDesc")} onClick={() => give({ type: "approve_for_session", grant: i, persist: remember || undefined })}>
+                <button key={i} className="btn" disabled={busy} title={script ? t("approval.grantScriptDesc", { site: hostOf(g.origin) }) : t("approval.grantAppDesc")} onClick={() => give({ type: "approve_for_session", grant: i, persist: (remember && !script) || undefined })}>
                   {grantLabel(g, t, desktopApp?.name)}
                 </button>
               ))
             ) : (
-              <button className="btn" disabled={busy} title={rule ? t("approval.sessionRule", { rule }) : t("approval.sessionDesc")} onClick={() => give({ type: "approve_for_session" })}>
-                {t("approval.session")}
-              </button>
+              // Only when the session would keep something: with nothing proposed it allows this call alone.
+              (rule || a.proposed_mode) && (
+                <button className="btn" disabled={busy} title={rule ? t("approval.sessionRule", { rule }) : t("approval.sessionDesc")} onClick={() => give({ type: "approve_for_session" })}>
+                  {t("approval.session")}
+                </button>
+              )
             )}
             <button className="btn primary" disabled={busy} onClick={() => give({ type: "approve" })}>
               {t("approval.once")}
@@ -299,8 +304,9 @@ export function Approval({ sessionId, view }: { sessionId: string; view: Session
 
 type T = ReturnType<typeof useTranslation<"session">>["t"];
 
-/** A desktop app's grant (`app://<bundle id>`) as a button: the app by its name once known, else its bundle id. One grant allows the app, reading and acting alike. */
+/** A grant as a button. A desktop app's (`app://<bundle id>`): the app by its name once known, else its bundle id; one grant allows the app, reading and acting alike. A site's scripts: the site. */
 function grantLabel(g: SiteGrant, t: T, appName?: string): string {
+  if (g.authority === "script") return t("approval.grantScript");
   return t("approval.grantApp", { app: appName ?? g.origin.slice(APP_ORIGIN.length) });
 }
 
