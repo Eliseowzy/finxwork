@@ -44,6 +44,14 @@ deck-worker 进程（同一个进程，新增 docx 条目类型）每份文件�
 - **不新开进程**：deck-worker 已经是"每份文件一个线程的 actor + 日志 + 崩溃重放"，Word 条目是同一种东西，换个引擎而已。
   若实施时发现耦合不合适，可以拆成 `word-worker` 子命令，wire 不变。
 - **新 crate `finx-word`**（与 finx-slide 并列）：包装引擎，对外只暴露 `Word` 和本文的操作类型，不暴露引擎 JSON。
+- **写回 .docx 借桌面端的 JS 引擎**（2026-11-07 实测发现）：fork 的 Rust 侧没有"Yrs 状态 → .docx"的路径，
+  这一步只有 TS（`packages/docx/src/yrs/saveYrsDocx.ts` + `yrsToDocument.ts`，约 5 千行）。移植成 Rust 工作量大、
+  保真风险高；Electron 的 RunAsNode 熔丝已关，内核也不能自己起 Node。所以：桌面主进程用 `utilityProcess` 跑一个
+  **docx 序列化进程**，以 `docx/host` 登记为宿主（同 `browser/host` 的做法）；内核需要字节时（保存、`docx_view` 渲染）
+  发 `docx/serialize { source_path, state_path, out_path }`，经文件传字节，不走 base64 帧。内核仍是唯一写盘者（I1）：
+  序列化进程只写内核给的临时路径，内核校验（能被 Rust 解析、页数合理）后原子替换原文件。
+  没有桌面端（纯 CLI）时 `docx_save`/`docx_view` 报"需要 FinxWork 桌面端"，读与改照常可用。
+  以后 fork 有了原生保存，再把这一步换回内核，接口不变。
 
 ## 3. finx-word：`Word`
 
@@ -55,8 +63,8 @@ deck-worker 进程（同一个进程，新增 docx 条目类型）每份文件�
 | 改 | `apply(EditBatch{mode, author, note, edits}) -> Applied` | 整批原子：失败指出第几步、为什么，不落半批 |
 | 修订 | `mode = Suggest` 时一切文字改动成为修订；`review(accept/reject, ids|all)` | 作者名、日期写入修订 |
 | 撤销 | `undo(edit)` | 只撤智能体的那一步（origin 隔离），人的改动不受影响；只能撤最近一次 |
-| 保存 | `save() -> bytes` | 未改动的部件逐字节等于源文件（不变量，测试覆盖） |
-| 看页 | `render_page(n, scale) -> png` | `betteroffice-docx` 光栅化；中文用系统字体（同 finx-slide fonts） |
+| 保存 | 由宿主序列化（§2）；`Word::check_saved(bytes)` 校验结果 | 未改动的部件逐字节等于源文件由 `saveYrsDocx` 的基线保存保证，e2e 覆盖 |
+| 看页 | `render_page(docx_bytes, n, scale) -> png` | `betteroffice-docx` 光栅化序列化后的字节；中文用系统字体（同 finx-slide fonts） |
 
 操作（snake_case，一一映射到引擎；寻址用段落 ID，文字用 `find`：在该段里恰好出现一次）：
 
@@ -145,6 +153,7 @@ insert_table_row { row_of: paragraph, position, cells }   delete_table_row { row
 | 波 | 任务 | 模型 |
 |---|---|---|
 | 1 | A. `finx-word` crate + Cargo rev 统一（§3） | opus |
+| 1 | F. docx 序列化宿主：utilityProcess + `docx/host`/`docx/serialize`（两端） | opus |
 | 1 | B. WordView 与副本链路、分流、保存/冲突（对着 §4 协议写，内核用替身测） | opus |
 | 2 | C. worker 条目、WordStore、`docx/*` 方法、`docx_*` 工具与审批（依赖 A） | opus |
 | 3 | D. 文档内 AI 交互（§5，依赖 B、C） | opus |
