@@ -15,6 +15,12 @@ export const opensAsDoc = (path: string) => doc.test(path);
 /** An object-based presentation editor, opened in the browser's own WASM session. */
 export const isPresentation = (path: string) => /\.pptx$/i.test(path);
 
+/** A Word document, opened as the kernel's document with the editor as its replica (word-design §6). */
+export const isWord = (path: string) => /\.docx$/i.test(path);
+
+/** The old binary Word format: the panel says it is not supported and offers the default app. */
+export const isLegacyWord = (path: string) => /\.doc$/i.test(path);
+
 /** A document that shows as the grid: a workbook, a CSV. */
 export const isGrid = (path: string) => opensAsDoc(path) && !/\.pdf$/i.test(path);
 

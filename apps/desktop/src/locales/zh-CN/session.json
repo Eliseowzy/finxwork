@@ -805,6 +805,23 @@
       "moreColors": "其他颜色…"
     }
   },
+  "word": {
+    "editor": "Word 文档编辑器",
+    "loadFailed": "无法打开 Word 文档：{{message}}",
+    "loadingTitle": "正在打开 Word 文档",
+    "progress": {
+      "reading": "正在读取文件…",
+      "fonts": "正在准备文字显示…",
+      "rendering": "马上就好…"
+    },
+    "readOnly": "此文件为只读，可以另存一份再编辑。",
+    "saveAs": "另存为…",
+    "savedAs": "已另存到 {{path}}",
+    "conflict": "文件在外部被修改",
+    "overwrite": "覆盖",
+    "reload": "重新载入",
+    "legacy": "这是旧版 Word 格式，FinxWork 只支持 .docx。"
+  },
   "deckEdit": {
     "show": "查看第 {{n}} 页",
     "open": "打开演示文稿",
