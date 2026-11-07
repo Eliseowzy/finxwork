@@ -200,6 +200,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         browser_pool: Some(Arc::new(BrowserPool::new(home.browser_dir(), false))),
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     };
     let options = StartOptions {

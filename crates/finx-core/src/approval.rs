@@ -125,6 +125,10 @@ pub fn evaluate(call: &ToolCall, kind: ToolKind, view: &SessionView) -> Gate {
         "doc_save" => evaluate_doc_save(arg("doc"), arg("path"), view),
         "deck_edit" => evaluate_deck_edit(&args, arg("deck"), view),
         "deck_save" => evaluate_doc_save(arg("deck"), arg("path"), view),
+        // Tracked changes are the user's review in the document itself (word-design §11-2).
+        "docx_edit" if args.get("mode").and_then(|v| v.as_str()).unwrap_or("suggest") == "suggest" => Gate::Allow,
+        "docx_edit" | "docx_review" => evaluate_edit_in_kernel(docx_edit_summary(&args, arg("docx")), view),
+        "docx_save" => evaluate_doc_save(arg("docx"), arg("path"), view),
         _ => match (kind, view.permission_mode) {
             (ToolKind::ReadOnly, _) | (ToolKind::Mutating, PermissionMode::BypassPermissions) => Gate::Allow,
             (ToolKind::Mutating, _) if call.name == crate::routine::MANAGE_ROUTINE => ask(crate::routine::approval_summary(&args), None),
@@ -154,10 +158,15 @@ fn evaluate_doc_edit(args: &serde_json::Value, doc: &str, view: &SessionView) ->
 /// A deck edit lands in the kernel's deck, not the file, and can be taken back
 /// (presentation-deck-edit §5): asked like a workbook edit, with each step in the question.
 fn evaluate_deck_edit(args: &serde_json::Value, deck: &str, view: &SessionView) -> Gate {
+    evaluate_edit_in_kernel(deck_edit_summary(args, deck), view)
+}
+
+/// An edit of a document the kernel holds, which the user can take back: asked only in manual mode.
+fn evaluate_edit_in_kernel(summary: String, view: &SessionView) -> Gate {
     match view.permission_mode {
         PermissionMode::AcceptEdits | PermissionMode::BypassPermissions => Gate::Allow,
         PermissionMode::Manual => Gate::Ask {
-            summary: deck_edit_summary(args, deck),
+            summary,
             reason: None,
             proposed_rule: None,
             proposed_mode: Some(PermissionMode::AcceptEdits),
@@ -195,6 +204,43 @@ fn deck_edit_summary(args: &serde_json::Value, deck: &str) -> String {
             "set_notes" => format!("set the speaker notes to \"{}\"", s(e, "text").unwrap_or_default()),
             "set_fill" => format!("fill an object with {}", s(e, "color").unwrap_or_default()),
             "set_background" => format!("set a slide's background to {}", s(e, "color").unwrap_or_default()),
+            other => other.replace('_', " "),
+        };
+        out.push_str("\n- ");
+        out.push_str(&line);
+    }
+    if edits.len() > SHOWN {
+        out.push_str(&format!("\n- and {} more", edits.len() - SHOWN));
+    }
+    out
+}
+
+/// "edit a.docx directly (2 change(s)): note", then a line a step; or what a review settles.
+fn docx_edit_summary(args: &serde_json::Value, docx: &str) -> String {
+    const SHOWN: usize = 12;
+    let name = Path::new(docx).file_name().and_then(|n| n.to_str()).unwrap_or(docx);
+    let s = |e: &serde_json::Value, k: &str| e.get(k).and_then(|v| v.as_str()).map(|t| t.chars().take(80).collect::<String>()).unwrap_or_default();
+    if let Some(action) = args.get("action").and_then(|v| v.as_str()) {
+        let which = match args.get("ids").and_then(|v| v.as_array()) {
+            Some(ids) => format!("{} tracked change(s)", ids.len()),
+            None => "all tracked changes".into(),
+        };
+        return format!("{action} {which} in {name}");
+    }
+    let edits = args.get("edits").and_then(|v| v.as_array()).map(Vec::as_slice).unwrap_or_default();
+    let note = args.get("note").and_then(|v| v.as_str()).map(|n| format!(": {n}")).unwrap_or_default();
+    let mut out = format!("edit {name} directly ({} change(s)){note}", edits.len());
+    for e in edits.iter().take(SHOWN) {
+        let line = match e.get("op").and_then(|v| v.as_str()).unwrap_or("") {
+            "replace_text" => format!("replace \"{}\" with \"{}\"", s(e, "find"), s(e, "replace")),
+            "insert_text" => format!("insert \"{}\"", s(e, "text")),
+            "delete_text" => format!("delete \"{}\"", s(e, "find")),
+            "insert_paragraphs" => {
+                let texts: Vec<String> = e.get("paragraphs").and_then(|v| v.as_array()).map(|ps| ps.iter().map(|p| s(p, "text")).collect()).unwrap_or_default();
+                format!("insert \"{}\"", texts.join(" / "))
+            }
+            "set_cell_text" => format!("set a cell to \"{}\"", s(e, "text")),
+            "add_comment" | "reply_comment" => format!("comment \"{}\"", s(e, "text")),
             other => other.replace('_', " "),
         };
         out.push_str("\n- ");
@@ -642,6 +688,44 @@ mod tests {
         assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
         assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Ask { .. }));
         let outside = doc_call("deck_save", json!({"deck": "/elsewhere/a.pptx"}));
+        assert!(matches!(evaluate(&outside, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Ask { .. }));
+    }
+
+    #[test]
+    fn suggested_docx_edits_never_ask_direct_ones_and_reviews_ask_like_deck_edits() {
+        let dir = tempfile::tempdir().unwrap();
+        let edits = json!([{"op": "replace_text", "paragraph": "10000002", "find": "百分之十", "replace": "一成"}]);
+        let suggest = doc_call("docx_edit", json!({"docx": "/w/a.docx", "edits": edits, "note": "润色"}));
+        let explicit = doc_call("docx_edit", json!({"docx": "/w/a.docx", "edits": edits, "mode": "suggest"}));
+        let direct = doc_call("docx_edit", json!({"docx": "/w/a.docx", "edits": edits, "mode": "direct", "note": "润色"}));
+        let review = doc_call("docx_review", json!({"docx": "/w/a.docx", "action": "accept", "ids": [3]}));
+        for mode in [PermissionMode::Manual, PermissionMode::AcceptEdits, PermissionMode::BypassPermissions] {
+            assert!(matches!(evaluate(&suggest, ToolKind::Mutating, &view(dir.path(), mode)), Gate::Allow));
+            assert!(matches!(evaluate(&explicit, ToolKind::Mutating, &view(dir.path(), mode)), Gate::Allow));
+        }
+        match evaluate(&direct, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)) {
+            Gate::Ask { summary, proposed_mode, .. } => {
+                assert_eq!(summary, "edit a.docx directly (1 change(s)): 润色\n- replace \"百分之十\" with \"一成\"");
+                assert_eq!(proposed_mode, Some(PermissionMode::AcceptEdits));
+            }
+            other => panic!("{other:?}"),
+        }
+        match evaluate(&review, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)) {
+            Gate::Ask { summary, .. } => assert_eq!(summary, "accept 1 tracked change(s) in a.docx"),
+            other => panic!("{other:?}"),
+        }
+        for mode in [PermissionMode::AcceptEdits, PermissionMode::BypassPermissions] {
+            assert!(matches!(evaluate(&direct, ToolKind::Mutating, &view(dir.path(), mode)), Gate::Allow));
+            assert!(matches!(evaluate(&review, ToolKind::Mutating, &view(dir.path(), mode)), Gate::Allow));
+        }
+        // Deferred, through call_tool: judged as itself.
+        let deferred = doc_call(crate::mcp::tools::CALL_TOOL, json!({"name": "docx_edit", "arguments": {"docx": "a.docx", "edits": []}}));
+        assert!(matches!(evaluate(&through_call_tool(&deferred).unwrap(), ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Allow));
+        // Saving as deck_save does.
+        let save = doc_call("docx_save", json!({"docx": "a.docx"}));
+        assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Allow));
+        assert!(matches!(evaluate(&save, ToolKind::Mutating, &view(dir.path(), PermissionMode::Manual)), Gate::Ask { .. }));
+        let outside = doc_call("docx_save", json!({"docx": "/elsewhere/a.docx"}));
         assert!(matches!(evaluate(&outside, ToolKind::Mutating, &view(dir.path(), PermissionMode::AcceptEdits)), Gate::Ask { .. }));
     }
 

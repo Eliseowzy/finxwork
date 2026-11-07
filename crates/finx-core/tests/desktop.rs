@@ -95,6 +95,7 @@ async fn harness(mode: PermissionMode) -> Harness {
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     };
     let options = StartOptions {

@@ -43,6 +43,7 @@ mod db;
 mod decks;
 mod docs;
 mod docx_host;
+mod words;
 mod files;
 mod models;
 mod peer;

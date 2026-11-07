@@ -8,6 +8,7 @@ pub mod bot;
 pub mod customize;
 pub mod deck;
 pub mod doc;
+pub mod docx;
 pub mod files;
 pub mod pptx;
 mod event;

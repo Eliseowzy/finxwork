@@ -73,6 +73,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, host: Option<Arc<d
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: host,
     }
 }

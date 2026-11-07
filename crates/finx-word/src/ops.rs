@@ -1,9 +1,10 @@
 //! What the agent asks of a document: one batch of edits, and how review settles revisions.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// How a batch's text changes land.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum EditMode {
     /// As Word revisions (`w:ins`/`w:del`, formatting as `w:rPrChange`) by the batch's author.
@@ -28,21 +29,21 @@ pub struct EditBatch {
 }
 
 /// Which end of a paragraph `insert_text` writes at.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Edge {
     Start,
     End,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum RowPosition {
     Before,
     After,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum Align {
     Left,
@@ -63,7 +64,7 @@ impl Align {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NewParagraph {
     pub text: String,
@@ -74,7 +75,7 @@ pub struct NewParagraph {
 
 /// One edit. Paragraphs are addressed by their id (from `outline`, `read` or `find`); `find`
 /// must occur exactly once in that paragraph's text as it reads now.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WordOp {
     ReplaceText {
@@ -162,7 +163,7 @@ pub enum WordOp {
     },
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ReviewAction {
     Accept,
