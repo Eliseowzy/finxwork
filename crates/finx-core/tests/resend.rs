@@ -96,6 +96,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, hooks: Vec<Arc<dyn
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     }
 }

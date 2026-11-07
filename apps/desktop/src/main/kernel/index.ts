@@ -10,6 +10,7 @@ import { testHome } from "../build";
 import { LineCutter } from "../frames";
 import { platform } from "../platform";
 import { startBrowserHost } from "../browser/host";
+import { startDocxHost } from "../docx/host";
 import { Supervisor, type KernelStatus, type ListFollower } from "./supervisor";
 
 // The windows' connections to finx (desktop-design §3.2, desktop-kernel-
@@ -81,10 +82,13 @@ export function startKernel(lists?: ListFollower) {
   supervisor.start();
   app.on("before-quit", () => supervisor?.stop());
   // The browser tools' pages show in the app (browser-design §8.3).
-  startBrowserHost(async () => {
+  const ready = async () => {
     await supervisor!.ready();
     return supervisor!.current.endpoint;
-  }, trace);
+  };
+  startBrowserHost(ready, trace);
+  // The kernel's Word documents are saved here (word-design §2).
+  startDocxHost(ready, trace);
 }
 
 function view(s: KernelStatus): KernelStatusView {

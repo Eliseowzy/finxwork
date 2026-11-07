@@ -472,6 +472,8 @@ export type DocQuote = {
   /** A workbook quote uses its sheet and A1 range instead of a page. */
   sheet?: string;
   range?: string;
+  /** A Word quote names the paragraphs it spans (the engine's paragraph ids) instead of a page. */
+  paragraphs?: string[];
   comment?: string;
   image?: number;
 };
@@ -487,13 +489,20 @@ function quotesOf(text: string): DocQuote[] | null {
   try {
     const list: unknown = JSON.parse(text.slice(docQuotes.length));
     if (!Array.isArray(list)) return null;
-    return list.every((q) => q && typeof q === "object" && typeof q.path === "string" && typeof q.doc_id === "string" && typeof q.text === "string" && (typeof q.page === "number" || (typeof q.sheet === "string" && typeof q.range === "string"))) ? list : null;
+    return list.every((q) => q && typeof q === "object" && typeof q.path === "string" && typeof q.doc_id === "string" && typeof q.text === "string" && (typeof q.page === "number" || (typeof q.sheet === "string" && typeof q.range === "string") || Array.isArray(q.paragraphs))) ? list : null;
   } catch {
     return null;
   }
 }
 
 const viewing = "The user has a document open beside the conversation: ";
+const wordRequest = "The user asked this from the Word editor beside the conversation";
+
+/** What a request made inside the Word editor tells the model (word-design §5.2): not shown in the conversation. `text` is the body after the block's preface. */
+export function wordRequestBlock(text: string): UserContent {
+  return { type: "text", text: `${wordRequest}.\n${text}` };
+}
+
 const sheetViewing = "The user has a workbook selection open beside the conversation: ";
 const deckViewing = "The user has a presentation open beside the conversation: ";
 
@@ -561,7 +570,7 @@ export function userText(content: UserContent[]): { text: string; files: string[
     if (web) comments.push(...web);
     else if (quoted) quotes.push(...quoted);
     else if (handed) tabs.push(handed);
-    else if (c.text.startsWith(viewing) || c.text.startsWith(sheetViewing) || c.text.startsWith(deckViewing)) continue;
+    else if (c.text.startsWith(viewing) || c.text.startsWith(wordRequest) || c.text.startsWith(sheetViewing) || c.text.startsWith(deckViewing)) continue;
     else if (paths) files.push(...paths);
     else texts.push(c.text);
   }

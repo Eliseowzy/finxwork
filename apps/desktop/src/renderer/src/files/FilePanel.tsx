@@ -11,10 +11,13 @@ import { fileMenu, opensAsPage, otherView, showPage } from "../session/contentMe
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
 import { usePanelWidth } from "../panelWidth";
-import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, takeWordDisk, useFiles, type SessionFiles, type Tab } from "./state";
 import { FileCard, FileLoading as Loading } from "./FileCard";
 import { ImageView } from "./ImageView";
-import { isGrid, isMarkdown, isPresentation, isSvg, previewable } from "./kind";
+import { isGrid, isLegacyWord, isMarkdown, isPresentation, isSvg, isWord, previewable } from "./kind";
+import { WordLoading } from "../docs/docx/WordLoading";
+import { setWordAiHost } from "../docs/docx/ai";
+import { isRunning } from "@finx/client";
 import { Tree } from "./Tree";
 import { sizeText } from "../format";
 
@@ -26,6 +29,7 @@ import { sizeText } from "../format";
 
 const Editor = lazy(() => import("./Editor"));
 const PresentationView = lazy(() => import("../docs/pptx/PresentationView"));
+const WordView = lazy(() => import("../docs/docx/WordView"));
 
 /** What the conversation keeps beside the panel at least, as with the browser; more beside a document, which is read beside it. */
 const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
@@ -40,9 +44,16 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const { t } = useTranslation("session");
   const st = useStore();
   const s = useFiles(session, cwd);
+  // The Word editor's own root reaches the conversation through this: its in-document AI's turns.
+  const sessions = useRef(st.sessions);
+  sessions.current = st.sessions;
+  useEffect(() => {
+    if (!st.rpc) return;
+    setWordAiHost({ rpc: st.rpc, op: st.op, live: (id) => { const x = sessions.current.find((y) => y.session_id === id); return !!x && isRunning(x); } });
+  }, [st.rpc, st.op]);
   const docs = useSessionDocs(session);
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
-  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened || !!tab?.presentation));
+  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened || !!tab?.presentation || !!tab?.word));
   const docOf = (x: Tab) => docs.tabs.find((d) => d.info.doc_id === x.opened?.docId);
   // No file open: the panel is only the folder tree to pick one from, not an empty editor's width.
   const bare = s.tabs.length === 0;
@@ -85,14 +96,14 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
           {s.tabs.map((x) => {
             const on = x.path === s.active;
             const opened = docOf(x);
-            const dirty = !!x.doc?.dirty || !!x.presentation?.dirty || !!opened?.info.dirty;
+            const dirty = !!x.doc?.dirty || !!x.presentation?.dirty || !!x.word?.dirty || !!opened?.info.dirty;
             const locked = x.read?.kind === "text" && !x.read.writable;
             // A workbook (xlsx, xlsm, xls, csv, tsv) shows as a grid; until it opens, its name says so.
             const grid = opened ? opened.info.layout === "grid" : isGrid(x.path);
             return (
               <div key={x.path} role="tab" aria-selected={on} className={`brp-tab fpn-tab no-drag ${on ? "on" : ""} ${dirty ? "dirty" : ""}`} title={x.rel ?? x.path} onClick={() => activate(s, x.path)}>
                 <span className="brp-tab-ic">
-                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : isPresentation(x.path) ? "doc" : "file"} />
+                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : isPresentation(x.path) || isWord(x.path) ? "doc" : "file"} />
                 </span>
                 <span className="brp-tab-t">{x.name}</span>
                 <button
@@ -166,7 +177,7 @@ function Tools({ s, tab }: { s: SessionFiles; tab: Tab | null }) {
   const st = useStore();
   const read = tab?.read;
   const doc = tab?.doc;
-  const presentation = tab?.presentation;
+  const presentation = tab?.presentation ?? tab?.word;
   const status = presentation
     ? !presentation.file.writable ? t("files.readOnly")
       : presentation.state === "saving" ? t("files.saving")
@@ -233,8 +244,16 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
       <PresentationView doc={tab.presentation} rpc={st.rpc} session={s.session} name={tab.name} />
     </Suspense>
   );
+  if (tab.word) return (
+    <Suspense fallback={<WordLoading name={tab.name} stage="reading" />}>
+      <WordView doc={tab.word} name={tab.name} path={tab.path} />
+    </Suspense>
+  );
+  // A .doc: the old binary format is not opened here (word-design §0); the card offers its own app.
+  if (isLegacyWord(tab.path)) return <Card tab={tab} text={t("word.legacy")} />;
   if (tab.error && !tab.doc) return <Card tab={tab} text={tab.error} />;
   if (tab.opened) return tab.opened.locked ? <Unlock s={s} tab={tab} /> : <Loading />;
+  if (!read && isWord(tab.path)) return <WordLoading name={tab.name} stage="reading" />;
   if (!read) return isPresentation(tab.path)
     ? <PresentationLoading name={tab.name} stage={tab.presentationProgress?.stage ?? "reading"}
         completed={tab.presentationProgress?.completed} total={tab.presentationProgress?.total}
@@ -290,6 +309,21 @@ function Note({ s, tab }: { s: SessionFiles; tab: Tab }) {
       <span>{tab.error ?? (conflict ? t("pptx.conflict") : t("files.failed", { message: pptx.message ?? "" }))}</span>
       {conflict && <button className="btn sm" onClick={() => void takePresentationDisk(s, tab)}>{t("files.takeDisk")}</button>}
       {pptx.state === "failed" && <button className="btn sm" onClick={() => void pptx.flush()}>{t("files.retry")}</button>}
+    </div>;
+  }
+  if (tab.word) {
+    const word = tab.word;
+    if (word.state === "conflict") return <div className="fpn-note warn" role="alert">
+      <Icon name="warn" />
+      <span>{t("word.conflict")}</span>
+      <button className="btn sm" onClick={() => void word.overwrite()}>{t("word.overwrite")}</button>
+      <button className="btn sm" onClick={() => void takeWordDisk(s, tab)}>{t("word.reload")}</button>
+    </div>;
+    if (word.state !== "failed" && word.state !== "refused" && !tab.error) return null;
+    return <div className="fpn-note warn" role="alert">
+      <Icon name="warn" />
+      <span>{tab.error ?? t("files.failed", { message: word.message ?? "" })}</span>
+      {word.state === "failed" && <button className="btn sm" onClick={() => void word.flush()}>{t("files.retry")}</button>}
     </div>;
   }
   if (!doc) return null;

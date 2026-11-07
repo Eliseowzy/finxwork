@@ -1475,6 +1475,607 @@
     }
   },
   {
+    "description": "Read a Word document (.docx) as it is now, unsaved edits included. Without `from`: the outline, one line a paragraph with its id, heading level and first words, and the counts of comments and tracked changes. With `from`: paragraphs in full (text with tracked changes applied, style, list, table cell), the comments anchored in them and the tracked changes in them, each with its number.",
+    "group": "word",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "docx_read",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "default": null,
+          "description": "How many paragraphs from `from`; default 20, at most 60.",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "docx": {
+          "description": "Path of the document (.docx).",
+          "type": "string"
+        },
+        "from": {
+          "default": null,
+          "description": "Read paragraphs in full from this paragraph id (from the outline or docx_find). Without it: the outline.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Find text in a Word document (.docx) as it is now: each match with its paragraph id and the words around it.",
+    "group": "word",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "docx_find",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "docx": {
+          "description": "Path of the document (.docx).",
+          "type": "string"
+        },
+        "query": {
+          "description": "Exact, case-sensitive text; a match lies within one paragraph.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx",
+        "query"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Look at a page of a Word document (.docx) as an image, unsaved edits included: its layout, tables, pictures and tracked changes as Word shows them. Needs the FinxWork desktop app when there are unsaved edits.",
+    "group": "word",
+    "kind": "read_only",
+    "loaded": false,
+    "name": "docx_view",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "docx": {
+          "description": "Path of the document (.docx).",
+          "type": "string"
+        },
+        "page": {
+          "description": "The page, from 1.",
+          "minimum": 1.0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "docx",
+        "page"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Change a Word document (.docx): replace, insert, delete or format words in a paragraph, insert or delete paragraphs, set a paragraph's style or alignment, add, reply to or resolve comments, insert or delete table rows and set a cell's text. Paragraphs are addressed by their id (docx_read, docx_find); `find` must occur exactly once in that paragraph. By default (mode suggest) text changes are tracked changes by FinxWork AI, already in the document the user sees, for them to accept or reject there. All edits are made at once, or none: a failing step is named with why. The file is not written until docx_save.",
+    "group": "word",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "docx_edit",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "docx": {
+          "description": "Path of the document (.docx).",
+          "type": "string"
+        },
+        "edits": {
+          "description": "The changes, made together as one step or not at all. At most 256.",
+          "items": {
+            "description": "One edit. Paragraphs are addressed by their id (from `outline`, `read` or `find`); `find` must occur exactly once in that paragraph's text as it reads now.",
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "find": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "replace_text"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  },
+                  "replace": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "find",
+                  "op",
+                  "paragraph",
+                  "replace"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "After `after` when given, otherwise at `at` (default the end).",
+                "properties": {
+                  "after": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "at": {
+                    "default": null,
+                    "description": "Which end of a paragraph `insert_text` writes at.",
+                    "enum": [
+                      "start",
+                      "end"
+                    ],
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "insert_text"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraph",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "find": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "delete_text"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "find",
+                  "op",
+                  "paragraph"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "The whole paragraph without `find`. `color` is hex (`FF0000`); `highlight` a Word highlight name or hex. `false` clears a flag.",
+                "properties": {
+                  "bold": {
+                    "default": null,
+                    "type": "boolean"
+                  },
+                  "color": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "find": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "highlight": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "italic": {
+                    "default": null,
+                    "type": "boolean"
+                  },
+                  "op": {
+                    "enum": [
+                      "format_text"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  },
+                  "strike": {
+                    "default": null,
+                    "type": "boolean"
+                  },
+                  "underline": {
+                    "default": null,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraph"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Exactly one of `after` and `before`.",
+                "properties": {
+                  "after": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "before": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "insert_paragraphs"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraphs": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "style": {
+                          "description": "A paragraph style id of the document; without one, the anchor paragraph's style.",
+                          "type": "string"
+                        },
+                        "text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraphs"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "delete_paragraph"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraph"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "set_paragraph_style"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  },
+                  "style": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraph",
+                  "style"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "align": {
+                    "enum": [
+                      "left",
+                      "center",
+                      "right",
+                      "justify"
+                    ],
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_alignment"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "align",
+                  "op",
+                  "paragraph"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "find": {
+                    "default": null,
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "add_comment"
+                    ],
+                    "type": "string"
+                  },
+                  "paragraph": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "paragraph",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "comment": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "reply_comment"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "comment",
+                  "op",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "comment": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "resolve_comment"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "comment",
+                  "op"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "One text per column of the row.",
+                "properties": {
+                  "cells": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "op": {
+                    "enum": [
+                      "insert_table_row"
+                    ],
+                    "type": "string"
+                  },
+                  "position": {
+                    "enum": [
+                      "before",
+                      "after"
+                    ],
+                    "type": "string"
+                  },
+                  "row_of": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cells",
+                  "op",
+                  "position",
+                  "row_of"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "op": {
+                    "enum": [
+                      "delete_table_row"
+                    ],
+                    "type": "string"
+                  },
+                  "row_of": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "op",
+                  "row_of"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "description": "Replaces the text of the cell holding `cell_of`; the cell keeps one paragraph.",
+                "properties": {
+                  "cell_of": {
+                    "type": "string"
+                  },
+                  "op": {
+                    "enum": [
+                      "set_cell_text"
+                    ],
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cell_of",
+                  "op",
+                  "text"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "mode": {
+          "default": "suggest",
+          "description": "`suggest` (default): as tracked changes by FinxWork AI, which the user accepts or rejects in the document. `direct`: straight into the text; only when the user asked for that.",
+          "oneOf": [
+            {
+              "description": "As Word revisions (`w:ins`/`w:del`, formatting as `w:rPrChange`) by the batch's author.",
+              "enum": [
+                "suggest"
+              ],
+              "type": "string"
+            },
+            {
+              "description": "Straight into the text.",
+              "enum": [
+                "direct"
+              ],
+              "type": "string"
+            }
+          ]
+        },
+        "note": {
+          "default": null,
+          "description": "What the changes do, in the user's words (\"润色第二段\"); shown with the step.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx",
+        "edits"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Accept or reject tracked changes in a Word document (.docx): those numbered, or all pending ones. Only when the user asks for it.",
+    "group": "word",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "docx_review",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "accept",
+            "reject"
+          ],
+          "type": "string"
+        },
+        "docx": {
+          "description": "Path of the document (.docx).",
+          "type": "string"
+        },
+        "ids": {
+          "default": null,
+          "description": "Tracked changes by their numbers (docx_read, docx_edit); every pending one when absent.",
+          "items": {
+            "minimum": 0.0,
+            "type": "integer"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "action",
+        "docx"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "Write a Word document's unsaved changes, yours and the user's, tracked changes included, to its file (or, with `path`, to another .docx). Needs the FinxWork desktop app.",
+    "group": "word",
+    "kind": "mutating",
+    "loaded": false,
+    "name": "docx_save",
+    "parameters": {
+      "additionalProperties": false,
+      "properties": {
+        "docx": {
+          "description": "Path of the document (.docx).",
+          "type": "string"
+        },
+        "force": {
+          "default": false,
+          "description": "Write over the file although it changed on disk since it was opened. Only when the user said so.",
+          "type": "boolean"
+        },
+        "path": {
+          "default": null,
+          "description": "Save as another .docx instead (absolute, or relative to the working directory).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "docx"
+      ],
+      "type": "object"
+    }
+  },
+  {
     "description": "See the agents in this session: each one's label, status, how long it has run, its recent steps, what it last said and how long ago it last did anything. Name agents, or leave it out for all. For diagnosing, not for waiting: a report comes when an agent is done.",
     "group": "agents",
     "kind": "read_only",

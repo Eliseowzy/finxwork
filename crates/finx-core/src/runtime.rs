@@ -244,6 +244,7 @@ pub fn kernel_deps(
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     })
 }

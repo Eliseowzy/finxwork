@@ -21,17 +21,18 @@ use crate::server::Server;
 /// Who opened which deck, to route notices: by deck, each session with its connection.
 pub(crate) type DeckWatchers = parking_lot::Mutex<HashMap<String, HashMap<String, ConnHandle>>>;
 
-fn rpc_error(e: DeckError) -> RpcError {
+pub(crate) fn rpc_error(e: DeckError) -> RpcError {
     match e {
         DeckError::NotFound(_) | DeckError::TooLarge(_) => RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string()),
         DeckError::NotOpen(_) | DeckError::Protocol(_) => RpcError::invalid_params(e),
         DeckError::Refused(_) | DeckError::NotUndoable(_) => RpcError::with_kind(error_code::DOC_REFUSED, "doc_refused", e.to_string()),
         DeckError::Conflict(_) | DeckError::Deleted(_) => RpcError::with_kind(error_code::DOC_CONFLICT, "doc_conflict", e.to_string()),
+        DeckError::Host(_) => RpcError::with_kind(error_code::DOC_UNAVAILABLE, "doc_unavailable", e.to_string()),
         DeckError::Worker(_) | DeckError::Io(_) => RpcError::internal(e.to_string()),
     }
 }
 
-fn decode(field: &str, data: &str) -> Result<Vec<u8>, RpcError> {
+pub(crate) fn decode(field: &str, data: &str) -> Result<Vec<u8>, RpcError> {
     B64.decode(data).map_err(|e| RpcError::invalid_params(format!("{field}: {e}")))
 }
 
@@ -45,6 +46,23 @@ fn changed(info: &DeckInfo, origin: DeckOrigin) -> DeckChangedParams {
         slide_ids: Vec::new(),
         conflict: info.conflict,
     }
+}
+
+/// Takes a closed connection out of `watchers`: the (entry, session) pairs it held.
+pub(crate) fn drop_conn(watchers: &DeckWatchers, conn: ConnId) -> Vec<(String, String)> {
+    let mut watchers = watchers.lock();
+    let mut gone = Vec::new();
+    for (deck, sessions) in watchers.iter_mut() {
+        sessions.retain(|session, c| {
+            let keep = c.id != conn;
+            if !keep {
+                gone.push((deck.clone(), session.clone()));
+            }
+            keep
+        });
+    }
+    watchers.retain(|_, s| !s.is_empty());
+    gone
 }
 
 impl Server {
@@ -83,21 +101,7 @@ impl Server {
     }
 
     pub(crate) fn forget_deck_watcher(&self, conn: ConnId) {
-        let gone: Vec<(String, String)> = {
-            let mut watchers = self.0.deck_watchers.lock();
-            let mut gone = Vec::new();
-            for (deck, sessions) in watchers.iter_mut() {
-                sessions.retain(|session, c| {
-                    let keep = c.id != conn;
-                    if !keep {
-                        gone.push((deck.clone(), session.clone()));
-                    }
-                    keep
-                });
-            }
-            watchers.retain(|_, s| !s.is_empty());
-            gone
-        };
+        let gone = drop_conn(&self.0.deck_watchers, conn);
         let decks = self.0.decks.clone();
         tokio::spawn(async move {
             for (deck, session) in gone {

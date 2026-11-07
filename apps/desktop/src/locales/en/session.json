@@ -474,7 +474,9 @@
     "lockedTitle": "Password Required",
     "showPassword": "Show Password",
     "hidePassword": "Hide Password",
-    "citeLocked": "“{{name}}” is password-protected: open it to enter the password"
+    "citeLocked": "“{{name}}” is password-protected: open it to enter the password",
+    "paragraphs_one": "{{count}} paragraph",
+    "paragraphs_other": "{{count}} paragraphs"
   },
   "content": {
     "open": "Open",
@@ -830,11 +832,66 @@
       "moreColors": "More Colors…"
     }
   },
+  "word": {
+    "editor": "Word document editor",
+    "loadFailed": "Could not open the Word document: {{message}}",
+    "loadingTitle": "Opening the Word document",
+    "progress": {
+      "reading": "Reading the file…",
+      "fonts": "Preparing the text…",
+      "rendering": "Almost there…"
+    },
+    "readOnly": "This file is read-only. Save a copy to edit it.",
+    "highlighterPen": "Highlighter (drag over text to highlight, Esc to stop)",
+    "fitWidth": "Fit to width",
+    "saveAs": "Save As…",
+    "savedAs": "Saved a copy to {{path}}",
+    "conflict": "The file was changed outside FinxWork",
+    "overwrite": "Overwrite",
+    "reload": "Reload",
+    "legacy": "This is the old Word format. FinxWork supports only .docx."
+  },
   "deckEdit": {
     "show": "Show slide {{n}}",
     "open": "Open the presentation",
     "undo": "Undo",
     "undone": "Undone",
     "failed": "Not undone: {{message}}"
+  },
+  "wordAi": {
+    "open": "Ask AI about the selection",
+    "placeholder": "Ask AI to rewrite or write something…",
+    "quote": "Quote in conversation",
+    "message": "In “{{file}}”: {{what}}",
+    "commentMessage": "In “{{file}}”, a comment: {{question}}",
+    "working": "AI is working…",
+    "stop": "Stop",
+    "failed": "AI could not finish: {{message}}",
+    "unknown": "unknown error",
+    "acceptAll": "Accept all",
+    "rejectAll": "Reject all",
+    "close": "Close",
+    "result_one": "{{count}} change by AI",
+    "result_other": "{{count}} changes by AI",
+    "action": {
+      "polish": "Polish",
+      "concise": "More concise",
+      "formal": "More formal",
+      "expand": "Expand",
+      "continue": "Continue writing",
+      "toChinese": "Translate to Chinese",
+      "toEnglish": "Translate to English",
+      "proofread": "Fix spelling and grammar",
+      "summarize": "Summarize as a comment",
+      "custom": "Custom…"
+    }
+  },
+  "docxEdit": {
+    "show": "Show the change",
+    "acceptAll": "Accept all",
+    "rejectAll": "Reject all",
+    "accepted": "Accepted",
+    "rejected": "Rejected",
+    "failed": "Failed: {{message}}"
   }
 }
