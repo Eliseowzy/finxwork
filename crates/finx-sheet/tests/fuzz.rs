@@ -14,6 +14,8 @@ use finx_sheet::Error;
 use finx_sheet::NewValue;
 use finx_sheet::Options;
 use finx_sheet::cellref::CellRef;
+use finx_sheet::cellref::MAX_COL;
+use finx_sheet::cellref::MAX_ROW;
 use finx_sheet::cellref::col_name;
 use finx_sheet::package::Package;
 use finx_sheet::package::SheetKind;
@@ -142,9 +144,10 @@ fn edits(rng: &mut Rng, sheets: &[(String, SheetIndex)]) -> Vec<CellEdit> {
             let at = match rng.below(10) {
                 0..=2 if !formulas.is_empty() => *rng.pick(&formulas),
                 0..=4 if !cells.is_empty() => *rng.pick(&cells),
+                // A little past the used range, but on the grid: a sheet may reach XFD1048576.
                 5..=8 => CellRef::new(
-                    1 + rng.below(max.row as u64 + 5) as u32,
-                    1 + rng.below(max.col as u64 + 3) as u32,
+                    (1 + rng.below(max.row as u64 + 5) as u32).min(MAX_ROW),
+                    (1 + rng.below(max.col as u64 + 3) as u32).min(MAX_COL),
                 ),
                 _ => CellRef::new(1 + rng.below(3000) as u32, 1 + rng.below(40) as u32),
             };
@@ -193,6 +196,14 @@ fn files() -> Vec<PathBuf> {
     out
 }
 
+/// FNV-1a of the file name: each file gets its own edits, the same ones in any checkout.
+fn name_hash(path: &Path) -> u64 {
+    let name = path.file_name().unwrap_or_default().as_encoded_bytes();
+    name.iter().fold(0xCBF29CE484222325, |h, b| {
+        (h ^ *b as u64).wrapping_mul(0x100000001B3)
+    })
+}
+
 #[test]
 fn random_edits_never_break_a_file() {
     let iters: u64 = std::env::var("FINX_SHEET_FUZZ_ITERS")
@@ -212,8 +223,7 @@ fn random_edits_never_break_a_file() {
         let Some(sheets) = worksheets(&data) else {
             continue;
         };
-        let mut rng =
-            Rng(seed.wrapping_mul(0x9E3779B97F4A7C15) ^ path.as_os_str().len() as u64 | 1);
+        let mut rng = Rng(seed.wrapping_mul(0x9E3779B97F4A7C15) ^ name_hash(&path) | 1);
         for _ in 0..iters {
             let edits = edits(&mut rng, &sheets);
             match finx_sheet::write(&data, &edits, &Options::default()) {

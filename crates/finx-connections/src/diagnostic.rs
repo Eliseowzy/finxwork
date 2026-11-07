@@ -3,8 +3,12 @@ use crate::Result;
 use finx_llm::{ErrorKind, LlmError};
 use finx_protocol::api::ConnectionDiagnostic;
 
+/// Boxed so `Result<T, ConnectionError>` stays one pointer wide on the happy path.
 #[derive(Clone, Debug)]
-pub struct ConnectionError {
+pub struct ConnectionError(Box<ConnectionErrorDetail>);
+
+#[derive(Clone, Debug)]
+pub struct ConnectionErrorDetail {
     pub code: String,
     pub message: String,
     pub stage: String,
@@ -12,6 +16,17 @@ pub struct ConnectionError {
     pub action: String,
     pub http_status: Option<u16>,
     pub field: Option<String>,
+}
+impl std::ops::Deref for ConnectionError {
+    type Target = ConnectionErrorDetail;
+    fn deref(&self) -> &ConnectionErrorDetail {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for ConnectionError {
+    fn deref_mut(&mut self) -> &mut ConnectionErrorDetail {
+        &mut self.0
+    }
 }
 impl ConnectionError {
     pub fn new(code: &str, message: &str) -> Self {
@@ -32,7 +47,7 @@ impl ConnectionError {
             _ if retryable => "retry",
             _ => "check_details",
         };
-        Self {
+        Self(Box::new(ConnectionErrorDetail {
             code: code.into(),
             message: message.into(),
             stage: "connection".into(),
@@ -40,7 +55,10 @@ impl ConnectionError {
             action: action.into(),
             http_status: None,
             field: None,
-        }
+        }))
+    }
+    pub fn into_message(self) -> String {
+        self.0.message
     }
     pub fn at(mut self, stage: &str) -> Self {
         self.stage = stage.into();

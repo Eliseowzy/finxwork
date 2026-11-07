@@ -110,6 +110,7 @@ pub fn to_output(result: CallToolResult, ctx: &ToolCtx, server: &str, tool: &str
         content,
         details: Some(json!({ "server": server, "tool": tool })),
         is_error: result.is_error,
+        ends_task: false,
     }
 }
 

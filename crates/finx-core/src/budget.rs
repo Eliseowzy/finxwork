@@ -463,10 +463,10 @@ mod tests {
     use finx_llm::UserMessage;
 
     fn model(id: &str) -> Model {
-        let mut model = (*finx_llm::api::scripted::ScriptedApi::provider().models[0]).clone();
+        let mut model = finx_llm::api::scripted::ScriptedApi::model();
         model.id = id.into();
         model.context_window = 10_000;
-        model.max_output_tokens = 1_000;
+        model.max_output_tokens = Some(1_000);
         model
     }
 

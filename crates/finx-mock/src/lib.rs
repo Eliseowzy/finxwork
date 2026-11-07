@@ -34,18 +34,36 @@
 //! | `mcp_direct:SERVER:PROJECT` | a direct call of `mcp__SERVER__vault_reveal_code`, then `mcp done: <its result>` |
 //! | `sheet:PATH` | a workbook session through `call_tool`: `doc_open` PATH, `doc_read` the inputs, `sheet_calc` WACC at 9%, `doc_edit` it, `sheet_trace` what reads it, `doc_save`; then `sheet done` |
 //! | `mcp_env:SERVER:VAR` | `call_tool` on `mcp__SERVER__env` for VAR (the server's environment), then `mcp done: <its result>` |
+//! | `send[:TEXT]` | a bot's `send_to_user` of TEXT (else the prompt) with `end_turn` |
+//! | `attach:PATH[,PATH…]` | a bot's `send_to_user` of those files with `end_turn` |
+//! | `ask:QUESTION\|A\|B…` | a bot's `send_to_user` of that question and its answers |
+//! | `relay[:LABEL]` | a bot's `spawn_agent` (described LABEL) with "在查了。" sent and `end_turn`; when the report wakes it, `查到了：<the report>` sent with `end_turn` |
+//! | `web_search:QUERY[\|allowed=A,B][\|blocked=C][\|recency=week]` | `tool_search` for the search tool, `call_tool` on `web_search`, then `search done: <its result>` |
+//! | `confirm[:CMD]` | a bot's "要执行命令，确认一下。" sent with a bash call running CMD in the same reply, then `做完了：<its result>` sent with `end_turn` |
+//! | `relay_slow:SECONDS` | a bot's opening line and a `spawn_agent` (named `writer`) that runs `sleep SECONDS`, a private line that ends the turn, then `回复：<the latest message>` sent with `end_turn` for whatever comes next, its report too |
+//! | `relay_told:SECONDS` | a bot's opening line and a `spawn_agent` (named `sales`) that runs `told`, a private line, then `send_to_user` of each thing that wakes it |
+//! | `told:SECONDS:TEXT` | a bot's sub-agent: `send_to_user` of TEXT, `sleep SECONDS`, then its report |
+//! | `check` | `tool_search`, `call_tool` on `list_agents`, its result sent with `end_turn`, then as `relay_slow` |
+//! | `stop_all` | the same with `stop_agents` and `all`, ahead of any message |
+//! | `relay_note:SECONDS` | as `relay_slow`, with a sub-agent that runs `note:SECONDS:3 月的数据整月缺失。` |
+//! | `note_session:SECONDS` | the same in a session: `spawn_agent`, `交给子智能体了。`, then `回复：<the latest message>` for whatever comes next |
+//! | `note:SECONDS:TEXT` | half a second later, a sub-agent's `send_message` of TEXT to `main`, then a bash call running `sleep SECONDS`, then `写完了。` |
+//! | `routine:NAME\|SCHEDULE\|RUN` | a bot's `manage_routine` create, with RUN as the routine's prompt in brackets (`[[mock:RUN]]`); then, for its result and for each report that wakes it, `转告：<the text>` sent with `end_turn` |
+//! | `say:TEXT` | TEXT, as it is |
 //!
 //! [`MockOptions`] adds a gateway's latency: a pause before the first chunk of every reply
 //! and between chunks.
 
 pub mod mcp;
 pub mod mcp_auth;
+pub mod search;
 pub mod simulation;
 
 use parking_lot::Mutex;
 use serde_json::Value;
 use serde_json::json;
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -64,6 +82,10 @@ pub const MODEL_ID: &str = "mock-1";
 /// A key the mock's model list refuses (401), for key checks.
 pub const REJECTED_KEY: &str = "sk-rejected";
 
+/// What a list under a path with `/bailian/` answers: part of the real plan's list, dated builds,
+/// a routing name and models that do not chat included.
+const BAILIAN_PLAN_MODELS: &[&str] = &["qwen3.8-max", "qwen3.7-max", "glm-5.3", "deepseek-v4.1-flash-1017", "wan2.7-image", "auto"];
+
 #[derive(Default)]
 pub struct Stats {
     pub requests: AtomicU64,
@@ -81,6 +103,8 @@ pub struct Stats {
     pub model_lists: AtomicU64,
     /// Requests for the public model catalog (`/catalog/api.json`).
     pub catalog_fetches: AtomicU64,
+    /// What the latest chat requests asked for, all but their messages and tools.
+    chat_controls: Mutex<VecDeque<Value>>,
 }
 
 impl Stats {
@@ -94,7 +118,27 @@ impl Stats {
     pub fn churn_bodies(&self) -> Vec<u32> {
         self.churn_bodies.lock().clone()
     }
+
+    /// What the latest chat requests asked for, oldest first: their fields, all but the messages
+    /// and tools, for tests of what reaches a provider.
+    pub fn chat_controls(&self) -> Vec<Value> {
+        self.chat_controls.lock().iter().cloned().collect()
+    }
+
+    fn record_controls(&self, request: &Value) {
+        let Some(fields) = request.as_object() else { return };
+        let controls: serde_json::Map<String, Value> =
+            fields.iter().filter(|(k, _)| !matches!(k.as_str(), "messages" | "tools")).map(|(k, v)| (k.clone(), v.clone())).collect();
+        let mut recorded = self.chat_controls.lock();
+        if recorded.len() == CONTROLS_KEPT {
+            recorded.pop_front();
+        }
+        recorded.push_back(Value::Object(controls));
+    }
 }
+
+/// How many requests' controls are remembered; long simulations should not grow with them.
+const CONTROLS_KEPT: usize = 256;
 
 /// Latency of the simulated gateway.
 #[derive(Clone, Copy, Debug, Default)]
@@ -111,6 +155,7 @@ struct Shared {
     next_call: AtomicU64,
     /// Prompts of the `retry` scenario that already got their failure.
     retried: Mutex<HashMap<String, u32>>,
+    search: search::SearchState,
 }
 
 pub struct MockServer {
@@ -137,6 +182,7 @@ impl MockServer {
             stats: Stats::default(),
             next_call: AtomicU64::new(1),
             retried: Mutex::new(HashMap::new()),
+            search: search::SearchState::default(),
         });
         let accept_shared = shared.clone();
         let accept = tokio::spawn(async move {
@@ -163,7 +209,23 @@ impl MockServer {
         &self.shared.stats
     }
 
-    /// A public model catalog in the upstream format, naming every built-in `catalog_id`.
+    /// `[web_search.endpoints]` pointing every search service but DeepSeek at this server; DeepSeek
+    /// is asked at its model account's address, which a test points here too.
+    pub fn search_endpoints_toml(&self) -> String {
+        search::endpoints_toml(self.addr)
+    }
+
+    /// From now on `service` answers every search with this status; 0 ends that.
+    pub fn fail_search(&self, service: &str, status: u16) {
+        self.shared.search.fail(service, status);
+    }
+
+    /// The searches so far, oldest first.
+    pub fn search_calls(&self) -> Vec<search::SearchCall> {
+        self.shared.search.calls()
+    }
+
+    /// A public model catalog in the upstream format.
     pub fn catalog_url(&self) -> String {
         format!("http://{}/catalog/api.json", self.addr)
     }
@@ -197,10 +259,13 @@ impl Drop for MockServer {
 }
 
 struct Request {
+    method: String,
     path: String,
     body: Vec<u8>,
     close: bool,
     authorization: Option<String>,
+    /// `X-Subscription-Token` or `X-Api-Key`.
+    token: Option<String>,
 }
 
 async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
@@ -210,7 +275,9 @@ async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
             Ok(Some(request)) => request,
             _ => return,
         };
-        let ok = if request.path.ends_with("/chat/completions") {
+        let ok = if let Some((status, body)) = search::answer(&shared.search, &request) {
+            write_json(&mut stream, status, &body).await
+        } else if request.path.ends_with("/chat/completions") {
             respond_chat(&mut stream, &request.body, &shared).await
         } else if request.path == "/catalog/api.json" {
             shared.stats.catalog_fetches.fetch_add(1, Ordering::Relaxed);
@@ -220,7 +287,8 @@ async fn serve_connection(mut stream: TcpStream, shared: Arc<Shared>) {
             if request.authorization.as_deref() == Some(&format!("Bearer {REJECTED_KEY}")) {
                 write_json(&mut stream, 401, &json!({"error": {"message": "Authentication Fails, Your api key is invalid"}})).await
             } else {
-                let data = json!([{"id": MODEL_ID, "object": "model"}, {"id": "mock-2", "object": "model"}, {"id": "deepseek-flash", "object": "model"}]);
+                let ids: &[&str] = if request.path.contains("/bailian/") { BAILIAN_PLAN_MODELS } else { &[MODEL_ID, "mock-2", "deepseek-flash"] };
+                let data: Vec<Value> = ids.iter().map(|id| json!({"id": id, "object": "model"})).collect();
                 write_json(&mut stream, 200, &json!({"object": "list", "data": data})).await
             }
         } else {
@@ -247,10 +315,12 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
     let head = String::from_utf8_lossy(&buf[..header_end]).into_owned();
     let mut lines = head.split("\r\n");
     let request_line = lines.next().unwrap_or("");
+    let method = request_line.split(' ').next().unwrap_or("GET").to_string();
     let path = request_line.split(' ').nth(1).unwrap_or("/").to_string();
     let mut length = 0usize;
     let mut close = false;
     let mut authorization = None;
+    let mut token = None;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else { continue };
         let value = value.trim();
@@ -258,6 +328,7 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
             "content-length" => length = value.parse().unwrap_or(0),
             "connection" => close = value.eq_ignore_ascii_case("close"),
             "authorization" => authorization = Some(value.to_string()),
+            "x-subscription-token" | "x-api-key" => token = Some(value.to_string()),
             _ => {}
         }
     }
@@ -272,11 +343,12 @@ async fn read_request(stream: &mut TcpStream, buf: &mut Vec<u8>) -> io::Result<O
     }
     let body = buf[body_start..body_start + length].to_vec();
     buf.drain(..body_start + length);
-    Ok(Some(Request { path, body, close, authorization }))
+    Ok(Some(Request { method, path, body, close, authorization, token }))
 }
 
 /// The catalog the mock serves: DeepSeek's flash with a window no real catalog has, so a test
-/// can tell it was taken; the other built-in catalog ids empty.
+/// can tell it was taken; some other built-in catalog ids empty, the rest missing, which costs
+/// only those.
 fn catalog() -> Value {
     let mut root = serde_json::Map::new();
     for id in ["alibaba-cn", "anthropic", "moonshotai-cn", "openai", "openrouter", "zhipuai"] {
@@ -408,6 +480,40 @@ fn directive(messages: &[Value]) -> (String, String, String, usize) {
     ("text".to_string(), String::new(), String::new(), step)
 }
 
+/// What `send` replies to the user messages after the last assistant message: each one's
+/// argument, else its prompt.
+fn unanswered_sends(messages: &[Value]) -> Vec<String> {
+    let from = messages
+        .iter()
+        .rposition(|m| m.get("role").and_then(Value::as_str) == Some("assistant"))
+        .map_or(0, |i| i + 1);
+    let texts: Vec<String> = messages[from..]
+        .iter()
+        .filter(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+        .filter_map(|m| {
+            let text = content_text(m);
+            let start = text.find("[[mock:send")?;
+            let len = text[start..].find("]]")?;
+            let arg = text[start + 7..start + len].strip_prefix("send").unwrap_or("").trim_start_matches(':');
+            let prompt = format!("{}{}", &text[..start], &text[start + len + 2..]).trim().to_string();
+            Some(if arg.is_empty() { prompt } else { arg.to_string() })
+        })
+        .collect();
+    if texts.is_empty() { vec!["send done".to_string()] } else { texts }
+}
+
+/// The text of the latest user message, past the word that follows a bot's owner's: a report,
+/// after a bot's sub-agent finished.
+fn last_user_text(messages: &[Value]) -> String {
+    messages
+        .iter()
+        .rev()
+        .filter(|m| m.get("role").and_then(Value::as_str) == Some("user"))
+        .map(content_text)
+        .find(|text| !text.starts_with("<reminder>"))
+        .unwrap_or_default()
+}
+
 /// The text of the latest tool result.
 fn last_tool_result(messages: &[Value]) -> String {
     messages
@@ -416,6 +522,11 @@ fn last_tool_result(messages: &[Value]) -> String {
         .find(|m| m.get("role").and_then(Value::as_str) == Some("tool"))
         .map(content_text)
         .unwrap_or_default()
+}
+
+/// A bot's whole answer to the latest message, a report or the owner's.
+fn answer_latest(messages: &[Value]) -> Step {
+    Step::calls(vec![("send_to_user", json!({ "text": format!("回复：{}", last_user_text(messages)), "end_turn": true }))])
 }
 
 fn now_us() -> u128 {
@@ -534,7 +645,201 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("mcp done: {}", last_tool_result(messages)))),
             }
         }
+        "web_search" => match step {
+            0 => Plan::Step(Step::calls(vec![("tool_search", json!({ "query": "web search" }))])),
+            1 => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": "web_search", "arguments": search::call_arguments(arg) }))])),
+            _ => Plan::Step(Step::text(format!("search done: {}", last_tool_result(messages)))),
+        },
         "fail" => Plan::Status(400, "mock rejects this request"),
+        "send" => match step {
+            0 => {
+                // Every message since the bot last replied gets its own, as a bot answers a
+                // burst; the last ends the turn.
+                let texts = unanswered_sends(messages);
+                let last = texts.len() - 1;
+                Plan::Step(Step::calls(
+                    texts
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, text)| ("send_to_user", json!({ "text": text, "end_turn": i == last })))
+                        .collect(),
+                ))
+            }
+            _ => done("send"),
+        },
+        "attach" => match step {
+            0 => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({
+                    "type": "attachment",
+                    "files": arg.split(',').map(|path| json!({ "path": path })).collect::<Vec<_>>(),
+                    "end_turn": true,
+                }),
+            )])),
+            _ => done("attach"),
+        },
+        "ask" => match step {
+            0 => {
+                let mut parts = arg.split('|');
+                let question = parts.next().unwrap_or_default();
+                let options: Vec<_> = parts.map(|label| json!({ "label": label })).collect();
+                Plan::Step(Step::calls(vec![("send_to_user", json!({ "type": "question", "text": question, "options": options }))]))
+            }
+            _ => done("ask"),
+        },
+        // Commands for sub-agents, one each, which the user may have to approve.
+        "delegate" => match step {
+            0 => Plan::Step(Step::calls(delegated(arg))),
+            1 => Plan::Step(Step::text("交给子智能体了。".to_string())),
+            _ => done("delegate"),
+        },
+        // The same for a bot.
+        "relay_run" => match step {
+            0 => {
+                let mut calls = delegated(arg);
+                calls.push(("send_to_user", json!({ "text": "交给子智能体了。", "end_turn": true })));
+                Plan::Step(Step::calls(calls))
+            }
+            _ => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({ "text": format!("做完了：{}", last_user_text(messages)), "end_turn": true }),
+            )])),
+        },
+        "relay" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                (
+                    "spawn_agent",
+                    json!({ "description": if arg.is_empty() { "查资料" } else { arg }, "task": "Look it up and report." }),
+                ),
+                ("send_to_user", json!({ "text": "在查了。", "end_turn": true })),
+            ])),
+            _ => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({ "text": format!("查到了：{}", last_user_text(messages)), "end_turn": true }),
+            )])),
+        },
+        // Long work handed over, and the bot goes on talking (bot-turn-design §3).
+        "relay_slow" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，这个要一会儿，写好发你。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "写长文", "task": format!("[[mock:bash:sleep {arg}]] Write it and report."), "name": "writer" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
+        // The same with a sub-agent that speaks up on the way (agent-messaging-design §3.1).
+        "relay_note" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，我先把数据汇总出来。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "汇总销售数据", "task": format!("[[mock:note:{arg}:3 月的数据整月缺失。]] Sum it and report."), "name": "sales" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
+        // A sub-agent that tells the owner itself, with the bot asleep meanwhile (§17).
+        "relay_told" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "好，我先把数据汇总出来。" })),
+                (
+                    "spawn_agent",
+                    json!({ "description": "汇总销售数据", "task": format!("[[mock:told:{arg}:3 月的数据整月缺失，我先按其余 11 个月做。]] Sum it and report."), "name": "sales" }),
+                ),
+            ])),
+            1 => Plan::Step(Step::text("It is at work; its report will wake me.".to_string())),
+            _ => Plan::Step(answer_latest(messages)),
+        },
+        "note_session" => match step {
+            0 => Plan::Step(Step::calls(vec![(
+                "spawn_agent",
+                json!({ "description": "汇总销售数据", "task": format!("[[mock:note:{arg}:3 月的数据整月缺失。]] Sum it and report."), "name": "sales" }),
+            )])),
+            1 => Plan::Step(Step::text("交给子智能体了。".to_string())),
+            _ => Plan::Step(Step::text(format!("回复：{}", last_user_text(messages)))),
+        },
+        "note" => {
+            let (seconds, text) = arg.split_once(':').unwrap_or((arg, "something came up"));
+            match step {
+                // By then the bot has ended its turn.
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(500),
+                    ..Step::calls(vec![("send_message", json!({ "to": "main", "message": text }))])
+                }),
+                1 => Plan::Step(Step::calls(vec![("bash", json!({ "command": format!("sleep {seconds}") }))])),
+                _ => Plan::Step(Step::text("写完了。".to_string())),
+            }
+        }
+        "told" => {
+            let (seconds, text) = arg.split_once(':').unwrap_or((arg, "有新进展。"));
+            match step {
+                // By then the bot has ended its turn.
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(500),
+                    ..Step::calls(vec![("send_to_user", json!({ "text": text }))])
+                }),
+                1 => Plan::Step(Step::calls(vec![("bash", json!({ "command": format!("sleep {seconds}") }))])),
+                _ => Plan::Step(Step::text("写完了。".to_string())),
+            }
+        }
+        // Asked how the agents stand, or to stop them: the tools are deferred (bot-turn-design §5.3).
+        "check" | "stop_all" => {
+            let (tool, arguments) = if name == "check" { ("list_agents", json!({})) } else { ("stop_agents", json!({ "all": true })) };
+            match step {
+                0 => Plan::Step(Step::calls(vec![("tool_search", json!({ "query": tool }))])),
+                1 => Plan::Step(Step::calls(vec![("call_tool", json!({ "name": tool, "arguments": arguments }))])),
+                2 => Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": last_tool_result(messages), "end_turn": true }))])),
+                _ => Plan::Step(answer_latest(messages)),
+            }
+        }
+        // A bot that answers in plain text, which the user never sees, and sends once reminded
+        // (bot-design §3.11). It takes long enough for a next message to come meanwhile.
+        "quiet" => {
+            let answer = if arg.is_empty() { prompt } else { arg };
+            match step {
+                0 => Plan::Step(Step {
+                    delay: Duration::from_millis(200),
+                    ..Step::text(answer.to_string())
+                }),
+                _ if last_user_text(messages).contains("<reply_reminder>") => {
+                    Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": answer, "end_turn": true }))]))
+                }
+                _ => done("quiet"),
+            }
+        }
+        "say" => Plan::Step(Step::text(arg.to_string())),
+        // A bot that makes a routine, then passes on what comes back (routine-design §2.3).
+        "routine" => match step {
+            0 => {
+                let mut parts = arg.splitn(3, '|');
+                let (name, schedule, run) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""), parts.next().unwrap_or(""));
+                Plan::Step(Step::calls(vec![(
+                    "manage_routine",
+                    json!({ "action": "create", "name": name, "prompt": format!("[[mock:{run}]]"), "schedule": schedule, "when": "说好的时间" }),
+                )]))
+            }
+            _ => {
+                // What came last, but for what the kernel adds to keep the model up to date.
+                let text = messages.iter().rev().map(content_text).find(|text| !text.starts_with("<environment_update>")).unwrap_or_default();
+                Plan::Step(Step::calls(vec![("send_to_user", json!({ "text": format!("转告：{text}"), "end_turn": true }))]))
+            }
+        },
+        // A bot that never sends, reminded or not (bot-design §3.11).
+        "mute" => Plan::Step(Step::text("写了字，没有发。".to_string())),
+        "confirm" => match step {
+            0 => Plan::Step(Step::calls(vec![
+                ("send_to_user", json!({ "text": "要执行命令，确认一下。" })),
+                ("bash", json!({ "command": if arg.is_empty() { "touch confirmed.txt" } else { arg } })),
+            ])),
+            _ => Plan::Step(Step::calls(vec![(
+                "send_to_user",
+                json!({ "text": format!("做完了：{}", last_tool_result(messages)), "end_turn": true }),
+            )])),
+        },
         "agent" => agent_step(arg, step),
         "fanout" => {
             let (count, label) = arg.split_once(':').unwrap_or((arg, "fan"));
@@ -582,6 +887,41 @@ fn plan(shared: &Shared, messages: &[Value], name: &str, arg: &str, prompt: &str
                 _ => Plan::Step(Step::text(format!("browsers done: {}", last_tool_result(messages)))),
             }
         }
+        // The user's own browser: a page opened there, its tabs, what a tab shows, and handing
+        // the page to the user (browser-design §8.4.7).
+        "yours" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim(), "browser": "yours"}))])),
+            _ => Plan::Step(Step::text(format!("yours opened: {}", last_tool_result(messages)))),
+        },
+        "yours_tabs" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_tabs", json!({}))])),
+            _ => Plan::Step(Step::text(format!("yours tabs: {}", last_tool_result(messages)))),
+        },
+        "yours_read" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_snapshot", json!({"tab": arg.trim()}))])),
+            _ => Plan::Step(Step::text(format!("yours read: {}", last_tool_result(messages)))),
+        },
+        // A sub-agent opens a page there, and reports.
+        "yours_agent" => match step {
+            0 => {
+                let task = format!("[[mock:yours:{}]] open it", arg.trim());
+                Plan::Step(Step::calls(vec![("spawn_agent", json!({"description": "打开页面", "task": task, "name": "opener", "wait": true}))]))
+            }
+            _ => Plan::Step(Step::text(format!("agent done: {}", last_tool_result(messages)))),
+        },
+        // Reads the first tab there, then keeps it in use for this many milliseconds.
+        "yours_hold" => match step {
+            0 => Plan::Step(Step::calls(vec![("browser_snapshot", json!({"tab": "y1"}))])),
+            _ => Plan::Step(Step {
+                parts: vec![Part::Text("held".into())],
+                finish: "stop",
+                delay: Duration::from_millis(arg.trim().parse().unwrap_or(1000)),
+            }),
+        },
+        "handoff" => match step {
+            0 => Plan::Step(Step::calls(vec![("call_tool", json!({"name": "browser_wait", "arguments": {"user": arg.trim()}}))])),
+            _ => Plan::Step(Step::text(format!("handoff done: {}", last_tool_result(messages)))),
+        },
         // A page opened without naming a browser: where the user's default sends it.
         "default_browser" => match step {
             0 => Plan::Step(Step::calls(vec![("browser_navigate", json!({"url": arg.trim()}))])),
@@ -697,6 +1037,18 @@ fn skill_actions(body: &str, dir: &str) -> Vec<(&'static str, Value)> {
 /// (`notes/LABEL.md`, so that tasks sharing a workspace do not collide) written, read back and
 /// edited, a command with about 9 KB of output, and a 3000-character
 /// summary. The workspace needs `src/lib.rs` and `README.md`.
+/// `spawn_agent` calls for the `|`-separated commands: each runs one and reports.
+fn delegated(commands: &str) -> Vec<(&'static str, Value)> {
+    commands
+        .split('|')
+        .enumerate()
+        .map(|(i, command)| {
+            let task = format!("[[mock:bash:{command}]] Run it and report.");
+            ("spawn_agent", json!({ "description": format!("运行 {command}"), "task": task, "name": format!("runner-{i}") }))
+        })
+        .collect()
+}
+
 fn agent_step(label: &str, step: usize) -> Plan {
     let call = |name: &str, args: Value| Part::Call {
         name: name.to_string(),
@@ -884,6 +1236,19 @@ fn churn_step(seed: u64, k: usize) -> Step {
     }
 }
 
+/// `finx models check` offers a tool of its own and can put no directive in its words.
+fn check_plan(request: &Value, messages: &[Value]) -> Option<Plan> {
+    let tools = request.get("tools")?.as_array()?;
+    tools.iter().find(|tool| tool["function"]["name"] == "check_echo")?;
+    if messages.last().is_some_and(|m| m.get("role").and_then(Value::as_str) == Some("tool")) {
+        return Some(Plan::Step(Step::text("ping")));
+    }
+    let text = messages.last().map(content_text).unwrap_or_default();
+    let echo = |text: &str| ("check_echo", json!({"text": text}));
+    let calls = if text.contains("twice") { vec![echo("a"), echo("b")] } else { vec![echo("ping")] };
+    Some(Plan::Step(Step::calls(calls)))
+}
+
 async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> io::Result<()> {
     shared.stats.requests.fetch_add(1, Ordering::Relaxed);
     shared.stats.request_bytes.fetch_add(body.len() as u64, Ordering::Relaxed);
@@ -896,9 +1261,13 @@ async fn respond_chat(stream: &mut TcpStream, body: &[u8], shared: &Shared) -> i
                 Ok(v) => v,
                 Err(_) => return write_json(stream, 400, &json!({"error": {"message": "invalid JSON"}})).await,
             };
+            shared.stats.record_controls(&request);
             let messages = request.get("messages").and_then(Value::as_array).map(Vec::as_slice).unwrap_or_default();
             let (name, arg, prompt, step) = directive(messages);
-            let plan = plan(shared, messages, &name, &arg, &prompt, step);
+            let plan = match check_plan(&request, messages) {
+                Some(plan) => plan,
+                None => plan(shared, messages, &name, &arg, &prompt, step),
+            };
             (name, plan)
         }
     };

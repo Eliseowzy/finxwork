@@ -2,20 +2,23 @@ import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, Menu, nativeImage
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
+import type { PagePreviewRect, BrowserMenuAction, BrowserPanel, BrowserTabCommand, Command, DesktopApp, DesktopControlStatus, DesktopPermission, EditorInfo, MenuItem, MenuState, PastedItem, PickedFile, Preferences } from "../shared/bridge";
 import { i18n } from "../shared/i18n";
 import { claimHomeBrowser, currentTabs, openBrowser, openURL, setPanel, showTab, tabCommand } from "./browser/pages";
-import { devServers } from "./browser/devservers";
-import { openSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { closePagePreview, openPagePreview, placePagePreview } from "./browser/pagePreview";
+import { devServers, stopDevServer } from "./browser/devservers";
+import { diagnoseSystemBrowser, openSystemBrowser, openSystemBrowserQuietly, refreshSystemBrowser, revealExtension, setUpSystemBrowser, systemBrowserIcon, systemBrowsers } from "./browser/system";
+import { notifier, openNotificationSettings, screenLocked, takeOpenTarget, testNotification } from "./notify";
 import { tabMenuAction, tabMenuState } from "./browser/menu";
 import { bundleIdOf, desktopProgramVersion, findApp, locateDesktopProgram } from "./desktop";
 import { editors, opensFolders } from "./editors";
-import { openExternal, openFile, openFolder, openTerminal, pathInfo, reveal } from "./files";
+import { openExternal, openFile, openFolder, openTerminal, pageOfFile, pathInfo, reveal } from "./files";
 import { gitBranch } from "./git";
 import { connectKernel, kernelBinary, kernelStatus, restartKernel, retryKernel } from "./kernel";
 import { clipboardContent } from "./clipboard";
 import { platform } from "./platform";
 import { preferences, setPreferences } from "./preferences";
+import { applyRoutinePreferences } from "./routines";
 import { check, download, install, setAutoDownload, snooze, updateInfo } from "./updater";
 import { mainWindow, ours, settingsVisible, showMain, showSettings } from "./windows";
 
@@ -25,7 +28,7 @@ function trusted(e: IpcMainEvent | IpcMainInvokeEvent): boolean {
   return !!e.senderFrame && ours(e.senderFrame.url);
 }
 
-const noMenuState: MenuState = { main: false, session: null, sidebar: true, undo: false };
+const noMenuState: MenuState = { main: false, session: null, botApprovable: false, sidebar: true, undo: false };
 let menuState = noMenuState;
 export const currentMenuState = () => menuState;
 export const menuStateListeners = new Set<() => void>();
@@ -62,11 +65,16 @@ function menuActionOk(a: unknown): a is BrowserMenuAction {
 /** A panel as the page reports it: a session id or null, a rectangle of finite numbers or null. */
 function browserPanel(p: unknown): p is BrowserPanel {
   if (typeof p !== "object" || p === null) return false;
-  const { session, rect, hold } = p as Record<string, unknown>;
+  const { session, rect, hold, editing } = p as Record<string, unknown>;
   if (session !== null && typeof session !== "string") return false;
   if (hold !== undefined && typeof hold !== "boolean") return false;
-  if (rect === null) return true;
-  if (typeof rect !== "object" || rect === undefined) return false;
+  if (editing !== undefined && typeof editing !== "boolean") return false;
+  return rect === null || finiteRect(rect);
+}
+
+/** A rectangle as the page reports it: four finite numbers. */
+function finiteRect(rect: unknown): rect is PagePreviewRect {
+  if (typeof rect !== "object" || rect === null) return false;
   const r = rect as Record<string, unknown>;
   return ["x", "y", "width", "height"].every((k) => typeof r[k] === "number" && Number.isFinite(r[k]));
 }
@@ -177,7 +185,7 @@ function menuIcon(icon: unknown) {
 const menuTests = process.env.FINXWORK_E2E_MENU;
 function testMenu(items: MenuItem[]): string | null {
   const dir = menuTests!;
-  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
+  const plain = (list: MenuItem[]): unknown[] => list.map((it) => ("separator" in it ? "-" : { id: it.id, label: it.label, ...(it.enabled === false && { enabled: false }), ...(it.checked !== undefined && { checked: it.checked }), ...(it.icon && { icon: true }), ...(it.accel && { accel: it.accel }), ...(it.submenu && { submenu: plain(it.submenu) }) }));
   fs.appendFileSync(path.join(dir, "shown.jsonl"), JSON.stringify(plain(items)) + "\n");
   const pick = path.join(dir, "pick");
   if (!fs.existsSync(pick)) return null;
@@ -278,6 +286,21 @@ export function registerIPC() {
     if (typeof session !== "string" || !session || session === "finxwork:home-browser" || !web(url)) throw new Error("Invalid page to open");
     openURL(session, url);
   });
+  // An HTML file from a conversation, as the page it is (content-actions-design DD-157): false when it is not there.
+  ipcMain.handle("browser-open-file", async (e, session: unknown, file: unknown) => {
+    if (!trusted(e) || !revealable(file)) return false;
+    if (typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid page to open");
+    const url = await pageOfFile(file.replace(/^~(?=$|\/)/, os.homedir()));
+    if (url) openURL(session, url, true);
+    return !!url;
+  });
+  // An HTML file in the preview over the window (bot-mode-design DD-159): false when it is not there.
+  ipcMain.handle("page-preview-open", (e, file: unknown, rect: unknown) => {
+    if (!trusted(e) || !revealable(file) || !finiteRect(rect)) return false;
+    return openPagePreview(e.sender, file.replace(/^~(?=$|\/)/, os.homedir()), rect);
+  });
+  ipcMain.on("page-preview-place", (e, rect: unknown) => trusted(e) && finiteRect(rect) && placePagePreview(e.sender, rect));
+  ipcMain.on("page-preview-close", (e) => trusted(e) && closePagePreview(e.sender));
   ipcMain.handle("browser-claim-home", (e, session: unknown) => {
     if (!trusted(e) || typeof session !== "string" || !session || session === "finxwork:home-browser") throw new Error("Invalid browser session");
     return claimHomeBrowser(session);
@@ -293,6 +316,10 @@ export function registerIPC() {
   ipcMain.on("browser-menu-action", (e, targetId: unknown, a: unknown) =>
     trusted(e) && (targetId === null || typeof targetId === "string") && menuActionOk(a) && tabMenuAction(e.sender, targetId, a));
   ipcMain.handle("browser-local-servers", (e) => (trusted(e) ? devServers(new Set(app.getAppMetrics().map((m) => m.pid))) : []));
+  ipcMain.handle("browser-stop-local-server", (e, port: unknown, pid: unknown) => {
+    if (!trusted(e) || !Number.isInteger(port) || !Number.isInteger(pid)) throw new Error("Invalid server");
+    return stopDevServer(port as number, pid as number, new Set([process.pid, ...app.getAppMetrics().map((m) => m.pid)]));
+  });
   ipcMain.handle("kernel-status", (e) => (trusted(e) ? kernelStatus() : null));
   ipcMain.handle("system-browsers", (e) => (trusted(e) ? systemBrowsers() : []));
   ipcMain.handle("system-browser-set-up", (e) => (trusted(e) ? setUpSystemBrowser() : null));
@@ -315,6 +342,14 @@ export function registerIPC() {
     return key ? desktopApp(key) : null;
   });
   ipcMain.handle("system-browser-icon", (e, id: unknown) => (trusted(e) ? systemBrowserIcon(id) : null));
+  ipcMain.handle("system-browser-open-quietly", (e) => (trusted(e) ? openSystemBrowserQuietly() : undefined));
+  ipcMain.handle("system-browser-repair", (e) => (trusted(e) ? refreshSystemBrowser() : undefined));
+  ipcMain.handle("system-browser-diagnose", (e) => (trusted(e) ? diagnoseSystemBrowser() : null));
+  ipcMain.handle("take-open-target", (e) => (trusted(e) ? takeOpenTarget() : null));
+  ipcMain.handle("screen-locked", (e) => (trusted(e) ? screenLocked() : false));
+  ipcMain.on("test-notification", (e) => trusted(e) && testNotification());
+  ipcMain.on("open-notification-settings", (e) => trusted(e) && openNotificationSettings());
+  ipcMain.on("show-main-window", (e) => trusted(e) && void showMain());
   ipcMain.on("system-browser-reveal-extension", (e) => trusted(e) && revealExtension());
   ipcMain.on("retry-kernel", (e) => trusted(e) && retryKernel());
   ipcMain.on("restart-kernel", (e, now: unknown) => trusted(e) && restartKernel(now === true));
@@ -411,6 +446,28 @@ export function registerIPC() {
     if (r.canceled) return [];
     return attachFiles(r.filePaths);
   });
+  // A bot's avatar (bot-mode-design §6.3): the system reads the picture, HEIC too; the page gets
+  // a square 256 px PNG, which is all finx keeps.
+  ipcMain.handle("pick-avatar", async (e) => {
+    if (!trusted(e)) return null;
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      properties: ["openFile"] as "openFile"[],
+      filters: [{ name: i18n.t("main:dialog.images"), extensions: ["png", "jpg", "jpeg", "heic"] }],
+    };
+    // End-to-end tests: the system's dialog cannot be driven, so a file stands for what was picked.
+    const r = menuTests ? { canceled: false, filePaths: [path.join(menuTests, "avatar.png")] } : await (win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options));
+    const file = r.canceled ? undefined : r.filePaths[0];
+    if (!file) return null;
+    const size = await fs.promises.stat(file).then((s) => s.size, () => 0);
+    if (size > 10 * 1024 * 1024) return { error: "too_large" };
+    const img = nativeImage.createFromPath(file);
+    if (img.isEmpty()) return { error: "unreadable" };
+    const { width, height } = img.getSize();
+    const side = Math.min(width, height);
+    const square = img.crop({ x: Math.floor((width - side) / 2), y: Math.floor((height - side) / 2), width: side, height: side });
+    return { png: square.resize({ width: 256, height: 256, quality: "best" }).toPNG().toString("base64") };
+  });
   // What is pasted into the composer: the files and folders copied (in Finder, Explorer), else
   // a picture with no file (a screenshot). Read only when the person pastes.
   ipcMain.handle("paste-files", async (e): Promise<PastedItem[]> => {
@@ -437,7 +494,7 @@ export function registerIPC() {
         list.map((it) => {
           if ("separator" in it) return { type: "separator" as const };
           const icon = menuIcon(it.icon);
-          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }) };
+          const common = { label: String(it.label), enabled: it.enabled !== false, ...(icon && { icon }), ...(typeof it.accel === "string" && { accelerator: it.accel, registerAccelerator: false }) };
           if (Array.isArray(it.submenu)) return { ...common, submenu: build(it.submenu) };
           return { ...common, type: it.checked === undefined ? ("normal" as const) : ("checkbox" as const), checked: it.checked, click: () => (chosen = it.id) };
         });
@@ -446,7 +503,16 @@ export function registerIPC() {
     });
   });
   ipcMain.handle("preferences", (e) => (trusted(e) ? preferences() : null));
-  ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => (trusted(e) && typeof p === "object" && p !== null ? setPreferences(p) : null));
+  ipcMain.handle("set-preferences", (e, p: Partial<Preferences>) => {
+    if (!trusted(e) || typeof p !== "object" || p === null) return null;
+    const next = setPreferences(p);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (ours(win.webContents.getURL())) win.webContents.send("preferences-changed", next);
+    }
+    notifier.refresh();
+    applyRoutinePreferences();
+    return next;
+  });
   ipcMain.handle("update-info", (e) => (trusted(e) ? updateInfo() : null));
   ipcMain.on("check-updates", (e) => trusted(e) && void check());
   ipcMain.on("download-update", (e) => trusted(e) && download());

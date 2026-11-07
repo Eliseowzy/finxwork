@@ -3,12 +3,13 @@ import { useDesktopStatus } from "../desktopControl";
 import { Icon } from "../icons";
 import { useBrowserState } from "../settings/BrowserSettings";
 import { useDesktopConfig } from "../settings/DesktopSettings";
+import { useSearchSwitch } from "../settings/SearchSettings";
 import { errorText, useStore } from "../store";
 import { activate, hoverFocus } from "./ConnectorsMenu";
 
-// The "+" menu's two switches: browser control and computer use, the same switches as in
-// Settings › 浏览器 and Settings › 电脑操控, where the rest of their settings are
-// (computer-use-design §4, browser-design §10.1). Each reaches every conversation's next step.
+// The "+" menu's switches: web search, browser control and computer use, the same switches as in
+// Settings › 联网搜索, Settings › 浏览器 and Settings › 电脑操控, where the rest of their settings are
+// (web-search-design §2.3, computer-use-design §4, browser-design §10.1). Each reaches every conversation's next step.
 // The menu stays open, as for the connectors. Computer use that cannot work yet says what it
 // needs, and a click takes to its settings. Until the config is read a switch cannot be used.
 
@@ -18,7 +19,14 @@ export function QuickSwitches({ close }: { close: () => void }) {
   const browser = useBrowserState();
   const desktop = useDesktopConfig();
   const { status } = useDesktopStatus(desktop.config?.executable);
+  const search = useSearchSwitch();
   const say = (work: Promise<unknown>, done: string) => work.then(() => st.show(done)).catch((e) => st.show(errorText(e), undefined, true));
+
+  const searchOn = search.on !== false;
+  const toggleSearch = () => {
+    if (search.on === null) return;
+    void say(search.set(!searchOn), t(searchOn ? "composer.searchOff" : "composer.searchOn"));
+  };
 
   const browserOn = browser.config?.enabled !== false;
   const toggleBrowser = () => {
@@ -43,6 +51,20 @@ export function QuickSwitches({ close }: { close: () => void }) {
 
   return (
     <>
+      <div
+        className={`mi cn-row quick ${searchOn ? "" : "off"}`}
+        role="menuitemcheckbox"
+        aria-checked={searchOn}
+        aria-disabled={search.on === null || undefined}
+        tabIndex={-1}
+        onMouseMove={hoverFocus}
+        onClick={toggleSearch}
+        onKeyDown={activate(toggleSearch)}
+      >
+        <Icon name="search" />
+        <span className="nm">{t("composer.searchSwitch")}</span>
+        <span className={`sw sm ${searchOn ? "on" : ""}`} aria-hidden="true" />
+      </div>
       <div
         className={`mi cn-row quick ${browserOn ? "" : "off"}`}
         role="menuitemcheckbox"

@@ -2,10 +2,21 @@ import { createContext, useCallback, useContext, useSyncExternalStore } from "re
 import type { PathInfo } from "../../../shared/bridge";
 
 /** The session a reply belongs to: its folder resolves the paths it writes, its browser opens its links. None outside a session. */
-export type Scope = { session: string; cwd: string } | null;
+export type Scope = {
+  session: string;
+  cwd: string;
+  /** What shows this content, over the window: it goes first when something here opens beside the conversation, behind it. */
+  leave?: () => void;
+} | null;
 const ScopeContext = createContext<Scope>(null);
 export const ContentScope = ScopeContext.Provider;
 export const useScope = () => useContext(ScopeContext);
+
+/**
+ * Inside a bot's conversation: an image on this computer written in its words shows
+ * (bot-design §3.12). Elsewhere a reply's image is only its alt text.
+ */
+export const LocalImages = createContext(false);
 
 /** Inside the block a reply is still writing: nothing in it acts yet (§3.5). */
 export const DraftContext = createContext(false);

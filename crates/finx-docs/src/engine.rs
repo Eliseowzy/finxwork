@@ -49,6 +49,8 @@ pub enum Request {
     SheetReload { handle: u64 },
     /// The edits a sort makes, not applied.
     SheetSort { handle: u64, sheet: String, range: String, by: String, descending: bool, header: bool },
+    /// The edits the fill handle makes, not applied.
+    SheetAutofill { handle: u64, sheet: String, source: String, target: String, switch: bool },
 }
 
 impl Request {
@@ -67,7 +69,8 @@ impl Request {
             | Request::SheetFill { handle, .. }
             | Request::SheetStructure { handle, .. }
             | Request::SheetReload { handle }
-            | Request::SheetSort { handle, .. } => Some(*handle),
+            | Request::SheetSort { handle, .. }
+            | Request::SheetAutofill { handle, .. } => Some(*handle),
             Request::Open { .. } | Request::SheetOpen { .. } => None,
         }
     }
@@ -91,8 +94,8 @@ pub struct Rendered {
 }
 
 /// Where the PDFium library is: `FINX_PDFIUM`, else beside the program (FinxWork.app's
-/// `Contents/MacOS` or `Contents/Frameworks`), else `~/.finx/pdfium/lib`, else, in development
-/// builds, the copy `tools/pdfium` downloads into.
+/// `Contents/MacOS` or `Contents/Frameworks`), else the `pdf` component (`finx install pdf`), else
+/// `$FINX_HOME/pdfium/lib`, else, in development builds, the copy `tools/pdfium` downloads into.
 pub fn locate_library() -> Option<PathBuf> {
     let name = Pdfium::pdfium_platform_library_name();
     if let Some(path) = std::env::var_os("FINX_PDFIUM") {
@@ -104,8 +107,11 @@ pub fn locate_library() -> Option<PathBuf> {
         candidates.push(dir.join(&name));
         candidates.push(dir.join("../Frameworks").join(&name));
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        candidates.push(PathBuf::from(home).join(".finx/pdfium/lib").join(&name));
+    if let Some(dir) = crate::pdf_addon_dir() {
+        candidates.push(dir.join(&name));
+    }
+    if let Some(home) = crate::finx_home() {
+        candidates.push(home.join("pdfium/lib").join(&name));
     }
     if cfg!(debug_assertions) {
         let platform = match (std::env::consts::OS, std::env::consts::ARCH) {
@@ -130,7 +136,7 @@ impl Engine {
         // One per process, for its whole life: documents borrow it, and PDFium binds only once.
         static PDFIUM: std::sync::OnceLock<Result<Pdfium, String>> = std::sync::OnceLock::new();
         let pdfium = PDFIUM.get_or_init(|| {
-            let path = locate_library().ok_or("PDFium is not installed: libpdfium was not found")?;
+            let path = locate_library().ok_or("PDF support is not installed. Ask the user to run \"finx install pdf\", or read the file another way.")?;
             let bindings = Pdfium::bind_to_library(&path).map_err(|e| format!("cannot load {}: {e}", path.display()))?;
             Ok(Pdfium::new(bindings))
         });
@@ -346,6 +352,7 @@ fn handle(pdf: &mut Option<Result<Engine, String>>, sheets: &mut crate::sheet::S
         Request::SheetStructure { handle, change } => json(serde_json::to_value(sheets.structure(handle, &change)?)),
         Request::SheetReload { handle } => json(serde_json::to_value(sheets.reload(handle)?)),
         Request::SheetSort { handle, sheet, range, by, descending, header } => json(serde_json::to_value(sheets.sort(handle, &sheet, &range, &by, descending, header)?)),
+        Request::SheetAutofill { handle, sheet, source, target, switch } => json(serde_json::to_value(sheets.autofill(handle, &sheet, &source, &target, switch)?)),
         Request::Close { handle } if sheets.close(handle) => Ok(serde_json::Value::Null),
         request => match pdf.get_or_insert_with(Engine::new) {
             Ok(engine) => engine.handle(request),

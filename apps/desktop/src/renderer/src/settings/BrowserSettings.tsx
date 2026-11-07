@@ -97,6 +97,23 @@ export function useSystemBrowsers() {
   return { browsers, refresh };
 }
 
+/** The browser's own icon, read from the installed app. */
+export function useBrowserIcon(id?: SystemBrowserId): string | null {
+  const [icon, setIcon] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    setIcon(null);
+    if (id) void window.finx?.systemBrowserIcon(id).then((src) => live && setIcon(src));
+    return () => {
+      live = false;
+    };
+  }, [id]);
+  return icon;
+}
+
+/** How long a refused host gets to exit and come back as the current program. */
+const REFUSED_STUCK_MS = 10_000;
+
 export function BrowserSettings() {
   const { t } = useTranslation("settings");
   const st = useStore();
@@ -111,6 +128,19 @@ export function BrowserSettings() {
   const connected = problem ? null : (status?.extension ?? null);
   const inUse = config?.extension === true;
   const registered = browsers?.filter((b) => b.registered) ?? [];
+  const refused = status?.refused;
+  // A host that exits on refusal is gone in moments. One that stays runs code from before it could.
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    setStuck(false);
+    if (!refused) return;
+    const timer = setTimeout(() => setStuck(true), REFUSED_STUCK_MS);
+    return () => clearTimeout(timer);
+  }, [!!refused]);
+  // Several browsers or profiles have the extension: the user says which the agent uses.
+  const several = status?.extensions ?? [];
+  // The manifest is another FinxWork's: this one's extension would not reach it.
+  const elsewhere = !connected && browsers?.some((b) => b.manifest === "other");
   // The connected one, by the name it gave; else the one it was set up for; else the first here.
   const mine =
     browsers?.find((b) => connected?.browser?.startsWith(b.name)) ?? registered[0] ?? browsers?.[0];
@@ -139,7 +169,7 @@ export function BrowserSettings() {
     state === "none" ? t("browser.none")
     : state === "on" ? t("browser.on")
     : state === "ready" ? t("browser.ready")
-    : state === "lost" ? (mine && !mine.running ? t("browser.closed", { name: mine.name }) : t("browser.lost"))
+    : state === "lost" ? (mine && !mine.running ? t("browser.closed", { name: mine.name }) : refused ? t(stuck ? "browser.refusedStuck" : "browser.refused") : elsewhere ? t("browser.elsewhere") : t("browser.lost", { name: mine?.name ?? "Chrome" }))
     : state === "outdated" ? t(`browser.outdated.${problem === "update_finx" ? "finx" : "extension"}`, { name: mine?.name ?? "Chrome" })
     : t("browser.off");
   const badge =
@@ -220,12 +250,36 @@ export function BrowserSettings() {
                 {mine && !mine.running && (
                   <button className="btn primary" onClick={() => void window.finx?.openSystemBrowser(mine.id).then(refresh)}>{t("browser.open", { name: mine.name })}</button>
                 )}
-                <button className="btn" onClick={() => setGuide(true)}>{t("browser.reconnect")}</button>
+                {mine && mine.running && !elsewhere && (
+                  <button className="btn primary" onClick={() => void window.finx?.openSystemBrowser(mine.id, "extensions")}>{t("browser.guide.openExtensions")}</button>
+                )}
+                <button className="btn" onClick={() => setGuide(true)}>{elsewhere ? t("browser.takeOver") : t("browser.reconnect")}</button>
               </>
             )}
           </div>
         </div>
+        {/* It lists one only when that one is not in use: the browser chosen is away. */}
+        {several.length > 0 && (
+          <div className="fgroup" style={{ marginTop: "var(--sp-1)" }}>
+            {several.map((e) => (
+              <div className="frow mrow ext-row" key={e.instance ?? e.browser}>
+                <div className="ft">
+                  <div className="fn">
+                    {e.browser?.replace(/ (\d+)(\.\d+)+$/, " $1") ?? "Chrome"}
+                    {e.account && <span className="mi-acct"> · {e.account}</span>}
+                  </div>
+                </div>
+                {e.in_use ? (
+                  <span className="badge ok">{t("browser.badge.on")}</span>
+                ) : (
+                  <button className="btn" disabled={!e.instance || busy} onClick={() => void act(() => st.call("browser/use_extension", { instance: e.instance! }))}>{t("browser.useThis")}</button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
         {error && <p className="mrow-err">{error}</p>}
+        {state !== "none" && <Diagnosis status={status} />}
       </section>
       {config && <SitePermissions sites={config.sites} write={(edits) => act(() => write(edits))} />}
       <BuiltInBrowser />
@@ -246,17 +300,48 @@ export function BrowserSettings() {
   );
 }
 
+/** Each link from the browser to finx's service, to read or to pass on when something does not connect. */
+function Diagnosis({ status }: { status: BrowserStatus | null }) {
+  const { t } = useTranslation("settings");
+  const st = useStore();
+  const [text, setText] = useState<string | null>(null);
+  const read = async () => {
+    const d = await window.finx?.diagnoseSystemBrowser();
+    if (!d) return;
+    setText(
+      [
+        `FinxWork ${d.app}`,
+        `service: ${d.service ?? "-"}`,
+        `host script: ${d.launcher}`,
+        `host program: ${d.program ?? "-"}${d.program && !d.programExists ? " (missing)" : ""}`,
+        `extension folder: ${d.extensionFolder} (build ${d.extensionBuild ?? "-"})`,
+        ...d.browsers.map((b) => `${b.name}: ${b.running ? "running" : "not running"}, manifest ${b.manifest}`),
+        `extension: ${status?.extension ? `${status.extension.browser ?? "?"}, version ${status.extension.extension_version ?? "?"}${status.extension.problem ? `, ${status.extension.problem}` : ""}` : "not connected"}`,
+        ...(status?.refused ? [`refused: ${status.refused}`] : []),
+      ].join("\n"),
+    );
+  };
+  if (text === null) {
+    return (
+      <div className="browser-diag-bar">
+        <button className="qb" onClick={() => void read()}>{t("browser.diagnose")}</button>
+      </div>
+    );
+  }
+  return (
+    <>
+      <pre className="browser-diag">{text}</pre>
+      <div className="browser-diag-bar">
+        <button className="qb" onClick={() => void navigator.clipboard.writeText(text).then(() => st.show(t("browser.diagnosisCopied")))}>{t("browser.copyDiagnosis")}</button>
+        <button className="qb" onClick={() => setText(null)}>{t("browser.hideDiagnosis")}</button>
+      </div>
+    </>
+  );
+}
+
 /** The browser's own icon, read from the installed app; a globe while there is none. */
 export function BrowserMark({ id }: { id?: SystemBrowserId }) {
-  const [icon, setIcon] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    setIcon(null);
-    if (id) void window.finx?.systemBrowserIcon(id).then((src) => live && setIcon(src));
-    return () => {
-      live = false;
-    };
-  }, [id]);
+  const icon = useBrowserIcon(id);
   return icon ? <img className="mtile browser-mark" src={icon} alt="" draggable={false} /> : <span className="mtile"><Icon name="globe" /></span>;
 }
 

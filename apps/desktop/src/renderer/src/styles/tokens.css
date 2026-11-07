@@ -3,11 +3,11 @@
    (hermesh's desktop app); platform differences are tokens too
    (html[data-platform]), never branches in components. */
 :root {
-  /* The brand's electric blue (assets/brand): --accent fills buttons (white on
-     it 4.6:1), --accent-fg is it as text (5.6:1 on white). Then the colours
+  /* A quieter blue: --accent fills buttons (white on it 4.8:1),
+     --accent-fg is the darker link colour. Then the colours
      of states, and one spacing scale in golden-ratio steps. */
-  --accent: #1f6bff;
-  --accent-fg: #1a5ce6;
+  --accent: #2f6fd6;
+  --accent-fg: #285fb8;
   --ok: #17924f;
   --warn: #d0700a;
   --danger: #d7333f;
@@ -30,86 +30,131 @@
   --ease-in: cubic-bezier(0.3, 0, 1, 1);
   --ease-in-out: cubic-bezier(0.45, 0, 0.55, 1);
 
-  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
-  --mono: "SF Mono", ui-monospace, Menlo, "JetBrains Mono", Consolas, monospace;
-  --fs: 13px;
+  --font: "Google Sans Flex", "Google Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --mono: "Google Sans Code", ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --fs: 14px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 450;
+  --font-weight-semibold: 550;
+  --font-weight-bold: 650;
+  --font-axes: "ROND" 0, "slnt" 0, "wdth" 92;
+  --sidebar-width: 256px;
+  --conversation-width: 768px;
+  --chat-size: 14.5px;
   /* The window's chrome: the top band, and room for the system's window buttons. */
   --top: 44px;
   --lights: 78px;
   --caption: 0px;
 
-  --win: #ffffff; --win2: #f4f4f7; --win3: #ebebf0;
-  --side: #f4f4f7; --side-head: #f4f4f7; --side-tint: rgba(246, 246, 249, .28);
-  --l1: rgba(0, 0, 0, .86); --l2: rgba(0, 0, 0, .54); --l3: rgba(0, 0, 0, .32); --l4: rgba(0, 0, 0, .14);
-  --sep: rgba(0, 0, 0, .075); --fill: rgba(0, 0, 0, .045); --fill2: rgba(0, 0, 0, .075); --fill3: rgba(0, 0, 0, .12);
-  --sel: rgba(31, 107, 255, .12); --sel-fg: #1a56d6; --side-sel: rgba(0, 0, 0, .075);
-  --accent-t: var(--accent-fg); --accent-bg: rgba(31, 107, 255, .10);
+  /* Soft white surfaces and graphite text. */
+  --win: #f4f5f7; --win2: #ebedf2; --win3: #e3e7ee;
+  --side: #eef0f4; --side-head: #eef0f4;
+  --l1: #202127; --l2: #60636d; --l3: #727580; --l4: rgba(32, 33, 39, .14);
+  --sep: rgba(32, 33, 39, .065); --fill: rgba(32, 33, 39, .04); --fill2: rgba(32, 33, 39, .07); --fill3: rgba(32, 33, 39, .12);
+  --sel: rgba(47, 111, 214, .12); --sel-fg: #285fb8; --side-sel: #e7edf7;
+  --accent-t: var(--accent-fg); --accent-bg: rgba(47, 111, 214, .09);
   --green: var(--ok); --green-bg: rgba(23, 146, 79, .11); --orange: var(--warn); --orange-bg: rgba(230, 126, 10, .12); --red: var(--danger); --red-bg: rgba(215, 51, 63, .10);
   /* The parts of the context, beside the accent, green and orange. */
   --violet: #8a5cf5; --teal: #0e9f9a;
-  --btn: #ffffff; --btn-sh: 0 0 0 .5px rgba(0, 0, 0, .14), 0 1px 1.5px rgba(0, 0, 0, .08);
-  --seg-on: #ffffff; --seg-bd: rgba(0, 0, 0, .12); --field: #ffffff; --field-bd: rgba(0, 0, 0, .16);
-  --menu: rgba(248, 248, 250, .80); --menu-solid: #f8f8fa; --menu-bd: rgba(0, 0, 0, .10);
-  --bub: var(--l1); --bub-fg: var(--win); --msg: var(--l1);
-  --glass: rgba(255, 255, 255, .72); --glass-sh: 0 0 0 .5px rgba(0, 0, 0, .10), 0 2px 8px rgba(0, 0, 0, .08);
+  --btn: #ffffff; --btn-sh: inset 0 1px 0 rgba(255, 255, 255, .8), 0 0 0 .5px rgba(32, 33, 39, .12), 0 1px 2px rgba(32, 33, 39, .05);
+  --seg-on: #ffffff; --seg-bd: rgba(32, 33, 39, .10); --field: #ffffff; --field-bd: rgba(32, 33, 39, .14);
+  --menu: rgba(250, 250, 251, .80); --menu-solid: #fafafb; --menu-bd: rgba(32, 33, 39, .09);
+  --bub: #e7ebf2; --bub-fg: var(--l1); --msg: var(--l1);
+  --bot-reply: #fcfcfd; --bot-user: #e7edf7;
+  --glass: rgba(255, 255, 255, .72); --glass-sh: inset 0 1px 0 rgba(255, 255, 255, .8), 0 0 0 .5px rgba(32, 33, 39, .09), 0 8px 24px -8px rgba(32, 33, 39, .10);
   /* Toolbar buttons, and the tint of the glass bar the conversation scrolls under (glass.tsx). */
-  --tb-fg: rgba(0, 0, 0, .72);
-  --bar-tint: rgba(255, 255, 255, .7);
-  --code: #f6f7fa; --add-bg: rgba(23, 146, 79, .10); --del-bg: rgba(215, 51, 63, .08); --add-fg: #127443; --del-fg: #b0232f;
+  --tb-fg: #60636d;
+  --bar-tint: rgba(244, 245, 247, .7);
+  --code: #ebedf2; --add-bg: rgba(23, 146, 79, .10); --del-bg: rgba(215, 51, 63, .08); --add-fg: #127443; --del-fg: #b0232f;
   --scrim: rgba(0, 0, 0, .18);
+  /* What is behind a dialog: colour and shape only, no words to read. */
+  --scrim-blur: blur(20px) saturate(1.3);
   /* The composer's pill and the approval card over it; the tray of waiting messages behind it, a step below the window. */
-  --pill: #ffffff; --pill-bd: rgba(0, 0, 0, .12);
-  --tray: #f4f4f7;
+  --pill: #ffffff; --pill-bd: rgba(32, 33, 39, .10);
+  --tray: #e3e7ee;
+  --home-glow: color-mix(in srgb, var(--accent) 9%, transparent);
+  --side-sel-sh: inset 0 0 0 .5px rgba(47, 111, 214, .28);
+  --cmp-sh: inset 0 1px 0 rgba(255, 255, 255, .8), 0 0 0 1px var(--pill-bd), 0 6px 18px -8px rgba(32, 33, 39, .10);
+  --cmp-focus-sh: inset 0 1px 0 rgba(255, 255, 255, .8), 0 0 0 1px rgba(47, 111, 214, .32), 0 6px 18px -8px rgba(32, 33, 39, .14);
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --accent: #1f6bff;
-    --accent-fg: #7ab0ff;
-    --ok: #3fcf86;
-    --warn: #ffab3d;
-    --danger: #ff6670;
-    --win: #1e1e21; --win2: #29292d; --win3: #323237;
-    --side: #25252a; --side-head: #25252a; --side-tint: rgba(28, 28, 32, .3);
-    --l1: rgba(255, 255, 255, .88); --l2: rgba(255, 255, 255, .55); --l3: rgba(255, 255, 255, .32); --l4: rgba(255, 255, 255, .14);
-    --sep: rgba(255, 255, 255, .09); --fill: rgba(255, 255, 255, .05); --fill2: rgba(255, 255, 255, .085); --fill3: rgba(255, 255, 255, .14);
-    --sel: rgba(46, 128, 255, .24); --sel-fg: #a8c8ff; --side-sel: rgba(255, 255, 255, .1);
-    --accent-bg: rgba(46, 128, 255, .16);
-    --green-bg: rgba(63, 207, 134, .14); --orange-bg: rgba(255, 171, 61, .14); --red-bg: rgba(255, 102, 112, .13);
+    /* Onyx-inspired: cool near-black grounds, raised neutral surfaces and a quiet blue accent. */
+    --accent: #2f71e3;
+    --accent-fg: #8ab4f8;
+    --ok: #7aae66;
+    --warn: #f3c949;
+    --danger: #de5555;
+    --win: #070709; --win2: #131317; --win3: #1f1f24;
+    --side: #111114; --side-head: #111114;
+    --l1: #f5f5f7; --l2: #bcbdc6; --l3: #87888f; --l4: rgba(255, 255, 255, .16);
+    --sep: rgba(255, 255, 255, .06); --fill: rgba(255, 255, 255, .042); --fill2: rgba(255, 255, 255, .075); --fill3: rgba(255, 255, 255, .12);
+    --sel: rgba(47, 113, 227, .26); --sel-fg: #a8c8ff; --side-sel: linear-gradient(180deg, #202025, #1c1c21);
+    --accent-bg: rgba(47, 113, 227, .14);
+    --green-bg: rgba(122, 174, 102, .12); --orange-bg: rgba(243, 201, 73, .12); --red-bg: rgba(222, 85, 85, .12);
     --violet: #a585ff; --teal: #3cc8c0;
-    --btn: rgba(255, 255, 255, .12); --btn-sh: 0 0 0 .5px rgba(255, 255, 255, .08);
-    --seg-on: rgba(255, 255, 255, .1); --seg-bd: rgba(255, 255, 255, .18); --field: rgba(255, 255, 255, .06); --field-bd: rgba(255, 255, 255, .16);
-    --menu: rgba(44, 44, 48, .80); --menu-solid: #2c2c30; --menu-bd: rgba(255, 255, 255, .12);
+    --btn: #24252a; --btn-sh: inset 0 1px 0 rgba(255, 255, 255, .08), 0 0 0 .5px rgba(255, 255, 255, .08);
+    --seg-on: #24252a; --seg-bd: rgba(255, 255, 255, .11); --field: #111115; --field-bd: rgba(255, 255, 255, .13);
+    --menu: rgba(19, 19, 23, .94); --menu-solid: #131317; --menu-bd: rgba(255, 255, 255, .085);
     /* The owner's messages: a quiet raised grey in the dark, not a white block. */
-    --bub: rgba(255, 255, 255, .09); --bub-fg: var(--l1);
+    --bub: #1f1f24; --bub-fg: var(--l1);
+    --bot-reply: var(--win2); --bot-user: #1f1f24;
     /* The model's words: near white, a step brighter than other text. */
-    --msg: rgba(255, 255, 255, .95);
-    --glass: rgba(60, 60, 66, .62); --glass-sh: 0 0 0 .5px rgba(255, 255, 255, .10), 0 2px 10px rgba(0, 0, 0, .3);
-    --tb-fg: rgba(255, 255, 255, .82);
-    --bar-tint: rgba(30, 30, 33, .6);
-    --code: #18181b; --add-bg: rgba(63, 207, 134, .12); --del-bg: rgba(255, 102, 112, .11); --add-fg: #5fe0a0; --del-fg: #ff8c94;
-    --scrim: rgba(0, 0, 0, .35);
-    --pill: #28282c; --pill-bd: rgba(255, 255, 255, .09);
-    --tray: #19191c;
+    --msg: #fafafa;
+    --glass: rgba(19, 19, 23, .92); --glass-sh: inset 0 1px 0 rgba(255, 255, 255, .085), 0 0 0 .5px rgba(255, 255, 255, .085), 0 20px 44px -12px rgba(0, 0, 0, .375);
+    --tb-fg: #bcbdc6;
+    --bar-tint: rgba(7, 7, 9, .78);
+    --code: #0d0d11; --add-bg: rgba(122, 174, 102, .12); --del-bg: rgba(222, 85, 85, .11); --add-fg: #98ca84; --del-fg: #f28b8b;
+    --scrim: rgba(0, 0, 0, .64);
+    --pill: #15151a; --pill-bd: rgba(255, 255, 255, .08);
+    --tray: #0d0d11;
+    --home-glow: color-mix(in srgb, var(--accent) 11%, transparent);
+    --side-sel-sh: inset 0 0 0 .5px rgba(255, 255, 255, .045);
+    /* A dark frame around the composer, then a fine rim and a top-edge highlight. */
+    --cmp-sh: inset 0 1px 0 rgba(255, 255, 255, .035), 0 0 0 1px rgba(255, 255, 255, .09), 0 8px 24px -8px rgba(0, 0, 0, .32);
+    --cmp-focus-sh: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 1px rgba(255, 255, 255, .16), 0 8px 24px -8px rgba(0, 0, 0, .36);
     color-scheme: dark;
+  }
+
+  /* Soft gray is the default dark palette. The original deep black remains
+     above; both share semantic accents, typography, spacing and components. */
+  :root:not([data-dark-style="black"]) {
+    --win: #242424; --win2: #2a2a2a; --win3: #303030;
+    --side: #1e1e1e; --side-head: #1e1e1e;
+    --l1: #f0f0ed; --l2: #b2b2ad; --l3: #999993;
+    --msg: #dededb;
+    --sep: rgba(255, 255, 255, .08);
+    --side-sel: #303030;
+    --btn: #303030; --seg-on: #303030;
+    --field: #202020; --field-bd: rgba(255, 255, 255, .16);
+    --menu: rgba(48, 48, 48, .96); --menu-solid: #303030;
+    --menu-bd: rgba(255, 255, 255, .12);
+    --bub: #303030; --bot-user: #303030;
+    --glass: rgba(42, 42, 42, .94);
+    --glass-sh: inset 0 1px 0 rgba(255, 255, 255, .06), 0 0 0 .5px rgba(255, 255, 255, .10), 0 12px 32px -12px rgba(0, 0, 0, .28);
+    --tb-fg: var(--l2);
+    --bar-tint: rgba(36, 36, 36, .82);
+    --code: #202020;
+    --scrim: rgba(0, 0, 0, .40);
+    --pill: #303030; --pill-bd: rgba(255, 255, 255, .10);
+    --tray: #202020;
+    --home-glow: color-mix(in srgb, var(--accent) 6%, transparent);
+    --side-sel-sh: inset 0 0 0 .5px rgba(255, 255, 255, .07);
+    --cmp-sh: inset 0 1px 0 rgba(255, 255, 255, .04), 0 0 0 1px var(--pill-bd), 0 6px 18px -8px rgba(0, 0, 0, .24);
+    --cmp-focus-sh: inset 0 1px 0 rgba(255, 255, 255, .05), 0 0 0 1px rgba(138, 180, 248, .45), 0 6px 18px -8px rgba(0, 0, 0, .28);
   }
 }
 
-/* Windows: Segoe, a step larger; the caption buttons sit at the top band's right. */
+/* The bundled typefaces are shared across platforms; window controls are native. */
 :root[data-platform="win"] {
-  --font: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif;
-  --mono: "Cascadia Mono", Consolas, monospace;
-  --fs: 13.5px;
   --lights: 12px;
   --caption: 138px;
 }
 
-/* Linux: the desktop's UI font; the system draws the title bar. */
+/* Linux: the system draws the title bar. */
 :root[data-platform="linux"] {
-  --font: system-ui, "Noto Sans", "Noto Sans CJK SC", "Ubuntu", sans-serif;
-  --mono: ui-monospace, "JetBrains Mono", "DejaVu Sans Mono", monospace;
-  --fs: 13.5px;
   --lights: 12px;
 }
 

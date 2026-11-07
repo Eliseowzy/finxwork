@@ -3,10 +3,11 @@ import { useTranslation } from "react-i18next";
 import { fileOfCode, fileOfLink, hiddenChars, loopback, shellLanguage, shortURL, webOf, webOfCode, type FileRef as Ref } from "@finx/client";
 import { inSession, showFile, showFolder } from "../files/state";
 import { Icon } from "../icons";
+import { useFilePreview } from "../preview/context";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
 import { Code } from "./Code";
-import { codeMenu, copyText, editorList, fileMenu, linkMenu, openLink, openRef, terminalWith } from "./contentMenus";
+import { codeMenu, copyText, editorList, fileMenu, linkMenu, openLink, openRef, opensAsPage, otherView, showPage, terminalWith } from "./contentMenus";
 import { DraftContext, useFileInfo, useScope, type Scope } from "./scope";
 
 // What a conversation's content does (content-actions-design): the files and web pages a reply
@@ -26,20 +27,31 @@ function FileTag({ target, scope, code, children }: { target: Ref; scope: NonNul
   const { t } = useTranslation("session");
   const st = useStore();
   const info = useFileInfo(scope.cwd, target.path);
+  const preview = useFilePreview();
   useEffect(() => void editorList(), []);
   if (code !== undefined && !info?.kind) return <code>{code}</code>;
   const missing = info?.kind === null;
   const folder = info ? info.kind === "folder" : /[\\/]$/.test(target.path);
   const where = info ? (info.rel ?? info.path) : target.path;
   const lines = target.line === undefined ? "" : target.endLine ? t("content.lines", { line: target.line, end: target.endLine }) : t("content.line", { line: target.line });
-  // In the session's file panel (file-panel-design DD-91); a folder outside the session's, in the file manager.
+  // A reference to lines is to the source, even in an HTML file.
+  const page = !!info && target.line === undefined && opensAsPage(info.path);
+  // In the session's file panel (file-panel-design DD-91), an HTML file in its browser (DD-157); a folder outside the session's, in the file manager.
   const open = () => {
     if (!info) return;
     if (info.kind === null) return void openRef(st, info, target.line);
+    // Over the window where the page offers it for this file (DD-159, DD-161); a reference to lines is to the source, in the panel.
+    if (preview?.takes(info.path) && info.kind === "file" && target.line === undefined) return preview.open(info.path);
+    scope.leave?.();
     if (info.kind === "folder") return inSession(scope.cwd, info.path) ? showFolder(st, scope.session, scope.cwd, info.path) : window.finx?.openFolder(info.path);
+    if (page) return showPage(st, scope.session, info.path);
     showFile(st, scope.session, scope.cwd, info.path, { line: target.line, endLine: target.endLine });
   };
-  const menu = () => info && void fileMenu(st, info, target.line, open);
+  const menu = () => {
+    if (!info) return;
+    const view = otherView(st, scope.session, scope.cwd, info.path, page ? "page" : "source");
+    void fileMenu(st, info, target.line, open, view && { ...view, run: () => (scope.leave?.(), view.run()) });
+  };
   return (
     <span
       className={`fref ${code !== undefined ? "mono" : ""} ${missing ? "gone" : ""}`}
@@ -155,7 +167,8 @@ export function InlineCode({ children }: { children?: ReactNode }) {
     const file = scope ? fileOfCode(children, windows()) : null;
     if (file && scope) return <FileTag target={file} scope={scope} code={children} />;
   }
-  return <code>{children}</code>;
+  const color = typeof children === "string" && /^#(?:[\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.test(children.trim()) ? children.trim() : null;
+  return <code>{color && <span className="md-color" aria-hidden="true" style={{ backgroundColor: color }} />}{children}</code>;
 }
 
 // ── code blocks ──

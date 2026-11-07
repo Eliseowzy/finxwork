@@ -15,12 +15,14 @@
 //   node apps/desktop/e2e/content-actions.mjs
 //   FINXWORK_E2E_SHOTS=<folder> node apps/desktop/e2e/content-actions.mjs   also screenshots
 //   FINXWORK_E2E_APP=dist/FinxWork.app node apps/desktop/e2e/content-actions.mjs   the packaged app, with its own finx
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const desktop = path.resolve(import.meta.dirname, "..");
 const root = path.resolve(desktop, "../..");
@@ -39,6 +41,8 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
 const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "fxc-")));
 const home = path.join(work, "finx");
+// A private HOME: the app registers the extension's host in the browsers under it.
+fs.mkdirSync(path.join(work, "home"), { recursive: true });
 const profile = path.join(work, "profile");
 const socket = path.join(home, "run/finx.sock");
 const opened = path.join(work, "opened.jsonl");
@@ -54,9 +58,19 @@ const write = (rel, body, mode = 0o644) => {
   fs.chmodSync(p, mode);
 };
 write("src/app.ts", Array.from({ length: 12 }, (_, i) => `export const line${i + 1} = ${i + 1};`).join("\n") + "\n");
-write("docs/报告 草稿.md", "# 报告\n");
+write("docs/报告 草稿.md", "# 报告\n\n[图](../assets/logo.png)\n");
 write("run.command", "#!/bin/sh\necho ran > /tmp/should-not-run\n", 0o755);
 write("scripts/build.sh", "#!/bin/sh\necho build\n", 0o755);
+// Its title says that its script ran, and whether it could read another file: by fetch, or through a frame.
+const firstPage = `<!doctype html><title>第一版</title><iframe id="f" src="file:///etc/hosts"></iframe><script>
+  onload = async () => {
+    const fetched = await fetch("file:///etc/hosts").then(() => true, () => false);
+    let framed = false;
+    try { framed = (document.getElementById("f").contentDocument?.body?.innerText ?? "").length > 0; } catch {}
+    document.title = fetched || framed ? "读到了别的文件" : "第一版 · 脚本跑了";
+  };
+</script>`;
+write("report/季度 报告.html", firstPage);
 write("assets/logo.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
 fs.mkdirSync(path.join(proj, "apps/web"), { recursive: true });
 
@@ -65,11 +79,13 @@ const dev = http.createServer((_, res) => res.writeHead(200, { "content-type": "
 await new Promise((r) => dev.listen(0, "127.0.0.1", r));
 const devURL = `http://127.0.0.1:${dev.address().port}/`;
 
-// ── the model: reads a file and runs echo, then replies; the reply waits before its last block closes ──
+// ── the model: reads a file and runs echo, then replies; the reply waits for the draft checks before its last block closes ──
 const reply = [
   "改好了。入口在 [应用入口](src/app.ts:3)，说明见 [报告草稿](docs/%E6%8A%A5%E5%91%8A%20%E8%8D%89%E7%A8%BF.md)，旧的 [不存在](src/missing.ts) 已删掉。",
   "",
   "行内：`src/app.ts:5`、`apps/web/`、`feat/x`、`cargo test`、`src/nope.ts`、`run.command`、`scripts/build.sh`、`assets/logo.png`。",
+  "",
+  "页面：[季度报告](report/%E5%AD%A3%E5%BA%A6%20%E6%8A%A5%E5%91%8A.html)，标题在 [第二行](report/%E5%AD%A3%E5%BA%A6%20%E6%8A%A5%E5%91%8A.html:2)。",
   "",
   `开发服务 ${devURL} 已启动，文档见 [Electron 文档](https://www.electronjs.org/docs/latest/api/shell)，有问题 [写信](mailto:a@b.co)。`,
   "",
@@ -84,9 +100,11 @@ const reply = [
   "```python",
   "print(1)",
 ].join("\n");
-const rest = "\n```\n\n就这些。";
+const tableSource = "| 项目 | 数值 |\n|:--|--:|\n| 收入 | 1.5 |";
+const rest = `\n\`\`\`\n\n${tableSource}\n\n就这些。`;
 const systems = [];
 let pausing = false;
+let resumeReply = () => {};
 const sse = (delta, finish) =>
   `data: ${JSON.stringify({ choices: [{ index: 0, delta, finish_reason: null }] })}\n\n` +
   `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: finish }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } })}\n\ndata: [DONE]\n\n`;
@@ -112,7 +130,12 @@ const provider = http.createServer((req, res) => {
       await sleep(20);
     }
     pausing = true;
-    await sleep(3000);
+    // Keep the draft open until the UI assertions have observed it. A fixed
+    // delay can expire while Chromium is busy compiling its first render.
+    await new Promise((resolve) => {
+      resumeReply = resolve;
+      res.once("close", resolve);
+    });
     pausing = false;
     chunk(rest);
     res.end(sse({}, "stop").split("\n\n").slice(1).join("\n\n"));
@@ -145,6 +168,8 @@ function finxCall(method, params = {}) {
       }
     });
     s.on("error", reject);
+    // A kernel told to shut down may go before it answers.
+    s.on("close", () => reject(new Error("the kernel closed the connection")));
   });
 }
 
@@ -152,10 +177,10 @@ function finxCall(method, params = {}) {
 let app = null;
 let port = 0;
 async function launch() {
-  port = 9400 + Math.floor(Math.random() * 400);
+  port = cdpPort();
   const program = packaged ? path.join(packaged, "Contents/MacOS/FinxWork") : electron;
   app = spawn(program, [...(packaged ? [] : [desktop]), `--remote-debugging-port=${port}`], {
-    env: { ...process.env, FINX_HOME: home, FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
+    env: { ...process.env, FINX_HOME: home, HOME: path.join(work, "home"), FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, ...(!packaged && { FINXWORK_FINX: finx }), FINX_CREDENTIAL_STORE: "file", FINXWORK_E2E_OPENED: opened, FINXWORK_E2E_MENU: menus },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -263,6 +288,14 @@ try {
     sh("pnpm", ["--dir", desktop, "build"]);
   }
   const page = await launch();
+  // Ask the live kernel before reloading the new-session page: a logged ready
+  // event can belong to a connection the supervisor has since replaced.
+  let hosted = false;
+  for (let i = 0; i < 100 && !hosted; i++) {
+    hosted = (await finxCall("browser/status").catch(() => null))?.result?.embedded === true;
+    if (!hosted) await sleep(100);
+  }
+  check(hosted, "the app's browser host never became ready");
   await page.until("the new session page", `!!document.querySelector(".cmp-in")`);
   // The project, as picked before: a new session works in it.
   await page.run(`localStorage.setItem("main-view", JSON.stringify({ ...JSON.parse(localStorage.getItem("main-view") ?? "{}"), draft: { cwd: ${JSON.stringify(proj)}, model: null, thinking: null, permission: "manual" } }))`);
@@ -273,6 +306,7 @@ try {
   await page.run(watchCopies);
   const copied = () => page.run(`(window.__copied ?? []).at(-1) ?? null`);
 
+
   step("a task reads a file, runs echo and answers");
   await page.run(`document.querySelector(".cmp-in").focus()`);
   await page.cdp("Input.insertText", { text: "看看这个项目" });
@@ -280,11 +314,12 @@ try {
   await page.run(`document.querySelector("button.send").click()`);
 
   step("while the last block is still being written, it has no buttons; the finished ones do");
-  await page.until("the reply paused in its last block", `document.querySelectorAll(".am .cblock").length === 3`, 30000);
+  await page.until("the reply paused in its last block", `document.querySelectorAll(".am .cblock").length === 3 && [...document.querySelectorAll(".am .cb-lang")].at(-1)?.textContent === "python"`, 30000);
   check(pausing, "the reply was not paused in its last block");
   const draftBars = await page.run(`[...document.querySelectorAll(".am .cblock")].map((b) => [b.querySelector(".cb-lang")?.textContent ?? "", b.querySelectorAll(".cb-b").length, !!b.querySelector(".cb-warn")])`);
   check(same(draftBars, [["bash", 2, false], ["sh", 2, true], ["python", 0, false]]), `the blocks while writing: ${JSON.stringify(draftBars)}`);
   await page.shot("1-writing");
+  resumeReply();
   await page.until("the reply done", `document.body.innerText.includes("就这些")`, 20000);
   await page.until("the task ended", `!document.querySelector(".working")`, 20000);
 
@@ -292,7 +327,7 @@ try {
   check(systems.length >= 1 && systems[0].includes("In the FinxWork app") && systems[0].includes("[prompt.rs](src/prompt.rs:11)"), "the system prompt has no app section");
 
   step("files: links always, inline code only when the file is there");
-  await page.until("the tags looked up", `document.querySelectorAll(".am .fref").length === 8`);
+  await page.until("the tags looked up", `document.querySelectorAll(".am .fref").length === 10`);
   const tags = await page.run(`[...document.querySelectorAll(".am .fref")].map((c) => [c.querySelector(".fref-n").textContent, c.querySelector(".fref-l")?.textContent ?? "", c.classList.contains("gone"), c.classList.contains("mono")])`);
   check(
     same(tags, [
@@ -304,12 +339,32 @@ try {
       ["run.command", "", false, true],
       ["scripts/build.sh", "", false, true],
       ["assets/logo.png", "", false, true],
+      ["季度报告", "", false, false],
+      ["第二行", ":2", false, false],
     ]),
     `the tags: ${JSON.stringify(tags)}`,
   );
   const plain = await page.run(`[...document.querySelectorAll(".am .md code")].filter((c) => !c.closest(".fref, .cblock, a")).map((c) => c.textContent)`);
   check(same(plain, ["feat/x", "cargo test", "src/nope.ts"]), `left as code: ${JSON.stringify(plain)}`);
   check((await page.run(`${chip("应用入口")}.title`)) === `src/app.ts · ${strings["zh-CN"].content.line.replace("{{line}}", "3")}` || (await page.run(`${chip("应用入口")}.title`)) === `src/app.ts · ${strings.en.content.line.replace("{{line}}", "3")}`, `the tag's tip: ${await page.run(`${chip("应用入口")}.title`)}`);
+
+  step("file tags fit narrow message bubbles");
+  const narrow = await page.run(`(() => {
+    const bubble = document.createElement("div");
+    bubble.className = "bbub";
+    bubble.style.cssText = "width:140px;position:fixed;top:0;left:0";
+    bubble.innerHTML = '<div class="md"><p></p></div>';
+    const tag = ${chip("应用入口")}.cloneNode(true);
+    tag.querySelector(".fref-n").textContent = "中概盘中走势卡片和很长的文件名称";
+    bubble.querySelector("p").append(tag);
+    document.body.append(bubble);
+    const bounds = bubble.getBoundingClientRect();
+    const fragments = [...tag.getClientRects()];
+    const result = { lines: fragments.length, fits: fragments.every((r) => r.left >= bounds.left && r.right <= bounds.right) };
+    bubble.remove();
+    return result;
+  })()`);
+  check(narrow.lines > 1 && narrow.fits, `narrow file tag: ${JSON.stringify(narrow)}`);
 
   step("web pages: real links with icons, a bare one shortened; mailto stays words");
   const links = await page.run(`[...document.querySelectorAll(".am a.wl")].map((a) => [a.textContent, a.getAttribute("href"), !!a.querySelector(".wl-i svg"), !!a.querySelector(".wl-i img")])`);
@@ -329,7 +384,7 @@ try {
     await page.cdp("Emulation.setEmulatedMedia", { features: [] });
   }
 
-  step("a click opens a file in the file panel; a folder in its tree (file-panel-design DD-91)");
+  step("a click opens code in the file panel; a folder in its tree (file-panel-design DD-91)");
   const activeTab = `(document.querySelector(".fpn-tab.on .brp-tab-t")?.textContent ?? null)`;
   let before = openedNow().length;
   await page.run(`${chip("应用入口")}.click()`);
@@ -343,6 +398,58 @@ try {
   await page.run(`${chip("不存在")}.click()`);
   await page.until("the word that it is missing", toastSays((s) => s.content.missing));
   check(openedNow().length === before, "a missing file was opened");
+
+  step("a result opens over the window, code beside the conversation (DD-161)");
+  await page.run(`${chip("scripts/build.sh")}.click()`);
+  await page.until("code in the file panel", `${activeTab} === "build.sh"`);
+  check(!(await page.run(`!!document.querySelector(".fpv")`)), "code opened over the window");
+  await page.run(`${chip("报告草稿")}.click()`);
+  await page.until("the report over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "报告 草稿.md" && document.querySelector(".fpv .md h1")?.textContent === "报告"`);
+  check((await page.run(activeTab)) === "build.sh", "the report went to the panel too");
+  // Its backdrop closes it, up to the window's top: the bars under it stop moving the window meanwhile.
+  check(await page.run(`[...document.querySelectorAll(".drag")].every((d) => getComputedStyle(d).webkitAppRegion === "no-drag")`), "a bar under the dialog still takes clicks to move the window");
+  await page.shot("2a-result-preview");
+  await page.run(`document.querySelector(".fpv-close").click()`);
+  await page.until("the preview closed", `!document.querySelector(".fpv")`);
+  check(await page.run(`[...document.querySelectorAll(".drag")].every((d) => getComputedStyle(d).webkitAppRegion === "drag")`), "the bars do not move the window again once it closed");
+  await page.run(`${chip("assets/logo.png")}.click()`);
+  await page.until("the picture over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "logo.png"`);
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until("its button takes it to the panel", `!document.querySelector(".fpv") && ${activeTab} === "logo.png"`);
+  await page.run(`${chip("报告草稿")}.click()`);
+  await page.until("the report over the window again", `!!document.querySelector(".fpv-panel")`);
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until("the report's link, in the panel", `!document.querySelector(".fpv") && ${activeTab} === "报告 草稿.md" && !!document.querySelector(".fpn .fref")`);
+  await page.run(`document.querySelector(".fpn .fref").click()`);
+  await page.until("a link in the panel stays in the panel", `${activeTab} === "logo.png"`);
+  check(!(await page.run(`!!document.querySelector(".fpv")`)), "a link in the panel opened over the window");
+  check(openedNow().length === before, `a result opened something outside the app: ${JSON.stringify(openedNow().slice(before))}`);
+
+  step("a file attached in the composer follows the same rule (DD-161)");
+  await page.run(`(() => { const input = document.createElement("input"); input.type = "file"; input.multiple = true; input.id = "attach-test"; document.body.append(input); })()`);
+  const attachDoc = await page.cdp("DOM.getDocument");
+  const attachInput = await page.cdp("DOM.querySelector", { nodeId: attachDoc.root.nodeId, selector: "#attach-test" });
+  await page.cdp("DOM.setFileInputFiles", { nodeId: attachInput.nodeId, files: [path.join(proj, "docs/报告 草稿.md"), path.join(proj, "scripts/build.sh")] });
+  check(await page.run(`(() => {
+    const data = new DataTransfer();
+    for (const file of document.querySelector("#attach-test").files) data.items.add(file);
+    const target = document.querySelector(".cmp");
+    const event = new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data });
+    return target.dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: data })), target.dispatchEvent(event), event.defaultPrevented;
+  })()`), "the files were not dropped");
+  const attached = (name) => `[...document.querySelectorAll(".cmp .tile")].find((t) => t.querySelector(".tile-name")?.textContent === ${JSON.stringify(name)})`;
+  await page.until("both attached", `!!${attached("报告 草稿.md")} && !!${attached("build.sh")}`);
+  await page.run(`${attached("报告 草稿.md")}.querySelector(".tile-open").click()`);
+  await page.until("the attached report over the window", `document.querySelector(".fpv .fpv-name")?.textContent === "报告 草稿.md"`);
+  await page.run(`document.querySelector(".fpv-close").click()`);
+  await page.until("the preview closed again", `!document.querySelector(".fpv")`);
+  await page.run(`${chip("应用入口")}.click()`);
+  await page.until("back on app.ts", `${activeTab} === "app.ts"`);
+  await page.run(`${attached("build.sh")}.querySelector(".tile-open").click()`);
+  await page.until("the attached script in the panel", `${activeTab} === "build.sh"`);
+  check(!(await page.run(`!!document.querySelector(".fpv")`)), "the attached script opened over the window");
+  await page.run(`[...document.querySelectorAll(".cmp .tile")].forEach((t) => t.querySelector(".tile-x, .tile-remove")?.click())`);
+  await page.run(`document.querySelector("#attach-test").remove()`);
 
   step("Open With › Default App: what would run is only shown in Finder");
   let shown = shownNow().length;
@@ -402,7 +509,7 @@ try {
   step("a link opens in the session's browser, once; ⌘ opens the default browser");
   const session = await page.run(`JSON.parse(localStorage.getItem("main-view")).selection.id`);
   await page.run(`${link(devURL.replace("http://", "").replace(/\/$/, ""))}.click()`);
-  await page.until("the page in the session's browser", `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(devURL)}).length === 1)`);
+  await page.until("the page in the session's browser", `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(devURL)}).length === 1)`, 15000);
   await page.until("the browser panel", `!!document.querySelector(".brp:not(.fpn)")`);
   await page.run(`${link(devURL.replace("http://", "").replace(/\/$/, ""))}.click()`);
   await sleep(600);
@@ -422,6 +529,52 @@ try {
   const kept = fs.existsSync(icons) ? fs.readdirSync(icons).map((f) => fs.readFileSync(path.join(icons, f), "utf8")) : [];
   check(!kept.some((k) => k.includes("electronjs")), "the linked site was asked for its icon");
 
+  step("an HTML file opens as its page over the window, in a view of its own; its button takes it to the session's browser, once, as it is now (DD-157, DD-161)");
+  const pageURL = pathToFileURL(path.join(proj, "report/季度 报告.html")).href;
+  const pageTabs = `window.finx.browserTabs().then((t) => t.filter((x) => x.session === ${JSON.stringify(session)} && x.url === ${JSON.stringify(pageURL)}))`;
+  const pageView = async (title) => {
+    for (let i = 0; i < 100; i++) {
+      const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
+      const view = list.find((t) => t.url === pageURL && t.title === title);
+      if (view) return view;
+      await sleep(100);
+    }
+    fail(`no view of the page titled ${title}`);
+  };
+  // Only the package has the fuse that takes away what Electron adds to file: pages (build-app.mjs).
+  const pageTitle = packaged ? "第一版 · 脚本跑了" : "读到了别的文件";
+  await page.run(`${chip("季度报告")}.click()`);
+  await page.until("the page's room over the window", `!!document.querySelector(".fpv-page")`);
+  await pageView(pageTitle);
+  check((await page.run(pageTabs)).length === 0, "the preview's page became a tab");
+  await page.shot("3a-html-preview");
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until(packaged ? "the page's script ran in a tab, and could not read another file" : "the page's script ran in a tab", `${pageTabs}.then((t) => t.length === 1 && t[0].title === ${JSON.stringify(pageTitle)})`);
+  await page.until("the browser panel in front", `!document.querySelector(".fpv") && !!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.shot("3a-html-page");
+  write("report/季度 报告.html", "<!doctype html><title>第二版</title>");
+  await page.run(`${chip("季度报告")}.click()`);
+  await pageView("第二版");
+  await page.run(`document.querySelector(".fpv-panel").click()`);
+  await page.until("the page as written again, in the same tab", `${pageTabs}.then((t) => t.length === 1 && t[0].title === "第二版")`);
+  shown = shownNow().length;
+  pick("view");
+  await page.run(rightClick(chip("季度报告")));
+  const pageItems = ids(await nextMenu("the HTML file", shown));
+  check(same(pageItems, ["open", "view", "with", "reveal", "-", "copyPath", "copyRel"]), `the HTML file's menu: ${JSON.stringify(pageItems)}`);
+  await page.until("its source in the file panel", `${activeTab} === "季度 报告.html" && (document.querySelector(".fpn .cm-content")?.innerText ?? "").includes("第二版")`);
+  const previewLabels = JSON.stringify(Object.values(strings).map((s) => s.content.previewInBrowser));
+  await page.run(`[...document.querySelectorAll(".fpn-tools button")].find((b) => ${previewLabels}.includes(b.getAttribute("aria-label"))).click()`);
+  await page.until("back to the page from its source", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  await page.run(`${chip("第二行")}.click()`);
+  await page.until("a reference to lines shows the source", `${activeTab} === "季度 报告.html"`);
+  shown = shownNow().length;
+  pick("view");
+  await page.run(rightClick(chip("第二行")));
+  check(same(ids(await nextMenu("the lines' tag", shown)), pageItems), "the lines' tag has the same items");
+  await page.until("the page from the lines' menu", `!!document.querySelector(".brp:not(.fpn)") && !document.querySelector(".fpn")`);
+  check((await page.run(pageTabs)).length === 1, "the page opened another tab");
+
   step("code blocks: Copy, and Open in Terminal for a shell's; hidden characters are told of and kept");
   await page.run(`document.querySelectorAll(".am .cblock")[1].querySelector(".cb-b").click()`);
   check((await copied()) === "rm\u200B -rf build", `the block with a hidden character was copied as ${JSON.stringify(await copied())}`);
@@ -439,6 +592,16 @@ try {
   await page.run(rightClick(`document.querySelectorAll(".am .cblock")[2]`));
   const pyItems = await nextMenu("the python block", shown);
   check(same(ids(pyItems), ["copy"]) && Object.values(strings).some((s) => s.content.copyCode === pyItems[0].label), `the python block's menu: ${JSON.stringify(pyItems)}`);
+
+  step("tables: Copy for a sheet or a document, the Markdown on the menu");
+  await page.run(`navigator.clipboard.write = async ([item]) => { window.__copiedTable = await (await item.getType("text/plain")).text(); }`);
+  await page.run(`document.querySelector(".am .md-table-tools button").click()`);
+  await page.until("the table copied with tabs", `window.__copiedTable === ${JSON.stringify("项目\t数值\n收入\t1.5")}`);
+  shown = shownNow().length;
+  pick("markdown");
+  await page.run(rightClick(`document.querySelector(".am .md-table")`));
+  check(same(ids(await nextMenu("the table", shown)), ["table", "markdown"]), "the table's menu");
+  await page.until("the table's Markdown copied", `(window.__copied ?? []).at(-1) === ${JSON.stringify(tableSource)}`);
 
   step("steps: a file's menu for the read, a command's for echo");
   await page.run(`[...document.querySelectorAll(".tgroup .tg-h")].forEach((b) => b.getAttribute("aria-expanded") === "false" && b.click())`);

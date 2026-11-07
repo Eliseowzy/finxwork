@@ -16,7 +16,7 @@ import { wraps } from "./kind";
 // selection) and scroll, swapped in when its tab comes forward. Edits go to the tab's document,
 // which saves them; a version taken from disk comes back in as one change.
 
-/** GitHub's colours, light and dark, as the conversation's code blocks have them (styles/files.css). */
+/** FinxWork's syntax colours, light and dark, as the conversation's code blocks have them (styles/files.css). */
 const colours = HighlightStyle.define([
   { tag: [tags.keyword, tags.modifier, tags.operatorKeyword, tags.controlKeyword, tags.definitionKeyword, tags.moduleKeyword], color: "var(--syn-keyword)" },
   { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], color: "var(--syn-string)" },

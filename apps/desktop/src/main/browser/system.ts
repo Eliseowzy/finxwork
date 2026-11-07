@@ -3,8 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { app, nativeImage, shell } from "electron";
-import type { SystemBrowser, SystemBrowserId } from "../../shared/bridge";
+import type { SystemBrowser, SystemBrowserDiagnosis, SystemBrowserId } from "../../shared/bridge";
 import { finxHome, kernelStatus } from "../kernel";
+import { heldBuild, manifestState, placeExtension } from "./extension-files";
 
 // The user's own browser (browser-design §8.4), set up from the settings: which browsers
 // this Mac has, registering finx as the extension's host, the extension's folder, and the
@@ -28,6 +29,19 @@ const run = (file: string, args: string[], env?: NodeJS.ProcessEnv) =>
     execFile(file, args, { env, timeout: 15000 }, (err, stdout, stderr) => resolve({ ok: !err, out: `${stdout}${stderr}`.trim() })),
   );
 
+/**
+ * Opens an app. End-to-end tests (FINXWORK_E2E_OPENED=<file>): what would open is written there
+ * instead, one JSON per line: the browser under test is not the one this Mac would start.
+ */
+const open = async (args: string[]) => {
+  const recordTo = process.env.FINXWORK_E2E_OPENED;
+  if (recordTo) {
+    fs.appendFileSync(recordTo, `${JSON.stringify({ browser: args })}\n`);
+    return { ok: true, out: "" };
+  }
+  return run("/usr/bin/open", args);
+};
+
 function appPath(k: Known): string | null {
   for (const dir of ["/Applications", path.join(os.homedir(), "Applications")]) {
     const p = path.join(dir, k.app);
@@ -38,6 +52,10 @@ function appPath(k: Known): string | null {
 
 const dataDir = (k: Known) => path.join(os.homedir(), "Library/Application Support", k.data);
 
+/** This home's host, which the manifests of a browser it set up point at. */
+const launcherPath = () => path.join(finxHome, "browser", "native-host");
+const manifestOf = (k: Known) => manifestState(path.join(dataDir(k), HOST_MANIFEST), launcherPath());
+
 async function running(k: Known): Promise<boolean> {
   return (await run("/usr/bin/pgrep", ["-x", k.process])).ok;
 }
@@ -47,12 +65,10 @@ export async function systemBrowsers(): Promise<SystemBrowser[]> {
   if (process.platform !== "darwin") return [];
   const found = known.flatMap((k) => (appPath(k) ? [k] : []));
   return Promise.all(
-    found.map(async (k) => ({
-      id: k.id,
-      name: k.name,
-      registered: fs.existsSync(path.join(dataDir(k), HOST_MANIFEST)),
-      running: await running(k),
-    })),
+    found.map(async (k) => {
+      const manifest = manifestOf(k);
+      return { id: k.id, name: k.name, registered: manifest === "ours" || manifest === "dead", manifest, running: await running(k) };
+    }),
   );
 }
 
@@ -79,16 +95,13 @@ export function extensionFolder(): string {
 
 function copyExtension() {
   const from = bundledExtension();
-  const to = extensionFolder();
-  fs.rmSync(to, { recursive: true, force: true });
-  fs.cpSync(from, to, {
-    recursive: true,
-    filter: (f) =>
-      !f.endsWith(".test.js") &&
-      !["package.json", "node_modules"].includes(path.basename(f)) &&
-      // The store packaging, in a development checkout.
-      !["scripts", "store", "dist"].includes(path.relative(from, f).split(path.sep)[0]),
-  });
+  placeExtension(from, extensionFolder(), (f) =>
+    !f.endsWith(".test.js") &&
+    !f.endsWith(".d.ts") &&
+    !["package.json", "node_modules", "build.json"].includes(path.basename(f)) &&
+    // The store packaging, in a development checkout.
+    !["scripts", "store", "dist"].includes(path.relative(from, f).split(path.sep)[0]),
+  );
 }
 
 /**
@@ -107,10 +120,53 @@ export async function setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; 
   return result.ok ? { ok: true } : { ok: false, message: result.out || "registering failed" };
 }
 
-/** At start: when the user set this up before, the files follow the app (it may have moved or updated). */
+/**
+ * At start, and when a host is refused: where this home set the browser up, the files follow the
+ * app, which may have moved or updated. A manifest that points at nothing is repaired; one of
+ * another home's stays: another FinxWork, or a test with its own home, may be using it.
+ */
 export async function refreshSystemBrowser() {
-  const browsers = await systemBrowsers();
-  if (browsers.some((b) => b.registered)) await setUpSystemBrowser();
+  if (process.platform !== "darwin") return;
+  const mine = known.filter((k) => ["ours", "dead"].includes(manifestOf(k)));
+  const binary = serviceBinary();
+  if (mine.length === 0 || !binary) return;
+  try {
+    copyExtension();
+  } catch {
+    // The folder is in use or read-only: the host still follows.
+  }
+  for (const k of mine) await run(binary, ["browser", "extension", "install", "--user-data-dir", dataDir(k)], { ...process.env, FINX_HOME: finxHome });
+}
+
+/** A task waits for the user's own browser: starts the one set up here, behind what the user is doing. */
+export async function openSystemBrowserQuietly() {
+  const k = known.find((b) => appPath(b) && ["ours", "dead"].includes(manifestOf(b)));
+  const where = k && appPath(k);
+  if (where) await open(["-g", "-a", where]);
+}
+
+/** Each link from the browser to finx's service, as this machine has it. */
+export async function diagnoseSystemBrowser(): Promise<SystemBrowserDiagnosis> {
+  const launcher = launcherPath();
+  let program: string | null = null;
+  try {
+    program = /exec '([^']*)' browser native-host/.exec(fs.readFileSync(launcher, "utf8"))?.[1] ?? null;
+  } catch {
+    // No script yet.
+  }
+  const folder = extensionFolder();
+  return {
+    app: app.getVersion(),
+    service: serviceBinary(),
+    launcher,
+    program,
+    programExists: !!program && fs.existsSync(program),
+    extensionFolder: folder,
+    extensionBuild: heldBuild(folder),
+    browsers: await Promise.all(
+      known.filter((k) => appPath(k)).map(async (k) => ({ name: k.name, running: await running(k), manifest: manifestOf(k) })),
+    ),
+  };
 }
 
 function find(id: unknown): Known | undefined {
@@ -123,7 +179,7 @@ export async function openSystemBrowser(id: unknown, page?: "extensions"): Promi
   const where = k && appPath(k);
   if (!k || !where) return false;
   const args = page === "extensions" ? ["-a", where, k.extensions] : ["-a", where];
-  return (await run("/usr/bin/open", args)).ok;
+  return (await open(args)).ok;
 }
 
 /** The browser's own icon, as Finder draws it. */

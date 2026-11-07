@@ -1,5 +1,4 @@
 {
-  "enable_thinking": true,
   "max_completion_tokens": 1000,
   "messages": [
     {
@@ -101,9 +100,9 @@
   ],
   "model": "test-model",
   "prompt_cache_key": "session-1",
+  "reasoning_effort": "low",
   "stream": true,
   "temperature": 0.5,
-  "thinking_budget": 4096,
   "tool_choice": "none",
   "tools": [
     {

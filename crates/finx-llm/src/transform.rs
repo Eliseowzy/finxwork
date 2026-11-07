@@ -163,6 +163,7 @@ mod tests {
             name: "read".into(),
             arguments: serde_json::json!({}).into(),
             arguments_error: None,
+            provider_data: None,
         };
         let ctx = Context {
             system: String::new(),

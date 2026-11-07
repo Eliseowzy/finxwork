@@ -18,7 +18,7 @@
 /* The close button: no inherited button padding, so the cross sits in the middle of its circle. */
 .provider-icon-button{padding:0;color:var(--l2);transition:background .15s,color .15s}
 .provider-icon-button:hover{background:var(--fill3);color:var(--l1)}
-.provider-icon-button .ic{width:12px;height:12px;stroke-width:1.8}
+.provider-icon-button .ic{width:12px;height:12px;stroke-width:2.7}
 /* A plan already connected, among the tiles: its mark and name step back, its label does not. */
 .provider-choice.added:disabled{opacity:1}
 .provider-choice.added .provider-wordmark{opacity:.48}

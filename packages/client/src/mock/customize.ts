@@ -2,6 +2,7 @@ import type {
   CommandInfo, ConfigEdit, ConfigLayer, ConfigLayerInfo, ConfigReadResult, ConfigWriteResult, McpCheckResult, McpListResult, McpLoginParams, McpLoginResult,
   McpProbeParams, McpProbeResult, McpProbeStep, McpServerView, McpToolSummary,
   McpToolsResult, SkillEntry, SkillsFilesResult, SkillsInstallParams, SkillsReadResult, SkillsInstallResult, SkillsListResult, SkillsSetEnabledResult,
+  WebSearchNeeds, WebSearchSetKeyResult, WebSearchSource, WebSearchStatus, WebSearchTestResult,
 } from "@finx/protocol";
 
 // The 自定义 page's side of the mock (customize-design §10.8): skills, MCP servers, the
@@ -15,6 +16,16 @@ const files: Record<"user" | "user_project" | "project", string> = {
   user_project: `${home}/.finx/projects/finxwork-3fa81c02/config.toml`,
   project: `${project}/.finx/config.toml`,
 };
+
+/** 联网搜索's services in their default order (web-search-design §3). */
+const searchServices: { id: string; name: string; needs: WebSearchNeeds; key_url: string | null }[] = [
+  { id: "deepseek", name: "DeepSeek", needs: "account", key_url: null },
+  { id: "exa", name: "Exa", needs: "nothing", key_url: "https://dashboard.exa.ai/api-keys" },
+  { id: "parallel", name: "Parallel", needs: "nothing", key_url: "https://platform.parallel.ai/" },
+  { id: "tavily", name: "Tavily", needs: "key", key_url: "https://app.tavily.com/home" },
+  { id: "brave", name: "Brave", needs: "key", key_url: "https://api-dashboard.search.brave.com/app/keys" },
+  { id: "bocha", name: "博查", needs: "key", key_url: "https://open.bochaai.com/" },
+];
 
 type Skill = { name: string; description: string; dir: string; scope: SkillEntry["scope"]; on: boolean; offByDefault?: boolean; removable?: boolean; source?: SkillEntry["source"]; userOnly?: boolean; files: [string, number][] };
 
@@ -154,6 +165,7 @@ export class CustomizeMock {
   private readonly system: Record<string, Record<string, unknown>> = {
     browser: { extension: true, sites: { "*": "navigate", "https://github.com": "act" } },
     desktop: { apps: { "com.apple.Safari": "allow" } },
+    web_search: {},
   };
   private versions: Record<string, number> = { user: 1, user_project: 1, project: 1 };
   private readonly notify: (method: string, params: unknown) => void;
@@ -331,7 +343,7 @@ export class CustomizeMock {
   }
 
   credentialsSet(name: string) {
-    if (!/^mcp(-oauth)?\.[A-Za-z0-9._-]{1,96}$/.test(name)) throw new Failure(-32602, "invalid_params", `'${name}' is not a credential name finx manages`);
+    if (!/^(mcp(-oauth)?|web-search)\.[A-Za-z0-9._-]{1,96}$/.test(name)) throw new Failure(-32602, "invalid_params", `'${name}' is not a credential name finx manages`);
     this.saved.add(name);
     this.notify("mcp/changed", {});
     return {};
@@ -341,6 +353,46 @@ export class CustomizeMock {
     this.saved.delete(name);
     this.notify("mcp/changed", {});
     return {};
+  }
+
+  // ---- web search ----
+
+  private searchOrder(): (typeof searchServices)[number][] {
+    const named = (this.system.web_search.order ?? []) as string[];
+    const first = named.flatMap((id) => searchServices.filter((s) => s.id === id));
+    return [...first, ...searchServices.filter((s) => !first.includes(s))];
+  }
+
+  webSearchStatus(): WebSearchStatus {
+    const disabled = (this.system.web_search.disabled ?? []) as string[];
+    const sources: WebSearchSource[] = this.searchOrder().map((s) => {
+      const saved = this.saved.has(`web-search.${s.id}`);
+      return {
+        id: s.id,
+        name: s.name,
+        needs: s.needs,
+        configured: s.needs !== "key" || saved,
+        enabled: !disabled.includes(s.id),
+        key: s.needs === "account" ? "account" : saved ? "saved" : null,
+        key_url: s.key_url,
+      };
+    });
+    return { enabled: this.system.web_search.enabled !== false, current: sources.find((s) => s.configured && s.enabled)?.id ?? null, sources };
+  }
+
+  webSearchTest(): WebSearchTestResult {
+    return { ok: true, count: 10, elapsed_ms: 900 };
+  }
+
+  /** A key with "bad" in it is refused, as a real service would; one that works goes first and its switch goes on. */
+  webSearchSetKey(source: string, key: string): WebSearchSetKeyResult {
+    if (key.includes("bad")) return { saved: false, test: { ok: false, count: 0, elapsed_ms: 300, error: "auth_failed" } };
+    const table = this.system.web_search;
+    if (!this.saved.has(`web-search.${source}`)) table.order = [source, ...this.searchOrder().map((s) => s.id).filter((id) => id !== source)];
+    table.disabled = ((table.disabled ?? []) as string[]).filter((id) => id !== source);
+    this.saved.add(`web-search.${source}`);
+    this.notify("config/changed", { file: files.user });
+    return { saved: true, test: this.webSearchTest() };
   }
 
   // ---- servers ----

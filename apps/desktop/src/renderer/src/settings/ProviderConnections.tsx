@@ -42,9 +42,7 @@ export function Brand({ id: given, name }: { id: string; name?: string }) {
   const mark = marks[id];
   if (mark) return <span className={`provider-brand brand-${id}`} aria-hidden="true" dangerouslySetInnerHTML={{ __html: mark.replaceAll("__uid__", uid) }} />;
   if (id === "custom") {
-    return <span className="provider-brand brand-custom" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none">
-      <path d="m11 8-8 8 8 8m10-16 8 8-8 8M18 5l-4 22" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg></span>;
+    return <span className="provider-brand brand-custom" aria-hidden="true"><Icon name="code" /></span>;
   }
   return <span className={`provider-brand brand-${id} brand-initial`} aria-hidden="true">{(name ?? id).charAt(0).toUpperCase()}</span>;
 }

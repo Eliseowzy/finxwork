@@ -75,7 +75,9 @@ struct PartialSuccess {
     warning_type: String,
 }
 
-fn default_status_value() -> Value { Value::Bool(true) }
+fn default_status_value() -> Value {
+    Value::Bool(true)
+}
 #[derive(Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Setup {
@@ -93,7 +95,9 @@ struct Artifact {
     #[serde(default = "default_notices")]
     notices: Vec<String>,
 }
-fn default_notices() -> Vec<String> { vec!["LICENSE".into(), "NOTICE".into()] }
+fn default_notices() -> Vec<String> {
+    vec!["LICENSE".into(), "NOTICE".into()]
+}
 #[derive(Serialize, Deserialize)]
 struct Receipt {
     version: String,
@@ -174,7 +178,11 @@ fn unpack(bytes: &[u8], artifact: &Artifact) -> Result<Bundle, String> {
         let p = entry.path().map_err(|e| e.to_string())?;
         let p = p.strip_prefix(".").unwrap_or(&p);
         if artifact.notices.iter().any(|name| p == Path::new(name)) {
-            let name = p.file_name().ok_or("许可证文件名无效")?.to_string_lossy().into_owned();
+            let name = p
+                .file_name()
+                .ok_or("许可证文件名无效")?
+                .to_string_lossy()
+                .into_owned();
             if !entry.header().entry_type().is_file()
                 || entry.size() > 1 << 20
                 || notices.contains_key(&name)
@@ -415,17 +423,20 @@ pub async fn status(home: &Path, m: &Manifest) -> Result<bool, String> {
         Duration::from_secs(20),
     )
     .await?;
-    let auth = result.0 && if m.auth.status_text {
-        Some(result.1.trim()) == m.auth.status_value.as_str()
-    } else {
-        let value: Value = serde_json::from_str(result.1.trim()).map_err(|_| "无法读取连接器登录状态")?;
-        value.get(&m.auth.status_field) == Some(&m.auth.status_value)
-    };
+    let auth = result.0
+        && if m.auth.status_text {
+            Some(result.1.trim()) == m.auth.status_value.as_str()
+        } else {
+            let value: Value =
+                serde_json::from_str(result.1.trim()).map_err(|_| "无法读取连接器登录状态")?;
+            value.get(&m.auth.status_field) == Some(&m.auth.status_value)
+        };
     remember(home, m, auth);
     Ok(auth)
 }
 pub fn partial_permissions(home: &Path, m: &Manifest) -> bool {
-    signed_in(home, m) && std::fs::read(root(home, m).join("auth-partial.json")).is_ok_and(|b| b == b"true")
+    signed_in(home, m)
+        && std::fs::read(root(home, m).join("auth-partial.json")).is_ok_and(|b| b == b"true")
 }
 pub async fn logout(home: &Path, m: &Manifest) -> Result<(), String> {
     remember(home, m, false);
@@ -449,8 +460,8 @@ pub async fn logout(home: &Path, m: &Manifest) -> Result<(), String> {
             return Err("无效的凭据文件名".into());
         }
         match std::fs::remove_file(root(home, m).join("config").join(name)) {
-            Ok(()) => {},
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e.to_string()),
         }
     }
@@ -477,15 +488,24 @@ impl PendingLogin {
 }
 fn allowed_url(origin: &str, path: &str, word: &str) -> Option<String> {
     let url = url::Url::parse(word).ok()?;
-    (url.origin().ascii_serialization() == origin && url.path() == path
-        && url.username().is_empty() && url.password().is_none()).then(|| url.to_string())
+    (url.origin().ascii_serialization() == origin
+        && url.path() == path
+        && url.username().is_empty()
+        && url.password().is_none())
+    .then(|| url.to_string())
 }
 fn auth_url(origin: &str, path: &str, field: Option<&str>, text: &str) -> Option<String> {
     // A device-flow response can contain both a bare URL and a complete one with the
     // user code. Parse the configured field, never accidentally open the bare URL.
     if let Some(field) = field {
-        return text.lines().filter_map(|line| serde_json::from_str::<Value>(line).ok())
-            .find_map(|v| v.get(field).and_then(Value::as_str).and_then(|s| allowed_url(origin, path, s)));
+        return text
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .find_map(|v| {
+                v.get(field)
+                    .and_then(Value::as_str)
+                    .and_then(|s| allowed_url(origin, path, s))
+            });
     }
     text.split(|c: char| c.is_whitespace() || ['"', '\'', '<', '>'].contains(&c))
         .find_map(|word| allowed_url(origin, path, word))
@@ -493,17 +513,29 @@ fn auth_url(origin: &str, path: &str, field: Option<&str>, text: &str) -> Option
 /// A nonzero exit is accepted only when this pinned provider explicitly reports a
 /// completed authorization with a scope warning. Status is independently checked next.
 fn partial_success(rule: &PartialSuccess, code: Option<i32>, output: &[u8]) -> bool {
-    if code != Some(rule.exit_code) { return false; }
+    if code != Some(rule.exit_code) {
+        return false;
+    }
     let text = String::from_utf8_lossy(output);
-    let event = text.lines().rev().filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    let event = text
+        .lines()
+        .rev()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .find(|v| v.get("event").is_some());
-    event.is_some_and(|v| v["event"] == rule.event && v["warning"]["type"] == rule.warning_type
-        && v["user_open_id"].as_str().is_some_and(|s| !s.is_empty())
-        && v["missing"].as_array().is_some_and(|a| !a.is_empty()))
+    event.is_some_and(|v| {
+        v["event"] == rule.event
+            && v["warning"]["type"] == rule.warning_type
+            && v["user_open_id"].as_str().is_some_and(|s| !s.is_empty())
+            && v["missing"].as_array().is_some_and(|a| !a.is_empty())
+    })
 }
 async fn login_step(
-    mut child: Child, origin: &str, path: &str, field: Option<&str>,
-    tx: mpsc::UnboundedSender<String>, cancel: &CancellationToken,
+    mut child: Child,
+    origin: &str,
+    path: &str,
+    field: Option<&str>,
+    tx: mpsc::UnboundedSender<String>,
+    cancel: &CancellationToken,
     partial: Option<&PartialSuccess>,
 ) -> Result<bool, String> {
     let stdout = child.stdout.take().ok_or("无法读取登录输出")?;
@@ -517,24 +549,35 @@ async fn login_step(
             let mut chunk = [0u8; 4096];
             loop {
                 let n = pipe.read(&mut chunk).await.map_err(|e| e.to_string())?;
-                if n == 0 { break; }
+                if n == 0 {
+                    break;
+                }
                 buffer.extend_from_slice(&chunk[..n]);
-                if buffer.len() > 65536 { return Err("登录输出异常".to_string()); }
+                if buffer.len() > 65536 {
+                    return Err("登录输出异常".to_string());
+                }
                 let text = String::from_utf8_lossy(&buffer);
-                if let Some(end) = text.rfind(char::is_whitespace) {
-                    if let Some(url) = auth_url(origin, path, field, &text[..end]) {
-                        if !sent.swap(true, std::sync::atomic::Ordering::SeqCst) { let _ = tx.send(url); }
-                    }
+                if let Some(end) = text.rfind(char::is_whitespace)
+                    && let Some(url) = auth_url(origin, path, field, &text[..end])
+                    && !sent.swap(true, std::sync::atomic::Ordering::SeqCst)
+                {
+                    let _ = tx.send(url);
                 }
             }
             Ok(buffer)
         }
     };
     let work = async {
-        let (out, _, exit) = tokio::try_join!(scan(Box::new(stdout)), scan(Box::new(stderr)),
-            async { child.wait().await.map_err(|e| e.to_string()) })?;
-        if exit.success() { return Ok(false); }
-        if partial.is_some_and(|rule| partial_success(rule, exit.code(), &out)) { return Ok(true); }
+        let (out, _, exit) =
+            tokio::try_join!(scan(Box::new(stdout)), scan(Box::new(stderr)), async {
+                child.wait().await.map_err(|e| e.to_string())
+            })?;
+        if exit.success() {
+            return Ok(false);
+        }
+        if partial.is_some_and(|rule| partial_success(rule, exit.code(), &out)) {
+            return Ok(true);
+        }
         Err("授权未完成，请重试并检查账号和企业设置".into())
     };
     let result = tokio::select! {
@@ -544,7 +587,11 @@ async fn login_step(
     let _ = child.kill().await;
     result
 }
-pub async fn login(home: PathBuf, m: Manifest, cancel: CancellationToken) -> Result<PendingLogin, String> {
+pub async fn login(
+    home: PathBuf,
+    m: Manifest,
+    cancel: CancellationToken,
+) -> Result<PendingLogin, String> {
     verify(&home, &m)?;
     let (tx, mut updates) = mpsc::unbounded_channel();
     let guard = cancel.clone().drop_guard();
@@ -552,19 +599,56 @@ pub async fn login(home: PathBuf, m: Manifest, cancel: CancellationToken) -> Res
     let (done_tx, done) = oneshot::channel();
     tokio::spawn(async move {
         let work = async {
-            if let Some(setup) = &m.auth.setup {
-                if !root(&home, &m).join("config").join(&setup.config_file).is_file() {
-                    let child = command(&home, &m, &setup.command)?.spawn().map_err(|e| e.to_string())?;
-                    login_step(child, &setup.authorize_origin, &setup.authorize_path, None, tx.clone(), &token, None).await?;
-                }
+            if let Some(setup) = &m.auth.setup
+                && !root(&home, &m)
+                    .join("config")
+                    .join(&setup.config_file)
+                    .is_file()
+            {
+                let child = command(&home, &m, &setup.command)?
+                    .spawn()
+                    .map_err(|e| e.to_string())?;
+                login_step(
+                    child,
+                    &setup.authorize_origin,
+                    &setup.authorize_path,
+                    None,
+                    tx.clone(),
+                    &token,
+                    None,
+                )
+                .await?;
             }
-            if token.is_cancelled() { return Err("已取消登录".into()); }
-            let child = command(&home, &m, &m.auth.login)?.spawn().map_err(|e| e.to_string())?;
-            let partial = login_step(child, &m.auth.authorize_origin, &m.auth.authorize_path, m.auth.url_field.as_deref(), tx.clone(), &token, m.auth.partial_success.as_ref()).await?;
-            if token.is_cancelled() { return Err("已取消登录".into()); }
-            if !status(&home, &m).await? { return Err("授权结束，但未检测到有效登录".into()); }
-            if token.is_cancelled() { return Err("已取消登录".into()); }
-            std::fs::write(root(&home, &m).join("auth-partial.json"), if partial { "true" } else { "false" }).map_err(|e| e.to_string())?;
+            if token.is_cancelled() {
+                return Err("已取消登录".into());
+            }
+            let child = command(&home, &m, &m.auth.login)?
+                .spawn()
+                .map_err(|e| e.to_string())?;
+            let partial = login_step(
+                child,
+                &m.auth.authorize_origin,
+                &m.auth.authorize_path,
+                m.auth.url_field.as_deref(),
+                tx.clone(),
+                &token,
+                m.auth.partial_success.as_ref(),
+            )
+            .await?;
+            if token.is_cancelled() {
+                return Err("已取消登录".into());
+            }
+            if !status(&home, &m).await? {
+                return Err("授权结束，但未检测到有效登录".into());
+            }
+            if token.is_cancelled() {
+                return Err("已取消登录".into());
+            }
+            std::fs::write(
+                root(&home, &m).join("auth-partial.json"),
+                if partial { "true" } else { "false" },
+            )
+            .map_err(|e| e.to_string())?;
             Ok(())
         };
         let result = work.await;
@@ -576,7 +660,12 @@ pub async fn login(home: PathBuf, m: Manifest, cancel: CancellationToken) -> Res
         result = tokio::time::timeout(Duration::from_secs(30), updates.recv()) => result.ok().flatten().ok_or_else(|| "无法获取授权链接，请重试".to_string()),
     };
     match url {
-        Ok(url) => Ok(PendingLogin { url, updates: Some(updates), done, _guard: guard }),
+        Ok(url) => Ok(PendingLogin {
+            url,
+            updates: Some(updates),
+            done,
+            _guard: guard,
+        }),
         Err(error) => {
             cancel.cancel();
             let _ = done.await;
@@ -633,7 +722,9 @@ where
     W: tokio::io::AsyncWrite + Unpin,
 {
     let m = manifest(id)?;
-    if !status(home, &m).await? { return Err("连接器尚未授权，不能启动".into()); }
+    if !status(home, &m).await? {
+        return Err("连接器尚未授权，不能启动".into());
+    }
     let mut reader = tokio::io::BufReader::new(reader);
     let mut bytes = Vec::new();
     let mut eof = false;

@@ -29,22 +29,22 @@ export type Actions = {
 
 export function skillMenu(item: SkillItem, a: Actions, c: Customize, t: TFunction<"customize">, withView: boolean): MenuItem[] {
   return [
-    ...(withView ? [{ id: "view", label: t("skill.view"), icon: "info", run: () => a.open({ kind: "skill", id: item.dir, tab: "overview" }) }] : []),
+    ...(withView ? [{ id: "view", label: t("skill.view"), icon: "info" as const, run: () => a.open({ kind: "skill", id: item.dir, tab: "overview" }) }] : []),
     // A skill turned off is not offered to the message box.
-    ...(item.on ? [{ id: "use", label: t("skill.use"), icon: "chat", run: () => a.useSkill(item.entry.name) }] : []),
-    { id: "reveal", label: t("skill.reveal"), icon: "folder", run: () => window.finx?.revealPath(item.dir) },
+    ...(item.on ? [{ id: "use", label: t("skill.use"), icon: "chat" as const, run: () => a.useSkill(item.entry.name) }] : []),
+    { id: "reveal", label: t("skill.reveal"), icon: "folder" as const, run: () => window.finx?.revealPath(item.dir) },
     // Only the person's own, in ~/.finx/skills (DD-35, DD-36).
-    ...(item.entry.removable ? [null, { id: "remove", label: t("skill.remove"), icon: "trash", danger: true, run: () => c.removeSkill(item) }] : []),
+    ...(item.entry.removable ? [null, { id: "remove", label: t("skill.remove"), icon: "trash" as const, danger: true, run: () => c.removeSkill(item) }] : []),
   ];
 }
 
 export function serverMenu(s: McpServerView, a: Actions, c: Customize, t: TFunction<"customize">, withView: boolean): MenuItem[] {
   return [
-    ...(withView ? [{ id: "view", label: t("connector.view"), icon: "info", run: () => a.open({ kind: "connector", id: s.name, tab: "overview" }) }] : []),
-    ...(s.editable && !s.connector && withView ? [{ id: "edit", label: t("connector.edit"), icon: "edit", run: () => a.edit(s) }] : []),
-    ...(s.status.state !== "untrusted" ? [{ id: "check", label: t("connector.recheck"), icon: "retry", run: () => void c.check(s.name) }] : []),
-    ...(s.file ? [{ id: "reveal", label: t("connector.revealFile"), icon: "folder", run: () => window.finx?.revealPath(s.file!) }] : []),
-    ...(s.editable ? [null, { id: "remove", label: t("connector.remove"), icon: "trash", danger: true, run: () => c.removeServer(s) }] : []),
+    ...(withView ? [{ id: "view", label: t("connector.view"), icon: "info" as const, run: () => a.open({ kind: "connector", id: s.name, tab: "overview" }) }] : []),
+    ...(s.editable && !s.connector && withView ? [{ id: "edit", label: t("connector.edit"), icon: "edit" as const, run: () => a.edit(s) }] : []),
+    ...(s.status.state !== "untrusted" ? [{ id: "check", label: t("connector.recheck"), icon: "retry" as const, run: () => void c.check(s.name) }] : []),
+    ...(s.file ? [{ id: "reveal", label: t("connector.revealFile"), icon: "folder" as const, run: () => window.finx?.revealPath(s.file!) }] : []),
+    ...(s.editable ? [null, { id: "remove", label: t("connector.remove"), icon: "trash" as const, danger: true, run: () => c.removeServer(s) }] : []),
   ];
 }
 

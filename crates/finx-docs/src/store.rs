@@ -611,6 +611,15 @@ impl DocStore {
             .map_err(worker_error)
     }
 
+    /// The edits the fill handle makes dragged from `source` to `target`, to apply as one revision.
+    pub async fn autofill_ops(&self, doc: &Doc, sheet: &str, source: &str, target: &str, switch: bool) -> Result<Vec<SheetOp>, DocError> {
+        Self::sheet(doc)?;
+        self.worker
+            .request(Request::SheetAutofill { handle: doc.handle, sheet: sheet.into(), source: source.into(), target: target.into(), switch })
+            .await
+            .map_err(worker_error)
+    }
+
     async fn send(&self, doc: &Doc, ops: Vec<SheetOp>, preview: bool) -> Result<Applied, DocError> {
         self.worker.request(Request::SheetApply { handle: doc.handle, ops, preview }).await.map_err(worker_error)
     }

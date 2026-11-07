@@ -8,12 +8,32 @@ use std::path::Path;
 use crate::config::Config;
 use crate::instructions::InstructionFile;
 
-pub const BASE_PROMPT: &str = include_str!("prompts/base.md");
+/// The built-in base sections (bot-design §2.3): a session's and a bot's. The sections both
+/// share are in `prompts/shared/` and come in where a base names them.
+const BASE_PROMPT: &str = include_str!("prompts/base.md");
+const BOT_PROMPT: &str = include_str!("prompts/bot.md");
+const SHARED: [(&str, &str); 2] = [
+    ("{{numbers_and_data}}", include_str!("prompts/shared/numbers_and_data.md")),
+    ("{{acting_with_care}}", include_str!("prompts/shared/acting_with_care.md")),
+];
 /// How to write files and commands for the desktop app, which turns them into controls
 /// (content-actions-design §9.1).
 pub const APP_PROMPT: &str = include_str!("prompts/app.md");
+/// The same for a bot, which hands over files with `send_to_user` instead of linking them
+/// (bot-design §3.12).
+const BOT_APP_PROMPT: &str = include_str!("prompts/app_bot.md");
+
+/// Which base section a system prompt starts with; the sections after it are the same.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PromptProfile {
+    /// A session, and a sub-agent: `prompts/base.md`, or `system_prompt_file`.
+    Session,
+    /// A bot's session: `prompts/bot.md`, or `bot_prompt_file`, given the bot's name.
+    Bot { name: String },
+}
 
 pub struct PromptInputs<'a> {
+    pub profile: &'a PromptProfile,
     pub config: &'a Config,
     pub tools: &'a ToolRegistry,
     pub env: &'a dyn Environment,
@@ -42,17 +62,55 @@ pub fn prompt_date(prompt: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(environment.get(start..start + 10)?, "%Y-%m-%d").ok()
 }
 
-pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
-    let base = match &inputs.config.system_prompt_file {
-        Some(path) => std::fs::read_to_string(path)?,
-        None => BASE_PROMPT.to_string(),
+/// A base section with the shared sections filled in.
+fn with_shared(text: &str) -> String {
+    SHARED
+        .iter()
+        .fold(text.to_string(), |text, (mark, section)| text.replace(mark, section.trim_end()))
+}
+
+fn base_section(profile: &PromptProfile, config: &Config) -> io::Result<String> {
+    let (file, built_in) = match profile {
+        PromptProfile::Session => (&config.system_prompt_file, BASE_PROMPT),
+        PromptProfile::Bot { .. } => (&config.bot_prompt_file, BOT_PROMPT),
     };
+    let text = match file {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => built_in.to_string(),
+    };
+    let text = with_shared(&text);
+    Ok(match profile {
+        PromptProfile::Session => text,
+        PromptProfile::Bot { name } => text.replace("{{name}}", name),
+    })
+}
+
+/// Which `bot.md` and app section a bot's prompt comes from: what is stored with its prompt, so
+/// that a new one reaches the bots that already have a conversation (bot-turn-design §8).
+pub fn bot_template(config: &Config) -> io::Result<String> {
+    use std::hash::Hash;
+    use std::hash::Hasher;
+    let text = match &config.bot_prompt_file {
+        Some(path) => std::fs::read_to_string(path)?,
+        None => BOT_PROMPT.to_string(),
+    };
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    with_shared(&text).hash(&mut hasher);
+    BOT_APP_PROMPT.hash(&mut hasher);
+    Ok(format!("{:016x}", hasher.finish()))
+}
+
+pub fn build_system_prompt(inputs: &PromptInputs<'_>) -> io::Result<String> {
+    let base = base_section(inputs.profile, inputs.config)?;
     let mut prompt = base.trim_end().to_string();
     // Fixed text right after the base, so it stays in the cached prefix; a custom base gets it
     // too, as it says how the app shows replies, not who the agent is.
     if inputs.in_app {
         prompt.push_str("\n\n");
-        prompt.push_str(APP_PROMPT.trim_end());
+        prompt.push_str(match inputs.profile {
+            PromptProfile::Session => APP_PROMPT.trim_end(),
+            PromptProfile::Bot { .. } => BOT_APP_PROMPT.trim_end(),
+        });
     }
 
     let guidelines = inputs.tools.guidelines();
@@ -134,6 +192,7 @@ mod tests {
             content: "Run cargo test before finishing.".into(),
         }];
         let prompt = build_system_prompt(&PromptInputs {
+            profile: &PromptProfile::Session,
             config: &config,
             tools: &tools,
             env: &env,
@@ -168,6 +227,7 @@ mod tests {
         let tools = builtin_registry(BashTool::default());
         let config = Config::default();
         let prompt = build_system_prompt(&PromptInputs {
+            profile: &PromptProfile::Session,
             config: &config,
             tools: &tools,
             env: &env,
@@ -180,7 +240,7 @@ mod tests {
         })
         .unwrap();
         let app = prompt.find("In the FinxWork app").expect("the app section");
-        assert!(prompt[..app].trim_end() == BASE_PROMPT.trim_end(), "right after the base");
+        assert!(prompt[..app].trim_end() == with_shared(BASE_PROMPT).trim_end(), "right after the base");
         assert!(app < prompt.find("<tool_guidelines>").unwrap());
         let text = APP_PROMPT.split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(text.contains("[prompt.rs](src/prompt.rs:11)"));
@@ -198,9 +258,64 @@ mod tests {
         assert_eq!(prompt_date("You are FinxWork. date: 2026-10-28"), None);
     }
 
+    /// A bot's prompt changes the base section (its name, its turns, how it talks) and how files
+    /// reach the user; the shared sections and everything after the app section are a session's
+    /// (bot-design §2.3, §3.12).
+    #[test]
+    fn a_bots_prompt_differs_from_a_sessions_only_in_the_base() {
+        let env = LocalEnvironment::new(PathBuf::from("/work/bot"));
+        let tools = builtin_registry(BashTool::default());
+        let config = Config::default();
+        let build = |profile: &PromptProfile| {
+            build_system_prompt(&PromptInputs {
+                profile,
+                config: &config,
+                tools: &tools,
+                env: &env,
+                instructions: &[],
+                skills: "",
+                project_root: None,
+                git_branch: None,
+                date: "2026-11-04".into(),
+                in_app: true,
+            })
+            .unwrap()
+        };
+        let session = build(&PromptProfile::Session);
+        let bot = build(&PromptProfile::Bot { name: "研究员".into() });
+        assert!(bot.starts_with("You are 研究员, one of the user's bots in FinxWork."));
+        assert!(bot.contains("The user sees only what you send with send_to_user."));
+        for text in [&session, &bot] {
+            assert!(!text.contains("{{"), "every mark is filled in");
+            for shared in SHARED.map(|(_, section)| section.trim_end()) {
+                assert!(text.contains(shared));
+            }
+        }
+        assert!(session.contains("Link files in Markdown"));
+        assert!(!bot.contains("Link files in Markdown"), "a bot hands files over in send_to_user");
+        assert!(bot.contains("```bash block, with no $ prompt"));
+        let after = |text: &str| text[text.find("<tool_guidelines>").unwrap()..].to_string();
+        assert_eq!(after(&session), after(&bot));
+    }
+
+    #[test]
+    fn bot_prompt_file_replaces_the_bots_base_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("bot.md");
+        std::fs::write(&file, "You are {{name}}, testing.\n\n{{acting_with_care}}\n").unwrap();
+        let config = Config {
+            bot_prompt_file: Some(file),
+            ..Config::default()
+        };
+        let bot = base_section(&PromptProfile::Bot { name: "FinxBot".into() }, &config).unwrap();
+        assert!(bot.starts_with("You are FinxBot, testing.\n\nActing with care:"));
+        let session = base_section(&PromptProfile::Session, &config).unwrap();
+        assert!(session.starts_with("You are FinxWork"));
+    }
+
     #[test]
     fn base_prompt_says_not_to_work_around_refusals() {
-        let text = BASE_PROMPT.split_whitespace().collect::<Vec<_>>().join(" ");
+        let text = with_shared(BASE_PROMPT).split_whitespace().collect::<Vec<_>>().join(" ");
         assert!(text.contains(
             "When a tool call is denied or not approved, do not retry it or get the same effect another way, \
              such as a different command, a script or another tool."

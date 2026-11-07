@@ -9,6 +9,7 @@
 // so when it is wrong, and opens with the right one. finxdoc:// serves nothing without a token.
 // Everything stays in a private HOME. Needs `pnpm build`, `cargo build -p finx-cli` and PDFium
 // (tools/pdfium, see crates/finx-docs). The PDF: FINX_DOC_PDF, else pdf_oxide's 1.pdf.
+import { cdpPort } from "./lib/port.mjs";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -135,7 +136,7 @@ fs.writeFileSync(path.join(home, "models.toml"), `[providers.mock]\nname = "Mock
 fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n`);
 
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function attach(match, what) {
   let target;
@@ -204,7 +205,7 @@ const send = async (main, text) => {
 let failed = false;
 try {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
     cwd: project,
   });
@@ -438,14 +439,21 @@ try {
   const fileTile = (p) => `[...document.querySelectorAll('.cmp .tile')].find(t => t.title === ${JSON.stringify(p)})`;
   await main.until("the dropped files attached", `!!${fileTile(pdf)} && !!${fileTile(secondPdf)} && !!${fileTile(otherFile)}`, 30000);
   check(await main.run(`!document.querySelector('.dcp')`), "a dropped PDF opened by itself");
-  await main.run(`${fileTile(pdf)}.querySelector('.tile-open').click()`);
+  // A PDF is a result: over the window (content-actions-design DD-161), its button takes it to the panel.
+  const toPanel = async (p) => {
+    await main.run(`${fileTile(p)}.querySelector('.tile-open').click()`);
+    await main.until("the PDF over the window", `!!document.querySelector('.fpv-panel')`, 30000);
+    await main.run(`document.querySelector('.fpv-panel').click()`);
+    await main.until("the PDF out of the preview", `!document.querySelector('.fpv')`);
+  };
+  await toPanel(pdf);
   await main.until("the first PDF open", `document.querySelectorAll('.dcp-tab').length === 1`, 30000);
-  await main.run(`${fileTile(secondPdf)}.querySelector('.tile-open').click()`);
+  await toPanel(secondPdf);
   await main.until("both PDFs open", `document.querySelectorAll('.dcp-tab').length === 2 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === '第二份.PDF'`, 30000);
   await main.run(`document.querySelectorAll('.dcp-tab-close')[0].click()`);
   await main.until("inactive tab closed", `document.querySelectorAll('.dcp-tab').length === 1 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === '第二份.PDF'`);
-  await main.run(`${fileTile(pdf)}.querySelector('.tile-open').click()`);
-  await main.run(`${fileTile(secondPdf)}.querySelector('.tile-open').click()`);
+  await toPanel(pdf);
+  await toPanel(secondPdf);
   await main.until("two PDFs open again", `document.querySelectorAll('.dcp-tab').length === 2 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === '第二份.PDF'`);
   await main.run(`document.querySelector('.dcp-tab[aria-selected="true"]').parentElement.querySelector('.dcp-tab-close').click()`);
   await main.until("active tab closed and remaining tab selected", `document.querySelectorAll('.dcp-tab').length === 1 && document.querySelector('.dcp-tab[aria-selected="true"]')?.textContent === ${JSON.stringify(pdfName)}`);

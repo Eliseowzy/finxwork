@@ -125,7 +125,7 @@ fn pages() -> HashMap<&'static str, String> {
     pages.insert(
         "/form",
         r#"<title>Form</title><select id=s aria-label="Size"><option value=s>Small</option><option value=l>Large</option></select>
-        <input type=checkbox aria-label="Agree"><input type=file aria-label="Attachment">
+        <input type=checkbox aria-label="Agree"><input type=file aria-label="Attachment"><input type=color aria-label="Tint">
         <p id=state></p>
         <script>
           document.getElementById('s').addEventListener('change', e => document.getElementById('state').textContent = 'size ' + e.target.value);
@@ -188,6 +188,8 @@ impl Fixture {
                 action_timeout: Duration::from_secs(10),
                 label: None,
                 prefix: "",
+                numbers: Default::default(),
+                note: None,
             },
         )
     }
@@ -359,6 +361,30 @@ async fn select_check_upload_and_download() {
     assert!(result.contains("Downloaded"), "{result}");
     let saved = std::fs::read_to_string(fx.dir.path().join("downloads").join("report.txt")).unwrap();
     assert_eq!(saved, "downloaded text");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn clicks_never_open_what_would_cover_the_screen() {
+    let Some(fx) = Fixture::new().await else { return };
+    let session = fx.session().await;
+    let opened = session.navigate(None, &fx.url("/form"), false).await.unwrap();
+
+    let size = ref_of(&opened.text, "combobox \"Size\"");
+    let refused = act(&session, Action::Click, &size).await.unwrap_err().to_string();
+    assert!(refused.contains("Use select"), "{refused}");
+    let tint = ref_of(&opened.text, "Tint");
+    let refused = act(&session, Action::Click, &tint).await.unwrap_err().to_string();
+    assert!(refused.contains("color picker"), "{refused}");
+
+    // The page's file chooser goes no further than the tab, and the agent hears of it.
+    let attachment = ref_of(&opened.text, "Attachment");
+    let clicked = act(&session, Action::Click, &attachment).await.unwrap();
+    assert!(clicked.contains("Use upload"), "{clicked}");
+    // Only around its actions: nothing is left to say afterwards, and upload still works.
+    let file = fx.dir.path().join("cv.pdf");
+    std::fs::write(&file, b"%PDF").unwrap();
+    let uploaded = act(&session, Action::Upload(vec![file]), &attachment).await.unwrap();
+    assert!(uploaded.contains("file cv.pdf") && !uploaded.contains("Use upload"), "{uploaded}");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

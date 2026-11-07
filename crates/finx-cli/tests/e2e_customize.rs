@@ -80,7 +80,7 @@ async fn skill_state(env: &TestEnv, cwd: &Path, name: &str) -> String {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_command_line_adds_switches_and_removes_skills_and_servers() {
-    let env = TestEnv::new("manual", "").await;
+    let env = TestEnv::new("bypass-permissions", "").await;
     let work = project(&env, "repo");
     let download = write_skill(&env.workspace("downloads"), "weekly", "Weekly report.");
     let from = download.to_str().unwrap();
@@ -107,7 +107,8 @@ async fn the_command_line_adds_switches_and_removes_skills_and_servers() {
     let (code, out) = run(&env, &work, &["skills", "remove", "weekly"]).await;
     assert_eq!(code, 0, "{out}");
     assert!(!installed.exists());
-    assert!(env.user_home().join(".Trash/weekly").join("SKILL.md").is_file(), "{out}");
+    let trashed = if cfg!(target_os = "macos") { ".Trash/weekly" } else { ".local/share/Trash/files/weekly" };
+    assert!(env.user_home().join(trashed).join("SKILL.md").is_file(), "{out}");
 
     // A server with a secret: the value goes to the credential store, the file gets a reference.
     let bin = server_bin();
@@ -128,7 +129,7 @@ async fn the_command_line_adds_switches_and_removes_skills_and_servers() {
     assert!(out.contains("mcp done: sk-test-1"), "{out}");
 
     // Off for this project only, then on again.
-    assert_eq!(run(&env, &work, &["mcp", "disable", "vault", "--here"]).await.0, 0);
+    assert_eq!(run(&env, &work, &["mcp", "disable", "vault", "--local"]).await.0, 0);
     let personal = std::fs::read_dir(env.home.path().join("projects")).unwrap().flatten().next().unwrap().path().join("config.toml");
     assert!(std::fs::read_to_string(&personal).unwrap().contains("enabled = false"));
     let (_, listed) = run(&env, &work, &["mcp", "list"]).await;
@@ -322,7 +323,7 @@ async fn the_page_manages_configuration_skills_and_servers_through_the_service()
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_session_records_its_servers_for_the_page() {
-    let env = TestEnv::new("manual", "").await;
+    let env = TestEnv::new("bypass-permissions", "").await;
     let work = project(&env, "repo");
     std::fs::write(
         env.home.path().join("config.toml"),

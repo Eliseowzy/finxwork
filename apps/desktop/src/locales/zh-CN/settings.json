@@ -2,16 +2,33 @@
   "title": "设置",
   "pages": {
     "general": "通用",
+    "notifications": "通知",
     "models": "模型",
+    "search": "联网搜索",
     "about": "关于",
     "browser": "浏览器",
     "desktop": "电脑操控"
+  },
+  "notifications": {
+    "enabled": "允许通知",
+    "enabledNote": "应用不在前台时，Bot 的回复、要你确认的事和失败的任务会通知你，应用图标上也会显示数字。",
+    "sound": "提示音",
+    "sessionEnded": "会话任务结束时通知",
+    "sessionEndedNote": "任务等你确认或失败时总会通知。",
+    "test": "试一下",
+    "testNote": "第一次发送时，系统会询问是否允许 FinxWork 发通知。",
+    "testButton": "发一条",
+    "system": "系统通知设置",
+    "systemNote": "如果没有收到通知，可以在这里检查是否已允许，也可以选择通知的样式。",
+    "systemButton": "打开",
+    "muteNote": "不想收到某个 Bot 的通知，可以在它的设置里打开免打扰。"
   },
   "appearance": {
     "title": "外观",
     "system": "跟随系统",
     "light": "浅色",
-    "dark": "深色"
+    "gray": "柔灰",
+    "black": "深黑"
   },
   "language": {
     "title": "语言",
@@ -287,7 +304,7 @@
     "off": "用你已登录的账号打开需要登录的网站。",
     "on": "需要你账号的网站会在这里打开。",
     "ready": "扩展已连接，还没有使用。",
-    "lost": "扩展没有连上。",
+    "lost": "扩展没有连上。确认 {{name}} 的扩展程序页面里 FinxWork 是打开的。",
     "closed": "{{name}} 没有打开，打开后会自动连上。",
     "none": "没有找到 Chrome、Edge 或 Brave。",
     "outdated": {
@@ -314,7 +331,7 @@
       "install": "在 {{name}} 里添加 FinxWork 扩展，只需要做一次：",
       "howto": {
         "open": "打开 {{name}} 的扩展程序页面。",
-        "developer": "打开页面右上角的“开发者模式”开关。",
+        "developer": "打开页面右上角的“开发者模式”开关，并保持打开：关掉后 Chrome 可能会停用这个扩展。",
         "drag": "把“FinxWork Extension”文件夹拖到扩展程序页面上。"
       },
       "openExtensions": "打开扩展程序页面",
@@ -385,7 +402,16 @@
     "defaultDesc": "智能体没指定时，新网页在这里打开。",
     "yoursOption": "{{name}}（你的浏览器）",
     "connectTitle": "连接你的浏览器",
-    "disconnect": "断开"
+    "disconnect": "断开",
+    "refused": "FinxWork 刚更新，扩展正在换用新版本，几秒内会自己连上。",
+    "refusedStuck": "扩展还在用旧程序。在扩展程序页面点一下 FinxWork 的刷新按钮。",
+    "elsewhere": "这个浏览器现在连着另一个 FinxWork。",
+    "takeOver": "改连这里…",
+    "useThis": "用这个",
+    "diagnose": "查看诊断信息",
+    "copyDiagnosis": "拷贝",
+    "hideDiagnosis": "收起",
+    "diagnosisCopied": "已拷贝诊断信息"
   },
   "desktop": {
     "enable": "允许 FinxWork 控制你电脑上的应用",
@@ -419,5 +445,99 @@
     "granted": "已授权",
     "notGranted": "未授权",
     "openSettings": "打开系统设置"
+  },
+  "routines": {
+    "atLogin": "有定时任务时，登录时启动 FinxWork",
+    "atLoginNote": "重启后定时任务也能跑。启动时不开窗口，macOS 会提示\"已添加后台项目\"。",
+    "keepAwake": "有定时任务时保持唤醒",
+    "keepAwakeNote": "接着电源时，Mac 不会因为空闲睡着。合盖还是会睡，用电池时不生效。"
+  },
+  "search": {
+    "master": "允许模型联网搜索",
+    "masterNote": "需要时模型会自己搜索。搜索词会发给下面列表里的服务。",
+    "masterOn": "联网搜索已开启",
+    "masterOff": "联网搜索已关闭",
+    "services": "搜索服务",
+    "intro": "从上到下，先用第一个可用的；失败就换下一个。拖动调整顺序。",
+    "current": "正在用",
+    "noneLeft": "所有服务都关了，模型现在搜不了。",
+    "grip": "拖动调整 {{name}} 的顺序，也可以用上下键",
+    "gripTitle": "拖动调整顺序",
+    "use": "使用 {{name}}",
+    "usedTitle": "搜索时会用它",
+    "skippedTitle": "搜索时跳过",
+    "connect": "去连接",
+    "addKey": "添加密钥",
+    "more": "更多",
+    "test": "测试搜索",
+    "replaceKey": "更换密钥",
+    "removeKey": "移除密钥",
+    "needsAccount": "要先在“模型”里连接 {{name}}",
+    "fromEnv": "用环境变量 {{env}} 里的密钥",
+    "failed": "{{what}} · {{when}}",
+    "usedNext": "。这次用了下一个",
+    "failure": {
+      "auth_failed": "密钥被拒绝了",
+      "quota_exhausted": "额度用完了",
+      "rate_limited": "限流了",
+      "unreachable": "连不上",
+      "bad_response": "回答读不了"
+    },
+    "why": {
+      "auth_failed": "密钥被拒绝",
+      "quota_exhausted": "额度用完了",
+      "rate_limited": "在限流",
+      "unreachable": "连不上",
+      "bad_response": "回答读不了"
+    },
+    "worked_other": "{{name}} 可用 · {{count}} 条结果 · {{seconds}} 秒",
+    "testFailed": "{{name}} 没测通：{{why}}",
+    "movedFirst": "，已排到最前",
+    "savedUntested": "密钥已保存，暂时没测通",
+    "refused": "{{name}} 拒绝了这个密钥，没有保存。",
+    "removeTitle": "移除 {{name}} 的密钥？",
+    "removeNote": "密钥会从钥匙串删除，这一行搜索时会跳过。",
+    "removeNoteFree": "密钥会从钥匙串删除，之后继续用免费额度。",
+    "remove": "移除",
+    "removed": "已移除密钥，{{name}} 这一行搜索时会跳过",
+    "removedFree": "已移除密钥，继续用免费额度",
+    "addTitle": "添加 {{name}} 密钥",
+    "replaceTitle": "更换 {{name}} 密钥",
+    "apiKey": "API Key",
+    "getKey": "去 {{name}} 获取",
+    "keychain": "密钥保存在钥匙串",
+    "cancel": "取消",
+    "saveAndTest": "保存并测试",
+    "testing": "正在测试…",
+    "sources": {
+      "deepseek": {
+        "desc": "和模型共用密钥 · $0.75/千次"
+      },
+      "exa": {
+        "desc": "免费额度，不用密钥",
+        "keyed": "已添加密钥 · $4/千次，每月 $10 免费",
+        "sheet": "不加密钥也能用。加了之后用你自己的额度，限额更高。"
+      },
+      "parallel": {
+        "desc": "免费额度，不用密钥",
+        "keyed": "已添加密钥，限额更高",
+        "sheet": "不加密钥也能用。加了之后限额更高。"
+      },
+      "tavily": {
+        "desc": "每月 1000 次免费，需要密钥",
+        "keyed": "已添加密钥 · 每月 1000 次免费",
+        "sheet": "每月 1000 次免费，之后每次约 $0.008。"
+      },
+      "brave": {
+        "desc": "每月 $5 免费额度，需要密钥",
+        "keyed": "已添加密钥 · 每月 $5 免费额度",
+        "sheet": "每月 $5 免费额度，约 1000 次。注册时要绑卡。"
+      },
+      "bocha": {
+        "desc": "中文内容，需要密钥",
+        "keyed": "已添加密钥",
+        "sheet": "面向中文内容的搜索服务。"
+      }
+    }
   }
 }

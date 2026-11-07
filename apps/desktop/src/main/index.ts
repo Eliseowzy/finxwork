@@ -9,6 +9,8 @@ import { retireModelGateway } from "./retire-model-gateway";
 import { startKernel } from "./kernel";
 import { chooseLanguage } from "./language";
 import { setAppMenu } from "./menu";
+import { notifier, startNotifications } from "./notify";
+import { openedAtLogin, routineKeeper, startRoutineKeeper } from "./routines";
 import { platform } from "./platform";
 import { applyAppearance } from "./preferences";
 import { startUpdater } from "./updater";
@@ -82,11 +84,26 @@ app.whenReady().then(async () => {
     return;
   }
   forgetSitesOnStart();
-  startKernel();
+  startNotifications();
+  startRoutineKeeper();
+  startKernel({
+    reconnected: () => notifier.reconnected(),
+    sessionList: (list) => notifier.sessionList(list),
+    sessionsChanged: (changed, deleted) => notifier.sessionsChanged(changed, deleted),
+    botList: (list) => {
+      notifier.botList(list);
+      routineKeeper.botList(list);
+    },
+    botsChanged: (changed, deleted) => {
+      notifier.botsChanged(changed, deleted);
+      routineKeeper.botsChanged(changed, deleted);
+    },
+  });
   void refreshSystemBrowser();
   startUpdater();
   setAppMenu();
-  showMain();
+  // Started at login for its routines: no window, until the person asks for one (routine-design §7.4).
+  if (!openedAtLogin()) showMain();
   app.on("activate", () => showMain());
 });
 

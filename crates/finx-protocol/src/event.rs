@@ -207,6 +207,17 @@ pub enum EventMsg {
     InputWithdrawn {
         id: String,
     },
+    /// `resend`: the conversation went back to just before `message_id`. That message and all
+    /// after it are no longer part of it, and the input that replaces it follows.
+    SessionRewound {
+        message_id: String,
+        /// The sub-agents started in the part taken back: they are gone.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        removed_agents: Vec<String>,
+        /// What still waited for the running task, handed back as with an interruption.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        returned_input: Vec<UserMessage>,
+    },
     SettingsChanged {
         model: String,
         thinking: ThinkingLevel,
@@ -222,6 +233,15 @@ pub enum EventMsg {
     /// The session was archived or brought back (`set_archived`).
     ArchivedChanged {
         archived: bool,
+    },
+    /// A call that needs approval was refused because nothing here can give it: a run without a
+    /// person, such as `finx exec` in a script.
+    ApprovalRefused {
+        call_id: String,
+        name: String,
+        summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     Warning {
         message: String,
@@ -360,6 +380,8 @@ pub enum WarningCode {
     /// MCP servers that were not ready for the session's first request. A client that shows
     /// `mcp_server_status` already has this.
     McpServersNotReady,
+    /// A `resend` was refused and nothing changed: its input is still the client's.
+    ResendRejected,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -494,6 +516,14 @@ pub struct AgentRef {
 pub enum MailKind {
     /// What a sub-agent reports when it has finished a round of work.
     Report,
+    /// What a sub-agent sends with `send_message` while it works: its round goes on.
+    Message,
+    /// What a run of a routine has to say, or that it failed: `from` is the run and the
+    /// routine's name (docs/kernel/routine-design.md §2.3).
+    Routine,
+    /// What a bot's sub-agent told the user with `send_to_user`: they have it already, and its
+    /// round goes on (docs/kernel/agent-messaging-design.md §17).
+    ToUser,
 }
 
 /// Where a delivered message came from.
@@ -507,6 +537,9 @@ pub struct MailInfo {
     /// show their own words for it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub no_reply: bool,
+    /// The routine, when a run of it sent this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routine_id: Option<String>,
 }
 
 /// A skill the user mentioned with `/skill:name`; its instructions went to the model with the

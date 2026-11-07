@@ -5,8 +5,10 @@ use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as B64};
 use finx_llm::connection::{Authorization, ConnectionRequest};
 use finx_llm::credentials::CredentialStore;
-use finx_llm::{AuthConfig, Credentials, Modality, ModelRegistry, ProviderConfig};
-use finx_protocol::api::{ChatGptLoginState, ChatGptStatus, ConnectionModel, ConnectionState, ConnectionView};
+use finx_llm::{AuthConfig, Credentials, ModelRegistry, ProviderConfig};
+use finx_protocol::api::{
+    ChatGptLoginState, ChatGptStatus, ConnectionModel, ConnectionState, ConnectionView,
+};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -23,7 +25,8 @@ use url::Url;
 
 pub const ID: &str = "chatgpt-api";
 const DIRECT_SCOPE: &str = "chatgpt.tokens.use.direct";
-const SCOPES: &str = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+const SCOPES: &str =
+    "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 const RESOURCE: &str = "https://api.openai.com/v1";
 const AGENT: &str = "FinxWork";
 
@@ -112,7 +115,8 @@ fn now() -> i64 {
 }
 fn random() -> String {
     let mut data = [0u8; 32];
-    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut data).expect("OS random generator");
+    ring::rand::SecureRandom::fill(&ring::rand::SystemRandom::new(), &mut data)
+        .expect("OS random generator");
     B64.encode(data)
 }
 
@@ -163,7 +167,8 @@ impl ChatGpt {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o700)).map_err(|_| storage())?;
+            std::fs::set_permissions(&self.dir, std::fs::Permissions::from_mode(0o700))
+                .map_err(|_| storage())?;
         }
         let mut opts = std::fs::OpenOptions::new();
         opts.read(true).write(true).create(true).truncate(false);
@@ -181,13 +186,20 @@ impl ChatGpt {
             loop {
                 match file.try_lock() {
                     Ok(()) => return Ok(file),
-                    Err(std::fs::TryLockError::WouldBlock) => tokio::time::sleep(Duration::from_millis(50)).await,
+                    Err(std::fs::TryLockError::WouldBlock) => {
+                        tokio::time::sleep(Duration::from_millis(50)).await
+                    }
                     Err(_) => return Err(storage()),
                 }
             }
         })
         .await
-        .map_err(|_| failure("connection_busy", "ChatGPT connection is busy; retry shortly"))?
+        .map_err(|_| {
+            failure(
+                "connection_busy",
+                "ChatGPT connection is busy; retry shortly",
+            )
+        })?
     }
     fn tokens(&self) -> Result<Tokens> {
         let raw = self
@@ -199,7 +211,10 @@ impl ChatGpt {
     }
     fn save_tokens(&self, t: &Tokens) -> Result<()> {
         self.store()?
-            .set(&self.credential_key, &serde_json::to_string(t).map_err(|_| storage())?)
+            .set(
+                &self.credential_key,
+                &serde_json::to_string(t).map_err(|_| storage())?,
+            )
             .map_err(|_| storage())
     }
     fn provider(p: &Profile) -> Option<String> {
@@ -242,36 +257,22 @@ impl ChatGpt {
             let mut providers = vec![];
             if p.enabled && !p.needs_login {
                 if let Some(id) = Self::provider(&p) {
-                    let mut provider = ProviderConfig {
+                    providers.push(ProviderConfig {
                         plan: None,
                         id,
                         name: "ChatGPT API".into(),
+                        names: Default::default(),
                         api: "openai-responses".into(),
                         base_url: self.endpoints.api.clone(),
                         auth: AuthConfig::Managed,
                         headers: Default::default(),
                         currency: Default::default(),
                         compat: Default::default(),
-                        models: vec![],
-                        listing: Default::default(),
-                    };
-                    provider.models = p
-                        .models
-                        .iter()
-                        .map(|m| {
-                            let mut model = provider.ad_hoc_model(&m.id);
-                            model.name = m.name.clone();
-                            model.context_window = m.context_window.unwrap_or(32768);
-                            model.reasoning = m.reasoning;
-                            model.thinking = m.thinking.clone();
-                            model.default_thinking = m.default_thinking;
-                            if m.images {
-                                model.input = vec![Modality::Text, Modality::Image];
-                            }
-                            Arc::new(model)
-                        })
-                        .collect();
-                    providers.push(provider);
+                        listing: finx_llm::catalog::Listing {
+                            entries: p.models.iter().map(crate::declared_model).collect(),
+                            ..Default::default()
+                        },
+                    });
                 }
             } else {
                 self.cancellation.read().cancel();
@@ -304,14 +305,13 @@ impl ChatGpt {
         let p = self.read()?;
         let login = self.login.lock();
         Ok(ChatGptStatus {
-            state: login
-                .as_ref()
-                .map(|l| l.state.clone())
-                .unwrap_or(if p.enabled && !p.needs_login {
+            state: login.as_ref().map(|l| l.state.clone()).unwrap_or(
+                if p.enabled && !p.needs_login {
                     ChatGptLoginState::Connected
                 } else {
                     ChatGptLoginState::Idle
-                }),
+                },
+            ),
             login_id: login.as_ref().map(|l| l.id.clone()),
             authorize_url: login
                 .as_ref()
@@ -350,7 +350,12 @@ impl ChatGpt {
         })?;
         let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
             .await
-            .map_err(|_| failure("callback_unavailable", "Cannot open the local ChatGPT sign-in callback"))?;
+            .map_err(|_| {
+                failure(
+                    "callback_unavailable",
+                    "Cannot open the local ChatGPT sign-in callback",
+                )
+            })?;
         let redirect = format!(
             "http://127.0.0.1:{}/auth/callback",
             listener
@@ -361,7 +366,10 @@ impl ChatGpt {
         let state = random();
         let nonce = random();
         let verifier = random();
-        let challenge = B64.encode(ring::digest::digest(&ring::digest::SHA256, verifier.as_bytes()));
+        let challenge = B64.encode(ring::digest::digest(
+            &ring::digest::SHA256,
+            verifier.as_bytes(),
+        ));
         let mut url = Url::parse(&format!("{}/api/accounts/authorize", self.endpoints.issuer))
             .map_err(|_| ConnectionError::unsupported())?;
         {
@@ -373,7 +381,10 @@ impl ChatGpt {
             }
             let mut q = url.query_pairs_mut();
             q.extend_pairs([
-                ("client_id", p.client_id.as_deref().unwrap_or("dynamic_agent_client")),
+                (
+                    "client_id",
+                    p.client_id.as_deref().unwrap_or("dynamic_agent_client"),
+                ),
                 ("response_type", "code"),
                 ("redirect_uri", &redirect),
                 ("scope", SCOPES),
@@ -410,7 +421,10 @@ impl ChatGpt {
                 r=tokio::time::timeout(Duration::from_secs(600),this.callback(listener,&state))=>r.unwrap_or_else(|_|Err(failure("login_timeout","ChatGPT sign-in timed out"))),
             };
             let result = match result {
-                Ok(query) => this.complete(query, &redirect, &verifier, &nonce, &cancel).await,
+                Ok(query) => {
+                    this.complete(query, &redirect, &verifier, &nonce, &cancel)
+                        .await
+                }
                 Err(e) => Err(e),
             };
             let _ = this.sync();
@@ -427,7 +441,7 @@ impl ChatGpt {
                         } else {
                             ChatGptLoginState::Failed
                         };
-                        l.message = Some(e.message);
+                        l.message = Some(e.into_message());
                     }
                 }
             }
@@ -441,7 +455,10 @@ impl ChatGpt {
         state: &str,
     ) -> Result<std::collections::HashMap<String, String>> {
         loop {
-            let (mut socket, _) = listener.accept().await.map_err(|_| ConnectionError::unavailable())?;
+            let (mut socket, _) = listener
+                .accept()
+                .await
+                .map_err(|_| ConnectionError::unavailable())?;
             let mut data = vec![0u8; 8192];
             let mut len = 0;
             let read = tokio::time::timeout(Duration::from_secs(3), async {
@@ -512,7 +529,10 @@ impl ChatGpt {
     async fn post_token(&self, form: &[(&str, &str)]) -> Result<Value> {
         let r = self
             .http()?
-            .post(format!("{}/api/accounts/oauth/token", self.endpoints.issuer))
+            .post(format!(
+                "{}/api/accounts/oauth/token",
+                self.endpoints.issuer
+            ))
             .timeout(Duration::from_secs(30))
             .form(form)
             .send()
@@ -523,7 +543,10 @@ impl ChatGpt {
         if !status.is_success() {
             let code = v["error"].as_str().or_else(|| v["error"]["code"].as_str());
             return Err(match code {
-                Some("invalid_client") => failure("invalid_client", "ChatGPT did not accept this client registration"),
+                Some("invalid_client") => failure(
+                    "invalid_client",
+                    "ChatGPT did not accept this client registration",
+                ),
                 Some(
                     "invalid_grant"
                     | "invalid_refresh_token"
@@ -534,7 +557,10 @@ impl ChatGpt {
                 ) => login_required(),
                 _ if status.as_u16() == 401 => login_required(),
                 _ if status.is_server_error() => ConnectionError::unavailable(),
-                _ => failure("oauth_exchange_failed", "ChatGPT authorization failed; retry sign-in"),
+                _ => failure(
+                    "oauth_exchange_failed",
+                    "ChatGPT authorization failed; retry sign-in",
+                ),
             });
         }
         Ok(v)
@@ -542,7 +568,10 @@ impl ChatGpt {
     async fn discovery(&self) -> Result<Value> {
         let v: Value = self
             .http()?
-            .get(format!("{}/.well-known/openid-configuration", self.endpoints.issuer))
+            .get(format!(
+                "{}/.well-known/openid-configuration",
+                self.endpoints.issuer
+            ))
             .timeout(Duration::from_secs(20))
             .send()
             .await
@@ -560,7 +589,8 @@ impl ChatGpt {
     fn trusted_endpoint(&self, v: &Value, key: &str) -> Result<String> {
         let value = v[key].as_str().ok_or_else(ConnectionError::unsupported)?;
         let u = Url::parse(value).map_err(|_| ConnectionError::unsupported())?;
-        let issuer = Url::parse(&self.endpoints.issuer).map_err(|_| ConnectionError::unsupported())?;
+        let issuer =
+            Url::parse(&self.endpoints.issuer).map_err(|_| ConnectionError::unsupported())?;
         if u.origin() != issuer.origin() || !u.username().is_empty() || u.password().is_some() {
             return Err(ConnectionError::unsupported());
         }
@@ -572,8 +602,8 @@ impl ChatGpt {
         if parts.len() != 3 {
             return Err(invalid());
         }
-        let header: Value =
-            serde_json::from_slice(&B64.decode(parts[0]).map_err(|_| invalid())?).map_err(|_| invalid())?;
+        let header: Value = serde_json::from_slice(&B64.decode(parts[0]).map_err(|_| invalid())?)
+            .map_err(|_| invalid())?;
         if header["alg"] != "RS256" {
             return Err(invalid());
         }
@@ -616,10 +646,13 @@ impl ChatGpt {
                 &signature,
             )
             .map_err(|_| invalid())?;
-        let claims: Value =
-            serde_json::from_slice(&B64.decode(parts[1]).map_err(|_| invalid())?).map_err(|_| invalid())?;
+        let claims: Value = serde_json::from_slice(&B64.decode(parts[1]).map_err(|_| invalid())?)
+            .map_err(|_| invalid())?;
         let aud = &claims["aud"];
-        let audience = aud == client || aud.as_array().is_some_and(|a| a.iter().any(|v| v == client));
+        let audience = aud == client
+            || aud
+                .as_array()
+                .is_some_and(|a| a.iter().any(|v| v == client));
         if claims["iss"] != self.endpoints.issuer
             || !audience
             || claims["exp"].as_i64().is_none_or(|e| e <= now())
@@ -680,8 +713,13 @@ impl ChatGpt {
         }
         let _lock = self.lock().await?;
         let mut p = self.read()?;
-        if let Some(client) = q.get("client_id").filter(|s| !s.is_empty() && s.len() < 512) {
-            if client == "dynamic_agent_client" || p.client_id.as_ref().is_some_and(|saved| saved != client) {
+        if let Some(client) = q
+            .get("client_id")
+            .filter(|s| !s.is_empty() && s.len() < 512)
+        {
+            if client == "dynamic_agent_client"
+                || p.client_id.as_ref().is_some_and(|saved| saved != client)
+            {
                 return Err(failure(
                     "invalid_client",
                     "ChatGPT returned a different registration; the existing connection was kept",
@@ -691,7 +729,10 @@ impl ChatGpt {
             self.save(&p)?;
         }
         if q.contains_key("error") {
-            return Err(failure("authorization_denied", "ChatGPT sign-in was not authorized"));
+            return Err(failure(
+                "authorization_denied",
+                "ChatGPT sign-in was not authorized",
+            ));
         }
         let client = p
             .client_id
@@ -713,7 +754,9 @@ impl ChatGpt {
             .await?;
         let claims = self
             .verify_id(
-                v["id_token"].as_str().ok_or_else(ConnectionError::unsupported)?,
+                v["id_token"]
+                    .as_str()
+                    .ok_or_else(ConnectionError::unsupported)?,
                 client,
                 Some(nonce),
             )
@@ -738,7 +781,9 @@ impl ChatGpt {
             p.plan_permission_required = true;
             p.models.clear();
             self.save(&p)?;
-            self.store()?.delete(&self.credential_key).map_err(|_| storage())?;
+            self.store()?
+                .delete(&self.credential_key)
+                .map_err(|_| storage())?;
             self.sync()?;
             return Err(failure(
                 "scope_not_granted",
@@ -802,7 +847,9 @@ impl ChatGpt {
                 if e.code == "connection_login_required" {
                     p.needs_login = true;
                     self.save(&p)?;
-                    self.store()?.delete(&self.credential_key).map_err(|_| storage())?;
+                    self.store()?
+                        .delete(&self.credential_key)
+                        .map_err(|_| storage())?;
                     self.sync()?;
                 }
                 return Err(e);
@@ -825,7 +872,9 @@ impl ChatGpt {
                 // token or install an identity that failed validation.
                 p.needs_login = true;
                 self.save(&p)?;
-                self.store()?.delete(&self.credential_key).map_err(|_| storage())?;
+                self.store()?
+                    .delete(&self.credential_key)
+                    .map_err(|_| storage())?;
                 self.sync()?;
                 return Err(login_required());
             }
@@ -852,7 +901,9 @@ impl ChatGpt {
             ));
         }
         let v: Value = r.json().await.map_err(|_| ConnectionError::unsupported())?;
-        let rows = v["models"].as_array().ok_or_else(ConnectionError::unsupported)?;
+        let rows = v["models"]
+            .as_array()
+            .ok_or_else(ConnectionError::unsupported)?;
         let mut models = vec![];
         for m in rows.iter().filter(|m| m["visibility"] == "list") {
             let id = m["slug"]
@@ -885,7 +936,10 @@ impl ChatGpt {
             models.push(ConnectionModel {
                 id: id.into(),
                 name: m["display_name"].as_str().unwrap_or(id).into(),
-                context_window: m["context_window"].as_u64().map(|v| v.clamp(1024, 2_000_000) as u32),
+                names: Default::default(),
+                context_window: m["context_window"]
+                    .as_u64()
+                    .map(|v| v.clamp(1024, 2_000_000) as u32),
                 max_output_tokens: None,
                 reasoning: !thinking.is_empty(),
                 images: m["input_modalities"]
@@ -960,7 +1014,9 @@ impl ChatGpt {
         if let Ok(tokens) = self.tokens() {
             revoke_failed = self.revoke(&tokens, &p).await.is_err();
         }
-        self.store()?.delete(&self.credential_key).map_err(|_| storage())?;
+        self.store()?
+            .delete(&self.credential_key)
+            .map_err(|_| storage())?;
         // Keep the verified account/client mapping for reauthorization on this host.
         p.models.clear();
         p.fetched_at = None;
@@ -980,9 +1036,12 @@ impl ChatGpt {
     /// Explicit removal forgets a registration; ordinary sign-out retains it.
     pub async fn forget(&self) -> Result<()> {
         let login_lock = self.lock_file("login.lock")?;
-        login_lock
-            .try_lock()
-            .map_err(|_| failure("connection_busy", "Cancel the pending ChatGPT sign-in first"))?;
+        login_lock.try_lock().map_err(|_| {
+            failure(
+                "connection_busy",
+                "Cancel the pending ChatGPT sign-in first",
+            )
+        })?;
         let _lock = self.lock().await?;
         let mut p = self.read()?;
         if p.enabled {
@@ -991,7 +1050,9 @@ impl ChatGpt {
                 "Disconnect ChatGPT API before forgetting the account",
             ));
         }
-        self.store()?.delete(&self.credential_key).map_err(|_| storage())?;
+        self.store()?
+            .delete(&self.credential_key)
+            .map_err(|_| storage())?;
         p.plan_permission_required = false;
         p.client_id = None;
         p.subject = None;
@@ -1037,7 +1098,10 @@ struct Request {
 }
 #[async_trait]
 impl ConnectionRequest for Request {
-    async fn authorize(&self, rejected: bool) -> std::result::Result<Authorization, finx_llm::LlmError> {
+    async fn authorize(
+        &self,
+        rejected: bool,
+    ) -> std::result::Result<Authorization, finx_llm::LlmError> {
         let old = self.used.lock().clone();
         let tokens = self
             .owner
@@ -1060,7 +1124,7 @@ impl ConnectionRequest for Request {
     fn failed(&self, error: &mut finx_llm::LlmError) {
         // Keep actionable quota/eligibility messages. Never substitute an API key or change route.
         if error.kind == finx_llm::ErrorKind::Auth {
-            error.message = login_required().message;
+            error.message = login_required().into_message();
         }
     }
 }

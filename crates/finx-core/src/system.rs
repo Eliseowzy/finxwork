@@ -10,12 +10,14 @@ use std::sync::atomic::Ordering;
 use crate::config::BrowserSettings;
 use crate::config::Config;
 use crate::config::DesktopSettings;
+use crate::config::WebSearchSettings;
 
-/// `[browser]` and `[desktop]`, as one value.
+/// `[browser]`, `[desktop]` and `[web_search]`, as one value.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SystemSettings {
     pub browser: BrowserSettings,
     pub desktop: DesktopSettings,
+    pub web_search: WebSearchSettings,
 }
 
 impl SystemSettings {
@@ -23,6 +25,7 @@ impl SystemSettings {
         Self {
             browser: config.browser.clone(),
             desktop: config.desktop.clone(),
+            web_search: config.web_search.clone(),
         }
     }
 }
@@ -91,7 +94,7 @@ impl crate::session::Session {
             (None, false) => {}
         }
         let docs = self.tool_state.get::<crate::docs::DocsHandle>().is_some();
-        *self.deferred.lock() = Arc::new(crate::deferred::Deferred::of(&settings, self.browser_pool.is_some(), embedded, docs));
+        *self.deferred.lock() = Arc::new(crate::deferred::Deferred::of(&settings, self.browser_pool.is_some(), embedded, docs, self.agent_role));
         *self.base_tools.lock() = crate::mcp::base_tools(&self.core_tools, self.mcp.as_ref(), &self.deferred, &self.mcp_shown);
         if self.refresh_tools(true) {
             self.record_system_prompt();

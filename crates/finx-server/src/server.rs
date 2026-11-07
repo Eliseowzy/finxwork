@@ -24,6 +24,8 @@ use finx_protocol::api::ResourceReadResult;
 use finx_protocol::api::SessionInfo;
 use finx_protocol::api::SessionListParams;
 use finx_protocol::api::SessionListResult;
+use finx_protocol::api::ToolsListParams;
+use finx_protocol::api::ToolsListResult;
 use finx_protocol::api::SessionSummary;
 use finx_protocol::api::SkillsListParams;
 use finx_protocol::api::SkillsListResult;
@@ -85,6 +87,9 @@ pub struct NewSession {
     pub model: Option<String>,
     pub thinking: Option<ThinkingLevel>,
     pub permission_mode: Option<PermissionMode>,
+    /// Refuse a model whose provider has no credentials yet, for clients that have a way to send
+    /// the person to sign in (ACP); others hear of it when a task fails.
+    pub require_credentials: bool,
     /// MCP servers the client brings for this session; the same name replaces a configured one.
     pub mcp_servers: Vec<McpServerConfig>,
 }
@@ -110,9 +115,11 @@ pub struct Server(pub(crate) Arc<Inner>);
 pub(crate) struct Inner {
     pub(crate) connections: Arc<finx_connections::Manager>,
     pub(crate) model_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    /// Connections that called `browser/status`, and the extension's last word (crate::browser_status).
+    /// Connections that called `browser/status`, the extensions connected, and why the last
+    /// host was refused (crate::browser_status).
     pub(crate) browser_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
-    pub(crate) extension: Mutex<Option<finx_protocol::api::ExtensionStatus>>,
+    pub(crate) extensions: Mutex<Vec<crate::browser_status::ExtensionEntry>>,
+    pub(crate) host_refused: Mutex<Option<String>>,
     /// Model lists and the catalog (crate::models).
     pub(crate) model_upkeep: crate::models::Upkeep,
     pub(crate) home: FinxHome,
@@ -131,19 +138,27 @@ pub(crate) struct Inner {
     /// Detect create/run/close bursts shorter than the memory-upkeep polling interval.
     closed_sessions: AtomicU64,
     /// Connections following the session list.
-    feed: Arc<ListFeed>,
+    pub(crate) feed: Arc<ListFeed>,
     /// What `session/new` uses for settings it leaves out (the user's configuration).
     pub(crate) defaults: SessionDefaults,
     /// The 自定义 page's subscriptions and file watching (crate::customize).
     pub(crate) customize: crate::customize::State,
     /// What the file panel watches (crate::files).
     pub(crate) files: crate::files::Watches,
-    /// Connections that opened a document: they hear `doc/changed`.
-    pub(crate) doc_conns: Mutex<Vec<crate::conn::ConnHandle>>,
+    /// Connections that opened a document: they hear `doc/changed` (crate::docs).
+    pub(crate) doc_watchers: Mutex<HashMap<crate::conn::ConnId, ConnHandle>>,
     /// The browsers of every session here, one per profile (browser-design §6.1).
     pub(crate) browser_pool: Arc<finx_core::BrowserPool>,
     /// The documents every session here shares (document-editor-design §5.2).
     pub(crate) docs: Arc<finx_docs::DocStore>,
+    /// The presentations every session here shares (presentation-kernel-authority).
+    pub(crate) decks: Arc<finx_docs::deck::DeckStore>,
+    /// Who opened which deck (crate::decks).
+    pub(crate) deck_watchers: crate::decks::DeckWatchers,
+    /// Every bot and who follows their list (crate::bots).
+    pub(crate) bots: Arc<crate::bots::Registry>,
+    /// Their routines (crate::routines).
+    pub(crate) routines: Arc<crate::routines::Routines>,
 }
 
 impl Server {
@@ -153,6 +168,9 @@ impl Server {
             tracing::warn!("{warning}");
         }
         let llm = Arc::new(runtime::model_registry(&options.home, &workspace.config)?);
+        for warning in llm.warnings() {
+            tracing::warn!("{warning}");
+        }
         let defaults = SessionDefaults {
             model: workspace.config.model.clone(),
             thinking: workspace.config.thinking,
@@ -161,14 +179,23 @@ impl Server {
         let connections = finx_connections::Manager::new(options.home.root().to_path_buf(), &llm);
         // A person may watch: show a window where there is a display.
         let browser_pool = Arc::new(finx_core::BrowserPool::new(options.home.browser_dir(), true));
+        let decks = Arc::new(finx_docs::deck::DeckStore::new(
+            options.home.root().join("decks"),
+            finx_docs::deck::DeckLauncher::like(&options.doc_worker),
+        ));
         let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
+        let bots = Arc::new(crate::bots::Registry::new(options.home.clone()));
+        let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
         let server = Server(Arc::new(Inner {
             connections: connections.clone(),
             model_watchers: Mutex::new(HashMap::new()),
             browser_watchers: Mutex::new(HashMap::new()),
-            extension: Mutex::new(None),
+            extensions: Mutex::new(Vec::new()),
+            host_refused: Mutex::new(None),
             model_upkeep: crate::models::Upkeep::new(workspace.config.models_network),
             feed: Arc::new(ListFeed::default()),
+            bots,
+            routines,
             defaults,
             store: Arc::new(JsonlStore::new(options.home.sessions_dir())),
             home: options.home,
@@ -185,25 +212,21 @@ impl Server {
             closed_sessions: AtomicU64::new(0),
             customize: Default::default(),
             files: Default::default(),
-            doc_conns: Mutex::default(),
+            doc_watchers: Mutex::default(),
             // A person may watch: show a window where there is a display.
             browser_pool,
             docs,
+            decks,
+            deck_watchers: Default::default(),
         }));
+        server.0.routines.bind(Arc::downgrade(&server.0));
         let weak = Arc::downgrade(&server.0);
         connections.on_change(Arc::new(move || {
             if let Some(inner) = weak.upgrade() { Server(inner).models_changed(); }
         }));
-        let weak = Arc::downgrade(&server.0);
-        server.0.docs.on_change(move |info| {
-            let Some(inner) = weak.upgrade() else { return };
-            let frame = finx_rpc::notification(finx_protocol::api::method::DOC_CHANGED, &finx_protocol::doc::DocChangedParams { info: info.clone() });
-            let mut conns = inner.doc_conns.lock();
-            conns.retain(|c| !c.queue.is_closed());
-            for c in conns.iter() {
-                c.send(frame.clone());
-            }
-        });
+        server.follow_doc_changes();
+        server.follow_deck_changes();
+        server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
         Ok(server)
     }
@@ -214,6 +237,10 @@ impl Server {
 
     pub fn acp_settings(&self) -> &AcpSettings {
         &self.0.acp
+    }
+
+    pub fn connections(&self) -> &Arc<finx_connections::Manager> {
+        &self.0.connections
     }
 
     pub fn models(&self) -> &Arc<ModelRegistry> {
@@ -251,7 +278,9 @@ impl Server {
         self.forget_model_watcher(conn.id);
         self.forget_customize(conn.id);
         self.forget_files(conn.id);
-        self.0.browser_watchers.lock().remove(&conn.id);
+        self.forget_browser_watcher(conn.id);
+        self.forget_doc_watcher(conn.id);
+        self.forget_deck_watcher(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -268,7 +297,7 @@ impl Server {
         self.0.sessions.lock().values().cloned().collect()
     }
 
-    fn hub(&self, id: &str) -> Option<HubHandle> {
+    pub(crate) fn hub(&self, id: &str) -> Option<HubHandle> {
         self.0.sessions.lock().get(id).cloned()
     }
 
@@ -276,11 +305,15 @@ impl Server {
         self.0.sessions.lock().contains_key(id)
     }
 
-    /// Whether any loaded session is running a task.
+    /// Whether any loaded session is running a task, or a routine's run.
     pub fn busy(&self) -> bool {
         self.hubs()
             .iter()
-            .any(|h| h.shared.busy.load(Ordering::Relaxed))
+            .any(|h| h.shared.busy.load(Ordering::Relaxed) || h.shared.routine_runs.load(Ordering::Relaxed) > 0)
+    }
+
+    pub(crate) fn is_closing(&self) -> bool {
+        self.0.closing.load(Ordering::Relaxed)
     }
 
     pub fn loaded_sessions(&self) -> usize {
@@ -297,12 +330,13 @@ impl Server {
         for hub in &hubs {
             hub.shared.wait_closed().await;
         }
+        self.0.routines.close().await;
     }
 
     /// Makes room for one more session. A full server unloads the session that has gone
     /// unused the longest (no client attached, no task running): its log is on disk, and
     /// resuming loads it again. Fails only when every loaded session is in use.
-    async fn make_room(&self) -> Result<(), RpcError> {
+    pub(crate) async fn make_room(&self) -> Result<(), RpcError> {
         if self.0.closing.load(Ordering::Relaxed) {
             return Err(RpcError::internal("the server is shutting down"));
         }
@@ -342,31 +376,45 @@ impl Server {
         (secs > 0).then(|| Duration::from_secs(secs))
     }
 
-    fn register(
+    /// Starts the hub of a loaded session; `bot` names the bot whose conversation it is.
+    pub(crate) fn register(
         &self,
         kernel: Kernel,
         transcript: Vec<TranscriptItem>,
-        attach: AttachRequest,
+        attach: Option<AttachRequest>,
         base: SummaryBase,
+        bot: Option<String>,
     ) -> String {
         let id = kernel.session_id().to_string();
         let server = Arc::downgrade(&self.0);
         let exit_id = id.clone();
+        let exit_bot = bot.clone();
         let on_exit = Box::new(move |last: SessionSummary| {
             if let Some(inner) = server.upgrade() {
                 inner.sessions.lock().remove(&exit_id);
                 inner.closed_sessions.fetch_add(1, Ordering::Relaxed);
-                inner.feed.publish(vec![last], Vec::new());
+                match &exit_bot {
+                    Some(bot) => inner.bots.on_unloaded(bot),
+                    None => inner.feed.publish(vec![last], Vec::new()),
+                }
             }
         });
+        let listing = match bot {
+            Some(id) => hub::Listing::Bot {
+                id,
+                bots: self.0.bots.clone(),
+                routines: self.0.routines.clone(),
+            },
+            None => hub::Listing::Sessions(self.0.feed.clone()),
+        };
         // Hold the table lock while the hub starts, so `on_exit` cannot run first.
         let mut sessions = self.0.sessions.lock();
         let handle = hub::spawn(
             kernel,
             transcript,
             self.idle_after(),
-            Some(attach),
-            self.0.feed.clone(),
+            attach,
+            listing,
             base,
             on_exit,
         );
@@ -375,13 +423,31 @@ impl Server {
     }
 
     /// The workspace's MCP servers, then the service's (`--mcp-config`), then the client's.
-    fn session_mcp_servers(&self, workspace: &Workspace, client: &[McpServerConfig]) -> Vec<McpServerConfig> {
+    pub(crate) fn session_mcp_servers(&self, workspace: &Workspace, client: &[McpServerConfig]) -> Vec<McpServerConfig> {
         let extra: Vec<McpServerConfig> = self.0.mcp_servers.iter().chain(client).cloned().collect();
         let (servers, warnings) = workspace.mcp_servers_with(&extra);
         for warning in warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
         }
         servers
+    }
+
+    /// The model a new session runs on. May read saved keys (the keychain) when nobody named one.
+    pub(crate) async fn session_model(&self, asked: Option<String>, configured: Option<String>) -> Result<String, RpcError> {
+        if let Some(model) = asked.or(configured) {
+            return Ok(model);
+        }
+        let llm = self.0.llm.clone();
+        tokio::task::spawn_blocking(move || finx_core::models::session_model(&llm, None, None))
+            .await
+            .map_err(|e| RpcError::internal(e.to_string()))?
+            .map_err(|e| errors::from_kernel(e, "new"))
+    }
+
+    /// The model a new session at `cwd` would start on, if there is one. Blocking I/O.
+    pub fn default_model_at(&self, cwd: &Path) -> Option<String> {
+        let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).ok()?;
+        finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
     }
 
     /// Starts a session; `attach` receives its snapshot before any event. Returns the id.
@@ -392,14 +458,26 @@ impl Server {
         self.make_room().await?;
         let cwd = match args.cwd {
             Some(cwd) => cwd,
-            None => self
-                .0
-                .home
-                .new_chat_dir()
-                .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?,
+            None => {
+                // Before a folder is made for it: only the user's own configuration applies here.
+                if args.model.is_none() {
+                    self.session_model(None, self.0.defaults.model.clone()).await?;
+                }
+                self.0
+                    .home
+                    .new_chat_dir()
+                    .map_err(|e| RpcError::internal(format!("cannot make a folder for the session: {e}")))?
+            }
         };
         let workspace = Workspace::open(&self.0.home, &cwd, &self.0.overrides).map_err(errors::from_runtime)?;
-        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
+        let model = self.session_model(args.model, workspace.config.model.clone()).await?;
+        if args.require_credentials
+            && let Some((provider, _)) = model.split_once('/')
+            && matches!(self.0.llm.auth_status(provider), Some(finx_llm::AuthStatus::Missing(_)))
+        {
+            return Err(errors::no_credentials(&model, provider));
+        }
+        let no_project = self.0.home.has_no_project(&workspace.cwd);
         for warning in &workspace.warnings {
             tracing::warn!(cwd = %workspace.cwd.display(), "{warning}");
         }
@@ -409,9 +487,10 @@ impl Server {
             .map_err(errors::from_runtime)?;
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
+        deps.decks = Some(self.0.decks.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &args.mcp_servers);
         let options = StartOptions {
-            model: args.model.unwrap_or_else(|| workspace.config.model.clone()),
+            model,
             thinking: args.thinking.unwrap_or(workspace.config.thinking),
             permission_mode: args
                 .permission_mode
@@ -422,6 +501,7 @@ impl Server {
             trusted: workspace.trusted,
             config: Arc::new(workspace.config),
             interactive_approvals: true,
+            bot: None,
         };
         let kernel = Kernel::start(options, deps)
             .await
@@ -433,7 +513,7 @@ impl Server {
             updated_at: now,
             no_project,
         };
-        Ok(self.register(kernel, Vec::new(), attach, base))
+        Ok(self.register(kernel, Vec::new(), Some(attach), base, None))
     }
 
     /// Loads a session from disk, or attaches when it is already loaded here.
@@ -443,17 +523,32 @@ impl Server {
         overrides: ResumeOverrides,
         attach: AttachRequest,
     ) -> Result<(), RpcError> {
+        self.load_session(id, overrides, Some(attach)).await
+    }
+
+    /// Loads a session from disk unless it is loaded here, and attaches `attach`. Without one the
+    /// session is there for what the service itself does, until nothing uses it.
+    pub(crate) async fn load_session(
+        &self,
+        id: &str,
+        overrides: ResumeOverrides,
+        attach: Option<AttachRequest>,
+    ) -> Result<(), RpcError> {
+        let attached = async |hub: HubHandle, attach: Option<AttachRequest>| match attach {
+            Some(attach) => hub.send(HubCmd::Attach(attach)).await,
+            None => Ok(()),
+        };
         if let Some(hub) = self.hub(id) {
             if !overrides.is_empty() {
                 return Err(RpcError::invalid_params(
                     "the session is already loaded; change settings with session/op instead",
                 ));
             }
-            return hub.send(HubCmd::Attach(attach)).await;
+            return attached(hub, attach).await;
         }
         let _loading = self.0.loading.lock().await;
         if let Some(hub) = self.hub(id) {
-            return hub.send(HubCmd::Attach(attach)).await;
+            return attached(hub, attach).await;
         }
         self.make_room().await?;
         let (header, location) = self
@@ -466,14 +561,16 @@ impl Server {
         }
         let workspace = Workspace::open(&self.0.home, &header.cwd, &self.0.overrides)
             .map_err(errors::from_runtime)?;
-        let no_project = self.0.home.is_chat_dir(&workspace.cwd);
+        let no_project = self.0.home.has_no_project(&workspace.cwd);
         let store: Arc<dyn SessionStore> = self.0.store.clone();
         let mut deps = workspace
             .kernel_deps(self.0.llm.clone(), store, &[])
             .map_err(errors::from_runtime)?;
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
+        deps.decks = Some(self.0.decks.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &overrides.mcp_servers);
+        deps.routines = header.bot.is_some().then(|| self.0.routines.clone() as Arc<dyn finx_core::routine::RoutineHost>);
         let base = match self.0.store.summary(&SessionRef::Path(location.clone())) {
             Ok(found) => SummaryBase {
                 updated_at: last_active(&found),
@@ -498,12 +595,17 @@ impl Server {
             trusted: workspace.trusted,
             config: Arc::new(workspace.config),
             interactive_approvals: true,
+            // A bot's conversation learns a name given while it was not loaded.
+            bot_name: header.bot.as_ref().and_then(|bot| self.0.bots.name(&bot.id)),
         };
         let kernel = Kernel::resume(options, deps)
             .await
             .map_err(|e| errors::from_kernel(e, id))?;
         let transcript = kernel.transcript();
-        self.register(kernel, transcript, attach, base);
+        if let Some(text) = header.bot.as_ref().and_then(|bot| self.0.routines.listing_of(&bot.id)) {
+            kernel.set_routines(text);
+        }
+        self.register(kernel, transcript, attach, base, header.bot.map(|bot| bot.id));
         Ok(())
     }
 
@@ -710,12 +812,30 @@ impl Server {
 
     /// What a session started in `cwd` would find, as `finx skills --all --json` reports it.
     /// Blocking I/O.
+    /// A loaded session's tools, or the built-in tools under the configuration of a session
+    /// without a project.
+    pub async fn list_tools(&self, params: ToolsListParams) -> Result<ToolsListResult, RpcError> {
+        if let Some(id) = params.session_id {
+            let (tx, rx) = oneshot::channel();
+            self.loaded(&id)?.send(HubCmd::Tools { reply: tx }).await?;
+            let tools = rx.await.map_err(|_| errors::session_closed(&id))?;
+            return Ok(ToolsListResult { tools });
+        }
+        let server = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let chats = server.0.home.chats_dir();
+            std::fs::create_dir_all(&chats).map_err(|e| RpcError::internal(e.to_string()))?;
+            let workspace = Workspace::open(&server.0.home, &chats, &server.0.overrides).map_err(errors::from_runtime)?;
+            Ok(ToolsListResult { tools: finx_core::tool_list::builtin(&workspace.config) })
+        })
+        .await
+        .unwrap_or_else(|e| Err(RpcError::internal(e.to_string())))
+    }
+
     fn scan_skills(&self, cwd: &Path) -> Result<SkillsListResult, RpcError> {
         let workspace = Workspace::open(&self.0.home, cwd, &self.0.overrides).map_err(errors::from_runtime)?;
-        let window = self
-            .0
-            .llm
-            .resolve(&workspace.config.model)
+        let window = finx_core::models::default_model(&self.0.llm, workspace.config.model.as_deref())
+            .and_then(|model| self.0.llm.resolve(&model).ok())
             .map_or(u64::MAX, |resolved| u64::from(resolved.model.context_window));
         let config = &workspace.config;
         let sources = skills::Sources::new(&self.0.home, &workspace.cwd, workspace.project_root.as_deref(), &config.skills);
@@ -774,12 +894,20 @@ impl Server {
 
     /// Moves the log of an unloaded session to `~/.finx/trash/sessions/`. Blocking I/O.
     pub fn delete_session(&self, id: &str) -> Result<(), RpcError> {
+        self.trash_log(id)?;
+        self.0.feed.publish(Vec::new(), vec![id.to_string()]);
+        Ok(())
+    }
+
+    /// [`Self::delete_session`] without telling the session list: a bot's conversation is not
+    /// in it. Blocking I/O.
+    pub(crate) fn trash_log(&self, id: &str) -> Result<(), RpcError> {
         if self.is_loaded(id) {
             return Err(errors::session_busy(format!(
                 "session {id} is loaded; close it first"
             )));
         }
-        let (header, location) = self
+        let (header, _) = self
             .0
             .store
             .header(&SessionRef::Id(id.to_string()))
@@ -788,23 +916,13 @@ impl Server {
             return Err(errors::session_not_found(id));
         }
         let trash = self.0.home.root().join("trash").join("sessions");
-        std::fs::create_dir_all(&trash)
-            .map_err(|e| RpcError::internal(format!("cannot create {}: {e}", trash.display())))?;
-        let name = location
-            .file_name()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from(format!("{id}.jsonl")));
-        // The session's files go with its log.
-        let (data_dir, _) = FinxHome::session_data_dir(&location, id);
-        std::fs::rename(&location, trash.join(&name))
-            .map_err(|e| RpcError::internal(format!("cannot move the log: {e}")))?;
-        if data_dir.is_dir() {
-            let dir_name = name.with_extension("");
-            std::fs::rename(&data_dir, trash.join(dir_name))
-                .map_err(|e| RpcError::internal(format!("cannot move the session files: {e}")))?;
-        }
-        self.0.feed.publish(Vec::new(), vec![id.to_string()]);
+        self.0.store.move_to_trash(&SessionRef::Id(id.to_string()), &trash).map_err(|e| errors::from_store(e, id))?;
+        self.forget_browser_session(id);
         Ok(())
+    }
+
+    pub(crate) fn store(&self) -> &Arc<JsonlStore> {
+        &self.0.store
     }
 
     /// Reads part of a saved tool output (`finx://tool-output/<session>/<call>`). Blocking I/O.
@@ -936,7 +1054,7 @@ fn last_active(s: &finx_core::store::SessionSummary) -> String {
 fn disk_summary(home: &FinxHome, s: &finx_core::store::SessionSummary) -> SessionSummary {
     SessionSummary {
         session_id: s.id.clone(),
-        no_project: home.is_chat_dir(&s.cwd),
+        no_project: home.has_no_project(&s.cwd),
         cwd: s.cwd.clone(),
         created_at: s.created_at.clone(),
         updated_at: last_active(s),
@@ -982,6 +1100,11 @@ mod tests {
             .unwrap();
         let location = created.location.clone();
         drop(created);
+        // The writer creates the log in the background.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !location.metadata().is_ok_and(|m| m.len() > 0) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
         let (data_dir, _) = FinxHome::session_data_dir(&location, &id);
         std::fs::create_dir_all(data_dir.join("tool-output")).unwrap();
         std::fs::write(

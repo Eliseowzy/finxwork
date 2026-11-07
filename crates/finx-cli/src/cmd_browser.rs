@@ -13,7 +13,11 @@
 //! which it passes on so the app can say which browser is connected, and the service can pick
 //! the bridge version both speak (D-219). Connected, it says `{status: "connected", bridge}`;
 //! when they share none, `{status: "outdated", update: "extension" | "finx", reason}`, and it
-//! stays connected without a browser until one side is updated (either restarts the host).
+//! stays connected without a browser until one side is updated. It also carries `{control}`
+//! both ways: what the extension and the service tell each other beyond CDP (§8.4.7).
+//!
+//! A host the service refuses runs another program than the service: an update replaced the app
+//! while Chrome kept this process. It exits, and the extension starts the current one.
 //! CDP messages pass through as JSON text: only the stream number is read.
 
 use anyhow::Context as _;
@@ -48,8 +52,23 @@ const PIECE: usize = 256 << 10;
 const MAX_INBOUND: usize = 64 << 20;
 /// How often the host looks for the service while it is not running.
 const RETRY: Duration = Duration::from_secs(2);
-/// How long the host waits for the extension's hello before connecting without it.
-const HELLO_WAIT: Duration = Duration::from_secs(3);
+/// How long the host waits for the extension's hello before connecting without it. A worker that
+/// has just started on a busy machine can take seconds, and a hello that comes late is lost.
+const HELLO_WAIT: Duration = Duration::from_secs(30);
+/// The host's exit code when the service refused it.
+const REFUSED_EXIT: i32 = 3;
+
+/// The service refused this host: it is not the service's own program.
+#[derive(Debug)]
+struct Refused(String);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Refused {}
 
 // ---- The host ----
 
@@ -84,31 +103,49 @@ pub async fn native_host() -> anyhow::Result<u8> {
         }
     });
 
-    let relay = tokio::spawn(relay(socket, to_chrome, inbox));
-    // Chrome closed the port (the extension stopped, or Chrome quit).
-    let _ = reader.await;
-    relay.abort();
+    let mut relay = tokio::spawn(relay(socket, to_chrome, inbox));
+    tokio::select! {
+        // Chrome closed the port (the extension stopped, or Chrome quit).
+        _ = reader => relay.abort(),
+        ended = &mut relay => {
+            if let Ok(Some(reason)) = ended {
+                tracing::info!(%reason, "extension host refused; exiting for the extension to start the current one");
+                // A read of stdin cannot be cancelled, so the runtime would wait for it.
+                drop(_guard);
+                std::process::exit(REFUSED_EXIT);
+            }
+        }
+    }
     writer.abort();
     tracing::info!("extension host stopped");
     Ok(0)
 }
 
-/// Connects to the service again and again, relaying while connected.
-async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<String>, mut inbox: mpsc::UnboundedReceiver<String>) {
+/// Connects to the service again and again, relaying while connected. Ends when Chrome closed the
+/// port, or with why the service refused this host.
+async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<String>, mut inbox: mpsc::UnboundedReceiver<String>) -> Option<String> {
     // The extension says who it is as soon as it connects.
     let hello = match tokio::time::timeout(HELLO_WAIT, inbox.recv()).await {
-        Ok(None) => return,
+        Ok(None) => return None,
         Ok(Some(message)) => serde_json::from_str::<Value>(&message)
             .ok()
             .and_then(|m| m.get("hello").cloned())
             .unwrap_or_default(),
-        Err(_) => Value::Null,
+        Err(_) => {
+            tracing::warn!("the extension said no hello in time");
+            Value::Null
+        }
     };
     let mut said = String::new();
     loop {
         let status = match serve_once(&socket, &hello, &to_chrome, &mut inbox).await {
             Ok(()) => "FinxWork stopped".to_string(),
-            Err(err) => format!("{err:#}"),
+            Err(err) => {
+                if let Some(refused) = err.downcast_ref::<Refused>() {
+                    return Some(refused.0.clone());
+                }
+                format!("{err:#}")
+            }
         };
         if status != said {
             tracing::info!(%status, "extension host waiting");
@@ -121,7 +158,10 @@ async fn relay(socket: PathBuf, to_chrome: mpsc::UnboundedSender<String>, mut in
         loop {
             tokio::select! {
                 _ = &mut wait => break,
-                message = inbox.recv() => if message.is_none() { return },
+                message = inbox.recv() => match message {
+                    Some(message) => { host_action(&message); }
+                    None => return None,
+                },
             }
         }
     }
@@ -153,6 +193,8 @@ async fn serve_once(
             "browser": hello["browser"].as_str(),
             "extension_version": hello["extension_version"].as_str(),
             "bridge": hello.get("bridge").filter(|b| b["min"].is_u64() && b["max"].is_u64()),
+            "instance": hello["instance"].as_str(),
+            "account": hello["account"].as_str(),
         }})))
         .await?;
     let result = answer(&mut lines, 2).await.context("the FinxWork service refused the extension")?;
@@ -168,7 +210,10 @@ async fn serve_once(
         loop {
             tokio::select! {
                 next = lines.next_line() => if next?.is_none() { return Ok(()) },
-                message = inbox.recv() => if message.is_none() { return Ok(()) },
+                message = inbox.recv() => match message {
+                    Some(message) => { host_action(&message); }
+                    None => return Ok(()),
+                },
             }
         }
     }
@@ -179,18 +224,56 @@ async fn serve_once(
             next = lines.next_line() => {
                 let Some(text) = next? else { return Ok(()) };
                 let Ok(message) = serde_json::from_str::<Incoming>(&text) else { continue };
-                if message.method.as_deref() == Some("browser/cdp") && let Some(params) = message.params {
-                    let _ = to_chrome.send(params.get().to_string());
+                match (message.method.as_deref(), message.params) {
+                    (Some("browser/cdp"), Some(params)) => {
+                        let _ = to_chrome.send(params.get().to_string());
+                    }
+                    (Some("browser/control"), Some(params)) => {
+                        let _ = to_chrome.send(format!("{{\"control\":{}}}", params.get()));
+                    }
+                    _ => {}
                 }
             }
             message = inbox.recv() => {
                 let Some(message) = message else { return Ok(()) };
-                if let Some(line) = cdp_line(&message) {
+                if host_action(&message) {
+                    continue;
+                }
+                if let Some(line) = cdp_line(&message).or_else(|| control_line(&message)) {
                     write.write_all(&line).await?;
                 }
             }
         }
     }
+}
+
+/// What the host does itself, without the service: opening the app, which may not be running.
+/// True when `message` was that.
+fn host_action(message: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<Value>(message) else {
+        return false;
+    };
+    if value["control"]["kind"] != "open_app" {
+        return false;
+    }
+    let exe = std::env::current_exe().ok();
+    let app = exe.iter().flat_map(|exe| exe.ancestors()).find(|p| p.extension().is_some_and(|e| e == "app"));
+    match app {
+        Some(app) if cfg!(target_os = "macos") => {
+            if let Err(err) = std::process::Command::new("/usr/bin/open").arg(app).spawn() {
+                tracing::warn!(%err, "cannot open the app");
+            }
+        }
+        _ => tracing::info!("no app to open from here"),
+    }
+    true
+}
+
+/// The `browser/extension` line for what the extension tells the service, if it is that.
+fn control_line(message: &str) -> Option<Vec<u8>> {
+    let value = serde_json::from_str::<Value>(message).ok()?;
+    let control = value.get("control")?;
+    Some(format!("{}\n", json!({"jsonrpc": "2.0", "method": "browser/extension", "params": control})).into_bytes())
 }
 
 /// Which side to update, when the service found no bridge version the extension speaks.
@@ -241,7 +324,11 @@ async fn answer<R: tokio::io::AsyncBufRead + Unpin>(lines: &mut tokio::io::Lines
             continue;
         }
         if let Some(error) = message.get("error") {
-            anyhow::bail!("{}", error["message"].as_str().unwrap_or("error"));
+            let text = error["message"].as_str().unwrap_or("error");
+            if error["data"]["kind"] == finx_protocol::api::HOST_REFUSED {
+                return Err(Refused(text.to_string()).into());
+            }
+            anyhow::bail!("{text}");
         }
         return Ok(message["result"].clone());
     }
@@ -406,15 +493,27 @@ pub fn uninstall() -> anyhow::Result<u8> {
     Ok(0)
 }
 
-/// `finx browser extension status`: where the host is installed.
-pub fn status() -> anyhow::Result<u8> {
+/// `finx browser extension status`: where the host is installed, and whether what each
+/// browser would start is there and is this home's.
+pub fn status(as_json: bool) -> anyhow::Result<u8> {
     let home = setup::home()?;
     let launcher = home.browser_dir().join("native-host");
+    if as_json {
+        let browsers: Vec<Value> = browser_dirs()
+            .into_iter()
+            .map(|(name, dir)| (name, manifest_path(&dir)))
+            .filter(|(_, path)| path.exists())
+            .map(|(name, path)| serde_json::json!({ "name": name, "state": manifest_state(&path, &launcher), "manifest": path }))
+            .collect();
+        let program = launcher_program(&launcher);
+        println!("{}", serde_json::json!({ "browsers": browsers, "host": launcher.exists().then_some(&launcher), "program": program }));
+        return Ok(0);
+    }
     let mut any = false;
     for (name, dir) in browser_dirs() {
         let path = manifest_path(&dir);
         if path.exists() {
-            println!("{name}: installed ({})", path.display());
+            println!("{name}: {} ({})", manifest_state(&path, &launcher), path.display());
             any = true;
         }
     }
@@ -422,8 +521,33 @@ pub fn status() -> anyhow::Result<u8> {
         println!("not installed; run `finx browser extension install`");
     } else if !launcher.exists() {
         println!("the host script {} is missing; run `finx browser extension install` again", launcher.display());
+    } else if let Some(program) = launcher_program(&launcher) {
+        let state = if !program.exists() { " (missing; run `finx browser extension install` again)" } else { "" };
+        println!("host: {} starts {}{state}", launcher.display(), program.display());
     }
     Ok(0)
+}
+
+/// What a browser's manifest says about the host it would start.
+fn manifest_state(manifest: &Path, launcher: &Path) -> String {
+    let path = std::fs::read_to_string(manifest)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .and_then(|value| value["path"].as_str().map(PathBuf::from));
+    match path {
+        None => "the manifest cannot be read; run `finx browser extension install` again".to_string(),
+        Some(path) if !path.exists() => format!("points at {}, which is gone; run `finx browser extension install` again", path.display()),
+        Some(path) if path != launcher => format!("registered by another FinxWork home ({})", path.display()),
+        Some(_) => "installed".to_string(),
+    }
+}
+
+/// The program a launcher script starts.
+fn launcher_program(launcher: &Path) -> Option<PathBuf> {
+    let script = std::fs::read_to_string(launcher).ok()?;
+    let start = script.find(" exec '")? + " exec '".len();
+    let end = script[start..].find("' browser native-host")?;
+    Some(PathBuf::from(script[start..start + end].replace(r"'\''", "'")))
 }
 
 #[cfg(test)]
@@ -473,6 +597,35 @@ mod tests {
         assert_eq!(line.matches('\n').count(), 1, "one line: {line}");
         assert!(cdp_line("{\"stream\":4,\"data\":\"text\"}").is_none());
         assert!(cdp_line("{\"hello\":{}}").is_none());
+    }
+
+    #[test]
+    fn control_goes_to_the_service_and_open_app_stays_here() {
+        let line = String::from_utf8(control_line(r#"{"control":{"kind":"stop","session_id":"s"}}"#).unwrap()).unwrap();
+        let value: Value = serde_json::from_str(&line).unwrap();
+        assert_eq!(value["method"], "browser/extension");
+        assert_eq!(value["params"], json!({"kind": "stop", "session_id": "s"}));
+        assert!(control_line(r#"{"stream":1,"data":{}}"#).is_none());
+        assert!(!host_action(r#"{"control":{"kind":"stop","session_id":"s"}}"#));
+        assert!(!host_action("not json"));
+    }
+
+    #[test]
+    fn status_says_what_a_manifest_points_at() {
+        let dir = tempfile::tempdir().unwrap();
+        let launcher = dir.path().join("native-host");
+        std::fs::write(&launcher, launcher_script(Path::new("/Apps/Finx Work/finx"), dir.path())).unwrap();
+        assert_eq!(launcher_program(&launcher), Some(PathBuf::from("/Apps/Finx Work/finx")));
+        let manifest = dir.path().join("m.json");
+        let write = |path: &Path| std::fs::write(&manifest, json!({"path": path}).to_string()).unwrap();
+        write(&launcher);
+        assert_eq!(manifest_state(&manifest, &launcher), "installed");
+        write(&dir.path().join("gone"));
+        assert!(manifest_state(&manifest, &launcher).contains("which is gone"));
+        let other = dir.path().join("other");
+        std::fs::write(&other, "").unwrap();
+        write(&other);
+        assert!(manifest_state(&manifest, &launcher).contains("another FinxWork home"));
     }
 
     #[test]

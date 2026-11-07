@@ -235,7 +235,8 @@ fn parse_page(page: &Value, models: &mut Vec<ListedModel>) -> Result<(), LlmErro
         .and_then(Value::as_array)
         .ok_or_else(|| LlmError::new(ErrorKind::Protocol, "the model list has no entries array"))?;
     for item in items {
-        let Some(id) = item.get("id").or_else(|| item.get("name")).and_then(Value::as_str) else {
+        // Gemini's OpenAI-compatible list says `models/gemini-3.8-flash`; requests take the bare id.
+        let Some(id) = item.get("id").or_else(|| item.get("name")).and_then(Value::as_str).map(|id| id.strip_prefix("models/").unwrap_or(id)) else {
             continue;
         };
         if !valid_id(id) || models.iter().any(|m| m.id == id) {

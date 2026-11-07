@@ -7,6 +7,7 @@
 // off; the built-in browser has its own switch (`browser.enabled`). Everything stays in a
 // private HOME, so the developer's own Chrome is never touched. Needs `pnpm build`, `cargo
 // build -p finx-cli` and Google Chrome.
+import { cdpPort } from "./lib/port.mjs";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import { createRequire } from "node:module";
@@ -48,7 +49,7 @@ fs.writeFileSync(
 // ── the app, driven over the DevTools protocol ──
 let app = null;
 let chrome = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function targets() {
   return fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
@@ -166,7 +167,7 @@ const control = `document.querySelector('.browser-set [role=switch]')`;
 let failed = false;
 try {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   const main = await attach((t) => t.type === "page" && /^(app:|file:|http:)/.test(t.url) && !t.url.includes("#settings"), "the main window");

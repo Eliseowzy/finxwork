@@ -1,6 +1,7 @@
 /** Tabs opened from the new-session page, before a conversation exists. */
 export const homeBrowserSession = "finxwork:home-browser";
 
+import type { AlertTarget } from "@finx/client";
 import type { Language, LanguageChoice } from "./i18n";
 import type { UpdateInfo } from "./update";
 import type { BrowserComment } from "./annotations";
@@ -12,7 +13,8 @@ import type { SearchEngine } from "./search";
 export type PlatformId = "mac" | "win" | "linux";
 
 /** A native menu's item: `icon` a PNG data URL drawn before the label, `submenu` items it opens to (its own id unused). */
-export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; submenu?: MenuItem[] } | { separator: true };
+/** A native menu item; `accel` is the shortcut it shows on its right (an Electron accelerator, shown only: the page handles the keys). */
+export type MenuItem = { id: string; label: string; enabled?: boolean; checked?: boolean; icon?: string; accel?: string; submenu?: MenuItem[] } | { separator: true };
 
 /** A path a reply wrote, looked up under its session's folder: absolute, relative when it is under the folder, and what it is (null: nothing there). */
 export type PathInfo = { path: string; rel: string | null; kind: "file" | "folder" | null };
@@ -40,6 +42,8 @@ export type MenuState = {
     archived: boolean;
     inspector: boolean;
   };
+  /** The bot on screen waits for an approval: it has no `session` entry (its session has no such menu). */
+  botApprovable: boolean;
   sidebar: boolean;
   /** The toast offers Undo (⌘Z undoes it rather than typing). */
   undo: boolean;
@@ -53,8 +57,8 @@ export type PickedFile = { path: string; name: string } & ({ kind: "file" } | { 
 /** What a paste attaches: files as picked, or a folder. */
 export type PastedItem = PickedFile | { kind: "folder"; path: string; name: string };
 
-/** Light or dark: the system's, or one chosen for the app. */
-export type Appearance = "system" | "light" | "dark";
+/** Follow the system (soft gray when dark), or choose a fixed palette. */
+export type Appearance = "system" | "light" | "gray" | "black";
 
 export type Preferences = {
   appearance: Appearance;
@@ -68,6 +72,20 @@ export type Preferences = {
   searchEngine: string;
   /** The search engines the person added, beside the built-in ones. */
   searchEngines: SearchEngine[];
+  notifications: NotificationSettings;
+  /** False: routines do not make the app start at login (routine-design §7.4). */
+  routinesAtLogin?: boolean;
+  /** Keep the Mac from idle sleep while a routine is enabled and it is on power (routine-design §7.5). */
+  routinesKeepAwake?: boolean;
+};
+
+/** The app's system notifications on this device (notification-design §5.5). Muting a bot is the bot's own. */
+export type NotificationSettings = {
+  /** Off: no notifications and no number on the app's icon. */
+  enabled: boolean;
+  sound: boolean;
+  /** Also when a session's task ends; waiting and failing always say so. */
+  sessionEnded: boolean;
 };
 
 /** A window's browser panel (browser-design §8.3.4): the session it shows, and where, in window coordinates; none while hidden. */
@@ -76,7 +94,15 @@ export type BrowserPanel = {
   rect: { x: number; y: number; width: number; height: number } | null;
   /** The tab steps aside for now (a dialog is over the window): the page gets a picture of it to show meanwhile. */
   hold?: boolean;
+  /** The person is typing in the panel's address field: the agent's tabs do not take the panel from them. */
+  editing?: boolean;
 };
+
+/** Where an HTML file's preview shows, in window coordinates. */
+export type PagePreviewRect = { x: number; y: number; width: number; height: number };
+
+/** What the page in a preview asks of the app: to close (Esc, with the keys in the page), or to go to a web address. */
+export type PagePreviewEvent = { kind: "close" } | { kind: "link"; url: string };
 
 /** A picture of a session's shown tab, taken as it stepped aside; `width` in CSS pixels. */
 export type BrowserStill = { session: string; image: string; width: number };
@@ -94,6 +120,8 @@ export type BrowserTab = {
   canGoBack: boolean;
   canGoForward: boolean;
   annotating?: boolean;
+  /** A blank tab the person opened: the panel's address field waits for them. The agent's blank tabs do not take the keyboard. */
+  asksAddress?: boolean;
 };
 
 /** The size a tab lays out at: the panel's, or a phone's or a tablet's. */
@@ -108,7 +136,7 @@ export type BrowserMenuAction =
   | { action: "cookies"; cookies: "always" | "untilQuit" };
 
 /** A web server running on this machine, for the new tab to offer; `framework` when its page shows it. */
-export type DevServer = { port: number; url: string; title: string; framework?: string; process: string };
+export type DevServer = { port: number; url: string; title: string; framework?: string; process: string; pid: number };
 
 /** What the person does to a tab in the panel. "new" opens a tab beside it, for its session. */
 export type BrowserTabCommand =
@@ -125,10 +153,24 @@ export type SystemBrowserId = "chrome" | "edge" | "brave" | "chromium";
 export type SystemBrowser = {
   id: SystemBrowserId;
   name: string;
-  /** finx is registered as the extension's host for it. */
+  /** finx is registered as the extension's host for it, by this home. */
   registered: boolean;
+  /** What its host manifest points at: this home's host, one that is gone, or another home's. */
+  manifest: "missing" | "ours" | "dead" | "other";
   /** It is running now. */
   running: boolean;
+};
+
+/** Each link from the browser to finx's service, as this machine has it. */
+export type SystemBrowserDiagnosis = {
+  app: string;
+  service: string | null;
+  launcher: string;
+  program: string | null;
+  programExists: boolean;
+  extensionFolder: string;
+  extensionBuild: string | null;
+  browsers: { name: string; running: boolean; manifest: SystemBrowser["manifest"] }[];
 };
 
 /** Desktop control (finx's desktop tools, through agent-desktop): the program and the app's own permissions. */
@@ -185,6 +227,8 @@ export type Bridge = {
   openPrivacySettings(): void;
   /** The web servers running on this machine now, for a new tab. */
   localServers(): Promise<DevServer[]>;
+  /** Stops the one on `port`, if `pid` still listens there: "gone" when it no longer does, "denied" when it isn't ours to stop. */
+  stopLocalServer(port: number, pid: number): Promise<"stopped" | "gone" | "denied">;
   openSourceApp(adapter?: "qwenwork" | "qoder"): Promise<void>;
   /** The local application's own icon, as the system draws it (a data URL), or null when it isn't installed. */
   sourceAppIcon(adapter?: "qwenwork" | "qoder"): Promise<string | null>;
@@ -213,6 +257,21 @@ export type Bridge = {
   systemBrowsers(): Promise<SystemBrowser[]>;
   setUpSystemBrowser(): Promise<{ ok: true } | { ok: false; message: string }>;
   openSystemBrowser(id: SystemBrowserId, page?: "extensions"): Promise<boolean>;
+  /** A task waits for the user's own browser: starts it behind what the user is doing. */
+  openSystemBrowserQuietly(): Promise<void>;
+  /** A host was refused: the files follow the service's program again. */
+  repairSystemBrowser(): Promise<void>;
+  diagnoseSystemBrowser(): Promise<SystemBrowserDiagnosis>;
+  /** What a clicked system notification opens, once; the page asks when it starts and when told. */
+  takeOpenTarget(): Promise<AlertTarget | null>;
+  onOpenTarget(cb: () => void): () => void;
+  testNotification(): void;
+  openNotificationSettings(): void;
+  /** A window can keep the focus behind a locked screen: nobody is looking then. */
+  screenLocked(): Promise<boolean>;
+  onScreenUnlocked(cb: () => void): () => void;
+  /** Brings the main window to the front. */
+  showMainWindow(): void;
   revealBrowserExtension(): void;
   systemBrowserIcon(id: SystemBrowserId): Promise<string | null>;
   /** Desktop control's program and the app's permissions for it; `configured` is `desktop.executable`. */
@@ -239,10 +298,14 @@ export type Bridge = {
   pickSkillSource(): Promise<string | null>;
   /** The path of a file or folder dropped on the page. */
   pathForFile(file: File): string;
+  /** Tests of session mode (FINXWORK_DEFAULT_MODE): a new profile starts there instead of in Bot mode. */
+  defaultMode?: "sessions";
   /** The 自定义 page's catalog skills: in the app's resources, or the repository's in development. */
   catalogDir: string;
   /** Files to attach, from the system's dialog; images read (up to 10 MB each), others by path. */
   pickFiles(): Promise<PickedFile[]>;
+  /** A bot's avatar from the system's dialog (bot-mode-design §6.3): a PNG, JPEG or HEIC of up to 10 MB, cropped to a square and scaled to 256 px, as a PNG (base64). */
+  pickAvatar(): Promise<{ png: string } | { error: "too_large" | "unreadable" } | null>;
   /** The files and folders on the clipboard, else its picture (a screenshot); none when it holds neither. */
   pasteFiles(): Promise<PastedItem[]>;
   /** Dropped files and folders, by their paths (pathForFile), as attachments. */
@@ -257,6 +320,13 @@ export type Bridge = {
   editors(): Promise<EditorInfo[]>;
   /** A web page in a conversation's embedded browser: the tab already at the address, else a new one. */
   openURL(session: string, url: string): Promise<void>;
+  /** An HTML file in the session's browser, as it is now; false when it is not there. */
+  openPageFile(session: string, path: string): Promise<boolean>;
+  /** An HTML file over the given rectangle, nobody's tab; false when it is not there. It stays until closed. */
+  openPagePreview(path: string, rect: PagePreviewRect): Promise<boolean>;
+  placePagePreview(rect: PagePreviewRect): void;
+  closePagePreview(): void;
+  onPagePreview(cb: (event: PagePreviewEvent) => void): () => void;
   /** Opens a folder itself in Finder (Explorer, the file manager). */
   openFolder(path: string): void;
   /** A new terminal window, its shell in this folder. */
@@ -267,6 +337,7 @@ export type Bridge = {
   showAbout(): void;
   getPreferences(): Promise<Preferences>;
   setPreferences(p: Partial<Preferences>): Promise<Preferences>;
+  onPreferences(cb: (p: Preferences) => void): () => void;
   /** Quits and opens the app again (a new language takes effect). */
   relaunch(): void;
   /** Where the app is with its next version, and as that changes. */

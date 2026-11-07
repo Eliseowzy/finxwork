@@ -16,6 +16,28 @@ let settingsBlurred = 0;
 let appActivated = 0;
 app.on("did-become-active", () => (appActivated = Date.now()));
 
+// An end-to-end run in the background (e2e/run.mjs) takes neither the screen nor the keyboard from
+// whoever is working at this Mac: no Dock icon, never the active app, and windows that cannot be
+// seen or clicked. To Chromium they are on screen, so pages paint and animate as usual, and pages
+// are told they have the focus they would have in front.
+export const background = process.env.FINXWORK_E2E_BACKGROUND === "1";
+if (background && process.platform === "darwin") app.setActivationPolicy("accessory");
+
+function show(win: BrowserWindow) {
+  if (!background) return win.show();
+  win.setOpacity(0);
+  win.setIgnoreMouseEvents(true);
+  win.showInactive();
+  const { debugger: cdp } = win.webContents;
+  if (cdp.isAttached()) return;
+  cdp.attach("1.3");
+  void cdp.sendCommand("Emulation.setFocusEmulationEnabled", { enabled: true }).catch(() => {});
+}
+
+function focus(win: BrowserWindow) {
+  if (!background) win.focus();
+}
+
 /** Is url one of our own pages (the only pages that may call the main process)? */
 export function ours(url: string): boolean {
   return url.startsWith(origin + "/") || (devURL !== undefined && url.startsWith(devURL));
@@ -52,6 +74,7 @@ function webPreferences() {
       arg("lang", language()),
       arg("platform", platform.id),
       arg("kernel", kernelKind),
+      arg("mode", process.env.FINXWORK_DEFAULT_MODE === "sessions" ? "sessions" : ""),
       arg("catalog", app.isPackaged ? path.join(process.resourcesPath, "catalog/skills") : path.join(app.getAppPath(), "resources/catalog/skills")),
     ],
   };
@@ -63,8 +86,8 @@ export function mainWindow(): BrowserWindow | undefined {
 
 export function showMain(): BrowserWindow {
   if (main) {
-    main.show();
-    main.focus();
+    show(main);
+    focus(main);
     return main;
   }
   main = new BrowserWindow({
@@ -79,7 +102,7 @@ export function showMain(): BrowserWindow {
     webPreferences: webPreferences(),
   });
   secure(main);
-  main.once("ready-to-show", () => main?.show());
+  main.once("ready-to-show", () => main && show(main));
   // Settings work as a dialog over the main window: going back to the main window closes them.
   // Coming back from another app (a click on the main window, the Dock) brings them forward instead.
   // A click from settings on the main window blurs settings just before; coming back from another app does not
@@ -88,7 +111,7 @@ export function showMain(): BrowserWindow {
     if (!settingsVisible()) return;
     const now = Date.now();
     if (now - settingsBlurred < 300 && now - appActivated > 300) settings!.close();
-    else settings!.focus();
+    else focus(settings!);
   });
   main.on("closed", () => (main = undefined));
   main.loadURL(page());
@@ -124,8 +147,8 @@ function settingsChanged(open: boolean) {
 export function showSettings(page_?: string) {
   if (settings) {
     if (page_) settings.webContents.send("settings-page", page_);
-    settings.show();
-    settings.focus();
+    show(settings);
+    focus(settings);
     return;
   }
   settings = new BrowserWindow({
@@ -142,7 +165,7 @@ export function showSettings(page_?: string) {
     webPreferences: webPreferences(),
   });
   secure(settings);
-  settings.once("ready-to-show", () => settings?.show());
+  settings.once("ready-to-show", () => settings && show(settings));
   settings.on("show", () => settingsChanged(true));
   settings.on("blur", () => (settingsBlurred = Date.now()));
   settings.on("closed", () => {

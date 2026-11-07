@@ -1,8 +1,9 @@
 import type {
-  ActiveTask, AgentStatus, ContextReport, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
+  ActiveTask, AgentStatus, Avatar, AvatarInput, BotSummary, RoutineOutcome, RoutineRunInfo, RoutineSummary, ContextReport, Event, Methods, ApprovalDecision, MailInfo, PermissionMode, AssistantContent, ErrorInfo, EventMsg, Op, PromptMode, RpcErrorObject,
   SessionInfo, SessionSnapshot, SessionState, SessionSummary, ThinkingLevel, TranscriptItem, Usage, UserContent, UserMessage,
 } from "@finx/protocol";
-import { applyEvent, fromSnapshot, runningAgents, statusOf, type SessionView } from "../session.ts";
+import { botScript, demoBots, demoImage, relayScript, type DemoBot, type DemoRoutine } from "./bots.ts";
+import { applyEvent, fromSnapshot, pendingApproval, runningAgents, statusOf, type SessionView } from "../session.ts";
 import { describe, userText } from "../steps.ts";
 import { agentTask, agentsScenario, wantsAgents, type AgentsScenario } from "./agents.ts";
 import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, siteScript, steerScript, wantsSite, type DemoSession, type DemoTask } from "./data.ts";
@@ -38,6 +39,27 @@ interface Conn {
   peer: Peer;
   attached: Set<string>;
   listening: boolean;
+  /** Called bots/subscribe. */
+  bots: boolean;
+}
+
+/** A bot (bot-design §2.1): its row, its uploaded avatar, its conversation. */
+interface MockBot {
+  summary: BotSummary;
+  png?: string;
+  routines: MockRoutine[];
+  /** What `bots/create` was told its conversation starts with. */
+  model?: string;
+  thinking?: ThinkingLevel;
+}
+
+/** A routine in the mock: what the row shows, and what only its detail does. */
+interface MockRoutine {
+  summary: RoutineSummary;
+  prompt: string;
+  schedule: string;
+  created_at: string;
+  runs: RoutineRunInfo[];
 }
 
 interface Run {
@@ -82,11 +104,13 @@ interface Session {
   roundStart?: number;
   /** When the main session got busy, for lists while only its sub-agents work. */
   busySince?: number;
+  /** A bot's conversation: the bot. It stays out of session lists. */
+  bot?: string;
 }
 
 /** What a client following a sub-agent gets of its events, as finx sends them. */
 const followed = new Set<string>([
-  "task_started", "turn_started", "message_completed", "stream_retry", "tool_started", "tool_running", "tool_completed",
+  "task_started", "turn_started", "message_completed", "stream_retry", "tool_started", "tool_running", "tool_completed", "approval_requested", "approval_resolved",
   "compaction_started", "compaction_completed", "compaction_failed", "turn_completed", "task_completed", "task_failed", "task_interrupted", "warning",
 ]);
 
@@ -126,6 +150,8 @@ export class MockServer {
   private readonly selection = new Map<string, boolean>();
   /** When the demo's model lists were last asked (models/refresh). */
   private listedAt = "2026-10-30T08:00:00Z";
+  /** Bot mode's bots, by id. */
+  private readonly bots = new Map<string, MockBot>();
   /** The 自定义 page's skills, servers and configuration; its changes reach every connection. */
   private readonly customize = new CustomizeMock((method, params) => {
     const line = JSON.stringify({ jsonrpc: "2.0", method, params }) + "\n";
@@ -138,10 +164,11 @@ export class MockServer {
     this.addSnake();
     for (const d of demoSessions()) this.addDemo(d);
     this.addAgentsDemo();
+    for (const b of demoBots()) this.addBot(b);
   }
 
   connect(peer: Peer): Connection {
-    const c: Conn = { peer, attached: new Set(), listening: false };
+    const c: Conn = { peer, attached: new Set(), listening: false, bots: false };
     this.conns.add(c);
     return {
       receive: (text) => {
@@ -209,6 +236,179 @@ export class MockServer {
     s.summary = { ...s.summary, title: d.title, archived: d.archived ?? false };
   }
 
+  /** A demo bot, its conversation written as history and its task under way played live. */
+  private addBot(d: DemoBot) {
+    const id = crypto.randomUUID();
+    const start = Date.now() - d.ago;
+    const avatar: Avatar = d.avatar;
+    this.bots.set(id, { routines: (d.routines ?? []).map((r) => this.demoRoutine(r, start)), summary: { id, name: d.name, avatar, default: d.default, pinned: d.pinned, created_at: iso(start - 3 * 86_400_000) } });
+    const made = this.bots.get(id)!;
+    if (made.routines.length) made.summary = { ...made.summary, routines: made.routines.map((r) => r.summary) };
+    if (d.history.length === 0 && !d.live) return;
+    const s = this.botSession(id, start);
+    this.clock = start;
+    for (const t of d.history) this.playNow(s, { prompt: t.prompt, script: t.script }, t.script.turns.length);
+    if (d.live) {
+      this.playNow(s, { prompt: d.live.prompt, script: d.live.script }, 1, true);
+      if (!this.still) void this.play(s, d.live.script, 1);
+    }
+    this.clock = null;
+    const bot = this.bots.get(id)!;
+    bot.summary = { ...bot.summary, unread: d.unread ?? 0 };
+  }
+
+  /** A bot's conversation: a session in its folder, out of session lists. */
+  private botSession(id: string, at: number): Session {
+    const bot = this.bots.get(id)!;
+    const s = this.create(crypto.randomUUID(), `~/.finx/bots/${id}/files`, bot.model ?? demoModels().defaults!.model!, bot.thinking ?? "medium", "manual", at, true);
+    s.bot = id;
+    bot.summary = { ...bot.summary, session_id: s.id };
+    return s;
+  }
+
+  /** A demo routine with how its runs went. */
+  private demoRoutine(d: DemoRoutine, at: number): MockRoutine {
+    const runs: RoutineRunInfo[] = d.runs.map((r, i) => {
+      const when = iso(Date.now() - r.hoursAgo * 3_600_000);
+      const skipped = r.outcome === "skipped";
+      return {
+        id: `run_demo_${i}_${crypto.randomUUID()}`,
+        scheduled: when,
+        started: skipped ? undefined : when,
+        ended: when,
+        outcome: r.outcome,
+        note: r.outcome === "quiet" || skipped ? (r.text ?? "the run before it had not finished") : undefined,
+        report: r.outcome === "reported" || r.outcome === "failed" ? r.text : undefined,
+        delivered: r.delivered ? when : undefined,
+      };
+    });
+    const started = runs.find((r) => r.started);
+    return {
+      summary: {
+        id: `r_${crypto.randomUUID().slice(0, 6)}`,
+        name: d.name,
+        when: d.when,
+        state: d.paused ? "paused" : "active",
+        next_run: d.paused ? undefined : iso(Date.now() + 8 * 3_600_000),
+        last_run: started ? { started: started.started!, outcome: started.outcome, delivered: started.delivered } : undefined,
+      },
+      prompt: d.prompt,
+      schedule: d.schedule,
+      created_at: iso(at),
+      runs,
+    };
+  }
+
+  /** The bot's manage_routine create: its row shows the routine, and the chat a line for it. */
+  private makeRoutine(s: Session, r: NonNullable<ToolScript["routine"]>): Record<string, unknown> {
+    const bot = this.bots.get(s.bot ?? "");
+    const next = iso(Date.now() + 24 * 3_600_000);
+    const made: MockRoutine = {
+      summary: { id: `r_${crypto.randomUUID().slice(0, 6)}`, name: r.name, when: r.when, state: "active", next_run: next },
+      prompt: r.prompt,
+      schedule: r.schedule,
+      created_at: iso(Date.now()),
+      runs: [],
+    };
+    if (bot) {
+      bot.routines.push(made);
+      this.routinesChanged(bot);
+    }
+    return { action: "create", routine_id: made.summary.id, name: r.name, when: r.when, next_run: next };
+  }
+
+  private routinesChanged(bot: MockBot) {
+    bot.summary = { ...bot.summary, routines: bot.routines.map((r) => r.summary) };
+    this.botsChanged([bot.summary]);
+  }
+
+  private routine(botId: unknown, id: unknown): { bot: MockBot; routine: MockRoutine } {
+    const bot = this.bot(botId);
+    const routine = bot.routines.find((r) => r.summary.id === id);
+    if (!routine) throw new Failure(-32043, "routine_not_found", `routine ${String(id)} not found`);
+    return { bot, routine };
+  }
+
+  /** A run from the panel: under way for a moment, then nothing to report. */
+  private runNow(bot: MockBot, routine: MockRoutine) {
+    if (routine.summary.running) throw new Failure(-32044, "routine_busy", "the routine is running now");
+    const started = iso(Date.now());
+    const info: RoutineRunInfo = { id: `run_demo_${crypto.randomUUID()}`, scheduled: started, started };
+    routine.runs.unshift(info);
+    routine.summary = { ...routine.summary, running: true, last_run: { started } };
+    this.routinesChanged(bot);
+    setTimeout(() => {
+      if (!routine.summary.running) return;
+      this.endRun(bot, routine, info, "quiet", "没有变化。");
+    }, 1500 / this.speed);
+  }
+
+  private endRun(bot: MockBot, routine: MockRoutine, info: RoutineRunInfo, outcome: RoutineOutcome, note?: string) {
+    info.ended = iso(Date.now());
+    info.outcome = outcome;
+    info.note = note;
+    routine.summary = { ...routine.summary, running: undefined, last_run: { started: info.started!, outcome } };
+    this.routinesChanged(bot);
+  }
+
+  /** A bot's row after an event of its conversation, as finx keeps it (bot-design §5.2). */
+  private botEvent(s: Session, e: Event) {
+    const bot = this.bots.get(s.bot!);
+    if (!bot) return;
+    const was = bot.summary;
+    let next: BotSummary = { ...was };
+    if (e.type === "tool_started" && e.name === "send_to_user" && (e.args as { type?: unknown })?.type !== "attachment" && !(e.args as { files?: unknown })?.files && typeof (e.args as { text?: unknown })?.text === "string") {
+      next = { ...next, last: { from: "bot", text: (e.args as { text: string }).text.slice(0, 1000), ts: iso(e.ts) }, unread: (next.unread ?? 0) + 1 };
+    } else if (e.type === "tool_completed" && e.result.tool_name === "send_to_user" && !e.result.is_error && (e.result as { details?: { files?: unknown } }).details?.files) {
+      const { files, text } = (e.result as unknown as { details: { files: { path: string; image?: boolean }[]; text?: string } }).details;
+      const other = files.find((f) => !f.image);
+      next = { ...next, last: { from: "bot", text: (text ?? "").slice(0, 1000), images: files.filter((f) => f.image).length, ...(other ? { file: other.path.split("/").at(-1) } : {}), ts: iso(e.ts) }, unread: (next.unread ?? 0) + 1 };
+    } else if (e.type === "message_completed" && e.message.role === "user" && !e.mail) {
+      const images = e.message.content.filter((c) => c.type === "image").length;
+      next = { ...next, last: { from: "user", text: textOf(e.message.content).slice(0, 1000), images, ts: iso(e.message.ts) } };
+    } else if (e.type === "approval_requested" || (e.type === "agent_event" && e.event.type === "approval_requested")) {
+      next = { ...next, unread: (next.unread ?? 0) + 1 };
+    }
+    const v = s.view;
+    const failed = e.type === "task_failed" || (e.type !== "task_started" && !!next.failed);
+    next = { ...next, typing: v.live !== null, agents_working: runningAgents(v).length, waiting: pendingApproval(v)?.approval.summary, failed };
+    bot.summary = next;
+    if (JSON.stringify(next) !== JSON.stringify(was)) this.botsChanged([next]);
+  }
+
+  private botsChanged(bots: BotSummary[], deleted: string[] = []) {
+    if (this.clock !== null) return;
+    const line = JSON.stringify({ jsonrpc: "2.0", method: "bots/changed", params: { bots, deleted } }) + "\n";
+    for (const c of this.conns) if (c.bots) c.peer.write(line);
+  }
+
+  private bot(id: unknown): MockBot {
+    const b = typeof id === "string" ? this.bots.get(id) : undefined;
+    if (!b) throw new Failure(-32040, "bot_not_found", `bot ${String(id)} not found`);
+    return b;
+  }
+
+  /** The avatar to keep for what the client gave. */
+  private avatarOf(b: MockBot | undefined, input: AvatarInput, isDefault: boolean): Avatar {
+    if (input.kind === "mark") {
+      if (!isDefault) throw new Failure(-32041, "bot_default", "only the default bot has the mark");
+      return { kind: "mark" };
+    }
+    if (input.kind === "image") {
+      if (!input.png.startsWith("iVBOR")) throw new Failure(-32042, "bot_invalid", "the image is not a PNG");
+      if (b) b.png = input.png;
+      return { kind: "image", rev: b?.summary.avatar.kind === "image" ? b.summary.avatar.rev + 1 : 1 };
+    }
+    return input;
+  }
+
+  private botName(name: string): string {
+    const n = name.trim();
+    if (!n) throw new Failure(-32042, "bot_invalid", "the name is empty");
+    if (Array.from(n).length > 20) throw new Failure(-32042, "bot_invalid", "the name is longer than 20 characters");
+    return n;
+  }
+
   /** Writes a task's first turns at once, as history (the clock moves on a little per event). */
   private playNow(s: Session, t: DemoTask, turns: number, keepGoing = false) {
     const run: Run = { cancelled: false, approvals: new Map() };
@@ -247,6 +447,7 @@ export class MockServer {
     s.view = applyEvent(s.view, event);
     const line = JSON.stringify({ jsonrpc: "2.0", method: "session/event", params: { session_id: s.id, event } }) + "\n";
     for (const c of this.conns) if (c.attached.has(s.id)) c.peer.write(line);
+    if (s.bot) return this.botEvent(s, event as Event);
     // The list hears of what a row shows: its state, title, model, time. The time is the last
     // task's start or end, as finx keeps it: opening or changing settings is not activity.
     const after = listState(s.view);
@@ -275,7 +476,7 @@ export class MockServer {
   }
 
   private listChanged(s: Session, deleted: string[] = []) {
-    if (this.clock !== null) return;
+    if (this.clock !== null || s.bot) return;
     const line = JSON.stringify({ jsonrpc: "2.0", method: "sessions/changed", params: { sessions: deleted.length ? [] : [s.summary], deleted } }) + "\n";
     for (const c of this.conns) if (c.listening) c.peer.write(line);
   }
@@ -364,6 +565,42 @@ export class MockServer {
     this.settle(s);
   }
 
+  /** `resend`, as finx does it: a running task stops, what waits goes back with the rewind, and the new message starts a task. */
+  private resend(s: Session, messageId: string, input: UserContent[]) {
+    const refuse = (why: string) => this.emit(s, { type: "warning", message: `cannot resend: ${why}`, code: "resend_rejected" });
+    if (s.bot) return refuse("a bot's conversation does not go back");
+    const at = s.view.entries.findIndex((e) => e.type === "message" && e.message_id === messageId && e.message.role === "user" && !e.mail);
+    if (at < 0) return refuse("that message is not in the conversation");
+    if (input.every((c) => c.type === "text" && c.text.trim() === "")) return refuse("there is nothing to send");
+    const live = s.view.live;
+    const run = s.run;
+    if (live && run) {
+      run.cancelled = true;
+      for (const resolve of run.approvals.values()) resolve({ type: "abort" });
+      if (run.writing) {
+        this.complete(s, run.writing.message_id, run.writing.content, "aborted");
+        run.writing = undefined;
+      }
+      this.emit(s, { type: "task_interrupted", task_id: live.task_id, returned_input: [], usage: live.usage });
+      s.run = undefined;
+    }
+    // Sub-agents started in what is taken back stop and leave; the reports of the others come again.
+    const taken = s.view.entries.slice(at);
+    const calls = new Set(taken.flatMap((e) => (e.type === "message" && e.message.role === "assistant" ? e.message.content.flatMap((c) => (c.type === "tool_call" ? [c.id] : [])) : [])));
+    const removed = s.view.agents.filter((a) => calls.has(a.call_id)).map((a) => a.id);
+    for (const child of s.children.filter((c) => removed.includes(c.id))) {
+      if (child.run) child.run.cancelled = true;
+      child.run = undefined;
+    }
+    s.children = s.children.filter((c) => !removed.includes(c.id));
+    const again = taken.flatMap((e) => (e.type === "message" && e.mail && !removed.includes(e.mail.from.id) ? [{ text: textOf(e.message.content), mail: e.mail, wake: false }] : []));
+    s.mails = [...again, ...s.mails.filter((m) => !removed.includes(m.mail.from.id))];
+    const returned_input = this.handBack(s);
+    this.emit(s, { type: "session_rewound", message_id: messageId, removed_agents: removed, returned_input });
+    if (!s.view.entries.some((e) => e.type === "message" && e.message.role === "user" && !e.mail)) s.summary = { ...s.summary, preview: undefined };
+    this.prompt(s, input);
+  }
+
   // ---- sub-agents ----
 
   /** spawn_agent's call completed: the agent starts, in the background. Its result's details. */
@@ -371,7 +608,7 @@ export class MockServer {
     const name = typeof t.args.name === "string" ? t.args.name : "agent";
     const description = typeof t.args.description === "string" ? t.args.description : "";
     const task = typeof t.args.task === "string" ? t.args.task : "";
-    const script = root.scenario?.agents.find((a) => a.name === name)?.script ?? { turns: [{ say: "完成了。" }] };
+    const script = t.agent ?? root.scenario?.agents.find((a) => a.name === name)?.script ?? { turns: [{ say: "完成了。" }] };
     const id = crypto.randomUUID();
     const session_file = root.view.info.session_file.replace(/[^/]*\.jsonl$/, `${id}.jsonl`);
     const info: SessionInfo = { ...root.view.info, session_id: id, session_file, title: description || name, archived: false };
@@ -425,7 +662,9 @@ export class MockServer {
     s.run = { cancelled: false, approvals: new Map() };
     s.tasks++;
     this.emit(s, { type: "task_started", task_id: `t${s.tasks}`, trigger: "mail" });
+    const reports = s.mails.map((m) => m.text);
     const names = this.deliver(s);
+    if (s.bot) return void this.play(s, relayScript(reports));
     const sc = s.scenario;
     const done = s.view.agents.length > 0 && s.view.agents.every((a) => a.status === "completed");
     let script: TaskScript;
@@ -467,7 +706,7 @@ export class MockServer {
   private toolCompleted(s: Session, call_id: string, t: ToolScript, denied?: string) {
     const text = denied ?? t.output;
     // As in finx, a sub-agent starts when its spawn_agent call completes.
-    const details = t.name === "spawn_agent" && denied === undefined && !s.parent ? this.spawnAgent(s, call_id, t) : undefined;
+    const details = t.name === "spawn_agent" && denied === undefined && !s.parent ? this.spawnAgent(s, call_id, t) : t.routine && denied === undefined ? this.makeRoutine(s, t.routine) : t.details;
     this.emit(s, {
       type: "tool_completed",
       call_id,
@@ -506,8 +745,14 @@ export class MockServer {
       const steers = this.take(s, "steer", true);
       if (steers.length > 0) {
         for (const x of steers) this.join(s, x);
-        const answer = steerScript(steers.map((x) => userText(x.input).text).join("；")).turns;
-        script = { ...script, turns: [...script.turns.slice(0, i), ...answer, ...script.turns.slice(i)] };
+        // A bot answers each message on its own, after the one it is on (bot-design §3.1).
+        if (s.bot) {
+          const answer = steers.flatMap((x) => botScript(userText(x.input).text).turns);
+          script = { ...script, turns: [...script.turns.slice(0, i + 1), ...answer, ...script.turns.slice(i + 1)] };
+        } else {
+          const answer = steerScript(steers.map((x) => userText(x.input).text).join("；")).turns;
+          script = { ...script, turns: [...script.turns.slice(0, i), ...answer, ...script.turns.slice(i)] };
+        }
       }
       const turn = script.turns[i];
       this.emit(s, { type: "turn_started", task_id, turn: i + 1 });
@@ -638,6 +883,7 @@ export class MockServer {
         ? { turns: sc.lead, fail: { kind: "quota_exceeded", message: "Insufficient balance: please top up your account.", status: 402, retryable: false } }
         : { turns: [...sc.lead, { say: sc.started }] };
     }
+    if (!script && s.bot) script = botScript(text);
     if (!script && wantsSite(text)) script = siteScript();
     script = this.unkeyed(s) ?? script ?? replyScript(text);
     s.run = { cancelled: false, approvals: new Map() };
@@ -689,7 +935,7 @@ export class MockServer {
     type R<K extends keyof Methods> = Methods[K][1];
     switch (method) {
       case "initialize": {
-        const capabilities = { max_frame_bytes: 33_554_432, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, workbooks: true };
+        const capabilities = { max_frame_bytes: 134_217_728, session_delete: true, resource_read: false, event_filter: false, sessions_subscribe: true, session_metadata: true, transcript_task_end: true, auth: true, agents: true, model_connections: false, model_discovery: true, customize: true, embedded_browser: false, input_queue: true, message_resend: true, workbooks: true, bots: true, routines: true };
         return { protocol_version: 2, server_info: { name: "finx", version: "0.1.0-mock" }, capabilities } satisfies R<"initialize">;
       }
       case "sessions/subscribe":
@@ -700,6 +946,135 @@ export class MockServer {
         return {};
       case "session/list":
         return { sessions: this.summaries() } satisfies R<"session/list">;
+      case "bots/subscribe":
+        c.bots = true;
+        return { bots: [...this.bots.values()].map((b) => b.summary) } satisfies R<"bots/subscribe">;
+      case "bots/unsubscribe":
+        c.bots = false;
+        return {};
+      case "bots/create": {
+        const q = p as P<"bots/create">;
+        const id = crypto.randomUUID();
+        const name = this.botName(q.name);
+        const bot: MockBot = { routines: [], model: q.model ?? undefined, thinking: q.thinking ?? undefined, summary: { id, name, avatar: { kind: "mono", hue: "slate" }, created_at: iso(Date.now()) } };
+        bot.summary = { ...bot.summary, avatar: this.avatarOf(bot, q.avatar, false) };
+        this.bots.set(id, bot);
+        this.botsChanged([bot.summary]);
+        return { bot: bot.summary } satisfies R<"bots/create">;
+      }
+      case "bots/update": {
+        const q = p as P<"bots/update">;
+        const bot = this.bot(q.bot_id);
+        const name = q.name == null ? bot.summary.name : this.botName(q.name);
+        const avatar = q.avatar == null ? bot.summary.avatar : this.avatarOf(bot, q.avatar, !!bot.summary.default);
+        bot.summary = { ...bot.summary, name, avatar, pinned: q.pinned ?? bot.summary.pinned, muted: q.muted ?? bot.summary.muted };
+        this.botsChanged([bot.summary]);
+        return { bot: bot.summary } satisfies R<"bots/update">;
+      }
+      case "bots/avatar": {
+        const bot = this.bot((p as P<"bots/avatar">).bot_id);
+        if (!bot.png) throw new Failure(-32042, "bot_invalid", "the bot has no uploaded avatar");
+        return { data: `data:image/png;base64,${bot.png}` } satisfies R<"bots/avatar">;
+      }
+      case "bots/open": {
+        const q = p as P<"bots/open">;
+        const bot = this.bot(q.bot_id);
+        const s = (bot.summary.session_id ? this.sessions.get(bot.summary.session_id) : undefined) ?? this.botSession(q.bot_id, Date.now());
+        if (!bot.summary.session_id || bot.summary.session_id !== s.id) bot.summary = { ...bot.summary, session_id: s.id };
+        this.botsChanged([bot.summary]);
+        c.attached.add(s.id);
+        return { session_id: s.id, snapshot: snapshotOf(s.view, q.history_limit ?? undefined) } satisfies R<"bots/open">;
+      }
+      case "bots/routine": {
+        const q = p as P<"bots/routine">;
+        const { routine } = this.routine(q.bot_id, q.routine_id);
+        const upcoming = routine.summary.next_run ? [0, 1, 2].map((i) => iso(Date.parse(routine.summary.next_run!) + i * 86_400_000)) : [];
+        return { routine: { summary: routine.summary, prompt: routine.prompt, schedule: routine.schedule, upcoming, created_at: routine.created_at } } satisfies R<"bots/routine">;
+      }
+      case "bots/routine_runs": {
+        const q = p as P<"bots/routine_runs">;
+        const { routine } = this.routine(q.bot_id, q.routine_id);
+        const from = q.before ? routine.runs.findIndex((r) => r.id === q.before) + 1 : 0;
+        return { runs: routine.runs.slice(from, from + (q.limit ?? 20)) } satisfies R<"bots/routine_runs">;
+      }
+      case "bots/routine_run": {
+        const q = p as P<"bots/routine_run">;
+        const { routine } = this.routine(q.bot_id, q.routine_id);
+        const run = routine.runs.find((r) => r.id === q.run_id);
+        if (!run) throw new Failure(-32043, "routine_not_found", `run ${q.run_id} not found`);
+        const ts = Date.parse(run.started ?? run.scheduled);
+        const call = { type: "tool_call", id: "c1", name: "bash", arguments: { command: "curl -s https://example.com/quote" } };
+        const transcript = run.started
+          ? [
+              { type: "message", message_id: "a1", message: { role: "assistant", content: [call], provider: "mock", model: "mock", usage: { input: 0, output: 0 }, stop_reason: "tool_use", ts } },
+              { type: "tool_result", call_id: "c1", result: { call_id: "c1", tool_name: "bash", content: [{ type: "text", text: "Exit code: 0" }], is_error: false, ts } },
+            ]
+          : [];
+        return { run, transcript: transcript as TranscriptItem[] } satisfies R<"bots/routine_run">;
+      }
+      case "bots/routine_set_enabled": {
+        const q = p as P<"bots/routine_set_enabled">;
+        const { bot, routine } = this.routine(q.bot_id, q.routine_id);
+        routine.summary = { ...routine.summary, state: q.enabled ? "active" : "paused", next_run: q.enabled ? iso(Date.now() + 3_600_000) : undefined };
+        this.routinesChanged(bot);
+        return {};
+      }
+      case "bots/routine_run_now": {
+        const q = p as P<"bots/routine_run_now">;
+        const { bot, routine } = this.routine(q.bot_id, q.routine_id);
+        this.runNow(bot, routine);
+        return {};
+      }
+      case "bots/routine_stop": {
+        const q = p as P<"bots/routine_stop">;
+        const { bot, routine } = this.routine(q.bot_id, q.routine_id);
+        if (routine.summary.running) this.endRun(bot, routine, routine.runs[0], "interrupted");
+        return {};
+      }
+      case "bots/routine_delete": {
+        const q = p as P<"bots/routine_delete">;
+        const { bot } = this.routine(q.bot_id, q.routine_id);
+        bot.routines = bot.routines.filter((r) => r.summary.id !== q.routine_id);
+        this.routinesChanged(bot);
+        return {};
+      }
+      case "files/read": {
+        const path = (p as P<"files/read">).path;
+        const image = demoImage(path);
+        if (!image) throw new Failure(-32602, "invalid_params", `no such file: ${path}`);
+        return { path, size: image.data.length, kind: "image", image, writable: false } satisfies R<"files/read">;
+      }
+      case "bots/read":
+      case "bots/unread": {
+        const bot = this.bot((p as P<"bots/read">).bot_id);
+        const unread = method === "bots/read" ? 0 : 1;
+        if ((bot.summary.unread ?? 0) !== unread) {
+          bot.summary = { ...bot.summary, unread };
+          this.botsChanged([bot.summary]);
+        }
+        return {};
+      }
+      case "bots/clear":
+      case "bots/delete": {
+        const id = (p as P<"bots/clear">).bot_id;
+        const bot = this.bot(id);
+        if (method === "bots/delete" && bot.summary.default) throw new Failure(-32041, "bot_default", "the default bot cannot be deleted");
+        const s = bot.summary.session_id ? this.sessions.get(bot.summary.session_id) : undefined;
+        if (s) {
+          for (const child of s.children) if (child.run) this.interrupt(child);
+          if (s.run) this.interrupt(s);
+          this.sessions.delete(s.id);
+          for (const x of this.conns) x.attached.delete(s.id);
+        }
+        if (method === "bots/delete") {
+          this.bots.delete(id);
+          this.botsChanged([], [id]);
+        } else {
+          bot.summary = { id: bot.summary.id, name: bot.summary.name, avatar: bot.summary.avatar, default: bot.summary.default, pinned: bot.summary.pinned, created_at: bot.summary.created_at };
+          this.botsChanged([bot.summary]);
+        }
+        return {};
+      }
       case "models/list":
         return demoModels(this.stored, this.selection, this.listedAt) satisfies R<"models/list">;
       case "models/refresh":
@@ -739,6 +1114,14 @@ export class MockServer {
       case "config/write": {
         const q = p as P<"config/write">;
         return this.customize.configWrite(q.layer, q.edits, q.expected_version) satisfies R<"config/write">;
+      }
+      case "web_search/status":
+        return this.customize.webSearchStatus() satisfies R<"web_search/status">;
+      case "web_search/test":
+        return this.customize.webSearchTest() satisfies R<"web_search/test">;
+      case "web_search/set_key": {
+        const q = p as P<"web_search/set_key">;
+        return this.customize.webSearchSetKey(q.source, q.key) satisfies R<"web_search/set_key">;
       }
       case "credentials/set":
         return this.customize.credentialsSet((p as P<"credentials/set">).name) satisfies R<"credentials/set">;
@@ -786,7 +1169,7 @@ export class MockServer {
       }
       case "session/new": {
         const q = p as P<"session/new">;
-        const model = q.model ?? demoModels().defaults!.model;
+        const model = q.model ?? demoModels().defaults!.model!;
         // As finx: a model whose provider is gone (a connection removed) is not there to start on.
         if (!demoModels().providers.some((d) => d.id === providerOf(model))) {
           throw new Failure(-32022, "model_unavailable", `unknown provider '${providerOf(model)}'`);
@@ -872,6 +1255,8 @@ export class MockServer {
         s.queue.push({ id: newId("u"), mode: op.mode ?? "steer", input: op.input, ts: this.now() });
         return this.queueChanged(s);
       }
+      case "resend":
+        return this.resend(s, op.message_id, op.input);
       case "withdraw": {
         const x = s.queue.find((y) => y.id === op.id);
         if (!x) return;
@@ -911,6 +1296,11 @@ export class MockServer {
         if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
         return resolve(op.decision);
       }
+      case "agent_approval": {
+        const resolve = s.children.find((c) => c.id === op.agent)?.run?.approvals.get(op.call_id);
+        if (!resolve) throw new Failure(-32015, "approval_not_pending", "no such approval");
+        return resolve(op.decision);
+      }
       case "set_model": {
         // As finx does (model-catalog-design §18): a level asked for is kept when the model offers it;
         // on a switch the session's level is kept when the new model offers it; else "default".
@@ -940,7 +1330,7 @@ export class MockServer {
   }
 
   private summaries(): SessionSummary[] {
-    return [...this.sessions.values()].map((s) => s.summary).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+    return [...this.sessions.values()].filter((s) => !s.bot).map((s) => s.summary).sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
   }
 }
 

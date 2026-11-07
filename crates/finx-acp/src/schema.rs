@@ -16,6 +16,11 @@ pub struct InitializeRequest {
 }
 
 impl InitializeRequest {
+    /// Whether the client can run a terminal method (`clientCapabilities.auth.terminal`).
+    pub fn can_run_terminal_auth(&self) -> bool {
+        self.client_capabilities.pointer("/auth/terminal").and_then(Value::as_bool) == Some(true)
+    }
+
     /// Whether `clientCapabilities.session.<name>` is present.
     pub fn session_capability(&self, name: &str) -> bool {
         self.client_capabilities
@@ -117,6 +122,13 @@ pub enum Outcome {
         #[serde(rename = "optionId")]
         option_id: String,
     },
+}
+
+/// `authenticate`
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthenticateRequest {
+    pub method_id: String,
 }
 
 #[cfg(test)]

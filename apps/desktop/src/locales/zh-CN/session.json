@@ -47,7 +47,8 @@
     "retryIn": "{{seconds}} 秒后第 {{attempt}} 次重试",
     "retrying": "正在第 {{attempt}} 次重试",
     "stopRetry": "停止",
-    "context": "上下文已用 {{percent}}% · {{used}} / {{size}} tokens"
+    "context": "上下文已用 {{percent}}% · {{used}} / {{size}} tokens",
+    "resend": "撤回重发"
   },
   "fail": {
     "theProvider": "服务商",
@@ -64,7 +65,8 @@
     "protocol": "{{provider}} 的回复无法识别",
     "unknown": "这一轮没能完成",
     "working_other": "后台还有 {{count}} 个任务在运行。",
-    "stopWorking": "停止后台任务"
+    "stopWorking": "停止后台任务",
+    "no_reply": "这次没有收到回复"
   },
   "agents": {
     "launched_other": "派出了 {{count}} 个子智能体，在后台并行工作",
@@ -73,10 +75,12 @@
       "completed": "完成",
       "failed": "失败",
       "interrupted": "已中断",
-      "closed": "已关闭"
+      "closed": "已关闭",
+      "awaiting_approval": "等你批准"
     },
     "open": "在后台面板中查看执行过程",
     "report": "<b>{{name}}</b> 的汇报",
+    "message": "<b>{{name}}</b> 发来消息",
     "noReply": {
       "interrupted": "停下时还没有回复",
       "completed": "做完了，但没有回复"
@@ -88,7 +92,8 @@
     "stopped_other": "{{count}} 条后台任务已中断，回复 finx 就能接着做",
     "sent": "已发消息给",
     "sending": "正在发消息给",
-    "messageObject": "{{to}}：{{message}}"
+    "messageObject": "{{to}}：{{message}}",
+    "mainAgent": "主智能体"
   },
   "background": {
     "title": "后台任务",
@@ -112,6 +117,7 @@
   },
   "approval": {
     "label": "等你批准",
+    "agent": "子智能体 · {{name}}",
     "queue": "第 {{n}} / {{total}} 项",
     "runCommand": "运行这条命令？",
     "useTool": "{{verb}} {{object}}？",
@@ -143,14 +149,14 @@
     "siteQuestionYours": "在你的浏览器里打开 {{site}}？",
     "siteActYours": "允许 finx 在你的浏览器里使用 {{site}}？",
     "siteYours": "用的是你已经登录的账号。",
-    "siteYoursBypass": "用的是你已经登录的账号，所以绕过权限也会先问你。"
+    "siteYoursBypass": "用的是你已经登录的账号，所以完全访问也会先问你。"
   },
   "notice": {
     "label": "关键提醒",
     "dismiss": "知道了"
   },
   "bypass": {
-    "title": "开启绕过权限？",
+    "title": "开启完全访问？",
     "body": "工具会直接运行、不再询问，包括改动 .git、shell 配置这类受保护的文件，以及工作区以外的文件。只有拒绝规则、询问规则和删除关键路径仍会拦下操作。请只在容器或临时副本这类隔离环境里使用。",
     "agree": "同意",
     "refuse": "拒绝"
@@ -201,6 +207,9 @@
     "connectors": "连接器",
     "browseConnectors": "浏览连接器",
     "manageConnectors": "管理连接器",
+    "searchSwitch": "联网搜索",
+    "searchOn": "已打开联网搜索，所有对话从下一步起可以使用",
+    "searchOff": "已关闭联网搜索，所有对话从下一步起不再搜索",
     "browserSwitch": "浏览器",
     "computerSwitch": "电脑操控",
     "computerGrant": "需要授权",
@@ -213,7 +222,11 @@
     "skills": "技能",
     "browseSkills": "浏览技能",
     "manageSkills": "管理技能",
-    "noSkills": "还没有可用的技能"
+    "noSkills": "还没有可用的技能",
+    "tabKind": "浏览器标签页",
+    "tabs_other": "{{count}} 个标签页",
+    "prevImage": "上一张",
+    "nextImage": "下一张"
   },
   "inspector": {
     "label": "会话详情",
@@ -350,6 +363,13 @@
     "typeUrl": "搜索或输入网址",
     "localServers": "本地服务",
     "rescan": "重新检测",
+    "stopServer": "停止服务",
+    "stopServerTitle": "停止 :{{port}} 上的服务？",
+    "stopServerBody": "会结束进程 {{process}}（PID {{pid}}），这个服务上未保存的内容可能会丢失。",
+    "stopServerButton": "停止",
+    "stopServerDone": ":{{port}} 已停止",
+    "stopServerGone": ":{{port}} 上的服务已经不在了",
+    "stopServerDenied": "没有权限停止 {{process}}（PID {{pid}}）",
     "noLocalServers": "本机没有正在运行的网页服务。启动后会显示在这里。",
     "more": "更多",
     "menu": {
@@ -444,6 +464,8 @@
   },
   "content": {
     "open": "打开",
+    "viewSource": "查看源码",
+    "previewInBrowser": "在内置浏览器中预览",
     "openWith": "打开方式",
     "systemApp": "系统默认应用",
     "revealFinder": "在访达中显示",
@@ -475,13 +497,16 @@
     "hidden": "含隐藏字符",
     "hiddenTip": "这段代码里有看不见的字符，粘贴前请检查"
   },
+  "preview": {
+    "toPanel": "在侧边栏打开",
+    "close": "关闭预览"
+  },
   "files": {
     "title": "文件",
     "hide": "收起文件面板",
     "tree": "项目文件",
     "toggleTree": "显示或隐藏目录树",
     "showInTree": "在文件面板中显示",
-    "empty": "从左边选一个文件打开",
     "loading": "正在读取…",
     "saved": "已保存",
     "unsaved": "未保存",
@@ -553,7 +578,7 @@
     "findNone": "无结果",
     "pasteTooBig": "一次最多粘贴 {{max}} 格",
     "hardcoded": "手填的数字：左右（或上下）都是公式，可能该是公式",
-    "openInExcel": "在 Excel 中打开",
+    "openInExcel": "默认应用打开",
     "unsaved": "未保存",
     "undo": "撤销",
     "redo": "重做",
@@ -573,8 +598,14 @@
     "readOnly": "此工作表为只读。",
     "csvNoFormula": "CSV 仅支持数值和文本，不能写入公式。如需保留等号开头的文本，请在前面加单引号。",
     "loadFailed": "无法加载单元格。",
-    "askFinx": "问 finx",
+    "fillHandle": "拖动填充；按住 ⌥ 在复制和序列之间切换",
+    "askAgent": "问 agent",
     "copy": "复制",
+    "cut": "剪切",
+    "paste": "粘贴",
+    "clearContents": "清除内容",
+    "fillDown": "向下填充",
+    "fillRight": "向右填充",
     "copied": "已复制选区",
     "quoted": "已引用到输入框",
     "selectionSummary": "已选择 {{range}}，共 {{count}} 个单元格。请用 doc_read 读取该区域。",
@@ -628,5 +659,192 @@
     "fillDown": "向下填充",
     "fillRight": "向右填充",
     "trace": "追踪"
+  },
+  "yours": {
+    "tabs_other": "{{count}} 个标签页",
+    "reconnecting": "正在重新连接",
+    "opening": "正在打开",
+    "waitingYou": "等你处理",
+    "revoked": "已收回控制",
+    "outdated": "需要更新",
+    "allow": "允许",
+    "show": "在 {{name}} 中查看",
+    "closeAll": "全部关闭",
+    "tabsMenu": "标签页",
+    "waitingLine": "等你的浏览器连上",
+    "inYourBrowser": " · 你的浏览器",
+    "card": {
+      "title": "{{name}} 里的 FinxWork 扩展没有连上",
+      "desc": "在扩展程序页面确认它还在，而且是打开的。连上后任务自己继续，不用回来点。",
+      "other": "智能体选用的浏览器没有连上，{{other}} 连着。",
+      "refused": "它还在用旧程序。在扩展程序页面点一下 FinxWork 的刷新按钮，连上后任务自己继续。",
+      "outdated": {
+        "extension": "这个扩展太旧了。在扩展程序页面更新它，连上后任务自己继续。",
+        "finx": "FinxWork 太旧了，用不了这个扩展。更新后任务自己继续。"
+      },
+      "update": "检查更新",
+      "skip": "这次不用 {{name}}",
+      "open": "打开扩展程序页面",
+      "switch": "改用它"
+    },
+    "handoff": {
+      "title": "需要你在 {{name}} 里处理",
+      "go": "去 {{name}}",
+      "done": "我处理好了",
+      "again": "再去看看",
+      "skip": "跳过这一步",
+      "handled": "你已处理"
+    },
+    "offer": "交给这个对话：{{title}}",
+    "offerRemove": "不交了"
+  },
+  "resend": {
+    "from": "重发：{{text}}",
+    "find": "在对话里找到这条",
+    "cancel": "不重发了，回到草稿",
+    "placeholder": "写下要重发的内容…",
+    "hint": "这条之后的内容会被撤回",
+    "hintFiles": "，模型改过的文件不会恢复",
+    "hintRunning": "，正在进行的任务会停止",
+    "sending": "正在撤回…",
+    "refused": "没能重发，内容还在输入框里",
+    "gone": "这条消息已在别处被撤回，内容留在了输入框里"
+  },
+  "webSearch": {
+    "only": " · 仅 {{sites}}",
+    "siteSeparator": "、",
+    "failed": "搜索失败",
+    "and": "，",
+    "stop": "。",
+    "openSettings": "打开设置",
+    "noneUsable": "所有搜索服务都关了，或者还没设置好。",
+    "failedOver": "{{failed}}，这次用 {{name}}",
+    "foot_zero": "没有结果 · {{name}} · {{seconds}} 秒",
+    "foot_other": "{{count}} 条结果 · {{name}} · {{seconds}} 秒",
+    "footAfter_zero": "没有结果 · {{seconds}} 秒",
+    "footAfter_other": "{{count}} 条结果 · {{seconds}} 秒",
+    "why": {
+      "auth_failed": "{{name}} 拒绝了密钥",
+      "quota_exhausted": "{{name}} 额度用完了",
+      "rate_limited": "{{name}} 限流",
+      "unreachable": "{{name}} 连不上",
+      "bad_response": "{{name}} 的回答读不了"
+    }
+  },
+  "markdown": {
+    "table": "数据表格",
+    "copyTable": "拷贝表格",
+    "copyAsMarkdown": "拷贝为 Markdown",
+    "copied": "已复制",
+    "copyFailed": "拷贝失败，请重试",
+    "expand": "展开",
+    "close": "关闭",
+    "tableOpen": "表格已展开 · 返回",
+    "details": "展开详情",
+    "diagram": "图形",
+    "source": "源码",
+    "exportSvg": "导出 SVG",
+    "diagramFailed": "此图无法渲染，已在操作栏下方显示源码。",
+    "rendering": "正在绘制图形…",
+    "footnotes": "脚注",
+    "backToReference": "返回引用位置"
+  },
+  "pptx": {
+    "outlineTitle": "大纲",
+    "outlineError": "无法加载大纲。",
+    "outlineUntitled": "无标题幻灯片",
+    "loadingPanel": {
+      "title": "正在打开演示文稿",
+      "hints": {
+        "preparing": "稍等片刻，打开后即可编辑。",
+        "reading": "文件越大，读取所需时间越长。",
+        "inspecting": "正在整理每一页的文字、图片和版式。",
+        "encoding": "正在整理每一页的文字、图片和版式。",
+        "fonts": "让文字按原来的样式显示。",
+        "rendering": "正在显示第一页。"
+      }
+    },
+    "progress": {
+      "preparing": "正在打开演示文稿…",
+      "reading": "正在读取文件…",
+      "inspecting": "正在整理内容…",
+      "encoding": "正在整理内容…",
+      "fonts": "正在准备文字显示…",
+      "rendering": "马上就好…"
+    },
+    "mediaWarning": "部分矢量对象未能完整显示：{{message}}",
+    "editor": "演示文稿编辑器",
+    "loading": "正在加载演示文稿和本机字体…",
+    "loadFailed": "无法打开演示文稿：{{message}}",
+    "conflict": "文件已被外部修改或删除。你的编辑仍保留在此处，可重新加载文件并放弃当前编辑。",
+    "ribbon": {
+      "home": "开始",
+      "select": "选择（Esc）",
+      "insert": "插入",
+      "paragraph": "段落",
+      "image": "图片",
+      "shapeStyle": "形状样式",
+      "fontSearch": "搜索字体",
+      "documentFonts": "本文档字体",
+      "allFonts": "所有字体",
+      "fontLoading": "正在加载…",
+      "fontFailed": "无法使用该字体：{{message}}",
+      "fontSubstitute": "（替代字体）",
+      "fontSubstituteHint": "使用 {{family}} 显示，字宽与原字体一致",
+      "fontsUnavailable": "无法读取本机字体：{{message}}",
+      "group": {
+        "clipboard": "剪贴板",
+        "editing": "编辑",
+        "alignObjects": "对齐"
+      },
+      "cmd": {
+        "paste": "粘贴",
+        "cut": "剪切",
+        "copy": "复制",
+        "duplicate": "复制对象",
+        "formatPainter": "格式刷（双击可连续使用）",
+        "deleteSlide": "删除幻灯片",
+        "superscript": "上标",
+        "subscript": "下标",
+        "clearFormat": "清除格式",
+        "align_left": "左对齐",
+        "align_center": "水平居中",
+        "align_right": "右对齐",
+        "align_top": "顶端对齐",
+        "align_middle": "垂直居中",
+        "align_bottom": "底端对齐",
+        "distribute_horizontal": "横向分布",
+        "distribute_vertical": "纵向分布",
+        "alignToPage": "对齐幻灯片",
+        "selectAll": "全选"
+      },
+      "reason": {
+        "engine": "编辑器暂不支持",
+        "read-only": "文件为只读",
+        "needs-slide": "请先打开一页幻灯片",
+        "needs-text": "请先选择文字",
+        "needs-text-range": "请先选中一段文字",
+        "needs-shape": "请先选择对象",
+        "needs-preset": "请先选择形状",
+        "needs-two": "请选择两个或更多对象",
+        "needs-three": "请选择三个或更多对象",
+        "needs-table": "请把光标放在表格中",
+        "needs-format": "请先选择要复制格式的文字或对象",
+        "needs-clipboard": "请先复制或剪切对象",
+        "needs-layout": "请选择其他版式",
+        "last-slide": "演示文稿至少要保留一页"
+      },
+      "todo": "即将支持",
+      "themeColors": "主题颜色",
+      "standardColors": "标准色",
+      "moreColors": "其他颜色…"
+    }
+  },
+  "deckEdit": {
+    "show": "查看第 {{n}} 页",
+    "open": "打开演示文稿",
+    "undo": "撤销",
+    "undone": "已撤销",
+    "failed": "没有撤销：{{message}}"
   }
 }

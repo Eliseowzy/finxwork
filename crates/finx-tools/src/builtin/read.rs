@@ -305,6 +305,7 @@ async fn read_image(
             "height": size.map(|s| s.1),
         })),
         is_error: false,
+        ends_task: false,
     })
 }
 

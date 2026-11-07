@@ -1,19 +1,20 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { addTotals, baseName, conversation, costText, openChain, runningAgents, segments, tokensText, totals, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
+import { addTotals, baseName, costText, openChain, runningAgents, segments, settledSteps, tokensText, totals, withStreaming, type ListSession, type SessionView, type Step, type TaskChain, type WorkItem } from "@finx/client";
 import type { TaskEndItem } from "@finx/protocol";
 import { unarchive } from "../actions";
 import { SkillTag } from "../composer/SkillNode";
-import { pairImages } from "../composer/attachments";
+import { pairImages, tabsName } from "../composer/attachments";
 import { Tile } from "../composer/Tile";
 import { agoInterval, durationText, messageAgo, timeLine } from "../format";
 import { Icon, MarkMotion } from "../icons";
 import { useNow, useStore } from "../store";
-import { AgentCard, BackgroundLine, ReportCard } from "./Agents";
-import { Dock } from "./Dock";
+import { AgentCard, AgentMessageCard, BackgroundLine, ReportCard } from "./Agents";
+import { Dock, writingAgain } from "./Dock";
 import { FailureCard, PastFailure, RetryCard, useResumeAfterCompact } from "./Failure";
-import { DraftMarkdown, Markdown } from "./Markdown";
+import { Markdown } from "./Markdown";
 import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
+import { useBrowserStatus } from "./Yours";
 
 /**
  * The conversation, newest at the bottom, ending with what the model is
@@ -23,7 +24,9 @@ import { LiveThinking, RunningCalls, ToolRow, Work } from "./Steps";
 export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionView; loadEarlier: () => Promise<void> }) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const steps = useMemo(() => conversation(view), [view]);
+  // The history does not change while the model writes: only what it is writing is worked out for each piece of text.
+  const settled = useMemo(() => settledSteps(view), [view.entries, view.agents, view.descriptions, view.live?.tools, view.live === null, view.info.cwd]);
+  const steps = useMemo(() => withStreaming(settled, view), [settled, view.live?.streaming]);
   const scroll = useRef<HTMLDivElement>(null);
   const [dock, setDock] = useState(0);
   const retry = view.live?.retry;
@@ -52,6 +55,17 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
   // Follow the conversation: open at its end, and stay there as it grows unless the person scrolled up;
   // scrolled well up, a button takes them back down.
   const atEnd = useRef(true);
+  const lastTop = useRef(0);
+  // When the person last acted on the conversation itself. A held pointer (the scrollbar) counts until it lets go.
+  const touched = useRef(-Infinity);
+  const touch = () => {
+    touched.current = performance.now();
+  };
+  const hold = () => {
+    touched.current = Infinity;
+    window.addEventListener("pointerup", touch, { once: true });
+    window.addEventListener("pointercancel", touch, { once: true });
+  };
   const [away, setAway] = useState(false);
   useLayoutEffect(() => {
     const el = scroll.current;
@@ -59,14 +73,61 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     if (el && atEnd.current) el.scrollTop = el.scrollHeight;
     else if (el && fromEnd.current !== null) el.scrollTop = el.scrollHeight - fromEnd.current;
     fromEnd.current = null;
+    if (el) lastTop.current = el.scrollTop;
     if (el && nearTop(el)) earlier();
   }, [steps, dock, retry]);
+  // Images, fonts, formulas and diagrams can resize without a new session event.
+  // Preserve a visible row while reading above the end, or follow the bottom.
+  const anchor = useRef<{ key: string; top: number } | null>(null);
+  const rememberAnchor = () => {
+    const el = scroll.current;
+    if (!el) return;
+    // At the end there is nothing to hold, and finding the row measures every one above it, at each scroll that follows.
+    if (atEnd.current) {
+      anchor.current = null;
+      return;
+    }
+    const top = el.getBoundingClientRect().top;
+    const row = [...el.querySelectorAll<HTMLElement>("[data-step-key]")].find((node) => node.getBoundingClientRect().bottom > top);
+    anchor.current = row ? { key: row.dataset.stepKey!, top: row.getBoundingClientRect().top - top } : null;
+  };
+  useEffect(() => {
+    const el = scroll.current;
+    const body = el?.firstElementChild;
+    if (!el || !body) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      // Following the end needs no frame of its own: this runs before the frame it resized is painted.
+      if (atEnd.current) {
+        el.scrollTop = el.scrollHeight;
+        lastTop.current = el.scrollTop;
+        return;
+      }
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (anchor.current) {
+          const row = el.querySelector<HTMLElement>(`[data-step-key="${CSS.escape(anchor.current.key)}"]`);
+          if (row) el.scrollTop += row.getBoundingClientRect().top - el.getBoundingClientRect().top - anchor.current.top;
+        }
+        lastTop.current = el.scrollTop;
+        rememberAnchor();
+      });
+    });
+    observer.observe(body);
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+  }, []);
   const onScroll = () => {
     const el = scroll.current;
     if (!el) return;
     const below = el.scrollHeight - el.scrollTop - el.clientHeight;
-    atEnd.current = below < 80;
-    setAway(below > 240);
+    // Only the person going up leaves the end. Rows settle their heights and pictures load after the scroll
+    // that followed them, which moves the position with no one touching anything: that goes back to the end.
+    if (below < 80) atEnd.current = true;
+    else if (el.scrollTop < lastTop.current && performance.now() - touched.current < 1000) atEnd.current = false;
+    else if (atEnd.current) el.scrollTop = el.scrollHeight;
+    lastTop.current = el.scrollTop;
+    setAway(!atEnd.current && below > 240);
+    rememberAnchor();
     if (nearTop(el)) earlier();
   };
   const toEnd = () => {
@@ -76,12 +137,21 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
     el.scrollTo({ top: el.scrollHeight, behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   };
 
+  // A sent message being written again: the composer (Dock) holds it, its row shows which it is.
+  const [again, setAgain] = useState(() => writingAgain(s.session_id));
+  const takeBack = useRef<(messageId: string) => void>(() => {});
+  const onResend = useCallback((messageId: string) => takeBack.current(messageId), []);
+  const find = (messageId: string) => {
+    atEnd.current = false;
+    scroll.current?.querySelector(`[data-mid="${CSS.escape(messageId)}"]`)?.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  };
+
   // The session's current failure is told once, at the end, with Retry; earlier ones in one quiet line.
-  const lastEnd = [...steps].reverse().find((x) => x.kind === "end");
+  const lastEnd = steps.findLast((x) => x.kind === "end");
   const working = runningAgents(view).length;
   return (
     <>
-      <div className="cscroll" ref={scroll} onScroll={onScroll}>
+      <div className="cscroll markdown-chat" ref={scroll} onScroll={onScroll} onWheel={touch} onTouchMove={touch} onKeyDown={touch} onPointerDown={hold}>
         <div className="dbody" style={{ paddingBottom: dock + 40 }}>
           {s.archived && (
             <div className="anote">
@@ -97,7 +167,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
           )}
           <div className="tr" role="log" aria-label={t("chat.log")}>
             {steps.map((step, i) => (
-              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} working={step === lastEnd ? working : 0} sessionId={s.session_id} />
+              <Row key={step.key} step={step} previous={previousUser(steps, i)} final={finalOf(steps, i)} merged={isMerged(steps, i)} current={step === lastEnd && !!view.failure && !view.live} working={step === lastEnd ? working : 0} sessionId={s.session_id} again={step.key === again} onResend={s.archived ? undefined : onResend} />
             ))}
             {retry && <RetryCard retry={retry} sessionId={s.session_id} />}
             <Working view={view} steps={steps} />
@@ -108,7 +178,7 @@ export function Chat({ s, view, loadEarlier }: { s: ListSession; view: SessionVi
       <button className={`tobottom ${away ? "on" : ""}`} style={{ "--dock": `${dock}px` } as CSSProperties} aria-label={t("chat.toBottom")} title={t("chat.toBottom")} tabIndex={away ? 0 : -1} aria-hidden={!away} onClick={toEnd}>
         <Icon name="arrowDown" />
       </button>
-      <Dock s={s} view={view} onHeight={setDock} />
+      <Dock s={s} view={view} onHeight={setDock} takeBack={takeBack} onAgain={setAgain} onFind={find} onResent={toEnd} />
     </>
   );
 }
@@ -141,6 +211,7 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
   const chain = useMemo(() => openChain(view), [view.entries, view.agents]);
   const used = live ? (chain.usage ? addTotals(chain.usage, live.usage) : live.usage) : undefined;
   const tokens = useCountUp(used ? totals(used).tokens : 0);
+  const waitsForBrowser = useBrowserStatus()?.waiting?.includes(view.info.session_id) ?? false;
   if (!live) return null;
   const time = <span className="wk-time">{durationText(now - (chain.started ?? live.started))}</span>;
   const tools = steps.flatMap((x) => (x.kind === "work" ? x.items.flatMap((it) => (it.kind === "tool" && runs(it) ? [it.tool] : [])) : []));
@@ -150,7 +221,7 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
     : tools.length === 1 ? <ToolRow key={tools[0].call_id} tool={tools[0]} after={time} />
     : <RunningCalls key="calls" tools={tools} after={time} />;
   if (live.approvals.length > 0 || live.retry) return calls;
-  if (calls) {
+  if (calls && !waitsForBrowser) {
     return (
       <div className="working" role="status">
         <MarkMotion size={18} rewrite />
@@ -167,7 +238,7 @@ function Working({ view, steps }: { view: SessionView; steps: Step[] }) {
   const doing = live.compacting !== undefined ? "compacting" : writing ? "writing" : thought ? "thinking" : "working";
   const line = (
     <>
-      <span className="shimmer">{t(`chat.working.${doing}`)}</span>
+      <span className="shimmer">{waitsForBrowser ? t("yours.waitingLine") : t(`chat.working.${doing}`)}</span>
       <span className="wk-meta">
         {`· ${durationText(now - (chain.started ?? live.started))}`}
         {tokens > 0 && ` · ${t("chat.tokens", { tokens: tokensText(tokens) })}`}
@@ -240,7 +311,7 @@ function isMerged(steps: Step[], i: number): boolean {
 }
 
 /** `working`: the background tasks still working, for the last task end. */
-type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string };
+type RowProps = { step: Step; previous: number | undefined; final: EndStep | undefined; merged: boolean; current: boolean; working: number; sessionId: string; again: boolean; onResend?: (messageId: string) => void };
 
 /**
  * A row renders again only when what it shows changed: the steps are made
@@ -255,14 +326,16 @@ const Row = memo(
     a.current === b.current &&
     a.working === b.working &&
     a.sessionId === b.sessionId &&
-    sameStep(a.step, b.step),
+    a.again === b.again &&
+    a.onResend === b.onResend &&
+    (a.step === b.step || sameStep(a.step, b.step)),
 );
 
 function sameStep(a: Step, b: Step): boolean {
   if (a.kind !== b.kind || a.key !== b.key) return false;
   switch (a.kind) {
     case "user":
-      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.skills.join() === (b as typeof a).skills.join();
+      return a.text === (b as typeof a).text && a.images.length === (b as typeof a).images.length && a.files.length === (b as typeof a).files.length && a.comments.length === (b as typeof a).comments.length && a.quotes.length === (b as typeof a).quotes.length && a.tabs.length === (b as typeof a).tabs.length && a.skills.join() === (b as typeof a).skills.join();
     case "text":
       return a.text === (b as typeof a).text && a.live === (b as typeof a).live;
     case "work": {
@@ -284,6 +357,8 @@ function sameStep(a: Step, b: Step): boolean {
     }
     case "report":
       return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent && a.status === (b as typeof a).status;
+    case "agent_message":
+      return a.text === (b as typeof a).text && a.agent === (b as typeof a).agent;
     case "end": {
       const c = (b as typeof a).chain;
       return a.end === (b as typeof a).end && a.chain?.usage === c?.usage && a.chain?.agents === c?.agents && a.chain?.started === c?.started;
@@ -293,7 +368,7 @@ function sameStep(a: Step, b: Step): boolean {
   }
 }
 
-function RowView({ step, previous, final, merged, current, working, sessionId }: RowProps) {
+function RowView({ step, previous, final, merged, current, working, sessionId, again, onResend }: RowProps) {
   const { t } = useTranslation("session");
   switch (step.kind) {
     case "user": {
@@ -302,8 +377,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
       return (
         <>
           <TimeLine at={step.ts} previous={previous} />
-          <div className="um">
-            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0) && (
+          <div className={`um ${again ? "again" : ""}`} data-mid={step.key} data-step-key={step.key}>
+            {(step.images.length > 0 || step.files.length > 0 || step.comments.length > 0 || step.quotes.length > 0 || step.tabs.length > 0) && (
               <div className="um-att">
                 {rest.map((im, i) => (
                   <Tile key={i} kind="image" src={`data:${im.mime_type};base64,${im.data}`} />
@@ -317,6 +392,9 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
                 {step.quotes.map((q, i) => (
                   <Tile key={`doc${i}`} kind="doc" quote={q} shot={picture(step.comments.length + i)} />
                 ))}
+                {step.tabs.map((tabs, i) => (
+                  <Tile key={`tabs${i}`} kind="tabs" name={tabsName(tabs)} />
+                ))}
               </div>
             )}
             {step.text !== "" && (
@@ -324,15 +402,15 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
                 <Words text={step.text} skills={step.skills} />
               </div>
             )}
-            <MessageBar text={step.text} at={step.ts} mine />
+            <MessageBar text={step.text} at={step.ts} mine onResend={onResend && (() => onResend(step.key))} />
           </div>
         </>
       );
     }
     case "text":
       return (
-        <div className={`am ${final ? "act" : ""}`}>
-          {step.live ? <DraftMarkdown text={step.text} /> : <Markdown text={step.text} />}
+        <div className={`am ${final ? "act" : ""}`} data-step-key={step.key}>
+          <Markdown text={step.text} streaming={step.live} />
           {final && <MessageBar text={step.text} at={step.ts} task={finished(final) ? <TaskTook end={final} started={previous} /> : undefined} />}
         </div>
       );
@@ -343,6 +421,8 @@ function RowView({ step, previous, final, merged, current, working, sessionId }:
       return <AgentCard launches={step.launches} />;
     case "report":
       return <ReportCard step={step} />;
+    case "agent_message":
+      return <AgentMessageCard step={step} />;
     case "end":
       if (merged) return null;
       return <TaskEnd end={step.end} chain={step.chain} started={previous} current={current} working={working} sessionId={sessionId} />;
@@ -370,9 +450,10 @@ function TimeLine({ at, previous }: { at: number; previous: number | undefined }
  * Under a message on hover (the model's only once its task ended): Copy, on
  * the edge the message keeps to, and beside it, quieter, how long ago it was
  * written (the full time on hover) and, under the model's last words, what
- * its task took. The owner's messages keep to the right, so Copy comes last.
+ * its task took. The owner's messages keep to the right, so Copy comes last,
+ * after writing the message again, which only brings it back to the composer.
  */
-function MessageBar({ text, at, task, mine }: { text: string; at: number; task?: ReactNode; mine?: boolean }) {
+function MessageBar({ text, at, task, mine, onResend }: { text: string; at: number; task?: ReactNode; mine?: boolean; onResend?: () => void }) {
   const { t } = useTranslation("session");
   const [done, setDone] = useState(false);
   const copy = (
@@ -391,7 +472,12 @@ function MessageBar({ text, at, task, mine }: { text: string; at: number; task?:
       {task}
     </span>
   );
-  return <div className="msg-act">{mine ? <>{meta}{copy}</> : <>{copy}{meta}</>}</div>;
+  const again = onResend && (
+    <button className="tb" aria-label={t("chat.resend")} title={t("chat.resend")} onClick={onResend}>
+      <Icon name="edit" className="sm" />
+    </button>
+  );
+  return <div className="msg-act">{mine ? <>{meta}{again}{copy}</> : <>{copy}{meta}</>}</div>;
 }
 
 /** What a task took, after the time under its last words: how long, its sub-agents, tokens and cost. */
@@ -413,7 +499,7 @@ function useTaskParts(end: TaskEndItem, chain: TaskChain | undefined, started: n
   ].filter(Boolean);
 }
 
-function MessageTime({ at }: { at: Date }) {
+export function MessageTime({ at }: { at: Date }) {
   // The clock only redraws it; the time is read now. When a message turns a minute old it moves to the
   // minute clock, whose last tick can be most of a minute behind, and would read as "just now" again.
   useNow(agoInterval(at));

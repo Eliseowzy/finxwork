@@ -81,20 +81,27 @@ pub fn home() -> anyhow::Result<FinxHome> {
     // to configure them; `auth/set` adds to it).
     if let Some(store) = finx_llm::credentials::default_store(home.root().join("credentials.toml")) {
         finx_llm::credentials::install(store);
+        finx_llm::credentials::watch(home.root().join("credentials.stamp"));
     }
     Ok(home)
 }
 
-/// Whether a command writes the log file. Commands that only show local information skip it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Logging {
-    On,
-    Off,
+/// Start-up of a command that calls a model or a server: it writes the log file.
+pub fn init(cwd: PathBuf, overrides: &[String]) -> anyhow::Result<Runtime> {
+    let home = home()?;
+    let log_guard = init_logging(&home);
+    load(home, log_guard, cwd, overrides)
 }
 
-pub fn init(cwd: PathBuf, overrides: &[String], logging: Logging) -> anyhow::Result<Runtime> {
+/// Start-up of a command that only shows local information: no log file, and the result lasts
+/// until the process exits. Nothing in it has to be cleaned up without a log file, and freeing
+/// it on the way out would be most of what such a command does after printing.
+pub fn init_local(cwd: PathBuf, overrides: &[String]) -> anyhow::Result<&'static Runtime> {
     let home = home()?;
-    let log_guard = if logging == Logging::On { init_logging(&home) } else { None };
+    Ok(Box::leak(Box::new(load(home, None, cwd, overrides)?)))
+}
+
+fn load(home: FinxHome, log_guard: Option<WorkerGuard>, cwd: PathBuf, overrides: &[String]) -> anyhow::Result<Runtime> {
     // Environment variables beat the config files; `-c` beats them.
     let mut warnings = Vec::new();
     let env_overrides = env_overrides(&mut warnings)?;
@@ -110,6 +117,7 @@ pub fn init(cwd: PathBuf, overrides: &[String], logging: Logging) -> anyhow::Res
         mcp_sources.insert(name.clone(), vec![source.clone()]);
     }
     let llm = Arc::new(runtime::model_registry(&home, &workspace.config)?);
+    warnings.extend(llm.warnings().iter().cloned());
     let connections = finx_connections::Manager::new(home.root().to_path_buf(), &llm);
     tracing::info!(cwd = %workspace.cwd.display(), project_root = ?workspace.project_root, trusted = workspace.trusted, "finx started");
     Ok(Runtime {
@@ -126,6 +134,83 @@ pub fn init(cwd: PathBuf, overrides: &[String], logging: Logging) -> anyhow::Res
         mcp_sources,
         _log_guard: log_guard,
     })
+}
+
+/// No model to run on, with what to do about it.
+#[derive(Debug)]
+pub struct NoModel {
+    pub help: String,
+}
+
+impl std::fmt::Display for NoModel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no model is set up\n\n{}", self.help)
+    }
+}
+
+impl std::error::Error for NoModel {}
+
+/// The model of a new session: the one asked for, the configured one, or the one the first usable
+/// provider starts on. No model is assumed: with none, the error says how to set one up.
+pub fn session_model(rt: &Runtime, asked: Option<String>) -> anyhow::Result<String> {
+    finx_core::models::session_model(&rt.llm, asked, rt.config.model.as_deref())
+        .map_err(|_| NoModel { help: no_model_help(rt) }.into())
+}
+
+/// A model whose provider has no credentials: nothing can run on it.
+#[derive(Debug)]
+pub struct NoCredentials {
+    pub model: String,
+    pub help: String,
+}
+
+impl std::fmt::Display for NoCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no credentials for {}\n  {}", self.model, self.help)
+    }
+}
+
+impl std::error::Error for NoCredentials {}
+
+/// Fails before anything starts when the model cannot run: this is a mistake in the setup, not a
+/// failed task, and it should not leave a session behind (standalone-cli-design §6.2).
+pub fn check_credentials(rt: &Runtime, reference: &str) -> anyhow::Result<()> {
+    let Ok(resolved) = rt.llm.resolve(reference) else {
+        return Ok(()); // The kernel words a bad reference.
+    };
+    let Some(provider) = rt.llm.provider(&resolved.model.provider) else {
+        return Ok(());
+    };
+    if !matches!(provider.auth.status(&provider.id), finx_llm::AuthStatus::Missing(_)) {
+        return Ok(());
+    }
+    let help = match provider.auth.env_vars().first() {
+        Some(variable) => format!("run `finx login {}`, or set {variable}", provider.id),
+        None => format!("run `finx login {}`", provider.id),
+    };
+    Err(NoCredentials { model: reference.to_string(), help }.into())
+}
+
+/// What to do while no model is set up, in the ways that work from a terminal.
+pub fn no_model_help(rt: &Runtime) -> String {
+    let mut keys: Vec<String> = rt
+        .llm
+        .providers()
+        .filter(|p| p.plan.is_none() && matches!(p.auth, finx_llm::AuthConfig::ApiKey { .. }))
+        .flat_map(|p| p.auth.env_vars().to_vec())
+        .collect();
+    keys.sort();
+    keys.dedup();
+    format!(
+        "To set up a model, run: finx login\n\n\
+         It also takes: finx login chatgpt, finx login deepseek --key-stdin, finx login NAME --base-url URL\n\
+         A key in the environment works too: {}\n\
+         A local Ollama: pass -m ollama/<model>\n\n\
+         `finx models` lists every provider and what it needs. To choose the default model, set\n\
+         model = \"provider/model-id\" in {}",
+        keys.join(", "),
+        rt.home.config_file().display(),
+    )
 }
 
 /// FINX_MODEL and FINX_PERMISSION_MODE as `key=value` overrides. FINX_APPROVAL is the old
@@ -165,13 +250,13 @@ pub fn workspace(dir: &Path) -> PathBuf {
 
 impl Runtime {
     /// `save: false` keeps the session log in memory only.
-    pub fn kernel_deps(&self, save: bool) -> anyhow::Result<KernelDeps> {
+    pub fn kernel_deps(&self, save: bool, extra_roots: &[PathBuf]) -> anyhow::Result<KernelDeps> {
         let store: Arc<dyn SessionStore> = if save {
             Arc::new(JsonlStore::new(self.home.sessions_dir()))
         } else {
             Arc::new(MemoryStore::new())
         };
-        let mut deps = runtime::kernel_deps(&self.config, &self.cwd, self.project_root.as_deref(), self.llm.clone(), store, &[])?;
+        let mut deps = runtime::kernel_deps(&self.config, &self.cwd, self.project_root.as_deref(), self.llm.clone(), store, extra_roots)?;
         deps.mcp_servers = self.mcp_servers.clone();
         // `finx exec` runs one session: its own pool, without a window unless configured.
         if self.config.browser.configured_on() {

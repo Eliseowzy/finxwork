@@ -124,7 +124,7 @@ async fn openai_chat_streams_and_prices_usage() {
     let request = &server.received_requests().await.unwrap()[0];
     let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
     assert_eq!(body["stream"], true);
-    assert_eq!(body["max_tokens"], 8192);
+    assert!(body.get("max_tokens").is_none(), "a limit nobody states is the provider's to apply");
     assert_eq!(body["messages"][0]["role"], "system");
 }
 

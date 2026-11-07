@@ -1,19 +1,22 @@
-import { lazy, Suspense, useEffect, useLayoutEffect } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { SidebarToggle } from "../components";
+import { PresentationLoading } from "../docs/pptx/PresentationLoading";
 import { PdfView, Unlock } from "../docs/PdfView";
 import { SheetView } from "../docs/SheetView";
 import { useSessionDocs } from "../docs/state";
 import { Icon } from "../icons";
 import { useStore } from "../store";
-import { fileMenu, openRef } from "../session/contentMenus";
+import { fileMenu, opensAsPage, otherView, showPage } from "../session/contentMenus";
 import { Markdown } from "../session/Markdown";
 import { ContentScope } from "../session/scope";
 import { usePanelWidth } from "../panelWidth";
-import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { activate, closeTab, flushAll, recheckActive, setPreview, setTree, takeDisk, takePresentationDisk, useFiles, type SessionFiles, type Tab } from "./state";
+import { FileCard, FileLoading as Loading } from "./FileCard";
 import { ImageView } from "./ImageView";
-import { isGrid, isMarkdown, isSvg, previewable } from "./kind";
+import { isGrid, isMarkdown, isPresentation, isSvg, previewable } from "./kind";
 import { Tree } from "./Tree";
+import { sizeText } from "../format";
 
 // The file panel (file-panel-design §3): the session's open files as tabs, with the file's tools
 // (how its edits stand, preview or source, its menu, the tree) at the strip's end; the editor or
@@ -22,6 +25,7 @@ import { Tree } from "./Tree";
 // bar of its own tools under the strip (document-editor-design §7.2, spreadsheet-design §8).
 
 const Editor = lazy(() => import("./Editor"));
+const PresentationView = lazy(() => import("../docs/pptx/PresentationView"));
 
 /** What the conversation keeps beside the panel at least, as with the browser; more beside a document, which is read beside it. */
 const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
@@ -29,7 +33,6 @@ const conversationRoom = (doc: boolean) => (doc ? 360 : 160);
 /** An encoding as people know it. */
 const encodingName = (e: string) => (e === "gb18030" ? "GBK" : e.startsWith("utf-16") ? "UTF-16" : e.toUpperCase());
 
-const sizeText = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.ceil(n / 1024)} KB`);
 
 const dirOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))) || path;
 
@@ -39,8 +42,18 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   const s = useFiles(session, cwd);
   const docs = useSessionDocs(session);
   const tab = s.tabs.find((x) => x.path === s.active) ?? null;
-  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened));
+  const { panel, width, resizing, style, grip } = usePanelWidth("finxwork.filePanelWidth", () => conversationRoom(!!tab?.opened || !!tab?.presentation));
   const docOf = (x: Tab) => docs.tabs.find((d) => d.info.doc_id === x.opened?.docId);
+  // No file open: the panel is only the folder tree to pick one from, not an empty editor's width.
+  const bare = s.tabs.length === 0;
+  const wide = max && !bare;
+
+  // The last file closed: the panel goes with it, as the browser's does with its last tab.
+  const hadTabs = useRef(!bare);
+  useEffect(() => {
+    if (bare && hadTabs.current) onClose();
+    hadTabs.current = !bare;
+  }, [bare]);
 
   // The tree, the first time: beside the code when there is room for both.
   useLayoutEffect(() => {
@@ -62,24 +75,24 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
   return (
     <aside
       ref={panel}
-      className={`bgp brp fpn ${max ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
-      style={style(max)}
+      className={`bgp brp fpn ${bare ? "bare" : wide ? "max" : width !== null ? "sized" : ""} ${resizing ? "resizing" : ""}`}
+      style={bare ? undefined : style(wide)}
       aria-label={t("files.title")}
     >
       <div className="brp-strip drag">
-        {max && <SidebarToggle />}
+        {wide && <SidebarToggle />}
         <div className="brp-tabs" role="tablist">
           {s.tabs.map((x) => {
             const on = x.path === s.active;
             const opened = docOf(x);
-            const dirty = !!x.doc?.dirty || !!opened?.info.dirty;
+            const dirty = !!x.doc?.dirty || !!x.presentation?.dirty || !!opened?.info.dirty;
             const locked = x.read?.kind === "text" && !x.read.writable;
             // A workbook (xlsx, xlsm, xls, csv, tsv) shows as a grid; until it opens, its name says so.
             const grid = opened ? opened.info.layout === "grid" : isGrid(x.path);
             return (
               <div key={x.path} role="tab" aria-selected={on} className={`brp-tab fpn-tab no-drag ${on ? "on" : ""} ${dirty ? "dirty" : ""}`} title={x.rel ?? x.path} onClick={() => activate(s, x.path)}>
                 <span className="brp-tab-ic">
-                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : "file"} />
+                  <Icon name={locked ? "lock" : x.opened ? (grid ? "grid" : "doc") : isPresentation(x.path) ? "doc" : "file"} />
                 </span>
                 <span className="brp-tab-t">{x.name}</span>
                 <button
@@ -97,11 +110,15 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
             );
           })}
         </div>
-        <Tools s={s} tab={tab} />
-        <span className="fpn-strip-sep" />
-        <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
-          <Icon name={max ? "shrink" : "expand"} />
-        </button>
+        {!bare && (
+          <>
+            <Tools s={s} tab={tab} />
+            <span className="fpn-strip-sep" />
+            <button className="tb" aria-label={max ? t("browser.restore") : t("browser.maximize")} title={max ? t("browser.restore") : t("browser.maximize")} onClick={() => onMax(!max)}>
+              <Icon name={max ? "shrink" : "expand"} />
+            </button>
+          </>
+        )}
         {/* The conversation bar's Files button, moved here while the panel is open: it puts the panel away. */}
         <button className="tb on" aria-label={t("files.hide")} title={t("files.hide")} aria-pressed onClick={onClose}>
           <Icon name="folder" />
@@ -109,7 +126,7 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
       </div>
       {/* The file on the left, the tree on the right. */}
       <div className="fpn-body">
-        <div className="fpn-main">
+        {!bare && <div className="fpn-main">
           {/* PDFs stay laid out while another tab shows: pdf.js would load and lay them out again. */}
           {st.rpc &&
             s.tabs.map((x) => {
@@ -124,12 +141,12 @@ export function FilePanel({ session, cwd, max, onMax, onClose }: { session: stri
                 </div>
               );
             })}
-          {tab ? !tab.opened?.docId && <Body s={s} tab={tab} /> : <div className="fpn-empty">{t("files.empty")}</div>}
-        </div>
-        {s.tree === true && <Tree s={s} />}
+          {tab && !tab.opened?.docId && <Body s={s} tab={tab} />}
+        </div>}
+        {(bare || s.tree === true) && <Tree s={s} />}
       </div>
       {tab && <Note s={s} tab={tab} />}
-      {!max && (
+      {!wide && !bare && (
         <div
           className="brp-grip no-drag"
           role="separator"
@@ -149,7 +166,13 @@ function Tools({ s, tab }: { s: SessionFiles; tab: Tab | null }) {
   const st = useStore();
   const read = tab?.read;
   const doc = tab?.doc;
-  const status = !read || read.kind !== "text"
+  const presentation = tab?.presentation;
+  const status = presentation
+    ? !presentation.file.writable ? t("files.readOnly")
+      : presentation.state === "saving" ? t("files.saving")
+      : presentation.dirty ? t("files.unsaved")
+      : presentation.savedAt ? t("files.saved") : ""
+    : !read || read.kind !== "text"
     ? ""
     : !read.writable
       ? read.encoding && !read.encoding.startsWith("utf-8") ? t("files.readOnlyEncoding", { encoding: encodingName(read.encoding) }) : t("files.readOnly")
@@ -172,12 +195,23 @@ function Tools({ s, tab }: { s: SessionFiles; tab: Tab | null }) {
           <Icon name="code" />
         </button>
       )}
+      {tab && !tab.error && opensAsPage(tab.path) && (
+        <button
+          className="tb"
+          aria-label={t("content.previewInBrowser")}
+          title={t("content.previewInBrowser")}
+          // What was just typed is saved first, so the page shows it.
+          onClick={() => void flushAll(s).then(() => showPage(st, s.session, tab.path))}
+        >
+          <Icon name="globe" />
+        </button>
+      )}
       {tab && (
         <button
           className="tb"
           aria-label={t("files.more")}
           title={t("files.more")}
-          onClick={() => void fileMenu(st, { path: tab.path, rel: tab.rel, kind: tab.error ? null : "file" }, tab.target?.line)}
+          onClick={() => void fileMenu(st, { path: tab.path, rel: tab.rel, kind: tab.error ? null : "file" }, tab.target?.line, undefined, tab.error ? undefined : otherView(st, s.session, s.cwd, tab.path, "source"))}
         >
           <Icon name="more" />
         </button>
@@ -194,9 +228,18 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const read = tab.read;
+  if (tab.presentation && st.rpc) return (
+    <Suspense fallback={<PresentationLoading name={tab.name} stage="preparing" bytes={tab.presentation.bytes.byteLength} fontCount={tab.presentation.file.font_families.length} />}>
+      <PresentationView doc={tab.presentation} rpc={st.rpc} session={s.session} name={tab.name} />
+    </Suspense>
+  );
   if (tab.error && !tab.doc) return <Card tab={tab} text={tab.error} />;
   if (tab.opened) return tab.opened.locked ? <Unlock s={s} tab={tab} /> : <Loading />;
-  if (!read) return <Loading />;
+  if (!read) return isPresentation(tab.path)
+    ? <PresentationLoading name={tab.name} stage={tab.presentationProgress?.stage ?? "reading"}
+        completed={tab.presentationProgress?.completed} total={tab.presentationProgress?.total}
+        bytes={tab.presentationProgress?.bytes} />
+    : <Loading />;
   if (read.kind === "image" && read.image) {
     return (
       <ImageView key={tab.path} src={`data:${read.image.mime_type};base64,${read.image.data}`} alt={tab.name} />
@@ -215,7 +258,7 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
     return (
       <ContentScope value={{ session: s.session, cwd: dirOf(tab.path) }}>
         <div className="fpn-md">
-          <Markdown text={text} />
+          <Markdown text={text} mode="document" />
         </div>
       </ContentScope>
     );
@@ -228,35 +271,9 @@ function Body({ s, tab }: { s: SessionFiles; tab: Tab }) {
   );
 }
 
-function Loading() {
-  const { t } = useTranslation("session");
-  return (
-    <div className="fpn-empty">
-      <span className="mini-spin" aria-label={t("files.loading")} />
-    </div>
-  );
-}
-
 /** Why a file is not shown, and where else it opens. */
 function Card({ tab, text }: { tab: Tab; text: string }) {
-  const { t } = useTranslation("session");
-  const st = useStore();
-  const mac = window.finx?.platform === "mac";
-  const info = { path: tab.path, rel: tab.rel, kind: tab.error ? null : ("file" as const) };
-  return (
-    <div className="fpn-card">
-      <Icon name="file" />
-      <b>{tab.name}</b>
-      {/* The name is above; an error that starts with the path need not say it again. */}
-      <p>{text.startsWith(`${tab.path}: `) ? text.slice(tab.path.length + 2) : text}</p>
-      {!tab.error && (
-        <div className="fpn-card-b">
-          <button className="btn" onClick={() => void openRef(st, info, undefined, "system")}>{t("files.openDefault")}</button>
-          <button className="btn" onClick={() => window.finx?.revealPath(tab.path)}>{t(mac ? "content.revealFinder" : "content.reveal")}</button>
-        </div>
-      )}
-    </div>
-  );
+  return <FileCard path={tab.path} rel={tab.rel} text={text} gone={!!tab.error} />;
 }
 
 /** A choice to make, under the file: it changed elsewhere, it is gone, it would not save. */
@@ -264,6 +281,17 @@ function Note({ s, tab }: { s: SessionFiles; tab: Tab }) {
   const { t } = useTranslation("session");
   const st = useStore();
   const doc = tab.doc;
+  if (tab.presentation) {
+    const pptx = tab.presentation;
+    const conflict = pptx.state === "conflict" || pptx.state === "deleted";
+    if (!conflict && pptx.state !== "failed" && pptx.state !== "refused" && !tab.error) return null;
+    return <div className="fpn-note warn" role="alert">
+      <Icon name="warn" />
+      <span>{tab.error ?? (conflict ? t("pptx.conflict") : t("files.failed", { message: pptx.message ?? "" }))}</span>
+      {conflict && <button className="btn sm" onClick={() => void takePresentationDisk(s, tab)}>{t("files.takeDisk")}</button>}
+      {pptx.state === "failed" && <button className="btn sm" onClick={() => void pptx.flush()}>{t("files.retry")}</button>}
+    </div>;
+  }
   if (!doc) return null;
   switch (doc.state) {
     case "conflict":

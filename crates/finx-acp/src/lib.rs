@@ -76,6 +76,77 @@ struct CancelRequest {
     request_id: Id,
 }
 
+const AUTH_REQUIRED: i64 = -32000;
+const CHATGPT: &str = "finx-chatgpt";
+const SAVED: &str = "finx-saved";
+const TERMINAL: &str = "finx-terminal";
+
+/// The ways in (standalone-cli-design §10.1). The terminal one is only for a client that can run it.
+fn auth_methods(terminal: bool) -> Value {
+    let mut methods = Vec::new();
+    if terminal {
+        methods.push(json!({ "id": TERMINAL, "name": "Sign in from a terminal", "type": "terminal", "args": ["--login"] }));
+    }
+    methods.push(json!({ "id": CHATGPT, "name": "Sign in with ChatGPT", "description": "Opens your browser" }));
+    methods.push(json!({ "id": SAVED, "name": "Use the credentials saved for finx", "description": "Run `finx login` in a terminal first" }));
+    Value::Array(methods)
+}
+
+fn auth_required(message: String) -> RpcError {
+    RpcError::with_kind(AUTH_REQUIRED, "auth_required", message)
+}
+
+/// What is missing for a new session at `cwd` to run, if anything.
+fn missing_credentials(server: &Server, cwd: &std::path::Path) -> Option<String> {
+    let model = server.default_model_at(cwd)?;
+    let resolved = server.models().resolve(&model).ok()?;
+    let provider = server.models().provider(&resolved.model.provider)?;
+    matches!(provider.auth.status(&provider.id), finx_llm::AuthStatus::Missing(_))
+        .then(|| format!("{model} has no credentials yet: run `finx login {}` in a terminal, or sign in here", provider.id))
+}
+
+async fn sign_in_with_chatgpt(server: &Server) -> Result<(), RpcError> {
+    use finx_protocol::api::ChatGptLoginState;
+    let chatgpt = server.connections().chatgpt.clone();
+    let started = chatgpt.start().await.map_err(|err| auth_required(err.to_string()))?;
+    if let Some(url) = &started.authorize_url {
+        finx_core::open_in_browser(url);
+    }
+    // Aborting the request (`$/cancel_request`) drops this, and with it the sign-in.
+    struct Cancel(Arc<finx_connections::chatgpt::ChatGpt>, Option<String>);
+    impl Drop for Cancel {
+        fn drop(&mut self) {
+            if let Some(id) = &self.1 {
+                let _ = self.0.cancel(id);
+            }
+        }
+    }
+    let mut cancel = Cancel(chatgpt.clone(), started.login_id.clone());
+    loop {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let status = chatgpt.status().map_err(|err| auth_required(err.to_string()))?;
+        match status.state {
+            ChatGptLoginState::Pending => {}
+            ChatGptLoginState::Connected => {
+                cancel.1 = None;
+                return Ok(());
+            }
+            _ => {
+                cancel.1 = None;
+                return Err(auth_required(status.message.unwrap_or_else(|| "the sign-in did not finish".to_string())));
+            }
+        }
+    }
+}
+
+/// A session cannot start until the person sets something up: in ACP, `auth_required`.
+fn auth_required_for_no_model(err: RpcError) -> RpcError {
+    if matches!(err.kind(), Some("no_model" | "no_credentials")) {
+        return RpcError::with_kind(AUTH_REQUIRED, "auth_required", err.message);
+    }
+    err
+}
+
 fn reply(id: &Id, result: Result<Value, RpcError>) -> Vec<u8> {
     match result {
         Ok(value) => finx_rpc::response(id, &value),
@@ -190,10 +261,11 @@ impl AcpProtocol {
                         .compaction
                         .store(request.session_capability("compaction"), Ordering::Relaxed);
                     self.initialized.store(true, Ordering::Relaxed);
+                    let methods = auth_methods(request.can_run_terminal_auth());
                     let result = json!({
                         "protocolVersion": ACP_VERSION,
                         "agentInfo": { "name": "finx", "title": "finx", "version": env!("CARGO_PKG_VERSION") },
-                        "authMethods": [],
+                        "authMethods": methods,
                         "agentCapabilities": {
                             "loadSession": true,
                             "promptCapabilities": { "image": true, "audio": false, "embeddedContext": true },
@@ -204,6 +276,29 @@ impl AcpProtocol {
                         }
                     });
                     conn.send(finx_rpc::response(id, &result));
+                }
+                Err(err) => conn.send_error(Some(id), &err),
+            },
+            "authenticate" => match finx_rpc::params::<schema::AuthenticateRequest>(params) {
+                Ok(request) => {
+                    let reply_id = id.clone();
+                    self.spawn(id, conn, async move {
+                        let result = match request.method_id.as_str() {
+                            SAVED => {
+                                let at = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("/"));
+                                let checked = server.clone();
+                                let found = tokio::task::spawn_blocking(move || (checked.default_model_at(&at), missing_credentials(&checked, &at))).await.ok();
+                                match found {
+                                    Some((Some(_), None)) => Ok(json!({})),
+                                    Some((_, Some(missing))) => Err(auth_required(missing)),
+                                    _ => Err(auth_required("no credentials are saved for finx: run `finx login` in a terminal".to_string())),
+                                }
+                            }
+                            CHATGPT => sign_in_with_chatgpt(&server).await.map(|()| json!({})),
+                            other => Err(RpcError::invalid_params(format!("no sign-in method {other}"))),
+                        };
+                        Some(reply(&reply_id, result))
+                    });
                 }
                 Err(err) => conn.send_error(Some(id), &err),
             },
@@ -218,6 +313,7 @@ impl AcpProtocol {
                         cwd: Some(request.cwd),
                         extra_roots: request.additional_directories,
                         mcp_servers,
+                        require_credentials: true,
                         ..NewSession::default()
                     };
                     let (reply_id, conn_out) = (id.clone(), conn.clone());
@@ -227,7 +323,7 @@ impl AcpProtocol {
                                 announce_commands(&server, &conn_out, &session).await;
                                 None
                             }
-                            Err(err) => Some(finx_rpc::error_response(Some(&reply_id), &err)),
+                            Err(err) => Some(finx_rpc::error_response(Some(&reply_id), &auth_required_for_no_model(err))),
                         }
                     });
                 }
@@ -407,7 +503,7 @@ impl AcpProtocol {
     /// The client answered one of our permission requests.
     /// (See [`decode_option`] for the option ids.)
     fn permission_answer(&self, id: &Id, result: Result<&RawValue, &RpcError>, conn: &ConnHandle) {
-        let Some((session, call_id)) = self.shared.permissions.lock().remove(id) else {
+        let Some(asked) = self.shared.permissions.lock().remove(id) else {
             return;
         };
         let decision = match result {
@@ -423,8 +519,11 @@ impl AcpProtocol {
         let server = self.server.clone();
         let conn = conn.clone();
         tokio::spawn(async move {
-            let op = Op::Approval { call_id, decision };
-            let _ = server.submit(&session, conn, op, false, Box::new(|_| Vec::new())).await;
+            let op = match asked.agent {
+                Some(agent) => Op::AgentApproval { agent, call_id: asked.call_id, decision },
+                None => Op::Approval { call_id: asked.call_id, decision },
+            };
+            let _ = server.submit(&asked.session, conn, op, false, Box::new(|_| Vec::new())).await;
         });
     }
 }

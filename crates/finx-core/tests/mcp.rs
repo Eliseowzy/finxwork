@@ -84,21 +84,30 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome, servers: Vec<McpSe
         mcp_servers: servers,
         browser_pool: None,
         docs: None,
+        decks: None,
+        routines: None,
     }
+}
+
+/// Most tests are about what the tools do, not whether they may: those that ask get `manual` by
+/// setting it.
+fn config_mode(config: &Config) -> PermissionMode {
+    if config.permission_mode == PermissionMode::Manual { PermissionMode::BypassPermissions } else { config.permission_mode }
 }
 
 fn start_options(work: &Path, home: &FinxHome, config: Config) -> StartOptions {
     StartOptions {
         model: "test/scripted".into(),
         thinking: ThinkingLevel::Off,
-        // Manual mode without anyone to approve: MCP calls must still run.
-        permission_mode: PermissionMode::Manual,
+        // Without anyone to approve; the tools below that are not read-only would be refused.
+        permission_mode: config_mode(&config),
         cwd: work.to_path_buf(),
         home: home.clone(),
         config: Arc::new(config),
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     }
 }
 
@@ -161,6 +170,50 @@ impl Harness {
         .unwrap();
         (result.end, result.events.into_iter().map(|e| e.msg).collect())
     }
+}
+
+/// Going back takes the definitions a search showed out of the context, so the next search
+/// gives them whole again, as after a compaction.
+#[tokio::test]
+async fn going_back_forgets_what_searches_showed() {
+    let server = test_server(McpTestOptions::default()).await;
+    let config = http_config("test", &server);
+    let mut h = Harness::start(
+        vec![config],
+        Some(server),
+        vec![
+            Script::tool_call("t1", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::text("found it"),
+            Script::tool_call("t2", "tool_search", json!({ "query": "mcp__test__add" })),
+            Script::text("found it again"),
+        ],
+    )
+    .await;
+    let (_, events) = h.run("find add").await;
+    let sent = events
+        .iter()
+        .find_map(|m| match m {
+            EventMsg::MessageCompleted {
+                message_id,
+                message: Message::User(_),
+                ..
+            } => Some(message_id.clone()),
+            _ => None,
+        })
+        .unwrap();
+    h.kernel
+        .submit(Op::Resend {
+            message_id: sent,
+            input: vec![UserContent::Text { text: "find it again".into() }],
+            commands: true,
+        })
+        .await
+        .unwrap();
+    until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    let requests = h.api.requests();
+    let results = tool_results(requests.last().unwrap());
+    assert_eq!(results.len(), 1, "{results:?}");
+    assert!(results[0].contains("- mcp__test__add: Add two numbers.\n  {"), "{}", results[0]);
 }
 
 /// The kernel's events up to and including the first one `done` accepts.
@@ -277,7 +330,7 @@ async fn deferred_tools_are_searched_and_called_without_changing_the_request() {
     assert!(search.contains("\"Text to repeat\""), "the schema comes with it: {search}");
     assert_eq!(tool_results(&requests[2])[1], "echo: hi");
 
-    assert!(events.iter().all(|e| !matches!(e, EventMsg::ApprovalRequested { .. })), "MCP calls are not approved");
+    assert!(events.iter().all(|e| !matches!(e, EventMsg::ApprovalRequested { .. })), "a tool that says it only reads is not asked about");
     let started = events
         .iter()
         .find_map(|e| match e {
@@ -405,24 +458,21 @@ async fn direct_servers_put_their_tools_in_the_list() {
     let server = test_server(McpTestOptions::default()).await;
     let mut config = http_config("tools", &server);
     config.exposure = Some(McpExposure::Direct);
-    let mut h = Harness::start(
-        vec![config],
-        Some(server),
-        vec![
-            Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })),
-            Script::text("ok"),
-        ],
-    )
+    // No deferred group at all: web search, on by default, is one.
+    let no_search = Config { web_search: finx_core::config::WebSearchSettings { enabled: false, ..Default::default() }, ..Config::default() };
+    let mut h = Harness::start_with(no_search, vec![config], Some(server), |api| {
+        api.push(Script::tool_call("t1", "mcp__tools__echo", json!({ "text": "direct" })));
+        api.push(Script::text("ok"));
+    })
     .await;
     let (end, events) = h.run("echo directly").await;
     assert!(matches!(end, TaskEnd::Completed { .. }));
     let requests = h.api.requests();
     let names = tool_names(&requests[0]);
     assert!(names.contains(&"mcp__tools__echo".to_string()), "{names:?}");
-    assert!(!names.contains(&"tool_search".to_string()), "no deferred server, no search tool");
     assert!(!names.iter().any(|n| n.contains("bad_schema") || n.contains("ui_panel")), "{names:?}");
     assert!(requests[0].system.contains("<mcp_instructions server=\"tools\">\nTest server for finx."));
-    assert!(!requests[0].system.contains("<deferred_tools>"));
+    assert!(!requests[0].system.contains("- tools"), "a direct server is not in the catalog");
     assert_eq!(tool_results(&requests[1])[0], "echo: direct");
     assert!(events.iter().any(|e| matches!(e, EventMsg::Warning { message, .. } if message.contains("bad_schema"))));
     // Start without tools, then the first request has them: one more entry, before any request.
@@ -487,9 +537,11 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let config = http_config("test", &server);
     let lanes = Arc::new(Lanes::default());
     let push = |lane: &str, script: Script| lanes.0.lock().entry(lane.to_string()).or_default().push_back(script);
-    push("root", Script::tool_call("r1", "spawn_agent", json!({ "description": "say hello", "task": "echo hello", "name": "helper", "wait": true })));
-    push("helper", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the helper" } })));
-    push("helper", Script::text("helper done"));
+    push("root", Script::tool_call("r1", "spawn_agent", json!({ "description": "say hello", "task": "echo hello", "name": "worker", "wait": true })));
+    push("worker", Script::tool_call("h1", "call_tool", json!({ "name": "mcp__test__echo", "arguments": { "text": "from the worker" } })));
+    // The way to deferred tools does not lead to the ones only the main session has.
+    push("worker", Script::tool_call("h2", "tool_search", json!({ "query": "stop_agents agents" })).then_tool_call("h3", "call_tool", json!({ "name": "stop_agents", "arguments": { "all": true } })));
+    push("worker", Script::text("worker done"));
     push("root", Script::text("root done"));
     let routed = lanes.clone();
     let mut h = Harness::start_with(Config::default(), vec![config], Some(server), move |api| {
@@ -499,12 +551,17 @@ async fn sub_agents_share_the_servers_and_get_the_search_tools() {
     let (end, _) = h.run("delegate").await;
     assert_eq!(end, TaskEnd::Completed { last_message: Some("root done".into()) });
     let calls = h.api.calls();
-    let helper: Vec<&Context> = calls.iter().map(|c| &c.context).filter(|c| lane_of(c) == "helper").collect();
-    let names = tool_names(helper[0]);
+    let worker: Vec<&Context> = calls.iter().map(|c| &c.context).filter(|c| lane_of(c) == "worker").collect();
+    let names = tool_names(worker[0]);
     assert!(names.contains(&"call_tool".to_string()) && names.contains(&"tool_search".to_string()), "{names:?}");
     assert!(!names.contains(&"spawn_agent".to_string()), "{names:?}");
-    assert!(helper[0].system.contains("<deferred_tools>"));
-    assert_eq!(tool_results(helper[1])[0], "echo: from the helper");
+    assert!(worker[0].system.contains("<deferred_tools>"));
+    assert!(worker[0].system.contains("- agents: See the other agents in this session"), "{}", worker[0].system);
+    assert_eq!(tool_results(worker[1])[0], "echo: from the worker");
+    let refused = tool_results(worker[2]);
+    let (found, stopped) = (&refused[refused.len() - 2], &refused[refused.len() - 1]);
+    assert!(!found.contains("Stop running agents"), "{found}");
+    assert!(stopped.starts_with("Unknown tool 'stop_agents'"), "{stopped}");
     assert_eq!(h.server.as_ref().unwrap().calls(), 1, "one call on the shared connection");
 }
 
@@ -531,6 +588,7 @@ async fn resumed_sessions_reconnect_and_keep_one_prompt_entry() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &h.work, &h.home, vec![config])).await.unwrap();
     let result = kernel.run(vec![UserContent::Text { text: "add".into() }]).await.unwrap();
@@ -538,4 +596,53 @@ async fn resumed_sessions_reconnect_and_keep_one_prompt_entry() {
     assert_eq!(tool_results(&api.requests()[1]).last().unwrap(), "3");
     assert_eq!(prompt_entries(&h.home).len(), 1, "same prompt and tools: no new entry on resume");
     let _ = kernel.shutdown().await;
+}
+
+/// A run under `mode`: the model calls `tool` through `call_tool`. Returns whether it ran.
+async fn runs_without_a_person(mode: PermissionMode, configure: impl FnOnce(&mut McpServerConfig), tool: &str, args: Value, rules: Vec<finx_protocol::CommandRule>) -> (bool, Vec<EventMsg>) {
+    let server = test_server(McpTestOptions::default()).await;
+    let mut config = http_config("test", &server);
+    configure(&mut config);
+    let mut h = Harness::start_with(
+        Config { permission_mode: mode, rules, ..Config::default() },
+        vec![config],
+        Some(server),
+        |api| {
+            api.push(Script::tool_call("t0", "tool_search", json!({ "query": "repeat" })));
+            api.push(Script::tool_call("t1", "call_tool", json!({ "name": tool, "arguments": args })));
+            api.push(Script::text("done"));
+        },
+    )
+    .await;
+    let (_, events) = h.run("go").await;
+    let refused = events.iter().any(|e| matches!(e, EventMsg::ApprovalRefused { .. }));
+    (!refused, events)
+}
+
+/// standalone-cli-design §8.5.
+#[tokio::test]
+async fn tools_from_servers_are_asked_about_unless_they_only_read_or_the_user_trusts_them() {
+    let add = json!({ "a": 1, "b": 2 });
+    let echo = json!({ "text": "hi" });
+    let manual = PermissionMode::AcceptEdits;
+    // Nobody can approve here, so asking is refusing.
+    assert!(!runs_without_a_person(manual, |_| {}, "mcp__test__add", add.clone(), vec![]).await.0, "a tool that may change things is asked about");
+    assert!(runs_without_a_person(manual, |_| {}, "mcp__test__echo", echo.clone(), vec![]).await.0, "one that says it only reads is not");
+    assert!(
+        !runs_without_a_person(manual, |c| c.project_defined = true, "mcp__test__echo", echo.clone(), vec![]).await.0,
+        "a project's server is not taken at its word"
+    );
+    assert!(
+        runs_without_a_person(manual, |c| c.approval = Some(finx_protocol::McpApproval::Never), "mcp__test__add", add.clone(), vec![]).await.0,
+        "the user trusts this server"
+    );
+    assert!(runs_without_a_person(PermissionMode::BypassPermissions, |_| {}, "mcp__test__add", add.clone(), vec![]).await.0, "every action runs");
+    let allow = finx_protocol::CommandRule { prefix: vec!["mcp__test__add".into()], decision: finx_protocol::RuleDecision::Allow, reason: None };
+    assert!(runs_without_a_person(manual, |_| {}, "mcp__test__add", add.clone(), vec![allow]).await.0, "a rule names the tool");
+    let deny = finx_protocol::CommandRule { prefix: vec!["mcp__test__echo".into()], decision: finx_protocol::RuleDecision::Deny, reason: None };
+    let (_, events) = runs_without_a_person(PermissionMode::BypassPermissions, |_| {}, "mcp__test__echo", echo, vec![deny]).await;
+    assert!(
+        format!("{events:?}").contains("blocked by the rule"),
+        "a rule that forbids it holds in every mode: {events:?}"
+    );
 }

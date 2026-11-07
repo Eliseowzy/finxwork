@@ -1,5 +1,6 @@
-//! `finx exec` and `finx resume`: run a task headless. The output is the reply as text, one
-//! JSON result object (`--output json`), or the event stream as JSONL (`--output stream-json`).
+//! `finx exec`: run a task headless, in a new session or one it continues. The output is the
+//! reply as text, one JSON result object (`--json`), or the event stream as JSONL
+//! (`--output stream-json`).
 
 use anyhow::Context as _;
 use finx_core::JsonlStore;
@@ -9,6 +10,7 @@ use finx_core::SessionRef;
 use finx_core::SessionStore;
 use finx_core::StartOptions;
 use finx_llm::UsageTotals;
+use finx_llm::UserContent;
 use finx_protocol::AgentStatus;
 use finx_protocol::ErrorInfo;
 use finx_protocol::EventMsg;
@@ -24,6 +26,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 use crate::OutputFormat;
+use crate::ExecArgs;
 use crate::RunArgs;
 use crate::approval_prompt;
 use crate::render::Renderer;
@@ -34,19 +37,22 @@ pub async fn exec(
     prompt: &str,
     cwd: Option<PathBuf>,
     save: bool,
-    run: &RunArgs,
+    args: &ExecArgs,
 ) -> anyhow::Result<u8> {
+    let run = &args.run;
     let cwd = match cwd {
         Some(cwd) => cwd,
         None => std::env::current_dir()?,
     };
-    let mut rt = setup::init(cwd, &with_run_overrides(overrides, run), setup::Logging::On)?;
+    let mut rt = setup::init(cwd, &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
-    let prompt = setup::read_prompt(prompt)?;
-    let interactive = interactive(run);
-    let deps = rt.kernel_deps(save)?;
+    let model = setup::session_model(&rt, run.model.clone())?;
+    setup::check_credentials(&rt, &model)?;
+    let prompt = input_of(setup::read_prompt(prompt)?, &args.image)?;
+    let interactive = interactive(args);
+    let deps = rt.kernel_deps(save, &run.add_dir)?;
     let options = StartOptions {
-        model: run.model.clone().unwrap_or_else(|| rt.config.model.clone()),
+        model,
         thinking: run.thinking.unwrap_or(rt.config.thinking),
         permission_mode: run.permission_mode().unwrap_or(rt.config.permission_mode),
         cwd: rt.cwd.clone(),
@@ -55,34 +61,35 @@ pub async fn exec(
         project_root: rt.project_root.clone(),
         trusted: rt.trusted,
         interactive_approvals: interactive,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps).await?;
-    drive(kernel, prompt, run, interactive, save, &rt.warnings).await
+    drive(kernel, prompt, args, interactive, save, &rt.warnings).await
 }
 
 pub async fn resume(
     overrides: &[String],
-    session: Option<String>,
-    prompt: Option<&str>,
-    run: &RunArgs,
+    session: &str,
+    prompt: &str,
+    args: &ExecArgs,
 ) -> anyhow::Result<u8> {
+    let run = &args.run;
     let home = setup::home()?;
     let store = JsonlStore::new(home.sessions_dir());
-    let (header, path) = match session.as_deref() {
-        None | Some("last") => {
+    let (header, path) = match session {
+        "last" => {
             let workspace = setup::workspace(&std::env::current_dir()?);
             store
                 .header(&SessionRef::LastIn(workspace))
                 .context("nothing to continue in this project (`finx sessions --all` lists every project)")?
         }
-        Some(id) => store.header(&SessionRef::Id(id.to_string()))?,
+        id => store.header(&SessionRef::Id(id.to_string()))?,
     };
-    let prompt = prompt.context("nothing to do: pass the next instruction with -p/--prompt")?;
-    let prompt = setup::read_prompt(prompt)?;
-    let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run), setup::Logging::On)?;
+    let prompt = input_of(setup::read_prompt(prompt)?, &args.image)?;
+    let mut rt = setup::init(header.cwd.clone(), &with_run_overrides(overrides, run))?;
     rt.warnings.extend(run.warnings());
-    let interactive = interactive(run);
-    let deps = rt.kernel_deps(true)?;
+    let interactive = interactive(args);
+    let deps = rt.kernel_deps(true, &run.add_dir)?;
     let options = ResumeOptions {
         session: SessionRef::Path(path),
         model: run.model.clone(),
@@ -93,29 +100,61 @@ pub async fn resume(
         project_root: rt.project_root.clone(),
         trusted: rt.trusted,
         interactive_approvals: interactive,
+        bot_name: None,
     };
     let kernel = Kernel::resume(options, deps).await?;
-    drive(kernel, prompt, run, interactive, true, &rt.warnings).await
+    setup::check_credentials(&rt, &kernel.info().model)?;
+    drive(kernel, prompt, args, interactive, true, &rt.warnings).await
 }
 
 /// Approvals are asked for in the terminal only when the output is text for a person.
-fn interactive(run: &RunArgs) -> bool {
-    run.ops_stdin || (run.format() == OutputFormat::Text && std::io::stdin().is_terminal())
+fn interactive(args: &ExecArgs) -> bool {
+    args.ops_stdin || (args.format() == OutputFormat::Text && std::io::stdin().is_terminal())
 }
 
-fn with_run_overrides(overrides: &[String], run: &RunArgs) -> Vec<String> {
+pub(crate) fn with_run_overrides(overrides: &[String], run: &RunArgs) -> Vec<String> {
     let mut all = overrides.to_vec();
     if let Some(max_turns) = run.max_turns {
         all.push(format!("max_turns={max_turns}"));
     }
+    if let Some(tools) = &run.tools {
+        all.push(format!("tools.enabled={}", toml_list(tools)));
+    }
     all
 }
 
-/// Runs one task to its end. Exit codes: 0 completed, 1 failed, 130 interrupted.
+fn toml_list(items: &[String]) -> String {
+    let items: Vec<String> = items.iter().map(|item| format!("{item:?}")).collect();
+    format!("[{}]", items.join(", "))
+}
+
+/// The task's text and the images given with `--image`.
+fn input_of(text: String, images: &[PathBuf]) -> anyhow::Result<Vec<UserContent>> {
+    use base64::Engine as _;
+    let mut input = vec![UserContent::Text { text }];
+    for path in images {
+        let mime_type = match path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).as_deref() {
+            Some("png") => "image/png",
+            Some("jpg" | "jpeg") => "image/jpeg",
+            Some("gif") => "image/gif",
+            Some("webp") => "image/webp",
+            _ => anyhow::bail!("--image {}: expected a png, jpeg, gif or webp file", path.display()),
+        };
+        let bytes = std::fs::read(path).with_context(|| format!("cannot read --image {}", path.display()))?;
+        input.push(UserContent::Image {
+            mime_type: mime_type.to_string(),
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
+        });
+    }
+    Ok(input)
+}
+
+/// Runs one task to its end. Exit codes: 0 completed, 1 failed, 3 completed but something it tried
+/// was refused because nothing here can approve it, 130 interrupted.
 async fn drive(
     mut kernel: Kernel,
-    prompt: String,
-    run: &RunArgs,
+    input: Vec<UserContent>,
+    run: &ExecArgs,
     interactive: bool,
     saved: bool,
     warnings: &[String],
@@ -135,7 +174,9 @@ async fn drive(
     if run.ops_stdin {
         spawn_stdin_ops(ops.clone());
     }
-    ops.send(Op::prompt(prompt)).await.context("the session closed unexpectedly")?;
+    ops.send(Op::Prompt { input, mode: Default::default(), commands: true })
+        .await
+        .context("the session closed unexpectedly")?;
 
     let mut outcome = Outcome::default();
     let mut exit_code = 1;
@@ -146,33 +187,47 @@ async fn drive(
             eprintln!("{}", renderer.style().yellow(&format!("warning: {message}")));
         }
         outcome.observe(&event.msg);
-        match &event.msg {
-            EventMsg::ApprovalRequested {
-                call_id,
+        // The session's approvals, and a sub-agent's as its `agent_event` carries them.
+        let (agent, asked) = match &event.msg {
+            EventMsg::AgentEvent { agent_id, event } => (Some(agent_id), &event.msg),
+            msg => (None, msg),
+        };
+        if let EventMsg::ApprovalRequested {
+            call_id,
+            name,
+            args,
+            summary,
+            reason,
+            proposed_rule,
+            proposed_mode,
+            proposed_grants,
+            ..
+        } = asked
+            && interactive
+            && !run.ops_stdin
+        {
+            let question = approval_prompt::Question {
+                agent: agent.and_then(|id| outcome.agent_label(id)),
                 name,
                 summary,
-                reason,
-                proposed_rule,
-                proposed_mode,
-                proposed_grants,
-                ..
-            } if interactive && !run.ops_stdin => {
-                let question = approval_prompt::Question {
-                    name,
-                    summary,
-                    reason: reason.as_deref(),
-                    rule: proposed_rule.as_ref(),
-                    mode: *proposed_mode,
-                    grants: proposed_grants,
-                };
-                let decision = approval_prompt::ask(renderer.style(), question).await;
-                let _ = ops
-                    .send(Op::Approval {
-                        call_id: call_id.clone(),
-                        decision,
-                    })
-                    .await;
-            }
+                reason: reason.as_deref(),
+                rule: proposed_rule.as_ref(),
+                mode: *proposed_mode,
+                grants: proposed_grants,
+            };
+            let decision = approval_prompt::ask(renderer.style(), question, args).await;
+            let call_id = call_id.clone();
+            let op = match agent {
+                Some(agent) => Op::AgentApproval {
+                    agent: agent.clone(),
+                    call_id,
+                    decision,
+                },
+                None => Op::Approval { call_id, decision },
+            };
+            let _ = ops.send(op).await;
+        }
+        match &event.msg {
             // The exit code is that of the last task; the run ends once nothing is left to do,
             // so that sub-agents still working are not cut off.
             EventMsg::TaskCompleted { .. } => exit_code = 0,
@@ -190,6 +245,18 @@ async fn drive(
             renderer.render(&event);
         }
     }
+    if exit_code == 0 && !outcome.refused.is_empty() {
+        exit_code = 3;
+        if format != OutputFormat::StreamJson {
+            let count = outcome.refused.len();
+            eprintln!(
+                "{}",
+                renderer.style().yellow(&format!(
+                    "{count} action(s) were refused because nothing here can approve them; set --permission-mode, add a rule, or answer with --ops-stdin"
+                ))
+            );
+        }
+    }
     if let Some(path) = &run.output_last_message {
         std::fs::write(path, outcome.final_output.clone().unwrap_or_default())
             .with_context(|| format!("cannot write {}", path.display()))?;
@@ -200,10 +267,8 @@ async fn drive(
             println!("{}", outcome.to_json(exit_code, session, started.elapsed()));
         }
         OutputFormat::Text if saved => {
-            let hint = format!(
-                "session {} · continue with: finx exec --continue \"…\"",
-                finx_core::short_id(&session_id)
-            );
+            let short = finx_core::short_id(&session_id);
+            let hint = format!("session {short} · continue with: finx exec --resume {short} \"…\"");
             eprintln!("{}", renderer.style().dim(&hint));
         }
         _ => {}
@@ -224,11 +289,25 @@ struct Outcome {
     agents: Vec<AgentOutcome>,
     /// The last `/context` report.
     context: Option<finx_protocol::ContextReport>,
+    /// What was refused because nothing could approve it, a sub-agent's as well.
+    refused: Vec<Value>,
 }
 
 impl Outcome {
+    /// What sub-agent `id` goes by.
+    fn agent_label(&self, id: &str) -> Option<&str> {
+        let agent = self.agents.iter().find(|a| a.id == id)?;
+        Some(if agent.description.is_empty() { &agent.name } else { &agent.description })
+    }
+
     fn observe(&mut self, msg: &EventMsg) {
         match msg {
+            EventMsg::ApprovalRefused { name, summary, .. } => self.refused.push(json!({ "name": name, "summary": summary })),
+            EventMsg::AgentEvent { event, .. } => {
+                if let EventMsg::ApprovalRefused { name, summary, .. } = &event.msg {
+                    self.refused.push(json!({ "name": name, "summary": summary }));
+                }
+            }
             EventMsg::SessionStarted { model, .. } | EventMsg::SettingsChanged { model, .. } => {
                 self.model = model.clone();
             }
@@ -302,6 +381,7 @@ impl Outcome {
                 "cost": self.usage.cost_by_currency(),
             },
             "tool_calls": self.tool_calls,
+            "refused": self.refused,
             "context": self.context,
             "agents": self.agents.iter().map(|a| {
                 let tokens = a.usage.tokens();

@@ -7,6 +7,7 @@ import { errorText, useStore } from "../store";
 import { maxComment } from "../../../shared/annotations";
 import { loadPdf, pdfjs, viewerLib } from "./pdf";
 import { lockedOut, unlockDoc, type SessionFiles, type Tab } from "../files/state";
+import { useScope } from "../session/scope";
 import { quoteToComposer, setDocPassword, setPage, type DocTab, type Jump } from "./state";
 
 // A PDF in the file panel (document-editor-design §7): the bar of its own tools — the page,
@@ -26,7 +27,22 @@ const cardWidth = 296;
 /** Lit-up rectangles on pages for a moment: a citation's source, or what was just quoted. */
 type Flash = { parts: { page: number; rects: Rect[] }[]; seq: number };
 
+/** A selection's rectangles, one per run of text, merged line by line into solid bands (as
+ * Chrome draws a PDF selection): runs sharing most of their height are one line, and a line
+ * takes the full height of its tallest run. PDF coordinates, y up. */
+export function lineBands(rects: Rect[]): Rect[] {
+  const lines: Rect[] = [];
+  for (const r of [...rects].sort((a, b) => b.y1 - a.y1 || a.x0 - b.x0)) {
+    const h = r.y1 - r.y0;
+    const line = lines.find((l) => Math.min(l.y1, r.y1) - Math.max(l.y0, r.y0) > 0.5 * Math.min(h, l.y1 - l.y0));
+    if (line) Object.assign(line, { x0: Math.min(line.x0, r.x0), x1: Math.max(line.x1, r.x1), y0: Math.min(line.y0, r.y0), y1: Math.max(line.y1, r.y1) });
+    else lines.push({ ...r });
+  }
+  return lines;
+}
+
 export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: string; tab: DocTab; jump: Jump | null }) {
+  const scope = useScope();
   const { t } = useTranslation("session");
   const st = useStore();
   const docId = tab.info.doc_id;
@@ -48,6 +64,8 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
   const [region, setRegion] = useState(false);
   const [pending, setPending] = useState<Pending | null>(null);
   const [flash, setFlash] = useState<Flash | null>(null);
+  // The text being selected, drawn as bands while the mouse drags (the browser's own highlight is hidden).
+  const [live, setLive] = useState<Flash["parts"] | null>(null);
   const [band, setBand] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [note, setNote] = useState("");
   const [adding, setAdding] = useState(false);
@@ -206,6 +224,40 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
     return () => clearTimeout(timer);
   }, [flash?.seq]);
 
+  // pdf.js's text layer stretches an empty element over the page while a selection is made; its
+  // box, many lines tall, is not text and would light the whole page: boxes far taller than the
+  // text around them are left out.
+  const selectionRects = (sel: Selection) => {
+    const rects = [...sel.getRangeAt(0).getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5);
+    const heights = rects.map((r) => r.height).sort((a, b) => a - b);
+    const median = heights[Math.floor(heights.length / 2)] ?? 0;
+    return rects.filter((r) => r.height <= Math.max(median * 2.5, 4) && !(r.width > 0 && rects.length === 1 && r.height > 200));
+  };
+  const rectsByPage = (rects: DOMRect[]) => {
+    const byPage = new Map<number, Rect[]>();
+    for (const r of rects) {
+      const n = pageAt(r.left + r.width / 2, r.top + r.height / 2);
+      const q = n ? toPdf(n, r) : null;
+      if (n && q) byPage.set(n, [...(byPage.get(n) ?? []), q]);
+    }
+    return byPage;
+  };
+  // While text is being selected, its bands follow it.
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed || !sel.rangeCount || !scroller.current?.contains(sel.anchorNode)) return setLive(null);
+        const byPage = rectsByPage(selectionRects(sel));
+        setLive(byPage.size ? [...byPage].map(([page, rects]) => ({ page, rects })) : null);
+      });
+    };
+    document.addEventListener("selectionchange", update);
+    return () => (document.removeEventListener("selectionchange", update), cancelAnimationFrame(frame));
+  }, []);
+
   // Selected text: its rectangles, page by page, go to finx to be read.
   const onMouseUp = (e: React.MouseEvent) => {
     if (region) return;
@@ -214,14 +266,9 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
     setTimeout(() => {
       const sel = window.getSelection();
       if (!sel || sel.isCollapsed || !scroller.current?.contains(sel.anchorNode)) return setPending(null);
-      const rects = [...sel.getRangeAt(0).getClientRects()].filter((r) => r.width > 0.5 && r.height > 0.5);
+      const rects = selectionRects(sel);
       if (!rects.length) return setPending(null);
-      const byPage = new Map<number, Rect[]>();
-      for (const r of rects) {
-        const n = pageAt(r.left + r.width / 2, r.top + r.height / 2);
-        const q = n ? toPdf(n, r) : null;
-        if (n && q) byPage.set(n, [...(byPage.get(n) ?? []), q]);
-      }
+      const byPage = rectsByPage(rects);
       const pages = [...byPage.keys()].sort((a, b) => a - b);
       if (!pages.length) return setPending(null);
       const [first, ...rest] = pages;
@@ -287,6 +334,8 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
       const toPage = p.more.at(-1)?.page;
       const comment = note.trim() || undefined;
       quoteToComposer(session, { quote: { path: tab.info.path, doc_id: docId, page: p.page, text: r.text, block, region: p.rect ? true : undefined, to_page: toPage, comment }, image: p.image });
+      // Over the window (a preview), the composer it went to is out of sight.
+      scope?.leave?.();
       const parts = [{ page: p.page, rects: r.boxes.length ? r.boxes : p.rect ? [p.rect] : [] }, ...(r.more ?? []).map((m) => ({ page: m.anchor.page, rects: m.boxes }))];
       setFlash({ parts, seq: Date.now() });
       setPending(null);
@@ -348,7 +397,11 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
 
   // The lit-up rectangles, laid over their page in its own coordinates: a flash for a moment,
   // or what the open card is about, for as long as it is open.
-  const marking: Flash | null = pending ? { parts: [{ page: pending.page, rects: pending.rect ? [pending.rect] : pending.quads }, ...pending.more.map((m) => ({ page: m.page, rects: m.quads }))], seq: 0 } : null;
+  const marking: Flash | null = pending
+    ? { parts: [{ page: pending.page, rects: pending.rect ? [pending.rect] : lineBands(pending.quads) }, ...pending.more.map((m) => ({ page: m.page, rects: lineBands(m.quads) }))], seq: 0 }
+    : live
+      ? { parts: live.map((p) => ({ page: p.page, rects: lineBands(p.rects) })), seq: 0 }
+      : null;
   useLayoutEffect(() => {
     if (!marking) return;
     const layers: HTMLElement[] = [];
@@ -356,18 +409,18 @@ export function PdfView({ rpc, session, tab, jump }: { rpc: RpcClient; session: 
       const view = viewer.current?.getPageView(part.page - 1);
       if (!view?.div) continue;
       const layer = document.createElement("div");
-      layer.className = "dcp-flash dcp-mark";
+      layer.className = pending?.rect ? "dcp-flash dcp-mark" : "dcp-sel";
       for (const r of part.rects) {
         const [a, b, c, d] = view.viewport.convertToViewportRectangle([r.x0, r.y0, r.x1, r.y1]);
         const box = document.createElement("div");
-        Object.assign(box.style, { left: `${Math.min(a, c) - 1}px`, top: `${Math.min(b, d) - 1}px`, width: `${Math.abs(c - a) + 2}px`, height: `${Math.abs(d - b) + 2}px` });
+        Object.assign(box.style, { left: `${Math.min(a, c)}px`, top: `${Math.min(b, d)}px`, width: `${Math.abs(c - a)}px`, height: `${Math.abs(d - b)}px` });
         layer.appendChild(box);
       }
       view.div.appendChild(layer);
       layers.push(layer);
     }
     return () => layers.forEach((l) => l.remove());
-  }, [pending, scale]);
+  }, [pending, live, scale]);
   useLayoutEffect(() => {
     if (!flash) return;
     const layers: HTMLElement[] = [];

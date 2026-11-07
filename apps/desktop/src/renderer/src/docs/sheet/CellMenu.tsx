@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Icon } from "../../icons";
+import { Icon, type IconName } from "../../icons";
 
 // The grid's right-click menu, as Excel's: groups split by lines, an item with a submenu opens
 // it to the side on hover. Drawn by the page, in the app's menu look (.vmenu).
 
 export type MenuItem =
   | { kind: "sep" }
-  | { kind: "item"; label: string; kbd?: string; icon?: string; disabled?: boolean; danger?: boolean; run?: () => void; items?: MenuItem[] };
+  | { kind: "item"; label: string; kbd?: string; icon?: IconName; checked?: boolean; disabled?: boolean; danger?: boolean; run?: () => void; items?: MenuItem[] };
 
 export const sep: MenuItem = { kind: "sep" };
 export const item = (label: string, run: (() => void) | undefined, extra: Partial<Extract<MenuItem, { kind: "item" }>> = {}): MenuItem => ({ kind: "item", label, run, ...extra });
@@ -61,10 +61,10 @@ function List({ items, at, onClose, refEl }: { items: MenuItem[]; at: { x: numbe
               m.run?.();
             }}
           >
-            {m.icon ? <Icon name={m.icon} /> : null}
+            {m.icon ? <Icon name={m.icon} /> : m.checked ? <Icon name="check" /> : null}
             <span>{m.label}</span>
             {m.kbd && <span className="val">{m.kbd}</span>}
-            {sub && <Icon name="caret" className="sht-menu-more" />}
+            {sub && <Icon name="chevR" className="sht-menu-more" />}
           </button>
         );
       })}

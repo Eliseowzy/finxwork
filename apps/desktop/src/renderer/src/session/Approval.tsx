@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { approvalPreview, argsOf, callTarget, describe, toolObject, type ApprovalPreview, type ListSession, type SessionView } from "@finx/client";
+import { approvalPreview, argsOf, callTarget, describe, pendingApproval, toolObject, type ApprovalPreview, type SessionView } from "@finx/client";
 import type { ApprovalDecision, CellChange, Impact, SheetOp, SiteGrant } from "@finx/protocol";
 import { pageCommand } from "../commands";
 import { APP_ORIGIN, useDesktopApp, useDesktopStatus } from "../desktopControl";
@@ -8,11 +8,13 @@ import { toolDo } from "../format";
 import { Icon, Mark } from "../icons";
 import { SiteIcon, siteOrigin } from "../siteIcon";
 import { useStore } from "../store";
+import { bringBrowserBack } from "./browserPanel";
 import { Code } from "./Code";
+import { handoffOf, revealYours, useYourBrowser } from "./Yours";
 
 /**
- * A tool call waiting for the owner (Op::Approval), popped up right above
- * the composer in its shape: what finx wants to do and why it asks, the
+ * A tool call waiting for the owner (Op::Approval), the session's own or a
+ * sub-agent's, which says who asks. Popped up right above the composer in its shape: what finx wants to do and why it asks, the
  * command or the change itself, and the answers as buttons, one click each.
  * Deny opens a line for why, which goes back to the model; stopping the
  * whole task is the composer's Stop. Keys: ⌘↩ (the menu's Approve) allows
@@ -24,11 +26,12 @@ import { Code } from "./Code";
  * its own button, names the app by its name and icon, and says so when
  * FinxWork lacks the system permission the call needs.
  */
-export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
+export function Approval({ sessionId, view }: { sessionId: string; view: SessionView }) {
   const { t } = useTranslation("session");
   const st = useStore();
-  const live = view.live!;
-  const a = live.approvals[0];
+  const { approval: a, agent } = pendingApproval(view)!;
+  // A sub-agent's call is in its own session.
+  const live = (agent?.view ?? view).live!;
   // What the call runs: a browser's or computer use's tool comes through call_tool.
   const target = callTarget(a.name, a.args);
   const tool = live.tools.find((x) => x.call_id === a.call_id) ?? { ...describe(a.name, argsOf(a.args), view.info.cwd), name: a.name };
@@ -42,6 +45,9 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
   // The workbook's file name: the agent may name it by its id.
   const [sheetFile, setSheetFile] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
+  // A page handed to the person (browser_wait with user): they went to it, and may say they are done.
+  const [went, setWent] = useState(false);
+  const yourBrowser = useYourBrowser();
   const sheetArgs = target.name === "doc_edit" ? target.args as { doc?: unknown; ops?: unknown } : null;
 
   useEffect(() => {
@@ -51,9 +57,9 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
     void (async () => {
       try {
         const ref = /^[0-9a-f]{16}$/.test(sheetArgs.doc as string) ? { doc_id: sheetArgs.doc as string } : { path: sheetArgs.doc as string };
-        const opened = await st.rpc!.request("doc/open", { session_id: s.session_id, ...ref });
+        const opened = await st.rpc!.request("doc/open", { session_id: sessionId, ...ref });
         const result = await st.rpc!.request("doc/apply", {
-          session_id: s.session_id,
+          session_id: sessionId,
           doc_id: opened.info.doc_id,
           ops: sheetArgs.ops as SheetOp[],
           base_revision: opened.info.revision,
@@ -68,12 +74,12 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
       }
     })();
     return () => { live = false; };
-  }, [a.call_id, s.session_id, st.rpc]);
+  }, [a.call_id, sessionId, st.rpc]);
 
   const give = async (decision: ApprovalDecision) => {
     if (busy) return;
     setBusy(true);
-    await st.op(s.session_id, { type: "approval", call_id: a.call_id, decision });
+    await st.op(sessionId, agent ? { type: "agent_approval", agent: agent.id, call_id: a.call_id, decision } : { type: "approval", call_id: a.call_id, decision });
     setBusy(false);
   };
   const deny = () => give({ type: "deny", feedback: feedback.trim() || undefined });
@@ -139,6 +145,50 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
     </>
   );
   const queue = live.approvals.length > 1 && <span className="qx-tag">{t("approval.queue", { n: 1, total: live.approvals.length })}</span>;
+  const who = agent && <span className="appr-who" title={agent.name}>{t("approval.agent", { name: agent.description || agent.name })}</span>;
+  const handoff = handoffOf(a);
+  if (handoff !== null) {
+    const name = a.own_browser ? yourBrowser.name : t("browser.builtIn");
+    const go = () => {
+      setWent(true);
+      if (a.own_browser) void revealYours(st, yourBrowser.browser, sessionId);
+      else {
+        bringBrowserBack(sessionId);
+        st.set({ browser: true, background: false, files: false, filesMax: false });
+      }
+    };
+    return (
+      <div className="appr" role="region" aria-label={t("approval.label")}>
+        <div className="appr-h">
+          <Mark size={16} />
+          <b>{t("yours.handoff.title", { name })}</b>
+          {who}
+        </div>
+        <div className="appr-site">
+          <span className="sel-text">{handoff}</span>
+        </div>
+        <div className="appr-f">
+          {denying ? (
+            denyField
+          ) : (
+            <>
+              <button className="btn" disabled={busy} onClick={() => setDenying(true)}>{t("yours.handoff.skip")}</button>
+              <span className="appr-sp" />
+              {went && <button className="btn" onClick={go}>{t("yours.handoff.again")}</button>}
+              {went ? (
+                <button className="btn primary" disabled={busy} onClick={() => give({ type: "approve" })}>
+                  {t("yours.handoff.done")}
+                  <span className="kret">⌘↩</span>
+                </button>
+              ) : (
+                <button className="btn primary" onClick={go}>{t("yours.handoff.go", { name })}</button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
   if (site) {
     const origin = grants[0].origin;
     const every = grants.findIndex((g) => g.origin === "*");
@@ -155,6 +205,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
           <b title={origin}>
             {t(!own ? "approval.siteQuestion" : opening ? "approval.siteQuestionYours" : "approval.siteActYours", { site: hostOf(origin) })}
           </b>
+          {who}
           {queue}
         </div>
         <div className="appr-site">
@@ -201,6 +252,7 @@ export function Approval({ s, view }: { s: ListSession; view: SessionView }) {
           </span>
         )}
         {a.reason && <span className="why" title={a.reason}>{a.reason}</span>}
+        {who}
         {queue}
       </div>
       {sheetArgs ? <SheetApproval impact={sheetImpact} ops={Array.isArray(sheetArgs.ops) ? sheetArgs.ops as SheetOp[] : []} /> : <Preview p={preview} />}

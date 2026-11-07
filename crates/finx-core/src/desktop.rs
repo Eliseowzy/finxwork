@@ -892,7 +892,7 @@ impl TypedTool for DesktopAct {
             let found = windows(&ctx, &key).await?;
             match found.iter().find(|w| w.id == window).or_else(|| found.iter().find(|w| w.focused)) {
                 Some(after) => {
-                    let (id, image) = capture(&ctx, &handle, &key, &args.app, after).await?;
+                    let (id, _, image) = capture(&ctx, &handle, &key, &args.app, after).await?;
                     text.push_str(&format!("\nScreenshot {id} after it, {}×{} px:", image.width, image.height));
                     details["shot"] = json!(id);
                     content.push(UserContent::Image {
@@ -908,6 +908,7 @@ impl TypedTool for DesktopAct {
             content,
             details: Some(details),
             is_error: false,
+            ends_task: false,
         })
     }
 }
@@ -1111,14 +1112,14 @@ pub(crate) struct ScreenshotArgs {
 
 struct DesktopScreenshot;
 
-/// A screenshot of `window`, as the model sees it, kept under a new id.
+/// A screenshot of `window`, as the model sees it, kept under a new id; and where it was saved.
 async fn capture(
     ctx: &ToolCtx,
     handle: &DesktopHandle,
     key: &str,
     asked: &str,
     window: &Window,
-) -> Result<(String, finx_desktop::Fitted), ToolError> {
+) -> Result<(String, std::path::PathBuf, finx_desktop::Fitted), ToolError> {
     std::fs::create_dir_all(&ctx.output_dir)?;
     // Kept as a file for user interfaces; the CLI only writes a new file.
     let n = handle.shared.next_shot.load(Ordering::Relaxed) + 1;
@@ -1147,7 +1148,7 @@ async fn capture(
         width: fitted.width,
         height: fitted.height,
     });
-    Ok((id, fitted))
+    Ok((id, path, fitted))
 }
 
 #[async_trait]
@@ -1186,15 +1187,16 @@ impl TypedTool for DesktopScreenshot {
         let handle = handle(&ctx)?;
         let found = windows(&ctx, &key).await?;
         let window = pick_window(&found, args.window_id.as_deref(), false, &args.app)?;
-        let (id, image) = capture(&ctx, &handle, &key, &args.app, window).await?;
+        let (id, path, image) = capture(&ctx, &handle, &key, &args.app, window).await?;
         let text = format!(
-            "Screenshot {id} of {}, window {} \"{}\", {}×{} px. To act at a point of it, call cua_act with \
-             shot \"{id}\" and x, y in this image's pixels.{}",
+            "Screenshot {id} of {}, window {} \"{}\", {}×{} px, saved to {}. To act at a point of it, call cua_act \
+             with shot \"{id}\" and x, y in this image's pixels.{}",
             args.app,
             window.id,
             window.title.replace('"', "'"),
             image.width,
             image.height,
+            path.display(),
             others(&found, Some(window)),
         );
         Ok(ToolOutput {
@@ -1207,6 +1209,7 @@ impl TypedTool for DesktopScreenshot {
             ],
             details: Some(json!({ "app": args.app, "shot": id })),
             is_error: false,
+            ends_task: false,
         })
     }
 }
@@ -1470,6 +1473,8 @@ esac
         let ctx = fake.ctx("fake-cli-click");
         let shot = Typed::new(DesktopScreenshot).execute(json!({"app": "Chat"}), ctx.clone()).await.unwrap();
         assert!(text_of(&shot).contains("Screenshot p1 of Chat, window w-1 \"Chat\", 300×200 px"), "{}", text_of(&shot));
+        let saved = fake.dir.path().join("out");
+        assert!(text_of(&shot).contains(&format!("saved to {}", saved.display())), "a bot sends it by this path");
         assert!(matches!(shot.content[1], UserContent::Image { .. }));
         fake.calls();
 

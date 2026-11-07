@@ -38,7 +38,9 @@ impl Environment for Fake {
     }
     async fn discover(&self) -> Result<ConnectionDiscovery> {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        if let Some(error) = self.discovery_failure.read().clone() { return Err(error); }
+        if let Some(error) = self.discovery_failure.read().clone() {
+            return Err(error);
+        }
         Ok(ConnectionDiscovery {
             diagnostic: None,
             adapter_id: "qwenwork".into(),
@@ -50,7 +52,9 @@ impl Environment for Fake {
     }
     async fn login(&self) -> Result<Login> {
         self.calls.fetch_add(1, Ordering::Relaxed);
-        if let Some(error) = self.login_failure.read().clone() { return Err(error); }
+        if let Some(error) = self.login_failure.read().clone() {
+            return Err(error);
+        }
         Ok(Login {
             subject: None,
             token: "account-secret".into(),
@@ -95,6 +99,7 @@ fn record(enabled: bool) -> Record {
         models: vec![ConnectionModel {
             id: "flash".into(),
             name: "Flash".into(),
+            names: Default::default(),
             context_window: Some(1000000),
             max_output_tokens: None,
             reasoning: true,
@@ -153,7 +158,21 @@ async fn existing_connection_restores_without_secrets_in_catalog_and_disconnect_
     let llm = registry();
     let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
     let provider = format!("local-{}", r.connection_id);
-    assert!(llm.resolve(&format!("{provider}/flash")).unwrap().model.accepts_images());
+    let flash = llm.resolve(&format!("{provider}/flash")).unwrap().model;
+    assert!(flash.accepts_images());
+    assert_eq!(flash.context_window, 1_000_000, "the account's catalog");
+    // Not stated by anyone: left to the gateway, never a guess that cuts replies short.
+    assert_eq!(flash.max_output_tokens, None);
+    let body: serde_json::Value = serde_json::from_slice(&finx_llm::api::openai_chat::build_body(
+        &flash,
+        &finx_llm::Context::default(),
+        &finx_llm::RequestOptions::default(),
+    ))
+    .unwrap();
+    assert!(
+        body.get("max_tokens").is_none() && body.get("max_completion_tokens").is_none(),
+        "{body}"
+    );
     assert!(llm.resolve(&format!("{provider}/invented")).is_err());
     assert_eq!(env.calls.load(Ordering::Relaxed), 0);
     let lease = m.begin(&provider, "flash", client()).await.unwrap();
@@ -236,7 +255,10 @@ async fn connecting_the_same_account_again_keeps_the_provider() {
     assert_eq!(second.provider_id, first.provider_id);
     // Kept across a restart; another account or application gets its own.
     let m = Manager::with_environment(dir.path().into(), &registry(), env);
-    assert_eq!(m.snapshot().unwrap().connections[0].provider_id, first.provider_id);
+    assert_eq!(
+        m.snapshot().unwrap().connections[0].provider_id,
+        first.provider_id
+    );
     assert_ne!(provider_id("qwenwork", "account-b"), first.provider_id);
     assert_ne!(provider_id("qoder", "account-a"), first.provider_id);
 }
@@ -251,7 +273,10 @@ async fn connection_publishes_and_authorizes_under_its_provider() {
     let llm = registry();
     let m = Manager::with_environment(dir.path().into(), &llm, env);
     assert!(llm.resolve(&format!("{}/flash", r.provider_id)).is_ok());
-    assert!(llm.resolve(&format!("local-{}/flash", r.connection_id)).is_err());
+    assert!(
+        llm.resolve(&format!("local-{}/flash", r.connection_id))
+            .is_err()
+    );
     assert!(m.begin(&r.provider_id, "flash", client()).await.is_ok());
 }
 #[tokio::test]
@@ -396,7 +421,13 @@ fn chrome_v10_login_decrypts_and_preserves_existing_identity_hash() {
         login.identity,
         platform::digest(br#"["user-1","","standard"]"#)
     );
-    assert_eq!(platform::decrypt_login(&sealed, b"incorrect").err().unwrap().code, "credential_decrypt_failed");
+    assert_eq!(
+        platform::decrypt_login(&sealed, b"incorrect")
+            .err()
+            .unwrap()
+            .code,
+        "credential_decrypt_failed"
+    );
 }
 
 #[tokio::test]
@@ -445,7 +476,10 @@ async fn catalogs_are_asked_again_only_when_old_and_failures_change_nothing() {
     assert!(env.calls.load(Ordering::Relaxed) > 0);
     let provider = format!("local-{}", r.connection_id);
     assert!(llm.resolve(&format!("{provider}/flash")).is_ok());
-    assert!(matches!(m.snapshot().unwrap().connections[0].state, ConnectionState::Ready));
+    assert!(matches!(
+        m.snapshot().unwrap().connections[0].state,
+        ConnectionState::Ready
+    ));
 }
 #[test]
 fn qwenwork_thinking_follows_the_application() {
@@ -453,15 +487,75 @@ fn qwenwork_thinking_follows_the_application() {
     let all = vec![Off, Low, Medium, High, Xhigh, Max];
     let always = vec![Low, Medium, High, Xhigh, Max];
     let of = |id: &str, entry: serde_json::Value| crate::qwenwork::thinking_of(id, &entry);
-    assert_eq!(of("pro", json!({"is_reasoning": true})), (all.clone(), High));
-    assert_eq!(of("qwen3.8-max-preview", json!({"is_reasoning": true})), (all.clone(), Xhigh));
+    assert_eq!(
+        of("pro", json!({"is_reasoning": true})),
+        (all.clone(), High)
+    );
+    assert_eq!(
+        of("qwen3.8-max-preview", json!({"is_reasoning": true})),
+        (all.clone(), Xhigh)
+    );
+    // An opaque key: the display name says which model it is.
+    assert_eq!(
+        of(
+            "mode-5d41402a",
+            json!({"is_reasoning": true, "display_name": "Qwen3.8-Max"})
+        ),
+        (all.clone(), Xhigh)
+    );
+    assert_eq!(
+        of(
+            "mode-7d793037",
+            json!({"is_reasoning": true, "display_name": "Qwen3.7-Max"})
+        ),
+        (vec![Off, On], On)
+    );
+    // The name shown may be the Chinese one while the English one says which model it is.
+    assert_eq!(
+        of(
+            "mode-7d793037",
+            json!({"is_reasoning": true, "i18n": {"display_name": {"zh": "千问旗舰", "en": "Qwen3.7-Max"}}})
+        ),
+        (vec![Off, On], On)
+    );
     // A thinking_config means the model keeps thinking: no "off".
-    assert_eq!(of("pro", json!({"is_reasoning": true, "thinking_config": {"effort": "high"}})), (always.clone(), High));
-    assert_eq!(of("flash", json!({"thinking_config": {"enabled": true, "effort": "medium"}})), (always.clone(), Medium));
-    assert_eq!(of("flash", json!({"is_reasoning": true, "thinking_config": {"effort": "turbo"}})), (always, High), "an unknown effort is ignored");
-    assert_eq!(of("flash", json!({"is_reasoning": true, "thinking_config": null})), (all, High));
-    assert_eq!(of("qwen3.7-plus", json!({"is_reasoning": true})), (vec![Off, On], On));
-    assert_eq!(of("plain", json!({"is_reasoning": false})), (vec![], Default));
+    assert_eq!(
+        of(
+            "pro",
+            json!({"is_reasoning": true, "thinking_config": {"effort": "high"}})
+        ),
+        (always.clone(), High)
+    );
+    assert_eq!(
+        of(
+            "flash",
+            json!({"thinking_config": {"enabled": true, "effort": "medium"}})
+        ),
+        (always.clone(), Medium)
+    );
+    assert_eq!(
+        of(
+            "flash",
+            json!({"is_reasoning": true, "thinking_config": {"effort": "turbo"}})
+        ),
+        (always, High),
+        "an unknown effort is ignored"
+    );
+    assert_eq!(
+        of(
+            "flash",
+            json!({"is_reasoning": true, "thinking_config": null})
+        ),
+        (all, High)
+    );
+    assert_eq!(
+        of("qwen3.7-plus", json!({"is_reasoning": true})),
+        (vec![Off, On], On)
+    );
+    assert_eq!(
+        of("plain", json!({"is_reasoning": false})),
+        (vec![], Default)
+    );
 }
 
 #[test]
@@ -475,8 +569,19 @@ fn qwenwork_429_quota_words_are_waited_out_unless_they_speak_of_arrears() {
     };
     let openai = r#"{"error":{"message":"You exceeded your current quota, please check your plan and billing details.","code":"insufficient_quota"}}"#;
     assert_eq!(kind("qwenwork", 429, openai), ErrorKind::RateLimited);
-    assert_eq!(kind("qwenwork", 429, r#"{"error":{"message":"账户已欠费，请充值"}}"#), ErrorKind::QuotaExceeded);
-    assert_eq!(kind("qwenwork", 402, openai), ErrorKind::QuotaExceeded, "only a 429 is a moment's limit");
+    assert_eq!(
+        kind(
+            "qwenwork",
+            429,
+            r#"{"error":{"message":"账户已欠费，请充值"}}"#
+        ),
+        ErrorKind::QuotaExceeded
+    );
+    assert_eq!(
+        kind("qwenwork", 402, openai),
+        ErrorKind::QuotaExceeded,
+        "only a 429 is a moment's limit"
+    );
     assert_eq!(kind("qoder", 429, openai), ErrorKind::QuotaExceeded);
 }
 
@@ -484,12 +589,80 @@ fn qwenwork_429_quota_words_are_waited_out_unless_they_speak_of_arrears() {
 fn gateway_words_lose_what_may_identify_the_account() {
     let scrub = crate::adapter::scrub;
     assert_eq!(
-        scrub("session 7f3a9c2e-41b8-4d0e-9a77-1c2d3e4f5a6b over limit, request_id=req_0a1b2c3d4e5f6a7b8c9d"),
+        scrub(
+            "session 7f3a9c2e-41b8-4d0e-9a77-1c2d3e4f5a6b over limit, request_id=req_0a1b2c3d4e5f6a7b8c9d"
+        ),
         "session … over limit, …"
     );
-    assert_eq!(scrub("You exceeded your current quota (insufficient_quota)."), "You exceeded your current quota (insufficient_quota).");
+    assert_eq!(
+        scrub("You exceeded your current quota (insufficient_quota)."),
+        "You exceeded your current quota (insufficient_quota)."
+    );
     assert_eq!(scrub("请求过多，请稍后再试"), "请求过多，请稍后再试");
     assert_eq!(scrub(&"字".repeat(600)).chars().count(), 501);
+}
+
+#[tokio::test]
+async fn qwen_catalog_names_models_as_the_application_does_and_requests_by_key() {
+    let server = MockServer::start().await;
+    let mut q = QwenWork::new("test".into(), "account-a".into(), Fake::new());
+    q.gateway = server.uri();
+    let entry = |key: &str, fields: serde_json::Value| {
+        let mut entry = json!({"key": key, "enable": true, "format": "openai/chat-completions"});
+        entry
+            .as_object_mut()
+            .unwrap()
+            .extend(fields.as_object().unwrap().clone());
+        entry
+    };
+    let body = json!({"catalog": [
+        entry("mode-a", json!({"displayName": "First", "display_name": "Second", "name": "Third"})),
+        entry("mode-b", json!({"display_name": "Second", "name": "Third"})),
+        entry("mode-c", json!({"name": "Third"})),
+        entry("mode-d", json!({"name": "Own", "server_model": {"display_name": "From server"}})),
+        entry("mode-e", json!({"serverModel": {"name": "From server"}})),
+        entry("mode-f", json!({"display_name": "  "})),
+        entry("flash", json!({})),
+        // As the real catalog has it (2026-11-06): only names by language.
+        entry("mode-g", json!({"name": "Plain", "i18n": {"display_name": {"en": "Standard", "zh": "标准"}}})),
+        entry("mode-h", json!({"i18n": {"displayName": {"en": "Pro"}}})),
+        entry("mode-i", json!({"server_model": {"i18n": {"display_name": {"zh": "高级"}}}})),
+        entry("mode-j", json!({"i18n": {"display_name": {"zh-CN": "标准版"}}})),
+        entry("mode-k", json!({"name": "Plain", "i18n": {"description": {"zh": "说明"}}})),
+    ]});
+    Mock::given(path("/api/desktop/chat-modes"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(body))
+        .mount(&server)
+        .await;
+    let models = q.catalog(&client()).await.unwrap();
+    let got: Vec<_> = models
+        .iter()
+        .map(|m| (m.id.as_str(), m.name.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("mode-a", "First"),
+            ("mode-b", "Second"),
+            ("mode-c", "Third"),
+            ("mode-d", "From server"),
+            ("mode-e", "From server"),
+            ("mode-f", "mode-f"),
+            ("flash", "flash"),
+            ("mode-g", "标准"),
+            ("mode-h", "Pro"),
+            ("mode-i", "高级"),
+            ("mode-j", "标准版"),
+            ("mode-k", "Plain"),
+        ]
+    );
+    // Every language goes along, for clients that have an interface language to pick by.
+    let names = |id: &str| &models.iter().find(|m| m.id == id).unwrap().names;
+    assert_eq!(names("mode-g")["en"], "Standard");
+    assert_eq!(names("mode-g")["zh"], "标准");
+    assert_eq!(names("mode-i")["zh"], "高级");
+    assert!(names("mode-a").is_empty());
+    assert!(names("mode-k").is_empty());
 }
 
 #[tokio::test]
@@ -499,30 +672,50 @@ async fn qwen_catalog_reports_actual_http_and_schema_failures_without_secrets() 
     let mut q = QwenWork::new("test".into(), "account-a".into(), env);
     q.gateway = server.uri();
     for (status, code, retryable) in [
-        (400, "request_rejected", false), (401, "connection_login_required", false),
-        (403, "permission_denied", false), (429, "rate_limited", true),
-        (503, "service_unavailable", true), (302, "redirect_rejected", false),
+        (400, "request_rejected", false),
+        (401, "connection_login_required", false),
+        (403, "permission_denied", false),
+        (429, "rate_limited", true),
+        (503, "service_unavailable", true),
+        (302, "redirect_rejected", false),
     ] {
         server.reset().await;
         Mock::given(path("/api/desktop/chat-modes"))
-            .respond_with(ResponseTemplate::new(status).set_body_string("secret-token-do-not-expose"))
-            .mount(&server).await;
+            .respond_with(
+                ResponseTemplate::new(status).set_body_string("secret-token-do-not-expose"),
+            )
+            .mount(&server)
+            .await;
         let e = q.catalog(&client()).await.unwrap_err();
         assert_eq!(e.code, code);
         assert_eq!(e.stage, "catalog");
         assert_eq!(e.http_status, Some(status));
         assert_eq!(e.retryable, retryable);
-        assert!(!serde_json::to_string(&e.diagnostic()).unwrap().contains("secret-token"));
+        assert!(
+            !serde_json::to_string(&e.diagnostic())
+                .unwrap()
+                .contains("secret-token")
+        );
     }
     for (body, code, field) in [
-        ("<html>proxy or service error</html>", "response_not_json", None),
+        (
+            "<html>proxy or service error</html>",
+            "response_not_json",
+            None,
+        ),
         (r#"{"catalog":{}}"#, "response_invalid", Some("catalog")),
         (r#"{"catalog":[]}"#, "catalog_empty", None),
-        (r#"{"catalog":[{"enable":true,"key":"future","format":"new-protocol"}]}"#, "unsupported_model_protocol", None),
+        (
+            r#"{"catalog":[{"enable":true,"key":"future","format":"new-protocol"}]}"#,
+            "unsupported_model_protocol",
+            None,
+        ),
     ] {
         server.reset().await;
         Mock::given(path("/api/desktop/chat-modes"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(body)).mount(&server).await;
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
         let e = q.catalog(&client()).await.unwrap_err();
         assert_eq!(e.code, code);
         assert_eq!(e.stage, "catalog");
@@ -537,13 +730,16 @@ async fn qwen_authorization_identifies_invalid_field_and_preserves_forbidden() {
     q.gateway = server.uri();
     Mock::given(path("/api/desktop-sessions"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({"expires_at_ms":9_000_000})))
-        .mount(&server).await;
+        .mount(&server)
+        .await;
     let e = q.authorize(&client(), false).await.err().unwrap();
     assert_eq!(e.stage, "authorization");
     assert_eq!(e.field.as_deref(), Some("access_token"));
     server.reset().await;
     Mock::given(path("/api/desktop-sessions"))
-        .respond_with(ResponseTemplate::new(403)).mount(&server).await;
+        .respond_with(ResponseTemplate::new(403))
+        .mount(&server)
+        .await;
     let e = q.authorize(&client(), false).await.err().unwrap();
     assert_eq!(e.code, "permission_denied");
     assert_eq!(e.action, "check_account");
@@ -562,22 +758,38 @@ async fn structured_diagnostics_survive_snapshots_and_clear_on_recovery() {
     let e = ConnectionError::new("network_timeout", "timeout").at("authorization");
     m.failed(&entry, &e);
     let snapshot = m.snapshot().unwrap();
-    assert!(matches!(snapshot.connections[0].state, ConnectionState::Ready));
+    assert!(matches!(
+        snapshot.connections[0].state,
+        ConnectionState::Ready
+    ));
     let d = snapshot.connections[0].diagnostic.as_ref().unwrap();
     assert_eq!(d.code, "network_timeout");
     assert_eq!(d.stage, "authorization");
     assert!(d.retryable);
-    let lease = m.begin(&format!("local-{}", r.connection_id), "flash", client()).await.unwrap();
+    let lease = m
+        .begin(&format!("local-{}", r.connection_id), "flash", client())
+        .await
+        .unwrap();
     lease.authorize(false).await.unwrap();
     assert!(m.snapshot().unwrap().connections[0].diagnostic.is_none());
     // Authorization success cannot clear an unrelated catalog failure.
     m.failed(&entry, &e.clone().at("catalog"));
     lease.authorize(false).await.unwrap();
-    assert_eq!(m.snapshot().unwrap().connections[0].diagnostic.as_ref().unwrap().stage, "catalog");
+    assert_eq!(
+        m.snapshot().unwrap().connections[0]
+            .diagnostic
+            .as_ref()
+            .unwrap()
+            .stage,
+        "catalog"
+    );
     drop(lease);
     m.disconnect(&r.connection_id).await.unwrap();
     m.failed(&entry, &e);
-    assert!(matches!(m.snapshot().unwrap().connections[0].state, ConnectionState::Disabled));
+    assert!(matches!(
+        m.snapshot().unwrap().connections[0].state,
+        ConnectionState::Disabled
+    ));
 }
 
 #[test]
@@ -599,15 +811,29 @@ async fn discovery_and_retry_preflight_preserve_diagnostics() {
     let r = record(true);
     save_config(dir.path(), &r);
     let m = Manager::with_environment(dir.path().into(), &llm, env.clone());
-    *env.discovery_failure.write() = Some(ConnectionError::new("source_unreadable", "cannot read app").at("discovery"));
+    *env.discovery_failure.write() =
+        Some(ConnectionError::new("source_unreadable", "cannot read app").at("discovery"));
     let discoveries = m.discover().await.unwrap();
-    assert_eq!(discoveries[0].diagnostic.as_ref().unwrap().code, "source_unreadable");
+    assert_eq!(
+        discoveries[0].diagnostic.as_ref().unwrap().code,
+        "source_unreadable"
+    );
     assert_eq!(discoveries[0].login, "unavailable");
-    *env.login_failure.write() = Some(ConnectionError::new("permission_cancelled", "cancelled").at("keychain"));
-    assert_eq!(m.retry(&r.connection_id).await.unwrap_err().code, "permission_cancelled");
+    *env.login_failure.write() =
+        Some(ConnectionError::new("permission_cancelled", "cancelled").at("keychain"));
+    assert_eq!(
+        m.retry(&r.connection_id).await.unwrap_err().code,
+        "permission_cancelled"
+    );
     let snapshot = m.snapshot().unwrap();
-    assert!(matches!(snapshot.connections[0].state, ConnectionState::PermissionRequired));
-    assert_eq!(snapshot.connections[0].diagnostic.as_ref().unwrap().stage, "keychain");
+    assert!(matches!(
+        snapshot.connections[0].state,
+        ConnectionState::PermissionRequired
+    ));
+    assert_eq!(
+        snapshot.connections[0].diagnostic.as_ref().unwrap().stage,
+        "keychain"
+    );
 }
 
 #[tokio::test]
@@ -618,13 +844,19 @@ async fn earlier_request_failure_does_not_overwrite_a_new_validation() {
     save_config(dir.path(), &r);
     let m = Manager::with_environment(dir.path().into(), &llm, Fake::new());
     let entry = m.entry(&r.connection_id).unwrap();
-    let lease = m.begin(&format!("local-{}", r.connection_id), "flash", client()).await.unwrap();
+    let lease = m
+        .begin(&format!("local-{}", r.connection_id), "flash", client())
+        .await
+        .unwrap();
     // A completed explicit check advances this generation while the old inference is in flight.
     entry.generation.fetch_add(1, Ordering::AcqRel);
     let mut failure = finx_llm::LlmError::new(finx_llm::ErrorKind::Auth, "old request rejected");
     failure.status = Some(401);
     lease.failed(&mut failure);
     let snapshot = m.snapshot().unwrap();
-    assert!(matches!(snapshot.connections[0].state, ConnectionState::Ready));
+    assert!(matches!(
+        snapshot.connections[0].state,
+        ConnectionState::Ready
+    ));
     assert!(snapshot.connections[0].diagnostic.is_none());
 }

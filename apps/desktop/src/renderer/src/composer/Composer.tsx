@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { homePath } from "@finx/client";
 import type { CommandInfo, ModelsListResult, PermissionMode, ThinkingLevel } from "@finx/protocol";
 import { permissionDesc, permissionTitle, modelTitle, thinkingFor, thinkingTitle } from "../format";
-import { Icon } from "../icons";
+import { Icon, type IconName } from "../icons";
 import { menuKeys } from "../sidebar/Sidebar";
 import { useStore } from "../store";
 import { addAttachments, attachEvent, droppedAttachments, pastedAttachments, pickFiles, pickFolder, type Attachment } from "./attachments";
@@ -48,8 +48,16 @@ export type Form =
       onHeight: (h: number) => void;
       /** ↑ in the empty composer: the last message that waits for the task comes back to edit; true when one did. */
       onEditLast: () => boolean;
+      /** A sent message being written again: the caret comes here when it changes (message-resend-design §5.1). */
+      again?: string;
+      /** Esc, unless a menu takes it: stops writing that message again; true when it did. */
+      onEscape?: () => boolean;
+      /** The words are on their way: they stay as they are until finx answers. */
+      locked?: boolean;
     }
-  | { mode: "new"; place: Place };
+  | { mode: "new"; place: Place }
+  /** A bot's conversation (bot-mode-design §6.14): only Send, never Stop, and no settings under it: they are in the bot's settings. */
+  | { mode: "bot"; above?: ReactNode; onHeight: (h: number) => void };
 
 /**
  * Where the owner writes to finx: one line while empty — "+", the text,
@@ -69,7 +77,8 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   canSend?: boolean;
   attachments: Attachment[];
   onAttachments: (a: Attachment[]) => void;
-  settings: Settings;
+  /** None for a bot's conversation. */
+  settings?: Settings;
   /** What `/` offers: the built-in commands and the skills (`skills/list`). */
   commands: CommandInfo[];
 }) {
@@ -87,10 +96,11 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
   const col = useRef<HTMLDivElement>(null);
   const ready = canSend && (value.trim() !== "" || attachments.length > 0);
   // Not away from a field being typed in, such as a title being renamed (a double-click on a row opens its page too).
+  const again = form.mode === "session" ? form.again : undefined;
   useEffect(() => {
     if (!(document.activeElement instanceof HTMLInputElement)) area.current?.focus();
-  }, []);
-  const onHeight = form.mode === "session" ? form.onHeight : undefined;
+  }, [again]);
+  const onHeight = form.mode === "new" ? undefined : form.onHeight;
   useEffect(() => {
     const el = col.current;
     if (!el || !onHeight) return;
@@ -108,7 +118,7 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
     <div className={`cmp-zone ${form.mode}`}>
       {dropping && <div className="drop-veil" aria-hidden="true" />}
       <div className="cmp-col" ref={col}>
-        {form.mode === "session" && form.above}
+        {form.mode !== "new" && form.above}
         <div
           className={`cmp ${dropping ? "dropping" : ""}`}
           onMouseDown={(e) => e.target instanceof HTMLElement && e.target.matches(".cmp,.cmp-row,.cmp-att") && (e.preventDefault(), area.current?.focus())}
@@ -133,10 +143,10 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
           {attachments.length > 0 && <Tiles items={attachments} onRemove={(i) => (onAttachments(attachments.filter((_, j) => j !== i)), area.current?.focus())} />}
           <div className="cmp-row">
             <PlusMenu attachments={attachments} onAttachments={(a) => (onAttachments(a), area.current?.focus())} commands={commands} onSkill={(name) => area.current?.insertSkill(name)} />
-            <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} placeholder={placeholder} label={t("composer.label")} commands={commands} />
+            <PromptEditor ref={area} value={value} onChange={onChange} onEnter={send} onUp={form.mode === "session" ? form.onEditLast : undefined} onEscape={form.mode === "session" ? form.onEscape : undefined} readOnly={form.mode === "session" && form.locked} placeholder={placeholder} label={t("composer.label")} commands={commands} />
             {stop ? (
               <button className="send stop" onClick={stop} title={t("composer.stop")} aria-label={t("composer.stop")}>
-                <Icon name="stopFill" />
+                <Icon name="stop" className="fill" />
               </button>
             ) : (
               <button className="send" disabled={!ready} onClick={() => send(false)} title={t("composer.send")} aria-label={t("composer.send")}>
@@ -145,17 +155,19 @@ export function Composer({ form, value, onChange, onSend, placeholder, canSend =
             )}
           </div>
         </div>
-        <div className="cmp-meta">
-          {form.mode === "new" && (
-            <>
-              <EnvironmentPicker />
-              <ProjectPicker place={form.place} />
-            </>
-          )}
-          <PermissionPicker value={settings.permission} onChange={settings.onPermission} />
-          <span className="sp" />
-          <ModelPicker settings={settings} />
-        </div>
+        {settings && (
+          <div className="cmp-meta">
+            {form.mode === "new" && (
+              <>
+                <EnvironmentPicker />
+                <ProjectPicker place={form.place} />
+              </>
+            )}
+            <PermissionPicker value={settings.permission} onChange={settings.onPermission} />
+            <span className="sp" />
+            <ModelPicker settings={settings} />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -166,7 +178,7 @@ function Tiles({ items, onRemove }: { items: Attachment[]; onRemove: (i: number)
   return (
     <div className="cmp-att">
       {items.map((a, i) => (
-        <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
+        <Tile key={a.path} kind={a.kind} path={a.kind === "web" || a.kind === "doc" || a.kind === "tabs" ? undefined : a.path} name={a.name} src={a.kind === "image" ? `data:${a.mime_type};base64,${a.data}` : undefined} web={a.kind === "web" ? a.comment : undefined} quote={a.kind === "doc" ? a.quote : undefined} shot={(a.kind === "doc" || a.kind === "web") && a.image ? `data:image/png;base64,${a.image}` : undefined} onRemove={() => onRemove(i)} />
       ))}
     </div>
   );
@@ -253,6 +265,7 @@ export function MenuButton({ className, title, label, align = "left", below, dis
     <>
       <button
         ref={btn}
+        type="button"
         className={className}
         title={title}
         aria-label={title}
@@ -267,7 +280,7 @@ export function MenuButton({ className, title, label, align = "left", below, dis
       >
         {label}
       </button>
-      {/* On the page itself: a card with a backdrop filter around the button would hold a fixed menu inside it. */}
+      {/* On the page itself: a card with a backdrop filter around the button would hold a fixed menu inside it. In a dialog, in the dialog: all else lies under it, out of reach. */}
       {at &&
         createPortal(
           <div
@@ -282,7 +295,7 @@ export function MenuButton({ className, title, label, align = "left", below, dis
           >
             {children(close)}
           </div>,
-          document.body,
+          btn.current?.closest("dialog") ?? document.body,
         )}
     </>
   );
@@ -299,7 +312,7 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
   value: string;
   title: string;
   /** In place of the check column, as a menu item's icon. */
-  icon?: string;
+  icon?: IconName;
   /** The submenu's own class, beside `vmenu`. */
   className?: string;
   children: ReactNode;
@@ -380,7 +393,7 @@ export function SubMenuItem({ label, value, title, icon, className, children }: 
 
 /** A menu item: an icon or a check, its words (and a line under them), a value or a shortcut at its right. */
 export function MenuItem({ icon, checked, label, desc, value, kbd, disabled, onClick }: {
-  icon?: string;
+  icon?: IconName;
   checked?: boolean;
   label: string;
   desc?: string;
@@ -418,10 +431,26 @@ const modes: PermissionMode[] = ["manual", "accept-edits", "bypass-permissions"]
 
 /**
  * How much finx may do without asking (the approval mode), named as it is.
- * Switching into bypass-permissions asks first, every time it is switched on:
+ * Switching into Full Access (bypass-permissions) asks first, every time it is switched on:
  * agreeing switches, refusing keeps the mode. Staying in it asks nothing more.
  */
 function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange: (m: PermissionMode) => void }) {
+  const { t } = useTranslation("session");
+  return (
+    <MenuButton className="mb" title={t("composer.permission")} label={<><Icon name="shield" /><span className="lbl">{permissionTitle(value)}</span></>}>
+      {(close) => <PermissionItems value={value} onChange={onChange} close={close} />}
+    </MenuButton>
+  );
+}
+
+/** The permission modes as a menu's items, wherever the button that opens them is. */
+export function PermissionItems({ value, onChange, close, bypassNote }: {
+  value: PermissionMode;
+  onChange: (m: PermissionMode) => void;
+  close: () => void;
+  /** What else the question before Full Access has to say here. */
+  bypassNote?: string;
+}) {
   const { t } = useTranslation("session");
   const st = useStore();
   const choose = (m: PermissionMode) => {
@@ -430,7 +459,7 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
       sheet: {
         kind: "confirm",
         title: t("bypass.title"),
-        message: t("bypass.body"),
+        message: bypassNote ? `${t("bypass.body")}${bypassNote}` : t("bypass.body"),
         button: t("bypass.agree"),
         cancel: t("bypass.refuse"),
         run: async () => onChange(m),
@@ -438,13 +467,11 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
     });
   };
   return (
-    <MenuButton className="mb" title={t("composer.permission")} label={<><Icon name="shield" /><span className="lbl">{permissionTitle(value)}</span></>}>
-      {(close) =>
-        modes.map((m) => (
-          <MenuItem key={m} checked={m === value} label={permissionTitle(m)} desc={permissionDesc(m)} onClick={() => (close(), choose(m))} />
-        ))
-      }
-    </MenuButton>
+    <>
+      {modes.map((m) => (
+        <MenuItem key={m} checked={m === value} label={permissionTitle(m)} desc={permissionDesc(m)} onClick={() => (close(), choose(m))} />
+      ))}
+    </>
   );
 }
 
@@ -458,26 +485,11 @@ function PermissionPicker({ value, onChange }: { value: PermissionMode; onChange
  * takes the level that model starts with, and says so (model-catalog-design
  * §18). Choosing a model whose key is missing asks for the key (§8.4).
  */
-function ModelPicker({ settings: { model, thinking, models, onModel, onThinking } }: { settings: Settings }) {
+function ModelPicker({ settings }: { settings: Settings }) {
   const { t } = useTranslation("session");
-  const st = useStore();
-  const current = model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
-  const entry = models.models.find((m) => m.id === current);
-  const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
+  const { thinking, models, onThinking } = settings;
+  const { current, levels, title, choose } = useModelSwitch(settings);
   const thinks = levels.length > 0;
-  // A name another provider's model in the menu has too says whose it is.
-  const twin = entry && models.models.some((m) => m.shown && m.id !== entry.id && m.name === entry.name);
-  const title = current ? modelTitle(current, models) + (twin ? ` · ${models.providers.find((p) => p.id === entry.provider)?.name ?? entry.provider}` : "") : t("composer.model");
-  const choose = (id: string, provider: string, available: boolean) => {
-    const next = models.models.find((m) => m.id === id);
-    // A session's switch follows the kernel's rule, which thinkingFor mirrors.
-    const after = onModel(id) ?? thinkingFor(next, thinking);
-    // A level chosen on purpose that the new model lacks: say what it became.
-    if (id !== current && next && thinking !== "default" && after !== thinking) {
-      st.show(t("composer.thinkingChanged", { model: next.name, from: thinkingTitle(thinking), to: thinkingTitle(after) }));
-    }
-    if (!available) window.dispatchEvent(new CustomEvent(keyEvent, { detail: provider }));
-  };
   return (
     <MenuButton
       className="mb"
@@ -495,11 +507,7 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
           {thinks && (
             <>
               <SubMenuItem label={t("composer.thinking")} value={thinkingTitle(thinking)} title={t("composer.thinking")}>
-                <MenuItem checked={thinking === "default"} label={thinkingTitle("default")} value={t("composer.thinkingDefault")} onClick={() => (close(), onThinking("default"))} />
-                <div className="msep" role="separator" />
-                {levels.map((l) => (
-                  <MenuItem key={l} checked={l === thinking} label={thinkingTitle(l)} onClick={() => (close(), onThinking(l))} />
-                ))}
+                <ThinkingItems thinking={thinking} levels={levels} onThinking={onThinking} close={close} />
               </SubMenuItem>
               <div className="msep" role="separator" />
             </>
@@ -509,6 +517,48 @@ function ModelPicker({ settings: { model, thinking, models, onModel, onThinking 
       )}
     </MenuButton>
   );
+}
+
+/** "default" (the provider decides) and the provider's own levels for this model. */
+export function ThinkingItems({ thinking, levels, onThinking, close }: { thinking: ThinkingLevel; levels: ThinkingLevel[]; onThinking: (l: ThinkingLevel) => void; close: () => void }) {
+  const { t } = useTranslation("session");
+  return (
+    <>
+      <MenuItem checked={thinking === "default"} label={thinkingTitle("default")} value={t("composer.thinkingDefault")} onClick={() => (close(), onThinking("default"))} />
+      <div className="msep" role="separator" />
+      {levels.map((l) => (
+        <MenuItem key={l} checked={l === thinking} label={thinkingTitle(l)} onClick={() => (close(), onThinking(l))} />
+      ))}
+    </>
+  );
+}
+
+/** The model chosen, else the one finx would start with. */
+export function shownModel(model: string | null, models: Settings["models"]): string | null {
+  return model ?? models.defaults?.model ?? models.models[0]?.id ?? null;
+}
+
+/** The model shown, the levels it offers, and switching to another: wherever a model is chosen. */
+export function useModelSwitch({ model, thinking, models, onModel }: Pick<Settings, "model" | "thinking" | "models" | "onModel">) {
+  const { t } = useTranslation("session");
+  const st = useStore();
+  const current = shownModel(model, models);
+  const entry = models.models.find((m) => m.id === current);
+  const levels: ThinkingLevel[] = entry?.thinking_levels ?? [];
+  // A name another provider's model in the menu has too says whose it is.
+  const twin = entry && models.models.some((m) => m.shown && m.id !== entry.id && m.name === entry.name);
+  const title = current ? modelTitle(current, models) + (twin ? ` · ${models.providers.find((p) => p.id === entry.provider)?.name ?? entry.provider}` : "") : t("composer.model");
+  const choose = (id: string, provider: string, available: boolean) => {
+    const next = models.models.find((m) => m.id === id);
+    // A session's switch follows the kernel's rule, which thinkingFor mirrors.
+    const after = onModel(id) ?? thinkingFor(next, thinking);
+    // A level chosen on purpose that the new model lacks: say what it became.
+    if (id !== current && next && thinking !== "default" && after !== thinking) {
+      st.show(t("composer.thinkingChanged", { model: next.name, from: thinkingTitle(thinking), to: thinkingTitle(after) }));
+    }
+    if (!available) window.dispatchEvent(new CustomEvent(keyEvent, { detail: provider }));
+  };
+  return { current, levels, title, choose };
 }
 
 /** Where a new session works: the last projects, a folder picked from the system's dialog, or no project. */

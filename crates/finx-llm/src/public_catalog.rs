@@ -24,13 +24,32 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(10);
 /// Catalog ids with a compiled-in snapshot; the built-in providers' `catalog_id`s.
 const EMBEDDED: &[(&str, &str)] = &[
     ("alibaba-cn", include_str!("../catalog/public/alibaba-cn.json")),
+    ("alibaba-token-plan-cn", include_str!("../catalog/public/alibaba-token-plan-cn.json")),
     ("anthropic", include_str!("../catalog/public/anthropic.json")),
     ("deepseek", include_str!("../catalog/public/deepseek.json")),
+    ("google", include_str!("../catalog/public/google.json")),
+    ("minimax-cn", include_str!("../catalog/public/minimax-cn.json")),
     ("moonshotai-cn", include_str!("../catalog/public/moonshotai-cn.json")),
     ("openai", include_str!("../catalog/public/openai.json")),
     ("openrouter", include_str!("../catalog/public/openrouter.json")),
+    ("tencent-token-plan", include_str!("../catalog/public/tencent-token-plan.json")),
+    ("tencent-tokenhub", include_str!("../catalog/public/tencent-tokenhub.json")),
+    ("volcengine-coding-plan", include_str!("../catalog/public/volcengine-coding-plan.json")),
+    ("xai", include_str!("../catalog/public/xai.json")),
+    ("xiaomi", include_str!("../catalog/public/xiaomi.json")),
+    ("zai-coding-plan", include_str!("../catalog/public/zai-coding-plan.json")),
     ("zhipuai", include_str!("../catalog/public/zhipuai.json")),
+    ("zhipuai-coding-plan", include_str!("../catalog/public/zhipuai-coding-plan.json")),
 ];
+
+include!("../catalog/makers.rs");
+include!(concat!(env!("OUT_DIR"), "/maker-ids.rs"));
+
+/// Whether a maker's snapshot compiled into this build has the model a channel calls `id`.
+pub fn compiled_maker_has(id: &str) -> bool {
+    let known = |name: &str| MAKER_NAME_HASHES.binary_search(&model_name_hash(name)).is_ok();
+    known(id) || known(bare_name(id))
+}
 
 /// One provider's models as the public catalog describes them.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -45,6 +64,21 @@ impl PublicProvider {
     pub fn model(&self, id: &str) -> Option<&PublicModel> {
         self.models.iter().find(|m| m.id == id)
     }
+
+    /// The row of a model as another channel calls it (see [`same_model`]).
+    pub fn model_named(&self, id: &str) -> Option<&PublicModel> {
+        self.models.iter().find(|m| same_model(&m.id, id))
+    }
+}
+
+/// Whether a maker's row describes the model a channel calls `id`. Channels differ in case and in
+/// a maker's prefix: `minimax-m3` is `MiniMax-M3`, `deepseek/deepseek-flash` is `deepseek-flash`.
+pub fn same_model(row: &str, id: &str) -> bool {
+    row.eq_ignore_ascii_case(id) || row.eq_ignore_ascii_case(bare_name(id))
+}
+
+fn bare_name(id: &str) -> &str {
+    id.rsplit_once('/').map_or(id, |(_, name)| name)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -110,28 +144,45 @@ pub enum ReasoningOption {
     },
 }
 
-/// Projects the upstream catalog to the providers in `ids`. Fails whole: a catalog that does not
-/// project is not taken.
-pub fn project(raw: &Value, ids: &[&str], fetched_at: &str) -> Result<BTreeMap<String, PublicProvider>, String> {
+/// The upstream catalog, projected to some providers.
+#[derive(Debug, Default)]
+pub struct Projection {
+    pub providers: BTreeMap<String, PublicProvider>,
+    /// What stopped the others: one that does not project is not taken, the rest still are, so
+    /// an unknown `catalog_id` in models.toml costs only its own provider.
+    pub failed: Vec<String>,
+}
+
+/// Projects the upstream catalog to the providers in `ids`. Fails when it is not a catalog.
+pub fn project(raw: &Value, ids: &[&str], fetched_at: &str) -> Result<Projection, String> {
     let root = raw.as_object().ok_or("the catalog is not a JSON object")?;
-    let mut out = BTreeMap::new();
+    let mut out = Projection::default();
     for id in ids {
-        let provider = root.get(*id).ok_or_else(|| format!("provider '{id}' is missing"))?;
-        let models = provider
-            .get("models")
-            .and_then(Value::as_object)
-            .ok_or_else(|| format!("provider '{id}' has no models object"))?;
-        let mut list = Vec::with_capacity(models.len());
-        for (key, model) in models {
-            list.push(project_model(key, model).map_err(|e| format!("{id}/{key}: {e}"))?);
+        match project_provider(root, id, fetched_at) {
+            Ok(provider) => {
+                out.providers.insert(id.to_string(), provider);
+            }
+            Err(error) => out.failed.push(error),
         }
-        list.sort_by(|a, b| a.id.cmp(&b.id));
-        out.insert(
-            id.to_string(),
-            PublicProvider { provider: id.to_string(), fetched_at: fetched_at.to_string(), models: list },
-        );
+    }
+    if out.providers.is_empty() && !out.failed.is_empty() {
+        return Err(out.failed.join("; "));
     }
     Ok(out)
+}
+
+fn project_provider(root: &serde_json::Map<String, Value>, id: &str, fetched_at: &str) -> Result<PublicProvider, String> {
+    let provider = root.get(id).ok_or_else(|| format!("provider '{id}' is missing"))?;
+    let models = provider
+        .get("models")
+        .and_then(Value::as_object)
+        .ok_or_else(|| format!("provider '{id}' has no models object"))?;
+    let mut list = Vec::with_capacity(models.len());
+    for (key, model) in models {
+        list.push(project_model(key, model).map_err(|e| format!("{id}/{key}: {e}"))?);
+    }
+    list.sort_by(|a, b| a.id.cmp(&b.id));
+    Ok(PublicProvider { provider: id.to_string(), fetched_at: fetched_at.to_string(), models: list })
 }
 
 fn project_model(key: &str, m: &Value) -> Result<PublicModel, String> {
@@ -332,6 +383,19 @@ pub fn load_one(dir: Option<&Path>, catalog_id: &str, model_id: &str) -> Option<
         .and_then(|line| serde_json::from_str(line.trim_end_matches(',')).ok())
 }
 
+/// The row of a maker as a channel calls the model, parsing only its line.
+pub fn load_named(dir: Option<&Path>, catalog_id: &str, model_id: &str) -> Option<PublicModel> {
+    let text = newer_text(dir, catalog_id)?;
+    text.lines()
+        .skip(1)
+        .find(|line| {
+            line.strip_prefix("{\"id\":\"")
+                .and_then(|rest| rest.split_once('"'))
+                .is_some_and(|(row, _)| same_model(row, model_id))
+        })
+        .and_then(|line| serde_json::from_str(line.trim_end_matches(',')).ok())
+}
+
 /// What the service remembers between refreshes.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct RefreshState {
@@ -370,8 +434,11 @@ pub async fn refresh(http: &reqwest::Client, url: &str, dir: &Path, ids: &[&str]
     let raw: Value = serde_json::from_slice(&body)
         .map_err(|e| LlmError::new(ErrorKind::Protocol, format!("the model catalog is not JSON: {e}")))?;
     let projected = project(&raw, ids, &now).map_err(|e| LlmError::new(ErrorKind::Protocol, e))?;
+    for failure in &projected.failed {
+        tracing::warn!(%failure, "a provider of the model catalog was not refreshed");
+    }
     let mut changed = false;
-    for (id, provider) in projected {
+    for (id, provider) in projected.providers {
         let current = load(Some(dir), &id);
         if current.as_ref().map(|c| &c.models) != Some(&provider.models) {
             changed = true;
@@ -413,7 +480,7 @@ mod tests {
 
     #[test]
     fn projects_the_fields_finx_uses() {
-        let out = project(&sample(), &["deepseek"], "2026-10-30T00:00:00Z").unwrap();
+        let out = project(&sample(), &["deepseek"], "2026-10-30T00:00:00Z").unwrap().providers;
         let p = &out["deepseek"];
         assert_eq!(p.models.iter().map(|m| m.id.as_str()).collect::<Vec<_>>(), ["deepseek-embed", "deepseek-flash", "old"]);
         let flash = p.model("deepseek-flash").unwrap();
@@ -436,7 +503,8 @@ mod tests {
     }
 
     #[test]
-    fn refuses_a_catalog_that_does_not_project() {
+    fn a_provider_that_does_not_project_costs_only_itself() {
+        assert!(project(&json!([]), &["deepseek"], "t").is_err(), "not a catalog");
         assert!(project(&sample(), &["missing"], "t").unwrap_err().contains("missing"));
         let mut bad = sample();
         bad["deepseek"]["models"]["deepseek-flash"]["limit"]["context"] = json!("lots");
@@ -444,11 +512,40 @@ mod tests {
         let mut bad_id = sample();
         bad_id["deepseek"]["models"]["x"] = json!({"id": "has space"});
         assert!(project(&bad_id, &["deepseek"], "t").is_err());
+        // Among others, it is reported and the rest are taken.
+        let some = project(&sample(), &["deepseek", "missing", "other"], "t").unwrap();
+        assert_eq!(some.providers.keys().collect::<Vec<_>>(), ["deepseek", "other"]);
+        assert!(some.failed.len() == 1 && some.failed[0].contains("missing"));
+    }
+
+    #[test]
+    fn a_maker_row_is_found_as_a_channel_calls_the_model() {
+        for (row, id) in [("MiniMax-M3", "minimax-m3"), ("deepseek-flash", "deepseek/deepseek-flash"), ("glm-5.3", "z-ai/GLM-5.3"), ("auto", "auto")] {
+            assert!(same_model(row, id), "{row} {id}");
+        }
+        assert!(!same_model("deepseek-flash", "deepseek"), "a prefix of the name is not the name");
+        assert!(!same_model("glm-5.3", "glm-5.3-flash"));
+        let line = load_named(None, "minimax-cn", "minimax-m3").expect("a line of the snapshot");
+        assert_eq!(line.id, "MiniMax-M3");
+        assert_eq!(load_named(None, "minimax-cn", "nope"), None);
+        let parsed = load(None, "minimax-cn").unwrap();
+        assert_eq!(parsed.model_named("minimax-m3").map(|m| m.id.as_str()), Some("MiniMax-M3"));
+    }
+
+    #[test]
+    fn the_compiled_index_answers_as_the_rows_do() {
+        for maker in MAKERS {
+            for model in load(None, maker).unwrap().models {
+                assert!(compiled_maker_has(&model.id), "{}", model.id);
+            }
+        }
+        assert!(compiled_maker_has("deepseek/deepseek-flash") && compiled_maker_has("minimax-m3"));
+        assert!(!compiled_maker_has("mock-1") && !compiled_maker_has("auto") && !compiled_maker_has("flash"));
     }
 
     #[test]
     fn files_round_trip_and_the_newer_copy_wins() {
-        let out = project(&sample(), &["deepseek"], "2099-01-01T00:00:00Z").unwrap();
+        let out = project(&sample(), &["deepseek"], "2099-01-01T00:00:00Z").unwrap().providers;
         let text = to_file(&out["deepseek"]);
         assert_eq!(header_time(&text), Some("2099-01-01T00:00:00Z"));
         assert_eq!(serde_json::from_str::<PublicProvider>(&text).unwrap(), out["deepseek"]);
@@ -456,7 +553,7 @@ mod tests {
         std::fs::write(dir.path().join("deepseek.json"), &text).unwrap();
         assert_eq!(load(Some(dir.path()), "deepseek").unwrap().models.len(), 3);
         // An older local copy loses to the compiled-in snapshot.
-        let old = project(&sample(), &["deepseek"], "2000-01-01T00:00:00Z").unwrap();
+        let old = project(&sample(), &["deepseek"], "2000-01-01T00:00:00Z").unwrap().providers;
         std::fs::write(dir.path().join("deepseek.json"), to_file(&old["deepseek"])).unwrap();
         let loaded = load(Some(dir.path()), "deepseek").unwrap();
         assert_ne!(loaded.fetched_at, "2000-01-01T00:00:00Z");
@@ -464,7 +561,7 @@ mod tests {
 
     #[test]
     fn one_model_is_read_from_its_line() {
-        let out = project(&sample(), &["deepseek"], "2099-01-01T00:00:00Z").unwrap();
+        let out = project(&sample(), &["deepseek"], "2099-01-01T00:00:00Z").unwrap().providers;
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("deepseek.json"), to_file(&out["deepseek"])).unwrap();
         for model in &out["deepseek"].models {

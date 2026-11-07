@@ -199,6 +199,8 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         mcp_servers: Vec::new(),
         browser_pool: Some(Arc::new(BrowserPool::new(home.browser_dir(), false))),
         docs: None,
+        decks: None,
+        routines: None,
     };
     let options = StartOptions {
         model: "test/scripted".into(),
@@ -210,6 +212,7 @@ async fn harness_config(mode: PermissionMode, interactive: bool, sites: &[(&str,
         project_root: None,
         trusted: true,
         interactive_approvals: interactive,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps).await.unwrap();
     Some(Harness {
@@ -671,6 +674,42 @@ async fn a_sub_agents_tabs_close_when_it_reports_and_the_main_sessions_stay() {
     h.kernel.shutdown().await;
 }
 
+#[tokio::test]
+async fn a_sub_agent_asks_for_a_site_and_the_grant_holds_for_the_tree() {
+    let Some(mut h) = harness(PermissionMode::Manual, true, &[]).await else {
+        return;
+    };
+    let login = format!("{}/login", h.origin);
+    h.api.push(Script::tool_call("c1", "spawn_agent", json!({ "description": "open the page", "task": "open the page", "name": "web", "wait": true })));
+    h.api.push(Script::tool_call("k1", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("opened it"));
+    // The site is allowed now: the main session opens it without asking.
+    h.api.push(Script::tool_call("c2", "browser_navigate", json!({ "url": login })));
+    h.api.push(Script::text("done"));
+    h.kernel.submit(Op::prompt("go")).await.unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::AgentEvent { event, .. } if matches!(event.msg, EventMsg::ApprovalRequested { .. }))).await;
+    let EventMsg::AgentEvent { agent_id, event } = &events.last().unwrap().msg else {
+        unreachable!()
+    };
+    let EventMsg::ApprovalRequested { call_id, proposed_grants, .. } = &event.msg else {
+        unreachable!()
+    };
+    assert_eq!(proposed_grants[0].origin, h.origin);
+    h.kernel
+        .submit(Op::AgentApproval {
+            agent: agent_id.clone(),
+            call_id: call_id.clone(),
+            decision: ApprovalDecision::ApproveForSession { grant: Some(0), persist: false },
+        })
+        .await
+        .unwrap();
+    let events = until(&mut h.kernel, |m| matches!(m, EventMsg::TaskCompleted { .. })).await;
+    assert!(!asked(&events), "the main session was not asked");
+    let page = last_results(&h.api).pop().unwrap();
+    assert!(page.contains("Sign in"), "{page}");
+    h.kernel.shutdown().await;
+}
+
 /// The browser settings as the user configuration file has them now, as the service hands them
 /// to an open session when the file changes (connectors-entry-design §9.4).
 fn settings_from(file: &Path) -> finx_core::SystemSettings {
@@ -705,9 +744,11 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     };
     h.api.push(Script::text("no browser yet"));
     run(&mut h.kernel, "hello").await;
-    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_") || n == "call_tool"), "{:?}", tool_names(&h.api));
-    let frozen = h.api.requests().last().unwrap().system.clone();
-    assert!(!frozen.contains("- browser:"), "no browser group yet");
+    assert!(!tool_names(&h.api).iter().any(|n| n.starts_with("browser_")), "{:?}", tool_names(&h.api));
+    let system = h.api.requests().last().unwrap().system.clone();
+    assert!(!system.contains("- browser:"), "no browser group yet");
+    // The catalog comes after what is frozen; the agents' group and web search are in it already.
+    let frozen = system.split("<deferred_tools>").next().unwrap().to_string();
 
     rewrite(&h.config, "enabled = false", "enabled = true");
     assert!(h.kernel.set_system_connectors(settings_from(&h.config)), "the settings changed");
@@ -721,8 +762,9 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     let names: Vec<&str> = first.tools.iter().map(|t| t.name.as_str()).collect();
     assert!(names.contains(&"tool_search") && names.contains(&"call_tool"), "{names:?}");
     assert!(!names.iter().any(|n| n.starts_with("browser_")), "deferred, not in the list: {names:?}");
-    assert!(first.system.starts_with(frozen.trim_end()), "the frozen part stays as it was");
+    assert!(first.system.starts_with(&frozen), "the frozen part stays as it was");
     assert!(first.system.contains("- browser:"), "the catalog lists the group");
+    assert!(first.system.contains("- agents:"), "the sub-agents' group stays through the rebuild");
     let search = &h.api.requests()[2];
     let found = search
         .messages
@@ -744,6 +786,7 @@ async fn the_browser_turned_on_and_off_while_a_session_is_open() {
     h.api.push(Script::text("closed"));
     run(&mut h.kernel, "and now").await;
     assert!(!h.api.requests().last().unwrap().system.contains("- browser:"), "the group is gone");
+    assert!(h.api.requests().last().unwrap().system.contains("- agents:"));
     tokio::time::sleep(Duration::from_millis(500)).await;
     assert!(!beating(&origin, "on-off", Duration::from_millis(1500)).await, "its tab closed");
     h.kernel.shutdown().await;

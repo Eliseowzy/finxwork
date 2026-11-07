@@ -48,7 +48,7 @@ jobs:
         run: |
           cargo build --profile dist --target x86_64-unknown-linux-musl -p finx-cli --bin finx
           cc -O2 -Wall -Wextra -Werror tools/bench/startup_launcher.c -o target/startup-launcher
-      - name: Gate local commands at 2 ms mean
+      - name: Gate local commands on page faults and their fastest run
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: bash tools/kernel-simulation.sh cli-startup
       - name: Measure real task startup separately

@@ -131,9 +131,40 @@ impl FinxHome {
     /// Whether `cwd` (canonical, as sessions keep it) is one of those folders, or the folder
     /// that holds them: a session there has no project.
     pub fn is_chat_dir(&self, cwd: &Path) -> bool {
-        let chats = self.chats_dir();
-        let chats = std::fs::canonicalize(&chats).unwrap_or(chats);
+        let chats = canonical(self.chats_dir());
         cwd == chats || cwd.parent() == Some(chats.as_path())
+    }
+
+    /// `bots/`: each bot's identity and working folder (bot-design §2.1).
+    pub fn bots_dir(&self) -> PathBuf {
+        self.root.join("bots")
+    }
+
+    pub fn bot_dir(&self, id: &str) -> PathBuf {
+        self.bots_dir().join(id)
+    }
+
+    /// A bot's working folder, where what it makes stays.
+    pub fn bot_files_dir(&self, id: &str) -> PathBuf {
+        self.bot_dir(id).join("files")
+    }
+
+    /// Whether a session in `cwd` (canonical) has no project: one started without a project,
+    /// or a bot's. Neither looks for a project around its folder.
+    pub fn has_no_project(&self, cwd: &Path) -> bool {
+        self.is_chat_dir(cwd) || self.is_bot_files_dir(cwd)
+    }
+
+    /// `cwd` (canonical) when it is a session's own folder in the data directory: one of
+    /// `chats/`, or a bot's `files/`. What is written there is the user's, not finx's data.
+    pub fn private_folder(&self, cwd: &Path) -> Option<PathBuf> {
+        let chats = canonical(self.chats_dir());
+        (cwd.parent() == Some(chats.as_path()) || self.is_bot_files_dir(cwd)).then(|| cwd.to_path_buf())
+    }
+
+    fn is_bot_files_dir(&self, cwd: &Path) -> bool {
+        let bots = canonical(self.bots_dir());
+        cwd.file_name().is_some_and(|name| name == "files") && cwd.parent().and_then(Path::parent) == Some(bots.as_path())
     }
 
 
@@ -160,6 +191,11 @@ impl FinxHome {
     }
 }
 
+/// `dir` canonical when it exists, as sessions keep their folders.
+fn canonical(dir: PathBuf) -> PathBuf {
+    std::fs::canonicalize(&dir).unwrap_or(dir)
+}
+
 /// `<name>-<8 hex digits>`: the directory's name, made safe and at most 40 characters, and the
 /// start of the SHA-256 of its full path, so two projects of the same name stay apart.
 pub fn project_key(project_dir: &Path) -> String {
@@ -175,4 +211,31 @@ pub fn project_key(project_dir: &Path) -> String {
     let digest = ring::digest::digest(&ring::digest::SHA256, project_dir.as_os_str().as_encoded_bytes());
     let hex: String = digest.as_ref()[..4].iter().map(|b| format!("{b:02x}")).collect();
     if name.is_empty() { format!("project-{hex}") } else { format!("{name}-{hex}") }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn private_folders_are_a_sessions_own_folder_in_the_data_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = FinxHome::new(dir.path().canonicalize().unwrap());
+        let chat = home.new_chat_dir().unwrap().canonicalize().unwrap();
+        let bot = home.bot_files_dir("b1");
+        std::fs::create_dir_all(&bot).unwrap();
+        let bot = bot.canonicalize().unwrap();
+        for own in [&chat, &bot] {
+            assert!(home.has_no_project(own));
+            assert_eq!(home.private_folder(own).as_deref(), Some(own.as_path()));
+        }
+        // The folder that holds the chats has no project either, but is nobody's own folder.
+        let chats = home.chats_dir().canonicalize().unwrap();
+        assert!(home.has_no_project(&chats));
+        assert_eq!(home.private_folder(&chats), None);
+        for other in [home.root().to_path_buf(), home.bot_dir("b1").canonicalize().unwrap(), chat.join("sub")] {
+            assert!(!home.has_no_project(&other), "{}", other.display());
+            assert_eq!(home.private_folder(&other), None, "{}", other.display());
+        }
+    }
 }

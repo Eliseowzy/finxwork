@@ -4,8 +4,8 @@
 //! Protocol reference: crates/finx-connections/licenses/README.md.
 use super::Target;
 use finx_llm::{
-    Message, RequestOptions, ThinkingLevel, ToolChoice, WireRequest,
-    api::openai_chat,
+    Message, RequestOptions, ThinkingLevel, ToolChoice, WireRequest, api::openai_chat,
+    model::REQUEST_MAX_OUTPUT_TOKENS,
 };
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -20,7 +20,12 @@ pub(crate) struct Ids {
 
 pub(crate) fn ids(req: &WireRequest) -> Ids {
     let ctx = &req.context;
-    let session = match req.options.cache_key.as_deref().filter(|k| !k.trim().is_empty()) {
+    let session = match req
+        .options
+        .cache_key
+        .as_deref()
+        .filter(|k| !k.trim().is_empty())
+    {
         Some(key) => uuid_of(&["key", key]),
         None => {
             let first = ctx.messages.iter().find_map(|m| match m {
@@ -57,7 +62,12 @@ pub(crate) fn build(req: &WireRequest, target: &Target, ids: &Ids, request: &str
     parameters.insert("enable_thinking".into(), json!(enable_thinking));
     parameters.insert(
         "max_tokens".into(),
-        json!(req.options.max_output_tokens.unwrap_or_else(|| req.model.default_max_output())),
+        json!(
+            req.options
+                .max_output_tokens
+                .or_else(|| req.model.default_max_output())
+                .unwrap_or(REQUEST_MAX_OUTPUT_TOKENS)
+        ),
     );
     if thinking.is_effort() {
         parameters.insert("reasoning_effort".into(), json!(thinking.as_str()));
@@ -132,11 +142,18 @@ fn turns(req: &WireRequest) -> Vec<Value> {
         messages: req.context.messages.clone(),
         tools: Vec::new(),
     };
-    let converted: Value =
-        serde_json::from_slice(&openai_chat::build_body(&Arc::new(model), &context, &options))
-            .unwrap_or_default();
+    let converted: Value = serde_json::from_slice(&openai_chat::build_body(
+        &Arc::new(model),
+        &context,
+        &options,
+    ))
+    .unwrap_or_default();
     let mut out = Vec::new();
-    for mut message in converted["messages"].as_array().cloned().unwrap_or_default() {
+    for mut message in converted["messages"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+    {
         match message["role"].as_str() {
             Some("system" | "developer") | None => continue,
             Some("user") => {
@@ -182,6 +199,16 @@ fn uuid_of(parts: &[&str]) -> String {
         context.update(&[0]);
     }
     let digest = context.finish();
-    let h: String = digest.as_ref()[..16].iter().map(|b| format!("{b:02x}")).collect();
-    format!("{}-{}-{}-{}-{}", &h[..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+    let h: String = digest.as_ref()[..16]
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &h[..8],
+        &h[8..12],
+        &h[12..16],
+        &h[16..20],
+        &h[20..32]
+    )
 }

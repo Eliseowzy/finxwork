@@ -53,6 +53,9 @@ pub struct SessionView {
     pub env: Arc<dyn Environment>,
     /// finx's own data directory (canonical), which is protected like `.git`.
     pub data_dir: PathBuf,
+    /// The session's own folder inside the data directory (canonical), which is not: a
+    /// session's without a project, or a bot's (bot-design §2.5).
+    pub own_folder: Option<PathBuf>,
     /// Configured skill paths (canonical). What is written there becomes instructions for
     /// later sessions, so they are protected like `.agents`.
     pub skill_roots: Arc<[PathBuf]>,

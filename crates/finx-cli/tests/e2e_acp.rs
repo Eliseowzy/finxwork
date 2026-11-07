@@ -136,6 +136,31 @@ fn handle(client: &Client, incoming: &Incoming, turn: &mut Turn, option: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_prompt_at_the_size_limit_goes_through_and_one_over_it_gets_its_answer() {
+    let env = TestEnv::new("manual", "[server]\nmax_frame_bytes = 65536\n").await;
+    let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
+    init(&client).await;
+    let cwd = env.workspace("acp");
+    let (session, _, _) = new_session(&client, &mut rx, &cwd).await;
+
+    let (turn, result) = prompt(&client, &mut rx, &session, &"x".repeat(65_000), "approve").await;
+    assert_eq!(result.unwrap()["stopReason"], "end_turn");
+    assert!(!turn.text.is_empty());
+
+    let params = json!({"sessionId": session, "prompt": [{"type": "text", "text": "x".repeat(66_000)}]});
+    let answer = tokio::time::timeout(common::WAIT, client.request("session/prompt", params));
+    let err = answer.await.expect("no answer").unwrap_err();
+    assert_eq!(err.code, finx_rpc::code::INVALID_REQUEST);
+    assert!(err.message.contains("65536"), "{}", err.message);
+
+    // The session goes on.
+    let (_, result) = prompt(&client, &mut rx, &session, "again", "approve").await;
+    assert_eq!(result.unwrap()["stopReason"], "end_turn");
+    drop(client);
+    assert_eq!(common::exit_code(&mut child).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn acp_runs_tools_with_permissions() {
     let env = TestEnv::new("manual", "").await;
     let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
@@ -183,6 +208,49 @@ async fn acp_runs_tools_with_permissions() {
 
     drop(client);
     assert_eq!(common::exit_code(&mut child).await, 0);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn acp_asks_the_client_what_a_sub_agent_asks() {
+    let env = TestEnv::new("manual", "").await;
+    let (mut child, client, mut rx) = env.spawn_rpc(&["acp"]);
+    init(&client).await;
+    let cwd = env.workspace("acp");
+    let (session, _, _) = new_session(&client, &mut rx, &cwd).await;
+
+    // The prompt is answered once the sub-agent is done, so the question comes before that.
+    let request = {
+        let client = client.clone();
+        let params = json!({"sessionId": session, "prompt": [{"type": "text", "text": "[[mock:delegate:touch made.txt]] run it"}]});
+        tokio::spawn(async move { client.request("session/prompt", params).await })
+    };
+    let mut asked = None;
+    let mut request = Box::pin(request);
+    let result = loop {
+        tokio::select! {
+            done = &mut request => break done.expect("prompt task"),
+            incoming = rx.recv() => {
+                let incoming = incoming.expect("connection closed");
+                check(&incoming);
+                if let Incoming::Request { id, method, params, .. } = &incoming && method == "session/request_permission" {
+                    assert!(asked.is_none(), "one question");
+                    assert!(!cwd.join("made.txt").exists());
+                    asked = Some(params.clone());
+                    client.respond(id, json!({"outcome": {"outcome": "selected", "optionId": "approve"}}));
+                }
+            }
+            _ = tokio::time::sleep(common::WAIT) => panic!("prompt timed out"),
+        }
+    };
+    assert_eq!(result.unwrap()["stopReason"], "end_turn");
+    let asked: Value = asked.expect("the client was asked");
+    let tool = &asked["toolCall"];
+    // Who asks shows, and its id is apart from the session's calls.
+    assert!(tool["toolCallId"].as_str().unwrap().starts_with("agent-"), "{tool}");
+    assert_eq!(tool["title"], "运行 touch made.txt: touch made.txt");
+    assert!(cwd.join("made.txt").exists());
+    drop(client);
+    common::exit_code(&mut child).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -380,7 +448,7 @@ async fn acp_rejects_what_it_does_not_support() {
     assert_eq!(err.kind(), Some("not_initialized"));
     init(&client).await;
     let err = client.request("authenticate", json!({"methodId": "x"})).await.unwrap_err();
-    assert_eq!(err.code, finx_rpc::code::METHOD_NOT_FOUND);
+    assert_eq!(err.code, -32602, "no such way to sign in");
     let (session, _, _) = new_session(&client, &mut rx, &env.workspace("audio")).await;
     let err = client
         .request("session/prompt", json!({"sessionId": session, "prompt": [{"type": "audio", "data": "AAAA", "mimeType": "audio/wav"}]}))

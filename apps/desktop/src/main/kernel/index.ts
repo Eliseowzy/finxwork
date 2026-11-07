@@ -10,7 +10,7 @@ import { testHome } from "../build";
 import { LineCutter } from "../frames";
 import { platform } from "../platform";
 import { startBrowserHost } from "../browser/host";
-import { Supervisor, type KernelStatus } from "./supervisor";
+import { Supervisor, type KernelStatus, type ListFollower } from "./supervisor";
 
 // The windows' connections to finx (desktop-design §3.2, desktop-kernel-
 // integration §3): each window gets a MessagePort whose other end is here,
@@ -57,7 +57,7 @@ function trace(message: string) {
 }
 
 /** Starts keeping finx running; the windows follow its state. */
-export function startKernel() {
+export function startKernel(lists?: ListFollower) {
   if (kernelKind !== "finx" || supervisor) return;
   const binary = kernelBinary();
   const endpoint = platform.kernelEndpoint(finxHome);
@@ -70,9 +70,10 @@ export function startKernel() {
     log: path.join(finxHome, "logs", "serve.out.log"),
     idleExitSecs: 600,
     client: { name: "finxwork-supervisor", version: app.getVersion() },
-    required: ["sessions_subscribe", "session_metadata", "transcript_task_end", "auth", "model_connections", "input_queue", "workbooks"],
+    required: ["sessions_subscribe", "session_metadata", "transcript_task_end", "auth", "model_connections", "input_queue", "message_resend", "workbooks"],
     starts: path.join(app.getPath("userData"), "kernel-starts.json"),
     trace,
+    lists,
   });
   supervisor.onChange((s) => {
     for (const win of BrowserWindow.getAllWindows()) win.webContents.send("kernel-state", view(s));

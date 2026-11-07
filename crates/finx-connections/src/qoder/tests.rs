@@ -1,5 +1,7 @@
-use super::*;
+// Live diagnostics report progress on stderr.
+#![allow(clippy::print_stderr)]
 use super::transport::Http;
+use super::*;
 use parking_lot::Mutex;
 use std::{
     collections::BTreeMap,
@@ -224,11 +226,13 @@ async fn live_qoder_connection() {
     assert!(c.models.iter().any(|m| m.id == "auto"));
     let provider = llm.provider(&c.provider_id).unwrap();
     assert_eq!(
-        provider.models.len(),
+        provider.listing.entries.len(),
         c.models.iter().filter(|m| supports_model(&m.id)).count()
     );
     let model_id = std::env::var("FINX_QODER_TEST_MODEL").unwrap_or_else(|_| "auto".into());
-    let model = provider.model(&model_id).expect("model must be published");
+    let model = llm
+        .lookup(&provider, &model_id)
+        .expect("model must be published");
     // Cantus rejects some general chat intents; validate its actual coding use case.
     let text_prompt = if model_id == "cmodel" {
         "Implement add(a,b) in Python. Start with the comment # FINX_QODER_RUST_OK."
@@ -393,13 +397,13 @@ async fn strict_transport_rejects_partial_and_malformed_tools_and_keeps_system()
         plan: None,
         id: "local-test".into(),
         name: "test".into(),
+        names: Default::default(),
         api: "openai-chat".into(),
         base_url: s.uri(),
         auth: AuthConfig::Managed,
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     for response in [
@@ -415,9 +419,12 @@ async fn strict_transport_rejects_partial_and_malformed_tools_and_keeps_system()
             )
             .mount(&s)
             .await;
+        // Qoder's catalog always gives a limit (capabilities.rs).
+        let mut model = provider.ad_hoc_model("auto");
+        model.max_output_tokens = Some(32_000);
         let events: Vec<_> = Http
             .stream(WireRequest {
-                model: Arc::new(provider.ad_hoc_model("auto")),
+                model: Arc::new(model),
                 credentials: Credentials::with_key("private".into()),
                 context: Arc::new(Context {
                     system: "finx system".into(),
@@ -473,13 +480,13 @@ async fn transport_surfaces_qoder_error_events_and_preserves_partial_content() {
         plan: None,
         id: "test".into(),
         name: "test".into(),
+        names: Default::default(),
         api: "openai-chat".into(),
         base_url: server.uri(),
         auth: finx_llm::AuthConfig::Managed,
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Default::default(),
-        models: vec![],
         listing: Default::default(),
     };
     let model = Arc::new(provider.ad_hoc_model("auto"));
@@ -537,6 +544,7 @@ async fn catalog_only_models_cannot_be_invoked_through_ad_hoc_references() {
         .map(|id| ConnectionModel {
             id: id.into(),
             name: id.into(),
+            names: Default::default(),
             context_window: None,
             max_output_tokens: None,
             reasoning: false,
@@ -572,8 +580,9 @@ async fn catalog_only_models_cannot_be_invoked_through_ad_hoc_references() {
         BTreeMap::from([("qoder".into(), Env::new() as Arc<dyn Environment>)]),
     );
     let provider = format!("local-{id}");
-    assert_eq!(llm.provider(&provider).unwrap().models.len(), 2);
-    assert!(llm.provider(&provider).unwrap().model("qfmodel").is_some());
+    let published = llm.provider(&provider).unwrap();
+    assert_eq!(published.listing.entries.len(), 2);
+    assert!(llm.lookup(&published, "qfmodel").is_some());
     assert!(
         manager
             .begin(&provider, "qfmodel", llm.http_client().unwrap())
@@ -718,7 +727,8 @@ async fn live_qoder_capability_matrix() {
     let filter = std::env::var("FINX_QODER_TEST_MODEL").ok();
     let mode = std::env::var("FINX_QODER_TEST_MODE").unwrap_or_default();
     let mut jobs = Vec::new();
-    for model in &provider.models {
+    let published = llm.directory().models(&provider);
+    for model in published.models.iter().map(|m| &m.model) {
         if filter.as_ref().is_some_and(|f| f != &model.id) {
             continue;
         }
@@ -784,7 +794,7 @@ async fn live_qoder_capability_matrix() {
             result
         }).await.unwrap_or_else(|_| json!({"status":"unknown", "reason":"timeout"}));
         let row = json!({"model":model.id, "probe":kind, "thinking":level,
-            "requested_max_tokens": if kind == "parameters" { model.default_max_output() } else {4096},
+            "requested_max_tokens": if kind == "parameters" { model.default_max_output() } else {Some(4096)},
             "requested_temperature": if kind == "parameters" { Some(if matches!(model.id.as_str(), "kmodel" | "kmodel_latest") {1.0} else {0.25}) } else {None},
             "elapsed_ms":start.elapsed().as_millis(), "observation":outcome});
         eprintln!("Qoder capability {} {} {}: {}", model.id, kind, level, outcome);
@@ -815,6 +825,7 @@ async fn capability_controls_preserve_images_and_only_caller_prompt_and_tools() 
         plan: None,
         id: "qoder-test".into(),
         name: "test".into(),
+        names: Default::default(),
         api: "openai-chat".into(),
         base_url: server.uri(),
         auth: AuthConfig::Managed,
@@ -824,7 +835,6 @@ async fn capability_controls_preserve_images_and_only_caller_prompt_and_tools() 
             thinking_format: crate::adapter::thinking_format("qoder"),
             ..Default::default()
         },
-        models: vec![],
         listing: Default::default(),
     };
     let mut model = provider.ad_hoc_model("qfmodel");
@@ -918,13 +928,13 @@ async fn disproven_off_control_fails_before_network_even_with_stale_catalog() {
         plan: None,
         id: "test".into(),
         name: "test".into(),
+        names: Default::default(),
         api: "openai-chat".into(),
         base_url: server.uri(),
         auth: AuthConfig::Managed,
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     for id in ["dmodel", "dfmodel"] {
@@ -968,13 +978,13 @@ async fn kimi_temperature_constraint_is_explicit_and_preserves_verified_values()
         plan: None,
         id: "test".into(),
         name: "test".into(),
+        names: Default::default(),
         api: "openai-chat".into(),
         base_url: server.uri(),
         auth: AuthConfig::Managed,
         headers: BTreeMap::new(),
         currency: Default::default(),
         compat: Compat::default(),
-        models: vec![],
         listing: Default::default(),
     };
     for id in ["kmodel", "kmodel_latest"] {
@@ -1024,20 +1034,27 @@ async fn kimi_temperature_constraint_is_explicit_and_preserves_verified_values()
 #[tokio::test]
 async fn authorization_errors_keep_stage_status_and_recovery_action() {
     for (status, code, retryable) in [
-        (400, "request_rejected", false), (401, "connection_login_required", false),
-        (403, "permission_denied", false), (429, "rate_limited", true),
+        (400, "request_rejected", false),
+        (401, "connection_login_required", false),
+        (403, "permission_denied", false),
+        (429, "rate_limited", true),
         (503, "service_unavailable", true),
     ] {
         let (s, _, mut q, http) = setup().await;
         Mock::given(path("/api/v1/me/jobToken"))
             .respond_with(ResponseTemplate::new(status).set_body_string("secret-do-not-expose"))
-            .mount(&s).await;
+            .mount(&s)
+            .await;
         let e = q.authorize(&http, false).await.err().unwrap();
         assert_eq!(e.code, code);
         assert_eq!(e.stage, "authorization");
         assert_eq!(e.http_status, Some(status));
         assert_eq!(e.retryable, retryable);
-        assert!(!serde_json::to_string(&e.diagnostic()).unwrap().contains("secret-do-not-expose"));
+        assert!(
+            !serde_json::to_string(&e.diagnostic())
+                .unwrap()
+                .contains("secret-do-not-expose")
+        );
     }
 }
 
@@ -1053,21 +1070,31 @@ async fn catalog_failure_is_distinct_from_authorization_and_auto_is_not_required
     ] {
         s.reset().await;
         Mock::given(path("/algo/api/v2/model/list"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(body)).mount(&s).await;
+            .respond_with(ResponseTemplate::new(200).set_body_string(body))
+            .mount(&s)
+            .await;
         let e = q.catalog(&http).await.unwrap_err();
         assert_eq!(e.code, expected);
         assert_eq!(e.stage, "catalog");
     }
     s.reset().await;
     Mock::given(path("/algo/api/v2/model/list"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({"app":[{"key":"fast","enable":true}]})))
-        .mount(&s).await;
+        .respond_with(
+            ResponseTemplate::new(200).set_body_json(json!({"app":[{"key":"fast","enable":true}]})),
+        )
+        .mount(&s)
+        .await;
     assert_eq!(q.catalog(&http).await.unwrap()[0].id, "fast");
 }
 
 #[test]
 fn job_and_source_diagnostics_identify_fields() {
-    let e = parse_job(&json!({"expires_in":90_000,"refresh_token_expires_in":180_000,"token":"abc"}), 0).err().unwrap();
+    let e = parse_job(
+        &json!({"expires_in":90_000,"refresh_token_expires_in":180_000,"token":"abc"}),
+        0,
+    )
+    .err()
+    .unwrap();
     assert_eq!(e.stage, "authorization");
     assert_eq!(e.field.as_deref(), Some("refresh_token"));
     let e = source_login(&json!({"schemaVersion":999})).err().unwrap();

@@ -33,7 +33,8 @@
     "mock": "Demo data · no kernel"
   },
   "model": {
-    "unavailable": "This model's connection is no longer available. Choose another model."
+    "unavailable": "This model's connection is no longer available. Choose another model.",
+    "none": "No model is connected yet. Connect one to get started."
   },
   "foot": {
     "label": "This computer and settings",
@@ -108,7 +109,9 @@
     "days_other": "{{count}} d",
     "pair": "{{big}} {{small}}",
     "daysAgo_one": "{{count}} day ago",
-    "daysAgo_other": "{{count}} days ago"
+    "daysAgo_other": "{{count}} days ago",
+    "tonight": "Tonight",
+    "tomorrow": "Tomorrow"
   },
   "steps": {
     "read": {
@@ -208,7 +211,7 @@
       "desc": "Changes files in the workspace without asking; asks before commands"
     },
     "bypass-permissions": {
-      "title": "Bypass Permissions",
+      "title": "Full Access",
       "desc": "Runs everything without asking, except deny rules, ask rules and deleting critical paths"
     }
   },
@@ -248,7 +251,8 @@
     "context_overflow": "Compact the context or start a new session.",
     "content_filtered": "Rephrase the request, or switch models.",
     "retryable": "Retry in a moment.",
-    "unknown": "Retry, or look at the details."
+    "unknown": "Retry, or look at the details.",
+    "no_reply": "The model ended its turn without sending you anything. Retry, or try another model."
   },
   "search": {
     "title": "Search Sessions",

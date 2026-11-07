@@ -34,11 +34,17 @@ pub use transport::default_socket_path;
 pub use transport::serve_stdio;
 pub use transport::serve_unix;
 
+mod bots;
 mod browser_host;
 mod browser_status;
 mod connections;
 mod customize;
+mod db;
+mod decks;
 mod docs;
 mod files;
 mod models;
 mod peer;
+mod routines;
+mod schedule;
+mod web_search;

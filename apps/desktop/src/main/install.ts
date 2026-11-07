@@ -1,6 +1,6 @@
 import { app, dialog } from "electron";
 import { i18n } from "../shared/i18n";
-import { testHome } from "./build";
+import { isolatedRun } from "./build";
 import { preferences, setPreferences } from "./preferences";
 
 // Where the app lives (desktop-release §5). A packaged Mac app outside the
@@ -11,8 +11,7 @@ import { preferences, setPreferences } from "./preferences";
 
 /** True when the app is moving: Electron quits and opens the moved copy, so the caller starts nothing. */
 export async function offerToMove(): Promise<boolean> {
-  const isolated = !!(process.env.FINXWORK_USER_DATA || process.env.FINX_HOME || testHome);
-  if (!app.isPackaged || process.platform !== "darwin" || isolated || app.isInApplicationsFolder() || preferences().moveDeclined) return false;
+  if (!app.isPackaged || process.platform !== "darwin" || isolatedRun() || app.isInApplicationsFolder() || preferences().moveDeclined) return false;
   const t = i18n.getFixedT(null, "main", "move");
   const r = await dialog.showMessageBox({
     type: "question",

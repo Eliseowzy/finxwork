@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Build first: cargo build -p finx-cli; pnpm --filter @finx/desktop build
 // Exercises the real Electron UI and kernel with the local OAuth/Responses fixture.
+import { cdpPort } from "./lib/port.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -9,7 +10,7 @@ import path from "node:path";
 import { fixture, finx, until, sleep } from "../../../crates/finx-connections/tests/chatgpt-fixture.mjs";
 const f = await fixture();
 const desktop = path.resolve(import.meta.dirname, "..");
-const port = 9800 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 const socket = path.join(f.home, "run/finx.sock");
 const locales = ["en", "zh-CN"].map(l => JSON.parse(fs.readFileSync(path.join(desktop, `src/locales/${l}/settings.json`))));
 const labels = key => locales.map(l => key.split(".").reduce((v, k) => v[k], l));
@@ -67,16 +68,17 @@ try {
   await until(() => fs.existsSync(socket), "kernel socket");
   f.state.mode = "pending";
   app = spawn(path.join(desktop, "node_modules/.bin/electron"), [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...f.env, FINXWORK_USER_DATA: path.join(f.work, "profile"), FINXWORK_FINX: finx }, stdio: ["ignore", "ignore", "pipe"],
+    env: { ...f.env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: path.join(f.work, "profile"), FINXWORK_FINX: finx }, stdio: ["ignore", "ignore", "pipe"],
   });
   app.stderr.on("data", () => {});
   const main = await page(false);
   await main.wait('!!window.finx', "desktop bridge");
   await until(() => main.run('!!document.querySelector(".onb .onb-local [data-testid=chatgpt-connection]")'), "onboarding subscriptions", 45000);
   const onboardingHeadings = await main.run('[...document.querySelectorAll(".onb .connections-section-heading h3")].map(n => n.textContent)');
-  assert.equal(onboardingHeadings.length, 2);
+  assert.equal(onboardingHeadings.length, 3);
   assert.ok(labels("models.subscription").includes(onboardingHeadings[0]));
-  assert.ok(labels("models.api").includes(onboardingHeadings[1]));
+  assert.ok(labels("models.plans.title").includes(onboardingHeadings[1]));
+  assert.ok(labels("models.api").includes(onboardingHeadings[2]));
   if (process.env.FINXWORK_E2E_SHOTS) {
     fs.mkdirSync(process.env.FINXWORK_E2E_SHOTS, { recursive: true });
     const { data } = await main.cdp("Page.captureScreenshot", { format: "png" });
@@ -88,9 +90,10 @@ try {
   console.log("Subscriptions share one group");
   assert.deepEqual(await settings.run(`[...(${row}).closest('.fgroup').querySelectorAll('.mrow')].map(n => n.dataset.testid)`), ["chatgpt-connection", "qwenwork-connection", "qoder-connection"]);
   const headings = await settings.run('[...document.querySelectorAll(".models > section > h3")].map(n => n.textContent)');
-  assert.equal(headings.length, 2);
+  assert.equal(headings.length, 3);
   assert.ok(labels("models.subscription").includes(headings[0]));
-  assert.ok(labels("models.api").includes(headings[1]));
+  assert.ok(labels("models.plans.title").includes(headings[1]));
+  assert.ok(labels("models.api").includes(headings[2]));
   if (process.env.FINXWORK_E2E_SHOTS) {
     fs.mkdirSync(process.env.FINXWORK_E2E_SHOTS, { recursive: true });
     const { data } = await settings.cdp("Page.captureScreenshot", { format: "png" });

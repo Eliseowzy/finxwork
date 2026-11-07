@@ -4,13 +4,17 @@
 //! additive; clients must ignore unknown event types and fields.
 
 pub mod api;
+pub mod bot;
 pub mod customize;
+pub mod deck;
 pub mod doc;
 pub mod files;
+pub mod pptx;
 mod event;
 pub mod mcp;
 mod op;
 pub mod schema;
+pub mod web_search;
 
 pub use event::AgentRef;
 pub use event::AgentStatus;
@@ -33,6 +37,7 @@ pub use event::SkillUse;
 pub use event::TaskTrigger;
 pub use event::ToolCategory;
 pub use event::WarningCode;
+pub use mcp::McpApproval;
 pub use mcp::McpAuthMode;
 pub use mcp::McpExposure;
 pub use mcp::McpOAuthClient;

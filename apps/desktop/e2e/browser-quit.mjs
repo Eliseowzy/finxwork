@@ -5,6 +5,7 @@
 // Second, closing the main window: on macOS the app and its tab stay (the agent may still be
 // browsing) and a quit then ends both; elsewhere the app quits with its last window.
 // FINXWORK_E2E_APP=<executable> runs a packaged app instead of this checkout's build.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -39,10 +40,10 @@ let app = null;
 let port = 0;
 let launches = 0;
 async function launch() {
-  port = 9400 + Math.floor(Math.random() * 400);
+  port = cdpPort();
   const args = [...(process.env.FINXWORK_E2E_NO_SANDBOX ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`];
   app = spawn(packaged ?? electron, packaged ? args : [desktop, ...args], {
-    env: { ...env, FINXWORK_USER_DATA: `${profile}-${++launches}`, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: `${profile}-${++launches}`, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

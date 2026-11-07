@@ -288,7 +288,12 @@ where
     loop {
         match frames.next().await {
             Ok(Some(Frame::Line(line))) => protocol.clone().on_line(line, &conn),
-            Ok(Some(Frame::Oversize)) => conn.send_error(None, &RpcError::invalid_request("the message exceeds the size limit")),
+            Ok(Some(Frame::Oversize { head })) => {
+                let limit = server.settings().max_frame_bytes;
+                tracing::warn!(conn = conn.id, limit, "rejected a message over the size limit");
+                let error = RpcError::invalid_request(format!("the message is over the limit of {limit} bytes (server.max_frame_bytes)"));
+                conn.send_error(finx_rpc::peek_request_id(&head).as_ref(), &error);
+            }
             Ok(None) => break,
             Err(err) => {
                 tracing::debug!(conn = conn.id, %err, "connection read failed");

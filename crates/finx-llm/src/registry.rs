@@ -151,6 +151,7 @@ pub struct ResolvedModel {
 
 pub struct ModelRegistry {
     providers: BTreeMap<String, ProviderConfig>,
+    warnings: Vec<String>,
     sources: RwLock<BTreeMap<String, Vec<ProviderConfig>>>,
     authorizer: OnceLock<Arc<dyn crate::connection::ConnectionAuthorizer>>,
     apis: HashMap<String, Arc<dyn WireApi>>,
@@ -164,6 +165,7 @@ impl ModelRegistry {
     pub fn new(catalog: Catalog, options: RegistryOptions) -> Self {
         let mut registry = Self {
             providers: catalog.providers,
+            warnings: catalog.warnings,
             sources: RwLock::new(BTreeMap::new()),
             authorizer: OnceLock::new(),
             apis: HashMap::new(),
@@ -175,6 +177,11 @@ impl ModelRegistry {
         registry.register_api(Arc::new(crate::api::openai_responses::OpenAiResponsesApi));
         registry.register_api(Arc::new(AnthropicApi));
         registry
+    }
+
+    /// What reading the catalog left to say: settings it did not know.
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 
     pub fn register_api(&mut self, api: Arc<dyn WireApi>) {
@@ -190,6 +197,14 @@ impl ModelRegistry {
         let mut result: Vec<_> = self.providers.values().cloned().collect();
         result.extend(self.sources.read().values().flatten().cloned());
         result.into_iter()
+    }
+
+    /// How a provider's credentials stand, without copying its configuration.
+    pub fn auth_status(&self, id: &str) -> Option<crate::AuthStatus> {
+        if let Some(provider) = self.providers.get(id) {
+            return Some(provider.auth.status(id));
+        }
+        self.sources.read().values().flatten().find(|p| p.id == id).map(|p| p.auth.status(id))
     }
 
     pub fn provider(&self, id: &str) -> Option<ProviderConfig> {
@@ -221,12 +236,17 @@ impl ModelRegistry {
                 return Err("provider ID is already owned".into());
             }
         }
-        sources.insert(source.to_string(), providers);
+        let replaced = sources.insert(source.to_string(), providers);
+        for p in replaced.iter().flatten().chain(sources.get(source).into_iter().flatten()) {
+            self.directory.forget(&p.id);
+        }
         Ok(())
     }
 
     pub fn remove_source(&self, source: &str) {
-        self.sources.write().remove(source);
+        for p in self.sources.write().remove(source).iter().flatten() {
+            self.directory.forget(&p.id);
+        }
     }
 
     pub fn install_authorizer(&self, resolver: Arc<dyn crate::connection::ConnectionAuthorizer>) {
@@ -243,11 +263,8 @@ impl ModelRegistry {
         &self.directory
     }
 
-    /// A provider's model: managed providers' as they are, the others' merged.
+    /// A provider's model, merged from its layers.
     pub fn lookup(&self, provider: &ProviderConfig, id: &str) -> Option<Arc<Model>> {
-        if matches!(provider.auth, crate::AuthConfig::Managed) {
-            return provider.model(id);
-        }
         self.directory.model(provider, id)
     }
 
@@ -326,11 +343,9 @@ impl ModelRegistry {
             return Ok(false);
         };
         let mut ids: Vec<String> = self.providers().filter_map(|p| p.listing.catalog_id).collect();
+        ids.extend(crate::public_catalog::MAKERS.iter().map(|id| id.to_string()));
         ids.sort();
         ids.dedup();
-        if ids.is_empty() {
-            return Ok(false);
-        }
         let http = self.http_client()?;
         let refs: Vec<&str> = ids.iter().map(String::as_str).collect();
         let changed = crate::public_catalog::refresh(&http, url, &dir, &refs).await?;
@@ -370,8 +385,7 @@ impl ModelRegistry {
                     .collect::<Vec<_>>()
                     .join(", "),
             })?;
-        if matches!(provider.auth, crate::AuthConfig::Managed) && provider.model(model_id).is_none()
-        {
+        if matches!(provider.auth, crate::AuthConfig::Managed) && provider.entry(model_id).is_none() {
             return Err(ResolveError::BadReference(reference.to_string()));
         }
         Ok(match self.lookup(&provider, model_id) {
@@ -384,6 +398,29 @@ impl ModelRegistry {
                 ad_hoc: true,
             },
         })
+    }
+
+    /// A model whose provider is gone, for a session that has nothing else to run on: it opens
+    /// and its history can be read. A request with it fails, as no provider answers to it.
+    pub fn unavailable(&self, reference: &str) -> Result<ResolvedModel, ResolveError> {
+        let (provider, id) = reference
+            .split_once('/')
+            .filter(|(p, m)| !p.is_empty() && !m.is_empty())
+            .ok_or_else(|| ResolveError::BadReference(reference.to_string()))?;
+        let gone = ProviderConfig {
+            id: provider.to_string(),
+            name: provider.to_string(),
+            names: Default::default(),
+            api: "openai-chat".to_string(),
+            base_url: String::new(),
+            auth: crate::AuthConfig::None,
+            headers: BTreeMap::new(),
+            currency: Default::default(),
+            compat: Default::default(),
+            listing: Default::default(),
+            plan: None,
+        };
+        Ok(ResolvedModel { model: Arc::new(gone.ad_hoc_model(id)), ad_hoc: true })
     }
 
     /// Streams one response. Never fails synchronously; see the contract on [`StreamEvent`].

@@ -2,16 +2,33 @@
   "title": "Settings",
   "pages": {
     "general": "General",
+    "notifications": "Notifications",
     "models": "Models",
+    "search": "Web Search",
     "about": "About",
     "browser": "Browser",
     "desktop": "Computer Use"
+  },
+  "notifications": {
+    "enabled": "Allow notifications",
+    "enabledNote": "When the app isn't in front, you hear about bots' replies, things waiting for your approval and failed tasks, and the app's icon shows a number.",
+    "sound": "Sound",
+    "sessionEnded": "When a session's task ends",
+    "sessionEndedNote": "A task waiting for your approval or failing always tells you.",
+    "test": "Try it",
+    "testNote": "The first time, the system asks whether FinxWork may send notifications.",
+    "testButton": "Send one",
+    "system": "System notification settings",
+    "systemNote": "If notifications don't arrive, check here that they're allowed. You can also choose their style.",
+    "systemButton": "Open",
+    "muteNote": "To stop hearing from one bot, turn on Do Not Disturb in its settings."
   },
   "appearance": {
     "title": "Appearance",
     "system": "System",
     "light": "Light",
-    "dark": "Dark"
+    "gray": "Soft gray",
+    "black": "Deep black"
   },
   "language": {
     "title": "Language",
@@ -287,7 +304,7 @@
     "off": "Open sites that need your sign-ins with your accounts.",
     "on": "Sites that need your account open here.",
     "ready": "The extension is connected but not in use.",
-    "lost": "The extension isn't connected.",
+    "lost": "The extension is not connected. Check that FinxWork is on, on the extensions page of {{name}}.",
     "closed": "{{name}} isn't open; it connects once you open it.",
     "none": "No Chrome, Edge or Brave found.",
     "outdated": {
@@ -314,7 +331,7 @@
       "install": "Add the FinxWork extension to {{name}}. You only do this once:",
       "howto": {
         "open": "Open the extensions page of {{name}}.",
-        "developer": "Turn on “Developer mode” at the top right of the page.",
+        "developer": "Turn on “Developer mode” at the top right of the page, and leave it on: Chrome may turn the extension off without it.",
         "drag": "Drag the “FinxWork Extension” folder onto the extensions page."
       },
       "openExtensions": "Open Extensions Page",
@@ -386,7 +403,16 @@
     "defaultDesc": "Where new pages open unless the agent names one.",
     "yoursOption": "{{name}} (your browser)",
     "connectTitle": "Connect Your Browser",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "refused": "FinxWork was just updated; the extension is moving to the new version and will connect in a few seconds.",
+    "refusedStuck": "The extension is still running the old program. Click its reload button on the extensions page.",
+    "elsewhere": "This browser is connected to another FinxWork.",
+    "takeOver": "Connect Here…",
+    "useThis": "Use This",
+    "diagnose": "Show Diagnostics",
+    "copyDiagnosis": "Copy",
+    "hideDiagnosis": "Hide",
+    "diagnosisCopied": "Diagnostics copied"
   },
   "desktop": {
     "enable": "Allow FinxWork to control apps on your computer",
@@ -420,5 +446,100 @@
     "granted": "Granted",
     "notGranted": "Not granted",
     "openSettings": "Open System Settings"
+  },
+  "routines": {
+    "atLogin": "Start FinxWork at login when there are scheduled tasks",
+    "atLoginNote": "So they run after a restart too. No window opens. macOS says a background item was added.",
+    "keepAwake": "Keep the Mac awake when there are scheduled tasks",
+    "keepAwakeNote": "On power, the Mac does not go to sleep from being idle. Closing the lid still does, and on battery this has no effect."
+  },
+  "search": {
+    "master": "Let the model search the web",
+    "masterNote": "The model searches when it needs to. What it searches for is sent to the services below.",
+    "masterOn": "Web search is on",
+    "masterOff": "Web search is off",
+    "services": "Search services",
+    "intro": "From the top down, the first one that can be used goes first; if it fails, the next. Drag to change the order.",
+    "current": "In use",
+    "noneLeft": "Every service is off, so the model can't search right now.",
+    "grip": "Drag to move {{name}}, or use the up and down keys",
+    "gripTitle": "Drag to change the order",
+    "use": "Use {{name}}",
+    "usedTitle": "Searches use it",
+    "skippedTitle": "Searches skip it",
+    "connect": "Connect",
+    "addKey": "Add Key",
+    "more": "More",
+    "test": "Test Search",
+    "replaceKey": "Replace Key",
+    "removeKey": "Remove Key",
+    "needsAccount": "Connect {{name}} under Models first",
+    "fromEnv": "Key from the environment variable {{env}}",
+    "failed": "{{what}} · {{when}}",
+    "usedNext": ". The next one was used",
+    "failure": {
+      "auth_failed": "Key rejected",
+      "quota_exhausted": "Out of quota",
+      "rate_limited": "Was limiting requests",
+      "unreachable": "Could not be reached",
+      "bad_response": "Sent an unreadable answer"
+    },
+    "why": {
+      "auth_failed": "key rejected",
+      "quota_exhausted": "out of quota",
+      "rate_limited": "limiting requests",
+      "unreachable": "could not be reached",
+      "bad_response": "unreadable answer"
+    },
+    "worked_one": "{{name}} works · {{count}} result · {{seconds}} s",
+    "worked_other": "{{name}} works · {{count}} results · {{seconds}} s",
+    "testFailed": "{{name}} did not work: {{why}}",
+    "movedFirst": ", moved to the top",
+    "savedUntested": "Key saved, but the test did not get through",
+    "refused": "{{name}} refused this key. It was not saved.",
+    "removeTitle": "Remove the {{name}} key?",
+    "removeNote": "The key is deleted from the keychain, and searches skip this service.",
+    "removeNoteFree": "The key is deleted from the keychain, and searches go on with the free tier.",
+    "remove": "Remove",
+    "removed": "Key removed. Searches skip {{name}}",
+    "removedFree": "Key removed. Searches go on with the free tier",
+    "addTitle": "Add {{name}} Key",
+    "replaceTitle": "Replace {{name}} Key",
+    "apiKey": "API Key",
+    "getKey": "Get one from {{name}}",
+    "keychain": "Kept in the keychain",
+    "cancel": "Cancel",
+    "saveAndTest": "Save and Test",
+    "testing": "Testing…",
+    "sources": {
+      "deepseek": {
+        "desc": "Shares your model key · $0.75 per 1,000"
+      },
+      "exa": {
+        "desc": "Free tier, no key needed",
+        "keyed": "Key added · $4 per 1,000, $10 free a month",
+        "sheet": "Works without a key. With one it uses your own credit, at higher limits."
+      },
+      "parallel": {
+        "desc": "Free tier, no key needed",
+        "keyed": "Key added, higher limits",
+        "sheet": "Works without a key. With one the limits are higher."
+      },
+      "tavily": {
+        "desc": "1,000 free a month, needs a key",
+        "keyed": "Key added · 1,000 free a month",
+        "sheet": "1,000 searches free a month, then about $0.008 each."
+      },
+      "brave": {
+        "desc": "$5 free a month, needs a key",
+        "keyed": "Key added · $5 free a month",
+        "sheet": "$5 free a month, about 1,000 searches. Signing up needs a card."
+      },
+      "bocha": {
+        "desc": "Chinese content, needs a key",
+        "keyed": "Key added",
+        "sheet": "A search service for Chinese content."
+      }
+    }
   }
 }

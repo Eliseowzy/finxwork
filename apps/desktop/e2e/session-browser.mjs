@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Verify a conversation with no pages opens the browser from its own toolbar.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -46,9 +47,9 @@ fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermiss
 // ── the app, driven over the DevTools protocol (as e2e/stale-model.mjs) ──
 let app = null;
 async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(electron, [desktop, ...(process.env.FINXWORK_E2E_NO_SANDBOX ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;

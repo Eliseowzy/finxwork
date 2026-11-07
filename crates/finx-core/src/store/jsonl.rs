@@ -50,8 +50,9 @@ struct Scanned {
     inode: u64,
     /// The end of the last complete line read.
     offset: u64,
-    /// A sub-agent's log.
-    agent: bool,
+    /// A log session lists leave out: a sub-agent's or a bot's.
+    #[serde(alias = "agent")]
+    hidden: bool,
     /// The summary from the lines up to `offset`.
     summary: SessionSummary,
 }
@@ -81,18 +82,18 @@ impl JsonlStore {
     fn find(&self, reference: &SessionRef) -> Result<PathBuf, StoreError> {
         match reference {
             SessionRef::Path(path) => Ok(path.clone()),
-            // Sub-agents' sessions are never "the last session".
+            // Sub-agents' and bots' sessions are never "the last session".
             SessionRef::Last => self
                 .all_files()
                 .into_iter()
                 .rev()
-                .find(|path| read_header(path).is_some_and(|h| h.agent.is_none()))
+                .find(|path| read_header(path).is_some_and(|h| h.listed()))
                 .ok_or_else(|| StoreError::NotFound("no sessions yet".into())),
             SessionRef::LastIn(dir) => self
                 .all_files()
                 .into_iter()
                 .rev()
-                .find(|path| read_header(path).is_some_and(|h| h.agent.is_none() && h.cwd.starts_with(dir)))
+                .find(|path| read_header(path).is_some_and(|h| h.listed() && h.cwd.starts_with(dir)))
                 .ok_or_else(|| StoreError::NotFound(format!("no session started in {} yet", dir.display()))),
             SessionRef::Id(id) => {
                 let matches: Vec<PathBuf> = self
@@ -365,7 +366,7 @@ impl SessionStore for JsonlStore {
             if let Some(header) = unwritten.get(&path)
                 && !path.exists()
             {
-                if header.agent.is_none() && within.is_none_or(|dir| header.cwd.starts_with(dir)) {
+                if header.listed() && within.is_none_or(|dir| header.cwd.starts_with(dir)) {
                     out.push(SessionSummary {
                         id: header.id.clone(),
                         location: path,
@@ -381,7 +382,8 @@ impl SessionStore for JsonlStore {
                 }
                 continue;
             }
-            // Sub-agents' sessions are opened through their parent, not listed.
+            // Sub-agents' sessions are opened through their parent, bots' through their bot: not
+            // listed.
             if let Some((false, summary)) = self.scan(&path)
                 && within.is_none_or(|dir| summary.cwd.starts_with(dir))
             {
@@ -405,7 +407,7 @@ impl JsonlStore {
         })
     }
 
-    /// A log's summary and whether it is a sub-agent's, reading only what was appended
+    /// A log's summary and whether session lists leave it out, reading only what was appended
     /// since the last call. The same as reading the whole log, as long as logs only grow.
     fn scan(&self, path: &Path) -> Option<(bool, SessionSummary)> {
         let meta = std::fs::metadata(path).ok()?;
@@ -418,7 +420,7 @@ impl JsonlStore {
             Some(cached)
         });
         let mut state = match cached.filter(|_| len >= self.keep_from) {
-            Some(c) if c.inode == inode && c.len == len && c.modified == modified => return Some((c.agent, c.summary)),
+            Some(c) if c.inode == inode && c.len == len && c.modified == modified => return Some((c.hidden, c.summary)),
             Some(c) if c.inode == inode && c.len < len => Some(c),
             _ => None,
         };
@@ -446,6 +448,7 @@ impl JsonlStore {
             None => {
                 let mut lines = text.lines();
                 let header = serde_json::from_str::<SessionHeader>(lines.next()?).ok()?;
+                let hidden = !header.listed();
                 let header_len = text.find('\n').map_or(text.len(), |i| i + 1);
                 let mut summary = SessionSummary {
                     id: header.id,
@@ -461,7 +464,7 @@ impl JsonlStore {
                 };
                 if header_len > complete {
                     // Only a header, without its line end: nothing to keep.
-                    return Some((header.agent.is_some(), summary));
+                    return Some((hidden, summary));
                 }
                 for line in done[header_len..].lines() {
                     summarize_line(&mut summary, line);
@@ -471,7 +474,7 @@ impl JsonlStore {
                     modified,
                     inode,
                     offset: complete as u64,
-                    agent: header.agent.is_some(),
+                    hidden,
                     summary,
                 };
                 return Some(self.keep(path, scanned, tail, &meta));
@@ -492,7 +495,7 @@ impl JsonlStore {
         if !tail.is_empty() {
             scanned.len = scanned.offset;
         }
-        let agent = scanned.agent;
+        let hidden = scanned.hidden;
         let mut summary = scanned.summary.clone();
         if scanned.offset >= self.keep_from {
             // A process restarting can reuse an unchanged large log's summary. Partial
@@ -507,7 +510,25 @@ impl JsonlStore {
         for line in tail.lines() {
             summarize_line(&mut summary, line);
         }
-        (agent, summary)
+        (hidden, summary)
+    }
+
+    /// Moves the log of a session no process has open, and its files, into `trash`. Returns the
+    /// session's id; `Locked` while a process has it open.
+    pub fn move_to_trash(&self, reference: &SessionRef, trash: &Path) -> Result<String, StoreError> {
+        let path = self.find(reference)?;
+        let (header, _) = self.header(reference)?;
+        let file = File::open(&path).map_err(io_err(&path))?;
+        lock(&file, &path)?;
+        std::fs::create_dir_all(trash).map_err(io_err(trash))?;
+        let name = path.file_name().map_or_else(|| PathBuf::from(format!("{}.jsonl", header.id)), PathBuf::from);
+        // The session's files go with its log.
+        let (data_dir, _) = crate::paths::FinxHome::session_data_dir(&path, &header.id);
+        std::fs::rename(&path, trash.join(&name)).map_err(io_err(&path))?;
+        if data_dir.is_dir() {
+            std::fs::rename(&data_dir, trash.join(name.with_extension(""))).map_err(io_err(&data_dir))?;
+        }
+        Ok(header.id)
     }
 
     /// Appends entries to the log of a session no process has open: after its last entry,
@@ -572,7 +593,7 @@ fn entry_type(line: &str) -> Option<&str> {
 fn summarize_line(summary: &mut SessionSummary, line: &str) {
     let wanted = match entry_type(line) {
         Some("message") => summary.first_message.is_none() && line.contains(r#""role":"user""#),
-        Some("title" | "settings" | "task" | "archived") => true,
+        Some("title" | "settings" | "task" | "archived" | "branch") => true,
         _ => false,
     };
     if !wanted {
@@ -595,6 +616,8 @@ fn summarize_line(summary: &mut SessionSummary, line: &str) {
             summary.last_task_at = Some(entry.ts);
         }
         EntryKind::Archived { archived } => summary.archived = archived,
+        // The session went back before its first message: the next one is the first.
+        EntryKind::Branch { before_first: true } => summary.first_message = None,
         _ => {}
     }
 }
@@ -647,6 +670,33 @@ mod tests {
         assert!(newer.location.exists());
         assert!(store.unwritten.lock().is_empty());
         assert_eq!(ids(&store, 10, None), [NEWER, OLDER]);
+    }
+
+    /// A bot's session is opened through its bot: never listed, never "the last session",
+    /// written or not (bot-design §2.2).
+    #[tokio::test]
+    async fn bot_sessions_stay_out_of_lists() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = JsonlStore::new(dir.path().join("sessions"));
+        let work = dir.path().join("work");
+        let plain = store.create(&SessionHeader::new(OLDER.into(), work.clone())).unwrap();
+        plain.writer.sync().await.unwrap();
+        let mut header = SessionHeader::new(NEWER.into(), work.clone());
+        header.bot = Some(super::super::BotRef {
+            id: "b1".into(),
+            name: "FinxBot".into(),
+        });
+        let bot = store.create(&header).unwrap();
+        assert_eq!(ids(&store, 10, None), [OLDER], "not written yet");
+        bot.writer.sync().await.unwrap();
+        for store in [&store, &JsonlStore::new(dir.path().join("sessions"))] {
+            assert_eq!(ids(store, 10, None), [OLDER]);
+            assert_eq!(ids(store, 10, Some(&work)), [OLDER]);
+            assert_eq!(store.header(&SessionRef::Last).unwrap().0.id, OLDER);
+            assert_eq!(store.header(&SessionRef::LastIn(work.clone())).unwrap().0.id, OLDER);
+            // Still found by its id.
+            assert_eq!(store.header(&SessionRef::Id(NEWER.into())).unwrap().0.bot, header.bot);
+        }
     }
 
     #[test]
@@ -731,6 +781,41 @@ mod tests {
         let store = JsonlStore::new(&sessions);
         assert_eq!(store.list(10, None).unwrap()[0].title.as_deref(), Some("Short"));
         assert!(store.scanned.lock().is_empty());
+    }
+
+    /// Going back before the first message: the list shows the message that took its place, on
+    /// a full read and on one that goes on from a kept summary. Going back to a later message
+    /// leaves the first one alone.
+    #[test]
+    fn the_first_message_follows_a_rewind_before_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(format!("20261105T000000-{OLDER}.jsonl"));
+        let header = serde_json::to_string(&SessionHeader::new(OLDER.into(), dir.path().into())).unwrap();
+        let line = |kind: EntryKind| {
+            let entry = Entry { id: format!("{:08x}", rand::random::<u32>()), parent: None, ts: 1, kind };
+            serde_json::to_string(&entry).unwrap() + "\n"
+        };
+        let message = |text: &str| line(EntryKind::message(finx_llm::UserMessage::text(text).into()));
+        let append = |text: &str| OpenOptions::new().append(true).open(&log).unwrap().write_all(text.as_bytes()).unwrap();
+        let mut kept = JsonlStore::new(dir.path());
+        kept.keep_from = 0;
+        let first = || {
+            let reference = SessionRef::Path(log.clone());
+            let fresh = JsonlStore::new(dir.path()).summary(&reference).unwrap().first_message;
+            assert_eq!(kept.summary(&reference).unwrap().first_message, fresh, "kept and fresh agree");
+            fresh
+        };
+        std::fs::write(&log, format!("{header}\n{}", message("the old first"))).unwrap();
+        assert_eq!(first().as_deref(), Some("the old first"));
+        append(&message("a second one"));
+        append(&line(EntryKind::Branch { before_first: false }));
+        assert_eq!(first().as_deref(), Some("the old first"), "back to a later message");
+        append(&line(EntryKind::Branch { before_first: true }));
+        assert_eq!(first(), None, "nothing has taken its place yet");
+        append(&message("the new first"));
+        assert_eq!(first().as_deref(), Some("the new first"));
+        append(&message("then another"));
+        assert_eq!(first().as_deref(), Some("the new first"));
     }
 
     #[test]

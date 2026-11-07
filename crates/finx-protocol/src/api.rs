@@ -78,6 +78,7 @@ pub mod method {
     pub const DOC_FILL: &str = "doc/fill";
     pub const DOC_STRUCTURE: &str = "doc/structure";
     pub const DOC_SORT: &str = "doc/sort";
+    pub const DOC_AUTOFILL: &str = "doc/autofill";
     pub const DOC_SAVE: &str = "doc/save";
     /// Notification: a document changed (an edit, undo, redo or save, from any session); to
     /// every connection that opened a document (spreadsheet-design §7).
@@ -86,6 +87,7 @@ pub mod method {
     pub const SESSION_UNARCHIVE: &str = "session/unarchive";
     /// A loaded session's skills and `/` commands, or the skills a directory would give a session.
     pub const SKILLS_LIST: &str = "skills/list";
+    pub const TOOLS_LIST: &str = "tools/list";
     /// Stores a provider's API key in the credential store.
     pub const AUTH_SET: &str = "auth/set";
     pub const AUTH_DELETE: &str = "auth/delete";
@@ -103,9 +105,52 @@ pub mod method {
     pub const CONFIG_CHANGED: &str = "config/changed";
     pub const CREDENTIALS_SET: &str = "credentials/set";
     pub const CREDENTIALS_DELETE: &str = "credentials/delete";
+    // 联网搜索 (docs/kernel/web-search-design.md §6.4).
+    pub const WEB_SEARCH_STATUS: &str = "web_search/status";
+    pub const WEB_SEARCH_TEST: &str = "web_search/test";
+    pub const WEB_SEARCH_SET_KEY: &str = "web_search/set_key";
     // The file panel (docs/desktop/file-panel-design.md §9).
     pub const FILES_LIST: &str = "files/list";
     pub const FILES_READ: &str = "files/read";
+    /// Also `deck/open`'s progress.
+    pub const PPTX_READ_PROGRESS: &str = "pptx/readProgress";
+    /// Transitional: the editor holds the deck. Replaced by `deck/open` (presentation-ai-design
+    /// §12); kept until the editor joins as a replica.
+    pub const PPTX_READ: &str = "pptx/read";
+    /// Transitional, like `pptx/read`: replaced by `deck/save`.
+    pub const PPTX_WRITE: &str = "pptx/write";
+    pub const PPTX_METAFILE: &str = "pptx/metafile";
+    // Presentations held by the kernel (docs/desktop/presentation-ai-design.md §12).
+    pub const DECK_OPEN: &str = "deck/open";
+    pub const DECK_CLOSE: &str = "deck/close";
+    /// A request from a replica (its Yrs update), and a server notification with the kernel's.
+    pub const DECK_SYNC: &str = "deck/sync";
+    pub const DECK_SAVE: &str = "deck/save";
+    pub const DECK_SUMMARY: &str = "deck/summary";
+    pub const DECK_READ: &str = "deck/read";
+    pub const DECK_FIND: &str = "deck/find";
+    pub const DECK_VIEW: &str = "deck/view";
+    pub const DECK_FOCUS: &str = "deck/focus";
+    pub const DECK_EDIT: &str = "deck/edit";
+    pub const DECK_COPY: &str = "deck/copy";
+    pub const DECK_PROPOSAL_LIST: &str = "deck/proposal/list";
+    pub const DECK_UNDO: &str = "deck/undo";
+    pub const DECK_PROPOSAL_ACCEPT: &str = "deck/proposal/accept";
+    pub const DECK_PROPOSAL_REJECT: &str = "deck/proposal/reject";
+    pub const DECK_PROPOSAL_REVERT: &str = "deck/proposal/revert";
+    pub const DECK_CHECK: &str = "deck/check";
+    pub const DECK_LAYOUTS: &str = "deck/layouts";
+    pub const DECK_TEMPLATE_PROFILE: &str = "deck/template_profile";
+    pub const DECK_LINKS: &str = "deck/links";
+    pub const DECK_DIFF: &str = "deck/diff";
+    /// Server notification to connections that opened the deck.
+    pub const DECK_CHANGED: &str = "deck/changed";
+    /// Server notification to connections that opened the deck: a proposal's life.
+    pub const DECK_PROPOSAL: &str = "deck/proposal";
+    /// Instant AI actions on the canvas (presentation-ai-design §6.6).
+    pub const AI_ACTION: &str = "ai/action";
+    /// Server notification to the connection that called `ai/action`.
+    pub const AI_ACTION_PROGRESS: &str = "ai/action_progress";
     pub const FILES_WRITE: &str = "files/write";
     pub const FILES_WATCH: &str = "files/watch";
     /// Server notification to a connection that called `files/watch`.
@@ -141,6 +186,52 @@ pub mod method {
     pub const BROWSER_CHANGED: &str = "browser/changed";
     /// A site's icon, for the lists of sites the browsers may open (browser-design §10.1).
     pub const BROWSER_SITE_ICON: &str = "browser/site_icon";
+    // Bots (docs/kernel/bot-design.md §4).
+    /// Every bot now, and `bots/changed` on this connection from then on.
+    pub const BOTS_SUBSCRIBE: &str = "bots/subscribe";
+    pub const BOTS_UNSUBSCRIBE: &str = "bots/unsubscribe";
+    pub const BOTS_CREATE: &str = "bots/create";
+    pub const BOTS_UPDATE: &str = "bots/update";
+    /// A bot's uploaded avatar.
+    pub const BOTS_AVATAR: &str = "bots/avatar";
+    /// Loads or attaches a bot's conversation, making it when there is none yet.
+    pub const BOTS_OPEN: &str = "bots/open";
+    /// The user is looking at the bot: nothing is unread.
+    pub const BOTS_READ: &str = "bots/read";
+    pub const BOTS_UNREAD: &str = "bots/unread";
+    /// Starts the bot's conversation over.
+    pub const BOTS_CLEAR: &str = "bots/clear";
+    pub const BOTS_DELETE: &str = "bots/delete";
+    /// Server notification to `bots/subscribe`rs.
+    pub const BOTS_CHANGED: &str = "bots/changed";
+    // A bot's routines (docs/kernel/routine-design.md §8). New ones and edits come from the chat.
+    pub const BOTS_ROUTINE: &str = "bots/routine";
+    pub const BOTS_ROUTINE_RUNS: &str = "bots/routine_runs";
+    pub const BOTS_ROUTINE_RUN: &str = "bots/routine_run";
+    pub const BOTS_ROUTINE_SET_ENABLED: &str = "bots/routine_set_enabled";
+    /// Runs a routine now, even a paused one. It does the real thing.
+    pub const BOTS_ROUTINE_RUN_NOW: &str = "bots/routine_run_now";
+    pub const BOTS_ROUTINE_STOP: &str = "bots/routine_stop";
+    pub const BOTS_ROUTINE_DELETE: &str = "bots/routine_delete";
+    /// Brings a session's tab in the user's own browser to the front (browser-design §8.4.7).
+    pub const BROWSER_REVEAL: &str = "browser/reveal";
+    /// Closes a session's tabs in the user's own browser, or one of them.
+    pub const BROWSER_CLOSE_TABS: &str = "browser/close_tabs";
+    /// Lets a session use the user's own browser again, after the user took control back.
+    pub const BROWSER_ALLOW: &str = "browser/allow";
+    /// A session waiting for the user's own browser to connect stops waiting.
+    pub const BROWSER_CANCEL_WAIT: &str = "browser/cancel_wait";
+    /// Which of the connected extensions the agent uses.
+    pub const BROWSER_USE_EXTENSION: &str = "browser/use_extension";
+    /// Gives a tab the user offered from their browser to a session.
+    pub const BROWSER_ASSIGN_TAB: &str = "browser/assign_tab";
+    /// What the extension says, from its host's connection.
+    pub const BROWSER_EXTENSION: &str = "browser/extension";
+    /// Server notification to an extension host, for its extension.
+    pub const BROWSER_CONTROL: &str = "browser/control";
+    /// Server notification to connections that called `browser/status`: the extension asks
+    /// the app for something.
+    pub const BROWSER_REQUEST: &str = "browser/request";
 }
 
 /// Application error codes, shared with the ACP projection. The `data` of these errors
@@ -193,6 +284,27 @@ pub mod error_code {
     pub const DOC_STALE: i64 = -32035;
     /// `doc/save`: the file changed on disk since it was opened; `force` writes over it.
     pub const DOC_CONFLICT: i64 = -32036;
+    /// `deck/*`: no deck of that id is open in the session, or the file cannot be opened.
+    pub const DECK_UNAVAILABLE: i64 = -32037;
+    /// `deck/save`: the file changed on disk since it was read; `force` writes over it.
+    pub const DECK_CONFLICT: i64 = -32038;
+    /// `deck/proposal/*`, `deck/view`: no proposal of that id, or it is no longer pending.
+    pub const PROPOSAL_NOT_FOUND: i64 = -32039;
+    /// `bots/*`: no bot has that id.
+    pub const BOT_NOT_FOUND: i64 = -32040;
+    /// `bots/delete` of the default bot, or the mark as another bot's avatar.
+    pub const BOT_DEFAULT: i64 = -32041;
+    /// `bots/create`, `bots/update`: an empty or long name, or an unusable avatar.
+    pub const BOT_INVALID: i64 = -32042;
+    /// `bots/routine*`: the bot has no routine with that id, or no run.
+    pub const ROUTINE_NOT_FOUND: i64 = -32043;
+    /// `bots/routine_run_now`: it is running already.
+    pub const ROUTINE_BUSY: i64 = -32044;
+    /// `bots/routine*`: the database cannot be opened.
+    pub const ROUTINES_UNAVAILABLE: i64 = -32045;
+    /// `session/new`, `bots/open`: no model was asked for, none is configured and no provider is
+    /// connected.
+    pub const NO_MODEL: i64 = -32046;
 
     /// Every code with its `kind`, standard JSON-RPC codes included.
     pub const ALL: &[(i64, &str)] = &[
@@ -230,6 +342,16 @@ pub mod error_code {
         (DOC_REFUSED, "doc_refused"),
         (DOC_STALE, "doc_stale"),
         (DOC_CONFLICT, "doc_conflict"),
+        (DECK_UNAVAILABLE, "deck_unavailable"),
+        (DECK_CONFLICT, "deck_conflict"),
+        (PROPOSAL_NOT_FOUND, "proposal_not_found"),
+        (BOT_NOT_FOUND, "bot_not_found"),
+        (BOT_DEFAULT, "bot_default"),
+        (BOT_INVALID, "bot_invalid"),
+        (ROUTINE_NOT_FOUND, "routine_not_found"),
+        (ROUTINE_BUSY, "routine_busy"),
+        (ROUTINES_UNAVAILABLE, "routines_unavailable"),
+        (NO_MODEL, "no_model"),
     ];
 }
 
@@ -250,6 +372,10 @@ pub enum RequestId {
 pub struct CancelRequestParams {
     pub id: RequestId,
 }
+
+/// The `kind` in the error's data when `browser/host` refuses an extension host because it is
+/// not the service's own program: it should exit, for the extension to start the current one.
+pub const HOST_REFUSED: &str = "host_refused";
 
 /// Which browser a `browser/host` connection provides.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -278,6 +404,12 @@ pub struct BrowserHostParams {
     /// that sends none has an extension from before them: version 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bridge: Option<BridgeRange>,
+    /// Tells this extension's browser and profile apart from others: kept by the extension.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// The account signed in to that browser profile, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
 }
 
 /// A range of bridge versions, both ends included.
@@ -320,16 +452,156 @@ pub struct ExtensionStatus {
     /// Set when the extension is connected but cannot be used until one side is updated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub problem: Option<ExtensionProblem>,
+    /// Tells this browser and profile apart from others.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
+    /// The account signed in to that browser profile, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account: Option<String>,
+    /// The agent uses this one; the others wait.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub in_use: bool,
+}
+
+/// A session's tab in the user's own browser, as the extension reports it: the extension keeps
+/// which tab is whose, across reconnects and restarts of the service (browser-design §8.4.7).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct YoursTab {
+    pub target_id: String,
+    pub url: String,
+    pub title: String,
+    /// The agent is attached to it now, so a task is using it; Chrome shows its debugging bar.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub attached: bool,
 }
 
 /// The result of `browser/status`, and the parameters of `browser/changed`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct BrowserStatus {
-    /// Set while the FinxWork extension is connected; with `problem` when it cannot be used.
+    /// The extension the agent uses, while one is connected; with `problem` when it cannot be
+    /// used. When several are connected, the others are in `extensions`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extension: Option<ExtensionStatus>,
     /// Whether a desktop app shows embedded browsers.
     pub embedded: bool,
+    /// Every extension connected, oldest first, when there is more than one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<ExtensionStatus>,
+    /// Each session's tabs in the user's own browser.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub tabs: std::collections::BTreeMap<String, Vec<YoursTab>>,
+    /// Why the last extension host was refused, until one connects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused: Option<String>,
+    /// Sessions the user took their browser back from.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub revoked: Vec<String>,
+    /// Sessions waiting for the user's own browser to connect.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waiting: Vec<String>,
+}
+
+/// Parameters of `browser/reveal`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserRevealParams {
+    /// The session whose tab to show: the one last used, unless `target_id` says which.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+}
+
+/// Parameters of `browser/close_tabs`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserCloseTabsParams {
+    pub session_id: String,
+    /// Only this tab.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+}
+
+/// Parameters of `browser/allow` and `browser/cancel_wait`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserSessionParams {
+    pub session_id: String,
+}
+
+/// Parameters of `browser/use_extension`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserUseExtensionParams {
+    pub instance: String,
+}
+
+/// Parameters of `browser/assign_tab`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BrowserAssignTabParams {
+    pub target_id: String,
+    pub session_id: String,
+}
+
+/// What the extension says through its host (`browser/extension`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtensionMessage {
+    /// Every session's tabs, whenever they change.
+    Tabs { sessions: std::collections::BTreeMap<String, Vec<YoursTab>> },
+    /// The user took control back, closing Chrome's debugging bar, from these sessions.
+    Revoked { sessions: Vec<String> },
+    /// The user asked to go back to a conversation.
+    OpenSession { session_id: String },
+    /// The user did what the session waits for in the page.
+    Done { session_id: String },
+    /// The user stopped a session's task from the extension.
+    Stop { session_id: String },
+    /// The user offered a tab of their own to a conversation.
+    OfferTab { target_id: String, url: String, title: String },
+    /// The user chose this browser and profile for the agent.
+    UseThis,
+}
+
+/// What a session looks like to the extension.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtensionSession {
+    pub title: String,
+    pub state: SessionState,
+    /// What it waits for the user to do in the page.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub handoff: Option<String>,
+}
+
+/// What the service tells the extension through its host (`browser/control`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowserControl {
+    /// Bring a tab and its window to the front.
+    Reveal {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session_id: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_id: Option<String>,
+    },
+    CloseTabs {
+        session_id: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_id: Option<String>,
+    },
+    /// A tab the user offered goes to this session.
+    AssignTab { target_id: String, session_id: String },
+    /// The sessions with tabs here, for the names of their tab groups and the extension's own
+    /// page.
+    Sessions { sessions: std::collections::BTreeMap<String, ExtensionSession> },
+    /// A session was deleted: its tabs are the user's now.
+    Forget { session_id: String },
+    /// Whether the agent uses this browser and profile.
+    InUse { in_use: bool },
+}
+
+/// What the extension asks of the app (`browser/request`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BrowserRequest {
+    OpenSession { session_id: String },
+    TabOffered { target_id: String, url: String, title: String },
 }
 
 /// Parameters of `browser/site_icon`.
@@ -449,11 +721,22 @@ pub struct ServerCapabilities {
     /// `returned_input` on `task_failed` (docs/kernel/input-queue-design.md).
     #[serde(default)]
     pub input_queue: bool,
+    /// Starting again from an earlier message: the `resend` op and `session_rewound`
+    /// (docs/kernel/message-resend-design.md).
+    #[serde(default)]
+    pub message_resend: bool,
     /// `doc/open` opens workbooks (xlsx, xlsm, xls, csv, tsv) as well as PDFs, and the
     /// workbook methods answer (docs/desktop/spreadsheet-design.md). A service without it
     /// refuses a workbook as "not a PDF".
     #[serde(default)]
     pub workbooks: bool,
+    /// Bots: the `bots/*` methods and `bots/changed` (docs/kernel/bot-design.md §4).
+    #[serde(default)]
+    pub bots: bool,
+    /// A bot's routines: the `bots/routine*` methods and `routines` on `BotSummary`
+    /// (docs/kernel/routine-design.md §8).
+    #[serde(default)]
+    pub routines: bool,
 }
 
 // ---- Sessions ----
@@ -906,8 +1189,10 @@ pub struct ModelsListResult {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SessionDefaults {
-    /// `provider/model-id`
-    pub model: String,
+    /// `provider/model-id`. Absent while no model is set up: `session/new` without a model then
+    /// fails with `no_model`, and the person has to connect one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     pub thinking: ThinkingLevel,
     pub permission_mode: PermissionMode,
 }
@@ -919,6 +1204,9 @@ pub struct ProviderSummary {
     pub plan: Option<TokenPlanSummary>,
     pub id: String,
     pub name: String,
+    /// The name by language tag, as `ModelSummary::names`.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub names: std::collections::BTreeMap<String, String>,
     pub auth: AuthKind,
     pub credential: CredentialState,
     /// The environment variable the key comes from, when `credential` is `env`.
@@ -1072,6 +1360,10 @@ pub struct ModelSummary {
     /// `provider/model-id`
     pub id: String,
     pub name: String,
+    /// The name in each language the source offers, by language tag (`zh`, `en`). A client that
+    /// has an interface language picks from these; `name` is for the rest.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub names: std::collections::BTreeMap<String, String>,
     pub provider: String,
     pub context_window: u64,
     pub reasoning: bool,
@@ -1218,6 +1510,56 @@ pub struct CatalogInfo {
     pub left_out: Vec<String>,
 }
 
+/// Parameters of `tools/list`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsListParams {
+    /// A loaded session: the tools it really has now, those of connected MCP servers included.
+    /// Without one, the built-in tools under the current configuration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolsListResult {
+    pub tools: Vec<ToolEntry>,
+}
+
+/// Where a tool comes from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolEntryOrigin {
+    Builtin,
+    Mcp,
+}
+
+/// What a tool does to the world: read-only tools may run side by side.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolEntryKind {
+    ReadOnly,
+    Mutating,
+}
+
+/// One tool, as `tools/list` and `finx tools --json` give it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ToolEntry {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema of its arguments.
+    pub parameters: serde_json::Value,
+    /// `base`, `agents`, `deferred` (the two tools that reach the others), `web`, `doc`, `browser`,
+    /// `cua`, `bot` or `mcp`.
+    pub group: String,
+    pub origin: ToolEntryOrigin,
+    pub kind: ToolEntryKind,
+    /// In the model's tool list from the start, rather than found through `tool_search`.
+    pub loaded: bool,
+    pub available: bool,
+    /// What it takes: the setting or the component missing, or a limit on an available tool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub needs: Option<String>,
+}
+
 /// Parameters of `skills/list`: `session_id` or `cwd`, or neither for what a session without
 /// a project would find.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -1279,6 +1621,9 @@ mod tests {
 pub struct ConnectionModel {
     pub id: String,
     pub name: String,
+    /// The name in each language the application offers, by language tag.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub names: std::collections::BTreeMap<String, String>,
     pub context_window: Option<u32>,
     pub max_output_tokens: Option<u32>,
     #[serde(default)] pub reasoning: bool,

@@ -77,8 +77,8 @@ impl Workspace {
             path: cwd.to_path_buf(),
             source,
         })?;
-        // A session without a project has its own folder, whatever lies around it.
-        let is_chat = home.is_chat_dir(&cwd);
+        // A session without a project, or a bot's, has its own folder, whatever lies around it.
+        let is_chat = home.has_no_project(&cwd);
         let project_root = if is_chat {
             None
         } else {
@@ -111,8 +111,13 @@ impl Workspace {
                     mcp_sources.entry(server.name.clone()).or_default().insert(0, ".mcp.json".to_string());
                 }
             }
-            let (servers, problems) = mcp::merge_servers(&config.mcp_servers, project_json, &[]);
+            let (mut servers, problems) = mcp::merge_servers(&config.mcp_servers, project_json, &[]);
             warnings.extend(problems);
+            for server in &mut servers {
+                server.project_defined = mcp_sources
+                    .get(&server.name)
+                    .is_some_and(|layers| layers.iter().any(|layer| layer == ".mcp.json" || layer == "project config"));
+            }
             servers
         } else {
             Vec::new()
@@ -150,6 +155,34 @@ impl Workspace {
         deps.mcp_servers = self.mcp_servers.clone();
         Ok(deps)
     }
+}
+
+/// What an untrusted project at `project_dir` would bring if it were trusted, one line each, the
+/// commands of its servers among them (standalone-cli-design §12.2). Nothing means nothing to ask.
+pub fn what_trust_brings(project_dir: &Path) -> Vec<String> {
+    let mut lines = Vec::new();
+    let path = project_dir.join(".mcp.json");
+    if let Some((servers, _)) = std::fs::read_to_string(&path).ok().and_then(|text| mcp::parse_mcp_json(&text, &path).ok())
+        && !servers.is_empty()
+    {
+        lines.push(format!(".mcp.json: {} MCP server(s)", servers.len()));
+        for server in &servers {
+            let how = match (&server.command, &server.url) {
+                (Some(command), _) => std::iter::once(command.clone()).chain(server.args.iter().cloned()).collect::<Vec<_>>().join(" "),
+                (None, Some(url)) => url.clone(),
+                (None, None) => "(no command)".to_string(),
+            };
+            lines.push(format!("  {}: {how}", server.name));
+        }
+    }
+    let path = project_dir.join(".finx").join("config.toml");
+    if let Some(mut table) = std::fs::read_to_string(&path).ok().and_then(|text| toml::from_str::<toml::Table>(&text).ok()) {
+        let items = config::strip_untrusted(&mut table);
+        if !items.is_empty() {
+            lines.push(format!(".finx/config.toml: {}", items.join(", ")));
+        }
+    }
+    lines
 }
 
 /// `.mcp.json` at the project root, when `mcp.project_json` is on and the project trusted.
@@ -210,6 +243,8 @@ pub fn kernel_deps(
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        routines: None,
     })
 }
 

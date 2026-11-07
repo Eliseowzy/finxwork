@@ -80,10 +80,13 @@ impl TestEnv {
             .current_dir(cwd)
             .env("FINX_HOME", self.home.path())
             .env("HOME", self.user_home())
+            .env_remove("XDG_DATA_HOME")
             // Saved keys go to a file in the test's home, never the developer's keychain.
             .env("FINX_CREDENTIAL_STORE", "file")
             // Sign-ins print their address; tests play the browser themselves.
             .env("FINX_NO_BROWSER", "1")
+            // What it says to people does not depend on the machine's locale.
+            .env("FINX_LANG", "en")
             // The public model catalog comes from the mock; the developer's keys stay out.
             .env("FINX_MODEL_CATALOG_URL", self.mock.catalog_url())
             .env_remove("DEEPSEEK_API_KEY")
@@ -93,6 +96,11 @@ impl TestEnv {
             .env_remove("MOONSHOT_API_KEY")
             .env_remove("ZHIPUAI_API_KEY")
             .env_remove("OPENROUTER_API_KEY")
+            .env_remove("TAVILY_API_KEY")
+            .env_remove("BRAVE_SEARCH_API_KEY")
+            .env_remove("BOCHA_API_KEY")
+            .env_remove("EXA_API_KEY")
+            .env_remove("PARALLEL_API_KEY")
             .env_remove("BAILIAN_TOKEN_PLAN_API_KEY")
             .env_remove("TENCENT_TOKEN_PLAN_API_KEY")
             .env_remove("VOLCENGINE_AGENT_PLAN_API_KEY")

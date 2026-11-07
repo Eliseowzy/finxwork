@@ -469,7 +469,7 @@ fn create_private_dir(dir: &Path) -> io::Result<()> {
 
 /// An exclusive lock for writing `path`, waited for up to two seconds. Lock files are kept in
 /// `run/locks` of finx's own directory (`finx_dir`), never beside a repository's file.
-fn lock(path: &Path, finx_dir: &Path) -> Result<File, WriteError> {
+pub fn lock(path: &Path, finx_dir: &Path) -> Result<File, WriteError> {
     let dir = finx_dir.join("run").join("locks");
     create_private_dir(&dir).map_err(|source| WriteError::Io { path: dir.clone(), source })?;
     // The same file however it is spelled: its directory exists by now.
@@ -549,10 +549,10 @@ pub fn credential_refs(text: &str) -> BTreeSet<String> {
     names
 }
 
-/// A name `credentials/set` takes: `mcp.` or `mcp-oauth.`, then 1-96 letters, digits, `.`,
-/// `_` or `-`.
+/// A name `credentials/set` takes: `mcp.`, `mcp-oauth.` or `web-search.`, then 1-96 letters,
+/// digits, `.`, `_` or `-`.
 pub fn valid_credential_name(name: &str) -> bool {
-    let rest = name.strip_prefix("mcp.").or_else(|| name.strip_prefix("mcp-oauth."));
+    let rest = name.strip_prefix("mcp.").or_else(|| name.strip_prefix("mcp-oauth.")).or_else(|| name.strip_prefix(crate::web_search::CREDENTIAL_PREFIX));
     rest.is_some_and(|rest| {
         !rest.is_empty() && rest.len() <= 96 && rest.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
     })
@@ -751,6 +751,7 @@ mod tests {
         assert!(matches!(write(&t, &[edit("model", json!("x"))], None), Err(WriteError::Invalid(_))));
         assert!(valid_credential_name("mcp.github"));
         assert!(valid_credential_name("mcp.pg.DATABASE_URL"));
+        assert!(valid_credential_name("web-search.tavily"));
         assert!(!valid_credential_name("deepseek"));
         assert!(!valid_credential_name("mcp."));
         assert!(!valid_credential_name("mcp.a b"));

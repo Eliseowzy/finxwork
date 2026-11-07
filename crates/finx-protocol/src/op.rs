@@ -20,6 +20,18 @@ pub enum Op {
         #[serde(default = "yes", skip_serializing_if = "is_yes")]
         commands: bool,
     },
+    /// Starts again from a message the user sent earlier: the running task stops, the
+    /// conversation goes back to just before that message, and `input` takes its place. Nothing
+    /// changes until this op: `session_rewound` says it happened, a `warning` with the code
+    /// `resend_rejected` that it did not (docs/kernel/message-resend-design.md).
+    Resend {
+        /// The `message_id` of a user message on the current branch.
+        message_id: String,
+        input: Vec<UserContent>,
+        /// As for `Prompt`.
+        #[serde(default = "yes", skip_serializing_if = "is_yes")]
+        commands: bool,
+    },
     /// Continue from the current history (retry after a failure).
     Continue,
     Interrupt,
@@ -44,6 +56,13 @@ pub enum Op {
         agent: String,
     },
     Approval {
+        call_id: String,
+        decision: ApprovalDecision,
+    },
+    /// Answers what a sub-agent asks: its `approval_requested`, carried by an `agent_event`.
+    AgentApproval {
+        /// The agent's id.
+        agent: String,
         call_id: String,
         decision: ApprovalDecision,
     },

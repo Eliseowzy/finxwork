@@ -16,7 +16,6 @@ use finx_core::context::HANDOFF_REQUEST;
 use finx_llm::Catalog;
 use finx_llm::ErrorKind;
 use finx_llm::Message;
-use finx_llm::Model;
 use finx_llm::ModelRegistry;
 use finx_llm::ProviderConfig;
 use finx_llm::RegistryOptions;
@@ -25,6 +24,7 @@ use finx_llm::ToolChoice;
 use finx_llm::ToolSpec;
 use finx_llm::UserContent;
 use finx_llm::api::scripted::Script;
+use finx_llm::catalog::ModelToml;
 use finx_llm::api::scripted::ScriptedApi;
 use finx_protocol::PermissionMode;
 use finx_protocol::CompactionReason;
@@ -53,19 +53,12 @@ const BIG: &str = "test/scripted-big";
 const SOFT: u64 = 16_200;
 const HARD: u64 = 18_000;
 
-fn model(id: &str, window: u32) -> Arc<Model> {
-    let mut model = (*ScriptedApi::provider().models[0]).clone();
-    model.id = id.into();
-    model.name = id.into();
-    model.context_window = window;
-    model.max_output_tokens = 2_000;
-    Arc::new(model)
+fn entry(id: &str, window: u32) -> ModelToml {
+    ModelToml { name: Some(id.into()), context_window: Some(window), max_output_tokens: Some(2_000), ..ModelToml::new(id) }
 }
 
 fn provider() -> ProviderConfig {
-    let mut provider = ScriptedApi::provider();
-    provider.models = vec![model("scripted", 20_000), model("scripted-big", 60_000)];
-    provider
+    ScriptedApi::provider_with(vec![entry("scripted", 20_000), entry("scripted-big", 60_000)])
 }
 
 /// Returns a large output, to exercise the kernel's safety net for any tool.
@@ -115,6 +108,8 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        routines: None,
     }
 }
 
@@ -146,6 +141,7 @@ async fn harness(model: &str, config: Config, scripts: Vec<Script>) -> Harness {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     let kernel = Kernel::start(options, deps(&api, &work, &home)).await.unwrap();
     Harness {
@@ -168,6 +164,7 @@ async fn resume(home: &FinxHome, work: &Path, session_id: &str, api: &Arc<Script
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     Kernel::resume(options, deps(api, work, home)).await.unwrap()
 }
@@ -679,6 +676,7 @@ async fn without_a_session_log_saved_output_is_temporary() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     let mut kernel = Kernel::start(options, deps).await.unwrap();
     let result = kernel.run(prompt("print")).await.unwrap();

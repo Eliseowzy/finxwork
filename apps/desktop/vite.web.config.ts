@@ -7,6 +7,7 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: path.join(import.meta.dirname, "src/renderer"),
   plugins: [react()],
+  worker: { format: "es" },
   resolve: { dedupe: ["react", "react-dom"] },
   server: { host: "127.0.0.1", port: Number(process.env.PORT ?? 5174), strictPort: true },
 });

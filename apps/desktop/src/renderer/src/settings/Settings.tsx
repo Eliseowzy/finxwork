@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import type { Appearance, KernelStatusView, Preferences } from "../../../shared/bridge";
+import type { Appearance, KernelStatusView, NotificationSettings, Preferences } from "../../../shared/bridge";
 import { i18n, languages, pickLanguage, resolveLanguage, type LanguageChoice } from "../../../shared/i18n";
 import { SheetHost, ToastView } from "../components";
 import { agoText } from "../format";
@@ -10,12 +10,15 @@ import { Icon, Mark } from "../icons";
 import { BrowserSettings } from "./BrowserSettings";
 import { DesktopSettings } from "./DesktopSettings";
 import { ModelConnections } from "./ModelConnections";
+import { SearchSettings } from "./SearchSettings";
 import { useStore } from "../store";
 import "../styles/settings.css";
 
 const pages = [
   { id: "general", icon: "gear" },
+  { id: "notifications", icon: "bell" },
   { id: "models", icon: "cube" },
+  { id: "search", icon: "search" },
   { id: "browser", icon: "globe" },
   { id: "desktop", icon: "laptop" },
   { id: "about", icon: "info" },
@@ -62,7 +65,9 @@ export function SettingsWindow() {
         </div>
         <div className="set-body">
           {page === "general" && <General />}
+          {page === "notifications" && <Notifications />}
           {page === "models" && <ModelConnections />}
+          {page === "search" && <SearchSettings />}
           {page === "browser" && <BrowserSettings />}
           {page === "desktop" && <DesktopSettings />}
           {page === "about" && <About />}
@@ -87,12 +92,52 @@ function SRow({ title, desc, children }: { title: ReactNode; desc?: ReactNode; c
   );
 }
 
+/** Notifications: this device's system notifications (notification-design §5.5). Muting a bot is in the bot's own settings. */
+function Notifications() {
+  const { t } = useTranslation("settings");
+  const [prefs, setPrefs] = useState<Preferences>();
+  useEffect(() => {
+    window.finx?.getPreferences().then(setPrefs);
+  }, []);
+  const on = prefs?.notifications;
+  const set = (p: Partial<NotificationSettings>) => window.finx?.setPreferences({ notifications: { ...on!, ...p } }).then(setPrefs);
+  const toggle = (key: keyof NotificationSettings, label: string, disabled = false) => (
+    <button className={`sw ${on?.[key] ? "on" : ""}`} role="switch" aria-checked={!!on?.[key]} aria-label={label} disabled={!on || disabled} onClick={() => set({ [key]: !on![key] })} />
+  );
+  return (
+    <div className="form">
+      <div className="fgroup">
+        <SRow title={t("notifications.enabled")} desc={t("notifications.enabledNote")}>
+          {toggle("enabled", t("notifications.enabled"))}
+        </SRow>
+        <SRow title={t("notifications.sound")}>{toggle("sound", t("notifications.sound"), !on?.enabled)}</SRow>
+        <SRow title={t("notifications.sessionEnded")} desc={t("notifications.sessionEndedNote")}>
+          {toggle("sessionEnded", t("notifications.sessionEnded"), !on?.enabled)}
+        </SRow>
+      </div>
+      <div className="fgroup">
+        <SRow title={t("notifications.test")} desc={t("notifications.testNote")}>
+          <button className="btn" onClick={() => window.finx?.testNotification()}>{t("notifications.testButton")}</button>
+        </SRow>
+        {window.finx?.platform === "mac" && (
+          <SRow title={t("notifications.system")} desc={t("notifications.systemNote")}>
+            <button className="btn" onClick={() => window.finx?.openNotificationSettings()}>{t("notifications.systemButton")}</button>
+          </SRow>
+        )}
+      </div>
+      <p className="set-note">{t("notifications.muteNote")}</p>
+    </div>
+  );
+}
+
 /** General: the appearance and the language, the app's own preferences. */
 function General() {
   const { t } = useTranslation("settings");
   const [prefs, setPrefs] = useState<Preferences>();
   useEffect(() => {
+    const stop = window.finx?.onPreferences(setPrefs);
     window.finx?.getPreferences().then(setPrefs);
+    return stop;
   }, []);
   const set = (p: Partial<Preferences>) => window.finx?.setPreferences(p).then(setPrefs);
   const running = window.finx?.language;
@@ -100,16 +145,28 @@ function General() {
   const restart = prefs && running && resolveLanguage(prefs.language, navigator.languages) !== running;
   return (
     <div className="form">
+      <fieldset className="appearance-picker" disabled={!prefs}>
+        <legend>{t("appearance.title")}</legend>
+        <div className="appearance-options">
+          {(["system", "light", "gray", "black"] as Appearance[]).map((a) => (
+            <label key={a} className="appearance-choice">
+              <input type="radio" name="appearance" value={a} checked={prefs?.appearance === a} onChange={() => set({ appearance: a })} />
+              <span className="appearance-preview" aria-hidden="true">
+                <span className={`appearance-mini ${a === "system" ? "light" : a}`}>
+                  <span className="appearance-mini-side" /><span className="appearance-mini-lines"><i /><i /><i /></span>
+                </span>
+                {a === "system" && (
+                  <span className="appearance-mini gray appearance-system-dark">
+                    <span className="appearance-mini-side" /><span className="appearance-mini-lines"><i /><i /><i /></span>
+                  </span>
+                )}
+              </span>
+              <span className="appearance-caption"><span>{t(`appearance.${a}`)}</span><Icon name="check" /></span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <div className="fgroup">
-        <SRow title={t("appearance.title")}>
-          <div className="seg" role="group" aria-label={t("appearance.title")}>
-            {(["system", "light", "dark"] as Appearance[]).map((a) => (
-              <button key={a} type="button" className={prefs?.appearance === a ? "on" : ""} aria-pressed={prefs?.appearance === a} disabled={!prefs} onClick={() => set({ appearance: a })}>
-                {t(`appearance.${a}`)}
-              </button>
-            ))}
-          </div>
-        </SRow>
         <SRow
           title={t("language.title")}
           desc={
@@ -128,6 +185,30 @@ function General() {
             ))}
           </select>
         </SRow>
+        {window.finx && (
+          <>
+            <SRow title={t("routines.atLogin")} desc={t("routines.atLoginNote")}>
+              <button
+                className={`sw ${prefs?.routinesAtLogin !== false ? "on" : ""}`}
+                role="switch"
+                aria-checked={prefs?.routinesAtLogin !== false}
+                aria-label={t("routines.atLogin")}
+                disabled={!prefs}
+                onClick={() => void set({ routinesAtLogin: prefs?.routinesAtLogin === false })}
+              />
+            </SRow>
+            <SRow title={t("routines.keepAwake")} desc={t("routines.keepAwakeNote")}>
+              <button
+                className={`sw ${prefs?.routinesKeepAwake ? "on" : ""}`}
+                role="switch"
+                aria-checked={!!prefs?.routinesKeepAwake}
+                aria-label={t("routines.keepAwake")}
+                disabled={!prefs}
+                onClick={() => void set({ routinesKeepAwake: !prefs?.routinesKeepAwake })}
+              />
+            </SRow>
+          </>
+        )}
       </div>
       {!window.finx && <p className="set-note">{t("browserNote")}</p>}
     </div>

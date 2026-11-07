@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AssistantContent, Event, EventMsg, SessionInfo, Usage } from "@finx/protocol";
 import { applyEvents, callTarget, fromSnapshot, type SessionView } from "./session.ts";
-import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, toolObject, userText, workSummary } from "./steps.ts";
+import { approvalPreview, attachedBlock, docQuoteBlock, docViewingBlock, presentationViewingBlock, sheetViewingBlock, webCommentBlock, conversation, describe, settledSteps, withStreaming, toolObject, userText, workSummary } from "./steps.ts";
 import { clockText, costText, tokensText } from "./text.ts";
 
 const info: SessionInfo = { session_id: "s", cwd: "/w/app", session_file: "/f.jsonl", model: "p/m", thinking: "off", permission_mode: "manual", context_window: 1000, archived: false };
@@ -59,6 +59,30 @@ test("thinking and tool calls between the model's words become one step; words a
   assert.ok(w?.kind === "work" && w.items[2].kind === "tool" && w.items[2].tool.state === "cancelled");
 });
 
+test("what is being written goes after the settled steps, which stay the same objects", () => {
+  const before: EventMsg[] = [
+    { type: "task_started", task_id: "t1" },
+    { type: "message_completed", message_id: "u1", message: { role: "user", content: [{ type: "text", text: "hi" }], ts: 1 } },
+    assistant("a1", [{ type: "thinking", text: "first" }]),
+  ];
+  const v = play([...before, { type: "message_started", message_id: "a2", role: "assistant" }, { type: "message_delta", message_id: "a2", delta: { type: "thinking", index: 0, text: "more" } }]);
+  const settled = settledSteps(v);
+  const [, group] = settled;
+  assert.equal(group.kind === "work" && group.items.length, 1);
+  const steps = withStreaming(settled, v);
+  // The thinking joins the group before it, in a copy.
+  assert.equal(steps.length, settled.length);
+  assert.ok(steps[0] === settled[0]);
+  const joined = steps.at(-1)!;
+  assert.deepEqual(joined.kind === "work" && [joined.items.length, joined.live], [2, true]);
+  assert.deepEqual(group.kind === "work" && [group.items.length, group.live], [1, false]);
+  assert.deepEqual(steps, conversation(v));
+  // Nothing being written: the very same list.
+  const quiet = play(before);
+  const still = settledSteps(quiet);
+  assert.equal(withStreaming(still, quiet), still);
+});
+
 test("a group's line counts its calls kind by kind; thinking counts only alone", () => {
   const tool = (category: "read" | "execute", state: "done" | "denied" = "done") =>
     ({ kind: "tool", key: Math.random().toString(), tool: { call_id: "", name: "", category, title: "", args: {}, state } }) as const;
@@ -92,10 +116,10 @@ test("an approval previews the command, the change, or what is written", () => {
 
 test("a message's attached files go to the model as a block of paths and come back as files, not words", () => {
   const content = [{ type: "text", text: "look at these" }, { type: "image", mime_type: "image/png", data: "AAAA" }, attachedBlock(["/w/a.rs", "/w/docs/"])] as const;
-  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [], quotes: [] });
-  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [], quotes: [] });
+  assert.deepEqual(userText([...content]), { text: "look at these", files: ["/w/a.rs", "/w/docs/"], comments: [], quotes: [], tabs: [] });
+  assert.deepEqual(userText([attachedBlock(["/w/b"])]), { text: "", files: ["/w/b"], comments: [], quotes: [], tabs: [] });
   const web = { url: "https://example.com/", title: "Example", tag: "h1", text: "Hello", selector: "#h", comment: "shorter" };
-  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web], quotes: [] });
+  assert.deepEqual(userText([{ type: "text", text: "see" }, webCommentBlock([web])]), { text: "see", files: [], comments: [web], quotes: [], tabs: [] });
   const v = play([{ type: "message_completed", message_id: "u1", message: { role: "user", content: [...content], ts: 1 } }]);
   const [u] = conversation(v);
   assert.ok(u.kind === "user");
@@ -109,7 +133,7 @@ test("an attached workbook tells the model to use Finx document tools and remain
   assert.equal(workbook.type, "text");
   assert.match(workbook.text, /doc_open, then doc_read/);
   assert.match(workbook.text, /instead of .*shell\/Python/);
-  assert.deepEqual(userText([workbook]), { text: "", files: ["/w/model.XLSX"], comments: [], quotes: [] });
+  assert.deepEqual(userText([workbook]), { text: "", files: ["/w/model.XLSX"], comments: [], quotes: [], tabs: [] });
 
   // Messages written before the workbook hint was added still render as file chips.
   assert.deepEqual(userText([{ type: "text", text: "Attached files:\n/w/old.xlsx" }]), {
@@ -117,6 +141,7 @@ test("an attached workbook tells the model to use Finx document tools and remain
     files: ["/w/old.xlsx"],
     comments: [],
     quotes: [],
+    tabs: [],
   });
 });
 
@@ -146,17 +171,24 @@ test("a call through call_tool is told as the tool it runs", () => {
   assert.deepEqual(callTarget("read", { path: "a" }), { name: "read", args: { path: "a" } });
   assert.deepEqual(callTarget("call_tool", {}), { name: "call_tool", args: {} });
   assert.equal(describe("call_tool", { name: "read", arguments: { path: "/p/a.md" } }, "/p").title, "read a.md");
+  assert.deepEqual(describe("call_tool", { name: "web_search", arguments: { query: "贵州茅台 三季报" } }, "/p"), { category: "search", title: "贵州茅台 三季报" });
 });
 
 test("quoted parts of documents come back as quotes, and what the column shows is not shown", () => {
   const quote = { path: "/w/合同.pdf", doc_id: "0123456789abcdef", page: 3, text: "违约金为合同总额的 20%", block: "p3.b12" };
   const content = [{ type: "text" as const, text: "这条合理吗" }, docQuoteBlock([quote]), docViewingBlock("/w/合同.pdf", "0123456789abcdef", 3, 12)];
-  assert.deepEqual(userText(content), { text: "这条合理吗", files: [], comments: [], quotes: [quote] });
+  assert.deepEqual(userText(content), { text: "这条合理吗", files: [], comments: [], quotes: [quote], tabs: [] });
   assert.match((content[2] as { text: string }).text, /page 3 of 12/);
 });
 
 test("a workbook range comes back as a quote, and its live selection is not shown", () => {
   const quote = { path: "/w/model.xlsx", doc_id: "fedcba9876543210", sheet: "利润表", range: "B3:D6", text: "| | B | C | D |" };
   const content = [{ type: "text" as const, text: "分析这个区域" }, docQuoteBlock([quote]), sheetViewingBlock(quote.path, quote.doc_id, quote.sheet, quote.range, "1,344.00")];
-  assert.deepEqual(userText(content), { text: "分析这个区域", files: [], comments: [], quotes: [quote] });
+  assert.deepEqual(userText(content), { text: "分析这个区域", files: [], comments: [], quotes: [quote], tabs: [] });
+});
+
+test("the open presentation goes along with a message but is not shown", () => {
+  const block = presentationViewingBlock("/w/deck.pptx", false);
+  assert.match((block as { text: string }).text, /deck\.pptx/);
+  assert.equal(userText([{ type: "text", text: "当前打开的ppt内容是啥" }, block]).text, "当前打开的ppt内容是啥");
 });

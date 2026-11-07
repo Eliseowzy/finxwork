@@ -4,15 +4,15 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { RpcClient, RpcError, type Transport } from "@finx/client";
-import { PROTOCOL_VERSION, type InitializeResult, type ServerCapabilities, type SessionState } from "@finx/protocol";
+import { PROTOCOL_VERSION, type BotSummary, type InitializeResult, type ServerCapabilities, type SessionState, type SessionSummary } from "@finx/protocol";
 import type { KernelStatusView } from "../../shared/bridge";
 import type { LoginEnvironment } from "./env.ts";
 import { readRecord, stopRecorded, type ServiceRecord } from "./record.ts";
 
 // Keeps a finx service that matches the app running, and says how it is
 // (desktop-kernel-integration §5–§6): connect to the one already there, or
-// start the app's own; check its version and capabilities; when it goes
-// away, start it again; replace an older one once no task runs. It talks to
+// start the app's own; check its version, capabilities and file; when it goes
+// away, start it again; replace one that differs once no task runs. It talks to
 // the service on a control connection of its own and never touches what the
 // windows' connections carry.
 
@@ -46,10 +46,22 @@ export type SupervisorOptions = {
   /** How long a started service has to answer. */
   startTimeoutMs?: number;
   trace?: (message: string) => void;
+  /** Follows the lists this connection already follows: the app's system notifications. */
+  lists?: ListFollower;
+};
+
+/** The service's lists: what they are on each new connection, then how they change. */
+export type ListFollower = {
+  reconnected(): void;
+  botList(list: BotSummary[]): void;
+  botsChanged(changed: BotSummary[], deleted: string[]): void;
+  sessionList(list: SessionSummary[]): void;
+  sessionsChanged(changed: SessionSummary[], deleted: string[]): void;
 };
 
 /** The longest Unix socket path (sockaddr_un's 104 bytes, with the terminator). */
 const MAX_SOCKET_PATH = 103;
+const COMPARE_CHUNK = 1 << 20;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** A Unix socket as an RpcClient transport. */
@@ -109,7 +121,7 @@ export class Supervisor {
   private env: Promise<LoginEnvironment> | null = null;
   private cycle: Promise<void> | null = null;
   private control: { rpc: RpcClient; socket: net.Socket } | null = null;
-  /** Sessions with a task running, as the control connection hears of them. */
+  /** Sessions with a task running, and bots at work, as the control connection hears of them. */
   private readonly busy = new Map<string, SessionState>();
   private expectClose = false;
   /** The last service was stopped to be replaced. */
@@ -270,6 +282,13 @@ export class Supervisor {
   /** initialize on a fresh control connection; on success the service is ready. */
   private async handshake(socket: net.Socket): Promise<Handshake> {
     const rpc = new RpcClient(socketTransport(socket));
+    // finx writes its record before it listens: this is the service that answers.
+    const record = readRecord(this.o.endpoint);
+    const ours = !!record?.exe && !!this.o.binary && sameFile(record.exe, this.o.binary);
+    // Only as the app opens. On a reconnect, a service that isn't ours was started by whoever
+    // got there first, another app still open or a terminal, and replacing it would have the
+    // two replace each other for as long as both run.
+    const another = !ours && this.status.state === "starting" && (await this.anotherBuild(record));
     let init: InitializeResult;
     try {
       init = await withTimeout(
@@ -280,36 +299,56 @@ export class Supervisor {
       socket.destroy();
       return e instanceof RpcError && e.kind === "invalid_params" ? "incompatible" : "silent";
     }
-    const record = readRecord(this.o.endpoint);
-    const ours = !!record?.exe && !!this.o.binary && sameFile(record.exe, this.o.binary);
     // Replaced: a service of another version than the app ships (an older app's, or one
     // started from a terminal; after an update in place the app's own path runs the old
-    // version), one that lacks what the app needs, or the app's own when its binary was
-    // rebuilt since (development). Only once in a row: if the service the app just started
-    // still differs, starting it again would not help.
+    // version), one that lacks what the app needs, the app's own when its binary was
+    // rebuilt since (development), or one found as the app opens that runs another build:
+    // the version need not change from one build to the next (desktop-release DD-25), and
+    // a terminal's counts like an older app's. Only once in a row: if the service the app
+    // just started still differs, starting it again would not help.
     const versionOff = this.o.expected !== null && init.server_info.version !== this.o.expected;
     const lacking = this.o.required.some((c) => !init.capabilities[c]);
     const rebuilt = ours && fs.statSync(this.o.binary!).mtimeMs > Date.parse(record!.started_at) + 1000;
     const swapped = ours && this.swapped(record!);
-    const stale = (versionOff || lacking || rebuilt || swapped) && !(ours && this.replaced);
+    const stale = (versionOff || lacking || rebuilt || swapped || another) && !(ours && this.replaced);
     if (!stale) this.replaced = false;
     if (ours && this.replaced && (versionOff || lacking)) this.o.trace?.("the app's own finx differs from what the app expects; keeping it");
+    if (another) this.o.trace?.(`the service runs another build (${record!.exe}); replacing it once no task runs`);
     // The app's life does not hang on this connection (a test's either).
     socket.unref();
     this.control = { rpc, socket };
     this.busy.clear();
     socket.once("close", () => this.lost(socket));
+    this.o.lists?.reconnected();
     if (init.capabilities.sessions_subscribe) {
       rpc.on("sessions/changed", (c) => {
         for (const s of c.sessions) this.track(s.session_id, s.state);
         for (const id of c.deleted ?? []) this.busy.delete(id);
+        this.o.lists?.sessionsChanged(c.sessions, c.deleted ?? []);
         if (this.status.replacing) void this.replaceWhenIdle();
       });
       try {
         const list = await rpc.request("sessions/subscribe", { limit: 500 });
         for (const s of list.sessions) this.track(s.session_id, s.state);
+        this.o.lists?.sessionList(list.sessions);
       } catch {
         // Without the list the service is replaced only when asked.
+      }
+    }
+    // A bot's conversation is not in the session list: its row says when it works (bot-design §5.2).
+    if (init.capabilities.bots) {
+      rpc.on("bots/changed", (c) => {
+        for (const b of c.bots) this.trackBot(b);
+        for (const id of c.deleted ?? []) this.busy.delete(`bot:${id}`);
+        this.o.lists?.botsChanged(c.bots, c.deleted ?? []);
+        if (this.status.replacing) void this.replaceWhenIdle();
+      });
+      try {
+        const list = await rpc.request("bots/subscribe", {});
+        for (const b of list.bots) this.trackBot(b);
+        this.o.lists?.botList(list.bots);
+      } catch {
+        // Without the list a bot's work does not hold a replacement back.
       }
     }
     this.attempt = 0;
@@ -331,18 +370,39 @@ export class Supervisor {
     }
   }
 
-  /** A service this supervisor (or the app before an update) started runs a file no longer at the app's path. */
+  /** A service this supervisor (or the app before an update) started runs a file no longer at its path. */
   private swapped(record: ServiceRecord): boolean {
     if (!this.o.starts) return false;
     const noted = readStarts(this.o.starts)[this.o.endpoint];
     if (!noted || noted.pid !== record.pid) return false;
-    const now = fileId(this.o.binary!);
+    const now = fileId(record.exe!);
     return !!now && (now.dev !== noted.dev || now.ino !== noted.ino);
+  }
+
+  /**
+   * A service not running the app's file: whether it runs another build, as far as the
+   * files tell. A record naming no file tells nothing, and without a file of its own the
+   * app has nothing to start in the service's place; a file that is gone is another build.
+   */
+  private async anotherBuild(record: ServiceRecord | null): Promise<boolean> {
+    const binary = this.o.binary;
+    if (!record?.exe || !binary || !fileId(binary)) return false;
+    // A file replaced since the service started says nothing about what it runs.
+    return this.swapped(record) || !(await sameBytes(record.exe, binary));
   }
 
   private track(id: string, state: SessionState) {
     if (state === "running" || state === "awaiting_approval") this.busy.set(id, state);
     else this.busy.delete(id);
+  }
+
+  /** A bot works while it answers, waits for an approval or has sub-agents at work. */
+  private trackBot(b: BotSummary) {
+    const key = `bot:${b.id}`;
+    if (b.waiting) this.busy.set(key, "awaiting_approval");
+    // A routine's run shows nowhere in the row's work, and the service's replacement waits for it (routine-design §7.3).
+    else if (b.typing || (b.agents_working ?? 0) > 0 || b.routines?.some((r) => r.running)) this.busy.set(key, "running");
+    else this.busy.delete(key);
   }
 
   /** Replaces the service now if no task runs; otherwise the list's next change tries again. */
@@ -408,6 +468,29 @@ function sameFile(a: string, b: string): boolean {
     return fs.realpathSync(a) === fs.realpathSync(b);
   } catch {
     return a === b;
+  }
+}
+
+/** Whether two files hold the same bytes, read only as far as the first difference; one that cannot be read does not. */
+export async function sameBytes(a: string, b: string): Promise<boolean> {
+  let x: fs.promises.FileHandle | undefined;
+  let y: fs.promises.FileHandle | undefined;
+  try {
+    x = await fs.promises.open(a, "r");
+    y = await fs.promises.open(b, "r");
+    const size = (await x.stat()).size;
+    if ((await y.stat()).size !== size) return false;
+    const [p, q] = [Buffer.allocUnsafe(COMPARE_CHUNK), Buffer.allocUnsafe(COMPARE_CHUNK)];
+    for (let at = 0; at < size; at += COMPARE_CHUNK) {
+      const [r, s] = await Promise.all([x.read(p, 0, COMPARE_CHUNK, at), y.read(q, 0, COMPARE_CHUNK, at)]);
+      if (r.bytesRead !== s.bytesRead || !p.subarray(0, r.bytesRead).equals(q.subarray(0, s.bytesRead))) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await x?.close();
+    await y?.close();
   }
 }
 

@@ -5,6 +5,7 @@
 // panel's tree joins them.
 // Everything stays in a private HOME. Needs `pnpm build`, `cargo build -p finx-cli` and PDFium
 // (tools/pdfium, see crates/finx-docs). The PDF: FINX_DOC_PDF, else pdf_oxide's 1.pdf.
+import { cdpPort } from "./lib/port.mjs";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -58,7 +59,7 @@ fs.writeFileSync(path.join(home, "models.toml"), `[providers.mock]\nname = "Mock
 fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermission_mode = "manual"\n[models]\nnetwork = false\n`);
 
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function attach(match, what) {
   let target;
@@ -126,7 +127,7 @@ const pdfBar = `!!document.querySelector('.fpn .dcp-viewer:not([hidden]) .dcp-ba
 let failed = false;
 try {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
     cwd: project,
   });
@@ -147,22 +148,31 @@ try {
   await main.until("both tags", `!!(${chip("研报")}) && !!(${chip("笔记")})`);
   check(!(await main.run(`(${chip("研报")}).classList.contains("gone")`)), "the PDF's tag is greyed though the file is there");
 
-  // 1. The PDF's tag opens the file panel, the PDF in it with its own bar; the sidebar stays where it was.
+  // 1. The PDF's tag opens over the window (content-actions-design DD-161); its button takes it to the
+  // file panel, the PDF in it with its own bar; the sidebar stays where it was.
   check(!(await main.run(`document.querySelector(".mainwrap").classList.contains("noside")`)), "the sidebar was not out to begin with");
-  await main.run(`(${chip("研报")}).click()`);
+  const toPanel = async (name) => {
+    await main.run(`(${chip(name)}).click()`);
+    await main.until(`${name} over the window`, `!!document.querySelector(".fpv-panel")`);
+    await main.run(`document.querySelector(".fpv-panel").click()`);
+    await main.until(`${name} out of the preview`, `!document.querySelector(".fpv")`);
+  };
+  await toPanel("研报");
   await main.until("the report in the panel", `${activeTab} === "report.pdf" && ${pdfBar}`, 30000);
   check(!(await main.run(`!!document.querySelector(".dcp")`)), "a document column of its own opened");
   check(!(await main.run(`document.querySelector(".mainwrap").classList.contains("noside")`)), "opening a PDF put the sidebar away");
   await main.shot("1-pdf-tag");
 
-  // 2. A text file's tag opens beside it as another tab, without the PDF's bar.
-  await main.run(`(${chip("笔记")}).click()`);
+  // 2. A text file opens beside it as another tab, without the PDF's bar.
+  await toPanel("笔记");
   await main.until("notes.md in the panel", `${activeTab} === "notes.md"`);
   check((await main.run(tabCount)) === 2, "the PDF's tab went when the text file opened");
   check(!(await main.run(pdfBar)), "the PDF's bar shows over a text file");
   await main.shot("2-md-tag");
 
   // 3. A PDF picked in the panel's tree opens there too, and the first one is still laid out.
+  // A file from the conversation leaves the tree closed (file-panel-design §4.2).
+  await main.run(`[...document.querySelectorAll(".fpn button")].find((b) => ["显示或隐藏目录树", "Show or hide the file tree"].includes(b.getAttribute("aria-label")))?.click()`);
   await main.until("second.pdf in the tree", `!!(${treeRow("second.pdf")})`);
   await main.run(`(${treeRow("second.pdf")}).click()`);
   await main.until("second.pdf in the panel", `${activeTab} === "second.pdf" && ${pdfBar}`, 30000);

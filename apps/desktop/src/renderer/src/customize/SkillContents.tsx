@@ -121,7 +121,7 @@ export function SkillContents({ dir, files, error, reveal }: { dir: string; file
   else if (md && !source)
     view = (
       <div className="cz-vmd">
-        <Markdown text={body(text)} />
+        <Markdown text={body(text)} mode="document" />
       </div>
     );
   else if (md) view = <Source text={text} />;

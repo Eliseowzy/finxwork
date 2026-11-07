@@ -3,12 +3,8 @@
    the same rules. Colours come from tokens.css only. */
 *{box-sizing:border-box}
 html,body{height:100%}
-body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);line-height:1.38;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
+body{margin:0;background:var(--win);color:var(--l1);font-family:var(--font);font-size:var(--fs);font-weight:var(--font-weight-normal);font-variation-settings:var(--font-axes);font-optical-sizing:auto;font-variant-ligatures:no-contextual;line-height:20px;-webkit-font-smoothing:antialiased;user-select:none;-webkit-user-select:none;cursor:default;overflow:hidden}
 #root{height:100%}
-/* macOS: the window's sidebar material shows through the sidebar; everything else stays opaque. */
-html.vibrant,html.vibrant body{background:transparent}
-html.vibrant .side{background:var(--side-tint)}
-html.vibrant .grp-h,html.vibrant .grp-row{position:static;background:transparent}
 input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 /* Text that can be selected shows the text cursor, as in a text field; its buttons stay arrows. */
 .sel-text{cursor:text}
@@ -27,8 +23,10 @@ input,textarea,.sel-text{user-select:text;-webkit-user-select:text}
 /* window chrome: the title bar areas drag the window; controls in them don't */
 .drag{-webkit-app-region:drag}
 .drag button,.drag input,.drag select,.drag a,.drag .no-drag{-webkit-app-region:no-drag}
+/* A dialog's backdrop closes it: the bars under it stop taking those clicks to move the window. */
+:root:has(dialog[open]) .drag{-webkit-app-region:no-drag}
 button{font:inherit;color:inherit}
-.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
+.ic{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.875;stroke-linecap:round;stroke-linejoin:round;flex:none;display:block}
 .ic.sm{width:13px;height:13px}
 .ic.fill{fill:currentColor;stroke:none}
 /* controls */
@@ -57,7 +55,7 @@ input:disabled,textarea:disabled{cursor:default}
 .cb{display:flex;align-items:center;gap:8px;border:0;background:none;padding:0;text-align:left}
 .cb .box{width:14px;height:14px;border-radius:var(--r-xs);background:var(--field);box-shadow:inset 0 0 0 1px var(--field-bd);display:flex;align-items:center;justify-content:center;flex:none}
 .cb.on .box{background:var(--accent);box-shadow:none;color:#fff}
-.cb .box .ic{width:11px;height:11px;stroke-width:2.2}
+.cb .box .ic{width:11px;height:11px;stroke-width:3.3}
 .cb:not(.on) .box .ic{display:none}
 /* A segmented control: a quiet track as tall as its buttons; the one chosen is a raised block
    filling it, with a hairline edge. */
@@ -71,6 +69,10 @@ input:disabled,textarea:disabled{cursor:default}
 .dotc.on{background:var(--green)}
 .dotc.warn{background:var(--orange)}
 .mono{font-family:var(--mono)}
+:where(code,pre,kbd,.mono,.cblock,.cm-editor,.tool .cmd,.tool .out){font-variation-settings:normal;font-weight:400}
+:where(input,textarea,select){font-family:var(--font);font-variation-settings:inherit}
+:where(h1,h2){font-variation-settings:"ROND" 20,"slnt" 0,"wdth" 100}
+:where(h3,h4,h5,h6){font-variation-settings:"ROND" 20,"slnt" 0,"wdth" 94}
 .muted{color:var(--l2)}
 .faint{color:var(--l3)}
 .tnum{font-variant-numeric:tabular-nums}
@@ -86,55 +88,64 @@ input:disabled,textarea:disabled{cursor:default}
 .mini-spin{width:12px;height:12px;border-radius:50%;border:1.6px solid var(--fill3);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
 
 /* main window */
-.mainwrap{position:relative;display:grid;grid-template-columns:272px minmax(0,1fr);height:100%;transition:grid-template-columns .3s cubic-bezier(.2,0,0,1)}
+.mainwrap{position:relative;display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);height:100%;transition:grid-template-columns .3s cubic-bezier(.2,0,0,1)}
 .mainwrap.noside{grid-template-columns:0 minmax(0,1fr)}
 /* Edge to edge: the sidebar fills the window from top to bottom and left to its edge, one hairline from the content. */
 .side{background:var(--side);border-right:.5px solid var(--sep);display:flex;flex-direction:column;min-height:0;overflow:hidden}
-/* Sidebar titles a step brighter than other text in the dark, as small text on the material reads grey. */
-@media (prefers-color-scheme:dark){.side{--l1:rgba(255,255,255,.93)}}
+/* Selected navigation gets the same quiet raised edge as the dark composer. */
+.side :is(.nav-i,.srow,.brow).sel{box-shadow:var(--side-sel-sh)}
+.side :is(.stitle,.bname,.nav-i){font-weight:var(--font-weight-normal)}
 .noside .side{opacity:0;pointer-events:none}
 .mainwrap>.content{grid-column:2}
 /* No room for the sidebar beside the conversation, but asked for: over it, opaque, until a click beside it (layout.ts). */
-.mainwrap.peek .side{position:absolute;top:0;left:0;bottom:0;z-index:20;width:272px;opacity:1;pointer-events:auto;background:var(--side);
+.mainwrap.peek .side{position:absolute;top:0;left:0;bottom:0;z-index:20;width:var(--sidebar-width);opacity:1;pointer-events:auto;background:var(--side);
   box-shadow:10px 0 30px rgba(0,0,0,.14);animation:peek-in .22s cubic-bezier(.2,0,0,1)}
 .peek-scrim{position:absolute;inset:0;z-index:19;background:rgba(0,0,0,.08);animation:scrim-in .2s}
 @keyframes scrim-in{from{opacity:0}}
 @keyframes peek-in{from{transform:translateX(-24px);opacity:0}}
 @media (prefers-reduced-motion:reduce){.mainwrap.peek .side{animation:none}}
 /* A narrow conversation: less margin beside its column and its composer. */
-.mainwrap.narrow .dbody{padding-left:var(--sp-3);padding-right:var(--sp-3)}
-.mainwrap.narrow .cmp-zone{padding-left:calc(var(--sp-3) - 12px);padding-right:calc(var(--sp-3) - 12px)}
+.mainwrap.narrow .dbody{padding-left:16px;padding-right:16px}
+.mainwrap.narrow .cmp-zone{padding-left:16px;padding-right:16px}
 /* The sidebar toggle sits a step after the traffic lights (which end at x 74); the list's view options end the row. */
 .side-top{height:var(--top);display:flex;align-items:center;justify-content:space-between;padding:0 8px 0 var(--lights);flex:none}
 .tb{height:28px;min-width:28px;border:0;background:transparent;border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;color:var(--tb-fg);gap:5px;padding:0 6px}
-.tb .ic{stroke-width:1.45}
+.tb .ic{stroke-width:2.175}
+/* A panel icon's straight lines centre on whole pixels at 16 px, so only a 1 px stroke (1.5 in the 24 grid) lands on a 2x screen's pixels. */
+.tb .ic.panel{stroke-width:1.5}
 .tb:hover{background:var(--fill2);color:var(--l1)}
 .tb.on{background:var(--fill2);color:var(--l1)}
 /* A toolbar button's tip (tips.tsx): placed by script, shown once placed. */
 .tip{position:fixed;left:0;top:0;z-index:1000;visibility:hidden;pointer-events:none;padding:4px 8px;border-radius:var(--r-sm);background:var(--menu-solid);box-shadow:0 0 0 .5px var(--menu-bd),0 2px 8px rgba(0,0,0,.12);font-size:12px;line-height:16px;color:var(--l1);white-space:nowrap;animation:tip-in .1s var(--ease-out)}
 .tip kbd{margin-left:6px;font:inherit;color:var(--l2)}
 @keyframes tip-in{from{opacity:0}}
-/* One rhythm with the list: rows 32 high, 34 apart. */
-.side-nav{padding:0 8px 6px;display:flex;flex-direction:column;gap:2px;flex:none}
-.nav-i{display:flex;align-items:center;gap:9px;height:32px;padding:0 9px;border-radius:var(--r-md);font-size:14px;border:0;background:none;width:100%;text-align:left}
-.nav-i .ic{width:18px;height:18px;color:var(--l1)}
+/* Navigation rows are 32px high, with a 6px gap. */
+.side-nav{padding:12px 8px 6px;display:flex;flex-direction:column;gap:6px;flex:none}
+.nav-i{display:flex;align-items:center;gap:6px;height:32px;padding:0 8px;border-radius:var(--r-md);font-size:14px;border:0;background:none;width:100%;text-align:left}
+.nav-i .ic{width:16px;height:16px;color:var(--l1)}
 /* The shortcut shows on hover only: the menus say it too. */
 .nav-i .kbd{margin-left:auto;opacity:0;transition:opacity .12s}
 .nav-i:hover .kbd,.nav-i:focus-visible .kbd{opacity:1}
 .nav-i:hover{background:var(--fill)}
 .nav-i.sel{background:var(--side-sel)}
 .nav-i .cnt{margin-left:auto;font-size:11.5px;color:var(--l2);font-variant-numeric:tabular-nums}
-.side-list{flex:1;overflow-y:auto;min-height:0;padding:0 8px 8px}
-.side-list>[role=group]{display:flex;flex-direction:column;gap:2px}
-/* The list's heading, a step below the actions so the list reads as its own part: its name, and ▾ to collapse every group (▸ when all are shut). */
+/* The list's right margin is its scrollbar's lane, reserved whether it scrolls or not: rows sit 8 from both
+   edges of the sidebar, like the actions above them, and never shift when the list starts to scroll. */
+.side-list{flex:1;overflow-y:auto;min-height:0;padding:0 0 8px 8px;scrollbar-gutter:stable}
+.side-list::-webkit-scrollbar{width:8px}
+.side-list::-webkit-scrollbar-thumb{border-width:2px}
+.side-list>[role=group]{display:flex;flex-direction:column;gap:1px}
+/* The list's heading, a step below the actions so the list reads as its own part: its name, and ▾ to collapse every group (▸ when all are shut).
+   The view options are as quiet as the name, their icon ending where the rows' text may. */
 .side-lh{display:flex;align-items:center;padding:12px 8px 4px;flex:none}
-.side-lh>.tb{margin:-2px 4px -2px auto}
-.side-lh-t{display:flex;align-items:center;gap:4px;height:24px;padding:0 10px;border:0;background:none;font:inherit;font-size:12px;color:var(--l2);border-radius:var(--r-sm)}
+.side-lh>.tb{margin:-2px 2px -2px auto;color:var(--l2)}
+.side-lh>.tb:hover,.side-lh>.tb.on{color:var(--l1)}
+.side-lh-t{display:flex;align-items:center;gap:5px;height:24px;padding:0 10px;border:0;background:none;font:inherit;font-size:12px;color:var(--l2);border-radius:var(--r-sm)}
 .side-lh-t:hover:not(:disabled){color:var(--l1)}
-.side-lh-t .ic{width:14px;height:14px;transition:transform .15s var(--ease-out)}
+.side-lh-t .ic{width:16px;height:16px;transition:transform .15s var(--ease-out)}
 .side-lh-t.shut .ic{transform:rotate(-90deg)}
 /* A group's heading: its title, its count, and ▾ (▸ when collapsed); a click collapses or opens it. */
-.grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:400;color:var(--l2);padding:24px 10px 6px;margin-bottom:2px;display:flex;align-items:center;gap:6px;background:var(--side-head);border:0;width:100%;text-align:left}
+.grp-h{position:sticky;top:0;z-index:2;font:inherit;font-size:12px;font-weight:var(--font-weight-medium);line-height:16px;letter-spacing:-.015em;color:var(--l2);padding:16px 8px 4px;margin-bottom:2px;display:flex;align-items:center;gap:5px;background:var(--side-head);border:0;width:100%;text-align:left}
 .side-list>[role=group]:first-child .grp-h{padding-top:8px}
 .grp-h:hover{color:var(--l1)}
 .grp-h .n{font-weight:500;color:var(--l3)}
@@ -147,16 +158,17 @@ input:disabled,textarea:disabled{cursor:default}
 .grp-row .grpact{display:none;flex:none;margin-bottom:2px}
 .grp-row:hover .grpact,.grp-row .grpact:focus-visible{display:flex}
 /* Grouped by project, a heading is a row like the list's own: the folder, the name in full colour, close to its neighbours. */
-.side-list.by-project .grp-h{padding:7px 10px;margin:0;font-size:13.5px;color:var(--l1);gap:8px}
-.side-list.by-project>[role=group]:first-child .grp-h{padding-top:7px}
+.side-list:not(.by-project) .grp-h,.side-lh-t{font-weight:var(--font-weight-medium);font-variation-settings:"ROND" 20,"slnt" 0,"wdth" 100;letter-spacing:-.015em}
+.side-list.by-project .grp-h{padding:6px 8px;margin:0;font-size:14px;font-weight:var(--font-weight-normal);line-height:20px;letter-spacing:normal;color:var(--l1);gap:6px}
+.side-list.by-project>[role=group]:first-child .grp-h{padding-top:6px}
 .side-list.by-project .grp-h .gi{width:16px;height:16px;flex:none;color:var(--l2)}
 .side-list.by-project .grp-h .ic:not(.gi){color:var(--l3)}
 .side-list.by-project .grp-row{border-radius:var(--r-md);align-items:center}
 .side-list.by-project .grp-row:hover{background:linear-gradient(var(--fill),var(--fill)),var(--side-head)}
-html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 .side-list.by-project .grp-row .grpact{margin:0 4px 0 0}
 .side-list.by-project>[role=group]+[role=group]{margin-top:2px}
-.srow{display:flex;padding:7px 10px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
+.srow{display:flex;padding:6px 8px;border-radius:var(--r-md);align-items:flex-start;border:0;background:none;width:100%;text-align:left;font-size:14px}
+.side-list.by-project .srow{padding-left:30px}
 .srow:hover{background:var(--fill)}
 .srow.sel{background:var(--side-sel)}
 .srow .sdot{width:6px;height:6px}
@@ -171,7 +183,7 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 .anote{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--l2);background:var(--fill);border-radius:var(--r-md);padding:8px 12px;margin-bottom:16px}
 .anote .link{margin-left:auto}
 .smain{min-width:0;flex:1}
-.sl1{display:flex;gap:8px;align-items:center;line-height:18px}
+.sl1{display:flex;gap:8px;align-items:center;line-height:20px}
 .stitle{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* In a task: a faded band crosses the title left to right every 2.4s at an even speed, like a progress
    bar, the next one entering as the last leaves, until the task ends. The title itself is
@@ -190,21 +202,27 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 @keyframes stitle-run-back{from{transform:translateX(86%)}to{transform:translateX(-86%)}}
 @media (prefers-reduced-motion:reduce){.stitle.run{color:inherit}.stitle .shine{display:none}}
 /* The same band over anything in progress in the conversation (a step, the working line): there the
-   words may be code with its own colours, so the band is a mask over the element instead of copies of
-   its text, three times its width and sliding so the band enters at its left edge and leaves at its
-   right, in the sidebar's 2.4s, dimming the words to about a third. */
-.shimmer{-webkit-mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);mask-image:linear-gradient(90deg,#000 38%,rgba(0,0,0,.36) 50%,#000 62%);-webkit-mask-size:300% 100%;mask-size:300% 100%;-webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;animation:shimmer 2.4s linear infinite}
-@keyframes shimmer{from{-webkit-mask-position:93% 0;mask-position:93% 0}to{-webkit-mask-position:7% 0;mask-position:7% 0}}
-@media (prefers-reduced-motion:reduce){.shimmer{animation:none;-webkit-mask-image:none;mask-image:none}}
-.smeta{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
-.sl2{display:flex;align-items:baseline;gap:8px;font-size:11px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:2px}
+   words may be code with its own colours, so the band is laid over the element instead of copies of its
+   text, its surface's colour at about two thirds, three times its width and sliding so it enters at its
+   left edge and leaves at its right, in the sidebar's 2.4s. A transform, which the compositor runs: anything
+   that must move on the main thread (a mask's position did) renders the whole page at the display's rate
+   for as long as a task runs, and the page is as heavy as the history that is loaded. */
+.shimmer{position:relative;overflow:clip}
+span.shimmer{display:inline-block;max-width:100%;vertical-align:bottom}
+.shimmer::after{content:"";position:absolute;top:0;bottom:0;left:-100%;width:300%;pointer-events:none;background:linear-gradient(90deg,transparent 38%,color-mix(in srgb,var(--shimmer-on,var(--win)) 64%,transparent) 50%,transparent 62%);animation:shimmer 2.4s linear infinite}
+@keyframes shimmer{from{transform:translateX(-28.6667%)}to{transform:translateX(28.6667%)}}
+@media (prefers-reduced-motion:reduce){.shimmer::after{display:none;animation:none}}
+.smeta{display:inline-flex;align-items:center;gap:5px;font-size:12px;line-height:16px;color:var(--l2);flex:none;font-variant-numeric:tabular-nums}
+/* Nothing to show takes no gap: the title runs to the row's padding, the same as on its left. */
+.smeta:empty{display:none}
+.sl2{display:flex;align-items:baseline;gap:8px;font-size:12px;line-height:16px;color:color-mix(in srgb,var(--l2) 78%,transparent);margin-top:0}
 .sl2t{flex:1;min-width:0;display:flex;align-items:center;gap:9px;overflow:hidden}
 /* The project, then the branch, each after its icon; the branch gives way first. */
 .sl2i{display:inline-flex;align-items:center;gap:3px;min-width:0;flex:0 1 auto}
 .sl2i+.sl2i{flex-shrink:1000}
 .sl2i>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sl2i .ic{width:11px;height:11px;stroke-width:1.35}
-.stime{flex:none;font-size:11px;font-variant-numeric:tabular-nums}
+.sl2i .ic{width:11px;height:11px;stroke-width:2.025}
+.stime{flex:none;font-size:12px;font-variant-numeric:tabular-nums}
 .loadrow{display:flex;align-items:center;justify-content:center;gap:8px;height:40px;color:var(--l2);font-size:12px}
 .endrow{text-align:center;color:var(--l3);font-size:11.5px;padding:14px 0 6px}
 /* finx did not start: why, and its last words. */
@@ -266,7 +284,9 @@ html.vibrant .side-list.by-project .grp-row:hover{background:var(--fill)}
 .ctitle{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
 .ctitle h2{margin:0;font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ctitle .sub{font-size:12px;color:var(--l2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cscroll{flex:1;overflow-y:auto;min-height:0;scrollbar-gutter:stable both-edges}
+/* No reserved scrollbar lanes: prose and composer share the same center and gutters. */
+.cscroll{flex:1;overflow-y:auto;min-height:0;scrollbar-width:none}
+.cscroll::-webkit-scrollbar{display:none}
 
 /* session page */
 .dwrap{flex:1;min-height:0;display:flex;position:relative;border-top:.5px solid var(--sep)}
@@ -348,19 +368,20 @@ button.insp-row:active{background:var(--fill2)}
 .ctx-other{background:var(--l2)}
 .ctx-reserved{background:var(--l3)}
 .ctx-free{background:var(--fill2);box-shadow:inset 0 0 0 .5px var(--l4)}
-/* The conversation: a 730-wide column, at least 34 from the edges; lines close together, blocks apart. */
-.dbody{max-width:798px;margin:0 auto;padding:var(--sp-3) var(--sp-4) 40px}
+/* A centered 768px conversation with 16px gutters; reply text is inset 8px. */
+.dbody{max-width:calc(var(--conversation-width) + 32px);margin:0 auto;padding:24px 16px 40px}
 .tr{display:flex;flex-direction:column;gap:var(--sp-2)}
 /* A time line before a message, only after a pause: centred, no rule. */
 .tdiv{align-self:center;font-size:11.5px;color:var(--l3);margin:10px 0 2px}
 /* Earlier history: the link, or while it comes the spinner, in the same height so nothing below moves. */
 .tdiv.earlier{display:flex;align-items:center;justify-content:center;height:16px}
 /* The owner speaks in a dark bubble on the right; the model writes plain text across the page. */
-.um{position:relative;align-self:flex-end;max-width:78%;margin-top:var(--sp-1)}
-.um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:15px;line-height:21px;white-space:pre-wrap;overflow-wrap:anywhere}
+.um{position:relative;align-self:flex-end;max-width:80%;margin-top:var(--sp-1)}
+.um .bub{background:var(--bub);color:var(--bub-fg);border-radius:var(--r-xl);padding:9px 15px;font-size:var(--chat-size);line-height:1.625;white-space:pre-wrap;overflow-wrap:anywhere}
 /* What the message carried, above its bubble: images as thumbnails, files and folders as chips. */
+.um.again .bub,.um.again .um-att{outline:1.5px solid var(--accent);outline-offset:2px;border-radius:var(--r-xl)}
 .um-att{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-bottom:8px}
-.am{position:relative;font-size:15px;line-height:21px;color:var(--msg)}
+.am{position:relative;font-size:var(--chat-size);line-height:1.625;color:var(--msg)}
 /* A message with time and Copy keeps room below it for them, shown on hover under the bubble's right edge or the
    text's left; the model's words between tool calls have none, so they sit as far from the work above as below. */
 .um,.am.act{margin-bottom:var(--sp-3)}
@@ -404,9 +425,8 @@ button.insp-row:active{background:var(--fill2)}
 .wl-i .site-ic{display:inline-flex}
 .wl-i .ic,.wl-i img{width:14px;height:14px}
 .md a.wl code{color:inherit}
-/* A file or folder: a quiet tag in the link's colour, the lines in grey; greyed when nothing is there. Inline and
-   unbroken, so punctuation after it never starts a line on its own. */
-.md .fref{display:inline;white-space:nowrap;padding:1px 5px;border-radius:var(--r-xs);background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);color:var(--accent-t);font-size:14px;cursor:pointer}
+/* A file or folder: a quiet tag in the link's colour, the lines in grey; greyed when nothing is there. */
+.md .fref{display:inline;padding:1px 5px;border-radius:var(--r-xs);background:var(--fill);box-shadow:inset 0 0 0 .5px var(--sep);box-decoration-break:clone;color:var(--accent-t);font-size:14px;cursor:pointer}
 .md .fref:hover{background:var(--fill2)}
 .md .fref:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .md .fref .ic{display:inline-block;width:13px;height:13px;margin-right:4px;vertical-align:-2px;color:var(--l2)}
@@ -445,7 +465,7 @@ button.insp-row:active{background:var(--fill2)}
    that run (centred on the first one's line, each with how long it has run) or what the model is at, how
    long the task has run and its tokens. */
 .working{display:flex;align-items:flex-start;gap:8px;font-size:14px;color:var(--l2)}
-.working canvas{margin-top:2px}
+.working .mark-strip{margin-top:2px}
 .wk-now{flex:1;min-width:0;display:flex;flex-direction:column}
 .wk-line{display:flex;align-items:baseline;gap:4px;padding:2px 0;line-height:19px}
 .wk-meta,.wk-time{flex:none;font-size:12.5px;color:var(--l3);font-variant-numeric:tabular-nums}
@@ -462,6 +482,20 @@ button.insp-row:active{background:var(--fill2)}
 .tgroup.open .tg-h .chev,.tool.open .th .chev{transform:none}
 .tool .out{display:none;margin:4px 0 6px;background:var(--code);border-radius:var(--r-md);padding:8px 10px;font-family:var(--mono);font-size:11.5px;white-space:pre-wrap;color:var(--l2);line-height:1.5;max-height:360px;overflow:auto}
 .tool.open .out{display:block}
+/* A web search opened: the pages found, then which service answered. */
+.ws-res{margin:4px 0 6px;padding:4px 0 0;border-radius:var(--r-md);background:var(--code);font-size:13px;overflow:hidden}
+.ws-hit{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;color:var(--l1);text-decoration:none}
+.ws-hit:hover{background:var(--fill)}
+.ws-hit .site-ic{flex:none;display:flex;color:var(--l3)}
+.ws-hit .site-ic img,.ws-hit .site-ic .ic{width:14px;height:14px;border-radius:var(--r-xs);object-fit:contain}
+.ws-hit .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ws-hit .m{flex:none;max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--l3);font-size:11.5px;font-variant-numeric:tabular-nums}
+.ws-foot{padding:6px 10px 8px;font-size:11.5px;color:var(--l3)}
+.ws-foot b{font-weight:400;color:var(--orange)}
+.ws-fail{padding:6px 10px 10px;display:flex;align-items:center;gap:13px;color:var(--l2)}
+.ws-fail span{flex:1;min-width:0}
+.ws-fail .btn{flex:none;height:26px;padding:0 12px;font-size:12px}
+.tg-b .tool .ws-res{margin:0;border-radius:0;background:var(--fill)}
 /* Thinking reads as the model's own quieter voice, not as code. */
 .tool.think .out{font-family:var(--font);font-size:13px;line-height:1.6;white-space:pre-wrap}
 /* Opened, a group is a hairline card a size down: one row per step, its output opening inside the card. */
@@ -487,7 +521,7 @@ button.insp-row:active{background:var(--fill2)}
 .fc-av .brand-initial{width:36px;height:36px;border-radius:var(--r-md);font-size:15px}
 .fc-badge{position:absolute;right:-4px;bottom:-4px;width:17px;height:17px;border-radius:50%;background:var(--win);display:grid;place-items:center}
 .fc-badge i{width:13px;height:13px;border-radius:50%;background:var(--tc);color:var(--win);display:grid;place-items:center}
-.fc-badge .ic{width:9px;height:9px;stroke-width:2.2}
+.fc-badge .ic{width:9px;height:9px;stroke-width:3.3}
 .fc-tx{flex:1;min-width:0}
 .fc-tx b{display:block;font-size:13.5px;font-weight:600;line-height:19px}
 .fc-tx span{display:block;font-size:12px;line-height:17px;color:var(--l2);margin-top:1px}
@@ -598,6 +632,11 @@ button.insp-row:active{background:var(--fill2)}
 .ntp-rescan:hover:not(:disabled){background:var(--fill);color:var(--l1)}
 .ntp-rescan:disabled{opacity:.5}
 .ntp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.ntp-item{position:relative;min-width:0;display:flex}
+.ntp-item>.ntp-card{flex:1}
+.ntp-stop{position:absolute;top:8px;right:8px;display:grid;place-items:center;width:22px;height:22px;padding:0;border:0;border-radius:6px;background:none;color:var(--l3);cursor:default;opacity:0}
+.ntp-item:hover .ntp-stop,.ntp-stop:focus-visible{opacity:1}
+.ntp-stop:hover{background:var(--fill2);color:var(--red)}
 .ntp-card{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0;height:76px;padding:10px 12px;border:1px solid var(--sep);border-radius:var(--r-lg);background:var(--fill);color:var(--l1);text-align:left;cursor:default}
 .ntp-card:hover{background:var(--fill2)}
 .ntp-card:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
@@ -657,7 +696,7 @@ button.insp-row:active{background:var(--fill2)}
 .bgc-btn{flex:none;width:24px;height:24px;margin:0 3px;border:0;border-radius:var(--r-sm);background:none;color:var(--l2);display:flex;align-items:center;justify-content:center}
 .bgc-btn:hover{background:var(--fill2);color:var(--l1)}
 /* Stop: the composer's square, small; red as it is pointed at. */
-.bgc :is(.bgc-btn,.rowact).stop .ic{width:10px;height:10px}
+.bgc :is(.bgc-btn,.rowact).stop .ic{width:8px;height:8px}
 .bgc :is(.bgc-btn,.rowact).stop:hover{color:var(--red)}
 .bgc .rowact.stop{margin:-2px -3px -2px 0}
 /* Stop all: words, its text ending where the rows' times do. */
@@ -731,9 +770,10 @@ button.insp-row:active{background:var(--fill2)}
 /* sheets */
 .sheet{margin:auto;border:0;padding:0;max-width:calc(100vw - 48px);max-height:calc(100vh - 80px);overflow-y:auto;color:var(--l1);background:var(--win);border-radius:var(--r-xl);box-shadow:0 0 0 .5px var(--menu-bd),0 20px 60px rgba(0,0,0,.35);animation:sheet .22s cubic-bezier(.2,0,0,1)}
 /* The main window while the settings window is open: dimmed as under a dialog. */
-.settings-dim{position:fixed;inset:0;z-index:100;background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
+.settings-dim{position:fixed;inset:0;z-index:100;background:var(--scrim);backdrop-filter:var(--scrim-blur);-webkit-backdrop-filter:var(--scrim-blur);animation:fade .2s}
 .sheet:focus-visible{outline:none}
-.sheet::backdrop{background:var(--scrim);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);animation:fade .2s}
+.sheet::backdrop{background:var(--scrim);backdrop-filter:var(--scrim-blur);-webkit-backdrop-filter:var(--scrim-blur);animation:fade .2s}
+@media (prefers-reduced-transparency:reduce){.sheet::backdrop,.settings-dim{backdrop-filter:none;-webkit-backdrop-filter:none}}
 .sheet-in{padding:22px 24px 18px}
 @keyframes sheet{from{opacity:0;transform:scale(.97)}}
 .sheet h3{margin:0 0 4px;font-size:15px;font-weight:600}
@@ -772,7 +812,7 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-zoom{display:flex;align-items:center;gap:2px}
 .dcp-zoom button{height:28px;min-width:28px;display:grid;place-items:center;padding:0;border:0;border-radius:var(--r-sm);background:none;color:var(--tb-fg)}
 .dcp-zoom button:hover{background:var(--fill2);color:var(--l1)}
-.dcp-zoom .ic{width:14px;height:14px;stroke-width:1.45}
+.dcp-zoom .ic{width:14px;height:14px;stroke-width:2.175}
 .dcp-zoom .dcp-scale{min-width:48px;padding:0 6px;font-size:12.5px;color:var(--l2);font-variant-numeric:tabular-nums}
 .dcp-find{flex:none;display:flex;align-items:center;gap:6px;padding:6px 12px;border-bottom:.5px solid var(--sep);color:var(--l3)}
 .dcp-find input{flex:1;min-width:0;height:26px;font:inherit;font-size:13px;color:var(--l1);background:var(--field);border:0;border-radius:var(--r-xs);padding:0 8px;outline:none}
@@ -793,6 +833,9 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-flash{position:absolute;inset:0;pointer-events:none;z-index:5}
 .dcp-flash>div{position:absolute;border-radius:3px;background:rgba(255,196,0,.32);box-shadow:0 0 0 1.5px rgba(255,170,0,.8);animation:dcp-flash 2.4s ease-out forwards}
 @keyframes dcp-flash{0%,60%{opacity:1}100%{opacity:0}}
+.dcp-sel{position:absolute;inset:0;pointer-events:none;z-index:5;mix-blend-mode:multiply}
+.dcp-sel>div{position:absolute;background:rgba(50,148,255,.32)}
+.dcp-view .textLayer ::selection{background:transparent}
 .dcp-mark>div{position:absolute;border-radius:2px;background:rgba(50,148,255,.22);box-shadow:0 0 0 1.5px rgba(50,148,255,.75)}
 .dcp-card{position:absolute;z-index:6;width:296px;max-width:calc(100% - 24px);padding:12px;border-radius:12px;background:var(--win);color:var(--l1);box-shadow:0 10px 32px rgba(0,0,0,.3),0 1px 3px rgba(0,0,0,.1),0 0 0 .5px var(--sep);animation:dcp-card .12s ease-out;cursor:default}
 @keyframes dcp-card{from{opacity:0;translate:0 3px}to{opacity:1;translate:0 0}}
@@ -843,5 +886,35 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-unlock-eye .ic{width:15px;height:15px}
 .dcp-unlock-go{margin-left:2px;background:var(--accent);color:#fff;animation:dcp-card .12s ease-out}
 .dcp-unlock-go:hover:not(:disabled){filter:brightness(1.1)}
-.dcp-unlock-go .ic{width:14px;height:14px;stroke-width:2}
+.dcp-unlock-go .ic{width:14px;height:14px;stroke-width:3}
 .dcp-unlock-bad{min-height:18px;margin-top:4px;color:#e5484d;font-size:12px}
+
+/* The user's own browser in the info card, one row of the environment (browser-design §8.4.7): it goes
+   to the browser; ⋯ on hover goes to one tab. The same in the top bar while the card does not show. */
+.yr{position:relative}
+.yr-mark{display:block;flex:none;width:18px;height:18px}
+.yr .insp-row .sdot{flex:none;width:7px;height:7px;margin-left:auto}
+.yr .insp-row .sdot+.yr-go{margin-left:0}
+.insp-row .ic.yr-go{flex:none;width:13px;height:13px;margin-left:auto;color:var(--l3)}
+.yr:hover .insp-row .ic.yr-go{color:var(--l2)}
+.yr .insp-where{min-width:0}
+.yr-more{position:absolute;right:26px;top:5px;width:22px;height:22px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:var(--r-sm);background:var(--fill2);color:var(--l1);opacity:0}
+.yr-more .ic{width:14px;height:14px}
+.yr:hover .yr-more,.yr-more:focus-visible,.yr-more[aria-expanded="true"]{opacity:1}
+.yr-act{position:absolute;right:4px;top:4px;background:var(--fill2);color:var(--l1)}
+.yr.revoked .insp-row{padding-right:52px}
+.vmenu .yr-site{flex:none;display:flex;color:var(--l3)}
+.vmenu .yr-site img,.vmenu .yr-site svg{display:block;width:14px;height:14px}
+.vmenu .yr-tab{min-width:0;max-width:260px;overflow:hidden;text-overflow:ellipsis}
+.tb .yb-mark{display:block;width:17px;height:17px}
+.tb-dot{position:absolute;top:3px;right:3px;width:8px;height:8px;border-radius:50%;background:var(--orange);box-shadow:0 0 0 1.5px var(--win)}
+/* A tab the person offered from their browser, above the composer. */
+.yours-offer{display:flex;align-items:center;gap:8px;min-width:0;padding:4px 4px 4px 13px;border-radius:var(--r-lg);background:var(--pill);box-shadow:0 0 0 .5px var(--pill-bd);font-size:13px}
+.yours-offer .yr-site{flex:none;display:flex;color:var(--l3)}
+.yours-offer .yr-site img,.yours-offer .yr-site svg{display:block;width:14px;height:14px}
+.yours-offer-t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Settings › Browser: which of several, and each link from the browser to finx. */
+.browser-set .ext-row .mi-acct{color:var(--l2)}
+.browser-diag{margin:8px 0 0;padding:8px 13px;border-radius:var(--r-md);background:var(--code);box-shadow:inset 0 0 0 .5px var(--sep);font-family:var(--mono);font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;-webkit-user-select:text}
+.browser-diag-bar{display:flex;align-items:center;gap:8px;margin-top:8px}
+

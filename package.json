@@ -7,6 +7,7 @@
     "build": "pnpm --filter @finx/desktop build",
     "app": "pnpm --filter @finx/desktop app",
     "release": "pnpm --filter @finx/desktop release",
+    "release:cli": "node tools/release/release.mjs",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck"
   }

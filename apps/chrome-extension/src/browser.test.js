@@ -7,7 +7,9 @@ function fakeTabs() {
   let nextTab = 100;
   const log = [];
   const sent = [];
+  const kept = [];
   const tabs = {
+    released: (label) => kept.filter((t) => t.label === label),
     create: async (url, label) => (log.push(["create", url, label]), nextTab++),
     adopt: (tabId, label) => void log.push(["adopt", tabId, label]),
     close: (tabId) => void log.push(["close", tabId]),
@@ -16,7 +18,7 @@ function fakeTabs() {
     detach: (tabId) => void log.push(["detach", tabId]),
     send: async (tabId, child, method, params) => (sent.push({ tabId, child, method, params }), { echo: method }),
   };
-  return { tabs, log, sent };
+  return { tabs, log, sent, kept };
 }
 
 function browser() {
@@ -135,3 +137,34 @@ test("a tab closed while the kernel attaches is not left attached", async () => 
   assert.match(attached.error.message, /closed/);
   assert.deepEqual(fake.log.at(-1), ["detach", 100]);
 });
+
+test("a session that ends lets its tab go, and a later browser finds it", async () => {
+  const first = browser();
+  const { targetId } = await first.open("s1");
+  const released = await first.call("Target.detachFromTarget", { targetId, finxRelease: true });
+  assert.deepEqual(released.result, {});
+  assert.ok(first.fake.log.some((e) => e[0] === "detach" && e[1] === 100), "the debugger lets go");
+  assert.ok(!first.fake.log.some((e) => e[0] === "close"), "the tab stays open");
+  assert.equal(first.b.byTab.size, 0);
+
+  // Another browser of the kernel: only that session's tabs, and they can be attached.
+  const next = browser();
+  next.fake.kept.push({ tabId: 100, label: "s1", url: "https://example.com/a", title: "A" }, { tabId: 101, label: "s2", url: "https://example.com/b", title: "B" });
+  const listed = await next.call("Target.getTargets", { finxSession: "s1" });
+  assert.deepEqual(listed.result.targetInfos.map((t) => [t.targetId, t.url, t.title, t.attached]), [["T100", "https://example.com/a", "A", false]]);
+  const attached = await next.call("Target.attachToTarget", { targetId: "T100", flatten: true });
+  assert.ok(attached.result.sessionId);
+  assert.ok(next.fake.log.some((e) => e[0] === "attach" && e[1] === 100));
+  const again = await next.call("Target.getTargets", { finxSession: "s1" });
+  assert.deepEqual(again.result.targetInfos, [], "an attached tab is not offered again");
+  assert.deepEqual((await next.call("Target.getTargets", {})).result.targetInfos, [], "nothing without a session");
+});
+
+test("the user taking control back says why, and keeps the tab", async () => {
+  const { b, fake, events, open } = browser();
+  await open("s1");
+  b.detached(100, "canceled_by_user");
+  assert.match(events("Target.detachedFromTarget")[0].params.reason, /user stopped/);
+  assert.ok(!fake.log.some((e) => e[0] === "close"));
+});
+

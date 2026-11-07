@@ -6,6 +6,7 @@
 // lists the remembered app, denies it with one click and removes it. macOS only; everything
 // stays in a private HOME. Needs `pnpm build` (which puts agent-desktop beside the debug finx,
 // where finx finds it) and `cargo build -p finx-cli`.
+import { cdpPort } from "./lib/port.mjs";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -65,7 +66,7 @@ fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermiss
 const config = () => fs.readFileSync(path.join(home, "config.toml"), "utf8");
 
 let app = null;
-const port = 9400 + Math.floor(Math.random() * 400);
+const port = cdpPort();
 
 async function attach(match, what) {
   let target;
@@ -129,7 +130,7 @@ const finderRow = `[...document.querySelectorAll('.desktop-set .mrow')].find(r =
 let failed = false;
 try {
   app = spawn(electron, [desktop, `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   const main = await attach((t) => t.type === "page" && /^(app:|file:|http:)/.test(t.url) && !t.url.includes("#settings"), "the main window");

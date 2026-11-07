@@ -1,0 +1,218 @@
+{
+  "mode": {
+    "label": "模式",
+    "sessions": "会话",
+    "bots": "Bot",
+    "sessionsTip": "会话模式",
+    "botsTip": "Bot 模式"
+  },
+  "nav": {
+    "newBot": "新建 Bot"
+  },
+  "list": {
+    "title": "Bot",
+    "label": "Bot 列表",
+    "loading": "正在载入…"
+  },
+  "line": {
+    "waiting": "[待确认]",
+    "agents": "正在处理{{things}}",
+    "typing": "正在输入…",
+    "empty": "还没说过话",
+    "image": "[图片]",
+    "file": "[文件] {{name}}"
+  },
+  "head": {
+    "settings": "Bot 设置"
+  },
+  "things": {
+    "1": "一件事",
+    "2": "两件事",
+    "3": "三件事",
+    "4": "四件事",
+    "5": "五件事",
+    "6": "六件事",
+    "7": "七件事",
+    "8": "八件事",
+    "9": "九件事",
+    "10": "十件事",
+    "many": "{{count}} 件事"
+  },
+  "chat": {
+    "log": "对话",
+    "placeholder": "发消息给 {{name}}",
+    "empty": "第一句话告诉它要帮你做什么。以后有事随时发，一次发几件也行。",
+    "copy": "拷贝",
+    "busyOpen": "看看是哪几件事",
+    "busyClose": "收起",
+    "retrying": "连接不稳，正在重试",
+    "earlier": "更早的消息",
+    "loadingEarlier": "正在载入更早的消息",
+    "toBottom": "回到底部",
+    "queued": "等它回完这一句就送达",
+    "fileGone": "文件已不在"
+  },
+  "fullAccess": {
+    "title": "Bot 默认开启完全访问",
+    "body": "任何系统操作将不再经过你的授权同意，它创建的智能体和任务也一样。每个 Bot 各有一份设置，你随时可以调整：点顶部的名字就能打开。",
+    "settings": "打开设置",
+    "ok": "知道了"
+  },
+  "setup": {
+    "title": "先给 {{name}} 选个模型",
+    "body": "它回话都用这个模型和思考强度，之后可以在 Bot 设置里改。选好才能发消息。",
+    "ok": "开始使用"
+  },
+  "model": {
+    "noKey": "这个模型还没有 Key，填好才能用。",
+    "addKey": "填写 Key",
+    "none": "选一个模型才能开始。"
+  },
+  "sheet": {
+    "newTitle": "新建 Bot",
+    "sub": "起个名字，挑个头像，选好模型。要它做什么，直接在对话里说。",
+    "name": "名字",
+    "placeholder": "比如：研究员",
+    "avatar": "头像",
+    "upload": "上传图片…",
+    "cancel": "取消",
+    "create": "创建",
+    "mono": "名字的第一个字",
+    "mark": "FinxWork 标志",
+    "tooLarge": "图片太大了：最大 10 MB",
+    "unreadable": "读不了这张图片",
+    "shapes": {
+      "tall": "平静",
+      "dot": "好奇",
+      "smile": "开心",
+      "wink": "眨眼",
+      "lid": "淡定",
+      "bar": "发呆",
+      "side": "张望",
+      "odd": "挑眉"
+    },
+    "hues": {
+      "slate": "天蓝",
+      "sage": "青草绿",
+      "clay": "珊瑚橙",
+      "ochre": "奶黄",
+      "plum": "丁香紫",
+      "teal": "青",
+      "rose": "玫瑰粉",
+      "stone": "烟灰"
+    }
+  },
+  "menu": {
+    "pin": "置顶",
+    "unpin": "取消置顶",
+    "delete": "删除 Bot",
+    "rename": "重命名"
+  },
+  "clear": {
+    "title": "清空和「{{name}}」的聊天记录？",
+    "message": "聊天记录会清空，它正在做的事会停止。文件、定时任务和这里的设置都保留。",
+    "button": "清空",
+    "done": "已清空聊天记录"
+  },
+  "delete": {
+    "title": "删除「{{name}}」？",
+    "message": "它的聊天记录、做出来的文件和手上的事都会一起删除。",
+    "button": "删除",
+    "done": "已删除「{{name}}」"
+  },
+  "pinned": "已置顶",
+  "search": {
+    "placeholder": "搜索 Bot",
+    "found": "{{n}} 个 Bot",
+    "none": "没有找到 Bot",
+    "noneHint": "按名字或最近说的话找"
+  },
+  "panel": {
+    "avatar": "更换头像",
+    "nameHint": "双击修改名字",
+    "model": "模型设定",
+    "modelNote": "只影响这个 Bot。",
+    "permission": "权限",
+    "permissionMode": "权限模式",
+    "permissionNote": "{{desc}}。只对这个 Bot 生效，它创建的智能体和任务都按这个权限运行，改了立刻跟着变。定时任务在你不在的时候也按这个权限运行。",
+    "bypassNote": "这个 Bot 创建的智能体和任务也会一样。",
+    "close": "关闭",
+    "clear": "清空聊天记录",
+    "notifications": "通知",
+    "muted": "免打扰",
+    "mutedNote": "不发系统通知，也不计入应用图标上的数字。列表里的未读照常显示。"
+  },
+  "routines": {
+    "title": "定时任务",
+    "back": "返回",
+    "new": "新建",
+    "newDraft": "帮我建一个定时任务：",
+    "editDraft": "把定时任务「{{name}}」改成：",
+    "edit": "在对话里修改",
+    "paused": "已暂停",
+    "finished": "已结束",
+    "enabled": "启用",
+    "when": "时间",
+    "upcoming": "接下来",
+    "listSeparator": "、",
+    "prompt": "说明",
+    "runs": "最近运行",
+    "noRuns": "还没有运行过。",
+    "earlier": "更早的运行",
+    "running": "正在运行…",
+    "runningLine": "正在运行 · {{time}}",
+    "runningFor": "已运行",
+    "ranFor": "运行 {{time}}",
+    "lastFailed": "上次没做成 · {{time}}",
+    "whenNext": "下次 {{time}} · {{when}}",
+    "note": "定时任务在这台 Mac 上运行。合盖或关机时不跑，下次开机后补最近一次。退出应用后照跑，但不弹通知。",
+    "unavailable": "定时任务现在用不了",
+    "empty": {
+      "title": "还没有定时任务",
+      "body": "跟 {{name}} 说一句就能建，比如\"每天早上 8 点给我一份盘前简报\"。"
+    },
+    "runNow": "立即运行",
+    "runNowNote": "立即运行会真的去做这件事。",
+    "stop": "停止",
+    "delete": {
+      "title": "删除定时任务「{{name}}」？",
+      "message": "删除后不再运行。",
+      "button": "删除",
+      "done": "已删除定时任务「{{name}}」"
+    },
+    "late": "晚了 {{time}}",
+    "result": {
+      "delivered": "发给你了",
+      "relaying": "正在转告",
+      "undelivered": "没有送达",
+      "quiet": "没有要说的",
+      "failed": "没做成",
+      "skipped": "跳过",
+      "skippedWhy": "上一次还在运行",
+      "interrupted": "已停止",
+      "quietRange": "{{from}} 到 {{to}}",
+      "quietCount": "{{count}} 次，点开看每一次"
+    },
+    "run": {
+      "title": "一次运行",
+      "result": "结果",
+      "scheduled": "计划时间",
+      "started": "开始",
+      "took": "用时",
+      "usage": "用量",
+      "found": "查到的",
+      "report": "汇报",
+      "why": "原因",
+      "steps": "过程",
+      "showInChat": "在对话里看"
+    },
+    "line": {
+      "create": "已创建定时任务「{{name}}」· {{time}}",
+      "update": "已修改定时任务「{{name}}」· {{time}}",
+      "pause": "已暂停定时任务「{{name}}」",
+      "resume": "已恢复定时任务「{{name}}」· {{time}}",
+      "delete": "已删除定时任务「{{name}}」"
+    },
+    "fromRoutine": "来自定时任务「{{name}}」"
+  }
+}

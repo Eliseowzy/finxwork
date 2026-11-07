@@ -79,6 +79,8 @@ fn deps(api: &Arc<ScriptedApi>, env: &Env, tools: &[&str]) -> KernelDeps {
         mcp_servers: Vec::new(),
         browser_pool: None,
         docs: None,
+        decks: None,
+        routines: None,
     }
 }
 
@@ -95,6 +97,7 @@ async fn start(env: &Env, api: &Arc<ScriptedApi>, mode: PermissionMode, config: 
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot: None,
     };
     Kernel::start(options, deps(api, env, tools)).await.unwrap()
 }
@@ -153,7 +156,9 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
         json!({ "path": env.home.skills_dir().join("pdf-tools/references/formats.md") }),
     ));
     api.push(Script::text("done"));
-    let mut kernel = start(&env, &api, PermissionMode::Manual, Config::default(), ALL_TOOLS).await;
+    // No deferred group, so what the model gets is the frozen prompt alone, as logged.
+    let no_search = || Config { web_search: finx_core::config::WebSearchSettings { enabled: false, ..Default::default() }, ..Config::default() };
+    let mut kernel = start(&env, &api, PermissionMode::Manual, no_search(), ALL_TOOLS).await;
     let result = kernel.run(prompt("extract the tables from report.pdf")).await.unwrap();
     assert_eq!(result.end, TaskEnd::Completed { last_message: Some("done".into()) });
     assert!(
@@ -190,7 +195,7 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
 
     // The log keeps the session's skills, those only the user may invoke included.
     let logged = logged_system_prompt(kernel.session_file());
-    assert_eq!(logged["text"], system.as_str());
+    assert!(system.starts_with(logged["text"].as_str().unwrap()), "the catalog of deferred tools follows it");
     let skills: Vec<(String, String, bool)> = logged["skills"]
         .as_array()
         .unwrap()
@@ -226,10 +231,11 @@ async fn the_model_reads_a_listed_skill_without_approval_and_resume_keeps_the_ca
         thinking: None,
         permission_mode: None,
         home: env.home.clone(),
-        config: Arc::new(Config::default()),
+        config: Arc::new(no_search()),
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &env, ALL_TOOLS)).await.unwrap();
     kernel.run(prompt("again")).await.unwrap();
@@ -578,6 +584,7 @@ async fn compaction_keeps_the_skills_in_use_and_resume_rebuilds_them() {
         project_root: None,
         trusted: false,
         interactive_approvals: false,
+        bot_name: None,
     };
     let mut kernel = Kernel::resume(options, deps(&api, &env, ALL_TOOLS)).await.unwrap();
     kernel.run(prompt("and now")).await.unwrap();

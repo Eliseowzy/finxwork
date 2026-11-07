@@ -131,7 +131,7 @@ function template(): MenuItemConstructorOptions[] {
     {
       label: t("session.title"),
       submenu: [
-        item("approve", t("session.approve"), !!s?.approvable, { accelerator: "CmdOrCtrl+Enter" }),
+        item("approve", t("session.approve"), !!s?.approvable || st.botApprovable, { accelerator: "CmdOrCtrl+Enter" }),
         item("interrupt", t("session.interrupt"), !!s?.interruptible, { accelerator: "CmdOrCtrl+." }),
         sep,
         item("rename", t("session.rename"), !!s),

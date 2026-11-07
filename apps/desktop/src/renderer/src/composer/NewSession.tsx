@@ -10,9 +10,10 @@ import { useStore } from "../store";
 import { addAttachments, type Attachment } from "./attachments";
 import { useComposerInbox } from "./inbox";
 import { Composer } from "./Composer";
-import { onboardingEvent } from "../onboarding/Onboarding";
 import { needsKey } from "./KeySetup";
+import { NoModel } from "./NoModel";
 import { useCommands } from "./skills";
+import { OfferedTab } from "../session/Yours";
 
 const greetings = ["new.greeting1", "new.greeting2", "new.greeting3", "new.greeting4"] as const;
 
@@ -76,21 +77,15 @@ export function NewSession() {
           </button>}
         </div>
         <div className="newpage" style={{ paddingTop: "var(--top)" }}>
-          {/* No model can run (the first-run page was left for later): the way back to it. */}
           {keyless ? (
-            <div className="new-hero">
-              <MarkMotion size={72} />
-              <h1>{t("new.noModel")}</h1>
-              <button className="btn primary" onClick={() => window.dispatchEvent(new Event(onboardingEvent))}>
-                {t("new.connect")}
-              </button>
-            </div>
+            <NoModel />
           ) : (
             <div className="new-hero">
               <MarkMotion size={72} />
               <h1>{t(greeting)}</h1>
             </div>
           )}
+          <OfferedTab />
           <Composer
             form={{ mode: "new", place: { cwd, recent, names: projectNames([...recent, ...(cwd ? [cwd] : [])]), onCwd: (p) => set({ cwd: p, noProject: p === null }), onPick: pick } }}
             value={text}

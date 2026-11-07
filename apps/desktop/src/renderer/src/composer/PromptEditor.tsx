@@ -22,11 +22,13 @@ import {
   $setSelection,
   BLUR_COMMAND,
   CLEAR_HISTORY_COMMAND,
+  COMMAND_PRIORITY_EDITOR,
   COMMAND_PRIORITY_LOW,
   COMMAND_PRIORITY_NORMAL,
   HISTORY_MERGE_TAG,
   KEY_ARROW_UP_COMMAND,
   KEY_ENTER_COMMAND,
+  KEY_ESCAPE_COMMAND,
   SELECTION_CHANGE_COMMAND,
   TextNode,
   type ElementNode,
@@ -59,10 +61,14 @@ export const PromptEditor = forwardRef<EditorHandle, {
   onEnter: (followUp: boolean) => void;
   /** ↑ while the text is empty; true when it was used (it takes back the last message that waits). */
   onUp?: () => boolean;
+  /** Esc, unless a menu takes it; true when it was used. */
+  onEscape?: () => boolean;
+  /** Shows the text and takes no edits. */
+  readOnly?: boolean;
   placeholder: string;
   label: string;
   commands: CommandInfo[];
-}>(function PromptEditor({ value, onChange, onEnter, onUp, placeholder, label, commands }, ref) {
+}>(function PromptEditor({ value, onChange, onEnter, onUp, onEscape, readOnly = false, placeholder, label, commands }, ref) {
   const known = useMemo(() => skillNames(commands), [commands]);
   const knownRef = useRef(known);
   knownRef.current = known;
@@ -89,7 +95,8 @@ export const PromptEditor = forwardRef<EditorHandle, {
         <HistoryPlugin />
         <ValuePlugin value={value} onChange={onChange} known={knownRef} />
         <TagsPlugin known={known} />
-        <KeysPlugin onEnter={onEnter} onUp={onUp} />
+        <KeysPlugin onEnter={onEnter} onUp={onUp} onEscape={onEscape} />
+        <ReadOnlyPlugin readOnly={readOnly} />
         <MenuPlugin commands={commands} />
         <Handle ref={ref} />
       </LexicalComposer>
@@ -238,11 +245,17 @@ function TagsPlugin({ known }: { known: Set<string> }) {
   return null;
 }
 
-/** ↩ sends and ⌥↩ sends as a follow-up, unless an input method composes; ⇧↩ breaks the line. */
-function KeysPlugin({ onEnter, onUp }: { onEnter: (followUp: boolean) => void; onUp?: () => boolean }) {
+function ReadOnlyPlugin({ readOnly }: { readOnly: boolean }) {
   const [editor] = useLexicalComposerContext();
-  const latest = useRef({ onEnter, onUp });
-  latest.current = { onEnter, onUp };
+  useEffect(() => editor.setEditable(!readOnly), [editor, readOnly]);
+  return null;
+}
+
+/** ↩ sends and ⌥↩ sends as a follow-up, unless an input method composes; ⇧↩ breaks the line. */
+function KeysPlugin({ onEnter, onUp, onEscape }: { onEnter: (followUp: boolean) => void; onUp?: () => boolean; onEscape?: () => boolean }) {
+  const [editor] = useLexicalComposerContext();
+  const latest = useRef({ onEnter, onUp, onEscape });
+  latest.current = { onEnter, onUp, onEscape };
   useEffect(
     () =>
       mergeRegister(
@@ -267,6 +280,16 @@ function KeysPlugin({ onEnter, onUp }: { onEnter: (followUp: boolean) => void; o
             return true;
           },
           COMMAND_PRIORITY_LOW,
+        ),
+        // Below the menu, which takes Esc while it is open.
+        editor.registerCommand(
+          KEY_ESCAPE_COMMAND,
+          (event) => {
+            if (!latest.current.onEscape?.()) return false;
+            event.preventDefault();
+            return true;
+          },
+          COMMAND_PRIORITY_EDITOR,
         ),
       ),
     [editor],

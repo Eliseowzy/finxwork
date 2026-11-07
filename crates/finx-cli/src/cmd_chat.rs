@@ -34,12 +34,13 @@ pub struct ChatOptions {
 }
 
 pub async fn chat(overrides: &[String], options: ChatOptions) -> anyhow::Result<u8> {
-    let rt = setup::init(std::env::current_dir()?, overrides, setup::Logging::On)?;
+    let rt = setup::init(std::env::current_dir()?, overrides)?;
     let style = Style::detect();
     for warning in &rt.warnings {
         eprintln!("{}", style.yellow(&format!("warning: {warning}")));
     }
-    let reference = options.model.clone().unwrap_or_else(|| rt.config.model.clone());
+    let reference = setup::session_model(&rt, options.model.clone())?;
+    setup::check_credentials(&rt, &reference)?;
     let resolved = rt.llm.resolve(&reference)?;
     if resolved.ad_hoc {
         eprintln!("{}", style.yellow(&format!("warning: '{reference}' is not in the catalog; default limits apply")));
@@ -184,7 +185,7 @@ async fn stream_once(
                 }
                 return message;
             }
-            StreamEvent::ToolCallStart { .. } | StreamEvent::ToolCallArgs { .. } => {}
+            StreamEvent::ToolCallStart { .. } | StreamEvent::ToolCallArgs { .. } | StreamEvent::ToolCallData { .. } => {}
         }
     }
     MessageAccumulator::for_model(model).fail(finx_llm::LlmError::new(

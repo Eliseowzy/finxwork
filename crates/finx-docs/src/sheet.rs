@@ -18,6 +18,11 @@ use finx_protocol::doc::CellValue;
 use finx_protocol::doc::ColumnWidth;
 use finx_protocol::doc::RowHeight;
 use finx_protocol::doc::Impact;
+use finx_protocol::doc::SheetChart;
+use finx_protocol::doc::SheetChartCorner;
+use finx_protocol::doc::SheetChartGrouping;
+use finx_protocol::doc::SheetChartKind;
+use finx_protocol::doc::SheetChartSeries;
 use finx_protocol::doc::SheetInfo;
 use finx_protocol::doc::SheetOp;
 use finx_protocol::doc::SheetStructure;
@@ -121,6 +126,7 @@ fn flat_sheet(name: &str, rows: u32, cols: u32) -> SheetInfo {
         columns: Vec::new(),
         default_width: CSV_WIDTH,
         default_height: 20.0,
+        charts: Vec::new(),
     }
 }
 
@@ -170,6 +176,40 @@ fn refusal(e: finx_sheet::Error) -> String {
     match e {
         finx_sheet::Error::Unsupported(m) | finx_sheet::Error::Formula(m) => format!("{REFUSED}{m}"),
         other => other.to_string(),
+    }
+}
+
+fn protocol_chart(c: &finx_sheet::chart::Chart) -> SheetChart {
+    use finx_sheet::chart::Grouping;
+    use finx_sheet::chart::Kind;
+    let corner = |k: finx_sheet::chart::Corner| SheetChartCorner { col: k.col, row: k.row, dx: k.dx, dy: k.dy };
+    SheetChart {
+        kind: match c.kind {
+            Kind::Bar => SheetChartKind::Bar,
+            Kind::Line => SheetChartKind::Line,
+            Kind::Area => SheetChartKind::Area,
+            Kind::Pie => SheetChartKind::Pie,
+            Kind::Doughnut => SheetChartKind::Doughnut,
+            Kind::Scatter => SheetChartKind::Scatter,
+            Kind::Radar => SheetChartKind::Radar,
+        },
+        horizontal: c.horizontal,
+        grouping: match c.grouping {
+            Grouping::Clustered => SheetChartGrouping::Clustered,
+            Grouping::Stacked => SheetChartGrouping::Stacked,
+            Grouping::Percent => SheetChartGrouping::Percent,
+        },
+        title: c.title.clone(),
+        legend: c.legend.clone(),
+        labels: c.labels,
+        categories: c.categories.clone(),
+        series: c.series.iter().map(|s| SheetChartSeries { name: s.name.clone(), color: s.color.clone(), values: s.values.clone(), x: s.x.clone() }).collect(),
+        min: c.min,
+        max: c.max,
+        from: corner(c.from),
+        to: c.to.map(corner),
+        width: c.width,
+        height: c.height,
     }
 }
 
@@ -232,6 +272,7 @@ impl Sheets {
                         .unwrap_or_default(),
                     default_width: width_px(ix.and_then(|ix| ix.default_width).unwrap_or(8.43)),
                     default_height: height_px(ix.and_then(|ix| ix.default_height).unwrap_or(15.0)),
+                    charts: s.charts.iter().map(protocol_chart).collect(),
                 }
             })
             .collect();
@@ -671,6 +712,102 @@ impl Sheets {
         }
         if ops.is_empty() {
             return Err(format!("{REFUSED}the rows are already in that order"));
+        }
+        Ok(ops)
+    }
+
+    /// Excel's fill handle dragged from `source` to `target` (the source and the rows or columns
+    /// the drag added on one side), as plain edits: each column (or row) of the source carried on
+    /// by `autofill::extend`, the cells it repeats copied as `fill` copies them.
+    pub fn autofill(&mut self, handle: u64, sheet: &str, source: &str, target: &str, switch: bool) -> Result<Vec<SheetOp>, String> {
+        use crate::autofill::{Filled, Shown, Source};
+        let src = Rect::parse(source).ok_or_else(|| format!("not a range: {source}"))?;
+        let to = Rect::parse(target).ok_or_else(|| format!("not a range: {target}"))?;
+        let same_cols = src.first.col == to.first.col && src.last.col == to.last.col;
+        let same_rows = src.first.row == to.first.row && src.last.row == to.last.row;
+        // Along the drag: (rows?, away from the source's first cell?)
+        let (vertical, forward) = match () {
+            _ if same_cols && to.first.row == src.first.row && to.last.row > src.last.row => (true, true),
+            _ if same_cols && to.last.row == src.last.row && to.first.row < src.first.row => (true, false),
+            _ if same_rows && to.first.col == src.first.col && to.last.col > src.last.col => (false, true),
+            _ if same_rows && to.last.col == src.last.col && to.first.col < src.first.col => (false, false),
+            _ => return Err(format!("{REFUSED}{target} does not carry {source} on along one side")),
+        };
+        let (lines, along) = if vertical { (src.first.col..=src.last.col, (src.first.row, src.last.row)) } else { (src.first.row..=src.last.row, (src.first.col, src.last.col)) };
+        let added = if vertical { (to.last.row - to.first.row) - (src.last.row - src.first.row) } else { (to.last.col - to.first.col) - (src.last.col - src.first.col) } as usize;
+        let targets = added as u64 * (lines.end() - lines.start() + 1) as u64;
+        if targets > MAX_CELLS {
+            return Err(format!("{target} fills {targets} cells; fill at most {MAX_CELLS} at a time"));
+        }
+        // Each source cell, as (value, stored formula, shown as a date or time).
+        type Read = (Value, Option<String>, Shown);
+        let read: HashMap<CellRef, Read>;
+        let date1904;
+        if let Some(flat) = self.flat(handle) {
+            date1904 = false;
+            read = flat.cells(sheet, Some(src)).ok_or_else(|| format!("no sheet named {sheet}"))?.into_iter().map(|(at, v, _, f)| (at, (v, f, Shown::Plain))).collect();
+        } else {
+            let doc = self.doc(handle)?;
+            let book = &doc.book;
+            date1904 = book.info.date1904;
+            let s = book.sheet_index(sheet).ok_or_else(|| format!("no sheet named {sheet}"))?;
+            let mut cells = HashMap::new();
+            for r in src.first.row..=src.last.row {
+                for c in src.first.col..=src.last.col {
+                    let at = CellRef::new(r, c);
+                    let fmt = book.style(s, at).num_fmt;
+                    let shown = if !finx_sheet::styles::is_date_format(&fmt) {
+                        Shown::Plain
+                    } else if fmt.to_ascii_lowercase().replace("[h]", "").contains(['y', 'd']) {
+                        Shown::Date
+                    } else {
+                        Shown::Time
+                    };
+                    cells.insert(at, (book.value(s, at), book.formula(s, at).map(str::to_string), shown));
+                }
+            }
+            read = cells;
+        }
+        let cell = |line: u32, pos: u32| if vertical { CellRef::new(pos, line) } else { CellRef::new(line, pos) };
+        let mut ops = Vec::new();
+        for line in lines {
+            // The source in the order the drag leaves it.
+            let order: Vec<u32> = if forward { (along.0..=along.1).collect() } else { (along.0..=along.1).rev().collect() };
+            let cells: Vec<(CellRef, Read)> = order.iter().map(|&p| (cell(line, p), read.get(&cell(line, p)).cloned().unwrap_or((Value::Empty, None, Shown::Plain)))).collect();
+            let sources: Vec<Source> = cells
+                .iter()
+                .map(|(_, (value, formula, shown))| match (formula, value) {
+                    (Some(_), _) => Source::Other,
+                    (None, Value::Number(n)) => Source::Number { value: *n, shown: *shown },
+                    (None, Value::Text(t)) => Source::Text(t.clone()),
+                    (None, Value::Empty) => Source::Empty,
+                    (None, _) => Source::Other,
+                })
+                .collect();
+            for (k, filled) in crate::autofill::extend(&sources, added, switch, date1904).into_iter().enumerate() {
+                let pos = if forward { along.1 + 1 + k as u32 } else { along.0 - 1 - k as u32 };
+                let at = cell(line, pos);
+                let (sheet, cell_name) = (sheet.to_string(), at.to_string());
+                ops.push(match filled {
+                    Filled::Number(n) => SheetOp::SetValue { sheet, cell: cell_name, value: CellInput::Number(n) },
+                    Filled::Text(t) => SheetOp::SetValue { sheet, cell: cell_name, value: CellInput::Text(t) },
+                    Filled::Copy(i) => {
+                        let (from, (value, formula, _)) = &cells[i];
+                        match (formula, value) {
+                            (Some(f), _) => {
+                                let moved = finx_sheet::formula::translate(f, at.row as i64 - from.row as i64, at.col as i64 - from.col as i64)
+                                    .map_err(|e| format!("{REFUSED}the formula in {from} cannot move to {at}: {e}"))?;
+                                SheetOp::SetFormula { sheet, cell: cell_name, formula: formula_text(&display(&moved)) }
+                            }
+                            (None, Value::Number(n)) => SheetOp::SetValue { sheet, cell: cell_name, value: CellInput::Number(*n) },
+                            (None, Value::Bool(b)) => SheetOp::SetValue { sheet, cell: cell_name, value: CellInput::Bool(*b) },
+                            (None, Value::Text(t)) => SheetOp::SetValue { sheet, cell: cell_name, value: CellInput::Text(t.clone()) },
+                            (None, Value::Error(e)) => return Err(format!("{REFUSED}{from} holds the error {e}; fill it in Excel")),
+                            (None, Value::Empty) => SheetOp::Clear { sheet, range: cell_name },
+                        }
+                    }
+                });
+            }
         }
         Ok(ops)
     }

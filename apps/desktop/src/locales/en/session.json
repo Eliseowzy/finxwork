@@ -48,7 +48,8 @@
     "retryIn": "Retry {{attempt}} in {{seconds}}s",
     "retrying": "Retry {{attempt}} in progress",
     "stopRetry": "Stop",
-    "context": "Context {{percent}}% used · {{used}} / {{size}} tokens"
+    "context": "Context {{percent}}% used · {{used}} / {{size}} tokens",
+    "resend": "Take back and resend"
   },
   "fail": {
     "theProvider": "the provider",
@@ -66,7 +67,8 @@
     "unknown": "This task couldn't finish",
     "working_one": "{{count}} background task is still working.",
     "working_other": "{{count}} background tasks are still working.",
-    "stopWorking": "Stop background tasks"
+    "stopWorking": "Stop background tasks",
+    "no_reply": "No reply this time"
   },
   "agents": {
     "launched_one": "Started {{count}} sub-agent, working in the background",
@@ -76,10 +78,12 @@
       "completed": "Done",
       "failed": "Failed",
       "interrupted": "Stopped",
-      "closed": "Closed"
+      "closed": "Closed",
+      "awaiting_approval": "Waiting for you"
     },
     "open": "Show its work in the background panel",
     "report": "Report from <b>{{name}}</b>",
+    "message": "Message from <b>{{name}}</b>",
     "noReply": {
       "interrupted": "Stopped before it replied",
       "completed": "Finished without a reply"
@@ -93,7 +97,8 @@
     "stopped_other": "{{count}} background tasks stopped; reply to let finx continue them",
     "sent": "Sent to",
     "sending": "Sending to",
-    "messageObject": "{{to}}: {{message}}"
+    "messageObject": "{{to}}: {{message}}",
+    "mainAgent": "the main agent"
   },
   "background": {
     "title": "Background tasks",
@@ -121,6 +126,7 @@
   },
   "approval": {
     "label": "Waiting for your approval",
+    "agent": "Sub-agent · {{name}}",
     "queue": "{{n}} of {{total}}",
     "runCommand": "Run this command?",
     "useTool": "{{verb}} {{object}}?",
@@ -153,14 +159,14 @@
     "siteQuestionYours": "Open {{site}} in your browser?",
     "siteActYours": "Allow finx to use {{site}} in your browser?",
     "siteYours": "It uses the accounts you're signed in to.",
-    "siteYoursBypass": "It uses the accounts you're signed in to, so it asks even when permissions are bypassed."
+    "siteYoursBypass": "It uses the accounts you're signed in to, so it asks even with Full Access."
   },
   "notice": {
     "label": "Notice",
     "dismiss": "Got it"
   },
   "bypass": {
-    "title": "Turn on Bypass Permissions?",
+    "title": "Turn on Full Access?",
     "body": "Tools run without asking, including changes to protected files such as .git and shell profiles, and to files outside the workspace. Only deny rules, ask rules and deleting critical paths still stop an action. Use it only in an isolated environment such as a container or a throwaway checkout.",
     "agree": "Agree",
     "refuse": "Decline"
@@ -211,6 +217,9 @@
     "connectors": "Connectors",
     "browseConnectors": "Browse Connectors",
     "manageConnectors": "Manage Connectors",
+    "searchSwitch": "Web Search",
+    "searchOn": "Web search is on, for every conversation from its next step",
+    "searchOff": "Web search is off, for every conversation from its next step",
     "browserSwitch": "Browser",
     "computerSwitch": "Computer Use",
     "computerGrant": "Needs permission",
@@ -223,7 +232,12 @@
     "skills": "Skills",
     "browseSkills": "Browse skills",
     "manageSkills": "Manage skills",
-    "noSkills": "No skills available"
+    "noSkills": "No skills available",
+    "tabKind": "Browser tab",
+    "tabs_one": "{{count}} tab",
+    "tabs_other": "{{count}} tabs",
+    "prevImage": "Previous image",
+    "nextImage": "Next image"
   },
   "inspector": {
     "label": "Session Details",
@@ -360,6 +374,13 @@
     "typeUrl": "Search or type a URL",
     "localServers": "Local servers",
     "rescan": "Look again",
+    "stopServer": "Stop server",
+    "stopServerTitle": "Stop the server on :{{port}}?",
+    "stopServerBody": "This ends {{process}} (PID {{pid}}). Anything unsaved in it may be lost.",
+    "stopServerButton": "Stop",
+    "stopServerDone": ":{{port}} stopped",
+    "stopServerGone": "The server on :{{port}} is no longer running",
+    "stopServerDenied": "Not allowed to stop {{process}} (PID {{pid}})",
     "noLocalServers": "No web server is running on this machine. Start one and it shows here.",
     "more": "More",
     "menu": {
@@ -457,6 +478,8 @@
   },
   "content": {
     "open": "Open",
+    "viewSource": "View Source",
+    "previewInBrowser": "Preview in Built-in Browser",
     "openWith": "Open With",
     "systemApp": "Default App",
     "revealFinder": "Show in Finder",
@@ -488,13 +511,16 @@
     "hidden": "Hidden characters",
     "hiddenTip": "This code has characters you can't see. Check it before you paste it."
   },
+  "preview": {
+    "toPanel": "Open in side panel",
+    "close": "Close preview"
+  },
   "files": {
     "title": "Files",
     "hide": "Hide files",
     "tree": "Project files",
     "toggleTree": "Show or Hide the Folder Tree",
     "showInTree": "Show in Files",
-    "empty": "Pick a file on the left to open it",
     "loading": "Reading…",
     "saved": "Saved",
     "unsaved": "Not saved",
@@ -568,7 +594,7 @@
     "findNone": "No match",
     "pasteTooBig": "Paste at most {{max}} cells at a time",
     "hardcoded": "A typed number between formulas: it may be meant as a formula",
-    "openInExcel": "Open in Excel",
+    "openInExcel": "Open with the default app",
     "unsaved": "Unsaved",
     "undo": "Undo",
     "redo": "Redo",
@@ -591,8 +617,14 @@
     "readOnly": "This sheet is read-only.",
     "csvNoFormula": "CSV files support values only. Enter text with a leading apostrophe to keep an equals sign.",
     "loadFailed": "Could not load cells.",
-    "askFinx": "Ask finx",
+    "fillHandle": "Drag to fill; hold ⌥ to switch between copying and counting",
+    "askAgent": "Ask agent",
     "copy": "Copy",
+    "cut": "Cut",
+    "paste": "Paste",
+    "clearContents": "Clear Contents",
+    "fillDown": "Fill Down",
+    "fillRight": "Fill Right",
     "copied": "Selection copied",
     "quoted": "Added to the composer",
     "selectionSummary": "Selected {{range}}, {{count}} cells. Read this range with doc_read.",
@@ -649,5 +681,195 @@
     "fillDown": "Fill down",
     "fillRight": "Fill right",
     "trace": "Trace"
+  },
+  "yours": {
+    "tabs_one": "{{count}} tab",
+    "tabs_other": "{{count}} tabs",
+    "reconnecting": "reconnecting",
+    "opening": "opening",
+    "waitingYou": "waiting for you",
+    "revoked": "taken back",
+    "outdated": "Needs an Update",
+    "allow": "Allow",
+    "show": "Show in {{name}}",
+    "closeAll": "Close All",
+    "tabsMenu": "Tabs",
+    "waitingLine": "Waiting for your browser",
+    "inYourBrowser": " · your browser",
+    "card": {
+      "title": "The FinxWork extension in {{name}} is not connected",
+      "desc": "On the extensions page, check that it is still there and turned on. The task goes on by itself once it connects.",
+      "other": "The browser chosen for the agent is not connected; {{other}} is.",
+      "refused": "It is still running the old program. Click its reload button on the extensions page; the task goes on by itself once it connects.",
+      "outdated": {
+        "extension": "This extension is too old. Update it on the extensions page; the task goes on by itself once it connects.",
+        "finx": "FinxWork is too old for this extension. Update it, and the task goes on by itself."
+      },
+      "update": "Check for Updates",
+      "skip": "Not {{name}} This Time",
+      "open": "Open Extensions Page",
+      "switch": "Use That One"
+    },
+    "handoff": {
+      "title": "Needs you in {{name}}",
+      "go": "Go to {{name}}",
+      "done": "I'm Done",
+      "again": "Look Again",
+      "skip": "Skip This Step",
+      "handled": "You handled"
+    },
+    "offer": "For this conversation: {{title}}",
+    "offerRemove": "Don't hand it over"
+  },
+  "resend": {
+    "from": "Resending: {{text}}",
+    "find": "Find it in the conversation",
+    "cancel": "Don't resend, back to your draft",
+    "placeholder": "Write what to send instead…",
+    "hint": "Everything after it will be taken back",
+    "hintFiles": ", and files the model changed stay as they are",
+    "hintRunning": ", and the running task stops",
+    "sending": "Taking it back…",
+    "refused": "Couldn't resend. Your words are still in the composer",
+    "gone": "That message was taken back elsewhere. Your words are in the composer"
+  },
+  "webSearch": {
+    "only": " · only {{sites}}",
+    "siteSeparator": ", ",
+    "failed": "Search failed",
+    "and": "; ",
+    "stop": ".",
+    "openSettings": "Open Settings",
+    "noneUsable": "Every search service is off or not set up.",
+    "failedOver": "{{failed}}; used {{name}} instead",
+    "foot_zero": "No results · {{name}} · {{seconds}} s",
+    "foot_one": "{{count}} result · {{name}} · {{seconds}} s",
+    "foot_other": "{{count}} results · {{name}} · {{seconds}} s",
+    "footAfter_zero": "No results · {{seconds}} s",
+    "footAfter_one": "{{count}} result · {{seconds}} s",
+    "footAfter_other": "{{count}} results · {{seconds}} s",
+    "why": {
+      "auth_failed": "{{name}} rejected the key",
+      "quota_exhausted": "{{name}} is out of quota",
+      "rate_limited": "{{name}} is limiting requests",
+      "unreachable": "{{name}} could not be reached",
+      "bad_response": "{{name}} sent an unreadable answer"
+    }
+  },
+  "markdown": {
+    "table": "Data table",
+    "copyTable": "Copy table",
+    "copyAsMarkdown": "Copy as Markdown",
+    "copied": "Copied",
+    "copyFailed": "Could not copy. Try again.",
+    "expand": "Expand",
+    "close": "Close",
+    "tableOpen": "Table opened · Return",
+    "details": "Details",
+    "diagram": "Diagram",
+    "source": "Source",
+    "exportSvg": "Export SVG",
+    "diagramFailed": "This diagram could not be rendered. Its source is shown below the controls.",
+    "rendering": "Rendering diagram…",
+    "footnotes": "Footnotes",
+    "backToReference": "Back to reference"
+  },
+  "pptx": {
+    "outlineTitle": "Outline",
+    "outlineError": "Could not load the outline.",
+    "outlineUntitled": "Untitled slide",
+    "loadingPanel": {
+      "title": "Opening presentation",
+      "hints": {
+        "preparing": "Just a moment — you can edit once it opens.",
+        "reading": "Larger files take a little longer to read.",
+        "inspecting": "Organizing the text, images and layout of each slide.",
+        "encoding": "Organizing the text, images and layout of each slide.",
+        "fonts": "So the text looks the way it was designed.",
+        "rendering": "Showing the first slide."
+      }
+    },
+    "progress": {
+      "preparing": "Opening presentation…",
+      "reading": "Reading file…",
+      "inspecting": "Organizing content…",
+      "encoding": "Organizing content…",
+      "fonts": "Preparing text…",
+      "rendering": "Almost ready…"
+    },
+    "mediaWarning": "A vector object could not be displayed completely: {{message}}",
+    "editor": "Presentation editor",
+    "loading": "Loading presentation and local fonts…",
+    "loadFailed": "Cannot open the presentation: {{message}}",
+    "conflict": "The file changed or was deleted outside FinxWork. Your edits are kept here. Reload the file to discard them.",
+    "ribbon": {
+      "home": "Home",
+      "select": "Select (Esc)",
+      "insert": "Insert",
+      "paragraph": "Paragraph",
+      "image": "Picture",
+      "shapeStyle": "Shape style",
+      "fontSearch": "Search fonts",
+      "documentFonts": "In this presentation",
+      "allFonts": "All fonts",
+      "fontLoading": "Loading…",
+      "fontFailed": "Can't use this font: {{message}}",
+      "fontSubstitute": "(substitute)",
+      "fontSubstituteHint": "Drawn with {{family}}, which has the same letter widths",
+      "fontsUnavailable": "Can't read this computer's fonts: {{message}}",
+      "group": {
+        "clipboard": "Clipboard",
+        "editing": "Editing",
+        "alignObjects": "Align"
+      },
+      "cmd": {
+        "paste": "Paste",
+        "cut": "Cut",
+        "copy": "Copy",
+        "duplicate": "Duplicate",
+        "formatPainter": "Format Painter (double-click to keep)",
+        "deleteSlide": "Delete Slide",
+        "superscript": "Superscript",
+        "subscript": "Subscript",
+        "clearFormat": "Clear Formatting",
+        "align_left": "Align Left",
+        "align_center": "Align Center",
+        "align_right": "Align Right",
+        "align_top": "Align Top",
+        "align_middle": "Align Middle",
+        "align_bottom": "Align Bottom",
+        "distribute_horizontal": "Distribute Horizontally",
+        "distribute_vertical": "Distribute Vertically",
+        "alignToPage": "Align to Slide",
+        "selectAll": "Select All"
+      },
+      "reason": {
+        "engine": "Not supported by the editor yet",
+        "read-only": "The file is read-only",
+        "needs-slide": "Open a slide first",
+        "needs-text": "Select text first",
+        "needs-text-range": "Select some text first",
+        "needs-shape": "Select an object first",
+        "needs-preset": "Select a shape first",
+        "needs-two": "Select two or more objects",
+        "needs-three": "Select three or more objects",
+        "needs-table": "Put the cursor in a table",
+        "needs-format": "Select text or an object to copy its formatting",
+        "needs-clipboard": "Copy or cut an object first",
+        "needs-layout": "Pick a different layout",
+        "last-slide": "A presentation needs at least one slide"
+      },
+      "todo": "Coming soon",
+      "themeColors": "Theme Colors",
+      "standardColors": "Standard Colors",
+      "moreColors": "More Colors…"
+    }
+  },
+  "deckEdit": {
+    "show": "Show slide {{n}}",
+    "open": "Open the presentation",
+    "undo": "Undo",
+    "undone": "Undone",
+    "failed": "Not undone: {{message}}"
   }
 }

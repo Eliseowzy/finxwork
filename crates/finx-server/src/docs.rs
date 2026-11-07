@@ -21,7 +21,10 @@ use finx_protocol::doc::DocViewParams;
 use finx_protocol::doc::ResolvedPart;
 use finx_rpc::RpcError;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use crate::conn::ConnHandle;
+use crate::conn::ConnId;
 use crate::server::Server;
 
 fn rpc_error(e: DocError) -> RpcError {
@@ -39,6 +42,26 @@ fn rpc_error(e: DocError) -> RpcError {
 }
 
 impl Server {
+    /// A connection that opened a document hears `doc/changed` until it closes.
+    pub(crate) fn watch_docs(&self, conn: &ConnHandle) {
+        self.0.doc_watchers.lock().insert(conn.id, conn.clone());
+    }
+
+    pub(crate) fn forget_doc_watcher(&self, conn: ConnId) {
+        self.0.doc_watchers.lock().remove(&conn);
+    }
+
+    /// Tells the watchers of every change to an open document.
+    pub(crate) fn follow_doc_changes(&self) {
+        let weak = Arc::downgrade(&self.0);
+        self.0.docs.on_change(move |info| {
+            let Some(inner) = weak.upgrade() else { return };
+            let frame = finx_rpc::notification(finx_protocol::api::method::DOC_CHANGED, &finx_protocol::doc::DocChangedParams { info: info.clone() });
+            for conn in inner.doc_watchers.lock().values() {
+                conn.send(frame.clone());
+            }
+        });
+    }
     pub(crate) async fn doc_open(&self, p: DocOpenParams) -> Result<DocOpenResult, RpcError> {
         let path = match (&p.path, &p.doc_id) {
             (Some(path), _) => PathBuf::from(path),
@@ -170,6 +193,14 @@ impl Server {
         Ok(DocApplyResult { revision, impact, dirty })
     }
 
+    /// The grid's fill handle: the series worked out by the worker, applied as one edit.
+    pub(crate) async fn doc_autofill(&self, p: finx_protocol::doc::DocAutofillParams) -> Result<DocApplyResult, RpcError> {
+        let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
+        let ops = self.0.docs.autofill_ops(&doc, &p.sheet, &p.source, &p.target, p.switch).await.map_err(rpc_error)?;
+        let (revision, impact, dirty) = self.0.docs.apply(&doc, &p.session_id, ops, p.base_revision, p.preview).await.map_err(rpc_error)?;
+        Ok(DocApplyResult { revision, impact, dirty })
+    }
+
     pub(crate) async fn doc_save(&self, p: DocSaveParams) -> Result<DocInfo, RpcError> {
         let doc = self.0.docs.get(&p.doc_id).map_err(rpc_error)?;
         let to = match &p.path {
@@ -183,5 +214,7 @@ impl Server {
     /// A closed session's columns show nothing any more.
     pub(crate) async fn docs_forget(&self, session: &str) {
         self.0.docs.forget_session(session).await;
+        // Decks the session's agent opened (deck_edit) close with it; unsaved edits stay.
+        self.0.decks.forget_session(session).await;
     }
 }

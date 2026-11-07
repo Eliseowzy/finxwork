@@ -14,6 +14,7 @@ use std::path::PathBuf;
 
 pub use entry::AgentOrigin;
 pub use entry::AgentSpawnedEntry;
+pub use entry::BotRef;
 pub use entry::CompactionEntry;
 pub use entry::SystemPromptEntry;
 pub use entry::Entry;
@@ -39,7 +40,7 @@ pub enum StoreError {
     NotFound(String),
     #[error("{0}")]
     Ambiguous(String),
-    #[error("session log {0} is in use by another finx process")]
+    #[error("this session is open in another finx or FinxWork ({0})")]
     Locked(PathBuf),
     #[error("corrupt session log {path}: {message}")]
     Corrupt { path: PathBuf, message: String },
@@ -103,7 +104,7 @@ pub trait SessionStore: Send + Sync + 'static {
     /// opened here or that another holder may be writing.
     fn read(&self, reference: &SessionRef) -> Result<(SessionHeader, Vec<Entry>), StoreError>;
     /// Most recent first; with `within`, only sessions started in that directory or below.
-    /// Sub-agents' sessions are left out; sessions started by this store whose log is not
-    /// written yet are included.
+    /// Sub-agents' and bots' sessions are left out; sessions started by this store whose log
+    /// is not written yet are included.
     fn list(&self, limit: usize, within: Option<&Path>) -> Result<Vec<SessionSummary>, StoreError>;
 }

@@ -2,8 +2,8 @@
 
 | 项 | 内容 |
 |---|---|
-| 版本 | v0.13 |
-| 日期 | 2026-11-02 |
+| 版本 | v0.14 |
+| 日期 | 2026-11-05 |
 | 状态 | 一期已实现（§14.3 记下与本文不同的地方），待验收；v0.5 跟随 skill-design v1.6 的技能来源收敛（2e），已实现（skill-design §13.4）；v0.6 定下添加连接器的新流程（§10.9）和二期的 OAuth、旧版 SSE、探测（§6.3、§8.3），已实现（§14.3）；v0.7 去掉页面上的"范围"：新连接器一律写进用户配置，所有项目可用（DD-57）；v0.8 设置页改成分组表单（DD-58），已实现；v0.9 页面不再让用户选客户端身份（DD-59），已实现；v0.10 名称按 Tab 采用建议、连接器显示服务的 logo、同一个服务只连一次（DD-60–DD-62），已实现；v0.11 logo 按形态展示（§10.10，DD-63）、编辑配置改成与添加一致的设置页（§10.11，DD-64）、去掉"也可以粘贴一段 JSON 配置"的提示（DD-65），已实现；v0.12 连接器详情页改成一页到底（§10.12，DD-66），已实现；v0.13 从发现添加连接器时由用户选登录方式，目录只给推荐（§10.6，DD-67），已实现；v0.14 目录条目随应用带上服务商的 logo（§10.10，DD-68），已实现；v0.15 技能详情页改成与连接器详情页一致的一页到底，下面是文件树加打开的文件，Markdown 可以在预览和原文之间切换，新增 `skills/read`（§10.13，DD-69），已实现 |
 | 原型 | [customize-demo.html](customize-demo.html)，最终版；添加连接器以 [connector-add-demo.html](connector-add-demo.html) 为准（§10.9），设置页的分组表单以 [connector-add-grouped-demo.html](connector-add-grouped-demo.html) 为准（DD-58）。包含二期的登录和"让打开的会话也用上"；本文另有几种状态没有单独画出：项目未受信任、被更高的层覆盖、令牌缺失 |
 | 关系 | 落实 mcp-design.md 的 Q-107（桌面端如何管理服务器），连带 Q-102（OAuth 令牌放在哪里）、Q-103（手动重连）、Q-108（在自己的配置里关掉项目的服务器）、Q-112（工具目录缓存）；技能部分接续 skill-design.md §11.4 的 `skills/list` 和 Q-61（内置技能）。协议新增的方法在实现时同步登记到 protocol-design.md，内核一侧的决策登记到 technical-design.md |
@@ -99,6 +99,7 @@
 | v0.4 | 2026-10-31 | 一期实现后按实现修正：skill-creator 不由模型调用（§4.6）；`SkillsSetEnabledResult` 带 `file` 与 `removed_names`（§6.2）；锁文件的位置（§5.1）；实际的发现目录（§10.6）；实现记录（§14.3） |
 | v0.5 | 2026-10-31 | 跟随 skill-design v1.6（2e）收敛技能来源：<br>• 仓库里的技能在 `.agents/skills`（默认启用）和 `.claude/skills`（默认不启用），不再有 `<项目>/.finx/skills`<br>• `~/.agents/skills`、`~/.claude/skills` 默认不读，`skills.other_apps` 打开<br>• 技能行的开关按默认状态写 `skills.opt_in` 或 `skills.disabled`（§9.3）<br>• SkillEntry 新增 `default_enabled`，页面据此写"默认不启用"（§10.4）<br>• 新增 DD-52 |
 | v0.6 | 2026-10-31 | 添加连接器改成两步（§10.9，原型 [connector-add-demo.html](connector-add-demo.html)）：第一步只有名称和地址，地址可以是网址、命令或 JSON；远程地址先探测，再按探测结果给出鉴权设置，本地命令进入命令表单；所有路径先检查、后写入。新增 `mcp/probe`，`mcp/login` 可以在写入之前登录（§6.3、§8.3）；内核一侧的 OAuth、客户端身份、旧版 SSE 见 mcp-design v1.3 §13.6–§13.8。新增 DD-53–DD-56 |
+| v0.14 | 2026-11-05 | Exa 从发现下架，搜索移到 设置 › 联网搜索（kernel/web-search-design.md D-365）。已经添加的连接器不动，要读网页工具、研究智能体和账号登录的人可以手动填地址。"选登录方式"的流程保留，暂时没有条目在用 |
 
 ## 1. 目标与范围
 
@@ -252,7 +253,7 @@ finx-llm      钥匙串（credentials）
 - **文件头**：服务第一次创建这个文件时写两行注释：
 
   ```toml
-  # Personal settings for /Users/yee/CodeSpace/finxwork
+  # Personal settings for /Users/me/code/finxwork
   # (only you, only this project; written by finx)
   ```
 
@@ -650,8 +651,8 @@ interface McpChanged { name?: string; login_id?: string; login_error?: string }
 | `finx skills enable/disable <名字或路径>` | `skills/set_enabled`；写名字时停用全部同名；写路径时按默认状态写 `opt_in` 或 `disabled`（skill-design §4.4） |
 | `finx mcp add <名字> --url <URL> [--header K=V]…` | `credentials/set`（`--token` 从标准输入读）和 `config/write` |
 | `finx mcp add <名字> [--env K=V]… -- <命令> [参数…]` | 同上；`--secret-env K` 把 K 的值存进钥匙串，配置里写引用 |
-| 范围选项 | 默认写用户配置；`--here` 写个人项目层；`--project` 写仓库的项目配置 |
-| `finx mcp remove/enable/disable <名字> [--here]` | `config/write`；仓库里的服务器用 `disable --here` 只对自己关闭 |
+| 范围选项 | `--global` 写用户配置（默认）；`--local` 写个人项目层；`--project` 写仓库的项目配置 |
+| `finx mcp remove/enable/disable <名字> [--local]` | `config/write`；仓库里的服务器用 `disable --local` 只对自己关闭 |
 | `finx mcp list --check`（已有） | 同时写缓存 |
 | `finx mcp login/logout <名字>`（二期） | 自己打开浏览器，在终端等回调 |
 
@@ -882,14 +883,9 @@ checking… ok, 38 tools (640 ms)
   - 已经装进 `~/.finx/skills` 的技能、写进配置的连接器不受影响，只是不再对应目录里的条目。
   - 要 OAuth 的（Linear、Notion、Sentry）等二期的登录做好再收录。
   - 已重新收录的连接器：
-    - **Exa**（2026-11-02）：三种方式，推荐不用密钥。
-      - 不用密钥：地址 `https://mcp.exa.ai/mcp`，免费额度内能用搜索和读取网页两个工具。
-      - 登录：按 Exa 文档改用 `https://mcp.exa.ai/mcp?login`，授权服务器是 `auth.exa.ai`，支持 PKCE、客户端元数据文档和动态注册。
-      - API Key：放在 `x-api-key` 请求头。
-      - 登录和 API Key 都能多用一个研究智能体。
-      - 说明取自服务器自报的 `serverInfo.description`，每种方式的区别写在语言文件的 `catalog.ways.exa.<方式>`。
+    - **Exa**（2026-11-02 收录，2026-11-05 下架）：搜索移到 设置 › 联网搜索，这里不再提供（kernel/web-search-design.md D-365）。它是目前唯一用过"三种方式"的条目：不用密钥、登录（`https://mcp.exa.ai/mcp?login`）、API Key（`x-api-key` 请求头）。
 - **登录方式由用户选（DD-67）**：
-  - **条目**：`auth` 列出服务商接受的所有方式，第一个是推荐。登录要用另一个地址的（例如 Exa 的 `?login`），写在 `oauth.url` 里。
+  - **条目**：`auth` 列出服务商接受的所有方式，第一个是推荐。登录要用另一个地址的（例如当时 Exa 的 `?login`），写在 `oauth.url` 里。
   - **一键添加**：只有所有方式都是"不需要鉴权"的条目，点 + 才直接写入。
   - **其余条目**：点 + 或详情页的"添加"都打开添加连接器的设置页（§10.9）。地址已经定了，所以跳过第一步，也不能改地址。
     - "方式"只列这个条目的几种，推荐的那种预先选好，并标上"推荐"。
@@ -1277,8 +1273,8 @@ logo 来自服务器声明或它的网站（mcp-design §13.9），形态各异�
 
 ```toml
 [skills]
-disabled = ["/Users/yee/CodeSpace/finxwork/.agents/skills/desktop-dev-run"]
-opt_in = ["/Users/yee/CodeSpace/finxwork/.claude/skills/release-notes"]
+disabled = ["/Users/me/code/finxwork/.agents/skills/desktop-dev-run"]
+opt_in = ["/Users/me/code/finxwork/.claude/skills/release-notes"]
 
 [mcp_servers.github]
 url = "https://api.githubcopilot.com/mcp/"
@@ -1296,7 +1292,7 @@ enabled = false
 个人项目层 `~/.finx/projects/finxwork-3fa81c02/config.toml`：
 
 ```toml
-# Personal settings for /Users/yee/CodeSpace/finxwork
+# Personal settings for /Users/me/code/finxwork
 # (only you, only this project; written by finx)
 
 [mcp_servers.postgres-dev]

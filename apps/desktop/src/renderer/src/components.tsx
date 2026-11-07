@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { displayTitle, type ListSession } from "@finx/client";
 import type { SessionState } from "@finx/protocol";
 import { Icon } from "./icons";
 import { layoutOf, setSidebar } from "./layout";
 import { useOverlay } from "./overlays";
 import { useStore } from "./store";
 
-/** A session's title, edited in place: ↩ or leaving the field keeps it (`end` gets the text), Esc puts it back (`end` gets null). */
-export function RenameField({ s, className, end }: { s: ListSession; className: string; end: (title: string | null) => void }) {
+/** A session's title or a bot's name, edited in place: ↩ or leaving the field keeps it (`end` gets the text), Esc puts it back (`end` gets null). */
+export function RenameField({ initial, className, maxLength, end }: { initial: string; className: string; maxLength?: number; end: (title: string | null) => void }) {
   const { t } = useTranslation("common");
-  const [value, setValue] = useState(displayTitle(s));
+  const [value, setValue] = useState(initial);
   const done = useRef(false);
   const finish = (keep: boolean) => {
     if (done.current) return;
@@ -22,6 +21,7 @@ export function RenameField({ s, className, end }: { s: ListSession; className: 
       className={className}
       aria-label={t("sessionMenu.renameLabel")}
       autoFocus
+      maxLength={maxLength}
       value={value}
       onFocus={(e) => e.currentTarget.select()}
       onChange={(e) => setValue(e.target.value)}
@@ -54,7 +54,7 @@ export function SidebarToggle() {
     <>
       <span style={{ width: "calc(var(--lights) - 30px)", flex: "none" }} />
       <button className="tb" onClick={() => setSidebar(st, true)} aria-label={t("window.showSidebar")} title={t("window.showSidebar")}>
-        <Icon name="sidebar" />
+        <Icon name="sidebar" className="panel" />
       </button>
     </>
   );
@@ -94,7 +94,7 @@ export function ToastView() {
  * Escape or a click outside closes it, and Escape goes no further (the
  * settings window closes on an Escape nothing else took).
  */
-export function Dialog({ label, width, className, onClose, children }: { label: string; width: number; className?: string; onClose: () => void; children: ReactNode }) {
+export function Dialog({ label, width, className, onClose, children }: { label: string; width: number | string; className?: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDialogElement>(null);
   useOverlay();
   useEffect(() => {
@@ -109,6 +109,8 @@ export function Dialog({ label, width, className, onClose, children }: { label: 
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.preventDefault();
+        // A dialog from inside another one (a table made large in a preview) closes alone.
+        e.stopPropagation();
         onClose();
       }}
       onCancel={(e) => (e.preventDefault(), onClose())}

@@ -53,6 +53,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
         const a = l.agent;
         const status = a?.status ?? (l.starting ? "running" : undefined);
         const tone = status === "completed" ? "ok" : status === "interrupted" ? "int" : status === "running" || status === undefined ? "" : "bad";
+        const asks = (a?.view.live?.approvals.length ?? 0) > 0;
         return (
           <button key={l.call_id} className="agc-r" title={t("agents.open")} onClick={() => show(a?.id)}>
             <AgentGlyph status={a?.status} />
@@ -69,7 +70,7 @@ export function AgentCard({ launches }: { launches: AgentLaunch[] }) {
               </>
             )}
             <span className={`agc-s ${tone}`}>
-              {status && <span>{t(`agents.status.${status}`)}</span>}
+              {status && <span>{t(asks ? "agents.status.awaiting_approval" : `agents.status.${status}`)}</span>}
               {a && <span className="tm">{agentTime(a, now)}</span>}
             </span>
             <Icon name="chevR" className="go" />
@@ -105,6 +106,39 @@ export function ReportCard({ step }: { step: Extract<Step, { kind: "report" }> }
       <div className={`rpc-b ${long && !open ? "clamp" : ""}`}>
         {/* No reply: the report's words are a note for the model; say it in the window's words. */}
         {step.no_reply ? <p className="rpc-none">{t(`agents.noReply.${step.status === "interrupted" ? "interrupted" : "completed"}`)}</p> : <Markdown text={step.text} />}
+      </div>
+      <div className="rpc-f">
+        {long && (
+          <button className="link quiet" onClick={() => setOpen(!open)}>
+            {open ? t("agents.collapse") : t("agents.expand")}
+          </button>
+        )}
+        <button className="link" onClick={() => show(step.agent_id)}>
+          {t("agents.process")}
+          <Icon name="chevR" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** What a sub-agent sent while it worked, where it reached the conversation: drawn like a report, but its work goes on. */
+export function AgentMessageCard({ step }: { step: Extract<Step, { kind: "agent_message" }> }) {
+  const { t } = useTranslation("session");
+  const [open, setOpen] = useState(false);
+  const show = useShowAgent();
+  const a = step.agent;
+  const long = step.text.split("\n").length > 2 || step.text.length > 140;
+  return (
+    <div className="rpc">
+      <div className="rpc-h">
+        <Icon name="bot" className="sm" />
+        <span>
+          <Trans t={t} i18nKey="agents.message" values={{ name: a?.description || step.name }} components={{ b: <b className={a?.description ? "who label" : "who"} /> }} />
+        </span>
+      </div>
+      <div className={`rpc-b ${long && !open ? "clamp" : ""}`}>
+        <Markdown text={step.text} />
       </div>
       <div className="rpc-f">
         {long && (

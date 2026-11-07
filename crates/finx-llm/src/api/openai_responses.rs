@@ -24,9 +24,25 @@ fn content(parts: &[UserContent]) -> Vec<Value> {
 
 pub fn build_body(model: &crate::Model, context: &Context, options: &RequestOptions) -> Value {
     let mut input = Vec::new();
+    // A call recorded without a name can never be sent (`name` must be non-empty): leave it out,
+    // with its result, rather than fail every later turn of the conversation.
+    let nameless: HashSet<&str> = context
+        .messages
+        .iter()
+        .filter_map(|m| match m {
+            Message::Assistant(m) => Some(&m.content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|p| match p {
+            AssistantContent::ToolCall(t) if t.name.is_empty() => Some(t.id.as_str()),
+            _ => None,
+        })
+        .collect();
     for message in &context.messages {
         match message {
             Message::User(m) => input.push(json!({"role":"user","content":content(&m.content)})),
+            Message::ToolResult(m) if nameless.contains(m.call_id.as_str()) => {}
             Message::ToolResult(m) => {
                 input.push(json!({"type":"function_call_output","call_id":m.call_id,"output":content(&m.content)}))
             }
@@ -36,6 +52,7 @@ pub fn build_body(model: &crate::Model, context: &Context, options: &RequestOpti
                         AssistantContent::Text { text } => input.push(json!({
                             "role": "assistant", "content": [{"type": "output_text", "text": text}]
                         })),
+                        AssistantContent::ToolCall(t) if t.name.is_empty() => {}
                         AssistantContent::ToolCall(t) => input.push(json!({
                             "type": "function_call", "call_id": t.id, "namespace": "finx",
                             "name": t.name, "arguments": t.arguments.as_str()
@@ -176,6 +193,27 @@ fn item(acc: &mut MessageAccumulator, index: usize, v: &Value) {
         _ => {}
     }
 }
+/// What `item` passes over in a response's output, by type, none of its content: a new kind of
+/// item or part must not vanish in silence.
+fn unreadable(output: &[Value]) -> Vec<String> {
+    let mut found = Vec::new();
+    for v in output {
+        let kind = v["type"].as_str().unwrap_or("?");
+        match kind {
+            "message" => {
+                for p in v["content"].as_array().into_iter().flatten() {
+                    let part = p["type"].as_str().unwrap_or("?");
+                    if part != "output_text" && part != "refusal" {
+                        found.push(format!("message/{part}"));
+                    }
+                }
+            }
+            "reasoning" | "function_call" => {}
+            _ => found.push(kind.to_string()),
+        }
+    }
+    found
+}
 impl WireApi for OpenAiResponsesApi {
     fn id(&self) -> &'static str {
         "openai-responses"
@@ -193,6 +231,7 @@ impl WireApi for OpenAiResponsesApi {
             };
             let mut events = http::sse_events(response,req.timeouts.idle);
             let mut streamed = HashSet::new();
+            let mut passed_over = Vec::new();
             loop {
                 let data = match events.next().await {
                     Ok(Some(e)) => e.data,
@@ -213,17 +252,28 @@ impl WireApi for OpenAiResponsesApi {
                     "response.output_item.done" => {
                         if v["item"]["type"] == "reasoning" { acc.append_thinking_signature(index, &v["item"].to_string()); }
                         else if !streamed.contains(&index) { item(&mut acc,index,&v["item"]); }
+                        else if v["item"]["type"] == "function_call" {
+                            // `output_item.added` may name the call blank; the finished item is whole.
+                            acc.apply(&StreamEvent::ToolCallStart { index, id:text(&v["item"],"call_id"), name:text(&v["item"],"name") });
+                        }
+                        // The subscription route's `response.completed` lists no items: this is its
+                        // only word on what the reply held.
+                        passed_over.extend(unreadable(std::slice::from_ref(&v["item"])));
                         None
                     }
                     "response.completed" => {
                         let r = &v["response"];
                         if r["status"].as_str().is_some_and(|s| s != "completed") { yield StreamEvent::Failed(acc.fail(protocol("Response did not complete"))); return; }
-                        if let Some(output) = r["output"].as_array() {
+                        // An empty list says nothing about what was streamed.
+                        if let Some(output) = r["output"].as_array().filter(|o| !o.is_empty()) {
                             // Terminal items are authoritative (also capture non-streamed arguments
-                            // and encrypted reasoning). Display deltas remain incremental.
+                            // and encrypted reasoning). Display deltas remain incremental. An answer
+                            // that lists none has said it all in what was streamed.
                             acc = MessageAccumulator::for_model(&req.model);
                             for (i,v) in output.iter().enumerate() { item(&mut acc,i,v); }
+                            passed_over = unreadable(output);
                         }
+                        if !passed_over.is_empty() { tracing::warn!(model=%req.model.id, items=?passed_over, "passed over Responses output"); }
                         acc.response_id = r["id"].as_str().map(String::from);
                         let u = &r["usage"];
                         acc.usage.cache_read = u["input_tokens_details"]["cached_tokens"].as_u64().unwrap_or_default();
@@ -231,6 +281,12 @@ impl WireApi for OpenAiResponsesApi {
                         acc.usage.output = u["output_tokens"].as_u64().unwrap_or_default();
                         acc.usage.reasoning = u["output_tokens_details"]["reasoning_tokens"].as_u64();
                         let message = acc.finish(StopReason::Stop);
+                        // Nothing here because finx could not read it is a failure. An empty reply
+                        // is not: the model chose to say nothing, as after handing work to a
+                        // background agent, and the layers above judge whether that will do.
+                        if message.content.is_empty() && !passed_over.is_empty() {
+                            yield StreamEvent::Failed(acc.fail(protocol(&format!("The model's reply has nothing finx can read: {}", passed_over.join(", "))))); return;
+                        }
                         if message.tool_calls().iter().any(|t| t.id.is_empty() || t.name.is_empty() || t.arguments_error.is_some()) {
                             yield StreamEvent::Failed(acc.fail(protocol("Invalid Responses tool call"))); return;
                         }

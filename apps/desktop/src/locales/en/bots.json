@@ -1,0 +1,218 @@
+{
+  "mode": {
+    "label": "Mode",
+    "sessions": "Sessions",
+    "bots": "Bots",
+    "sessionsTip": "Session mode",
+    "botsTip": "Bot mode"
+  },
+  "nav": {
+    "newBot": "New Bot"
+  },
+  "list": {
+    "title": "Bots",
+    "label": "Bot list",
+    "loading": "Loading…"
+  },
+  "line": {
+    "waiting": "[Needs you]",
+    "agents": "Working on {{things}}",
+    "typing": "Typing…",
+    "empty": "No messages yet",
+    "image": "[Image]",
+    "file": "[File] {{name}}"
+  },
+  "head": {
+    "settings": "Bot settings"
+  },
+  "things": {
+    "1": "1 thing",
+    "2": "2 things",
+    "3": "3 things",
+    "4": "4 things",
+    "5": "5 things",
+    "6": "6 things",
+    "7": "7 things",
+    "8": "8 things",
+    "9": "9 things",
+    "10": "10 things",
+    "many": "{{count}} things"
+  },
+  "chat": {
+    "log": "Conversation",
+    "placeholder": "Message {{name}}",
+    "empty": "Tell it what to help with in your first message. Write any time after that, several things at once if you like.",
+    "copy": "Copy",
+    "busyOpen": "See which ones",
+    "busyClose": "Hide",
+    "retrying": "Connection unstable, retrying",
+    "earlier": "Earlier messages",
+    "loadingEarlier": "Loading earlier messages",
+    "toBottom": "Back to the bottom",
+    "queued": "Delivered once it finishes this reply",
+    "fileGone": "File no longer there"
+  },
+  "fullAccess": {
+    "title": "Bots use Full Access by default",
+    "body": "System actions no longer ask for your approval, and the same goes for the agents and tasks it creates. Each bot has its own setting, which you can change at any time: click its name at the top.",
+    "settings": "Open Settings",
+    "ok": "Got it"
+  },
+  "setup": {
+    "title": "Choose a model for {{name}}",
+    "body": "It answers with this model and thinking level. You can change them later in the bot's settings. You can send messages once you've chosen.",
+    "ok": "Get Started"
+  },
+  "model": {
+    "noKey": "This model has no key yet. Add one to use it.",
+    "addKey": "Add Key",
+    "none": "Choose a model to continue."
+  },
+  "sheet": {
+    "newTitle": "New Bot",
+    "sub": "Give it a name, pick an avatar and choose a model. Tell it what to do in the conversation.",
+    "name": "Name",
+    "placeholder": "For example: Researcher",
+    "avatar": "Avatar",
+    "upload": "Upload image…",
+    "cancel": "Cancel",
+    "create": "Create",
+    "mono": "First letter of the name",
+    "mark": "FinxWork mark",
+    "tooLarge": "The image is too large: 10 MB at most",
+    "unreadable": "This image cannot be read",
+    "shapes": {
+      "tall": "Calm",
+      "dot": "Curious",
+      "smile": "Happy",
+      "wink": "Wink",
+      "lid": "Unfazed",
+      "bar": "Blank",
+      "side": "Sidelong",
+      "odd": "Skeptical"
+    },
+    "hues": {
+      "slate": "Sky",
+      "sage": "Grass",
+      "clay": "Coral",
+      "ochre": "Butter",
+      "plum": "Lilac",
+      "teal": "Teal",
+      "rose": "Rose",
+      "stone": "Grey"
+    }
+  },
+  "menu": {
+    "pin": "Pin",
+    "unpin": "Unpin",
+    "delete": "Delete Bot",
+    "rename": "Rename"
+  },
+  "clear": {
+    "title": "Clear your chat with “{{name}}”?",
+    "message": "The chat history is cleared and the work it is doing stops. Its files, routines and these settings stay.",
+    "button": "Clear",
+    "done": "Chat cleared"
+  },
+  "delete": {
+    "title": "Delete “{{name}}”?",
+    "message": "Its chat history, the files it made and the work it is doing go with it.",
+    "button": "Delete",
+    "done": "Deleted “{{name}}”"
+  },
+  "pinned": "Pinned",
+  "search": {
+    "placeholder": "Search bots",
+    "found": "{{n}} bots",
+    "none": "No bots found",
+    "noneHint": "Search by name or by what was last said"
+  },
+  "panel": {
+    "avatar": "Change avatar",
+    "nameHint": "Double-click to rename",
+    "model": "Model settings",
+    "modelNote": "Applies to this bot only.",
+    "permission": "Permissions",
+    "permissionMode": "Permission mode",
+    "permissionNote": "{{desc}}. Applies to this bot only. The agents and tasks it creates run with this mode too, and follow any change at once. Its scheduled tasks run with this mode too, while you are away.",
+    "bypassNote": "The agents and tasks this bot creates will do the same.",
+    "close": "Close",
+    "clear": "Clear chat",
+    "notifications": "Notifications",
+    "muted": "Do Not Disturb",
+    "mutedNote": "No system notifications, and it doesn't count in the number on the app's icon. Unread still shows in the list."
+  },
+  "routines": {
+    "title": "Scheduled tasks",
+    "back": "Back",
+    "new": "New",
+    "newDraft": "Set up a scheduled task for me: ",
+    "editDraft": "Change the scheduled task \"{{name}}\" to: ",
+    "edit": "Change in the chat",
+    "paused": "Paused",
+    "finished": "Finished",
+    "enabled": "Enabled",
+    "when": "When",
+    "upcoming": "Next",
+    "listSeparator": ", ",
+    "prompt": "Instructions",
+    "runs": "Recent runs",
+    "noRuns": "It has not run yet.",
+    "earlier": "Earlier runs",
+    "running": "Running…",
+    "runningLine": "Running · {{time}}",
+    "runningFor": "Running for",
+    "ranFor": "Run time {{time}}",
+    "lastFailed": "Last run failed · {{time}}",
+    "whenNext": "Next {{time}} · {{when}}",
+    "note": "Scheduled tasks run on this Mac. They do not run with the lid closed or the Mac off, and catch up once, with the latest, the next time it starts. They keep running after you quit the app, without notifications.",
+    "unavailable": "Scheduled tasks are not available",
+    "empty": {
+      "title": "No scheduled tasks yet",
+      "body": "Just tell {{name}}, for example \"give me a pre-market brief every morning at 8\"."
+    },
+    "runNow": "Run now",
+    "runNowNote": "Run now really does the task.",
+    "stop": "Stop",
+    "delete": {
+      "title": "Delete the scheduled task \"{{name}}\"?",
+      "message": "It will not run again.",
+      "button": "Delete",
+      "done": "Deleted the scheduled task \"{{name}}\""
+    },
+    "late": "{{time}} late",
+    "result": {
+      "delivered": "Sent to you",
+      "relaying": "Passing it on",
+      "undelivered": "Not delivered",
+      "quiet": "Nothing to report",
+      "failed": "Failed",
+      "skipped": "Skipped",
+      "skippedWhy": "The run before it was still going",
+      "interrupted": "Stopped",
+      "quietRange": "{{from}} to {{to}}",
+      "quietCount": "{{count}} runs, open to see each"
+    },
+    "run": {
+      "title": "One run",
+      "result": "Result",
+      "scheduled": "Scheduled for",
+      "started": "Started",
+      "took": "Took",
+      "usage": "Usage",
+      "found": "What it found",
+      "report": "Report",
+      "why": "Why",
+      "steps": "Steps",
+      "showInChat": "Show in chat"
+    },
+    "line": {
+      "create": "Created the scheduled task \"{{name}}\" · {{time}}",
+      "update": "Changed the scheduled task \"{{name}}\" · {{time}}",
+      "pause": "Paused the scheduled task \"{{name}}\"",
+      "resume": "Resumed the scheduled task \"{{name}}\" · {{time}}",
+      "delete": "Deleted the scheduled task \"{{name}}\""
+    },
+    "fromRoutine": "From the scheduled task \"{{name}}\""
+  }
+}

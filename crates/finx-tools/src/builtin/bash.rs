@@ -136,6 +136,7 @@ impl TypedTool for BashTool {
                 "full_output_path": out.output.saved.as_ref().map(|s| &s.path),
             })),
             is_error: out.timed_out,
+            ends_task: false,
         })
     }
 }

@@ -77,7 +77,7 @@ fn join_error(err: tokio::task::JoinError) -> RpcError {
 }
 
 impl Server {
-    async fn file_scope(&self, id: &str) -> Result<FileScope, RpcError> {
+    pub(crate) async fn file_scope(&self, id: &str) -> Result<FileScope, RpcError> {
         let (tx, rx) = oneshot::channel();
         self.loaded(id)?.send(HubCmd::FileScope { reply: tx }).await?;
         rx.await.ok().flatten().ok_or_else(|| errors::session_closed(id))
@@ -102,6 +102,34 @@ impl Server {
         finx_core::files::write(&scope, &self.0.home, &path, &params.text, params.base_hash.as_deref())
             .await
             .map_err(|e| io_error(&path, e))
+    }
+
+    pub async fn pptx_read(&self, params: finx_protocol::pptx::PptxReadParams, conn: &ConnHandle) -> Result<finx_protocol::pptx::PptxReadResult, RpcError> {
+        let scope = self.file_scope(&params.session_id).await?;
+        let path = scope.env.resolve(&params.path);
+        let home = self.0.home.clone();
+        let conn = conn.clone();
+        tokio::task::spawn_blocking(move || {
+            finx_core::pptx::read_with_progress(&home, &path, |stage, completed, total| {
+                if let Some(progress_id) = &params.progress_id {
+                    conn.send(finx_rpc::notification(method::PPTX_READ_PROGRESS, &finx_protocol::pptx::PptxReadProgress {
+                        session_id: params.session_id.clone(), progress_id: progress_id.clone(), stage, completed, total,
+                    }));
+                }
+            }).map_err(|e| io_error(&path, e))
+        }).await.map_err(join_error)?
+    }
+
+    pub async fn pptx_write(&self, params: finx_protocol::pptx::PptxWriteParams) -> Result<FilesWriteResult, RpcError> {
+        let scope = self.file_scope(&params.session_id).await?;
+        let path = scope.env.resolve(&params.path);
+        finx_core::pptx::write(&scope, &self.0.home, &path, &params.data, &params.base_hash).await.map_err(|e| io_error(&path, e))
+    }
+
+    pub async fn pptx_metafile(&self, params: finx_protocol::pptx::PptxMetafileParams) -> Result<finx_protocol::pptx::PptxMetafileResult, RpcError> {
+        self.file_scope(&params.session_id).await?;
+        tokio::task::spawn_blocking(move || finx_core::pptx::metafile(&params.data)
+            .map_err(|e| RpcError::invalid_params(e.to_string()))).await.map_err(join_error)?
     }
 
     /// Replaces what `conn` watches for the session; the folders no one needs any more are let go.

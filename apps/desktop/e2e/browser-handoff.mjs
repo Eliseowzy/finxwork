@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Verify a new conversation reads an existing home browser page without reloading it.
+import { cdpPort } from "./lib/port.mjs";
 import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
@@ -49,9 +50,9 @@ fs.writeFileSync(path.join(home, "config.toml"), `model = "mock/mock-1"\npermiss
 // ── the app, driven over the DevTools protocol (as e2e/stale-model.mjs) ──
 let app = null;
 async function launch() {
-  const port = 9400 + Math.floor(Math.random() * 400);
+  const port = cdpPort();
   app = spawn(electron, [desktop, ...(process.env.FINXWORK_E2E_NO_SANDBOX ? ["--no-sandbox"] : []), `--remote-debugging-port=${port}`], {
-    env: { ...env, FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
+    env: { ...env, FINXWORK_DEFAULT_MODE: "sessions", FINXWORK_USER_DATA: profile, FINXWORK_FINX: finx, FINXWORK_NO_BROWSER: "1" },
     stdio: ["ignore", "ignore", "inherit"],
   });
   let target;
@@ -145,7 +146,8 @@ try {
   await page.run(`document.querySelector('.brp-addr').requestSubmit()`);
   await page.until("real page loaded", `document.querySelector('.brp-tab-t')?.textContent === 'Browser button test'`, 60000);
   await page.shot("home-browser");
-  await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);
+  // While the panel is open, its button sits at the end of the panel's strip.
+  await page.run(`[...document.querySelectorAll(".brp .brp-strip > button")].at(-1).click()`);
   await page.until("panel hidden", `!document.querySelector('.brp')`);
   await page.run(`document.querySelector(${JSON.stringify(button)}).click()`);
   await page.until("tab restored", `document.querySelectorAll('.brp-tab').length === 1 && document.querySelector('.brp-tab-t')?.textContent === 'Browser button test'`, 60000);

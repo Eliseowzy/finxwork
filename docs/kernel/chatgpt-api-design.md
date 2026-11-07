@@ -34,7 +34,7 @@
 
 每次 HTTP 请求使用 `store:false`、`stream:true` 和完整 input 历史，不使用 `previous_response_id`。系统指令放在 instructions；finx 工具放在命名空间中，由现有内核执行。工具调用与结果、图片输入和加密 reasoning item 能继续多轮对话。采样参数、输出上限和任意 extra_body 不透传到该受限路线。
 
-只有收到 `response.completed` 才成功。额度错误、中途断流、无效工具参数、`response.failed` 和 `response.incomplete` 均不能触发成功收尾。可用模型和思考等级来自账户模型目录，不硬编码型号、不补入 Codex 的缓存目录。[官方推理要求](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)、[预览限制](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+只有收到 `response.completed` 才成功。它列出的 `output` 是权威内容；`output` 为空时，以已经流式收到的内容为准（真实服务会这样返回，2026-11-04 发现）。额度错误、中途断流、无效工具参数、`response.failed` 和 `response.incomplete` 均不能触发成功收尾。可用模型和思考等级来自账户模型目录，不硬编码型号、不补入 Codex 的缓存目录。[官方推理要求](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)、[预览限制](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
 
 ## 自动验证
 
@@ -76,15 +76,15 @@ pnpm --filter @finx/desktop e2e:chatgpt
 CLI 可独立执行相同流程：
 
 ```sh
-./target/debug/finx models login chatgpt-api
-./target/debug/finx models status chatgpt-api
+./target/debug/finx login chatgpt
+./target/debug/finx models --json   # 看 chatgpt-api 这一项
 ./target/debug/finx models --all --json
 # 将下面的引用替换成上一步列出的真实 provider/model ID
 ./target/debug/finx chat --model '<provider>/<model>' '只回复 hello'
 ./target/debug/finx chat --model '<provider>/<model>' --tool-test '请调用 get_time 告诉我现在的时间'
-./target/debug/finx models logout chatgpt-api
+./target/debug/finx logout chatgpt
 # 仅在要清除注册、改用另一账户时执行
-./target/debug/finx models forget chatgpt-api
+./target/debug/finx logout chatgpt --forget
 ```
 
 如果账户或工作区不符合资格，保留该错误用于联调，不自动回退到其他来源。额度限制可能来自应用授权上限，不应直接理解为整个订阅都已耗尽。真实模型可用性、最终扣量与商业分发接入状态不由本地模拟测试证明。
