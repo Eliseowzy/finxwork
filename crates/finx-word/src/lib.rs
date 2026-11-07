@@ -72,6 +72,19 @@ pub struct SavedSummary {
     pub pages: u32,
 }
 
+/// The number the editor knows revision `id` by (`scrollToChange`): the id itself when it is
+/// a number, else the engine's hash of it into the safe-integer range (docx-edit's layout
+/// `numeric_id` with no mapping, which is how the editor lays out).
+pub fn revision_number(id: &str) -> u64 {
+    if let Ok(n) = id.parse::<u64>() {
+        return n;
+    }
+    let hash = id.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+    });
+    hash & ((1 << 53) - 1)
+}
+
 /// One Word document's authoritative session.
 ///
 /// Not `Send`: the engine session holds `Rc`/`RefCell` state, so a `Word` lives on the thread
@@ -119,6 +132,12 @@ impl Word {
     /// Full Yrs state for a replica joining this document.
     pub fn encode_state(&self) -> Vec<u8> {
         self.session.encode_state()
+    }
+
+    /// What the serializer needs beside [`Word::encode_state`]: media, header and footer aliases
+    /// and note separators the state does not carry.
+    pub fn peer_metadata(&self) -> Result<Vec<u8>> {
+        engine(self.session.encode_peer_metadata())
     }
 
     pub fn state_vector(&self) -> Vec<u8> {
@@ -209,6 +228,22 @@ impl Word {
             paragraphs_touched: touched,
             update,
         })
+    }
+
+    /// The ids of pending revisions by their [`revision_number`]s.
+    pub fn revision_ids(&self, numbers: &[u64]) -> Result<Vec<String>> {
+        let pending = read::revisions(&self.session)?;
+        let mut ids: Vec<String> = Vec::new();
+        for &n in numbers {
+            let id = pending
+                .iter()
+                .find(|r| revision_number(&r.id) == n)
+                .ok_or_else(|| WordError::NoRevision(n.to_string()))?;
+            if !ids.contains(&id.id) {
+                ids.push(id.id.clone());
+            }
+        }
+        Ok(ids)
     }
 
     /// Accepts or rejects revisions (`None`: every pending one); returns the update.

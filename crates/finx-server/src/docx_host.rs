@@ -98,7 +98,6 @@ impl DocxHost {
 
     /// Has the host write `out` from the source .docx and the Yrs state (and the engine's peer
     /// metadata, when given); returns how many bytes it wrote. The caller checks the file.
-    #[allow(dead_code, reason = "docx/save and docx_view call it")]
     pub(crate) async fn serialize_docx(
         &self,
         source: &Path,
@@ -130,6 +129,21 @@ impl DocxHost {
                 Err(DocxHostError::Timeout(timeout))
             }
         }
+    }
+}
+
+/// How long the desktop app may take to write one document.
+const SERIALIZE_TIMEOUT: Duration = Duration::from_secs(120);
+
+impl finx_docs::word::DocxSerializer for DocxHost {
+    fn serialize<'a>(
+        &'a self,
+        source: &'a Path,
+        state: &'a Path,
+        metadata: &'a Path,
+        out: &'a Path,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<u64, String>> + Send + 'a>> {
+        Box::pin(async move { self.serialize_docx(source, state, Some(metadata), out, SERIALIZE_TIMEOUT).await.map_err(|e| e.to_string()) })
     }
 }
 
@@ -237,5 +251,57 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(5), connection).await.unwrap().unwrap();
         assert!(matches!(waiting.await.unwrap(), Err(DocxHostError::Disconnected)));
         assert!(!server.0.docx_host.has_host());
+    }
+
+    /// The `docx/*` methods with a stand-in desktop app writing the bytes (crate::words).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn docx_methods_save_through_the_host_and_report_conflicts_as_a_status() {
+        use finx_protocol::docx::{DocxReviewAction, DocxReviewParams, DocxSaveParams, DocxSaveStatus, DocxSyncParams, DocxUndoParams};
+        let (dir, server, mut lines, mut writes, _connection) = hosted().await;
+        let file = dir.path().join("report.docx");
+        std::fs::write(&file, include_bytes!("../../finx-word/tests/fixtures/report.docx")).unwrap();
+        let opened = server.0.words.open(&file, "s", true).await.unwrap();
+        let id = opened.entry.deck_id.clone();
+        let edit = |find: &str, with: &str| finx_word::EditBatch {
+            mode: finx_word::EditMode::Suggest,
+            author: finx_docs::word::AUTHOR.into(),
+            note: String::new(),
+            edits: vec![finx_word::WordOp::ReplaceText { paragraph: "10000002".into(), find: find.into(), replace: with.into() }],
+        };
+        let edited = server.0.words.apply(&id, &edit("百分之十", "一成")).await.unwrap();
+        let synced = server.docx_sync(DocxSyncParams { session_id: "s".into(), docx_id: id.clone(), update: None, state_vector: None }).await.unwrap();
+        assert_eq!((synced.revision, synced.update), (1, None));
+
+        let save = |force| DocxSaveParams { session_id: "s".into(), docx_id: id.clone(), path: None, force };
+        let saving = tokio::spawn({
+            let (server, params) = (server.clone(), save(false));
+            async move { server.docx_save(params).await }
+        });
+        let request: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+        assert_eq!(request["method"], "docx/serialize");
+        let params = &request["params"];
+        for key in ["state_path", "metadata_path"] {
+            assert!(std::fs::metadata(params[key].as_str().unwrap()).unwrap().len() > 0, "{key}");
+        }
+        let bytes = std::fs::copy(params["source_path"].as_str().unwrap(), params["out_path"].as_str().unwrap()).unwrap();
+        let answer = json!({"jsonrpc": "2.0", "id": request["id"], "result": {"bytes": bytes}});
+        writes.write_all(format!("{answer}\n").as_bytes()).await.unwrap();
+        let saved = saving.await.unwrap().unwrap();
+        assert_eq!((saved.status, saved.hash.as_deref()), (DocxSaveStatus::Saved, Some(server.0.words.get(&id).unwrap().info().hash.as_str())));
+        assert!(!server.0.words.get(&id).unwrap().info().dirty);
+
+        // Undo of an edit that is not the agent's latest: refused, with why.
+        let review = DocxReviewParams { session_id: "s".into(), docx_id: id.clone(), action: DocxReviewAction::Accept, ids: Some(edited.revisions.clone()) };
+        assert_eq!(server.docx_review(review).await.unwrap().revision, 2);
+        let err = server.docx_undo(DocxUndoParams { session_id: "s".into(), docx_id: id.clone(), edit: 1 }).await.unwrap_err();
+        assert_eq!(err.data.as_ref().and_then(|d| d["kind"].as_str()), Some("doc_refused"), "{err:?}");
+        assert!(err.message.contains("later edit"), "{}", err.message);
+
+        // Changed on disk: a status, nothing asked of the host.
+        std::fs::write(&file, b"elsewhere").unwrap();
+        let conflict = server.docx_save(save(false)).await.unwrap();
+        assert_eq!((conflict.status, conflict.hash.as_deref()), (DocxSaveStatus::Conflict, Some("changed")));
+        std::fs::remove_file(&file).unwrap();
+        assert_eq!(server.docx_save(save(false)).await.unwrap().hash, None);
     }
 }

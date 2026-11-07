@@ -109,6 +109,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &Path, home: &FinxHome) -> KernelDeps {
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     }
 }

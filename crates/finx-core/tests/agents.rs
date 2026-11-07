@@ -169,6 +169,7 @@ fn deps(api: &Arc<ScriptedApi>, work: &std::path::Path, home: &FinxHome) -> Kern
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     }
 }
@@ -1509,6 +1510,7 @@ async fn sub_agents_can_be_turned_off() {
             browser_pool: None,
             docs: None,
             decks: None,
+            words: None,
             routines: None,
         },
     )

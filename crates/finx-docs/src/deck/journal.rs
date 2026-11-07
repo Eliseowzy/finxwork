@@ -12,6 +12,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 pub const SOURCE: &str = "source.pptx";
+/// A Word document's source, in place of [`SOURCE`]: what the worker opens it as.
+pub const WORD_SOURCE: &str = "source.docx";
 pub const LOG: &str = "updates.log";
 pub const SNAPSHOT: &str = "snapshot.yupd";
 pub const ENGINE: &str = "engine.txt";

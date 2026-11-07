@@ -11,6 +11,7 @@ betteroffice-docx.workspace = true
 docx-edit.workspace = true
 finx-slide.workspace = true
 ring.workspace = true
+schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

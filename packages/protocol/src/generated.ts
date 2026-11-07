@@ -2011,6 +2011,84 @@ export type DocViewParams = {
   session_id: string;
 };
 
+/** Server notification to connections that opened the document. */
+export type DocxChangedParams = {
+  /** Who made the change: the agent's name for its own edits, else null. */
+  author: string | null;
+  /** The file changed on disk under unsaved edits. */
+  conflict?: boolean;
+  dirty: boolean;
+  docx_id: string;
+  revision: number;
+};
+
+export type DocxIdParams = {
+  docx_id: string;
+  session_id: string;
+};
+
+export type DocxOpenParams = {
+  /** Drop the kernel's unsaved edits of this file and read it anew. */
+  discard?: boolean;
+  path: string;
+  /** The caller joins as a Yrs replica (the editor): the result carries the source and state. */
+  replica?: boolean;
+  session_id: string;
+};
+
+export type DocxOpenResult = {
+  /** Unsaved edits, maybe brought back from an earlier run. */
+  dirty: boolean;
+  /** From the file's canonical path: the same in every session. */
+  docx_id: string;
+  /** Font families the document names, with the host's fallbacks: what the editor loads. */
+  font_families: string[];
+  /** Of the file as last read or written. */
+  hash: string;
+  path: string;
+  revision: number;
+  /** The file as the kernel opened it (base64), for a replica: the editor's engine needs the source parts the state does not carry. */
+  source?: string | null;
+  /** The whole Yrs state (base64), for a replica. */
+  state?: string | null;
+  writable: boolean;
+};
+
+export type DocxReviewAction = "accept" | "reject";
+
+/** Accepts or rejects tracked changes, the person's choice in the document (word-design §5.2). */
+export type DocxReviewParams = {
+  action: DocxReviewAction;
+  docx_id: string;
+  /** The revisions, by the numbers the editor knows them by (`scrollToChange`) and `docx_edit` gives; all pending ones when absent. */
+  ids?: number[] | null;
+  session_id: string;
+};
+
+export type DocxRevisionResult = {
+  /** The document's revision after it. */
+  revision: number;
+};
+
+export type DocxSaveParams = {
+  docx_id: string;
+  /** Write over the file although it changed on disk. */
+  force?: boolean;
+  /** Save as another .docx instead. */
+  path?: string | null;
+  session_id: string;
+};
+
+export type DocxSaveResult = {
+  /** Saved: of the file written. Conflict: `changed`, or null when the file is gone. */
+  hash: string | null;
+  message: string | null;
+  revision: number;
+  status: DocxSaveStatus;
+};
+
+export type DocxSaveStatus = "saved" | "conflict" | "refused";
+
 /** Parameters of `docx/serialize`, a request from the kernel to the `docx/host` connection. The bytes travel in files: the host reads the first three and writes only `out_path`. */
 export type DocxSerializeParams = {
   /** The engine's peer metadata (`encode_peer_metadata`): media, header and footer aliases and note separators that the state alone does not carry. Without it the host opens the source and loads the state over it. */
@@ -2027,6 +2105,33 @@ export type DocxSerializeParams = {
 export type DocxSerializeResult = {
   /** How many bytes were written to `out_path`. */
   bytes: number;
+};
+
+/** Server notification to the other replicas: the kernel's update or another replica's. */
+export type DocxSyncNotice = {
+  docx_id: string;
+  revision: number;
+  update: string;
+};
+
+/** A replica's update (merged and sent to the other replicas), and/or its state vector (the result then carries what it lacks). */
+export type DocxSyncParams = {
+  docx_id: string;
+  session_id: string;
+  state_vector?: string | null;
+  update?: string | null;
+};
+
+export type DocxSyncResult = {
+  revision: number;
+  update?: string | null;
+};
+
+/** Takes back the agent's edit `edit` (the revision it made), when it is the agent's latest step still in the document. */
+export type DocxUndoParams = {
+  docx_id: string;
+  edit: number;
+  session_id: string;
 };
 
 /** The result of methods that return nothing: `{}`. */
@@ -4544,7 +4649,13 @@ export interface Methods {
   "doc/trace": [DocTraceParams, DocFoundResult];
   "doc/undo": [DocIdParams, DocApplyResult];
   "doc/view": [DocViewParams, Empty];
+  "docx/close": [DocxIdParams, Empty];
   "docx/host": [Record<string, never>, Empty];
+  "docx/open": [DocxOpenParams, DocxOpenResult];
+  "docx/review": [DocxReviewParams, DocxRevisionResult];
+  "docx/save": [DocxSaveParams, DocxSaveResult];
+  "docx/sync": [DocxSyncParams, DocxSyncResult];
+  "docx/undo": [DocxUndoParams, DocxRevisionResult];
   "files/list": [FilesListParams, FilesListResult];
   "files/read": [FilesReadParams, FilesReadResult];
   "files/watch": [FilesWatchParams, Empty];
@@ -4611,6 +4722,8 @@ export interface ServerNotifications {
   "deck/proposal": DeckProposalEvent;
   "deck/sync": DeckSyncNotice;
   "doc/changed": DocChangedParams;
+  "docx/changed": DocxChangedParams;
+  "docx/sync": DocxSyncNotice;
   "files/changed": FilesChangedParams;
   "mcp/changed": McpChangedParams;
   "mcp/probe_progress": McpProbeProgressParams;

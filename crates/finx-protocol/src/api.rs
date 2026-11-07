@@ -189,6 +189,16 @@ pub mod method {
     pub const DOCX_HOST: &str = "docx/host";
     /// Server request to the `docx/host` connection: write one document's bytes.
     pub const DOCX_SERIALIZE: &str = "docx/serialize";
+    // Word documents held by the kernel (docs/desktop/word-design.md §4).
+    pub const DOCX_OPEN: &str = "docx/open";
+    /// A request from a replica (its Yrs update), and a server notification with the kernel's.
+    pub const DOCX_SYNC: &str = "docx/sync";
+    pub const DOCX_SAVE: &str = "docx/save";
+    pub const DOCX_CLOSE: &str = "docx/close";
+    pub const DOCX_UNDO: &str = "docx/undo";
+    pub const DOCX_REVIEW: &str = "docx/review";
+    /// Server notification to connections that opened the document.
+    pub const DOCX_CHANGED: &str = "docx/changed";
     // Bots (docs/kernel/bot-design.md §4).
     /// Every bot now, and `bots/changed` on this connection from then on.
     pub const BOTS_SUBSCRIBE: &str = "bots/subscribe";

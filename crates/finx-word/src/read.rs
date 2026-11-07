@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use docx_edit::session::EditSessionCore;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::{Result, WordError, engine, parse};
@@ -17,14 +17,14 @@ const CONTEXT_CHARS: usize = 20;
 pub const OBJECT: char = '\u{FFFC}';
 
 /// Where a paragraph sits in a table, all from 1.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CellPosition {
     pub table: u32,
     pub row: u32,
     pub column: u32,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListItem {
     /// From 0.
     pub level: u32,
@@ -32,7 +32,7 @@ pub struct ListItem {
     pub marker: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutlineEntry {
     pub id: String,
     /// Heading level from 1; `None` for body text.
@@ -44,7 +44,7 @@ pub struct OutlineEntry {
     pub table: Option<CellPosition>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParagraphView {
     pub id: String,
     /// With pending revisions applied; each inline object is one [`OBJECT`].
@@ -59,7 +59,7 @@ pub struct ParagraphView {
     pub revisions: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Found {
     pub paragraph: String,
     /// Characters before the match in the paragraph's text.
@@ -67,7 +67,7 @@ pub struct Found {
     pub context: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Comment {
     pub id: String,
     pub author: String,
@@ -80,7 +80,7 @@ pub struct Comment {
     pub paragraphs: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RevisionKind {
     Insertion,
@@ -92,7 +92,7 @@ pub enum RevisionKind {
 }
 
 /// One tracked change. A replacement is two entries, a deletion and an insertion, under one id.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Revision {
     pub id: String,
     pub kind: RevisionKind,

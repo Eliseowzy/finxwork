@@ -80,6 +80,7 @@ fn deps(api: &Arc<ScriptedApi>, env: &Env, tools: &[&str]) -> KernelDeps {
         browser_pool: None,
         docs: None,
         decks: None,
+        words: None,
         routines: None,
     }
 }

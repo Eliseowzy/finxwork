@@ -17,6 +17,7 @@ use crate::api::method;
 use crate::bot;
 use crate::customize;
 use crate::deck;
+use crate::docx;
 use crate::event::Event;
 use crate::files;
 use crate::op::Op;
@@ -282,6 +283,12 @@ pub fn document() -> Value {
         (method::DECK_LINKS, Some(name::<deck::DeckLinksParams>(g)), name::<deck::DeckLinksResult>(g)),
         (method::DECK_DIFF, Some(name::<deck::DeckDiffParams>(g)), name::<deck::DeckDiff>(g)),
         (method::AI_ACTION, Some(name::<deck::AiActionParams>(g)), name::<deck::AiActionResult>(g)),
+        (method::DOCX_OPEN, Some(name::<docx::DocxOpenParams>(g)), name::<docx::DocxOpenResult>(g)),
+        (method::DOCX_SYNC, Some(name::<docx::DocxSyncParams>(g)), name::<docx::DocxSyncResult>(g)),
+        (method::DOCX_SAVE, Some(name::<docx::DocxSaveParams>(g)), name::<docx::DocxSaveResult>(g)),
+        (method::DOCX_CLOSE, Some(name::<docx::DocxIdParams>(g)), name::<api::Empty>(g)),
+        (method::DOCX_UNDO, Some(name::<docx::DocxUndoParams>(g)), name::<docx::DocxRevisionResult>(g)),
+        (method::DOCX_REVIEW, Some(name::<docx::DocxReviewParams>(g)), name::<docx::DocxRevisionResult>(g)),
         (method::FILES_WRITE, Some(name::<files::FilesWriteParams>(g)), name::<files::FilesWriteResult>(g)),
         (method::FILES_WATCH, Some(name::<files::FilesWatchParams>(g)), name::<api::Empty>(g)),
         (method::BOTS_SUBSCRIBE, None, name::<bot::BotsResult>(g)),
@@ -322,6 +329,8 @@ pub fn document() -> Value {
         (method::DECK_CHANGED, name::<deck::DeckChangedParams>(g)),
         (method::DECK_PROPOSAL, name::<deck::DeckProposalEvent>(g)),
         (method::AI_ACTION_PROGRESS, name::<deck::AiActionProgress>(g)),
+        (method::DOCX_SYNC, name::<docx::DocxSyncNotice>(g)),
+        (method::DOCX_CHANGED, name::<docx::DocxChangedParams>(g)),
         (method::DOC_CHANGED, name::<crate::doc::DocChangedParams>(g)),
         (method::BOTS_CHANGED, name::<bot::BotsChangedParams>(g)),
         (method::SESSION_EVENT, name::<api::SessionEventParams>(g)),
@@ -397,7 +406,7 @@ pub fn document() -> Value {
 /// the desktop app and the extension host.
 pub fn stability(name: &str) -> &'static str {
     const INTERNAL: &[&str] = &["browser/host", "browser/cdp", "browser/extension", "browser/control", "browser/request", "docx/host", "docx/serialize"];
-    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "pptx/", "bots/", "browser/", "routines/", "bot/", "connector/"];
+    const EXPERIMENTAL: &[&str] = &["connections/", "connectors/", "doc/", "docx/", "pptx/", "bots/", "browser/", "routines/", "bot/", "connector/"];
     if INTERNAL.contains(&name) {
         "internal"
     } else if EXPERIMENTAL.iter().any(|prefix| name.starts_with(prefix)) {

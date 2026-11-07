@@ -156,7 +156,11 @@ pub(crate) struct Inner {
     /// Who opened which deck (crate::decks).
     pub(crate) deck_watchers: crate::decks::DeckWatchers,
     /// The desktop app's connection that writes .docx files (crate::docx_host).
-    pub(crate) docx_host: crate::docx_host::DocxHost,
+    pub(crate) docx_host: Arc<crate::docx_host::DocxHost>,
+    /// The Word documents every session here shares (word-design §4), on the decks' worker.
+    pub(crate) words: Arc<finx_docs::word::WordStore>,
+    /// Who opened which document (crate::words).
+    pub(crate) docx_watchers: crate::decks::DeckWatchers,
     /// Every bot and who follows their list (crate::bots).
     pub(crate) bots: Arc<crate::bots::Registry>,
     /// Their routines (crate::routines).
@@ -185,6 +189,8 @@ impl Server {
             options.home.root().join("decks"),
             finx_docs::deck::DeckLauncher::like(&options.doc_worker),
         ));
+        let docx_host = Arc::new(crate::docx_host::DocxHost::default());
+        let words = Arc::new(finx_docs::word::WordStore::new(options.home.root().join("docx"), &decks, docx_host.clone()));
         let docs = Arc::new(finx_docs::DocStore::new(options.home.root().join("docs"), options.doc_worker));
         let bots = Arc::new(crate::bots::Registry::new(options.home.clone()));
         let routines = crate::routines::Routines::new(options.home.clone(), bots.clone());
@@ -220,7 +226,9 @@ impl Server {
             docs,
             decks,
             deck_watchers: Default::default(),
-            docx_host: Default::default(),
+            docx_host,
+            words,
+            docx_watchers: Default::default(),
         }));
         server.0.routines.bind(Arc::downgrade(&server.0));
         let weak = Arc::downgrade(&server.0);
@@ -229,6 +237,7 @@ impl Server {
         }));
         server.follow_doc_changes();
         server.follow_deck_changes();
+        server.follow_word_changes();
         server.follow_browser_changes();
         spawn_memory_upkeep(&server.0);
         Ok(server)
@@ -284,6 +293,7 @@ impl Server {
         self.forget_browser_watcher(conn.id);
         self.forget_doc_watcher(conn.id);
         self.forget_deck_watcher(conn.id);
+        self.forget_docx_watcher(conn.id);
         self.0.feed.cancel(conn.id);
         for hub in self.hubs() {
             if hub.tx.try_send(Box::new(HubCmd::ConnGone { conn: conn.id })).is_err() {
@@ -491,6 +501,7 @@ impl Server {
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
         deps.decks = Some(self.0.decks.clone());
+        deps.words = Some(self.0.words.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &args.mcp_servers);
         let options = StartOptions {
             model,
@@ -572,6 +583,7 @@ impl Server {
         deps.browser_pool = Some(self.0.browser_pool.clone());
         deps.docs = Some(self.0.docs.clone());
         deps.decks = Some(self.0.decks.clone());
+        deps.words = Some(self.0.words.clone());
         deps.mcp_servers = self.session_mcp_servers(&workspace, &overrides.mcp_servers);
         deps.routines = header.bot.is_some().then(|| self.0.routines.clone() as Arc<dyn finx_core::routine::RoutineHost>);
         let base = match self.0.store.summary(&SessionRef::Path(location.clone())) {
