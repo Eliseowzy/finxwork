@@ -134,3 +134,15 @@ test("a file changed on disk reloads when clean and asks when dirty", () => {
   assert.equal(doc.diskChanged("h2"), false);
   assert.equal(doc.state, "conflict");
 });
+
+test("reloading keeps the kernel's entry open: the new link has the same document id", () => {
+  const { rpc, calls } = fakeRpc(() => ({}));
+  const old = new DocxKernelLink(rpc, "s", "w", Uint8Array.of());
+  const doc = new WordDoc({ data: "", hash: "h", writable: true, font_families: [], kernel: old, recoveredDirty: false }, () => {});
+  doc.takeDisk({ data: "", hash: "h2", writable: true, font_families: [], kernel: new DocxKernelLink(rpc, "s", "w", Uint8Array.of()), recoveredDirty: false });
+  assert.equal(calls.filter((c) => c.method === "docx/close").length, 0);
+  const other = new DocxKernelLink(rpc, "s", "w", Uint8Array.of());
+  const moved = new WordDoc({ data: "", hash: "h", writable: true, font_families: [], kernel: other, recoveredDirty: false }, () => {});
+  moved.takeDisk({ data: "", hash: "h3", writable: true, font_families: [], kernel: new DocxKernelLink(rpc, "s", "v", Uint8Array.of()), recoveredDirty: false });
+  assert.deepEqual(calls.filter((c) => c.method === "docx/close").map((c) => c.params.docx_id), ["w"]);
+});

@@ -144,7 +144,8 @@ export class WordDoc {
     this.surface?.dispose();
     this.surface = null;
     this.prepare = null;
-    if (this.file.kernel !== next.kernel) this.file.kernel.close();
+    // A reload opens the same entry (its id is the file's): closing the old link would close the new one's document.
+    if (this.file.kernel !== next.kernel) this.file.kernel.close(this.file.kernel.docxId === next.kernel.docxId);
     this.file = next;
     this.generation++;
     this.revision = this.savedRevision = 0;

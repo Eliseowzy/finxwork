@@ -176,11 +176,13 @@ export class DocxKernelLink {
     }
   }
 
-  close() {
+  /** `keep`: the kernel's entry stays open, as when a link on the same document replaces this one. */
+  close(keep = false) {
     if (this.closed) return;
     this.closed = true;
     for (const stop of this.stops.splice(0)) stop();
     this.replica = null;
+    if (keep) return;
     void this.rpc.request("docx/close", { session_id: this.session, docx_id: this.docxId }).catch(() => {});
   }
 }
