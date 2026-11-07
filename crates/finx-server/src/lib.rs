@@ -42,6 +42,7 @@ mod customize;
 mod db;
 mod decks;
 mod docs;
+mod docx_host;
 mod files;
 mod models;
 mod peer;

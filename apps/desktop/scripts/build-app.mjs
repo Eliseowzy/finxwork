@@ -250,6 +250,9 @@ for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify",
     if (!entry || entry.size !== fs.statSync(source).size) throw new Error(`the signed app.asar lacks renderer/fonts/${name} (the deck editor's ${family} stand-in)`);
   }
 }
+// TODO(word): smoke-check the Word serializer on the signed app: main/docx-serializer.js with the engine's wasm beside it
+// (main/generated/{opc,parse}, main/chunks/generated/edit; electron.vite.config.ts copies them), run as the app's
+// utilityProcess on a .docx and a Yrs state, read from inside app.asar.
 /** Runs `finx serve` (stdio JSON-RPC) for one body of calls, then stops it. */
 async function withKernel(bin, env, cwd, body) {
   const child = spawn(bin, ["serve"], { env, cwd, stdio: ["pipe", "pipe", "pipe"] });

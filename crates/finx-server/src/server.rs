@@ -155,6 +155,8 @@ pub(crate) struct Inner {
     pub(crate) decks: Arc<finx_docs::deck::DeckStore>,
     /// Who opened which deck (crate::decks).
     pub(crate) deck_watchers: crate::decks::DeckWatchers,
+    /// The desktop app's connection that writes .docx files (crate::docx_host).
+    pub(crate) docx_host: crate::docx_host::DocxHost,
     /// Every bot and who follows their list (crate::bots).
     pub(crate) bots: Arc<crate::bots::Registry>,
     /// Their routines (crate::routines).
@@ -218,6 +220,7 @@ impl Server {
             docs,
             decks,
             deck_watchers: Default::default(),
+            docx_host: Default::default(),
         }));
         server.0.routines.bind(Arc::downgrade(&server.0));
         let weak = Arc::downgrade(&server.0);
