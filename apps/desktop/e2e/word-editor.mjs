@@ -40,6 +40,9 @@ try {
   check(!(await page.run(`!!document.querySelector(".fpn .word-error")`)), `an error over the editor: ${await page.run(`document.querySelector(".fpn .word-error")?.innerText`)}`);
   check(!(await page.run(tabStatus)), `the tab says something before any edit: ${await page.run(tabStatus)}`);
   await page.shot("01-opened");
+  await sleep(1000);
+  const warned = page.fontWarnings();
+  check(warned.length === 0, `the editor's fonts fell back: ${warned.join(" | ")}`);
 
   step("typing makes it unsaved; ⌘S writes the file: the new words in, every other part untouched");
   const canvas = await page.run(`(() => { const r = document.querySelector(".fpn .word-editor-canvas canvas").getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);

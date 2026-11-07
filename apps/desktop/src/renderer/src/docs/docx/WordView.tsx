@@ -3,14 +3,13 @@ import { createRoot } from "react-dom/client";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { DocxEditor, type DocxEditorRef, type TrackedChangesOptions } from "@betteroffice/docx-react";
 import type { CollaborationReplica } from "@betteroffice/docx/collaboration";
-import type { FontDefinition } from "@betteroffice/docx/utils";
+import type { BundledFontProvider } from "@betteroffice/docx/layout";
 import zhCN from "@betteroffice/docx-i18n/zh-CN";
 import "@betteroffice/docx-react/styles.css";
 import { i18n } from "../../../../shared/i18n";
 import { fromBase64 } from "../pptx/document";
-import type { FontLoadProgress } from "../pptx/PresentationLoading";
 import type { WordDoc } from "./document";
-import { wordFonts } from "./fonts";
+import { wordFontProvider } from "./fonts";
 import { registerWordHandle } from "./handle";
 import { WordLoading } from "./WordLoading";
 import { askFromComment, WordAi } from "./WordAi";
@@ -34,8 +33,8 @@ function brandColor() {
 
 function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string }) {
   const { t } = useTranslation("session");
-  const [fonts, setFonts] = useState<FontDefinition[] | null>(null);
-  const [progress, setProgress] = useState<FontLoadProgress>({ completed: 0, total: 0 });
+  // Faces load as the layout asks for them, so this waits only for the machine's font list.
+  const [fonts, setFonts] = useState<{ provider?: BundledFontProvider } | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState(i18n.language);
@@ -52,14 +51,11 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
 
   useLayoutEffect(() => {
     let live = true;
-    let release = () => {};
-    void wordFonts(doc.file.font_families, (value) => { if (live) setProgress(value); }).then((loaded) => {
-      release = loaded.release;
-      if (live) setFonts(loaded.fonts); else release();
-    }, (e: unknown) => { if (live) setFonts([]); console.warn("word fonts unavailable", e); });
+    void wordFontProvider().then((provider) => { if (live) setFonts({ provider }); },
+      (e: unknown) => { if (live) setFonts({}); console.warn("word fonts unavailable", e); });
     const locale = (lng: string) => setLanguage(lng);
     i18n.on("languageChanged", locale);
-    return () => { live = false; release(); i18n.off("languageChanged", locale); doc.prepare = null; };
+    return () => { live = false; i18n.off("languageChanged", locale); doc.prepare = null; };
   }, [doc, kernel]);
 
   // Once the first page shows: saves flush held-back typing, and the in-document AI can find this editor.
@@ -72,7 +68,7 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
   }, [ready, doc, kernel, path]);
 
   if (error && !ready) return <div className="word-message" role="alert">{t("word.loadFailed", { message: error })}</div>;
-  const loading = <WordLoading name={name} stage={fonts ? "rendering" : "fonts"} completed={progress.completed} total={progress.total} />;
+  const loading = <WordLoading name={name} stage={fonts ? "rendering" : "fonts"} />;
   if (!fonts) return loading;
   return <div className="word-editor-shell">
     {error && <div className="word-error" role="alert">{error}</div>}
@@ -81,7 +77,7 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
       ref={editor}
       file={bytes}
       fileName={name}
-      fonts={fonts}
+      measurementFontProvider={fonts.provider}
       collaboration={collaboration}
       readOnly={!doc.file.writable}
       colorMode="system"

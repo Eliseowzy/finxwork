@@ -221,7 +221,13 @@ export async function setup({ prefix, fixture = "report.docx", file = "report.do
       return at;
     };
     await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 0, mobile: false });
-    return { cdp, events: page.events, editorText, select, lineOf, run, until, shot, click, clickAt, where, chord, close: page.close };
+    await cdp("Runtime.enable");
+    /** The page's font warnings so far: the engine's "[fontRegistry] …" ones mean it measured with made-up metrics. */
+    const fontWarnings = () => page.events
+      .filter((e) => e.method === "Runtime.consoleAPICalled")
+      .map((e) => e.params.args.map((a) => a.value ?? a.description ?? "").join(" "))
+      .filter((line) => line.includes("[fontRegistry]") || line.includes("word fonts unavailable"));
+    return { cdp, events: page.events, fontWarnings, editorText, select, lineOf, run, until, shot, click, clickAt, where, chord, close: page.close };
   }
 
   async function quit() {
