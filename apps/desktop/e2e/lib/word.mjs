@@ -201,8 +201,27 @@ export async function setup({ prefix, fixture = "report.docx", file = "report.do
       await cdp("Input.dispatchKeyEvent", { type: "rawKeyDown", key, code, modifiers, windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0), commands: [] });
       await cdp("Input.dispatchKeyEvent", { type: "keyUp", key, code, modifiers, windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0) });
     };
+    /** The text the editor draws (its layout runs), page by page. */
+    const editorText = () => run(`[...document.querySelectorAll(".fpn .layout-run-text")].map((e) => e.textContent).join("")`);
+    // Where the first page's paragraphs are drawn, from the page's top (the fixture's, at 100%): the text
+    // layer's boxes do not follow the canvas, so a click is aimed by these.
+    const PARAGRAPH_Y = { title: 115, first: 148, conclusion: 291 };
+    /** Where in the window the line of a paragraph of the fixture is: its start and end. */
+    const lineOf = async (which) => {
+      const c = await run(`(() => { const r = document.querySelector(".fpn .word-editor-canvas canvas").getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
+      return { x: c.x + 98, x2: c.x + 470, y: c.y + PARAGRAPH_Y[which] };
+    };
+    /** Selects a paragraph's line by dragging across it, as a person does. */
+    const select = async (which) => {
+      const at = await lineOf(which);
+      await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x, y: at.y });
+      await cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "left", clickCount: 1 });
+      for (let i = 1; i <= 10; i++) await cdp("Input.dispatchMouseEvent", { type: "mouseMoved", x: at.x + ((at.x2 - at.x) * i) / 10, y: at.y, button: "left", buttons: 1 });
+      await cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x2, y: at.y, button: "left", clickCount: 1 });
+      return at;
+    };
     await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 0, mobile: false });
-    return { cdp, events: page.events, run, until, shot, click, clickAt, where, chord, close: page.close };
+    return { cdp, events: page.events, editorText, select, lineOf, run, until, shot, click, clickAt, where, chord, close: page.close };
   }
 
   async function quit() {
