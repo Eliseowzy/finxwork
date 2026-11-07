@@ -816,6 +816,7 @@
       "rendering": "马上就好…"
     },
     "readOnly": "此文件为只读，可以另存一份再编辑。",
+    "fitWidth": "适应宽度",
     "saveAs": "另存为…",
     "savedAs": "已另存到 {{path}}",
     "conflict": "文件在外部被修改",

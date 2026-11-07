@@ -45,8 +45,7 @@ try {
   check(warned.length === 0, `the editor's fonts fell back: ${warned.join(" | ")}`);
 
   step("typing makes it unsaved; ⌘S writes the file: the new words in, every other part untouched");
-  const canvas = await page.run(`(() => { const r = document.querySelector(".fpn .word-editor-canvas canvas").getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
-  await page.clickAt(canvas.x + 250, canvas.y + 120);
+  await page.pageAt(250, 120).then((p) => page.clickAt(p.x, p.y));
   await page.cdp("Input.insertText", { text: TYPED });
   await page.until("the tab says unsaved", `${tabStatus} === "未保存"`, 10000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)}`));
   check(sha(fs.readFileSync(t.docx)) === sha(t.original), "typing wrote the file before a save");
@@ -75,7 +74,7 @@ with zipfile.ZipFile(src) as a, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) 
         b.writestr(i.filename, d)`, t.docx, outside, OUTSIDE]);
   fs.copyFileSync(outside, t.docx);
   const outsideSha = sha(fs.readFileSync(t.docx));
-  await page.clickAt(canvas.x + 250, canvas.y + 120);
+  await page.pageAt(250, 120).then((p) => page.clickAt(p.x, p.y));
   await page.cdp("Input.insertText", { text: "再改一处" });
   await page.chord("s", "KeyS", 4);
   await page.until("the conflict note", `${note}.includes("文件在外部被修改")`, 20000).catch(async (e) => fail(`${e.message}: ${await page.run(tabStatus)} ${await page.run(`document.querySelector(".fpn-note")?.innerText`)}`));
@@ -87,7 +86,7 @@ with zipfile.ZipFile(src) as a, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) 
   check(sha(fs.readFileSync(t.docx)) === outsideSha, "reloading wrote the file");
   check((await page.run(tabStatus)) !== "未保存", "the tab still says unsaved after reloading");
   // What the editor now holds is the kernel's document: another edit saves on top of the outside's text.
-  await page.clickAt(canvas.x + 250, canvas.y + 120);
+  await page.pageAt(250, 120).then((p) => page.clickAt(p.x, p.y));
   await page.cdp("Input.insertText", { text: "重载后" });
   await page.chord("s", "KeyS", 4);
   for (let i = 0; i < 100 && sha(fs.readFileSync(t.docx)) === outsideSha; i++) await sleep(100);

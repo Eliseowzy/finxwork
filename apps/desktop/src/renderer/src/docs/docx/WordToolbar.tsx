@@ -1,0 +1,97 @@
+import { useEffect, useSyncExternalStore } from "react";
+import { useTranslation as useAppTranslation } from "react-i18next";
+import { EditorToolbar, ToolbarButton, ToolbarCommand, ToolbarGroup, ToolbarSeparator, useDocxCommandState, useTranslation } from "@betteroffice/docx-react";
+
+/**
+ * Fit-to-width zoom: on until the person picks a zoom of their own. `set` is the last zoom this set,
+ * so a different zoom in the editor means the person chose it.
+ */
+export interface WordFit { auto: boolean; set: number | null; refit: () => void; zoomed: (zoom: number) => void; sidebar: boolean; listeners: Set<() => void> }
+
+export function createFit(): WordFit {
+  return { auto: true, set: null, refit: () => {}, zoomed: () => {}, sidebar: false, listeners: new Set() };
+}
+
+/**
+ * The editor's chrome in the file panel: one compact row, no title bar (the panel's tab names the
+ * file). The most used controls come first, as the row overflows into "More" from its end.
+ */
+export function WordToolbar({ fit }: { fit: WordFit }) {
+  const { t } = useTranslation();
+  const { t: app } = useAppTranslation("session");
+  const zoom = useDocxCommandState("zoom").value;
+  const sidebar = !!useDocxCommandState("commentsSidebar").active;
+  useEffect(() => { fit.sidebar = sidebar; fit.refit(); }, [sidebar, fit]);
+  const table = useDocxCommandState("tableAction").value != null;
+  const wrap = useDocxCommandState("imageWrap").value != null;
+  const image = useDocxCommandState("imageProperties").enabled || wrap;
+  const auto = useSyncExternalStore((l) => { fit.listeners.add(l); return () => fit.listeners.delete(l); }, () => fit.auto);
+  // A zoom this did not set is the person's: stop fitting.
+  useEffect(() => {
+    if (typeof zoom === "number") fit.zoomed(zoom);
+    if (typeof zoom === "number" && fit.set !== null && Math.abs(zoom - fit.set) > 0.001 && fit.auto) {
+      fit.auto = false;
+      fit.listeners.forEach((l) => l());
+    }
+  }, [zoom, fit]);
+  return <EditorToolbar className="word-toolbar">
+    <EditorToolbar.Toolbar>
+      <ToolbarGroup label={t("formattingBar.groups.history")}>
+        <ToolbarCommand id="undo" />
+        <ToolbarCommand id="redo" />
+      </ToolbarGroup>
+      <ToolbarGroup label={t("formattingBar.groups.styles")}>
+        <ToolbarCommand id="paragraphStyle" />
+      </ToolbarGroup>
+      <ToolbarGroup label={t("formattingBar.groups.textFormatting")}>
+        <ToolbarCommand id="bold" />
+        <ToolbarCommand id="italic" />
+        <ToolbarCommand id="underline" />
+        <ToolbarCommand id="textColor" />
+        <ToolbarCommand id="highlightColor" />
+      </ToolbarGroup>
+      <ToolbarGroup label={t("formattingBar.groups.alignment")}>
+        <ToolbarCommand id="alignment" />
+      </ToolbarGroup>
+      <ToolbarGroup label={t("formattingBar.groups.listFormatting")}>
+        <ToolbarCommand id="bulletList" />
+        <ToolbarCommand id="numberedList" />
+      </ToolbarGroup>
+      {image && <ToolbarGroup label={t("formattingBar.groups.image")}>
+        <ToolbarCommand id="imageWrap" />
+        <ToolbarCommand id="imageTransform" />
+        <ToolbarCommand id="imageProperties" />
+      </ToolbarGroup>}
+      {table && <ToolbarGroup label={t("formattingBar.groups.table")}>
+        <ToolbarCommand id="tableAction" />
+      </ToolbarGroup>}
+      <ToolbarGroup label={t("formattingBar.groups.zoom")}>
+        <ToolbarButton
+          active={auto}
+          title={app("word.fitWidth")}
+          onClick={() => { fit.auto = true; fit.refit(); fit.listeners.forEach((l) => l()); }}
+        ><span className="word-fit-icon" aria-hidden="true">↔</span></ToolbarButton>
+        <ToolbarCommand id="zoom" />
+      </ToolbarGroup>
+      <ToolbarSeparator />
+      <ToolbarCommand id="commentsSidebar" />
+      <ToolbarCommand id="editingMode" />
+      <ToolbarGroup label={t("formattingBar.groups.font")}>
+        <ToolbarCommand id="fontFamily" />
+        <ToolbarCommand id="fontSize" />
+      </ToolbarGroup>
+      <ToolbarGroup label={t("formattingBar.groups.textFormatting")}>
+        <ToolbarCommand id="strikethrough" />
+        <ToolbarCommand id="superscript" />
+        <ToolbarCommand id="subscript" />
+        <ToolbarCommand id="insertLink" />
+      </ToolbarGroup>
+      <ToolbarGroup label={t("formattingBar.groups.listFormatting")}>
+        <ToolbarCommand id="outdent" />
+        <ToolbarCommand id="indent" />
+        <ToolbarCommand id="lineSpacing" />
+      </ToolbarGroup>
+      <ToolbarCommand id="clearFormatting" />
+    </EditorToolbar.Toolbar>
+  </EditorToolbar>;
+}

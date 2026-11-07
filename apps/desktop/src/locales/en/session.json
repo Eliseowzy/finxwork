@@ -842,6 +842,7 @@
       "rendering": "Almost there…"
     },
     "readOnly": "This file is read-only. Save a copy to edit it.",
+    "fitWidth": "Fit to width",
     "saveAs": "Save As…",
     "savedAs": "Saved a copy to {{path}}",
     "conflict": "The file was changed outside FinxWork",

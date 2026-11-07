@@ -4,14 +4,15 @@ import { I18nextProvider, useTranslation } from "react-i18next";
 import { DocxEditor, type DocxEditorRef, type TrackedChangesOptions } from "@betteroffice/docx-react";
 import type { CollaborationReplica } from "@betteroffice/docx/collaboration";
 import type { BundledFontProvider } from "@betteroffice/docx/layout";
-import zhCN from "@betteroffice/docx-i18n/zh-CN";
 import "@betteroffice/docx-react/styles.css";
 import { i18n } from "../../../../shared/i18n";
 import { fromBase64 } from "../pptx/document";
 import type { WordDoc } from "./document";
 import { wordFontProvider } from "./fonts";
 import { registerWordHandle } from "./handle";
+import { wordZhCN } from "./i18n";
 import { WordLoading } from "./WordLoading";
+import { createFit, WordToolbar } from "./WordToolbar";
 import { askFromComment, WordAi } from "./WordAi";
 import "../pptx/theme.css";
 import "./word.css";
@@ -26,6 +27,13 @@ export const trackedChanges: TrackedChangesOptions = {
     : undefined,
 };
 
+/** Fitting the page: the room left beside it, and the zooms it keeps within. */
+const FIT_GUTTER = 24, FIT_MIN = 0.5, FIT_MAX = 1.25;
+/** The comments sidebar's width and gap (@betteroffice/docx SIDEBAR_WIDTH + SIDEBAR_PAGE_GAP). */
+const SIDEBAR = 352;
+/** Below this panel width the outline button's gutter costs the page too much. */
+const OUTLINE_MIN = 960;
+
 function brandColor() {
   const value = typeof document === "undefined" ? "" : getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
   return value || "#2f6fd6";
@@ -39,6 +47,10 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
   const [error, setError] = useState<string | null>(null);
   const [language, setLanguage] = useState(i18n.language);
   const editor = useRef<DocxEditorRef | null>(null);
+  const canvas = useRef<HTMLDivElement>(null);
+  const fit = useMemo(createFit, [doc]);
+  const [zoom, setZoom] = useState(1);
+  const [wide, setWide] = useState(false);
   const bytes = useMemo(() => fromBase64(doc.file.data), [doc, doc.generation]);
   const kernel = doc.kernel;
   const where = useMemo(() => ({ session: kernel.session, docxId: kernel.docxId, path }), [kernel, path]);
@@ -67,13 +79,47 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
     return () => { release(); if (doc.prepare) doc.prepare = null; };
   }, [ready, doc, kernel, path]);
 
+  // Fit the page to the panel's width while the person has not chosen a zoom; again as the panel resizes.
+  useEffect(() => {
+    const box = canvas.current;
+    const ref = editor.current;
+    if (!ready || !box || !ref) return;
+    let frame = 0;
+    const refit = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const page = box.querySelector("canvas");
+        const now = ref.getZoom();
+        if (!page || !now) return;
+        const width = page.getBoundingClientRect().width / now;
+        const roomy = box.clientWidth >= OUTLINE_MIN;
+        setWide(roomy);
+        if (fit.auto && width > 0) {
+          // The editor centres the page between two allowances for its outline button, and shifts it for the comments.
+          const room = box.clientWidth - 2 * (roomy ? 64 : 20) - FIT_GUTTER;
+          const beside = (room - SIDEBAR) / width;
+          const next = Math.round(Math.min(FIT_MAX, Math.max(FIT_MIN, fit.sidebar && beside >= 0.6 ? beside : room / width)) * 100) / 100;
+          fit.set = next;
+          if (Math.abs(next - now) > 0.001) ref.setZoom(next);
+        }
+        setZoom(ref.getZoom());
+      });
+    };
+    fit.refit = refit;
+    fit.zoomed = setZoom;
+    const seen = new ResizeObserver(refit);
+    seen.observe(box);
+    refit();
+    return () => { seen.disconnect(); cancelAnimationFrame(frame); fit.refit = () => {}; fit.zoomed = () => {}; };
+  }, [ready, fit]);
+
   if (error && !ready) return <div className="word-message" role="alert">{t("word.loadFailed", { message: error })}</div>;
   const loading = <WordLoading name={name} stage={fonts ? "rendering" : "fonts"} />;
   if (!fonts) return loading;
   return <div className="word-editor-shell">
     {error && <div className="word-error" role="alert">{error}</div>}
     {!doc.file.writable && <ReadOnlyBar doc={doc} name={name} />}
-    <div className="word-editor-canvas"><DocxEditor
+    <div className="word-editor-canvas" ref={canvas} data-zoom={zoom}><DocxEditor
       ref={editor}
       file={bytes}
       fileName={name}
@@ -81,9 +127,12 @@ function Editor({ doc, name, path }: { doc: WordDoc; name: string; path: string 
       collaboration={collaboration}
       readOnly={!doc.file.writable}
       colorMode="system"
-      i18n={language.startsWith("zh") ? zhCN : undefined}
+      i18n={language.startsWith("zh") ? wordZhCN : undefined}
       trackedChanges={trackedChanges}
       loadingIndicator={null}
+      toolbar={<WordToolbar fit={fit} />}
+      showOutlineButton={wide}
+      author={window.finx?.userName || undefined}
       showFileOpen={false}
       showHelpMenu={false}
       style={{ height: "100%", width: "100%", minHeight: 0 }}

@@ -135,11 +135,16 @@ try {
 
   step("a comment opening with @AI is answered in its thread");
   await page.select("first");
-  const at = await page.lineOf("first");
+  // The selection has settled once ✦ shows for it; a menu opened before then acts on an older one.
+  await page.until("the ✦", `!!document.querySelector(".word-ai-spark")`, 10000);
+  await sleep(300);
+  const line = await page.lineOf("first");
+  // Inside the selection, so the menu acts on it.
+  const at = { x: (line.x + line.x2) / 2, y: line.y };
   await page.cdp("Input.dispatchMouseEvent", { type: "mousePressed", x: at.x, y: at.y, button: "right", clickCount: 1 });
   await page.cdp("Input.dispatchMouseEvent", { type: "mouseReleased", x: at.x, y: at.y, button: "right", clickCount: 1 });
-  await page.until("the context menu", `[...document.querySelectorAll("[role=menuitem]")].some((e) => e.textContent.trim() === "Comment")`, 10000);
-  await page.run(`[...document.querySelectorAll("[role=menuitem]")].find((e) => e.textContent.trim() === "Comment").click()`);
+  await page.until("the context menu", `[...document.querySelectorAll("[role=menuitem]")].some((e) => e.textContent.trim() === "批注")`, 10000);
+  await page.run(`[...document.querySelectorAll("[role=menuitem]")].find((e) => e.textContent.trim() === "批注").click()`);
   await page.until("the comment box", `!!document.querySelector(".docx-comment-composer textarea")`, 10000);
   await page.run(`document.querySelector(".docx-comment-composer textarea").focus()`);
   await page.cdp("Input.insertText", { text: "@AI 这段什么意思" });

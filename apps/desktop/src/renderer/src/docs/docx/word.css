@@ -43,8 +43,18 @@
   --doc-font-ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
   font-family: var(--doc-font-ui);
 }
-/* A denser toolbar, as the panel is narrower than a page of its own. */
-.word-surface .oox-root [role="toolbar"] { gap: 2px; padding-block: 3px; }
+/* The toolbar (WordToolbar): one row in the presentation ribbon's card (pptx/ribbon.css), flat
+   buttons that show a fill on hover and when on, a hairline between groups. */
+.word-surface .word-toolbar { background: var(--pptx-bg); box-shadow: none; padding-top: 6px; }
+.word-surface .word-toolbar .oox-toolbar-rail { margin: 0 8px 6px; padding: 3px 6px; border-radius: 12px; background: var(--pptx-ribbon); gap: 2px; min-height: 36px; }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button { border: 0; color: var(--pptx-ink); }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:not([aria-pressed="true"]):not([aria-expanded="true"]):not(:hover) { background-color: transparent; }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:hover:not(:disabled) { background-color: var(--pptx-hover); }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button[aria-pressed="true"] { background-color: color-mix(in srgb, var(--pptx-accent) 16%, transparent); color: var(--pptx-accent); }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:disabled { opacity: .4; }
+.word-surface .word-toolbar [data-testid="formatting-bar"] button:focus-visible { outline: 2px solid var(--pptx-accent); outline-offset: -2px; }
+.word-surface .word-toolbar [role="separator"] { background: var(--pptx-line); }
+.word-fit-icon { font-size: 15px; line-height: 1; }
 
 @media (prefers-color-scheme: dark) {
   .word-surface .oox-root {

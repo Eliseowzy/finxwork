@@ -203,13 +203,19 @@ export async function setup({ prefix, fixture = "report.docx", file = "report.do
     };
     /** The text the editor draws (its layout runs), page by page. */
     const editorText = () => run(`[...document.querySelectorAll(".fpn .layout-run-text")].map((e) => e.textContent).join("")`);
-    // Where the first page's paragraphs are drawn, from the page's top (the fixture's, at 100%): the text
-    // layer's boxes do not follow the canvas, so a click is aimed by these.
+    // Where the first page's paragraphs are drawn, from the page's top at 100% (the fixture's): the text
+    // layer's boxes do not follow the canvas, so a click is aimed by these, scaled by the editor's zoom.
     const PARAGRAPH_Y = { title: 115, first: 148, conclusion: 291 };
+    /** Where in the window a point of the first page (at 100%) is drawn now. */
+    const pageAt = async (x, y) => {
+      const c = await run(`(() => { const r = document.querySelector(".fpn .word-editor-canvas canvas").getBoundingClientRect(); return { x: r.left, y: r.top, z: Number(document.querySelector(".fpn .word-editor-canvas").dataset.zoom) || 1 }; })()`);
+      return { x: c.x + x * c.z, y: c.y + y * c.z };
+    };
     /** Where in the window the line of a paragraph of the fixture is: its start and end. */
     const lineOf = async (which) => {
-      const c = await run(`(() => { const r = document.querySelector(".fpn .word-editor-canvas canvas").getBoundingClientRect(); return { x: r.left, y: r.top }; })()`);
-      return { x: c.x + 98, x2: c.x + 470, y: c.y + PARAGRAPH_Y[which] };
+      const a = await pageAt(97, PARAGRAPH_Y[which]);
+      const b = await pageAt(470, PARAGRAPH_Y[which]);
+      return { x: a.x, x2: b.x, y: a.y };
     };
     /** Selects a paragraph's line by dragging across it, as a person does. */
     const select = async (which) => {
@@ -227,7 +233,7 @@ export async function setup({ prefix, fixture = "report.docx", file = "report.do
       .filter((e) => e.method === "Runtime.consoleAPICalled")
       .map((e) => e.params.args.map((a) => a.value ?? a.description ?? "").join(" "))
       .filter((line) => line.includes("[fontRegistry]") || line.includes("word fonts unavailable"));
-    return { cdp, events: page.events, fontWarnings, editorText, select, lineOf, run, until, shot, click, clickAt, where, chord, close: page.close };
+    return { cdp, events: page.events, fontWarnings, editorText, select, lineOf, pageAt, run, until, shot, click, clickAt, where, chord, close: page.close };
   }
 
   async function quit() {
