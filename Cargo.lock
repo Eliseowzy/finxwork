@@ -1604,10 +1604,12 @@ name = "finx-docs"
 version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
+ "betteroffice-docx-edit",
  "betteroffice-pptx",
  "finx-protocol",
  "finx-sheet",
  "finx-slide",
+ "finx-word",
  "md-5",
  "parking_lot",
  "pdfium-render",

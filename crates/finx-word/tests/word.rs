@@ -512,3 +512,26 @@ fn renders_and_checks_saved_bytes() {
     assert!(summary.paragraphs >= 6);
     assert!(word.check_saved(b"not a zip").is_err());
 }
+
+#[test]
+fn revision_numbers_are_the_editors() {
+    // The engine's yrs ids hash into the safe-integer range; numeric ids stay themselves.
+    assert_eq!(finx_word::revision_number("7"), 7);
+    let n = finx_word::revision_number("1:0");
+    assert!(n < 1 << 53 && n != 0);
+    let word = open();
+    let applied = word
+        .apply(&batch(
+            EditMode::Suggest,
+            vec![replace("10000002", "百分之十", "一成")],
+        ))
+        .unwrap();
+    let ids = word
+        .revision_ids(&[finx_word::revision_number(&applied.revision_ids_created[0])])
+        .unwrap();
+    assert_eq!(ids, applied.revision_ids_created);
+    assert!(matches!(
+        word.revision_ids(&[1]),
+        Err(WordError::NoRevision(_))
+    ));
+}
