@@ -833,6 +833,9 @@ button.insp-row:active{background:var(--fill2)}
 .dcp-flash{position:absolute;inset:0;pointer-events:none;z-index:5}
 .dcp-flash>div{position:absolute;border-radius:3px;background:rgba(255,196,0,.32);box-shadow:0 0 0 1.5px rgba(255,170,0,.8);animation:dcp-flash 2.4s ease-out forwards}
 @keyframes dcp-flash{0%,60%{opacity:1}100%{opacity:0}}
+.dcp-sel{position:absolute;inset:0;pointer-events:none;z-index:5;mix-blend-mode:multiply}
+.dcp-sel>div{position:absolute;background:rgba(50,148,255,.32)}
+.dcp-view .textLayer ::selection{background:transparent}
 .dcp-mark>div{position:absolute;border-radius:2px;background:rgba(50,148,255,.22);box-shadow:0 0 0 1.5px rgba(50,148,255,.75)}
 .dcp-card{position:absolute;z-index:6;width:296px;max-width:calc(100% - 24px);padding:12px;border-radius:12px;background:var(--win);color:var(--l1);box-shadow:0 10px 32px rgba(0,0,0,.3),0 1px 3px rgba(0,0,0,.1),0 0 0 .5px var(--sep);animation:dcp-card .12s ease-out;cursor:default}
 @keyframes dcp-card{from{opacity:0;translate:0 3px}to{opacity:1;translate:0 0}}
