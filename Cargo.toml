@@ -64,11 +64,11 @@ async-trait = "0.1"
 # Back to upstream once all of these are merged there and a release carries them. No font packs
 # (fonts-latin, fonts-intl, fonts-cjk): every face comes from the machine (finx-slide's
 # SystemFonts). Local work against a checkout of the fork: crates/finx-slide/README.md.
-betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac", default-features = false, features = ["raster", "fonts"] }
+betteroffice-pptx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "2d3d66334f5f0637f2bd0d4ffcdb140e89101bb7", default-features = false, features = ["raster", "fonts"] }
 # Word on the same fork: the editing session (Yrs) and rasterization of saved bytes.
-betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac", default-features = false, features = ["raster", "fonts"] }
-docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac" }
-ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "330266fb736226800ef0c4478c221e56ea2b62ac", features = ["svg"] }
+betteroffice-docx = { git = "https://github.com/Eliseowzy/betteroffice", rev = "2d3d66334f5f0637f2bd0d4ffcdb140e89101bb7", default-features = false, features = ["raster", "fonts"] }
+docx-edit = { package = "betteroffice-docx-edit", git = "https://github.com/Eliseowzy/betteroffice", rev = "2d3d66334f5f0637f2bd0d4ffcdb140e89101bb7" }
+ooxml-metafile = { package = "betteroffice-metafile", git = "https://github.com/Eliseowzy/betteroffice", rev = "2d3d66334f5f0637f2bd0d4ffcdb140e89101bb7", features = ["svg"] }
 base64 = "0.22"
 bytes = "1"
 calamine = "0.38"

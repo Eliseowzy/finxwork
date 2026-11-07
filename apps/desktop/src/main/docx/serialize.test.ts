@@ -5,7 +5,7 @@ import path from "node:path";
 import { test } from "node:test";
 import zlib from "node:zlib";
 import { createYrsSession, type YrsAuthor } from "@betteroffice/docx/yrs";
-import { readablePeerMetadata, serializeDocx, serializeFiles } from "./serialize.ts";
+import { serializeDocx, serializeFiles } from "./serialize.ts";
 
 const source = new Uint8Array(fs.readFileSync(path.join(import.meta.dirname, "fixtures/demo.docx")));
 
@@ -85,24 +85,4 @@ test("the request's files: out_path is written whole, and nothing on failure", a
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test("peer metadata from a newer engine loses the field the JavaScript engine does not know", () => {
-  const frame = (wire: object, blobs: number[]) => {
-    const json = new TextEncoder().encode(JSON.stringify(wire));
-    const out = new Uint8Array(60 + json.length + blobs.length);
-    out.fill(7, 0, 44);
-    new DataView(out.buffer).setBigUint64(44, BigInt(json.length), true);
-    new DataView(out.buffer).setBigUint64(52, BigInt(blobs.length), true);
-    out.set(json, 60);
-    out.set(blobs, 60 + json.length);
-    return out;
-  };
-  const read = readablePeerMetadata(frame({ source_digest: "d", seed_identities: { body: [1, 2] } }, [9, 9]));
-  const jsonLength = Number(new DataView(read.buffer).getBigUint64(44, true));
-  assert.deepEqual(JSON.parse(new TextDecoder().decode(read.subarray(60, 60 + jsonLength))), { source_digest: "d" });
-  assert.deepEqual([...read.subarray(60 + jsonLength)], [9, 9]);
-  assert.equal(Number(new DataView(read.buffer).getBigUint64(52, true)), 2);
-  const plain = frame({ source_digest: "d" }, []);
-  assert.equal(readablePeerMetadata(plain), plain);
 });

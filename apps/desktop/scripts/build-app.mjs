@@ -247,7 +247,7 @@ for (const f of [embedded, ...desktopTools, pdfium]) sh("codesign", ["--verify",
   for (const family of ["Carlito", "Caladea"]) for (const style of ["Regular", "Bold", "Italic", "BoldItalic"]) {
     const name = `${family}-${style}.ttf`;
     const entry = header.files?.renderer?.files?.fonts?.files?.[name];
-    const source = path.join(desktop, "node_modules/@betteroffice/fonts/assets", name);
+    const source = path.join(root, "crates/finx-slide/fonts", name);
     if (!entry || entry.size !== fs.statSync(source).size) throw new Error(`the signed app.asar lacks renderer/fonts/${name} (the deck editor's ${family} stand-in)`);
   }
 }

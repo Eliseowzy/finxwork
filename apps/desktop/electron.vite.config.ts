@@ -29,8 +29,9 @@ function pdfjsAssets(): Plugin {
 }
 
 // The metric-compatible stand-ins for Calibri and Cambria (docs/pptx/fonts.ts), served at fonts/ beside the page.
-// They come from @betteroffice/fonts; the packaged renderer carries them as assets (build-app.mjs checks they are there).
-const fontsDir = path.join(path.dirname(createRequire(import.meta.url).resolve("@betteroffice/fonts/package.json")), "assets");
+// The same files the kernel embeds (crates/finx-slide/fonts, with their OFL); the packaged renderer carries them as
+// assets (build-app.mjs checks they are there). @betteroffice/fonts now ships its faces compressed, in font packs.
+const fontsDir = path.join(import.meta.dirname, "../../crates/finx-slide/fonts");
 const standInFonts = ["Carlito", "Caladea"].flatMap((f) => ["Regular", "Bold", "Italic", "BoldItalic"].map((s) => `${f}-${s}.ttf`));
 function standInFontAssets(): Plugin {
   return {
