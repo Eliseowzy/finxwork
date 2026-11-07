@@ -181,7 +181,9 @@ export function ToolRow({ tool, after, card = true }: { tool: ToolView; after?: 
     ? search.query + (search.sites.length ? t("webSearch.only", { sites: search.sites.join(t("webSearch.siteSeparator")) }) : "")
     : toAgent ? t("agents.messageObject", { to: address === "main" || address === "parent" ? t("agents.mainAgent") : address, message: String(tool.args.message ?? "").split("\n")[0] }) : (handoff ?? toolObject(tool));
   // The kernel's title for a page opened in the user's own browser.
-  const object = named.replace(/ in your browser$/, t("yours.inYourBrowser"));
+  // A Word change names its document, not the path the kernel was given.
+  const docx = docxEditOf(tool);
+  const object = docx ? docx.path.split(/[\\/]/).pop() ?? docx.path : named.replace(/ in your browser$/, t("yours.inYourBrowser"));
   const verb = search && tool.state === "failed" ? t("webSearch.failed") : toAgent ? (spinning || tool.state === "pending" ? t("agents.sending") : t("agents.sent")) : handoff !== null && tool.state === "done" ? t("yours.handoff.handled") : toolVerb(tool);
   return (
     <div
