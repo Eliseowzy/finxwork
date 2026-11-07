@@ -10,6 +10,7 @@ import { demoModels, demoSessions, demoSkills, demoSkillUses, replyScript, siteS
 import { CustomizeMock, Failure as CustomizeFailure } from "./customize.ts";
 import { asks, type TaskScript, type ToolScript, type TurnScript } from "./script.ts";
 import { snake } from "./snake.ts";
+import { churnBot, churnSession, rng, stressBotTranscript, stressBots, stressSessions, stressTranscript, type StressOptions } from "./stress.ts";
 
 // A stand-in for `finx serve` (desktop-design §6.4): the native protocol's
 // server side, with the proposed methods (§7), over NDJSON text. Tasks are
@@ -33,6 +34,8 @@ export interface MockOptions {
   speed?: number;
   /** Plays nothing live (tests). */
   still?: boolean;
+  /** Adds a heavy owner's bots and sessions, for frontend stress tests (stress.ts). */
+  stress?: StressOptions;
 }
 
 interface Conn {
@@ -106,6 +109,8 @@ interface Session {
   busySince?: number;
   /** A bot's conversation: the bot. It stays out of session lists. */
   bot?: string;
+  /** A stress test's conversation, made when it is first opened. */
+  fill?: () => TranscriptItem[];
 }
 
 /** What a client following a sub-agent gets of its events, as finx sends them. */
@@ -142,6 +147,8 @@ export class MockServer {
   private readonly conns = new Set<Conn>();
   private readonly speed: number;
   private readonly still: boolean;
+  /** Turns of a stress test's conversations. */
+  private readonly stressTurns: number;
   /** The clock events are stamped with; in the past while the demo's history is written. */
   private clock: number | null = null;
   /** Providers whose key was saved with auth/set. */
@@ -161,10 +168,56 @@ export class MockServer {
   constructor(o: MockOptions = {}) {
     this.speed = o.speed ?? 1;
     this.still = o.still ?? false;
+    this.stressTurns = o.stress?.turns ?? 60;
     this.addSnake();
     for (const d of demoSessions()) this.addDemo(d);
     this.addAgentsDemo();
     for (const b of demoBots()) this.addBot(b);
+    if (o.stress) this.addStress(o.stress);
+  }
+
+  /** A heavy owner's bots and sessions, and a stream of changes to them (stress.ts). */
+  private addStress(o: StressOptions) {
+    const now = Date.now();
+    const turns = o.turns ?? 60;
+    for (const [i, summary] of stressSessions(o, now).entries()) {
+      const s = this.create(summary.session_id, summary.cwd, summary.model!, "medium", "manual", Date.parse(summary.created_at), summary.no_project ?? false);
+      s.summary = summary;
+      s.fill = () => stressTranscript(i + 1, turns, Date.parse(summary.created_at));
+    }
+    for (const summary of stressBots(o, now)) this.bots.set(summary.id, { summary, routines: [] });
+    if (!o.churn || this.still) return;
+    const r = rng((o.seed ?? 7) + 99);
+    const bots = [...this.bots.values()].filter((b) => b.summary.id.startsWith("stress-bot-"));
+    const sessions = [...this.sessions.values()].filter((s) => s.id.startsWith("stress-session-") && !s.summary.archived);
+    // Every 50 ms, as many changes as the rate asks for, two bots for each session.
+    const per = o.churn / 20;
+    let owed = 0;
+    setInterval(() => {
+      owed += per;
+      const changedBots: BotSummary[] = [];
+      for (; owed >= 1; owed--) {
+        if (r() < 2 / 3) {
+          const b = bots[Math.floor(r() * bots.length)]!;
+          b.summary = churnBot(r, b.summary, Date.now());
+          changedBots.push(b.summary);
+        } else {
+          const s = sessions[Math.floor(r() * sessions.length)]!;
+          s.summary = churnSession(r, s.summary, Date.now());
+          this.listChanged(s);
+        }
+      }
+      if (changedBots.length) this.botsChanged(changedBots);
+    }, 50);
+  }
+
+  /** A stress test's conversation, made the first time it is opened. */
+  private filled(s: Session): Session {
+    const fill = s.fill;
+    if (!fill) return s;
+    s.fill = undefined;
+    s.view = fromSnapshot({ session: s.view.info, last_seq: 0, transcript: { items: fill() }, usage: { per_model: {} } });
+    return s;
   }
 
   connect(peer: Peer): Connection {
@@ -979,7 +1032,14 @@ export class MockServer {
       case "bots/open": {
         const q = p as P<"bots/open">;
         const bot = this.bot(q.bot_id);
-        const s = (bot.summary.session_id ? this.sessions.get(bot.summary.session_id) : undefined) ?? this.botSession(q.bot_id, Date.now());
+        let s = (bot.summary.session_id ? this.sessions.get(bot.summary.session_id) : undefined);
+        if (!s) {
+          s = this.botSession(q.bot_id, Date.now());
+          const at = Date.parse(bot.summary.created_at);
+          // A stress test's bot: its conversation as long as its sessions'.
+          if (q.bot_id.startsWith("stress-bot-")) s.fill = () => stressBotTranscript(Number(q.bot_id.slice(11)) + 1, this.stressTurns, at);
+        }
+        this.filled(s);
         if (!bot.summary.session_id || bot.summary.session_id !== s.id) bot.summary = { ...bot.summary, session_id: s.id };
         this.botsChanged([bot.summary]);
         c.attached.add(s.id);
@@ -1186,7 +1246,7 @@ export class MockServer {
       case "session/resume":
       case "session/attach": {
         const q = p as P<"session/attach">;
-        const s = this.session(q.session_id);
+        const s = this.filled(this.session(q.session_id));
         c.attached.add(s.id);
         return { snapshot: snapshotOf(s.view, q.history_limit ?? undefined) };
       }

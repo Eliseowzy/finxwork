@@ -1,0 +1,429 @@
+#!/usr/bin/env node
+// The window under a heavy owner's lists: 1000+ bots and 1000+ sessions with long conversations,
+// from the mock kernel (FINXWORK_KERNEL=mock, FINXWORK_MOCK_STRESS), nothing sent to a model.
+// The development build in a temporary profile, driven over the DevTools protocol, behind the
+// person's work. It measures memory, how long each step takes to show, scrolling frames, and the
+// main thread while lists change many times a second; it checks the lists stay whole and in order.
+//
+//   node apps/desktop/e2e/stress.mjs
+//   … --bots 1200 --sessions 1500 --turns 60 --churn 40   (the default load)
+//   … --json <file>                   also writes the numbers
+//   FINXWORK_E2E_NO_BUILD=1 …         uses the build there is
+import assert from "node:assert/strict";
+import { execFileSync, spawn } from "node:child_process";
+import { once } from "node:events";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { cdpPort } from "./lib/port.mjs";
+
+const desktop = path.resolve(import.meta.dirname, "..");
+const args = process.argv.slice(2);
+const opt = (name, fallback) => {
+  const i = args.indexOf(`--${name}`);
+  return i >= 0 ? args[i + 1] : fallback;
+};
+const load = { bots: Number(opt("bots", 1200)), sessions: Number(opt("sessions", 1500)), turns: Number(opt("turns", 60)), churn: Number(opt("churn", 40)) };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const step = (s) => console.log(`\n▶ ${s}`);
+const note = (s) => console.log(`  · ${s}`);
+const results = {};
+
+if (!process.env.FINXWORK_E2E_NO_BUILD) execFileSync("pnpm", ["exec", "electron-vite", "build"], { cwd: desktop, stdio: "ignore" });
+
+// ── the app ──
+
+let app = null;
+let page = null;
+
+async function launch(stress) {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "fxs-"));
+  // A private HOME: the app registers the extension's host in the browsers under it.
+  const userHome = path.join(work, "home");
+  fs.mkdirSync(userHome);
+  const port = cdpPort();
+  app = spawn(path.join(desktop, "node_modules/.bin/electron"), [desktop, `--remote-debugging-port=${port}`], {
+    env: {
+      ...process.env, FINXWORK_KERNEL: "mock", FINXWORK_MOCK_STRESS: stress, FINXWORK_E2E_BACKGROUND: process.env.FINXWORK_E2E_FOREGROUND ? "" : "1",
+      FINX_HOME: path.join(work, "finx"), HOME: userHome, FINXWORK_USER_DATA: path.join(work, "profile"), FINXWORK_NO_BROWSER: "1", FINX_NO_BROWSER: "1",
+    },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  let target;
+  for (let i = 0; i < 150 && !target; i++) {
+    await sleep(200);
+    const list = await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json(), () => []);
+    target = list.find((t) => t.type === "page" && t.url.startsWith("app://finxwork/") && !t.url.includes("#settings"));
+  }
+  assert.ok(target, "the window did not open");
+  page = await connectPage(target.webSocketDebuggerUrl);
+  await page.call("Runtime.enable");
+  await page.call("Performance.enable");
+  await page.call("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
+  // From the document's start: when the first rows show, long tasks, and input delays.
+  await page.call("Page.enable");
+  await page.call("Page.addScriptToEvaluateOnNewDocument", { source: probe });
+  await page.call("Page.reload", { ignoreCache: false });
+  await until("!!window.__stress", "the page again, with the probe");
+  await until("!!document.querySelector('.mainwrap .side, .onb-foot')", "main window");
+  if (await page.run("!!document.querySelector('.onb-foot button')")) {
+    await page.run("document.querySelector('.onb-foot button').click()");
+    await until("!!document.querySelector('.mainwrap .side')", "past onboarding");
+  }
+}
+
+async function quit() {
+  page?.close();
+  if (app && app.exitCode === null) {
+    const exited = once(app, "exit");
+    app.kill("SIGTERM");
+    await exited;
+  }
+  app = null;
+}
+
+async function connectPage(url) {
+  const ws = new WebSocket(url);
+  await new Promise((resolve, reject) => {
+    ws.onopen = resolve;
+    ws.onerror = reject;
+  });
+  let id = 0;
+  const pending = new Map();
+  const errors = [];
+  ws.onmessage = ({ data }) => {
+    const m = JSON.parse(data);
+    if (m.method === "Runtime.exceptionThrown") errors.push(m.params.exceptionDetails.exception?.description ?? m.params.exceptionDetails.text);
+    const w = pending.get(m.id);
+    if (!w) return;
+    pending.delete(m.id);
+    m.error ? w.reject(new Error(m.error.message)) : w.resolve(m.result);
+  };
+  const call = (method, params = {}) =>
+    new Promise((resolve, reject) => {
+      pending.set(++id, { resolve, reject });
+      ws.send(JSON.stringify({ id, method, params }));
+    });
+  const run = async (expression) => {
+    const r = await call("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true });
+    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+    return r.result.value;
+  };
+  return { call, run, errors, close: () => ws.close() };
+}
+
+async function until(expression, label, ms = 30000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await page.run(`Boolean(${expression})`)) return;
+    await sleep(50);
+  }
+  throw new Error(`timed out: ${label}\n${page.errors.join("\n")}`);
+}
+
+// In the page from its first line: marks, long tasks, input-to-paint of each key.
+const probe = `(() => {
+  const s = window.__stress = { marks: {}, long: [], events: [] };
+  const mark = (name, sel) => {
+    if (s.marks[name] || !document.querySelector(sel)) return;
+    s.marks[name] = -1;
+    requestAnimationFrame(() => setTimeout(() => { s.marks[name] = performance.now(); }));
+  };
+  new MutationObserver(() => { mark("side", ".mainwrap .side"); mark("botRow", ".brow"); mark("sessionRow", ".srow"); })
+    .observe(document, { childList: true, subtree: true });
+  new PerformanceObserver((l) => { for (const e of l.getEntries()) s.long.push({ at: e.startTime, ms: e.duration }); }).observe({ type: "longtask", buffered: true });
+  new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.name === "keydown" || e.name === "click" || e.name === "pointerdown") s.events.push({ name: e.name, at: e.startTime, ms: e.duration }); })
+    .observe({ type: "event", durationThreshold: 16, buffered: true });
+})();`;
+
+// In the page: helpers the steps share.
+const helpers = `(() => {
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r()));
+  /** Runs an action and waits until what it changed has painted (two frames). */
+  window.__time = async (action, ready) => {
+    const t0 = performance.now();
+    action();
+    const end = t0 + 10000;
+    if (ready) while (!ready()) {
+      if (performance.now() > end) throw new Error("not ready in 10 s: " + ready);
+      await new Promise((r) => setTimeout(r, 5));
+    }
+    await frame(); await frame();
+    return performance.now() - t0;
+  };
+  /**
+   * Scrolls a list from top to bottom, a fast wheel's distance a frame: the gaps between frames, and
+   * the frames whose middle and ends showed no row (a list drawing only what is in sight drew too little).
+   */
+  window.__scroll = async (sel, perFrame, rows) => {
+    const el = document.querySelector(sel);
+    el.scrollTop = 0;
+    await frame();
+    const gaps = [];
+    let blank = 0;
+    let last = performance.now();
+    while (el.scrollTop + el.clientHeight < el.scrollHeight - 2) {
+      el.scrollTop += perFrame;
+      await frame();
+      const t = performance.now();
+      gaps.push(t - last);
+      last = t;
+      if (rows) {
+        const r = el.getBoundingClientRect();
+        const x = r.left + r.width / 2;
+        // A point may fall in the 1-2 px between two rows: empty only if one 3 px lower is too.
+        const hit = (y) => [y, y + 3].some((z) => document.elementFromPoint(x, z)?.closest(rows));
+        if ([r.top + 40, r.top + r.height / 2, r.bottom - 16].some((y) => !hit(y))) blank++;
+      }
+      if (gaps.length > 3000) break;
+    }
+    return { gaps, blank };
+  };
+})();`;
+
+const sum = (a) => a.reduce((n, x) => n + x, 0);
+const pct = (a, p) => {
+  if (!a.length) return 0;
+  const s = [...a].sort((x, y) => x - y);
+  return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))];
+};
+const median = (a) => pct(a, 50);
+const mb = (bytes) => Math.round((bytes / 1048576) * 10) / 10;
+const ms = (x) => Math.round(x * 10) / 10;
+
+async function metrics() {
+  const { metrics } = await page.call("Performance.getMetrics");
+  return Object.fromEntries(metrics.map((m) => [m.name, m.value]));
+}
+
+/** Process memory of the app (main, renderers, GPU): resident sizes in MB. */
+function rss() {
+  const rows = execFileSync("ps", ["-A", "-o", "pid=,ppid=,rss=,command="], { encoding: "utf8" })
+    .trim().split("\n").map((l) => l.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).filter(Boolean)
+    .map(([, pid, ppid, kb, cmd]) => ({ pid: +pid, ppid: +ppid, kb: +kb, cmd }));
+  const mine = new Set([app.pid]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const r of rows) if (!mine.has(r.pid) && mine.has(r.ppid)) (mine.add(r.pid), (grew = true));
+  }
+  const procs = rows.filter((r) => mine.has(r.pid));
+  const renderer = Math.max(...procs.filter((r) => r.cmd.includes("--type=renderer")).map((r) => r.kb));
+  return { total: Math.round(sum(procs.map((r) => r.kb)) / 1024), renderer: Math.round(renderer / 1024) };
+}
+
+async function memory(label) {
+  await page.call("HeapProfiler.collectGarbage");
+  await sleep(300);
+  const m = await metrics();
+  const r = rss();
+  const out = { heapMB: mb(m.JSHeapUsedSize), nodes: m.Nodes, listeners: m.JSEventListeners, rendererMB: r.renderer, appMB: r.total };
+  note(`${label}: JS heap ${out.heapMB} MB · DOM nodes ${out.nodes} · listeners ${out.listeners} · renderer RSS ${out.rendererMB} MB · app RSS ${out.appMB} MB`);
+  return out;
+}
+
+async function scroll(sel, label, rows) {
+  const { gaps, blank } = await page.run(`window.__scroll(${JSON.stringify(sel)}, 160, ${JSON.stringify(rows ?? null)})`);
+  assert.ok(gaps.length > 0, `${label}: the list does not scroll`);
+  const out = { frames: gaps.length, p50: ms(median(gaps)), p95: ms(pct(gaps, 95)), max: ms(Math.max(...gaps)), janky: gaps.filter((g) => g > 33.4).length };
+  note(`${label}: ${out.frames} frames · p50 ${out.p50} ms · p95 ${out.p95} ms · max ${out.max} ms · frames over 33 ms ${out.janky}`);
+  if (rows) assert.equal(blank, 0, `${label}: ${blank} frames showed an empty stretch of the list`);
+  return out;
+}
+
+/**
+ * A conversation read back with the wheel, from its end upwards (it loads earlier pages on the way):
+ * real input, as a conversation following its end lets go only for the person's own scrolling.
+ */
+async function wheel(sel, label, steps = 120) {
+  // At the conversation's left margin: over a tool's output, the wheel would scroll that box instead.
+  const at = await page.run(`(() => { const r = document.querySelector(${JSON.stringify(sel)}).getBoundingClientRect(); return { x: r.left + 12, y: r.top + r.height / 2 }; })()`);
+  const before = await page.run(`document.querySelector(${JSON.stringify(sel)}).scrollTop`);
+  await page.run(`window.__frames = []; (async () => { let l = performance.now(); window.__wheeling = true; while (window.__wheeling) { await new Promise((r) => requestAnimationFrame(r)); const t = performance.now(); window.__frames.push(t - l); l = t; } })(); 0`);
+  for (let i = 0; i < steps; i++) {
+    await page.call("Input.dispatchMouseEvent", { type: "mouseWheel", x: at.x, y: at.y, deltaX: 0, deltaY: -120 });
+    await sleep(16);
+  }
+  await sleep(300);
+  const gaps = await page.run("window.__wheeling = false; window.__frames.slice(1)");
+  const after = await page.run(`document.querySelector(${JSON.stringify(sel)}).scrollTop`);
+  const moved = await page.run(`document.querySelectorAll(${JSON.stringify(sel)} + " .md, " + ${JSON.stringify(sel)} + " .bub, " + ${JSON.stringify(sel)} + " .bbub").length`);
+  assert.ok(after !== before, `${label}: the conversation did not scroll`);
+  const out = { frames: gaps.length, p50: ms(median(gaps)), p95: ms(pct(gaps, 95)), max: ms(Math.max(...gaps)), janky: gaps.filter((g) => g > 33.4).length, messages: moved };
+  note(`${label}: ${out.frames} frames · p50 ${out.p50} ms · p95 ${out.p95} ms · max ${out.max} ms · frames over 33 ms ${out.janky} · ${moved} messages drawn after`);
+  return out;
+}
+
+/**
+ * Main-thread work over a stretch of time: script, style and layout, long tasks; then, apart, how
+ * frames come. Nothing of the measurement asks for frames while the work is counted: a sampler's
+ * own requestAnimationFrame makes the page render every frame, which is work of its own.
+ */
+async function busy(seconds, label) {
+  const a = await metrics();
+  const from = await page.run("performance.now()");
+  await sleep(seconds * 1000);
+  const b = await metrics();
+  const long = await page.run(`window.__stress.long.filter((x) => x.at >= ${from})`);
+  const gaps = await page.run(`(async () => { const g = []; let l = performance.now(); const end = l + 3000;
+    while (performance.now() < end) { await new Promise((r) => requestAnimationFrame(r)); const t = performance.now(); g.push(t - l); l = t; } return g; })()`);
+  const out = {
+    scriptPct: Math.round(((b.ScriptDuration - a.ScriptDuration) / seconds) * 1000) / 10,
+    taskPct: Math.round(((b.TaskDuration - a.TaskDuration) / seconds) * 1000) / 10,
+    layoutMs: ms((b.LayoutDuration - a.LayoutDuration + b.RecalcStyleDuration - a.RecalcStyleDuration) * 1000),
+    longTasks: long.length,
+    longMs: ms(sum(long.map((x) => x.ms))),
+    frameP95: ms(pct(gaps, 95)),
+    janky: gaps.filter((g) => g > 33.4).length,
+  };
+  note(`${label}: main thread busy ${out.taskPct}% (script ${out.scriptPct}%) · style+layout ${out.layoutMs} ms · long tasks ${out.longTasks} (${out.longMs} ms) · then frame p95 ${out.frameP95} ms, ${out.janky} of ${gaps.length} over 33 ms`);
+  return out;
+}
+
+/** Keys typed into the composer: each key's time to its next paint (Event Timing, over 16 ms only). */
+async function typing(count, label) {
+  await page.run("document.querySelector('.cmp-in').focus()");
+  const from = await page.run("performance.now()");
+  const times = [];
+  for (let i = 0; i < count; i++) {
+    const t0 = Date.now();
+    await page.call("Input.dispatchKeyEvent", { type: "keyDown", key: "a", code: "KeyA", text: "a", windowsVirtualKeyCode: 65 });
+    await page.call("Input.dispatchKeyEvent", { type: "keyUp", key: "a", code: "KeyA", windowsVirtualKeyCode: 65 });
+    times.push(Date.now() - t0);
+    await sleep(30);
+  }
+  await sleep(200);
+  const slow = await page.run(`window.__stress.events.filter((e) => e.name === "keydown" && e.at >= ${from}).map((e) => e.ms)`);
+  // Clear what was typed, so a draft does not linger.
+  await page.run("document.querySelector('.cmp-in').focus(); document.execCommand('selectAll'); document.execCommand('delete')");
+  const out = { keys: count, slowKeys: slow.length, worstMs: slow.length ? Math.max(...slow) : 0, p95Ms: ms(pct(slow.length ? slow : [0], 95)), roundTripP95: ms(pct(times, 95)) };
+  note(`${label}: ${out.keys} keys · over 16 ms to paint: ${out.slowKeys} (worst ${out.worstMs} ms) · protocol round trip p95 ${out.roundTripP95} ms`);
+  return out;
+}
+
+const time = (action, ready) => page.run(`window.__time(() => { ${action} }, ${ready ? `() => ${ready}` : "null"})`);
+
+// ── the run ──
+
+try {
+  const spec = `bots=${load.bots},sessions=${load.sessions},turns=${load.turns}`;
+  step(`Static lists: ${load.bots} bots, ${load.sessions} sessions, ${load.turns} turns a conversation`);
+  await launch(spec);
+  await page.run(helpers);
+  await until(`document.querySelector('.brow') && !document.querySelector('.side-list .loadrow')`, "bot rows");
+  await sleep(1500);
+  const marks = await page.run("window.__stress.marks");
+  results.startup = { sideMs: ms(marks.side), firstBotRowMs: ms(marks.botRow) };
+  note(`startup: sidebar at ${results.startup.sideMs} ms · first bot row at ${results.startup.firstBotRowMs} ms (from navigation)`);
+  const startLong = await page.run("window.__stress.long");
+  results.startup.longTasks = startLong.length;
+  results.startup.longestMs = ms(Math.max(0, ...startLong.map((x) => x.ms)));
+  note(`startup long tasks: ${startLong.length}, longest ${results.startup.longestMs} ms`);
+
+  // The bot list shows every bot, in order: pinned first, then the latest message first.
+  const order = await page.run(`(() => { const list = document.querySelector('.side-list.bots'); return { scrollHeight: list.scrollHeight, rowH: document.querySelector('.brow').getBoundingClientRect().height }; })()`);
+  assert.ok(order.scrollHeight >= order.rowH * load.bots * 0.95, `the bot list holds every bot (${order.scrollHeight}px for ${load.bots} rows of ${order.rowH}px)`);
+  results.botsMemory = await memory("bot mode, loaded");
+  results.botsIdle = await busy(5, "bot mode, idle");
+  results.botScroll = await scroll(".side-list.bots", "bot list scroll", ".brow");
+  // Scrolled to the end, the last row drawn sits at the end of the list: nothing missing below it.
+  const endGap = (list, row) => page.run(`(() => { const l = document.querySelector(${JSON.stringify(list)}); const rows = l.querySelectorAll(${JSON.stringify(row)}); return l.getBoundingClientRect().bottom - rows[rows.length - 1].getBoundingClientRect().bottom; })()`);
+  const botEnd = await endGap(".side-list.bots", ".brow");
+  assert.ok(botEnd >= 0 && botEnd <= 12, `the bot list's last row ends ${botEnd}px from its end`);
+
+  // Opening bots: their long conversations.
+  const botOpens = [];
+  for (let i = 0; i < 8; i++) {
+    const at = 40 + i * 37;
+    await page.run(`document.querySelector('.side-list.bots').scrollTop = ${at * 64}`);
+    await sleep(100);
+    const t = await time(
+      `const rows = document.querySelectorAll('.brow:not(.sel)'); window.__picked = rows[Math.min(rows.length - 1, 3)].querySelector('.bname').textContent; rows[Math.min(rows.length - 1, 3)].click();`,
+      `document.querySelector('.brow.sel .bname')?.textContent === window.__picked && document.querySelector('.cmp-in') && document.querySelectorAll('.bbub').length > 3`,
+    );
+    botOpens.push(t);
+  }
+  results.botOpen = { medianMs: ms(median(botOpens)), maxMs: ms(Math.max(...botOpens)) };
+  note(`open a bot (60-turn conversation): median ${results.botOpen.medianMs} ms · max ${results.botOpen.maxMs} ms`);
+  results.botTyping = await typing(30, "typing in a bot's composer");
+  results.botChatScroll = await wheel(".content .cscroll", "bot conversation, wheel upwards");
+
+  // The session list.
+  const toSessions = await time(`document.querySelector('[data-mode=sessions]').click()`, `document.querySelector('.srow')`);
+  results.toSessionsMs = ms(toSessions);
+  note(`switch to sessions: ${results.toSessionsMs} ms`);
+  await sleep(500);
+  results.sessionsMemory = await memory("session mode, loaded");
+  results.sessionsIdle = await busy(5, "session mode, idle (running sessions at the top)");
+  results.sessionScroll = await scroll(".side-list", "session list scroll", ".srow, .grp-row");
+  const sessionEnd = await endGap(".side-list", ".srow");
+  assert.ok(sessionEnd >= 0 && sessionEnd <= 12, `the session list's last row ends ${sessionEnd}px from its end`);
+
+  // Grouping by project and by date, then back by status.
+  const regroup = async (index, label) => {
+    await page.run("document.querySelector('.side-lh .tb').click()");
+    await until("document.querySelector('[data-pane=group]')", "view menu");
+    await page.run("document.querySelector('[data-pane=group]').click()");
+    await until("document.querySelectorAll('[role=menuitemradio]').length >= 3", "group menu");
+    const t = await time(`document.querySelectorAll('[role=menuitemradio]')[${index}].click()`);
+    note(`group by ${label}: ${ms(t)} ms`);
+    return ms(t);
+  };
+  results.regroup = { projectMs: await regroup(2, "project"), dateMs: await regroup(1, "date"), statusMs: await regroup(0, "status") };
+
+  const sessionOpens = [];
+  for (let i = 0; i < 8; i++) {
+    await page.run(`document.querySelector('.side-list').scrollTop = ${300 + i * 2400}`);
+    await sleep(100);
+    const t = await time(
+      `const rows = document.querySelectorAll('.srow:not(.sel)'); const r = rows[Math.min(rows.length - 1, 4)]; window.__picked = r.querySelector('.stitle').textContent; r.click();`,
+      `document.querySelector('.srow.sel .stitle')?.textContent === window.__picked && document.querySelectorAll('.tr .md, .tr .bub').length > 3`,
+    );
+    sessionOpens.push(t);
+  }
+  results.sessionOpen = { medianMs: ms(median(sessionOpens)), maxMs: ms(Math.max(...sessionOpens)) };
+  note(`open a session (60-turn conversation): median ${results.sessionOpen.medianMs} ms · max ${results.sessionOpen.maxMs} ms`);
+  results.sessionChatScroll = await wheel(".content .cscroll.markdown-chat", "session conversation, wheel upwards");
+  results.sessionTyping = await typing(30, "typing in a session's composer");
+
+  // Search across every session.
+  await time(`document.querySelectorAll('.side-nav .nav-i')[1].click()`, `document.querySelector('.pal-in input')`);
+  const searches = [];
+  for (const q of ["缓存", "支付回调", "finx", "第 3 轮"]) {
+    searches.push(await time(`const i = document.querySelector('.pal-in input'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(q)}); i.dispatchEvent(new Event('input', { bubbles: true }));`));
+  }
+  results.searchMs = { median: ms(median(searches)), max: ms(Math.max(...searches)) };
+  note(`search keystroke: median ${results.searchMs.median} ms · max ${results.searchMs.max} ms`);
+  await page.run("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))");
+  await until("!document.querySelector('.pal')", "search closed");
+
+  results.idle = await busy(5, "session mode, a conversation open, idle");
+  results.afterVisits = await memory("after opening 16 conversations");
+  await time(`document.querySelectorAll('.side-nav .nav-i')[0].click()`, `!document.querySelector('.content .cscroll.markdown-chat')`);
+  await sleep(500);
+  results.afterLeaving = await memory("back on the new session page");
+  await quit();
+
+  step(`Lists changing: ${load.churn} changes a second`);
+  await launch(`${spec},churn=${load.churn}`);
+  await page.run(helpers);
+  await until(`document.querySelector('.brow') && !document.querySelector('.side-list .loadrow')`, "bot rows");
+  await sleep(1500);
+  results.churnBots = await busy(10, "bot mode while bots change");
+  results.churnBotTyping = await typing(40, "typing in a bot's composer while bots change");
+  await time(`document.querySelector('[data-mode=sessions]').click()`, `document.querySelector('.srow')`);
+  await sleep(500);
+  results.churnSessions = await busy(10, "session mode while sessions change");
+  results.churnSessionTyping = await typing(40, "typing in the new session composer while sessions change");
+  results.churnMemory = await memory("after 20 s of changes");
+  assert.deepEqual(page.errors, [], "no page errors");
+  await quit();
+
+  const file = opt("json");
+  if (file) fs.writeFileSync(file, JSON.stringify({ load, results }, null, 2));
+  console.log("\n✓ stress run complete");
+} catch (e) {
+  console.error(e);
+  process.exitCode = 1;
+} finally {
+  await quit();
+}

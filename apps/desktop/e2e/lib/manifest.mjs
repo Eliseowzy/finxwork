@@ -51,6 +51,7 @@ export const scripts = {
   resend: { covers: [`${renderer}composer/`, `${renderer}session/Dock`, `${renderer}session/Queue`, `${core}history.rs`] },
   "send-modes": { covers: [`${renderer}composer/`, `${renderer}session/Dock`, `${renderer}session/Queue`, `${core}kernel.rs`, `${core}task.rs`] },
   "session-browser": { covers: [`${renderer}session/Browser`, `${renderer}session/browserPanel`, `${renderer}session/SidePanels`, `${main}browser/pages`] },
+  stress: { covers: [`${renderer}sidebar/`, `${renderer}bots/BotList`, `${renderer}bots/Avatar`, `${renderer}store`, `${renderer}MainWindow`, `${renderer}commands`, `${renderer}search/`, `${client}sessions`, `${client}bots`, `${client}mock/stress`] },
   "stale-model": { covers: [`${renderer}settings/ModelConnections`, `${renderer}settings/ManageModels`, `${core}models.rs`, `${server}models`, `${server}connections`] },
   "subagent-approval": { covers: [`${renderer}session/Approval`, `${renderer}session/Agents`, `${core}agents/`, `${core}approval.rs`] },
   "system-browser": { foreground: "drives a real Chrome window", covers: [`${renderer}settings/BrowserSettings`, `${main}browser/system`, `${main}browser/host`, `${main}browser/extension`] },

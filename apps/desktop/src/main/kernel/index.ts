@@ -1,4 +1,4 @@
-import { MockServer } from "@finx/client/mock";
+import { MockServer, parseStress } from "@finx/client/mock";
 import { app, BrowserWindow, MessageChannelMain, type WebContents } from "electron";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -117,7 +117,8 @@ interface Upstream {
 let mock: MockServer | undefined;
 
 function mockUpstream(deliver: (text: string) => void): Upstream {
-  mock ??= new MockServer();
+  // FINXWORK_MOCK_STRESS="bots=1200,sessions=1500": a heavy owner's lists, for stress tests.
+  mock ??= new MockServer({ stress: parseStress(process.env.FINXWORK_MOCK_STRESS) });
   const conn = mock.connect({ write: deliver });
   return { write: (text) => conn.receive(text), close: () => conn.close() };
 }

@@ -28,7 +28,9 @@ function portTransport(): Promise<Transport> {
 
 /** A connection to finx, initialized. */
 export async function connect(): Promise<{ rpc: RpcClient; server: string }> {
-  const transport = window.finx ? await portTransport() : (await import("@finx/client/mock")).mockTransport();
+  // A page in a browser takes a heavy owner's lists with ?stress=bots=1200,sessions=1500 (stress tests).
+  const mock = window.finx ? null : await import("@finx/client/mock");
+  const transport = mock ? mock.mockTransport(new mock.MockServer({ stress: mock.parseStress(new URLSearchParams(location.search).get("stress")) })) : await portTransport();
   const rpc = new RpcClient(transport);
   const init = await rpc.request("initialize", {
     protocol_version: PROTOCOL_VERSION,
