@@ -44,14 +44,11 @@ deck-worker 进程（同一个进程，新增 docx 条目类型）每份文件�
 - **不新开进程**：deck-worker 已经是"每份文件一个线程的 actor + 日志 + 崩溃重放"，Word 条目是同一种东西，换个引擎而已。
   若实施时发现耦合不合适，可以拆成 `word-worker` 子命令，wire 不变。
 - **新 crate `finx-word`**（与 finx-slide 并列）：包装引擎，对外只暴露 `Word` 和本文的操作类型，不暴露引擎 JSON。
-- **写回 .docx 借桌面端的 JS 引擎**（2026-11-07 实测发现）：fork 的 Rust 侧没有"Yrs 状态 → .docx"的路径，
-  这一步只有 TS（`packages/docx/src/yrs/saveYrsDocx.ts` + `yrsToDocument.ts`，约 5 千行）。移植成 Rust 工作量大、
-  保真风险高；Electron 的 RunAsNode 熔丝已关，内核也不能自己起 Node。所以：桌面主进程用 `utilityProcess` 跑一个
-  **docx 序列化进程**，以 `docx/host` 登记为宿主（同 `browser/host` 的做法）；内核需要字节时（保存、`docx_view` 渲染）
-  发 `docx/serialize { source_path, state_path, out_path }`，经文件传字节，不走 base64 帧。内核仍是唯一写盘者（I1）：
-  序列化进程只写内核给的临时路径，内核校验（能被 Rust 解析、页数合理）后原子替换原文件。
-  没有桌面端（纯 CLI）时 `docx_save`/`docx_view` 报"需要 FinxWork 桌面端"，读与改照常可用。
-  以后 fork 有了原生保存，再把这一步换回内核，接口不变。
+- **写回 .docx 在内核里完成**（2026-11-07，见 [word-native-save.md](word-native-save.md)）：fork 新增
+  `docx-native-save`，是引擎 TS 写回（`saveYrsDocx` + `yrsToDocument`）的逐模块 Rust 移植，与 TS 逐字节一致。
+  deck-worker 用 `Word::save()` 直接写出；桌面端的 **docx 序列化进程**（`utilityProcess`，以 `docx/host` 登记，
+  内核发 `docx/serialize`）保留为退路与对照（`FINX_WORD_SAVE=desktop|compare`）。内核仍是唯一写盘者（I1），
+  写出后校验再原子替换原文件。纯 CLI 下 `docx_save`/`docx_view` 也可用。
 
 ## 3. finx-word：`Word`
 
@@ -63,7 +60,7 @@ deck-worker 进程（同一个进程，新增 docx 条目类型）每份文件�
 | 改 | `apply(EditBatch{mode, author, note, edits}) -> Applied` | 整批原子：失败指出第几步、为什么，不落半批 |
 | 修订 | `mode = Suggest` 时一切文字改动成为修订；`review(accept/reject, ids|all)` | 作者名、日期写入修订 |
 | 撤销 | `undo(edit)` | 只撤智能体的那一步（origin 隔离），人的改动不受影响；只能撤最近一次 |
-| 保存 | 由宿主序列化（§2）；`Word::check_saved(bytes)` 校验结果 | 未改动的部件逐字节等于源文件由 `saveYrsDocx` 的基线保存保证，e2e 覆盖 |
+| 保存 | `Word::save()`（原生，§2），失败时由宿主序列化；`Word::check_saved(bytes)` 校验结果 | 未改动的部件逐字节等于源文件由 `saveYrsDocx` 的基线保存保证，e2e 覆盖 |
 | 看页 | `render_page(docx_bytes, n, scale) -> png` | `betteroffice-docx` 光栅化序列化后的字节；中文用系统字体（同 finx-slide fonts） |
 
 操作（snake_case，一一映射到引擎；寻址用段落 ID，文字用 `find`：在该段里恰好出现一次）：

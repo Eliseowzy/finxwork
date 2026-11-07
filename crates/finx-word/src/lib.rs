@@ -2,11 +2,14 @@
 //! join; reading for the agent, atomic edit batches (as revisions by default), review, undo of
 //! the kernel's own edits, and rendering of saved bytes.
 //!
-//! There is no `save`: the fork has no Rust path from the session to a `.docx` (only its
-//! TypeScript `saveYrsDocx`), so the desktop's serializer process writes the bytes from
-//! [`Word::source_bytes`] and [`Word::encode_state`], and the kernel checks them with
-//! [`Word::check_saved`] before replacing the file (word-design §2).
+//! [`Word::save`] writes the `.docx` in-process with the fork's `docx-native-save`, the Rust
+//! port of the engine's TypeScript `saveYrsDocx`: unchanged parts keep their source bytes. The
+//! desktop's serializer process (the TypeScript save itself, from [`Word::source_bytes`],
+//! [`Word::encode_state`] and [`Word::peer_metadata`]) remains as a fallback and a reference;
+//! either way the kernel checks the bytes with [`Word::check_saved`] before replacing the file
+//! (word-native-save.md).
 
+mod compare;
 mod ops;
 mod read;
 mod render;
@@ -18,6 +21,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use betteroffice_docx::fonts::FontError;
 use docx_edit::session::{EditSessionCore, EngineResult, Host};
+use docx_native_save::OpenedSource;
+pub use docx_native_save::SaveOptions;
 use serde_json::{Value, json};
 
 pub use ops::{
@@ -27,12 +32,13 @@ pub use read::{
     CellPosition, Comment, Found, ListItem, OBJECT, OutlineEntry, ParagraphView, Revision,
     RevisionKind,
 };
+pub use compare::package_difference;
 pub use render::{page_count, render_page};
 
 use read::Paragraph;
 
 /// The engine build. Keep in step with the `docx-edit` rev in the workspace Cargo.toml.
-pub const ENGINE: &str = "betteroffice 330266fb";
+pub const ENGINE: &str = "betteroffice aac46417";
 
 /// The Yrs client id of the kernel's own edits; see [`Word::client_id`].
 const CLIENT_ID: u64 = 1;
@@ -58,6 +64,9 @@ pub enum WordError {
     Docx(#[from] betteroffice_docx::Error),
     #[error("fonts: {0}")]
     Fonts(#[from] FontError),
+    /// The native save could not write the document.
+    #[error("save: {0}")]
+    Save(String),
 }
 
 pub type Result<T> = std::result::Result<T, WordError>;
@@ -93,13 +102,19 @@ pub struct Word {
     session: EditSessionCore,
     source: Vec<u8>,
     sha256: String,
+    /// What the native save keeps of the opening, or why it could not (then only the desktop's
+    /// serializer can write this document).
+    opened: std::result::Result<OpenedSource, String>,
 }
 
 impl Word {
     pub fn open(bytes: Vec<u8>) -> Result<Self> {
         let session = new_session();
-        let opened = parse(&engine(session.open_docx(&bytes, true, None, None))?)?;
+        let receipt = engine(session.open_docx(&bytes, true, None, None))?;
+        let opened = parse(&receipt)?;
         seed_comments(&session, opened.pointer(OPENED_COMMENTS))?;
+        drop(opened);
+        let native = OpenedSource::after_open(bytes.clone(), &receipt).map_err(|e| e.to_string());
         // After seeding, so opening is not a step to undo.
         session.track_undo();
         let digest = ring::digest::digest(&ring::digest::SHA256, &bytes);
@@ -108,6 +123,7 @@ impl Word {
             session,
             source: bytes,
             sha256,
+            opened: native,
         })
     }
 
@@ -288,6 +304,25 @@ impl Word {
             return Ok(None);
         }
         Ok(Some(self.encode_diff(&sv)?))
+    }
+
+    /// The `.docx` of the document as it is now, written in-process: what the desktop's
+    /// serializer writes from the same state (`saveYrsDocx`). Only reads the session.
+    pub fn save(&self) -> Result<Vec<u8>> {
+        self.save_with(&SaveOptions::default())
+    }
+
+    /// [`Word::save`] with the writer's options; `record_saved_paragraph_ids` is always off,
+    /// so saving is never a change to the document.
+    pub fn save_with(&self, options: &SaveOptions) -> Result<Vec<u8>> {
+        let opened = self.opened.as_ref().map_err(|e| WordError::Save(e.clone()))?;
+        let options = SaveOptions {
+            record_saved_paragraph_ids: false,
+            ..options.clone()
+        };
+        docx_native_save::save_docx(&self.session, opened, &options)
+            .map(|saved| saved.bytes)
+            .map_err(|e| WordError::Save(e.to_string()))
     }
 
     /// Opens what the serializer wrote and says what is in it; bytes the engine cannot read or

@@ -375,6 +375,11 @@ fn handle(held: &mut Held, request: Request) -> Result<Value, String> {
             crate::atomic::write(&metadata, &peer).map_err(|e| format!("write: {e}"))?;
             to_value(Synced { revision: held.revision })
         }
+        Request::WordWrite { path, .. } => {
+            let bytes = held.deck.word()?.save().map_err(|e| e.to_string())?;
+            crate::atomic::write(&path, &bytes).map_err(|e| format!("write: {e}"))?;
+            to_value(Synced { revision: held.revision })
+        }
         Request::WordCheck { path, .. } => {
             let bytes = std::fs::read(&path).map_err(|e| format!("read: {e}"))?;
             let summary = held.deck.word()?.check_saved(&bytes).map_err(|e| format!("{REFUSED}the written document does not open: {e}"))?;

@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 
 use docx_edit::session::{EditSessionCore, Host};
 use finx_docs::deck::{DeckError, DeckLauncher, DeckStore, WordQuery};
-use finx_docs::word::{AUTHOR, DocxSerializer, WordEvent, WordStore};
+use finx_docs::word::{AUTHOR, DocxSerializer, SaveEngine, WordEvent, WordStore};
 use finx_word::{EditBatch, EditMode, ParagraphView, ReviewAction, Revision, WordOp};
 
 const FIXTURE: &[u8] = include_bytes!("../../finx-word/tests/fixtures/report.docx");
@@ -47,9 +47,19 @@ fn setup() -> Setup {
 }
 
 fn store(s: &Setup, serializer: Arc<Copier>) -> (DeckStore, WordStore) {
+    store_with(s, serializer, SaveEngine::Native)
+}
+
+fn store_with(s: &Setup, serializer: Arc<Copier>, engine: SaveEngine) -> (DeckStore, WordStore) {
     let decks = DeckStore::new(s.root.join("decks"), DeckLauncher::Thread);
-    let words = WordStore::new(s.root.join("docx"), &decks, serializer);
+    let words = WordStore::new(s.root.join("docx"), &decks, serializer).with_engine(engine);
     (decks, words)
+}
+
+/// The text of a body paragraph of the .docx at `path`.
+fn saved_text(path: &Path, paragraph: &str) -> String {
+    let word = finx_word::Word::open(std::fs::read(path).unwrap()).unwrap();
+    word.read(paragraph, 1).unwrap().iter().map(|p| p.text.clone()).collect()
 }
 
 fn replica(state: &[u8]) -> EditSessionCore {
@@ -203,7 +213,7 @@ async fn a_worker_crash_or_restart_loses_nothing_acknowledged() {
 async fn saves_through_the_serializer_with_the_guard_of_decks() {
     let s = setup();
     let copier = Arc::new(Copier::default());
-    let (_decks, words) = store(&s, copier.clone());
+    let (_decks, words) = store_with(&s, copier.clone(), SaveEngine::Desktop);
     let id = words.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
     // Nothing unsaved: nothing written.
     words.save(&id, None, false).await.unwrap();
@@ -233,9 +243,9 @@ async fn saves_through_the_serializer_with_the_guard_of_decks() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn without_a_serializer_or_write_access_nothing_is_written() {
+async fn saving_with_the_desktop_only_needs_the_desktop_app_and_write_access() {
     let s = setup();
-    let (_decks, words) = store(&s, Arc::new(Copier { absent: true, ..Copier::default() }));
+    let (_decks, words) = store_with(&s, Arc::new(Copier { absent: true, ..Copier::default() }), SaveEngine::Desktop);
     let id = words.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
     words.apply(&id, &batch(EditMode::Direct, vec![replace("10000002", "百分之十", "一成")])).await.unwrap();
     assert!(matches!(words.save(&id, None, false).await, Err(DeckError::Host(m)) if m.contains("桌面端")));
@@ -255,6 +265,49 @@ async fn without_a_serializer_or_write_access_nothing_is_written() {
     assert!(!entry.writable);
     words.apply(&entry.deck_id, &batch(EditMode::Direct, vec![replace("10000002", "百分之十", "一成")])).await.unwrap();
     assert!(matches!(words.save(&entry.deck_id, None, false).await, Err(DeckError::Refused(_))));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn saves_natively_without_the_desktop_app() {
+    let s = setup();
+    let copier = Arc::new(Copier { absent: true, ..Copier::default() });
+    let (_decks, words) = store(&s, copier.clone());
+    let id = words.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
+    words.apply(&id, &batch(EditMode::Direct, vec![replace("10000002", "百分之十", "一成")])).await.unwrap();
+    // Drawing pages of the unsaved document, then saving it: no serializer involved.
+    let peek = words.current_bytes(&id).await.unwrap();
+    assert!(finx_word::Word::open(peek).is_ok());
+    let info = words.save(&id, None, false).await.unwrap();
+    assert!(!info.dirty);
+    assert!(copier.calls.lock().unwrap().is_empty());
+    assert_eq!(info.hash, sha256_hex(&std::fs::read(&s.file).unwrap()));
+    assert!(saved_text(&s.file, "10000002").ends_with("一成。"));
+    let dir = words.get(&id).unwrap().dir.clone();
+    let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+    assert!(!left.iter().any(|n| n.starts_with("saving") || n.starts_with("peek-") || n.starts_with("state-")), "{left:?}");
+    // A tracked change is saved as one: reopened, it is still pending.
+    words.apply(&id, &batch(EditMode::Suggest, vec![replace("10000002", "一成", "两成")])).await.unwrap();
+    words.save(&id, Some(&s.root.join("tracked.docx")), false).await.unwrap();
+    let reopened = finx_word::Word::open(std::fs::read(s.root.join("tracked.docx")).unwrap()).unwrap();
+    assert!(!reopened.revisions().unwrap().is_empty());
+    // The file left untouched on disk by the save-as.
+    assert!(saved_text(&s.file, "10000002").ends_with("一成。"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn compare_keeps_the_desktops_bytes() {
+    let s = setup();
+    let copier = Arc::new(Copier::default());
+    let (_decks, words) = store_with(&s, copier.clone(), SaveEngine::Compare);
+    let id = words.open(&s.file, "a", false).await.unwrap().entry.deck_id.clone();
+    words.apply(&id, &batch(EditMode::Direct, vec![replace("10000002", "百分之十", "一成")])).await.unwrap();
+    words.save(&id, None, false).await.unwrap();
+    // The stand-in writes the source as it is: that is what was saved, not the native bytes.
+    assert_eq!(copier.calls.lock().unwrap().len(), 1);
+    assert_eq!(std::fs::read(&s.file).unwrap(), FIXTURE);
+    let dir = words.get(&id).unwrap().dir.clone();
+    let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+    assert!(!left.iter().any(|n| n.starts_with("native-")), "{left:?}");
 }
 
 /// The digest the store keeps (`DeckInfo.hash`).

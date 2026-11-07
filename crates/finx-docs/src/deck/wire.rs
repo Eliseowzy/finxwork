@@ -49,6 +49,9 @@ pub enum Request {
     WordState { deck: String, state: PathBuf, metadata: PathBuf },
     /// A Word document: opens what the serializer wrote at `path`; replies `WordChecked`.
     WordCheck { deck: String, path: PathBuf },
+    /// A Word document: writes it to `path` itself (finx-word `Word::save`), whole or not at
+    /// all; replies `Synced` with the revision written.
+    WordWrite { deck: String, path: PathBuf },
     /// Ends the process: after shutdown, and in tests as a crash.
     Exit,
 }
@@ -71,7 +74,8 @@ impl Request {
             | Request::WordReview { deck, .. }
             | Request::WordRead { deck, .. }
             | Request::WordState { deck, .. }
-            | Request::WordCheck { deck, .. } => Some(deck),
+            | Request::WordCheck { deck, .. }
+            | Request::WordWrite { deck, .. } => Some(deck),
             Request::Exit => None,
         }
     }

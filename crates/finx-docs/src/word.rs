@@ -2,10 +2,11 @@
 //! like a deck: the same directory layout (with `source.docx`), log, recovery, save guard and
 //! conflicts, on the deck worker's process, where a thread holds its `finx_word::Word`.
 //!
-//! The kernel cannot write .docx itself (§2): saving and drawing pages go through a
-//! [`DocxSerializer`], the desktop app's serializer process, which writes the bytes from the
-//! source, the Yrs state and the engine's peer metadata. The kernel checks what it wrote and is
-//! still the only one to replace the file.
+//! The deck worker writes the .docx itself (finx-word `Word::save`, the engine's save ported to
+//! Rust; word-native-save.md). The desktop app's serializer process, a [`DocxSerializer`] that
+//! runs the engine's TypeScript save from the source, the Yrs state and the peer metadata, is
+//! the fallback when the native save fails, and the reference in [`SaveEngine::Compare`]. The
+//! kernel checks what was written and is the only one to replace the file.
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -27,6 +28,28 @@ pub trait DocxSerializer: Send + Sync {
     fn serialize<'a>(&'a self, source: &'a Path, state: &'a Path, metadata: &'a Path, out: &'a Path) -> Pin<Box<dyn Future<Output = Result<u64, String>> + Send + 'a>>;
 }
 
+/// Which writer saves Word documents (`FINX_WORD_SAVE`: `native`, the default, `desktop` or
+/// `compare`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SaveEngine {
+    /// In the deck worker; the desktop's serializer only when that fails.
+    Native,
+    /// The desktop's serializer only (the kernel before the native save).
+    Desktop,
+    /// Both: the desktop's bytes are kept, and where the native ones differ it is logged.
+    Compare,
+}
+
+impl SaveEngine {
+    pub fn from_env() -> Self {
+        match std::env::var("FINX_WORD_SAVE").as_deref() {
+            Ok("desktop") => SaveEngine::Desktop,
+            Ok("compare") => SaveEngine::Compare,
+            _ => SaveEngine::Native,
+        }
+    }
+}
+
 /// What listeners hear.
 #[derive(Clone, Debug)]
 pub enum WordEvent {
@@ -41,6 +64,7 @@ type Listener = Box<dyn Fn(&WordEvent) + Send + Sync>;
 pub struct WordStore {
     entries: DeckStore,
     serializer: Arc<dyn DocxSerializer>,
+    engine: SaveEngine,
     listeners: Arc<Mutex<Vec<Listener>>>,
 }
 
@@ -61,7 +85,13 @@ impl WordStore {
                 f(&event);
             }
         });
-        Self { entries, serializer, listeners }
+        Self { entries, serializer, engine: SaveEngine::from_env(), listeners }
+    }
+
+    /// The store saving with `engine` instead of what `FINX_WORD_SAVE` says.
+    pub fn with_engine(mut self, engine: SaveEngine) -> Self {
+        self.engine = engine;
+        self
     }
 
     pub fn on_event(&self, f: impl Fn(&WordEvent) + Send + Sync + 'static) {
@@ -124,8 +154,8 @@ impl WordStore {
         Ok(self.entries.worker.request(Request::WordRead { deck: docx_id.to_owned(), query }).await?)
     }
 
-    /// Saves to the file, or to `to`, with the save guard of decks: the serializer writes a
-    /// staged file, the engine checks it opens, then it replaces the target.
+    /// Saves to the file, or to `to`, with the save guard of decks: a staged file is written
+    /// ([`SaveEngine`]), the engine checks it opens, then it replaces the target.
     pub async fn save(&self, docx_id: &str, to: Option<&Path>, force: bool) -> Result<DeckInfo, DeckError> {
         let entry = self.get(docx_id)?;
         self.entries
@@ -149,16 +179,56 @@ impl WordStore {
         bytes
     }
 
-    /// Has the serializer write the document now to `out` and checks it: the revision written.
+    /// Writes the document now to `out` and checks it: the revision written.
     async fn stage(&self, entry: &DeckEntry, out: &Path) -> Result<(u64, WordChecked), DeckError> {
+        let revision = match self.engine {
+            SaveEngine::Native => match self.write_native(entry, out).await {
+                Ok(revision) => revision,
+                Err(native) => {
+                    tracing::warn!(docx = %entry.deck_id, error = %native, "native Word save failed, the desktop app writes it");
+                    self.write_desktop(entry, out).await.map_err(|desktop| match desktop {
+                        DeckError::Host(host) => DeckError::Host(format!("{native}; {host}")),
+                        other => other,
+                    })?
+                }
+            },
+            SaveEngine::Desktop => self.write_desktop(entry, out).await?,
+            SaveEngine::Compare => {
+                let revision = self.write_desktop(entry, out).await?;
+                let native = entry.dir.join(format!("native-{}.docx", uuid::Uuid::new_v4()));
+                let compared = self.write_native(entry, &native).await.and_then(|_| {
+                    let theirs = std::fs::read(out)?;
+                    let ours = std::fs::read(&native)?;
+                    Ok(finx_word::package_difference(&theirs, &ours))
+                });
+                let _ = std::fs::remove_file(&native);
+                match compared {
+                    Ok(None) => tracing::info!(docx = %entry.deck_id, revision, "native Word save matches the desktop's"),
+                    Ok(Some(difference)) => tracing::warn!(docx = %entry.deck_id, revision, %difference, "native Word save differs from the desktop's"),
+                    Err(e) => tracing::warn!(docx = %entry.deck_id, revision, error = %e, "native Word save failed"),
+                }
+                revision
+            }
+        };
+        let checked: WordChecked = self.entries.worker.request(Request::WordCheck { deck: entry.deck_id.clone(), path: out.to_owned() }).await?;
+        Ok((revision, checked))
+    }
+
+    /// The deck worker writes the document to `out`: the revision written.
+    async fn write_native(&self, entry: &DeckEntry, out: &Path) -> Result<u64, DeckError> {
+        let synced: Synced = self.entries.worker.request(Request::WordWrite { deck: entry.deck_id.clone(), path: out.to_owned() }).await?;
+        Ok(synced.revision)
+    }
+
+    /// The desktop's serializer writes the document to `out`: the revision written.
+    async fn write_desktop(&self, entry: &DeckEntry, out: &Path) -> Result<u64, DeckError> {
         let tag = uuid::Uuid::new_v4();
         let state = entry.dir.join(format!("state-{tag}.yupd"));
         let metadata = entry.dir.join(format!("metadata-{tag}.bin"));
         let result = async {
             let synced: Synced = self.entries.worker.request(Request::WordState { deck: entry.deck_id.clone(), state: state.clone(), metadata: metadata.clone() }).await?;
             self.serializer.serialize(&entry.source(), &state, &metadata, out).await.map_err(DeckError::Host)?;
-            let checked: WordChecked = self.entries.worker.request(Request::WordCheck { deck: entry.deck_id.clone(), path: out.to_owned() }).await?;
-            Ok((synced.revision, checked))
+            Ok(synced.revision)
         }
         .await;
         let _ = std::fs::remove_file(&state);

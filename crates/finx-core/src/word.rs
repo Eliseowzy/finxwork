@@ -1,8 +1,8 @@
 //! The Word tools (word-design §4): the deferred group `word`. Every tool works on the kernel's
 //! entry of the document (WordStore), opening it there when no one has; the session's hold ends
 //! with it. Edits land as tracked changes by default (`mode = suggest`), which the user accepts
-//! or rejects in the document; `docx_view` and `docx_save` need the desktop app to write the
-//! .docx bytes, reading and editing do not.
+//! or rejects in the document. The kernel writes the .docx bytes itself (finx-word `Word::save`),
+//! so `docx_view` and `docx_save` work without the desktop app too.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -265,7 +265,7 @@ impl TypedTool for DocxView {
     type Args = ViewArgs;
     const NAME: &'static str = "docx_view";
     const DESCRIPTION: &'static str = "Look at a page of a Word document (.docx) as an image, unsaved edits included: its layout, \
-        tables, pictures and tracked changes as Word shows them. Needs the FinxWork desktop app when there are unsaved edits.";
+        tables, pictures and tracked changes as Word shows them.";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -505,7 +505,7 @@ impl TypedTool for DocxSave {
     type Args = SaveArgs;
     const NAME: &'static str = "docx_save";
     const DESCRIPTION: &'static str = "Write a Word document's unsaved changes, yours and the user's, tracked changes included, \
-        to its file (or, with `path`, to another .docx). Needs the FinxWork desktop app.";
+        to its file (or, with `path`, to another .docx).";
 
     fn guidelines(&self) -> &[&'static str] {
         GUIDELINES
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn without_the_desktop_app_reading_and_editing_go_on() {
+    async fn without_the_desktop_app_everything_goes_on() {
         let s = setup(true);
         let edit = json!({ "docx": "report.docx", "mode": "direct", "edits": [{ "op": "replace_text", "paragraph": "10000002", "find": "百分之十", "replace": "一成" }] });
         let out = run(DocxEdit, &s, edit).await.unwrap();
@@ -651,8 +651,11 @@ mod tests {
         assert_eq!(out.details.unwrap()["revisions"], json!([]));
         let read = text_of(&run(DocxRead, &s, json!({ "docx": "report.docx", "from": "10000002", "count": 1 })).await.unwrap());
         assert!(read.contains("一成"));
-        for result in [run(DocxSave, &s, json!({ "docx": "report.docx" })).await, run(DocxView, &s, json!({ "docx": "report.docx", "page": 1 })).await] {
-            assert!(matches!(result, Err(ToolError::Failed(m)) if m.contains("需要 FinxWork 桌面端")));
-        }
+        let view = run(DocxView, &s, json!({ "docx": "report.docx", "page": 1 })).await.unwrap();
+        assert!(matches!(view.content[1], UserContent::Image { .. }));
+        run(DocxSave, &s, json!({ "docx": "report.docx" })).await.unwrap();
+        let saved = finx_word::Word::open(std::fs::read(s.dir.path().join("report.docx")).unwrap()).unwrap();
+        let text: String = saved.read("10000002", 1).unwrap().iter().map(|p| p.text.clone()).collect();
+        assert!(text.contains("一成") && !text.contains("百分之十"), "{text}");
     }
 }
